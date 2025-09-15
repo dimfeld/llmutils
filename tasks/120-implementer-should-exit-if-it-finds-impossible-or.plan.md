@@ -15,7 +15,7 @@ docs: []
 planGeneratedAt: 2025-09-15T03:12:44.945Z
 promptsGeneratedAt: 2025-09-15T03:52:50.945Z
 createdAt: 2025-09-14T08:19:24.654Z
-updatedAt: 2025-09-15T04:40:42.230Z
+updatedAt: 2025-09-15T05:00:50.671Z
 tasks:
   - title: Create Standardized Failure Detection Template
     done: true
@@ -113,7 +113,7 @@ tasks:
       - src/rmplan/executors/failure_detection.test.ts
     steps: []
   - title: Add Failure Detection to Claude Executor
-    done: false
+    done: true
     description: >
       Modify `src/rmplan/executors/claude_code.ts` to check for "FAILED:" in the
       final assistant message. Update the `execute()` method to return failure
@@ -127,7 +127,7 @@ tasks:
       - src/rmplan/executors/claude_code.ts
     steps: []
   - title: Update Claude Output Processing
-    done: false
+    done: true
     description: >
       Enhance the output processing in
       `src/rmplan/executors/claude_code/format.ts` to identify and extract
@@ -156,7 +156,7 @@ tasks:
       - src/rmplan/executors/claude_code.ts
     steps: []
   - title: Add Failure Detection to Codex Executor
-    done: false
+    done: true
     description: >
       Modify `src/rmplan/executors/codex_cli.ts` to check each agent's output
       for "FAILED:" messages. Update the `execute()` method to track failure
@@ -170,7 +170,7 @@ tasks:
       - src/rmplan/executors/codex_cli.ts
     steps: []
   - title: Make Task Completion Conditional
-    done: false
+    done: true
     description: >
       Update the finally block in `execute()` method to check for failure state
       before calling `markCompletedTasksFromImplementer()`. Add a flag to track
@@ -184,7 +184,7 @@ tasks:
       - src/rmplan/executors/codex_cli.ts
     steps: []
   - title: Update Codex Output Processing
-    done: false
+    done: true
     description: >
       Enhance `src/rmplan/executors/codex_cli/format.ts` to identify failure
       messages in the JSON stream and make them available for detection.
@@ -196,7 +196,7 @@ tasks:
       - src/rmplan/executors/codex_cli/format.ts
     steps: []
   - title: Update Serial Mode Agent Loop
-    done: false
+    done: true
     description: >
       Modify `src/rmplan/commands/agent/agent.ts` to check executor output for
       failure indication. Update error handling to display detailed failure
@@ -297,16 +297,27 @@ tasks:
       - CLAUDE.md
     steps: []
 changedFiles:
+  - src/rmplan/commands/agent/agent.failure_handling.test.ts
+  - src/rmplan/commands/agent/agent.ts
   - src/rmplan/executors/claude_code/agent_prompts.test.ts
   - src/rmplan/executors/claude_code/agent_prompts.ts
+  - src/rmplan/executors/claude_code/format.ts
   - src/rmplan/executors/claude_code/orchestrator_prompt.test.ts
   - src/rmplan/executors/claude_code/orchestrator_prompt.ts
+  - src/rmplan/executors/claude_code.test.ts
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/executors/codex_cli/format.ts
   - src/rmplan/executors/codex_cli.fixer_prompt.test.ts
+  - src/rmplan/executors/codex_cli.test.ts
   - src/rmplan/executors/codex_cli.ts
   - src/rmplan/executors/failure_detection.test.ts
   - src/rmplan/executors/failure_detection.ts
   - src/rmplan/executors/types.ts
+  - src/rmplan/prompt_builder.ts
+  - src/rmplan/summary/collector.ts
+  - src/rmplan/summary/display.ts
   - src/rmplan/summary/parsers.ts
+  - src/rmplan/summary/types.ts
 rmfilter: []
 ---
 
