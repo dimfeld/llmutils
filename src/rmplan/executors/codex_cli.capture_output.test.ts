@@ -30,8 +30,12 @@ describe('CodexCliExecutor captureOutput', () => {
     captureOutput: 'result',
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     moduleMocker = new ModuleMocker(import.meta);
+    // Ensure the executor's auto-marking step never hits network
+    await moduleMocker.mock('ai', () => ({
+      generateObject: mock(async () => ({ object: { completed_titles: [] } })),
+    }));
   });
 
   afterEach(() => {
