@@ -7,14 +7,14 @@ goal: Enable agents to add timestamped progress notes to plans during execution,
   prompts.
 id: 121
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 dependencies: []
 issue: []
 docs: []
 planGeneratedAt: 2025-09-15T08:23:05.434Z
 createdAt: 2025-09-15T03:02:03.721Z
-updatedAt: 2025-09-15T09:23:26.268Z
+updatedAt: 2025-09-15T09:52:59.610Z
 tasks:
   - title: Extend Plan Schema
     done: true
@@ -136,7 +136,7 @@ tasks:
       - Plan validation and cleanup
     steps: []
   - title: Handle Edge Cases
-    done: false
+    done: true
     description: |
       Test and fix edge cases:
       - Very long note text (implement truncation if needed)
@@ -157,8 +157,11 @@ tasks:
 changedFiles:
   - README.md
   - schema/rmplan-plan-schema.json
+  - src/rmplan/commands/add-progress-note.merge.test.ts
+  - src/rmplan/commands/add-progress-note.rotation.test.ts
   - src/rmplan/commands/add-progress-note.test.ts
   - src/rmplan/commands/add-progress-note.ts
+  - src/rmplan/commands/list.progress_notes.test.ts
   - src/rmplan/commands/list.test.ts
   - src/rmplan/commands/list.ts
   - src/rmplan/commands/merge.test.ts
@@ -166,6 +169,7 @@ changedFiles:
   - src/rmplan/commands/show.test.ts
   - src/rmplan/commands/show.ts
   - src/rmplan/commands/split.test.ts
+  - src/rmplan/configSchema.ts
   - src/rmplan/executors/claude_code/orchestrator_prompt.test.ts
   - src/rmplan/executors/claude_code/orchestrator_prompt.ts
   - src/rmplan/planSchema.test.ts
