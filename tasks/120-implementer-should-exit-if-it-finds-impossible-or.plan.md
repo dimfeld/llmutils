@@ -1,7 +1,7 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Implementer should exit if it finds impossible or conflicting
-  requirements it ca not resolve
+  requirements it can not resolve
 goal: ""
 id: 120
 status: pending
