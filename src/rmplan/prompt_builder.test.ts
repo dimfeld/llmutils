@@ -297,6 +297,32 @@ describe('prompt_builder', () => {
       expect(result).not.toContain('2024-01-01T00:00:00.000Z');
     });
 
+    test('includes source metadata prefix when provided', async () => {
+      const planData: PlanSchema = {
+        title: 'Plan with Source Notes',
+        goal: 'Plan Goal',
+        details: 'Plan Details',
+        tasks: [],
+        progressNotes: [
+          {
+            timestamp: '2024-01-03T00:00:00.000Z',
+            text: 'Investigated failing tests',
+            source: 'tester: Task Gamma',
+          },
+        ],
+      } as any;
+
+      const result = await buildExecutionPromptWithoutSteps({
+        executor: mockExecutor,
+        planData,
+        planFilePath: path.join(tempDir, 'test-plan.yml'),
+        baseDir: tempDir,
+        config: mockConfig,
+      });
+
+      expect(result).toContain('- [tester: Task Gamma] Investigated failing tests');
+    });
+
     test('progress notes are truncated to last 50 with summary line', async () => {
       const progressNotes = Array.from({ length: 52 }).map((_, i) => ({
         timestamp: new Date(2024, 0, i + 1).toISOString(),

@@ -146,7 +146,11 @@ export async function handleShowCommand(planFile: string | undefined, options: a
       const timestamp = latestNote.timestamp
         ? new Date(latestNote.timestamp).toLocaleString()
         : undefined;
-      const singleLine = (latestNote.text ?? '').replace(/\s+/g, ' ').trim();
+      const sourceLabel = (latestNote.source || '').trim();
+      const combined = sourceLabel.length
+        ? `[${sourceLabel}] ${latestNote.text ?? ''}`
+        : (latestNote.text ?? '');
+      const singleLine = combined.replace(/\s+/g, ' ').trim();
       const truncated =
         singleLine.length > MAX_NOTE_CHARS
           ? singleLine.slice(0, Math.max(0, MAX_NOTE_CHARS - 3)) + '...'
@@ -317,18 +321,25 @@ export async function handleShowCommand(planFile: string | undefined, options: a
       for (const n of visible) {
         const ts = new Date(n.timestamp).toLocaleString();
         const text = n.text || '';
+        const sourceLabel = (n.source || '').trim();
         if (options.full) {
           // Show full text, preserving line breaks with indentation
           const lines = text.split('\n');
-          log(`  • ${chalk.gray(ts)}\n    ${lines.join('\n    ')}`);
+          const header = `  • ${chalk.gray(ts)}${sourceLabel.length ? `  [${sourceLabel}]` : ''}`;
+          log(header);
+          if (text.trim().length > 0) {
+            log(`    ${lines.join('\n    ')}`);
+          }
         } else {
           // Truncate to a single line for compact display
-          const singleLine = text.replace(/\s+/g, ' ').trim();
+          const combined = sourceLabel.length ? `[${sourceLabel}] ${text}` : text;
+          const singleLine = combined.replace(/\s+/g, ' ').trim();
           const truncated =
             singleLine.length > MAX_NOTE_CHARS
               ? singleLine.slice(0, Math.max(0, MAX_NOTE_CHARS - 3)) + '...'
               : singleLine;
-          log(`  • ${chalk.gray(ts)}  ${truncated}`);
+          const body = truncated.length ? truncated : sourceLabel.length ? `[${sourceLabel}]` : '';
+          log(`  • ${chalk.gray(ts)}${body ? `  ${body}` : ''}`);
         }
       }
       const hidden = notes.length - visible.length;

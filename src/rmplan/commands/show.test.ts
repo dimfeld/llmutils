@@ -133,6 +133,7 @@ describe('handleShowCommand', () => {
         {
           timestamp: new Date('2024-02-02T12:00:00Z').toISOString(),
           text: 'Latest note with more details',
+          source: 'implementer: Task Beta',
         },
       ],
     } as any;
@@ -152,6 +153,7 @@ describe('handleShowCommand', () => {
     expect(stripped).toContain('Condensed Plan');
     expect(stripped).toContain('Latest Progress Note');
     expect(stripped).toContain('Latest note with more details');
+    expect(stripped).toContain('[implementer: Task Beta]');
     expect(stripped).not.toContain('Earlier note');
     expect(stripped).toContain('Tasks:');
     expect(stripped).toContain('✓ Task Title 1');
@@ -163,7 +165,7 @@ describe('handleShowCommand', () => {
   });
 
   test('displays progress notes count and formatted list (default)', async () => {
-    const notes = [] as Array<{ timestamp: string; text: string }>;
+    const notes = [] as Array<{ timestamp: string; text: string; source?: string }>;
     // Create 12 notes to exercise truncation to last 10
     for (let i = 1; i <= 12; i++) {
       notes.push({
@@ -213,6 +215,7 @@ describe('handleShowCommand', () => {
       {
         timestamp: new Date('2024-01-02T00:00:00.000Z').toISOString(),
         text: 'Line A\nLine B\nLine C',
+        source: 'tester: Task Foo',
       },
     ];
 
@@ -242,6 +245,7 @@ describe('handleShowCommand', () => {
     expect(logs).not.toContain('more earlier note(s)');
     // Indentation marker (four spaces) should appear before continued lines
     expect(logs).toContain('\n    Line B');
+    expect(logs).toContain('[tester: Task Foo]');
   });
 
   test('shows error when plan file not found', async () => {

@@ -102,7 +102,8 @@ export class CodexCliExecutor implements Executor {
 
     if (planContextAvailable) {
       const planData = await readPlanFile(planInfo.planFilePath);
-      ({ completed: initiallyCompleted, pending: initiallyPending } = this.categorizeTasks(planData));
+      ({ completed: initiallyCompleted, pending: initiallyPending } =
+        this.categorizeTasks(planData));
 
       this.logTaskStatus('Initial plan analysis', initiallyCompleted, initiallyPending, gitRoot);
     }

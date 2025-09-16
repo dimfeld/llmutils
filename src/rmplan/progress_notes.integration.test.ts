@@ -69,9 +69,11 @@ describe('Progress Notes Integration', () => {
     // Add two progress notes
     await handleAddProgressNoteCommand('201', 'Initial chunk completed', {
       parent: { opts: () => ({ config: configPath }) },
+      opts: () => ({}),
     } as any);
     await handleAddProgressNoteCommand('201', 'Found edge case; updated approach', {
       parent: { opts: () => ({ config: configPath }) },
+      opts: () => ({}),
     } as any);
 
     // Verify file contains notes
@@ -127,9 +129,11 @@ describe('Progress Notes Integration', () => {
     // Two sequential additions, like two agents finishing work
     await handleAddProgressNoteCommand('202', 'Agent A: implemented core logic', {
       parent: { opts: () => ({ config: configPath }) },
+      opts: () => ({}),
     } as any);
     await handleAddProgressNoteCommand('202', 'Agent B: added tests and fixes', {
       parent: { opts: () => ({ config: configPath }) },
+      opts: () => ({}),
     } as any);
 
     let updated = await readPlanFile(planFile);
@@ -160,7 +164,7 @@ describe('Progress Notes Integration', () => {
     const planFile = path.join(tasksDir, '203.yml');
     await fs.writeFile(planFile, yaml.stringify(plan));
 
-    const cmd = { parent: { opts: () => ({ config: configPath }) } } as any;
+    const cmd = { parent: { opts: () => ({ config: configPath }) }, opts: () => ({}) } as any;
 
     // Fire two concurrent add-progress-note operations
     await Promise.all([
@@ -174,5 +178,42 @@ describe('Progress Notes Integration', () => {
     expect(texts.sort()).toEqual(
       ['Concurrent A finished step', 'Concurrent B finished step'].sort()
     );
+  });
+
+  test('progress note source metadata appears in show output and prompts', async () => {
+    const plan: PlanSchema = {
+      id: 204,
+      title: 'Source Metadata Plan',
+      goal: 'Validate source propagation',
+      details: 'Details',
+      tasks: [],
+    };
+    const planFile = path.join(tasksDir, '204.yml');
+    await fs.writeFile(planFile, yaml.stringify(plan));
+
+    const command = {
+      parent: { opts: () => ({ config: configPath }) },
+      opts: () => ({ source: 'implementer: Task Delta' }),
+    } as any;
+
+    await handleAddProgressNoteCommand('204', 'Implemented Delta task endpoints', command);
+
+    const updated = await readPlanFile(planFile);
+    expect(updated.progressNotes?.[0].source).toBe('implementer: Task Delta');
+
+    const showCmd = { parent: { opts: () => ({ config: configPath }) } } as any;
+    mockLog.mockClear();
+    await handleShowCommand('204', {}, showCmd);
+    const showOutput = mockLog.mock.calls.flat().map(String).join('\n');
+    expect(showOutput).toContain('[implementer: Task Delta]');
+
+    const prompt = await buildExecutionPromptWithoutSteps({
+      executor: { execute: async () => {} },
+      planData: updated,
+      planFilePath: planFile,
+      baseDir: tempDir,
+      config: { paths: { tasks: 'tasks' } },
+    });
+    expect(prompt).toContain('- [implementer: Task Delta] Implemented Delta task endpoints');
   });
 });

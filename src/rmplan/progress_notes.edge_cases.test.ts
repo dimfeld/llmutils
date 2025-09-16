@@ -64,6 +64,7 @@ describe('Progress Notes Edge Cases', () => {
     const longText = 'X'.repeat(300) + ' end';
     await handleAddProgressNoteCommand('301', longText, {
       parent: { opts: () => ({ config: configPath }) },
+      opts: () => ({}),
     } as any);
 
     const showCmd = { parent: { opts: () => ({ config: configPath }) } } as any;
@@ -96,6 +97,7 @@ Line 2: emoji 🚀 café naïve
 Line 3: YAML-ish : & % [ ] { } < >`;
     await handleAddProgressNoteCommand('302', specialMultiline, {
       parent: { opts: () => ({ config: configPath }) },
+      opts: () => ({}),
     } as any);
 
     // Verify stored text is intact
@@ -136,7 +138,10 @@ Line 3: YAML-ish : & % [ ] { } < >`;
     await fs.writeFile(planFile, yaml.stringify(plan));
 
     // Add 12 notes
-    const showCmd = { parent: { opts: () => ({ config: configPath }) } } as any;
+    const showCmd = {
+      parent: { opts: () => ({ config: configPath }) },
+      opts: () => ({}),
+    } as any;
     for (let i = 1; i <= 52; i++) {
       // eslint-disable-next-line no-await-in-loop
       await handleAddProgressNoteCommand('303', `Note ${i}`, showCmd);
@@ -184,6 +189,7 @@ Line 3: YAML-ish : & % [ ] { } < >`;
     const longText = 'Y'.repeat(300) + ' END';
     await handleAddProgressNoteCommand('304', longText, {
       parent: { opts: () => ({ config: configPath }) },
+      opts: () => ({}),
     } as any);
 
     const updated = await readPlanFile(planFile);

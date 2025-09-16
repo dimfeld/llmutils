@@ -35,7 +35,8 @@ describe('handleAddProgressNoteCommand', () => {
 
     await handleAddProgressNoteCommand(planFile, 'Initial work completed', {
       parent: { opts: () => ({}) },
-    });
+      opts: () => ({}),
+    } as any);
 
     const updated = await readPlanFile(planFile);
     expect(updated.progressNotes?.length).toBe(1);
@@ -59,7 +60,8 @@ describe('handleAddProgressNoteCommand', () => {
 
     await handleAddProgressNoteCommand(planFile, 'New discovery', {
       parent: { opts: () => ({}) },
-    });
+      opts: () => ({}),
+    } as any);
 
     const updated = await readPlanFile(planFile);
     expect(updated.progressNotes?.length).toBe(2);
@@ -71,7 +73,8 @@ describe('handleAddProgressNoteCommand', () => {
     await expect(
       handleAddProgressNoteCommand(path.join(tasksDir, 'nope.yml'), 'text', {
         parent: { opts: () => ({}) },
-      })
+        opts: () => ({}),
+      } as any)
     ).rejects.toThrow();
   });
 
@@ -87,7 +90,10 @@ describe('handleAddProgressNoteCommand', () => {
     await fs.writeFile(planFile, yaml.stringify(plan));
 
     await expect(
-      handleAddProgressNoteCommand(planFile, '   ', { parent: { opts: () => ({}) } })
+      handleAddProgressNoteCommand(planFile, '   ', {
+        parent: { opts: () => ({}) },
+        opts: () => ({}),
+      } as any)
     ).rejects.toThrow('You must provide a non-empty progress note');
   });
 
@@ -109,6 +115,7 @@ describe('handleAddProgressNoteCommand', () => {
 
     await handleAddProgressNoteCommand('777', 'Note via ID', {
       parent: { opts: () => ({ config: configPath }) },
+      opts: () => ({}),
     } as any);
 
     const updated = await readPlanFile(path.join(tasksDir, '777.yml'));
@@ -143,7 +150,30 @@ describe('handleAddProgressNoteCommand', () => {
     await expect(
       handleAddProgressNoteCommand('42', 'Should fail', {
         parent: { opts: () => ({ config: configPath }) },
+        opts: () => ({}),
       } as any)
     ).rejects.toThrow(/duplicated in multiple files/i);
+  });
+
+  test('stores source metadata when provided', async () => {
+    const plan: PlanSchema = {
+      id: 104,
+      title: 'Source Plan',
+      goal: 'Test source field',
+      details: 'Details',
+      tasks: [],
+    };
+    const planFile = path.join(tasksDir, '104.yml');
+    await fs.writeFile(planFile, yaml.stringify(plan));
+
+    const command = {
+      parent: { opts: () => ({}) },
+      opts: () => ({ source: ' implementer: Task Alpha ' }),
+    } as any;
+
+    await handleAddProgressNoteCommand(planFile, 'Documented progress with source', command);
+
+    const updated = await readPlanFile(planFile);
+    expect(updated.progressNotes?.[0].source).toBe('implementer: Task Alpha');
   });
 });

@@ -18,4 +18,32 @@ describe('computeProgressNotesUnion', () => {
     const out = computeProgressNotesUnion(latest, staleLocalMerged, entry, 3);
     expect(out.map((n) => n.text)).toEqual(['A4', 'A5', 'NB']);
   });
+
+  test('treats notes with different sources as distinct entries', () => {
+    const latest = [
+      {
+        timestamp: '2024-02-01T00:00:00.000Z',
+        text: 'Implement core pipeline',
+        source: 'implementer: Task 7',
+      },
+    ];
+    const localMerged = [
+      {
+        timestamp: '2024-02-01T00:00:00.000Z',
+        text: 'Implement core pipeline',
+        source: 'tester: Task 7',
+      },
+    ];
+    const entry = {
+      timestamp: '2024-02-01T00:00:00.000Z',
+      text: 'Implement core pipeline',
+      source: 'tester: Task 7',
+    };
+
+    const out = computeProgressNotesUnion(latest, localMerged, entry, 5);
+    expect(out).toHaveLength(2);
+    const sources = out.map((n) => n.source);
+    expect(sources).toContain('implementer: Task 7');
+    expect(sources).toContain('tester: Task 7');
+  });
 });

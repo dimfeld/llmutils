@@ -37,6 +37,7 @@ describe('agent_prompts failure protocol integration', () => {
 
   it('includes progress note instructions when plan id is provided', () => {
     const def = getImplementerPrompt(context, '42');
-    expect(def.prompt).toContain("rmplan add-progress-note 42");
+    expect(def.prompt).toContain('rmplan add-progress-note 42');
+    expect(def.prompt).toContain('--source');
   });
 });

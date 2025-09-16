@@ -13,6 +13,7 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
   const progressNoteSchema = objectFactory({
     timestamp: z.string().datetime(),
     text: z.string(),
+    source: z.string().optional(),
   });
 
   const stepSchema = objectFactory({

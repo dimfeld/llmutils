@@ -16,7 +16,7 @@ While executing, add progress notes whenever you:
 - Encounter unexpected behavior or deviate from the original plan
 - Discover important details future runs should know
 
-Use the Bash command 'rmplan add-progress-note ${planId} "<note text>"'. Notes should be self-contained and understandable without extra context.
+Use the Bash command 'rmplan add-progress-note ${planId} --source "<agent>: <task>" "<note text>"'. The source value must clearly identify which agent is reporting (implementer, tester, reviewer, or human) and which task it was working on so future runs understand the context. Notes should be self-contained and understandable without extra context.
 `;
 }
 

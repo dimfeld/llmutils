@@ -43,7 +43,10 @@ describe('add-progress-note rotation with maxStored', () => {
     const planFile = path.join(tasksDir, '901.yml');
     await fs.writeFile(planFile, yaml.stringify(plan));
 
-    const cmd = { parent: { opts: () => ({ config: configPath }) } } as any;
+    const cmd = {
+      parent: { opts: () => ({ config: configPath }) },
+      opts: () => ({}),
+    } as any;
     // Add 5 notes; with maxStored 3 only last 3 should remain
     await handleAddProgressNoteCommand('901', 'note-1', cmd);
     await handleAddProgressNoteCommand('901', 'note-2', cmd);

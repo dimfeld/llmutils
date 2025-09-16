@@ -311,9 +311,11 @@ export function buildProgressNotesSection(planData: PlanSchema): string {
   for (const n of latest) {
     // Exclude timestamps per acceptance criteria; include text only
     const text = (n.text || '').trim();
-    if (text.length) {
+    const sourcePrefix = (n.source || '').trim();
+    if (text.length || sourcePrefix.length) {
+      const withSource = sourcePrefix.length ? `[${sourcePrefix}] ${text}`.trim() : text;
       // Preserve single-line bullets; collapse newlines to spaces to keep prompt compact
-      const singleLine = text.replace(/\s+/g, ' ').trim();
+      const singleLine = withSource.replace(/\s+/g, ' ').trim();
       const truncated =
         singleLine.length > MAX_NOTE_CHARS
           ? singleLine.slice(0, MAX_NOTE_CHARS - 3) + '...'

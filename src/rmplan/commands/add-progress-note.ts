@@ -6,6 +6,12 @@ import { log, warn } from '../../logging.js';
 import { open, unlink, stat, readFile } from 'node:fs/promises';
 import { loadEffectiveConfig } from '../configLoader.js';
 
+type ProgressNoteEntry = {
+  timestamp: string;
+  text: string;
+  source?: string;
+};
+
 export async function handleAddProgressNoteCommand(planFile: string, note: string, command: any) {
   if (!planFile || typeof planFile !== 'string') {
     throw new Error('You must specify a plan file path or plan ID');
@@ -16,12 +22,17 @@ export async function handleAddProgressNoteCommand(planFile: string, note: strin
 
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
+  const commandOpts = typeof command.opts === 'function' ? command.opts() : {};
+  const rawSource = typeof commandOpts.source === 'string' ? commandOpts.source : undefined;
+  const source = rawSource?.trim() ? rawSource.trim() : undefined;
   // Resolve file or ID to an absolute plan file path
   const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
 
   // Optimistic concurrency with retry: merge-on-write and verify
   const timestamp = new Date().toISOString();
-  const entry = { timestamp, text: note };
+  const entry: ProgressNoteEntry = source
+    ? { timestamp, text: note, source }
+    : { timestamp, text: note };
   const maxRetries = 5;
 
   const lockPath = `${resolvedPlanFile}.lock`;
@@ -33,7 +44,13 @@ export async function handleAddProgressNoteCommand(planFile: string, note: strin
     // Append and de-duplicate by timestamp+text
     const merged = [...notes, entry].filter((value, index, self) => {
       return (
-        index === self.findIndex((n) => n.timestamp === value.timestamp && n.text === value.text)
+        index ===
+        self.findIndex(
+          (n) =>
+            n.timestamp === value.timestamp &&
+            n.text === value.text &&
+            (n.source ?? '') === (value.source ?? '')
+        )
       );
     });
     const maxStored = config.progressNotes?.maxStored ?? 200;
@@ -129,16 +146,16 @@ export async function handleAddProgressNoteCommand(planFile: string, note: strin
 }
 
 export function computeProgressNotesUnion(
-  latestNotes: Array<{ timestamp: string; text: string }> | undefined,
-  localMerged: Array<{ timestamp: string; text: string }> | undefined,
-  entry: { timestamp: string; text: string },
+  latestNotes: Array<ProgressNoteEntry> | undefined,
+  localMerged: Array<ProgressNoteEntry> | undefined,
+  entry: ProgressNoteEntry,
   maxStored?: number
-): Array<{ timestamp: string; text: string }> {
+): Array<ProgressNoteEntry> {
   const ln = Array.isArray(latestNotes) ? latestNotes : [];
   const lm = Array.isArray(localMerged) ? localMerged : [];
   // Avoid re-introducing stale notes that were pruned by rotation in latestBeforeWrite.
   // Allow only notes that are already in latestNotes plus our new entry.
-  const key = (n: { timestamp: string; text: string }) => `${n.timestamp}|${n.text}`;
+  const key = (n: ProgressNoteEntry) => `${n.timestamp}|${n.text}|${n.source ?? ''}`;
   const allowedKeys = new Set<string>(ln.map(key));
   allowedKeys.add(key(entry));
   const combined = [...ln, ...lm];

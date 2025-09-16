@@ -950,14 +950,14 @@ Record significant milestones, deviations, or discoveries during execution. Note
 Usage:
 
 ```bash
-rmplan add-progress-note <planIdOrPath> "<note text>"
+rmplan add-progress-note <planIdOrPath> --source "<agent>: <task>" "<note text>"
 ```
 
 Examples:
 
 ```bash
-rmplan add-progress-note 123 "Finished initial refactor; updated API surface and tests"
-rmplan add-progress-note tasks/123-feature.plan.md "Investigated flaky test; root cause is async race in setup"
+rmplan add-progress-note 123 --source "implementer: Refactor API" "Finished initial refactor; updated API surface and tests"
+rmplan add-progress-note tasks/123-feature.plan.md --source "tester: Flaky Test Investigation" "Investigated flaky test; root cause is async race in setup"
 ```
 
 Behavior:
@@ -965,6 +965,7 @@ Behavior:
 - `rmplan show` displays the latest 10 notes by default (use `--full` for all).
 - `rmplan list` shows a Notes column when any plan has notes.
 - Agent prompts include a “Progress Notes” section (timestamps omitted to reduce noise), limited to the last 50 notes with a summary line like "... and N more earlier note(s)" when older notes are hidden.
+- Set the `--source` value to identify the agent (implementer/tester/reviewer/human) and the specific task the note covers; this label is displayed in CLI output and agent prompts. Omitting the flag stores the note without origin metadata.
 
 ### Requirements
 

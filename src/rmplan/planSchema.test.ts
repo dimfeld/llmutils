@@ -10,13 +10,18 @@ describe('planSchema progressNotes', () => {
       tasks: [],
       progressNotes: [
         { timestamp: new Date().toISOString(), text: 'Initial setup complete' },
-        { timestamp: new Date().toISOString(), text: 'Found edge case with parser' },
+        {
+          timestamp: new Date().toISOString(),
+          text: 'Found edge case with parser',
+          source: 'tester: Parser Task',
+        },
       ],
     };
 
     const parsed = planSchema.parse(plan);
     expect(parsed.progressNotes?.length).toBe(2);
     expect(parsed.progressNotes?.[0].text).toBe('Initial setup complete');
+    expect(parsed.progressNotes?.[1].source).toBe('tester: Parser Task');
   });
 
   test('rejects invalid timestamp format', () => {
