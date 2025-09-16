@@ -420,7 +420,7 @@ program
 program
   .command('add-progress-note <plan> <note>')
   .description('Add a progress note to a plan (file path or plan ID)')
-  .action(async (planFile, note, command) => {
+  .action(async (planFile, note, _options, command) => {
     const { handleAddProgressNoteCommand } = await import('./commands/add-progress-note.js');
     await handleAddProgressNoteCommand(planFile, note, command).catch(handleCommandError);
   });
