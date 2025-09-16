@@ -229,8 +229,13 @@ export class CodexCliExecutor implements Executor {
         const aggregated = buildAggregatedOutput();
         if (aggregated != null) return aggregated;
         return;
-      } else if (verdict === 'NEEDS_FIXES') {
-        log('Review verdict: NEEDS_FIXES');
+      } else {
+        if (verdict === 'NEEDS_FIXES') {
+          log('Review verdict: NEEDS_FIXES');
+        } else {
+          log(`Failed to parse review verdict, treating as 'NEEDS_FIXES'`);
+        }
+
         // Analyze whether the flagged issues are in-scope and require fixes now
         const reviewDoc = await this.loadRepositoryReviewDoc(gitRoot);
         const analysis = await analyzeReviewFeedback({
@@ -348,11 +353,6 @@ export class CodexCliExecutor implements Executor {
         // Even if still needs fixes, provide the latest reviewer output when capturing
         const aggregated = buildAggregatedOutput();
         if (aggregated != null) return aggregated;
-      } else {
-        error('Could not determine review verdict from reviewer output. Treating as NEEDS_FIXES.');
-        const aggregated = buildAggregatedOutput();
-        if (aggregated != null) return aggregated;
-        return;
       }
     } finally {
       if (!hadFailure) {
@@ -565,7 +565,7 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
   /** Parse the reviewer verdict from output text */
   private parseReviewerVerdict(output: string): 'ACCEPTABLE' | 'NEEDS_FIXES' | 'UNKNOWN' {
     // Look for a line like: "VERDICT: ACCEPTABLE" or "VERDICT: NEEDS_FIXES"
-    const regex = /\bVERDICT.*:\s*(ACCEPTABLE|NEEDS_FIXES)\b/i;
+    const regex = /\bVERDICT.*\s+(ACCEPTABLE|NEEDS_FIXES)\b/i;
     const m = output.match(regex);
     if (!m) return 'UNKNOWN';
     const v = m[1].toUpperCase();
