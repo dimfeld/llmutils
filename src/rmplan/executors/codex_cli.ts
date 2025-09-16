@@ -159,7 +159,7 @@ export class CodexCliExecutor implements Executor {
         newlyCompletedTitles
       );
       const testerInstructions = await this.loadAgentInstructionsFor('tester', gitRoot);
-      const tester = getTesterPrompt(testerContext, testerInstructions, this.sharedOptions.model);
+      const tester = getTesterPrompt(testerContext, planInfo.planId, testerInstructions, this.sharedOptions.model);
 
       // Execute tester step
       log('Running tester step...');
@@ -195,6 +195,7 @@ export class CodexCliExecutor implements Executor {
       const reviewerInstructions = await this.loadAgentInstructionsFor('reviewer', gitRoot);
       const reviewer = getReviewerPrompt(
         reviewerContext,
+        planInfo.planId,
         reviewerInstructions,
         this.sharedOptions.model
       );

@@ -928,16 +928,19 @@ export class ClaudeCodeExecutor implements Executor {
       const agentDefinitions = [
         getImplementerPrompt(
           originalContextContent,
+          planInfo.planId,
           implementerInstructions,
           this.options.agents?.implementer?.model
         ),
         getTesterPrompt(
           originalContextContent,
+          planInfo.planId,
           testerInstructions,
           this.options.agents?.tester?.model
         ),
         getReviewerPrompt(
           originalContextContent,
+          planInfo.planId,
           reviewerInstructions,
           this.options.agents?.reviewer?.model
         ),

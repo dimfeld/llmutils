@@ -1,4 +1,5 @@
 import type { AgentDefinition } from './agent_generator.ts';
+import { progressNotesGuidance } from './orchestrator_prompt.ts';
 
 const contextTaskFocus = `The "Context and Task" section may contain more tasks than are being worked on right now. Pay attention to your instructions on which tasks are actually in play and focus on those, but keep in mind that the instructions may not have all the details from the active tasks. The instructions should reference which tasks are being worked on.`;
 
@@ -29,6 +30,7 @@ Possible solutions:
 
 export function getImplementerPrompt(
   contextContent: string,
+  planId: string | number,
   customInstructions?: string,
   model?: string
 ): AgentDefinition {
@@ -84,6 +86,8 @@ You may receive a single task or multiple related tasks to implement together. W
 
 ${FAILED_PROTOCOL_INSTRUCTIONS}
 
+${progressNotesGuidance(planId)}
+
 ### Implementation Approach
 1. First understand the existing code structure and patterns
 2. Look at similar implementations in the codebase
@@ -99,6 +103,7 @@ Do not mark anything in the plan file as done. This is your manager's responsibi
 
 export function getTesterPrompt(
   contextContent: string,
+  planId: string | number,
   customInstructions?: string,
   model?: string
 ): AgentDefinition {
@@ -122,6 +127,8 @@ ${contextContent}${customInstructionsSection}
 4. Fix any failing tests to ensure they pass
 5. Verify all tests work correctly with the implementation
 6. Take your time to ensure test coverage is complete and passing. Run testing commands even if they may take a while or use system resources.
+
+${progressNotesGuidance(planId)}
 
 ## Handling Multiple Tasks:
 You may receive a single task or multiple related tasks to test. When testing multiple tasks:
@@ -189,6 +196,7 @@ Remember: Your goal is to ensure all tests pass and that the code has comprehens
 
 export function getReviewerPrompt(
   contextContent: string,
+  planId: string | number,
   customInstructions?: string,
   model?: string
 ): AgentDefinition {
@@ -277,6 +285,8 @@ The plan file tasks may not be marked as done in the plan file, because they are
 - Flaky or non-deterministic tests
 - Tests with insufficient coverage of critical paths
 - Integration tests missing for complex workflows
+
+${progressNotesGuidance(planId)}
 
 ## Response Format:
 
