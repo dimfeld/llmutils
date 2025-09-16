@@ -5,8 +5,39 @@ export type Priority = z.infer<typeof prioritySchema>;
 
 export const statusSchema = z.enum(['pending', 'in_progress', 'done', 'cancelled', 'deferred']);
 
-export const phaseSchema = z
-  .object({
+type ObjectFactory = <T extends z.ZodRawShape>(shape: T) => z.ZodObject<T>;
+
+const createLooseObject: ObjectFactory = (shape) => z.object(shape).passthrough();
+
+export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObject) => {
+  const progressNoteSchema = objectFactory({
+    timestamp: z.string().datetime(),
+    text: z.string(),
+  });
+
+  const stepSchema = objectFactory({
+    prompt: z.string(),
+    done: z.boolean().default(false),
+    examples: z.array(z.string()).optional(),
+  });
+
+  const taskSchema = objectFactory({
+    title: z.string(),
+    done: z.boolean().default(false),
+    description: z.string(),
+    files: z.array(z.string()).default([]).optional(),
+    examples: z.array(z.string()).optional(),
+    docs: z.array(z.string()).default([]).optional(),
+    steps: z.array(stepSchema).default([]),
+  });
+
+  const projectSchema = objectFactory({
+    title: z.string(),
+    goal: z.string().optional(),
+    details: z.string().optional(),
+  });
+
+  const phaseSchema = objectFactory({
     title: z.string().optional(),
     goal: z.string().optional(),
     details: z
@@ -38,54 +69,31 @@ export const phaseSchema = z
     promptsGeneratedAt: z.string().datetime().optional(),
     createdAt: z.string().datetime().optional(),
     updatedAt: z.string().datetime().optional(),
-    progressNotes: z
-      .array(
-        z
-          .object({
-            timestamp: z.string().datetime(),
-            text: z.string(),
-          })
-          .strict()
-      )
-      .default([])
-      .optional(),
-    project: z
-      .object({
-        title: z.string(),
-        goal: z.string().optional(),
-        details: z.string().optional(),
-      })
-      .strict()
-      .optional(),
-    tasks: z.array(
-      z
-        .object({
-          title: z.string(),
-          done: z.boolean().default(false),
-          description: z.string(),
-          files: z.array(z.string()).default([]).optional(),
-          examples: z.array(z.string()).optional(),
-          docs: z.array(z.string()).default([]).optional(),
-          steps: z
-            .array(
-              z
-                .object({
-                  prompt: z.string(),
-                  done: z.boolean().default(false),
-                  examples: z.array(z.string()).optional(),
-                })
-                .strict()
-            )
-            .default([]),
-        })
-        .strict()
-    ),
+    progressNotes: z.array(progressNoteSchema).default([]).optional(),
+    project: projectSchema.optional(),
+    tasks: z.array(taskSchema),
     baseBranch: z.string().optional(),
     changedFiles: z.array(z.string()).default([]).optional(),
     rmfilter: z.array(z.string()).default([]).optional(),
-  })
-  .strict()
-  .describe('rmplan phase file schema');
+  }).describe('rmplan phase file schema');
+
+  const multiPhasePlanSchema = objectFactory({
+    title: z.string().optional(),
+    goal: z.string(),
+    details: z.string().optional(),
+    phases: z.array(phaseSchema),
+  }).describe('Multi-phase plan structure for split command');
+
+  return {
+    phaseSchema,
+    multiPhasePlanSchema,
+  } as const;
+};
+
+const defaultSchemas = createPlanSchemas();
+
+export const phaseSchema = defaultSchemas.phaseSchema;
+export const multiPhasePlanSchema = defaultSchemas.multiPhasePlanSchema;
 
 export type PhaseSchema = z.output<typeof phaseSchema>;
 
@@ -99,16 +107,5 @@ export type PlanSchemaInput = z.input<typeof phaseSchema>;
 export type PlanSchemaInputWithFilename = PlanSchemaInput & {
   filename: string;
 };
-
-// Multi-phase plan schema for split command
-export const multiPhasePlanSchema = z
-  .object({
-    title: z.string().optional(),
-    goal: z.string(),
-    details: z.string().optional(),
-    phases: z.array(phaseSchema),
-  })
-  .strict()
-  .describe('Multi-phase plan structure for split command');
 
 export type MultiPhasePlanSchema = z.infer<typeof multiPhasePlanSchema>;

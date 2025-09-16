@@ -734,6 +734,9 @@ export async function saveMultiPhaseYaml(
       ? options.output
       : `${options.output}.plan.md`;
 
+  if (options.generatedBy) {
+    combinedPlan.generatedBy = options.generatedBy;
+  }
   await writePlanFile(outputPath, combinedPlan);
 
   if (!quiet) {

@@ -4,7 +4,7 @@ import * as yaml from 'yaml';
 import chalk from 'chalk';
 import { z } from 'zod/v4';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { phaseSchema, type PlanSchema } from '../planSchema.js';
+import { createPlanSchemas, type PlanSchema } from '../planSchema.js';
 import { resolveTasksDir } from '../configSchema.js';
 import { readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
 interface ValidationResult {
@@ -24,6 +24,10 @@ interface FixResult {
   fixedRelationships: number;
   errors: string[];
 }
+
+const { phaseSchema: strictPhaseSchema } = createPlanSchemas((shape) =>
+  z.object(shape).strict()
+);
 
 async function validatePlanFile(filePath: string): Promise<ValidationResult> {
   const filename = path.basename(filePath);
@@ -66,7 +70,7 @@ async function validatePlanFile(filePath: string): Promise<ValidationResult> {
     }
 
     // Validate with the strict schema
-    const result = phaseSchema.safeParse(parsed);
+    const result = strictPhaseSchema.safeParse(parsed);
 
     if (result.success) {
       return { filename, isValid: true };
