@@ -109,6 +109,59 @@ describe('handleShowCommand', () => {
     expect(allOutput).toContain('Test goal');
   });
 
+  test('shows condensed summary with --short', async () => {
+    const plan = {
+      id: '2',
+      title: 'Condensed Plan',
+      goal: 'Should be hidden in short view',
+      details: 'This detail text should not appear in short mode.',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Task Title 1',
+          description: 'Hidden description',
+          steps: [{ prompt: 'Hidden step', done: true }],
+        },
+        {
+          title: 'Task Title 2',
+          description: 'Another hidden description',
+          steps: [],
+        },
+      ],
+      progressNotes: [
+        { timestamp: new Date('2024-02-01T00:00:00Z').toISOString(), text: 'Earlier note' },
+        {
+          timestamp: new Date('2024-02-02T12:00:00Z').toISOString(),
+          text: 'Latest note with more details',
+        },
+      ],
+    } as any;
+
+    await fs.writeFile(path.join(tasksDir, '2.yml'), yaml.stringify(plan));
+
+    const options = { short: true } as any;
+    const command = { parent: { opts: () => ({}) } } as any;
+
+    await handleShowCommand('2', options, command);
+
+    const logs = logSpy.mock.calls.map((call) => call[0]).join('\n');
+
+    const stripped = logs.replace(/\x1b\[[0-9;]*m/g, '');
+
+    expect(stripped).toContain('Plan Summary');
+    expect(stripped).toContain('Condensed Plan');
+    expect(stripped).toContain('Latest Progress Note');
+    expect(stripped).toContain('Latest note with more details');
+    expect(stripped).not.toContain('Earlier note');
+    expect(stripped).toContain('Tasks:');
+    expect(stripped).toContain('✓ Task Title 1');
+    expect(stripped).toContain('○ Task Title 2');
+    expect(stripped).not.toContain('Goal:');
+    expect(stripped).not.toContain('Details:');
+    expect(stripped).not.toContain('Hidden description');
+    expect(stripped).not.toContain('Hidden step');
+  });
+
   test('displays progress notes count and formatted list (default)', async () => {
     const notes = [] as Array<{ timestamp: string; text: string }>;
     // Create 12 notes to exercise truncation to last 10

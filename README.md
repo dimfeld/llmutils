@@ -495,6 +495,9 @@ rmplan show plan.yml
 # Show plan information using its ID
 rmplan show my-feature-123
 
+# Show a condensed summary with just status, latest note, and task titles
+rmplan show my-feature-123 --short
+
 # Show the next plan that is ready to be implemented
 rmplan show --next
 

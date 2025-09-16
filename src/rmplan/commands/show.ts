@@ -109,12 +109,6 @@ export async function handleShowCommand(planFile: string | undefined, options: a
     plan = await readPlanFile(resolvedPlanFile);
   }
 
-  // Display basic information
-  log(chalk.bold('\nPlan Information:'));
-  log('─'.repeat(60));
-  log(`${chalk.cyan('ID:')} ${plan.id || 'Not set'}`);
-  log(`${chalk.cyan('Title:')} ${getCombinedTitle(plan)}`);
-
   // Display "ready" for pending plans whose dependencies are done
   const actualStatus = plan.status || 'pending';
   const isReady = plan.id
@@ -138,214 +132,273 @@ export async function handleShowCommand(planFile: string | undefined, options: a
           : actualStatus === 'in_progress'
             ? chalk.yellow
             : chalk.white;
-  log(`${chalk.cyan('Status:')} ${statusColor(statusDisplay)}`);
-
-  if (plan.statusDescription) {
-    log(`${chalk.cyan('Status Description:')} ${plan.statusDescription}`);
-  }
-
-  const priorityColor =
-    plan.priority === 'urgent'
-      ? chalk.red
-      : plan.priority === 'high'
-        ? chalk.magenta
-        : plan.priority === 'medium'
-          ? chalk.yellow
-          : plan.priority === 'low'
-            ? chalk.blue
-            : plan.priority === 'maybe'
-              ? chalk.gray
-              : chalk.white;
-  log(`${chalk.cyan('Priority:')} ${plan.priority ? priorityColor(plan.priority) : ''}`);
-  if (plan.assignedTo) {
-    log(`${chalk.cyan('Assigned To:')} ${plan.assignedTo}`);
-  }
-
-  // Display parent plan if present
-  if (plan.parent) {
-    const parentPlan = allPlans.get(plan.parent);
-    if (parentPlan) {
-      log(
-        `${chalk.cyan('Parent:')} ${chalk.cyan(plan.parent)} - ${getCombinedTitleFromSummary(parentPlan)}`
-      );
-    } else {
-      log(`${chalk.cyan('Parent:')} ${chalk.cyan(plan.parent)} ${chalk.red('[Not found]')}`);
-    }
-  }
-  log(`${chalk.cyan('Goal:')} ${getCombinedGoal(plan)}`);
-  log(`${chalk.cyan('File:')} ${resolvedPlanFile}`);
-  if (plan.progressNotes && plan.progressNotes.length > 0) {
-    log(`${chalk.cyan('Progress Notes:')} ${plan.progressNotes.length}`);
-  }
-
-  if (plan.baseBranch) {
-    log(`${chalk.cyan('Base Branch:')} ${plan.baseBranch}`);
-  }
-
-  if (plan.createdAt) {
-    log(`${chalk.cyan('Created:')} ${new Date(plan.createdAt).toLocaleString()}`);
-  }
-
-  if (plan.updatedAt) {
-    log(`${chalk.cyan('Updated:')} ${new Date(plan.updatedAt).toLocaleString()}`);
-  }
-
-  // Display dependencies with resolution
-  if (plan.dependencies && plan.dependencies.length > 0) {
-    log('\n' + chalk.bold('Dependencies:'));
+  if (options.short) {
+    log(chalk.bold('\nPlan Summary:'));
     log('─'.repeat(60));
+    log(`${chalk.cyan('ID:')} ${plan.id || 'Not set'}`);
+    log(`${chalk.cyan('Title:')} ${getCombinedTitle(plan)}`);
+    log(`${chalk.cyan('Status:')} ${statusColor(statusDisplay)}`);
 
-    for (const depId of plan.dependencies) {
-      const depPlan = allPlans.get(depId);
-      if (depPlan) {
-        const statusIcon =
-          depPlan.status === 'done' ? '✓' : depPlan.status === 'in_progress' ? '⏳' : '○';
-        const statusColor =
-          depPlan.status === 'done'
-            ? chalk.green
-            : depPlan.status === 'in_progress'
-              ? chalk.yellow
-              : chalk.gray;
-        log(
-          `  ${statusIcon} ${chalk.cyan(depId)} - ${getCombinedTitleFromSummary(depPlan)} ${statusColor(`[${depPlan.status || 'pending'}]`)}`
-        );
-      } else {
-        log(`  ○ ${chalk.cyan(depId)} ${chalk.red('[Not found]')}`);
+    const notes = plan.progressNotes ?? [];
+    if (notes.length > 0) {
+      const latestNote = notes[notes.length - 1];
+      const { MAX_NOTE_CHARS } = await import('../truncation.js');
+      const timestamp = latestNote.timestamp
+        ? new Date(latestNote.timestamp).toLocaleString()
+        : undefined;
+      const singleLine = (latestNote.text ?? '').replace(/\s+/g, ' ').trim();
+      const truncated =
+        singleLine.length > MAX_NOTE_CHARS
+          ? singleLine.slice(0, Math.max(0, MAX_NOTE_CHARS - 3)) + '...'
+          : singleLine;
+
+      log('\n' + chalk.bold('Latest Progress Note:'));
+      log('─'.repeat(60));
+      if (timestamp) {
+        log(`  ${chalk.gray(timestamp)}  ${truncated}`);
+      } else if (truncated) {
+        log(`  ${truncated}`);
       }
     }
-  }
 
-  // Display docs
-  if (plan.docs && plan.docs.length > 0) {
-    log('\n' + chalk.bold('Documentation Paths:'));
+    if (plan.container) {
+      log('\n' + chalk.bold('Tasks:'));
+      log('─'.repeat(60));
+      log(chalk.gray('This is a parent-only plan that serves as a container for other plans.'));
+    } else if (plan.tasks && plan.tasks.length > 0) {
+      log('\n' + chalk.bold('Tasks:'));
+      log('─'.repeat(60));
+      plan.tasks.forEach((task) => {
+        const steps = task.steps ?? [];
+        const totalSteps = steps.length;
+        const doneSteps = steps.filter((s) => s.done).length;
+        const taskComplete =
+          (totalSteps > 0 && doneSteps === totalSteps) || (totalSteps === 0 && task.done);
+        const taskIcon = taskComplete ? '✓' : totalSteps > 0 && doneSteps > 0 ? '⏳' : '○';
+        const taskColor = taskComplete
+          ? chalk.green
+          : totalSteps > 0 && doneSteps > 0
+            ? chalk.yellow
+            : chalk.white;
+        const title = task.title || '(untitled task)';
+        log(`  ${taskIcon} ${taskColor(title)}`);
+      });
+    }
+  } else {
+    // Display basic information
+    log(chalk.bold('\nPlan Information:'));
     log('─'.repeat(60));
-    plan.docs.forEach((doc) => log(`  • ${doc}`));
-  }
+    log(`${chalk.cyan('ID:')} ${plan.id || 'Not set'}`);
+    log(`${chalk.cyan('Title:')} ${getCombinedTitle(plan)}`);
+    log(`${chalk.cyan('Status:')} ${statusColor(statusDisplay)}`);
 
-  // Display issues and PRs
-  if (plan.issue && plan.issue.length > 0) {
-    log('\n' + chalk.bold('Issues:'));
-    log('─'.repeat(60));
-    plan.issue.forEach((url) => log(`  • ${url}`));
-  }
+    if (plan.statusDescription) {
+      log(`${chalk.cyan('Status Description:')} ${plan.statusDescription}`);
+    }
 
-  if (plan.pullRequest && plan.pullRequest.length > 0) {
-    log('\n' + chalk.bold('Pull Requests:'));
-    log('─'.repeat(60));
-    plan.pullRequest.forEach((url) => log(`  • ${url}`));
-  }
+    const priorityColor =
+      plan.priority === 'urgent'
+        ? chalk.red
+        : plan.priority === 'high'
+          ? chalk.magenta
+          : plan.priority === 'medium'
+            ? chalk.yellow
+            : plan.priority === 'low'
+              ? chalk.blue
+              : plan.priority === 'maybe'
+                ? chalk.gray
+                : chalk.white;
+    log(`${chalk.cyan('Priority:')} ${plan.priority ? priorityColor(plan.priority) : ''}`);
+    if (plan.assignedTo) {
+      log(`${chalk.cyan('Assigned To:')} ${plan.assignedTo}`);
+    }
 
-  // Display details
-  if (plan.details) {
-    log('\n' + chalk.bold('Details:'));
-    log('─'.repeat(60));
+    // Display parent plan if present
+    if (plan.parent) {
+      const parentPlan = allPlans.get(plan.parent);
+      if (parentPlan) {
+        log(
+          `${chalk.cyan('Parent:')} ${chalk.cyan(plan.parent)} - ${getCombinedTitleFromSummary(parentPlan)}`
+        );
+      } else {
+        log(`${chalk.cyan('Parent:')} ${chalk.cyan(plan.parent)} ${chalk.red('[Not found]')}`);
+      }
+    }
+    log(`${chalk.cyan('Goal:')} ${getCombinedGoal(plan)}`);
+    log(`${chalk.cyan('File:')} ${resolvedPlanFile}`);
+    if (plan.progressNotes && plan.progressNotes.length > 0) {
+      log(`${chalk.cyan('Progress Notes:')} ${plan.progressNotes.length}`);
+    }
 
-    if (!options.full) {
-      const lines = plan.details.split('\n');
-      if (lines.length > 20) {
-        const truncatedLines = lines.slice(0, 20);
-        log(truncatedLines.join('\n'));
-        log(chalk.gray(`... and ${lines.length - 20} more lines (use --full to see all)`));
+    if (plan.baseBranch) {
+      log(`${chalk.cyan('Base Branch:')} ${plan.baseBranch}`);
+    }
+
+    if (plan.createdAt) {
+      log(`${chalk.cyan('Created:')} ${new Date(plan.createdAt).toLocaleString()}`);
+    }
+
+    if (plan.updatedAt) {
+      log(`${chalk.cyan('Updated:')} ${new Date(plan.updatedAt).toLocaleString()}`);
+    }
+
+    // Display dependencies with resolution
+    if (plan.dependencies && plan.dependencies.length > 0) {
+      log('\n' + chalk.bold('Dependencies:'));
+      log('─'.repeat(60));
+
+      for (const depId of plan.dependencies) {
+        const depPlan = allPlans.get(depId);
+        if (depPlan) {
+          const statusIcon =
+            depPlan.status === 'done' ? '✓' : depPlan.status === 'in_progress' ? '⏳' : '○';
+          const statusColor =
+            depPlan.status === 'done'
+              ? chalk.green
+              : depPlan.status === 'in_progress'
+                ? chalk.yellow
+                : chalk.gray;
+          log(
+            `  ${statusIcon} ${chalk.cyan(depId)} - ${getCombinedTitleFromSummary(depPlan)} ${statusColor(`[${depPlan.status || 'pending'}]`)}`
+          );
+        } else {
+          log(`  ○ ${chalk.cyan(depId)} ${chalk.red('[Not found]')}`);
+        }
+      }
+    }
+
+    // Display docs
+    if (plan.docs && plan.docs.length > 0) {
+      log('\n' + chalk.bold('Documentation Paths:'));
+      log('─'.repeat(60));
+      plan.docs.forEach((doc) => log(`  • ${doc}`));
+    }
+
+    // Display issues and PRs
+    if (plan.issue && plan.issue.length > 0) {
+      log('\n' + chalk.bold('Issues:'));
+      log('─'.repeat(60));
+      plan.issue.forEach((url) => log(`  • ${url}`));
+    }
+
+    if (plan.pullRequest && plan.pullRequest.length > 0) {
+      log('\n' + chalk.bold('Pull Requests:'));
+      log('─'.repeat(60));
+      plan.pullRequest.forEach((url) => log(`  • ${url}`));
+    }
+
+    // Display details
+    if (plan.details) {
+      log('\n' + chalk.bold('Details:'));
+      log('─'.repeat(60));
+
+      if (!options.full) {
+        const lines = plan.details.split('\n');
+        if (lines.length > 20) {
+          const truncatedLines = lines.slice(0, 20);
+          log(truncatedLines.join('\n'));
+          log(chalk.gray(`... and ${lines.length - 20} more lines (use --full to see all)`));
+        } else {
+          log(plan.details);
+        }
       } else {
         log(plan.details);
       }
-    } else {
-      log(plan.details);
     }
-  }
 
-  // Display progress notes (if any)
-  if (plan.progressNotes && plan.progressNotes.length > 0) {
-    log('\n' + chalk.bold('Progress Notes:'));
-    log('─'.repeat(60));
-    const { MAX_SHOW_NOTES, MAX_NOTE_CHARS } = await import('../truncation.js');
-    const notes = plan.progressNotes;
-    const startIndex = options.full ? 0 : Math.max(0, notes.length - MAX_SHOW_NOTES);
-    const visible = notes.slice(startIndex);
-    for (const n of visible) {
-      const ts = new Date(n.timestamp).toLocaleString();
-      const text = n.text || '';
-      if (options.full) {
-        // Show full text, preserving line breaks with indentation
-        const lines = text.split('\n');
-        log(`  • ${chalk.gray(ts)}\n    ${lines.join('\n    ')}`);
-      } else {
-        // Truncate to a single line for compact display
-        const singleLine = text.replace(/\s+/g, ' ').trim();
-        const truncated =
-          singleLine.length > MAX_NOTE_CHARS
-            ? singleLine.slice(0, Math.max(0, MAX_NOTE_CHARS - 3)) + '...'
-            : singleLine;
-        log(`  • ${chalk.gray(ts)}  ${truncated}`);
+    // Display progress notes (if any)
+    if (plan.progressNotes && plan.progressNotes.length > 0) {
+      log('\n' + chalk.bold('Progress Notes:'));
+      log('─'.repeat(60));
+      const { MAX_SHOW_NOTES, MAX_NOTE_CHARS } = await import('../truncation.js');
+      const notes = plan.progressNotes;
+      const startIndex = options.full ? 0 : Math.max(0, notes.length - MAX_SHOW_NOTES);
+      const visible = notes.slice(startIndex);
+      for (const n of visible) {
+        const ts = new Date(n.timestamp).toLocaleString();
+        const text = n.text || '';
+        if (options.full) {
+          // Show full text, preserving line breaks with indentation
+          const lines = text.split('\n');
+          log(`  • ${chalk.gray(ts)}\n    ${lines.join('\n    ')}`);
+        } else {
+          // Truncate to a single line for compact display
+          const singleLine = text.replace(/\s+/g, ' ').trim();
+          const truncated =
+            singleLine.length > MAX_NOTE_CHARS
+              ? singleLine.slice(0, Math.max(0, MAX_NOTE_CHARS - 3)) + '...'
+              : singleLine;
+          log(`  • ${chalk.gray(ts)}  ${truncated}`);
+        }
+      }
+      const hidden = notes.length - visible.length;
+      if (hidden > 0) {
+        const { formatHiddenNotesSummary } = await import('../truncation.js');
+        log(chalk.gray(formatHiddenNotesSummary(hidden)));
       }
     }
-    const hidden = notes.length - visible.length;
-    if (hidden > 0) {
-      const { formatHiddenNotesSummary } = await import('../truncation.js');
-      log(chalk.gray(formatHiddenNotesSummary(hidden)));
+
+    // Display tasks with completion status
+    if (plan.container) {
+      log('\n' + chalk.bold('Tasks:'));
+      log('─'.repeat(60));
+      log(chalk.gray('This is a parent-only plan that serves as a container for other plans.'));
+    } else if (plan.tasks && plan.tasks.length > 0) {
+      log('\n' + chalk.bold('Tasks:'));
+      log('─'.repeat(60));
+
+      plan.tasks.forEach((task, taskIdx) => {
+        const totalSteps = task.steps.length;
+        const doneSteps = task.steps.filter((s) => s.done).length;
+        const taskComplete =
+          (totalSteps > 0 && doneSteps === totalSteps) || (totalSteps === 0 && task.done);
+        const taskIcon = taskComplete ? '✓' : totalSteps > 0 && doneSteps > 0 ? '⏳' : '○';
+        const taskColor = taskComplete
+          ? chalk.green
+          : totalSteps > 0 && doneSteps > 0
+            ? chalk.yellow
+            : chalk.white;
+
+        log(`\n${taskIcon} ${chalk.bold(`Task ${taskIdx + 1}:`)} ${taskColor(task.title)}`);
+        if (totalSteps > 0) {
+          log(`  Progress: ${doneSteps}/${totalSteps} steps completed`);
+        }
+        log(`  ${chalk.rgb(200, 200, 200)(task.description)}`);
+
+        if (task.files && task.files.length > 0) {
+          log(`  Files: ${task.files.join(', ')}`);
+        }
+
+        if (task.docs && task.docs.length > 0) {
+          log(`  Docs: ${task.docs.join(', ')}`);
+        }
+
+        if (task.steps && task.steps.length > 0) {
+          log('  Steps:');
+          task.steps.forEach((step, stepIdx) => {
+            const stepIcon = step.done ? '✓' : '○';
+            const stepColor = step.done ? chalk.green : chalk.rgb(170, 170, 170);
+            const prompt = step.prompt.split('\n')[0];
+            const truncated = prompt.length > 60 ? prompt.substring(0, 60) + '...' : prompt;
+            log(`    ${stepIcon} ${stepColor(`Step ${stepIdx + 1}: ${truncated}`)}`);
+          });
+        }
+      });
     }
-  }
 
-  // Display tasks with completion status
-  if (plan.container) {
-    log('\n' + chalk.bold('Tasks:'));
-    log('─'.repeat(60));
-    log(chalk.gray('This is a parent-only plan that serves as a container for other plans.'));
-  } else if (plan.tasks && plan.tasks.length > 0) {
-    log('\n' + chalk.bold('Tasks:'));
-    log('─'.repeat(60));
+    // Display rmfilter args if present
+    if (plan.rmfilter && plan.rmfilter.length > 0) {
+      log('\n' + chalk.bold('rmfilter Arguments:'));
+      log('─'.repeat(60));
+      log(`  ${plan.rmfilter.join(' ')}`);
+    }
 
-    plan.tasks.forEach((task, taskIdx) => {
-      const totalSteps = task.steps.length;
-      const doneSteps = task.steps.filter((s) => s.done).length;
-      const taskComplete =
-        (totalSteps > 0 && doneSteps === totalSteps) || (totalSteps === 0 && task.done);
-      const taskIcon = taskComplete ? '✓' : totalSteps > 0 && doneSteps > 0 ? '⏳' : '○';
-      const taskColor = taskComplete
-        ? chalk.green
-        : totalSteps > 0 && doneSteps > 0
-          ? chalk.yellow
-          : chalk.white;
-
-      log(`\n${taskIcon} ${chalk.bold(`Task ${taskIdx + 1}:`)} ${taskColor(task.title)}`);
-      if (totalSteps > 0) {
-        log(`  Progress: ${doneSteps}/${totalSteps} steps completed`);
-      }
-      log(`  ${chalk.rgb(200, 200, 200)(task.description)}`);
-
-      if (task.files && task.files.length > 0) {
-        log(`  Files: ${task.files.join(', ')}`);
-      }
-
-      if (task.docs && task.docs.length > 0) {
-        log(`  Docs: ${task.docs.join(', ')}`);
-      }
-
-      if (task.steps && task.steps.length > 0) {
-        log('  Steps:');
-        task.steps.forEach((step, stepIdx) => {
-          const stepIcon = step.done ? '✓' : '○';
-          const stepColor = step.done ? chalk.green : chalk.rgb(170, 170, 170);
-          const prompt = step.prompt.split('\n')[0];
-          const truncated = prompt.length > 60 ? prompt.substring(0, 60) + '...' : prompt;
-          log(`    ${stepIcon} ${stepColor(`Step ${stepIdx + 1}: ${truncated}`)}`);
-        });
-      }
-    });
-  }
-
-  // Display rmfilter args if present
-  if (plan.rmfilter && plan.rmfilter.length > 0) {
-    log('\n' + chalk.bold('rmfilter Arguments:'));
-    log('─'.repeat(60));
-    log(`  ${plan.rmfilter.join(' ')}`);
-  }
-
-  // Display changed files if present
-  if (plan.changedFiles && plan.changedFiles.length > 0) {
-    log('\n' + chalk.bold('Changed Files:'));
-    log('─'.repeat(60));
-    plan.changedFiles.forEach((file) => log(`  • ${file}`));
+    // Display changed files if present
+    if (plan.changedFiles && plan.changedFiles.length > 0) {
+      log('\n' + chalk.bold('Changed Files:'));
+      log('─'.repeat(60));
+      plan.changedFiles.forEach((file) => log(`  • ${file}`));
+    }
   }
 
   log('');
