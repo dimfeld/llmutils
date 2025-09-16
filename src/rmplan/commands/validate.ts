@@ -25,9 +25,7 @@ interface FixResult {
   errors: string[];
 }
 
-const { phaseSchema: strictPhaseSchema } = createPlanSchemas((shape) =>
-  z.object(shape).strict()
-);
+const { phaseSchema: strictPhaseSchema } = createPlanSchemas((shape) => z.object(shape).strict());
 
 async function validatePlanFile(filePath: string): Promise<ValidationResult> {
   const filename = path.basename(filePath);
