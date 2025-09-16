@@ -27,24 +27,24 @@ describe('Git Utilities', () => {
     await fs.writeFile(path.join(tmpRepoPath, 'file1.txt'), 'Initial content for file1\n');
     await $`git add file1.txt`.cwd(tmpRepoPath).quiet();
     await $`git commit -m "Add file1.txt"`.cwd(tmpRepoPath).quiet();
-    commit1Sha = (await $`git rev-parse HEAD`.cwd(tmpRepoPath).text()).trim();
+    commit1Sha = (await $`git rev-parse HEAD`.cwd(tmpRepoPath).quiet().text()).trim();
 
     // Commit 2: Modify file1.txt
     await fs.writeFile(path.join(tmpRepoPath, 'file1.txt'), 'Modified content for file1\n');
     await $`git add file1.txt`.cwd(tmpRepoPath).quiet();
     await $`git commit -m "Modify file1.txt"`.cwd(tmpRepoPath).quiet();
-    commit2Sha = (await $`git rev-parse HEAD`.cwd(tmpRepoPath).text()).trim();
+    commit2Sha = (await $`git rev-parse HEAD`.cwd(tmpRepoPath).quiet().text()).trim();
 
     // Commit 3: Add file2.txt (file1.txt remains as in commit2Sha)
     await fs.writeFile(path.join(tmpRepoPath, 'file2.txt'), 'Content for file2\n');
     await $`git add file2.txt`.cwd(tmpRepoPath).quiet();
     await $`git commit -m "Add file2.txt"`.cwd(tmpRepoPath).quiet();
-    commit3Sha = (await $`git rev-parse HEAD`.cwd(tmpRepoPath).text()).trim();
+    commit3Sha = (await $`git rev-parse HEAD`.cwd(tmpRepoPath).quiet().text()).trim();
 
     // Commit 4: Delete file1.txt (file2.txt remains as in commit3Sha)
     await $`git rm file1.txt`.cwd(tmpRepoPath).quiet();
     await $`git commit -m "Delete file1.txt"`.cwd(tmpRepoPath).quiet();
-    commit4Sha = (await $`git rev-parse HEAD`.cwd(tmpRepoPath).text()).trim();
+    commit4Sha = (await $`git rev-parse HEAD`.cwd(tmpRepoPath).quiet().text()).trim();
   });
 
   afterAll(async () => {
@@ -137,7 +137,7 @@ describe('Git Utilities', () => {
   describe('getCurrentCommitSha', () => {
     test('should return the current commit SHA when in a Git repository', async () => {
       // Get the current commit SHA using git command for comparison
-      const expectedSha = (await $`git rev-parse HEAD`.cwd(tmpRepoPath).text()).trim();
+      const expectedSha = (await $`git rev-parse HEAD`.cwd(tmpRepoPath).quiet().text()).trim();
 
       const sha = await gitUtils.getCurrentCommitSha(tmpRepoPath);
       expect(sha).toBe(expectedSha);

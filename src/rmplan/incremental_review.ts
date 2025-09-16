@@ -172,7 +172,7 @@ export async function calculateDiffRange(gitRoot: string, fromCommit: string): P
       throw new Error(`Invalid current commit hash from jj: ${toCommit}`);
     }
   } else {
-    const result = await $`git rev-parse HEAD`.cwd(gitRoot).nothrow();
+    const result = await $`git rev-parse HEAD`.cwd(gitRoot).nothrow().quiet();
     if (result.exitCode !== 0) {
       const errorMsg = result.stderr.toString().trim() || 'Unknown error';
       throw new Error(`Failed to get current git commit: ${errorMsg}`);

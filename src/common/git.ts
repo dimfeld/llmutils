@@ -160,12 +160,12 @@ export async function getCurrentCommitHash(gitRoot: string): Promise<string | nu
     const usingJj = await getUsingJj();
 
     if (usingJj) {
-      const result = await $`jj log -r @ --no-graph -T commit_id`.cwd(gitRoot).nothrow();
+      const result = await $`jj log -r @ --no-graph -T commit_id`.cwd(gitRoot).nothrow().quiet();
       if (result.exitCode === 0) {
         return result.stdout.toString().trim();
       }
     } else {
-      const result = await $`git rev-parse HEAD`.cwd(gitRoot).nothrow();
+      const result = await $`git rev-parse HEAD`.cwd(gitRoot).nothrow().quiet();
       if (result.exitCode === 0) {
         return result.stdout.toString().trim();
       }
