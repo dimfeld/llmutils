@@ -35,6 +35,10 @@ export class CodexCliExecutor implements Executor {
   static name = CodexCliExecutorName;
   static description = 'Executes the plan using OpenAI Codex CLI (codex exec)';
   static optionsSchema = codexCliOptionsSchema;
+  static defaultModel = {
+    execution: 'auto',
+    answerPr: 'auto',
+  };
 
   constructor(
     public options: CodexCliExecutorOptions,
@@ -45,9 +49,10 @@ export class CodexCliExecutor implements Executor {
   prepareStepOptions(): Partial<PrepareNextStepOptions> {
     // Use rmfilter to provide repo context; omit boilerplate instructions to reduce token usage
     return {
-      rmfilter: true,
-      rmfilterArgs: ['--omit-top-instructions'],
-      // Model is not used by Codex CLI directly; it reads its own configuration
+      rmfilter: false,
+      selectSteps: 'all',
+      // This is currently ignored
+      model: 'gpt5-codex',
     } satisfies Partial<PrepareNextStepOptions>;
   }
 
@@ -88,11 +93,19 @@ export class CodexCliExecutor implements Executor {
     };
     // Analyze plan file to understand completed vs pending tasks
     const gitRoot = await getGitRoot(this.sharedOptions.baseDir);
-    const planData = await readPlanFile(planInfo.planFilePath);
-    const { completed: initiallyCompleted, pending: initiallyPending } =
-      this.categorizeTasks(planData);
+    const hasPlanFilePath = planInfo.planFilePath.trim().length > 0;
+    const hasPlanId = planInfo.planId.trim().length > 0;
+    const planContextAvailable = hasPlanFilePath && hasPlanId;
 
-    this.logTaskStatus('Initial plan analysis', initiallyCompleted, initiallyPending, gitRoot);
+    let initiallyCompleted: Array<{ title: string }> = [];
+    let initiallyPending: Array<{ title: string }> = [];
+
+    if (planContextAvailable) {
+      const planData = await readPlanFile(planInfo.planFilePath);
+      ({ completed: initiallyCompleted, pending: initiallyPending } = this.categorizeTasks(planData));
+
+      this.logTaskStatus('Initial plan analysis', initiallyCompleted, initiallyPending, gitRoot);
+    }
 
     // Track failure state across agents
     let hadFailure = false;
@@ -107,6 +120,7 @@ export class CodexCliExecutor implements Executor {
 
     const implementer = getImplementerPrompt(
       contextContent,
+      planContextAvailable ? planInfo.planId : undefined,
       implementerInstructions,
       this.sharedOptions.model
     );
@@ -141,15 +155,17 @@ export class CodexCliExecutor implements Executor {
     try {
       // Re-read plan file to detect newly-completed tasks (if any)
       let newlyCompletedTitles: string[] = [];
-      try {
-        const updatedPlan = await readPlanFile(planInfo.planFilePath);
-        const { completed: afterCompleted } = this.categorizeTasks(updatedPlan);
-        const beforeTitles = new Set(initiallyCompleted.map((t) => t.title));
-        newlyCompletedTitles = afterCompleted
-          .map((t) => t.title)
-          .filter((title) => !beforeTitles.has(title));
-      } catch (e) {
-        // Non-fatal; proceed without delta if re-read fails
+      if (planContextAvailable) {
+        try {
+          const updatedPlan = await readPlanFile(planInfo.planFilePath);
+          const { completed: afterCompleted } = this.categorizeTasks(updatedPlan);
+          const beforeTitles = new Set(initiallyCompleted.map((t) => t.title));
+          newlyCompletedTitles = afterCompleted
+            .map((t) => t.title)
+            .filter((title) => !beforeTitles.has(title));
+        } catch (e) {
+          // Non-fatal; proceed without delta if re-read fails
+        }
       }
 
       // Build tester context: include implementer output and focus tasks
@@ -161,7 +177,7 @@ export class CodexCliExecutor implements Executor {
       const testerInstructions = await this.loadAgentInstructionsFor('tester', gitRoot);
       const tester = getTesterPrompt(
         testerContext,
-        planInfo.planId,
+        planContextAvailable ? planInfo.planId : undefined,
         testerInstructions,
         this.sharedOptions.model
       );
@@ -200,7 +216,7 @@ export class CodexCliExecutor implements Executor {
       const reviewerInstructions = await this.loadAgentInstructionsFor('reviewer', gitRoot);
       const reviewer = getReviewerPrompt(
         reviewerContext,
-        planInfo.planId,
+        planContextAvailable ? planInfo.planId : undefined,
         reviewerInstructions,
         this.sharedOptions.model
       );
@@ -361,9 +377,9 @@ export class CodexCliExecutor implements Executor {
         if (aggregated != null) return aggregated;
       }
     } finally {
-      if (!hadFailure) {
+      if (!hadFailure && planContextAvailable) {
         await this.markCompletedTasksFromImplementer(implementerOutput, planInfo, gitRoot);
-      } else {
+      } else if (hadFailure) {
         warn('Skipping automatic task completion marking due to executor failure.');
       }
     }
@@ -634,6 +650,11 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
     gitRoot: string
   ): Promise<void> {
     try {
+      const planFilePath = planInfo.planFilePath.trim();
+      if (!planFilePath) {
+        return;
+      }
+
       // Skip entirely during tests or when explicitly disabled. This prevents
       // slow, flaky external model calls from running inside unit tests.
       const disableAutoMark =
@@ -653,7 +674,7 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
         return;
       }
 
-      const plan = await readPlanFile(planInfo.planFilePath);
+      const plan = await readPlanFile(planFilePath);
       const tasks = (plan.tasks ?? []).map((t: any) => ({
         title: t.title as string,
         description: (t.description as string) ?? '',
@@ -703,7 +724,7 @@ Return JSON only, like: {"completed_titles": ["Task A", "Task B"]}`;
         if (!pendingTitles.has(title)) continue;
         try {
           await setTaskDone(
-            planInfo.planFilePath,
+            planFilePath,
             { taskIdentifier: title, commit: false },
             gitRoot,
             this.rmplanConfig

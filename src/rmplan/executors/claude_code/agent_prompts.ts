@@ -30,13 +30,15 @@ Possible solutions:
 
 export function getImplementerPrompt(
   contextContent: string,
-  planId: string | number,
+  planId?: string | number,
   customInstructions?: string,
   model?: string
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
     : '';
+  const progressNotesSection = progressNotesGuidance(planId);
+  const formattedProgressNotes = progressNotesSection ? `\n${progressNotesSection}\n` : '\n';
 
   return {
     name: 'implementer',
@@ -85,8 +87,7 @@ You may receive a single task or multiple related tasks to implement together. W
 - Add proper null/undefined checks where needed
 
 ${FAILED_PROTOCOL_INSTRUCTIONS}
-
-${progressNotesGuidance(planId)}
+${formattedProgressNotes}
 
 ### Implementation Approach
 1. First understand the existing code structure and patterns
@@ -103,13 +104,15 @@ Do not mark anything in the plan file as done. This is your manager's responsibi
 
 export function getTesterPrompt(
   contextContent: string,
-  planId: string | number,
+  planId?: string | number,
   customInstructions?: string,
   model?: string
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
     : '';
+  const progressNotesSection = progressNotesGuidance(planId);
+  const formattedProgressNotes = progressNotesSection ? `\n${progressNotesSection}\n` : '\n';
 
   return {
     name: 'tester',
@@ -128,7 +131,7 @@ ${contextContent}${customInstructionsSection}
 5. Verify all tests work correctly with the implementation
 6. Take your time to ensure test coverage is complete and passing. Run testing commands even if they may take a while or use system resources.
 
-${progressNotesGuidance(planId)}
+${formattedProgressNotes}
 
 ## Handling Multiple Tasks:
 You may receive a single task or multiple related tasks to test. When testing multiple tasks:
@@ -196,13 +199,15 @@ Remember: Your goal is to ensure all tests pass and that the code has comprehens
 
 export function getReviewerPrompt(
   contextContent: string,
-  planId: string | number,
+  planId?: string | number,
   customInstructions?: string,
   model?: string
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
     : '';
+  const progressNotesSection = progressNotesGuidance(planId);
+  const formattedProgressNotes = progressNotesSection ? `\n${progressNotesSection}\n` : '\n';
 
   return {
     name: 'reviewer',
@@ -286,7 +291,7 @@ The plan file tasks may not be marked as done in the plan file, because they are
 - Tests with insufficient coverage of critical paths
 - Integration tests missing for complex workflows
 
-${progressNotesGuidance(planId)}
+${formattedProgressNotes}
 
 ## Response Format:
 

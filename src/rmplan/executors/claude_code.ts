@@ -770,6 +770,9 @@ export class ClaudeCodeExecutor implements Executor {
     this.planInfo = planInfo;
 
     let originalContextContent = contextContent;
+    const planId = planInfo.planId;
+    const planFilePath = planInfo.planFilePath;
+    const planContextAvailable = planId.trim().length > 0 && planFilePath.trim().length > 0;
 
     // In batch mode, prepend the plan file with @ prefix to make it accessible to Edit tool
     if (planInfo && planInfo.batchMode && planInfo.planFilePath) {
@@ -778,10 +781,10 @@ export class ClaudeCodeExecutor implements Executor {
     }
 
     // Apply orchestration wrapper when plan information is provided and in normal mode
-    if (planInfo && planInfo.planId && planInfo.executionMode === 'normal') {
-      contextContent = wrapWithOrchestration(contextContent, planInfo.planId, {
+    if (planContextAvailable && planInfo.executionMode === 'normal') {
+      contextContent = wrapWithOrchestration(contextContent, planId, {
         batchMode: planInfo.batchMode,
-        planFilePath: planInfo.planFilePath,
+        planFilePath: planFilePath,
         enableReviewFeedback: this.options.enableReviewFeedback === true,
       });
     }
@@ -908,7 +911,7 @@ export class ClaudeCodeExecutor implements Executor {
     }
 
     // Generate agent files if plan information is provided and in normal mode
-    if (planInfo && planInfo.planId && planInfo.executionMode === 'normal') {
+    if (planContextAvailable && planInfo.executionMode === 'normal') {
       // Load custom instructions for each agent if configured
       const implementerInstructions = this.rmplanConfig.agents?.implementer?.instructions
         ? await this.loadAgentInstructions(
@@ -928,25 +931,25 @@ export class ClaudeCodeExecutor implements Executor {
       const agentDefinitions = [
         getImplementerPrompt(
           originalContextContent,
-          planInfo.planId,
+          planId,
           implementerInstructions,
           this.options.agents?.implementer?.model
         ),
         getTesterPrompt(
           originalContextContent,
-          planInfo.planId,
+          planId,
           testerInstructions,
           this.options.agents?.tester?.model
         ),
         getReviewerPrompt(
           originalContextContent,
-          planInfo.planId,
+          planId,
           reviewerInstructions,
           this.options.agents?.reviewer?.model
         ),
       ];
-      await generateAgentFiles(planInfo.planId, agentDefinitions);
-      log(chalk.blue(`Created agent files for plan ${planInfo.planId}`));
+      await generateAgentFiles(planId, agentDefinitions);
+      log(chalk.blue(`Created agent files for plan ${planId}`));
 
       // Register cleanup handler for agent files
       const cleanupRegistry = CleanupRegistry.getInstance();
@@ -958,7 +961,7 @@ export class ClaudeCodeExecutor implements Executor {
           try {
             const files = fsSync.readdirSync(agentsDir);
             const matchingFiles = files.filter((file) =>
-              file.match(new RegExp(`^rmplan-${planInfo.planId}-.*\\.md$`))
+              file.match(new RegExp(`^rmplan-${planId}-.*\\.md$`))
             );
 
             for (const file of matchingFiles) {
@@ -1003,11 +1006,7 @@ export class ClaudeCodeExecutor implements Executor {
 
       // Automatic model selection for review and planning modes
       let modelToUse = this.sharedOptions.model;
-      if (
-        planInfo &&
-        (planInfo.executionMode === 'review' || planInfo.executionMode === 'planning') &&
-        !modelToUse
-      ) {
+      if ((planInfo.executionMode === 'review' || planInfo.executionMode === 'planning') && !modelToUse) {
         modelToUse = 'opus';
       }
 
@@ -1204,9 +1203,9 @@ export class ClaudeCodeExecutor implements Executor {
       }
 
       // Clean up agent files if they were created (only in normal mode)
-      if (planInfo && planInfo.planId && planInfo.executionMode === 'normal') {
-        await removeAgentFiles(planInfo.planId);
-        debugLog(`Removed agent files for plan ${planInfo.planId}`);
+      if (planContextAvailable && planInfo.executionMode === 'normal') {
+        await removeAgentFiles(planId);
+        debugLog(`Removed agent files for plan ${planId}`);
       }
 
       // Unregister the cleanup handler since we've cleaned up normally

@@ -479,9 +479,9 @@ export async function handleRmprCommand(
   }
 
   await executor.execute(llmPrompt, {
-    planId: 'pr-review',
+    planId: '',
     planTitle: `PR Review: ${pullRequest.title}`,
-    planFilePath: 'N/A',
+    planFilePath: '',
     executionMode: 'review',
   });
 

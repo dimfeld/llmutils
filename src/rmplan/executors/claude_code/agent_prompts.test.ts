@@ -29,4 +29,14 @@ describe('agent_prompts failure protocol integration', () => {
     expect(def.prompt).toContain('FAILED:');
     expect(def.prompt).toContain('Failure Protocol');
   });
+
+  it('omits progress note instructions when no plan id is provided', () => {
+    const def = getImplementerPrompt(context);
+    expect(def.prompt).not.toContain('rmplan add-progress-note');
+  });
+
+  it('includes progress note instructions when plan id is provided', () => {
+    const def = getImplementerPrompt(context, '42');
+    expect(def.prompt).toContain("rmplan add-progress-note 42");
+  });
 });

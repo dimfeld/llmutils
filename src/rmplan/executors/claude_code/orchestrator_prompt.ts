@@ -5,7 +5,9 @@ interface OrchestrationOptions {
 }
 
 // Progress notes guidance should be present in both batch and non-batch modes
-export function progressNotesGuidance(planId: string | number) {
+export function progressNotesGuidance(planId?: string | number) {
+  if (!planId) return '';
+
   return `
 ## Progress Notes
 
