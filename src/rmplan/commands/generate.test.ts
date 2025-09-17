@@ -146,6 +146,7 @@ describe('handleGenerateCommand', () => {
     const options = {
       plan: planPath,
       extract: false, // Disable extract to avoid YAML parsing
+      claude: false, // Force traditional mode for this test
       parent: {
         opts: () => ({}),
       },
@@ -188,6 +189,7 @@ describe('handleGenerateCommand', () => {
       plan: planPath,
       simple: true,
       extract: false,
+      claude: false, // Force traditional mode for this test
       parent: {
         opts: () => ({}),
       },
@@ -224,6 +226,7 @@ describe('handleGenerateCommand', () => {
       plan: planPath,
       autofind: true,
       extract: false,
+      claude: false, // Force traditional mode for this test
       parent: {
         opts: () => ({}),
       },
@@ -343,6 +346,7 @@ Task description`);
     const options = {
       plan: planPath,
       extract: true, // Default is true
+      claude: false, // Force traditional mode for this test
       parent: {
         opts: () => ({}),
       },
@@ -418,6 +422,7 @@ Task description`);
       plan: planPath,
       quiet: true,
       extract: false,
+      claude: false, // Force traditional mode for this test
       parent: {
         opts: () => ({}),
       },
@@ -1118,6 +1123,7 @@ phases:
     const options = {
       plan: planPath, // Add required plan option
       extract: false,
+      claude: false, // Force traditional mode for this test
       // No direct flag specified
       parent: {
         opts: () => ({}),
@@ -1696,6 +1702,7 @@ describe('handleGenerateCommand with --issue flag (Issue Tracker Abstraction)', 
     const options = {
       issue: '123',
       extract: false,
+      claude: false, // Force traditional mode for this test
       parent: { opts: () => ({}) },
     };
 
@@ -1722,5 +1729,138 @@ describe('handleGenerateCommand with --issue flag (Issue Tracker Abstraction)', 
     expect(callArgs[0]).toContain('*.js');
     expect(callArgs[0]).toContain('--exclude');
     expect(callArgs[0]).toContain('node_modules/**');
+  });
+});
+
+describe('handleGenerateCommand claude_mode configuration logic', () => {
+  let tempDir: string;
+  let tasksDir: string;
+
+  // Mock functions
+  const invokeClaudeCodeForGenerationSpy = mock(async () => 'Generated YAML content');
+  const extractMarkdownToYamlSpy = mock(async () => {});
+
+  beforeEach(async () => {
+    // Clear mocks
+    invokeClaudeCodeForGenerationSpy.mockClear();
+    extractMarkdownToYamlSpy.mockClear();
+
+    // Clear plan cache
+    clearPlanCache();
+
+    // Create temporary directory
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-generate-claude-config-test-'));
+    tasksDir = path.join(tempDir, 'tasks');
+    await fs.mkdir(tasksDir, { recursive: true });
+
+    // Mock modules
+    await moduleMocker.mock('../claude_utils.js', () => ({
+      invokeClaudeCodeForGeneration: invokeClaudeCodeForGenerationSpy,
+    }));
+
+    await moduleMocker.mock('../process_markdown.js', () => ({
+      extractMarkdownToYaml: extractMarkdownToYamlSpy,
+    }));
+  });
+
+  afterEach(async () => {
+    moduleMocker.clear();
+    // Clean up
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('no flag, no config - claude should be true (default)', async () => {
+    // Mock config loader with no claude_mode setting (should default to true)
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: {
+          tasks: tasksDir,
+        },
+        models: {
+          stepGeneration: 'test-model',
+        },
+      }),
+    }));
+
+    const planPath = path.join(tempDir, 'test-plan.md');
+    await fs.writeFile(planPath, '# Test Plan\n\nThis is a test plan.');
+
+    const options = {
+      plan: planPath,
+      extract: true,
+      // No claude flag specified
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    const command = {
+      args: [],
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleGenerateCommand(undefined, options, command);
+
+    // Should use Claude mode (default) and call invokeClaudeCodeForGeneration
+    expect(invokeClaudeCodeForGenerationSpy).toHaveBeenCalledTimes(1);
+    expect(extractMarkdownToYamlSpy).toHaveBeenCalledWith(
+      'Generated YAML content',
+      expect.any(Object),
+      false,
+      expect.objectContaining({
+        generatedBy: 'agent', // This indicates Claude mode was used
+      })
+    );
+  });
+
+  test('--claude flag overrides config claude_mode=false', async () => {
+    // Mock config loader with claude_mode: false
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: {
+          tasks: tasksDir,
+        },
+        planning: {
+          claude_mode: false,
+        },
+        models: {
+          stepGeneration: 'test-model',
+        },
+      }),
+    }));
+
+    const planPath = path.join(tempDir, 'test-plan.md');
+    await fs.writeFile(planPath, '# Test Plan\n\nThis is a test plan.');
+
+    const options = {
+      plan: planPath,
+      extract: true,
+      claude: true, // Explicit claude flag
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    const command = {
+      args: [],
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleGenerateCommand(undefined, options, command);
+
+    // Should use Claude mode due to --claude flag
+    expect(invokeClaudeCodeForGenerationSpy).toHaveBeenCalledTimes(1);
+    expect(extractMarkdownToYamlSpy).toHaveBeenCalledWith(
+      'Generated YAML content',
+      expect.any(Object),
+      false,
+      expect.objectContaining({
+        generatedBy: 'agent', // This indicates Claude mode was used
+      })
+    );
   });
 });

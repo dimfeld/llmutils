@@ -32,6 +32,13 @@ export async function handlePrepareCommand(
   const effectiveDirectMode =
     options.direct !== undefined ? options.direct : (config.planning?.direct_mode ?? false);
 
+  // Determine effective Claude mode setting with precedence:
+  // 1. Command-line flag (--claude or --no-claude)
+  // 2. Config setting (config.planning?.claude_mode)
+  // 3. Default to true (making Claude mode the default)
+  const effectiveClaudeMode =
+    options.claude !== undefined ? options.claude : (config.planning?.claude_mode ?? true);
+
   // Handle --use-yaml option which uses the file as LLM output
   if (options.useYaml) {
     // When using --use-yaml, we need a phase file to update
@@ -108,6 +115,6 @@ export async function handlePrepareCommand(
     rmfilterArgs: rmfilterArgs,
     direct: effectiveDirectMode,
     useYaml: options.useYaml,
-    claude: options.claude,
+    claude: effectiveClaudeMode,
   });
 }

@@ -164,6 +164,10 @@ export const rmplanConfigSchema = z
           .boolean()
           .optional()
           .describe('Default behavior for direct mode in generate and prepare commands'),
+        claude_mode: z
+          .boolean()
+          .optional()
+          .describe('Default behavior for Claude mode in generate and prepare commands'),
         instructions: z
           .string()
           .optional()
@@ -316,5 +320,6 @@ export function getDefaultConfig(): RmplanConfig {
     defaultExecutor: DEFAULT_EXECUTOR,
     workspaceCreation: undefined,
     prCreation: { draft: true },
+    planning: { claude_mode: true },
   };
 }

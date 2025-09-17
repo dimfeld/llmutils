@@ -158,6 +158,13 @@ export async function handleGenerateCommand(
   const effectiveDirectMode =
     options.direct !== undefined ? options.direct : (config.planning?.direct_mode ?? false);
 
+  // Determine effective Claude mode setting with precedence:
+  // 1. Command-line flag (--claude or --no-claude)
+  // 2. Config setting (config.planning?.claude_mode)
+  // 3. Default to true (making Claude mode the default)
+  const effectiveClaudeMode =
+    options.claude !== undefined ? options.claude : (config.planning?.claude_mode ?? true);
+
   // Find '--' in process.argv to get extra args for rmfilter
   const doubleDashIdx = process.argv.indexOf('--');
   const userCliRmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
@@ -431,142 +438,172 @@ export async function handleGenerateCommand(
 
   // planText now contains the loaded plan
   const promptString = options.simple ? simplePlanPrompt(fullPlanText) : planPrompt(fullPlanText);
-  const tmpDir = os.tmpdir();
-  const tmpPromptPath = path.join(tmpDir, `rmplan-prompt-${Date.now()}.md`);
-  const rmfilterOutputPath = path.join(tmpDir, `rmfilter-output-${Date.now()}.xml`);
 
   let exitRes: number | undefined;
+  let rmfilterOutputPath: string | undefined;
+  let tmpPromptPath: string | undefined;
   let wrotePrompt = false;
-  try {
-    await Bun.write(tmpPromptPath, promptString);
-    wrotePrompt = true;
-    log('Prompt written to:', tmpPromptPath);
+  let allRmfilterOptions: string[] = [];
 
-    // Call rmfilter with constructed args
-    let additionalFiles: string[] = [];
-    if (options.autofind) {
-      log('[Autofind] Searching for relevant files based on plan...');
-      const query = planText;
-
-      const rmfindOptions: RmfindOptions = {
-        baseDir: gitRoot,
-        query: query,
-        classifierModel: process.env.RMFIND_CLASSIFIER_MODEL || process.env.RMFIND_MODEL,
-        grepGeneratorModel: process.env.RMFIND_GREP_GENERATOR_MODEL || process.env.RMFIND_MODEL,
-        globs: [],
-        quiet: options.quiet ?? false,
-      };
-
-      try {
-        const rmfindResult = await findFilesCore(rmfindOptions);
-        if (rmfindResult && rmfindResult.files.length > 0) {
-          if (!options.quiet) {
-            log(`[Autofind] Found ${rmfindResult.files.length} potentially relevant files:`);
-            rmfindResult.files.forEach((f) => log(`  - ${path.relative(gitRoot, f)}`));
-          }
-          additionalFiles = rmfindResult.files.map((f) => path.relative(gitRoot, f));
-        }
-      } catch (error) {
-        warn(
-          `[Autofind] Warning: Failed to find files: ${error instanceof Error ? error.message : String(error)}`
-        );
-      }
-    }
-
+  // Handle Claude mode separately - no rmfilter needed
+  if (effectiveClaudeMode) {
+    exitRes = 0; // Skip all rmfilter logic
+    // For Claude mode, we still need to collect rmfilter options for the extract phase
     // Process the combinedRmprOptions if available
     let issueRmfilterOptions: string[] = [];
     if (combinedRmprOptions) {
       issueRmfilterOptions = argsFromRmprOptions(combinedRmprOptions);
-      if (issueRmfilterOptions.length > 0 && !options.quiet) {
-        log(chalk.blue('Applying rmpr options from issue:'), issueRmfilterOptions.join(' '));
-      }
     }
 
     // Combine user CLI args and issue rmpr options
-    const allRmfilterOptions: string[] = [];
     for (const argList of [userCliRmfilterArgs, issueRmfilterOptions, stubPlan?.data?.rmfilter]) {
       if (!argList?.length) continue;
       // Add a separator if some options already exist
       if (allRmfilterOptions.length) allRmfilterOptions.push('--');
       allRmfilterOptions.push(...argList.flatMap((arg) => arg.split(' ')));
     }
+  } else {
+    // Traditional mode - set up temp files and run rmfilter
+    const tmpDir = os.tmpdir();
+    tmpPromptPath = path.join(tmpDir, `rmplan-prompt-${Date.now()}.md`);
+    rmfilterOutputPath = path.join(tmpDir, `rmfilter-output-${Date.now()}.xml`);
 
-    // Check if no files are provided to rmfilter
-    const hasNoFiles = additionalFiles.length === 0 && allRmfilterOptions.length === 0;
+    try {
+      await Bun.write(tmpPromptPath, promptString);
+      wrotePrompt = true;
+      log('Prompt written to:', tmpPromptPath);
 
-    if (hasNoFiles) {
-      warn(
-        chalk.yellow(
-          '\n⚠️  Warning: No files specified for rmfilter. The prompt will only contain the planning instructions without any code context.'
-        )
-      );
+      // Call rmfilter with constructed args
+      let additionalFiles: string[] = [];
+      if (options.autofind) {
+        log('[Autofind] Searching for relevant files based on plan...');
+        const query = planText;
 
-      // Warn if copying content for a plan that's already done or has tasks
-      if (
-        parsedPlan &&
-        (parsedPlan.status === 'done' || (parsedPlan.tasks && parsedPlan.tasks.length > 0))
-      ) {
-        warn(
-          chalk.yellow(
-            '⚠️  Warning: Copying content for a plan that is already done or has existing tasks. You may have typed the wrong plan ID.'
-          )
-        );
-      }
+        const rmfindOptions: RmfindOptions = {
+          baseDir: gitRoot,
+          query: query,
+          classifierModel: process.env.RMFIND_CLASSIFIER_MODEL || process.env.RMFIND_MODEL,
+          grepGeneratorModel: process.env.RMFIND_GREP_GENERATOR_MODEL || process.env.RMFIND_MODEL,
+          globs: [],
+          quiet: options.quiet ?? false,
+        };
 
-      if (!effectiveDirectMode) {
-        // Copy the prompt directly to clipboard without running rmfilter
-        await clipboard.write(promptString);
-        log('Prompt copied to clipboard');
-      }
-      exitRes = 0;
-    } else {
-      // Collect docs from stub plan
-      const docsArgs: string[] = [];
-      if (stubPlan?.data?.docs) {
-        stubPlan?.data.docs.forEach((doc) => {
-          if (!isURL(doc)) {
-            docsArgs.push('--docs', doc);
+        try {
+          const rmfindResult = await findFilesCore(rmfindOptions);
+          if (rmfindResult && rmfindResult.files.length > 0) {
+            if (!options.quiet) {
+              log(`[Autofind] Found ${rmfindResult.files.length} potentially relevant files:`);
+              rmfindResult.files.forEach((f) => log(`  - ${path.relative(gitRoot, f)}`));
+            }
+            additionalFiles = rmfindResult.files.map((f) => path.relative(gitRoot, f));
           }
-        });
+        } catch (error) {
+          warn(
+            `[Autofind] Warning: Failed to find files: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
       }
 
-      // Warn if copying content for a plan that's already done or has tasks
-      if (
-        parsedPlan &&
-        (parsedPlan.status === 'done' || (parsedPlan.tasks && parsedPlan.tasks.length > 0))
-      ) {
+      // Process the combinedRmprOptions if available
+      let issueRmfilterOptions: string[] = [];
+      if (combinedRmprOptions) {
+        issueRmfilterOptions = argsFromRmprOptions(combinedRmprOptions);
+        if (issueRmfilterOptions.length > 0 && !options.quiet) {
+          log(chalk.blue('Applying rmpr options from issue:'), issueRmfilterOptions.join(' '));
+        }
+      }
+
+      // Combine user CLI args and issue rmpr options
+      for (const argList of [userCliRmfilterArgs, issueRmfilterOptions, stubPlan?.data?.rmfilter]) {
+        if (!argList?.length) continue;
+        // Add a separator if some options already exist
+        if (allRmfilterOptions.length) allRmfilterOptions.push('--');
+        allRmfilterOptions.push(...argList.flatMap((arg) => arg.split(' ')));
+      }
+
+      // Check if no files are provided to rmfilter
+      const hasNoFiles = additionalFiles.length === 0 && allRmfilterOptions.length === 0;
+
+      if (hasNoFiles) {
         warn(
           chalk.yellow(
-            '⚠️  Warning: Copying content for a plan that is already done or has existing tasks. You may have typed the wrong plan ID.'
+            '\n⚠️  Warning: No files specified for rmfilter. The prompt will only contain the planning instructions without any code context.'
           )
         );
+
+        // Warn if copying content for a plan that's already done or has tasks
+        if (
+          parsedPlan &&
+          (parsedPlan.status === 'done' || (parsedPlan.tasks && parsedPlan.tasks.length > 0))
+        ) {
+          warn(
+            chalk.yellow(
+              '⚠️  Warning: Copying content for a plan that is already done or has existing tasks. You may have typed the wrong plan ID.'
+            )
+          );
+        }
+
+        if (!effectiveDirectMode) {
+          // Copy the prompt directly to clipboard without running rmfilter
+          await clipboard.write(promptString);
+          log('Prompt copied to clipboard');
+        }
+        exitRes = 0;
+      } else {
+        // Collect docs from stub plan
+        const docsArgs: string[] = [];
+        if (stubPlan?.data?.docs) {
+          stubPlan?.data.docs.forEach((doc) => {
+            if (!isURL(doc)) {
+              docsArgs.push('--docs', doc);
+            }
+          });
+        }
+
+        // Warn if copying content for a plan that's already done or has tasks
+        if (
+          parsedPlan &&
+          (parsedPlan.status === 'done' || (parsedPlan.tasks && parsedPlan.tasks.length > 0))
+        ) {
+          warn(
+            chalk.yellow(
+              '⚠️  Warning: Copying content for a plan that is already done or has existing tasks. You may have typed the wrong plan ID.'
+            )
+          );
+        }
+
+        // Append autofound files to rmfilter args
+        const rmfilterFullArgs = [
+          'rmfilter',
+          ...allRmfilterOptions,
+          ...docsArgs,
+          '--',
+          ...additionalFiles,
+          '--bare',
+          '--copy',
+          '--instructions',
+          `@${tmpPromptPath}`,
+          '--output',
+          rmfilterOutputPath,
+        ];
+        const proc = logSpawn(rmfilterFullArgs, {
+          cwd: gitRoot,
+          stdio: ['inherit', 'inherit', 'inherit'],
+        });
+        exitRes = await proc.exited;
       }
-
-      // Append autofound files to rmfilter args
-      const rmfilterFullArgs = [
-        'rmfilter',
-        ...allRmfilterOptions,
-        ...docsArgs,
-        '--',
-        ...additionalFiles,
-        '--bare',
-        '--copy',
-        '--instructions',
-        `@${tmpPromptPath}`,
-        '--output',
-        rmfilterOutputPath,
-      ];
-      const proc = logSpawn(rmfilterFullArgs, {
-        cwd: gitRoot,
-        stdio: ['inherit', 'inherit', 'inherit'],
-      });
-      exitRes = await proc.exited;
+    } catch (err) {
+      // Handle errors in traditional mode
+      exitRes = 1;
+      throw err;
     }
+  }
 
+  try {
     if (exitRes === 0 && options.extract !== false) {
       let input: string;
 
-      if (options.claude) {
+      if (effectiveClaudeMode) {
         // Generate the two prompts for Claude Code
         const planningPrompt = generateClaudeCodePlanningPrompt(fullPlanText);
         const generationPrompt = generateClaudeCodeGenerationPrompt();
@@ -580,6 +617,11 @@ export async function handleGenerateCommand(
         // Direct LLM call
         const modelId = config.models?.stepGeneration || DEFAULT_RUN_MODEL;
         const model = await createModel(modelId, config);
+
+        if (!rmfilterOutputPath) {
+          throw new Error('rmfilterOutputPath not available for direct mode');
+        }
+
         const rmfilterOutput = await Bun.file(rmfilterOutputPath).text();
 
         log('Generating plan using model:', modelId);
@@ -625,19 +667,21 @@ export async function handleGenerateCommand(
         issueUrls: issueUrlsForExtract,
         stubPlan,
         commit: options.commit,
-        generatedBy: options.claude ? 'agent' : 'oneshot',
+        generatedBy: effectiveClaudeMode ? 'agent' : 'oneshot',
       };
 
       await extractMarkdownToYaml(input, config, options.quiet ?? false, extractOptions);
     }
   } finally {
-    if (wrotePrompt) {
+    if (wrotePrompt && tmpPromptPath) {
       try {
         await fs.rm(tmpPromptPath);
       } catch (e) {
         warn('Warning: failed to clean up temp file:', tmpPromptPath);
       }
+    }
 
+    if (rmfilterOutputPath) {
       try {
         await fs.rm(rmfilterOutputPath);
       } catch (e) {

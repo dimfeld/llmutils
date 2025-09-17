@@ -98,6 +98,7 @@ program
   .option('--direct', 'Call LLM directly instead of copying prompt to clipboard')
   .option('--no-direct', 'Use clipboard mode even if direct mode is configured')
   .option('--claude', 'Use Claude Code for two-step planning and generation')
+  .option('--no-claude', 'Use traditional copy/paste mode instead of Claude Code')
   .option(
     '--next-ready <planIdOrPath>',
     'Find and operate on the next ready dependency of the specified parent plan (accepts plan ID or file path)'
@@ -393,6 +394,7 @@ program
   .option('--no-direct', 'Use clipboard mode even if direct mode is configured')
   .option('--use-yaml <yaml_file>', 'Skip generation and use existing YAML file as LLM output')
   .option('--claude', 'Use Claude Code for two-step planning and generation')
+  .option('--no-claude', 'Use traditional copy/paste mode instead of Claude Code')
   .allowExcessArguments(true)
   .allowUnknownOption(true)
   .action(async (yamlFile, options, command) => {
