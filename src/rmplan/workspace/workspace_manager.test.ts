@@ -1004,4 +1004,236 @@ describe('createWorkspace', () => {
     expect(calledCommands[2].workingDirectory).toBe('tests');
     expect(calledCommands[2].overrideGitRoot).toBe(expectedClonePath);
   });
+
+  test('createWorkspace with cp clone method', async () => {
+    // Setup
+    const taskId = 'task-cp-test';
+    const sourceDirectory = path.join(testTempDir, 'source');
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'source-task-cp-test');
+
+    // Create source directory
+    await fs.mkdir(sourceDirectory, { recursive: true });
+    await fs.writeFile(path.join(sourceDirectory, 'test.txt'), 'test content');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        cloneMethod: 'cp',
+        sourceDirectory,
+        cloneLocation,
+        repositoryUrl: 'https://github.com/example/repo.git',
+      },
+    };
+
+    // Mock cp command to succeed
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => {
+      // Simulate cp by creating the target directory and copying content
+      await fs.mkdir(targetClonePath, { recursive: true });
+      await fs.writeFile(path.join(targetClonePath, 'test.txt'), 'test content');
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    // Mock git init to succeed
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Mock git remote get-url to fail (no existing remote)
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 1,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Mock git remote add to succeed
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Mock branch creation to succeed
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Act
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+
+    // Verify
+    expect(result).not.toBeNull();
+    expect(result?.path).toBe(targetClonePath);
+    expect(result?.taskId).toBe(taskId);
+
+    // Verify cp was called
+    expect(mockSpawnAndLogOutput).toHaveBeenCalledWith(['cp', '-r', sourceDirectory, targetClonePath]);
+
+    // Verify git init was called
+    expect(mockSpawnAndLogOutput).toHaveBeenCalledWith(['git', 'init'], { cwd: targetClonePath });
+
+    // Verify git remote add was called
+    expect(mockSpawnAndLogOutput).toHaveBeenCalledWith(
+      ['git', 'remote', 'add', 'origin', 'https://github.com/example/repo.git'],
+      { cwd: targetClonePath }
+    );
+  });
+
+  test('createWorkspace with mac-cow clone method should succeed on macOS', async () => {
+    // Setup
+    const taskId = 'task-mac-cow-test';
+    const sourceDirectory = path.join(testTempDir, 'source');
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'source-task-mac-cow-test');
+
+    // Create source directory
+    await fs.mkdir(sourceDirectory, { recursive: true });
+    await fs.writeFile(path.join(sourceDirectory, 'test.txt'), 'test content');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        cloneMethod: 'mac-cow',
+        sourceDirectory,
+        cloneLocation,
+      },
+    };
+
+    // Mock os.platform to return non-macOS - this needs to be done differently
+    // Since the module is already loaded, we'll test the actual fallback by testing the cp -c failure
+
+    // Mock git remote get-url to try to infer repository URL from source (will fail)
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 1,
+      stdout: '',
+      stderr: 'no remote origin',
+    }));
+
+    // Mock cp -c command to succeed
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => {
+      await fs.mkdir(targetClonePath, { recursive: true });
+      await fs.writeFile(path.join(targetClonePath, 'test.txt'), 'test content');
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    // Mock git init to succeed
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Mock branch creation to succeed
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Act
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+
+    // Verify
+    expect(result).not.toBeNull();
+    expect(result?.path).toBe(targetClonePath);
+    expect(result?.taskId).toBe(taskId);
+
+    // Verify cp -c was called (copy-on-write)
+    expect(mockSpawnAndLogOutput).toHaveBeenCalledWith(['cp', '-c', sourceDirectory, targetClonePath]);
+  });
+
+  test('createWorkspace with missing source directory should fail', async () => {
+    // Setup
+    const taskId = 'task-missing-source';
+    const nonExistentSource = path.join(testTempDir, 'non-existent');
+    const cloneLocation = path.join(testTempDir, 'clones');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        cloneMethod: 'cp',
+        sourceDirectory: nonExistentSource,
+        cloneLocation,
+      },
+    };
+
+    // Act
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+
+    // Verify
+    expect(result).toBeNull();
+    expect(mockLog).toHaveBeenCalledWith('Source directory does not exist: ' + nonExistentSource);
+  });
+
+  test('createWorkspace with relative source directory path should resolve correctly', async () => {
+    // Setup
+    const taskId = 'task-relative-source';
+    const sourceSubdir = 'source';
+    const sourceDirectory = path.join(mainRepoRoot, sourceSubdir);
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'source-task-relative-source');
+
+    // Create source directory
+    await fs.mkdir(sourceDirectory, { recursive: true });
+    await fs.writeFile(path.join(sourceDirectory, 'test.txt'), 'test content');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        cloneMethod: 'cp',
+        sourceDirectory: sourceSubdir, // Relative path
+        cloneLocation,
+      },
+    };
+
+    // Mock git remote get-url to infer repository URL from source
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: 'https://github.com/example/repo.git',
+      stderr: '',
+    }));
+
+    // Mock cp command to succeed
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => {
+      await fs.mkdir(targetClonePath, { recursive: true });
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    // Mock git init to succeed
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: ''
+    }));
+
+    // Mock git remote get-url (from setupGitRemote - to check if origin exists)
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0, // Simulate that origin already exists
+      stdout: 'https://github.com/existing/repo.git',
+      stderr: ''
+    }));
+
+    // Mock git remote set-url (from setupGitRemote - because origin exists)
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: ''
+    }));
+
+    // Mock branch creation to succeed
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: ''
+    }));
+
+
+    // Act
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+
+    // Verify
+    expect(result).not.toBeNull();
+    // Verify cp was called with resolved absolute path
+    expect(mockSpawnAndLogOutput).toHaveBeenCalledWith(['cp', '-r', sourceDirectory, targetClonePath]);
+  });
 });

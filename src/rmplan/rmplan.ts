@@ -682,6 +682,9 @@ workspaceCommand
   .command('add [planIdentifier]')
   .description('Create a new workspace, optionally linked to a plan')
   .option('--id <workspaceId>', 'Specify a custom workspace ID')
+  .option('--clone-method <method>', 'Clone method: git, cp, or mac-cow (overrides config)')
+  .option('--source-dir <path>', 'Source directory for cp/mac-cow methods (overrides config)')
+  .option('--repo-url <url>', 'Repository URL for git method (overrides config)')
   .action(async (planIdentifier, options, command) => {
     const { handleWorkspaceAddCommand } = await import('./commands/workspace.js');
     await handleWorkspaceAddCommand(planIdentifier, options, command).catch(handleCommandError);

@@ -36,10 +36,22 @@ export const postApplyCommandSchema = z.object({
  */
 export const workspaceCreationConfigSchema = z.object({
   /**
+   * Method to use for cloning/copying the repository.
+   * - 'git': Standard git clone (default)
+   * - 'cp': Copy using cp command (requires sourceDirectory)
+   * - 'mac-cow': Copy using macOS APFS copy-on-write (requires sourceDirectory and macOS)
+   */
+  cloneMethod: z.enum(['git', 'cp', 'mac-cow']).optional().default('git'),
+  /**
    * URL of the repository to clone.
-   * If method is 'rmplan' and this is not provided, it will be inferred from the current repository's remote origin.
+   * Required for 'git' method. If not provided for git method, it will be inferred from the current repository's remote origin.
    */
   repositoryUrl: z.string().optional(),
+  /**
+   * Local source directory to copy from.
+   * Required for 'cp' and 'mac-cow' methods. Should be an absolute path or relative to the main repository root.
+   */
+  sourceDirectory: z.string().optional(),
   /**
    * Directory where clones should be created.
    * Defaults to ~/.rmfilter/workspaces/.
@@ -48,7 +60,6 @@ export const workspaceCreationConfigSchema = z.object({
   cloneLocation: z.string().optional(),
   /**
    * Array of commands to run after a clone is created and a new branch is checked out.
-   * Only applicable if method is 'rmplan'.
    */
   postCloneCommands: z.array(postApplyCommandSchema).optional(),
 });

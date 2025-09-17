@@ -57,6 +57,24 @@ export async function handleWorkspaceAddCommand(
     );
   }
 
+  // Override config with command line options if provided
+  const effectiveConfig = {
+    ...config,
+    workspaceCreation: {
+      ...config.workspaceCreation,
+      ...(options.cloneMethod && { cloneMethod: options.cloneMethod }),
+      ...(options.sourceDir && { sourceDirectory: options.sourceDir }),
+      ...(options.repoUrl && { repositoryUrl: options.repoUrl }),
+    },
+  };
+
+  // Validate clone method if provided
+  if (options.cloneMethod && !['git', 'cp', 'mac-cow'].includes(options.cloneMethod)) {
+    throw new Error(
+      `Invalid clone method: ${options.cloneMethod}. Must be one of: git, cp, mac-cow`
+    );
+  }
+
   // Determine workspace ID
   let workspaceId: string;
   if (options.id) {
@@ -104,7 +122,7 @@ export async function handleWorkspaceAddCommand(
   }
 
   // Create the workspace
-  const workspace = await createWorkspace(gitRoot, workspaceId, resolvedPlanFilePath, config);
+  const workspace = await createWorkspace(gitRoot, workspaceId, resolvedPlanFilePath, effectiveConfig);
 
   if (!workspace) {
     throw new Error('Failed to create workspace');

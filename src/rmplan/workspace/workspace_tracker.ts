@@ -12,8 +12,8 @@ export interface WorkspaceInfo {
   taskId: string;
   /** Absolute path to the plan file in the main repo, if workspace is associated with a plan */
   originalPlanFilePath?: string;
-  /** URL of the repository that was cloned */
-  repositoryUrl: string;
+  /** URL of the repository that was cloned (optional for copy methods) */
+  repositoryUrl?: string;
   /** Absolute path to the cloned workspace */
   workspacePath: string;
   /** Name of the branch that was created */
@@ -153,7 +153,7 @@ export async function findWorkspacesByRepoUrl(
   const normalizedSearchUrl = normalizeUrl(repositoryUrl);
 
   return Object.values(data).filter(
-    (workspace) => normalizeUrl(workspace.repositoryUrl) === normalizedSearchUrl
+    (workspace) => workspace.repositoryUrl && normalizeUrl(workspace.repositoryUrl) === normalizedSearchUrl
   );
 }
 
