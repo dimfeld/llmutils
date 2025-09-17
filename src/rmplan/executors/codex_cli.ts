@@ -117,6 +117,7 @@ export class CodexCliExecutor implements Executor {
     // Safely append extra guidance without coercing undefined to string
     implementerInstructions =
       (implementerInstructions || '') +
+      '\n\nOnce you decide how to go about implementing theh tasks, do so immeidately. No need to wait for approval.' +
       `\n\nIn your final message, be sure to include the titles of the tasks that you completed.\n`;
 
     const implementer = getImplementerPrompt(
