@@ -41,7 +41,7 @@ export const workspaceCreationConfigSchema = z.object({
    * - 'cp': Copy using cp command (requires sourceDirectory)
    * - 'mac-cow': Copy using macOS APFS copy-on-write (requires sourceDirectory and macOS)
    */
-  cloneMethod: z.enum(['git', 'cp', 'mac-cow']).optional().default('git'),
+  cloneMethod: z.enum(['git', 'cp', 'mac-cow']).optional(),
   /**
    * URL of the repository to clone.
    * Required for 'git' method. If not provided for git method, it will be inferred from the current repository's remote origin.
@@ -331,6 +331,5 @@ export function getDefaultConfig(): RmplanConfig {
     defaultExecutor: DEFAULT_EXECUTOR,
     workspaceCreation: undefined,
     prCreation: { draft: true },
-    planning: { claude_mode: true },
   };
 }
