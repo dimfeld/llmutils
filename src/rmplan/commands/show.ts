@@ -180,7 +180,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
     } else if (plan.tasks && plan.tasks.length > 0) {
       log('\n' + chalk.bold('Tasks:'));
       log('─'.repeat(60));
-      plan.tasks.forEach((task) => {
+      plan.tasks.forEach((task, i) => {
         const steps = task.steps ?? [];
         const totalSteps = steps.length;
         const doneSteps = steps.filter((s) => s.done).length;
@@ -193,7 +193,8 @@ export async function handleShowCommand(planFile: string | undefined, options: a
             ? chalk.yellow
             : chalk.white;
         const title = task.title || '(untitled task)';
-        log(`  ${taskIcon} ${taskColor(title)}`);
+        const index = (i + 1).toString().padStart(2, ' ');
+        log(`  ${taskIcon} ${taskColor(index + '. ' + title)}`);
       });
     }
   } else {
