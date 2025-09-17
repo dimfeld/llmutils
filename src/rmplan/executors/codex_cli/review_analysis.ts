@@ -6,12 +6,14 @@ import { debugLog, error, log } from '../../../logging.ts';
 export const ReviewAnalysisSchema = z.object({
   needs_fixes: z.boolean().describe('Whether fixes are actually required within the current scope'),
   fix_instructions: z
-    .string()
-    .optional()
+    .preprocess((v) => (typeof v === 'string' ? [v] : v), z.string().array().optional())
     .describe('Specific, actionable instructions for fixes if needed'),
 });
 
-export type ReviewAnalysisResult = z.infer<typeof ReviewAnalysisSchema>;
+export interface ReviewAnalysisResult {
+  needs_fixes: boolean;
+  fix_instructions?: string;
+}
 
 export interface AnalyzeReviewFeedbackParams {
   reviewerOutput: string;
@@ -60,8 +62,12 @@ export async function analyzeReviewFeedback(
 
     // Basic sanity defaults
     const needs_fixes = Boolean(object?.needs_fixes);
-    const fix_instructions = object?.fix_instructions?.trim() || undefined;
-    const result: ReviewAnalysisResult = { needs_fixes, fix_instructions };
+    const fix_instructions =
+      object?.fix_instructions?.map((s) => s.trim()).filter(Boolean) || undefined;
+    const result: ReviewAnalysisResult = {
+      needs_fixes,
+      fix_instructions: fix_instructions?.join('\n\n'),
+    };
 
     debugLog('Review analysis result:', JSON.stringify(result));
     return result;
@@ -117,7 +123,7 @@ For any issues you deem valid, copy the issue title and its corresponding descri
 Return a strict JSON object that matches this schema exactly:
 {
   "needs_fixes": boolean,
-  "fix_instructions": string | undefined
+  "fix_instructions": string[] | undefined
 }
 
 Rules:
