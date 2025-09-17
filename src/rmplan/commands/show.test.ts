@@ -154,7 +154,7 @@ describe('handleShowCommand', () => {
     expect(stripped).toContain('Latest Progress Note');
     expect(stripped).toContain('Latest note with more details');
     expect(stripped).toContain('[implementer: Task Beta]');
-    expect(stripped).not.toContain('Earlier note');
+    expect(stripped).toContain('Earlier note');
     expect(stripped).toContain('Tasks:');
     expect(stripped).toContain('✓ Task Title 1');
     expect(stripped).toContain('○ Task Title 2');

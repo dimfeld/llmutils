@@ -20,6 +20,7 @@ import {
 } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { findNextReadyDependency } from './find_next_dependency.js';
+import { MAX_NOTE_CHARS } from '../truncation.js';
 
 export async function handleShowCommand(planFile: string | undefined, options: any, command: any) {
   const globalOpts = command.parent.opts();
@@ -141,27 +142,34 @@ export async function handleShowCommand(planFile: string | undefined, options: a
 
     const notes = plan.progressNotes ?? [];
     if (notes.length > 0) {
-      const latestNote = notes[notes.length - 1];
-      const { MAX_NOTE_CHARS } = await import('../truncation.js');
-      const timestamp = latestNote.timestamp
-        ? new Date(latestNote.timestamp).toLocaleString()
-        : undefined;
-      const sourceLabel = (latestNote.source || '').trim();
-      const combined = sourceLabel.length
-        ? `[${sourceLabel}] ${latestNote.text ?? ''}`
-        : (latestNote.text ?? '');
-      const singleLine = combined.replace(/\s+/g, ' ').trim();
-      const truncated =
-        singleLine.length > MAX_NOTE_CHARS
-          ? singleLine.slice(0, Math.max(0, MAX_NOTE_CHARS - 3)) + '...'
-          : singleLine;
+      const latestNotes = notes.slice(-10).map((latestNote) => {
+        const timestamp = latestNote.timestamp
+          ? new Date(latestNote.timestamp).toLocaleString()
+          : undefined;
+        const sourceLabel = (latestNote.source || '').trim();
+        const combined = sourceLabel.length
+          ? `[${sourceLabel}] ${latestNote.text ?? ''}`
+          : (latestNote.text ?? '');
+        const singleLine = combined.replace(/\s+/g, ' ').trim();
+        const truncated =
+          singleLine.length > MAX_NOTE_CHARS
+            ? singleLine.slice(0, Math.max(0, MAX_NOTE_CHARS - 3)) + '...'
+            : singleLine;
+        if (timestamp) {
+          return `  ${chalk.gray(timestamp)}  ${truncated}`;
+        } else if (truncated) {
+          return `  ${truncated}`;
+        } else {
+          return '';
+        }
+      });
 
-      log('\n' + chalk.bold('Latest Progress Note:'));
+      log('\n' + chalk.bold('Latest Progress Notes:'));
       log('─'.repeat(60));
-      if (timestamp) {
-        log(`  ${chalk.gray(timestamp)}  ${truncated}`);
-      } else if (truncated) {
-        log(`  ${truncated}`);
+      for (const note of latestNotes) {
+        if (note) {
+          log(note);
+        }
       }
     }
 
