@@ -414,6 +414,7 @@ program
   .option('--copy-details', 'Copy the plan details to the clipboard')
   .option('--full', 'Display full details without truncation')
   .option('-s, --short', 'Display a condensed summary view')
+  .option('-w, --watch', 'Watch mode: re-print short output every 5 seconds')
   .action(async (planFile, options, command) => {
     const { handleShowCommand } = await import('./commands/show.js');
     await handleShowCommand(planFile, options, command).catch(handleCommandError);

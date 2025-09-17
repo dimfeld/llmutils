@@ -22,94 +22,15 @@ import type { PlanSchema } from '../planSchema.js';
 import { findNextReadyDependency } from './find_next_dependency.js';
 import { MAX_NOTE_CHARS } from '../truncation.js';
 
-export async function handleShowCommand(planFile: string | undefined, options: any, command: any) {
-  const globalOpts = command.parent.opts();
-
-  const config = await loadEffectiveConfig(globalOpts.config);
-
-  let resolvedPlanFile: string;
-
-  if (options.nextReady) {
-    // Validate that --next-ready has a value (parent plan ID or file path)
-    if (!options.nextReady || options.nextReady === true || options.nextReady.trim() === '') {
-      throw new Error('--next-ready requires a parent plan ID or file path');
-    }
-
-    // Find the next ready dependency of the specified parent plan
-    const tasksDir = await resolveTasksDir(config);
-    // Convert string ID to number or resolve plan file to get numeric ID
-    let parentPlanId: number;
-    const planIdNumber = parseInt(options.nextReady, 10);
-    if (!isNaN(planIdNumber)) {
-      parentPlanId = planIdNumber;
-    } else {
-      // Try to resolve as a file path and get the plan ID
-      const planFile = await resolvePlanFile(options.nextReady, globalOpts.config);
-      const plan = await readPlanFile(planFile);
-      if (!plan.id || typeof plan.id !== 'number') {
-        throw new Error(`Plan file ${planFile} does not have a valid numeric ID`);
-      }
-      parentPlanId = plan.id;
-    }
-
-    const result = await findNextReadyDependency(parentPlanId, tasksDir, true);
-
-    if (!result.plan) {
-      log(result.message);
-      return;
-    }
-
-    log(chalk.green(`Found ready plan: ${result.plan.id} - ${result.plan.title}`));
-    resolvedPlanFile = result.plan.filename;
-  } else if (options.next || options.current) {
-    // Find the next ready plan or current plan
-    const tasksDir = await resolveTasksDir(config);
-    const plan = await findNextPlan(tasksDir, {
-      includePending: true,
-      includeInProgress: options.current,
-    });
-
-    if (!plan) {
-      if (options.current) {
-        log('No current plans found. No plans are in progress or ready to be implemented.');
-      } else {
-        log('No ready plans found. All pending plans have incomplete dependencies.');
-      }
-      return;
-    }
-
-    const message = options.current
-      ? `Found current plan: ${plan.id}`
-      : `Found next ready plan: ${plan.id}`;
-    log(chalk.green(message));
-    resolvedPlanFile = plan.filename;
-  } else {
-    if (!planFile) {
-      throw new Error(
-        'Please provide a plan file or use --next/--current/--next-ready to find a plan'
-      );
-    }
-    resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
-  }
-
-  // Get all plans first to check dependencies
-  const tasksDir = await resolveTasksDir(config);
-  const { plans: allPlans } = await readAllPlans(tasksDir);
-
-  // Find the specific plan from the collection
-  let plan: PlanSchema | undefined;
-  for (const p of allPlans.values()) {
-    if (p.filename === resolvedPlanFile) {
-      plan = p;
-      break;
-    }
-  }
-
-  if (!plan) {
-    // Fallback to reading the file directly if not found in collection
-    plan = await readPlanFile(resolvedPlanFile);
-  }
-
+/**
+ * Display plan information based on options
+ */
+async function displayPlanInfo(
+  plan: PlanSchema,
+  resolvedPlanFile: string,
+  allPlans: Map<number, PlanSchema & { filename: string }>,
+  options: any
+): Promise<number> {
   // Display "ready" for pending plans whose dependencies are done
   const actualStatus = plan.status || 'pending';
   const isReady = plan.id
@@ -133,12 +54,16 @@ export async function handleShowCommand(planFile: string | undefined, options: a
           : actualStatus === 'in_progress'
             ? chalk.yellow
             : chalk.white;
-  if (options.short) {
-    log(chalk.bold('\nPlan Summary:'));
-    log('─'.repeat(60));
-    log(`${chalk.cyan('ID:')} ${plan.id || 'Not set'}`);
-    log(`${chalk.cyan('Title:')} ${getCombinedTitle(plan)}`);
-    log(`${chalk.cyan('Status:')} ${statusColor(statusDisplay)}`);
+
+  let outputLines = 0;
+
+  if (options.short || options.watch) {
+    const output = [];
+    output.push(chalk.bold('\nPlan Summary:'));
+    output.push('─'.repeat(60));
+    output.push(`${chalk.cyan('ID:')} ${plan.id || 'Not set'}`);
+    output.push(`${chalk.cyan('Title:')} ${getCombinedTitle(plan)}`);
+    output.push(`${chalk.cyan('Status:')} ${statusColor(statusDisplay)}`);
 
     const notes = plan.progressNotes ?? [];
     if (notes.length > 0) {
@@ -164,22 +89,24 @@ export async function handleShowCommand(planFile: string | undefined, options: a
         }
       });
 
-      log('\n' + chalk.bold('Latest Progress Notes:'));
-      log('─'.repeat(60));
+      output.push('\n' + chalk.bold('Latest Progress Notes:'));
+      output.push('─'.repeat(60));
       for (const note of latestNotes) {
         if (note) {
-          log(note);
+          output.push(note);
         }
       }
     }
 
     if (plan.container) {
-      log('\n' + chalk.bold('Tasks:'));
-      log('─'.repeat(60));
-      log(chalk.gray('This is a parent-only plan that serves as a container for other plans.'));
+      output.push('\n' + chalk.bold('Tasks:'));
+      output.push('─'.repeat(60));
+      output.push(
+        chalk.gray('This is a parent-only plan that serves as a container for other plans.')
+      );
     } else if (plan.tasks && plan.tasks.length > 0) {
-      log('\n' + chalk.bold('Tasks:'));
-      log('─'.repeat(60));
+      output.push('\n' + chalk.bold('Tasks:'));
+      output.push('─'.repeat(60));
       plan.tasks.forEach((task, i) => {
         const steps = task.steps ?? [];
         const totalSteps = steps.length;
@@ -194,11 +121,20 @@ export async function handleShowCommand(planFile: string | undefined, options: a
             : chalk.white;
         const title = task.title || '(untitled task)';
         const index = (i + 1).toString().padStart(2, ' ');
-        log(`  ${taskIcon} ${taskColor(index + '. ' + title)}`);
+        output.push(`  ${taskIcon} ${taskColor(index + '. ' + title)}`);
       });
     }
+
+    if (options.watch) {
+      output.push('');
+      output.push(chalk.gray('(watching... press Ctrl+C to exit)'));
+    }
+
+    const fullOutput = output.join('\n');
+    log(fullOutput);
+    outputLines = fullOutput.split('\n').length;
   } else {
-    // Display basic information
+    // Full display logic (existing code)
     log(chalk.bold('\nPlan Information:'));
     log('─'.repeat(60));
     log(`${chalk.cyan('ID:')} ${plan.id || 'Not set'}`);
@@ -306,10 +242,10 @@ export async function handleShowCommand(planFile: string | undefined, options: a
       log('─'.repeat(60));
 
       if (!options.full) {
-        const lines = plan.details.split('\n');
+        const lines = plan.details.split('\\n');
         if (lines.length > 20) {
           const truncatedLines = lines.slice(0, 20);
-          log(truncatedLines.join('\n'));
+          log(truncatedLines.join('\\n'));
           log(chalk.gray(`... and ${lines.length - 20} more lines (use --full to see all)`));
         } else {
           log(plan.details);
@@ -333,7 +269,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
         const sourceLabel = (n.source || '').trim();
         if (options.full) {
           // Show full text, preserving line breaks with indentation
-          const lines = text.split('\n');
+          const lines = text.split('\\n');
           const header = `  • ${chalk.gray(ts)}${sourceLabel.length ? `  [${sourceLabel}]` : ''}`;
           log(header);
           if (text.trim().length > 0) {
@@ -398,7 +334,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
           task.steps.forEach((step, stepIdx) => {
             const stepIcon = step.done ? '✓' : '○';
             const stepColor = step.done ? chalk.green : chalk.rgb(170, 170, 170);
-            const prompt = step.prompt.split('\n')[0];
+            const prompt = step.prompt.split('\\n')[0];
             const truncated = prompt.length > 60 ? prompt.substring(0, 60) + '...' : prompt;
             log(`    ${stepIcon} ${stepColor(`Step ${stepIdx + 1}: ${truncated}`)}`);
           });
@@ -419,7 +355,159 @@ export async function handleShowCommand(planFile: string | undefined, options: a
       log('─'.repeat(60));
       plan.changedFiles.forEach((file) => log(`  • ${file}`));
     }
+
+    outputLines = 50; // Approximate for full display
   }
+
+  return outputLines;
+}
+
+export async function handleShowCommand(planFile: string | undefined, options: any, command: any) {
+  const globalOpts = command.parent.opts();
+
+  const config = await loadEffectiveConfig(globalOpts.config);
+
+  let resolvedPlanFile: string;
+
+  if (options.nextReady) {
+    // Validate that --next-ready has a value (parent plan ID or file path)
+    if (!options.nextReady || options.nextReady === true || options.nextReady.trim() === '') {
+      throw new Error('--next-ready requires a parent plan ID or file path');
+    }
+
+    // Find the next ready dependency of the specified parent plan
+    const tasksDir = await resolveTasksDir(config);
+    // Convert string ID to number or resolve plan file to get numeric ID
+    let parentPlanId: number;
+    const planIdNumber = parseInt(options.nextReady, 10);
+    if (!isNaN(planIdNumber)) {
+      parentPlanId = planIdNumber;
+    } else {
+      // Try to resolve as a file path and get the plan ID
+      const planFile = await resolvePlanFile(options.nextReady, globalOpts.config);
+      const plan = await readPlanFile(planFile);
+      if (!plan.id || typeof plan.id !== 'number') {
+        throw new Error(`Plan file ${planFile} does not have a valid numeric ID`);
+      }
+      parentPlanId = plan.id;
+    }
+
+    const result = await findNextReadyDependency(parentPlanId, tasksDir, true);
+
+    if (!result.plan) {
+      log(result.message);
+      return;
+    }
+
+    log(chalk.green(`Found ready plan: ${result.plan.id} - ${result.plan.title}`));
+    resolvedPlanFile = result.plan.filename;
+  } else if (options.next || options.current) {
+    // Find the next ready plan or current plan
+    const tasksDir = await resolveTasksDir(config);
+    const plan = await findNextPlan(tasksDir, {
+      includePending: true,
+      includeInProgress: options.current,
+    });
+
+    if (!plan) {
+      if (options.current) {
+        log('No current plans found. No plans are in progress or ready to be implemented.');
+      } else {
+        log('No ready plans found. All pending plans have incomplete dependencies.');
+      }
+      return;
+    }
+
+    const message = options.current
+      ? `Found current plan: ${plan.id}`
+      : `Found next ready plan: ${plan.id}`;
+    log(chalk.green(message));
+    resolvedPlanFile = plan.filename;
+  } else {
+    if (!planFile) {
+      throw new Error(
+        'Please provide a plan file or use --next/--current/--next-ready to find a plan'
+      );
+    }
+    resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
+  }
+
+  // Get all plans first to check dependencies
+  const tasksDir = await resolveTasksDir(config);
+  const { plans: allPlans } = await readAllPlans(tasksDir);
+
+  // Find the specific plan from the collection
+  let plan: PlanSchema | undefined;
+  for (const p of allPlans.values()) {
+    if (p.filename === resolvedPlanFile) {
+      plan = p;
+      break;
+    }
+  }
+
+  if (!plan) {
+    // Fallback to reading the file directly if not found in collection
+    plan = await readPlanFile(resolvedPlanFile);
+  }
+
+  // Watch mode implementation
+  if (options.watch) {
+    // Force short mode for watch
+    options.short = true;
+
+    let previousLineCount = 0;
+    let watchInterval: NodeJS.Timeout;
+
+    // Handle Ctrl+C gracefully
+    const handleSigint = () => {
+      if (watchInterval) {
+        clearInterval(watchInterval);
+      }
+      log('\n' + chalk.gray('Watch mode stopped.'));
+      process.exit(0);
+    };
+
+    process.on('SIGINT', handleSigint);
+
+    // Function to refresh the display
+    const refreshDisplay = async () => {
+      try {
+        // Move cursor up by the number of lines from previous output
+        if (previousLineCount > 0) {
+          process.stdout.write(`\x1b[${previousLineCount}A`);
+          // Removed since it causes flicker.
+          // process.stdout.write('\x1b[0J'); // Clear from cursor to end
+        }
+
+        // Re-read the plan data for updates
+        const updatedPlan = await readPlanFile(resolvedPlanFile);
+        const { plans: updatedAllPlans } = await readAllPlans(tasksDir);
+
+        // Display updated information
+        previousLineCount = await displayPlanInfo(
+          updatedPlan,
+          resolvedPlanFile,
+          updatedAllPlans,
+          options
+        );
+      } catch (error) {
+        // If there's an error reading the plan, just continue with the existing data
+        previousLineCount = await displayPlanInfo(plan, resolvedPlanFile, allPlans, options);
+      }
+    };
+
+    // Initial display
+    previousLineCount = await displayPlanInfo(plan, resolvedPlanFile, allPlans, options);
+
+    // Set up interval to refresh every 5 seconds
+    watchInterval = setInterval(refreshDisplay, 5000);
+
+    // Keep the process alive
+    return;
+  }
+
+  // Normal (non-watch) display
+  await displayPlanInfo(plan, resolvedPlanFile, allPlans, options);
 
   log('');
 

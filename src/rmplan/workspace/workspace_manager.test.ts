@@ -1070,7 +1070,12 @@ describe('createWorkspace', () => {
     expect(result?.taskId).toBe(taskId);
 
     // Verify cp was called
-    expect(mockSpawnAndLogOutput).toHaveBeenCalledWith(['cp', '-r', sourceDirectory, targetClonePath]);
+    expect(mockSpawnAndLogOutput).toHaveBeenCalledWith([
+      'cp',
+      '-r',
+      sourceDirectory,
+      targetClonePath,
+    ]);
 
     // Verify git init was called
     expect(mockSpawnAndLogOutput).toHaveBeenCalledWith(['git', 'init'], { cwd: targetClonePath });
@@ -1141,7 +1146,12 @@ describe('createWorkspace', () => {
     expect(result?.taskId).toBe(taskId);
 
     // Verify cp -c was called (copy-on-write)
-    expect(mockSpawnAndLogOutput).toHaveBeenCalledWith(['cp', '-c', sourceDirectory, targetClonePath]);
+    expect(mockSpawnAndLogOutput).toHaveBeenCalledWith([
+      'cp',
+      '-c',
+      sourceDirectory,
+      targetClonePath,
+    ]);
   });
 
   test('createWorkspace with missing source directory should fail', async () => {
@@ -1203,30 +1213,29 @@ describe('createWorkspace', () => {
     mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
       exitCode: 0,
       stdout: '',
-      stderr: ''
+      stderr: '',
     }));
 
     // Mock git remote get-url (from setupGitRemote - to check if origin exists)
     mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
       exitCode: 0, // Simulate that origin already exists
       stdout: 'https://github.com/existing/repo.git',
-      stderr: ''
+      stderr: '',
     }));
 
     // Mock git remote set-url (from setupGitRemote - because origin exists)
     mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
       exitCode: 0,
       stdout: '',
-      stderr: ''
+      stderr: '',
     }));
 
     // Mock branch creation to succeed
     mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
       exitCode: 0,
       stdout: '',
-      stderr: ''
+      stderr: '',
     }));
-
 
     // Act
     const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
@@ -1234,6 +1243,11 @@ describe('createWorkspace', () => {
     // Verify
     expect(result).not.toBeNull();
     // Verify cp was called with resolved absolute path
-    expect(mockSpawnAndLogOutput).toHaveBeenCalledWith(['cp', '-r', sourceDirectory, targetClonePath]);
+    expect(mockSpawnAndLogOutput).toHaveBeenCalledWith([
+      'cp',
+      '-r',
+      sourceDirectory,
+      targetClonePath,
+    ]);
   });
 });

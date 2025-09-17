@@ -153,7 +153,8 @@ export async function findWorkspacesByRepoUrl(
   const normalizedSearchUrl = normalizeUrl(repositoryUrl);
 
   return Object.values(data).filter(
-    (workspace) => workspace.repositoryUrl && normalizeUrl(workspace.repositoryUrl) === normalizedSearchUrl
+    (workspace) =>
+      workspace.repositoryUrl && normalizeUrl(workspace.repositoryUrl) === normalizedSearchUrl
   );
 }
 

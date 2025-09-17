@@ -122,7 +122,12 @@ export async function handleWorkspaceAddCommand(
   }
 
   // Create the workspace
-  const workspace = await createWorkspace(gitRoot, workspaceId, resolvedPlanFilePath, effectiveConfig);
+  const workspace = await createWorkspace(
+    gitRoot,
+    workspaceId,
+    resolvedPlanFilePath,
+    effectiveConfig
+  );
 
   if (!workspace) {
     throw new Error('Failed to create workspace');

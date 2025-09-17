@@ -25,7 +25,11 @@ export interface Workspace {
 /**
  * Clone using git clone command
  */
-async function cloneWithGit(repositoryUrl: string, targetPath: string, mainRepoRoot: string): Promise<boolean> {
+async function cloneWithGit(
+  repositoryUrl: string,
+  targetPath: string,
+  mainRepoRoot: string
+): Promise<boolean> {
   try {
     log(`Cloning repository ${repositoryUrl} to ${targetPath}`);
     const { exitCode, stderr } = await spawnAndLogOutput(
@@ -60,9 +64,12 @@ async function cloneWithCp(sourceDir: string, targetPath: string): Promise<boole
     }
 
     // Initialize git repository in the copied directory
-    const { exitCode: gitInitCode, stderr: gitInitStderr } = await spawnAndLogOutput(['git', 'init'], {
-      cwd: targetPath,
-    });
+    const { exitCode: gitInitCode, stderr: gitInitStderr } = await spawnAndLogOutput(
+      ['git', 'init'],
+      {
+        cwd: targetPath,
+      }
+    );
 
     if (gitInitCode !== 0) {
       log(`Failed to initialize git repository: ${gitInitStderr}`);
@@ -98,9 +105,12 @@ async function cloneWithMacCow(sourceDir: string, targetPath: string): Promise<b
     }
 
     // Initialize git repository in the copied directory
-    const { exitCode: gitInitCode, stderr: gitInitStderr } = await spawnAndLogOutput(['git', 'init'], {
-      cwd: targetPath,
-    });
+    const { exitCode: gitInitCode, stderr: gitInitStderr } = await spawnAndLogOutput(
+      ['git', 'init'],
+      {
+        cwd: targetPath,
+      }
+    );
 
     if (gitInitCode !== 0) {
       log(`Failed to initialize git repository: ${gitInitStderr}`);
@@ -126,24 +136,33 @@ async function setupGitRemote(targetPath: string, repositoryUrl?: string): Promi
 
   try {
     // Check if origin remote already exists
-    const { exitCode: checkRemoteCode } = await spawnAndLogOutput(['git', 'remote', 'get-url', 'origin'], {
-      cwd: targetPath,
-    });
+    const { exitCode: checkRemoteCode } = await spawnAndLogOutput(
+      ['git', 'remote', 'get-url', 'origin'],
+      {
+        cwd: targetPath,
+      }
+    );
 
     if (checkRemoteCode === 0) {
       // Remote already exists, update it
-      const { exitCode, stderr } = await spawnAndLogOutput(['git', 'remote', 'set-url', 'origin', repositoryUrl], {
-        cwd: targetPath,
-      });
+      const { exitCode, stderr } = await spawnAndLogOutput(
+        ['git', 'remote', 'set-url', 'origin', repositoryUrl],
+        {
+          cwd: targetPath,
+        }
+      );
 
       if (exitCode !== 0) {
         log(`Warning: Failed to update git remote: ${stderr}`);
       }
     } else {
       // Add new remote
-      const { exitCode, stderr } = await spawnAndLogOutput(['git', 'remote', 'add', 'origin', repositoryUrl], {
-        cwd: targetPath,
-      });
+      const { exitCode, stderr } = await spawnAndLogOutput(
+        ['git', 'remote', 'add', 'origin', repositoryUrl],
+        {
+          cwd: targetPath,
+        }
+      );
 
       if (exitCode !== 0) {
         log(`Warning: Failed to add git remote: ${stderr}`);
@@ -273,10 +292,11 @@ export async function createWorkspace(
   // Extract repo name from URL or source directory
   let repoName: string;
   if (cloneMethod === 'git' && repositoryUrl) {
-    repoName = repositoryUrl
-      .split('/')
-      .pop()
-      ?.replace(/\.git$/, '') || 'repo';
+    repoName =
+      repositoryUrl
+        .split('/')
+        .pop()
+        ?.replace(/\.git$/, '') || 'repo';
   } else if (sourceDirectory) {
     repoName = path.basename(sourceDirectory);
   } else {
