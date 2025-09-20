@@ -205,3 +205,29 @@ describe('CodexCliExecutor - failure detection across agents', () => {
     expect(out.failureDetails?.problems).toContain('conflict');
   });
 });
+
+test('CodexCliExecutor - parseReviewerVerdict', async () => {
+  const { parseReviewerVerdict } = await import('./codex_cli.ts');
+  const testCases = [
+    ['**VERDICT:** ACCEPTABLE', 'ACCEPTABLE'],
+    ['**VERDICT**: ACCEPTABLE', 'ACCEPTABLE'],
+    ['**VERDICT:** NEEDS_FIXES', 'NEEDS_FIXES'],
+    ['**VERDICT:**', 'UNKNOWN'],
+    ['VERDICT: ACCEPTABLE', 'ACCEPTABLE'],
+    ['VERDICT: NEEDS_FIXES', 'NEEDS_FIXES'],
+    ['VERDICT: ', 'UNKNOWN'],
+    ['VERDICT: ACCEPTABLE\n', 'ACCEPTABLE'],
+    ['VERDICT: NEEDS_FIXES', 'NEEDS_FIXES'],
+    ['VERDICT: ACCEPTABLE', 'ACCEPTABLE'],
+    [
+      ` **Status**: RESOLVED
+**VERDICT:** ACCEPTABLE\n`,
+      'ACCEPTABLE',
+    ],
+  ];
+
+  for (const [input, expected] of testCases) {
+    const result = parseReviewerVerdict(input) as string;
+    expect(result, input).toBe(expected);
+  }
+});

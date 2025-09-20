@@ -247,7 +247,7 @@ export class CodexCliExecutor implements Executor {
       }
 
       // Parse and log verdict
-      const verdict = this.parseReviewerVerdict(reviewerOutput);
+      const verdict = parseReviewerVerdict(reviewerOutput);
       if (verdict === 'ACCEPTABLE') {
         log('Review verdict: ACCEPTABLE');
         const aggregated = buildAggregatedOutput();
@@ -347,7 +347,7 @@ export class CodexCliExecutor implements Executor {
           events.push({ type: 'reviewer', message: rerunReviewerOutput });
 
           // Parse verdict from the latest reviewer output (not the initial one)
-          const verdict = this.parseReviewerVerdict(rerunReviewerOutput);
+          const verdict = parseReviewerVerdict(rerunReviewerOutput);
 
           /*
           const newAnalysis =
@@ -360,6 +360,13 @@ export class CodexCliExecutor implements Executor {
                   fixerOutput,
                   repoReviewDoc: reviewDoc,
                 });
+          */
+          // Disabled above for now since review analysis is skipping real issues.
+
+          const newAnalysis = {
+            needs_fixes: verdict !== 'ACCEPTABLE',
+            fix_instructions: rerunReviewerOutput,
+          };
 
           if (!newAnalysis.needs_fixes) {
             log(`Review verdict after fixes (iteration ${iter}): ACCEPTABLE`);
@@ -367,13 +374,6 @@ export class CodexCliExecutor implements Executor {
             if (aggregated != null) return aggregated;
             return;
           }
-          */
-
-          // Disabled above for now since review analysis is skipping real issues.
-          const newAnalysis = {
-            needs_fixes: verdict !== 'ACCEPTABLE',
-            fix_instructions: rerunReviewerOutput,
-          };
 
           log(`Review verdict after fixes (iteration ${iter}): NEEDS_FIXES`);
           if (newAnalysis.fix_instructions) {
@@ -600,18 +600,6 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
 `;
   }
 
-  /** Parse the reviewer verdict from output text */
-  private parseReviewerVerdict(output: string): 'ACCEPTABLE' | 'NEEDS_FIXES' | 'UNKNOWN' {
-    // Look for a line like: "VERDICT: ACCEPTABLE" or "VERDICT: NEEDS_FIXES"
-    const regex = /\bVERDICT.*\s+(ACCEPTABLE|NEEDS_FIXES)\b/i;
-    const m = output.match(regex);
-    if (!m) return 'UNKNOWN';
-    const v = m[1].toUpperCase();
-    if (v === 'ACCEPTABLE') return 'ACCEPTABLE';
-    if (v === 'NEEDS_FIXES') return 'NEEDS_FIXES';
-    return 'UNKNOWN';
-  }
-
   /**
    * Runs a single-step Codex execution with JSON streaming enabled and returns the final agent message.
    */
@@ -810,4 +798,15 @@ ${FAILED_PROTOCOL_INSTRUCTIONS}`;
       return undefined;
     }
   }
+}
+/** Parse the reviewer verdict from output text */
+export function parseReviewerVerdict(output: string): 'ACCEPTABLE' | 'NEEDS_FIXES' | 'UNKNOWN' {
+  // Look for a line like: "VERDICT: ACCEPTABLE" or "VERDICT: NEEDS_FIXES"
+  const regex = /\bVERDICT.*\s+(ACCEPTABLE|NEEDS_FIXES)\b/i;
+  const m = output.match(regex);
+  if (!m) return 'UNKNOWN';
+  const v = m[1].toUpperCase();
+  if (v === 'ACCEPTABLE') return 'ACCEPTABLE';
+  if (v === 'NEEDS_FIXES') return 'NEEDS_FIXES';
+  return 'UNKNOWN';
 }
