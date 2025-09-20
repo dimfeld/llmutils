@@ -260,8 +260,10 @@ export class CodexCliExecutor implements Executor {
           log(`Failed to parse review verdict, treating as 'NEEDS_FIXES'`);
         }
 
-        // Analyze whether the flagged issues are in-scope and require fixes now
         const reviewDoc = await this.loadRepositoryReviewDoc(gitRoot);
+
+        /*
+        // Analyze whether the flagged issues are in-scope and require fixes now
         const analysis = await analyzeReviewFeedback({
           reviewerOutput: reviewerOutput,
           completedTasks: initiallyCompleted.map((t) => t.title),
@@ -283,6 +285,10 @@ export class CodexCliExecutor implements Executor {
         if (analysis.fix_instructions) {
           log(`Fix instructions: ${analysis.fix_instructions}`);
         }
+        */
+        // Disabled the above and we're just using the raw reviewer output for now.
+        // The review analysis step is not smart enough and is skipping real feedback.
+        let fixInstructions = reviewerOutput;
 
         // Implement fix-and-review loop (up to 5 iterations)
         const maxFixIterations = 5;
@@ -343,6 +349,7 @@ export class CodexCliExecutor implements Executor {
           // Parse verdict from the latest reviewer output (not the initial one)
           const verdict = this.parseReviewerVerdict(rerunReviewerOutput);
 
+          /*
           const newAnalysis =
             verdict === 'ACCEPTABLE'
               ? { needs_fixes: false }
@@ -360,6 +367,13 @@ export class CodexCliExecutor implements Executor {
             if (aggregated != null) return aggregated;
             return;
           }
+          */
+
+          // Disabled above for now since review analysis is skipping real issues.
+          const newAnalysis = {
+            needs_fixes: verdict !== 'ACCEPTABLE',
+            fix_instructions: rerunReviewerOutput,
+          };
 
           log(`Review verdict after fixes (iteration ${iter}): NEEDS_FIXES`);
           if (newAnalysis.fix_instructions) {
