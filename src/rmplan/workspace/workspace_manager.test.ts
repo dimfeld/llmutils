@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach, mock, spyOn } from 'bun:test';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
@@ -1005,16 +1005,17 @@ describe('createWorkspace', () => {
     expect(calledCommands[2].overrideGitRoot).toBe(expectedClonePath);
   });
 
-  test('createWorkspace with cp clone method', async () => {
-    // Setup
+  test('createWorkspace with cp clone method copies git-tracked files only', async () => {
     const taskId = 'task-cp-test';
     const sourceDirectory = path.join(testTempDir, 'source');
     const cloneLocation = path.join(testTempDir, 'clones');
     const targetClonePath = path.join(cloneLocation, 'source-task-cp-test');
 
-    // Create source directory
     await fs.mkdir(sourceDirectory, { recursive: true });
-    await fs.writeFile(path.join(sourceDirectory, 'test.txt'), 'test content');
+    await fs.writeFile(path.join(sourceDirectory, 'tracked.txt'), 'tracked content');
+    await fs.writeFile(path.join(sourceDirectory, 'ignored.log'), 'ignored content');
+    await fs.mkdir(path.join(sourceDirectory, '.git'), { recursive: true });
+    await fs.writeFile(path.join(sourceDirectory, '.git', 'config'), 'repo config');
 
     const config: RmplanConfig = {
       workspaceCreation: {
@@ -1025,78 +1026,226 @@ describe('createWorkspace', () => {
       },
     };
 
-    // Mock cp command to succeed
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => {
-      // Simulate cp by creating the target directory and copying content
-      await fs.mkdir(targetClonePath, { recursive: true });
-      await fs.writeFile(path.join(targetClonePath, 'test.txt'), 'test content');
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[], options?: { cwd?: string }) => {
+      if (cmd[0] === 'git' && cmd[1] === 'ls-files') {
+        expect(options?.cwd).toBe(sourceDirectory);
+        return { exitCode: 0, stdout: 'tracked.txt\u0000', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'init') {
+        expect(options?.cwd).toBe(targetClonePath);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'remote' && cmd[2] === 'get-url') {
+        return { exitCode: 1, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'remote' && cmd[2] === 'add') {
+        expect(cmd).toEqual([
+          'git',
+          'remote',
+          'add',
+          'origin',
+          'https://github.com/example/repo.git',
+        ]);
+        expect(options?.cwd).toBe(targetClonePath);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'checkout') {
+        expect(options?.cwd).toBe(targetClonePath);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      // Default success for any other git command
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
-    // Mock git init to succeed
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-    }));
-
-    // Mock git remote get-url to fail (no existing remote)
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
-      exitCode: 1,
-      stdout: '',
-      stderr: '',
-    }));
-
-    // Mock git remote add to succeed
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-    }));
-
-    // Mock branch creation to succeed
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-    }));
-
-    // Act
     const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
 
-    // Verify
     expect(result).not.toBeNull();
     expect(result?.path).toBe(targetClonePath);
-    expect(result?.taskId).toBe(taskId);
 
-    // Verify cp was called
-    expect(mockSpawnAndLogOutput).toHaveBeenCalledWith([
-      'cp',
-      '-r',
-      sourceDirectory,
-      targetClonePath,
-    ]);
+    const trackedCopy = await fs.readFile(path.join(targetClonePath, 'tracked.txt'), 'utf-8');
+    expect(trackedCopy).toBe('tracked content');
 
-    // Verify git init was called
-    expect(mockSpawnAndLogOutput).toHaveBeenCalledWith(['git', 'init'], { cwd: targetClonePath });
+    await expect(fs.stat(path.join(targetClonePath, 'ignored.log'))).rejects.toThrow();
 
-    // Verify git remote add was called
-    expect(mockSpawnAndLogOutput).toHaveBeenCalledWith(
-      ['git', 'remote', 'add', 'origin', 'https://github.com/example/repo.git'],
-      { cwd: targetClonePath }
+    const copiedGitConfig = await fs.readFile(
+      path.join(targetClonePath, '.git', 'config'),
+      'utf-8'
     );
+    expect(copiedGitConfig).toBe('repo config');
+
+    const gitLsFilesCall = mockSpawnAndLogOutput.mock.calls.find(
+      (call) => call[0][0] === 'git' && call[0][1] === 'ls-files'
+    );
+    expect(gitLsFilesCall).toBeDefined();
   });
 
-  test('createWorkspace with mac-cow clone method should succeed on macOS', async () => {
-    // Setup
+  test('createWorkspace includes copyAdditionalGlobs when provided', async () => {
+    const taskId = 'task-cp-extra-glob';
+    const sourceDirectory = path.join(testTempDir, 'source');
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'source-task-cp-extra-glob');
+
+    await fs.mkdir(sourceDirectory, { recursive: true });
+    await fs.writeFile(path.join(sourceDirectory, 'tracked.txt'), 'tracked content');
+    await fs.writeFile(path.join(sourceDirectory, 'ignored.log'), 'ignored content');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        cloneMethod: 'cp',
+        sourceDirectory,
+        cloneLocation,
+        repositoryUrl: 'https://github.com/example/repo.git',
+        copyAdditionalGlobs: ['ignored.log'],
+      },
+    };
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[], options?: { cwd?: string }) => {
+      if (cmd[0] === 'git' && cmd[1] === 'ls-files' && !cmd.includes('--others')) {
+        return { exitCode: 0, stdout: 'tracked.txt\u0000', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'ls-files' && cmd.includes('--others')) {
+        expect(cmd).toContain('ignored.log');
+        return { exitCode: 0, stdout: 'ignored.log\u0000', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'init') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'remote' && cmd[2] === 'get-url') {
+        return { exitCode: 1, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'remote' && cmd[2] === 'add') {
+        expect(options?.cwd).toBe(targetClonePath);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'checkout') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+
+    expect(result).not.toBeNull();
+    const copiedTracked = await fs.readFile(path.join(targetClonePath, 'tracked.txt'), 'utf-8');
+    const copiedIgnored = await fs.readFile(path.join(targetClonePath, 'ignored.log'), 'utf-8');
+
+    expect(copiedTracked).toBe('tracked content');
+    expect(copiedIgnored).toBe('ignored content');
+
+    const lsFilesCalls = mockSpawnAndLogOutput.mock.calls.filter(
+      (call) => call[0][0] === 'git' && call[0][1] === 'ls-files'
+    );
+    expect(lsFilesCalls).toHaveLength(2);
+  });
+
+  test('createWorkspace copies jj repository metadata when present', async () => {
+    const taskId = 'task-cp-jj';
+    const sourceDirectory = path.join(testTempDir, 'source');
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'source-task-cp-jj');
+
+    await fs.mkdir(path.join(sourceDirectory, '.jj'), { recursive: true });
+    await fs.writeFile(path.join(sourceDirectory, '.jj', 'repo'), 'jj store');
+    await fs.writeFile(path.join(sourceDirectory, 'tracked.txt'), 'tracked');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        cloneMethod: 'cp',
+        sourceDirectory,
+        cloneLocation,
+      },
+    };
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[], options?: { cwd?: string }) => {
+      if (cmd[0] === 'git' && cmd[1] === 'ls-files') {
+        expect(options?.cwd).toBe(sourceDirectory);
+        return { exitCode: 0, stdout: 'tracked.txt\u0000', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'init') {
+        expect(options?.cwd).toBe(targetClonePath);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'checkout') {
+        expect(options?.cwd).toBe(targetClonePath);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+
+    expect(result).not.toBeNull();
+    const copiedJjRepo = await fs.readFile(path.join(targetClonePath, '.jj', 'repo'), 'utf-8');
+    expect(copiedJjRepo).toBe('jj store');
+  });
+
+  test('createWorkspace copies gitdir pointer when .git is a file', async () => {
+    const taskId = 'task-cp-git-pointer';
+    const sourceDirectory = path.join(testTempDir, 'source');
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'source-task-cp-git-pointer');
+
+    await fs.mkdir(sourceDirectory, { recursive: true });
+    await fs.writeFile(path.join(sourceDirectory, '.git'), 'gitdir: ../actual.git');
+    await fs.writeFile(path.join(sourceDirectory, 'tracked.txt'), 'tracked');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        cloneMethod: 'cp',
+        sourceDirectory,
+        cloneLocation,
+      },
+    };
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[], options?: { cwd?: string }) => {
+      if (cmd[0] === 'git' && cmd[1] === 'ls-files') {
+        return { exitCode: 0, stdout: 'tracked.txt\u0000', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'init') {
+        expect(options?.cwd).toBe(targetClonePath);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'checkout') {
+        expect(options?.cwd).toBe(targetClonePath);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+
+    expect(result).not.toBeNull();
+    const gitPointer = await fs.readFile(path.join(targetClonePath, '.git'), 'utf-8');
+    expect(gitPointer).toBe('gitdir: ../actual.git');
+  });
+
+  test('createWorkspace with mac-cow clone method prefers clone-on-write copy', async () => {
     const taskId = 'task-mac-cow-test';
     const sourceDirectory = path.join(testTempDir, 'source');
     const cloneLocation = path.join(testTempDir, 'clones');
     const targetClonePath = path.join(cloneLocation, 'source-task-mac-cow-test');
 
-    // Create source directory
     await fs.mkdir(sourceDirectory, { recursive: true });
     await fs.writeFile(path.join(sourceDirectory, 'test.txt'), 'test content');
+
+    const platformSpy = spyOn(os, 'platform').mockReturnValue('darwin');
 
     const config: RmplanConfig = {
       workspaceCreation: {
@@ -1106,52 +1255,39 @@ describe('createWorkspace', () => {
       },
     };
 
-    // Mock os.platform to return non-macOS - this needs to be done differently
-    // Since the module is already loaded, we'll test the actual fallback by testing the cp -c failure
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[], options?: { cwd?: string }) => {
+      if (cmd[0] === 'git' && cmd[1] === 'remote' && cmd[2] === 'get-url') {
+        return { exitCode: 1, stdout: '', stderr: 'no remote origin' };
+      }
 
-    // Mock git remote get-url to try to infer repository URL from source (will fail)
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
-      exitCode: 1,
-      stdout: '',
-      stderr: 'no remote origin',
-    }));
+      if (cmd[0] === 'git' && cmd[1] === 'ls-files') {
+        expect(options?.cwd).toBe(sourceDirectory);
+        return { exitCode: 0, stdout: 'test.txt\u0000', stderr: '' };
+      }
 
-    // Mock cp -c command to succeed
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => {
-      await fs.mkdir(targetClonePath, { recursive: true });
-      await fs.writeFile(path.join(targetClonePath, 'test.txt'), 'test content');
+      if (cmd[0] === 'git' && cmd[1] === 'init') {
+        expect(options?.cwd).toBe(targetClonePath);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'checkout') {
+        expect(options?.cwd).toBe(targetClonePath);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
-    // Mock git init to succeed
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-    }));
-
-    // Mock branch creation to succeed
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-    }));
-
-    // Act
     const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
 
-    // Verify
     expect(result).not.toBeNull();
     expect(result?.path).toBe(targetClonePath);
-    expect(result?.taskId).toBe(taskId);
+    expect(mockLog).not.toHaveBeenCalledWith('Falling back to regular copy method');
 
-    // Verify cp -c was called (copy-on-write)
-    expect(mockSpawnAndLogOutput).toHaveBeenCalledWith([
-      'cp',
-      '-c',
-      sourceDirectory,
-      targetClonePath,
-    ]);
+    const copiedContent = await fs.readFile(path.join(targetClonePath, 'test.txt'), 'utf-8');
+    expect(copiedContent).toBe('test content');
+
+    platformSpy.mockRestore();
   });
 
   test('createWorkspace with missing source directory should fail', async () => {
@@ -1177,77 +1313,72 @@ describe('createWorkspace', () => {
   });
 
   test('createWorkspace with relative source directory path should resolve correctly', async () => {
-    // Setup
     const taskId = 'task-relative-source';
     const sourceSubdir = 'source';
     const sourceDirectory = path.join(mainRepoRoot, sourceSubdir);
     const cloneLocation = path.join(testTempDir, 'clones');
     const targetClonePath = path.join(cloneLocation, 'source-task-relative-source');
 
-    // Create source directory
     await fs.mkdir(sourceDirectory, { recursive: true });
     await fs.writeFile(path.join(sourceDirectory, 'test.txt'), 'test content');
 
     const config: RmplanConfig = {
       workspaceCreation: {
         cloneMethod: 'cp',
-        sourceDirectory: sourceSubdir, // Relative path
+        sourceDirectory: sourceSubdir,
         cloneLocation,
       },
     };
 
-    // Mock git remote get-url to infer repository URL from source
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
-      exitCode: 0,
-      stdout: 'https://github.com/example/repo.git',
-      stderr: '',
-    }));
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[], options?: { cwd?: string }) => {
+      if (
+        cmd[0] === 'git' &&
+        cmd[1] === 'remote' &&
+        cmd[2] === 'get-url' &&
+        options?.cwd === sourceDirectory
+      ) {
+        return { exitCode: 0, stdout: 'https://github.com/example/repo.git', stderr: '' };
+      }
 
-    // Mock cp command to succeed
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => {
-      await fs.mkdir(targetClonePath, { recursive: true });
+      if (cmd[0] === 'git' && cmd[1] === 'ls-files') {
+        expect(options?.cwd).toBe(sourceDirectory);
+        return { exitCode: 0, stdout: 'test.txt\u0000', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'init') {
+        expect(options?.cwd).toBe(targetClonePath);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (
+        cmd[0] === 'git' &&
+        cmd[1] === 'remote' &&
+        cmd[2] === 'get-url' &&
+        options?.cwd === targetClonePath
+      ) {
+        return { exitCode: 0, stdout: 'https://github.com/existing/repo.git', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'remote' && cmd[2] === 'set-url') {
+        expect(options?.cwd).toBe(targetClonePath);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'checkout') {
+        expect(options?.cwd).toBe(targetClonePath);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
-    // Mock git init to succeed
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-    }));
-
-    // Mock git remote get-url (from setupGitRemote - to check if origin exists)
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
-      exitCode: 0, // Simulate that origin already exists
-      stdout: 'https://github.com/existing/repo.git',
-      stderr: '',
-    }));
-
-    // Mock git remote set-url (from setupGitRemote - because origin exists)
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-    }));
-
-    // Mock branch creation to succeed
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-    }));
-
-    // Act
     const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
 
-    // Verify
     expect(result).not.toBeNull();
-    // Verify cp was called with resolved absolute path
-    expect(mockSpawnAndLogOutput).toHaveBeenCalledWith([
-      'cp',
-      '-r',
-      sourceDirectory,
-      targetClonePath,
-    ]);
+    expect(result?.path).toBe(targetClonePath);
+    const copiedContent = await fs.readFile(path.join(targetClonePath, 'test.txt'), 'utf-8');
+    expect(copiedContent).toBe('test content');
+
+    await fs.rm(cloneLocation, { recursive: true, force: true });
   });
 });

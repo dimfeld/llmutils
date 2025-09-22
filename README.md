@@ -1044,10 +1044,13 @@ The `workspaceCreation` section allows you to configure how `rmplan agent` autom
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
 
 workspaceCreation:
-  method: 'rmplan'
-  repositoryUrl: 'https://github.com/username/repo.git' # Optional, inferred from current repo if not specified
+  cloneMethod: 'cp' # or git/mac-cow
+  sourceDirectory: '/path/to/source/repo' # Required for cp/mac-cow
+  repositoryUrl: 'https://github.com/username/repo.git' # Optional, inferred if not specified
   cloneLocation: '/path/to/workspaces' # Required: location for new workspaces
-  postCloneCommands: # Commands to run after cloning (optional)
+  copyAdditionalGlobs:
+    - '.env.local' # Optional files to copy even if ignored by Git
+  postCloneCommands:
     - 'npm install'
     - 'npm run build'
 ```
@@ -1059,6 +1062,9 @@ workspaceCreation:
   - Creates a task-specific branch
   - Runs configurable post-clone commands
   - Tracks workspaces in `~/.config/rmfilter/workspaces.json`
+- **Git-aware Copy Options** (cp/mac-cow):
+  - Copies only files tracked by Git, skipping `.gitignore` entries by default
+  - Use `copyAdditionalGlobs` to include extra files (e.g., local env files) when needed
 
 - **Required Configuration**:
   - `cloneLocation` must be specified in the configuration

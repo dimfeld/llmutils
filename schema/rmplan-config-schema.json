@@ -229,6 +229,13 @@
             ],
             "additionalProperties": false
           }
+        },
+        "copyAdditionalGlobs": {
+          "description": "Additional glob patterns to copy when using filesystem-based clone methods",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "additionalProperties": false

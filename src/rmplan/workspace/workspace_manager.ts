@@ -1,4 +1,5 @@
 import * as fs from 'node:fs/promises';
+import { constants as fsConstants, type Dirent, type Stats } from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { debugLog, log } from '../../logging.js';
@@ -20,6 +21,220 @@ export interface Workspace {
   planFilePathInWorkspace?: string;
   /** Unique identifier for the workspace */
   taskId: string;
+}
+
+const COPY_FILE_CLONE_FLAG = fsConstants?.COPYFILE_FICLONE;
+
+function shouldRetryWithoutClone(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  const err = error as NodeJS.ErrnoException;
+  if (!err.code) {
+    return false;
+  }
+
+  return (
+    err.code === 'ENOTSUP' ||
+    err.code === 'EXDEV' ||
+    err.code === 'EINVAL' ||
+    err.code === 'ERR_FS_COPYFILE'
+  );
+}
+
+async function copyFilePreservingMode(
+  sourcePath: string,
+  destinationPath: string,
+  mode: number,
+  useCloneFlag: boolean
+) {
+  if (useCloneFlag && COPY_FILE_CLONE_FLAG !== undefined) {
+    try {
+      await fs.copyFile(sourcePath, destinationPath, COPY_FILE_CLONE_FLAG);
+    } catch (error) {
+      if (shouldRetryWithoutClone(error)) {
+        debugLog('Falling back to standard copy for', sourcePath, '->', destinationPath);
+        await fs.copyFile(sourcePath, destinationPath);
+      } else {
+        throw error;
+      }
+    }
+  } else {
+    await fs.copyFile(sourcePath, destinationPath);
+  }
+
+  await fs.chmod(destinationPath, mode);
+}
+
+async function collectFilesToCopy(
+  sourceDir: string,
+  extraGlobs: string[] | undefined
+): Promise<string[] | null> {
+  const files = new Set<string>();
+
+  const trackedResult = await spawnAndLogOutput(['git', 'ls-files', '-z', '--full-name'], {
+    cwd: sourceDir,
+    quiet: true,
+  });
+
+  if (trackedResult.exitCode !== 0) {
+    log(`Failed to list tracked files for workspace copy: ${trackedResult.stderr}`);
+    return null;
+  }
+
+  for (const entry of trackedResult.stdout.split('\0')) {
+    if (entry) {
+      files.add(entry);
+    }
+  }
+
+  if (extraGlobs?.length) {
+    const extraResult = await spawnAndLogOutput(
+      [
+        'git',
+        'ls-files',
+        '-z',
+        '--full-name',
+        '--others',
+        '--ignored',
+        '--exclude-standard',
+        '--',
+        ...extraGlobs,
+      ],
+      {
+        cwd: sourceDir,
+        quiet: true,
+      }
+    );
+
+    if (extraResult.exitCode !== 0) {
+      log(`Failed to resolve copyAdditionalGlobs: ${extraResult.stderr}`);
+      return null;
+    }
+
+    for (const entry of extraResult.stdout.split('\0')) {
+      if (entry) {
+        files.add(entry);
+      }
+    }
+  }
+
+  await includeDirectoryTreeIfExists(files, sourceDir, '.git');
+  await includeDirectoryTreeIfExists(files, sourceDir, '.jj');
+
+  return Array.from(files).sort();
+}
+
+async function copyFilesToTarget(
+  sourceDir: string,
+  targetPath: string,
+  files: string[],
+  useCloneFlag: boolean
+): Promise<boolean> {
+  try {
+    await fs.mkdir(targetPath, { recursive: true });
+  } catch (error) {
+    log(`Failed to create target workspace directory: ${String(error)}`);
+    return false;
+  }
+
+  for (const relativePath of files) {
+    const sourcePath = path.join(sourceDir, relativePath);
+    const destinationPath = path.join(targetPath, relativePath);
+    const destinationDir = path.dirname(destinationPath);
+
+    try {
+      await fs.mkdir(destinationDir, { recursive: true });
+    } catch (error) {
+      log(`Failed to create directory ${destinationDir}: ${String(error)}`);
+      return false;
+    }
+
+    let stats;
+    try {
+      stats = await fs.lstat(sourcePath);
+    } catch (error) {
+      log(`Failed to stat source file ${relativePath}: ${String(error)}`);
+      return false;
+    }
+
+    try {
+      if (stats.isSymbolicLink()) {
+        const linkTarget = await fs.readlink(sourcePath);
+        await fs.symlink(linkTarget, destinationPath);
+      } else if (stats.isDirectory()) {
+        await fs.mkdir(destinationPath, { recursive: true });
+      } else {
+        await copyFilePreservingMode(sourcePath, destinationPath, stats.mode, useCloneFlag);
+      }
+    } catch (error) {
+      log(`Failed to copy ${relativePath}: ${String(error)}`);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+async function cloneUsingFileList(
+  sourceDir: string,
+  targetPath: string,
+  options: { extraGlobs?: string[]; useCloneFlag: boolean }
+): Promise<boolean> {
+  const files = await collectFilesToCopy(sourceDir, options.extraGlobs);
+  if (!files) {
+    return false;
+  }
+
+  return copyFilesToTarget(sourceDir, targetPath, files, options.useCloneFlag);
+}
+
+async function includeDirectoryTreeIfExists(
+  files: Set<string>,
+  sourceDir: string,
+  directoryName: string
+): Promise<void> {
+  const fullPath = path.join(sourceDir, directoryName);
+
+  let stats: Stats;
+  try {
+    stats = await fs.lstat(fullPath);
+  } catch {
+    return;
+  }
+
+  if (stats.isDirectory()) {
+    await addDirectoryEntriesToSet(files, sourceDir, directoryName);
+    return;
+  }
+
+  files.add(directoryName);
+}
+
+async function addDirectoryEntriesToSet(
+  files: Set<string>,
+  baseDir: string,
+  relativeDir: string
+): Promise<void> {
+  files.add(relativeDir);
+
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(path.join(baseDir, relativeDir), { withFileTypes: true });
+  } catch (error) {
+    log(`Failed to read directory ${relativeDir}: ${String(error)}`);
+    return;
+  }
+
+  for (const entry of entries) {
+    const entryRelativePath = path.join(relativeDir, entry.name);
+    files.add(entryRelativePath);
+
+    if (entry.isDirectory()) {
+      await addDirectoryEntriesToSet(files, baseDir, entryRelativePath);
+    }
+  }
 }
 
 /**
@@ -53,40 +268,50 @@ async function cloneWithGit(
 /**
  * Clone using cp command (standard file copy)
  */
-async function cloneWithCp(sourceDir: string, targetPath: string): Promise<boolean> {
+async function cloneWithCp(
+  sourceDir: string,
+  targetPath: string,
+  extraGlobs?: string[]
+): Promise<boolean> {
+  log(`Copying directory ${sourceDir} to ${targetPath}`);
+
   try {
-    log(`Copying directory ${sourceDir} to ${targetPath}`);
-    const { exitCode, stderr } = await spawnAndLogOutput(['cp', '-r', sourceDir, targetPath]);
+    const copySuccess = await cloneUsingFileList(sourceDir, targetPath, {
+      extraGlobs,
+      useCloneFlag: false,
+    });
 
-    if (exitCode !== 0) {
-      log(`Failed to copy directory: ${stderr}`);
+    if (!copySuccess) {
       return false;
     }
-
-    // Initialize git repository in the copied directory
-    const { exitCode: gitInitCode, stderr: gitInitStderr } = await spawnAndLogOutput(
-      ['git', 'init'],
-      {
-        cwd: targetPath,
-      }
-    );
-
-    if (gitInitCode !== 0) {
-      log(`Failed to initialize git repository: ${gitInitStderr}`);
-      return false;
-    }
-
-    return true;
   } catch (error) {
     log(`Error copying directory: ${String(error)}`);
     return false;
   }
+
+  const { exitCode: gitInitCode, stderr: gitInitStderr } = await spawnAndLogOutput(
+    ['git', 'init'],
+    {
+      cwd: targetPath,
+    }
+  );
+
+  if (gitInitCode !== 0) {
+    log(`Failed to initialize git repository: ${gitInitStderr}`);
+    return false;
+  }
+
+  return true;
 }
 
 /**
  * Clone using macOS APFS copy-on-write (fastest on compatible systems)
  */
-async function cloneWithMacCow(sourceDir: string, targetPath: string): Promise<boolean> {
+async function cloneWithMacCow(
+  sourceDir: string,
+  targetPath: string,
+  extraGlobs?: string[]
+): Promise<boolean> {
   // Check if we're on macOS
   if (os.platform() !== 'darwin') {
     log('mac-cow clone method is only available on macOS');
@@ -95,35 +320,35 @@ async function cloneWithMacCow(sourceDir: string, targetPath: string): Promise<b
 
   try {
     log(`Creating APFS copy-on-write clone ${sourceDir} to ${targetPath}`);
-    const { exitCode, stderr } = await spawnAndLogOutput(['cp', '-c', sourceDir, targetPath]);
+    const copySuccess = await cloneUsingFileList(sourceDir, targetPath, {
+      extraGlobs,
+      useCloneFlag: true,
+    });
 
-    if (exitCode !== 0) {
-      log(`Failed to create copy-on-write clone: ${stderr}`);
-      // Fall back to regular cp if copy-on-write is not supported
+    if (!copySuccess) {
       log('Falling back to regular copy method');
-      return await cloneWithCp(sourceDir, targetPath);
+      return await cloneWithCp(sourceDir, targetPath, extraGlobs);
     }
-
-    // Initialize git repository in the copied directory
-    const { exitCode: gitInitCode, stderr: gitInitStderr } = await spawnAndLogOutput(
-      ['git', 'init'],
-      {
-        cwd: targetPath,
-      }
-    );
-
-    if (gitInitCode !== 0) {
-      log(`Failed to initialize git repository: ${gitInitStderr}`);
-      return false;
-    }
-
-    return true;
   } catch (error) {
     log(`Error creating copy-on-write clone: ${String(error)}`);
     // Fall back to regular cp method
     log('Falling back to regular copy method');
-    return await cloneWithCp(sourceDir, targetPath);
+    return await cloneWithCp(sourceDir, targetPath, extraGlobs);
   }
+
+  const { exitCode: gitInitCode, stderr: gitInitStderr } = await spawnAndLogOutput(
+    ['git', 'init'],
+    {
+      cwd: targetPath,
+    }
+  );
+
+  if (gitInitCode !== 0) {
+    log(`Failed to initialize git repository: ${gitInitStderr}`);
+    return false;
+  }
+
+  return true;
 }
 
 /**
@@ -197,6 +422,7 @@ export async function createWorkspace(
 
   const workspaceConfig = config.workspaceCreation;
   const cloneMethod = workspaceConfig.cloneMethod || 'git';
+  const extraCopyGlobs = workspaceConfig.copyAdditionalGlobs;
 
   // Validate required parameters for each clone method
   let repositoryUrl = workspaceConfig.repositoryUrl;
@@ -310,9 +536,9 @@ export async function createWorkspace(
   if (cloneMethod === 'git' && repositoryUrl) {
     cloneSuccess = await cloneWithGit(repositoryUrl, targetClonePath, mainRepoRoot);
   } else if (cloneMethod === 'cp' && sourceDirectory) {
-    cloneSuccess = await cloneWithCp(sourceDirectory, targetClonePath);
+    cloneSuccess = await cloneWithCp(sourceDirectory, targetClonePath, extraCopyGlobs);
   } else if (cloneMethod === 'mac-cow' && sourceDirectory) {
-    cloneSuccess = await cloneWithMacCow(sourceDirectory, targetClonePath);
+    cloneSuccess = await cloneWithMacCow(sourceDirectory, targetClonePath, extraCopyGlobs);
   }
 
   if (!cloneSuccess) {

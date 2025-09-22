@@ -62,6 +62,11 @@ export const workspaceCreationConfigSchema = z.object({
    * Array of commands to run after a clone is created and a new branch is checked out.
    */
   postCloneCommands: z.array(postApplyCommandSchema).optional(),
+  /**
+   * Additional glob patterns to copy when using filesystem-based clone methods.
+   * Allows including files that are normally ignored by Git.
+   */
+  copyAdditionalGlobs: z.array(z.string()).optional(),
 });
 
 export type WorkspaceCreationConfig = z.infer<typeof workspaceCreationConfigSchema>;
