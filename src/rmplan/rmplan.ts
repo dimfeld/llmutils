@@ -411,6 +411,7 @@ program
     '--next-ready <planIdOrPath>',
     'Find and show the next ready dependency of the specified parent plan (accepts plan ID or file path)'
   )
+  .option('--latest', 'Show the most recently updated plan')
   .option('--copy-details', 'Copy the plan details to the clipboard')
   .option('--full', 'Display full details without truncation')
   .option('-s, --short', 'Display a condensed summary view')

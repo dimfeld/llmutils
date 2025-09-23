@@ -2,6 +2,7 @@
 // Displays detailed information about a plan
 
 import chalk from 'chalk';
+import { stat } from 'node:fs/promises';
 import * as clipboard from '../../common/clipboard.js';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -21,6 +22,38 @@ import {
 import type { PlanSchema } from '../planSchema.js';
 import { findNextReadyDependency } from './find_next_dependency.js';
 import { MAX_NOTE_CHARS } from '../truncation.js';
+
+type PlanWithFilename = PlanSchema & { filename: string };
+
+const MIN_TIMESTAMP = Number.NEGATIVE_INFINITY;
+
+function parseIsoTimestamp(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+async function getPlanTimestamp(plan: PlanWithFilename): Promise<number> {
+  const updatedAt = parseIsoTimestamp(plan.updatedAt);
+  if (updatedAt !== undefined) {
+    return updatedAt;
+  }
+
+  const createdAt = parseIsoTimestamp(plan.createdAt);
+  if (createdAt !== undefined) {
+    return createdAt;
+  }
+
+  try {
+    const fileStats = await stat(plan.filename);
+    return fileStats.mtimeMs;
+  } catch {
+    return MIN_TIMESTAMP;
+  }
+}
 
 /**
  * Display plan information based on options
@@ -368,6 +401,9 @@ export async function handleShowCommand(planFile: string | undefined, options: a
   const config = await loadEffectiveConfig(globalOpts.config);
 
   let resolvedPlanFile: string;
+  let tasksDir: string | undefined;
+  let preloadedPlans: Map<number, PlanWithFilename> | undefined;
+  let selectedPlan: PlanWithFilename | undefined;
 
   if (options.nextReady) {
     // Validate that --next-ready has a value (parent plan ID or file path)
@@ -376,7 +412,10 @@ export async function handleShowCommand(planFile: string | undefined, options: a
     }
 
     // Find the next ready dependency of the specified parent plan
-    const tasksDir = await resolveTasksDir(config);
+    if (!tasksDir) {
+      tasksDir = await resolveTasksDir(config);
+    }
+
     // Convert string ID to number or resolve plan file to get numeric ID
     let parentPlanId: number;
     const planIdNumber = parseInt(options.nextReady, 10);
@@ -384,12 +423,12 @@ export async function handleShowCommand(planFile: string | undefined, options: a
       parentPlanId = planIdNumber;
     } else {
       // Try to resolve as a file path and get the plan ID
-      const planFile = await resolvePlanFile(options.nextReady, globalOpts.config);
-      const plan = await readPlanFile(planFile);
-      if (!plan.id || typeof plan.id !== 'number') {
-        throw new Error(`Plan file ${planFile} does not have a valid numeric ID`);
+      const resolvedInput = await resolvePlanFile(options.nextReady, globalOpts.config);
+      const planFromFile = await readPlanFile(resolvedInput);
+      if (!planFromFile.id || typeof planFromFile.id !== 'number') {
+        throw new Error(`Plan file ${resolvedInput} does not have a valid numeric ID`);
       }
-      parentPlanId = plan.id;
+      parentPlanId = planFromFile.id;
     }
 
     const result = await findNextReadyDependency(parentPlanId, tasksDir, true);
@@ -401,9 +440,49 @@ export async function handleShowCommand(planFile: string | undefined, options: a
 
     log(chalk.green(`Found ready plan: ${result.plan.id} - ${result.plan.title}`));
     resolvedPlanFile = result.plan.filename;
+    selectedPlan = result.plan;
+  } else if (options.latest) {
+    if (!tasksDir) {
+      tasksDir = await resolveTasksDir(config);
+    }
+
+    const { plans } = await readAllPlans(tasksDir);
+    preloadedPlans = plans;
+
+    if (plans.size === 0) {
+      log('No plans found in tasks directory.');
+      return;
+    }
+
+    const candidates = await Promise.all(
+      Array.from(plans.values()).map(async (candidate) => ({
+        plan: candidate,
+        timestamp: await getPlanTimestamp(candidate),
+      }))
+    );
+
+    let latestEntry = candidates[0];
+    for (const entry of candidates.slice(1)) {
+      if (entry.timestamp > latestEntry.timestamp) {
+        latestEntry = entry;
+      }
+    }
+
+    const title = getCombinedTitle(latestEntry.plan);
+    const label =
+      latestEntry.plan.id !== undefined && latestEntry.plan.id !== null
+        ? `${latestEntry.plan.id} - ${title}`
+        : title || latestEntry.plan.filename;
+
+    log(chalk.green(`Found latest plan: ${label}`));
+    resolvedPlanFile = latestEntry.plan.filename;
+    selectedPlan = latestEntry.plan;
   } else if (options.next || options.current) {
     // Find the next ready plan or current plan
-    const tasksDir = await resolveTasksDir(config);
+    if (!tasksDir) {
+      tasksDir = await resolveTasksDir(config);
+    }
+
     const plan = await findNextPlan(tasksDir, {
       includePending: true,
       includeInProgress: options.current,
@@ -423,31 +502,51 @@ export async function handleShowCommand(planFile: string | undefined, options: a
       : `Found next ready plan: ${plan.id}`;
     log(chalk.green(message));
     resolvedPlanFile = plan.filename;
+    selectedPlan = plan;
   } else {
     if (!planFile) {
       throw new Error(
-        'Please provide a plan file or use --next/--current/--next-ready to find a plan'
+        'Please provide a plan file or use --latest/--next/--current/--next-ready to find a plan'
       );
     }
     resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
   }
 
-  // Get all plans first to check dependencies
-  const tasksDir = await resolveTasksDir(config);
-  const { plans: allPlans } = await readAllPlans(tasksDir);
+  if (!tasksDir) {
+    tasksDir = await resolveTasksDir(config);
+  }
+
+  if (!tasksDir) {
+    throw new Error('Unable to resolve tasks directory for rmplan show command');
+  }
+
+  if (!preloadedPlans) {
+    const { plans } = await readAllPlans(tasksDir);
+    preloadedPlans = plans;
+  }
+
+  const allPlans = preloadedPlans;
+  const resolvedTasksDir = tasksDir;
 
   // Find the specific plan from the collection
-  let plan: PlanSchema | undefined;
-  for (const p of allPlans.values()) {
-    if (p.filename === resolvedPlanFile) {
-      plan = p;
-      break;
+  let plan: PlanSchema | undefined = selectedPlan;
+
+  if (!plan) {
+    for (const p of allPlans.values()) {
+      if (p.filename === resolvedPlanFile) {
+        plan = p;
+        break;
+      }
     }
   }
 
   if (!plan) {
     // Fallback to reading the file directly if not found in collection
     plan = await readPlanFile(resolvedPlanFile);
+  }
+
+  if (!plan) {
+    throw new Error(`Failed to load plan from ${resolvedPlanFile}`);
   }
 
   // Watch mode implementation
@@ -481,7 +580,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
 
         // Re-read the plan data for updates
         const updatedPlan = await readPlanFile(resolvedPlanFile);
-        const { plans: updatedAllPlans } = await readAllPlans(tasksDir);
+        const { plans: updatedAllPlans } = await readAllPlans(resolvedTasksDir);
 
         // Display updated information
         previousLineCount = await displayPlanInfo(
@@ -492,7 +591,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
         );
       } catch (error) {
         // If there's an error reading the plan, just continue with the existing data
-        previousLineCount = await displayPlanInfo(plan, resolvedPlanFile, allPlans, options);
+        previousLineCount = await displayPlanInfo(plan!, resolvedPlanFile, allPlans, options);
       }
     };
 

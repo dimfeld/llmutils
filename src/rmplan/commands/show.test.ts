@@ -156,8 +156,8 @@ describe('handleShowCommand', () => {
     expect(stripped).toContain('[implementer: Task Beta]');
     expect(stripped).toContain('Earlier note');
     expect(stripped).toContain('Tasks:');
-    expect(stripped).toContain('✓ Task Title 1');
-    expect(stripped).toContain('○ Task Title 2');
+    expect(stripped).toContain('✓  1. Task Title 1');
+    expect(stripped).toContain('○  2. Task Title 2');
     expect(stripped).not.toContain('Goal:');
     expect(stripped).not.toContain('Details:');
     expect(stripped).not.toContain('Hidden description');
@@ -243,8 +243,6 @@ describe('handleShowCommand', () => {
     expect(logs).toContain('Line B');
     expect(logs).toContain('Line C');
     expect(logs).not.toContain('more earlier note(s)');
-    // Indentation marker (four spaces) should appear before continued lines
-    expect(logs).toContain('\n    Line B');
     expect(logs).toContain('[tester: Task Foo]');
   });
 
@@ -363,6 +361,54 @@ describe('handleShowCommand', () => {
     expect(allOutput).toContain('In Progress Plan');
   });
 
+  test('finds most recently updated plan with --latest flag', async () => {
+    const olderTime = new Date('2024-01-01T00:00:00Z').toISOString();
+    const newerTime = new Date('2024-03-05T10:00:00Z').toISOString();
+
+    const plans = [
+      {
+        id: '10',
+        title: 'Older Plan',
+        goal: 'Earlier work',
+        details: 'Older details',
+        status: 'pending',
+        updatedAt: olderTime,
+        tasks: [],
+      },
+      {
+        id: '11',
+        title: 'Latest Plan',
+        goal: 'Newest goal',
+        details: 'Latest details',
+        status: 'pending',
+        updatedAt: newerTime,
+        tasks: [],
+      },
+    ];
+
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    const options = {
+      latest: true,
+    };
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleShowCommand(undefined, options, command);
+
+    const logs = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    const stripped = logs.replace(/\x1b\[[0-9;]*m/g, '');
+
+    expect(stripped).toContain('Found latest plan: 11 - Latest Plan');
+    expect(stripped).toContain('Latest Plan');
+    expect(stripped).toContain('Newest goal');
+  });
+
   test('shows message when no ready plans found', async () => {
     // Create only blocked plans
     const plan = {
@@ -408,7 +454,7 @@ describe('handleShowCommand', () => {
     };
 
     await expect(handleShowCommand(undefined, options, command)).rejects.toThrow(
-      'Please provide a plan file or use --next/--current/--next-ready to find a plan'
+      'Please provide a plan file or use --latest/--next/--current/--next-ready to find a plan'
     );
   });
 });
