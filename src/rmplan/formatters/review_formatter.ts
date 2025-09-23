@@ -200,6 +200,64 @@ const ACTION_ITEM_PATTERN = /^(todo|action|next|fix|address|update)/i;
 const ACTION_ITEM_SECTION_PATTERN = /^\w+\s*(items?)?\s*:\s*$/;
 const ACTION_BULLET_PATTERN = /^[-*•]\s*(todo|action|fix)/i;
 
+function analyzeIssueContent(content: string): {
+  severity: ReviewSeverity;
+  category: ReviewCategory;
+  file?: string;
+  line?: number;
+} {
+  let severity: ReviewSeverity = 'info';
+  let category: ReviewCategory = 'other';
+
+  const severityTagMatch = content.match(/^(CRITICAL|MAJOR|MINOR|INFO):/i);
+  if (severityTagMatch) {
+    severity = severityTagMatch[1].toLowerCase() as ReviewSeverity;
+  }
+
+  for (const pattern of ISSUE_PATTERNS) {
+    if (pattern.pattern.test(content)) {
+      if (!severityTagMatch) {
+        severity = pattern.severity;
+      }
+      category = pattern.category;
+      break;
+    }
+  }
+
+  let file: string | undefined;
+  let lineNumber: number | undefined;
+
+  const fileLineMatch = content.match(FILE_LINE_PATTERN);
+  if (fileLineMatch) {
+    const potentialFile = validateAndSanitizeFilePath(fileLineMatch[1]);
+    if (potentialFile) {
+      file = potentialFile;
+      const parsedLine = parseInt(fileLineMatch[2], 10);
+      if (parsedLine > 0 && parsedLine <= 100000) {
+        lineNumber = parsedLine;
+      }
+    }
+  } else {
+    const fileOnlyMatch = content.match(FILE_ONLY_PATTERN);
+    if (fileOnlyMatch) {
+      const potentialFile = validateAndSanitizeFilePath(fileOnlyMatch[1]);
+      if (potentialFile) {
+        file = potentialFile;
+      }
+    } else {
+      const fileKeywordMatch = content.match(FILE_KEYWORD_PATTERN);
+      if (fileKeywordMatch) {
+        const potentialFile = validateAndSanitizeFilePath(fileKeywordMatch[1]);
+        if (potentialFile) {
+          file = potentialFile;
+        }
+      }
+    }
+  }
+
+  return { severity, category, file, line: lineNumber };
+}
+
 /**
  * Parses raw reviewer agent output to extract structured review findings
  * Optimized for performance with large outputs
@@ -225,11 +283,111 @@ export function parseReviewerOutput(rawOutput: string): {
   // Split output into lines for processing
   const lines = rawOutput.split('\n');
   const lineCount = Math.min(lines.length, MAX_LINES);
+  const processedLineIndices = new Set<number>();
   let issueId = 1;
 
+  const hasIssueSeparators = lines.slice(0, lineCount).some((line) => line.trim() === '---');
+
+  if (hasIssueSeparators) {
+    type IssueBlock = { lines: string[]; indices: number[] };
+    const blocks: IssueBlock[] = [];
+    let currentLines: string[] = [];
+    let currentIndices: number[] = [];
+
+    const pushBlock = () => {
+      if (currentLines.some((line) => line.trim())) {
+        blocks.push({ lines: currentLines.slice(), indices: currentIndices.slice() });
+      }
+      currentLines = [];
+      currentIndices = [];
+    };
+
+    for (let i = 0; i < lineCount && issues.length < MAX_ISSUES; i++) {
+      const rawLine = lines[i];
+      if (rawLine.trim() === '---') {
+        processedLineIndices.add(i);
+        pushBlock();
+        continue;
+      }
+      currentLines.push(rawLine);
+      currentIndices.push(i);
+    }
+
+    pushBlock();
+
+    for (const block of blocks) {
+      if (issues.length >= MAX_ISSUES) break;
+
+      let headerIndex = -1;
+      let headerMatch: RegExpMatchArray | null = null;
+      for (let idx = 0; idx < block.lines.length; idx++) {
+        const potentialHeader = block.lines[idx].trim();
+        if (!potentialHeader) {
+          continue;
+        }
+        for (const marker of ISSUE_MARKERS) {
+          const match = potentialHeader.match(marker);
+          if (match) {
+            headerMatch = match;
+            headerIndex = idx;
+            break;
+          }
+        }
+        if (headerMatch) {
+          break;
+        }
+      }
+
+      if (headerIndex === -1 || !headerMatch) {
+        continue;
+      }
+
+      const headerContent = (headerMatch[1] || headerMatch[2] || headerMatch[0] || '').trim();
+      if (!headerContent) continue;
+
+      const issueContentLines = [headerContent, ...block.lines.slice(headerIndex + 1)];
+      const issueContent = issueContentLines.join('\n').trim();
+      if (!issueContent) continue;
+
+      const analysis = analyzeIssueContent(issueContent);
+
+      let suggestion: string | undefined;
+      for (const rawLine of block.lines.slice(headerIndex + 1)) {
+        const trimmedLine = rawLine.trim();
+        if (
+          trimmedLine.startsWith('Suggestion:') ||
+          trimmedLine.startsWith('Fix:') ||
+          trimmedLine.startsWith('Consider:')
+        ) {
+          suggestion = trimmedLine.replace(/^(Suggestion|Fix|Consider):\s*/i, '');
+          break;
+        }
+      }
+
+      issues.push({
+        id: `issue-${issueId++}`,
+        severity: analysis.severity,
+        category: analysis.category,
+        content: issueContent,
+        file: analysis.file,
+        line: analysis.line,
+        ...(suggestion ? { suggestion } : {}),
+      });
+
+      for (const index of block.indices) {
+        processedLineIndices.add(index);
+      }
+    }
+  }
+
   for (let i = 0; i < lineCount && issues.length < MAX_ISSUES; i++) {
+    if (processedLineIndices.has(i)) {
+      continue;
+    }
+
     const line = lines[i].trim();
     if (!line || line.length > 500) continue; // Skip empty or very long lines
+    if (line === '---') continue;
 
     // Skip legend entries that match the exclusion pattern
     if (LEGEND_EXCLUSION_PATTERN.test(line) || VERDICT_EXCLUSION_PATTERN.test(line)) continue;
@@ -239,72 +397,20 @@ export function parseReviewerOutput(rawOutput: string): {
     for (const marker of ISSUE_MARKERS) {
       const match = line.match(marker);
       if (match) {
-        const content = match[1] || match[2] || match[0];
-
-        // Determine severity and category based on content
-        let severity: ReviewSeverity = 'info';
-        let category: ReviewCategory = 'other';
-
-        // First check for explicit severity tags in the content
-        const severityTagMatch = content.match(/^(CRITICAL|MAJOR|MINOR):/i);
-        if (severityTagMatch) {
-          const tag = severityTagMatch[1].toLowerCase() as ReviewSeverity;
-          severity = tag;
-          // Keep default category as 'other' for explicit tags unless pattern matching provides a better one
+        const content = (match[1] || match[2] || match[0] || '').trim();
+        if (!content) {
+          continue;
         }
 
-        // Use optimized pattern matching with early termination
-        // If we already found an explicit severity tag, only update category but not severity
-        for (const pattern of ISSUE_PATTERNS) {
-          if (pattern.pattern.test(content)) {
-            if (!severityTagMatch) {
-              severity = pattern.severity;
-            }
-            category = pattern.category;
-            break;
-          }
-        }
+        const analysis = analyzeIssueContent(content);
 
-        // Extract file and line number if present using pre-compiled patterns
-        let file: string | undefined;
-        let lineNumber: number | undefined;
-
-        const fileLineMatch = content.match(FILE_LINE_PATTERN);
-        if (fileLineMatch) {
-          const potentialFile = validateAndSanitizeFilePath(fileLineMatch[1]);
-          if (potentialFile) {
-            file = potentialFile;
-            const lineNum = parseInt(fileLineMatch[2], 10);
-            if (lineNum > 0 && lineNum <= 100000) {
-              lineNumber = lineNum;
-            }
-          }
-        } else {
-          const fileOnlyMatch = content.match(FILE_ONLY_PATTERN);
-          if (fileOnlyMatch) {
-            const potentialFile = validateAndSanitizeFilePath(fileOnlyMatch[1]);
-            if (potentialFile) {
-              file = potentialFile;
-            }
-          } else {
-            const fileKeywordMatch = content.match(FILE_KEYWORD_PATTERN);
-            if (fileKeywordMatch) {
-              const potentialFile = validateAndSanitizeFilePath(fileKeywordMatch[1]);
-              if (potentialFile) {
-                file = potentialFile;
-              }
-            }
-          }
-        }
-
-        // Create issue
         const issue: ReviewIssue = {
           id: `issue-${issueId++}`,
-          severity,
-          category,
+          severity: analysis.severity,
+          category: analysis.category,
           content,
-          file,
-          line: lineNumber,
+          file: analysis.file,
+          line: analysis.line,
         };
 
         // Look for suggestions in following lines (limit lookahead)

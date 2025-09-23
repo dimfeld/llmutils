@@ -136,6 +136,60 @@ Action items:
     expect(recommendations).toHaveLength(0);
     expect(actionItems).toHaveLength(0);
   });
+
+  test('handles complex semi-structured review output', () => {
+    const review = `## Found Issues:
+
+1. CRITICAL: Missing error reporting in settings form action
+
+In file.ts, line 59: The error handler is not called.
+
+} catch (error) {
+  return setError(form, 'Failed to update  email');
+}
+
+While the user gets feedback via setError, the actual error information is lost. 
+
+} catch (error) {
+  locals.reportError?.(error);
+  return setError(form, 'Failed to update purchase order email');
+}
+
+---
+
+2. MINOR: Permission pattern inconsistency
+
+The permission array pattern in +layout.svelte at line 244 does not use the constant. Use this instead:
+
+if(user.hasPermissions(billingPermissions)) {
+
+This ensures permission consistency and makes maintenance easier.
+
+---
+`;
+
+    const result = parseReviewerOutput(review);
+    expect(result.issues).toHaveLength(2);
+
+    const firstIssue = result.issues[0];
+    expect(firstIssue.severity).toBe('critical');
+    expect(firstIssue.category).toBe('security');
+    expect(firstIssue.content).toContain('Missing error reporting in settings form action');
+    expect(firstIssue.content).toContain("locals.reportError?.(error);");
+    expect(firstIssue.content).toContain(
+      "return setError(form, 'Failed to update purchase order email');"
+    );
+
+    const secondIssue = result.issues[1];
+    expect(secondIssue.severity).toBe('minor');
+    expect(secondIssue.category).toBe('other');
+    expect(secondIssue.content).toContain('Permission pattern inconsistency');
+    expect(secondIssue.content).toContain('if(user.hasPermissions(billingPermissions)) {');
+    expect(secondIssue.content).toContain('This ensures permission consistency');
+
+    expect(result.recommendations).toHaveLength(0);
+    expect(result.actionItems).toHaveLength(0);
+  });
 });
 
 describe('generateReviewSummary', () => {

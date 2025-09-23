@@ -295,6 +295,10 @@ ${formattedProgressNotes}
 
 ## Response Format:
 
+Place three dashes after each issue to make it easier to parse out which issues are listed.
+
+A sample response might look like this:
+
 ${issueAndVerdictFormat}
 
 ### If a clear verdict is impossible due to conflicting or irreconcilable requirements
@@ -313,28 +317,40 @@ export const issueAndVerdictFormat = `Found Issues:
 [More details about the critical issue, including files and line numbers if applicable,
 explanations of the problem, and potential fixes.]
 
+---
+
 2. CRITICAL: [A critical bug, security issue, or correctness problem]
 
 [More details about the critical issue, including files and line numbers if applicable,
 explanations of the problem, and potential fixes.]
+
+---
 
 3. MAJOR: [A performance issue, pattern violation, or testing gap]
 
 [More details about the major issue, including files and line numbers if applicable,
 explanations of the problem, and potential fixes.]
 
+---
+
 4. MAJOR: [A performance issue, pattern violation, or testing gap]
 
 [More details about the major issue, including files and line numbers if applicable,
 explanations of the problem, and potential fixes.]
 
+---
+
 5. MINOR: [Style inconsistency, minor optimizations]
 
 [Suggestions for improving the code.]
 
+---
+
 6. MINOR: [Style inconsistency, minor optimizations]
 
 [Suggestions for improving the code.]
+
+---
 
 **VERDICT:** NEEDS_FIXES | ACCEPTABLE
 
