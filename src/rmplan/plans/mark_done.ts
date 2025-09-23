@@ -498,7 +498,7 @@ async function checkAndMarkParentDone(
     (child) => child.status === 'done' || child.status === 'cancelled'
   );
 
-  if (allChildrenDone && children.length > 0) {
+  if (allChildrenDone && children.length > 0 && parentPlan.container) {
     // Mark parent as done
     parentPlan.status = 'done';
     parentPlan.updatedAt = new Date().toISOString();

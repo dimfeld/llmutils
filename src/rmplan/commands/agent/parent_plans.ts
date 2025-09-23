@@ -66,7 +66,7 @@ export async function checkAndMarkParentDone(
   // Check if all children are done
   const allChildrenDone = children.every((child) => child.status === 'done');
 
-  if (allChildrenDone && children.length > 0) {
+  if (allChildrenDone && children.length > 0 && parentPlan.container) {
     // Mark parent as done
     parentPlan.status = 'done';
     parentPlan.updatedAt = new Date().toISOString();

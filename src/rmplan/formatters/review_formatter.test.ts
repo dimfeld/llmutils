@@ -175,7 +175,7 @@ This ensures permission consistency and makes maintenance easier.
     expect(firstIssue.severity).toBe('critical');
     expect(firstIssue.category).toBe('security');
     expect(firstIssue.content).toContain('Missing error reporting in settings form action');
-    expect(firstIssue.content).toContain("locals.reportError?.(error);");
+    expect(firstIssue.content).toContain('locals.reportError?.(error);');
     expect(firstIssue.content).toContain(
       "return setError(form, 'Failed to update purchase order email');"
     );

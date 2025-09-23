@@ -121,7 +121,7 @@ export async function executeBatchMode(
         iteration += 1;
         const ok = output ? (output as any).success !== false : true;
         if (!ok) {
-          const fd = (output as any)?.failureDetails as any;
+          const fd = output?.failureDetails;
           const src = fd?.sourceAgent ? ` (${fd.sourceAgent})` : '';
           log(chalk.redBright(`\nFAILED${src}: ${fd?.problems || 'Executor reported failure.'}`));
           const req = typeof fd?.requirements === 'string' ? fd.requirements.trim() : '';

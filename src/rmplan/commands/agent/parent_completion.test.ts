@@ -43,6 +43,7 @@ describe('Parent Plan Completion', () => {
       details: 'Parent details',
       status: 'in_progress',
       tasks: [],
+      container: true,
       updatedAt: new Date().toISOString(),
     };
     const parentPath = path.join(tasksDir, '1.yaml');
@@ -111,6 +112,45 @@ describe('Parent Plan Completion', () => {
     expect(parent.changedFiles).toContain('file3.ts');
   });
 
+  test('does not mark non-container parent as done even when children complete', async () => {
+    const parentPlan: PlanSchema = {
+      id: 1,
+      title: 'Parent Plan',
+      goal: 'Parent goal',
+      details: 'Parent details',
+      status: 'in_progress',
+      tasks: [],
+      container: false,
+      updatedAt: new Date().toISOString(),
+    };
+    const parentPath = path.join(tasksDir, '1.yaml');
+    await writePlanFile(parentPath, parentPlan);
+
+    const childPlan: PlanSchemaInput = {
+      id: 2,
+      title: 'Child Plan',
+      goal: 'Child goal',
+      details: 'Child details',
+      status: 'in_progress',
+      parent: 1,
+      tasks: [
+        {
+          title: 'Child Task',
+          description: 'Task description',
+          files: [],
+        },
+      ],
+      updatedAt: new Date().toISOString(),
+    };
+    const childPath = path.join(tasksDir, '2.yaml');
+    await writePlanFile(childPath, childPlan);
+
+    await markTaskDone(childPath, 0, { commit: false }, tempDir, config);
+
+    const parent = await readPlanFile(parentPath);
+    expect(parent.status).toBe('in_progress');
+  });
+
   test('handles nested parent completion', async () => {
     // Create grandparent plan
     const grandparentPlan: PlanSchema = {
@@ -120,6 +160,7 @@ describe('Parent Plan Completion', () => {
       details: 'Grandparent details',
       status: 'in_progress',
       tasks: [],
+      container: true,
       updatedAt: new Date().toISOString(),
     };
     const grandparentPath = path.join(tasksDir, '1.yaml');
@@ -134,6 +175,7 @@ describe('Parent Plan Completion', () => {
       status: 'in_progress',
       parent: 1,
       tasks: [],
+      container: true,
       updatedAt: new Date().toISOString(),
     };
     const parentPath = path.join(tasksDir, '2.yaml');
@@ -181,6 +223,7 @@ describe('Parent Plan Completion', () => {
       details: 'Parent details',
       status: 'in_progress',
       tasks: [],
+      container: true,
       updatedAt: new Date().toISOString(),
     };
     const parentPath = path.join(tasksDir, '1.yaml');
