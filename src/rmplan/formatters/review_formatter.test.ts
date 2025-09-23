@@ -166,10 +166,27 @@ if(user.hasPermissions(billingPermissions)) {
 This ensures permission consistency and makes maintenance easier.
 
 ---
+
+**VERDICT:** NEEDS_FIXES
+
+- Summary: Implementation has critical security issues.
+- Suggested follow-up: Add logging around the failing branch.
+
+Overall, the implementation has critical security issues.
 `;
 
     const result = parseReviewerOutput(review);
     expect(result.issues).toHaveLength(2);
+    expect(
+      result.issues.some((issue) =>
+        issue.content.includes('Summary: Implementation has critical security issues.')
+      )
+    ).toBe(false);
+    expect(
+      result.issues.some((issue) =>
+        issue.content.includes('Overall, the implementation has critical security issues.')
+      )
+    ).toBe(false);
 
     const firstIssue = result.issues[0];
     expect(firstIssue.severity).toBe('critical');

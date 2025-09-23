@@ -285,6 +285,7 @@ export function parseReviewerOutput(rawOutput: string): {
   const lineCount = Math.min(lines.length, MAX_LINES);
   const processedLineIndices = new Set<number>();
   let issueId = 1;
+  let inVerdictSection = false;
 
   const hasIssueSeparators = lines.slice(0, lineCount).some((line) => line.trim() === '---');
 
@@ -317,6 +318,10 @@ export function parseReviewerOutput(rawOutput: string): {
 
     for (const block of blocks) {
       if (issues.length >= MAX_ISSUES) break;
+
+      if (block.lines.some((line) => VERDICT_EXCLUSION_PATTERN.test(line))) {
+        continue;
+      }
 
       let headerIndex = -1;
       let headerMatch: RegExpMatchArray | null = null;
@@ -386,11 +391,38 @@ export function parseReviewerOutput(rawOutput: string): {
     }
 
     const line = lines[i].trim();
-    if (!line || line.length > 500) continue; // Skip empty or very long lines
-    if (line === '---') continue;
+
+    if (line === '---') {
+      inVerdictSection = false;
+      continue;
+    }
+
+    if (!line) {
+      if (inVerdictSection) {
+        continue;
+      }
+      continue;
+    }
+
+    if (line.length > 500) {
+      continue; // Skip very long lines that are unlikely to be actionable
+    }
+
+    if (VERDICT_EXCLUSION_PATTERN.test(line)) {
+      inVerdictSection = true;
+      continue;
+    }
+
+    if (inVerdictSection) {
+      if (/^#{1,6}\s/.test(line)) {
+        inVerdictSection = false;
+      } else {
+        continue;
+      }
+    }
 
     // Skip legend entries that match the exclusion pattern
-    if (LEGEND_EXCLUSION_PATTERN.test(line) || VERDICT_EXCLUSION_PATTERN.test(line)) continue;
+    if (LEGEND_EXCLUSION_PATTERN.test(line)) continue;
 
     // Check for issue markers first (most specific patterns)
     let foundIssue = false;

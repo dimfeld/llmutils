@@ -6,7 +6,7 @@ import { checkbox, select } from '@inquirer/prompts';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname, isAbsolute, resolve, relative } from 'node:path';
 import { getCurrentCommitHash, getGitRoot, getTrunkBranch, getUsingJj } from '../../common/git.js';
-import { findBranchSpecificPlan } from '../plans.js';
+import { findBranchSpecificPlan, writePlanFile } from '../plans.js';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
@@ -382,6 +382,7 @@ export async function handleReviewCommand(
     const hasIssues = detectIssuesInReview(reviewResult, rawOutput);
     let shouldAutofix = false;
     let shouldCreateCleanupPlan = false;
+    let shouldAppendTasksToPlan = false;
     let selectedIssues: ReviewIssue[] | null = null;
 
     if (hasIssues) {
@@ -417,13 +418,14 @@ export async function handleReviewCommand(
         }
       } else if (!options.noAutofix) {
         // Prompt user for action when interactive; otherwise skip prompting
-        let action: 'fix' | 'cleanup' | 'exit' = 'exit';
+        let action: 'fix' | 'cleanup' | 'append' | 'exit' = 'exit';
         if (isInteractiveEnv) {
           action = await select({
             message: 'Issues were found during review. What would you like to do?',
             choices: [
               { name: 'Fix now (apply fixes immediately)', value: 'fix' },
               { name: 'Create a cleanup plan (for later execution)', value: 'cleanup' },
+              { name: 'Append issues to the current plan as tasks', value: 'append' },
               { name: 'Exit (do nothing)', value: 'exit' },
             ],
             default: 'exit',
@@ -453,6 +455,15 @@ export async function handleReviewCommand(
               log(chalk.yellow('No issues selected for cleanup plan.'));
             }
           }
+        } else if (action === 'append') {
+          shouldAppendTasksToPlan = true;
+          if (reviewResult.issues && reviewResult.issues.length > 0) {
+            selectedIssues = await selectIssuesToFix(reviewResult.issues, 'append as plan tasks');
+            shouldAppendTasksToPlan = selectedIssues.length > 0;
+            if (!shouldAppendTasksToPlan) {
+              log(chalk.yellow('No issues selected to append as tasks.'));
+            }
+          }
         } else {
           log(chalk.gray('No action taken.'));
         }
@@ -460,6 +471,37 @@ export async function handleReviewCommand(
     }
 
     const performAutofix = shouldAutofix && !options.noAutofix;
+
+    if (shouldAppendTasksToPlan && hasIssues) {
+      const issuesToAppend =
+        (selectedIssues && selectedIssues.length > 0 ? selectedIssues : reviewResult.issues) || [];
+
+      if (issuesToAppend.length === 0) {
+        log(chalk.yellow('No review issues available to append as tasks.'));
+      } else {
+        try {
+          const appendedCount = await appendIssuesToPlanTasks(
+            contextPlanFile,
+            planData,
+            issuesToAppend
+          );
+
+          if (appendedCount > 0) {
+            const plural = appendedCount === 1 ? '' : 's';
+            log(
+              chalk.green(
+                `✓ Added ${appendedCount} review issue${plural} as task${plural} to the plan.`
+              )
+            );
+          } else {
+            log(chalk.gray('No new tasks were added (likely due to duplicate titles).'));
+          }
+        } catch (appendErr) {
+          const appendMessage = appendErr instanceof Error ? appendErr.message : String(appendErr);
+          log(chalk.red(`Error appending review issues to plan tasks: ${appendMessage}`));
+        }
+      }
+    }
 
     // Persistence logic - save to structured review history
     const shouldSave =
@@ -763,6 +805,93 @@ async function selectIssuesToFix(
   });
 
   return selectedIssues;
+}
+
+type PlanTask = PlanSchema['tasks'][number];
+
+function buildTaskTitleFromIssue(issue: ReviewIssue): string {
+  const firstMeaningfulLine = issue.content
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+
+  let normalized = (firstMeaningfulLine || 'Review feedback').replace(/\s+/g, ' ');
+  const MAX_BODY_LENGTH = 100;
+  if (normalized.length > MAX_BODY_LENGTH) {
+    normalized = `${normalized.slice(0, MAX_BODY_LENGTH - 3).trimEnd()}...`;
+  }
+
+  if (!/[.!?]$/.test(normalized)) {
+    normalized += '.';
+  }
+
+  return `Address Review Feedback: ${normalized}`;
+}
+
+function createTaskFromIssue(issue: ReviewIssue): PlanTask {
+  const title = buildTaskTitleFromIssue(issue);
+
+  const descriptionSegments: string[] = [];
+  const trimmedContent = issue.content.trim();
+  if (trimmedContent) {
+    descriptionSegments.push(trimmedContent);
+  } else {
+    descriptionSegments.push('Follow up on review feedback.');
+  }
+
+  if (issue.suggestion) {
+    descriptionSegments.push('', `Suggestion: ${issue.suggestion}`);
+  }
+
+  if (issue.file) {
+    const location = issue.line ? `${issue.file}:${issue.line}` : issue.file;
+    descriptionSegments.push('', `Related file: ${location}`);
+  }
+
+  const description = descriptionSegments.join('\n').trim();
+
+  const task: PlanTask = {
+    title,
+    description,
+    done: false,
+    steps: [],
+  };
+
+  if (issue.file) {
+    task.files = [issue.file];
+  }
+
+  return task;
+}
+
+async function appendIssuesToPlanTasks(
+  planFilePath: string,
+  planData: PlanSchema,
+  issues: ReviewIssue[]
+): Promise<number> {
+  if (!Array.isArray(planData.tasks)) {
+    planData.tasks = [];
+  }
+
+  const existingTitles = new Set(planData.tasks.map((task) => task.title));
+  let appendedCount = 0;
+
+  for (const issue of issues) {
+    const task = createTaskFromIssue(issue);
+    if (existingTitles.has(task.title)) {
+      continue;
+    }
+
+    planData.tasks.push(task);
+    existingTitles.add(task.title);
+    appendedCount++;
+  }
+
+  if (appendedCount > 0) {
+    await writePlanFile(planFilePath, planData);
+  }
+
+  return appendedCount;
 }
 
 export function buildReviewPrompt(
