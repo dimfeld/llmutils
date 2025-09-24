@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { handleGenerateCommand } from './generate.js';
-import { clearPlanCache } from '../plans.js';
+import { clearPlanCache, readPlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
 
@@ -1879,5 +1879,241 @@ describe('handleGenerateCommand claude_mode configuration logic', () => {
         researchInsertedAt: undefined,
       })
     );
+  });
+});
+
+
+describe('handleGenerateCommand research preservation integration', () => {
+  let tempDir: string;
+  let tasksDir: string;
+  let planPath: string;
+  let config: any;
+
+  const logSpyLocal = mock(() => {});
+  const warnSpyLocal = mock(() => {});
+  const errorSpyLocal = mock(() => {});
+  const clipboardWriteMock = mock(async () => {});
+  const clipboardReadMock = mock(async () => '');
+  const waitForEnterMock = mock(async () => '');
+  const getGitRootMock = mock(async () => tempDir);
+  const invokeClaudeCodeForGenerationSpy = mock(async () => ({
+    generationOutput: '',
+    researchOutput: undefined,
+  }));
+  const createModelSpy = mock(async () => ({ id: 'unused' }));
+
+  beforeEach(async () => {
+    logSpyLocal.mockClear();
+    warnSpyLocal.mockClear();
+    errorSpyLocal.mockClear();
+    clipboardWriteMock.mockClear();
+    clipboardReadMock.mockClear();
+    waitForEnterMock.mockClear();
+    getGitRootMock.mockClear();
+    invokeClaudeCodeForGenerationSpy.mockClear();
+    createModelSpy.mockClear();
+
+    clearPlanCache();
+
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-generate-research-'));
+    tasksDir = path.join(tempDir, 'tasks');
+    await fs.mkdir(tasksDir, { recursive: true });
+
+    planPath = path.join(tasksDir, '123.plan.md');
+    const stubPlan: PlanSchema = {
+      id: 123,
+      title: 'Stub Plan',
+      goal: 'Initial goal',
+      details: 'Initial plan details',
+      status: 'pending',
+      container: false,
+      baseBranch: 'main',
+      changedFiles: [],
+      pullRequest: [],
+      assignedTo: 'tester',
+      docs: [],
+      issue: [],
+      rmfilter: [],
+      dependencies: [],
+      priority: 'medium',
+      project: {
+        title: 'Project context',
+        goal: 'Context goal',
+        details: 'Context details',
+      },
+      parent: 42,
+      tasks: [],
+    };
+    await fs.writeFile(planPath, yaml.stringify(stubPlan), 'utf-8');
+
+    config = {
+      paths: {
+        tasks: tasksDir,
+      },
+      models: {
+        planning: 'test-model',
+        stepGeneration: 'test-model',
+      },
+    };
+
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: logSpyLocal,
+      warn: warnSpyLocal,
+      error: errorSpyLocal,
+    }));
+
+    await moduleMocker.mock('../../common/clipboard.ts', () => ({
+      write: clipboardWriteMock,
+      read: clipboardReadMock,
+    }));
+
+    await moduleMocker.mock('../../common/terminal.js', () => ({
+      waitForEnter: waitForEnterMock,
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: getGitRootMock,
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => config,
+    }));
+
+    await moduleMocker.mock('../../common/model_factory.js', () => ({
+      createModel: createModelSpy,
+    }));
+
+    await moduleMocker.mock('../claude_utils.js', () => ({
+      invokeClaudeCodeForGeneration: invokeClaudeCodeForGenerationSpy,
+    }));
+  });
+
+  afterEach(async () => {
+    moduleMocker.clear();
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  function buildOptions() {
+    return {
+      plan: planPath,
+      claude: true,
+      extract: true,
+      parent: {
+        opts: () => ({}),
+      },
+    };
+  }
+
+  function buildCommand() {
+    return {
+      args: [],
+      parent: {
+        opts: () => ({}),
+      },
+    };
+  }
+
+  test('persists research output into single-phase plan files', async () => {
+    const generationOutput = [
+      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json',
+      'id: 123',
+      'title: Stub Plan',
+      'goal: Updated goal',
+      'details: |',
+      '  Claude-provided summary of the work to do.',
+      'status: pending',
+      'createdAt: 2024-01-01T00:00:00Z',
+      'updatedAt: 2024-01-01T00:00:00Z',
+      'tasks:',
+      '  - title: Task 1',
+      '    description: Implement the thing',
+      '    steps:',
+      '      - prompt: |',
+      '          Step details go here',
+      '        done: false',
+    ].join('\n');
+
+    invokeClaudeCodeForGenerationSpy.mockResolvedValueOnce({
+      generationOutput,
+      researchOutput: 'Research findings from Claude',
+    });
+
+    await handleGenerateCommand(undefined, buildOptions(), buildCommand());
+
+    clearPlanCache();
+    const savedPlan = await readPlanFile(planPath);
+
+    expect(savedPlan.details).toContain('Claude-provided summary');
+    expect(savedPlan.details).toContain('## Research');
+    expect(savedPlan.details).toContain('Research findings from Claude');
+    expect(savedPlan.generatedBy).toBe('agent');
+
+    const researchHeadingCount = (savedPlan.details.match(/## Research/g) || []).length;
+    expect(researchHeadingCount).toBe(1);
+
+    const invokeArgs = invokeClaudeCodeForGenerationSpy.mock.calls[0];
+    expect(invokeArgs[2].researchPrompt).toContain('structured Markdown');
+  });
+
+  test('skips research section when research output is empty', async () => {
+    const generationOutput = [
+      'id: 123',
+      'title: Stub Plan',
+      'goal: Updated goal',
+      'details: Basic details',
+      'status: pending',
+      'createdAt: 2024-01-01T00:00:00Z',
+      'updatedAt: 2024-01-01T00:00:00Z',
+      'tasks:',
+      '  - title: Task 1',
+      '    description: Implement the thing',
+      '    steps: []',
+    ].join('\n');
+
+    invokeClaudeCodeForGenerationSpy.mockResolvedValueOnce({
+      generationOutput,
+      researchOutput: '    ',
+    });
+
+    await handleGenerateCommand(undefined, buildOptions(), buildCommand());
+
+    const savedPlan = await readPlanFile(planPath);
+    expect(savedPlan.details).toContain('# Original Plan Details');
+    expect(savedPlan.details).not.toMatch(/## Research/);
+    expect(savedPlan.details).toContain('Basic details');
+  });
+
+  test('combines multi-phase plans and preserves research findings', async () => {
+    const multiPhaseOutput = [
+      'goal: Build multi-phase project',
+      'details: Overview of project',
+      'phases:',
+      '  - title: Phase 1',
+      '    goal: Do first part',
+      '    status: pending',
+      '    tasks:',
+      '      - title: Task A',
+      '        description: Task A description',
+      '        steps: []',
+      '  - title: Phase 2',
+      '    goal: Do second part',
+      '    status: pending',
+      '    tasks:',
+      '      - title: Task B',
+      '        description: Task B description',
+      '        steps: []',
+    ].join('\n');
+
+    invokeClaudeCodeForGenerationSpy.mockResolvedValueOnce({
+      generationOutput: multiPhaseOutput,
+      researchOutput: 'Key multi-phase research',
+    });
+
+    await handleGenerateCommand(undefined, buildOptions(), buildCommand());
+
+    const savedPlan = await readPlanFile(planPath);
+    expect(savedPlan.details).toContain('## Research');
+    expect(savedPlan.details).toContain('Key multi-phase research');
+    expect(savedPlan.tasks.map((task) => task.title)).toEqual(['Task A', 'Task B']);
   });
 });
