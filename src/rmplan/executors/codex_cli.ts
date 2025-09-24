@@ -129,7 +129,9 @@ export class CodexCliExecutor implements Executor {
 
     // Execute implementer step and capture its final agent message
     log('Running implementer step...');
-    const implementerOutput = await this.executeCodexStep(implementer.prompt, gitRoot);
+    const implementerOutput = await this.executeCodexStep(implementer.prompt, gitRoot, {
+      planTool: true,
+    });
     events.push({ type: 'implementer', message: implementerOutput });
     log('Implementer output captured.');
 
@@ -603,26 +605,32 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
   /**
    * Runs a single-step Codex execution with JSON streaming enabled and returns the final agent message.
    */
-  private async executeCodexStep(prompt: string, cwd: string): Promise<string> {
+  private async executeCodexStep(
+    prompt: string,
+    cwd: string,
+    opts: { planTool?: boolean } = {}
+  ): Promise<string> {
     const allowAllTools = process.env.ALLOW_ALL_TOOLS === 'true';
     const sandboxSettings = allowAllTools
       ? ['--dangerously-bypass-approvals-and-sandbox']
       : ['--sandbox', 'workspace-write'];
 
     const formatter = createCodexStdoutFormatter();
+    const args = ['codex', '--search', 'exec', ...sandboxSettings, prompt, '--json'];
+    if (opts.planTool) {
+      //  TODO This will be enabled in the next release of Codex
+      // args.push('--include-plan-tool')
+    }
 
-    const { exitCode, stdout, stderr } = await spawnAndLogOutput(
-      ['codex', '--search', 'exec', ...sandboxSettings, prompt, '--json'],
-      {
-        cwd,
-        env: {
-          ...process.env,
-          AGENT: process.env.AGENT || '1',
-        },
-        formatStdout: (chunk: string) => formatter.formatChunk(chunk),
-        // stderr is not JSON – print as-is
-      }
-    );
+    const { exitCode, stdout, stderr } = await spawnAndLogOutput(args, {
+      cwd,
+      env: {
+        ...process.env,
+        AGENT: process.env.AGENT || '1',
+      },
+      formatStdout: (chunk: string) => formatter.formatChunk(chunk),
+      // stderr is not JSON – print as-is
+    });
 
     if (exitCode !== 0) {
       throw new Error(`codex exited with code ${exitCode}`);
