@@ -2040,7 +2040,6 @@ describe('handleGenerateCommand research preservation integration', () => {
     await handleGenerateCommand(undefined, buildOptions(), buildCommand());
 
     clearPlanCache();
-    clearPlanCache();
     const savedPlan = await readPlanFile(planPath);
 
     expect(savedPlan.details).toContain('Claude-provided summary');
