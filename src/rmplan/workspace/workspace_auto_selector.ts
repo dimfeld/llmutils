@@ -98,7 +98,7 @@ export class WorkspaceAutoSelector {
 
       // Check if lock is stale
       const lockInfo = await WorkspaceLock.getLockInfo(workspace.workspacePath);
-      if (lockInfo && (await WorkspaceLock.isLockStale(lockInfo))) {
+      if (lockInfo?.type === 'pid' && (await WorkspaceLock.isLockStale(lockInfo))) {
         const cleared = await this.handleStaleLock(workspace, lockInfo, interactive);
         if (cleared) {
           log(`Selected workspace after clearing stale lock: ${workspace.workspacePath}`);
@@ -127,6 +127,10 @@ export class WorkspaceAutoSelector {
     lockInfo: LockInfo,
     interactive: boolean
   ): Promise<boolean> {
+    if (lockInfo.type !== 'pid') {
+      return false;
+    }
+
     const lockAge = Date.now() - new Date(lockInfo.startedAt).getTime();
     const lockAgeHours = Math.round(lockAge / (1000 * 60 * 60));
 
@@ -196,21 +200,63 @@ export class WorkspaceAutoSelector {
 
     console.log('\nWorkspaces:');
     for (const workspace of workspacesWithStatus) {
-      const status = workspace.lockedBy
-        ? chalk.red(`🔒 Locked by PID ${workspace.lockedBy.pid} on ${workspace.lockedBy.hostname}`)
-        : chalk.green('🔓 Available');
-
-      console.log(`\n${status}`);
+      if (workspace.lockedBy) {
+        const statusLabel = `🔒 Locked (${workspace.lockedBy.type})`;
+        console.log(`\n${chalk.red(statusLabel)}`);
+      } else {
+        console.log(`\n${chalk.green('🔓 Available')}`);
+      }
       console.log(`  Path: ${workspace.workspacePath}`);
       console.log(`  Task: ${workspace.taskId}`);
       console.log(`  Branch: ${workspace.branch}`);
       console.log(`  Created: ${new Date(workspace.createdAt).toLocaleString()}`);
 
       if (workspace.lockedBy) {
-        const lockAge = Date.now() - new Date(workspace.lockedBy.startedAt).getTime();
-        const lockAgeHours = Math.round(lockAge / (1000 * 60 * 60));
-        console.log(`  Lock age: ${lockAgeHours} hours`);
+        if (workspace.lockedBy.pid) {
+          const pidLine = workspace.lockedBy.hostname
+            ? `  PID: ${workspace.lockedBy.pid} on ${workspace.lockedBy.hostname}`
+            : `  PID: ${workspace.lockedBy.pid}`;
+          console.log(pidLine);
+        } else if (workspace.lockedBy.hostname) {
+          console.log(`  Host: ${workspace.lockedBy.hostname}`);
+        }
+
+        if (workspace.lockedBy.command) {
+          console.log(`  Command: ${workspace.lockedBy.command}`);
+        }
+
+        const lockAgeMs = Date.now() - new Date(workspace.lockedBy.startedAt).getTime();
+        const duration = formatDuration(lockAgeMs);
+        const durationLine = `  Locked for: ${duration}`;
+        const highlight = lockAgeMs >= ONE_DAY_MS;
+        console.log(highlight ? chalk.yellow(durationLine) : durationLine);
       }
     }
   }
+}
+
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+function formatDuration(durationMs: number): string {
+  if (durationMs <= 0) {
+    return 'less than a minute';
+  }
+
+  const minutesTotal = Math.floor(durationMs / (60 * 1000));
+  const days = Math.floor(minutesTotal / (60 * 24));
+  const hours = Math.floor((minutesTotal % (60 * 24)) / 60);
+  const minutes = minutesTotal % 60;
+
+  const parts: string[] = [];
+  if (days > 0) {
+    parts.push(`${days}d`);
+  }
+  if (hours > 0) {
+    parts.push(`${hours}h`);
+  }
+  if (parts.length === 0 || minutes > 0) {
+    parts.push(`${minutes}m`);
+  }
+
+  return parts.join(' ');
 }

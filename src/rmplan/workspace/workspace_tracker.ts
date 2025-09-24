@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import * as fs from 'node:fs/promises';
 import { log } from '../../logging.js';
-import { WorkspaceLock, type LockInfo } from './workspace_lock.js';
+import { WorkspaceLock, type LockInfo, type LockType } from './workspace_lock.js';
 
 /**
  * Interface representing detailed information about a created workspace
@@ -22,9 +22,11 @@ export interface WorkspaceInfo {
   createdAt: string;
   /** Lock information if workspace is currently locked */
   lockedBy?: {
-    pid: number;
+    type: LockType;
+    pid?: number;
     startedAt: string;
     hostname: string;
+    command: string;
   };
 }
 
@@ -174,9 +176,11 @@ export async function updateWorkspaceLockStatus(
         return {
           ...workspace,
           lockedBy: {
+            type: lockInfo.type,
             pid: lockInfo.pid,
             startedAt: lockInfo.startedAt,
             hostname: lockInfo.hostname,
+            command: lockInfo.command,
           },
         };
       }

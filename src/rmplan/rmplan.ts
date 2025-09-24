@@ -692,6 +692,28 @@ workspaceCommand
     await handleWorkspaceAddCommand(planIdentifier, options, command).catch(handleCommandError);
   });
 
+workspaceCommand
+  .command('lock [workspaceIdentifier]')
+  .description('Lock a workspace by task ID, directory, or current directory')
+  .option('-a, --available', 'Lock the first available workspace for this repository')
+  .option('-c, --create', 'Create a new workspace if none are available')
+  .action(async (workspaceIdentifier, options, command) => {
+    const { handleWorkspaceLockCommand } = await import('./commands/workspace.js');
+    await handleWorkspaceLockCommand(workspaceIdentifier, options, command).catch(
+      handleCommandError
+    );
+  });
+
+workspaceCommand
+  .command('unlock [workspaceIdentifier]')
+  .description('Unlock a workspace by task ID, directory, or current directory')
+  .action(async (workspaceIdentifier, options, command) => {
+    const { handleWorkspaceUnlockCommand } = await import('./commands/workspace.js');
+    await handleWorkspaceUnlockCommand(workspaceIdentifier, options, command).catch(
+      handleCommandError
+    );
+  });
+
 async function run() {
   await loadEnv();
 

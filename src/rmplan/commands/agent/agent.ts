@@ -250,11 +250,11 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       // Acquire lock if we didn't already (auto-selector doesn't create new workspaces)
       if (selectedWorkspace && !selectedWorkspace.isNew) {
         try {
-          await WorkspaceLock.acquireLock(
+          const lockInfo = await WorkspaceLock.acquireLock(
             workspace.path,
             `rmplan agent --workspace ${workspace.taskId}`
           );
-          WorkspaceLock.setupCleanupHandlers(workspace.path);
+          WorkspaceLock.setupCleanupHandlers(workspace.path, lockInfo.type);
         } catch (error) {
           log(`Warning: Failed to acquire workspace lock: ${error as Error}`);
         }

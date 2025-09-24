@@ -91,9 +91,11 @@ describe('WorkspaceAutoSelector', () => {
         branch: 'llmutils-task/task-2',
         createdAt: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
         lockedBy: {
+          type: 'pid',
           pid: 99999,
           startedAt: new Date().toISOString(),
           hostname: 'other-host',
+          command: 'rmplan agent',
         },
       },
     ];
@@ -117,6 +119,7 @@ describe('WorkspaceAutoSelector', () => {
 
     // Create a stale lock
     const staleLock = {
+      type: 'pid' as const,
       pid: 99999,
       command: 'rmplan agent',
       startedAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(), // 25 hours ago
@@ -137,9 +140,11 @@ describe('WorkspaceAutoSelector', () => {
         branch: 'llmutils-task/task-stale',
         createdAt: new Date().toISOString(),
         lockedBy: {
+          type: 'pid',
           pid: staleLock.pid,
           startedAt: staleLock.startedAt,
           hostname: staleLock.hostname,
+          command: staleLock.command,
         },
       },
     ];
@@ -174,9 +179,11 @@ describe('WorkspaceAutoSelector', () => {
         branch: 'llmutils-task/task-locked',
         createdAt: new Date().toISOString(),
         lockedBy: {
+          type: 'persistent',
           pid: process.pid, // Current process, so not stale
           startedAt: new Date().toISOString(),
           hostname: os.hostname(),
+          command: 'manual lock',
         },
       },
     ];

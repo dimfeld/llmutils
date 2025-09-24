@@ -21,7 +21,8 @@ const markStepDoneSpy = mock(async () => ({
 }));
 
 // Mock WorkspaceLock
-const releaseLockSpy = mock(async () => {});
+const releaseLockSpy = mock(async () => true);
+const getLockInfoSpy = mock(async () => null);
 
 describe('handleDoneCommand', () => {
   let tempDir: string;
@@ -33,6 +34,7 @@ describe('handleDoneCommand', () => {
     errorSpy.mockClear();
     markStepDoneSpy.mockClear();
     releaseLockSpy.mockClear();
+    getLockInfoSpy.mockClear();
 
     // Clear plan cache
     clearPlanCache();
@@ -56,6 +58,7 @@ describe('handleDoneCommand', () => {
     await moduleMocker.mock('../workspace/workspace_lock.js', () => ({
       WorkspaceLock: {
         releaseLock: releaseLockSpy,
+        getLockInfo: getLockInfoSpy,
       },
     }));
 
@@ -283,6 +286,15 @@ describe('handleDoneCommand', () => {
       message: 'All steps complete',
     });
 
+    getLockInfoSpy.mockResolvedValueOnce({
+      type: 'pid',
+      pid: process.pid,
+      command: 'rmplan agent',
+      startedAt: new Date().toISOString(),
+      hostname: os.hostname(),
+      version: 2,
+    });
+
     const options = {
       steps: '1',
     };
@@ -297,6 +309,56 @@ describe('handleDoneCommand', () => {
 
     expect(releaseLockSpy).toHaveBeenCalledWith(tempDir);
     expect(logSpy).toHaveBeenCalledWith('Released workspace lock');
+  });
+
+  test('logs reminder when persistent lock remains after plan completes', async () => {
+    const plan: PlanSchema = {
+      id: '1',
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Test Task',
+          description: 'Test task description',
+          steps: [{ prompt: 'Test step prompt', done: false }],
+        },
+      ],
+    };
+
+    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
+
+    markStepDoneSpy.mockResolvedValue({
+      planComplete: true,
+      message: 'All steps complete',
+    });
+
+    getLockInfoSpy.mockResolvedValueOnce({
+      type: 'persistent',
+      pid: process.pid,
+      command: 'manual lock',
+      startedAt: new Date().toISOString(),
+      hostname: os.hostname(),
+      version: 2,
+    });
+
+    const options = {
+      steps: '1',
+    };
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleDoneCommand('1', options, command);
+
+    expect(releaseLockSpy).not.toHaveBeenCalled();
+    expect(logSpy).toHaveBeenCalledWith(
+      'Workspace remains locked. Use "rmplan workspace unlock" to release it.'
+    );
   });
 
   test('handles errors from markStepDone', async () => {

@@ -29,8 +29,16 @@ export async function handleDoneCommand(planFile: string, options: any, command:
   // If plan is complete and we're in a workspace, release the lock
   if (result.planComplete) {
     try {
-      await WorkspaceLock.releaseLock(gitRoot);
-      log('Released workspace lock');
+      const lockInfo = await WorkspaceLock.getLockInfo(gitRoot);
+
+      if (lockInfo?.type === 'pid') {
+        const released = await WorkspaceLock.releaseLock(gitRoot);
+        if (released) {
+          log('Released workspace lock');
+        }
+      } else if (lockInfo?.type === 'persistent') {
+        log('Workspace remains locked. Use "rmplan workspace unlock" to release it.');
+      }
     } catch (err) {
       // Ignore lock release errors - workspace might not be locked
     }

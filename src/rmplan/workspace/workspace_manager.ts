@@ -662,8 +662,11 @@ export async function createWorkspace(
 
   // Acquire lock for the workspace
   try {
-    await WorkspaceLock.acquireLock(targetClonePath, `rmplan agent --workspace ${taskId}`);
-    WorkspaceLock.setupCleanupHandlers(targetClonePath);
+    const lockInfo = await WorkspaceLock.acquireLock(
+      targetClonePath,
+      `rmplan agent --workspace ${taskId}`
+    );
+    WorkspaceLock.setupCleanupHandlers(targetClonePath, lockInfo.type);
   } catch (error) {
     log(`Warning: Failed to acquire workspace lock: ${String(error)}`);
     // Continue without lock - this isn't fatal
