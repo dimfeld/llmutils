@@ -623,7 +623,7 @@ export async function handleReviewCommand(
         );
         log(
           chalk.gray(
-            `  Next step: Use "rmplan generate --plan ${cleanupResult.planId}" or "rmplan run ${cleanupResult.planId}"`
+            `  Next step: Use "rmplan generate ${cleanupResult.planId}" or "rmplan run ${cleanupResult.planId}"`
           )
         );
       } catch (cleanupErr) {
