@@ -687,7 +687,6 @@ export async function handleGenerateCommand(
         commit: options.commit,
         generatedBy: effectiveClaudeMode ? 'agent' : 'oneshot',
         researchContent: researchToPersist?.content,
-        researchInsertedAt: researchToPersist?.insertedAt,
       };
 
       await extractMarkdownToYaml(input, config, options.quiet ?? false, extractOptions);
