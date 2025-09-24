@@ -951,7 +951,6 @@ phases:
       false,
       expect.objectContaining({
         researchContent: 'Research findings from Claude',
-        researchInsertedAt: expect.any(Date),
       })
     );
   });
@@ -1825,7 +1824,6 @@ describe('handleGenerateCommand claude_mode configuration logic', () => {
       expect.objectContaining({
         generatedBy: 'agent', // This indicates Claude mode was used
         researchContent: undefined,
-        researchInsertedAt: undefined,
       })
     );
   });
@@ -1876,7 +1874,6 @@ describe('handleGenerateCommand claude_mode configuration logic', () => {
       expect.objectContaining({
         generatedBy: 'agent', // This indicates Claude mode was used
         researchContent: undefined,
-        researchInsertedAt: undefined,
       })
     );
   });

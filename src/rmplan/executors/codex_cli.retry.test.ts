@@ -234,6 +234,109 @@ describe('CodexCliExecutor implementer auto-retry', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
+  test('warns when repository state cannot be verified and skips detection retries', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-retry-unavailable-'));
+    const repoStates: RepositoryState[] = [
+      { commitHash: 'git-sha3', hasChanges: false, statusCheckFailed: true },
+      { commitHash: 'git-sha3', hasChanges: false, statusCheckFailed: true },
+    ];
+
+    const captureMock = mock(async () => {
+      const next = repoStates.shift();
+      return next ?? repoStates[repoStates.length - 1];
+    });
+
+    const logMock = mock((...args: any[]) => {
+      logMessages.push(args.map((a) => String(a)).join(' '));
+    });
+    const warnMock = mock((...args: any[]) => {
+      warnMessages.push(args.map((a) => String(a)).join(' '));
+    });
+
+    await moduleMocker.mock('../../logging.ts', () => ({
+      log: logMock,
+      warn: warnMock,
+      error: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+      captureRepositoryState: captureMock,
+    }));
+
+    const finals = [
+      'Plan: gathering context before coding',
+      'Tests completed.',
+      'Review done.\nVERDICT: ACCEPTABLE',
+    ];
+
+    await moduleMocker.mock('./codex_cli/format.ts', () => ({
+      createCodexStdoutFormatter: () => {
+        let final: string | undefined;
+        return {
+          formatChunk: () => {
+            final = finals.shift();
+            return '';
+          },
+          getFinalAgentMessage: () => final,
+          getFailedAgentMessage: () => undefined,
+        };
+      },
+    }));
+
+    const spawnMock = mock(async (_args: string[], opts: any) => {
+      if (opts && typeof opts.formatStdout === 'function') {
+        opts.formatStdout('ignored');
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: spawnMock,
+    }));
+
+    await moduleMocker.mock('../plans.ts', () => ({
+      readPlanFile: mock(async () => ({
+        id: 4,
+        title: 'Unavailable Repo State',
+        tasks: [],
+      })),
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.ts');
+    const executor = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    await executor.execute('Context', {
+      planId: '4',
+      planTitle: 'Plan',
+      planFilePath: path.join(tempDir, 'plan.yml'),
+      executionMode: 'normal',
+      captureOutput: 'none',
+    });
+
+    expect(spawnMock).toHaveBeenCalledTimes(3);
+    expect(captureMock).toHaveBeenCalledTimes(2);
+    expect(
+      warnMessages.some(
+        (msg) =>
+          msg.includes('Could not verify repository state after implementer attempt 1/4') &&
+          msg.includes('skipping planning-only detection for this attempt')
+      )
+    ).toBeTrue();
+    expect(
+      warnMessages.some((msg) =>
+        msg.includes('produced planning output without repository changes')
+      )
+    ).toBeFalse();
+    expect(
+      logMessages.some((msg) =>
+        msg.includes('Retrying implementer with more explicit instructions')
+      )
+    ).toBeFalse();
+
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
   test('does not retry when there is no planning language even if repo stays unchanged', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-retry-no-plan-'));
     const repoStates: RepositoryState[] = [

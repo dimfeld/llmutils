@@ -13,7 +13,7 @@ issue: []
 docs: []
 planGeneratedAt: 2025-09-24T19:56:12.064Z
 createdAt: 2025-09-24T02:30:42.162Z
-updatedAt: 2025-09-24T21:05:15.141Z
+updatedAt: 2025-09-24T21:20:13.756Z
 progressNotes:
   - timestamp: 2025-09-24T20:23:49.826Z
     text: Implemented repository state capture utilities and planning detection
@@ -50,6 +50,14 @@ progressNotes:
       implementer outputs, covering git success-after-retry, jj exhaustion, and
       no-detection edge cases.
     source: "implementer: Task 7"
+  - timestamp: 2025-09-24T21:10:39.831Z
+    text: Added integration test to assert warning output when repository state
+      capture fails, ensuring retries stay disabled under status check failures.
+    source: "tester: logging-integration"
+  - timestamp: 2025-09-24T21:13:52.055Z
+    text: Updated existing Codex executor tests to match new logging strings and ran
+      full bun test suite; all tests now passing.
+    source: "tester: integration-logging"
 tasks:
   - title: Add Repository State Tracking Interface
     done: true
@@ -118,7 +126,7 @@ tasks:
       - Preserve original context and task information across retries
     steps: []
   - title: Add Logging and Observability
-    done: false
+    done: true
     description: >-
       Implement clear logging for detection and retry events:
 
@@ -132,7 +140,7 @@ tasks:
       - Ensure logs are actionable and help with debugging
     steps: []
   - title: Create Integration Tests
-    done: false
+    done: true
     description: |-
       Write integration tests for the complete flow:
       - Mock Codex executor responses with planning-only output
@@ -164,12 +172,14 @@ tasks:
 changedFiles:
   - src/common/git.test.ts
   - src/common/git.ts
+  - src/rmplan/commands/generate.test.ts
   - src/rmplan/commands/generate.ts
   - src/rmplan/executors/claude_code/format.ts
   - src/rmplan/executors/codex_cli/format.test.ts
   - src/rmplan/executors/codex_cli/format.ts
   - src/rmplan/executors/codex_cli.capture_output.test.ts
   - src/rmplan/executors/codex_cli.fix_loop.test.ts
+  - src/rmplan/executors/codex_cli.retry.test.ts
   - src/rmplan/executors/codex_cli.test.ts
   - src/rmplan/executors/codex_cli.ts
   - src/rmplan/executors/failure_detection.test.ts

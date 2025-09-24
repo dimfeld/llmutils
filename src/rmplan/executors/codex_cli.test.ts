@@ -206,9 +206,10 @@ describe('CodexCliExecutor - failure detection across agents', () => {
   });
 
   test('retries implementer when output only contains planning text', async () => {
+    const logMock = mock(() => {});
     const warnMock = mock(() => {});
     await moduleMocker.mock('../../logging', () => ({
-      log: mock(() => {}),
+      log: logMock,
       warn: warnMock,
       error: mock(() => {}),
     }));
@@ -318,14 +319,19 @@ describe('CodexCliExecutor - failure detection across agents', () => {
       'Please implement the changes now, not just plan them.'
     );
     expect(
-      warnMock.mock.calls.some((args) => String(args[0]).includes('Retrying (attempt 2/4)'))
+      logMock.mock.calls.some((args) =>
+        String(args[0]).includes(
+          'Retrying implementer with more explicit instructions (attempt 2/4)'
+        )
+      )
     ).toBeTrue();
   });
 
   test('continues after exhausting planning-only retries', async () => {
+    const logMock = mock(() => {});
     const warnMock = mock(() => {});
     await moduleMocker.mock('../../logging', () => ({
-      log: mock(() => {}),
+      log: logMock,
       warn: warnMock,
       error: mock(() => {}),
     }));
@@ -440,12 +446,14 @@ describe('CodexCliExecutor - failure detection across agents', () => {
     expect(
       warnMock.mock.calls.some((args) =>
         String(args[0]).includes(
-          'Implementer planned without executing changes despite retries; continuing.'
+          'Implementer planned without executing changes after exhausting 4 attempts; continuing to tester.'
         )
       )
     ).toBeTrue();
     expect(
-      warnMock.mock.calls.filter((args) => String(args[0]).includes('Retrying (attempt'))
+      logMock.mock.calls.filter((args) =>
+        String(args[0]).includes('Retrying implementer with more explicit instructions')
+      )
     ).toHaveLength(3);
   });
 });
