@@ -634,6 +634,30 @@ Then prepare to synthesize these reports into the final plan.
 When you're done with your analysis, let me know and I'll provide the next instruction.`;
 }
 
+export function generateClaudeCodeResearchPrompt(): string {
+  return `Before you generate the final implementation plan, capture every insight you've gathered so far.
+
+Output structured Markdown that can be appended directly under a "## Research" heading in the plan file. Follow this exact template:
+
+### Summary
+- Provide a concise overview of the opportunity or problem you investigated.
+- Highlight the most critical discoveries that should guide implementation.
+
+### Key Findings
+- List notable files, modules, or patterns you inspected and what you learned about them.
+- Mention existing utilities, abstractions, or APIs that are relevant.
+
+### Risks & Constraints
+- Record architectural hazards, edge cases, or constraints uncovered during research.
+- Call out any dependencies or prerequisites the implementation must respect.
+
+### Follow-up Questions
+- Capture any remaining unknowns that an engineer or product partner should resolve.
+- If there are no open questions, state "None" so the section is explicit.
+
+Do not wrap the output in code fences and do not repeat previous instructions. Focus on signal over fluff.`;
+}
+
 export function generateClaudeCodeGenerationPrompt(): string {
   return `Based on your analysis of the codebase and the project description, please now generate a detailed implementation plan.
 

@@ -16,9 +16,8 @@ const errorSpy = mock(() => {});
 const warnSpy = mock(() => {});
 
 // Mock invokeClaudeCodeForGeneration
-const invokeClaudeCodeForGenerationSpy = mock(async () => {
-  // Return predefined YAML with tasks containing files and steps
-  return `tasks:
+const invokeClaudeCodeForGenerationSpy = mock(async () => ({
+  generationOutput: `tasks:
   - title: "Task 1"
     description: "Task 1 description"
     files:
@@ -35,20 +34,21 @@ const invokeClaudeCodeForGenerationSpy = mock(async () => {
       - "src/file3.ts"
     steps:
       - prompt: "Step 1 for Task 2"
-        done: false`;
-});
+        done: false`,
+  researchOutput: undefined,
+}));
 
 // Mock runRmfilterProgrammatically
 const runRmfilterProgrammaticallySpy = mock(async () => 'rmfilter output');
 
 // Mock getGitRoot
-const getGitRootSpy = mock(async () => '/mock/git/root');
+let tempDir: string;
+const getGitRootSpy = mock(async () => tempDir);
 
 // Mock model factory
 const createModelSpy = mock(async () => ({ id: 'test-model' }));
 
 describe('preparePhase with Claude option', () => {
-  let tempDir: string;
   let tasksDir: string;
   let planFilePath: string;
 
@@ -155,6 +155,7 @@ describe('preparePhase with Claude option', () => {
     expect(claudeCall[2]).toEqual({
       model: 'test-model',
       includeDefaultTools: true,
+      researchPrompt: undefined,
     });
 
     // Assert that the tasks have been updated with files and steps
@@ -234,5 +235,56 @@ describe('preparePhase with Claude option', () => {
     expect(invokeClaudeCodeForGenerationSpy).toHaveBeenCalledTimes(1);
     const claudeCall = invokeClaudeCodeForGenerationSpy.mock.calls[0] as any;
     expect(claudeCall[2].model).toBe('custom-model');
+  });
+
+  test('captures research findings when plan was generated in oneshot mode', async () => {
+    const researchPlan: PlanSchema = {
+      id: 3,
+      title: 'Oneshot Plan',
+      goal: 'Verify research preservation',
+      details: 'Initial details',
+      status: 'pending',
+      generatedBy: 'oneshot',
+      tasks: [
+        {
+          title: 'Initial Task',
+          description: 'Placeholder',
+          steps: [],
+        },
+      ],
+    };
+
+    planFilePath = path.join(tasksDir, 'research-plan.yaml');
+    await fs.writeFile(planFilePath, yaml.stringify(researchPlan));
+
+    invokeClaudeCodeForGenerationSpy.mockResolvedValueOnce({
+      generationOutput: `tasks:
+  - title: "Initial Task"
+    description: "Updated description"
+    steps:
+      - prompt: "Generated step"
+        done: false`,
+      researchOutput: 'Research summary from Claude',
+    });
+
+    const mockConfig = {
+      models: {
+        stepGeneration: 'test-model',
+      },
+    };
+
+    await preparePhase(planFilePath, mockConfig as any, {
+      claude: true,
+    });
+
+    const updatedPlan = await readPlanFile(planFilePath);
+
+    expect(updatedPlan.details).toContain('Initial details');
+    expect(updatedPlan.details).toContain('## Research');
+    expect(updatedPlan.details).toContain('Research summary from Claude');
+    expect(updatedPlan.tasks[0].description).toBe('Updated description');
+    expect(invokeClaudeCodeForGenerationSpy).toHaveBeenCalledTimes(1);
+    const optionsArg = invokeClaudeCodeForGenerationSpy.mock.calls[0][2];
+    expect(optionsArg.researchPrompt).toContain('structured Markdown');
   });
 });

@@ -1,6 +1,9 @@
 import chalk from 'chalk';
 import { log } from '../logging.js';
-import { runClaudeCodeGeneration } from './executors/claude_code_orchestrator.js';
+import {
+  runClaudeCodeGeneration,
+  type ClaudeCodeGenerationResult,
+} from './executors/claude_code_orchestrator.js';
 
 /**
  * Invokes Claude Code for two-step generation process (planning + generation).
@@ -18,14 +21,16 @@ export async function invokeClaudeCodeForGeneration(
   options: {
     model?: string;
     includeDefaultTools?: boolean;
+    researchPrompt?: string;
   }
-): Promise<string> {
-  log(chalk.blue('🤖 Using Claude Code for two-step planning and generation'));
+): Promise<ClaudeCodeGenerationResult> {
+  log(chalk.blue('🤖 Using Claude Code for multi-step planning and generation'));
 
   // Call the orchestrator with both prompts
   const result = await runClaudeCodeGeneration({
     planningPrompt,
     generationPrompt,
+    researchPrompt: options.researchPrompt,
     options: {
       includeDefaultTools: options.includeDefaultTools ?? true,
     },

@@ -747,7 +747,10 @@ describe('handleGenerateCommand with --claude flag', () => {
   const clipboardWriteSpy = mock(async () => {});
   const clipboardReadSpy = mock(async () => 'clipboard content');
   const waitForEnterSpy = mock(async () => 'enter pressed');
-  const invokeClaudeCodeForGenerationSpy = mock(async () => 'Generated YAML content');
+  const invokeClaudeCodeForGenerationSpy = mock(async () => ({
+    generationOutput: 'Generated YAML content',
+    researchOutput: undefined,
+  }));
   const extractMarkdownToYamlSpy = mock(async () => {});
 
   beforeEach(async () => {
@@ -886,6 +889,7 @@ describe('handleGenerateCommand with --claude flag', () => {
     expect(callArgs[2]).toEqual({
       model: 'test-model',
       includeDefaultTools: true,
+      researchPrompt: expect.any(String),
     });
   });
 
@@ -913,7 +917,10 @@ phases:
         description: Task description
         status: pending`;
 
-    invokeClaudeCodeForGenerationSpy.mockResolvedValueOnce(yamlContent);
+    invokeClaudeCodeForGenerationSpy.mockResolvedValueOnce({
+      generationOutput: yamlContent,
+      researchOutput: 'Research findings from Claude',
+    });
 
     const options = {
       plan: planPath,
@@ -942,7 +949,10 @@ phases:
       yamlContent,
       expect.any(Object),
       false,
-      expect.any(Object)
+      expect.objectContaining({
+        researchContent: 'Research findings from Claude',
+        researchInsertedAt: expect.any(Date),
+      })
     );
   });
 });
@@ -1737,7 +1747,10 @@ describe('handleGenerateCommand claude_mode configuration logic', () => {
   let tasksDir: string;
 
   // Mock functions
-  const invokeClaudeCodeForGenerationSpy = mock(async () => 'Generated YAML content');
+  const invokeClaudeCodeForGenerationSpy = mock(async () => ({
+    generationOutput: 'Generated YAML content',
+    researchOutput: undefined,
+  }));
   const extractMarkdownToYamlSpy = mock(async () => {});
 
   beforeEach(async () => {
@@ -1811,6 +1824,8 @@ describe('handleGenerateCommand claude_mode configuration logic', () => {
       false,
       expect.objectContaining({
         generatedBy: 'agent', // This indicates Claude mode was used
+        researchContent: undefined,
+        researchInsertedAt: undefined,
       })
     );
   });
@@ -1860,6 +1875,8 @@ describe('handleGenerateCommand claude_mode configuration logic', () => {
       false,
       expect.objectContaining({
         generatedBy: 'agent', // This indicates Claude mode was used
+        researchContent: undefined,
+        researchInsertedAt: undefined,
       })
     );
   });

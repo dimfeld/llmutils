@@ -13,6 +13,7 @@ import {
   generatePhaseStepsPrompt,
   generateClaudeCodePhaseStepsPlanningPrompt,
   generateClaudeCodePhaseStepsGenerationPrompt,
+  generateClaudeCodeResearchPrompt,
 } from '../prompt.js';
 import { runRmfilterProgrammatically } from '../../rmfilter/rmfilter.js';
 import { resolveTasksDir, type RmplanConfig } from '../configSchema.js';
@@ -21,6 +22,7 @@ import { fixYaml } from '../fix_yaml.js';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../llm_utils/run_and_apply.js';
 import { readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
 import { invokeClaudeCodeForGeneration } from '../claude_utils.js';
+import { appendResearchToPlan } from '../research_utils.ts';
 
 /**
  * Prepares a phase by generating detailed implementation steps and prompts for all tasks.
@@ -58,6 +60,7 @@ export async function preparePhase(
   try {
     // Load the target phase YAML file
     const currentPhaseData = await readPlanFile(phaseYamlFile);
+    let researchToPersist: { content: string; insertedAt: Date } | undefined;
     const tasksDir = await resolveTasksDir(config);
     const projectPlanDir = path.dirname(phaseYamlFile);
     const { plans: allPlans } = await readAllPlans(tasksDir);
@@ -163,12 +166,27 @@ export async function preparePhase(
       // Generate the two prompts for Claude Code
       const planningPrompt = generateClaudeCodePhaseStepsPlanningPrompt(phaseGenCtx);
       const generationPrompt = generateClaudeCodePhaseStepsGenerationPrompt();
+      const shouldCaptureResearch = currentPhaseData.generatedBy === 'oneshot';
+      const researchPrompt = shouldCaptureResearch
+        ? `${generateClaudeCodeResearchPrompt()}\n\nFocus this summary on findings relevant to preparing implementation steps for this phase.`
+        : undefined;
 
       // Use the shared Claude Code invocation helper
-      text = await invokeClaudeCodeForGeneration(planningPrompt, generationPrompt, {
+      const claudeResult = await invokeClaudeCodeForGeneration(planningPrompt, generationPrompt, {
         model: options.model || config.models?.stepGeneration,
         includeDefaultTools: true,
+        researchPrompt,
       });
+
+      if (shouldCaptureResearch && claudeResult.researchOutput?.trim()) {
+        researchToPersist = {
+          content: claudeResult.researchOutput,
+          insertedAt: new Date(),
+        };
+        log(chalk.green('✓ Captured research findings for plan details'));
+      }
+
+      text = claudeResult.generationOutput;
     } else {
       let prompt: string;
       try {
@@ -256,6 +274,13 @@ export async function preparePhase(
     const now = new Date().toISOString();
     currentPhaseData.promptsGeneratedAt = now;
     currentPhaseData.updatedAt = now;
+
+    if (researchToPersist) {
+      const planWithResearch = appendResearchToPlan(currentPhaseData, researchToPersist.content, {
+        insertedAt: researchToPersist.insertedAt,
+      });
+      Object.assign(currentPhaseData, planWithResearch);
+    }
 
     // 11. Write the updated phase YAML back to file
     await writePlanFile(phaseYamlFile, currentPhaseData);

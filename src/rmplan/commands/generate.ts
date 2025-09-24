@@ -39,6 +39,7 @@ import {
   simplePlanPrompt,
   generateClaudeCodePlanningPrompt,
   generateClaudeCodeGenerationPrompt,
+  generateClaudeCodeResearchPrompt,
 } from '../prompt.js';
 import { getInstructionsFromIssue, type IssueInstructionData } from '../issue_utils.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
@@ -601,18 +602,35 @@ export async function handleGenerateCommand(
 
   try {
     if (exitRes === 0 && options.extract !== false) {
+      let researchToPersist: { content: string; insertedAt: Date } | undefined;
       let input: string;
 
       if (effectiveClaudeMode) {
         // Generate the two prompts for Claude Code
         const planningPrompt = generateClaudeCodePlanningPrompt(fullPlanText);
+        const researchPrompt = generateClaudeCodeResearchPrompt();
         const generationPrompt = generateClaudeCodeGenerationPrompt();
 
         // Use the shared Claude Code invocation helper
-        input = await invokeClaudeCodeForGeneration(planningPrompt, generationPrompt, {
+        const claudeResult = await invokeClaudeCodeForGeneration(planningPrompt, generationPrompt, {
           model: config.models?.stepGeneration,
           includeDefaultTools: true,
+          researchPrompt,
         });
+
+        if (claudeResult.researchOutput?.trim()) {
+          if (planFile) {
+            researchToPersist = {
+              content: claudeResult.researchOutput,
+              insertedAt: new Date(),
+            };
+            log(chalk.green('✓ Captured research findings for plan details'));
+          } else {
+            warn('Generated research findings but no plan file was available to update.');
+          }
+        }
+
+        input = claudeResult.generationOutput;
       } else if (effectiveDirectMode) {
         // Direct LLM call
         const modelId = config.models?.stepGeneration || DEFAULT_RUN_MODEL;
@@ -668,6 +686,8 @@ export async function handleGenerateCommand(
         stubPlan,
         commit: options.commit,
         generatedBy: effectiveClaudeMode ? 'agent' : 'oneshot',
+        researchContent: researchToPersist?.content,
+        researchInsertedAt: researchToPersist?.insertedAt,
       };
 
       await extractMarkdownToYaml(input, config, options.quiet ?? false, extractOptions);

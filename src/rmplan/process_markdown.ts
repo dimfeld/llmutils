@@ -12,6 +12,7 @@ import type { PlanSchema } from './planSchema.js';
 import { phaseSchema, planSchema } from './planSchema.js';
 import { isTaskDone, writePlanFile } from './plans.js';
 import { phaseExampleFormatGeneric, planExampleFormatGeneric } from './prompt.js';
+import { appendResearchToPlan } from './research_utils.ts';
 // Note: previously used for prompting on multiphase directory names.
 // No longer needed since we always write a single plan file.
 import type { GoogleGenerativeAIProviderOptions } from '@ai-sdk/google';
@@ -276,6 +277,8 @@ export interface ExtractMarkdownToYamlOptions {
   updatePlan?: { data: PlanSchema; path: string };
   commit?: boolean;
   generatedBy?: 'agent' | 'oneshot';
+  researchContent?: string;
+  researchInsertedAt?: Date;
 }
 
 export async function extractMarkdownToYaml(
@@ -527,6 +530,12 @@ export async function extractMarkdownToYaml(
     throw e;
   }
 
+  if (options.researchContent?.trim()) {
+    validatedPlan = appendResearchToPlan(validatedPlan, options.researchContent, {
+      insertedAt: options.researchInsertedAt,
+    });
+  }
+
   // Write single-phase plan to output file
   const outputPath =
     options.output.endsWith('.yml') || options.output.endsWith('.plan.md')
@@ -618,6 +627,12 @@ export async function saveMultiPhaseYaml(
     );
   }
   let combinedPlan = validation.data;
+
+  if (options.researchContent?.trim()) {
+    combinedPlan = appendResearchToPlan(combinedPlan, options.researchContent, {
+      insertedAt: options.researchInsertedAt,
+    });
+  }
 
   // Preserve or set metadata similar to the single-phase path
   const fieldsToPreserve = [

@@ -7,7 +7,10 @@ const moduleMocker = new ModuleMocker(import.meta);
 describe('invokeClaudeCodeForGeneration', () => {
   // Mock functions
   const logSpy = mock(() => {});
-  const runClaudeCodeGenerationSpy = mock(async () => 'Generated content from Claude');
+  const runClaudeCodeGenerationSpy = mock(async () => ({
+    generationOutput: 'Generated content from Claude',
+    researchOutput: 'Research summary',
+  }));
 
   beforeEach(async () => {
     // Clear mocks
@@ -41,7 +44,7 @@ describe('invokeClaudeCodeForGeneration', () => {
     // Verify log was called
     expect(logSpy).toHaveBeenCalledTimes(1);
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Using Claude Code for two-step planning and generation')
+      expect.stringContaining('Using Claude Code for multi-step planning and generation')
     );
 
     // Verify runClaudeCodeGeneration was called with correct arguments
@@ -49,6 +52,7 @@ describe('invokeClaudeCodeForGeneration', () => {
     expect(runClaudeCodeGenerationSpy).toHaveBeenCalledWith({
       planningPrompt,
       generationPrompt,
+      researchPrompt: undefined,
       options: {
         includeDefaultTools: true,
       },
@@ -56,7 +60,10 @@ describe('invokeClaudeCodeForGeneration', () => {
     });
 
     // Verify the result
-    expect(result).toBe('Generated content from Claude');
+    expect(result).toEqual({
+      generationOutput: 'Generated content from Claude',
+      researchOutput: 'Research summary',
+    });
   });
 
   test('defaults includeDefaultTools to true when not provided', async () => {
@@ -71,6 +78,7 @@ describe('invokeClaudeCodeForGeneration', () => {
     expect(runClaudeCodeGenerationSpy).toHaveBeenCalledWith({
       planningPrompt,
       generationPrompt,
+      researchPrompt: undefined,
       options: {
         includeDefaultTools: true,
       },
@@ -88,10 +96,33 @@ describe('invokeClaudeCodeForGeneration', () => {
     expect(runClaudeCodeGenerationSpy).toHaveBeenCalledWith({
       planningPrompt,
       generationPrompt,
+      researchPrompt: undefined,
       options: {
         includeDefaultTools: true,
       },
       model: undefined,
+    });
+  });
+
+  test('passes through research prompt when provided', async () => {
+    const planningPrompt = 'Planning prompt';
+    const generationPrompt = 'Generation prompt';
+    const researchPrompt = 'Research prompt';
+
+    await invokeClaudeCodeForGeneration(planningPrompt, generationPrompt, {
+      model: 'custom-model',
+      researchPrompt,
+      includeDefaultTools: false,
+    });
+
+    expect(runClaudeCodeGenerationSpy).toHaveBeenCalledWith({
+      planningPrompt,
+      generationPrompt,
+      researchPrompt,
+      options: {
+        includeDefaultTools: false,
+      },
+      model: 'custom-model',
     });
   });
 });
