@@ -77,6 +77,9 @@ export interface ExecutorFactory<E extends Executor, SCHEMA extends z.ZodType = 
   /** A brief description of what the executor does. */
   description: string;
 
+  /** Indicates whether the executor supports orchestrating sub-agents. */
+  supportsSubagents?: boolean;
+
   optionsSchema: SCHEMA;
 
   defaultModel?: {
