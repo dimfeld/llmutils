@@ -188,6 +188,7 @@ describe('Git Utilities', () => {
       const after = await captureRepositoryState(tempDir);
       expect(after.hasChanges).toBeTrue();
       expect(after.statusOutput).toContain('example.txt');
+      expect(after.diffHash).toBeString();
 
       const comparison = compareRepositoryStates(before, after);
       expect(comparison.commitChanged).toBeFalse();
@@ -219,6 +220,7 @@ describe('Git Utilities', () => {
       const comparison = compareRepositoryStates(before, after);
       expect(after.hasChanges).toBeFalse();
       expect(after.statusOutput).toBeUndefined();
+      expect(after.diffHash).toBeUndefined();
       expect(comparison.commitChanged).toBeTrue();
       expect(comparison.workingTreeChanged).toBeFalse();
       expect(comparison.hasDifferences).toBeTrue();
@@ -228,6 +230,34 @@ describe('Git Utilities', () => {
       const state = await captureRepositoryState(tempDir);
       expect(state.statusCheckFailed).toBeTrue();
       expect(state.hasChanges).toBeFalse();
+      expect(state.diffHash).toBeUndefined();
+    });
+
+    it('detects working tree changes when file list remains the same', async () => {
+      await initGitRepository(tempDir);
+
+      const filePath = path.join(tempDir, 'example.txt');
+      await fs.writeFile(filePath, 'initial');
+
+      await runGit(tempDir, ['add', '.']);
+      await runGit(tempDir, ['commit', '-m', 'Initial commit']);
+
+      await fs.writeFile(filePath, 'first dirty state');
+      const before = await captureRepositoryState(tempDir);
+      expect(before.hasChanges).toBeTrue();
+      expect(before.statusOutput).toContain('example.txt');
+      expect(before.diffHash).toBeString();
+
+      await fs.writeFile(filePath, 'second dirty state with actual edits');
+      const after = await captureRepositoryState(tempDir);
+      expect(after.hasChanges).toBeTrue();
+      expect(after.statusOutput).toBe(before.statusOutput);
+      expect(after.diffHash).not.toBe(before.diffHash);
+
+      const comparison = compareRepositoryStates(before, after);
+      expect(comparison.commitChanged).toBeFalse();
+      expect(comparison.workingTreeChanged).toBeTrue();
+      expect(comparison.hasDifferences).toBeTrue();
     });
   });
 

@@ -114,6 +114,26 @@ describe('planning-without-implementation detection', () => {
     expect(detection.recommendedAction).toBe('proceed');
   });
 
+  test('ignores planning output when diff hash changes even if status list is identical', () => {
+    const before: RepositoryState = {
+      commitHash: 'abc',
+      hasChanges: true,
+      statusOutput: ' M src/example.ts',
+      diffHash: 'hash-one',
+    };
+    const after: RepositoryState = {
+      commitHash: 'abc',
+      hasChanges: true,
+      statusOutput: ' M src/example.ts',
+      diffHash: 'hash-two',
+    };
+
+    const detection = detectPlanningWithoutImplementation('Plan: finish work later', before, after);
+    expect(detection.detected).toBeFalse();
+    expect(detection.workingTreeChanged).toBeTrue();
+    expect(detection.recommendedAction).toBe('proceed');
+  });
+
   test('bails out when repository status is unavailable', () => {
     const before = { commitHash: 'abc', hasChanges: false, statusCheckFailed: true };
     const after = { commitHash: 'abc', hasChanges: false, statusCheckFailed: true };

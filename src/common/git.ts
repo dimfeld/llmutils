@@ -16,6 +16,7 @@
 
 import { $ } from 'bun';
 import { findUp } from 'find-up';
+import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 import { debugLog, log } from '../logging.js';
 import { CURRENT_DIFF, parseJjRename } from '../rmfilter/additional_docs.js';
@@ -105,6 +106,7 @@ interface WorkingCopyStatus {
   hasChanges: boolean;
   output?: string;
   checkFailed: boolean;
+  diffHash?: string;
 }
 
 async function getWorkingCopyStatus(cwd: string): Promise<WorkingCopyStatus> {
@@ -120,7 +122,14 @@ async function getWorkingCopyStatus(cwd: string): Promise<WorkingCopyStatus> {
       return { hasChanges: false, checkFailed: true };
     }
     const output = result.stdout.toString().trim();
-    return { hasChanges: output.length > 0, output: output || undefined, checkFailed: false };
+    const diffHash =
+      output.length > 0 ? createHash('sha256').update(output).digest('hex') : undefined;
+    return {
+      hasChanges: output.length > 0,
+      output: output || undefined,
+      checkFailed: false,
+      diffHash,
+    };
   }
 
   const result = await $`git status --porcelain`.cwd(cwd).quiet().nothrow();
@@ -128,7 +137,13 @@ async function getWorkingCopyStatus(cwd: string): Promise<WorkingCopyStatus> {
     return { hasChanges: false, checkFailed: true };
   }
   const output = result.stdout.toString().trim();
-  return { hasChanges: output.length > 0, output: output || undefined, checkFailed: false };
+  const diffHash = output.length > 0 ? await computeGitWorkingTreeHash(cwd) : undefined;
+  return {
+    hasChanges: output.length > 0,
+    output: output || undefined,
+    checkFailed: false,
+    diffHash,
+  };
 }
 
 /**
@@ -200,6 +215,7 @@ export interface RepositoryState {
   hasChanges: boolean;
   statusOutput?: string;
   statusCheckFailed?: boolean;
+  diffHash?: string;
 }
 
 export interface RepositoryStateComparison {
@@ -220,6 +236,7 @@ export async function captureRepositoryState(gitRoot: string): Promise<Repositor
       hasChanges: status.hasChanges,
       statusOutput: status.output,
       statusCheckFailed: status.checkFailed || undefined,
+      diffHash: status.diffHash,
     };
   } catch (error) {
     log(chalk.yellow(`Warning: Could not capture repository state: ${(error as Error).message}`));
@@ -239,12 +256,59 @@ export function compareRepositoryStates(
   const commitChanged = (before.commitHash ?? null) !== (after.commitHash ?? null);
   const workingTreeChanged =
     before.hasChanges !== after.hasChanges ||
-    normalize(before.statusOutput) !== normalize(after.statusOutput);
+    normalize(before.statusOutput) !== normalize(after.statusOutput) ||
+    (before.diffHash ?? null) !== (after.diffHash ?? null);
   return {
     commitChanged,
     workingTreeChanged,
     hasDifferences: commitChanged || workingTreeChanged,
   };
+}
+
+async function computeGitWorkingTreeHash(cwd: string): Promise<string | undefined> {
+  try {
+    const diffResult = await $`git diff --no-color HEAD`.cwd(cwd).quiet().nothrow();
+    if (diffResult.exitCode !== 0) {
+      return undefined;
+    }
+    const diffText = diffResult.stdout.toString();
+    const hash = createHash('sha256');
+    let hasContent = false;
+    if (diffText.length > 0) {
+      hash.update(diffText);
+      hasContent = true;
+    }
+
+    const untrackedResult = await $`git ls-files --others --exclude-standard -z`
+      .cwd(cwd)
+      .quiet()
+      .nothrow();
+    if (untrackedResult.exitCode === 0) {
+      const paths = untrackedResult.stdout
+        .toString()
+        .split('\0')
+        .filter((p) => p.length > 0)
+        .sort();
+      for (const relPath of paths) {
+        hash.update(relPath);
+        hash.update('\0');
+        hasContent = true;
+        try {
+          const fileData = await Bun.file(path.join(cwd, relPath)).arrayBuffer();
+          hash.update(new Uint8Array(fileData));
+        } catch {
+          hash.update('<missing>');
+        }
+      }
+    }
+
+    if (!hasContent) {
+      return undefined;
+    }
+    return hash.digest('hex');
+  } catch {
+    return undefined;
+  }
 }
 
 /**
