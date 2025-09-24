@@ -126,13 +126,16 @@
           },
           "text": {
             "type": "string"
+          },
+          "source": {
+            "type": "string"
           }
         },
         "required": [
           "timestamp",
           "text"
         ],
-        "additionalProperties": false
+        "additionalProperties": {}
       }
     },
     "project": {
@@ -151,7 +154,7 @@
       "required": [
         "title"
       ],
-      "additionalProperties": false
+      "additionalProperties": {}
     },
     "tasks": {
       "type": "array",
@@ -209,20 +212,17 @@
                 }
               },
               "required": [
-                "prompt",
-                "done"
+                "prompt"
               ],
-              "additionalProperties": false
+              "additionalProperties": {}
             }
           }
         },
         "required": [
           "title",
-          "done",
-          "description",
-          "steps"
+          "description"
         ],
-        "additionalProperties": false
+        "additionalProperties": {}
       }
     },
     "baseBranch": {
@@ -247,5 +247,5 @@
     "status",
     "tasks"
   ],
-  "additionalProperties": false
+  "additionalProperties": {}
 }

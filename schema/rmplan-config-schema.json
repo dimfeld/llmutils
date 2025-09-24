@@ -45,11 +45,8 @@
         },
         "required": [
           "title",
-          "command",
-          "allowFailure",
-          "hideOutputOnSuccess"
-        ],
-        "additionalProperties": false
+          "command"
+        ]
       }
     },
     "paths": {
@@ -70,8 +67,7 @@
           "description": "Path to workspace tracking file (default: ~/.config/rmfilter/workspaces.json)",
           "type": "string"
         }
-      },
-      "additionalProperties": false
+      }
     },
     "autoexamples": {
       "type": "array",
@@ -95,8 +91,7 @@
             "required": [
               "find",
               "example"
-            ],
-            "additionalProperties": false
+            ]
           }
         ]
       }
@@ -120,8 +115,7 @@
           "description": "Model spec for rmplan prepare phase generation",
           "type": "string"
         }
-      },
-      "additionalProperties": false
+      }
     },
     "answerPr": {
       "type": "object",
@@ -143,8 +137,7 @@
           "description": "Default value for whether to commit changes after processing",
           "type": "boolean"
         }
-      },
-      "additionalProperties": false
+      }
     },
     "prCreation": {
       "description": "Configuration for PR creation behavior",
@@ -160,9 +153,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "draft"
-      ],
       "additionalProperties": false
     },
     "modelApiKeys": {
@@ -183,7 +173,18 @@
     "workspaceCreation": {
       "type": "object",
       "properties": {
+        "cloneMethod": {
+          "type": "string",
+          "enum": [
+            "git",
+            "cp",
+            "mac-cow"
+          ]
+        },
         "repositoryUrl": {
+          "type": "string"
+        },
+        "sourceDirectory": {
           "type": "string"
         },
         "cloneLocation": {
@@ -223,22 +224,17 @@
             },
             "required": [
               "title",
-              "command",
-              "allowFailure",
-              "hideOutputOnSuccess"
-            ],
-            "additionalProperties": false
+              "command"
+            ]
           }
         },
         "copyAdditionalGlobs": {
-          "description": "Additional glob patterns to copy when using filesystem-based clone methods",
           "type": "array",
           "items": {
             "type": "string"
           }
         }
-      },
-      "additionalProperties": false
+      }
     },
     "planning": {
       "type": "object",
@@ -247,12 +243,15 @@
           "description": "Default behavior for direct mode in generate and prepare commands",
           "type": "boolean"
         },
+        "claude_mode": {
+          "description": "Default behavior for Claude mode in generate and prepare commands",
+          "type": "boolean"
+        },
         "instructions": {
           "description": "Path to a planning document file to include in all planning prompts",
           "type": "string"
         }
-      },
-      "additionalProperties": false
+      }
     },
     "agents": {
       "description": "Custom instructions for implementer, tester, and reviewer agents",
@@ -265,8 +264,7 @@
               "description": "Path to custom instructions file for the implementer agent",
               "type": "string"
             }
-          },
-          "additionalProperties": false
+          }
         },
         "tester": {
           "type": "object",
@@ -275,8 +273,7 @@
               "description": "Path to custom instructions file for the tester agent",
               "type": "string"
             }
-          },
-          "additionalProperties": false
+          }
         },
         "reviewer": {
           "type": "object",
@@ -285,8 +282,7 @@
               "description": "Path to custom instructions file for the reviewer agent",
               "type": "string"
             }
-          },
-          "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false
@@ -399,8 +395,7 @@
               },
               "required": [
                 "enabled"
-              ],
-              "additionalProperties": false
+              ]
             },
             "agents": {
               "description": "Configuration for specialized agents",
@@ -413,8 +408,7 @@
                       "description": "Model to use for the implementer agent",
                       "type": "string"
                     }
-                  },
-                  "additionalProperties": false
+                  }
                 },
                 "tester": {
                   "type": "object",
@@ -423,8 +417,7 @@
                       "description": "Model to use for the tester agent",
                       "type": "string"
                     }
-                  },
-                  "additionalProperties": false
+                  }
                 },
                 "reviewer": {
                   "type": "object",
@@ -433,24 +426,20 @@
                       "description": "Model to use for the reviewer agent",
                       "type": "string"
                     }
-                  },
-                  "additionalProperties": false
+                  }
                 }
-              },
-              "additionalProperties": false
+              }
             },
             "enableReviewFeedback": {
               "description": "Enable the review feedback MCP tool for interactive review feedback",
               "default": false,
               "type": "boolean"
             }
-          },
-          "additionalProperties": false
+          }
         },
         "copy-only": {
           "type": "object",
-          "properties": {},
-          "additionalProperties": false
+          "properties": {}
         },
         "copy-paste": {
           "type": "object",
@@ -459,8 +448,7 @@
               "description": "The model string for LLM execution, e.g., 'google/gemini-2.5-pro'.",
               "type": "string"
             }
-          },
-          "additionalProperties": false
+          }
         },
         "direct-call": {
           "type": "object",
@@ -469,12 +457,22 @@
               "description": "The model string for LLM execution, e.g., 'google/gemini-2.5-pro'.",
               "type": "string"
             }
-          },
-          "additionalProperties": false
+          }
+        }
+      }
+    },
+    "progressNotes": {
+      "description": "Progress notes behavior and retention",
+      "type": "object",
+      "properties": {
+        "maxStored": {
+          "description": "Maximum number of progress notes to keep in a plan file",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "additionalProperties": false
     }
-  },
-  "additionalProperties": false
+  }
 }

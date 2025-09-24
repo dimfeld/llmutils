@@ -39,22 +39,12 @@ async function updateSchemas() {
       // Convert Zod schema to JSON Schema
       const jsonSchema = z.toJSONSchema(zodSchema, {
         target: 'draft-7',
+        io: 'input',
       });
-      // const jsonSchema = zodToJsonSchema(zodSchema, {
-      //   name: schemaName,
-      //   // Use draft-07 for better compatibility
-      //   $refStrategy: 'none',
-      // });
-
-      // Add the $schema property
-      const schemaWithMeta = {
-        // $schema: 'http://json-schema.org/draft-07/schema#',
-        ...jsonSchema,
-      };
 
       // Write to file with pretty formatting
       const fullPath = path.join(process.cwd(), outputPath);
-      await writeFile(fullPath, JSON.stringify(schemaWithMeta, null, 2) + '\n');
+      await writeFile(fullPath, JSON.stringify(jsonSchema, null, 2) + '\n');
 
       console.log(`✅ Updated ${outputPath}`);
     } catch (error) {
