@@ -5,7 +5,7 @@ import { getGitRoot } from '../common/git.js';
 import { createModel } from '../common/model_factory.js';
 import { commitAll } from '../common/process.js';
 import { boldMarkdownHeaders, debugLog, error, log, warn } from '../logging.js';
-import { resolveTasksDir, type RmplanConfig } from './configSchema.js';
+import { resolveTasksDir, rmplanConfigSchema, type RmplanConfig } from './configSchema.js';
 import { fixYaml } from './fix_yaml.js';
 import { generateNumericPlanId } from './id_utils.js';
 import type { PlanSchema } from './planSchema.js';
@@ -251,7 +251,8 @@ export function findYamlStart(text: string): string {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     // Match a line that looks like a YAML key: starts with a letter, followed by word chars/hyphens, then colon
-    if (/^(- )?[a-zA-Z][a-zA-Z0-9_-]*:/.test(line)) {
+    const m = /^(- )?([a-zA-Z][a-zA-Z0-9_-]*):/.exec(line);
+    if (m && Object.keys(rmplanConfigSchema.shape).includes(m[2])) {
       startIndex = text.indexOf(lines[i]);
       break;
     }
