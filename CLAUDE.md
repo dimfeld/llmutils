@@ -88,6 +88,17 @@ The codebase is organized into several main modules with improved modularity and
 - Research notes are preserved on disk inside the plan file. Open the plan and scroll to the `## Research` section in the `details` field to review or edit Claude's findings later.
 - If the research capture step fails, the orchestrator falls back to the traditional two-step process so existing workflows keep working.
 
+## Codex CLI Implementer Auto-Retry
+
+- The Codex executor now captures repository state before and after each implementer attempt using `captureRepositoryState()`, checking both commit hash and working tree status across Git and jj.
+- Planning-only outputs are detected when the implementer message contains planning phrases (e.g. lines starting with `Plan:`) and the repository state is unchanged. When detected, the executor retries up to three additional times with progressively stronger instructions to apply the changes immediately.
+- Logging surfaces detection and retry activity, for example:
+  - `Implementer attempt 1/4 produced planning output without repository changes...`
+  - `Retrying implementer with more explicit instructions (attempt 2/4)...`
+  - `Implementer produced repository changes after 1 planning-only attempt...`
+- Repository state checks gracefully degrade: if either capture fails (common in sandboxed environments), detection is skipped and a warning is emitted instead of forcing retries.
+- Real modifications—including direct commits, renames, deletions, and concurrent filesystem edits—prevent false positives by updating either the commit hash or working tree hashes tracked in the comparison.
+
 ## Environment Requirements
 
 - **Bun**: Required as the JavaScript runtime

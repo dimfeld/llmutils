@@ -12,6 +12,7 @@ import {
   getCurrentCommitHash,
   getCurrentJujutsuBranch,
 } from './git';
+import { detectPlanningWithoutImplementation } from '../rmplan/executors/failure_detection.ts';
 
 async function runGit(dir: string, args: string[]): Promise<void> {
   const proc = Bun.spawn(['git', ...args], { cwd: dir, stdout: 'pipe', stderr: 'pipe' });
@@ -258,6 +259,44 @@ describe('Git Utilities', () => {
       expect(comparison.commitChanged).toBeFalse();
       expect(comparison.workingTreeChanged).toBeTrue();
       expect(comparison.hasDifferences).toBeTrue();
+    });
+
+    it('detects renames and deletions as working tree changes', async () => {
+      await initGitRepository(tempDir);
+
+      const renamedSource = path.join(tempDir, 'example.txt');
+      const deletedFile = path.join(tempDir, 'extra.txt');
+      await fs.writeFile(renamedSource, 'initial');
+      await fs.writeFile(deletedFile, 'remove me');
+
+      await runGit(tempDir, ['add', '.']);
+      await runGit(tempDir, ['commit', '-m', 'Initial commit']);
+
+      const before = await captureRepositoryState(tempDir);
+      expect(before.hasChanges).toBeFalse();
+
+      const subdir = path.join(tempDir, 'src');
+      await fs.mkdir(subdir);
+      await runGit(tempDir, ['mv', 'example.txt', path.join('src', 'moved.txt')]);
+      await fs.rm(deletedFile);
+
+      const after = await captureRepositoryState(tempDir);
+      expect(after.hasChanges).toBeTrue();
+      expect(after.statusOutput).toBeString();
+      expect(after.statusOutput).toContain('->');
+      expect(after.statusOutput).toContain('extra.txt');
+
+      const comparison = compareRepositoryStates(before, after);
+      expect(comparison.workingTreeChanged).toBeTrue();
+      expect(comparison.hasDifferences).toBeTrue();
+
+      const detection = detectPlanningWithoutImplementation(
+        'Plan: reorganize files soon',
+        before,
+        after
+      );
+      expect(detection.detected).toBeFalse();
+      expect(detection.recommendedAction).toBe('proceed');
     });
   });
 

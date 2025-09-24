@@ -166,4 +166,17 @@ describe('planning-without-implementation detection', () => {
     expect(detection.commitChanged).toBeTrue();
     expect(detection.recommendedAction).toBe('proceed');
   });
+
+  test('treats repository as unavailable when only the after state fails', () => {
+    const before: RepositoryState = { commitHash: 'abc', hasChanges: false };
+    const after: RepositoryState = {
+      commitHash: 'abc',
+      hasChanges: false,
+      statusCheckFailed: true,
+    };
+    const detection = detectPlanningWithoutImplementation('Plan: take action later', before, after);
+    expect(detection.detected).toBeFalse();
+    expect(detection.repositoryStatusUnavailable).toBeTrue();
+    expect(detection.recommendedAction).toBe('proceed');
+  });
 });

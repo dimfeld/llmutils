@@ -337,6 +337,203 @@ describe('CodexCliExecutor implementer auto-retry', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
+  test('does not retry when a direct commit occurs during implementer run', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-retry-direct-commit-'));
+    const repoStates: RepositoryState[] = [
+      { commitHash: 'git-sha10', hasChanges: false, statusOutput: '', diffHash: undefined },
+      { commitHash: 'git-sha11', hasChanges: false, statusOutput: '', diffHash: undefined },
+    ];
+
+    const captureMock = mock(async () => {
+      const next = repoStates.shift();
+      return next ?? repoStates[repoStates.length - 1];
+    });
+
+    const logMock = mock((...args: any[]) => {
+      logMessages.push(args.map((a) => String(a)).join(' '));
+    });
+    const warnMock = mock((...args: any[]) => {
+      warnMessages.push(args.map((a) => String(a)).join(' '));
+    });
+
+    await moduleMocker.mock('../../logging.ts', () => ({
+      log: logMock,
+      warn: warnMock,
+      error: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+      captureRepositoryState: captureMock,
+    }));
+
+    const finals = [
+      'Plan: I will apply these changes and have already committed them.',
+      'Tests complete.',
+      'Review looks good.\nVERDICT: ACCEPTABLE',
+    ];
+
+    await moduleMocker.mock('./codex_cli/format.ts', () => ({
+      createCodexStdoutFormatter: () => {
+        let final: string | undefined;
+        return {
+          formatChunk: () => {
+            final = finals.shift();
+            return '';
+          },
+          getFinalAgentMessage: () => final,
+          getFailedAgentMessage: () => undefined,
+        };
+      },
+    }));
+
+    const spawnMock = mock(async (_args: string[], opts: any) => {
+      if (opts && typeof opts.formatStdout === 'function') {
+        opts.formatStdout('ignored');
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: spawnMock,
+    }));
+
+    await moduleMocker.mock('../plans.ts', () => ({
+      readPlanFile: mock(async () => ({
+        id: 5,
+        title: 'Direct Commit Plan',
+        tasks: [],
+      })),
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.ts');
+    const executor = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    await executor.execute('Context', {
+      planId: '5',
+      planTitle: 'Plan',
+      planFilePath: path.join(tempDir, 'plan.yml'),
+      executionMode: 'normal',
+      captureOutput: 'none',
+    });
+
+    expect(spawnMock).toHaveBeenCalledTimes(3);
+    expect(captureMock).toHaveBeenCalledTimes(2);
+    expect(
+      warnMessages.some((msg) =>
+        msg.includes('produced planning output without repository changes')
+      )
+    ).toBeFalse();
+    expect(
+      logMessages.some((msg) =>
+        msg.includes('Retrying implementer with more explicit instructions')
+      )
+    ).toBeFalse();
+
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('treats concurrent workspace changes as real modifications', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-retry-concurrent-'));
+    const repoStates: RepositoryState[] = [
+      { commitHash: 'git-sha20', hasChanges: false, statusOutput: '', diffHash: undefined },
+      {
+        commitHash: 'git-sha20',
+        hasChanges: true,
+        statusOutput: '?? external.txt',
+        diffHash: 'hash-external',
+      },
+    ];
+
+    const captureMock = mock(async () => {
+      const next = repoStates.shift();
+      return next ?? repoStates[repoStates.length - 1];
+    });
+
+    const logMock = mock((...args: any[]) => {
+      logMessages.push(args.map((a) => String(a)).join(' '));
+    });
+    const warnMock = mock((...args: any[]) => {
+      warnMessages.push(args.map((a) => String(a)).join(' '));
+    });
+
+    await moduleMocker.mock('../../logging.ts', () => ({
+      log: logMock,
+      warn: warnMock,
+      error: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+      captureRepositoryState: captureMock,
+    }));
+
+    const finals = [
+      'Plan: coordinate with external changes later.',
+      'Tests done.',
+      'Review done.\nVERDICT: ACCEPTABLE',
+    ];
+
+    await moduleMocker.mock('./codex_cli/format.ts', () => ({
+      createCodexStdoutFormatter: () => {
+        let final: string | undefined;
+        return {
+          formatChunk: () => {
+            final = finals.shift();
+            return '';
+          },
+          getFinalAgentMessage: () => final,
+          getFailedAgentMessage: () => undefined,
+        };
+      },
+    }));
+
+    const spawnMock = mock(async (_args: string[], opts: any) => {
+      if (opts && typeof opts.formatStdout === 'function') {
+        opts.formatStdout('ignored');
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: spawnMock,
+    }));
+
+    await moduleMocker.mock('../plans.ts', () => ({
+      readPlanFile: mock(async () => ({
+        id: 6,
+        title: 'Concurrent Changes Plan',
+        tasks: [],
+      })),
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.ts');
+    const executor = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    await executor.execute('Context', {
+      planId: '6',
+      planTitle: 'Plan',
+      planFilePath: path.join(tempDir, 'plan.yml'),
+      executionMode: 'normal',
+      captureOutput: 'none',
+    });
+
+    expect(spawnMock).toHaveBeenCalledTimes(3);
+    expect(captureMock).toHaveBeenCalledTimes(2);
+    expect(
+      warnMessages.some((msg) =>
+        msg.includes('produced planning output without repository changes')
+      )
+    ).toBeFalse();
+    expect(
+      logMessages.some((msg) =>
+        msg.includes('Retrying implementer with more explicit instructions')
+      )
+    ).toBeFalse();
+
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
   test('does not retry when there is no planning language even if repo stays unchanged', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-retry-no-plan-'));
     const repoStates: RepositoryState[] = [
