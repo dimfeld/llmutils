@@ -117,7 +117,7 @@ export class CodexCliExecutor implements Executor {
     // Safely append extra guidance without coercing undefined to string
     implementerInstructions =
       (implementerInstructions || '') +
-      '\n\nOnce you decide how to go about implementing theh tasks, do so immeidately. No need to wait for approval.' +
+      '\n\nOnce you decide how to go about implementing theh tasks, do so immediately. No need to wait for approval.' +
       `\n\nIn your final message, be sure to include the titles of the tasks that you completed.\n`;
 
     const implementer = getImplementerPrompt(
@@ -618,8 +618,7 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
     const formatter = createCodexStdoutFormatter();
     const args = ['codex', '--search', 'exec', ...sandboxSettings, prompt, '--json'];
     if (opts.planTool) {
-      //  TODO This will be enabled in the next release of Codex
-      // args.push('--include-plan-tool')
+      args.push('--include-plan-tool');
     }
 
     const { exitCode, stdout, stderr } = await spawnAndLogOutput(args, {
