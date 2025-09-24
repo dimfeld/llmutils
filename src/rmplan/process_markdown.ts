@@ -278,7 +278,6 @@ export interface ExtractMarkdownToYamlOptions {
   commit?: boolean;
   generatedBy?: 'agent' | 'oneshot';
   researchContent?: string;
-  researchInsertedAt?: Date;
 }
 
 export async function extractMarkdownToYaml(
@@ -531,9 +530,7 @@ export async function extractMarkdownToYaml(
   }
 
   if (options.researchContent?.trim()) {
-    validatedPlan = appendResearchToPlan(validatedPlan, options.researchContent, {
-      insertedAt: options.researchInsertedAt,
-    });
+    validatedPlan = appendResearchToPlan(validatedPlan, options.researchContent);
   }
 
   // Write single-phase plan to output file
@@ -630,7 +627,7 @@ export async function saveMultiPhaseYaml(
 
   if (options.researchContent?.trim()) {
     combinedPlan = appendResearchToPlan(combinedPlan, options.researchContent, {
-      insertedAt: options.researchInsertedAt,
+      insertedAt: false,
     });
   }
 

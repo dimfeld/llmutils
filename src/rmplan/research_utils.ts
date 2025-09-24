@@ -1,7 +1,7 @@
 import type { PlanSchema } from './planSchema.js';
 
 export type AppendResearchOptions = {
-  insertedAt?: Date;
+  insertedAt?: Date | false;
   heading?: string;
 };
 
@@ -24,11 +24,13 @@ export function appendResearchToPlan(
 
   const heading = options.heading ?? '## Research';
   const insertedAt = options.insertedAt ?? new Date();
-  const timestamp = formatTimestamp(insertedAt);
-  const entryHeader = `### ${timestamp}`;
+  const timestamp = insertedAt !== false ? formatTimestamp(insertedAt) : '';
+  const entryHeader = timestamp ? `### ${timestamp}` : '';
 
   const currentDetails = plan.details?.trimEnd() ?? '';
-  const hasExistingHeading = /(^|\n)## Research(\s|$)/.test(currentDetails);
+  const researchRegex = /## Research(\s|$)/;
+  const hasExistingHeading =
+    researchRegex.test(currentDetails) || researchRegex.test(trimmedResearch);
 
   const pieces: string[] = [];
   if (currentDetails) {
@@ -39,13 +41,17 @@ export function appendResearchToPlan(
     pieces.push(heading);
   }
 
-  pieces.push(entryHeader, trimmedResearch);
+  if (entryHeader) {
+    pieces.push(entryHeader);
+  }
+
+  pieces.push(trimmedResearch);
 
   const details = pieces.join('\n\n').trimEnd() + '\n';
 
   return {
     ...plan,
     details,
-    updatedAt: insertedAt.toISOString(),
+    updatedAt: (insertedAt || new Date()).toISOString(),
   };
 }
