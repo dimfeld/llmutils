@@ -7,7 +7,7 @@ goal: Modify the rmplan generate and prepare commands to use a three-step Claude
   generation.
 id: 124
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 container: false
 dependencies: []
@@ -16,7 +16,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-09-24T09:57:35.920Z
 createdAt: 2025-09-24T09:46:07.509Z
-updatedAt: 2025-09-24T11:10:30.441Z
+updatedAt: 2025-09-24T11:21:00.642Z
 progressNotes:
   - timestamp: 2025-09-24T10:12:24.648Z
     text: Implemented three-step Claude orchestration with optional research
@@ -49,6 +49,17 @@ progressNotes:
     text: "Updated CLAUDE.md and README to document the Claude Code three-step flow,
       conditional research capture, and the new ## Research storage details."
     source: "implementer: Task10"
+  - timestamp: 2025-09-24T11:12:29.931Z
+    text: Executed full bun test suite to verify research-preservation workflow and
+      doc updates; all 1981 tests passed.
+    source: "tester: Task10"
+  - timestamp: 2025-09-24T11:16:12.997Z
+    text: Docs claim the interactive rmplan research command appends results under a
+      '## Research' heading with timestamped entries, but
+      src/rmplan/commands/research.ts still writes '# Research ...' without
+      creating that section. Documentation needs to reflect actual behavior or
+      the command must be updated.
+    source: "reviewer: Task10"
 tasks:
   - title: Modify Claude Code orchestrator for three-step flow
     done: true
@@ -128,7 +139,7 @@ tasks:
     docs: []
     steps: []
   - title: Update documentation
-    done: false
+    done: true
     description: Update CLAUDE.md and relevant documentation to describe the new
       three-step process, when research extraction occurs, and how to access
       preserved research findings in plan files.
@@ -136,10 +147,14 @@ tasks:
     docs: []
     steps: []
 changedFiles:
+  - CLAUDE.md
+  - README.md
   - src/rmplan/claude_utils.test.ts
   - src/rmplan/claude_utils.ts
   - src/rmplan/commands/generate.test.ts
   - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/research.test.ts
+  - src/rmplan/commands/research.ts
   - src/rmplan/executors/claude_code_orchestrator.test.ts
   - src/rmplan/executors/claude_code_orchestrator.ts
   - src/rmplan/plans/prepare_phase.test.ts
