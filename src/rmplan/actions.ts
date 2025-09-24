@@ -21,7 +21,8 @@ import { type PostApplyCommand } from './configSchema.js';
  */
 export async function executePostApplyCommand(
   commandConfig: PostApplyCommand,
-  overrideGitRoot?: string
+  overrideGitRoot?: string,
+  printLog = true
 ): Promise<boolean> {
   let effectiveGitRoot: string;
   try {
@@ -50,7 +51,9 @@ export async function executePostApplyCommand(
     ...(commandConfig.env || {}),
   };
 
-  log(boldMarkdownHeaders(`\nRunning post-apply command: "${commandConfig.title}"...`));
+  if (printLog) {
+    log(boldMarkdownHeaders(`\nRunning post-apply command: "${commandConfig.title}"...`));
+  }
 
   // Use sh -c or cmd /c for robust command string execution
   const isWindows = process.platform === 'win32';
@@ -117,6 +120,8 @@ export async function executePostApplyCommand(
     }
   }
 
-  log(`Post-apply command "${commandConfig.title}" completed successfully.`);
+  if (printLog) {
+    log(`Post-apply command "${commandConfig.title}" completed successfully.`);
+  }
   return true;
 }

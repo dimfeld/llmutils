@@ -9,6 +9,8 @@ postApplyCommands:
     allowFailure: true
     hideOutputOnSuccess: true
 workspaceCreation:
+  cloneLocation: ..
+  cloneMethod: mac-cow
   postCloneCommands:
     - title: Install Dependencies
       command: bun install

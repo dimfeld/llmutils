@@ -620,7 +620,7 @@ export async function createWorkspace(
 
       // Execute the command using executePostApplyCommand with targetClonePath as the git root
       // Note: workingDirectory will be resolved against targetClonePath by executePostApplyCommand
-      const success = await executePostApplyCommand(commandWithEnv, targetClonePath);
+      const success = await executePostApplyCommand(commandWithEnv, targetClonePath, false);
 
       if (!success && !commandConfig.allowFailure) {
         log(`Post-clone command failed and failure is not allowed. Cleaning up workspace.`);
