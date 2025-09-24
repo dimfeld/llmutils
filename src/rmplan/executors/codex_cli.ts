@@ -125,11 +125,15 @@ export class CodexCliExecutor implements Executor {
       'CRITICAL: You must write actual code files NOW.',
     ];
     const maxRetries = retryInstructionSuffixes.length;
+    const totalImplementerAttempts = maxRetries + 1;
+    const planningOnlyAttempts: number[] = [];
+    let planningDetectionResolutionLogged = false;
 
     let implementerOutput: string | undefined;
     let implementerStateBefore = await captureRepositoryState(gitRoot);
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const attemptNumber = attempt + 1;
       const extraInstructions =
         attempt === 0
           ? ''
@@ -141,7 +145,7 @@ export class CodexCliExecutor implements Executor {
         this.sharedOptions.model
       );
 
-      log(`Running implementer step${attempt > 0 ? ` (attempt ${attempt + 1})` : ''}...`);
+      log(`Running implementer step${attempt > 0 ? ` (attempt ${attemptNumber})` : ''}...`);
       const attemptOutput = await this.executeCodexStep(implementerPrompt.prompt, gitRoot, {
         planTool: true,
       });
@@ -173,16 +177,50 @@ export class CodexCliExecutor implements Executor {
         implementerStateAfter
       );
 
-      if (planningDetection.detected && attempt < maxRetries) {
+      if (planningDetection.repositoryStatusUnavailable) {
         warn(
-          `Implementer appears to have planned but not executed changes. Retrying (attempt ${attempt + 2}/${maxRetries + 1})...`
+          `Could not verify repository state after implementer attempt ${attemptNumber}/${totalImplementerAttempts}; skipping planning-only detection for this attempt.`
+        );
+      }
+
+      if (planningDetection.detected) {
+        planningOnlyAttempts.push(attemptNumber);
+        const indicatorPreview = planningDetection.planningIndicators
+          .slice(0, 2)
+          .map((line) => line.slice(0, 120));
+        const indicatorText =
+          indicatorPreview.length > 0 ? indicatorPreview.join(' | ') : '<no indicators captured>';
+        warn(
+          `Implementer attempt ${attemptNumber}/${totalImplementerAttempts} produced planning output without repository changes (commit changed: ${planningDetection.commitChanged}, working tree changed: ${planningDetection.workingTreeChanged}). Indicators: ${indicatorText}`
+        );
+      }
+
+      if (planningDetection.detected && attempt < maxRetries) {
+        log(
+          `Retrying implementer with more explicit instructions (attempt ${attemptNumber + 1}/${totalImplementerAttempts})...`
         );
         implementerStateBefore = implementerStateAfter;
         continue;
       }
 
       if (planningDetection.detected && attempt === maxRetries) {
-        warn('Implementer planned without executing changes despite retries; continuing.');
+        warn(
+          `Implementer planned without executing changes after exhausting ${totalImplementerAttempts} attempts; continuing to tester.`
+        );
+      }
+
+      if (
+        planningOnlyAttempts.length > 0 &&
+        !planningDetection.detected &&
+        !planningDetection.repositoryStatusUnavailable &&
+        !planningDetectionResolutionLogged
+      ) {
+        const retriesUsed = planningOnlyAttempts.length;
+        const resolvedAttempt = attemptNumber;
+        log(
+          `Implementer produced repository changes after ${retriesUsed} planning-only attempt${retriesUsed === 1 ? '' : 's'} (resolved on attempt ${resolvedAttempt}/${totalImplementerAttempts}).`
+        );
+        planningDetectionResolutionLogged = true;
       }
 
       implementerOutput = attemptOutput;
