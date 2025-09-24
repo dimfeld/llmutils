@@ -10,6 +10,10 @@ updatedAt: 2025-09-24T02:30:42.162Z
 tasks: []
 ---
 
+This is blocked on `codex exec` not outputting the session ID. Might be able to work around by looking at the raw JSONL
+but I hope we don't have to do that.
+
+
 Sometimes the Codex implementer step will plan some changes but not do anything. The tester step usually does a good job
 of raising a FAIL when it finds the things it's supposed to test are not there, but we should try to catch this.
 

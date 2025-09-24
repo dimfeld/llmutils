@@ -22,25 +22,48 @@ interface RateLimitInfo {
   resets_in_seconds: number;
 }
 
-function formatSeconds(seconds: number): string {
+interface TokenUsage {
+  input_tokens: number;
+  cached_input_tokens: number;
+  output_tokens: number;
+  reasoning_output_tokens: number;
+  total_tokens: number;
+}
+
+function formatResetsInSeconds(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
+  if (hours > 1) {
+    return `${hours}h`;
+  }
+
   const minutes = Math.floor((seconds - hours * 3600) / 60);
   return `${hours}h ${minutes}m`;
 }
 
 function formatMinutes(minutes: number): string {
+  const days = Math.floor(minutes / 1440);
+  minutes -= days * 1440;
   const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes - hours * 60;
-  if (remainingMinutes === 0) {
-    return `${hours}h`;
-  }
-  return `${hours}h ${remainingMinutes}m`;
+  minutes -= hours * 60;
+
+  const parts: string[] = [
+    days ? `${days}d` : '',
+    hours ? `${hours}h` : '',
+    minutes ? `${minutes}m` : '',
+  ];
+
+  return parts.filter(Boolean).join(', ');
 }
 
 function formatRateLimit(rateLimit: RateLimitInfo): string {
-  return `${formatMinutes(rateLimit.window_minutes)} Rate Limit: ${Math.round(rateLimit.used_percent)}%, New in ${formatSeconds(
+  // We get values like 299 and 10079 instead of 300 and 10080. Hack to work around that.
+  let window_minutes = rateLimit.window_minutes;
+  if (window_minutes % 10 === 9) {
+    window_minutes += 1;
+  }
+  return `${Math.round(rateLimit.used_percent)}% of ${formatMinutes(window_minutes)} (New in ${formatResetsInSeconds(
     rateLimit.resets_in_seconds
-  )}`;
+  )})`;
 }
 
 // Known Codex message variants (inside envelope.msg)
@@ -74,7 +97,11 @@ export type CodexMessage =
     }
   | {
       type: 'token_count';
-      info: any;
+      info: {
+        total_token_usage: TokenUsage;
+        last_token_usage: TokenUsage;
+        model_context_window: number;
+      };
       rate_limits: {
         primary: RateLimitInfo;
         secondary: RateLimitInfo;
@@ -222,24 +249,32 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
           parts.push(`Last: ${last.total_tokens.toLocaleString()} tokens`);
         }
 
+        /*
+        // This isn't useful to print every time.
         if (contextWindow) {
           parts.push(`Context Window: ${contextWindow.toLocaleString()}`);
         }
+        */
 
         if (msg.rate_limits) {
           const rateLimits = msg.rate_limits;
+          let rateLimitInfo: string[] = [];
           if (msg.rate_limits.primary) {
-            parts.push(formatRateLimit(rateLimits.primary));
+            rateLimitInfo.push(formatRateLimit(rateLimits.primary));
           }
 
           if (msg.rate_limits.secondary) {
-            parts.push(formatRateLimit(rateLimits.secondary));
+            rateLimitInfo.push(formatRateLimit(rateLimits.secondary));
+          }
+
+          if (rateLimitInfo.length > 0) {
+            parts.push(`Rate Limits: ${rateLimitInfo.join('\t\t')}`);
           }
         }
 
         return {
           type: msg.type,
-          message: chalk.gray(`### Token Count [${ts}]\n\n`) + parts.join('\n'),
+          message: chalk.gray(`### Usage [${ts}]\n\n`) + parts.join('\n'),
         };
       }
       case 'agent_message': {
