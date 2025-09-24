@@ -201,13 +201,17 @@ export function getReviewerPrompt(
   contextContent: string,
   planId?: string | number,
   customInstructions?: string,
-  model?: string
+  model?: string,
+  useSubagents: boolean = false
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
     : '';
   const progressNotesSection = progressNotesGuidance(planId);
   const formattedProgressNotes = progressNotesSection ? `\n${progressNotesSection}\n` : '\n';
+  const subagentDirective = useSubagents
+    ? 'CRITICAL: Use the available sub-agents to delegate in-depth analysis, run tests, and cross-check findings before delivering your final verdict.\n\n'
+    : '';
 
   return {
     name: 'reviewer',
@@ -216,7 +220,7 @@ export function getReviewerPrompt(
     model,
     prompt: `You are a critical code reviewer whose job is to find problems and issues with implementations. Your output will be used by other agents to determine if they need to go back and fix things, so you must be thorough in identifying actual problems.
 
-CRITICAL: Do not be polite or encouraging. Your job is to find issues, not to praise good code. If code is acceptable, simply state that briefly. Focus your energy on identifying real problems that need fixing.
+${subagentDirective}CRITICAL: Do not be polite or encouraging. Your job is to find issues, not to praise good code. If code is acceptable, simply state that briefly. Focus your energy on identifying real problems that need fixing.
 
 Use git commands to see the recent related commits and which files were changed, so you know what to focus on.
 

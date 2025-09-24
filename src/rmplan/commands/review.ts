@@ -304,12 +304,14 @@ export async function handleReviewCommand(
   // If the executor wants rmfilter output, that means that we need to send it the diff.
   // TODO rename that flag to something more generic
   const includeDiff = executor.prepareStepOptions?.()?.rmfilter ?? true;
+  const useSubagents = executor.supportsSubagents === true;
 
   // Build the review prompt
   const reviewPrompt = buildReviewPrompt(
     planData,
     diffResult,
     includeDiff,
+    useSubagents,
     parentChain,
     completedChildren,
     customInstructions
@@ -898,6 +900,7 @@ export function buildReviewPrompt(
   planData: PlanSchema,
   diffResult: DiffResult,
   includeDiff: boolean = false,
+  useSubagents: boolean = false,
   parentChain: PlanWithFilename[] = [],
   completedChildren: PlanWithFilename[] = [],
   customInstructions?: string
@@ -1031,7 +1034,13 @@ export function buildReviewPrompt(
   ].join('\n');
 
   // Use the reviewer agent template with our context and custom instructions
-  const reviewerPromptWithContext = getReviewerPrompt(contextContent, customInstructions || '');
+  const reviewerPromptWithContext = getReviewerPrompt(
+    contextContent,
+    planData.id,
+    customInstructions,
+    undefined,
+    useSubagents
+  );
 
   return reviewerPromptWithContext.prompt;
 }

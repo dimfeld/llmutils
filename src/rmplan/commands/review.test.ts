@@ -80,6 +80,7 @@ tasks:
       planData: any,
       diffResult: any,
       includeDiff: boolean = false,
+      useSubagents: boolean = false,
       parentChain: any[] = [],
       completedChildren: any[] = [],
       customInstructions?: string
@@ -167,6 +168,7 @@ tasks:
       planData: any,
       diffResult: any,
       includeDiff: boolean = false,
+      useSubagents: boolean = false,
       parentChain: any[] = [],
       completedChildren: any[] = [],
       customInstructions?: string
@@ -276,7 +278,7 @@ index 1234567..abcdefg 100644
       }),
     }));
 
-    const prompt = buildReviewPrompt(planData, diffResult, true, [], []);
+    const prompt = buildReviewPrompt(planData, diffResult, true, false, [], []);
 
     // Verify plan context is included
     expect(prompt).toContain('Plan ID:** 42');
@@ -308,6 +310,38 @@ index 1234567..abcdefg 100644
     expect(prompt).toContain('REVIEWER AGENT');
   });
 
+  test('passes useSubagents flag to reviewer prompt', async () => {
+    const planData: PlanSchema = {
+      id: 99,
+      title: 'Subagent Plan',
+      goal: 'Check subagent usage',
+      tasks: [],
+    };
+
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['src/file.ts'],
+      baseBranch: 'main',
+      diffContent: 'diff --git',
+    };
+
+    const reviewerSpy = vi.fn(() => ({ prompt: 'mock prompt' }));
+    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+      getReviewerPrompt: reviewerSpy,
+    }));
+
+    buildReviewPrompt(planData, diffResult, false, true, [], []);
+
+    expect(reviewerSpy).toHaveBeenCalledTimes(1);
+    expect(reviewerSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      planData.id,
+      undefined,
+      undefined,
+      true
+    );
+  });
+
   test('handles plan without tasks', async () => {
     const planData: PlanSchema = {
       id: 1,
@@ -329,7 +363,7 @@ index 1234567..abcdefg 100644
       }),
     }));
 
-    const prompt = buildReviewPrompt(planData, diffResult, true, [], []);
+    const prompt = buildReviewPrompt(planData, diffResult, true, false, [], []);
 
     expect(prompt).toContain('Plan ID:** 1');
     expect(prompt).toContain('Title:** Simple Plan');
@@ -365,7 +399,7 @@ index 1234567..abcdefg 100644
       }),
     }));
 
-    const prompt = buildReviewPrompt(planData, diffResult, true, [], []);
+    const prompt = buildReviewPrompt(planData, diffResult, true, false, [], []);
 
     expect(prompt).toContain('Plan ID:** 2');
     expect(prompt).toContain('Title:** Plan Without Details');
@@ -690,6 +724,7 @@ tasks:
         planData: any,
         diffResult: any,
         includeDiff: boolean = false,
+        useSubagents: boolean = false,
         parentChain: any[] = [],
         completedChildren: any[] = [],
         customInstructions?: string
@@ -767,6 +802,7 @@ tasks:
         planData: any,
         diffResult: any,
         includeDiff: boolean = false,
+        useSubagents: boolean = false,
         parentChain: any[] = [],
         completedChildren: any[] = [],
         customInstructions?: string
@@ -826,7 +862,7 @@ describe('Parent plan context handling', () => {
       }),
     }));
 
-    const prompt = buildReviewPrompt(childPlan, diffResult, true, [parentPlan], []);
+    const prompt = buildReviewPrompt(childPlan, diffResult, true, false, [parentPlan], []);
 
     // Verify parent context is included
     expect(prompt).toContain('# Parent Plan Context');
@@ -869,7 +905,7 @@ describe('Parent plan context handling', () => {
       }),
     }));
 
-    const prompt = buildReviewPrompt(planData, diffResult, true, [], []);
+    const prompt = buildReviewPrompt(planData, diffResult, true, false, [], []);
 
     // Should not include parent context
     expect(prompt).not.toContain('# Parent Plan Context');
@@ -910,7 +946,7 @@ describe('Parent plan context handling', () => {
     }));
 
     // Test with undefined parent (simulating missing parent)
-    const prompt = buildReviewPrompt(childPlan, diffResult, true, [], []);
+    const prompt = buildReviewPrompt(childPlan, diffResult, true, false, [], []);
 
     // Should not include parent context when parent is missing
     expect(prompt).not.toContain('# Parent Plan Context');
@@ -1028,6 +1064,7 @@ tasks:
         planData: any,
         diffResult: any,
         includeDiff: boolean = false,
+        useSubagents: boolean = false,
         parentChain: any[] = [],
         completedChildren: any[] = []
       ) => {
@@ -1114,7 +1151,7 @@ describe('Hierarchy integration with utilities', () => {
 
     // Test with multi-level parent chain
     const parentChain = [parentPlan, grandparentPlan];
-    const prompt = buildReviewPrompt(childPlan, diffResult, true, parentChain, []);
+    const prompt = buildReviewPrompt(childPlan, diffResult, true, false, parentChain, []);
 
     // Verify both parent levels are included
     expect(prompt).toContain('# Parent Plan Context');
@@ -1177,7 +1214,7 @@ describe('Hierarchy integration with utilities', () => {
     }));
 
     const completedChildren = [completedChild1, completedChild2];
-    const prompt = buildReviewPrompt(parentPlan, diffResult, true, [], completedChildren);
+    const prompt = buildReviewPrompt(parentPlan, diffResult, true, false, [], completedChildren);
 
     // Verify completed children section is included
     expect(prompt).toContain('# Completed Child Plans');
@@ -1250,7 +1287,14 @@ describe('Hierarchy integration with utilities', () => {
 
     const parentChain = [parentPlan, grandparentPlan];
     const completedChildren = [completedChild];
-    const prompt = buildReviewPrompt(currentPlan, diffResult, true, parentChain, completedChildren);
+    const prompt = buildReviewPrompt(
+      currentPlan,
+      diffResult,
+      true,
+      false,
+      parentChain,
+      completedChildren
+    );
 
     // Verify both parent and children contexts are included in correct order
     expect(prompt).toContain('# Parent Plan Context');
@@ -1299,7 +1343,7 @@ describe('Hierarchy integration with utilities', () => {
     }));
 
     // Should not attempt hierarchy traversal without an ID
-    const prompt = buildReviewPrompt(planWithoutId, diffResult, true, [], []);
+    const prompt = buildReviewPrompt(planWithoutId, diffResult, true, false, [], []);
 
     expect(prompt).not.toContain('# Parent Plan Context');
     expect(prompt).not.toContain('# Completed Child Plans');
@@ -1333,7 +1377,7 @@ describe('Hierarchy integration with utilities', () => {
       }),
     }));
 
-    const prompt = buildReviewPrompt(simplePlan, diffResult, true, [], []);
+    const prompt = buildReviewPrompt(simplePlan, diffResult, true, false, [], []);
 
     // Should work like before - no parent or children sections
     expect(prompt).not.toContain('# Parent Plan Context');
@@ -1394,6 +1438,7 @@ describe('Hierarchy integration with utilities', () => {
       currentPlan,
       diffResult,
       true,
+      false,
       [parentWithoutDetails],
       [childWithoutDetails]
     );
@@ -1616,6 +1661,7 @@ tasks:
           planData: any,
           diffResult: any,
           includeDiff: boolean = false,
+          useSubagents: boolean = false,
           parentChain: any[] = [],
           completedChildren: any[] = [],
           customInstructions?: string
@@ -1749,9 +1795,9 @@ describe('Custom review instructions', () => {
 
     // This should not throw and should work with the new signature
     expect(() =>
-      buildReviewPrompt(planData, diffResult, true, [], [], 'custom instructions')
+      buildReviewPrompt(planData, diffResult, true, false, [], [], 'custom instructions')
     ).not.toThrow();
-    expect(() => buildReviewPrompt(planData, diffResult, true, [], [])).not.toThrow();
+    expect(() => buildReviewPrompt(planData, diffResult, true, false, [], [])).not.toThrow();
   });
 
   test('validates function signatures work correctly after security fixes', () => {
@@ -1865,6 +1911,7 @@ tasks:
         planData: any,
         diffResult: any,
         includeDiff: boolean = false,
+        useSubagents: boolean = false,
         parentChain: any[] = [],
         completedChildren: any[] = [],
         customInstructions?: string

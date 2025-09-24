@@ -98,6 +98,9 @@ export interface Executor {
   forceReviewCommentsMode?: 'inline-edits' | 'separate-context';
   todoDirections?: string;
 
+  /** Indicates whether the executor can orchestrate sub-agent workflows. */
+  supportsSubagents?: boolean;
+
   /**
    * Prefix to use when listing file paths in prompts.
    * For example, '@' for Claude Code to enable automatic file reading.

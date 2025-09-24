@@ -40,4 +40,14 @@ describe('agent_prompts failure protocol integration', () => {
     expect(def.prompt).toContain('rmplan add-progress-note 42');
     expect(def.prompt).toContain('--source');
   });
+
+  it('adds subagent directive to reviewer prompt when enabled', () => {
+    const def = getReviewerPrompt(context, undefined, undefined, undefined, true);
+    expect(def.prompt).toContain('Use the available sub-agents');
+  });
+
+  it('omits subagent directive from reviewer prompt when disabled', () => {
+    const def = getReviewerPrompt(context);
+    expect(def.prompt).not.toContain('Use the available sub-agents');
+  });
 });

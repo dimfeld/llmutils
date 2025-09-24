@@ -50,6 +50,7 @@ export class ClaudeCodeExecutor implements Executor {
     answerPr: 'auto',
   };
   static supportsSubagents = true;
+  readonly supportsSubagents = true;
 
   // readonly forceReviewCommentsMode = 'separate-context';
   readonly filePathPrefix = '@';
