@@ -188,7 +188,7 @@ export class CodexCliExecutor implements Executor {
 
       // Execute tester step
       log('Running tester step...');
-      const testerOutput = await this.executeCodexStep(tester.prompt, gitRoot);
+      const testerOutput = await this.executeCodexStep(tester.prompt, gitRoot, { planTool: true });
       events.push({ type: 'tester', message: testerOutput });
       log('Tester output captured.');
 
@@ -306,7 +306,7 @@ export class CodexCliExecutor implements Executor {
             fixInstructions,
           });
 
-          const fixerOutput = await this.executeCodexStep(fixerPrompt, gitRoot);
+          const fixerOutput = await this.executeCodexStep(fixerPrompt, gitRoot, { planTool: true });
           lastFixerOutput = fixerOutput;
           events.push({ type: 'fixer', message: fixerOutput });
           log('Fixer output captured. Re-running reviewer...');
