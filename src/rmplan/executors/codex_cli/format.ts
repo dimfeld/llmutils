@@ -136,6 +136,8 @@ export interface FormattedCodexMessage {
   type: string;
   // If this line carries or finalizes the agent message, include it here
   agentMessage?: string;
+  // The "last token count" from a `token_count` message
+  lastTokenCount?: number;
   // Failure detection info for agent messages
   failed?: boolean;
 }
@@ -274,6 +276,7 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
 
         return {
           type: msg.type,
+          lastTokenCount: last?.total_tokens,
           message: chalk.gray(`### Usage [${ts}]\n\n`) + parts.join('\n'),
         };
       }
@@ -404,11 +407,23 @@ export function createCodexStdoutFormatter() {
   let finalAgentMessage: string | undefined;
   let lastFailedAgentMessage: string | undefined;
 
+  let previousTokenCount = -1;
+
   function formatChunk(chunk: string): string {
     const lines = split(chunk);
     const out: string[] = [];
     for (const line of lines) {
       const fm = formatCodexJsonMessage(line);
+
+      if ((fm.type as CodexMessage['type']) === 'token_count' && fm.lastTokenCount) {
+        if (previousTokenCount && previousTokenCount === fm.lastTokenCount) {
+          // this one is a duplicate of the previous token count, skip to avoid being too noisy
+          continue;
+        }
+
+        previousTokenCount = fm.lastTokenCount;
+      }
+
       if (fm.agentMessage) {
         finalAgentMessage = fm.agentMessage;
         if (fm.failed) lastFailedAgentMessage = fm.agentMessage;
