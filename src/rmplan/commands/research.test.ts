@@ -178,7 +178,8 @@ describe('handleResearchCommand', () => {
 
     // Should have appended research to details
     expect(updatedPlan.details).toContain('Initial details');
-    expect(updatedPlan.details).toMatch(/# Research \w+ \w+ \d+ \d+/); // Matches date format
+    expect(updatedPlan.details).toContain('## Research');
+    expect(updatedPlan.details).toMatch(/### \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/);
     expect(updatedPlan.details).toContain('This is my research findings from investigation.');
 
     // Should have updated timestamp
@@ -459,8 +460,10 @@ describe('handleResearchCommand', () => {
       // Read the updated plan
       const updatedPlan = await readPlanFile(planFile);
 
-      // Should have appended research with goal in header
-      expect(updatedPlan.details).toContain('# Research Mon Jan 15 2024: specific research task');
+      // Should have appended research under the Research heading with timestamp and focus
+      expect(updatedPlan.details).toContain('## Research');
+      expect(updatedPlan.details).toContain('### 2024-01-15 00:00 UTC');
+      expect(updatedPlan.details).toContain('**Focus**: specific research task');
       expect(updatedPlan.details).toContain('Tutorial content here.');
     } finally {
       // Restore original Date

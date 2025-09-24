@@ -6,6 +6,7 @@ import { log } from '../../logging.js';
 import { readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { runRmfilterProgrammatically } from '../../rmfilter/rmfilter.js';
+import { appendResearchToPlan } from '../research_utils.js';
 
 /**
  * Handles the rmplan research command.
@@ -105,15 +106,12 @@ async function handleResearch(options: {
 
   // If pasted content is not empty, append it to the details field
   if (pastedContent && pastedContent.trim()) {
-    const researchDate = new Date().toDateString();
-    const researchHeader = options.researchGoal
-      ? `# Research ${researchDate}: ${options.researchGoal}`
-      : `# Research ${researchDate}`;
-    planData.details =
-      (planData.details?.trimEnd() || '') + `\n\n${researchHeader}\n\n` + pastedContent.trim();
-
-    // Update the updatedAt timestamp
-    planData.updatedAt = new Date().toISOString();
+    const now = new Date();
+    const trimmedContent = pastedContent.trim();
+    const researchEntry = options.researchGoal
+      ? `**Focus**: ${options.researchGoal}\n\n${trimmedContent}`
+      : trimmedContent;
+    planData = appendResearchToPlan(planData, researchEntry, { insertedAt: now });
 
     // Save the modified plan back to the file
     await writePlanFile(options.planFile, planData);
