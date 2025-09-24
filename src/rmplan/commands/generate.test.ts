@@ -2040,6 +2040,7 @@ describe('handleGenerateCommand research preservation integration', () => {
     await handleGenerateCommand(undefined, buildOptions(), buildCommand());
 
     clearPlanCache();
+    clearPlanCache();
     const savedPlan = await readPlanFile(planPath);
 
     expect(savedPlan.details).toContain('Claude-provided summary');
@@ -2076,10 +2077,59 @@ describe('handleGenerateCommand research preservation integration', () => {
 
     await handleGenerateCommand(undefined, buildOptions(), buildCommand());
 
+    clearPlanCache();
     const savedPlan = await readPlanFile(planPath);
     expect(savedPlan.details).toContain('# Original Plan Details');
     expect(savedPlan.details).not.toMatch(/## Research/);
     expect(savedPlan.details).toContain('Basic details');
+  });
+
+  test('appends new research entry without duplicating heading', async () => {
+    const existingPlan = yaml.parse(await fs.readFile(planPath, 'utf-8')) as PlanSchema;
+    existingPlan.details = [
+      '# Original Plan Details',
+      '',
+      'Initial summary block',
+      '',
+      '## Research',
+      '',
+      '### 2024-03-01 12:00 UTC',
+      '',
+      'Prior research insights',
+    ].join('\n');
+
+    await fs.writeFile(planPath, yaml.stringify(existingPlan), 'utf-8');
+
+    const generationOutput = [
+      'id: 123',
+      'title: Stub Plan',
+      'goal: Updated goal',
+      'details: |',
+      '  Refined implementation overview.',
+      'status: pending',
+      'createdAt: 2024-01-01T00:00:00Z',
+      'updatedAt: 2024-01-01T00:00:00Z',
+      'tasks: []',
+    ].join('\n');
+
+    invokeClaudeCodeForGenerationSpy.mockResolvedValueOnce({
+      generationOutput,
+      researchOutput: 'New research summary from Claude',
+    });
+
+    await handleGenerateCommand(undefined, buildOptions(), buildCommand());
+
+    clearPlanCache();
+    const savedPlan = await readPlanFile(planPath);
+    expect(savedPlan.details).toContain('Refined implementation overview.');
+    expect(savedPlan.details).toContain('Prior research insights');
+    expect(savedPlan.details).toContain('New research summary from Claude');
+
+    const researchHeadingCount = (savedPlan.details.match(/## Research/g) || []).length;
+    expect(researchHeadingCount).toBe(1);
+
+    const entryCount = (savedPlan.details.match(/### /g) || []).length;
+    expect(entryCount).toBeGreaterThanOrEqual(2);
   });
 
   test('combines multi-phase plans and preserves research findings', async () => {

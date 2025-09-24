@@ -175,4 +175,39 @@ describe('runClaudeCodeGeneration', () => {
     expect(result.researchOutput).toBe('ignored');
     expect(warnMock).toHaveBeenCalled();
   });
+
+  test('continues when research step throws error', async () => {
+    let callIndex = 0;
+    spawnMock.mockImplementation(async (_cmd, options) => {
+      callIndex += 1;
+      if (callIndex === 1) {
+        options?.formatStdout?.('{"session_id":"session-999"}\n');
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      if (callIndex === 2) {
+        throw new Error('session interrupted');
+      }
+      if (callIndex === 3) {
+        options?.formatStdout?.(
+          '{"type":"result","subtype":"success","result":"Recovered plan","total_cost_usd":0.01,"duration_ms":500,"num_turns":2}\n'
+        );
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const { runClaudeCodeGeneration } = await import('./claude_code_orchestrator.js');
+
+    const result = await runClaudeCodeGeneration({
+      planningPrompt: 'plan',
+      researchPrompt: 'research',
+      generationPrompt: 'generate',
+      options: { includeDefaultTools: true },
+    });
+
+    expect(spawnMock).toHaveBeenCalledTimes(3);
+    expect(result.generationOutput).toBe('Recovered plan');
+    expect(result.researchOutput).toBeUndefined();
+    expect(warnMock).toHaveBeenCalledWith(expect.stringContaining('session interrupted'));
+  });
 });
