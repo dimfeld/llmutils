@@ -2,6 +2,7 @@
 // Manages workspaces for plans (with subcommands list and add)
 
 import * as path from 'path';
+import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
 import { $ } from 'bun';
 import { log, warn } from '../../logging.js';
@@ -11,6 +12,11 @@ import { resolvePlanFile, readPlanFile, setPlanStatus } from '../plans.js';
 import { generateAlphanumericId } from '../id_utils.js';
 import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
 import { createWorkspace } from '../workspace/workspace_manager.js';
+import {
+  findWorkspacesByRepoUrl,
+  readTrackingData,
+  writeTrackingData,
+} from '../workspace/workspace_tracker.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { Command } from 'commander';
 
@@ -36,7 +42,52 @@ export async function handleWorkspaceListCommand(options: any, command: Command)
     }
   }
 
+  const removedWorkspaces = await removeMissingWorkspaceEntries(repoUrl, trackingFilePath);
+  for (const workspacePath of removedWorkspaces) {
+    warn(`Removed deleted workspace directory: ${workspacePath}`);
+  }
+
   await WorkspaceAutoSelector.listWorkspacesWithStatus(repoUrl, trackingFilePath);
+}
+
+async function removeMissingWorkspaceEntries(
+  repositoryUrl: string,
+  trackingFilePath?: string
+): Promise<string[]> {
+  const [trackingData, workspaces] = await Promise.all([
+    readTrackingData(trackingFilePath),
+    findWorkspacesByRepoUrl(repositoryUrl, trackingFilePath),
+  ]);
+
+  const removed: string[] = [];
+
+  for (const workspace of workspaces) {
+    const exists = await workspaceDirectoryExists(workspace.workspacePath);
+    if (!exists && trackingData[workspace.workspacePath]) {
+      delete trackingData[workspace.workspacePath];
+      removed.push(workspace.workspacePath);
+    }
+  }
+
+  if (removed.length > 0) {
+    await writeTrackingData(trackingData, trackingFilePath);
+  }
+
+  return removed;
+}
+
+async function workspaceDirectoryExists(directoryPath: string): Promise<boolean> {
+  try {
+    const stats = await fs.stat(directoryPath);
+    return stats.isDirectory();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false;
+    }
+
+    warn(`Failed to check workspace directory ${directoryPath}: ${error as Error}`);
+    return false;
+  }
 }
 
 export async function handleWorkspaceAddCommand(
