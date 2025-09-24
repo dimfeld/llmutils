@@ -1,6 +1,12 @@
 import chalk from 'chalk';
 
-export type TodoStatus = 'completed' | 'in_progress' | 'pending' | 'blocked' | 'not_started' | string;
+export type TodoStatus =
+  | 'completed'
+  | 'in_progress'
+  | 'pending'
+  | 'blocked'
+  | 'not_started'
+  | string;
 
 export interface TodoLikeItem {
   label: string;

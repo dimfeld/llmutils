@@ -124,4 +124,26 @@ describe('planning-without-implementation detection', () => {
     expect(detection.repositoryStatusUnavailable).toBeTrue();
     expect(detection.recommendedAction).toBe('proceed');
   });
+
+  test('does not trigger when no planning indicators are present', () => {
+    const before = blankState();
+    const after = blankState();
+    const output = `Implementation completed successfully.`;
+
+    const detection = detectPlanningWithoutImplementation(output, before, after);
+    expect(detection.detected).toBeFalse();
+    expect(detection.planningIndicators).toHaveLength(0);
+    expect(detection.recommendedAction).toBe('proceed');
+  });
+
+  test('does not flag planning output when a new commit is detected', () => {
+    const before = { commitHash: 'aaa', hasChanges: false };
+    const after = { commitHash: 'bbb', hasChanges: false };
+    const output = `Plan:\n- Outline steps\n- Follow through`;
+
+    const detection = detectPlanningWithoutImplementation(output, before, after);
+    expect(detection.detected).toBeFalse();
+    expect(detection.commitChanged).toBeTrue();
+    expect(detection.recommendedAction).toBe('proceed');
+  });
 });

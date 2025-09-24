@@ -26,9 +26,18 @@ describe('codex_cli/format', () => {
         type: 'plan_update',
         explanation: 'Keeping tests green.',
         plan: [
-          { step: 'Review current forms module implementation and existing tests to spot coverage gaps.', status: 'completed' },
-          { step: 'Add or adjust tests to cover missing scenarios for onboarding form management.', status: 'in_progress' },
-          { step: 'Run targeted checks (type check, lint, tests) to verify everything passes.', status: 'pending' },
+          {
+            step: 'Review current forms module implementation and existing tests to spot coverage gaps.',
+            status: 'completed',
+          },
+          {
+            step: 'Add or adjust tests to cover missing scenarios for onboarding form management.',
+            status: 'in_progress',
+          },
+          {
+            step: 'Run targeted checks (type check, lint, tests) to verify everything passes.',
+            status: 'pending',
+          },
         ],
       },
     });

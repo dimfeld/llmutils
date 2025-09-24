@@ -321,6 +321,133 @@ describe('CodexCliExecutor - failure detection across agents', () => {
       warnMock.mock.calls.some((args) => String(args[0]).includes('Retrying (attempt 2/4)'))
     ).toBeTrue();
   });
+
+  test('continues after exhausting planning-only retries', async () => {
+    const warnMock = mock(() => {});
+    await moduleMocker.mock('../../logging', () => ({
+      log: mock(() => {}),
+      warn: warnMock,
+      error: mock(() => {}),
+    }));
+
+    const repeatedState = { commitHash: 'sha1', hasChanges: false, statusOutput: undefined };
+    const repoStates = [repeatedState, repeatedState, repeatedState, repeatedState, repeatedState];
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+      captureRepositoryState: mock(async () => repoStates.shift() ?? repeatedState),
+    }));
+
+    await moduleMocker.mock('../plans.ts', () => ({
+      readPlanFile: mock(async () => ({
+        tasks: [
+          { title: 'Task A', done: false },
+          { title: 'Task B', done: true },
+        ],
+      })),
+    }));
+
+    const implementerInstructionHistory: string[] = [];
+    await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
+      getImplementerPrompt: mock(
+        (ctx: string, _planId: string | undefined, instructions: string) => {
+          implementerInstructionHistory.push(instructions);
+          return { name: 'impl', description: '', prompt: `IMPLEMENTER\n${ctx}\n${instructions}` };
+        }
+      ),
+      getTesterPrompt: mock((ctx: string) => ({
+        name: 'tester',
+        description: '',
+        prompt: `TESTER\n${ctx}`,
+      })),
+      getReviewerPrompt: mock((ctx: string) => ({
+        name: 'reviewer',
+        description: '',
+        prompt: `REVIEWER\n${ctx}`,
+      })),
+    }));
+
+    const finalMessages = [
+      'Plan:\n- Outline investigation',
+      'Plan:\n- Restate approach',
+      'Plan:\n- Still planning',
+      'Plan:\n- One more plan',
+      'Tests pass',
+      'All good\nVERDICT: ACCEPTABLE',
+    ];
+
+    const spawnMock = mock(async (_args: string[], opts: any) => {
+      const message = finalMessages.shift();
+      if (!message) throw new Error('Unexpected extra Codex invocation');
+      if (opts && typeof opts.formatStdout === 'function') {
+        opts.formatStdout(message);
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: spawnMock,
+    }));
+
+    await moduleMocker.mock('./codex_cli/format.ts', () => ({
+      createCodexStdoutFormatter: () => {
+        let final: string | undefined;
+        return {
+          formatChunk: (chunk: string) => {
+            final = chunk;
+            return chunk;
+          },
+          getFinalAgentMessage: () => final,
+        };
+      },
+    }));
+
+    await moduleMocker.mock('ai', () => ({
+      generateObject: mock(async () => ({ object: { completed_titles: [] } })),
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.ts');
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+
+    await expect(
+      exec.execute('CTX', {
+        planId: '1',
+        planTitle: 'Plan',
+        planFilePath: `${tempDir}/plan.yml`,
+        executionMode: 'normal',
+      })
+    ).resolves.toBeUndefined();
+
+    const implementerPromptsRun = spawnMock.mock.calls.filter((call) => {
+      const args = call[0] as string[];
+      const jsonIndex = args.lastIndexOf('--json');
+      const promptIdx = jsonIndex > 0 ? jsonIndex - 1 : args.length - 2;
+      const prompt = args[promptIdx];
+      return typeof prompt === 'string' && prompt.startsWith('IMPLEMENTER');
+    });
+
+    expect(implementerPromptsRun.length).toBe(4);
+    expect(implementerInstructionHistory[0]).not.toContain('Please implement the changes now');
+    expect(implementerInstructionHistory[1]).toContain(
+      'Please implement the changes now, not just plan them.'
+    );
+    expect(implementerInstructionHistory[2]).toContain(
+      'IMPORTANT: Execute the actual code changes immediately.'
+    );
+    expect(implementerInstructionHistory[3]).toContain(
+      'CRITICAL: You must write actual code files NOW.'
+    );
+    expect(
+      warnMock.mock.calls.some((args) =>
+        String(args[0]).includes(
+          'Implementer planned without executing changes despite retries; continuing.'
+        )
+      )
+    ).toBeTrue();
+    expect(
+      warnMock.mock.calls.filter((args) => String(args[0]).includes('Retrying (attempt'))
+    ).toHaveLength(3);
+  });
 });
 
 test('CodexCliExecutor - parseReviewerVerdict', async () => {
