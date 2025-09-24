@@ -61,7 +61,7 @@ describe('analyzeReviewFeedback', () => {
     });
 
     expect(res.needs_fixes).toBe(true);
-    expect(res.fix_instructions).toContain('null checks');
+    expect(res.fix_instructions).toContain('Null reference');
   });
 
   test('includes repository review doc in prompt when provided', async () => {

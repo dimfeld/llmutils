@@ -306,8 +306,9 @@ export const rmplanConfigSchema = z
   })
   .describe('Repository-level configuration for rmplan');
 
-export type RmplanConfig = z.infer<typeof rmplanConfigSchema>;
-export type PostApplyCommand = z.infer<typeof postApplyCommandSchema>;
+export type RmplanConfig = z.output<typeof rmplanConfigSchema>;
+export type RmplanConfigInput = z.input<typeof rmplanConfigSchema>;
+export type PostApplyCommand = z.output<typeof postApplyCommandSchema>;
 
 /**
  * Resolves the tasks directory path, handling both absolute and relative paths.

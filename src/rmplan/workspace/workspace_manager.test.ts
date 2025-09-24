@@ -16,7 +16,7 @@ const mockExecutePostApplyCommand = mock(async () => true);
 
 // Import the module under test after all mocks are set up
 import { createWorkspace } from './workspace_manager.js';
-import type { RmplanConfig } from '../configSchema.js';
+import type { RmplanConfig, RmplanConfigInput } from '../configSchema.js';
 
 describe('createWorkspace', () => {
   // Setup variables
@@ -220,7 +220,7 @@ describe('createWorkspace', () => {
     const cloneLocation = path.join(testTempDir, 'clones');
     const targetClonePath = path.join(cloneLocation, 'repo-task-123');
 
-    const config: RmplanConfig = {
+    const config: RmplanConfigInput = {
       workspaceCreation: {
         repositoryUrl,
         cloneLocation,
@@ -278,7 +278,8 @@ describe('createWorkspace', () => {
           LLMUTILS_PLAN_FILE_PATH: path.join(targetClonePath, 'plan-postcmds.yml'),
         }),
       }),
-      expect.stringContaining('repo-task-123')
+      expect.stringContaining('repo-task-123'),
+      false
     );
 
     // Verify second command was called with correct parameters
@@ -291,7 +292,8 @@ describe('createWorkspace', () => {
           LLMUTILS_PLAN_FILE_PATH: path.join(targetClonePath, 'plan-postcmds.yml'),
         }),
       }),
-      expect.stringContaining('repo-task-123')
+      expect.stringContaining('repo-task-123'),
+      false
     );
   });
 
