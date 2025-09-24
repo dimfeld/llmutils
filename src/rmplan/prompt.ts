@@ -643,9 +643,10 @@ Output structured Markdown that can be appended directly under a "## Research" h
 - Provide a concise overview of the opportunity or problem you investigated.
 - Highlight the most critical discoveries that should guide implementation.
 
-### Key Findings
+### Findings
 - List notable files, modules, or patterns you inspected and what you learned about them.
 - Mention existing utilities, abstractions, or APIs that are relevant.
+- Place each subagent's output under a subsection in here. Prefer to just use each subagent's output verbatim.
 
 ### Risks & Constraints
 - Record architectural hazards, edge cases, or constraints uncovered during research.
@@ -655,7 +656,10 @@ Output structured Markdown that can be appended directly under a "## Research" h
 - Capture any remaining unknowns that an engineer or product partner should resolve.
 - If there are no open questions, state "None" so the section is explicit.
 
-Do not wrap the output in code fences and do not repeat previous instructions. Focus on signal over fluff.`;
+Do not wrap the output in code fences and do not repeat previous instructions.
+Be verbose in your findings. The insights you gathered are valuable,
+so the more you include from your exploration, the better.
+`;
 }
 
 export function generateClaudeCodeGenerationPrompt(): string {
