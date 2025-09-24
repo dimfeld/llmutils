@@ -4,7 +4,7 @@ import { z as z3 } from 'zod/v3';
 import type { Executor, ExecutorCommonOptions, ExecutePlanInfo, ExecutorOutput } from './types';
 import type { RmplanConfig } from '../configSchema';
 import type { PrepareNextStepOptions } from '../plans/prepare_step';
-import { getGitRoot } from '../../common/git';
+import { captureRepositoryState, getGitRoot } from '../../common/git';
 import { spawnAndLogOutput } from '../../common/process';
 import { log, error, warn } from '../../logging';
 import { buildCodexOrchestrationPrompt } from './codex_cli/prompt';
@@ -22,7 +22,7 @@ import { analyzeReviewFeedback } from './codex_cli/review_analysis.ts';
 import { generateObject } from 'ai';
 import { createModel } from '../../common/model_factory.ts';
 import { setTaskDone } from '../plans/mark_done.ts';
-import { parseFailedReport } from './failure_detection.ts';
+import { detectPlanningWithoutImplementation, parseFailedReport } from './failure_detection.ts';
 
 export type CodexCliExecutorOptions = z.infer<typeof codexCliOptionsSchema>;
 
@@ -114,36 +114,47 @@ export class CodexCliExecutor implements Executor {
 
     // Build implementer prompt using the Claude Code agent prompt for consistency
     let implementerInstructions = await this.loadAgentInstructionsFor('implementer', gitRoot);
-    // Safely append extra guidance without coercing undefined to string
     implementerInstructions =
       (implementerInstructions || '') +
       '\n\nOnce you decide how to go about implementing theh tasks, do so immediately. No need to wait for approval.' +
       `\n\nIn your final message, be sure to include the titles of the tasks that you completed.\n`;
 
-    const implementer = getImplementerPrompt(
-      contextContent,
-      planContextAvailable ? planInfo.planId : undefined,
-      implementerInstructions,
-      this.sharedOptions.model
-    );
+    const retryInstructionSuffixes = [
+      'Please implement the changes now, not just plan them.',
+      'IMPORTANT: Execute the actual code changes immediately.',
+      'CRITICAL: You must write actual code files NOW.',
+    ];
+    const maxRetries = retryInstructionSuffixes.length;
 
-    // Execute implementer step and capture its final agent message
-    log('Running implementer step...');
-    const implementerOutput = await this.executeCodexStep(implementer.prompt, gitRoot, {
-      planTool: true,
-    });
-    events.push({ type: 'implementer', message: implementerOutput });
-    log('Implementer output captured.');
+    let implementerOutput: string | undefined;
+    let implementerStateBefore = await captureRepositoryState(gitRoot);
 
-    // Failure detection: implementer
-    {
-      const parsed = parseFailedReport(implementerOutput);
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const extraInstructions =
+        attempt === 0
+          ? ''
+          : `\n\n${retryInstructionSuffixes[Math.min(attempt - 1, retryInstructionSuffixes.length - 1)]}`;
+      const implementerPrompt = getImplementerPrompt(
+        contextContent,
+        planContextAvailable ? planInfo.planId : undefined,
+        implementerInstructions + extraInstructions,
+        this.sharedOptions.model
+      );
+
+      log(`Running implementer step${attempt > 0 ? ` (attempt ${attempt + 1})` : ''}...`);
+      const attemptOutput = await this.executeCodexStep(implementerPrompt.prompt, gitRoot, {
+        planTool: true,
+      });
+      events.push({ type: 'implementer', message: attemptOutput });
+      log('Implementer output captured.');
+
+      const parsed = parseFailedReport(attemptOutput);
       if (parsed.failed) {
         hadFailure = true;
-        failureOutput = implementerOutput;
+        failureOutput = attemptOutput;
         const aggregated = buildAggregatedOutput();
         return {
-          ...(aggregated ?? { content: implementerOutput }),
+          ...(aggregated ?? { content: attemptOutput }),
           success: false,
           failureDetails: parsed.details
             ? { ...parsed.details, sourceAgent: 'implementer' }
@@ -154,7 +165,33 @@ export class CodexCliExecutor implements Executor {
               },
         };
       }
+
+      const implementerStateAfter = await captureRepositoryState(gitRoot);
+      const planningDetection = detectPlanningWithoutImplementation(
+        attemptOutput,
+        implementerStateBefore,
+        implementerStateAfter
+      );
+
+      if (planningDetection.detected && attempt < maxRetries) {
+        warn(
+          `Implementer appears to have planned but not executed changes. Retrying (attempt ${attempt + 2}/${maxRetries + 1})...`
+        );
+        implementerStateBefore = implementerStateAfter;
+        continue;
+      }
+
+      if (planningDetection.detected && attempt === maxRetries) {
+        warn('Implementer planned without executing changes despite retries; continuing.');
+      }
+
+      implementerOutput = attemptOutput;
+      implementerStateBefore = implementerStateAfter;
+      break;
     }
+
+    const finalImplementerOutput =
+      implementerOutput ?? events.filter((e) => e.type === 'implementer').pop()?.message ?? '';
 
     try {
       // Re-read plan file to detect newly-completed tasks (if any)
@@ -175,7 +212,7 @@ export class CodexCliExecutor implements Executor {
       // Build tester context: include implementer output and focus tasks
       const testerContext = this.composeTesterContext(
         contextContent,
-        implementerOutput,
+        finalImplementerOutput,
         newlyCompletedTitles
       );
       const testerInstructions = await this.loadAgentInstructionsFor('tester', gitRoot);
@@ -212,7 +249,7 @@ export class CodexCliExecutor implements Executor {
       // Build reviewer context with implementer + tester outputs and task context
       const reviewerContext = this.composeReviewerContext(
         contextContent,
-        implementerOutput,
+        finalImplementerOutput,
         testerOutput,
         initiallyCompleted.map((t) => t.title),
         initiallyPending.map((t) => t.title)
@@ -270,7 +307,7 @@ export class CodexCliExecutor implements Executor {
           reviewerOutput: reviewerOutput,
           completedTasks: initiallyCompleted.map((t) => t.title),
           pendingTasks: initiallyPending.map((t) => t.title),
-          implementerOutput,
+          finalImplementerOutput,
           repoReviewDoc: reviewDoc,
         });
 
@@ -300,7 +337,7 @@ export class CodexCliExecutor implements Executor {
           log(`Starting fix iteration ${iter}/${maxFixIterations}...`);
 
           const fixerPrompt = this.getFixerPrompt({
-            implementerOutput,
+            implementerOutput: finalImplementerOutput,
             testerOutput,
             completedTaskTitles: initiallyCompleted.map((t) => t.title),
             fixInstructions,
@@ -335,7 +372,7 @@ export class CodexCliExecutor implements Executor {
           // Re-run reviewer with updated context including fixer output
           const rerunReviewerContext = this.composeFixReviewContext(
             contextContent,
-            implementerOutput,
+            finalImplementerOutput,
             testerOutput,
             initiallyCompleted.map((t) => t.title),
             initiallyPending.map((t) => t.title),
@@ -396,7 +433,7 @@ export class CodexCliExecutor implements Executor {
       }
     } finally {
       if (!hadFailure && planContextAvailable) {
-        await this.markCompletedTasksFromImplementer(implementerOutput, planInfo, gitRoot);
+        await this.markCompletedTasksFromImplementer(finalImplementerOutput, planInfo, gitRoot);
       } else if (hadFailure) {
         warn('Skipping automatic task completion marking due to executor failure.');
       }

@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import type { RepositoryState } from '../../common/git.ts';
 import {
   detectFailedLine,
   detectFailedLineAnywhere,
+  detectPlanningWithoutImplementation,
   extractFailureDetails,
   parseFailedReport,
   parseFailedReportAnywhere,
@@ -80,5 +82,46 @@ describe('failure_detection utilities', () => {
     expect(details.requirements).toContain('R1');
     expect(details.problems).toContain('P1');
     expect(details.solutions).toContain('S1');
+  });
+});
+
+describe('planning-without-implementation detection', () => {
+  const blankState = (): RepositoryState => ({ commitHash: 'abc', hasChanges: false });
+
+  test('flags planning outputs when repository state is unchanged', () => {
+    const before = blankState();
+    const after = blankState();
+    const output = `Plan:\n1. Analyze files\n2. Implement features later`;
+
+    const detection = detectPlanningWithoutImplementation(output, before, after);
+    expect(detection.detected).toBeTrue();
+    expect(detection.recommendedAction).toBe('retry');
+    expect(detection.planningIndicators.length).toBeGreaterThan(0);
+  });
+
+  test('does not trigger when working tree changes', () => {
+    const before = blankState();
+    const after = {
+      commitHash: 'abc',
+      hasChanges: true,
+      statusOutput: ' M src/example.ts',
+    };
+    const output = `Implementation Plan:\n- Update src/example.ts`;
+
+    const detection = detectPlanningWithoutImplementation(output, before, after);
+    expect(detection.detected).toBeFalse();
+    expect(detection.workingTreeChanged).toBeTrue();
+    expect(detection.recommendedAction).toBe('proceed');
+  });
+
+  test('bails out when repository status is unavailable', () => {
+    const before = { commitHash: 'abc', hasChanges: false, statusCheckFailed: true };
+    const after = { commitHash: 'abc', hasChanges: false, statusCheckFailed: true };
+    const output = `Plan: Write some code`;
+
+    const detection = detectPlanningWithoutImplementation(output, before, after);
+    expect(detection.detected).toBeFalse();
+    expect(detection.repositoryStatusUnavailable).toBeTrue();
+    expect(detection.recommendedAction).toBe('proceed');
   });
 });

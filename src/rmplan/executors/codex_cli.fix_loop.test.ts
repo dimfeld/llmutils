@@ -104,8 +104,9 @@ describe('CodexCliExecutor - Fix Loop', () => {
     let callIndex = 0;
     await moduleMocker.mock('../../common/process.ts', () => ({
       spawnAndLogOutput: mock(async (args: string[], opts: any) => {
-        // The actual prompt is the second-to-last argument (before --json)
-        const prompt = args[args.length - 2] as string;
+        const jsonFlagIndex = args.lastIndexOf('--json');
+        const promptIndex = jsonFlagIndex > 0 ? jsonFlagIndex - 1 : args.length - 2;
+        const prompt = args[promptIndex] as string;
         // Simulate JSON streaming
         const outputs: string[] = [codexTaskStarted()];
         if (prompt.startsWith('IMPLEMENTER')) {
@@ -230,8 +231,9 @@ describe('CodexCliExecutor - Fix Loop', () => {
     const calls: string[] = [];
     await moduleMocker.mock('../../common/process.ts', () => ({
       spawnAndLogOutput: mock(async (args: string[], opts: any) => {
-        // The actual prompt is the second-to-last argument (before --json)
-        const prompt = args[args.length - 2] as string;
+        const jsonFlagIndex = args.lastIndexOf('--json');
+        const promptIndex = jsonFlagIndex > 0 ? jsonFlagIndex - 1 : args.length - 2;
+        const prompt = args[promptIndex] as string;
         calls.push(prompt);
         const outputs: string[] = [codexTaskStarted()];
         if (prompt.startsWith('REVIEWER')) {

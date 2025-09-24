@@ -2,6 +2,9 @@
  * Utilities to detect and parse standardized FAILED reports from agent outputs.
  */
 
+import type { RepositoryState } from '../../common/git.ts';
+import { compareRepositoryStates } from '../../common/git.ts';
+
 export interface FailureDetection {
   failed: boolean;
   summary?: string;
@@ -154,4 +157,63 @@ export function parseFailedReportAnywhere(
   const slice = sliceFromFirstFailed(content);
   if (!slice) return { failed: false };
   return parseFailedReport(slice);
+}
+
+export interface PlanningWithoutImplementationDetection {
+  detected: boolean;
+  planningIndicators: string[];
+  commitChanged: boolean;
+  workingTreeChanged: boolean;
+  repositoryStatusUnavailable: boolean;
+  recommendedAction: 'retry' | 'proceed';
+}
+
+const PLANNING_LINE_PATTERNS: RegExp[] = [
+  /^\s*(?:[-*]\s*)?(?:detailed\s+)?plan\b/i,
+  /plan\s*:?\s*$/i,
+  /^\s*here'?s\s+what\s+i'?ll\s+do\b/i,
+  /^\s*i\s+(?:will|can)\s+plan\b/i,
+  /^\s*i\s+will\s+(?:implement|do|make)\b/i,
+  /^\s*the\s+implementation\s+will\b/i,
+];
+
+const MAX_INDICATORS_TO_COLLECT = 5;
+
+export function detectPlanningWithoutImplementation(
+  output: string,
+  beforeState: RepositoryState,
+  afterState: RepositoryState
+): PlanningWithoutImplementationDetection {
+  const normalized = output.replace(/\r\n?/g, '\n');
+  const lines = normalized.split('\n');
+  const planningIndicators: string[] = [];
+
+  for (const line of lines) {
+    if (planningIndicators.length >= MAX_INDICATORS_TO_COLLECT) {
+      break;
+    }
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (PLANNING_LINE_PATTERNS.some((pattern) => pattern.test(trimmed))) {
+      planningIndicators.push(trimmed);
+    }
+  }
+
+  const repoComparison = compareRepositoryStates(beforeState, afterState);
+  const repositoryStatusUnavailable = Boolean(
+    beforeState.statusCheckFailed || afterState.statusCheckFailed
+  );
+
+  const repositoryChanged = repoComparison.hasDifferences;
+  const detected =
+    planningIndicators.length > 0 && !repositoryChanged && !repositoryStatusUnavailable;
+
+  return {
+    detected,
+    planningIndicators,
+    commitChanged: repoComparison.commitChanged,
+    workingTreeChanged: repoComparison.workingTreeChanged,
+    repositoryStatusUnavailable,
+    recommendedAction: detected ? 'retry' : 'proceed',
+  };
 }

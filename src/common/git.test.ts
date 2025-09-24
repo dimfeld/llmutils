@@ -3,12 +3,32 @@ import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import {
+  captureRepositoryState,
+  compareRepositoryStates,
   getGitRoot,
   hasUncommittedChanges,
   getCurrentGitBranch,
   getCurrentBranchName,
+  getCurrentCommitHash,
   getCurrentJujutsuBranch,
 } from './git';
+
+async function runGit(dir: string, args: string[]): Promise<void> {
+  const proc = Bun.spawn(['git', ...args], { cwd: dir, stdout: 'pipe', stderr: 'pipe' });
+  const [exitCode, stderr] = await Promise.all([
+    proc.exited,
+    new Response(proc.stderr as ReadableStream).text(),
+  ]);
+  if (exitCode !== 0) {
+    throw new Error(`git ${args.join(' ')} failed: ${stderr.trim()}`);
+  }
+}
+
+async function initGitRepository(dir: string): Promise<void> {
+  await runGit(dir, ['init', '-b', 'main']);
+  await runGit(dir, ['config', 'user.email', 'test@example.com']);
+  await runGit(dir, ['config', 'user.name', 'Test User']);
+}
 
 describe('Git Utilities', () => {
   let tempDir: string;
@@ -146,6 +166,68 @@ describe('Git Utilities', () => {
 
       const hasChanges = await hasUncommittedChanges(tempDir);
       expect(hasChanges).toBe(true);
+    });
+  });
+
+  describe('repository state tracking', () => {
+    it('captures uncommitted changes and reports working tree differences', async () => {
+      await initGitRepository(tempDir);
+
+      const filePath = path.join(tempDir, 'example.txt');
+      await fs.writeFile(filePath, 'initial');
+
+      await runGit(tempDir, ['add', '.']);
+      await runGit(tempDir, ['commit', '-m', 'Initial commit']);
+
+      const before = await captureRepositoryState(tempDir);
+      expect(before.hasChanges).toBeFalse();
+      expect(before.statusOutput).toBeUndefined();
+
+      await fs.writeFile(filePath, 'modified');
+
+      const after = await captureRepositoryState(tempDir);
+      expect(after.hasChanges).toBeTrue();
+      expect(after.statusOutput).toContain('example.txt');
+
+      const comparison = compareRepositoryStates(before, after);
+      expect(comparison.commitChanged).toBeFalse();
+      expect(comparison.workingTreeChanged).toBeTrue();
+      expect(comparison.hasDifferences).toBeTrue();
+    });
+
+    it('detects commit hash changes without working tree diffs', async () => {
+      await initGitRepository(tempDir);
+
+      const filePath = path.join(tempDir, 'example.txt');
+      await fs.writeFile(filePath, 'initial');
+
+      await runGit(tempDir, ['add', '.']);
+      await runGit(tempDir, ['commit', '-m', 'Initial commit']);
+
+      const before = await captureRepositoryState(tempDir);
+      const beforeCommit = await getCurrentCommitHash(tempDir);
+      expect(beforeCommit).not.toBeNull();
+
+      await fs.writeFile(filePath, 'updated');
+      await runGit(tempDir, ['add', '.']);
+      await runGit(tempDir, ['commit', '-m', 'Update file']);
+
+      const after = await captureRepositoryState(tempDir);
+      const afterCommit = await getCurrentCommitHash(tempDir);
+      expect(afterCommit).not.toBeNull();
+      expect(afterCommit).not.toBe(beforeCommit);
+      const comparison = compareRepositoryStates(before, after);
+      expect(after.hasChanges).toBeFalse();
+      expect(after.statusOutput).toBeUndefined();
+      expect(comparison.commitChanged).toBeTrue();
+      expect(comparison.workingTreeChanged).toBeFalse();
+      expect(comparison.hasDifferences).toBeTrue();
+    });
+
+    it('marks status as unavailable when repository status cannot be read', async () => {
+      const state = await captureRepositoryState(tempDir);
+      expect(state.statusCheckFailed).toBeTrue();
+      expect(state.hasChanges).toBeFalse();
     });
   });
 

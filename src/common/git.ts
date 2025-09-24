@@ -93,27 +93,42 @@ export async function getUsingJj(): Promise<boolean> {
  * @returns Promise resolving to true if there are uncommitted changes, false otherwise
  */
 export async function hasUncommittedChanges(cwd?: string): Promise<boolean> {
-  // Check if jj exists in the provided directory
   const workingDir = cwd || process.cwd();
-  const jjPath = path.join(workingDir, '.jj');
+  const status = await getWorkingCopyStatus(workingDir);
+  if (status.checkFailed) {
+    return false;
+  }
+  return status.hasChanges;
+}
+
+interface WorkingCopyStatus {
+  hasChanges: boolean;
+  output?: string;
+  checkFailed: boolean;
+}
+
+async function getWorkingCopyStatus(cwd: string): Promise<WorkingCopyStatus> {
+  const jjPath = path.join(cwd, '.jj');
   const hasJj = await Bun.file(jjPath)
     .stat()
     .then((s) => s.isDirectory())
     .catch(() => false);
 
   if (hasJj) {
-    const proc = $`jj diff`.cwd(workingDir).quiet().nothrow();
-    const result = await proc;
-
-    return result.exitCode === 0 && result.stdout.toString().trim().length > 0;
-  } else {
-    // Use git status --porcelain which is more reliable
-    const proc = $`git status --porcelain`.cwd(workingDir).quiet().nothrow();
-    const result = await proc;
-
-    // If there's any output from git status --porcelain, there are changes
-    return result.exitCode === 0 && result.stdout.toString().trim().length > 0;
+    const result = await $`jj diff`.cwd(cwd).quiet().nothrow();
+    if (result.exitCode !== 0) {
+      return { hasChanges: false, checkFailed: true };
+    }
+    const output = result.stdout.toString().trim();
+    return { hasChanges: output.length > 0, output: output || undefined, checkFailed: false };
   }
+
+  const result = await $`git status --porcelain`.cwd(cwd).quiet().nothrow();
+  if (result.exitCode !== 0) {
+    return { hasChanges: false, checkFailed: true };
+  }
+  const output = result.stdout.toString().trim();
+  return { hasChanges: output.length > 0, output: output || undefined, checkFailed: false };
 }
 
 /**
@@ -157,9 +172,12 @@ export async function getCurrentGitBranch(cwd?: string): Promise<string | null> 
  */
 export async function getCurrentCommitHash(gitRoot: string): Promise<string | null> {
   try {
-    const usingJj = await getUsingJj();
+    const usingJjForRoot = await Bun.file(path.join(gitRoot, '.jj'))
+      .stat()
+      .then((s) => s.isDirectory())
+      .catch(() => false);
 
-    if (usingJj) {
+    if (usingJjForRoot) {
       const result = await $`jj log -r @ --no-graph -T commit_id`.cwd(gitRoot).nothrow().quiet();
       if (result.exitCode === 0) {
         return result.stdout.toString().trim();
@@ -175,6 +193,58 @@ export async function getCurrentCommitHash(gitRoot: string): Promise<string | nu
   }
 
   return null;
+}
+
+export interface RepositoryState {
+  commitHash: string | null;
+  hasChanges: boolean;
+  statusOutput?: string;
+  statusCheckFailed?: boolean;
+}
+
+export interface RepositoryStateComparison {
+  commitChanged: boolean;
+  workingTreeChanged: boolean;
+  hasDifferences: boolean;
+}
+
+export async function captureRepositoryState(gitRoot: string): Promise<RepositoryState> {
+  try {
+    const [commitHash, status] = await Promise.all([
+      getCurrentCommitHash(gitRoot),
+      getWorkingCopyStatus(gitRoot),
+    ]);
+
+    return {
+      commitHash,
+      hasChanges: status.hasChanges,
+      statusOutput: status.output,
+      statusCheckFailed: status.checkFailed || undefined,
+    };
+  } catch (error) {
+    log(chalk.yellow(`Warning: Could not capture repository state: ${(error as Error).message}`));
+    return {
+      commitHash: null,
+      hasChanges: false,
+      statusCheckFailed: true,
+    };
+  }
+}
+
+export function compareRepositoryStates(
+  before: RepositoryState,
+  after: RepositoryState
+): RepositoryStateComparison {
+  const normalize = (value?: string) => (value ?? '').trim();
+  const commitChanged = (before.commitHash ?? null) !== (after.commitHash ?? null);
+  const workingTreeChanged =
+    before.hasChanges !== after.hasChanges ||
+    normalize(before.statusOutput) !== normalize(after.statusOutput);
+  return {
+    commitChanged,
+    workingTreeChanged,
+    hasDifferences: commitChanged || workingTreeChanged,
+  };
 }
 
 /**

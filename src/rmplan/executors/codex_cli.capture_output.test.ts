@@ -90,7 +90,9 @@ describe('CodexCliExecutor captureOutput', () => {
 
     await moduleMocker.mock('../../common/process.ts', () => ({
       spawnAndLogOutput: mock(async (args: string[], opts: any) => {
-        const prompt = args[args.length - 2] as string;
+        const jsonFlagIndex = args.lastIndexOf('--json');
+        const promptIndex = jsonFlagIndex > 0 ? jsonFlagIndex - 1 : args.length - 2;
+        const prompt = args[promptIndex] as string;
         const outs: string[] = [codexTaskStarted()];
         if (prompt.startsWith('IMPLEMENTER')) outs.push(codexAgentMessage('I did work'));
         else if (prompt.startsWith('TESTER')) outs.push(codexAgentMessage('Tests are great'));
@@ -148,7 +150,9 @@ describe('CodexCliExecutor captureOutput', () => {
 
     await moduleMocker.mock('../../common/process.ts', () => ({
       spawnAndLogOutput: mock(async (args: string[], opts: any) => {
-        const prompt = args[args.length - 2] as string;
+        const jsonFlagIndex = args.lastIndexOf('--json');
+        const promptIndex = jsonFlagIndex > 0 ? jsonFlagIndex - 1 : args.length - 2;
+        const prompt = args[promptIndex] as string;
         const outs: string[] = [codexTaskStarted()];
         if (prompt.startsWith('IMPLEMENTER')) outs.push(codexAgentMessage('impl out'));
         else if (prompt.startsWith('TESTER')) outs.push(codexAgentMessage('tester out'));
