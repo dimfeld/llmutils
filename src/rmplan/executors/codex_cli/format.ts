@@ -16,6 +16,33 @@ interface AnyMessage {
   [key: string]: any;
 }
 
+interface RateLimitInfo {
+  used_percent: number;
+  window_minutes: number;
+  resets_in_seconds: number;
+}
+
+function formatSeconds(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds - hours * 3600) / 60);
+  return `${hours}h ${minutes}m`;
+}
+
+function formatMinutes(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes - hours * 60;
+  if (remainingMinutes === 0) {
+    return `${hours}h`;
+  }
+  return `${hours}h ${remainingMinutes}m`;
+}
+
+function formatRateLimit(rateLimit: RateLimitInfo): string {
+  return `${formatMinutes(rateLimit.window_minutes)} Rate Limit: ${Math.round(rateLimit.used_percent)}%, New in ${formatSeconds(
+    rateLimit.resets_in_seconds
+  )}`;
+}
+
 // Known Codex message variants (inside envelope.msg)
 export type CodexMessage =
   | { type: 'task_started'; model_context_window?: number }
@@ -45,7 +72,14 @@ export type CodexMessage =
       formatted_output?: string;
       aggregated_output?: string;
     }
-  | { type: 'token_count'; info: any }
+  | {
+      type: 'token_count';
+      info: any;
+      rate_limits: {
+        primary: RateLimitInfo;
+        secondary: RateLimitInfo;
+      };
+    }
   | { type: 'agent_message'; message?: string }
   | { type: 'turn_diff'; unified_diff?: string }
   | {
@@ -92,6 +126,7 @@ function tryFormatInitial(lineObj: CodexEnvelope): FormattedCodexMessage | undef
     const ts = new Date().toTimeString().split(' ')[0];
     const desc = [
       lineObj.model ? `Model: ${lineObj.model}` : undefined,
+      lineObj['reasoning effort'] ? `Reasoning Effort: ${lineObj['reasoning effort']}` : undefined,
       lineObj.provider ? `Provider: ${lineObj.provider}` : undefined,
       lineObj.sandbox ? `Sandbox: ${lineObj.sandbox}` : undefined,
       lineObj.workdir ? `Workdir: ${lineObj.workdir}` : undefined,
@@ -107,6 +142,7 @@ function tryFormatInitial(lineObj: CodexEnvelope): FormattedCodexMessage | undef
 export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage {
   try {
     if (!jsonLine || jsonLine.trim() === '') return { type: '' };
+    debugLog(`codex: `, jsonLine);
     const obj = JSON.parse(jsonLine) as CodexEnvelope<CodexMessage>;
 
     // Initial line without msg
@@ -188,6 +224,17 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
 
         if (contextWindow) {
           parts.push(`Context Window: ${contextWindow.toLocaleString()}`);
+        }
+
+        if (msg.rate_limits) {
+          const rateLimits = msg.rate_limits;
+          if (msg.rate_limits.primary) {
+            parts.push(formatRateLimit(rateLimits.primary));
+          }
+
+          if (msg.rate_limits.secondary) {
+            parts.push(formatRateLimit(rateLimits.secondary));
+          }
         }
 
         return {
