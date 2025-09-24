@@ -16,7 +16,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-09-24T09:57:35.920Z
 createdAt: 2025-09-24T09:46:07.509Z
-updatedAt: 2025-09-24T10:32:17.100Z
+updatedAt: 2025-09-24T10:45:03.115Z
 progressNotes:
   - timestamp: 2025-09-24T10:12:24.648Z
     text: Implemented three-step Claude orchestration with optional research
@@ -34,7 +34,7 @@ progressNotes:
     source: "tester: Task8-9"
 tasks:
   - title: Modify Claude Code orchestrator for three-step flow
-    done: false
+    done: true
     description: Update `/src/rmplan/executors/claude_code_orchestrator.ts` to
       accept an optional research extraction prompt parameter. Implement
       conditional execution that runs the research prompt between planning and
@@ -44,7 +44,7 @@ tasks:
     docs: []
     steps: []
   - title: Create research extraction prompt template
-    done: false
+    done: true
     description: Add a new prompt function `generateClaudeCodeResearchPrompt()` to
       `/src/rmplan/prompt.ts` that instructs Claude to format and output all
       research findings in a structured markdown format suitable for appending
@@ -53,7 +53,7 @@ tasks:
     docs: []
     steps: []
   - title: Update orchestrator response handling
-    done: false
+    done: true
     description: Enhance the JSON stream processing in the orchestrator to capture
       research output separately from the final plan output, ensuring proper
       formatting and error handling for the intermediate research step.
@@ -61,7 +61,7 @@ tasks:
     docs: []
     steps: []
   - title: Update generate command for three-step flow
-    done: false
+    done: true
     description: Modify `/src/rmplan/commands/generate.ts` to always use the
       three-step process when in Claude mode. Update the
       `invokeClaudeCodeForGeneration` wrapper in `/src/rmplan/claude_utils.ts`
@@ -70,7 +70,7 @@ tasks:
     docs: []
     steps: []
   - title: Add conditional research extraction to prepare command
-    done: false
+    done: true
     description: Update `/src/rmplan/commands/prepare.ts` to check the plan's
       `generatedBy` field and conditionally include the research extraction step
       for 'oneshot' plans. Ensure proper plan file reading and updating with
@@ -79,7 +79,7 @@ tasks:
     docs: []
     steps: []
   - title: Implement research content insertion logic
-    done: false
+    done: true
     description: Create a utility function to append research findings to the plan's
       details field with proper formatting, timestamps, and markdown structure.
       Ensure the research section is preserved during subsequent plan updates.
@@ -87,7 +87,7 @@ tasks:
     docs: []
     steps: []
   - title: Create orchestrator unit tests
-    done: false
+    done: true
     description: Write comprehensive unit tests for the modified orchestrator in
       `/src/rmplan/executors/claude_code_orchestrator.test.ts`, covering
       successful three-step flow, two-step fallback, and error scenarios.
@@ -118,7 +118,19 @@ tasks:
     files: []
     docs: []
     steps: []
-changedFiles: []
+changedFiles:
+  - src/rmplan/claude_utils.test.ts
+  - src/rmplan/claude_utils.ts
+  - src/rmplan/commands/generate.test.ts
+  - src/rmplan/commands/generate.ts
+  - src/rmplan/executors/claude_code_orchestrator.test.ts
+  - src/rmplan/executors/claude_code_orchestrator.ts
+  - src/rmplan/plans/prepare_phase.test.ts
+  - src/rmplan/plans/prepare_phase.ts
+  - src/rmplan/process_markdown.ts
+  - src/rmplan/prompt.ts
+  - src/rmplan/research_utils.test.ts
+  - src/rmplan/research_utils.ts
 rmfilter: []
 ---
 

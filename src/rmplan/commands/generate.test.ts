@@ -1882,7 +1882,6 @@ describe('handleGenerateCommand claude_mode configuration logic', () => {
   });
 });
 
-
 describe('handleGenerateCommand research preservation integration', () => {
   let tempDir: string;
   let tasksDir: string;
