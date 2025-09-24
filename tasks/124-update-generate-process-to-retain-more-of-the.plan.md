@@ -16,7 +16,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-09-24T09:57:35.920Z
 createdAt: 2025-09-24T09:46:07.509Z
-updatedAt: 2025-09-24T11:08:01.785Z
+updatedAt: 2025-09-24T11:10:30.441Z
 progressNotes:
   - timestamp: 2025-09-24T10:12:24.648Z
     text: Implemented three-step Claude orchestration with optional research
@@ -45,6 +45,10 @@ progressNotes:
       src/rmplan/executors/claude_code_orchestrator.test.ts completed without
       failures.
     source: "tester: Task8-9"
+  - timestamp: 2025-09-24T11:10:30.436Z
+    text: "Updated CLAUDE.md and README to document the Claude Code three-step flow,
+      conditional research capture, and the new ## Research storage details."
+    source: "implementer: Task10"
 tasks:
   - title: Modify Claude Code orchestrator for three-step flow
     done: true

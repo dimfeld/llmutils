@@ -288,7 +288,7 @@ You can find the task plans for this repository under the "tasks" directory.
 - **Plan Creation**: Use the `add` command to quickly create new plan stub files with metadata like dependencies and priority.
 - **Issue Import**: Use the `import` command to convert GitHub or Linear issues into structured plan files, with support for both single-issue and interactive multi-issue import modes, automatic duplicate prevention, and selective content inclusion.
 - **Plan Splitting**: Use the `split` command to intelligently break down large, complex plans into multiple phase-based plans using an LLM.
-- **Research Integration**: Use the `research` command to generate research prompts based on a plan's goals and append findings back to the plan for enhanced context.
+- **Research Integration**: Use the `research` command (or the Claude Code generate/prepare flow) to capture findings and append them under the `## Research` section of a plan's `details` markdown for future reference.
 - **YAML Conversion**: Convert the Markdown project plan into a structured YAML format for running tasks.
 - **Task Execution**: Execute the next steps in a plan, generating prompts for LLMs and optionally integrating with `rmfilter` for context.
 - **Progress Tracking**: Mark tasks and steps as done, with support for committing changes to git or jj.
@@ -319,12 +319,13 @@ Alternatively, you can use the `agent` command (or its alias `run`) to automate 
 
 ### Using with Claude Code
 
-The `generate` and `prepare` commands support a `--claude` flag that leverages Anthropic's Claude Code model for enhanced planning and generation capabilities. This feature uses a two-step invocation process:
+The `generate` and `prepare` commands support a `--claude` flag that leverages Anthropic's Claude Code model for enhanced planning and generation capabilities. This feature now uses a three-step invocation process that preserves Claude's research notes:
 
-1. **Planning Phase**: Claude Code first analyzes the task and creates a structured plan
-2. **Generation Phase**: Using the same session context, Claude Code generates the final output in the required format
+1. **Planning Phase**: Claude Code analyzes the task and drafts an execution approach.
+2. **Research Capture**: The same session summarizes key findings, which rmplan appends to the plan file under a `## Research` heading in the `details` field.
+3. **Generation Phase**: Claude Code produces the final structured plan output using the accumulated context.
 
-This two-step approach produces more thoughtful and accurate results compared to single-pass generation, as Claude Code can reason about the task structure before generating detailed implementation steps.
+`rmplan generate --claude` always runs all three steps. `rmplan prepare --claude` runs the research capture phase when the plan's `generatedBy` metadata is `oneshot`, and otherwise keeps the traditional two-step flow. If the research capture step fails for any reason, the orchestrator falls back to the planning → generation flow so existing automation keeps working.
 
 **Requirements**: The `claude-code` CLI tool must be installed and available in your system's PATH.
 
@@ -346,6 +347,8 @@ rmplan generate --plan-editor --claude --commit -- src/**/*.ts
 
 The `--claude` flag works seamlessly with all other options for both commands. When not specified, the commands use their default behavior of calling the configured LLM directly.
 
+When the research capture step runs, open the plan file and scroll to the `## Research` section in the `details` markdown to review Claude's investigation notes. These entries are timestamped and persist through subsequent plan edits.
+
 ### Additional Commands
 
 The `prepare` command is used to generate detailed steps and prompts for a phase plan that doesn't already have them. This is useful when you have a high-level plan outline but need to expand it with specific implementation steps.
@@ -354,7 +357,7 @@ The `add` command allows you to quickly create new plan stub files with just a t
 
 The `split` command helps manage complexity by using an LLM to intelligently break down a large, detailed plan into multiple smaller, phase-based plans. Each phase becomes a separate plan file with proper dependencies, allowing you to tackle complex projects incrementally while maintaining the full context and details from the original plan.
 
-The `research` command generates a research prompt based on a plan's goal and details, helping you gather additional context or information to enhance the plan. The `--rmfilter` option incorporates file context into the research prompt using `rmfilter`, allowing you to include relevant code files and documentation. After running the research prompt through an LLM, the command provides an interactive paste-back mechanism where you can paste the research findings, and they will be automatically appended to the plan file's `research` field for future reference.
+The `research` command generates a research prompt based on a plan's goal and details, helping you gather additional context or information to enhance the plan. The `--rmfilter` option incorporates file context into the research prompt using `rmfilter`, allowing you to include relevant code files and documentation. After running the research prompt through an LLM, the command provides an interactive paste-back mechanism where you can paste the research findings, and they will be automatically appended to the plan file's `details` field beneath the `## Research` heading for future reference.
 
 The `update` command allows you to modify an existing plan by providing a natural language description of the desired changes. This enables iterative refinement of plans as requirements evolve or new information becomes available. The command uses an LLM to intelligently update the plan's tasks and structure while preserving important metadata.
 

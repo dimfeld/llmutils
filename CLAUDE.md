@@ -81,6 +81,13 @@ The codebase is organized into several main modules with improved modularity and
    - Includes OpenTelemetry integration for observability
    - Features rollback capabilities for failed operations
 
+## rmplan Claude Code Workflow
+
+- `rmplan generate --claude` now runs a three-step Claude Code session: planning → research capture → plan generation. The middle step prompts Claude to summarize its findings, which are appended under a `## Research` heading in the plan's `details` markdown before the plan is parsed.
+- `rmplan prepare --claude` uses this same research capture step when the target plan's `generatedBy` field is `oneshot`. Other plans keep the original two-step flow.
+- Research notes are preserved on disk inside the plan file. Open the plan and scroll to the `## Research` section in the `details` field to review or edit Claude's findings later.
+- If the research capture step fails, the orchestrator falls back to the traditional two-step process so existing workflows keep working.
+
 ## Environment Requirements
 
 - **Bun**: Required as the JavaScript runtime
