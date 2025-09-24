@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { createLineSplitter, debug as processDebug } from '../../../common/process.ts';
+import { formatTodoLikeLines } from '../shared/todo_format.ts';
 import { debugLog } from '../../../logging.ts';
 
 // Envelope for Codex CLI JSON stream lines
@@ -108,6 +109,11 @@ export type CodexMessage =
       };
     }
   | { type: 'agent_message'; message?: string }
+  | {
+      type: 'plan_update';
+      explanation?: string | null;
+      plan?: Array<{ step: string; status?: string | null }>;
+    }
   | { type: 'turn_diff'; unified_diff?: string }
   | {
       type: 'patch_apply_begin';
@@ -224,7 +230,6 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
         const info = msg.info ?? {};
         const total = info.total_token_usage;
         const last = info.last_token_usage;
-        const contextWindow = info.model_context_window;
 
         const parts = [];
         if (total) {
@@ -294,6 +299,36 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
           message: chalk.bold.green(`### Agent Message [${ts}]`) + '\n\n' + text,
           agentMessage: text,
           failed: failed || undefined,
+        };
+      }
+      case 'plan_update': {
+        const rawPlan = Array.isArray(msg.plan) ? msg.plan : [];
+        const planLines = formatTodoLikeLines(
+          rawPlan.map((item) => ({
+            label:
+              typeof item?.step === 'string' && item.step.trim().length > 0
+                ? item.step
+                : '(missing step description)',
+            status: item?.status,
+          })),
+          { includePriority: false }
+        );
+        const explanation =
+          typeof msg.explanation === 'string' && msg.explanation.trim().length > 0
+            ? msg.explanation.trim()
+            : undefined;
+        const sections: string[] = [];
+        if (planLines.length > 0) {
+          sections.push(planLines.join('\n'));
+        } else {
+          sections.push(chalk.gray('No plan steps provided.'));
+        }
+        if (explanation) {
+          sections.push(`Explanation: ${explanation}`);
+        }
+        return {
+          type: msg.type,
+          message: `${chalk.bold.blue(`### Plan Update [${ts}]`)}\n\n${sections.join('\n\n')}`,
         };
       }
       case 'turn_diff': {

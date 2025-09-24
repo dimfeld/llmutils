@@ -1,6 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import chalk from 'chalk';
 import yaml from 'yaml';
+import { formatTodoLikeLines } from '../shared/todo_format.ts';
 import { debugLog } from '../../../logging.ts';
 import { createTwoFilesPatch, diffLines } from 'diff';
 import { detectFailedLineAnywhere } from '../failure_detection.ts';
@@ -209,38 +210,21 @@ export function formatJsonMessage(input: string): {
           typeof content.input === 'object' &&
           'todos' in content.input
         ) {
-          // Special formatting for TodoWrite tool
           const todos = (content.input as any).todos as Array<{
             id: string;
             content: string;
-            status: string;
-            priority: string;
+            status?: string;
+            priority?: string;
           }>;
           outputLines.push(chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`));
 
-          const todoLines = todos.map((todo) => {
-            const statusIcon =
-              todo.status === 'completed' ? '✓' : todo.status === 'in_progress' ? '→' : '•';
-            const priorityColor =
-              todo.priority === 'high'
-                ? chalk.red
-                : todo.priority === 'medium'
-                  ? chalk.yellow
-                  : chalk.gray;
-
-            // Color the content based on status
-            const contentColor =
-              todo.status === 'completed'
-                ? chalk.green
-                : todo.status === 'in_progress'
-                  ? chalk.cyan
-                  : chalk.gray;
-
-            // Priority may have been removed in recent versions
-            const priority = todo.priority ? `[${priorityColor(todo.priority)}] ` : '';
-
-            return `  ${statusIcon} ${priority}${contentColor(todo.content)}`;
-          });
+          const todoLines = formatTodoLikeLines(
+            todos.map((todo) => ({
+              label: todo.content,
+              status: todo.status,
+              priority: todo.priority,
+            }))
+          );
           outputLines.push(todoLines.join('\n'));
         } else {
           const color = content.name === 'Task' ? chalk.red : chalk.cyan;

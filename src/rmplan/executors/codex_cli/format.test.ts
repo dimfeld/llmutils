@@ -19,6 +19,27 @@ describe('codex_cli/format', () => {
     expect(res.message).toContain('Task Started');
   });
 
+  test('handles plan update', () => {
+    const line = JSON.stringify({
+      id: '0',
+      msg: {
+        type: 'plan_update',
+        explanation: 'Keeping tests green.',
+        plan: [
+          { step: 'Review current forms module implementation and existing tests to spot coverage gaps.', status: 'completed' },
+          { step: 'Add or adjust tests to cover missing scenarios for onboarding form management.', status: 'in_progress' },
+          { step: 'Run targeted checks (type check, lint, tests) to verify everything passes.', status: 'pending' },
+        ],
+      },
+    });
+    const res = formatCodexJsonMessage(line);
+    expect(res.type).toBe('plan_update');
+    expect(res.message).toContain('Plan Update');
+    expect(res.message).toContain('✓');
+    expect(res.message).toContain('→');
+    expect(res.message).toContain('Explanation: Keeping tests green.');
+  });
+
   test('handles agent reasoning', () => {
     const line = JSON.stringify({ id: '0', msg: { type: 'agent_reasoning', text: 'thinking...' } });
     const res = formatCodexJsonMessage(line);
