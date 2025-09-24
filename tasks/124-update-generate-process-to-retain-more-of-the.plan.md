@@ -16,7 +16,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-09-24T09:57:35.920Z
 createdAt: 2025-09-24T09:46:07.509Z
-updatedAt: 2025-09-24T10:52:10.867Z
+updatedAt: 2025-09-24T11:08:01.785Z
 progressNotes:
   - timestamp: 2025-09-24T10:12:24.648Z
     text: Implemented three-step Claude orchestration with optional research
@@ -37,6 +37,14 @@ progressNotes:
       and added orchestrator session interruption fallback test; new cases
       confirm headings stay single and failures degrade to two-step.
     source: "implementer: Task8-9"
+  - timestamp: 2025-09-24T10:55:18.482Z
+    text: Re-ran targeted generate/prepare/orchestrator tests to validate research
+      preservation and fallback paths; bun test
+      src/rmplan/commands/generate.test.ts
+      src/rmplan/plans/prepare_phase.test.ts
+      src/rmplan/executors/claude_code_orchestrator.test.ts completed without
+      failures.
+    source: "tester: Task8-9"
 tasks:
   - title: Modify Claude Code orchestrator for three-step flow
     done: true
@@ -100,7 +108,7 @@ tasks:
     docs: []
     steps: []
   - title: Add integration tests for commands
-    done: false
+    done: true
     description: Create integration tests for generate and prepare commands that
       verify research extraction behavior, including tests for the conditional
       logic based on generatedBy field and proper plan file updates.
@@ -108,7 +116,7 @@ tasks:
     docs: []
     steps: []
   - title: Test edge cases and error recovery
-    done: false
+    done: true
     description: Implement tests for edge cases including research extraction
       failures, malformed outputs, session interruptions, and verify graceful
       degradation to two-step flow when needed.
