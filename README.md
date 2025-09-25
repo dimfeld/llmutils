@@ -43,6 +43,7 @@ assume a repository written with Typescript and PNPM workspaces.
     - [Cleanup Command](#cleanup-command)
   - [Requirements](#requirements-1)
   - [Notes](#notes-1)
+  - [External Storage](#external-storage)
   - [Configuration](#configuration)
     - [Paths](#paths)
     - [Documentation Search Paths](#documentation-search-paths)
@@ -980,6 +981,19 @@ Behavior:
 - Use `--previous` to include completed steps for context in the LLM prompt.
 - The `--commit` option supports both git and jj for version control.
 - The `agent` command automates step execution, using `rmfilter` to generate context, running the step with an LLM, and marking it as done with a commit. It stops on errors or when the plan is complete.
+
+### External Storage {#external-storage}
+
+When a repository does not include `.rmfilter/config/rmplan.yml`, `rmplan` automatically stores configuration and plan files in an external directory at `~/.config/rmfilter/repositories/<repository-name>/`. The repository name is derived from the `origin` remote when available and sanitized so the directory is filesystem-safe; repositories without remotes fall back to the Git root folder name.
+
+The external directory always contains:
+
+- `.rmfilter/config/rmplan.yml` — the repository-specific configuration file created on first use
+- `tasks/` — the plan directory where new plans are written and discovered
+
+On the first load in external-storage mode, `rmplan` prints a multi-line message describing the base directory, config file, plan directory, detected remote, and how to opt-out. To disable external storage, create `.rmfilter/config/rmplan.yml` inside the repository; future runs will respect the in-repo config and stop using the external location.
+
+Claude Code and Codex executors automatically receive access to the external directory via `--add-dir` and sandbox writable-roots arguments, so agents can read and write the generated plans without additional configuration.
 
 ### Configuration
 

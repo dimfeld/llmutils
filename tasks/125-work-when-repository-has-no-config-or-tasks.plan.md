@@ -13,7 +13,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-09-25T09:16:20.304Z
 createdAt: 2025-09-25T08:58:56.840Z
-updatedAt: 2025-09-25T12:47:26.563Z
+updatedAt: 2025-09-25T12:53:45.740Z
 progressNotes:
   - timestamp: 2025-09-25T10:09:43.140Z
     text: Set up new git URL parsing utilities with filesystem-safe name derivation
@@ -49,6 +49,11 @@ progressNotes:
     text: Updated add/promote/import suites plus new path_resolver coverage to
       exercise external storage flows and confirmed success with `bun test`.
     source: "tester: tasks 10-11"
+  - timestamp: 2025-09-25T12:53:45.734Z
+    text: Enhanced external storage logging to detail config and plan locations,
+      added test coverage for the message output, and documented the fallback
+      workflow plus agent access in the README.
+    source: "implementer: tasks 7,17,18"
 tasks:
   - title: Create Git URL Parser Module
     done: true
@@ -245,7 +250,7 @@ rmfilter: []
 # Implemented Functionality Notes
 
 - Built `RepositoryConfigResolver` to derive per-repository directories at `~/.config/rmfilter/repositories/<name>`, using sanitized remote metadata and automatically creating both `.rmfilter/config` and `tasks` subdirectories whenever a local config is absent.
-- Updated `loadEffectiveConfig` to route through the resolver, attach runtime metadata (`isUsingExternalStorage`, `externalRepositoryConfigDir`, and the resolved config path), key cache entries by git root, and surface a log message the first time external storage is engaged.
+- Updated `loadEffectiveConfig` to route through the resolver, attach runtime metadata (`isUsingExternalStorage`, `externalRepositoryConfigDir`, and the resolved config path), key cache entries by git root, and emit a detailed multi-line message the first time external storage is engaged covering base directory, config/plan paths, remote, and the opt-out hint.
 - Adjusted `resolveTasksDir` to honor external storage mode, normalize relative task paths against the repository config directory, and proactively ensure target directories exist before plan operations run.
 - Added targeted coverage via `src/rmplan/repository_config_resolver.test.ts`, expanded scenarios in `src/rmplan/configLoader.test.ts`, and new `resolveTasksDir` cases in `src/rmplan/configSchema.test.ts` to validate directory creation, metadata propagation, and path resolution for both local and external storage modes.
 - Hardened `src/rmplan/resolvePlanFile.external.test.ts` so every filesystem operation first asserts the target lives inside the test's temporary home directory, preventing the suite from deleting a contributor's real `~/.config/rmfilter/repositories/...` data if the mocked homedir ever fails.
@@ -255,6 +260,7 @@ rmfilter: []
 - Introduced `path_resolver` helper utilities that compute git-aware task directories and configuration roots, providing a single source of truth for external storage resolution.
 - Refactored plan operations (`rmplan add`, `generate`, `promote`, hierarchical imports, cleanup utilities, renumbering, and mark-done flows) to consume the shared helpers so plan files always land in the external repository directory when required.
 - Expanded automated coverage with `path_resolver.test.ts` and new external-storage scenarios across add/promote/import unit and integration suites, ensuring command behavior remains stable in both local and external modes.
+- Enhanced external-storage messaging tests in `src/rmplan/configLoader.test.ts` to assert the new guidance, and documented the automatic fallback plus executor access in `README.md` for users working on third-party repositories.
 
 # Original Plan Details
 

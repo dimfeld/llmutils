@@ -258,7 +258,27 @@ export async function loadEffectiveConfig(overridePath?: string): Promise<Rmplan
     };
 
     if (resolution.usingExternalStorage && resolution.repositoryConfigDir) {
-      log(`Using external rmplan configuration at ${resolution.repositoryConfigDir}`);
+      const externalConfigPath =
+        resolution.externalConfigPath ??
+        path.join(resolution.repositoryConfigDir, '.rmfilter', 'config', 'rmplan.yml');
+      const externalTasksDir =
+        resolution.externalTasksDir ?? path.join(resolution.repositoryConfigDir, 'tasks');
+      const localConfigPath = resolution.gitRoot
+        ? path.join(resolution.gitRoot, '.rmfilter', 'config', 'rmplan.yml')
+        : '.rmfilter/config/rmplan.yml';
+      const remoteDetails = resolution.remoteUrl ?? 'none detected';
+      const repositoryLabel = resolution.repositoryName ?? 'this repository';
+
+      const messageLines = [
+        `Using external rmplan storage for ${repositoryLabel}:`,
+        `  Base directory: ${resolution.repositoryConfigDir}`,
+        `  Configuration file: ${externalConfigPath}`,
+        `  Plan directory: ${externalTasksDir}`,
+        `  Remote origin: ${remoteDetails}`,
+        `  Add ${localConfigPath} to store rmplan data inside the repository.`,
+      ];
+
+      log(messageLines.join('\n'));
     }
 
     foundConfigs.set(cacheKey, configWithMetadata);

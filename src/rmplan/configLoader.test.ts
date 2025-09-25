@@ -135,7 +135,18 @@ describe('configLoader', () => {
 
     expect(config.isUsingExternalStorage).toBe(true);
     expect(config.externalRepositoryConfigDir).toBe(expectedRepositoryDir);
-    expect(logSpy.mock.calls.some((call) => call[0].includes(expectedRepositoryDir))).toBe(true);
+    const loggedMessage = logSpy.mock.calls.at(-1)?.[0];
+    expect(typeof loggedMessage).toBe('string');
+    const messageText = loggedMessage as string;
+    expect(messageText).toContain(`Base directory: ${expectedRepositoryDir}`);
+    expect(messageText).toContain(
+      `Configuration file: ${path.join(expectedRepositoryDir, '.rmfilter', 'config', 'rmplan.yml')}`
+    );
+    expect(messageText).toContain(`Plan directory: ${path.join(expectedRepositoryDir, 'tasks')}`);
+    expect(messageText).toContain('Remote origin: none detected');
+    expect(messageText).toContain(
+      `Add ${path.join(testDir, '.rmfilter', 'config', 'rmplan.yml')} to store rmplan data inside the repository.`
+    );
   });
 
   test('loadEffectiveConfig captures repository metadata from remote when using external storage', async () => {
@@ -168,6 +179,13 @@ describe('configLoader', () => {
     expect(config.resolvedConfigPath).toBe(
       path.join(expectedRepositoryDir, '.rmfilter', 'config', 'rmplan.yml')
     );
+
+    const loggedMessage = logSpy.mock.calls.at(-1)?.[0];
+    expect(typeof loggedMessage).toBe('string');
+    const messageText = loggedMessage as string;
+    expect(messageText).toContain(`Remote origin: ${remote}`);
+    expect(messageText).toContain(`Base directory: ${expectedRepositoryDir}`);
+    expect(messageText).toContain('Using external rmplan storage for');
   });
 
   test('findConfigPath falls back to external repository config path when default config does not exist', async () => {
