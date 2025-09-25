@@ -13,7 +13,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-09-25T09:16:20.304Z
 createdAt: 2025-09-25T08:58:56.840Z
-updatedAt: 2025-09-25T10:53:19.942Z
+updatedAt: 2025-09-25T11:00:59.222Z
 progressNotes:
   - timestamp: 2025-09-25T10:09:43.140Z
     text: Set up new git URL parsing utilities with filesystem-safe name derivation
@@ -69,7 +69,7 @@ tasks:
     docs: []
     steps: []
   - title: Create RepositoryConfigResolver Class
-    done: false
+    done: true
     description: Implement `src/rmplan/repository_config_resolver.ts` with methods
       for determining external config paths, checking existence, and creating
       directory structure.
@@ -77,7 +77,7 @@ tasks:
     docs: []
     steps: []
   - title: Extend Config Loading Logic
-    done: false
+    done: true
     description: Update `loadEffectiveConfig()` in `src/rmplan/configLoader.ts` to
       use RepositoryConfigResolver when no local config exists. Add
       `isUsingExternalStorage` flag to config.
@@ -100,7 +100,7 @@ tasks:
     docs: []
     steps: []
   - title: Update resolveTasksDir Function
-    done: false
+    done: true
     description: Modify `resolveTasksDir()` in `src/rmplan/configSchema.ts` to check
       for external storage mode and return appropriate directory path.
     files: []
@@ -194,8 +194,15 @@ changedFiles:
   - src/common/git_url_parser.js
   - src/common/git_url_parser.test.ts
   - src/common/git_url_parser.ts
+  - src/rmplan/configLoader.test.ts
+  - src/rmplan/configLoader.ts
+  - src/rmplan/configSchema.test.ts
+  - src/rmplan/configSchema.ts
   - src/rmplan/executors/claude_code/orchestrator_prompt.ts
   - src/rmplan/executors/codex_cli/format.ts
+  - src/rmplan/repository_config_resolver.js
+  - src/rmplan/repository_config_resolver.test.ts
+  - src/rmplan/repository_config_resolver.ts
 rmfilter: []
 ---
 
