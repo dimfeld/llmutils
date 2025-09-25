@@ -13,7 +13,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-09-25T09:16:20.304Z
 createdAt: 2025-09-25T08:58:56.840Z
-updatedAt: 2025-09-25T12:59:38.113Z
+updatedAt: 2025-09-25T13:05:12.286Z
 progressNotes:
   - timestamp: 2025-09-25T10:09:43.140Z
     text: Set up new git URL parsing utilities with filesystem-safe name derivation
@@ -112,7 +112,7 @@ tasks:
     docs: []
     steps: []
   - title: Add User Messaging
-    done: false
+    done: true
     description: Implement clear messaging that informs users when external
       configuration storage is being used, including the specific path being
       used.
@@ -188,14 +188,14 @@ tasks:
     docs: []
     steps: []
   - title: Update README Documentation
-    done: false
+    done: true
     description: Add comprehensive documentation to README explaining external
       storage, including when it's used, directory structure, and examples.
     files: []
     docs: []
     steps: []
   - title: Improve User Messaging
-    done: false
+    done: true
     description: Enhance messages shown when external storage is activated to
       include helpful information about storage location and management.
     files: []
@@ -216,6 +216,7 @@ tasks:
     docs: []
     steps: []
 changedFiles:
+  - README.md
   - src/common/git.test.ts
   - src/common/git.ts
   - src/common/git_url_parser.js
