@@ -81,6 +81,7 @@ program
   .command('generate [plan]')
   .description('Generate planning prompt and context for a task')
   .option('--plan <plan>', 'Plan to use')
+  .option('--latest', 'Use the most recently updated plan')
   .option('--plan-editor', 'Open plan in editor')
   .option('--issue <url|number>', 'Issue URL or number to use for the plan text')
   .option(

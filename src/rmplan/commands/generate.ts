@@ -29,6 +29,7 @@ import {
   writePlanFile,
 } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
+import { getCombinedTitle } from '../display_utils.js';
 import {
   extractMarkdownToYaml,
   findYamlStart,
@@ -46,6 +47,55 @@ import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import { invokeClaudeCodeForGeneration } from '../claude_utils.js';
 import { findNextReadyDependency } from './find_next_dependency.js';
 import { isURL } from '../context_helpers.ts';
+
+type PlanWithFilename = PlanSchema & { filename: string };
+
+const MIN_TIMESTAMP = Number.NEGATIVE_INFINITY;
+
+function parseIsoTimestamp(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+async function getPlanTimestamp(plan: PlanWithFilename): Promise<number> {
+  const updatedAt = parseIsoTimestamp(plan.updatedAt);
+  if (updatedAt !== undefined) {
+    return updatedAt;
+  }
+
+  const createdAt = parseIsoTimestamp(plan.createdAt);
+  if (createdAt !== undefined) {
+    return createdAt;
+  }
+
+  try {
+    const fileStats = await fs.stat(plan.filename);
+    return fileStats.mtimeMs;
+  } catch {
+    return MIN_TIMESTAMP;
+  }
+}
+
+async function findMostRecentlyUpdatedPlan<T extends PlanWithFilename>(
+  plans: Map<number, T>
+): Promise<T | null> {
+  let latestPlan: T | null = null;
+  let latestTimestamp = MIN_TIMESTAMP;
+
+  for (const candidate of plans.values()) {
+    const timestamp = await getPlanTimestamp(candidate);
+    if (timestamp > latestTimestamp) {
+      latestTimestamp = timestamp;
+      latestPlan = candidate;
+    }
+  }
+
+  return latestPlan;
+}
 
 /**
  * Creates a stub plan YAML file with the given plan text in the details field
@@ -171,12 +221,13 @@ export async function handleGenerateCommand(
     options.planEditor,
     options.issue,
     options.nextReady,
+    options.latest,
   ].reduce((acc, val) => acc + (val ? 1 : 0), 0);
 
   // Manual conflict check for --plan, --plan-editor, --issue, and --next-ready
   if (planOptionsSet !== 1) {
     throw new Error(
-      'You must provide one and only one of [plan], --plan <plan>, --plan-editor, --issue <url|number>, or --next-ready <planIdOrPath>'
+      'You must provide one and only one of [plan], --plan <plan>, --plan-editor, --issue <url|number>, --next-ready <planIdOrPath>, or --latest'
     );
   }
 
@@ -210,6 +261,31 @@ export async function handleGenerateCommand(
     // Set the resolved plan as the target
     options.plan = result.plan.filename;
     planArg = undefined; // Clear planArg since we're using options.plan
+  } else if (options.latest) {
+    const { plans } = await readAllPlans(tasksDirectory);
+
+    if (plans.size === 0) {
+      log('No plans found in tasks directory.');
+      return;
+    }
+
+    const latestPlan = await findMostRecentlyUpdatedPlan(plans);
+
+    if (!latestPlan) {
+      log('No plans found in tasks directory.');
+      return;
+    }
+
+    const title = getCombinedTitle(latestPlan);
+    const label =
+      latestPlan.id !== undefined && latestPlan.id !== null
+        ? `${latestPlan.id} - ${title}`
+        : title || latestPlan.filename;
+
+    log(chalk.green(`Found latest plan: ${label}`));
+
+    options.plan = latestPlan.filename;
+    planArg = undefined;
   }
 
   // Handle --use-yaml option which skips generation and uses the file as if it was pasted

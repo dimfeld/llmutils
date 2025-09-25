@@ -410,8 +410,60 @@ Task description`);
     };
 
     await expect(handleGenerateCommand(undefined, options, command)).rejects.toThrow(
-      'You must provide one and only one of [plan], --plan <plan>, --plan-editor, --issue <url|number>, or --next-ready <planIdOrPath>'
+      'You must provide one and only one of [plan], --plan <plan>, --plan-editor, --issue <url|number>, --next-ready <planIdOrPath>, or --latest'
     );
+  });
+
+  test('selects most recently updated plan when --latest flag is used', async () => {
+    const olderPlan = {
+      id: 101,
+      title: 'Older Plan',
+      goal: 'Old goal',
+      details: 'Old details',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-02T00:00:00Z',
+      tasks: [],
+    } satisfies PlanSchema;
+    const newerPlan = {
+      id: 102,
+      title: 'Newer Plan',
+      goal: 'New goal',
+      details: 'New details',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: '2024-02-01T00:00:00Z',
+      updatedAt: '2024-03-01T00:00:00Z',
+      tasks: [],
+    } satisfies PlanSchema;
+
+    const olderPlanPath = path.join(tasksDir, '101-older.plan.yml');
+    const newerPlanPath = path.join(tasksDir, '102-newer.plan.yml');
+
+    await fs.writeFile(olderPlanPath, yaml.stringify(olderPlan));
+    await fs.writeFile(newerPlanPath, yaml.stringify(newerPlan));
+
+    const options = {
+      latest: true,
+      extract: false,
+      claude: false,
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    const command = {
+      args: [],
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleGenerateCommand(undefined, options, command);
+
+    expect(options.plan).toBe(newerPlanPath);
+    expect(clipboardWriteSpy).toHaveBeenCalled();
   });
 
   test('uses quiet mode when --quiet flag is set', async () => {
