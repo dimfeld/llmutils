@@ -1,9 +1,14 @@
+import { $ } from 'bun';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { fallbackRepositoryNameFromGitRoot } from '../common/git_url_parser.js';
+import {
+  deriveRepositoryName,
+  fallbackRepositoryNameFromGitRoot,
+  parseGitRemoteUrl,
+} from '../common/git_url_parser.js';
 import { ModuleMocker } from '../testing.js';
 import { RepositoryConfigResolver } from './repository_config_resolver.js';
 
@@ -68,6 +73,39 @@ describe('RepositoryConfigResolver', () => {
     expect(resolution.externalTasksDir).toBe(path.join(expectedRepositoryDir, 'tasks'));
 
     const configDirStats = await fs.stat(expectedConfigDir);
+    expect(configDirStats.isDirectory()).toBe(true);
+    const tasksDirStats = await fs.stat(path.join(expectedRepositoryDir, 'tasks'));
+    expect(tasksDirStats.isDirectory()).toBe(true);
+  });
+
+  test('derives repository metadata from remote origin when available', async () => {
+    await $`git init`.cwd(gitRoot).quiet();
+    const remote = 'example.com:Owner Space/Client Repo.git';
+    await $`git remote add origin ${remote}`.cwd(gitRoot).quiet();
+
+    const resolver = await RepositoryConfigResolver.create();
+    const resolution = await resolver.resolve();
+
+    const parsedRemote = parseGitRemoteUrl(remote);
+    const fallbackName = fallbackRepositoryNameFromGitRoot(gitRoot);
+    const expectedRepositoryName = deriveRepositoryName(parsedRemote, {
+      fallbackName,
+      uniqueSalt: gitRoot,
+    });
+
+    const expectedRepositoryDir = path.join(
+      fakeHomeDir,
+      '.config',
+      'rmfilter',
+      'repositories',
+      expectedRepositoryName
+    );
+
+    expect(resolution.remoteUrl).toBe(remote);
+    expect(resolution.repositoryName).toBe(expectedRepositoryName);
+    expect(resolution.repositoryConfigDir).toBe(expectedRepositoryDir);
+
+    const configDirStats = await fs.stat(path.join(expectedRepositoryDir, '.rmfilter', 'config'));
     expect(configDirStats.isDirectory()).toBe(true);
     const tasksDirStats = await fs.stat(path.join(expectedRepositoryDir, 'tasks'));
     expect(tasksDirStats.isDirectory()).toBe(true);

@@ -1,3 +1,4 @@
+import { $ } from 'bun';
 import { test, describe, expect, afterEach, beforeEach, mock } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -16,7 +17,11 @@ const moduleMocker = new ModuleMocker(import.meta);
 // Silence logs during tests will be done in beforeEach
 import { type RmplanConfig, type WorkspaceCreationConfig } from './configSchema.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
-import { fallbackRepositoryNameFromGitRoot } from '../common/git_url_parser.js';
+import {
+  deriveRepositoryName,
+  fallbackRepositoryNameFromGitRoot,
+  parseGitRemoteUrl,
+} from '../common/git_url_parser.js';
 
 // Since js-yaml isn't working in tests, we'll use yaml
 import yaml from 'yaml';
@@ -131,6 +136,38 @@ describe('configLoader', () => {
     expect(config.isUsingExternalStorage).toBe(true);
     expect(config.externalRepositoryConfigDir).toBe(expectedRepositoryDir);
     expect(logSpy.mock.calls.some((call) => call[0].includes(expectedRepositoryDir))).toBe(true);
+  });
+
+  test('loadEffectiveConfig captures repository metadata from remote when using external storage', async () => {
+    await fs.rm(path.join(configDir, 'rmplan.yml'), { force: true });
+
+    await $`git init`.cwd(testDir).quiet();
+    const remote = 'example.com:Owner Space/Client Repo.git';
+    await $`git remote add origin ${remote}`.cwd(testDir).quiet();
+
+    const config = await loadEffectiveConfig();
+
+    const parsedRemote = parseGitRemoteUrl(remote);
+    const fallbackName = fallbackRepositoryNameFromGitRoot(testDir);
+    const expectedName = deriveRepositoryName(parsedRemote, {
+      fallbackName,
+      uniqueSalt: testDir,
+    });
+
+    const expectedRepositoryDir = path.join(
+      fakeHomeDir,
+      '.config',
+      'rmfilter',
+      'repositories',
+      expectedName
+    );
+
+    expect(config.repositoryRemoteUrl).toBe(remote);
+    expect(config.repositoryConfigName).toBe(expectedName);
+    expect(config.externalRepositoryConfigDir).toBe(expectedRepositoryDir);
+    expect(config.resolvedConfigPath).toBe(
+      path.join(expectedRepositoryDir, '.rmfilter', 'config', 'rmplan.yml')
+    );
   });
 
   test('findConfigPath falls back to external repository config path when default config does not exist', async () => {
