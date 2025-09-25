@@ -4,14 +4,27 @@ title: Store task files locally when repository has no config
 goal: Work better with third-party projects
 id: 125
 generatedBy: agent
-status: pending
+status: in_progress
 priority: medium
+container: false
 dependencies: []
 issue: []
+pullRequest: []
 docs: []
 planGeneratedAt: 2025-09-25T09:16:20.304Z
 createdAt: 2025-09-25T08:58:56.840Z
-updatedAt: 2025-09-25T09:16:20.304Z
+updatedAt: 2025-09-25T10:26:21.185Z
+progressNotes:
+  - timestamp: 2025-09-25T10:09:43.140Z
+    text: Set up new git URL parsing utilities with filesystem-safe name derivation
+      and switched getGitRepository() to use them with better fallbacks for
+      repositories without remotes.
+    source: "implementer: tasks 1-3"
+  - timestamp: 2025-09-25T10:26:21.179Z
+    text: parseGitRemoteUrl fails to recognize scp-style remotes without an explicit
+      username (e.g. example.com:owner/repo.git), causing getGitRepository to
+      return just 'repo'.
+    source: "reviewer: Create Git URL Parser Module"
 tasks:
   - title: Create Git URL Parser Module
     done: false
@@ -19,115 +32,160 @@ tasks:
       various git remote URL formats and extract normalized repository
       information. Include support for GitHub, GitLab, Bitbucket, and generic
       git URLs.
+    files: []
+    docs: []
     steps: []
   - title: Implement Repository Name Derivation
     done: false
     description: Add `deriveRepositoryName()` function that converts parsed URLs to
       filesystem-safe directory names. Handle special characters, ensure
       uniqueness, and provide fallback for local-only repositories.
+    files: []
+    docs: []
     steps: []
   - title: Update getGitRepository Function
     done: false
     description: Refactor `getGitRepository()` in `src/common/git.ts` to use the new
       parser for more robust URL handling while maintaining backward
       compatibility.
+    files: []
+    docs: []
     steps: []
   - title: Add Comprehensive Tests
     done: false
     description: Write unit tests covering all supported URL formats, edge cases,
       and fallback scenarios. Include tests for repositories without remotes.
+    files: []
+    docs: []
     steps: []
   - title: Create RepositoryConfigResolver Class
     done: false
     description: Implement `src/rmplan/repository_config_resolver.ts` with methods
       for determining external config paths, checking existence, and creating
       directory structure.
+    files: []
+    docs: []
     steps: []
   - title: Extend Config Loading Logic
     done: false
     description: Update `loadEffectiveConfig()` in `src/rmplan/configLoader.ts` to
       use RepositoryConfigResolver when no local config exists. Add
       `isUsingExternalStorage` flag to config.
+    files: []
+    docs: []
     steps: []
   - title: Add User Messaging
     done: false
     description: Implement clear messaging that informs users when external
       configuration storage is being used, including the specific path being
       used.
+    files: []
+    docs: []
     steps: []
   - title: Create Directory Structure Tests
     done: false
     description: Add integration tests that verify directory creation, permission
       handling, and config discovery with various repository configurations.
+    files: []
+    docs: []
     steps: []
   - title: Update resolveTasksDir Function
     done: false
     description: Modify `resolveTasksDir()` in `src/rmplan/configSchema.ts` to check
       for external storage mode and return appropriate directory path.
+    files: []
+    docs: []
     steps: []
   - title: Verify Plan Operations Compatibility
     done: false
     description: Test and fix any issues with plan file operations when using
       external storage, ensuring proper path resolution for both plans and
       repository files.
+    files: []
+    docs: []
     steps: []
   - title: Add Path Resolution Helpers
     done: false
     description: Create helper functions to manage path resolution between
       repository files and external storage, ensuring clear separation of
       concerns.
+    files: []
+    docs: []
     steps: []
   - title: Create Integration Tests
     done: false
     description: Write comprehensive integration tests covering all plan commands
       with external storage, including edge cases like moving between
       repositories.
+    files: []
+    docs: []
     steps: []
   - title: Update Claude Code Executor
     done: false
     description: Modify `src/rmplan/executors/claude_code.ts` to add `--add-dir`
       argument when external storage is active, passing the repository config
       directory path.
+    files: []
+    docs: []
     steps: []
   - title: Update Codex CLI Executor
     done: false
     description: Modify `src/rmplan/executors/codex_cli.ts` to include external
       config directory in `sandbox_workspace_write.writable_roots`
       configuration.
+    files: []
+    docs: []
     steps: []
   - title: Add Conditional Logic
     done: false
     description: Implement logic to only add directory access when
       `isUsingExternalStorage` flag is true in the configuration.
+    files: []
+    docs: []
     steps: []
   - title: Test Executor Configurations
     done: false
     description: Create tests verifying correct command construction for both
       executors with and without external storage.
+    files: []
+    docs: []
     steps: []
   - title: Update README Documentation
     done: false
     description: Add comprehensive documentation to README explaining external
       storage, including when it's used, directory structure, and examples.
+    files: []
+    docs: []
     steps: []
   - title: Improve User Messaging
     done: false
     description: Enhance messages shown when external storage is activated to
       include helpful information about storage location and management.
+    files: []
+    docs: []
     steps: []
   - title: Add Storage Management Commands (Optional)
     done: false
     description: Consider adding `rmplan storage list` and `rmplan storage clean`
       commands for managing external storage directories.
+    files: []
+    docs: []
     steps: []
   - title: Create Example Workflows
     done: false
     description: Document example workflows for common scenarios like contributing
       to open-source projects or working with client repositories.
+    files: []
+    docs: []
     steps: []
 changedFiles: []
 rmfilter: []
 ---
+
+# Implemented Functionality Notes
+
+- Updated `parseGitRemoteUrl` to accept scp-style remotes without an explicit username while continuing to recognize Windows filesystem paths as local repositories; this restores expected owner/repo extraction for remotes such as `example.com:owner/repo.git`.
+- Added unit coverage in `src/common/git_url_parser.test.ts` for the new scp parsing case and extended `src/common/git.test.ts` to assert that `getGitRepository` now returns `owner/repo` for remotes lacking a username.
 
 # Original Plan Details
 
@@ -766,3 +824,9 @@ Some areas still use `process.cwd()` directly
 - Should external configs be automatically cleaned up when no longer needed, or require manual cleanup? Answer: Manual
 - What level of logging/verbosity should be used when operating in external storage mode?: Answer: No different, just one extra message when we first decide to use the .config directory
 - Should we support a `.rmplanignore` file in the external config directory to exclude certain files from operations? Answer: No
+
+# Implemented Functionality Notes
+- Added `src/common/git_url_parser.ts` with robust remote parsing that normalizes paths (including SCP-style and local remotes), derives owner/repository metadata, and provides filesystem-safe repository names plus fallbacks for repositories without remotes. Introduced helper utilities to normalize path separators and collapse repeated slashes to avoid brittle regular expressions.
+- Added lightweight bridge module `src/common/git_url_parser.js` so runtime consumers importing the built package can access the new parser while we continue authoring the implementation in TypeScript.
+- Refactored `getGitRepository` in `src/common/git.ts` to accept an optional working directory, cache per git root, and rely on the new parser for consistent results across HTTPS/SSH/local remotes. Added graceful fallbacks when no remote exists and exported `resetGitRepositoryCache()` for tests.
+- Expanded test coverage with the new `src/common/git_url_parser.test.ts` suite plus additional scenarios in `src/common/git.test.ts` verifying remote parsing, caching behavior, and fallback logic for repositories lacking remotes.

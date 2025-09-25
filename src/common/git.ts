@@ -20,10 +20,11 @@ import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 import { debugLog, log } from '../logging.js';
 import { CURRENT_DIFF, parseJjRename } from '../rmfilter/additional_docs.js';
+import { fallbackRepositoryNameFromGitRoot, parseGitRemoteUrl } from './git_url_parser.js';
 import chalk from 'chalk';
 
 let cachedGitRoot = new Map<string, string>();
-let cachedGitRepository: string | undefined;
+const cachedGitRepository = new Map<string, string>();
 
 /**
  * Gets the root directory of the current Git or Jujutsu repository with caching.
@@ -408,15 +409,60 @@ export async function getCurrentBranchName(cwd?: string): Promise<string | null>
  *
  * @returns Promise resolving to the repository name in owner/repo format
  */
-export async function getGitRepository(): Promise<string> {
-  if (!cachedGitRepository) {
-    let remote = (await $`git remote get-url origin`.quiet().nothrow().text()).trim();
-    // Parse out the repository from the remote URL
-    let lastColonIndex = remote.lastIndexOf(':');
-    cachedGitRepository = remote.slice(lastColonIndex + 1).replace(/\.git$/, '');
+export async function getGitRepository(cwd = process.cwd()): Promise<string> {
+  const gitRoot = await getGitRoot(cwd);
+  const cacheKey = gitRoot;
+  const cached = cachedGitRepository.get(cacheKey);
+  if (cached) {
+    return cached;
   }
 
-  return cachedGitRepository;
+  const remoteResult = await $`git remote get-url origin`.cwd(gitRoot).quiet().nothrow();
+  const remote = remoteResult.exitCode === 0 ? remoteResult.stdout.toString().trim() : '';
+
+  if (remote) {
+    const parsed = parseGitRemoteUrl(remote);
+    if (parsed) {
+      if (parsed.host && parsed.fullName) {
+        cachedGitRepository.set(cacheKey, parsed.fullName);
+        return parsed.fullName;
+      }
+
+      if (parsed.fullName && !parsed.host) {
+        const repository = parsed.repository ?? parsed.fullName;
+        cachedGitRepository.set(cacheKey, repository);
+        return repository;
+      }
+
+      if (parsed.repository) {
+        cachedGitRepository.set(cacheKey, parsed.repository);
+        return parsed.repository;
+      }
+    }
+
+    const sanitizedRemote = remote
+      .replace(/\.git$/i, '')
+      .replace(/^[^:]+:/, '')
+      .replace(/\\/g, '/')
+      .split('/')
+      .filter(Boolean)
+      .pop();
+    if (sanitizedRemote) {
+      cachedGitRepository.set(cacheKey, sanitizedRemote);
+      return sanitizedRemote;
+    }
+  }
+
+  const fallbackName = fallbackRepositoryNameFromGitRoot(gitRoot);
+  cachedGitRepository.set(cacheKey, fallbackName);
+  return fallbackName;
+}
+
+/**
+ * Resets the cached git repository name. Intended for use in tests.
+ */
+export function resetGitRepositoryCache(): void {
+  cachedGitRepository.clear();
 }
 
 export interface GetChangedFilesOptions {

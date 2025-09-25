@@ -11,6 +11,8 @@ import {
   getCurrentBranchName,
   getCurrentCommitHash,
   getCurrentJujutsuBranch,
+  getGitRepository,
+  resetGitRepositoryCache,
 } from './git';
 import { detectPlanningWithoutImplementation } from '../rmplan/executors/failure_detection.ts';
 
@@ -297,6 +299,68 @@ describe('Git Utilities', () => {
       );
       expect(detection.detected).toBeFalse();
       expect(detection.recommendedAction).toBe('proceed');
+    });
+  });
+
+  describe('getGitRepository', () => {
+    beforeEach(() => {
+      resetGitRepositoryCache();
+    });
+
+    afterEach(() => {
+      resetGitRepositoryCache();
+    });
+
+    it('parses GitHub style remotes', async () => {
+      await initGitRepository(tempDir);
+      await runGit(tempDir, ['remote', 'add', 'origin', 'git@github.com:owner/repo.git']);
+
+      const repo = await getGitRepository(tempDir);
+      expect(repo).toBe('owner/repo');
+    });
+
+    it('parses SCP-style remotes without usernames', async () => {
+      await initGitRepository(tempDir);
+      await runGit(tempDir, ['remote', 'add', 'origin', 'example.com:owner/repo.git']);
+
+      const repo = await getGitRepository(tempDir);
+      expect(repo).toBe('owner/repo');
+    });
+
+    it('returns the repository directory name when no remote is configured', async () => {
+      await initGitRepository(tempDir);
+
+      const repo = await getGitRepository(tempDir);
+      expect(repo).toBe(path.basename(tempDir));
+    });
+
+    it('falls back to repository name for filesystem remotes', async () => {
+      await initGitRepository(tempDir);
+      await runGit(tempDir, ['remote', 'add', 'origin', '../external/project.git']);
+
+      const repo = await getGitRepository(tempDir);
+      expect(repo).toBe('project');
+    });
+
+    it('parses HTTPS remotes with custom ports', async () => {
+      await initGitRepository(tempDir);
+      await runGit(tempDir, [
+        'remote',
+        'add',
+        'origin',
+        'https://github.enterprise.example.com:8443/workspace/project.git',
+      ]);
+
+      const repo = await getGitRepository(tempDir);
+      expect(repo).toBe('workspace/project');
+    });
+
+    it('falls back to sanitized remote name when path information is missing', async () => {
+      await initGitRepository(tempDir);
+      await runGit(tempDir, ['remote', 'add', 'origin', 'ssh://example.com']);
+
+      const repo = await getGitRepository(tempDir);
+      expect(repo).toBe('example.com');
     });
   });
 

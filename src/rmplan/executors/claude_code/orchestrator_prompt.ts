@@ -36,7 +36,7 @@ After finishing your work, you MUST update the plan file '${planPath}' with deta
    - Integration points with existing code
    - Any deviations from the original plan and why
 3. **Document for future maintenance** - write notes that would help someone else understand the implementation months later
-4. **Place notes in the "Implemented Functionality Notes" section** of the plan file (you can add this if it doesn't exist yet)
+4. **Place notes in the "# Implemented Functionality Notes" section** of the plan file (you can add this at the bottom if it doesn't exist yet)
 5. If existing content in this section is outdated, **update or replace it**
 
 These notes are crucial for project continuity and help future developers understand the implementation choices made.
