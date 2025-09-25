@@ -995,6 +995,12 @@ On the first load in external-storage mode, `rmplan` prints a multi-line message
 
 Claude Code and Codex executors automatically receive access to the external directory via `--add-dir` and sandbox writable-roots arguments, so agents can read and write the generated plans without additional configuration.
 
+#### Example Workflows
+
+- **Contribute to open source without committing plans**: When you clone a third-party repository without permission to add dotfiles, run `rmplan generate` or any other plan command normally. The first invocation seeds `~/.config/rmfilter/repositories/<host__owner__repo>/` and you can inspect the generated plans with `rmplan storage list --size` or open the tasks directory directly.
+- **Jump between client repositories**: Each remote gets its own sanitized directory name, so switching branches or repositories automatically reuses the correct external configuration. Use `rmplan storage list --json` to script against the stored metadata when you need to automate audits.
+- **Remove stale scratch data**: When you finish a contract or want to reclaim disk space, run `rmplan storage clean` to interactively select repositories to delete. Add `--dry-run` to preview the paths and `--force` only when you are sure a directory no longer contains plans you care about.
+
 ### Configuration
 
 `rmplan` can be configured using a YAML file to customize its behavior.

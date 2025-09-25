@@ -714,6 +714,31 @@ workspaceCommand
     );
   });
 
+const storageCommand = program
+  .command('storage')
+  .description('Manage external rmplan storage directories');
+
+storageCommand
+  .command('list')
+  .description('List external rmplan storage directories')
+  .option('--json', 'Output directory information as JSON')
+  .option('--size', 'Include directory size information (may be slow on large trees)')
+  .action(async (options) => {
+    const { handleStorageListCommand } = await import('./commands/storage.js');
+    await handleStorageListCommand(options).catch(handleCommandError);
+  });
+
+storageCommand
+  .command('clean [names...]')
+  .description('Remove external storage directories when they are no longer needed')
+  .option('--all', 'Remove all external storage directories without prompting')
+  .option('--force', 'Remove directories even if plan files are present')
+  .option('--dry-run', 'Print the directories that would be removed without deleting them')
+  .action(async (names, options) => {
+    const { handleStorageCleanCommand } = await import('./commands/storage.js');
+    await handleStorageCleanCommand(names, options).catch(handleCommandError);
+  });
+
 async function run() {
   await loadEnv();
 

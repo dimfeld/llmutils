@@ -11,6 +11,10 @@ import {
 } from '../common/git_url_parser.js';
 import { ModuleMocker } from '../testing.js';
 import { RepositoryConfigResolver } from './repository_config_resolver.js';
+import {
+  describeRemoteForLogging,
+  readRepositoryStorageMetadata,
+} from './external_storage_utils.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -76,6 +80,12 @@ describe('RepositoryConfigResolver', () => {
     expect(configDirStats.isDirectory()).toBe(true);
     const tasksDirStats = await fs.stat(path.join(expectedRepositoryDir, 'tasks'));
     expect(tasksDirStats.isDirectory()).toBe(true);
+
+    const metadata = await readRepositoryStorageMetadata(expectedRepositoryDir);
+    expect(metadata?.repositoryName).toBe(repositoryName);
+    expect(metadata?.remoteLabel).toBeUndefined();
+    expect(metadata?.externalConfigPath).toBe(path.join(expectedConfigDir, 'rmplan.yml'));
+    expect(metadata?.externalTasksDir).toBe(path.join(expectedRepositoryDir, 'tasks'));
   });
 
   test('derives repository metadata from remote origin when available', async () => {
@@ -109,6 +119,14 @@ describe('RepositoryConfigResolver', () => {
     expect(configDirStats.isDirectory()).toBe(true);
     const tasksDirStats = await fs.stat(path.join(expectedRepositoryDir, 'tasks'));
     expect(tasksDirStats.isDirectory()).toBe(true);
+
+    const metadata = await readRepositoryStorageMetadata(expectedRepositoryDir);
+    expect(metadata?.repositoryName).toBe(expectedRepositoryName);
+    expect(metadata?.remoteLabel).toBe(describeRemoteForLogging(remote));
+    expect(metadata?.externalConfigPath).toBe(
+      path.join(expectedRepositoryDir, '.rmfilter', 'config', 'rmplan.yml')
+    );
+    expect(metadata?.externalTasksDir).toBe(path.join(expectedRepositoryDir, 'tasks'));
   });
 
   test('sanitizes credentials and query fragments when constructing repository directories', async () => {
@@ -124,5 +142,16 @@ describe('RepositoryConfigResolver', () => {
     expect(resolution.repositoryConfigDir).toContain('github.example.com__Owner__Repo');
     expect(resolution.repositoryName?.includes('token')).toBe(false);
     expect(resolution.repositoryName?.includes('super-secret-token')).toBe(false);
+
+    const metadata = await readRepositoryStorageMetadata(
+      path.join(
+        fakeHomeDir,
+        '.config',
+        'rmfilter',
+        'repositories',
+        'github.example.com__Owner__Repo'
+      )
+    );
+    expect(metadata?.remoteLabel).toBe(describeRemoteForLogging(remote));
   });
 });

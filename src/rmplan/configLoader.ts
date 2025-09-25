@@ -1,8 +1,8 @@
 import * as path from 'node:path';
 import * as yaml from 'js-yaml';
-import { parseGitRemoteUrl } from '../common/git_url_parser.js';
 import { quiet } from '../common/process.js';
 import { debugLog, error, log, warn } from '../logging.js';
+import { describeRemoteForLogging } from './external_storage_utils.js';
 import { type RmplanConfig, rmplanConfigSchema, getDefaultConfig } from './configSchema.js';
 import {
   RepositoryConfigResolver,
@@ -82,55 +82,6 @@ function mergeConfigs(mainConfig: RmplanConfig, localConfig: RmplanConfig): Rmpl
   }
 
   return merged;
-}
-
-function trimQueryAndFragment(value: string): string {
-  return value.replace(/[?#].*$/, '');
-}
-
-function describeRemoteForLogging(remoteUrl?: string | null): string {
-  if (!remoteUrl) {
-    return 'none detected';
-  }
-
-  const parsed = parseGitRemoteUrl(remoteUrl);
-  if (parsed) {
-    if (parsed.host && parsed.fullName) {
-      return trimQueryAndFragment(`${parsed.host}/${parsed.fullName}`);
-    }
-
-    if (parsed.host && parsed.path) {
-      return trimQueryAndFragment(`${parsed.host}/${parsed.path}`);
-    }
-
-    if (parsed.fullName) {
-      return trimQueryAndFragment(parsed.fullName);
-    }
-
-    if (parsed.host) {
-      return trimQueryAndFragment(parsed.host);
-    }
-  }
-
-  return trimQueryAndFragment(stripRemoteCredentials(remoteUrl));
-}
-
-function stripRemoteCredentials(remote: string): string {
-  if (remote.includes('://')) {
-    try {
-      const parsedUrl = new URL(remote);
-      return `${parsedUrl.host}${parsedUrl.pathname}` || parsedUrl.host;
-    } catch {
-      // Fall through to best-effort sanitisation below when URL parsing fails.
-    }
-  }
-
-  const atIndex = remote.indexOf('@');
-  if (atIndex !== -1) {
-    return remote.slice(atIndex + 1);
-  }
-
-  return remote;
 }
 
 /**

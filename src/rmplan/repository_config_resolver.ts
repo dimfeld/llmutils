@@ -1,6 +1,5 @@
 import { $ } from 'bun';
 import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { getGitRoot } from '../common/git.js';
@@ -10,6 +9,11 @@ import {
   parseGitRemoteUrl,
 } from '../common/git_url_parser.js';
 import { debugLog } from '../logging.js';
+import {
+  describeRemoteForLogging,
+  getExternalStorageBaseDir,
+  writeRepositoryStorageMetadata,
+} from './external_storage_utils.js';
 
 export interface RepositoryConfigResolution {
   configPath: string | null;
@@ -86,13 +90,7 @@ export class RepositoryConfigResolver {
       uniqueSalt: gitRoot,
     });
 
-    const repositoryConfigDir = path.join(
-      os.homedir(),
-      '.config',
-      'rmfilter',
-      'repositories',
-      repositoryName
-    );
+    const repositoryConfigDir = path.join(getExternalStorageBaseDir(), repositoryName);
     const externalConfigDir = path.join(repositoryConfigDir, '.rmfilter', 'config');
     const externalTasksDir = path.join(repositoryConfigDir, 'tasks');
 
@@ -102,6 +100,20 @@ export class RepositoryConfigResolver {
     const externalConfigPath = path.join(externalConfigDir, 'rmplan.yml');
 
     debugLog(`Using external rmplan storage at ${repositoryConfigDir}`);
+
+    try {
+      await writeRepositoryStorageMetadata(repositoryConfigDir, {
+        repositoryName,
+        remoteLabel: remoteUrl ? describeRemoteForLogging(remoteUrl) : null,
+        lastGitRoot: gitRoot,
+        externalConfigPath,
+        externalTasksDir,
+      });
+    } catch (metadataError) {
+      debugLog(
+        `Failed to update external storage metadata for ${repositoryConfigDir}: ${metadataError as Error}`
+      );
+    }
 
     return {
       configPath: externalConfigPath,
