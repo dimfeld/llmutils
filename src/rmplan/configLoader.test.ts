@@ -183,7 +183,11 @@ describe('configLoader', () => {
     const loggedMessage = logSpy.mock.calls.at(-1)?.[0];
     expect(typeof loggedMessage).toBe('string');
     const messageText = loggedMessage as string;
-    expect(messageText).toContain(`Remote origin: ${remote}`);
+    const expectedRemoteDetails =
+      parsedRemote?.fullName && parsedRemote.host
+        ? `${parsedRemote.host}/${parsedRemote.fullName}`
+        : remote;
+    expect(messageText).toContain(`Remote origin: ${expectedRemoteDetails}`);
     expect(messageText).toContain(`Base directory: ${expectedRepositoryDir}`);
     expect(messageText).toContain('Using external rmplan storage for');
   });

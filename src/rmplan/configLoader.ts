@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import * as yaml from 'js-yaml';
+import { parseGitRemoteUrl } from '../common/git_url_parser.js';
 import { quiet } from '../common/process.js';
 import { debugLog, error, log, warn } from '../logging.js';
 import { type RmplanConfig, rmplanConfigSchema, getDefaultConfig } from './configSchema.js';
@@ -81,6 +82,54 @@ function mergeConfigs(mainConfig: RmplanConfig, localConfig: RmplanConfig): Rmpl
   }
 
   return merged;
+}
+
+function describeRemoteForLogging(remoteUrl?: string | null): string {
+  if (!remoteUrl) {
+    return 'none detected';
+  }
+
+  const parsed = parseGitRemoteUrl(remoteUrl);
+  if (parsed) {
+    if (parsed.host && parsed.fullName) {
+      return `${parsed.host}/${parsed.fullName}`;
+    }
+
+    if (parsed.host && parsed.path) {
+      return `${parsed.host}/${parsed.path}`;
+    }
+
+    if (parsed.fullName) {
+      return parsed.fullName;
+    }
+
+    if (parsed.host) {
+      return parsed.host;
+    }
+  }
+
+  return stripRemoteCredentials(remoteUrl);
+}
+
+function stripRemoteCredentials(remote: string): string {
+  if (remote.includes('://')) {
+    try {
+      const parsedUrl = new URL(remote);
+      return (
+        `${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}` ||
+        parsedUrl.host
+      );
+    } catch {
+      // Fall through to best-effort sanitisation below when URL parsing fails.
+    }
+  }
+
+  const atIndex = remote.indexOf('@');
+  if (atIndex !== -1) {
+    return remote.slice(atIndex + 1);
+  }
+
+  return remote;
 }
 
 /**
@@ -266,7 +315,7 @@ export async function loadEffectiveConfig(overridePath?: string): Promise<Rmplan
       const localConfigPath = resolution.gitRoot
         ? path.join(resolution.gitRoot, '.rmfilter', 'config', 'rmplan.yml')
         : '.rmfilter/config/rmplan.yml';
-      const remoteDetails = resolution.remoteUrl ?? 'none detected';
+      const remoteDetails = describeRemoteForLogging(resolution.remoteUrl);
       const repositoryLabel = resolution.repositoryName ?? 'this repository';
 
       const messageLines = [

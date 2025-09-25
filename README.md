@@ -991,7 +991,7 @@ The external directory always contains:
 - `.rmfilter/config/rmplan.yml` — the repository-specific configuration file created on first use
 - `tasks/` — the plan directory where new plans are written and discovered
 
-On the first load in external-storage mode, `rmplan` prints a multi-line message describing the base directory, config file, plan directory, detected remote, and how to opt-out. To disable external storage, create `.rmfilter/config/rmplan.yml` inside the repository; future runs will respect the in-repo config and stop using the external location.
+On the first load in external-storage mode, `rmplan` prints a multi-line message describing the base directory, config file, plan directory, detected remote (listed as `host/owner/repository` with any credentials stripped), and how to opt-out. To disable external storage, create `.rmfilter/config/rmplan.yml` inside the repository; future runs will respect the in-repo config and stop using the external location.
 
 Claude Code and Codex executors automatically receive access to the external directory via `--add-dir` and sandbox writable-roots arguments, so agents can read and write the generated plans without additional configuration.
 

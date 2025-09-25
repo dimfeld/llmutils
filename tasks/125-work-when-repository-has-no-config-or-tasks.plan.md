@@ -13,7 +13,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-09-25T09:16:20.304Z
 createdAt: 2025-09-25T08:58:56.840Z
-updatedAt: 2025-09-25T12:53:45.740Z
+updatedAt: 2025-09-25T12:59:38.113Z
 progressNotes:
   - timestamp: 2025-09-25T10:09:43.140Z
     text: Set up new git URL parsing utilities with filesystem-safe name derivation
@@ -54,6 +54,14 @@ progressNotes:
       added test coverage for the message output, and documented the fallback
       workflow plus agent access in the README.
     source: "implementer: tasks 7,17,18"
+  - timestamp: 2025-09-25T12:56:47.466Z
+    text: Ran bun test (full suite) to cover external-storage messaging updates; all
+      tests passed despite expected YAML warnings.
+    source: "tester: tasks 7/18"
+  - timestamp: 2025-09-25T12:59:38.108Z
+    text: Found that the new external-storage status message prints the raw origin
+      URL, leaking embedded credentials (tokens/usernames).
+    source: "reviewer: tasks 7,17,18"
 tasks:
   - title: Create Git URL Parser Module
     done: true
@@ -261,6 +269,7 @@ rmfilter: []
 - Refactored plan operations (`rmplan add`, `generate`, `promote`, hierarchical imports, cleanup utilities, renumbering, and mark-done flows) to consume the shared helpers so plan files always land in the external repository directory when required.
 - Expanded automated coverage with `path_resolver.test.ts` and new external-storage scenarios across add/promote/import unit and integration suites, ensuring command behavior remains stable in both local and external modes.
 - Enhanced external-storage messaging tests in `src/rmplan/configLoader.test.ts` to assert the new guidance, and documented the automatic fallback plus executor access in `README.md` for users working on third-party repositories.
+- Introduced credential-safe remote reporting via `describeRemoteForLogging()` so the external-storage notice now renders `host/owner/repository` without tokens, refreshed the README to call out the sanitisation, and updated config loader tests to expect the scrubbed value.
 
 # Original Plan Details
 
