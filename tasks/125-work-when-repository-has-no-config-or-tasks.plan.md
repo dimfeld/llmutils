@@ -13,7 +13,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-09-25T09:16:20.304Z
 createdAt: 2025-09-25T08:58:56.840Z
-updatedAt: 2025-09-25T11:10:54.410Z
+updatedAt: 2025-09-25T12:00:32.494Z
 progressNotes:
   - timestamp: 2025-09-25T10:09:43.140Z
     text: Set up new git URL parsing utilities with filesystem-safe name derivation
@@ -136,7 +136,7 @@ tasks:
     docs: []
     steps: []
   - title: Update Claude Code Executor
-    done: false
+    done: true
     description: Modify `src/rmplan/executors/claude_code.ts` to add `--add-dir`
       argument when external storage is active, passing the repository config
       directory path.
@@ -144,7 +144,7 @@ tasks:
     docs: []
     steps: []
   - title: Update Codex CLI Executor
-    done: false
+    done: true
     description: Modify `src/rmplan/executors/codex_cli.ts` to include external
       config directory in `sandbox_workspace_write.writable_roots`
       configuration.
@@ -152,14 +152,14 @@ tasks:
     docs: []
     steps: []
   - title: Add Conditional Logic
-    done: false
+    done: true
     description: Implement logic to only add directory access when
       `isUsingExternalStorage` flag is true in the configuration.
     files: []
     docs: []
     steps: []
   - title: Test Executor Configurations
-    done: false
+    done: true
     description: Create tests verifying correct command construction for both
       executors with and without external storage.
     files: []
@@ -204,10 +204,16 @@ changedFiles:
   - src/rmplan/configSchema.test.ts
   - src/rmplan/configSchema.ts
   - src/rmplan/executors/claude_code/orchestrator_prompt.ts
+  - src/rmplan/executors/claude_code.test.ts
+  - src/rmplan/executors/claude_code.ts
   - src/rmplan/executors/codex_cli/format.ts
+  - src/rmplan/executors/codex_cli.test.ts
+  - src/rmplan/executors/codex_cli.ts
+  - src/rmplan/plans.ts
   - src/rmplan/repository_config_resolver.js
   - src/rmplan/repository_config_resolver.test.ts
   - src/rmplan/repository_config_resolver.ts
+  - src/rmplan/resolvePlanFile.external.test.ts
 rmfilter: []
 ---
 

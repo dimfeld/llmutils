@@ -6,6 +6,7 @@ import * as yaml from 'yaml';
 import { debugLog, warn } from '../logging.js';
 import { getGitRoot, getTrunkBranch, getUsingJj } from '../common/git.js';
 import { loadEffectiveConfig } from './configLoader.js';
+import { resolveTasksDir } from './configSchema.js';
 import { phaseSchema, type PlanSchema, type PlanSchemaInput } from './planSchema.js';
 import { createModel } from '../common/model_factory.js';
 import { generateText } from 'ai';
@@ -175,16 +176,7 @@ export async function resolvePlanFile(planArg: string, configPath?: string): Pro
 
   // Get the tasks directory configuration
   const config = await loadEffectiveConfig(configPath);
-  const gitRoot = (await getGitRoot()) || process.cwd();
-
-  let tasksDir: string;
-  if (config.paths?.tasks) {
-    tasksDir = path.isAbsolute(config.paths.tasks)
-      ? config.paths.tasks
-      : path.join(gitRoot, config.paths.tasks);
-  } else {
-    tasksDir = gitRoot;
-  }
+  const tasksDir = await resolveTasksDir(config);
 
   // If it's just a filename (no path separators), check in the tasks directory
   if (!planArg.includes('/') && !planArg.includes('\\') && planArg.includes('.')) {
