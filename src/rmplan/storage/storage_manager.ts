@@ -114,9 +114,13 @@ export async function collectExternalStorageDirectories(
 
   for (const directory of directories) {
     const repositoryPath = path.join(baseDir, directory.name);
-    const configPath = path.join(repositoryPath, '.rmfilter', 'config', 'rmplan.yml');
-    const tasksPath = path.join(repositoryPath, 'tasks');
     const metadata = await readRepositoryStorageMetadata(repositoryPath);
+    const configPath = metadata?.externalConfigPath
+      ? path.resolve(repositoryPath, metadata.externalConfigPath)
+      : path.join(repositoryPath, '.rmfilter', 'config', 'rmplan.yml');
+    const tasksPath = metadata?.externalTasksDir
+      ? path.resolve(repositoryPath, metadata.externalTasksDir)
+      : path.join(repositoryPath, 'tasks');
     const planCount = await countPlanFiles(tasksPath);
     const totalSizeBytes = options.includeSize ? await calculateDirectorySize(repositoryPath) : 0;
 

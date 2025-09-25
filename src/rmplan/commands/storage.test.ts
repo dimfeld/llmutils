@@ -16,12 +16,12 @@ const STORAGE_BASE_SUBPATH = path.join('.config', 'rmfilter', 'repositories');
 async function createStorageRepository(
   homeDir: string,
   name: string,
-  options: { plans?: number; remoteLabel?: string } = {}
+  options: { plans?: number; remoteLabel?: string; tasksPath?: string } = {}
 ) {
   const plans = options.plans ?? 0;
   const baseDir = path.join(homeDir, STORAGE_BASE_SUBPATH, name);
   const configDir = path.join(baseDir, '.rmfilter', 'config');
-  const tasksDir = path.join(baseDir, 'tasks');
+  const tasksDir = options.tasksPath ?? path.join(baseDir, 'tasks');
 
   await fs.mkdir(configDir, { recursive: true });
   await fs.mkdir(tasksDir, { recursive: true });
@@ -90,6 +90,29 @@ describe('storage commands', () => {
     expect(typeof alpha.totalSizeBytes).toBe('number');
   });
 
+  test('handleStorageListCommand reports tasks path overrides from metadata', async () => {
+    const repositoryName = 'custom-repo';
+    const baseDir = path.join(fakeHomeDir, STORAGE_BASE_SUBPATH, repositoryName);
+    const customTasksDir = path.join(baseDir, 'external', 'plans');
+
+    await createStorageRepository(fakeHomeDir, repositoryName, {
+      plans: 1,
+      tasksPath: customTasksDir,
+    });
+
+    const { handleStorageListCommand } = await import('./storage.js');
+    await handleStorageListCommand({ json: true });
+
+    expect(mockLog).toHaveBeenCalledTimes(1);
+    const payload = mockLog.mock.calls[0][0];
+    const parsed = JSON.parse(payload as string);
+    const entry = parsed.find((item: any) => item.name === repositoryName);
+
+    expect(entry).toBeTruthy();
+    expect(entry.tasksPath).toBe(customTasksDir);
+    expect(entry.planCount).toBe(1);
+  });
+
   test('handleStorageCleanCommand supports dry runs and matching by name', async () => {
     await createStorageRepository(fakeHomeDir, 'alpha-repo');
     await createStorageRepository(fakeHomeDir, 'beta-repo');
@@ -121,6 +144,28 @@ describe('storage commands', () => {
     await expect(fs.stat(storagePath)).rejects.toThrow();
   });
 
+  test('handleStorageCleanCommand respects metadata tasks directory overrides', async () => {
+    const repositoryName = 'custom-repo';
+    const baseDir = path.join(fakeHomeDir, STORAGE_BASE_SUBPATH, repositoryName);
+    const customTasksDir = path.join(baseDir, 'external', 'plans');
+
+    await createStorageRepository(fakeHomeDir, repositoryName, {
+      plans: 1,
+      tasksPath: customTasksDir,
+    });
+
+    const { handleStorageCleanCommand } = await import('./storage.js');
+    await handleStorageCleanCommand([repositoryName]);
+
+    expect(mockWarn.mock.calls.some((call) => call[0].includes(`Skipping ${repositoryName}`))).toBe(
+      true
+    );
+
+    const storagePath = path.join(fakeHomeDir, STORAGE_BASE_SUBPATH, repositoryName);
+    const exists = await fs.stat(storagePath);
+    expect(exists.isDirectory()).toBe(true);
+  });
+
   test('handleStorageCleanCommand removes selected directories via prompt', async () => {
     await createStorageRepository(fakeHomeDir, 'alpha-repo');
 
@@ -135,5 +180,46 @@ describe('storage commands', () => {
     await expect(fs.stat(storagePath)).rejects.toThrow();
 
     expect(mockLog.mock.calls.some((call) => call[0].includes('Removed alpha-repo'))).toBe(true);
+  });
+
+  test('handleStorageCleanCommand removes all directories when --all is provided', async () => {
+    await createStorageRepository(fakeHomeDir, 'alpha-repo');
+    await createStorageRepository(fakeHomeDir, 'beta-repo');
+
+    const { handleStorageCleanCommand } = await import('./storage.js');
+    await handleStorageCleanCommand(undefined, { all: true, force: true });
+
+    await expect(
+      fs.stat(path.join(fakeHomeDir, STORAGE_BASE_SUBPATH, 'alpha-repo'))
+    ).rejects.toThrow();
+    await expect(
+      fs.stat(path.join(fakeHomeDir, STORAGE_BASE_SUBPATH, 'beta-repo'))
+    ).rejects.toThrow();
+
+    expect(
+      mockLog.mock.calls.filter(
+        (call) => typeof call[0] === 'string' && call[0].includes('Removed ')
+      )
+    ).toHaveLength(2);
+  });
+
+  test('handleStorageCleanCommand matches remote labels and warns for unknown names', async () => {
+    await createStorageRepository(fakeHomeDir, 'alpha-repo', {
+      remoteLabel: 'github.example.com/owners/alpha-repo',
+    });
+    await createStorageRepository(fakeHomeDir, 'beta-repo');
+
+    const { handleStorageCleanCommand } = await import('./storage.js');
+    await handleStorageCleanCommand(['OWNERS/ALPHA-REPO', 'missing-repo'], { force: true });
+
+    await expect(
+      fs.stat(path.join(fakeHomeDir, STORAGE_BASE_SUBPATH, 'alpha-repo'))
+    ).rejects.toThrow();
+
+    const betaPath = path.join(fakeHomeDir, STORAGE_BASE_SUBPATH, 'beta-repo');
+    const betaStats = await fs.stat(betaPath);
+    expect(betaStats.isDirectory()).toBe(true);
+
+    expect(mockWarn.mock.calls.some((call) => call[0].includes('missing-repo'))).toBe(true);
   });
 });
