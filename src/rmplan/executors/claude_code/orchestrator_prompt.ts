@@ -28,7 +28,7 @@ export function implementationNotesGuidance(planPath: string | undefined) {
   return `## Implementation Documentation
 
 After finishing your work, you MUST update the plan file '${planPath}' with detailed notes about what you did.
-Place notes in the "# Implemented Functionality Notes" section of the plan file (you can add this at the bottom if it doesn't exist yet).
+Place notes in the "# Implemented Functionality Notes" section at the bottom of the plan file. You can add this if it doesn't exist yet. Make sure you place it all the way at the bottom even if the file is very long.
 
 Notes must contain:
 1. Comprehensive description of what you implemented and how it works.

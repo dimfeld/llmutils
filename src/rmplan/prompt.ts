@@ -647,6 +647,7 @@ Output structured Markdown that can be appended directly under a "## Research" h
 - List notable files, modules, or patterns you inspected and what you learned about them.
 - Mention existing utilities, abstractions, or APIs that are relevant.
 - Place each subagent's output under a subsection in here. Prefer to just use each subagent's output verbatim.
+- File paths must be relative to the root of the repository, not absolute.
 
 ### Risks & Constraints
 - Record architectural hazards, edge cases, or constraints uncovered during research.

@@ -791,8 +791,13 @@ async function selectIssuesToFix(
     const severityIssues = groupedIssues[severity] || [];
     for (const issue of severityIssues) {
       const fileInfo = issue.file ? ` (${issue.file}${issue.line ? ':' + issue.line : ''})` : '';
+
+      const firstLine = issue.content.split('\n')[0];
+      const fullDesc = issue.content + fileInfo;
+
       options.push({
-        name: `${severityIcons[severity]} [${severity.toUpperCase()}] ${issue.content}${fileInfo}`,
+        name: `${severityIcons[severity]} [${severity.toUpperCase()}] ${firstLine}`,
+        description: fullDesc,
         value: issue,
         checked: severity === 'critical' || severity === 'major', // Pre-select critical and major issues
       });

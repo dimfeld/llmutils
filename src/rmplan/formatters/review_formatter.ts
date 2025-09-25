@@ -258,6 +258,14 @@ function analyzeIssueContent(content: string): {
   return { severity, category, file, line: lineNumber };
 }
 
+function trimIssueContent(content: string): string {
+  let trimmedContent = content.trim();
+  if (trimmedContent.startsWith('Found Issues:')) {
+    trimmedContent = trimmedContent.substring(trimmedContent.indexOf(':') + 1).trim();
+  }
+  return trimmedContent;
+}
+
 /**
  * Parses raw reviewer agent output to extract structured review findings
  * Optimized for performance with large outputs
@@ -352,7 +360,8 @@ export function parseReviewerOutput(rawOutput: string): {
 
       const remainingLines = block.lines.slice(headerInfo.idx + 1);
       const issueContentLines = [headerContent, ...remainingLines];
-      const issueContent = issueContentLines.join('\n').trim();
+      let issueContent = issueContentLines.join('\n').trim();
+      issueContent = trimIssueContent(issueContent);
 
       if (!issueContent) {
         continue;
@@ -428,7 +437,9 @@ export function parseReviewerOutput(rawOutput: string): {
       for (const marker of ISSUE_MARKERS) {
         const match = line.match(marker);
         if (match) {
-          const content = (match[1] || match[2] || match[0] || '').trim();
+          let content = (match[1] || match[2] || match[0] || '').trim();
+          content = trimIssueContent(content);
+
           if (!content) {
             continue;
           }

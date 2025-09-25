@@ -140,6 +140,8 @@ Action items:
   test('handles complex semi-structured review output', () => {
     const review = `## Found Issues:
 
+---
+
 1. CRITICAL: Missing error reporting in settings form action
 
 In file.ts, line 59: The error handler is not called.
@@ -227,7 +229,9 @@ Update this so the third query uses SQL joins to filter appropriate in just one 
 
     expect(result.issues).toHaveLength(1);
     const [issue] = result.issues;
-    expect(issue.content).toContain('MAJOR Data dependency waterfall should convert to concurrent queries');
+    expect(issue.content).toContain(
+      'MAJOR Data dependency waterfall should convert to concurrent queries'
+    );
     expect(issue.content).toContain('1. Fetch locations');
     expect(issue.content).toContain('2. Fetch teams');
     expect(issue.content).toContain('3. Fetch counts viewable by locations and teams');

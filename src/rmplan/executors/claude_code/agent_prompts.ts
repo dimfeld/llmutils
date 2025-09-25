@@ -316,6 +316,9 @@ DO NOT include praise, encouragement, or positive feedback. Focus exclusively on
 }
 
 export const issueAndVerdictFormat = `Found Issues:
+
+---
+
 1. CRITICAL: [A critical bug, security issue, or correctness problem]
 
 [More details about the critical issue, including files and line numbers if applicable,
