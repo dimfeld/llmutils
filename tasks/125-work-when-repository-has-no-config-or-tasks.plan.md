@@ -4,7 +4,7 @@ title: Store task files locally when repository has no config
 goal: Work better with third-party projects
 id: 125
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 container: false
 dependencies: []
@@ -13,7 +13,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-09-25T09:16:20.304Z
 createdAt: 2025-09-25T08:58:56.840Z
-updatedAt: 2025-09-25T13:45:47.352Z
+updatedAt: 2025-09-25T14:11:07.627Z
 progressNotes:
   - timestamp: 2025-09-25T10:09:43.140Z
     text: Set up new git URL parsing utilities with filesystem-safe name derivation
@@ -220,14 +220,14 @@ tasks:
     docs: []
     steps: []
   - title: Add Storage Management Commands (Optional)
-    done: false
+    done: true
     description: Consider adding `rmplan storage list` and `rmplan storage clean`
       commands for managing external storage directories.
     files: []
     docs: []
     steps: []
   - title: Create Example Workflows
-    done: false
+    done: true
     description: Document example workflows for common scenarios like contributing
       to open-source projects or working with client repositories.
     files: []
@@ -250,6 +250,9 @@ changedFiles:
   - src/rmplan/commands/promote.test.ts
   - src/rmplan/commands/promote.ts
   - src/rmplan/commands/renumber.ts
+  - src/rmplan/commands/storage.js
+  - src/rmplan/commands/storage.test.ts
+  - src/rmplan/commands/storage.ts
   - src/rmplan/configLoader.test.ts
   - src/rmplan/configLoader.ts
   - src/rmplan/configSchema.test.ts
@@ -261,6 +264,8 @@ changedFiles:
   - src/rmplan/executors/codex_cli/format.ts
   - src/rmplan/executors/codex_cli.test.ts
   - src/rmplan/executors/codex_cli.ts
+  - src/rmplan/external_storage_utils.js
+  - src/rmplan/external_storage_utils.ts
   - src/rmplan/path_resolver.js
   - src/rmplan/path_resolver.test.ts
   - src/rmplan/path_resolver.ts
@@ -270,6 +275,10 @@ changedFiles:
   - src/rmplan/repository_config_resolver.test.ts
   - src/rmplan/repository_config_resolver.ts
   - src/rmplan/resolvePlanFile.external.test.ts
+  - src/rmplan/rmplan.ts
+  - src/rmplan/storage/storage_manager.js
+  - src/rmplan/storage/storage_manager.test.ts
+  - src/rmplan/storage/storage_manager.ts
   - src/rmplan/utils/cleanup_plan_creator.ts
 rmfilter: []
 ---
