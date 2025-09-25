@@ -13,7 +13,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-09-25T09:16:20.304Z
 createdAt: 2025-09-25T08:58:56.840Z
-updatedAt: 2025-09-25T12:28:18.615Z
+updatedAt: 2025-09-25T12:47:26.563Z
 progressNotes:
   - timestamp: 2025-09-25T10:09:43.140Z
     text: Set up new git URL parsing utilities with filesystem-safe name derivation
@@ -121,7 +121,7 @@ tasks:
     docs: []
     steps: []
   - title: Verify Plan Operations Compatibility
-    done: false
+    done: true
     description: Test and fix any issues with plan file operations when using
       external storage, ensuring proper path resolution for both plans and
       repository files.
@@ -129,7 +129,7 @@ tasks:
     docs: []
     steps: []
   - title: Add Path Resolution Helpers
-    done: false
+    done: true
     description: Create helper functions to manage path resolution between
       repository files and external storage, ensuring clear separation of
       concerns.
@@ -208,21 +208,37 @@ changedFiles:
   - src/common/git_url_parser.js
   - src/common/git_url_parser.test.ts
   - src/common/git_url_parser.ts
+  - src/rmplan/commands/add.test.ts
+  - src/rmplan/commands/add.ts
+  - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/import/import.integration.test.ts
+  - src/rmplan/commands/import/import.test.ts
+  - src/rmplan/commands/import/import.ts
+  - src/rmplan/commands/import/import_hierarchical.test.ts
+  - src/rmplan/commands/promote.test.ts
+  - src/rmplan/commands/promote.ts
+  - src/rmplan/commands/renumber.ts
   - src/rmplan/configLoader.test.ts
   - src/rmplan/configLoader.ts
   - src/rmplan/configSchema.test.ts
   - src/rmplan/configSchema.ts
+  - src/rmplan/executors/claude_code/orchestrator_integration.test.ts
   - src/rmplan/executors/claude_code/orchestrator_prompt.ts
   - src/rmplan/executors/claude_code.test.ts
   - src/rmplan/executors/claude_code.ts
   - src/rmplan/executors/codex_cli/format.ts
   - src/rmplan/executors/codex_cli.test.ts
   - src/rmplan/executors/codex_cli.ts
+  - src/rmplan/path_resolver.js
+  - src/rmplan/path_resolver.test.ts
+  - src/rmplan/path_resolver.ts
+  - src/rmplan/plans/mark_done.ts
   - src/rmplan/plans.ts
   - src/rmplan/repository_config_resolver.js
   - src/rmplan/repository_config_resolver.test.ts
   - src/rmplan/repository_config_resolver.ts
   - src/rmplan/resolvePlanFile.external.test.ts
+  - src/rmplan/utils/cleanup_plan_creator.ts
 rmfilter: []
 ---
 

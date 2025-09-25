@@ -77,7 +77,9 @@ test('wrapWithOrchestration includes batch mode workflow instructions', () => {
   expect(result).toContain('5. Mark the tasks done.');
   expect(result).toContain('## Plan File Updates');
   expect(result).toContain('use the Edit tool to update the plan file');
-  expect(result).toContain('Only mark tasks as `done: true` after they have been successfully implemented');
+  expect(result).toContain(
+    'Only mark tasks as `done: true` after they have been successfully implemented'
+  );
 
   // Check for batch mode guidelines
   expect(result).toContain('**Be selective**');

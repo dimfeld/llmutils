@@ -61,9 +61,6 @@ export function resolveConfiguredPath(
   return path.join(context.configBaseDir, configuredPath);
 }
 
-export function resolveConfiguredTasksPath(
-  config: RmplanConfig,
-  gitRoot: string
-): string {
+export function resolveConfiguredTasksPath(config: RmplanConfig, gitRoot: string): string {
   return computeTasksDir(config, gitRoot);
 }

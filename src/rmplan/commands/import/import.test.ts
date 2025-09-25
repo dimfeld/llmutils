@@ -474,7 +474,10 @@ describe('handleImportCommand', () => {
 
     const mockPlansWithExisting = {
       plans: new Map([
-        [3, { ...existingPlan, filename: path.join(gitRootDir, 'tasks', 'issue-123-test-issue.yml') }],
+        [
+          3,
+          { ...existingPlan, filename: path.join(gitRootDir, 'tasks', 'issue-123-test-issue.yml') },
+        ],
       ]),
       maxNumericId: 5,
       duplicates: {},
@@ -735,7 +738,9 @@ describe('handleImportCommand', () => {
       expect(writePlanFile).toHaveBeenCalled();
 
       const [filePath, planData] = (writePlanFile as any).mock.calls[0];
-      expect(filePath).toBe(path.join(gitRootDir, 'tasks', '6-issue-team-123-linear-issue.plan.md'));
+      expect(filePath).toBe(
+        path.join(gitRootDir, 'tasks', '6-issue-team-123-linear-issue.plan.md')
+      );
       expect(planData).toMatchObject({
         id: 6,
         title: 'Linear Issue',

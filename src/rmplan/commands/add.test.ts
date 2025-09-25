@@ -200,8 +200,8 @@ describe('rmplan add command', () => {
 
     const command = {
       parent: {
-        opts: () => ({})
-      }
+        opts: () => ({}),
+      },
     };
 
     await handleAddCommand(['External', 'Plan'], {}, command);
