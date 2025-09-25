@@ -23,6 +23,7 @@ import { generateObject } from 'ai';
 import { createModel } from '../../common/model_factory.ts';
 import { setTaskDone } from '../plans/mark_done.ts';
 import { detectPlanningWithoutImplementation, parseFailedReport } from './failure_detection.ts';
+import { implementationNotesGuidance } from './claude_code/orchestrator_prompt.ts';
 
 export type CodexCliExecutorOptions = z.infer<typeof codexCliOptionsSchema>;
 
@@ -116,8 +117,9 @@ export class CodexCliExecutor implements Executor {
     let implementerInstructions = await this.loadAgentInstructionsFor('implementer', gitRoot);
     implementerInstructions =
       (implementerInstructions || '') +
-      '\n\nOnce you decide how to go about implementing theh tasks, do so immediately. No need to wait for approval.' +
-      `\n\nIn your final message, be sure to include the titles of the tasks that you completed.\n`;
+      `\n\nOnce you decide how to go about implementing the tasks, do so immediately. No need to wait for approval.` +
+      implementationNotesGuidance(planInfo.planFilePath) +
+      `\n\nIn your final message, be sure to include the titles of the tasks that you completed.`;
 
     const retryInstructionSuffixes = [
       'Please implement the changes now, not just plan them.',
@@ -375,6 +377,7 @@ export class CodexCliExecutor implements Executor {
           log(`Starting fix iteration ${iter}/${maxFixIterations}...`);
 
           const fixerPrompt = this.getFixerPrompt({
+            planPath: planInfo.planFilePath,
             implementerOutput: finalImplementerOutput,
             testerOutput,
             completedTaskTitles: initiallyCompleted.map((t) => t.title),
@@ -831,6 +834,7 @@ Return JSON only, like: {"completed_titles": ["Task A", "Task B"]}`;
 
   /** Build a prompt for the fixer step */
   private getFixerPrompt(input: {
+    planPath?: string;
     implementerOutput: string;
     testerOutput: string;
     completedTaskTitles: string[];
@@ -860,7 +864,9 @@ Your job:
 3. Prefer small, safe changes; avoid broad refactors
 4. Run relevant tests and commands as needed
 
-When complete, summarize what you changed. If you could not address an issue, clearly explain why.
+${implementationNotesGuidance(input.planPath)}
+
+When complete, summarize what you changed and update the implementation documentation if necessary. If you could not address an issue, clearly explain why.
 
 ${FAILED_PROTOCOL_INSTRUCTIONS}`;
   }

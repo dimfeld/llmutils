@@ -20,6 +20,29 @@ Use the Bash command 'rmplan add-progress-note ${planId} --source "<agent>: <tas
 `;
 }
 
+export function implementationNotesGuidance(planPath: string | undefined) {
+  if (!planPath) {
+    return '';
+  }
+
+  return `## Implementation Documentation
+
+After finishing your work, you MUST update the plan file '${planPath}' with detailed implementation notes:
+
+1. **Add comprehensive notes** describing what was implemented and how it works
+2. **Include technical details** such as:
+   - Key functions, classes, or components created
+   - Important design decisions and their rationale
+   - Integration points with existing code
+   - Any deviations from the original plan and why
+3. **Document for future maintenance** - write notes that would help someone else understand the implementation months later
+4. **Place notes in the "Implemented Functionality Notes" section** of the plan file (you can add this if it doesn't exist yet)
+5. If existing content in this section is outdated, **update or replace it**
+
+These notes are crucial for project continuity and help future developers understand the implementation choices made.
+`;
+}
+
 /**
  * Builds the batch mode processing instructions
  */
@@ -34,7 +57,10 @@ You have been provided with multiple incomplete tasks from a project plan. Your 
 2. **Select a logical subset** of tasks that make sense to execute together in this batch.
    You are permitted to implement tasks from different Areas together.
 3. **Execute the selected tasks** using the specialized agents
-4. **Update the plan file** to mark completed tasks as done
+4. **Update the plan file** to document your work
+5. Mark the tasks done.
+
+If existing work has been done on the plan, you can find it described in the "Implemented Functionality Notes" section of the plan file.
 
 ## Task Selection Guidelines
 
@@ -126,20 +152,14 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
    - Ask the reviewer to analyze the codebase and ensures its quality and adherence to the task requirements
    - The reviewer is instructed to only focus on problems; don't expect positive feedback even if the code is perfect.${reviewFeedbackInstructions}`;
 
-  const finalPhase = options.batchMode
-    ? `5. **Plan Update Phase**
-   - After all selected tasks are successfully completed, tested, and reviewed, use the Edit tool to update the plan file
-   - Mark each completed task with \`done: true\` in the YAML structure
-   - Only mark tasks as done if they are fully complete and working
-   - Make sure to commit after updating the plan file
+  const finalPhases = `${options.batchMode ? '5' : '4'}. **Notes Phase**
+   ${implementationNotesGuidance(options.planFilePath)}
 
-6. **Iteration**`
-    : `4. **Iteration**`;
+${options.batchMode ? '6' : '5'}. **Iteration**
 
-  const iterationSteps = `
-   - If the reviewer identifies issues or tests fail:
-     - Return to step ${options.batchMode ? '2' : '1'} with the reviewer's feedback
-     - Continue this loop until all tests pass and the implementation is satisfactory`;
+- If the reviewer identifies issues or tests fail:
+- Return to step ${options.batchMode ? '2' : '1'} with the reviewer's feedback
+- Continue this loop until all tests pass and the implementation is satisfactory`;
 
   return `## Workflow Instructions
 
@@ -151,7 +171,7 @@ ${testingPhase}
 
 ${reviewPhase}
 
-${finalPhase}${iterationSteps}`;
+${finalPhases}`;
 }
 
 /**
