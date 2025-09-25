@@ -1,3 +1,4 @@
+import { $ } from 'bun';
 import { afterEach, beforeEach, describe, expect, test, mock } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -6,6 +7,7 @@ import yaml from 'yaml';
 import { readPlanFile } from '../plans.js';
 import { ModuleMocker } from '../../testing.js';
 import { getDefaultConfig } from '../configSchema.js';
+import { clearConfigCache } from '../configLoader.js';
 import { handleAddCommand } from './add.js';
 
 describe('rmplan add command', () => {
@@ -636,5 +638,75 @@ describe('rmplan add command', () => {
         new Date(parentCreatedAt).getTime()
       );
     });
+  });
+
+  test('creates sanitized external plan when remote contains credentials and query tokens', async () => {
+    clearConfigCache();
+
+    const fakeHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-add-home-'));
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-add-repo-'));
+    const originalCwd = process.cwd();
+
+    const remote =
+      'https://user:super-secret-token@github.example.com/Owner/Repo.git?token=abc#frag';
+
+    const realOs = await import('node:os');
+    await moduleMocker.mock('node:os', () => ({
+      ...realOs,
+      homedir: () => fakeHomeDir,
+    }));
+
+    const logMessages: string[] = [];
+    await moduleMocker.mock('../../logging.js', () => ({
+      debugLog: mock(() => {}),
+      error: mock(() => {}),
+      log: mock((message: string) => {
+        logMessages.push(message);
+      }),
+      warn: mock(() => {}),
+    }));
+
+    try {
+      await $`git init`.cwd(repoDir).quiet();
+      await $`git remote add origin ${remote}`.cwd(repoDir).quiet();
+
+      process.chdir(repoDir);
+
+      const command = {
+        parent: {
+          opts: () => ({}),
+        },
+      };
+
+      await handleAddCommand(['External', 'Plan'], {}, command);
+
+      const repositoryDir = path.join(
+        fakeHomeDir,
+        '.config',
+        'rmfilter',
+        'repositories',
+        'github.example.com__Owner__Repo'
+      );
+      const tasksDirectory = path.join(repositoryDir, 'tasks');
+      const planPath = path.join(tasksDirectory, '1-external-plan.plan.md');
+
+      const planExists = await fs
+        .access(planPath)
+        .then(() => true)
+        .catch(() => false);
+
+      expect(planExists).toBe(true);
+      expect(repositoryDir.includes('token')).toBe(false);
+      expect(tasksDirectory.includes('token')).toBe(false);
+      expect(logMessages.some((message) => message.includes('Remote origin: github.example.com/Owner/Repo'))).toBe(
+        true
+      );
+      expect(logMessages.some((message) => /super-secret-token|token=abc/.test(message))).toBe(false);
+    } finally {
+      process.chdir(originalCwd);
+      await fs.rm(repoDir, { recursive: true, force: true });
+      await fs.rm(fakeHomeDir, { recursive: true, force: true });
+      clearConfigCache();
+    }
   });
 });

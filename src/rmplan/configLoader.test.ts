@@ -192,6 +192,25 @@ describe('configLoader', () => {
     expect(messageText).toContain('Using external rmplan storage for');
   });
 
+  test('loadEffectiveConfig redacts credentials and tokens from remote logging output', async () => {
+    await fs.rm(path.join(configDir, 'rmplan.yml'), { force: true });
+
+    await $`git init`.cwd(testDir).quiet();
+    const remote = 'https://user:super-secret-token@github.com/Owner/Repo.git?token=abc#frag';
+    await $`git remote add origin ${remote}`.cwd(testDir).quiet();
+
+    await loadEffectiveConfig();
+
+    const loggedMessage = logSpy.mock.calls.at(-1)?.[0];
+    expect(typeof loggedMessage).toBe('string');
+    const messageText = loggedMessage as string;
+
+    expect(messageText).toContain('Remote origin: github.com/Owner/Repo');
+    expect(messageText).not.toMatch(/super-secret-token/);
+    expect(messageText).not.toMatch(/token=abc/);
+    expect(messageText).not.toMatch(/x-oauth-basic/);
+  });
+
   test('findConfigPath falls back to external repository config path when default config does not exist', async () => {
     await fs.rm(path.join(configDir, 'rmplan.yml'), { force: true });
 

@@ -84,6 +84,10 @@ function mergeConfigs(mainConfig: RmplanConfig, localConfig: RmplanConfig): Rmpl
   return merged;
 }
 
+function trimQueryAndFragment(value: string): string {
+  return value.replace(/[?#].*$/, '');
+}
+
 function describeRemoteForLogging(remoteUrl?: string | null): string {
   if (!remoteUrl) {
     return 'none detected';
@@ -92,23 +96,23 @@ function describeRemoteForLogging(remoteUrl?: string | null): string {
   const parsed = parseGitRemoteUrl(remoteUrl);
   if (parsed) {
     if (parsed.host && parsed.fullName) {
-      return `${parsed.host}/${parsed.fullName}`;
+      return trimQueryAndFragment(`${parsed.host}/${parsed.fullName}`);
     }
 
     if (parsed.host && parsed.path) {
-      return `${parsed.host}/${parsed.path}`;
+      return trimQueryAndFragment(`${parsed.host}/${parsed.path}`);
     }
 
     if (parsed.fullName) {
-      return parsed.fullName;
+      return trimQueryAndFragment(parsed.fullName);
     }
 
     if (parsed.host) {
-      return parsed.host;
+      return trimQueryAndFragment(parsed.host);
     }
   }
 
-  return stripRemoteCredentials(remoteUrl);
+  return trimQueryAndFragment(stripRemoteCredentials(remoteUrl));
 }
 
 function stripRemoteCredentials(remote: string): string {
@@ -116,7 +120,7 @@ function stripRemoteCredentials(remote: string): string {
     try {
       const parsedUrl = new URL(remote);
       return (
-        `${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}` ||
+        `${parsedUrl.host}${parsedUrl.pathname}` ||
         parsedUrl.host
       );
     } catch {

@@ -62,6 +62,12 @@ progressNotes:
     text: Found that the new external-storage status message prints the raw origin
       URL, leaking embedded credentials (tokens/usernames).
     source: "reviewer: tasks 7,17,18"
+  - timestamp: 2025-09-25T13:15:16.360Z
+    text: Hardened remote sanitisation to strip credentials, query strings, and
+      fragments from external-storage messaging and repository directory names,
+      and added targeted unit plus rmplan add integration tests to lock in the
+      behaviour.
+    source: "implementer: tasks 8/12"
 tasks:
   - title: Create Git URL Parser Module
     done: true
@@ -269,6 +275,7 @@ rmfilter: []
 - Introduced `path_resolver` helper utilities that compute git-aware task directories and configuration roots, providing a single source of truth for external storage resolution.
 - Refactored plan operations (`rmplan add`, `generate`, `promote`, hierarchical imports, cleanup utilities, renumbering, and mark-done flows) to consume the shared helpers so plan files always land in the external repository directory when required.
 - Expanded automated coverage with `path_resolver.test.ts` and new external-storage scenarios across add/promote/import unit and integration suites, ensuring command behavior remains stable in both local and external modes.
+- Hardened git remote sanitisation by trimming credentials, query parameters, and fragments in `stripGitSuffix()` and `describeRemoteForLogging()` before deriving repository names or emitting external-storage notices, and added high-signal unit plus integration coverage (config loader logging, repository resolver naming, rmplan add with credentialed remotes) to prevent regressions.
 - Enhanced external-storage messaging tests in `src/rmplan/configLoader.test.ts` to assert the new guidance, and documented the automatic fallback plus executor access in `README.md` for users working on third-party repositories.
 - Introduced credential-safe remote reporting via `describeRemoteForLogging()` so the external-storage notice now renders `host/owner/repository` without tokens, refreshed the README to call out the sanitisation, and updated config loader tests to expect the scrubbed value.
 

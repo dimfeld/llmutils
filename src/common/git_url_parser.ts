@@ -113,7 +113,9 @@ function normalizePath(pathname: string): string {
 }
 
 function stripGitSuffix(segment: string): string {
-  return segment.replace(/\.git$/i, '');
+  const withoutFragment = segment.split('#', 1)[0];
+  const withoutQuery = withoutFragment.split('?', 1)[0];
+  return withoutQuery.replace(/\.git$/i, '');
 }
 
 function asPathSegments(normalizedPath: string): string[] {

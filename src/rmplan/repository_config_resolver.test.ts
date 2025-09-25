@@ -110,4 +110,19 @@ describe('RepositoryConfigResolver', () => {
     const tasksDirStats = await fs.stat(path.join(expectedRepositoryDir, 'tasks'));
     expect(tasksDirStats.isDirectory()).toBe(true);
   });
+
+  test('sanitizes credentials and query fragments when constructing repository directories', async () => {
+    await $`git init`.cwd(gitRoot).quiet();
+    const remote =
+      'https://user:super-secret-token@github.example.com/Owner/Repo.git?token=abc#frag';
+    await $`git remote add origin ${remote}`.cwd(gitRoot).quiet();
+
+    const resolver = await RepositoryConfigResolver.create();
+    const resolution = await resolver.resolve();
+
+    expect(resolution.repositoryName).toBe('github.example.com__Owner__Repo');
+    expect(resolution.repositoryConfigDir).toContain('github.example.com__Owner__Repo');
+    expect(resolution.repositoryName?.includes('token')).toBe(false);
+    expect(resolution.repositoryName?.includes('super-secret-token')).toBe(false);
+  });
 });

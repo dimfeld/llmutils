@@ -54,6 +54,14 @@ describe('parseGitRemoteUrl', () => {
     expect(parsed?.username).toBe('user');
   });
 
+  it('drops query strings and fragments from repository metadata', () => {
+    const parsed = parseGitRemoteUrl('git@github.com:owner/repo.git?token=abc#frag');
+    expect(parsed).not.toBeNull();
+    expect(parsed?.repository).toBe('repo');
+    expect(parsed?.fullName).toBe('owner/repo');
+    expect(parsed?.pathSegments).toEqual(['owner', 'repo']);
+  });
+
   it('handles HTTPS remotes without .git suffix and trailing slashes', () => {
     const parsed = parseGitRemoteUrl('https://gitlab.example.com/group/repo/');
     expect(parsed).not.toBeNull();
@@ -129,6 +137,12 @@ describe('deriveRepositoryName', () => {
     const parsed = parseGitRemoteUrl('https://gitlab.example.com/Team Space/Project.Name.git');
     const derived = deriveRepositoryName(parsed);
     expect(derived).toBe('gitlab.example.com__Team-Space__Project.Name');
+  });
+
+  it('omits credentials and query tokens when deriving names', () => {
+    const parsed = parseGitRemoteUrl('https://user:token@github.com/Owner/Repo.git?token=abc#frag');
+    const derived = deriveRepositoryName(parsed);
+    expect(derived).toBe('github.com__Owner__Repo');
   });
 
   it('derives names from fallback paths with nested segments', () => {
