@@ -9,8 +9,15 @@ import stripAnsi from 'strip-ansi';
 function formatDuration(ms?: number): string {
   if (ms == null) return 'n/a';
   const sec = Math.floor(ms / 1000);
-  const m = Math.floor(sec / 60);
+  let m = Math.floor(sec / 60);
   const s = sec % 60;
+
+  let h = Math.floor(m / 60);
+  if (h > 0) {
+    m = m % 60;
+    return `${h}h ${m}m ${s}s`;
+  }
+
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
 }
@@ -59,11 +66,7 @@ function isSectionList(val: unknown): val is Array<{ title: string; body: string
   return (
     Array.isArray(val) &&
     val.every(
-      (s) =>
-        s &&
-        typeof s === 'object' &&
-        typeof (s as any).title === 'string' &&
-        typeof (s as any).body === 'string'
+      (s) => s && typeof s === 'object' && typeof s.title === 'string' && typeof s.body === 'string'
     )
   );
 }
