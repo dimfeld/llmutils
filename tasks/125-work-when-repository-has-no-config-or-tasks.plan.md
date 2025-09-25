@@ -13,7 +13,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-09-25T09:16:20.304Z
 createdAt: 2025-09-25T08:58:56.840Z
-updatedAt: 2025-09-25T10:26:21.185Z
+updatedAt: 2025-09-25T10:31:13.938Z
 progressNotes:
   - timestamp: 2025-09-25T10:09:43.140Z
     text: Set up new git URL parsing utilities with filesystem-safe name derivation
@@ -27,7 +27,7 @@ progressNotes:
     source: "reviewer: Create Git URL Parser Module"
 tasks:
   - title: Create Git URL Parser Module
-    done: false
+    done: true
     description: Create `src/common/git_url_parser.ts` with functions to parse
       various git remote URL formats and extract normalized repository
       information. Include support for GitHub, GitLab, Bitbucket, and generic
@@ -44,7 +44,7 @@ tasks:
     docs: []
     steps: []
   - title: Update getGitRepository Function
-    done: false
+    done: true
     description: Refactor `getGitRepository()` in `src/common/git.ts` to use the new
       parser for more robust URL handling while maintaining backward
       compatibility.
@@ -52,7 +52,7 @@ tasks:
     docs: []
     steps: []
   - title: Add Comprehensive Tests
-    done: false
+    done: true
     description: Write unit tests covering all supported URL formats, edge cases,
       and fallback scenarios. Include tests for repositories without remotes.
     files: []
@@ -178,7 +178,14 @@ tasks:
     files: []
     docs: []
     steps: []
-changedFiles: []
+changedFiles:
+  - src/common/git.test.ts
+  - src/common/git.ts
+  - src/common/git_url_parser.js
+  - src/common/git_url_parser.test.ts
+  - src/common/git_url_parser.ts
+  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
+  - src/rmplan/executors/codex_cli/format.ts
 rmfilter: []
 ---
 
