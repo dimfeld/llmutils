@@ -1,3 +1,4 @@
+import * as fs from 'node:fs/promises';
 import * as path from 'path';
 import { z } from 'zod/v4';
 import { DEFAULT_EXECUTOR } from './constants.js';
@@ -306,7 +307,15 @@ export const rmplanConfigSchema = z
   })
   .describe('Repository-level configuration for rmplan');
 
-export type RmplanConfig = z.output<typeof rmplanConfigSchema>;
+export interface RmplanRuntimeConfigMetadata {
+  isUsingExternalStorage?: boolean;
+  externalRepositoryConfigDir?: string;
+  resolvedConfigPath?: string | null;
+  repositoryConfigName?: string;
+  repositoryRemoteUrl?: string | null;
+}
+
+export type RmplanConfig = z.output<typeof rmplanConfigSchema> & RmplanRuntimeConfigMetadata;
 export type RmplanConfigInput = z.input<typeof rmplanConfigSchema>;
 export type PostApplyCommand = z.output<typeof postApplyCommandSchema>;
 
@@ -314,15 +323,31 @@ export type PostApplyCommand = z.output<typeof postApplyCommandSchema>;
  * Resolves the tasks directory path, handling both absolute and relative paths.
  * If tasks path is relative, it's resolved relative to the git root.
  */
-export async function resolveTasksDir(config: any): Promise<string> {
+export async function resolveTasksDir(config: RmplanConfig): Promise<string> {
+  if (config.isUsingExternalStorage) {
+    const baseDir = config.externalRepositoryConfigDir;
+    if (baseDir) {
+      const tasksPath = config.paths?.tasks
+        ? path.isAbsolute(config.paths.tasks)
+          ? config.paths.tasks
+          : path.join(baseDir, config.paths.tasks)
+        : path.join(baseDir, 'tasks');
+      await fs.mkdir(tasksPath, { recursive: true });
+      return tasksPath;
+    }
+  }
+
   const gitRoot = (await getGitRoot()) || process.cwd();
 
   if (config.paths?.tasks) {
-    return path.isAbsolute(config.paths.tasks)
+    const resolvedPath = path.isAbsolute(config.paths.tasks)
       ? config.paths.tasks
       : path.join(gitRoot, config.paths.tasks);
+    await fs.mkdir(resolvedPath, { recursive: true });
+    return resolvedPath;
   }
 
+  await fs.mkdir(gitRoot, { recursive: true });
   return gitRoot;
 }
 

@@ -13,7 +13,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-09-25T09:16:20.304Z
 createdAt: 2025-09-25T08:58:56.840Z
-updatedAt: 2025-09-25T10:31:13.938Z
+updatedAt: 2025-09-25T10:46:43.227Z
 progressNotes:
   - timestamp: 2025-09-25T10:09:43.140Z
     text: Set up new git URL parsing utilities with filesystem-safe name derivation
@@ -25,6 +25,11 @@ progressNotes:
       username (e.g. example.com:owner/repo.git), causing getGitRepository to
       return just 'repo'.
     source: "reviewer: Create Git URL Parser Module"
+  - timestamp: 2025-09-25T10:46:43.221Z
+    text: Added repository configuration resolver with external storage fallback,
+      integrated loadEffectiveConfig metadata/logging, and updated
+      resolveTasksDir plus new tests.
+    source: "implementer: tasks 5-9"
 tasks:
   - title: Create Git URL Parser Module
     done: true
@@ -191,8 +196,11 @@ rmfilter: []
 
 # Implemented Functionality Notes
 
-- Updated `parseGitRemoteUrl` to accept scp-style remotes without an explicit username while continuing to recognize Windows filesystem paths as local repositories; this restores expected owner/repo extraction for remotes such as `example.com:owner/repo.git`.
-- Added unit coverage in `src/common/git_url_parser.test.ts` for the new scp parsing case and extended `src/common/git.test.ts` to assert that `getGitRepository` now returns `owner/repo` for remotes lacking a username.
+- Built `RepositoryConfigResolver` to derive per-repository directories at `~/.config/rmfilter/repositories/<name>`, using sanitized remote metadata and automatically creating both `.rmfilter/config` and `tasks` subdirectories whenever a local config is absent.
+- Updated `loadEffectiveConfig` to route through the resolver, attach runtime metadata (`isUsingExternalStorage`, `externalRepositoryConfigDir`, and the resolved config path), key cache entries by git root, and surface a log message the first time external storage is engaged.
+- Adjusted `resolveTasksDir` to honor external storage mode, normalize relative task paths against the repository config directory, and proactively ensure target directories exist before plan operations run.
+- Added targeted coverage via `src/rmplan/repository_config_resolver.test.ts`, expanded scenarios in `src/rmplan/configLoader.test.ts`, and new `resolveTasksDir` cases in `src/rmplan/configSchema.test.ts` to validate directory creation, metadata propagation, and path resolution for both local and external storage modes.
+- Provided bridge modules (`src/common/git_url_parser.js`, `src/rmplan/repository_config_resolver.js`) alongside the earlier git URL parser work so runtime consumers and the CLI resolve the new implementations without a build step.
 
 # Original Plan Details
 
@@ -833,7 +841,8 @@ Some areas still use `process.cwd()` directly
 - Should we support a `.rmplanignore` file in the external config directory to exclude certain files from operations? Answer: No
 
 # Implemented Functionality Notes
-- Added `src/common/git_url_parser.ts` with robust remote parsing that normalizes paths (including SCP-style and local remotes), derives owner/repository metadata, and provides filesystem-safe repository names plus fallbacks for repositories without remotes. Introduced helper utilities to normalize path separators and collapse repeated slashes to avoid brittle regular expressions.
-- Added lightweight bridge module `src/common/git_url_parser.js` so runtime consumers importing the built package can access the new parser while we continue authoring the implementation in TypeScript.
-- Refactored `getGitRepository` in `src/common/git.ts` to accept an optional working directory, cache per git root, and rely on the new parser for consistent results across HTTPS/SSH/local remotes. Added graceful fallbacks when no remote exists and exported `resetGitRepositoryCache()` for tests.
-- Expanded test coverage with the new `src/common/git_url_parser.test.ts` suite plus additional scenarios in `src/common/git.test.ts` verifying remote parsing, caching behavior, and fallback logic for repositories lacking remotes.
+- Built `RepositoryConfigResolver` to derive per-repository directories at `~/.config/rmfilter/repositories/<name>`, using sanitized remote metadata and automatically creating both `.rmfilter/config` and `tasks` subdirectories whenever a local config is absent.
+- Updated `loadEffectiveConfig` to route through the resolver, attach runtime metadata (`isUsingExternalStorage`, `externalRepositoryConfigDir`, and the resolved config path), key cache entries by git root, and surface a log message the first time external storage is engaged.
+- Adjusted `resolveTasksDir` to honor external storage mode, normalize relative task paths against the repository config directory, and proactively ensure target directories exist before plan operations run.
+- Added targeted coverage via `src/rmplan/repository_config_resolver.test.ts`, expanded scenarios in `src/rmplan/configLoader.test.ts`, and new `resolveTasksDir` cases in `src/rmplan/configSchema.test.ts` to validate directory creation, metadata propagation, and path resolution for both local and external storage modes.
+- Provided bridge modules (`src/common/git_url_parser.js`, `src/rmplan/repository_config_resolver.js`) alongside the earlier git URL parser work so runtime consumers and the CLI resolve the new implementations without a build step.

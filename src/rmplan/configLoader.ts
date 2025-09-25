@@ -1,9 +1,12 @@
 import * as path from 'node:path';
 import * as yaml from 'js-yaml';
 import { quiet } from '../common/process.js';
-import { getGitRoot } from '../common/git.js'; // Assuming logging exists
 import { debugLog, error, log, warn } from '../logging.js';
 import { type RmplanConfig, rmplanConfigSchema, getDefaultConfig } from './configSchema.js';
+import {
+  RepositoryConfigResolver,
+  type RepositoryConfigResolution,
+} from './repository_config_resolver.js';
 
 /**
  * Deeply merges two RmplanConfig objects, with localConfig overriding mainConfig.
@@ -92,29 +95,13 @@ function mergeConfigs(mainConfig: RmplanConfig, localConfig: RmplanConfig): Rmpl
  * @throws {Error} If `overridePath` is provided but the file does not exist.
  */
 export async function findConfigPath(overridePath?: string): Promise<string | null> {
-  if (overridePath) {
-    const absoluteOverridePath = path.resolve(overridePath);
-    const fileExists = await Bun.file(absoluteOverridePath).exists();
-    if (!fileExists) {
-      throw new Error(`Specified configuration file not found: ${absoluteOverridePath}`);
-    }
-    debugLog(`Using configuration file specified via override: ${absoluteOverridePath}`);
-    return absoluteOverridePath;
-  }
-
+  const resolver = await RepositoryConfigResolver.create({ overridePath });
   try {
-    const gitRoot = await getGitRoot();
-    if (!gitRoot) {
-      debugLog('Could not determine Git repository root. Skipping default config search.');
-      return null;
-    }
-    const defaultPath = path.join(gitRoot, '.rmfilter', 'config', 'rmplan.yml');
-    const fileExists = await Bun.file(defaultPath).exists();
-    debugLog(`Checking for default configuration file at: ${defaultPath}`);
-    return fileExists ? defaultPath : null;
-  } catch (err: any) {
-    debugLog(`Error finding Git root or checking default config: ${err.message}`);
-    return null; // Gracefully handle errors like not being in a git repo
+    const resolution = await resolver.resolve();
+    return resolution.configPath;
+  } catch (error) {
+    // Maintain legacy behavior when override path is missing.
+    throw error;
   }
 }
 
@@ -214,34 +201,31 @@ export function clearConfigCache(): void {
  * @throws {Error} If configuration loading fails due to file not found (for override) or validation errors.
  */
 export async function loadEffectiveConfig(overridePath?: string): Promise<RmplanConfig> {
-  if (foundConfigs.has(overridePath || '')) {
-    return foundConfigs.get(overridePath || '')!;
-  }
-
-  let configPath: string | null = null;
+  let resolution: RepositoryConfigResolution;
   try {
-    configPath = await findConfigPath(overridePath);
+    const resolver = await RepositoryConfigResolver.create({ overridePath });
+    resolution = await resolver.resolve();
   } catch (err: any) {
-    // findConfigPath only throws if overridePath is specified and not found
     error(`Error finding configuration file: ${err.message}`);
-    // Re-throw to halt execution as the user explicitly requested a file that doesn't exist.
     throw err;
   }
 
-  try {
-    // Load the main configuration
-    const config = await loadConfig(configPath);
+  const cacheKey = overridePath ? path.resolve(overridePath) : (resolution.gitRoot ?? '');
+  const cachedConfig = foundConfigs.get(cacheKey);
+  if (cachedConfig) {
+    return cachedConfig;
+  }
 
-    // Find and load local override configuration if it exists
+  const configPath = resolution.configPath;
+
+  try {
+    const config = await loadConfig(configPath);
     const localConfigPath = await findLocalConfigPath(configPath);
     let effectiveConfig: RmplanConfig;
 
     if (localConfigPath) {
       try {
-        // Load the local override configuration
         const localConfig = await loadConfig(localConfigPath);
-
-        // Merge the configurations with local overriding main
         effectiveConfig = mergeConfigs(config, localConfig);
 
         debugLog(
@@ -250,11 +234,10 @@ export async function loadEffectiveConfig(overridePath?: string): Promise<Rmplan
           `\nLocal override: ${localConfigPath}`
         );
       } catch (localErr: any) {
-        // If there's a validation error in the local config, log it but continue with the main config
         warn(`Error loading local override configuration: ${localErr.message}`);
         warn('Continuing with main configuration only');
 
-        if (!quiet) {
+        if (!quiet && configPath) {
           log('Loaded configuration file', configPath);
         }
 
@@ -265,12 +248,23 @@ export async function loadEffectiveConfig(overridePath?: string): Promise<Rmplan
       effectiveConfig = config;
     }
 
-    foundConfigs.set(overridePath || '', effectiveConfig);
-    return effectiveConfig;
+    const configWithMetadata: RmplanConfig = {
+      ...effectiveConfig,
+      isUsingExternalStorage: resolution.usingExternalStorage,
+      externalRepositoryConfigDir: resolution.repositoryConfigDir,
+      resolvedConfigPath: configPath,
+      repositoryConfigName: resolution.repositoryName,
+      repositoryRemoteUrl: resolution.remoteUrl ?? null,
+    };
+
+    if (resolution.usingExternalStorage && resolution.repositoryConfigDir) {
+      log(`Using external rmplan configuration at ${resolution.repositoryConfigDir}`);
+    }
+
+    foundConfigs.set(cacheKey, configWithMetadata);
+    return configWithMetadata;
   } catch (err: any) {
-    // loadConfig only throws on validation errors. Read/parse errors return default config.
     error(`Error loading or validating configuration: ${err.message}`);
-    // Re-throw validation errors to halt execution.
     throw err;
   }
 }

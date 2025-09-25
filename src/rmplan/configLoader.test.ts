@@ -16,12 +16,15 @@ const moduleMocker = new ModuleMocker(import.meta);
 // Silence logs during tests will be done in beforeEach
 import { type RmplanConfig, type WorkspaceCreationConfig } from './configSchema.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
+import { fallbackRepositoryNameFromGitRoot } from '../common/git_url_parser.js';
 
 // Since js-yaml isn't working in tests, we'll use yaml
 import yaml from 'yaml';
 
 // Test state
 let tempDir: string;
+let fakeHomeDir: string;
+let logSpy: ReturnType<typeof mock>;
 
 // Helper function to create a temporary directory structure for testing
 async function createTempTestDir() {
@@ -44,14 +47,8 @@ beforeEach(async () => {
   await moduleMocker.mock('../logging.js', () => ({
     debugLog: mock(() => {}),
     error: mock(() => {}),
-    log: mock(() => {}),
+    log: (logSpy = mock(() => {})),
     warn: mock(() => {}),
-  }));
-
-  // Mock utils
-  await moduleMocker.mock('../rmfilter/utils.js', () => ({
-    getGitRoot: mock(() => Promise.resolve('/fake/git/root')),
-    quiet: false,
   }));
 
   // Create temporary directory for test files
@@ -80,6 +77,14 @@ describe('configLoader', () => {
     testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-config-test-'));
     configDir = path.join(testDir, '.rmfilter', 'config');
 
+    fakeHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-home-'));
+
+    const realOs = await import('node:os');
+    await moduleMocker.mock('node:os', () => ({
+      ...realOs,
+      homedir: () => fakeHomeDir,
+    }));
+
     // Mock the getGitRoot function to return our test directory
     await moduleMocker.mock('../common/git.js', () => ({
       getGitRoot: async () => testDir,
@@ -92,6 +97,9 @@ describe('configLoader', () => {
   afterEach(async () => {
     // Cleanup test directory
     await fs.rm(testDir, { recursive: true, force: true });
+    if (fakeHomeDir) {
+      await fs.rm(fakeHomeDir, { recursive: true, force: true });
+    }
     // Clear mocks after each test
     moduleMocker.clear();
     // Clear the config cache again
@@ -106,16 +114,55 @@ describe('configLoader', () => {
     expect(result).toBe(defaultConfigPath);
   });
 
-  test('findConfigPath returns null when default path does not exist', async () => {
-    // Remove any existing config file
-    try {
-      await fs.unlink(path.join(configDir, 'rmplan.yml'));
-    } catch (e) {
-      // Ignore errors if file doesn't exist
-    }
+  test('loadEffectiveConfig returns default config using external storage when repository lacks config', async () => {
+    await fs.rm(path.join(configDir, 'rmplan.yml'), { force: true });
+
+    const repositoryName = fallbackRepositoryNameFromGitRoot(testDir);
+    const expectedRepositoryDir = path.join(
+      fakeHomeDir,
+      '.config',
+      'rmfilter',
+      'repositories',
+      repositoryName
+    );
+
+    const config = await loadEffectiveConfig();
+
+    expect(config.isUsingExternalStorage).toBe(true);
+    expect(config.externalRepositoryConfigDir).toBe(expectedRepositoryDir);
+    expect(logSpy.mock.calls.some((call) => call[0].includes(expectedRepositoryDir))).toBe(true);
+  });
+
+  test('findConfigPath falls back to external repository config path when default config does not exist', async () => {
+    await fs.rm(path.join(configDir, 'rmplan.yml'), { force: true });
+
+    const repositoryName = fallbackRepositoryNameFromGitRoot(testDir);
+    const expectedConfigPath = path.join(
+      fakeHomeDir,
+      '.config',
+      'rmfilter',
+      'repositories',
+      repositoryName,
+      '.rmfilter',
+      'config',
+      'rmplan.yml'
+    );
+    const expectedTasksDir = path.join(
+      fakeHomeDir,
+      '.config',
+      'rmfilter',
+      'repositories',
+      repositoryName,
+      'tasks'
+    );
 
     const result = await findConfigPath();
-    expect(result).toBeNull();
+
+    expect(result).toBe(expectedConfigPath);
+    const configDirStats = await fs.stat(path.dirname(expectedConfigPath));
+    expect(configDirStats.isDirectory()).toBe(true);
+    const tasksDirStats = await fs.stat(expectedTasksDir);
+    expect(tasksDirStats.isDirectory()).toBe(true);
   });
 
   test('findConfigPath returns override path when provided', async () => {
@@ -215,6 +262,7 @@ defaultExecutor: ${DEFAULT_EXECUTOR}
 
       // Local config should override main config
       expect(config).toHaveProperty('defaultExecutor', DEFAULT_EXECUTOR);
+      expect(config.isUsingExternalStorage).toBe(false);
 
       // Properties not in local config should remain from main config
       expect(config).toHaveProperty('postApplyCommands');
