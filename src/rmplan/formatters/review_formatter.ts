@@ -319,45 +319,49 @@ export function parseReviewerOutput(rawOutput: string): {
     for (const block of blocks) {
       if (issues.length >= MAX_ISSUES) break;
 
+      const markBlockProcessed = () => {
+        for (const index of block.indices) {
+          processedLineIndices.add(index);
+        }
+      };
+
+      markBlockProcessed();
+
       if (block.lines.some((line) => VERDICT_EXCLUSION_PATTERN.test(line))) {
         continue;
       }
 
-      let headerIndex = -1;
-      let headerMatch: RegExpMatchArray | null = null;
-      for (let idx = 0; idx < block.lines.length; idx++) {
-        const potentialHeader = block.lines[idx].trim();
-        if (!potentialHeader) {
-          continue;
-        }
-        for (const marker of ISSUE_MARKERS) {
-          const match = potentialHeader.match(marker);
-          if (match) {
-            headerMatch = match;
-            headerIndex = idx;
-            break;
-          }
-        }
-        if (headerMatch) {
+      const nonEmptyLines = block.lines
+        .map((line, idx) => ({ line, idx }))
+        .filter(({ line }) => line.trim().length > 0);
+
+      if (nonEmptyLines.length === 0) {
+        continue;
+      }
+
+      const headerInfo = nonEmptyLines[0];
+      let headerContent = headerInfo.line.trim();
+
+      for (const marker of ISSUE_MARKERS) {
+        const match = headerContent.match(marker);
+        if (match) {
+          headerContent = (match[1] || match[2] || match[0] || '').trim();
           break;
         }
       }
 
-      if (headerIndex === -1 || !headerMatch) {
+      const remainingLines = block.lines.slice(headerInfo.idx + 1);
+      const issueContentLines = [headerContent, ...remainingLines];
+      const issueContent = issueContentLines.join('\n').trim();
+
+      if (!issueContent) {
         continue;
       }
-
-      const headerContent = (headerMatch[1] || headerMatch[2] || headerMatch[0] || '').trim();
-      if (!headerContent) continue;
-
-      const issueContentLines = [headerContent, ...block.lines.slice(headerIndex + 1)];
-      const issueContent = issueContentLines.join('\n').trim();
-      if (!issueContent) continue;
 
       const analysis = analyzeIssueContent(issueContent);
 
       let suggestion: string | undefined;
-      for (const rawLine of block.lines.slice(headerIndex + 1)) {
+      for (const rawLine of remainingLines) {
         const trimmedLine = rawLine.trim();
         if (
           trimmedLine.startsWith('Suggestion:') ||
@@ -378,10 +382,6 @@ export function parseReviewerOutput(rawOutput: string): {
         line: analysis.line,
         ...(suggestion ? { suggestion } : {}),
       });
-
-      for (const index of block.indices) {
-        processedLineIndices.add(index);
-      }
     }
   }
 
@@ -424,43 +424,42 @@ export function parseReviewerOutput(rawOutput: string): {
     // Skip legend entries that match the exclusion pattern
     if (LEGEND_EXCLUSION_PATTERN.test(line)) continue;
 
-    // Check for issue markers first (most specific patterns)
-    let foundIssue = false;
-    for (const marker of ISSUE_MARKERS) {
-      const match = line.match(marker);
-      if (match) {
-        const content = (match[1] || match[2] || match[0] || '').trim();
-        if (!content) {
-          continue;
-        }
-
-        const analysis = analyzeIssueContent(content);
-
-        const issue: ReviewIssue = {
-          id: `issue-${issueId++}`,
-          severity: analysis.severity,
-          category: analysis.category,
-          content,
-          file: analysis.file,
-          line: analysis.line,
-        };
-
-        // Look for suggestions in following lines (limit lookahead)
-        if (i + 1 < lineCount) {
-          const nextLine = lines[i + 1].trim();
-          if (
-            nextLine.length < 200 &&
-            (nextLine.startsWith('Suggestion:') ||
-              nextLine.startsWith('Fix:') ||
-              nextLine.startsWith('Consider:'))
-          ) {
-            issue.suggestion = nextLine.replace(/^(Suggestion|Fix|Consider):\s*/i, '');
+    if (!hasIssueSeparators) {
+      for (const marker of ISSUE_MARKERS) {
+        const match = line.match(marker);
+        if (match) {
+          const content = (match[1] || match[2] || match[0] || '').trim();
+          if (!content) {
+            continue;
           }
-        }
 
-        issues.push(issue);
-        foundIssue = true;
-        break;
+          const analysis = analyzeIssueContent(content);
+
+          const issue: ReviewIssue = {
+            id: `issue-${issueId++}`,
+            severity: analysis.severity,
+            category: analysis.category,
+            content,
+            file: analysis.file,
+            line: analysis.line,
+          };
+
+          // Look for suggestions in following lines (limit lookahead)
+          if (i + 1 < lineCount) {
+            const nextLine = lines[i + 1].trim();
+            if (
+              nextLine.length < 200 &&
+              (nextLine.startsWith('Suggestion:') ||
+                nextLine.startsWith('Fix:') ||
+                nextLine.startsWith('Consider:'))
+            ) {
+              issue.suggestion = nextLine.replace(/^(Suggestion|Fix|Consider):\s*/i, '');
+            }
+          }
+
+          issues.push(issue);
+          break;
+        }
       }
     }
 

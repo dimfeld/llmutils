@@ -207,6 +207,32 @@ Overall, the implementation has critical security issues.
     expect(result.recommendations).toHaveLength(0);
     expect(result.actionItems).toHaveLength(0);
   });
+
+  test('treats triple-dash separators as issue boundaries even with numbered lists', () => {
+    const review = `---
+
+2. MAJOR Data dependency waterfall should convert to concurrent queries
+
+The current fetching logic works sequentially:
+
+1. Fetch locations
+2. Fetch teams
+3. Fetch counts viewable by locations and teams
+
+Update this so the third query uses SQL joins to filter appropriate in just one query
+
+---`;
+
+    const result = parseReviewerOutput(review);
+
+    expect(result.issues).toHaveLength(1);
+    const [issue] = result.issues;
+    expect(issue.content).toContain('MAJOR Data dependency waterfall should convert to concurrent queries');
+    expect(issue.content).toContain('1. Fetch locations');
+    expect(issue.content).toContain('2. Fetch teams');
+    expect(issue.content).toContain('3. Fetch counts viewable by locations and teams');
+    expect(issue.content).toContain('Update this so the third query uses SQL joins');
+  });
 });
 
 describe('generateReviewSummary', () => {
