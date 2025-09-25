@@ -119,10 +119,7 @@ function stripRemoteCredentials(remote: string): string {
   if (remote.includes('://')) {
     try {
       const parsedUrl = new URL(remote);
-      return (
-        `${parsedUrl.host}${parsedUrl.pathname}` ||
-        parsedUrl.host
-      );
+      return `${parsedUrl.host}${parsedUrl.pathname}` || parsedUrl.host;
     } catch {
       // Fall through to best-effort sanitisation below when URL parsing fails.
     }

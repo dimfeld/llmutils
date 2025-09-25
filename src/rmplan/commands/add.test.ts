@@ -698,10 +698,14 @@ describe('rmplan add command', () => {
       expect(planExists).toBe(true);
       expect(repositoryDir.includes('token')).toBe(false);
       expect(tasksDirectory.includes('token')).toBe(false);
-      expect(logMessages.some((message) => message.includes('Remote origin: github.example.com/Owner/Repo'))).toBe(
-        true
+      expect(
+        logMessages.some((message) =>
+          message.includes('Remote origin: github.example.com/Owner/Repo')
+        )
+      ).toBe(true);
+      expect(logMessages.some((message) => /super-secret-token|token=abc/.test(message))).toBe(
+        false
       );
-      expect(logMessages.some((message) => /super-secret-token|token=abc/.test(message))).toBe(false);
     } finally {
       process.chdir(originalCwd);
       await fs.rm(repoDir, { recursive: true, force: true });

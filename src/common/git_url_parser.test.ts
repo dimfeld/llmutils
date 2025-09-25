@@ -145,6 +145,22 @@ describe('deriveRepositoryName', () => {
     expect(derived).toBe('github.com__Owner__Repo');
   });
 
+  it('derives names for local filesystem remotes', () => {
+    const parsed = parseGitRemoteUrl('../relative/path/to/repo.git');
+    const derived = deriveRepositoryName(parsed);
+    expect(derived).toBe('segment1__relative__path__to__repo');
+  });
+
+  it('produces distinct truncated names for equivalent remotes', () => {
+    const scp = parseGitRemoteUrl('git@github.com:owner/repo.git');
+    const ssh = parseGitRemoteUrl('ssh://git@github.com/owner/repo.git');
+    const scpDerived = deriveRepositoryName(scp, { maxLength: 16 });
+    const sshDerived = deriveRepositoryName(ssh, { maxLength: 16 });
+    expect(scpDerived).not.toBe(sshDerived);
+    expect(scpDerived.length).toBeLessThanOrEqual(16);
+    expect(sshDerived.length).toBeLessThanOrEqual(16);
+  });
+
   it('derives names from fallback paths with nested segments', () => {
     const derived = deriveRepositoryName(null, { fallbackName: 'clients/acme corp/project one' });
     expect(derived).toBe('clients__acme-corp__project-one');
