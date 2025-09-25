@@ -56,15 +56,40 @@ function formatMinutes(minutes: number): string {
   return parts.filter(Boolean).join(', ');
 }
 
+function shouldWarnRateLimit(rateLimit: RateLimitInfo): boolean {
+  const windowSeconds = rateLimit.window_minutes * 60;
+  if (!Number.isFinite(windowSeconds) || windowSeconds <= 0) {
+    return false;
+  }
+
+  if (rateLimit.used_percent >= 100) {
+    return true;
+  }
+
+  const resetsInSeconds = Number.isFinite(rateLimit.resets_in_seconds)
+    ? rateLimit.resets_in_seconds
+    : windowSeconds;
+  const remainingSeconds = Math.min(windowSeconds, Math.max(0, resetsInSeconds));
+  const elapsedSeconds = windowSeconds - remainingSeconds;
+  if (elapsedSeconds <= 0) {
+    return false;
+  }
+
+  const usageFraction = Math.max(0, rateLimit.used_percent) / 100;
+  const projectedFraction = usageFraction * (windowSeconds / elapsedSeconds);
+  return projectedFraction >= 1;
+}
+
 function formatRateLimit(rateLimit: RateLimitInfo): string {
   // We get values like 299 and 10079 instead of 300 and 10080. Hack to work around that.
   let window_minutes = rateLimit.window_minutes;
   if (window_minutes % 10 === 9) {
     window_minutes += 1;
   }
+  const warning = shouldWarnRateLimit(rateLimit) ? ' ⚠️' : '';
   return `${Math.round(rateLimit.used_percent)}% of ${formatMinutes(window_minutes)} (New in ${formatResetsInSeconds(
     rateLimit.resets_in_seconds
-  )})`;
+  )})${warning}`;
 }
 
 // Known Codex message variants (inside envelope.msg)
