@@ -167,4 +167,98 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     expect(out.failureDetails?.sourceAgent).toBe('orchestrator');
     expect(out.failureDetails?.problems).toContain('X');
   });
+
+  test('adds external repository config directory when using external storage', async () => {
+    const externalDir = '/tmp/rmplan/external-config';
+    const recordedArgs: string[][] = [];
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (args: string[], opts: any) => {
+        recordedArgs.push(args);
+        if (opts && typeof opts.formatStdout === 'function') {
+          opts.formatStdout('{}\n');
+        }
+        return { exitCode: 0 };
+      }),
+      createLineSplitter: () => (_s: string) => [],
+      debug: false,
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock(() => ({})),
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir },
+      {
+        issueTracker: 'github',
+        isUsingExternalStorage: true,
+        externalRepositoryConfigDir: externalDir,
+      } as any
+    );
+
+    await exec.execute('CTX', {
+      planId: 'p1',
+      planTitle: 'Plan',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'normal',
+    });
+
+    expect(recordedArgs).toHaveLength(1);
+    expect(recordedArgs[0]).toContain('--add-dir');
+    expect(recordedArgs[0]).toContain(externalDir);
+  });
+
+  test('does not add external config directory when not using external storage', async () => {
+    const recordedArgs: string[][] = [];
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (args: string[], opts: any) => {
+        recordedArgs.push(args);
+        if (opts && typeof opts.formatStdout === 'function') {
+          opts.formatStdout('{}\n');
+        }
+        return { exitCode: 0 };
+      }),
+      createLineSplitter: () => (_s: string) => [],
+      debug: false,
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock(() => ({})),
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir },
+      {
+        issueTracker: 'github',
+        isUsingExternalStorage: false,
+        externalRepositoryConfigDir: '/tmp/rmplan/external-config',
+      } as any
+    );
+
+    await exec.execute('CTX', {
+      planId: 'p1',
+      planTitle: 'Plan',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'normal',
+    });
+
+    expect(recordedArgs).toHaveLength(1);
+    expect(recordedArgs[0]).not.toContain('--add-dir');
+  });
 });

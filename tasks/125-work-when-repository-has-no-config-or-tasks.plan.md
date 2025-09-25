@@ -13,7 +13,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-09-25T09:16:20.304Z
 createdAt: 2025-09-25T08:58:56.840Z
-updatedAt: 2025-09-25T11:00:59.222Z
+updatedAt: 2025-09-25T11:10:54.410Z
 progressNotes:
   - timestamp: 2025-09-25T10:09:43.140Z
     text: Set up new git URL parsing utilities with filesystem-safe name derivation
@@ -35,6 +35,11 @@ progressNotes:
       loadEffectiveConfig capture external storage metadata and directory
       creation.
     source: "tester: tasks 5-9"
+  - timestamp: 2025-09-25T11:10:54.405Z
+    text: Updated Claude and Codex executors to pass the external config directory
+      when external storage is active and added tests ensuring the new arguments
+      appear only in that mode.
+    source: "implementer: tasks 13-16"
 tasks:
   - title: Create Git URL Parser Module
     done: true
@@ -213,6 +218,8 @@ rmfilter: []
 - Adjusted `resolveTasksDir` to honor external storage mode, normalize relative task paths against the repository config directory, and proactively ensure target directories exist before plan operations run.
 - Added targeted coverage via `src/rmplan/repository_config_resolver.test.ts`, expanded scenarios in `src/rmplan/configLoader.test.ts`, and new `resolveTasksDir` cases in `src/rmplan/configSchema.test.ts` to validate directory creation, metadata propagation, and path resolution for both local and external storage modes.
 - Provided bridge modules (`src/common/git_url_parser.js`, `src/rmplan/repository_config_resolver.js`) alongside the earlier git URL parser work so runtime consumers and the CLI resolve the new implementations without a build step.
+- Updated `ClaudeCodeExecutor` and `CodexCliExecutor` to automatically include the external repository configuration directory in their access arguments (`--add-dir` and sandbox `-c` writable roots) whenever `isUsingExternalStorage` metadata is true, ensuring agents can read/write configs outside the working tree.
+- Added focused executor tests that assert the new arguments appear only when external storage is active, preventing regressions in command construction for both Claude and Codex flows.
 
 # Original Plan Details
 

@@ -456,6 +456,136 @@ describe('CodexCliExecutor - failure detection across agents', () => {
       )
     ).toHaveLength(3);
   });
+
+  test('adds sandbox writable roots when using external storage', async () => {
+    const recordedArgs: string[][] = [];
+    const externalDir = '/tmp/rmplan/external-config';
+    const originalAllowAll = process.env.ALLOW_ALL_TOOLS;
+    process.env.ALLOW_ALL_TOOLS = 'false';
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+      captureRepositoryState: mock(async () => ({ commitHash: 'hash', hasChanges: false })),
+    }));
+
+    await moduleMocker.mock('../plans.ts', () => ({
+      readPlanFile: mock(async () => ({
+        id: 1,
+        title: 'Plan',
+        tasks: [{ title: 'Task', done: false }],
+      })),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (args: string[], opts: any) => {
+        recordedArgs.push(args);
+        if (opts && typeof opts.formatStdout === 'function') opts.formatStdout('ignored');
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }),
+    }));
+
+    await moduleMocker.mock('./codex_cli/format.ts', () => ({
+      createCodexStdoutFormatter: () => ({
+        formatChunk: () => '',
+        getFinalAgentMessage: () => 'FAILED: Implementer hit impossible requirements',
+        getFailedAgentMessage: () => 'FAILED: Implementer hit impossible requirements',
+      }),
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.ts');
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {
+      issueTracker: 'github',
+      isUsingExternalStorage: true,
+      externalRepositoryConfigDir: externalDir,
+    } as any);
+
+    try {
+      await exec.execute('CTX', {
+        planId: '1',
+        planTitle: 'P',
+        planFilePath: `${tempDir}/plan.yml`,
+        executionMode: 'normal',
+        captureOutput: 'result',
+      });
+    } finally {
+      if (originalAllowAll == null) {
+        delete process.env.ALLOW_ALL_TOOLS;
+      } else {
+        process.env.ALLOW_ALL_TOOLS = originalAllowAll;
+      }
+    }
+
+    expect(recordedArgs).toHaveLength(1);
+    const args = recordedArgs[0];
+    expect(args).toContain('--sandbox');
+    expect(args).toContain('-c');
+    expect(args.includes(`sandbox_workspace_write.writable_roots=["${externalDir}"]`)).toBeTrue();
+  });
+
+  test('omits sandbox writable roots when external storage is disabled', async () => {
+    const recordedArgs: string[][] = [];
+    const originalAllowAll = process.env.ALLOW_ALL_TOOLS;
+    process.env.ALLOW_ALL_TOOLS = 'false';
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+      captureRepositoryState: mock(async () => ({ commitHash: 'hash', hasChanges: false })),
+    }));
+
+    await moduleMocker.mock('../plans.ts', () => ({
+      readPlanFile: mock(async () => ({
+        id: 1,
+        title: 'Plan',
+        tasks: [{ title: 'Task', done: false }],
+      })),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (args: string[], opts: any) => {
+        recordedArgs.push(args);
+        if (opts && typeof opts.formatStdout === 'function') opts.formatStdout('ignored');
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }),
+    }));
+
+    await moduleMocker.mock('./codex_cli/format.ts', () => ({
+      createCodexStdoutFormatter: () => ({
+        formatChunk: () => '',
+        getFinalAgentMessage: () => 'FAILED: Implementer hit impossible requirements',
+        getFailedAgentMessage: () => 'FAILED: Implementer hit impossible requirements',
+      }),
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.ts');
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {
+      issueTracker: 'github',
+      isUsingExternalStorage: false,
+    } as any);
+
+    try {
+      await exec.execute('CTX', {
+        planId: '1',
+        planTitle: 'P',
+        planFilePath: `${tempDir}/plan.yml`,
+        executionMode: 'normal',
+        captureOutput: 'result',
+      });
+    } finally {
+      if (originalAllowAll == null) {
+        delete process.env.ALLOW_ALL_TOOLS;
+      } else {
+        process.env.ALLOW_ALL_TOOLS = originalAllowAll;
+      }
+    }
+
+    expect(recordedArgs).toHaveLength(1);
+    const args = recordedArgs[0];
+    expect(args).toContain('--sandbox');
+    expect(args).not.toContain('-c');
+    expect(
+      args.some((value) => value.startsWith('sandbox_workspace_write.writable_roots='))
+    ).toBeFalse();
+  });
 });
 
 test('CodexCliExecutor - parseReviewerVerdict', async () => {

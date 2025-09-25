@@ -694,7 +694,18 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
       : ['--sandbox', 'workspace-write'];
 
     const formatter = createCodexStdoutFormatter();
-    const args = ['codex', '--search', 'exec', ...sandboxSettings, prompt, '--json'];
+    const args = ['codex', '--search', 'exec', ...sandboxSettings];
+
+    if (
+      !allowAllTools &&
+      this.rmplanConfig?.isUsingExternalStorage &&
+      this.rmplanConfig.externalRepositoryConfigDir
+    ) {
+      const writableRoots = JSON.stringify([this.rmplanConfig.externalRepositoryConfigDir]);
+      args.push('-c', `sandbox_workspace_write.writable_roots=${writableRoots}`);
+    }
+
+    args.push(prompt, '--json');
     if (opts.planTool) {
       args.push('--include-plan-tool');
     }

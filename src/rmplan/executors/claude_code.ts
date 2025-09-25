@@ -988,6 +988,18 @@ export class ClaudeCodeExecutor implements Executor {
     try {
       const args = ['claude'];
 
+      const extraAccessDirs = new Set<string>();
+      if (
+        this.rmplanConfig.isUsingExternalStorage &&
+        this.rmplanConfig.externalRepositoryConfigDir
+      ) {
+        extraAccessDirs.add(this.rmplanConfig.externalRepositoryConfigDir);
+      }
+
+      for (const dir of extraAccessDirs) {
+        args.push('--add-dir', dir);
+      }
+
       if (allowedTools.length) {
         args.push('--allowedTools', allowedTools.join(','));
       }
