@@ -187,9 +187,17 @@ export async function buildExecutionPromptWithoutSteps(
 
   // Add task details if provided
   if (task) {
-    const taskSection = buildTaskSection(task);
-    if (taskSection) {
-      promptParts.push(taskSection);
+    if (batchMode) {
+      promptParts.push('## Remaining Tasks\n\n');
+      promptParts.push(
+        task.description ||
+          'Please select and complete a logical subset of the following incomplete tasks that makes sense to work on together'
+      );
+    } else {
+      const taskSection = buildTaskSection(task);
+      if (taskSection) {
+        promptParts.push(taskSection);
+      }
     }
 
     const gitRoot = await getGitRoot(baseDir);
@@ -316,11 +324,7 @@ export function buildProgressNotesSection(planData: PlanSchema): string {
       const withSource = sourcePrefix.length ? `[${sourcePrefix}] ${text}`.trim() : text;
       // Preserve single-line bullets; collapse newlines to spaces to keep prompt compact
       const singleLine = withSource.replace(/\s+/g, ' ').trim();
-      const truncated =
-        singleLine.length > MAX_NOTE_CHARS
-          ? singleLine.slice(0, MAX_NOTE_CHARS - 3) + '...'
-          : singleLine;
-      lines.push(`- ${truncated}`);
+      lines.push(`- ${singleLine}`);
     }
   }
   const hiddenCount = notes.length - latest.length;

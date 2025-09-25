@@ -27,17 +27,22 @@ export function implementationNotesGuidance(planPath: string | undefined) {
 
   return `## Implementation Documentation
 
-After finishing your work, you MUST update the plan file '${planPath}' with detailed implementation notes:
+After finishing your work, you MUST update the plan file '${planPath}' with detailed notes about what you did.
+Place notes in the "# Implemented Functionality Notes" section of the plan file (you can add this at the bottom if it doesn't exist yet).
 
-1. **Add comprehensive notes** describing what was implemented and how it works
-2. **Include technical details** such as:
+Notes must contain:
+1. Comprehensive description of what you implemented and how it works.
+2. The names of the tasks you were working on.
+3. Technical details such as:
+   - Specific files modified
    - Key functions, classes, or components created
    - Important design decisions and their rationale
    - Integration points with existing code
    - Any deviations from the original plan and why
-3. **Document for future maintenance** - write notes that would help someone else understand the implementation months later
-4. **Place notes in the "# Implemented Functionality Notes" section** of the plan file (you can add this at the bottom if it doesn't exist yet)
-5. If existing content in this section is outdated, **update or replace it**
+4. Document for future maintenance - write notes that would help someone else understand the implementation months later
+
+If existing content in this section is outdated, update or replace it. Be verbose and detailed.
+Prefer to write a paragraph instead of a single line.
 
 These notes are crucial for project continuity and help future developers understand the implementation choices made.
 `;
