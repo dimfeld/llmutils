@@ -7,8 +7,8 @@ import { parseTaskIds } from '../utils/id_parser.js';
 import { resolvePlanFile, readPlanFile, writePlanFile, clearPlanCache } from '../plans.js';
 import { generateNumericPlanId } from '../id_utils.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { getGitRoot } from '../../common/git.js';
 import type { PlanSchema } from '../planSchema.js';
+import { resolvePlanPathContext } from '../path_resolver.js';
 
 export async function handlePromoteCommand(taskIds: string[], options: any) {
   if (taskIds.length === 0) {
@@ -41,15 +41,7 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
 
   // Get the tasks directory for generating new plan IDs
   const config = await loadEffectiveConfig(options.config);
-  const gitRoot = (await getGitRoot()) || process.cwd();
-  let tasksDir: string;
-  if (config.paths?.tasks) {
-    tasksDir = path.isAbsolute(config.paths.tasks)
-      ? config.paths.tasks
-      : path.join(gitRoot, config.paths.tasks);
-  } else {
-    tasksDir = gitRoot;
-  }
+  const { tasksDir } = await resolvePlanPathContext(config);
 
   // Process each plan group
   for (const [planId, taskInfo] of tasksByPlan) {

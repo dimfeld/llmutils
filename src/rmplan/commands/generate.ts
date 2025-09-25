@@ -17,7 +17,7 @@ import { log, warn } from '../../logging.js';
 import { findFilesCore, type RmfindOptions } from '../../rmfind/core.js';
 import { argsFromRmprOptions, type RmprOptions } from '../../rmpr/comment_options.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolveTasksDir } from '../configSchema.ts';
+import { resolvePlanPathContext } from '../path_resolver.js';
 import { createModel } from '../../common/model_factory.js';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../llm_utils/run_and_apply.js';
 import { generateNumericPlanId, slugify } from '../id_utils.js';
@@ -58,24 +58,13 @@ import { isURL } from '../context_helpers.ts';
 async function createStubPlanFromText(
   planText: string,
   config: any,
+  paths: { tasksDir: string },
   title?: string,
   issueUrls?: string[]
 ): Promise<{ data: PlanSchema; path: string }> {
-  const gitRoot = (await getGitRoot()) || process.cwd();
+  const targetDir = paths.tasksDir;
 
-  // Determine the target directory for the new plan file
-  let targetDir: string;
-  if (config.paths?.tasks) {
-    if (path.isAbsolute(config.paths.tasks)) {
-      targetDir = config.paths.tasks;
-    } else {
-      targetDir = path.join(gitRoot, config.paths.tasks);
-    }
-  } else {
-    targetDir = process.cwd();
-  }
-
-  // Ensure the target directory exists
+  // Ensure the target directory exists (resolvePlanPathContext already does this but keeping guard)
   await fs.mkdir(targetDir, { recursive: true });
 
   // Generate a unique numeric plan ID
@@ -150,7 +139,8 @@ export async function handleGenerateCommand(
   // - claude: Use Claude Code for two-step planning and generation
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
-  const gitRoot = (await getGitRoot()) || process.cwd();
+  const pathContext = await resolvePlanPathContext(config);
+  const { gitRoot, tasksDir: tasksDirectory } = pathContext;
 
   // Determine effective direct mode setting with precedence:
   // 1. Command-line flag (--direct or --no-direct)
@@ -192,7 +182,7 @@ export async function handleGenerateCommand(
 
   // Handle --next-ready option - find and operate on next ready dependency
   if (options.nextReady) {
-    const tasksDir = await resolveTasksDir(config);
+    const tasksDir = tasksDirectory;
     // Convert string ID to number or resolve plan file to get numeric ID
     let parentPlanId: number;
     const planIdNumber = parseInt(options.nextReady, 10);
@@ -335,7 +325,7 @@ export async function handleGenerateCommand(
       log(chalk.green('✓ Plan copied to clipboard'));
 
       // Create stub plan file with the plan text in details
-      const stubPlanResult = await createStubPlanFromText(planText, config);
+      const stubPlanResult = await createStubPlanFromText(planText, config, pathContext);
       planFile = stubPlanResult.path;
       parsedPlan = stubPlanResult.data;
     } catch (err) {
@@ -355,7 +345,7 @@ export async function handleGenerateCommand(
     issueUrlsForExtract.push(issueResult.issue.html_url);
 
     // Create stub plan file with the issue text in details
-    const stubPlanResult = await createStubPlanFromText(planText, config, undefined, [
+    const stubPlanResult = await createStubPlanFromText(planText, config, pathContext, undefined, [
       issueResult.issue.html_url,
     ]);
     planFile = stubPlanResult.path;
@@ -389,8 +379,7 @@ export async function handleGenerateCommand(
 
       // Add parent plan information if available
       if (stubPlan.data.parent) {
-        const tasksDir = await resolveTasksDir(config);
-        const { plans: allPlans } = await readAllPlans(tasksDir);
+        const { plans: allPlans } = await readAllPlans(tasksDirectory);
         const parentPlan = allPlans.get(stubPlan.data.parent);
         if (parentPlan) {
           planParts.push(

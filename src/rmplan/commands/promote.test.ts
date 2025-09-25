@@ -7,6 +7,7 @@ import { handlePromoteCommand } from './promote.js';
 import { clearPlanCache, readPlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
+import { getDefaultConfig } from '../configSchema.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -225,6 +226,64 @@ describe('handlePromoteCommand', () => {
 
     // Verify logging was called
     expect(logSpy).toHaveBeenCalled();
+  });
+
+  test('writes promoted plans to external storage when configured', async () => {
+    const externalBase = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-promote-external-'));
+    const repositoryConfigDir = path.join(externalBase, 'repositories', 'example');
+    const externalTasksDir = path.join(repositoryConfigDir, 'tasks');
+    await fs.mkdir(externalTasksDir, { recursive: true });
+
+    const config = {
+      ...getDefaultConfig(),
+      paths: undefined,
+      isUsingExternalStorage: true,
+      externalRepositoryConfigDir: repositoryConfigDir,
+      resolvedConfigPath: path.join(repositoryConfigDir, '.rmfilter', 'config', 'rmplan.yml'),
+      repositoryConfigName: 'example',
+      repositoryRemoteUrl: null,
+    };
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: mock(async () => config),
+    }));
+
+    const originalTasksDir = tasksDir;
+    tasksDir = externalTasksDir;
+    try {
+      const originalPlan: PlanSchema = {
+        id: 1,
+        goal: 'External plan',
+        details: 'Plan stored outside repository',
+        status: 'pending',
+        tasks: [
+          {
+            title: 'External task',
+            description: 'Move to new plan',
+            steps: [],
+          },
+        ],
+        dependencies: [],
+      };
+
+      await createPlanFile('1', originalPlan);
+
+      await handlePromoteCommand(['1.1'], {});
+
+      const promotedPlanPath = path.join(externalTasksDir, '2.plan.md');
+      const promotedExists = await fs
+        .access(promotedPlanPath)
+        .then(() => true)
+        .catch(() => false);
+      expect(promotedExists).toBe(true);
+
+      const promotedPlan = await readPlanFile(promotedPlanPath);
+      expect(promotedPlan.id).toBe(2);
+      expect(promotedPlan.title).toBe('External task');
+    } finally {
+      tasksDir = originalTasksDir;
+      await fs.rm(externalBase, { recursive: true, force: true });
+    }
   });
 
   test('should promote all tasks from a plan leaving empty tasks array', async () => {

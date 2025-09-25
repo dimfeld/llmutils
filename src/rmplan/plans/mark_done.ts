@@ -8,6 +8,7 @@ import {
 import { commitAll } from '../../common/process.js';
 import { boldMarkdownHeaders, log, warn } from '../../logging.js';
 import { resolveTasksDir, type RmplanConfig } from '../configSchema.js';
+import { resolveConfiguredTasksPath } from '../path_resolver.js';
 import { clearPlanCache, readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
 import { type PendingTaskResult, findPendingTask, findNextActionableItem } from './find_next.js';
 import type { PlanSchema } from '../planSchema.js';
@@ -123,7 +124,8 @@ export async function markStepDone(
   }
 
   // 5. Update metadata fields
-  const gitRoot = await getGitRoot(baseDir);
+  const gitRoot = (await getGitRoot(baseDir)) || process.cwd();
+  const tasksPath = config ? resolveConfiguredTasksPath(config, gitRoot) : undefined;
 
   // Always update the updatedAt timestamp
   planData.updatedAt = new Date().toISOString();
@@ -132,14 +134,15 @@ export async function markStepDone(
   try {
     // Build exclude paths from config
     const excludePaths: string[] = [];
-    if (config?.paths?.tasks) {
-      // Resolve tasks path relative to git root if it's relative
-      const tasksPath = path.isAbsolute(config.paths.tasks)
-        ? config.paths.tasks
-        : path.join(gitRoot, config.paths.tasks);
-
-      // Make it relative to git root for comparison
-      excludePaths.push(path.relative(gitRoot, tasksPath));
+    if (tasksPath) {
+      const relativeTasksPath = path.relative(gitRoot, tasksPath);
+      if (
+        relativeTasksPath &&
+        !relativeTasksPath.startsWith('..') &&
+        !path.isAbsolute(relativeTasksPath)
+      ) {
+        excludePaths.push(relativeTasksPath);
+      }
     }
 
     const options: GetChangedFilesOptions = {
@@ -249,7 +252,8 @@ export async function markTaskDone(
   }
 
   // 6. Update metadata fields
-  const gitRoot = await getGitRoot(baseDir);
+  const gitRoot = (await getGitRoot(baseDir)) || process.cwd();
+  const tasksPath = config ? resolveConfiguredTasksPath(config, gitRoot) : undefined;
 
   // Always update the updatedAt timestamp
   planData.updatedAt = new Date().toISOString();
@@ -258,14 +262,15 @@ export async function markTaskDone(
   try {
     // Build exclude paths from config
     const excludePaths: string[] = [];
-    if (config?.paths?.tasks) {
-      // Resolve tasks path relative to git root if it's relative
-      const tasksPath = path.isAbsolute(config.paths.tasks)
-        ? config.paths.tasks
-        : path.join(gitRoot, config.paths.tasks);
-
-      // Make it relative to git root for comparison
-      excludePaths.push(path.relative(gitRoot, tasksPath));
+    if (tasksPath) {
+      const relativeTasksPath = path.relative(gitRoot, tasksPath);
+      if (
+        relativeTasksPath &&
+        !relativeTasksPath.startsWith('..') &&
+        !path.isAbsolute(relativeTasksPath)
+      ) {
+        excludePaths.push(relativeTasksPath);
+      }
     }
 
     const options: GetChangedFilesOptions = {
@@ -391,7 +396,8 @@ export async function setTaskDone(
   }
 
   // 6. Update metadata fields
-  const gitRoot = await getGitRoot(baseDir);
+  const gitRoot = (await getGitRoot(baseDir)) || process.cwd();
+  const tasksPath = config ? resolveConfiguredTasksPath(config, gitRoot) : undefined;
 
   // Always update the updatedAt timestamp
   planData.updatedAt = new Date().toISOString();
@@ -400,14 +406,15 @@ export async function setTaskDone(
   try {
     // Build exclude paths from config
     const excludePaths: string[] = [];
-    if (config?.paths?.tasks) {
-      // Resolve tasks path relative to git root if it's relative
-      const tasksPath = path.isAbsolute(config.paths.tasks)
-        ? config.paths.tasks
-        : path.join(gitRoot, config.paths.tasks);
-
-      // Make it relative to git root for comparison
-      excludePaths.push(path.relative(gitRoot, tasksPath));
+    if (tasksPath) {
+      const relativeTasksPath = path.relative(gitRoot, tasksPath);
+      if (
+        relativeTasksPath &&
+        !relativeTasksPath.startsWith('..') &&
+        !path.isAbsolute(relativeTasksPath)
+      ) {
+        excludePaths.push(relativeTasksPath);
+      }
     }
 
     const options: GetChangedFilesOptions = {

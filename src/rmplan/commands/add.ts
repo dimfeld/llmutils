@@ -5,13 +5,13 @@ import * as path from 'path';
 import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
 import { log } from '../../logging.js';
-import { getGitRoot } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { generateNumericPlanId, slugify } from '../id_utils.js';
 import { writePlanFile, readAllPlans, readPlanFile } from '../plans.js';
 import { prioritySchema, statusSchema, type PlanSchema } from '../planSchema.js';
 import { needArrayOrUndefined } from '../../common/cli.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
+import { resolvePlanPathContext } from '../path_resolver.js';
 
 export async function handleAddCommand(title: string[], options: any, command: any) {
   const globalOpts = command.parent.opts();
@@ -23,18 +23,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
   const config = await loadEffectiveConfig(globalOpts.config);
 
   // Determine the target directory for the new plan file
-  let targetDir: string;
-  if (config.paths?.tasks) {
-    if (path.isAbsolute(config.paths.tasks)) {
-      targetDir = config.paths.tasks;
-    } else {
-      // Resolve relative to git root
-      const gitRoot = (await getGitRoot()) || process.cwd();
-      targetDir = path.join(gitRoot, config.paths.tasks);
-    }
-  } else {
-    targetDir = process.cwd();
-  }
+  const { tasksDir: targetDir } = await resolvePlanPathContext(config);
 
   // Ensure the target directory exists
   await fs.mkdir(targetDir, { recursive: true });

@@ -4,13 +4,13 @@
 import * as path from 'path';
 import chalk from 'chalk';
 import { log } from '../../logging.js';
-import { getGitRoot } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { generateNumericPlanId, slugify } from '../id_utils.js';
 import { writePlanFile, readAllPlans } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import type { ReviewIssue } from '../formatters/review_formatter.js';
+import { resolvePlanPathContext } from '../path_resolver.js';
 
 export interface CleanupPlanOptions {
   title?: string;
@@ -42,18 +42,7 @@ export async function createCleanupPlan(
   const config = await loadEffectiveConfig(globalOpts.config);
 
   // Determine the target directory for the new plan file
-  let targetDir: string;
-  if (config.paths?.tasks) {
-    if (path.isAbsolute(config.paths.tasks)) {
-      targetDir = config.paths.tasks;
-    } else {
-      // Resolve relative to git root
-      const gitRoot = (await getGitRoot()) || process.cwd();
-      targetDir = path.join(gitRoot, config.paths.tasks);
-    }
-  } else {
-    targetDir = process.cwd();
-  }
+  const { tasksDir: targetDir } = await resolvePlanPathContext(config);
 
   // Load all plans to find the referenced plan and avoid race conditions
   const { plans: allPlans } = await readAllPlans(targetDir);

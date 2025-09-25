@@ -1,4 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { handleImportCommand } from './import.js';
 import { ModuleMocker } from '../../../testing.js';
 import type { PlanSchema, PlanSchemaInput } from '../../planSchema.js';
@@ -78,12 +81,8 @@ const mockIssueTracker: IssueTrackerClient = {
   getConfig: mock(() => ({ type: 'github' })),
 };
 
-const mockConfig = {
-  issueTracker: 'github',
-  paths: {
-    tasks: 'tasks',
-  },
-};
+let mockConfig: any;
+let gitRootDir: string;
 
 const mockPlansResult = {
   plans: new Map(),
@@ -133,6 +132,14 @@ const mockLinearIssueTracker: IssueTrackerClient = {
 
 describe('handleImportCommand', () => {
   beforeEach(async () => {
+    gitRootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-import-unit-'));
+    mockConfig = {
+      issueTracker: 'github',
+      paths: {
+        tasks: 'tasks',
+      },
+    };
+
     // Mock all the dependencies
     await moduleMocker.mock('../../issue_utils.js', () => ({
       getInstructionsFromIssue: mock(() => Promise.resolve(mockIssueData)),
@@ -167,7 +174,7 @@ describe('handleImportCommand', () => {
     }));
 
     await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: mock(() => Promise.resolve('/test/git/root')),
+      getGitRoot: mock(() => Promise.resolve(gitRootDir)),
     }));
 
     await moduleMocker.mock('../../../logging.js', () => ({
@@ -192,7 +199,8 @@ describe('handleImportCommand', () => {
   });
 
   afterEach(async () => {
-    return moduleMocker.clear();
+    moduleMocker.clear();
+    await fs.rm(gitRootDir, { recursive: true, force: true });
   });
 
   test('should import a single issue when --issue flag is provided', async () => {
@@ -466,7 +474,7 @@ describe('handleImportCommand', () => {
 
     const mockPlansWithExisting = {
       plans: new Map([
-        [3, { ...existingPlan, filename: '/test/git/root/tasks/issue-123-test-issue.yml' }],
+        [3, { ...existingPlan, filename: path.join(gitRootDir, 'tasks', 'issue-123-test-issue.yml') }],
       ]),
       maxNumericId: 5,
       duplicates: {},
@@ -543,7 +551,7 @@ describe('handleImportCommand', () => {
 
     const [filePath, planData] = (writePlanFile as any).mock.calls[0];
 
-    expect(filePath).toBe('/test/git/root/tasks/issue-123-test-issue.yml');
+    expect(filePath).toBe(path.join(gitRootDir, 'tasks', 'issue-123-test-issue.yml'));
     expect(planData).toMatchObject({
       id: 3, // Preserves existing ID
       title: 'Test Issue', // Updated from issue
@@ -569,7 +577,7 @@ describe('handleImportCommand', () => {
     expect(writePlanFile).toHaveBeenCalled();
     const [filePath, planData] = (writePlanFile as any).mock.calls[0];
 
-    expect(filePath).toBe('/test/git/root/tasks/6-issue-123-test-issue.plan.md');
+    expect(filePath).toBe(path.join(gitRootDir, 'tasks', '6-issue-123-test-issue.plan.md'));
     expect(planData).toMatchObject({
       id: 6, // maxId + 1
       title: 'Test Issue',
@@ -593,7 +601,7 @@ describe('handleImportCommand', () => {
       details: 'This is a test issue description', // Same as issue body so no new content
       issue: ['https://github.com/owner/repo/issues/123'], // Same URL as mockIssueData
       tasks: [],
-      filename: '/test/git/root/tasks/existing-plan.yml',
+      filename: path.join(gitRootDir, 'tasks', 'existing-plan.yml'),
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-01T00:00:00Z',
     };
@@ -727,7 +735,7 @@ describe('handleImportCommand', () => {
       expect(writePlanFile).toHaveBeenCalled();
 
       const [filePath, planData] = (writePlanFile as any).mock.calls[0];
-      expect(filePath).toBe('/test/git/root/tasks/6-issue-team-123-linear-issue.plan.md');
+      expect(filePath).toBe(path.join(gitRootDir, 'tasks', '6-issue-team-123-linear-issue.plan.md'));
       expect(planData).toMatchObject({
         id: 6,
         title: 'Linear Issue',

@@ -13,7 +13,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-09-25T09:16:20.304Z
 createdAt: 2025-09-25T08:58:56.840Z
-updatedAt: 2025-09-25T12:00:32.494Z
+updatedAt: 2025-09-25T12:28:18.615Z
 progressNotes:
   - timestamp: 2025-09-25T10:09:43.140Z
     text: Set up new git URL parsing utilities with filesystem-safe name derivation
@@ -40,6 +40,15 @@ progressNotes:
       when external storage is active and added tests ensuring the new arguments
       appear only in that mode.
     source: "implementer: tasks 13-16"
+  - timestamp: 2025-09-25T12:19:48.805Z
+    text: Created shared path_resolver helpers for plan directories and swapped
+      add/promote/generate/import/renumber flows to use them so tasks now
+      resolve into external storage correctly.
+    source: "implementer: tasks 10-11"
+  - timestamp: 2025-09-25T12:28:18.610Z
+    text: Updated add/promote/import suites plus new path_resolver coverage to
+      exercise external storage flows and confirmed success with `bun test`.
+    source: "tester: tasks 10-11"
 tasks:
   - title: Create Git URL Parser Module
     done: true
@@ -227,6 +236,9 @@ rmfilter: []
 - Provided bridge modules (`src/common/git_url_parser.js`, `src/rmplan/repository_config_resolver.js`) alongside the earlier git URL parser work so runtime consumers and the CLI resolve the new implementations without a build step.
 - Updated `ClaudeCodeExecutor` and `CodexCliExecutor` to automatically include the external repository configuration directory in their access arguments (`--add-dir` and sandbox `-c` writable roots) whenever `isUsingExternalStorage` metadata is true, ensuring agents can read/write configs outside the working tree.
 - Added focused executor tests that assert the new arguments appear only when external storage is active, preventing regressions in command construction for both Claude and Codex flows.
+- Introduced `path_resolver` helper utilities that compute git-aware task directories and configuration roots, providing a single source of truth for external storage resolution.
+- Refactored plan operations (`rmplan add`, `generate`, `promote`, hierarchical imports, cleanup utilities, renumbering, and mark-done flows) to consume the shared helpers so plan files always land in the external repository directory when required.
+- Expanded automated coverage with `path_resolver.test.ts` and new external-storage scenarios across add/promote/import unit and integration suites, ensuring command behavior remains stable in both local and external modes.
 
 # Original Plan Details
 
@@ -872,3 +884,6 @@ Some areas still use `process.cwd()` directly
 - Adjusted `resolveTasksDir` to honor external storage mode, normalize relative task paths against the repository config directory, and proactively ensure target directories exist before plan operations run.
 - Added targeted coverage via `src/rmplan/repository_config_resolver.test.ts`, expanded scenarios in `src/rmplan/configLoader.test.ts`, and new `resolveTasksDir` cases in `src/rmplan/configSchema.test.ts` to validate directory creation, metadata propagation, and path resolution for both local and external storage modes.
 - Provided bridge modules (`src/common/git_url_parser.js`, `src/rmplan/repository_config_resolver.js`) alongside the earlier git URL parser work so runtime consumers and the CLI resolve the new implementations without a build step.
+- Introduced `path_resolver` helper utilities that compute git-aware task directories and configuration roots, providing a single source of truth for external storage resolution.
+- Refactored plan operations (`rmplan add`, `generate`, `promote`, hierarchical imports, cleanup utilities, renumbering, and mark-done flows) to consume the shared helpers so plan files always land in the external repository directory when required.
+- Expanded automated coverage with `path_resolver.test.ts` and new external-storage scenarios across add/promote/import unit and integration suites, ensuring command behavior remains stable in both local and external modes.

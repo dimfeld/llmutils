@@ -7,6 +7,7 @@ import { debugLog, warn } from '../logging.js';
 import { getGitRoot, getTrunkBranch, getUsingJj } from '../common/git.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { resolveTasksDir } from './configSchema.js';
+import { resolvePlanPathContext } from './path_resolver.js';
 import { phaseSchema, type PlanSchema, type PlanSchemaInput } from './planSchema.js';
 import { createModel } from '../common/model_factory.js';
 import { generateText } from 'ai';
@@ -756,16 +757,7 @@ export async function findBranchSpecificPlan(
   configPath?: string
 ): Promise<(PlanSchema & { filename: string }) | null> {
   const config = await loadEffectiveConfig(configPath);
-  const gitRoot = await getGitRoot();
-
-  let tasksDir: string;
-  if (config.paths?.tasks) {
-    tasksDir = path.isAbsolute(config.paths.tasks)
-      ? config.paths.tasks
-      : path.join(gitRoot, config.paths.tasks);
-  } else {
-    tasksDir = gitRoot;
-  }
+  const { gitRoot, tasksDir } = await resolvePlanPathContext(config);
 
   // Get plan files that are new on this branch
   const newPlanFiles = await getNewPlanFilesOnBranch(gitRoot, tasksDir);

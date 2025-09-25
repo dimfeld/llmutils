@@ -1,6 +1,9 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { handleImportCommand } from './import.js';
 import { ModuleMocker } from '../../../testing.js';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import type { PlanSchema } from '../../planSchema.js';
 import type {
   IssueTrackerClient,
@@ -77,12 +80,8 @@ const mockLinearIssueTracker: IssueTrackerClient = {
   getConfig: mock(() => ({ type: 'linear' })),
 };
 
-const mockConfig = {
-  issueTracker: 'linear',
-  paths: {
-    tasks: 'tasks',
-  },
-};
+let mockConfig: any;
+let gitRootDir: string;
 
 const mockPlansResult = {
   plans: new Map(),
@@ -92,6 +91,14 @@ const mockPlansResult = {
 
 describe('Hierarchical Linear Import', () => {
   beforeEach(async () => {
+    gitRootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-import-hier-'));
+    mockConfig = {
+      issueTracker: 'linear',
+      paths: {
+        tasks: 'tasks',
+      },
+    };
+
     // Mock all dependencies
     await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(mockLinearIssueTracker)),
@@ -110,7 +117,7 @@ describe('Hierarchical Linear Import', () => {
     }));
 
     await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: mock(() => Promise.resolve('/test/git/root')),
+      getGitRoot: mock(() => Promise.resolve(gitRootDir)),
     }));
 
     await moduleMocker.mock('../../../logging.js', () => ({
@@ -192,7 +199,8 @@ describe('Hierarchical Linear Import', () => {
   });
 
   afterEach(async () => {
-    return moduleMocker.clear();
+    moduleMocker.clear();
+    await fs.rm(gitRootDir, { recursive: true, force: true });
   });
 
   test('should import Linear issue with children when --with-subissues flag is provided', async () => {

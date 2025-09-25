@@ -1,14 +1,17 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, mock } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
 import { readPlanFile } from '../plans.js';
+import { ModuleMocker } from '../../testing.js';
+import { getDefaultConfig } from '../configSchema.js';
 import { handleAddCommand } from './add.js';
 
 describe('rmplan add command', () => {
   let tempDir: string;
   let tasksDir: string;
+  const moduleMocker = new ModuleMocker(import.meta);
 
   beforeEach(async () => {
     // Create temporary directory structure
@@ -27,6 +30,10 @@ describe('rmplan add command', () => {
         },
       })
     );
+  });
+
+  afterEach(async () => {
+    moduleMocker.clear();
   });
 
   test('creates plan with numeric ID when no plans exist', async () => {
@@ -169,6 +176,44 @@ describe('rmplan add command', () => {
     const plan = await readPlanFile(planPath);
     expect(plan.id).toBe(6);
     expect(plan.title).toBe('Another Plan');
+  });
+
+  test('creates plan within external storage when repository uses external config', async () => {
+    const externalBase = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-add-external-'));
+    const repositoryConfigDir = path.join(externalBase, 'repositories', 'example');
+    const externalTasksDir = path.join(repositoryConfigDir, 'tasks');
+    await fs.mkdir(externalTasksDir, { recursive: true });
+
+    const config = {
+      ...getDefaultConfig(),
+      paths: undefined,
+      isUsingExternalStorage: true,
+      externalRepositoryConfigDir: repositoryConfigDir,
+      resolvedConfigPath: path.join(repositoryConfigDir, '.rmfilter', 'config', 'rmplan.yml'),
+      repositoryConfigName: 'example',
+      repositoryRemoteUrl: null,
+    };
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: mock(async () => config),
+    }));
+
+    const command = {
+      parent: {
+        opts: () => ({})
+      }
+    };
+
+    await handleAddCommand(['External', 'Plan'], {}, command);
+
+    const createdPath = path.join(externalTasksDir, '1-external-plan.plan.md');
+    const exists = await fs
+      .access(createdPath)
+      .then(() => true)
+      .catch(() => false);
+    expect(exists).toBe(true);
+
+    await fs.rm(externalBase, { recursive: true, force: true });
   });
 
   test('handles multi-word titles correctly', async () => {

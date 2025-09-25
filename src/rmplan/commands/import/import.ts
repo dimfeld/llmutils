@@ -14,7 +14,7 @@ import {
   getImportedIssueUrls,
 } from '../../plans.js';
 import { loadEffectiveConfig } from '../../configLoader.js';
-import { getGitRoot } from '../../../common/git.js';
+import { resolvePlanPathContext } from '../../path_resolver.js';
 import {
   createStubPlanFromIssue,
   getInstructionsFromIssue,
@@ -496,19 +496,10 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
 
   // Get configuration and tasks directory
   const config = await loadEffectiveConfig();
-  const gitRoot = (await getGitRoot()) || process.cwd();
+  const { tasksDir } = await resolvePlanPathContext(config);
 
   // Get the issue tracker client
   const issueTracker = await getIssueTracker(config);
-
-  let tasksDir: string;
-  if (config.paths?.tasks) {
-    tasksDir = path.isAbsolute(config.paths.tasks)
-      ? config.paths.tasks
-      : path.join(gitRoot, config.paths.tasks);
-  } else {
-    tasksDir = gitRoot;
-  }
 
   if (!issueSpecifier) {
     // Interactive mode: fetch all open issues and let user select multiple

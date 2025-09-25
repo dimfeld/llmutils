@@ -4,7 +4,8 @@ import yaml from 'yaml';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
-import { getGitRoot, getCurrentBranchName, getChangedFilesOnBranch } from '../../common/git.js';
+import { getCurrentBranchName, getChangedFilesOnBranch } from '../../common/git.js';
+import { resolvePlanPathContext } from '../path_resolver.js';
 import { debugLog, log } from '../../logging.js';
 
 /**
@@ -643,7 +644,8 @@ export function reassignFamilyIds(
 export async function handleRenumber(options: RenumberOptions, command: RenumberCommand) {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
-  const gitRoot = (await getGitRoot()) || process.cwd();
+  const pathContext = await resolvePlanPathContext(config);
+  const { gitRoot, tasksDir: tasksDirectory } = pathContext;
 
   // Detect current branch and determine if we should use branch-based preference
   const currentBranch = await getCurrentBranchName(gitRoot);
@@ -681,15 +683,6 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
       );
       // Continue with normal logic if git operations fail
     }
-  }
-
-  let tasksDirectory: string;
-  if (config.paths?.tasks) {
-    tasksDirectory = path.isAbsolute(config.paths.tasks)
-      ? config.paths.tasks
-      : path.join(gitRoot, config.paths.tasks);
-  } else {
-    tasksDirectory = gitRoot;
   }
 
   log('Scanning for plans that need renumbering...');

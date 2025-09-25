@@ -1,10 +1,14 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { handleImportCommand } from './import.js';
 import { ModuleMocker } from '../../../testing.js';
 import type { IssueTrackerClient, IssueWithComments } from '../../../common/issue_tracker/types.js';
 import type { Issue } from '@linear/sdk';
 
 const moduleMocker = new ModuleMocker(import.meta);
+let gitRootDir: string;
 
 // Mock Linear-style issue data
 const mockLinearIssueWithComments: IssueWithComments = {
@@ -149,6 +153,8 @@ const mockGitHubIssueData = {
 
 describe('handleImportCommand Integration Tests', () => {
   beforeEach(async () => {
+    gitRootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-import-int-'));
+
     // Mock common dependencies
     await moduleMocker.mock('../../plans.js', () => ({
       readAllPlans: mock(() => Promise.resolve(mockPlansResult)),
@@ -159,7 +165,7 @@ describe('handleImportCommand Integration Tests', () => {
     }));
 
     await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: mock(() => Promise.resolve('/test/git/root')),
+      getGitRoot: mock(() => Promise.resolve(gitRootDir)),
     }));
 
     await moduleMocker.mock('../../../logging.js', () => ({
@@ -207,7 +213,8 @@ describe('handleImportCommand Integration Tests', () => {
   });
 
   afterEach(async () => {
-    return moduleMocker.clear();
+    moduleMocker.clear();
+    await fs.rm(gitRootDir, { recursive: true, force: true });
   });
 
   test('should work with Linear configuration', async () => {
@@ -251,7 +258,11 @@ describe('handleImportCommand Integration Tests', () => {
     });
 
     expect(log).toHaveBeenCalledWith(
-      'Created stub plan file: /test/git/root/tasks/6-linear-123-linear-issue-example.plan.md'
+      `Created stub plan file: ${path.join(
+        gitRootDir,
+        'tasks',
+        '6-linear-123-linear-issue-example.plan.md'
+      )}`
     );
   });
 
@@ -296,7 +307,11 @@ describe('handleImportCommand Integration Tests', () => {
     });
 
     expect(log).toHaveBeenCalledWith(
-      'Created stub plan file: /test/git/root/tasks/6-issue-456-github-issue-example.plan.md'
+      `Created stub plan file: ${path.join(
+        gitRootDir,
+        'tasks',
+        '6-issue-456-github-issue-example.plan.md'
+      )}`
     );
   });
 
