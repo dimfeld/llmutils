@@ -32,8 +32,16 @@ interface TokenUsage {
 }
 
 function formatResetsInSeconds(seconds: number): string {
+  const days = Math.floor(seconds / 86400);
+  seconds -= days * 86400;
   const hours = Math.floor(seconds / 3600);
+  seconds -= hours * 3600;
+  if (days > 1) {
+    return [`${days}d`, hours ? `${hours}h` : ''].filter(Boolean).join(' ');
+  }
+
   if (hours > 1) {
+    // if hours is 2 or more just ignore minutes
     return `${hours}h`;
   }
 
