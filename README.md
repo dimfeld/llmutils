@@ -73,6 +73,7 @@ This project assumes you have these tools installed:
 - [fzf](https://github.com/junegunn/fzf) (for rmfind)
 - [bat](https://github.com/sharkdp/bat) (for rmfind and rmrun)
 - [claude Code](https://github.com/anthropics/claude-code) (optional, for Claude Code support)
+- [OpenAI Codex](https://github.com/openai/codex) (optional, for Codex support)
 
 ### Build Instructions
 
@@ -1324,6 +1325,8 @@ The executor system in rmplan provides a flexible way to execute plan steps with
 - **CopyOnlyExecutor**: Just copies the prompt to the clipboard without applying any edits.
 
 - **ClaudeCodeExecutor**: Executes the plan using Claude Code CLI, providing an agent-based approach that can read files, apply edits, and run commands directly.
+
+- **CodexCliExecutor**: Integrates the Codex CLI with a implement/test/review loop and adds rmplan safeguards like planning-only auto-retries.
 
 To specify an executor, use the `--executor` option:
 
