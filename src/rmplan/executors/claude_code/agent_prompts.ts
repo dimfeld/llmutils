@@ -210,7 +210,7 @@ export function getReviewerPrompt(
   const progressNotesSection = progressNotesGuidance(planId);
   const formattedProgressNotes = progressNotesSection ? `\n${progressNotesSection}\n` : '\n';
   const subagentDirective = useSubagents
-    ? 'CRITICAL: Use the available sub-agents to delegate in-depth analysis, run tests, and cross-check findings before delivering your final verdict.\n\n'
+    ? 'CRITICAL: Use the available sub-agents to delegate in-depth analysis, run tests, and create findings before delivering your final verdict.\n\n'
     : '';
 
   return {
