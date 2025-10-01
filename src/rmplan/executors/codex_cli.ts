@@ -694,7 +694,16 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
       : ['--sandbox', 'workspace-write'];
 
     const formatter = createCodexStdoutFormatter();
-    const args = ['codex', '--search', 'exec', ...sandboxSettings];
+    const args = [
+      'codex',
+      '--search',
+      'exec',
+      // For the types of tasks we're doing we already want high.
+      // Make this configurable in the future
+      '-c',
+      'model_reasoning_effort=high',
+      ...sandboxSettings,
+    ];
 
     if (
       !allowAllTools &&
