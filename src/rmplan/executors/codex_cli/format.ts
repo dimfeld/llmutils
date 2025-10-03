@@ -45,7 +45,7 @@ function formatResetsInSeconds(seconds: number): string {
     return `${hours}h`;
   }
 
-  const minutes = Math.floor((seconds - hours * 3600) / 60);
+  const minutes = Math.floor(seconds / 60);
   return `${hours}h ${minutes}m`;
 }
 

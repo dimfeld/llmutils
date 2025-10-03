@@ -694,11 +694,12 @@ describe('prompt_builder', () => {
           '\n## Plan File\n\n- @/format-batch-plan.yml: This is the plan file '
         );
 
-        // Verify it appears after the task section
-        const taskSectionIndex = result.indexOf('## Task: Batch Processing Format');
+        // Verify it appears after the task section (batch mode uses Remaining Tasks header)
+        const taskSectionIndex = result.indexOf('## Remaining Tasks');
         const planFileIndex = result.indexOf('## Plan File');
         expect(taskSectionIndex).toBeLessThan(planFileIndex);
         expect(taskSectionIndex).toBeGreaterThan(-1);
+        expect(result).toContain('Test format and content');
         expect(planFileIndex).toBeGreaterThan(-1);
       });
     });

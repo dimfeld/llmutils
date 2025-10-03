@@ -122,7 +122,7 @@ tasks:
     // Verify prompt includes batch mode plan file reference
     expect(prompt).toContain('## Plan File');
     expect(prompt).toContain('@/tasks/batch-test-plan.yml: This is the plan file ');
-    expect(prompt).toContain('## Task: Batch Processing Implementation');
+    expect(prompt).toContain('## Remaining Tasks');
     expect(prompt).toContain('Execute multiple tasks in batch mode');
 
     // Create plan info for batch mode
@@ -154,7 +154,7 @@ tasks:
       new RegExp(`^@${planFilePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n\\n`)
     );
     expect(orchestratedContent).toContain('## Plan File');
-    expect(orchestratedContent).toContain('## Task: Batch Processing Implementation');
+    expect(orchestratedContent).toContain('## Remaining Tasks');
   });
 
   test('batch mode detection works correctly in integration', async () => {
@@ -482,7 +482,7 @@ tasks:
     // Verify all components are included
     expect(result).toContain('# Project Goal: Overall Project Goal');
     expect(result).toContain('# Current Phase Goal: Phase Goal');
-    expect(result).toContain('## Task: Complex Batch Processing');
+    expect(result).toContain('## Remaining Tasks');
     expect(result).toContain('Execute complex batch mode operations');
     expect(result).toContain('## Plan File');
     expect(result).toContain('@/complex-plan.yml: This is the plan file ');

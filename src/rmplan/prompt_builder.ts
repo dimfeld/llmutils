@@ -324,7 +324,11 @@ export function buildProgressNotesSection(planData: PlanSchema): string {
       const withSource = sourcePrefix.length ? `[${sourcePrefix}] ${text}`.trim() : text;
       // Preserve single-line bullets; collapse newlines to spaces to keep prompt compact
       const singleLine = withSource.replace(/\s+/g, ' ').trim();
-      lines.push(`- ${singleLine}`);
+      let truncated = singleLine;
+      if (truncated.length > MAX_NOTE_CHARS) {
+        truncated = truncated.slice(0, Math.max(0, MAX_NOTE_CHARS - 3)) + '...';
+      }
+      lines.push(`- ${truncated}`);
     }
   }
   const hiddenCount = notes.length - latest.length;

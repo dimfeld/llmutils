@@ -358,6 +358,10 @@ export function parseReviewerOutput(rawOutput: string): {
         }
       }
 
+      if (/^#{1,6}\s/.test(headerContent)) {
+        continue;
+      }
+
       const remainingLines = block.lines.slice(headerInfo.idx + 1);
       const issueContentLines = [headerContent, ...remainingLines];
       let issueContent = issueContentLines.join('\n').trim();
