@@ -895,6 +895,9 @@ async function appendIssuesToPlanTasks(
   }
 
   if (appendedCount > 0) {
+    if (planData.status === 'done') {
+      planData.status = 'in_progress';
+    }
     await writePlanFile(planFilePath, planData);
   }
 
