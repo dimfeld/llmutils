@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { createLineSplitter, debug as processDebug } from '../../../common/process.ts';
+import { createLineSplitter } from '../../../common/process.ts';
 import { formatTodoLikeLines } from '../shared/todo_format.ts';
 import { debugLog } from '../../../logging.ts';
 
@@ -29,6 +29,71 @@ interface TokenUsage {
   output_tokens: number;
   reasoning_output_tokens: number;
   total_tokens: number;
+}
+
+interface CodexOutUsage {
+  input_tokens?: number | null;
+  cached_input_tokens?: number | null;
+  output_tokens?: number | null;
+  reasoning_tokens?: number | null;
+  total_tokens?: number | null;
+  [key: string]: unknown;
+}
+
+interface CodexOutTodoItem {
+  text?: string | null;
+  completed?: boolean | null;
+  status?: string | null;
+  priority?: string | null;
+  [key: string]: unknown;
+}
+
+interface CodexOutItem {
+  id?: string | number | null;
+  item_type?: string | null;
+  type?: string | null;
+  text?: string | null;
+  items?: CodexOutTodoItem[] | null;
+  command?: string | string[] | null;
+  aggregated_output?: string | null;
+  formatted_output?: string | null;
+  stdout?: string | null;
+  stderr?: string | null;
+  chunk?: string | null;
+  encoding?: 'base64' | 'utf8' | string | null;
+  exit_code?: number | null;
+  status?: string | null;
+  cwd?: string | null;
+  unified_diff?: string | null;
+  diff?: string | null;
+  changes?: Record<string, unknown> | null;
+  auto_approved?: boolean | null;
+  [key: string]: unknown;
+}
+
+type CodexOutEventType =
+  | 'thread.started'
+  | 'turn.started'
+  | 'turn.completed'
+  | 'item.started'
+  | 'item.updated'
+  | 'item.completed'
+  | 'item.delta'
+  | string;
+
+interface CodexOutMessage {
+  type?: CodexOutEventType;
+  item?: CodexOutItem | null;
+  usage?: CodexOutUsage | null;
+  rate_limits?: {
+    primary?: RateLimitInfo | null;
+    secondary?: RateLimitInfo | null;
+    [key: string]: unknown;
+  } | null;
+  thread_id?: string | null;
+  session_id?: string | null;
+  sessionId?: string | null;
+  [key: string]: unknown;
 }
 
 function formatResetsInSeconds(seconds: number): string {
@@ -207,24 +272,436 @@ function tryFormatInitial(lineObj: CodexEnvelope): FormattedCodexMessage | undef
   return undefined;
 }
 
-export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage {
-  try {
-    if (!jsonLine || jsonLine.trim() === '') return { type: '' };
-    debugLog(`codex: `, jsonLine);
-    const obj = JSON.parse(jsonLine) as CodexEnvelope<CodexMessage>;
+function isCodexOutMessage(value: unknown): value is CodexOutMessage {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const maybeMessage = value as Record<string, unknown>;
+  if ('msg' in maybeMessage) {
+    return false;
+  }
 
-    // Initial line without msg
-    const initial = tryFormatInitial(obj);
-    if (initial) return initial;
+  if (typeof maybeMessage.type !== 'string') {
+    return false;
+  }
 
-    const msg = obj.msg;
-    if (msg == null || typeof msg !== 'object' || !('type' in msg)) {
-      return { type: 'unknown' };
+  return true;
+}
+
+type HeaderColor = (text: string) => string;
+
+function formatHeader(
+  label: string,
+  ts: string,
+  color: HeaderColor,
+  item?: CodexOutItem | null
+): string {
+  const id = item?.id;
+  const idTag = typeof id === 'string' || typeof id === 'number' ? ` ${chalk.gray(`[${id}]`)}` : '';
+  return color(`### ${label} [${ts}]${idTag}`);
+}
+
+function detectFailure(text: string | null | undefined): boolean {
+  if (!text) return false;
+  const firstContentLine = text
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .find((line) => line.trim().length > 0);
+  if (!firstContentLine) {
+    return false;
+  }
+
+  return /^\s*FAILED:\s*/.test(firstContentLine);
+}
+
+function ensureTodoItems(items: CodexOutTodoItem[] | null | undefined): CodexOutTodoItem[] {
+  return Array.isArray(items) ? items : [];
+}
+
+function resolveItemType(item: CodexOutItem | null | undefined): string {
+  if (!item) return 'unknown';
+  const type = item.item_type ?? item.type;
+  return typeof type === 'string' && type.length > 0 ? type : 'unknown';
+}
+
+function normalizeCommand(command: string | string[] | null | undefined): string | undefined {
+  if (typeof command === 'string') {
+    return command;
+  }
+  if (Array.isArray(command)) {
+    return command.map((part) => String(part)).join(' ');
+  }
+  return undefined;
+}
+
+function formatReasoningItem(
+  eventType: 'item.started' | 'item.updated' | 'item.completed',
+  item: CodexOutItem | null | undefined,
+  ts: string
+): FormattedCodexMessage {
+  const text = (item?.text ?? '') || '';
+  const headerLabel =
+    eventType === 'item.started'
+      ? 'Thinking'
+      : eventType === 'item.updated'
+        ? 'Thinking Update'
+        : 'Agent Message';
+  const headerColor = eventType === 'item.completed' ? chalk.bold.green : chalk.blue;
+  const header = formatHeader(headerLabel, ts, headerColor, item);
+  const message = text ? `${header}\n\n${text}` : header;
+
+  const formatted: FormattedCodexMessage = {
+    type: eventType,
+    message,
+  };
+
+  if (eventType === 'item.completed' && text) {
+    formatted.agentMessage = text;
+    if (detectFailure(text)) {
+      formatted.failed = true;
     }
+  }
 
-    const ts = new Date().toTimeString().split(' ')[0];
+  return formatted;
+}
 
-    switch (msg.type) {
+function formatAgentMessageItem(
+  eventType: 'item.started' | 'item.updated' | 'item.completed',
+  item: CodexOutItem | null | undefined,
+  ts: string
+): FormattedCodexMessage {
+  const text = (item?.text ?? '') || '';
+  const header = formatHeader('Agent Message', ts, chalk.bold.green, item);
+  const message = text ? `${header}\n\n${text}` : header;
+  return {
+    type: 'agent_message',
+    message,
+    agentMessage: text || undefined,
+    failed: detectFailure(text) || undefined,
+  };
+}
+
+function formatTodoListItem(
+  eventType: 'item.started' | 'item.updated' | 'item.completed',
+  item: CodexOutItem | null | undefined,
+  ts: string
+): FormattedCodexMessage {
+  const label =
+    eventType === 'item.started'
+      ? 'Task List'
+      : eventType === 'item.updated'
+        ? 'Task List Update'
+        : 'Task List Summary';
+  const header = formatHeader(label, ts, chalk.bold.blue, item);
+
+  const todoItems = ensureTodoItems(item?.items).map((todo) => ({
+    label: (todo.text ?? '').trim() || '(missing item text)',
+    status: todo.status ?? (todo.completed ? 'completed' : 'pending'),
+    priority: todo.priority ?? undefined,
+  }));
+
+  const todoLines = formatTodoLikeLines(todoItems, { includePriority: false });
+  const body = todoLines.length > 0 ? todoLines.join('\n') : chalk.gray('No todo items provided.');
+
+  return {
+    type: 'plan_update',
+    message: `${header}\n\n${body}`,
+  };
+}
+
+function formatCommandItem(
+  eventType: 'item.started' | 'item.updated' | 'item.completed',
+  item: CodexOutItem | null | undefined,
+  ts: string
+): FormattedCodexMessage {
+  const status = (item?.status ?? '').toString().toLowerCase();
+  const exitCode = typeof item?.exit_code === 'number' ? item.exit_code : undefined;
+  const command = normalizeCommand(item?.command ?? null);
+  const cwd = item?.cwd ? `CWD: ${item.cwd}` : undefined;
+  const outputSource =
+    item?.aggregated_output ?? item?.formatted_output ?? item?.stdout ?? item?.text ?? '';
+  const output = truncateToLines(outputSource, 20);
+
+  let label: string;
+  let color: HeaderColor = chalk.cyan;
+  if (eventType === 'item.started') {
+    label = 'Exec Begin';
+  } else if (eventType === 'item.updated') {
+    label = 'Exec Update';
+  } else {
+    const failed = status === 'failed' || (typeof exitCode === 'number' && exitCode !== 0);
+    color = failed ? chalk.red : chalk.cyan;
+    label = failed ? 'Exec Failed' : 'Exec End';
+  }
+
+  const header = formatHeader(label, ts, color, item);
+  const details: string[] = [];
+  if (command) details.push(command);
+  if (cwd) details.push(cwd);
+
+  const meta: string[] = [];
+  if (status) meta.push(`Status: ${status}`);
+  if (typeof exitCode === 'number') meta.push(`Exit Code: ${exitCode}`);
+  if (meta.length > 0) details.push(meta.join(' • '));
+  if (output) details.push(output);
+
+  return {
+    type: 'command_execution',
+    message: [header, ...details].join('\n\n'),
+  };
+}
+
+function formatDiffItem(
+  eventType: 'item.started' | 'item.updated' | 'item.completed',
+  item: CodexOutItem | null | undefined,
+  ts: string
+): FormattedCodexMessage {
+  const diffText =
+    item?.unified_diff ?? item?.diff ?? item?.aggregated_output ?? item?.text ?? '';
+  const diff = typeof diffText === 'string' ? diffText : '';
+
+  const fileMatches = diff.match(/^(?:\+\+\+|---) (.+)$/gm) || [];
+  const filenames = fileMatches
+    .map((match) => match.replace(/^(?:\+\+\+|---) /, '').replace(/\t.*$/, ''))
+    .filter((filename) => filename !== '/dev/null')
+    .map((filename) => {
+      if (filename.startsWith('a/') || filename.startsWith('b/')) {
+        return filename.substring(2);
+      }
+      return filename;
+    });
+  const uniqueFiles = [...new Set(filenames)];
+
+  const diffLines = diff.split('\n');
+  let addedLines = 0;
+  let removedLines = 0;
+  for (const line of diffLines) {
+    if (line.startsWith('+') && !line.startsWith('+++')) {
+      addedLines++;
+    } else if (line.startsWith('-') && !line.startsWith('---')) {
+      removedLines++;
+    }
+  }
+
+  const label = eventType === 'item.started' ? 'Diff Start' : 'Diff';
+  const header = formatHeader(label, ts, chalk.magenta, item);
+  const fileCount = uniqueFiles.length;
+  const fileText = fileCount === 1 ? '1 file' : `${fileCount} files`;
+  const fileList =
+    fileCount <= 3 ? uniqueFiles.join(', ') : `${uniqueFiles.slice(0, 3).join(', ')} and ${fileCount - 3} more`;
+  const changeStats: string[] = [];
+  if (addedLines > 0) changeStats.push(chalk.green(`+${addedLines}`));
+  if (removedLines > 0) changeStats.push(chalk.red(`-${removedLines}`));
+  const statsText = changeStats.length > 0 ? ` (${changeStats.join(', ')})` : '';
+
+  const summary =
+    uniqueFiles.length > 0
+      ? `Changes to ${fileText}: ${fileList}${statsText}`
+      : `Changes detected${statsText}`;
+
+  return {
+    type: 'turn_diff',
+    message: `${header}\n\n${summary}`,
+  };
+}
+
+function formatPatchApplyItem(
+  eventType: 'item.started' | 'item.updated' | 'item.completed',
+  item: CodexOutItem | null | undefined,
+  ts: string
+): FormattedCodexMessage {
+  const autoApproved = item?.auto_approved ? ' (auto-approved)' : '';
+  const headerLabel =
+    eventType === 'item.started'
+      ? `Patch Apply Begin${autoApproved}`
+      : eventType === 'item.updated'
+        ? `Patch Apply Update${autoApproved}`
+        : `Patch Apply End${autoApproved}`;
+  const header = formatHeader(headerLabel, ts, chalk.yellow, item);
+  const changes = item?.changes && typeof item.changes === 'object' ? item.changes : {};
+  const entries = Object.entries(changes as Record<string, any>);
+  if (entries.length === 0) {
+    return {
+      type: 'patch_apply',
+      message: `${header}\n\n${chalk.gray('No change details provided.')}`,
+    };
+  }
+
+  const formattedChanges = entries
+    .map(([filePath, change]) => {
+      if (change && typeof change === 'object') {
+        if ('add' in change && change.add && typeof change.add === 'object') {
+          const content = truncateToLines(String((change.add as any).content ?? ''), 10);
+          return `${chalk.green('ADD')} ${filePath}:\n${content}`;
+        }
+        if ('update' in change && change.update && typeof change.update === 'object') {
+          const update = change.update as Record<string, unknown>;
+          const diff = truncateToLines(String(update.unified_diff ?? ''), 10);
+          const movePath = typeof update.move_path === 'string' && update.move_path.length > 0 ? ` -> ${update.move_path}` : '';
+          return `${chalk.cyan('UPDATE')} ${filePath}${movePath}:\n${diff}`;
+        }
+        if ('remove' in change) {
+          return `${chalk.red('REMOVE')} ${filePath}`;
+        }
+      }
+      return `${chalk.gray('UNKNOWN')} ${filePath}: ${JSON.stringify(change)}`;
+    })
+    .join('\n\n');
+
+  return {
+    type: 'patch_apply',
+    message: `${header}\n\n${formattedChanges}`,
+  };
+}
+
+function formatUnknownItem(
+  eventType: 'item.started' | 'item.updated' | 'item.completed',
+  item: CodexOutItem | null | undefined,
+  ts: string
+): FormattedCodexMessage {
+  const itemType = resolveItemType(item);
+  const header = formatHeader(`Item ${itemType}`, ts, chalk.gray, item);
+  const serialized = item ? JSON.stringify(item, null, 2) : 'No item payload provided.';
+  return {
+    type: eventType,
+    message: `${header}\n\n${serialized}`,
+  };
+}
+
+function formatCodexOutItemEvent(
+  eventType: 'item.started' | 'item.updated' | 'item.completed',
+  item: CodexOutItem | null | undefined,
+  ts: string
+): FormattedCodexMessage {
+  const itemType = resolveItemType(item);
+  switch (itemType) {
+    case 'reasoning':
+      return formatReasoningItem(eventType, item, ts);
+    case 'agent_message':
+      return formatAgentMessageItem(eventType, item, ts);
+    case 'todo_list':
+      return formatTodoListItem(eventType, item, ts);
+    case 'command_execution':
+      return formatCommandItem(eventType, item, ts);
+    case 'diff':
+    case 'turn_diff':
+      return formatDiffItem(eventType, item, ts);
+    case 'patch_apply':
+    case 'patch_application':
+      return formatPatchApplyItem(eventType, item, ts);
+    default:
+      return formatUnknownItem(eventType, item, ts);
+  }
+}
+
+function formatCodexOutUsageMessage(message: CodexOutMessage, ts: string): FormattedCodexMessage {
+  const usage = message.usage ?? {};
+  const inputTokens = Number(usage.input_tokens ?? 0);
+  const cachedTokens = Number(usage.cached_input_tokens ?? 0);
+  const outputTokens = Number(usage.output_tokens ?? 0);
+  const reasoningTokens = Number(usage.reasoning_tokens ?? 0);
+  const totalTokensExplicit = Number(usage.total_tokens ?? 0);
+
+  const effectiveInputTokens = Math.max(0, inputTokens - cachedTokens);
+  const computedTotal = effectiveInputTokens + outputTokens + reasoningTokens;
+  const totalTokens = totalTokensExplicit > 0 ? totalTokensExplicit : computedTotal;
+
+  const parts: string[] = [];
+  if (inputTokens > 0) {
+    parts.push(`Input: ${inputTokens.toLocaleString()} tokens`);
+  }
+  if (cachedTokens > 0) {
+    parts.push(`  Cached: ${cachedTokens.toLocaleString()} tokens`);
+  }
+  if (effectiveInputTokens > 0 && cachedTokens > 0) {
+    parts.push(`  Effective Input: ${effectiveInputTokens.toLocaleString()} tokens`);
+  }
+  if (outputTokens > 0) {
+    parts.push(`Output: ${outputTokens.toLocaleString()} tokens`);
+  }
+  if (reasoningTokens > 0) {
+    parts.push(`Reasoning: ${reasoningTokens.toLocaleString()} tokens`);
+  }
+  if (totalTokens > 0) {
+    parts.push(`Total: ${totalTokens.toLocaleString()} tokens`);
+  }
+
+  const rateLimits = message.rate_limits;
+  if (rateLimits) {
+    const rateLimitInfo: string[] = [];
+    if (rateLimits.primary) {
+      rateLimitInfo.push(formatRateLimit(rateLimits.primary));
+    }
+    if (rateLimits.secondary) {
+      rateLimitInfo.push(formatRateLimit(rateLimits.secondary));
+    }
+    if (rateLimitInfo.length > 0) {
+      parts.push(`Rate Limits: ${rateLimitInfo.join('\t\t')}`);
+    }
+  }
+
+  const body = parts.length > 0 ? parts.join('\n') : chalk.gray('No usage information provided.');
+  return {
+    type: 'turn.completed',
+    lastTokenCount: totalTokens > 0 ? totalTokens : undefined,
+    message: chalk.gray(`### Usage [${ts}]\n\n`) + body,
+  };
+}
+
+function formatCodexOutMessage(message: CodexOutMessage, ts: string): FormattedCodexMessage {
+  switch (message.type) {
+    case 'thread.started': {
+      const details = message.thread_id ? `Thread: ${message.thread_id}` : undefined;
+      const header = chalk.bold.green(`### Start [${ts}]`);
+      return {
+        type: 'thread.started',
+        message: details ? `${header}\n\n${details}` : header,
+      };
+    }
+    case 'turn.started': {
+      return {
+        type: 'task_started',
+        message: chalk.bold.green(`### Task Started [${ts}]`),
+      };
+    }
+    case 'turn.completed': {
+      return formatCodexOutUsageMessage(message, ts);
+    }
+    case 'item.started':
+    case 'item.updated':
+    case 'item.completed': {
+      return formatCodexOutItemEvent(message.type, message.item ?? undefined, ts);
+    }
+    case 'item.delta': {
+      // Streamed deltas can be noisy; skip detailed printing.
+      return { type: 'item.delta' };
+    }
+    case 'session.created': {
+      const sessionId = message.session_id ?? message.sessionId;
+      const header = chalk.bold.green(`### Session Created [${ts}]`);
+      const details = sessionId ? `Session ID: ${sessionId}` : undefined;
+      return {
+        type: 'session.created',
+        message: details ? `${header}\n\n${details}` : header,
+      };
+    }
+    default: {
+      const typeLabel = typeof message.type === 'string' && message.type.length > 0 ? message.type : 'unknown';
+      return {
+        type: typeLabel,
+        message: JSON.stringify(message),
+      };
+    }
+  }
+}
+
+function formatLegacyCodexMessage(obj: CodexEnvelope<CodexMessage>, ts: string): FormattedCodexMessage {
+  const msg = obj.msg;
+  if (msg == null || typeof msg !== 'object' || !('type' in msg)) {
+    return { type: 'unknown' };
+  }
+
+  switch (msg.type) {
       case 'task_started': {
         return {
           type: msg.type,
@@ -460,6 +937,35 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
         return { type: (msg as AnyMessage).type, message: JSON.stringify(msg) };
       }
     }
+}
+
+export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage {
+  try {
+    if (!jsonLine || jsonLine.trim() === '') return { type: '' };
+    debugLog(`codex: `, jsonLine);
+    const parsed = JSON.parse(jsonLine) as unknown;
+
+    if (!parsed || typeof parsed !== 'object') {
+      return { type: 'unknown', message: jsonLine };
+    }
+
+    const ts = new Date().toTimeString().split(' ')[0];
+
+    const initial = tryFormatInitial(parsed as CodexEnvelope);
+    if (initial) return initial;
+
+    if ('msg' in (parsed as Record<string, unknown>)) {
+      return formatLegacyCodexMessage(parsed as CodexEnvelope<CodexMessage>, ts);
+    }
+
+    if (isCodexOutMessage(parsed)) {
+      return formatCodexOutMessage(parsed, ts);
+    }
+
+    return {
+      type: 'unknown',
+      message: JSON.stringify(parsed),
+    };
   } catch (err) {
     debugLog('Failed to parse Codex JSON line:', jsonLine, err);
     return { type: 'parse_error', message: jsonLine };
@@ -483,13 +989,18 @@ export function createCodexStdoutFormatter() {
     for (const line of lines) {
       const fm = formatCodexJsonMessage(line);
 
-      if ((fm.type as CodexMessage['type']) === 'token_count' && fm.lastTokenCount) {
-        if (previousTokenCount && previousTokenCount === fm.lastTokenCount) {
+      const isUsageMessage =
+        ((fm.type as CodexMessage['type']) === 'token_count' || fm.type === 'turn.completed') &&
+        fm.lastTokenCount != null;
+
+      if (isUsageMessage) {
+        const lastTokenCount = fm.lastTokenCount as number;
+        if (previousTokenCount === lastTokenCount) {
           // this one is a duplicate of the previous token count, skip to avoid being too noisy
           continue;
         }
 
-        previousTokenCount = fm.lastTokenCount;
+        previousTokenCount = lastTokenCount;
       }
 
       if (fm.agentMessage) {
