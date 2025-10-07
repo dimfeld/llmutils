@@ -491,6 +491,7 @@ export class ClaudeCodeExecutor implements Executor {
                     );
                     const response = {
                       type: 'permission_response',
+                      requestId,
                       approved: true,
                     };
                     socket.write(JSON.stringify(response) + '\n');
@@ -506,6 +507,7 @@ export class ClaudeCodeExecutor implements Executor {
                 log(chalk.green(`Tool ${tool_name} automatically approved (${approvalSource})`));
                 const response = {
                   type: 'permission_response',
+                  requestId,
                   approved: true,
                 };
                 socket.write(JSON.stringify(response) + '\n');
@@ -539,6 +541,7 @@ export class ClaudeCodeExecutor implements Executor {
                     );
                     const response = {
                       type: 'permission_response',
+                      requestId,
                       approved: true,
                     };
                     socket.write(JSON.stringify(response) + '\n');
