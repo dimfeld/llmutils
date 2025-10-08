@@ -663,8 +663,11 @@ so the more you include from your exploration, the better.
 `;
 }
 
-export function generateClaudeCodeGenerationPrompt(): string {
+export function generateClaudeCodeGenerationPrompt(planText: string): string {
   return `Based on your analysis of the codebase and the project description, please now generate a detailed implementation plan.
+
+Once again, the project being implemented is:
+${planText}
 
 The plan should be formatted as follows:
 - Break the project into phases (or a single phase for smaller features)

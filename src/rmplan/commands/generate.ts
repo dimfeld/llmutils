@@ -674,7 +674,7 @@ export async function handleGenerateCommand(
         // Generate the two prompts for Claude Code
         const planningPrompt = generateClaudeCodePlanningPrompt(fullPlanText);
         const researchPrompt = generateClaudeCodeResearchPrompt();
-        const generationPrompt = generateClaudeCodeGenerationPrompt();
+        const generationPrompt = generateClaudeCodeGenerationPrompt(fullPlanText);
 
         // Use the shared Claude Code invocation helper
         const claudeResult = await invokeClaudeCodeForGeneration(planningPrompt, generationPrompt, {
