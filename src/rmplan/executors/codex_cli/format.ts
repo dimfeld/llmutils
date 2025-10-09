@@ -537,11 +537,12 @@ function formatPatchApplyItem(
     .map(([filePath, change]) => {
       if (change && typeof change === 'object') {
         if ('add' in change && change.add && typeof change.add === 'object') {
-          const content = truncateToLines(String((change.add as any).content ?? ''), 10);
+          const content = truncateToLines(String(change.add.content ?? ''), 10);
           return `${chalk.green('ADD')} ${filePath}:\n${content}`;
         }
         if ('update' in change && change.update && typeof change.update === 'object') {
           const update = change.update as Record<string, unknown>;
+          // eslint-disable-next-line @typescript-eslint/no-base-to-string
           const diff = truncateToLines(String(update.unified_diff ?? ''), 10);
           const movePath =
             typeof update.move_path === 'string' && update.move_path.length > 0
