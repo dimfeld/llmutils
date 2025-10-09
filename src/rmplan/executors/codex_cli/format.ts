@@ -446,8 +446,7 @@ function formatCommandItem(
   if (cwd) details.push(cwd);
 
   const meta: string[] = [];
-  if (status) meta.push(`Status: ${status}`);
-  if (typeof exitCode === 'number') meta.push(`Exit Code: ${exitCode}`);
+  if (typeof exitCode === 'number' && exitCode !== 0) meta.push(`Exit Code: ${exitCode}`);
   if (meta.length > 0) details.push(meta.join(' • '));
   if (output) details.push(output);
 
