@@ -420,6 +420,8 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     }
   }
 
+  const maxSteps = options.steps ? parseInt(options.steps, 10) : Infinity;
+
   // Check if batch mode is enabled (default is true, disabled by --serial-tasks)
   if (!options.serialTasks) {
     try {
@@ -431,6 +433,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           executor,
           dryRun: options.dryRun,
           executorName,
+          maxSteps,
         },
         summaryEnabled ? summaryCollector : undefined
       );
@@ -452,7 +455,6 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   try {
     let hasError = false;
 
-    const maxSteps = options.steps ? parseInt(options.steps, 10) : Infinity;
     let stepCount = 0;
     while (stepCount < maxSteps) {
       stepCount++;

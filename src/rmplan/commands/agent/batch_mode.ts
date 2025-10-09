@@ -17,6 +17,7 @@ export async function executeBatchMode(
     executor,
     baseDir,
     dryRun = false,
+    maxSteps = Infinity,
     executorName,
   }: {
     currentPlanFile: string;
@@ -24,6 +25,7 @@ export async function executeBatchMode(
     executor: Executor;
     baseDir: string;
     dryRun?: boolean;
+    maxSteps?: number;
     executorName?: string;
   },
   summaryCollector?: SummaryCollector
@@ -34,7 +36,7 @@ export async function executeBatchMode(
     let iteration = 0;
 
     // Batch mode: continue until no incomplete tasks remain
-    while (true) {
+    while (iteration < maxSteps) {
       // Read the current plan file to get updated state
       const planData = await readPlanFile(currentPlanFile);
 
