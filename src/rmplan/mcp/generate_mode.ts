@@ -57,9 +57,6 @@ function buildPlanContext(
   if (plan.goal) {
     parts.push(`Goal:\n${plan.goal}`);
   }
-  if (plan.details) {
-    parts.push(`Details:\n${plan.details.trim()}`);
-  }
   if (plan.issue?.length) {
     parts.push(`Linked issues:\n${plan.issue.join('\n')}`);
   }
@@ -70,6 +67,10 @@ function buildPlanContext(
   const existingTasks = formatExistingTasks(plan);
   if (existingTasks) {
     parts.push(existingTasks);
+  }
+
+  if (plan.details) {
+    parts.push(`Details:\n${plan.details.trim()}`);
   }
 
   return parts.join('\n\n');
@@ -174,33 +175,29 @@ async function mergeTasksIntoPlan(
   const updatedPlan: PlanSchema = {
     ...newPlan,
     id: originalPlan.id,
+    parent: originalPlan.parent,
+    container: originalPlan.container,
+    baseBranch: originalPlan.baseBranch,
+    changedFiles: originalPlan.changedFiles,
+    pullRequest: originalPlan.pullRequest,
+    issue: originalPlan.issue,
+    docs: originalPlan.docs,
+    assignedTo: originalPlan.assignedTo,
+    rmfilter: originalPlan.rmfilter,
+    dependencies: originalPlan.dependencies,
+    project: originalPlan.project,
+    generatedBy: 'agent',
     createdAt: originalPlan.createdAt,
     updatedAt: new Date().toISOString(),
     planGeneratedAt: new Date().toISOString(),
     status: originalPlan.status,
+    promptsGeneratedAt: new Date().toISOString(),
     // Only override these if provided in newPlanData
     priority: newPlanData.priority !== undefined ? newPlanData.priority : originalPlan.priority,
     title: newPlanData.title !== undefined ? newPlanData.title : originalPlan.title,
     goal: newPlanData.goal !== undefined ? newPlanData.goal : originalPlan.goal,
     details: newPlanData.details !== undefined ? newPlanData.details : originalPlan.details,
   };
-
-  // Preserve fields that should not be overwritten
-  if (originalPlan.parent !== undefined) updatedPlan.parent = originalPlan.parent;
-  if (originalPlan.container !== undefined) updatedPlan.container = originalPlan.container;
-  if (originalPlan.baseBranch !== undefined) updatedPlan.baseBranch = originalPlan.baseBranch;
-  if (originalPlan.changedFiles !== undefined) updatedPlan.changedFiles = originalPlan.changedFiles;
-  if (originalPlan.pullRequest !== undefined) updatedPlan.pullRequest = originalPlan.pullRequest;
-  if (originalPlan.assignedTo !== undefined) updatedPlan.assignedTo = originalPlan.assignedTo;
-  if (originalPlan.docs !== undefined) updatedPlan.docs = originalPlan.docs;
-  if (originalPlan.issue !== undefined) updatedPlan.issue = originalPlan.issue;
-  if (originalPlan.rmfilter !== undefined) updatedPlan.rmfilter = originalPlan.rmfilter;
-  if (originalPlan.dependencies !== undefined) updatedPlan.dependencies = originalPlan.dependencies;
-  if (originalPlan.project !== undefined) updatedPlan.project = originalPlan.project;
-  if (originalPlan.generatedBy !== undefined) updatedPlan.generatedBy = originalPlan.generatedBy;
-
-  // Preserve promptsGeneratedAt from original plan
-  updatedPlan.promptsGeneratedAt = originalPlan.promptsGeneratedAt;
 
   // Merge tasks while preserving completed ones
   const originalTasks = originalPlan.tasks || [];
@@ -236,8 +233,15 @@ async function mergeTasksIntoPlan(
         mergedTasks[taskIndex] = newTask;
       }
     } else {
-      // New task without ID - add to the end
-      mergedTasks.push(newTask);
+      let matchingTitleTask = originalTasks.findIndex((task) => task.title === newTask.title);
+      if (matchingTitleTask >= 0) {
+        if (!completedTasks.has(matchingTitleTask)) {
+          mergedTasks[matchingTitleTask] = newTask;
+        }
+      } else {
+        // New task without ID - add to the end
+        mergedTasks.push(newTask);
+      }
     }
   });
 
@@ -281,6 +285,22 @@ export async function handleGenerateTasksTool(
     const message = error instanceof Error ? error.message : String(error);
     throw new UserError(`Failed to update plan: ${message}`);
   }
+}
+
+export const getPlanParameters = z
+  .object({
+    plan: z.string().describe('Plan ID or file path to retrieve'),
+  })
+  .describe('Retrieve the full plan text for a given plan ID or file path');
+
+export type GetPlanArguments = z.infer<typeof getPlanParameters>;
+
+export async function handleGetPlanTool(
+  args: GetPlanArguments,
+  context: GenerateModeRegistrationContext
+): Promise<string> {
+  const { plan, planPath } = await resolvePlan(args.plan, context);
+  return buildPlanContext(plan, planPath, context);
 }
 
 export const appendResearchParameters = z
@@ -385,5 +405,17 @@ export function registerGenerateMode(
       readOnlyHint: false,
     },
     execute: async (args) => handleAppendResearchTool(args, context),
+  });
+
+  server.addTool({
+    name: 'get-plan',
+    description:
+      'Retrieve the full plan details by numeric ID or file path. Returns the plan metadata, goal, details, tasks, and related information.',
+    parameters: getPlanParameters,
+    annotations: {
+      destructiveHint: false,
+      readOnlyHint: true,
+    },
+    execute: async (args) => handleGetPlanTool(args, context),
   });
 }

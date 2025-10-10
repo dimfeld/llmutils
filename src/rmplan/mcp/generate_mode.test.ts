@@ -4,19 +4,21 @@ import os from 'node:os';
 import path from 'node:path';
 import { getDefaultConfig } from '../configSchema.js';
 import type { PlanSchema } from '../planSchema.js';
-import { writePlanFile, readPlanFile } from '../plans.js';
+import { writePlanFile, readPlanFile, clearPlanCache } from '../plans.js';
 import {
   appendResearchParameters,
   generateTasksParameters,
+  getPlanParameters,
   handleAppendResearchTool,
   handleGenerateTasksTool,
+  handleGetPlanTool,
   loadQuestionsPrompt,
   loadResearchPrompt,
   type GenerateModeRegistrationContext,
 } from './generate_mode.js';
 
 const basePlan: PlanSchema = {
-  id: 42,
+  id: 99999,
   title: 'Test Plan',
   goal: 'Ship a high-quality feature',
   details: 'Initial details about the plan.',
@@ -31,11 +33,16 @@ describe('rmplan MCP generate mode helpers', () => {
   let context: GenerateModeRegistrationContext;
 
   beforeEach(async () => {
+    clearPlanCache();
     tmpDir = await mkdtemp(path.join(os.tmpdir(), 'rmplan-mcp-'));
-    planPath = path.join(tmpDir, '0042-test.plan.md');
+    planPath = path.join(tmpDir, '99999-test.plan.md');
     await writePlanFile(planPath, basePlan);
+
+    const config = getDefaultConfig();
+    config.tasksDir = tmpDir;
+
     context = {
-      config: getDefaultConfig(),
+      config,
       configPath: undefined,
       gitRoot: tmpDir,
     };
@@ -43,6 +50,7 @@ describe('rmplan MCP generate mode helpers', () => {
 
   afterEach(async () => {
     await rm(tmpDir, { recursive: true, force: true });
+    clearPlanCache();
   });
 
   test('loadResearchPrompt returns plan context with research template', async () => {
@@ -110,5 +118,16 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(updated.tasks[1]?.description).toBe('Ensure coverage');
     expect(updated.details).toContain('Updated details about the plan.');
     expect(updated.priority).toBe('high');
+  });
+
+  test('handleGetPlanTool retrieves plan details', async () => {
+    const args = getPlanParameters.parse({ plan: planPath });
+    const result = await handleGetPlanTool(args, context);
+    expect(result).toContain('Plan ID: 99999');
+    expect(result).toContain('Test Plan');
+    expect(result).toContain('Ship a high-quality feature');
+    expect(result).toContain('Initial details about the plan.');
+    expect(result).toContain('Status: pending');
+    expect(result).toContain('Priority: medium');
   });
 });
