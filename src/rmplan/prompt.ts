@@ -691,10 +691,15 @@ Everything you said above will not be saved anywhere, so be sure to include it a
 ${commonGenerateDetails}`;
   }
 
+  let projectReminder = planText
+    ? `Once again, the project being implemented is:
+${planText}
+`
+    : '';
+
   return `Based on your analysis of the codebase and the project description, please now generate a detailed implementation plan.
 
-Once again, the project being implemented is:
-${planText}
+${projectReminder}
 
 The plan should be formatted as follows:
 - Break the project into phases (or a single phase for smaller features)

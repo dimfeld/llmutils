@@ -147,8 +147,11 @@ export async function loadGeneratePrompt(
   args: { plan?: string },
   context: GenerateModeRegistrationContext
 ) {
-  const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
-  const contextBlock = buildPlanContext(plan, planPath, context);
+  let contextBlock = '';
+  if (args.plan) {
+    const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
+    contextBlock = buildPlanContext(plan, planPath, context);
+  }
 
   const text = `${generateClaudeCodeGenerationPrompt(contextBlock, false)}
 
@@ -431,7 +434,7 @@ export function registerGenerateMode(
       {
         name: 'plan',
         description: 'Plan ID or file path to generate tasks for',
-        required: true,
+        required: false,
       },
     ],
     load: async (args) => loadGeneratePrompt({ plan: args.plan }, context),
