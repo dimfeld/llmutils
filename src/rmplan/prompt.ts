@@ -597,8 +597,11 @@ ${yaml.stringify(plan.tasks, null, 2)}
   return prompt;
 }
 
-export function generateClaudeCodePlanningPrompt(planText: string): string {
-  return `This is a description for an upcoming feature that I want you to analyze and prepare a plan for.
+export function generateClaudeCodePlanningPrompt(
+  planText: string,
+  includeNextInstructionSentence = true
+): string {
+  let prompt = `This is a description for an upcoming feature that I want you to analyze and prepare a plan for.
 
 # Project Description
 
@@ -630,12 +633,18 @@ ${commonGenerateDetails}
 Do not perform any implementation or write any files yet.
 
 Use parallel subagents to analyze the requirements against different parts of the codebase, and generate detailed reports.
-Then prepare to synthesize these reports into the final plan.
-When you're done with your analysis, let me know and I'll provide the next instruction.`;
+Then prepare to synthesize these reports into the final plan.`;
+
+  if (includeNextInstructionSentence) {
+    prompt += `\nWhen you're done with your analysis, let me know and I'll provide the next instruction.`;
+  }
+  return prompt;
 }
 
-export function generateClaudeCodeResearchPrompt(): string {
-  return `Before you generate the final implementation plan, capture every insight you've gathered so far.
+export function generateClaudeCodeResearchPrompt(
+  prefix = 'Before you generate the final implementation plan'
+): string {
+  return `${prefix}, capture every insight you've gathered.
 
 Output structured Markdown that can be appended directly under a "## Research" heading in the plan file. Follow this exact template:
 
@@ -663,24 +672,41 @@ so the more you include from your exploration, the better.
 `;
 }
 
-export function generateClaudeCodeGenerationPrompt(planText: string): string {
+export function generateClaudeCodeGenerationPrompt(
+  planText: string,
+  includeMarkdownFormat = true
+): string {
+  let formatInstructions = '';
+  if (includeMarkdownFormat) {
+    formatInstructions = `
+Please output the plan in the exact Markdown format specified below:
+
+${phaseBasedMarkdownExampleFormat}
+
+Everything you said above will not be saved anywhere, so be sure to include it again when generating the plan below. Remember to include all the below sections in the project details, along with any other relevant details that an engineer will require to know how to implement the plan:
+${commonGenerateDetails}`;
+  } else {
+    formatInstructions = `
+Everything you said above will not be saved anywhere, so be sure to include it again when generating the plan below. Remember to include all the below sections in the project details, along with any other relevant details that an engineer will require to know how to implement the plan:
+${commonGenerateDetails}`;
+  }
+
+  let projectReminder = planText
+    ? `Once again, the project being implemented is:
+${planText}
+`
+    : '';
+
   return `Based on your analysis of the codebase and the project description, please now generate a detailed implementation plan.
 
-Once again, the project being implemented is:
-${planText}
+${projectReminder}
 
 The plan should be formatted as follows:
 - Break the project into phases (or a single phase for smaller features)
 - Each phase should have a clear goal, details, and tasks
 - Focus on logical progression and incremental functionality
 - Include acceptance criteria for each phase
-
-Please output the plan in the exact Markdown format specified below:
-
-${phaseBasedMarkdownExampleFormat}
-
-Everything you said above will not be saved anywhere, so be sure to include it again when generating the plan below. Remember to include all the below sections in the project details, along with any other relevant details that an engineer will require to know how to implement the plan:
-${commonGenerateDetails}
+${formatInstructions}
 
 Generate the complete plan now.`;
 }

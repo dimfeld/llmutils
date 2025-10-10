@@ -301,6 +301,7 @@ You can find the task plans for this repository under the "tasks" directory.
 - **Flexible Input**: Accept plans from files, editor input, or clipboard, and output results to files or stdout.
 - **Workspace Auto-Creation**: Automatically create isolated workspaces (Git clones or worktrees) for each task, ensuring clean execution environments.
 - **Manual Workspace Management**: Use the `workspace add` command to explicitly create workspaces with or without plan associations, and `workspace list` to view all workspaces and their lock status.
+- **MCP Server Mode**: Run `rmplan mcp-server` to expose prompts and tools over the Model Context Protocol for interactive plan research and generation.
 
 ### Usage
 
@@ -347,6 +348,27 @@ rmplan prepare tasks/phase-1.yml --claude
 rmplan generate --plan-editor --claude --commit -- src/**/*.ts
 ```
 
+### MCP server mode
+
+`rmplan` includes an MCP server that exposes the interactive generate workflow to MCP-compatible clients. Launch it with:
+
+```bash
+rmplan mcp-server --mode generate
+```
+
+The server communicates over stdio by default. To expose an HTTP streaming endpoint instead, pass `--transport http --port <port>`. The command respects the global `--config` flag so you can point it at a specific `rmplan` configuration file when starting the server.
+
+The generate mode publishes two prompts and two tools:
+
+- **Prompts**
+  - `perform-research` – loads the plan and returns the standard research template so the client can capture findings under `## Research`.
+  - `plan-questions` – shares plan context and instructs the model to ask focused, iterative questions that move the plan forward.
+- **Tools**
+  - `generate-plan-tasks` – builds the full planning prompt for the target plan. When `planning.direct_mode` is enabled (or the tool input sets `direct: true`), the tool calls the configured model directly and streams the generated tasks back. Otherwise it returns the prompt text so the client can run it manually.
+  - `append-plan-research` – appends research Markdown to the plan’s `details` field under the `## Research` heading, creating the section if needed.
+
+Plan arguments accept either a numeric ID (resolved via the configured tasks directory) or an explicit file path, matching the rest of the `rmplan` CLI.
+
 The `--claude` flag works seamlessly with all other options for both commands. When not specified, the commands use their default behavior of calling the configured LLM directly.
 
 When the research capture step runs, open the plan file and scroll to the `## Research` section in the `details` markdown to review Claude's investigation notes. These entries are timestamped and persist through subsequent plan edits.
@@ -384,6 +406,9 @@ rmplan generate --issue 28
 
 # Generate a plan and commit the resulting YAML file
 rmplan generate --plan plan.txt --commit -- src/**/*.ts
+
+# Start the MCP server for interactive plan generation
+rmplan mcp-server --mode generate
 
 # Import GitHub issues as stub plan files
 # Import a specific issue by number or URL
