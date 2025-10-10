@@ -12,6 +12,7 @@ import {
   handleAppendResearchTool,
   handleGenerateTasksTool,
   handleGetPlanTool,
+  loadGeneratePrompt,
   loadQuestionsPrompt,
   loadResearchPrompt,
   type GenerateModeRegistrationContext,
@@ -57,7 +58,7 @@ describe('rmplan MCP generate mode helpers', () => {
     const prompt = await loadResearchPrompt({ plan: planPath }, context);
     const message = prompt.messages[0]?.content;
     expect(message?.text).toContain('Test Plan');
-    expect(message?.text).toContain('Use the following template to capture research');
+    expect(message?.text).toContain('Follow this exact template');
     expect(message?.text).toContain('### Summary');
   });
 
@@ -66,6 +67,15 @@ describe('rmplan MCP generate mode helpers', () => {
     const message = prompt.messages[0]?.content;
     expect(message?.text).toContain('Ask one concise, high-impact question');
     expect(message?.text).toContain('Initial details about the plan.');
+  });
+
+  test('loadGeneratePrompt returns plan context with generation instructions', async () => {
+    const prompt = await loadGeneratePrompt({ plan: planPath }, context);
+    const message = prompt.messages[0]?.content;
+    expect(message?.text).toContain('Test Plan');
+    expect(message?.text).toContain('generate a detailed implementation plan');
+    expect(message?.text).toContain('update-plan-tasks tool');
+    expect(message?.text).toContain('Break the project into phases');
   });
 
   test('handleAppendResearchTool appends research to the plan file', async () => {

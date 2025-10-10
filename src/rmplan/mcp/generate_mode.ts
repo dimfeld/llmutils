@@ -2,7 +2,11 @@ import path from 'node:path';
 import { FastMCP, UserError } from 'fastmcp';
 import type { SerializableValue } from 'fastmcp';
 import { z } from 'zod/v4';
-import { generateClaudeCodeResearchPrompt } from '../prompt.js';
+import {
+  generateClaudeCodePlanningPrompt,
+  generateClaudeCodeResearchPrompt,
+  generateClaudeCodeGenerationPrompt,
+} from '../prompt.js';
 import { appendResearchToPlan } from '../research_utils.js';
 import { readPlanFile, writePlanFile, resolvePlanFile, isTaskDone } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
@@ -95,7 +99,11 @@ export async function loadResearchPrompt(
   const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
   const contextBlock = buildPlanContext(plan, planPath, context);
 
-  const text = `${contextBlock}\n\nUse the following template to capture research for this plan:\n\n${generateClaudeCodeResearchPrompt()}`;
+  const text = `${generateClaudeCodePlanningPrompt(contextBlock, false)}
+
+${generateClaudeCodeResearchPrompt(`Once your research is complete`)}
+
+Use the append-plan-research tool to add the output to the plan.`;
 
   return {
     messages: [
@@ -114,10 +122,44 @@ export async function loadQuestionsPrompt(
   args: { plan?: string },
   context: GenerateModeRegistrationContext
 ) {
+  let contextBlock = '';
+  if (args.plan) {
+    const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
+    contextBlock = buildPlanContext(plan, planPath, context) + '\n\n';
+  }
+
+  const text = `${contextBlock}You are collaborating with a human partner to refine this plan. Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Avoid repeating information already captured. Wait for the user to respond before asking a follow-up.`;
+
+  return {
+    messages: [
+      {
+        role: 'user' as const,
+        content: {
+          type: 'text' as const,
+          text,
+        },
+      },
+    ],
+  };
+}
+
+export async function loadGeneratePrompt(
+  args: { plan?: string },
+  context: GenerateModeRegistrationContext
+) {
   const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
   const contextBlock = buildPlanContext(plan, planPath, context);
 
-  const text = `${contextBlock}\n\nYou are collaborating with a human partner to refine this plan. Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Avoid repeating information already captured. Wait for the user to respond before asking a follow-up.`;
+  const text = `${generateClaudeCodeGenerationPrompt(contextBlock, false)}
+
+Use the update-plan-tasks tool to save the generated plan with the following structure:
+- title: The overall project title
+- goal: The overall project goal
+- details: Comprehensive project details including acceptance criteria, technical considerations, and any research findings
+- priority: The priority level (low|medium|high|urgent)
+- tasks: An array of tasks, where each task has:
+  - title: A concise task title
+  - description: Detailed task description`;
 
   return {
     messages: [
@@ -375,10 +417,24 @@ export function registerGenerateMode(
       {
         name: 'plan',
         description: 'Plan ID or file path to discuss with the user',
-        required: true,
+        required: false,
       },
     ],
     load: async (args) => loadQuestionsPrompt({ plan: args.plan }, context),
+  });
+
+  server.addPrompt({
+    name: 'generate-plan',
+    description:
+      'Generate a detailed implementation plan after analyzing the codebase. Uses the Claude Code generation prompt and instructs to use the update-plan-tasks tool.',
+    arguments: [
+      {
+        name: 'plan',
+        description: 'Plan ID or file path to generate tasks for',
+        required: true,
+      },
+    ],
+    load: async (args) => loadGeneratePrompt({ plan: args.plan }, context),
   });
 
   server.addTool({
