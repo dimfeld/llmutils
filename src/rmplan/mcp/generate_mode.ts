@@ -201,6 +201,62 @@ export const generateTasksParameters = z
 
 export type GenerateTasksArguments = z.infer<typeof generateTasksParameters>;
 
+const GENERATED_START_DELIMITER = '<!-- rmplan-generated-start -->';
+const GENERATED_END_DELIMITER = '<!-- rmplan-generated-end -->';
+
+/**
+ * Extracts the research section (## Research) position from markdown details if present.
+ * Returns the index where the research section starts, or undefined if not found.
+ */
+function findResearchSectionStart(details: string): number | undefined {
+  const researchMatch = details.match(/^## Research$/m);
+  return researchMatch?.index;
+}
+
+/**
+ * Merges new details into the original details using delimiters to track generated content.
+ * - If delimiters exist, replaces content between them
+ * - If delimiters don't exist, inserts them and new content before the Research section (or at the end)
+ * This preserves manually-added content like research sections while allowing the tool to update its own content.
+ */
+function mergeDetails(
+  newDetails: string | undefined,
+  originalDetails: string | undefined
+): string | undefined {
+  if (!newDetails) {
+    return originalDetails;
+  }
+
+  if (!originalDetails) {
+    // No original details, wrap new details in delimiters
+    return `${GENERATED_START_DELIMITER}\n${newDetails.trim()}\n${GENERATED_END_DELIMITER}`;
+  }
+
+  // Check if delimiters already exist in the original
+  const startIndex = originalDetails.indexOf(GENERATED_START_DELIMITER);
+  const endIndex = originalDetails.indexOf(GENERATED_END_DELIMITER);
+
+  if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+    // Delimiters exist - replace content between them
+    const before = originalDetails.slice(0, startIndex);
+    const after = originalDetails.slice(endIndex + GENERATED_END_DELIMITER.length);
+    return `${before}${GENERATED_START_DELIMITER}\n${newDetails.trim()}\n${GENERATED_END_DELIMITER}${after}`;
+  }
+
+  // Delimiters don't exist - insert them before the Research section or at the end
+  const researchStart = findResearchSectionStart(originalDetails);
+
+  if (researchStart !== undefined) {
+    // Insert before the Research section
+    const before = originalDetails.slice(0, researchStart).trim();
+    const after = originalDetails.slice(researchStart).trim();
+    return `${before}\n\n${GENERATED_START_DELIMITER}\n${newDetails.trim()}\n${GENERATED_END_DELIMITER}\n\n${after}`;
+  } else {
+    // No research section - append at the end
+    return `${originalDetails.trim()}\n\n${GENERATED_START_DELIMITER}\n${newDetails.trim()}\n${GENERATED_END_DELIMITER}`;
+  }
+}
+
 async function mergeTasksIntoPlan(
   newPlanData: Partial<PlanSchema>,
   originalPlan: PlanSchema
@@ -245,7 +301,7 @@ async function mergeTasksIntoPlan(
     priority: newPlanData.priority !== undefined ? newPlanData.priority : originalPlan.priority,
     title: newPlanData.title !== undefined ? newPlanData.title : originalPlan.title,
     goal: newPlanData.goal !== undefined ? newPlanData.goal : originalPlan.goal,
-    details: newPlanData.details !== undefined ? newPlanData.details : originalPlan.details,
+    details: mergeDetails(newPlanData.details, originalPlan.details),
   };
 
   // Merge tasks while preserving completed ones

@@ -140,4 +140,161 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(result).toContain('Status: pending');
     expect(result).toContain('Priority: medium');
   });
+
+  test('handleGenerateTasksTool adds delimiters on first update', async () => {
+    const args = generateTasksParameters.parse({
+      plan: planPath,
+      details: 'First generated details.',
+      tasks: [
+        {
+          title: 'Task 1',
+          description: 'Description',
+        },
+      ],
+    });
+
+    const stubLogger = {
+      debug() {},
+      error() {},
+      info() {},
+      warn() {},
+    };
+
+    await handleGenerateTasksTool(args, context, { log: stubLogger });
+
+    const updated = await readPlanFile(planPath);
+    expect(updated.details).toContain('<!-- rmplan-generated-start -->');
+    expect(updated.details).toContain('<!-- rmplan-generated-end -->');
+    expect(updated.details).toContain('First generated details.');
+  });
+
+  test('handleGenerateTasksTool replaces content between delimiters on subsequent update', async () => {
+    // First update adds delimiters
+    const firstArgs = generateTasksParameters.parse({
+      plan: planPath,
+      details: 'First generated details.',
+      tasks: [{ title: 'Task 1', description: 'Description' }],
+    });
+
+    const stubLogger = {
+      debug() {},
+      error() {},
+      info() {},
+      warn() {},
+    };
+
+    await handleGenerateTasksTool(firstArgs, context, { log: stubLogger });
+
+    // Second update replaces content between delimiters
+    const secondArgs = generateTasksParameters.parse({
+      plan: planPath,
+      details: 'Second generated details (updated).',
+      tasks: [{ title: 'Task 2', description: 'New description' }],
+    });
+
+    await handleGenerateTasksTool(secondArgs, context, { log: stubLogger });
+
+    const updated = await readPlanFile(planPath);
+    expect(updated.details).toContain('<!-- rmplan-generated-start -->');
+    expect(updated.details).toContain('<!-- rmplan-generated-end -->');
+    expect(updated.details).toContain('Second generated details (updated).');
+    expect(updated.details).not.toContain('First generated details.');
+  });
+
+  test('handleGenerateTasksTool inserts delimiters before Research section', async () => {
+    // Set up plan with research section but no delimiters
+    const planWithResearch: PlanSchema = {
+      ...basePlan,
+      details: `Initial details about the plan.
+
+## Research
+
+### Key Findings
+- Found relevant authentication module`,
+    };
+    await writePlanFile(planPath, planWithResearch);
+
+    // Update with new generated details
+    const args = generateTasksParameters.parse({
+      plan: planPath,
+      details: 'New generated details.',
+      tasks: [{ title: 'Task 1', description: 'Description' }],
+    });
+
+    const stubLogger = {
+      debug() {},
+      error() {},
+      info() {},
+      warn() {},
+    };
+
+    await handleGenerateTasksTool(args, context, { log: stubLogger });
+
+    // Verify delimiters were inserted before Research section
+    const updated = await readPlanFile(planPath);
+    expect(updated.details).toContain('<!-- rmplan-generated-start -->');
+    expect(updated.details).toContain('<!-- rmplan-generated-end -->');
+    expect(updated.details).toContain('New generated details.');
+    expect(updated.details).toContain('## Research');
+    expect(updated.details).toContain('Found relevant authentication module');
+
+    // Verify order: generated content comes before research
+    const generatedEndIndex = updated.details!.indexOf('<!-- rmplan-generated-end -->');
+    const researchIndex = updated.details!.indexOf('## Research');
+    expect(generatedEndIndex).toBeLessThan(researchIndex);
+  });
+
+  test('handleGenerateTasksTool preserves research section across multiple updates', async () => {
+    // Set up plan with research section
+    const planWithResearch: PlanSchema = {
+      ...basePlan,
+      details: `Initial details.
+
+## Research
+
+### Key Findings
+- Important research data that should be preserved`,
+    };
+    await writePlanFile(planPath, planWithResearch);
+
+    const stubLogger = {
+      debug() {},
+      error() {},
+      info() {},
+      warn() {},
+    };
+
+    // First update
+    await handleGenerateTasksTool(
+      generateTasksParameters.parse({
+        plan: planPath,
+        details: 'First update.',
+        tasks: [{ title: 'Task 1', description: 'Desc' }],
+      }),
+      context,
+      { log: stubLogger }
+    );
+
+    let updated = await readPlanFile(planPath);
+    expect(updated.details).toContain('First update.');
+    expect(updated.details).toContain('## Research');
+    expect(updated.details).toContain('Important research data that should be preserved');
+
+    // Second update - research should still be preserved
+    await handleGenerateTasksTool(
+      generateTasksParameters.parse({
+        plan: planPath,
+        details: 'Second update.',
+        tasks: [{ title: 'Task 2', description: 'Desc' }],
+      }),
+      context,
+      { log: stubLogger }
+    );
+
+    updated = await readPlanFile(planPath);
+    expect(updated.details).toContain('Second update.');
+    expect(updated.details).not.toContain('First update.');
+    expect(updated.details).toContain('## Research');
+    expect(updated.details).toContain('Important research data that should be preserved');
+  });
 });
