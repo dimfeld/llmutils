@@ -92,6 +92,8 @@ async function resolvePlan(
   return { plan, planPath };
 }
 
+const questionText = `Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Avoid repeating information already captured. As you figure things out, update the details in the plan file if necessary.`;
+
 export async function loadResearchPrompt(
   args: { plan?: string },
   context: GenerateModeRegistrationContext
@@ -103,9 +105,9 @@ export async function loadResearchPrompt(
 
 ${generateClaudeCodeResearchPrompt(`Once your research is complete`)}
 
-Use the append-plan-research tool to add the output to the plan.
+Use the append-plan-research tool to add the output to the plan. It is fine to send a lot of text to this tool at once.
 
-When done, collaborate with your human partner to refine this plan. Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Avoid repeating information already captured. Wait for the user to respond before asking a follow-up.`;
+When done, collaborate with your human partner to refine this plan. ${questionText}`;
 
   return {
     messages: [
@@ -130,7 +132,7 @@ export async function loadQuestionsPrompt(
     contextBlock = buildPlanContext(plan, planPath, context) + '\n\n';
   }
 
-  const text = `${contextBlock}You are collaborating with a human partner to refine this plan. Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Avoid repeating information already captured. Wait for the user to respond before asking a follow-up.`;
+  const text = `${contextBlock}You are collaborating with a human partner to refine this plan. ${questionText}`;
 
   return {
     messages: [
@@ -353,7 +355,7 @@ export async function handleGetPlanTool(
 export const appendResearchParameters = z
   .object({
     plan: z.string().describe('Plan ID or file path to update'),
-    research: z.string().describe('Research notes to append under the Research section'),
+    research: z.string().describe('Extensive research notes to append under the Research section'),
     heading: z
       .string()
       .optional()
@@ -361,7 +363,7 @@ export const appendResearchParameters = z
     timestamp: z
       .boolean()
       .optional()
-      .describe('Include an automatic timestamp heading (default: true)'),
+      .describe('Include an automatic timestamp heading (default: false)'),
   })
   .describe('Options for appending research notes to a plan');
 
@@ -374,7 +376,7 @@ export async function handleAppendResearchTool(
   const { plan, planPath } = await resolvePlan(args.plan, context);
   const updated = appendResearchToPlan(plan, args.research, {
     heading: args.heading,
-    insertedAt: args.timestamp === false ? false : undefined,
+    insertedAt: args.timestamp === true ? new Date() : false,
   });
   await writePlanFile(planPath, updated);
   const relativePath = path.relative(context.gitRoot, planPath) || planPath;
