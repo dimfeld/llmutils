@@ -40,6 +40,7 @@ import { executors } from './executors/index.js';
 import { handleCommandError } from './utils/commands.js';
 import { prioritySchema, statusSchema } from './planSchema.js';
 import { CleanupRegistry } from '../common/cleanup_registry.js';
+import { startMcpServer } from './mcp/server.js';
 
 function intArg(value: string | undefined): number | undefined;
 function intArg(value: string[] | undefined): number[] | undefined;
@@ -76,6 +77,29 @@ program.addHelpText(
   'after',
   `\nExecution summaries:\n  'agent' and 'run' support '--no-summary' to disable end-of-run summaries\n  and '--summary-file <path>' to write a summary to a file.\n  Set 'RMPLAN_SUMMARY_ENABLED=0/false' to disable summaries by default. When enabled by env,\n  '--no-summary' takes precedence. When disabled by env, '--summary-file' does not force-enable.\n`
 );
+
+program
+  .command('mcp-server')
+  .description('Start rmplan as an MCP server for interactive workflows')
+  .option('--mode <mode>', 'MCP server mode to launch (default: generate)', 'generate')
+  .option('--transport <transport>', 'Transport to use: stdio or http', 'stdio')
+  .option('--port <port>', 'Port to listen on when using HTTP transport', (value) => {
+    const parsed = Number(value);
+    if (Number.isNaN(parsed)) {
+      throw new Error(`Invalid port: ${value}`);
+    }
+    return parsed;
+  })
+  .action(async (options, command) => {
+    const globalOpts = command.parent.opts();
+    const transport = options.transport === 'http' ? 'http' : 'stdio';
+    await startMcpServer({
+      mode: options.mode,
+      configPath: globalOpts.config,
+      transport,
+      port: options.port,
+    }).catch(handleCommandError);
+  });
 
 program
   .command('generate [plan]')
