@@ -103,7 +103,9 @@ export async function loadResearchPrompt(
 
 ${generateClaudeCodeResearchPrompt(`Once your research is complete`)}
 
-Use the append-plan-research tool to add the output to the plan.`;
+Use the append-plan-research tool to add the output to the plan.
+
+When done, collaborate with your human partner to refine this plan. Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Avoid repeating information already captured. Wait for the user to respond before asking a follow-up.`;
 
   return {
     messages: [
