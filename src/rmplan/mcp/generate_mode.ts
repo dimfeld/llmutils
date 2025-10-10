@@ -1,17 +1,13 @@
 import path from 'node:path';
 import { FastMCP, UserError } from 'fastmcp';
 import type { SerializableValue } from 'fastmcp';
-import { z } from 'zod';
-import yaml from 'yaml';
-import { planPrompt, simplePlanPrompt, generateClaudeCodeResearchPrompt } from '../prompt.js';
+import { z } from 'zod/v4';
+import { generateClaudeCodeResearchPrompt } from '../prompt.js';
 import { appendResearchToPlan } from '../research_utils.js';
 import { readPlanFile, writePlanFile, resolvePlanFile, isTaskDone } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
-import { planSchema } from '../planSchema.js';
+import { planSchema, prioritySchema } from '../planSchema.js';
 import type { RmplanConfig } from '../configSchema.js';
-import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../llm_utils/run_and_apply.js';
-import { convertMarkdownToYaml, findYamlStart } from '../process_markdown.js';
-import { fixYaml } from '../fix_yaml.js';
 
 export interface GenerateModeRegistrationContext {
   config: RmplanConfig;
@@ -79,32 +75,6 @@ function buildPlanContext(
   return parts.join('\n\n');
 }
 
-function buildPlanPromptBody(plan: PlanSchema): string {
-  const sections: string[] = [];
-
-  if (plan.title) {
-    sections.push(`# ${plan.title}`);
-  }
-
-  if (plan.goal) {
-    sections.push(`## Goal\n${plan.goal}`);
-  }
-
-  if (plan.details) {
-    sections.push(`## Details\n${plan.details.trim()}`);
-  }
-
-  if (plan.tasks?.length) {
-    const taskLines = plan.tasks.map((task, index) => {
-      const title = task.title || `Task ${index + 1}`;
-      return `- ${title}`;
-    });
-    sections.push(`## Existing Tasks\n${taskLines.join('\n')}`);
-  }
-
-  return sections.join('\n\n');
-}
-
 async function resolvePlan(
   planArg: string,
   context: GenerateModeRegistrationContext
@@ -161,73 +131,41 @@ export async function loadQuestionsPrompt(
   };
 }
 
+// Simplified task schema for MCP tool parameters
+const taskSchema = z.object({
+  title: z.string().describe('Short title for the task'),
+  description: z.string().describe('Detailed description of what needs to be done'),
+  done: z.boolean().optional().describe('Whether this task is completed (default: false)'),
+});
+
 export const generateTasksParameters = z
   .object({
-    plan: z.string().describe('Plan ID or file path to generate tasks for'),
-    simple: z.boolean().optional().describe('Use the simplified single-phase planning prompt'),
-    direct: z
-      .boolean()
-      .optional()
-      .describe('Call the configured model directly instead of returning a planning prompt'),
-    model: z
-      .string()
-      .optional()
-      .describe('Model identifier to use when direct generation is enabled'),
+    plan: z.string().describe('Plan ID or file path to update'),
+    title: z.string().optional().describe('Plan title'),
+    goal: z.string().optional().describe('High-level goal of the plan'),
+    details: z.string().optional().describe('Additional details about the plan in markdown format'),
+    priority: prioritySchema.optional().describe('Priority level for the plan'),
+    tasks: z.array(taskSchema).describe('List of tasks to be completed'),
   })
-  .describe('Options for generating tasks for a plan');
+  .describe('Update a plan file with generated tasks and details');
 
 export type GenerateTasksArguments = z.infer<typeof generateTasksParameters>;
 
-async function loadPlanningDocument(context: GenerateModeRegistrationContext): Promise<string> {
-  const instructionsPath = context.config.planning?.instructions;
-  if (!instructionsPath) {
-    return '';
-  }
-
-  const absolutePath = path.isAbsolute(instructionsPath)
-    ? instructionsPath
-    : path.join(context.gitRoot, instructionsPath);
-
-  const file = Bun.file(absolutePath);
-  try {
-    return await file.text();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new UserError(`Failed to read planning instructions from ${absolutePath}: ${message}`);
-  }
-}
-
-async function parseAndMergeTasks(
-  generatedText: string,
-  originalPlan: PlanSchema,
-  config: RmplanConfig
+async function mergeTasksIntoPlan(
+  newPlanData: Partial<PlanSchema>,
+  originalPlan: PlanSchema
 ): Promise<PlanSchema> {
-  let convertedYaml: string;
+  // Validate the new plan data against the schema
+  const result = planSchema.safeParse({
+    ...originalPlan,
+    ...newPlanData,
+    // Ensure tasks is always an array
+    tasks: newPlanData.tasks || [],
+  });
 
-  try {
-    // First try to see if it's YAML already
-    const maybeYaml = findYamlStart(generatedText);
-    const parsedObject = yaml.parse(maybeYaml, { strict: false });
-    convertedYaml = yaml.stringify(parsedObject);
-  } catch {
-    // Not valid YAML, convert from markdown
-    convertedYaml = await convertMarkdownToYaml(generatedText, config, true);
-  }
-
-  // Parse and fix the YAML
-  let parsedYaml;
-  try {
-    parsedYaml = await fixYaml(convertedYaml, 5, config);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new UserError(`Failed to parse generated YAML: ${message}`);
-  }
-
-  // Validate against the plan schema
-  const result = planSchema.safeParse(parsedYaml);
   if (!result.success) {
     const errors = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ');
-    throw new UserError(`Generated plan failed validation: ${errors}`);
+    throw new UserError(`Plan data failed validation: ${errors}`);
   }
 
   const newPlan = result.data;
@@ -240,9 +178,11 @@ async function parseAndMergeTasks(
     updatedAt: new Date().toISOString(),
     planGeneratedAt: new Date().toISOString(),
     status: originalPlan.status,
-    priority: originalPlan.priority || newPlan.priority,
-    title: originalPlan.title || newPlan.title,
-    goal: originalPlan.goal || newPlan.goal,
+    // Only override these if provided in newPlanData
+    priority: newPlanData.priority !== undefined ? newPlanData.priority : originalPlan.priority,
+    title: newPlanData.title !== undefined ? newPlanData.title : originalPlan.title,
+    goal: newPlanData.goal !== undefined ? newPlanData.goal : originalPlan.goal,
+    details: newPlanData.details !== undefined ? newPlanData.details : originalPlan.details,
   };
 
   // Preserve fields that should not be overwritten
@@ -259,12 +199,8 @@ async function parseAndMergeTasks(
   if (originalPlan.project !== undefined) updatedPlan.project = originalPlan.project;
   if (originalPlan.generatedBy !== undefined) updatedPlan.generatedBy = originalPlan.generatedBy;
 
-  // Update promptsGeneratedAt if prompts were generated
-  if (newPlan.tasks[0]?.steps?.[0]?.prompt) {
-    updatedPlan.promptsGeneratedAt = new Date().toISOString();
-  } else {
-    updatedPlan.promptsGeneratedAt = originalPlan.promptsGeneratedAt;
-  }
+  // Preserve promptsGeneratedAt from original plan
+  updatedPlan.promptsGeneratedAt = originalPlan.promptsGeneratedAt;
 
   // Merge tasks while preserving completed ones
   const originalTasks = originalPlan.tasks || [];
@@ -317,39 +253,23 @@ export async function handleGenerateTasksTool(
   execContext: { log: GenerateModeExecutionLogger }
 ): Promise<string> {
   const { plan, planPath } = await resolvePlan(args.plan, context);
-  const basePromptBody = buildPlanPromptBody(plan);
-  const planningDoc = await loadPlanningDocument(context);
-  const combinedBody = planningDoc
-    ? `${basePromptBody}\n\n## Planning Rules\n\n${planningDoc}`
-    : basePromptBody;
-  const promptText = args.simple ? simplePlanPrompt(combinedBody) : planPrompt(combinedBody);
-
-  const shouldCallModel = args.direct ?? context.config.planning?.direct_mode ?? false;
-
-  if (!shouldCallModel) {
-    const relativePath = path.relative(context.gitRoot, planPath) || planPath;
-    return [
-      'Direct model generation is disabled. Copy the prompt below into your preferred model to generate tasks.',
-      `Plan: ${relativePath}`,
-      '',
-      promptText,
-    ].join('\n');
-  }
-
-  const modelId = args.model ?? DEFAULT_RUN_MODEL;
 
   try {
-    execContext.log.info('Generating tasks using direct model invocation', { modelId });
-    const { text } = await runStreamingPrompt({
-      input: promptText,
-      model: modelId,
-    });
+    execContext.log.info('Merging generated plan data');
 
-    const generatedText = text.trim();
-    execContext.log.info('Parsing and merging generated tasks into plan');
+    // Build partial plan data from arguments
+    const newPlanData: Partial<PlanSchema> = {
+      tasks: args.tasks as PlanSchema['tasks'],
+    };
 
-    // Parse the generated text and merge with the existing plan
-    const updatedPlan = await parseAndMergeTasks(generatedText, plan, context.config);
+    // Only include optional fields if they were provided
+    if (args.title !== undefined) newPlanData.title = args.title;
+    if (args.goal !== undefined) newPlanData.goal = args.goal;
+    if (args.details !== undefined) newPlanData.details = args.details;
+    if (args.priority !== undefined) newPlanData.priority = args.priority;
+
+    // Merge with the existing plan
+    const updatedPlan = await mergeTasksIntoPlan(newPlanData, plan);
 
     // Write the updated plan back to the file
     await writePlanFile(planPath, updatedPlan);
@@ -359,7 +279,7 @@ export async function handleGenerateTasksTool(
     return `Successfully updated plan at ${relativePath} with ${taskCount} task${taskCount === 1 ? '' : 's'}`;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new UserError(`Failed to generate and update tasks: ${message}`);
+    throw new UserError(`Failed to update plan: ${message}`);
   }
 }
 
@@ -442,16 +362,17 @@ export function registerGenerateMode(
   });
 
   server.addTool({
-    name: 'generate-plan-tasks',
-    description: 'Generate detailed rmplan tasks for the provided plan description.',
+    name: 'update-plan-tasks',
+    description:
+      'Update an rmplan file with generated tasks and details. Takes pre-generated plan content (in markdown or YAML format) and merges it into the existing plan file, preserving metadata and completed tasks.',
     parameters: generateTasksParameters,
     annotations: {
-      destructiveHint: false,
-      readOnlyHint: true,
+      destructiveHint: true,
+      readOnlyHint: false,
     },
     execute: async (args, execContext) =>
       handleGenerateTasksTool(args, context, {
-        log: wrapLogger(execContext.log, '[generate-plan-tasks] '),
+        log: wrapLogger(execContext.log, '[update-plan-tasks] '),
       }),
   });
 

@@ -74,10 +74,22 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(updated.details).toContain('### Notes');
   });
 
-  test('handleGenerateTasksTool returns a planning prompt when direct mode is disabled', async () => {
+  test('handleGenerateTasksTool updates plan with structured data', async () => {
     const args = generateTasksParameters.parse({
       plan: planPath,
-      direct: false,
+      goal: 'Ship a high-quality feature',
+      details: 'Updated details about the plan.',
+      priority: 'high',
+      tasks: [
+        {
+          title: 'Implement core functionality',
+          description: 'Build the main feature',
+        },
+        {
+          title: 'Add tests',
+          description: 'Ensure coverage',
+        },
+      ],
     });
     const stubLogger = {
       debug() {},
@@ -86,7 +98,17 @@ describe('rmplan MCP generate mode helpers', () => {
       warn() {},
     };
     const result = await handleGenerateTasksTool(args, context, { log: stubLogger });
-    expect(result).toContain('Direct model generation is disabled');
-    expect(result).toContain('# Test Plan');
+    expect(result).toContain('Successfully updated plan');
+    expect(result).toContain('2 tasks');
+
+    // Verify the plan was actually updated
+    const updated = await readPlanFile(planPath);
+    expect(updated.tasks).toHaveLength(2);
+    expect(updated.tasks[0]?.title).toBe('Implement core functionality');
+    expect(updated.tasks[0]?.description).toBe('Build the main feature');
+    expect(updated.tasks[1]?.title).toBe('Add tests');
+    expect(updated.tasks[1]?.description).toBe('Ensure coverage');
+    expect(updated.details).toContain('Updated details about the plan.');
+    expect(updated.priority).toBe('high');
   });
 });
