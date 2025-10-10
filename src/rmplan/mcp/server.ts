@@ -15,7 +15,7 @@ export interface StartMcpServerOptions {
 export async function startMcpServer(options: StartMcpServerOptions = {}): Promise<void> {
   const mode = options.mode ?? 'generate';
   if (mode !== 'generate') {
-    throw new Error(`Unsupported MCP mode: ${mode}`);
+    throw new Error(`Unsupported MCP mode: ${mode as string}`);
   }
 
   const config = await loadEffectiveConfig(options.configPath);

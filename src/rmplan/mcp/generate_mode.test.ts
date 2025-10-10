@@ -47,7 +47,7 @@ describe('rmplan MCP generate mode helpers', () => {
 
   test('loadResearchPrompt returns plan context with research template', async () => {
     const prompt = await loadResearchPrompt({ plan: planPath }, context);
-    const message = prompt.messages[0]?.content[0];
+    const message = prompt.messages[0]?.content;
     expect(message?.text).toContain('Test Plan');
     expect(message?.text).toContain('Use the following template to capture research');
     expect(message?.text).toContain('### Summary');
@@ -55,7 +55,7 @@ describe('rmplan MCP generate mode helpers', () => {
 
   test('loadQuestionsPrompt encourages iterative questioning', async () => {
     const prompt = await loadQuestionsPrompt({ plan: planPath }, context);
-    const message = prompt.messages[0]?.content[0];
+    const message = prompt.messages[0]?.content;
     expect(message?.text).toContain('Ask one concise, high-impact question');
     expect(message?.text).toContain('Initial details about the plan.');
   });

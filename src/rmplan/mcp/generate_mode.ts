@@ -1,12 +1,17 @@
 import path from 'node:path';
 import { FastMCP, UserError } from 'fastmcp';
+import type { SerializableValue } from 'fastmcp';
 import { z } from 'zod';
+import yaml from 'yaml';
 import { planPrompt, simplePlanPrompt, generateClaudeCodeResearchPrompt } from '../prompt.js';
 import { appendResearchToPlan } from '../research_utils.js';
-import { readPlanFile, writePlanFile, resolvePlanFile } from '../plans.js';
+import { readPlanFile, writePlanFile, resolvePlanFile, isTaskDone } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
+import { planSchema } from '../planSchema.js';
 import type { RmplanConfig } from '../configSchema.js';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../llm_utils/run_and_apply.js';
+import { convertMarkdownToYaml, findYamlStart } from '../process_markdown.js';
+import { fixYaml } from '../fix_yaml.js';
 
 export interface GenerateModeRegistrationContext {
   config: RmplanConfig;
@@ -62,8 +67,8 @@ function buildPlanContext(
   if (plan.issue?.length) {
     parts.push(`Linked issues:\n${plan.issue.join('\n')}`);
   }
-  if (plan.doc?.length) {
-    parts.push(`Documentation references:\n${plan.doc.join('\n')}`);
+  if (plan.docs?.length) {
+    parts.push(`Documentation references:\n${plan.docs.join('\n')}`);
   }
 
   const existingTasks = formatExistingTasks(plan);
@@ -113,10 +118,10 @@ async function resolvePlan(
 }
 
 export async function loadResearchPrompt(
-  args: { plan: string },
+  args: { plan?: string },
   context: GenerateModeRegistrationContext
-): Promise<{ messages: Array<{ role: 'user'; content: Array<{ type: 'text'; text: string }> }> }> {
-  const { plan, planPath } = await resolvePlan(args.plan, context);
+) {
+  const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
   const contextBlock = buildPlanContext(plan, planPath, context);
 
   const text = `${contextBlock}\n\nUse the following template to capture research for this plan:\n\n${generateClaudeCodeResearchPrompt()}`;
@@ -124,23 +129,21 @@ export async function loadResearchPrompt(
   return {
     messages: [
       {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text,
-          },
-        ],
+        role: 'user' as const,
+        content: {
+          type: 'text' as const,
+          text,
+        },
       },
     ],
   };
 }
 
 export async function loadQuestionsPrompt(
-  args: { plan: string },
+  args: { plan?: string },
   context: GenerateModeRegistrationContext
-): Promise<{ messages: Array<{ role: 'user'; content: Array<{ type: 'text'; text: string }> }> }> {
-  const { plan, planPath } = await resolvePlan(args.plan, context);
+) {
+  const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
   const contextBlock = buildPlanContext(plan, planPath, context);
 
   const text = `${contextBlock}\n\nYou are collaborating with a human partner to refine this plan. Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Avoid repeating information already captured. Wait for the user to respond before asking a follow-up.`;
@@ -148,13 +151,11 @@ export async function loadQuestionsPrompt(
   return {
     messages: [
       {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text,
-          },
-        ],
+        role: 'user' as const,
+        content: {
+          type: 'text' as const,
+          text,
+        },
       },
     ],
   };
@@ -196,6 +197,120 @@ async function loadPlanningDocument(context: GenerateModeRegistrationContext): P
   }
 }
 
+async function parseAndMergeTasks(
+  generatedText: string,
+  originalPlan: PlanSchema,
+  config: RmplanConfig
+): Promise<PlanSchema> {
+  let convertedYaml: string;
+
+  try {
+    // First try to see if it's YAML already
+    const maybeYaml = findYamlStart(generatedText);
+    const parsedObject = yaml.parse(maybeYaml, { strict: false });
+    convertedYaml = yaml.stringify(parsedObject);
+  } catch {
+    // Not valid YAML, convert from markdown
+    convertedYaml = await convertMarkdownToYaml(generatedText, config, true);
+  }
+
+  // Parse and fix the YAML
+  let parsedYaml;
+  try {
+    parsedYaml = await fixYaml(convertedYaml, 5, config);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new UserError(`Failed to parse generated YAML: ${message}`);
+  }
+
+  // Validate against the plan schema
+  const result = planSchema.safeParse(parsedYaml);
+  if (!result.success) {
+    const errors = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ');
+    throw new UserError(`Generated plan failed validation: ${errors}`);
+  }
+
+  const newPlan = result.data;
+
+  // Preserve all metadata from the original plan
+  const updatedPlan: PlanSchema = {
+    ...newPlan,
+    id: originalPlan.id,
+    createdAt: originalPlan.createdAt,
+    updatedAt: new Date().toISOString(),
+    planGeneratedAt: new Date().toISOString(),
+    status: originalPlan.status,
+    priority: originalPlan.priority || newPlan.priority,
+    title: originalPlan.title || newPlan.title,
+    goal: originalPlan.goal || newPlan.goal,
+  };
+
+  // Preserve fields that should not be overwritten
+  if (originalPlan.parent !== undefined) updatedPlan.parent = originalPlan.parent;
+  if (originalPlan.container !== undefined) updatedPlan.container = originalPlan.container;
+  if (originalPlan.baseBranch !== undefined) updatedPlan.baseBranch = originalPlan.baseBranch;
+  if (originalPlan.changedFiles !== undefined) updatedPlan.changedFiles = originalPlan.changedFiles;
+  if (originalPlan.pullRequest !== undefined) updatedPlan.pullRequest = originalPlan.pullRequest;
+  if (originalPlan.assignedTo !== undefined) updatedPlan.assignedTo = originalPlan.assignedTo;
+  if (originalPlan.docs !== undefined) updatedPlan.docs = originalPlan.docs;
+  if (originalPlan.issue !== undefined) updatedPlan.issue = originalPlan.issue;
+  if (originalPlan.rmfilter !== undefined) updatedPlan.rmfilter = originalPlan.rmfilter;
+  if (originalPlan.dependencies !== undefined) updatedPlan.dependencies = originalPlan.dependencies;
+  if (originalPlan.project !== undefined) updatedPlan.project = originalPlan.project;
+  if (originalPlan.generatedBy !== undefined) updatedPlan.generatedBy = originalPlan.generatedBy;
+
+  // Update promptsGeneratedAt if prompts were generated
+  if (newPlan.tasks[0]?.steps?.[0]?.prompt) {
+    updatedPlan.promptsGeneratedAt = new Date().toISOString();
+  } else {
+    updatedPlan.promptsGeneratedAt = originalPlan.promptsGeneratedAt;
+  }
+
+  // Merge tasks while preserving completed ones
+  const originalTasks = originalPlan.tasks || [];
+  const newTasks = newPlan.tasks || [];
+
+  // Build a map of completed tasks
+  const completedTasks = new Map<number, PlanSchema['tasks'][0]>();
+  originalTasks.forEach((task, index) => {
+    if (isTaskDone(task)) {
+      completedTasks.set(index, task);
+    }
+  });
+
+  // Parse task IDs from new tasks to match with original tasks
+  const taskIdRegex = /\[TASK-(\d+)\]/;
+  const mergedTasks: PlanSchema['tasks'] = [];
+
+  // First, add all completed tasks in their original positions
+  for (const [index, task] of completedTasks) {
+    mergedTasks[index] = task;
+  }
+
+  // Then process new tasks
+  newTasks.forEach((newTask) => {
+    const match = newTask.title.match(taskIdRegex);
+    if (match) {
+      const taskIndex = parseInt(match[1]) - 1; // Convert to 0-based index
+      // Remove the task ID from the title
+      newTask.title = newTask.title.replace(taskIdRegex, '').trim();
+
+      // Only update if this was not a completed task
+      if (!completedTasks.has(taskIndex)) {
+        mergedTasks[taskIndex] = newTask;
+      }
+    } else {
+      // New task without ID - add to the end
+      mergedTasks.push(newTask);
+    }
+  });
+
+  // Filter out any undefined entries
+  updatedPlan.tasks = mergedTasks.filter((task) => task !== undefined);
+
+  return updatedPlan;
+}
+
 export async function handleGenerateTasksTool(
   args: GenerateTasksArguments,
   context: GenerateModeRegistrationContext,
@@ -229,10 +344,22 @@ export async function handleGenerateTasksTool(
       input: promptText,
       model: modelId,
     });
-    return text.trim();
+
+    const generatedText = text.trim();
+    execContext.log.info('Parsing and merging generated tasks into plan');
+
+    // Parse the generated text and merge with the existing plan
+    const updatedPlan = await parseAndMergeTasks(generatedText, plan, context.config);
+
+    // Write the updated plan back to the file
+    await writePlanFile(planPath, updatedPlan);
+
+    const relativePath = path.relative(context.gitRoot, planPath) || planPath;
+    const taskCount = updatedPlan.tasks.length;
+    return `Successfully updated plan at ${relativePath} with ${taskCount} task${taskCount === 1 ? '' : 's'}`;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new UserError(`Failed to generate tasks with model ${modelId}: ${message}`);
+    throw new UserError(`Failed to generate and update tasks: ${message}`);
   }
 }
 
@@ -268,10 +395,10 @@ export async function handleAppendResearchTool(
 }
 
 type GenerateModeExecutionLogger = {
-  debug: (message: string, data?: Record<string, unknown>) => void;
-  error: (message: string, data?: Record<string, unknown>) => void;
-  info: (message: string, data?: Record<string, unknown>) => void;
-  warn: (message: string, data?: Record<string, unknown>) => void;
+  debug: (message: string, data?: SerializableValue) => void;
+  error: (message: string, data?: SerializableValue) => void;
+  info: (message: string, data?: SerializableValue) => void;
+  warn: (message: string, data?: SerializableValue) => void;
 };
 
 function wrapLogger(log: GenerateModeExecutionLogger, prefix: string): GenerateModeExecutionLogger {
