@@ -147,6 +147,28 @@ export async function loadQuestionsPrompt(
   };
 }
 
+export async function loadPlanPrompt(
+  args: { plan: string },
+  context: GenerateModeRegistrationContext
+) {
+  const { plan, planPath } = await resolvePlan(args.plan, context);
+  const contextBlock = buildPlanContext(plan, planPath, context);
+
+  const text = `${contextBlock}\n\nWait for your human collaborator to review the plan and provide further instructions before taking any additional action.`;
+
+  return {
+    messages: [
+      {
+        role: 'user' as const,
+        content: {
+          type: 'text' as const,
+          text,
+        },
+      },
+    ],
+  };
+}
+
 export async function loadGeneratePrompt(
   args: { plan?: string },
   context: GenerateModeRegistrationContext
@@ -484,6 +506,20 @@ export function registerGenerateMode(
       },
     ],
     load: async (args) => loadQuestionsPrompt({ plan: args.plan }, context),
+  });
+
+  server.addPrompt({
+    name: 'load-plan',
+    description:
+      'Load a plan and share its current details, then wait for the human collaborator before taking additional action.',
+    arguments: [
+      {
+        name: 'plan',
+        description: 'Plan ID or file path to load',
+        required: true,
+      },
+    ],
+    load: async (args) => loadPlanPrompt({ plan: args.plan }, context),
   });
 
   server.addPrompt({
