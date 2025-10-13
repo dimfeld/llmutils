@@ -482,13 +482,13 @@ export function registerGenerateMode(
   context: GenerateModeRegistrationContext
 ): void {
   server.addPrompt({
-    name: 'perform-research',
+    name: 'generate-plan',
     description:
-      'Collect research notes and findings for a plan using the standard rmplan research template.',
+      'Generate a detailed implementation plan with research. Performs research, collects findings, and generates tasks after collaborating with the user.',
     arguments: [
       {
         name: 'plan',
-        description: 'Plan ID or file path to investigate',
+        description: 'Plan ID or file path to generate',
         required: true,
       },
     ],
@@ -519,13 +519,18 @@ export function registerGenerateMode(
         required: true,
       },
     ],
-    load: async (args) => loadPlanPrompt({ plan: args.plan }, context),
+    load: async (args) => {
+      if (!args.plan) {
+        return `Plan ID or file path is required for this prompt`;
+      }
+      return loadPlanPrompt({ plan: args.plan }, context);
+    },
   });
 
   server.addPrompt({
-    name: 'generate-plan',
+    name: 'generate-plan-simple',
     description:
-      'Generate a detailed implementation plan after analyzing the codebase. Uses the Claude Code generation prompt and instructs to use the update-plan-tasks tool.',
+      'Generate tasks for a plan without research phase. Goes directly to task generation using the Claude Code generation prompt and update-plan-tasks tool.',
     arguments: [
       {
         name: 'plan',
