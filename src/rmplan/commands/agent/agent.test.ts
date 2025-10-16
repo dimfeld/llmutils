@@ -610,7 +610,10 @@ describe('rmplanAgent - simple mode flag plumbing', () => {
   const serialFindNextActionableItemSpy = mock(() => null);
   const serialPrepareNextStepSpy = mock(async () => null);
   const serialMarkStepDoneSpy = mock(async () => ({ message: 'Marked', planComplete: false }));
-  const serialMarkTaskDoneSpy = mock(async () => ({ message: 'Task updated', planComplete: false }));
+  const serialMarkTaskDoneSpy = mock(async () => ({
+    message: 'Task updated',
+    planComplete: false,
+  }));
 
   beforeEach(async () => {
     clearPlanCache();
