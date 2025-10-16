@@ -113,6 +113,7 @@ describe('executeBatchMode stops on structured executor failure', () => {
           baseDir: '/tmp/repo',
           dryRun: false,
           executorName: 'codex-cli',
+          executionMode: 'normal',
         },
         collector as any
       )

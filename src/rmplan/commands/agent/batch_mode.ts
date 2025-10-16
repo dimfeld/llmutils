@@ -19,6 +19,7 @@ export async function executeBatchMode(
     dryRun = false,
     maxSteps = Infinity,
     executorName,
+    executionMode = 'normal',
   }: {
     currentPlanFile: string;
     config: RmplanConfig;
@@ -27,6 +28,7 @@ export async function executeBatchMode(
     dryRun?: boolean;
     maxSteps?: number;
     executorName?: string;
+    executionMode?: 'normal' | 'simple';
   },
   summaryCollector?: SummaryCollector
 ) {
@@ -117,7 +119,7 @@ export async function executeBatchMode(
           planTitle: planData.title ?? 'Untitled Plan',
           planFilePath: currentPlanFile,
           batchMode: true,
-          executionMode: 'normal',
+          executionMode,
           captureOutput: summaryCollector ? 'result' : 'none',
         });
         iteration += 1;

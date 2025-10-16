@@ -177,6 +177,7 @@ program
   .option('--doc <paths...>', 'Add documentation file paths to the plan')
   .option('--assign <username>', 'Assign the plan to a user')
   .option('--cleanup <planId>', 'Create a cleanup plan for the specified plan ID')
+  .option('--temp', 'Mark this plan as temporary (can be deleted with cleanup-temp command)')
   .action(async (title, options, command) => {
     const { handleAddCommand } = await import('./commands/add.js');
     options.dependsOn = intArg(options.dependsOn);
@@ -291,6 +292,14 @@ program
     await handleCleanupCommand(files, options).catch(handleCommandError);
   });
 
+program
+  .command('cleanup-temp')
+  .description('Delete all temporary plan files marked with temp: true')
+  .action(async (options, command) => {
+    const { handleCleanupTempCommand } = await import('./commands/cleanup-temp.js');
+    await handleCleanupTempCommand(options, command).catch(handleCommandError);
+  });
+
 const executorNames = executors
   .values()
   .map((e) => e.name)
@@ -347,6 +356,7 @@ function createAgentCommand(command: Command, description: string) {
       '--serial-tasks',
       'Disable batch task execution mode and process tasks one at a time (default is batch mode)'
     )
+    .option('--simple', 'Use streamlined two-phase execution mode (implement then verify)')
     .allowExcessArguments(true)
     .allowUnknownOption(true)
     .action(async (planFile, options, command) => {

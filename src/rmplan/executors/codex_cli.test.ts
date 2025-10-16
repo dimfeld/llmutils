@@ -581,7 +581,7 @@ describe('CodexCliExecutor - failure detection across agents', () => {
     expect(recordedArgs).toHaveLength(1);
     const args = recordedArgs[0];
     expect(args).toContain('--sandbox');
-    expect(args).not.toContain('-c');
+    expect(args.filter((value) => value === '-c')).toHaveLength(1);
     expect(
       args.some((value) => value.startsWith('sandbox_workspace_write.writable_roots='))
     ).toBeFalse();

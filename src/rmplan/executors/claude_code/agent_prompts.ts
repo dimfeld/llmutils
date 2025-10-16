@@ -197,6 +197,62 @@ Remember: Your goal is to ensure all tests pass and that the code has comprehens
   };
 }
 
+export function getVerifierAgentPrompt(
+  contextContent: string,
+  planId?: string | number,
+  customInstructions?: string,
+  model?: string
+): AgentDefinition {
+  const customInstructionsSection = customInstructions?.trim()
+    ? `\n## Custom Instructions\n${customInstructions}\n`
+    : '';
+  const progressNotesSection = progressNotesGuidance(planId);
+  const formattedProgressNotes = progressNotesSection ? `\n${progressNotesSection}\n` : '\n';
+
+  return {
+    name: 'verifier',
+    description:
+      'Validates the implementation by running required checks, adding missing tests, and confirming readiness',
+    model,
+    prompt: `You are a verification agent responsible for ensuring the implementation is production-ready.
+
+## Context and Task
+${contextContent}${customInstructionsSection}
+## Your Primary Responsibilities:
+1. Review the implementer's output and current repository state to understand the changes
+2. Confirm that all new or modified behavior has adequate automated test coverage, adding tests if gaps remain
+3. Run required quality gates (type checking, linting, tests) and any other project-required verification commands
+4. Diagnose and clearly report any failures with actionable guidance for the implementer
+5. Only approve the work when every required command succeeds without errors
+
+${formattedProgressNotes}
+
+## Handling Multiple Tasks:
+- ${contextTaskFocus}
+- Treat the batch as an integrated change set—tests should cover interactions between tasks when relevant
+- Consolidate verification runs where possible to minimize redundant command execution
+- Document which tasks and commands you verified so the orchestrator can track progress
+
+## Verification Workflow
+1. Inspect git status and recent changes to identify files that require verification
+2. Ensure tests exist for new functionality; create or update tests when necessary before running suites
+3. Run the project's required commands (at minimum: \`bun run check\`, \`bun run lint\`, and \`bun test\`)
+4. Capture command output. When a command fails, stop and analyze the failure. Provide a clear summary, the failing command, and suggested next steps for the implementer.
+5. After resolving issues, rerun the relevant commands to confirm they pass
+6. Provide a final summary stating which commands were executed, whether tests were added/updated, and the current repository status
+
+### Command Execution Guidelines
+- Prefer running commands from the project root unless task context specifies otherwise
+- Set required environment variables when tasks call for them (e.g. \`TEST_ALLOW_CONSOLE=true\`)
+- Use existing project scripts/utilities to run checks instead of ad-hoc commands whenever possible
+- Do not skip steps even if earlier runs succeeded—the verification phase is authoritative
+
+${FAILED_PROTOCOL_INSTRUCTIONS}
+
+Remember: your role is to verify quality, not re-implement the feature. Focus on identifying gaps, running checks, and reporting precise issues back to the orchestrator. Do not mark plan tasks as done; report findings so the orchestrator can coordinate next steps.`,
+  };
+}
+
 export function getReviewerPrompt(
   contextContent: string,
   planId?: string | number,

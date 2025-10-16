@@ -53,11 +53,16 @@ export async function handleAddCommand(title: string[], options: any, command: a
       planTitle = title.join(' ');
     }
   } else {
-    // Regular flow - title is required when not using cleanup
+    // Regular flow - title is required when not using cleanup or edit
     if (title.length === 0) {
-      throw new Error('Plan title is required when not using --cleanup option');
+      if (!options.edit) {
+        throw new Error('Plan title is required when not using --cleanup or --edit option');
+      }
+      // Use empty string when --edit is provided without a title
+      planTitle = '';
+    } else {
+      planTitle = title.join(' ');
     }
-    planTitle = title.join(' ');
   }
 
   // Generate a unique numeric plan ID
@@ -98,6 +103,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
     details: '',
     status: options.status || 'pending',
     priority: (options.priority as 'low' | 'medium' | 'high' | 'urgent') || 'medium',
+    temp: options.temp || false,
     dependencies: needArrayOrUndefined(options.dependsOn),
     parent: referencedPlan
       ? referencedPlan.id
@@ -190,5 +196,21 @@ export async function handleAddCommand(title: string[], options: any, command: a
       stdio: ['inherit', 'inherit', 'inherit'],
     });
     await editorProcess.exited;
+
+    // Read the edited plan to check if title was updated
+    const editedPlan = await readPlanFile(filePath);
+
+    // If the title changed, rename the file to match
+    if (editedPlan.title && editedPlan.title !== planTitle) {
+      const newSlugifiedTitle = slugify(editedPlan.title);
+      const newFilename = `${planId}-${newSlugifiedTitle}.plan.md`;
+      const newFilePath = path.join(targetDir, newFilename);
+
+      // Only rename if the new filename is different
+      if (newFilename !== filename) {
+        await fs.rename(filePath, newFilePath);
+        log(chalk.gray(`  Renamed plan file to: ${newFilename}`));
+      }
+    }
   }
 }

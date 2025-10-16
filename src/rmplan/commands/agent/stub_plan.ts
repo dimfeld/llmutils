@@ -16,6 +16,7 @@ export async function executeStubPlan({
   executor,
   commit,
   dryRun = false,
+  executionMode = 'normal',
 }: {
   config: RmplanConfig;
   baseDir: string;
@@ -24,6 +25,7 @@ export async function executeStubPlan({
   executor: Executor;
   commit: boolean;
   dryRun?: boolean;
+  executionMode?: 'normal' | 'simple';
 }) {
   // Update plan status to in_progress
   planData.status = 'in_progress';
@@ -64,7 +66,7 @@ export async function executeStubPlan({
     planId: planData.id?.toString() ?? 'unknown',
     planTitle: planData.title ?? 'Untitled Plan',
     planFilePath: planFilePath,
-    executionMode: 'normal',
+    executionMode,
   });
 
   // Execute post-apply commands if configured and no error occurred

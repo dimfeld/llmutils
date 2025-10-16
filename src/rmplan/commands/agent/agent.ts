@@ -275,13 +275,27 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   const agentExecutionModel =
     options.model || config.models?.execution || defaultModelForExecutor(executorName, 'execution');
 
+  const executorConfigEntry =
+    config.executors && executorName in config.executors
+      ? (config.executors as Record<string, unknown>)[executorName]
+      : undefined;
+  const configSimpleMode =
+    executorConfigEntry && typeof executorConfigEntry === 'object'
+      ? (executorConfigEntry as { simpleMode?: unknown }).simpleMode
+      : undefined;
+  const simpleModeEnabled = options.simple === true || configSimpleMode === true;
+
   const sharedExecutorOptions: ExecutorCommonOptions = {
     baseDir: currentBaseDir,
     model: agentExecutionModel,
     interactive: options.interactiveExecutor,
+    simpleMode: simpleModeEnabled ? true : undefined,
   };
 
-  const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
+  const executor = options.simple
+    ? buildExecutorAndLog(executorName, sharedExecutorOptions, config, { simpleMode: true })
+    : buildExecutorAndLog(executorName, sharedExecutorOptions, config);
+  const executionMode: 'normal' | 'simple' = simpleModeEnabled ? 'simple' : 'normal';
 
   // Check if the plan needs preparation
   const planData = await readPlanFile(currentPlanFile);
@@ -355,6 +369,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           executor,
           commit: true,
           dryRun: options.dryRun,
+          executionMode,
         });
       } catch (err) {
         error('Direct execution failed:', err);
@@ -434,6 +449,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           dryRun: options.dryRun,
           executorName,
           maxSteps,
+          executionMode,
         },
         summaryEnabled ? summaryCollector : undefined
       );
@@ -522,7 +538,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             planId: planData.id?.toString() ?? 'unknown',
             planTitle: planData.title ?? 'Untitled Plan',
             planFilePath: currentPlanFile,
-            executionMode: 'normal',
+            executionMode,
             captureOutput: summaryEnabled ? 'result' : 'none',
           });
           // Detect executor-declared failure and stop early
@@ -720,7 +736,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           planId: planData.id?.toString() ?? 'unknown',
           planTitle: planData.title ?? 'Untitled Plan',
           planFilePath: currentPlanFile,
-          executionMode: 'normal',
+          executionMode,
           captureOutput: summaryEnabled ? 'result' : 'none',
         });
         const ok = output ? output.success !== false : true;

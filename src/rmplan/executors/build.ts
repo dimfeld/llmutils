@@ -23,7 +23,7 @@ export const executors = new Map<string, ExecutorFactory<any, z.ZodType<any, any
 
 export function createExecutor(
   name: string,
-  options: any,
+  options: Record<string, unknown>,
   sharedOptions: ExecutorCommonOptions,
   rmplanConfig: RmplanConfig
 ) {
@@ -57,15 +57,10 @@ export function createExecutor(
 export function buildExecutorAndLog(
   executorName: string,
   sharedOptions: ExecutorCommonOptions,
-  config: RmplanConfig
+  config: RmplanConfig,
+  executorOptions: Record<string, unknown> = {}
 ) {
-  const buildExecutorResult = createExecutor(
-    executorName,
-    // TODO: Add support for CLI-provided executor options
-    {},
-    sharedOptions,
-    config
-  );
+  const buildExecutorResult = createExecutor(executorName, executorOptions, sharedOptions, config);
 
   if ('error' in buildExecutorResult) {
     error(buildExecutorResult.error);

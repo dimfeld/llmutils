@@ -16,7 +16,7 @@ While executing, add progress notes whenever you:
 - Encounter unexpected behavior or deviate from the original plan
 - Discover important details future runs should know
 
-Use the Bash command 'rmplan add-progress-note ${planId} --source "<agent>: <task>" "<note text>"'. The source value must clearly identify which agent is reporting (implementer, tester, reviewer, or human) and which task it was working on so future runs understand the context. Notes should be self-contained and understandable without extra context.
+Use the Bash command 'rmplan add-progress-note ${planId} --source "<agent>: <task>" "<note text>"'. The source value must clearly identify which agent is reporting (implementer, verifier, tester, reviewer, or human - use whichever applies) and which task it was working on so future runs understand the context. Notes should be self-contained and understandable without extra context.
 `;
 }
 
@@ -263,6 +263,107 @@ ${contextContent}`;
 ${workflowInstructions}
 
 ${importantGuidelines}
+
+${footer}`;
+}
+
+/**
+ * Wraps context content with simplified orchestration instructions for implement → verify flow.
+ */
+export function wrapWithOrchestrationSimple(
+  contextContent: string,
+  planId: string,
+  options: OrchestrationOptions = {}
+): string {
+  const batchModeInstructions = buildBatchModeInstructions(options);
+  const progressNotesSection = progressNotesGuidance(planId);
+  const implementationDocs = implementationNotesGuidance(options.planFilePath);
+
+  const header = `# Two-Phase Orchestration Instructions
+
+You are coordinating a streamlined two-phase workflow (implement → verify) for the tasks below.`;
+
+  const availableAgents = `## Available Agents
+
+You have two specialized agents:
+- **rmplan-${planId}-implementer**: Implements the requested functionality and updates code/tests as needed.
+- **rmplan-${planId}-verifier**: Runs verification commands (typecheck, lint, tests) and ensures the work meets requirements.`;
+
+  const taskSelectionPhase = options.batchMode
+    ? `1. **Task Selection Phase**
+   - Review all provided tasks and select a focused subset for this run
+   - Document which tasks you chose and why before proceeding
+   - Keep the batch manageable so both phases can finish successfully
+
+2. **Implementation Phase**`
+    : `1. **Implementation Phase**`;
+
+  const workflowInstructions = `## Workflow Instructions
+
+You MUST follow this simplified loop:
+
+${taskSelectionPhase}
+   - Call the implementer agent via the Task tool with subagent_type="rmplan-${planId}-implementer"
+   - Provide precise task instructions and relevant context
+   - Wait for the implementer to finish before moving on
+
+${options.batchMode ? '3' : '2'}. **Verification Phase**
+   - Invoke the verifier agent with subagent_type="rmplan-${planId}-verifier"
+   - Direct the verifier to:
+     - Ensure tests exist for new or changed behavior (adding tests if gaps remain)
+     - Run type checking (e.g. \`bun run check\`)
+     - Run linting (e.g. \`bun run lint\`)
+     - Run the project test suite (e.g. \`bun test\`)
+     - Confirm all commands pass and summarize any failures
+   - If verification fails, return to the implementer with the issues found
+
+${options.batchMode ? '4' : '3'}. **Notes Phase**
+${implementationDocs}
+
+${options.batchMode ? '5' : '4'}. **Iteration**
+- Repeat the implement → verify loop until verification succeeds without failures.`;
+
+  const failureProtocol = `
+## Failure Protocol (Conflicting/Impossible Requirements)
+
+- Monitor all subagent outputs for a line starting with "FAILED:".
+- If any subagent emits a FAILED line, stop immediately.
+- Output a concise failure message and propagate details:
+  - First line: FAILED: <agent> reported a failure — <1-sentence summary>
+    - <agent> must be one of: implementer | verifier | orchestrator
+  - Then include the subagent's detailed report verbatim.
+- Do NOT continue to other phases or mark tasks done when a failure occurs.
+- You may add brief context (e.g. which tasks were active) if helpful.`;
+
+  const guidance = `## Important Guidelines
+
+- Do NOT implement, verify, or edit files yourself—delegate all work to the agents.
+- When invoking agents, give clear instructions referencing the specific task titles.
+- Provide prior agent outputs to the next agent so they have full context.
+- Keep the scope focused; if verification fails, loop back to implementation before moving forward.${
+    options.batchMode
+      ? `
+- Subagents can read all pending tasks; explicitly tell them which ones are in scope for this batch.`
+      : ''
+  }${progressNotesSection}`;
+
+  const footer = `## Task Context
+
+Below is the original task context to execute with this workflow:
+
+---
+
+${contextContent}`;
+
+  return `${header}
+
+${batchModeInstructions}${availableAgents}
+
+${workflowInstructions}
+
+${failureProtocol}
+
+${guidance}
 
 ${footer}`;
 }

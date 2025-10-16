@@ -12,6 +12,7 @@ describe('createExecutor', () => {
   const mockOptionsSchema = z.object({
     testOption: z.string().default('default'),
     numberOption: z.number().default(42),
+    simpleMode: z.boolean().optional(),
   });
 
   // Mock executor class
@@ -32,9 +33,9 @@ describe('createExecutor', () => {
 
   // Mock shared options
   const mockSharedOptions: ExecutorCommonOptions = {
-    taskFile: 'test.yml',
-    taskIndex: 0,
-    workspaceDir: '/test/workspace',
+    baseDir: '/test/workspace',
+    model: 'test-model',
+    interactive: false,
   };
 
   test('creates executor with options from config when no options provided', () => {
@@ -251,5 +252,37 @@ describe('createExecutor', () => {
       const options = (result.executor as any).options;
       expect(options.permissionsMcp?.autoApproveCreatedFileDeletion).toBe(true); // CLI option takes precedence
     }
+  });
+  test('prefers CLI-provided simpleMode over config value', () => {
+    executors.set('MockExecutor', MockExecutor as any);
+
+    const mockConfig: RmplanConfig = {
+      defaultExecutor: 'MockExecutor',
+      executors: {
+        MockExecutor: {
+          testOption: 'from-config',
+          numberOption: 7,
+          simpleMode: false,
+        },
+      },
+    };
+
+    const cliOptions = {
+      simpleMode: true,
+    };
+
+    const result = createExecutor('MockExecutor', cliOptions, mockSharedOptions, mockConfig);
+
+    expect('error' in result).toBe(false);
+    if (!('error' in result)) {
+      const mockExecutorInstance = result.executor as MockExecutor;
+      expect(mockExecutorInstance.options).toEqual({
+        testOption: 'from-config',
+        numberOption: 7,
+        simpleMode: true,
+      });
+    }
+
+    executors.delete('MockExecutor');
   });
 });

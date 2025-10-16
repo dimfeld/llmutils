@@ -553,6 +553,15 @@ rmplan agent plan.yml --workspace task-123
 # You can also use plan IDs instead of file paths
 rmplan agent my-feature-123 --steps 3
 
+# Run a streamlined implement → verify loop instead of the full review cycle
+rmplan agent plan.yml --simple
+
+### Simple Mode (--simple)
+
+Add `--simple` when a task only needs a fast implementation pass plus automated verification. In simple mode the executors skip the three-phase implement → test → review loop and instead run an implementer agent followed immediately by a verifier agent. The verifier is responsible for type-checking, linting, and testing (`bun run check`, `bun run lint`, and `bun test`) and for adding or updating tests if the change would otherwise land without coverage. Failures from the verifier stop the run and surface in the same structured failure report used for other agents.
+
+Simple mode works with both Claude Code and Codex CLI executors. You can enable it ad hoc with `--simple`, or set `executors.<name>.simpleMode: true` in `rmplan.yaml` to make the streamlined flow the default for a specific executor. The flag composes with other options such as `--batch`/`--serial-tasks`, `--dry-run`, and workspace selection so you can keep the same workflows while shortening straightforward iterations.
+
 ### Execution Summaries
 
 `rmplan run` and `rmplan agent` produce an execution summary at the end of a run, aggregating step outputs, status, file changes, and timing.

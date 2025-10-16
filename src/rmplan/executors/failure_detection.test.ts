@@ -4,6 +4,7 @@ import {
   detectFailedLine,
   detectFailedLineAnywhere,
   detectPlanningWithoutImplementation,
+  inferFailedAgent,
   extractFailureDetails,
   parseFailedReport,
   parseFailedReportAnywhere,
@@ -82,6 +83,35 @@ describe('failure_detection utilities', () => {
     expect(details.requirements).toContain('R1');
     expect(details.problems).toContain('P1');
     expect(details.solutions).toContain('S1');
+  });
+});
+
+describe('inferFailedAgent', () => {
+  test('detects agent from summary prefix', () => {
+    const source = inferFailedAgent('Implementer cannot proceed due to conflict', undefined);
+    expect(source).toBe('implementer');
+  });
+
+  test('detects agent from reported phrasing', () => {
+    const source = inferFailedAgent('Tester reported a failure — lint errors remain', undefined);
+    expect(source).toBe('tester');
+  });
+
+  test('detects agent from FAILED line in content when summary lacks agent', () => {
+    const content = `FAILED: Reviewer found blocking issues\nProblems:\n- Issue details`;
+    const source = inferFailedAgent(undefined, content);
+    expect(source).toBe('reviewer');
+  });
+
+  test('supports verifier agent detection', () => {
+    const source = inferFailedAgent('Verifier cannot approve due to failing tests', undefined);
+    expect(source).toBe('verifier');
+  });
+
+  test('falls back to orchestrator when no agent detected', () => {
+    const content = `FAILED: Unable to proceed\nNo agent context`;
+    const source = inferFailedAgent(undefined, content);
+    expect(source).toBe('orchestrator');
   });
 });
 

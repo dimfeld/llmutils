@@ -2,6 +2,7 @@ import { test, describe, expect } from 'bun:test';
 import { z } from 'zod/v4';
 import {
   claudeCodeOptionsSchema,
+  codexCliOptionsSchema,
   copyOnlyOptionsSchema,
   copyPasteOptionsSchema,
   directCallOptionsSchema,
@@ -150,6 +151,7 @@ describe('claudeCodeOptionsSchema', () => {
           timeout: 10000,
           autoApproveCreatedFileDeletion: true,
         },
+        simpleMode: true,
       };
 
       const result = claudeCodeOptionsSchema.safeParse(completeOptions);
@@ -172,6 +174,25 @@ describe('claudeCodeOptionsSchema', () => {
         expect(result.data.mcpConfigFile).toBeUndefined();
         expect(result.data.interactive).toBeUndefined();
         expect(result.data.permissionsMcp).toBeUndefined();
+        expect(result.data.simpleMode).toBeUndefined();
+      }
+    });
+
+    test('accepts optional simpleMode flag', () => {
+      const result = claudeCodeOptionsSchema.safeParse({ simpleMode: true });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.simpleMode).toBe(true);
+      }
+    });
+
+    test('rejects invalid simpleMode type', () => {
+      const result = claudeCodeOptionsSchema.safeParse({ simpleMode: 'yes' });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues[0].path).toEqual(['simpleMode']);
       }
     });
   });
@@ -208,6 +229,24 @@ describe('other executor schemas', () => {
     expect(result2.success).toBe(true);
     if (result2.success) {
       expect(result2.data.executionModel).toBe('google/gemini-2.5-pro');
+    }
+  });
+
+  test('codexCliOptionsSchema accepts optional simpleMode flag', () => {
+    const result = codexCliOptionsSchema.safeParse({ simpleMode: true });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.simpleMode).toBe(true);
+    }
+  });
+
+  test('codexCliOptionsSchema enforces boolean type for simpleMode', () => {
+    const result = codexCliOptionsSchema.safeParse({ simpleMode: 'true' });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].path).toEqual(['simpleMode']);
     }
   });
 });

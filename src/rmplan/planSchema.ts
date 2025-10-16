@@ -60,6 +60,7 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
     statusDescription: z.string().optional(),
     priority: prioritySchema.optional(),
     container: z.boolean().default(false).optional(),
+    temp: z.boolean().default(false).optional(),
     dependencies: z.array(z.coerce.number().int().positive()).default([]).optional(),
     parent: z.coerce.number().int().positive().optional(),
     issue: z.array(z.url()).default([]).optional(),

@@ -19,10 +19,18 @@ import { confirm, select, editor } from '@inquirer/prompts';
 import { stringify } from 'yaml';
 import { prefixPrompt } from './claude_code/prefix_prompt.ts';
 import { waitForEnter } from '../../common/terminal.ts';
-import { wrapWithOrchestration } from './claude_code/orchestrator_prompt.ts';
-import { generateAgentFiles, removeAgentFiles } from './claude_code/agent_generator.ts';
+import {
+  wrapWithOrchestration,
+  wrapWithOrchestrationSimple,
+} from './claude_code/orchestrator_prompt.ts';
+import {
+  generateAgentFiles,
+  removeAgentFiles,
+  type AgentDefinition,
+} from './claude_code/agent_generator.ts';
 import {
   getImplementerPrompt,
+  getVerifierAgentPrompt,
   getTesterPrompt,
   getReviewerPrompt,
 } from './claude_code/agent_prompts.ts';
@@ -30,6 +38,7 @@ import {
   parseFailedReport,
   parseFailedReportAnywhere,
   detectFailedLineAnywhere,
+  inferFailedAgent,
 } from './failure_detection.ts';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
@@ -786,12 +795,19 @@ export class ClaudeCodeExecutor implements Executor {
     }
 
     // Apply orchestration wrapper when plan information is provided and in normal mode
-    if (planContextAvailable && planInfo.executionMode === 'normal') {
-      contextContent = wrapWithOrchestration(contextContent, planId, {
-        batchMode: planInfo.batchMode,
-        planFilePath: planFilePath,
-        enableReviewFeedback: this.options.enableReviewFeedback === true,
-      });
+    if (planContextAvailable) {
+      if (planInfo.executionMode === 'normal') {
+        contextContent = wrapWithOrchestration(contextContent, planId, {
+          batchMode: planInfo.batchMode,
+          planFilePath,
+          enableReviewFeedback: this.options.enableReviewFeedback === true,
+        });
+      } else if (planInfo.executionMode === 'simple') {
+        contextContent = wrapWithOrchestrationSimple(contextContent, planId, {
+          batchMode: planInfo.batchMode,
+          planFilePath,
+        });
+      }
     }
 
     let { disallowedTools, allowAllTools, mcpConfigFile, interactive } = this.options;
@@ -916,76 +932,121 @@ export class ClaudeCodeExecutor implements Executor {
       await Bun.file(dynamicMcpConfigFile).write(JSON.stringify(mcpConfig, null, 2));
     }
 
-    // Generate agent files if plan information is provided and in normal mode
-    if (planContextAvailable && planInfo.executionMode === 'normal') {
-      // Load custom instructions for each agent if configured
-      const implementerInstructions = this.rmplanConfig.agents?.implementer?.instructions
-        ? await this.loadAgentInstructions(
-            this.rmplanConfig.agents.implementer.instructions,
-            gitRoot
-          )
-        : undefined;
+    // Generate agent files when plan information is provided
+    if (planContextAvailable) {
+      let agentDefinitions: AgentDefinition[] | undefined;
+      let agentCreationMessage: string | undefined;
 
-      const testerInstructions = this.rmplanConfig.agents?.tester?.instructions
-        ? await this.loadAgentInstructions(this.rmplanConfig.agents.tester.instructions, gitRoot)
-        : undefined;
+      if (planInfo.executionMode === 'normal') {
+        const implementerInstructions = this.rmplanConfig.agents?.implementer?.instructions
+          ? await this.loadAgentInstructions(
+              this.rmplanConfig.agents.implementer.instructions,
+              gitRoot
+            )
+          : undefined;
+        const testerInstructions = this.rmplanConfig.agents?.tester?.instructions
+          ? await this.loadAgentInstructions(this.rmplanConfig.agents.tester.instructions, gitRoot)
+          : undefined;
+        const reviewerInstructions = this.rmplanConfig.agents?.reviewer?.instructions
+          ? await this.loadAgentInstructions(
+              this.rmplanConfig.agents.reviewer.instructions,
+              gitRoot
+            )
+          : undefined;
 
-      const reviewerInstructions = this.rmplanConfig.agents?.reviewer?.instructions
-        ? await this.loadAgentInstructions(this.rmplanConfig.agents.reviewer.instructions, gitRoot)
-        : undefined;
+        agentDefinitions = [
+          getImplementerPrompt(
+            originalContextContent,
+            planId,
+            implementerInstructions,
+            this.options.agents?.implementer?.model
+          ),
+          getTesterPrompt(
+            originalContextContent,
+            planId,
+            testerInstructions,
+            this.options.agents?.tester?.model
+          ),
+          getReviewerPrompt(
+            originalContextContent,
+            planId,
+            reviewerInstructions,
+            this.options.agents?.reviewer?.model
+          ),
+        ];
+        agentCreationMessage = `Created implementer/tester/reviewer agent files for plan ${planId}`;
+      } else if (planInfo.executionMode === 'simple') {
+        const implementerInstructions = this.rmplanConfig.agents?.implementer?.instructions
+          ? await this.loadAgentInstructions(
+              this.rmplanConfig.agents.implementer.instructions,
+              gitRoot
+            )
+          : undefined;
+        const testerInstructions = this.rmplanConfig.agents?.tester?.instructions
+          ? await this.loadAgentInstructions(this.rmplanConfig.agents.tester.instructions, gitRoot)
+          : undefined;
+        const reviewerInstructions = this.rmplanConfig.agents?.reviewer?.instructions
+          ? await this.loadAgentInstructions(
+              this.rmplanConfig.agents.reviewer.instructions,
+              gitRoot
+            )
+          : undefined;
+        const verifierInstructions =
+          [testerInstructions, reviewerInstructions]
+            .filter((instructions): instructions is string => Boolean(instructions?.trim()))
+            .join('\n\n') || undefined;
 
-      const agentDefinitions = [
-        getImplementerPrompt(
-          originalContextContent,
-          planId,
-          implementerInstructions,
-          this.options.agents?.implementer?.model
-        ),
-        getTesterPrompt(
-          originalContextContent,
-          planId,
-          testerInstructions,
-          this.options.agents?.tester?.model
-        ),
-        getReviewerPrompt(
-          originalContextContent,
-          planId,
-          reviewerInstructions,
-          this.options.agents?.reviewer?.model
-        ),
-      ];
-      await generateAgentFiles(planId, agentDefinitions);
-      log(chalk.blue(`Created agent files for plan ${planId}`));
+        agentDefinitions = [
+          getImplementerPrompt(
+            originalContextContent,
+            planId,
+            implementerInstructions,
+            this.options.agents?.implementer?.model
+          ),
+          getVerifierAgentPrompt(
+            originalContextContent,
+            planId,
+            verifierInstructions,
+            this.options.agents?.tester?.model
+          ),
+        ];
+        agentCreationMessage = `Created implementer/verifier agent files for plan ${planId}`;
+      }
 
-      // Register cleanup handler for agent files
-      const cleanupRegistry = CleanupRegistry.getInstance();
-      unregisterCleanup = cleanupRegistry.register(() => {
-        try {
-          const agentsDir = path.join(gitRoot, '.claude', 'agents');
+      if (agentDefinitions) {
+        await generateAgentFiles(planId, agentDefinitions);
+        log(chalk.blue(agentCreationMessage ?? `Created agent files for plan ${planId}`));
 
-          // Use synchronous operations since this may be called from signal handlers
+        // Register cleanup handler for agent files
+        const cleanupRegistry = CleanupRegistry.getInstance();
+        unregisterCleanup = cleanupRegistry.register(() => {
           try {
-            const files = fsSync.readdirSync(agentsDir);
-            const matchingFiles = files.filter((file) =>
-              file.match(new RegExp(`^rmplan-${planId}-.*\\.md$`))
-            );
+            const agentsDir = path.join(gitRoot, '.claude', 'agents');
 
-            for (const file of matchingFiles) {
-              const filePath = path.join(agentsDir, file);
-              try {
-                fsSync.unlinkSync(filePath);
-              } catch (err) {
-                console.error(`Failed to remove agent file ${filePath}:`, err);
+            // Use synchronous operations since this may be called from signal handlers
+            try {
+              const files = fsSync.readdirSync(agentsDir);
+              const matchingFiles = files.filter((file) =>
+                file.match(new RegExp(`^rmplan-${planId}-.*\\.md$`))
+              );
+
+              for (const file of matchingFiles) {
+                const filePath = path.join(agentsDir, file);
+                try {
+                  fsSync.unlinkSync(filePath);
+                } catch (err) {
+                  console.error(`Failed to remove agent file ${filePath}:`, err);
+                }
               }
+            } catch (err) {
+              // Directory might not exist
+              debugLog('Error reading agents directory during cleanup:', err);
             }
           } catch (err) {
-            // Directory might not exist
-            debugLog('Error reading agents directory during cleanup:', err);
+            debugLog('Error during agent file cleanup:', err);
           }
-        } catch (err) {
-          debugLog('Error during agent file cleanup:', err);
-        }
-      });
+        });
+      }
     }
 
     try {
@@ -1153,38 +1214,11 @@ export class ClaudeCodeExecutor implements Executor {
         // If a failure was detected at any point, return structured failure regardless of capture mode
         if (failureRaw) {
           const parsedAny = parseFailedReportAnywhere(failureRaw);
-          // Try to infer sub-agent identity from the FAILED summary line first
           const failedLine = detectFailedLineAnywhere(failureRaw);
-          const sum = (failedLine.summary || '').trim();
-          let sourceAgent: 'implementer' | 'tester' | 'reviewer' | 'fixer' | 'orchestrator' =
-            'orchestrator';
-          const m = sum.match(/^\s*(implementer|tester|reviewer|fixer)\b/i);
-          if (m) {
-            const a = m[1].toLowerCase();
-            if (a === 'implementer' || a === 'tester' || a === 'reviewer' || a === 'fixer') {
-              sourceAgent = a;
-            }
-          } else {
-            // Fallback: look for an explicit phrasing from the orchestrator prompt
-            const m2 = sum.match(
-              /^\s*(implementer|tester|reviewer|fixer)\s+reported\s+a\s+failure\b/i
-            );
-            if (m2) {
-              const a = m2[1].toLowerCase();
-              if (a === 'implementer' || a === 'tester' || a === 'reviewer' || a === 'fixer') {
-                sourceAgent = a;
-              }
-            } else {
-              // Last resort: scan the full text for a FAILED: <agent> prefix anywhere
-              const m3 = failureRaw.match(/FAILED:\s*(implementer|tester|reviewer|fixer)\b/i);
-              if (m3) {
-                const a = m3[1].toLowerCase();
-                if (a === 'implementer' || a === 'tester' || a === 'reviewer' || a === 'fixer') {
-                  sourceAgent = a;
-                }
-              }
-            }
-          }
+          const sourceAgent = inferFailedAgent(
+            failedLine.failed ? failedLine.summary : undefined,
+            failureRaw
+          );
 
           return {
             content: failureRaw,
@@ -1223,8 +1257,11 @@ export class ClaudeCodeExecutor implements Executor {
         await fs.rm(tempMcpConfigDir, { recursive: true, force: true });
       }
 
-      // Clean up agent files if they were created (only in normal mode)
-      if (planContextAvailable && planInfo.executionMode === 'normal') {
+      // Clean up agent files when they were created for this execution
+      if (
+        planContextAvailable &&
+        (planInfo.executionMode === 'normal' || planInfo.executionMode === 'simple')
+      ) {
         await removeAgentFiles(planId);
         debugLog(`Removed agent files for plan ${planId}`);
       }

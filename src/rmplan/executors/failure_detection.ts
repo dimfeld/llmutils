@@ -16,6 +16,45 @@ export interface FailureDetails {
   solutions?: string;
 }
 
+export type FailedSubAgent = 'implementer' | 'tester' | 'reviewer' | 'verifier' | 'fixer';
+export type FailureSourceAgent = FailedSubAgent | 'orchestrator';
+
+const FAILED_AGENT_NAME_PATTERN = /(implementer|tester|reviewer|verifier|fixer)/i;
+
+/**
+ * Attempts to infer which sub-agent emitted a FAILED report by inspecting the one-line summary
+ * and the full message content. Falls back to 'orchestrator' when no agent match is found.
+ */
+export function inferFailedAgent(summary?: string, fullContent?: string): FailureSourceAgent {
+  const normalizedSummary = summary?.trim();
+  if (normalizedSummary) {
+    const directMatch = normalizedSummary.match(
+      /^\s*(implementer|tester|reviewer|verifier|fixer)\b/i
+    );
+    if (directMatch) {
+      return directMatch[1].toLowerCase() as FailedSubAgent;
+    }
+
+    const reportedMatch = normalizedSummary.match(
+      /^\s*(implementer|tester|reviewer|verifier|fixer)\s+reported\s+a\s+failure\b/i
+    );
+    if (reportedMatch) {
+      return reportedMatch[1].toLowerCase() as FailedSubAgent;
+    }
+  }
+
+  if (fullContent) {
+    const contentMatch = fullContent.match(
+      new RegExp(`FAILED:\\s*${FAILED_AGENT_NAME_PATTERN.source}\\b`, 'i')
+    );
+    if (contentMatch) {
+      return contentMatch[1].toLowerCase() as FailedSubAgent;
+    }
+  }
+
+  return 'orchestrator';
+}
+
 // Exact, case-sensitive FAILED prefix. Detection is only valid when it appears
 // as the first non-empty line of the assistant's final message.
 const FAILED_PREFIX_FIRST_LINE = /^\s*FAILED:\s*(.*)$/;

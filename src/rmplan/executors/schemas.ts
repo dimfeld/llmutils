@@ -61,6 +61,10 @@ export const claudeCodeOptionsSchema = z.object({
     .default(false)
     .optional()
     .describe('Enable the review feedback MCP tool for interactive review feedback'),
+  simpleMode: z
+    .boolean()
+    .optional()
+    .describe('Run executor in streamlined implement/verify mode instead of full review loop'),
 });
 
 /**
@@ -91,4 +95,9 @@ export const directCallOptionsSchema = z.object({
 /**
  * Schema for the 'codex-cli' executor's options.
  */
-export const codexCliOptionsSchema = z.object({});
+export const codexCliOptionsSchema = z.object({
+  simpleMode: z
+    .boolean()
+    .optional()
+    .describe('Run executor in streamlined implement/verify mode instead of full review loop'),
+});
