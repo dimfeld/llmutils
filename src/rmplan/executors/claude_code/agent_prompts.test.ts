@@ -65,4 +65,11 @@ describe('agent_prompts failure protocol integration', () => {
     expect(verifier.prompt).toContain('rmplan add-progress-note 77');
     expect(verifier.prompt).toContain('--source "<agent>: <task>"');
   });
+
+  it('appends custom instructions section to verifier prompt when provided', () => {
+    const verifier = getVerifierAgentPrompt(context, '55', '  Follow project-specific QA checklist.  ');
+    expect(verifier.prompt).toContain('## Custom Instructions');
+    expect(verifier.prompt).toContain('Follow project-specific QA checklist.');
+    expect(verifier.prompt).toContain('rmplan add-progress-note 55');
+  });
 });

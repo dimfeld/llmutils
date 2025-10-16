@@ -15,7 +15,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-10-16T08:11:33.994Z
 createdAt: 2025-10-16T08:04:19.031Z
-updatedAt: 2025-10-16T10:12:57.619Z
+updatedAt: 2025-10-16T10:15:46.776Z
 progressNotes:
   - timestamp: 2025-10-16T08:16:22.416Z
     text: Added CLI --simple flag plumbing. Updated executor shared options/types
@@ -98,6 +98,14 @@ progressNotes:
     text: Ran bun run check plus agent tests to confirm --simple interactions with
       dry-run/serial paths remain passing.
     source: "tester: Tasks18-20"
+  - timestamp: 2025-10-16T10:14:50.543Z
+    text: Expanded simple-mode prompt tests to cover custom instructions and
+      progress-note guidance.
+    source: "implementer: Task15"
+  - timestamp: 2025-10-16T10:15:46.769Z
+    text: Ran bun test for agent_prompts and orchestrator_prompt suites; new
+      assertions guarding custom instructions and progress-note guidance pass.
+    source: "tester: Task15"
 tasks:
   - title: Add --simple flag to rmplan agent CLI command
     done: true
@@ -443,3 +451,5 @@ Addressed the reviewer follow-up for tasks "Modify executor build process to pas
 Implemented reviewer-noted fixes for tasks "Add --simple flag to rmplan agent CLI command" and "Create simple mode execution loop" by ensuring the streamlined mode actually reaches the executors in every command path. Updated `src/rmplan/commands/agent/agent.ts` to derive a single `executionMode` flag from both the CLI switch and `executors.<name>.simpleMode` config, plumb that value through `ExecutorCommonOptions`, and reuse it for the batch runner, step loop, and stub-plan shortcut. Extended `src/rmplan/commands/agent/batch_mode.ts` and `src/rmplan/commands/agent/stub_plan.ts` so their `executor.execute` calls now honor the computed `executionMode`, guaranteeing Claude and Codex receive `'simple'` when requested instead of the hard-coded `'normal'`. Strengthened regression coverage in `src/rmplan/commands/agent/agent.test.ts`, `src/rmplan/commands/agent/batch_mode.capture_output.test.ts`, and `src/rmplan/commands/agent/batch_mode.soft_failure.test.ts` to assert the new plumbing, and reran `bun run check` plus the updated Bun test subset to verify type safety and behavior.
 
 Completed tasks "Test interaction with other flags", "Update README and documentation", and "Add CLAUDE.md notes about simple mode". Expanded `src/rmplan/commands/agent/agent.test.ts` with new spies around `findNextActionableItem`, `prepareNextStep`, and `markStepDone` so we can drive the serial execution loop under `--simple`. Added coverage that asserts the batch path still forwards `executionMode: 'simple'` alongside `dryRun: true`, and that the serial loop executes exactly once with `executor.execute` receiving the simple execution mode while post-step plumbing remains intact. Updated `README.md` with a `Simple Mode (--simple)` subsection that highlights the implement → verify flow, the verifier’s responsibility to run `bun run check`, `bun run lint`, and `bun test`, and how the flag composes with batch/serial/dry-run workflows or config defaults. Documented the architecture in `CLAUDE.md`, noting how `ExecutorCommonOptions.simpleMode` selects the streamlined orchestrators, how Claude’s implementer/verifier agent files are generated, how Codex CLI’s `executeSimpleMode()` builds verifier context, and how `inferFailedAgent()` tags verifier failures. Retained ASCII-oriented formatting while matching existing README arrow notation for consistency, and confirmed the new tests with `bun run check` plus `bun test src/rmplan/commands/agent/agent.test.ts`.
+
+Extended unit coverage for task "Write unit tests for simple mode prompts" by enriching the prompt test suites in `src/rmplan/executors/claude_code/agent_prompts.test.ts` and `src/rmplan/executors/claude_code/orchestrator_prompt.test.ts`. Added a verifier-specific assertion that confirms custom instructions are preserved and surfaced under the `## Custom Instructions` heading (ensuring reviewers’ policy overrides survive the simple-mode pipeline), and verified progress-note guidance is embedded in the two-phase orchestration helper so orchestrators always instruct agents to log updates with `rmplan add-progress-note <planId>`. These tests guard against future regressions where the simple-mode prompts might drop mandatory guidance or lose plan-scoped customization, providing fast feedback when prompt templates change.

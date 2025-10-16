@@ -44,4 +44,10 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain('bun run check');
     expect(out).toContain('@/plans/test.plan.md');
   });
+
+  it('includes progress notes instructions in simple mode prompts', () => {
+    const out = wrapWithOrchestrationSimple('Context', '007', { batchMode: false });
+    expect(out).toContain("Use the Bash command 'rmplan add-progress-note 007");
+    expect(out).toContain('implementer, verifier, tester, reviewer, or human');
+  });
 });
