@@ -15,7 +15,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-10-16T08:11:33.994Z
 createdAt: 2025-10-16T08:04:19.031Z
-updatedAt: 2025-10-16T09:10:00.309Z
+updatedAt: 2025-10-16T09:20:24.748Z
 progressNotes:
   - timestamp: 2025-10-16T08:16:22.416Z
     text: Added CLI --simple flag plumbing. Updated executor shared options/types
@@ -55,6 +55,12 @@ progressNotes:
       Planning-only detection continues to work and auto task completion still
       runs after successful verification.
     source: "implementer: Tasks10-14"
+  - timestamp: 2025-10-16T09:20:24.742Z
+    text: "Added bun-based coverage for Codex simple mode: validated
+      implementer→verifier aggregation, planning-only retry logging, and
+      verifier failure handling. All Codex executor suites pass with the new
+      tests."
+    source: "tester: Tasks10-14"
 tasks:
   - title: Add --simple flag to rmplan agent CLI command
     done: true
