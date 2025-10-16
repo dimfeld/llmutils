@@ -982,6 +982,15 @@ export class ClaudeCodeExecutor implements Executor {
         const testerInstructions = this.rmplanConfig.agents?.tester?.instructions
           ? await this.loadAgentInstructions(this.rmplanConfig.agents.tester.instructions, gitRoot)
           : undefined;
+        const reviewerInstructions = this.rmplanConfig.agents?.reviewer?.instructions
+          ? await this.loadAgentInstructions(
+              this.rmplanConfig.agents.reviewer.instructions,
+              gitRoot
+            )
+          : undefined;
+        const verifierInstructions = [testerInstructions, reviewerInstructions]
+          .filter((instructions): instructions is string => Boolean(instructions?.trim()))
+          .join('\n\n') || undefined;
 
         agentDefinitions = [
           getImplementerPrompt(
@@ -993,7 +1002,7 @@ export class ClaudeCodeExecutor implements Executor {
           getVerifierAgentPrompt(
             originalContextContent,
             planId,
-            testerInstructions,
+            verifierInstructions,
             this.options.agents?.tester?.model
           ),
         ];

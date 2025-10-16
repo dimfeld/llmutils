@@ -263,7 +263,10 @@ describe('ClaudeCodeExecutor model selection', () => {
     const verifierPrompt = { name: 'verifier', prompt: 'verify' };
     const getImplementerPrompt = mock(() => implementerPrompt);
     const getTesterPrompt = mock(() => ({ name: 'tester', prompt: 'tester' }));
-    const getVerifierAgentPrompt = mock(() => verifierPrompt);
+    const getVerifierAgentPrompt = mock(
+      (_context: string, _planId?: string | number, _instructions?: string, _model?: string) =>
+        verifierPrompt
+    );
     await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
       getImplementerPrompt,
       getTesterPrompt,
@@ -279,6 +282,23 @@ describe('ClaudeCodeExecutor model selection', () => {
       },
     }));
 
+    const loadAgentInstructionsMock = mock(
+      async (_instructionPath: string, _gitRoot: string) => {
+        if (_instructionPath.includes('implementer')) {
+          return 'implementer instructions';
+        }
+        if (_instructionPath.includes('tester')) {
+          return 'tester instructions';
+        }
+        if (_instructionPath.includes('reviewer')) {
+          return 'reviewer instructions';
+        }
+        return undefined;
+      }
+    );
+    const originalLoadAgentInstructions = (ClaudeCodeExecutor.prototype as any).loadAgentInstructions;
+    (ClaudeCodeExecutor.prototype as any).loadAgentInstructions = loadAgentInstructionsMock;
+
     const executor = new ClaudeCodeExecutor(
       {
         allowedTools: [],
@@ -287,7 +307,14 @@ describe('ClaudeCodeExecutor model selection', () => {
         permissionsMcp: { enabled: false },
       },
       mockSharedOptions,
-      mockConfig
+      {
+        ...mockConfig,
+        agents: {
+          implementer: { instructions: 'implementer.md' },
+          tester: { instructions: 'tester.md' },
+          reviewer: { instructions: 'reviewer.md' },
+        },
+      }
     );
 
     const planInfo: ExecutePlanInfo = {
@@ -297,18 +324,24 @@ describe('ClaudeCodeExecutor model selection', () => {
       executionMode: 'simple',
     };
 
-    await executor.execute('context content', planInfo);
+    try {
+      await executor.execute('context content', planInfo);
 
-    expect(capturedArgs).toContain('--model');
-    const modelIndex = capturedArgs.indexOf('--model');
-    expect(capturedArgs[modelIndex + 1]).toBe('sonnet');
-    expect(wrapSimple).toHaveBeenCalledTimes(1);
-    expect(wrapSimple.mock.calls[0][1]).toBe('simple-plan');
-    expect(wrapSimple.mock.calls[0][2]).toMatchObject({ planFilePath: '/plans/simple.plan.md' });
-    expect(agentDefinitions).toBeTruthy();
-    expect(agentDefinitions?.map((def) => def.name)).toEqual(['implementer', 'verifier']);
-    expect(getImplementerPrompt).toHaveBeenCalledTimes(1);
-    expect(getVerifierAgentPrompt).toHaveBeenCalledTimes(1);
-    expect(getTesterPrompt).not.toHaveBeenCalled();
+      expect(capturedArgs).toContain('--model');
+      const modelIndex = capturedArgs.indexOf('--model');
+      expect(capturedArgs[modelIndex + 1]).toBe('sonnet');
+      expect(wrapSimple).toHaveBeenCalledTimes(1);
+      expect(wrapSimple.mock.calls[0][1]).toBe('simple-plan');
+      expect(wrapSimple.mock.calls[0][2]).toMatchObject({ planFilePath: '/plans/simple.plan.md' });
+      expect(agentDefinitions).toBeTruthy();
+      expect(agentDefinitions?.map((def) => def.name)).toEqual(['implementer', 'verifier']);
+      expect(getImplementerPrompt).toHaveBeenCalledTimes(1);
+      expect(getVerifierAgentPrompt).toHaveBeenCalledTimes(1);
+      expect(getTesterPrompt).not.toHaveBeenCalled();
+      const verifierCall = getVerifierAgentPrompt.mock.calls[0];
+      expect(verifierCall?.[2]).toBe('tester instructions\n\nreviewer instructions');
+    } finally {
+      (ClaudeCodeExecutor.prototype as any).loadAgentInstructions = originalLoadAgentInstructions;
+    }
   });
 });

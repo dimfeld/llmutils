@@ -15,6 +15,7 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain('Progress Notes');
     expect(out).toContain('rmplan add-progress-note 123');
     expect(out).toContain('--source "<agent>: <task>"');
+    expect(out).toContain('implementer, verifier, tester, reviewer, or human');
   });
 
   it('includes progress notes guidance in non-batch mode as well', () => {
