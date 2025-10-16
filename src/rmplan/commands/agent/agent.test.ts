@@ -594,6 +594,143 @@ describe.skip('rmplanAgent - Direct Execution Flow', () => {
   });
 });
 
+describe('rmplanAgent - simple mode flag plumbing', () => {
+  let tempDir: string;
+  let simplePlanFile: string;
+  const executeBatchModeSpy = mock(async () => undefined);
+  const testExecutor = {
+    execute: executorExecuteSpy,
+  };
+  const defaultConfig = {
+    defaultExecutor: 'test-executor',
+    executors: {},
+    models: {},
+    postApplyCommands: [],
+  };
+
+  beforeEach(async () => {
+    clearPlanCache();
+
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-simple-flag-test-'));
+    const tasksDir = path.join(tempDir, 'tasks');
+    await fs.mkdir(tasksDir, { recursive: true });
+
+    simplePlanFile = path.join(tasksDir, '123-simple-plan.yml');
+    const planContent = yaml.stringify({
+      id: 123,
+      title: 'Simple Flag Plan',
+      goal: 'Exercise executor plumbing',
+      details: 'Ensure simple flag flows through to executor builder',
+      status: 'pending',
+      tasks: [
+        {
+          title: 'Task 1',
+          description: 'Has explicit steps so preparation is skipped',
+          done: false,
+          steps: [{ prompt: 'Do the work', done: false }],
+        },
+      ],
+    });
+    await fs.writeFile(simplePlanFile, planContent, 'utf-8');
+
+    buildExecutorAndLogSpy.mockReset();
+    executorExecuteSpy.mockReset();
+    executeBatchModeSpy.mockReset();
+    buildExecutorAndLogSpy.mockReturnValue(testExecutor);
+
+    await moduleMocker.mock('../../../logging.js', () => ({
+      log: mock(() => {}),
+      error: mock(() => {}),
+      warn: mock(() => {}),
+      openLogFile: mock(() => {}),
+      closeLogFile: mock(async () => {}),
+      boldMarkdownHeaders: (text: string) => text,
+    }));
+
+    await moduleMocker.mock('../../executors/index.js', () => ({
+      buildExecutorAndLog: buildExecutorAndLogSpy,
+      DEFAULT_EXECUTOR: 'fall-back-executor',
+      defaultModelForExecutor: mock(() => 'default-model'),
+    }));
+
+    await moduleMocker.mock('../../configLoader.js', () => ({
+      loadEffectiveConfig: mock(async () => defaultConfig),
+    }));
+
+    await moduleMocker.mock('../../../common/git.js', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../../common/process.js', () => ({
+      logSpawn: mock(() => ({ exitCode: 0, exited: Promise.resolve(0) })),
+      commitAll: mock(async () => 0),
+    }));
+
+    await moduleMocker.mock('./batch_mode.js', () => ({
+      executeBatchMode: executeBatchModeSpy,
+    }));
+
+    await moduleMocker.mock('../../summary/collector.js', () => ({
+      SummaryCollector: class {
+        recordExecutionStart() {}
+        addError() {}
+        recordExecutionEnd() {}
+        async trackFileChanges() {}
+        getExecutionSummary() {
+          return {};
+        }
+      },
+    }));
+
+    await moduleMocker.mock('../../summary/display.js', () => ({
+      writeOrDisplaySummary: mock(async () => {}),
+    }));
+  });
+
+  afterEach(async () => {
+    moduleMocker.clear();
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('omits simple executor options when flag is not set', async () => {
+    await rmplanAgent(simplePlanFile, { log: false } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [executorName, sharedOptions, config, executorOptions] =
+      buildExecutorAndLogSpy.mock.calls[0];
+    expect(executorName).toBe('test-executor');
+    expect(sharedOptions).toMatchObject({
+      baseDir: tempDir,
+      model: 'default-model',
+      simpleMode: undefined,
+    });
+    expect(config).toBe(defaultConfig);
+    expect(executorOptions).toBeUndefined();
+    expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
+    const [batchOptions] = executeBatchModeSpy.mock.calls[0];
+    expect(batchOptions).toMatchObject({ executor: testExecutor });
+  });
+
+  test('passes simpleMode flag through to executor builder', async () => {
+    await rmplanAgent(simplePlanFile, { log: false, simple: true } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [executorName, sharedOptions, config, executorOptions] =
+      buildExecutorAndLogSpy.mock.calls[0];
+    expect(executorName).toBe('test-executor');
+    expect(sharedOptions).toMatchObject({
+      baseDir: tempDir,
+      model: 'default-model',
+      simpleMode: true,
+    });
+    expect(config).toBe(defaultConfig);
+    expect(executorOptions).toEqual({ simpleMode: true });
+    expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
+    const [batchOptions] = executeBatchModeSpy.mock.calls[0];
+    expect(batchOptions).toMatchObject({ executor: testExecutor });
+  });
+});
+
 describe('handleAgentCommand - --next-ready flag', () => {
   let tempDir: string;
   let parentPlanFile: string;

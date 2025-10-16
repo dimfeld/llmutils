@@ -15,13 +15,27 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-10-16T08:11:33.994Z
 createdAt: 2025-10-16T08:04:19.031Z
-updatedAt: 2025-10-16T08:16:22.422Z
+updatedAt: 2025-10-16T08:25:28.549Z
 progressNotes:
   - timestamp: 2025-10-16T08:16:22.416Z
     text: Added CLI --simple flag plumbing. Updated executor shared options/types
       and option schemas for simple mode. buildExecutorAndLog now accepts CLI
       overrides and agent command passes simple flag when requested.
     source: "implementer: tasks 1-4"
+  - timestamp: 2025-10-16T08:20:58.372Z
+    text: Reviewed current agent/executor specs; no coverage yet for --simple
+      plumbing. Need new unit tests for CLI flag pass-through and schema
+      acceptance.
+    source: "tester: Task1"
+  - timestamp: 2025-10-16T08:25:07.216Z
+    text: "Added new unit coverage: agent simple-mode flow now asserts executor
+      args, schemas accept simpleMode, and createExecutor respects CLI
+      override."
+    source: "tester: Task1"
+  - timestamp: 2025-10-16T08:25:28.544Z
+    text: Typecheck and focused suites (agent/executor schema/build) all green after
+      new coverage.
+    source: "tester: Task1"
 tasks:
   - title: Add --simple flag to rmplan agent CLI command
     done: false
