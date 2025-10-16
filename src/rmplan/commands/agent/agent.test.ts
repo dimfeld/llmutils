@@ -607,6 +607,10 @@ describe('rmplanAgent - simple mode flag plumbing', () => {
     models: {},
     postApplyCommands: [],
   };
+  const serialFindNextActionableItemSpy = mock(() => null);
+  const serialPrepareNextStepSpy = mock(async () => null);
+  const serialMarkStepDoneSpy = mock(async () => ({ message: 'Marked', planComplete: false }));
+  const serialMarkTaskDoneSpy = mock(async () => ({ message: 'Task updated', planComplete: false }));
 
   beforeEach(async () => {
     clearPlanCache();
@@ -637,6 +641,10 @@ describe('rmplanAgent - simple mode flag plumbing', () => {
     buildExecutorAndLogSpy.mockReset();
     executorExecuteSpy.mockReset();
     executeBatchModeSpy.mockReset();
+    serialFindNextActionableItemSpy.mockReset();
+    serialPrepareNextStepSpy.mockReset();
+    serialMarkStepDoneSpy.mockReset();
+    serialMarkTaskDoneSpy.mockReset();
     buildExecutorAndLogSpy.mockReturnValue(testExecutor);
 
     await moduleMocker.mock('../../../logging.js', () => ({
@@ -675,6 +683,8 @@ describe('rmplanAgent - simple mode flag plumbing', () => {
       SummaryCollector: class {
         recordExecutionStart() {}
         addError() {}
+        addStepResult() {}
+        setBatchIterations() {}
         recordExecutionEnd() {}
         async trackFileChanges() {}
         getExecutionSummary() {
@@ -685,6 +695,19 @@ describe('rmplanAgent - simple mode flag plumbing', () => {
 
     await moduleMocker.mock('../../summary/display.js', () => ({
       writeOrDisplaySummary: mock(async () => {}),
+    }));
+
+    await moduleMocker.mock('../../plans/find_next.js', () => ({
+      findNextActionableItem: serialFindNextActionableItemSpy,
+    }));
+
+    await moduleMocker.mock('../../plans/prepare_step.js', () => ({
+      prepareNextStep: serialPrepareNextStepSpy,
+    }));
+
+    await moduleMocker.mock('../../plans/mark_done.js', () => ({
+      markStepDone: serialMarkStepDoneSpy,
+      markTaskDone: serialMarkTaskDoneSpy,
     }));
   });
 
@@ -754,6 +777,54 @@ describe('rmplanAgent - simple mode flag plumbing', () => {
     expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
     const [batchOptions] = executeBatchModeSpy.mock.calls[0];
     expect(batchOptions).toMatchObject({ executor: testExecutor, executionMode: 'simple' });
+  });
+
+  test('passes simpleMode to batch execution when dry-run is enabled', async () => {
+    await rmplanAgent(simplePlanFile, { log: false, simple: true, dryRun: true } as any, {});
+
+    expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
+    const [batchOptions] = executeBatchModeSpy.mock.calls[0];
+    expect(batchOptions).toMatchObject({
+      executor: testExecutor,
+      executionMode: 'simple',
+      dryRun: true,
+    });
+  });
+
+  test('serial task execution forwards simple mode to executor calls', async () => {
+    serialFindNextActionableItemSpy
+      .mockReturnValueOnce({
+        type: 'step',
+        taskIndex: 0,
+        stepIndex: 0,
+        task: {
+          title: 'Task 1',
+          description: 'Has explicit steps so preparation is skipped',
+          steps: [{ prompt: 'Do the work', done: false }],
+        },
+      })
+      .mockReturnValueOnce(null);
+    serialPrepareNextStepSpy.mockResolvedValueOnce({
+      prompt: 'Prepared step context',
+      promptFilePath: undefined,
+      taskIndex: 0,
+      stepIndex: 0,
+      numStepsSelected: 1,
+      rmfilterArgs: undefined,
+    });
+    serialMarkStepDoneSpy.mockResolvedValueOnce({ message: 'marked', planComplete: false });
+
+    await rmplanAgent(
+      simplePlanFile,
+      { log: false, serialTasks: true, simple: true, nonInteractive: true } as any,
+      {}
+    );
+
+    expect(executeBatchModeSpy).not.toHaveBeenCalled();
+    expect(executorExecuteSpy).toHaveBeenCalledTimes(1);
+    const [, execOptions] = executorExecuteSpy.mock.calls[0];
+    expect(execOptions).toMatchObject({ executionMode: 'simple' });
+    expect(serialMarkStepDoneSpy).toHaveBeenCalled();
   });
 });
 
