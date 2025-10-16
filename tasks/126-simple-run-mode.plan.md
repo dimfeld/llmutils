@@ -15,7 +15,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-10-16T08:11:33.994Z
 createdAt: 2025-10-16T08:04:19.031Z
-updatedAt: 2025-10-16T09:43:00.906Z
+updatedAt: 2025-10-16T10:02:21.849Z
 progressNotes:
   - timestamp: 2025-10-16T08:16:22.416Z
     text: Added CLI --simple flag plumbing. Updated executor shared options/types
@@ -142,7 +142,7 @@ tasks:
     docs: []
     steps: []
   - title: Modify agent file generation for simple mode
-    done: false
+    done: true
     description: Update `/src/rmplan/executors/claude_code/agent_generator.ts` to
       conditionally generate implementer and verifier agents in simple mode
       instead of implementer, tester, and reviewer agents.
@@ -204,7 +204,7 @@ tasks:
     docs: []
     steps: []
   - title: Write integration tests for Claude Code simple mode
-    done: false
+    done: true
     description: Add tests in the Claude Code executor test file that verify the
       complete 2-phase flow works correctly, including agent file generation and
       failure handling.
@@ -244,12 +244,19 @@ tasks:
 changedFiles:
   - src/rmplan/commands/agent/agent.test.ts
   - src/rmplan/commands/agent/agent.ts
+  - src/rmplan/commands/agent/batch_mode.capture_output.test.ts
+  - src/rmplan/commands/agent/batch_mode.soft_failure.test.ts
+  - src/rmplan/commands/agent/batch_mode.ts
+  - src/rmplan/commands/agent/stub_plan.ts
   - src/rmplan/executors/build.test.ts
   - src/rmplan/executors/build.ts
+  - src/rmplan/executors/claude_code/agent_generator.test.ts
+  - src/rmplan/executors/claude_code/agent_generator.ts
   - src/rmplan/executors/claude_code/agent_prompts.test.ts
   - src/rmplan/executors/claude_code/agent_prompts.ts
   - src/rmplan/executors/claude_code/orchestrator_prompt.test.ts
   - src/rmplan/executors/claude_code/orchestrator_prompt.ts
+  - src/rmplan/executors/claude_code.test.ts
   - src/rmplan/executors/claude_code.ts
   - src/rmplan/executors/claude_code_model_test.ts
   - src/rmplan/executors/codex_cli.simple_mode.test.ts
