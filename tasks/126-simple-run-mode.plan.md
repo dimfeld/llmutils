@@ -6,7 +6,7 @@ goal: Implement a --simple flag for the rmplan agent command that runs executors
   3-phase "implement-test-review" orchestration loop.
 id: 126
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 container: false
 dependencies: []
@@ -15,7 +15,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-10-16T08:11:33.994Z
 createdAt: 2025-10-16T08:04:19.031Z
-updatedAt: 2025-10-16T10:24:39.073Z
+updatedAt: 2025-10-16T10:35:42.285Z
 progressNotes:
   - timestamp: 2025-10-16T08:16:22.416Z
     text: Added CLI --simple flag plumbing. Updated executor shared options/types
@@ -258,7 +258,7 @@ tasks:
     docs: []
     steps: []
   - title: Write integration tests for Codex CLI simple mode
-    done: false
+    done: true
     description: Add tests for the Codex CLI executor's simple mode loop, including
       planning-only detection and retry behavior in the simplified context.
     files: []
