@@ -1,4 +1,7 @@
 import { describe, test, expect, mock, afterEach, beforeEach } from 'bun:test';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import { tmpdir } from 'node:os';
 import { ModuleMocker } from '../../testing.js';
 
 describe('ClaudeCodeExecutor - failure detection integration', () => {
@@ -121,6 +124,54 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     expect(out.failureDetails?.sourceAgent).toBe('reviewer');
   });
 
+  test('reports verifier as failure source when simple mode verifier reports FAILED', async () => {
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+        if (opts && typeof opts.formatStdout === 'function') {
+          opts.formatStdout('{}\n');
+        }
+        return { exitCode: 0 };
+      }),
+      createLineSplitter: () => (s: string) => s.split('\n'),
+      debug: false,
+    }));
+
+    const failureRaw =
+      'FAILED: Verifier detected failing checks\n\nRequirements:\n- Ensure tests pass\nProblems:\n- bun test failed\nPossible solutions:\n- Investigate test logs';
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock((_line: string) => ({
+        type: 'assistant',
+        message: 'Model output...',
+        rawMessage: failureRaw,
+        failed: true,
+        failedSummary: 'Verifier detected failing checks',
+      })),
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const executor = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir },
+      {} as any
+    );
+
+    const result = (await executor.execute('CTX', {
+      planId: 'simple-failure',
+      planTitle: 'Simple Failure',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'simple',
+    })) as any;
+
+    expect(result).toBeDefined();
+    expect(result.success).toBeFalse();
+    expect(result.failureDetails?.sourceAgent).toBe('verifier');
+  });
+
   test('detects FAILED when not first line and returns orchestrator source by default', async () => {
     await moduleMocker.mock('../../common/git.ts', () => ({
       getGitRoot: mock(async () => tempDir),
@@ -166,6 +217,101 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     expect(out.success).toBeFalse();
     expect(out.failureDetails?.sourceAgent).toBe('orchestrator');
     expect(out.failureDetails?.problems).toContain('X');
+  });
+
+  test('simple mode generates implementer and verifier agents and prunes stale files', async () => {
+    const planRoot = await fs.mkdtemp(path.join(tmpdir(), 'claude-simple-mode-'));
+    const agentsDir = path.join(planRoot, '.claude', 'agents');
+    await fs.mkdir(agentsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(agentsDir, 'rmplan-simple-plan-tester.md'),
+      'stale tester',
+      'utf-8'
+    );
+    await fs.writeFile(
+      path.join(agentsDir, 'rmplan-simple-plan-reviewer.md'),
+      'stale reviewer',
+      'utf-8'
+    );
+
+    const recordedArgs: string[][] = [];
+    const wrapSimple = mock((_content: string) => 'WRAPPED_SIMPLE');
+
+    try {
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(async () => planRoot),
+      }));
+
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(async (args: string[], opts: any) => {
+          recordedArgs.push(args);
+          if (opts && typeof opts.formatStdout === 'function') {
+            opts.formatStdout('{}\n');
+          }
+          return { exitCode: 0 };
+        }),
+        createLineSplitter: mock(() => (input: string) => (input ? input.split('\n') : [])),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+        wrapWithOrchestrationSimple: wrapSimple,
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock(() => ({
+          type: 'assistant',
+          message: 'Model output...',
+          rawMessage: 'Model output...',
+        })),
+      }));
+
+      await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
+        removeAgentFiles: mock(async () => Promise.resolve()),
+      }));
+
+      await moduleMocker.mock('../../common/cleanup_registry.ts', () => ({
+        CleanupRegistry: {
+          getInstance: mock(() => ({
+            register: mock(() => mock()),
+          })),
+        },
+      }));
+
+      const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+      const executor = new ClaudeCodeExecutor(
+        { permissionsMcp: { enabled: false } } as any,
+        { baseDir: planRoot },
+        {} as any
+      );
+
+      await executor.execute('context', {
+        planId: 'simple-plan',
+        planTitle: 'Simple Mode Integration',
+        planFilePath: path.join(planRoot, 'plan.md'),
+        executionMode: 'simple',
+      });
+
+      expect(wrapSimple).toHaveBeenCalledTimes(1);
+      expect(recordedArgs.length).toBeGreaterThan(0);
+      const args = recordedArgs[0];
+      expect(args).toContain('WRAPPED_SIMPLE');
+
+      const files = (await fs.readdir(agentsDir)).sort();
+      expect(files).toEqual([
+        'rmplan-simple-plan-implementer.md',
+        'rmplan-simple-plan-verifier.md',
+      ]);
+
+      const verifierContent = await fs.readFile(
+        path.join(agentsDir, 'rmplan-simple-plan-verifier.md'),
+        'utf-8'
+      );
+      expect(verifierContent).toContain('name: rmplan-simple-plan-verifier');
+    } finally {
+      await fs.rm(planRoot, { recursive: true, force: true });
+    }
   });
 
   test('adds external repository config directory when using external storage', async () => {

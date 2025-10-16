@@ -169,6 +169,38 @@ You are a testing agent that writes tests.
 `;
       expect(testerContent).toBe(expectedTesterContent);
     });
+
+    test('removes stale agent files for the plan before writing new ones', async () => {
+      await fs.mkdir(agentsDir, { recursive: true });
+      const staleFiles = [
+        path.join(agentsDir, 'rmplan-simple-plan-tester.md'),
+        path.join(agentsDir, 'rmplan-simple-plan-reviewer.md'),
+      ];
+      for (const file of staleFiles) {
+        await fs.writeFile(file, 'stale content', 'utf-8');
+      }
+
+      const agents: AgentDefinition[] = [
+        {
+          name: 'implementer',
+          description: 'Implements new features',
+          prompt: 'Implement the requested changes.',
+        },
+        {
+          name: 'verifier',
+          description: 'Verifies the implementation',
+          prompt: 'Run checks and tests to validate the work.',
+        },
+      ];
+
+      await generateAgentFiles('simple-plan', agents);
+
+      const files = (await fs.readdir(agentsDir)).sort();
+      expect(files).toEqual([
+        'rmplan-simple-plan-implementer.md',
+        'rmplan-simple-plan-verifier.md',
+      ]);
+    });
   });
 
   describe('removeAgentFiles', () => {
@@ -233,12 +265,24 @@ You are a testing agent that writes tests.
 
   describe('edge cases', () => {
     test('handles empty agents array', async () => {
-      // Should not throw when given empty array
+      await generateAgentFiles('empty-plan', [
+        {
+          name: 'implementer',
+          description: 'Implements features',
+          prompt: 'Do work',
+        },
+      ]);
+
+      const preFiles = await fs.readdir(agentsDir);
+      expect(preFiles).toContain('rmplan-empty-plan-implementer.md');
+
+      // Should not throw when given empty array and should remove stale plan files
       await generateAgentFiles('empty-plan', []);
 
-      // Directory should still be created
       const stats = await fs.stat(agentsDir);
       expect(stats.isDirectory()).toBe(true);
+      const postFiles = await fs.readdir(agentsDir);
+      expect(postFiles).not.toContain('rmplan-empty-plan-implementer.md');
     });
 
     test('handles agent names with spaces', async () => {

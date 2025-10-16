@@ -18,6 +18,28 @@ export async function generateAgentFiles(planId: string, agents: AgentDefinition
   // Create .claude/agents directory if it doesn't exist
   await fs.mkdir(agentsDir, { recursive: true });
 
+  const expectedFileNames = new Set(agents.map((agent) => `rmplan-${planId}-${agent.name}.md`));
+
+  try {
+    const existingFiles = await glob(path.join(agentsDir, `rmplan-${planId}-*.md`));
+    for (const file of existingFiles) {
+      const fileName = path.basename(file);
+      if (!expectedFileNames.has(fileName)) {
+        try {
+          await fs.unlink(file);
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+            error(`Failed to remove stale agent file ${file}:`, err);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      error('Failed to enumerate existing agent files:', err);
+    }
+  }
+
   // Generate each agent file
   for (const agent of agents) {
     const fileName = `rmplan-${planId}-${agent.name}.md`;
