@@ -179,6 +179,19 @@ ${reviewPhase}
 ${finalPhases}`;
 }
 
+function markTasksDoneGuidance(planId: string) {
+  return `
+## Marking Tasks Done
+
+Only perform the following if no subagent failure occurred during this run.
+If any agent emitted a line beginning with 'FAILED:', do not run any of the following commands — stop immediately.
+
+When updating tasks after successful implementation, testing, and review, use the Bash command 'rmplan set-task-done ${planId} --title "<taskTitle>"'.
+To set Task 2 done for plan 165, use 'rmplan set-task-done 165 --title "do it"'. To set multiple tasks done, run the command multiple times for each task.
+
+`;
+}
+
 /**
  * Builds the important guidelines section
  */
@@ -218,13 +231,7 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 - Subagents will have access to the entire list of incomplete tasks from the plan file, so be sure to include which tasks to focus on in your subagent instructions.
 - **Be selective**: Don't attempt all tasks at once - choose a reasonable subset that works well together.
 
-## Marking Tasks Done
-
-Only perform the following if no subagent failure occurred during this run.
-If any agent emitted a line beginning with 'FAILED:', do not run any of the following commands — stop immediately.
-
-When updating tasks after successful implementation, testing, and review, use the Bash command 'rmplan set-task-done ${planId} --title "<taskTitle>"'.
-To set Task 2 done for plan 165, use 'rmplan set-task-done 165 --title "do it"'. To set multiple tasks done, run the command multiple times for each task.
+${markTasksDoneGuidance(planId)}
 `
     : '';
 
@@ -345,7 +352,11 @@ ${options.batchMode ? '5' : '4'}. **Iteration**
       ? `
 - Subagents can read all pending tasks; explicitly tell them which ones are in scope for this batch.`
       : ''
-  }${progressNotesSection}`;
+  }
+
+${markTasksDoneGuidance(planId)}
+
+${progressNotesSection}`;
 
   const footer = `## Task Context
 
