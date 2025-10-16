@@ -266,9 +266,9 @@ If there are any changes requested or comments made after your create this plan,
 }
 
 export function simplePlanPrompt(plan: string) {
-  return `This is a description for an upcoming feature, and you will be tasked with creating a plan for it.
+  return `This is a description for a task in the repository that needs exploration and planning.
 
-# Project Description
+# Task Description
 
 ${plan}
 
@@ -277,7 +277,7 @@ ${plan}
 Please think about how to accomplish the task and create a detailed, step-by-step blueprint for it. The blueprint should
 work in the context of the provided codebase. Examine the provided codebase and identify which files need to be edited for each step.
 
-Break it down into small, iterative chunks that build on each other. Look at these chunks and then go another round to break it into small steps. Review the results and make sure that the steps are small enough to be implemented safely with strong testing, but big enough to move the project forward. Iterate until you feel that the steps are right sized for this project.
+Break it down into small, iterative chunks that build on each other. Look at these chunks and then go another round to break it into small steps. Review the results and make sure that the steps are small enough to be implemented safely with strong testing, but big enough to move the project forward. Iterate until you feel that the steps are right sized for this task.
 
 From here you should have the foundation to provide a series of prompts for a code-generation LLM that will implement each step in a test-driven manner. Prioritize best practices, incremental progress, and early testing, ensuring no big jumps in complexity at any stage. Make sure that each prompt builds on the previous prompts, and ends with everything wired together. There should be no hanging or orphaned code that isn't integrated into a previous step. At the end of the task, update the relevant documentation in README.md or other files too.
 
@@ -287,12 +287,12 @@ When testing, prefer to use real tests and not mock functions or modules. Prefer
 
 The goal is to output prompts, but context, etc is important as well. Include plenty of information about which files to edit, what to do and how to do it, but you do not need to output code samples.
 
-When generating the final output with the prompts, output a title (a concise single-sentence title for the project), an overall goal, project details (including acceptance criteria for the overall project), a priority level, and then a list of tasks.
+When generating the final output with the prompts, output a title (a concise single-sentence title for the task), an overall goal, project details (including acceptance criteria for completing the task), a priority level, and then a list of tasks.
 
 For the priority level, choose one of the following based on importance and urgency:
-- low: Nice-to-have features or improvements with no pressing timeline
-- medium: Important features that should be done but aren't blocking critical functionality
-- high: Critical features or fixes that are needed soon or blocking other work
+- low: Nice-to-have improvements with no pressing timeline
+- medium: Important work that should be done but isn't blocking critical functionality
+- high: Critical work that is needed soon or blocking other work
 - urgent: Must be done immediately, fixing production issues or critical blockers
 
 Each task should have a list of relevant files and a list of steps, where each step is a prompt a few sentences long. The relevant files should include the files to edit, and also any other files that contain relevant code that will be used from the edited files, but do not include library dependencies or built-in system libraries in this list.
@@ -709,6 +709,45 @@ The plan should be formatted as follows:
 ${formatInstructions}
 
 Generate the complete plan now.`;
+}
+
+export function generateClaudeCodeSimplePlanningPrompt(
+  planText: string,
+  includeNextInstructionSentence = true
+): string {
+  let prompt = `This is a description for a task in the repository that needs exploration and planning.
+
+# Task Description
+
+${planText}
+
+# Instructions
+
+Please analyze this task description and the codebase. Your task is to:
+
+1. Use your tools to explore the codebase and understand the existing code structure
+2. Identify which files would need to be created or modified to accomplish this task
+3. Think about how to break this down into logical steps
+4. Consider dependencies between different parts of the implementation
+5. Identify any potential challenges or considerations
+
+Once you've analyzed the codebase, I'll ask you to generate a detailed implementation plan in a specific format.
+
+For now, please:
+- Explore the relevant parts of the codebase
+- Understand the existing patterns and conventions
+- Identify the key files and components that will be involved
+- Think about the best approach to accomplish this task
+
+Do not perform any implementation or write any files yet.
+
+Use parallel subagents to analyze the requirements against different parts of the codebase, and generate detailed reports.
+Then prepare to synthesize these reports into the final plan.`;
+
+  if (includeNextInstructionSentence) {
+    prompt += `\nWhen you're done with your analysis, let me know and I'll provide the next instruction.`;
+  }
+  return prompt;
 }
 
 export function generateClaudeCodePhaseStepsPlanningPrompt(

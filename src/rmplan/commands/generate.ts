@@ -41,6 +41,7 @@ import {
   generateClaudeCodePlanningPrompt,
   generateClaudeCodeGenerationPrompt,
   generateClaudeCodeResearchPrompt,
+  generateClaudeCodeSimplePlanningPrompt,
 } from '../prompt.js';
 import { getInstructionsFromIssue, type IssueInstructionData } from '../issue_utils.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
@@ -671,10 +672,18 @@ export async function handleGenerateCommand(
       let input: string;
 
       if (effectiveClaudeMode) {
-        // Generate the two prompts for Claude Code
-        const planningPrompt = generateClaudeCodePlanningPrompt(fullPlanText);
-        const researchPrompt = generateClaudeCodeResearchPrompt();
-        const generationPrompt = generateClaudeCodeGenerationPrompt(fullPlanText);
+        // Generate the prompts for Claude Code
+        // For simple mode: skip research and don't pass planText to generation
+        const planningPrompt = options.simple
+          ? generateClaudeCodeSimplePlanningPrompt(fullPlanText)
+          : generateClaudeCodePlanningPrompt(fullPlanText);
+
+        const generationPrompt = options.simple
+          ? generateClaudeCodeGenerationPrompt('')
+          : generateClaudeCodeGenerationPrompt(fullPlanText);
+
+        // Only include research prompt for non-simple mode
+        const researchPrompt = options.simple ? undefined : generateClaudeCodeResearchPrompt();
 
         // Use the shared Claude Code invocation helper
         const claudeResult = await invokeClaudeCodeForGeneration(planningPrompt, generationPrompt, {
