@@ -3,6 +3,7 @@ import {
   getImplementerPrompt,
   getTesterPrompt,
   getReviewerPrompt,
+  getVerifierAgentPrompt,
   FAILED_PROTOCOL_INSTRUCTIONS,
 } from './agent_prompts.ts';
 
@@ -49,5 +50,19 @@ describe('agent_prompts failure protocol integration', () => {
   it('omits subagent directive from reviewer prompt when disabled', () => {
     const def = getReviewerPrompt(context);
     expect(def.prompt).not.toContain('Use the available sub-agents');
+  });
+
+  it('configures verifier prompt with verification commands and failure protocol', () => {
+    const verifier = getVerifierAgentPrompt(context);
+    expect(verifier.prompt).toContain('bun run check');
+    expect(verifier.prompt).toContain('bun run lint');
+    expect(verifier.prompt).toContain('bun test');
+    expect(verifier.prompt).toContain('FAILED:');
+  });
+
+  it('includes progress note guidance for verifier when plan id provided', () => {
+    const verifier = getVerifierAgentPrompt(context, '77');
+    expect(verifier.prompt).toContain('rmplan add-progress-note 77');
+    expect(verifier.prompt).toContain('--source "<agent>: <task>"');
   });
 });

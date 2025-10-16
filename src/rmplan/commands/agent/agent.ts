@@ -723,7 +723,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           planId: planData.id?.toString() ?? 'unknown',
           planTitle: planData.title ?? 'Untitled Plan',
           planFilePath: currentPlanFile,
-          executionMode: 'normal',
+          executionMode: options.simple ? 'simple' : 'normal',
           captureOutput: summaryEnabled ? 'result' : 'none',
         });
         const ok = output ? output.success !== false : true;

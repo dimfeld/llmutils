@@ -37,10 +37,11 @@ export interface ExecutePlanInfo {
   /**
    * Execution mode for the executor.
    * - 'normal': Uses full multi-agent orchestration workflow
+   * - 'simple': Uses streamlined implement → verify workflow
    * - 'review': Bypasses orchestration and runs prompts directly for review operations
    * - 'planning': Bypasses orchestration and runs prompts directly for planning operations
    */
-  executionMode: 'normal' | 'review' | 'planning';
+  executionMode: 'normal' | 'simple' | 'review' | 'planning';
 }
 
 /**

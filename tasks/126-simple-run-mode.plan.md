@@ -15,7 +15,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-10-16T08:11:33.994Z
 createdAt: 2025-10-16T08:04:19.031Z
-updatedAt: 2025-10-16T08:35:36.129Z
+updatedAt: 2025-10-16T08:49:22.193Z
 progressNotes:
   - timestamp: 2025-10-16T08:16:22.416Z
     text: Added CLI --simple flag plumbing. Updated executor shared options/types
@@ -36,6 +36,18 @@ progressNotes:
     text: Typecheck and focused suites (agent/executor schema/build) all green after
       new coverage.
     source: "tester: Task1"
+  - timestamp: 2025-10-16T08:44:32.609Z
+    text: "Prompted Claude simple-mode flow now shares implement \\u2192 verify
+      guidance, added verifier agent prompt, wired executionMode 'simple' into
+      claude_code executor with two-agent generation, and extended failure
+      detection so FAILED: verifier reports bubble up."
+    source: "implementer: Tasks5-9"
+  - timestamp: 2025-10-16T08:49:22.187Z
+    text: Added coverage for new simple-mode prompts and executor plumbing. Added
+      verifier prompt assertions, two-phase orchestration expectations, and a
+      simple-mode executor model test to confirm we only generate
+      implementer/verifier agents.
+    source: "tester: Task15"
 tasks:
   - title: Add --simple flag to rmplan agent CLI command
     done: true
@@ -347,3 +359,5 @@ This phase ensures the simple mode implementation is robust through comprehensiv
 # Implemented Functionality Notes
 
 Implemented support groundwork for tasks "Add --simple flag to rmplan agent CLI command", "Update executor type definitions for simple mode", "Update executor schemas to include simpleMode option", and "Modify executor build process to pass simple mode flag". Added the new `--simple` option to the agent CLI in `src/rmplan/rmplan.ts` so users can request the streamlined flow. Extended `ExecutorCommonOptions` in `src/rmplan/executors/types.ts` with an optional `simpleMode` flag that executors can check when orchestrating their phases. Updated both executor option schemas in `src/rmplan/executors/schemas.ts` to accept a `simpleMode` boolean so configuration files can enable the simplified mode without CLI flags. Adjusted `buildExecutorAndLog` in `src/rmplan/executors/build.ts` to accept executor-specific overrides and propagate them into `createExecutor`, and changed `src/rmplan/commands/agent/agent.ts` to populate the shared options and pass the override when the CLI flag is present (falling back to the existing signature otherwise). This establishes a consistent data path for the simple-mode signal from CLI/config into executor constructors while preserving backwards compatibility for other call sites.
+
+Implemented tasks "Create simple mode orchestrator prompt", "Create verifier agent prompt", "Update Claude Code executor to branch on simple mode", "Modify agent file generation for simple mode", and "Add failure detection for verifier agent". Added `wrapWithOrchestrationSimple()` in `src/rmplan/executors/claude_code/orchestrator_prompt.ts` to provide implement → verify guidance, reusing plan updates/progress note directions while reshaping the workflow to two phases and adjusting the failure protocol to recognize the verifier role. Introduced `getVerifierAgentPrompt()` in `src/rmplan/executors/claude_code/agent_prompts.ts` so Claude receives a dedicated verifier agent brief that mandates running `bun run check`, `bun run lint`, `bun test`, and adding tests when gaps remain. Updated `ExecutePlanInfo` in `src/rmplan/executors/types.ts` and the agent command in `src/rmplan/commands/agent/agent.ts` to propagate a new `executionMode: 'simple'`, then taught `src/rmplan/executors/claude_code.ts` to select the simple orchestration wrapper, generate implementer/verifier agent files (reusing tester custom instructions/models for the verifier), and clean them up after execution. Centralized FAILED source parsing in `inferFailedAgent()` inside `src/rmplan/executors/failure_detection.ts`, expanding detection to include the verifier and sharing the helper with the Claude executor for consistent error reporting; added coverage in `src/rmplan/executors/failure_detection.test.ts`. Verified typings with `bun run check` and exercised the failure-detection suite with `bun test src/rmplan/executors/failure_detection.test.ts` to confirm the new logic behaves as expected.
