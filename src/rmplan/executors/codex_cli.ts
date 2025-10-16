@@ -962,7 +962,7 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
     cwd: string,
     opts: { planTool?: boolean } = {}
   ): Promise<string> {
-    const allowAllTools = process.env.ALLOW_ALL_TOOLS === 'true';
+    const allowAllTools = ['true', '1'].includes(process.env.ALLOW_ALL_TOOLS || '');
     const sandboxSettings = allowAllTools
       ? ['--dangerously-bypass-approvals-and-sandbox']
       : ['--sandbox', 'workspace-write'];
