@@ -61,8 +61,8 @@ export class CodexCliExecutor implements Executor {
   async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | ExecutorOutput> {
     if (
       planInfo.executionMode === 'simple' ||
-      this.sharedOptions.simpleMode ||
-      this.options.simpleMode
+      (planInfo.executionMode === 'normal' &&
+        (this.sharedOptions.simpleMode || this.options.simpleMode))
     ) {
       return this.executeSimpleMode(contextContent, planInfo);
     }

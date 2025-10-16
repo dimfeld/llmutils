@@ -666,4 +666,41 @@ describe('CodexCliExecutor simple mode', () => {
       warnMessages.some((msg) => msg.includes('Skipping automatic task completion'))
     ).toBeFalse();
   });
+
+  test('simple mode flags do not force review or planning executions into simple loop', async () => {
+    const { CodexCliExecutor } = await import('./codex_cli.ts');
+    const basePlan = {
+      planId: 'plan-simple-gating',
+      planTitle: 'Simple Mode Gating',
+      planFilePath: '/tmp/simple-gating-plan.md',
+    };
+
+    const scenarios = [
+      new CodexCliExecutor(
+        { simpleMode: true } as any,
+        { baseDir: process.cwd(), interactive: false },
+        {}
+      ),
+      new CodexCliExecutor(
+        {} as any,
+        { baseDir: process.cwd(), simpleMode: true, interactive: false },
+        {}
+      ),
+    ];
+
+    for (const executor of scenarios) {
+      const simpleSpy = mock(async () => undefined);
+      const normalSpy = mock(async () => undefined);
+      (executor as any).executeSimpleMode = simpleSpy;
+      (executor as any).executeNormalMode = normalSpy;
+
+      await executor.execute('CTX CONTENT', { ...basePlan, executionMode: 'review' });
+      await executor.execute('CTX CONTENT', { ...basePlan, executionMode: 'planning' });
+
+      expect(simpleSpy).not.toHaveBeenCalled();
+      expect(normalSpy).toHaveBeenCalledTimes(2);
+      expect(normalSpy.mock.calls[0][1].executionMode).toBe('review');
+      expect(normalSpy.mock.calls[1][1].executionMode).toBe('planning');
+    }
+  });
 });

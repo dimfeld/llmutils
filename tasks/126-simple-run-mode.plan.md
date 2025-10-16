@@ -15,7 +15,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-10-16T08:11:33.994Z
 createdAt: 2025-10-16T08:04:19.031Z
-updatedAt: 2025-10-16T10:22:16.136Z
+updatedAt: 2025-10-16T10:24:39.073Z
 progressNotes:
   - timestamp: 2025-10-16T08:16:22.416Z
     text: Added CLI --simple flag plumbing. Updated executor shared options/types
@@ -120,6 +120,11 @@ progressNotes:
     text: Added integration-style Codex CLI simple mode tests covering
       shared/options simpleMode toggles plus planning-only retry logging. Bun
       test for codex_cli.simple_mode.test.ts passes.
+    source: "tester: Task17"
+  - timestamp: 2025-10-16T10:24:39.067Z
+    text: Verified codex_cli.simple_mode.test.ts against current implementation; bun
+      test src/rmplan/executors/codex_cli.simple_mode.test.ts passes without
+      modifications.
     source: "tester: Task17"
 tasks:
   - title: Add --simple flag to rmplan agent CLI command
@@ -470,3 +475,5 @@ Completed tasks "Test interaction with other flags", "Update README and document
 Extended unit coverage for task "Write unit tests for simple mode prompts" by enriching the prompt test suites in `src/rmplan/executors/claude_code/agent_prompts.test.ts` and `src/rmplan/executors/claude_code/orchestrator_prompt.test.ts`. Added a verifier-specific assertion that confirms custom instructions are preserved and surfaced under the `## Custom Instructions` heading (ensuring reviewers’ policy overrides survive the simple-mode pipeline), and verified progress-note guidance is embedded in the two-phase orchestration helper so orchestrators always instruct agents to log updates with `rmplan add-progress-note <planId>`. These tests guard against future regressions where the simple-mode prompts might drop mandatory guidance or lose plan-scoped customization, providing fast feedback when prompt templates change.
 
 Implemented task "Task 17: Write integration tests for Codex CLI simple mode" by expanding `src/rmplan/executors/codex_cli.simple_mode.test.ts` with two integration-focused scenarios that exercise the new implement → verify loop through the primary entry points. The first test forces `ExecutorCommonOptions.simpleMode` to drive the workflow while `ExecutePlanInfo.executionMode` remains `'normal'`, then simulates a planning-only first attempt followed by a successful retry to ensure warning and retry logs fire and that captured steps include both implementer attempts plus the verifier output. The second test enables `CodexCliExecutorOptions.simpleMode` to confirm configuration defaults hit the same path, verifying aggregated output when capture mode is `'all'` and that automatic task completion still runs on success. Both tests stub `captureRepositoryState`, `spawnAndLogOutput`, and prompt factories to focus on orchestration behavior while using real `execute()` plumbing, and they assert that planning-only detection, aggregated step titles, and final verifier messaging behave exactly as expected. Validated the additions with `bun test src/rmplan/executors/codex_cli.simple_mode.test.ts` to guard against regressions in the simplified Codex loop.
+
+Addressed follow-up work for tasks "Create simple mode execution loop" and "Test interaction with other flags" by tightening the Codex executor's mode switching. Updated `CodexCliExecutor.execute` in `src/rmplan/executors/codex_cli.ts` so configuration- or CLI-supplied `simpleMode` flags only activate the implement→verify path when `planInfo.executionMode` is `'normal'`, preserving review (`'review'`) and planning (`'planning'`) workflows that depend on the traditional orchestration. Added the regression test `simple mode flags do not force review or planning executions into simple loop` to `src/rmplan/executors/codex_cli.simple_mode.test.ts`, stubbing the executor methods to assert that both configuration (`options.simpleMode`) and shared (`ExecutorCommonOptions.simpleMode`) flags still dispatch to `executeNormalMode`. Verified the guard and coverage with `bun test src/rmplan/executors/codex_cli.simple_mode.test.ts` to prevent this regression from resurfacing.
