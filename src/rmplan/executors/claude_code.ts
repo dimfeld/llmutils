@@ -19,7 +19,10 @@ import { confirm, select, editor } from '@inquirer/prompts';
 import { stringify } from 'yaml';
 import { prefixPrompt } from './claude_code/prefix_prompt.ts';
 import { waitForEnter } from '../../common/terminal.ts';
-import { wrapWithOrchestration, wrapWithOrchestrationSimple } from './claude_code/orchestrator_prompt.ts';
+import {
+  wrapWithOrchestration,
+  wrapWithOrchestrationSimple,
+} from './claude_code/orchestrator_prompt.ts';
 import {
   generateAgentFiles,
   removeAgentFiles,
@@ -988,9 +991,10 @@ export class ClaudeCodeExecutor implements Executor {
               gitRoot
             )
           : undefined;
-        const verifierInstructions = [testerInstructions, reviewerInstructions]
-          .filter((instructions): instructions is string => Boolean(instructions?.trim()))
-          .join('\n\n') || undefined;
+        const verifierInstructions =
+          [testerInstructions, reviewerInstructions]
+            .filter((instructions): instructions is string => Boolean(instructions?.trim()))
+            .join('\n\n') || undefined;
 
         agentDefinitions = [
           getImplementerPrompt(
@@ -1211,7 +1215,10 @@ export class ClaudeCodeExecutor implements Executor {
         if (failureRaw) {
           const parsedAny = parseFailedReportAnywhere(failureRaw);
           const failedLine = detectFailedLineAnywhere(failureRaw);
-          const sourceAgent = inferFailedAgent(failedLine.failed ? failedLine.summary : undefined, failureRaw);
+          const sourceAgent = inferFailedAgent(
+            failedLine.failed ? failedLine.summary : undefined,
+            failureRaw
+          );
 
           return {
             content: failureRaw,

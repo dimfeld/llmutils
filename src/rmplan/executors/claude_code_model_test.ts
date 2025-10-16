@@ -282,21 +282,20 @@ describe('ClaudeCodeExecutor model selection', () => {
       },
     }));
 
-    const loadAgentInstructionsMock = mock(
-      async (_instructionPath: string, _gitRoot: string) => {
-        if (_instructionPath.includes('implementer')) {
-          return 'implementer instructions';
-        }
-        if (_instructionPath.includes('tester')) {
-          return 'tester instructions';
-        }
-        if (_instructionPath.includes('reviewer')) {
-          return 'reviewer instructions';
-        }
-        return undefined;
+    const loadAgentInstructionsMock = mock(async (_instructionPath: string, _gitRoot: string) => {
+      if (_instructionPath.includes('implementer')) {
+        return 'implementer instructions';
       }
-    );
-    const originalLoadAgentInstructions = (ClaudeCodeExecutor.prototype as any).loadAgentInstructions;
+      if (_instructionPath.includes('tester')) {
+        return 'tester instructions';
+      }
+      if (_instructionPath.includes('reviewer')) {
+        return 'reviewer instructions';
+      }
+      return undefined;
+    });
+    const originalLoadAgentInstructions = (ClaudeCodeExecutor.prototype as any)
+      .loadAgentInstructions;
     (ClaudeCodeExecutor.prototype as any).loadAgentInstructions = loadAgentInstructionsMock;
 
     const executor = new ClaudeCodeExecutor(

@@ -340,8 +340,12 @@ ${options.batchMode ? '5' : '4'}. **Iteration**
 - Do NOT implement, verify, or edit files yourself—delegate all work to the agents.
 - When invoking agents, give clear instructions referencing the specific task titles.
 - Provide prior agent outputs to the next agent so they have full context.
-- Keep the scope focused; if verification fails, loop back to implementation before moving forward.${options.batchMode ? `
-- Subagents can read all pending tasks; explicitly tell them which ones are in scope for this batch.` : ''}${progressNotesSection}`;
+- Keep the scope focused; if verification fails, loop back to implementation before moving forward.${
+    options.batchMode
+      ? `
+- Subagents can read all pending tasks; explicitly tell them which ones are in scope for this batch.`
+      : ''
+  }${progressNotesSection}`;
 
   const footer = `## Task Context
 

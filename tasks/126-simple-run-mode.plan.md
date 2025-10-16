@@ -15,7 +15,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-10-16T08:11:33.994Z
 createdAt: 2025-10-16T08:04:19.031Z
-updatedAt: 2025-10-16T08:49:22.193Z
+updatedAt: 2025-10-16T09:04:16.637Z
 progressNotes:
   - timestamp: 2025-10-16T08:16:22.416Z
     text: Added CLI --simple flag plumbing. Updated executor shared options/types
@@ -83,7 +83,7 @@ tasks:
     docs: []
     steps: []
   - title: Create simple mode orchestrator prompt
-    done: false
+    done: true
     description: Add new `wrapWithOrchestrationSimple()` function in
       `/src/rmplan/executors/claude_code/orchestrator_prompt.ts` that provides
       2-phase orchestration instructions (implement → verify) instead of the
@@ -92,7 +92,7 @@ tasks:
     docs: []
     steps: []
   - title: Create verifier agent prompt
-    done: false
+    done: true
     description: Add `getVerifierAgentPrompt()` function in
       `/src/rmplan/executors/claude_code/agent_prompts.ts` that combines testing
       and validation responsibilities. The verifier should run type checking,
@@ -101,7 +101,7 @@ tasks:
     docs: []
     steps: []
   - title: Update Claude Code executor to branch on simple mode
-    done: false
+    done: true
     description: Modify `/src/rmplan/executors/claude_code.ts` execute() method
       around line 789 to check for simple mode and use
       wrapWithOrchestrationSimple() instead of wrapWithOrchestration() when
@@ -118,7 +118,7 @@ tasks:
     docs: []
     steps: []
   - title: Add failure detection for verifier agent
-    done: false
+    done: true
     description: "Extend failure detection in
       `/src/rmplan/executors/failure_detection.ts` to recognize failures from
       the new verifier agent using the existing FAILED: protocol."
@@ -214,6 +214,14 @@ changedFiles:
   - src/rmplan/commands/agent/agent.ts
   - src/rmplan/executors/build.test.ts
   - src/rmplan/executors/build.ts
+  - src/rmplan/executors/claude_code/agent_prompts.test.ts
+  - src/rmplan/executors/claude_code/agent_prompts.ts
+  - src/rmplan/executors/claude_code/orchestrator_prompt.test.ts
+  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/executors/claude_code_model_test.ts
+  - src/rmplan/executors/failure_detection.test.ts
+  - src/rmplan/executors/failure_detection.ts
   - src/rmplan/executors/schemas.test.ts
   - src/rmplan/executors/schemas.ts
   - src/rmplan/executors/types.ts

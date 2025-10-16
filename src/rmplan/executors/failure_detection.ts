@@ -25,13 +25,12 @@ const FAILED_AGENT_NAME_PATTERN = /(implementer|tester|reviewer|verifier|fixer)/
  * Attempts to infer which sub-agent emitted a FAILED report by inspecting the one-line summary
  * and the full message content. Falls back to 'orchestrator' when no agent match is found.
  */
-export function inferFailedAgent(
-  summary?: string,
-  fullContent?: string
-): FailureSourceAgent {
+export function inferFailedAgent(summary?: string, fullContent?: string): FailureSourceAgent {
   const normalizedSummary = summary?.trim();
   if (normalizedSummary) {
-    const directMatch = normalizedSummary.match(/^\s*(implementer|tester|reviewer|verifier|fixer)\b/i);
+    const directMatch = normalizedSummary.match(
+      /^\s*(implementer|tester|reviewer|verifier|fixer)\b/i
+    );
     if (directMatch) {
       return directMatch[1].toLowerCase() as FailedSubAgent;
     }
@@ -45,7 +44,9 @@ export function inferFailedAgent(
   }
 
   if (fullContent) {
-    const contentMatch = fullContent.match(new RegExp(`FAILED:\\s*${FAILED_AGENT_NAME_PATTERN.source}\\b`, 'i'));
+    const contentMatch = fullContent.match(
+      new RegExp(`FAILED:\\s*${FAILED_AGENT_NAME_PATTERN.source}\\b`, 'i')
+    );
     if (contentMatch) {
       return contentMatch[1].toLowerCase() as FailedSubAgent;
     }
