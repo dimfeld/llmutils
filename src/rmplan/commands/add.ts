@@ -103,6 +103,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
     details: '',
     status: options.status || 'pending',
     priority: (options.priority as 'low' | 'medium' | 'high' | 'urgent') || 'medium',
+    temp: options.temp || false,
     dependencies: needArrayOrUndefined(options.dependsOn),
     parent: referencedPlan
       ? referencedPlan.id
@@ -200,7 +201,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
     const editedPlan = await readPlanFile(filePath);
 
     // If the title changed, rename the file to match
-    if (editedPlan.title !== planTitle) {
+    if (editedPlan.title && editedPlan.title !== planTitle) {
       const newSlugifiedTitle = slugify(editedPlan.title);
       const newFilename = `${planId}-${newSlugifiedTitle}.plan.md`;
       const newFilePath = path.join(targetDir, newFilename);
