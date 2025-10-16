@@ -246,7 +246,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
     const row = [
       chalk.cyan(plan.id || 'no-id'),
-      getCombinedTitleFromSummary(plan),
+      getCombinedTitleFromSummary(plan) + (plan.temp ? chalk.gray(' (temp)') : ''),
       statusColor(statusDisplay),
       priorityDisplay ? priorityColor(priorityDisplay) : '-',
       (() => {

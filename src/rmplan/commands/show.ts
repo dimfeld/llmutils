@@ -97,6 +97,9 @@ async function displayPlanInfo(
     output.push(`${chalk.cyan('ID:')} ${plan.id || 'Not set'}`);
     output.push(`${chalk.cyan('Title:')} ${getCombinedTitle(plan)}`);
     output.push(`${chalk.cyan('Status:')} ${statusColor(statusDisplay)}`);
+    if (plan.temp) {
+      output.push(`${chalk.cyan('Temp:')} ${chalk.yellow('true')}`);
+    }
 
     const notes = plan.progressNotes ?? [];
     if (notes.length > 0) {
@@ -191,6 +194,9 @@ async function displayPlanInfo(
                 ? chalk.gray
                 : chalk.white;
     log(`${chalk.cyan('Priority:')} ${plan.priority ? priorityColor(plan.priority) : ''}`);
+    if (plan.temp) {
+      log(`${chalk.cyan('Temp:')} ${chalk.yellow('true')}`);
+    }
     if (plan.assignedTo) {
       log(`${chalk.cyan('Assigned To:')} ${plan.assignedTo}`);
     }
