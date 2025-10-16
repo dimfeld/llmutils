@@ -60,12 +60,7 @@ export function buildExecutorAndLog(
   config: RmplanConfig,
   executorOptions: Record<string, unknown> = {}
 ) {
-  const buildExecutorResult = createExecutor(
-    executorName,
-    executorOptions,
-    sharedOptions,
-    config
-  );
+  const buildExecutorResult = createExecutor(executorName, executorOptions, sharedOptions, config);
 
   if ('error' in buildExecutorResult) {
     error(buildExecutorResult.error);

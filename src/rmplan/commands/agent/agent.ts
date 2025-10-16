@@ -283,12 +283,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   };
 
   const executor = options.simple
-    ? buildExecutorAndLog(
-        executorName,
-        sharedExecutorOptions,
-        config,
-        { simpleMode: true }
-      )
+    ? buildExecutorAndLog(executorName, sharedExecutorOptions, config, { simpleMode: true })
     : buildExecutorAndLog(executorName, sharedExecutorOptions, config);
 
   // Check if the plan needs preparation
