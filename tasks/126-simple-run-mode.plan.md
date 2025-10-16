@@ -15,7 +15,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-10-16T08:11:33.994Z
 createdAt: 2025-10-16T08:04:19.031Z
-updatedAt: 2025-10-16T10:15:46.776Z
+updatedAt: 2025-10-16T10:18:53.422Z
 progressNotes:
   - timestamp: 2025-10-16T08:16:22.416Z
     text: Added CLI --simple flag plumbing. Updated executor shared options/types
@@ -106,6 +106,10 @@ progressNotes:
     text: Ran bun test for agent_prompts and orchestrator_prompt suites; new
       assertions guarding custom instructions and progress-note guidance pass.
     source: "tester: Task15"
+  - timestamp: 2025-10-16T10:17:18.853Z
+    text: Executed bun test src/rmplan/executors/codex_cli.simple_mode.test.ts; all
+      simple-mode Codex executor scenarios pass.
+    source: "tester: Task17"
 tasks:
   - title: Add --simple flag to rmplan agent CLI command
     done: true
@@ -223,7 +227,7 @@ tasks:
     docs: []
     steps: []
   - title: Write unit tests for simple mode prompts
-    done: false
+    done: true
     description: Create tests for wrapWithOrchestrationSimple() and
       getVerifierAgentPrompt() functions to ensure correct prompt generation.
     files: []

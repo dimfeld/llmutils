@@ -67,7 +67,11 @@ describe('agent_prompts failure protocol integration', () => {
   });
 
   it('appends custom instructions section to verifier prompt when provided', () => {
-    const verifier = getVerifierAgentPrompt(context, '55', '  Follow project-specific QA checklist.  ');
+    const verifier = getVerifierAgentPrompt(
+      context,
+      '55',
+      '  Follow project-specific QA checklist.  '
+    );
     expect(verifier.prompt).toContain('## Custom Instructions');
     expect(verifier.prompt).toContain('Follow project-specific QA checklist.');
     expect(verifier.prompt).toContain('rmplan add-progress-note 55');
