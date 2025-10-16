@@ -15,7 +15,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-10-16T08:11:33.994Z
 createdAt: 2025-10-16T08:04:19.031Z
-updatedAt: 2025-10-16T09:20:24.748Z
+updatedAt: 2025-10-16T09:34:10.447Z
 progressNotes:
   - timestamp: 2025-10-16T08:16:22.416Z
     text: Added CLI --simple flag plumbing. Updated executor shared options/types
@@ -139,7 +139,7 @@ tasks:
     docs: []
     steps: []
   - title: Create simple mode execution loop
-    done: false
+    done: true
     description: Add new method in `/src/rmplan/executors/codex_cli.ts` for simple
       mode execution that implements the 2-phase loop (implement → verify)
       without the review and fix iteration phases.
@@ -147,7 +147,7 @@ tasks:
     docs: []
     steps: []
   - title: Create verifier prompts for Codex
-    done: false
+    done: true
     description: Add verifier prompt generation functions in Codex executor that
       instruct the agent to run verification commands and ensure all checks
       pass.
@@ -155,7 +155,7 @@ tasks:
     docs: []
     steps: []
   - title: Update main execute method to use simple loop
-    done: false
+    done: true
     description: Modify the execute() method in Codex CLI executor to check for
       simple mode and call the new simple execution loop instead of the full
       orchestration loop.
@@ -163,7 +163,7 @@ tasks:
     docs: []
     steps: []
   - title: Adapt planning-only detection for simple mode
-    done: false
+    done: true
     description: Ensure the planning-only detection and retry mechanism works
       correctly in simple mode, with appropriate retry messages for the
       simplified workflow.
@@ -171,7 +171,7 @@ tasks:
     docs: []
     steps: []
   - title: Handle task completion in simple mode
-    done: false
+    done: true
     description: Adapt the auto task completion logic to work with the simplified
       output from the 2-phase execution.
     files: []
@@ -233,6 +233,9 @@ changedFiles:
   - src/rmplan/executors/claude_code/orchestrator_prompt.ts
   - src/rmplan/executors/claude_code.ts
   - src/rmplan/executors/claude_code_model_test.ts
+  - src/rmplan/executors/codex_cli.simple_mode.test.ts
+  - src/rmplan/executors/codex_cli.test.ts
+  - src/rmplan/executors/codex_cli.ts
   - src/rmplan/executors/failure_detection.test.ts
   - src/rmplan/executors/failure_detection.ts
   - src/rmplan/executors/schemas.test.ts

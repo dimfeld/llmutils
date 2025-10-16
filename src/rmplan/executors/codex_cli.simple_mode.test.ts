@@ -186,7 +186,9 @@ describe('CodexCliExecutor simple mode', () => {
     expect(capturedVerifierContext).toContain('Refactor helpers');
     expect(capturedVerifierContext).toContain('### Newly Completed Tasks From Implementer');
     expect(capturedVerifierContext).toContain('Add feature');
-    expect(capturedVerifierInstructions).toBe('Tester custom checks\n\nReviewer escalation guidance');
+    expect(capturedVerifierInstructions).toBe(
+      'Tester custom checks\n\nReviewer escalation guidance'
+    );
 
     expect(loadInstructionsMock).toHaveBeenCalledTimes(3);
     expect(markCompletedSpy).toHaveBeenCalledTimes(1);
@@ -204,7 +206,9 @@ describe('CodexCliExecutor simple mode', () => {
       body: 'Verification succeeded. All checks pass.',
     });
     expect(result.content).toBe('Verification succeeded. All checks pass.');
-    expect(warnMessages.some((msg) => msg.includes('Skipping automatic task completion'))).toBeFalse();
+    expect(
+      warnMessages.some((msg) => msg.includes('Skipping automatic task completion'))
+    ).toBeFalse();
   });
 
   test('retries implementer when initial attempt only plans work', async () => {
@@ -306,7 +310,9 @@ describe('CodexCliExecutor simple mode', () => {
     expect(loadInstructionsMock).toHaveBeenCalledTimes(3);
     expect(markCompletedSpy).toHaveBeenCalledTimes(1);
     expect(
-      warnMessages.some((msg) => msg.includes('produced planning output without repository changes'))
+      warnMessages.some((msg) =>
+        msg.includes('produced planning output without repository changes')
+      )
     ).toBeTrue();
     expect(
       logMessages.some((msg) =>
@@ -424,7 +430,9 @@ describe('CodexCliExecutor simple mode', () => {
     expect(result.steps[1].body).toContain('FAILED: Verifier reports blocking issues');
     expect(markCompletedSpy).not.toHaveBeenCalled();
     expect(
-      warnMessages.some((msg) => msg.includes('Skipping automatic task completion marking due to executor failure'))
+      warnMessages.some((msg) =>
+        msg.includes('Skipping automatic task completion marking due to executor failure')
+      )
     ).toBeTrue();
   });
 });
