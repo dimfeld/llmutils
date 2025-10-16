@@ -435,4 +435,235 @@ describe('CodexCliExecutor simple mode', () => {
       )
     ).toBeTrue();
   });
+
+  test('honors shared simpleMode flag when executionMode remains normal', async () => {
+    const gitRoot = '/tmp/codex-simple-shared-flag';
+    const repoStates = [
+      { commitHash: 'sha', hasChanges: false, statusOutput: '', diffHash: undefined },
+      { commitHash: 'sha', hasChanges: false, statusOutput: '', diffHash: undefined },
+      { commitHash: 'sha', hasChanges: true, statusOutput: ' M src/file.ts', diffHash: 'diff-4' },
+    ];
+
+    await moduleMocker.mock('../../logging.ts', () => ({
+      log: mock((...args: any[]) => logMessages.push(args.map((a) => String(a)).join(' '))),
+      warn: mock((...args: any[]) => warnMessages.push(args.map((a) => String(a)).join(' '))),
+      error: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => gitRoot),
+      captureRepositoryState: mock(async () => {
+        const next = repoStates.shift();
+        return next ?? repoStates[repoStates.length - 1];
+      }),
+    }));
+
+    await moduleMocker.mock('../plans.ts', () => ({
+      readPlanFile: mock(async () => ({
+        tasks: [
+          { title: 'Task Alpha', done: false },
+          { title: 'Task Beta', done: true },
+        ],
+      })),
+    }));
+
+    await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
+      getImplementerPrompt: mock(() => ({
+        name: 'implementer',
+        description: '',
+        prompt: 'IMPLEMENTER SIMPLE PROMPT',
+      })),
+      getVerifierAgentPrompt: mock(() => ({
+        name: 'verifier',
+        description: '',
+        prompt: 'VERIFIER SIMPLE PROMPT',
+      })),
+      FAILED_PROTOCOL_INSTRUCTIONS: 'FAILED section',
+    }));
+
+    const finalMessages = [
+      'Plan: jotting down next steps only',
+      'Implementation finished after retry with simple flag.',
+      'Verification confirms checks passed.',
+    ];
+
+    await moduleMocker.mock('./codex_cli/format.ts', () => ({
+      createCodexStdoutFormatter: mock(() => {
+        const final = finalMessages.shift() ?? '';
+        const failed = final.startsWith('FAILED:') ? final : undefined;
+        return {
+          formatChunk: mock(() => ''),
+          getFinalAgentMessage: mock(() => final),
+          getFailedAgentMessage: mock(() => failed),
+        };
+      }),
+    }));
+
+    const spawnMock = mock(async (_args: string[], _opts: any) => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: spawnMock,
+      createLineSplitter: mock(() => (chunk: string) => chunk.split('\n').filter(Boolean)),
+      debug: false,
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.ts');
+    const executor = new CodexCliExecutor(
+      {},
+      { baseDir: gitRoot, simpleMode: true, model: 'gpt-test', interactive: false },
+      {}
+    );
+
+    const loadInstructionsMock = mock(async () => undefined);
+    (executor as any).loadAgentInstructionsFor = loadInstructionsMock;
+    const markCompletedSpy = mock(async () => {});
+    (executor as any).markCompletedTasksFromImplementer = markCompletedSpy;
+
+    const result = (await executor.execute('CTX', {
+      planId: 'plan-shared',
+      planTitle: 'Shared Flag Plan',
+      planFilePath: '/tmp/plan.md',
+      executionMode: 'normal',
+      captureOutput: 'result',
+    })) as any;
+
+    expect(spawnMock).toHaveBeenCalledTimes(3);
+    expect(loadInstructionsMock).toHaveBeenCalledTimes(3);
+    expect(markCompletedSpy).toHaveBeenCalledTimes(1);
+    expect(
+      warnMessages.some((msg) =>
+        msg.includes('produced planning output without repository changes')
+      )
+    ).toBeTrue();
+    expect(
+      logMessages.some((msg) =>
+        msg.includes('Retrying implementer with more explicit instructions (attempt 2/4)')
+      )
+    ).toBeTrue();
+    expect(
+      logMessages.some((msg) =>
+        msg.includes(
+          'Implementer produced repository changes after 1 planning-only attempt (resolved on attempt 2/4).'
+        )
+      )
+    ).toBeTrue();
+    expect(result.steps).toHaveLength(3);
+    expect(result.steps[0].title).toBe('Codex Implementer');
+    expect(result.steps[1].title).toBe('Codex Implementer #2');
+    expect(result.steps[2].title).toBe('Codex Verifier');
+    expect(result.content).toContain('Verification confirms checks passed.');
+  });
+
+  test('options.simpleMode triggers simple execution loop with aggregated output', async () => {
+    const gitRoot = '/tmp/codex-simple-options-flag';
+
+    await moduleMocker.mock('../../logging.ts', () => ({
+      log: mock((...args: any[]) => logMessages.push(args.map((a) => String(a)).join(' '))),
+      warn: mock((...args: any[]) => warnMessages.push(args.map((a) => String(a)).join(' '))),
+      error: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => gitRoot),
+      captureRepositoryState: mock(async () => ({
+        commitHash: 'sha',
+        hasChanges: true,
+        statusOutput: ' M src/feature.ts',
+        diffHash: 'diff-5',
+      })),
+    }));
+
+    await moduleMocker.mock('../plans.ts', () => ({
+      readPlanFile: mock(async () => ({
+        tasks: [
+          { title: 'Task One', done: false },
+          { title: 'Task Two', done: false },
+        ],
+      })),
+    }));
+
+    await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
+      getImplementerPrompt: mock(() => ({
+        name: 'implementer',
+        description: '',
+        prompt: 'IMPLEMENTER OPTIONS PROMPT',
+      })),
+      getVerifierAgentPrompt: mock(() => ({
+        name: 'verifier',
+        description: '',
+        prompt: 'VERIFIER OPTIONS PROMPT',
+      })),
+      FAILED_PROTOCOL_INSTRUCTIONS: 'FAILED section',
+    }));
+
+    const finalMessages = [
+      'Implementation complete. ✅',
+      'Verification succeeded. All checks pass.',
+    ];
+
+    await moduleMocker.mock('./codex_cli/format.ts', () => ({
+      createCodexStdoutFormatter: mock(() => {
+        const final = finalMessages.shift() ?? '';
+        const failed = final.startsWith('FAILED:') ? final : undefined;
+        return {
+          formatChunk: mock(() => ''),
+          getFinalAgentMessage: mock(() => final),
+          getFailedAgentMessage: mock(() => failed),
+        };
+      }),
+    }));
+
+    const spawnMock = mock(async (_args: string[], _opts: any) => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: spawnMock,
+      createLineSplitter: mock(() => (chunk: string) => chunk.split('\n').filter(Boolean)),
+      debug: false,
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.ts');
+    const executor = new CodexCliExecutor(
+      { simpleMode: true } as any,
+      { baseDir: gitRoot, interactive: false },
+      {}
+    );
+
+    const loadInstructionsMock = mock(async () => undefined);
+    (executor as any).loadAgentInstructionsFor = loadInstructionsMock;
+    const markCompletedSpy = mock(async () => {});
+    (executor as any).markCompletedTasksFromImplementer = markCompletedSpy;
+
+    const result = (await executor.execute('CTX CONTEXT', {
+      planId: 'plan-options',
+      planTitle: 'Options Flag Plan',
+      planFilePath: '/tmp/options-plan.md',
+      executionMode: 'normal',
+      captureOutput: 'all',
+    })) as any;
+
+    expect(spawnMock).toHaveBeenCalledTimes(2);
+    expect(loadInstructionsMock).toHaveBeenCalledTimes(3);
+    expect(markCompletedSpy).toHaveBeenCalledTimes(1);
+    expect(result.steps).toHaveLength(2);
+    expect(result.steps[0]).toEqual({
+      title: 'Codex Implementer',
+      body: 'Implementation complete. ✅',
+    });
+    expect(result.steps[1]).toEqual({
+      title: 'Codex Verifier',
+      body: 'Verification succeeded. All checks pass.',
+    });
+    expect(result.content).toBe('Verification succeeded. All checks pass.');
+    expect(
+      warnMessages.some((msg) => msg.includes('Skipping automatic task completion'))
+    ).toBeFalse();
+  });
 });

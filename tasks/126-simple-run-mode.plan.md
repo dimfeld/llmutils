@@ -15,7 +15,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-10-16T08:11:33.994Z
 createdAt: 2025-10-16T08:04:19.031Z
-updatedAt: 2025-10-16T10:18:53.422Z
+updatedAt: 2025-10-16T10:22:16.136Z
 progressNotes:
   - timestamp: 2025-10-16T08:16:22.416Z
     text: Added CLI --simple flag plumbing. Updated executor shared options/types
@@ -109,6 +109,17 @@ progressNotes:
   - timestamp: 2025-10-16T10:17:18.853Z
     text: Executed bun test src/rmplan/executors/codex_cli.simple_mode.test.ts; all
       simple-mode Codex executor scenarios pass.
+    source: "tester: Task17"
+  - timestamp: 2025-10-16T10:20:35.734Z
+    text: Reviewed existing Codex CLI simple mode tests; coverage already exercises
+      executionMode flag but not sharedOptions/options toggles. Plan to add
+      integration-style tests verifying execute() respects those entry points
+      while still handling planning-only retry logging.
+    source: "implementer: Task17"
+  - timestamp: 2025-10-16T10:22:16.129Z
+    text: Added integration-style Codex CLI simple mode tests covering
+      shared/options simpleMode toggles plus planning-only retry logging. Bun
+      test for codex_cli.simple_mode.test.ts passes.
     source: "tester: Task17"
 tasks:
   - title: Add --simple flag to rmplan agent CLI command
@@ -457,3 +468,5 @@ Implemented reviewer-noted fixes for tasks "Add --simple flag to rmplan agent CL
 Completed tasks "Test interaction with other flags", "Update README and documentation", and "Add CLAUDE.md notes about simple mode". Expanded `src/rmplan/commands/agent/agent.test.ts` with new spies around `findNextActionableItem`, `prepareNextStep`, and `markStepDone` so we can drive the serial execution loop under `--simple`. Added coverage that asserts the batch path still forwards `executionMode: 'simple'` alongside `dryRun: true`, and that the serial loop executes exactly once with `executor.execute` receiving the simple execution mode while post-step plumbing remains intact. Updated `README.md` with a `Simple Mode (--simple)` subsection that highlights the implement → verify flow, the verifier’s responsibility to run `bun run check`, `bun run lint`, and `bun test`, and how the flag composes with batch/serial/dry-run workflows or config defaults. Documented the architecture in `CLAUDE.md`, noting how `ExecutorCommonOptions.simpleMode` selects the streamlined orchestrators, how Claude’s implementer/verifier agent files are generated, how Codex CLI’s `executeSimpleMode()` builds verifier context, and how `inferFailedAgent()` tags verifier failures. Retained ASCII-oriented formatting while matching existing README arrow notation for consistency, and confirmed the new tests with `bun run check` plus `bun test src/rmplan/commands/agent/agent.test.ts`.
 
 Extended unit coverage for task "Write unit tests for simple mode prompts" by enriching the prompt test suites in `src/rmplan/executors/claude_code/agent_prompts.test.ts` and `src/rmplan/executors/claude_code/orchestrator_prompt.test.ts`. Added a verifier-specific assertion that confirms custom instructions are preserved and surfaced under the `## Custom Instructions` heading (ensuring reviewers’ policy overrides survive the simple-mode pipeline), and verified progress-note guidance is embedded in the two-phase orchestration helper so orchestrators always instruct agents to log updates with `rmplan add-progress-note <planId>`. These tests guard against future regressions where the simple-mode prompts might drop mandatory guidance or lose plan-scoped customization, providing fast feedback when prompt templates change.
+
+Implemented task "Task 17: Write integration tests for Codex CLI simple mode" by expanding `src/rmplan/executors/codex_cli.simple_mode.test.ts` with two integration-focused scenarios that exercise the new implement → verify loop through the primary entry points. The first test forces `ExecutorCommonOptions.simpleMode` to drive the workflow while `ExecutePlanInfo.executionMode` remains `'normal'`, then simulates a planning-only first attempt followed by a successful retry to ensure warning and retry logs fire and that captured steps include both implementer attempts plus the verifier output. The second test enables `CodexCliExecutorOptions.simpleMode` to confirm configuration defaults hit the same path, verifying aggregated output when capture mode is `'all'` and that automatic task completion still runs on success. Both tests stub `captureRepositoryState`, `spawnAndLogOutput`, and prompt factories to focus on orchestration behavior while using real `execute()` plumbing, and they assert that planning-only detection, aggregated step titles, and final verifier messaging behave exactly as expected. Validated the additions with `bun test src/rmplan/executors/codex_cli.simple_mode.test.ts` to guard against regressions in the simplified Codex loop.
