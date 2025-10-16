@@ -14,6 +14,7 @@ import {
   getImplementerPrompt,
   getTesterPrompt,
   getReviewerPrompt,
+  getVerifierAgentPrompt,
   FAILED_PROTOCOL_INSTRUCTIONS,
 } from './claude_code/agent_prompts.ts';
 import { readPlanFile } from '../plans.ts';
@@ -58,6 +59,16 @@ export class CodexCliExecutor implements Executor {
   }
 
   async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | ExecutorOutput> {
+    if (planInfo.executionMode === 'simple' || this.sharedOptions.simpleMode) {
+      return this.executeSimpleMode(contextContent, planInfo);
+    }
+    return this.executeNormalMode(contextContent, planInfo);
+  }
+
+  private async executeNormalMode(
+    contextContent: string,
+    planInfo: ExecutePlanInfo
+  ): Promise<void | ExecutorOutput> {
     // Accumulate every piece of output across all steps/iterations
     type AgentType = 'implementer' | 'tester' | 'reviewer' | 'fixer';
     const events: Array<{ type: AgentType; message: string }> = [];
@@ -481,6 +492,240 @@ export class CodexCliExecutor implements Executor {
     }
   }
 
+  private async executeSimpleMode(
+    contextContent: string,
+    planInfo: ExecutePlanInfo
+  ): Promise<void | ExecutorOutput> {
+    type AgentType = 'implementer' | 'verifier';
+    const events: Array<{ type: AgentType; message: string }> = [];
+
+    const buildAggregatedOutput = (): ExecutorOutput | undefined => {
+      if (planInfo.captureOutput !== 'all' && planInfo.captureOutput !== 'result') return undefined;
+      const steps: Array<{ title: string; body: string }> = [];
+      const counters: Record<AgentType, number> = {
+        implementer: 0,
+        verifier: 0,
+      };
+      for (const event of events) {
+        counters[event.type]++;
+        const attempt = counters[event.type];
+        const prettyType = event.type === 'implementer' ? 'Codex Implementer' : 'Codex Verifier';
+        const title = attempt === 1 ? prettyType : `${prettyType} #${attempt}`;
+        steps.push({ title, body: event.message.trim() });
+      }
+      const last = events[events.length - 1];
+      const content = (last?.message || '').trim();
+      return { content, steps };
+    };
+
+    const gitRoot = await getGitRoot(this.sharedOptions.baseDir);
+    const hasPlanFilePath = planInfo.planFilePath.trim().length > 0;
+    const hasPlanId = planInfo.planId.trim().length > 0;
+    const planContextAvailable = hasPlanFilePath && hasPlanId;
+
+    let initiallyCompleted: Array<{ title: string }> = [];
+    let initiallyPending: Array<{ title: string }> = [];
+    if (planContextAvailable) {
+      const planData = await readPlanFile(planInfo.planFilePath);
+      ({ completed: initiallyCompleted, pending: initiallyPending } =
+        this.categorizeTasks(planData));
+
+      this.logTaskStatus(
+        'Initial plan analysis (simple mode)',
+        initiallyCompleted,
+        initiallyPending,
+        gitRoot
+      );
+    }
+
+    let hadFailure = false;
+
+    let implementerInstructions = await this.loadAgentInstructionsFor('implementer', gitRoot);
+    implementerInstructions =
+      (implementerInstructions || '') +
+      `\n\nOnce you decide how to go about implementing the tasks, do so immediately. No need to wait for approval.\n\n` +
+      implementationNotesGuidance(planInfo.planFilePath) +
+      `\n\nIn your final message, be sure to include the titles of the tasks that you completed.`;
+
+    const retryInstructionSuffixes = [
+      'Please implement the changes now, not just plan them.',
+      'IMPORTANT: Execute the actual code changes immediately.',
+      'CRITICAL: You must write actual code files NOW.',
+    ];
+    const maxRetries = retryInstructionSuffixes.length;
+    const totalImplementerAttempts = maxRetries + 1;
+    const planningOnlyAttempts: number[] = [];
+    let planningDetectionResolutionLogged = false;
+
+    let implementerOutput: string | undefined;
+    let implementerStateBefore = await captureRepositoryState(gitRoot);
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const attemptNumber = attempt + 1;
+      const extraInstructions =
+        attempt === 0
+          ? ''
+          : `\n\n${retryInstructionSuffixes[Math.min(attempt - 1, retryInstructionSuffixes.length - 1)]}`;
+      const implementerPrompt = getImplementerPrompt(
+        contextContent,
+        planContextAvailable ? planInfo.planId : undefined,
+        implementerInstructions + extraInstructions,
+        this.sharedOptions.model
+      );
+
+      log(`Running implementer step${attempt > 0 ? ` (attempt ${attemptNumber})` : ''}...`);
+      const attemptOutput = await this.executeCodexStep(implementerPrompt.prompt, gitRoot, {
+        planTool: true,
+      });
+      events.push({ type: 'implementer', message: attemptOutput });
+      log('Implementer output captured.');
+
+      const parsed = parseFailedReport(attemptOutput);
+      if (parsed.failed) {
+        hadFailure = true;
+        const aggregated = buildAggregatedOutput();
+        return {
+          ...(aggregated ?? { content: attemptOutput }),
+          success: false,
+          failureDetails: parsed.details
+            ? { ...parsed.details, sourceAgent: 'implementer' }
+            : {
+                requirements: '',
+                problems: parsed.summary || 'FAILED',
+                sourceAgent: 'implementer',
+              },
+        };
+      }
+
+      const implementerStateAfter = await captureRepositoryState(gitRoot);
+      const planningDetection = detectPlanningWithoutImplementation(
+        attemptOutput,
+        implementerStateBefore,
+        implementerStateAfter
+      );
+
+      if (planningDetection.repositoryStatusUnavailable) {
+        warn(
+          `Could not verify repository state after implementer attempt ${attemptNumber}/${totalImplementerAttempts}; skipping planning-only detection for this attempt.`
+        );
+      }
+
+      if (planningDetection.detected) {
+        planningOnlyAttempts.push(attemptNumber);
+        const indicatorPreview = planningDetection.planningIndicators
+          .slice(0, 2)
+          .map((line) => line.slice(0, 120));
+        const indicatorText =
+          indicatorPreview.length > 0 ? indicatorPreview.join(' | ') : '<no indicators captured>';
+        warn(
+          `Implementer attempt ${attemptNumber}/${totalImplementerAttempts} produced planning output without repository changes (commit changed: ${planningDetection.commitChanged}, working tree changed: ${planningDetection.workingTreeChanged}). Indicators: ${indicatorText}`
+        );
+      }
+
+      if (planningDetection.detected && attempt < maxRetries) {
+        log(
+          `Retrying implementer with more explicit instructions (attempt ${attemptNumber + 1}/${totalImplementerAttempts})...`
+        );
+        implementerStateBefore = implementerStateAfter;
+        continue;
+      }
+
+      if (planningDetection.detected && attempt === maxRetries) {
+        warn(
+          `Implementer planned without executing changes after exhausting ${totalImplementerAttempts} attempts; continuing to verifier.`
+        );
+      }
+
+      if (
+        planningOnlyAttempts.length > 0 &&
+        !planningDetection.detected &&
+        !planningDetection.repositoryStatusUnavailable &&
+        !planningDetectionResolutionLogged
+      ) {
+        const retriesUsed = planningOnlyAttempts.length;
+        const resolvedAttempt = attemptNumber;
+        log(
+          `Implementer produced repository changes after ${retriesUsed} planning-only attempt${retriesUsed === 1 ? '' : 's'} (resolved on attempt ${resolvedAttempt}/${totalImplementerAttempts}).`
+        );
+        planningDetectionResolutionLogged = true;
+      }
+
+      implementerOutput = attemptOutput;
+      implementerStateBefore = implementerStateAfter;
+      break;
+    }
+
+    const finalImplementerOutput =
+      implementerOutput ?? events.filter((e) => e.type === 'implementer').pop()?.message ?? '';
+
+    try {
+      let newlyCompletedTitles: string[] = [];
+      if (planContextAvailable) {
+        try {
+          const updatedPlan = await readPlanFile(planInfo.planFilePath);
+          const { completed: afterCompleted } = this.categorizeTasks(updatedPlan);
+          const beforeTitles = new Set(initiallyCompleted.map((t) => t.title));
+          newlyCompletedTitles = afterCompleted
+            .map((t) => t.title)
+            .filter((title) => !beforeTitles.has(title));
+        } catch (e) {
+          // Non-fatal; proceed without delta if re-read fails
+        }
+      }
+
+      const testerInstructions = await this.loadAgentInstructionsFor('tester', gitRoot);
+      const reviewerInstructions = await this.loadAgentInstructionsFor('reviewer', gitRoot);
+      const verifierInstructions =
+        [testerInstructions, reviewerInstructions]
+          .map((section) => section?.trim())
+          .filter((section): section is string => Boolean(section && section.length > 0))
+          .join('\n\n') || undefined;
+
+      const verifierPrompt = getVerifierAgentPrompt(
+        this.composeVerifierContext(
+          contextContent,
+          finalImplementerOutput,
+          newlyCompletedTitles,
+          initiallyCompleted.map((t) => t.title),
+          initiallyPending.map((t) => t.title)
+        ),
+        planContextAvailable ? planInfo.planId : undefined,
+        verifierInstructions,
+        this.sharedOptions.model
+      );
+
+      log('Running verifier step...');
+      const verifierOutput = await this.executeCodexStep(verifierPrompt.prompt, gitRoot, {
+        planTool: true,
+      });
+      events.push({ type: 'verifier', message: verifierOutput });
+      log('Verifier output captured.');
+
+      const parsed = parseFailedReport(verifierOutput);
+      if (parsed.failed) {
+        hadFailure = true;
+        const aggregated = buildAggregatedOutput();
+        return {
+          ...(aggregated ?? { content: verifierOutput }),
+          success: false,
+          failureDetails: parsed.details
+            ? { ...parsed.details, sourceAgent: 'verifier' }
+            : { requirements: '', problems: parsed.summary || 'FAILED', sourceAgent: 'verifier' },
+        };
+      }
+
+      const aggregated = buildAggregatedOutput();
+      if (aggregated != null) return aggregated;
+      return;
+    } finally {
+      if (!hadFailure && planContextAvailable) {
+        await this.markCompletedTasksFromImplementer(finalImplementerOutput, planInfo, gitRoot);
+      } else if (hadFailure) {
+        warn('Skipping automatic task completion marking due to executor failure.');
+      }
+    }
+  }
+
   /** Load agent instructions if configured in rmplanConfig */
   private async loadAgentInstructionsFor(
     agent: 'implementer' | 'tester' | 'reviewer',
@@ -564,6 +809,31 @@ export class CodexCliExecutor implements Executor {
       `\n\n### Initial Implementation Output\n${implementerOutput}` +
       `\n\n### Initial Testing Output\n${testerOutput}`;
     return base;
+  }
+
+  private composeVerifierContext(
+    originalContext: string,
+    implementerOutput: string,
+    newlyCompletedTitles: string[],
+    previouslyCompletedTitles: string[],
+    pendingTitles: string[]
+  ): string {
+    const previouslyCompletedSection = previouslyCompletedTitles.length
+      ? `\n\n### Completed Tasks Before This Run\n- ${previouslyCompletedTitles.join('\n- ')}`
+      : '';
+    const pendingSection = pendingTitles.length
+      ? `\n\n### Pending Tasks Prior to Verification\n- ${pendingTitles.join('\n- ')}`
+      : '';
+    const newlyCompletedSection = newlyCompletedTitles.length
+      ? `\n\n### Newly Completed Tasks From Implementer\n- ${newlyCompletedTitles.join('\n- ')}`
+      : '';
+    return (
+      `${originalContext}` +
+      previouslyCompletedSection +
+      pendingSection +
+      newlyCompletedSection +
+      `\n\n### Implementer Output Summary\n${implementerOutput}`
+    );
   }
 
   private composeFixReviewContext(
