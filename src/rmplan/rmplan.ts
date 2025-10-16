@@ -347,6 +347,7 @@ function createAgentCommand(command: Command, description: string) {
       '--serial-tasks',
       'Disable batch task execution mode and process tasks one at a time (default is batch mode)'
     )
+    .option('--simple', 'Use streamlined two-phase execution mode (implement then verify)')
     .allowExcessArguments(true)
     .allowUnknownOption(true)
     .action(async (planFile, options, command) => {

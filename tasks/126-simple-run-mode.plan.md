@@ -6,32 +6,46 @@ goal: Implement a --simple flag for the rmplan agent command that runs executors
   3-phase "implement-test-review" orchestration loop.
 id: 126
 generatedBy: agent
-status: pending
+status: in_progress
 priority: medium
+container: false
 dependencies: []
 issue: []
+pullRequest: []
 docs: []
 planGeneratedAt: 2025-10-16T08:11:33.994Z
 createdAt: 2025-10-16T08:04:19.031Z
-updatedAt: 2025-10-16T08:11:33.995Z
+updatedAt: 2025-10-16T08:16:22.422Z
+progressNotes:
+  - timestamp: 2025-10-16T08:16:22.416Z
+    text: Added CLI --simple flag plumbing. Updated executor shared options/types
+      and option schemas for simple mode. buildExecutorAndLog now accepts CLI
+      overrides and agent command passes simple flag when requested.
+    source: "implementer: tasks 1-4"
 tasks:
   - title: Add --simple flag to rmplan agent CLI command
     done: false
     description: Update `/src/rmplan/rmplan.ts` to add the --simple option after
       line 349 in the `createAgentCommand()` function. Follow the pattern of
       existing flags like --serial-tasks.
+    files: []
+    docs: []
     steps: []
   - title: Update executor type definitions for simple mode
     done: false
     description: Modify `/src/rmplan/executors/types.ts` to support simple mode in
       ExecutorCommonOptions or ExecutePlanInfo. Consider adding an executionMode
       variant or a separate simpleMode boolean field.
+    files: []
+    docs: []
     steps: []
   - title: Update executor schemas to include simpleMode option
     done: false
     description: Add simpleMode field to both claudeCodeOptionsSchema and
       codexCliOptionsSchema in `/src/rmplan/executors/schemas.ts`. Include
       proper zod validation and descriptions.
+    files: []
+    docs: []
     steps: []
   - title: Modify executor build process to pass simple mode flag
     done: false
@@ -39,6 +53,8 @@ tasks:
       function to accept and pass executor-specific options. Modify the call
       site in `/src/rmplan/commands/agent/agent.ts` to pass the simple flag when
       present.
+    files: []
+    docs: []
     steps: []
   - title: Create simple mode orchestrator prompt
     done: false
@@ -46,6 +62,8 @@ tasks:
       `/src/rmplan/executors/claude_code/orchestrator_prompt.ts` that provides
       2-phase orchestration instructions (implement → verify) instead of the
       current 3-phase flow.
+    files: []
+    docs: []
     steps: []
   - title: Create verifier agent prompt
     done: false
@@ -53,6 +71,8 @@ tasks:
       `/src/rmplan/executors/claude_code/agent_prompts.ts` that combines testing
       and validation responsibilities. The verifier should run type checking,
       linting, tests, and add tests if needed.
+    files: []
+    docs: []
     steps: []
   - title: Update Claude Code executor to branch on simple mode
     done: false
@@ -60,80 +80,108 @@ tasks:
       around line 789 to check for simple mode and use
       wrapWithOrchestrationSimple() instead of wrapWithOrchestration() when
       appropriate.
+    files: []
+    docs: []
     steps: []
   - title: Modify agent file generation for simple mode
     done: false
     description: Update `/src/rmplan/executors/claude_code/agent_generator.ts` to
       conditionally generate implementer and verifier agents in simple mode
       instead of implementer, tester, and reviewer agents.
+    files: []
+    docs: []
     steps: []
   - title: Add failure detection for verifier agent
     done: false
     description: "Extend failure detection in
       `/src/rmplan/executors/failure_detection.ts` to recognize failures from
       the new verifier agent using the existing FAILED: protocol."
+    files: []
+    docs: []
     steps: []
   - title: Create simple mode execution loop
     done: false
     description: Add new method in `/src/rmplan/executors/codex_cli.ts` for simple
       mode execution that implements the 2-phase loop (implement → verify)
       without the review and fix iteration phases.
+    files: []
+    docs: []
     steps: []
   - title: Create verifier prompts for Codex
     done: false
     description: Add verifier prompt generation functions in Codex executor that
       instruct the agent to run verification commands and ensure all checks
       pass.
+    files: []
+    docs: []
     steps: []
   - title: Update main execute method to use simple loop
     done: false
     description: Modify the execute() method in Codex CLI executor to check for
       simple mode and call the new simple execution loop instead of the full
       orchestration loop.
+    files: []
+    docs: []
     steps: []
   - title: Adapt planning-only detection for simple mode
     done: false
     description: Ensure the planning-only detection and retry mechanism works
       correctly in simple mode, with appropriate retry messages for the
       simplified workflow.
+    files: []
+    docs: []
     steps: []
   - title: Handle task completion in simple mode
     done: false
     description: Adapt the auto task completion logic to work with the simplified
       output from the 2-phase execution.
+    files: []
+    docs: []
     steps: []
   - title: Write unit tests for simple mode prompts
     done: false
     description: Create tests for wrapWithOrchestrationSimple() and
       getVerifierAgentPrompt() functions to ensure correct prompt generation.
+    files: []
+    docs: []
     steps: []
   - title: Write integration tests for Claude Code simple mode
     done: false
     description: Add tests in the Claude Code executor test file that verify the
       complete 2-phase flow works correctly, including agent file generation and
       failure handling.
+    files: []
+    docs: []
     steps: []
   - title: Write integration tests for Codex CLI simple mode
     done: false
     description: Add tests for the Codex CLI executor's simple mode loop, including
       planning-only detection and retry behavior in the simplified context.
+    files: []
+    docs: []
     steps: []
   - title: Test interaction with other flags
     done: false
     description: Verify that --simple flag works correctly with other options like
       --batch, --serial-tasks, and --dry-run, ensuring no conflicts or
       unexpected behavior.
+    files: []
+    docs: []
     steps: []
   - title: Update README and documentation
     done: false
     description: Update the main README.md to document the new --simple flag,
       explaining when to use it and how it differs from the standard execution
       mode. Include examples of usage.
+    files: []
+    docs: []
     steps: []
   - title: Add CLAUDE.md notes about simple mode
     done: false
     description: Update the CLAUDE.md file with implementation details about the
       simple mode architecture for future development reference.
+    files: []
+    docs: []
     steps: []
 changedFiles: []
 rmfilter: []
@@ -273,3 +321,7 @@ Tasks:
 - Add CLAUDE.md notes about simple mode
 
 This phase ensures the simple mode implementation is robust through comprehensive testing and that users can easily discover and use the new feature through updated documentation. All edge cases should be tested including failure scenarios, retry mechanisms, and interaction with other flags.
+
+# Implemented Functionality Notes
+
+Implemented support groundwork for tasks "Add --simple flag to rmplan agent CLI command", "Update executor type definitions for simple mode", "Update executor schemas to include simpleMode option", and "Modify executor build process to pass simple mode flag". Added the new `--simple` option to the agent CLI in `src/rmplan/rmplan.ts` so users can request the streamlined flow. Extended `ExecutorCommonOptions` in `src/rmplan/executors/types.ts` with an optional `simpleMode` flag that executors can check when orchestrating their phases. Updated both executor option schemas in `src/rmplan/executors/schemas.ts` to accept a `simpleMode` boolean so configuration files can enable the simplified mode without CLI flags. Adjusted `buildExecutorAndLog` in `src/rmplan/executors/build.ts` to accept executor-specific overrides and propagate them into `createExecutor`, and changed `src/rmplan/commands/agent/agent.ts` to populate the shared options and pass the override when the CLI flag is present (falling back to the existing signature otherwise). This establishes a consistent data path for the simple-mode signal from CLI/config into executor constructors while preserving backwards compatibility for other call sites.

@@ -9,6 +9,10 @@ export interface ExecutorCommonOptions {
   baseDir: string;
   interactive?: boolean;
   model?: string;
+  /**
+   * When true, executors should run in the streamlined implement → verify flow.
+   */
+  simpleMode?: boolean;
 }
 
 /**

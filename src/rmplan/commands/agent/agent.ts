@@ -279,9 +279,17 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     baseDir: currentBaseDir,
     model: agentExecutionModel,
     interactive: options.interactiveExecutor,
+    simpleMode: options.simple ? true : undefined,
   };
 
-  const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
+  const executor = options.simple
+    ? buildExecutorAndLog(
+        executorName,
+        sharedExecutorOptions,
+        config,
+        { simpleMode: true }
+      )
+    : buildExecutorAndLog(executorName, sharedExecutorOptions, config);
 
   // Check if the plan needs preparation
   const planData = await readPlanFile(currentPlanFile);
