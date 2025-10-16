@@ -610,6 +610,7 @@ describe('rmplanAgent - simple mode flag plumbing', () => {
 
   beforeEach(async () => {
     clearPlanCache();
+    defaultConfig.executors = {};
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-simple-flag-test-'));
     const tasksDir = path.join(tempDir, 'tasks');
@@ -708,7 +709,7 @@ describe('rmplanAgent - simple mode flag plumbing', () => {
     expect(executorOptions).toBeUndefined();
     expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
     const [batchOptions] = executeBatchModeSpy.mock.calls[0];
-    expect(batchOptions).toMatchObject({ executor: testExecutor });
+    expect(batchOptions).toMatchObject({ executor: testExecutor, executionMode: 'normal' });
   });
 
   test('passes simpleMode flag through to executor builder', async () => {
@@ -727,7 +728,32 @@ describe('rmplanAgent - simple mode flag plumbing', () => {
     expect(executorOptions).toEqual({ simpleMode: true });
     expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
     const [batchOptions] = executeBatchModeSpy.mock.calls[0];
-    expect(batchOptions).toMatchObject({ executor: testExecutor });
+    expect(batchOptions).toMatchObject({ executor: testExecutor, executionMode: 'simple' });
+  });
+
+  test('enables simpleMode when configured on executor', async () => {
+    defaultConfig.executors = {
+      'test-executor': {
+        simpleMode: true,
+      },
+    };
+
+    await rmplanAgent(simplePlanFile, { log: false } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [executorName, sharedOptions, config, executorOptions] =
+      buildExecutorAndLogSpy.mock.calls[0];
+    expect(executorName).toBe('test-executor');
+    expect(sharedOptions).toMatchObject({
+      baseDir: tempDir,
+      model: 'default-model',
+      simpleMode: true,
+    });
+    expect(config).toBe(defaultConfig);
+    expect(executorOptions).toBeUndefined();
+    expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
+    const [batchOptions] = executeBatchModeSpy.mock.calls[0];
+    expect(batchOptions).toMatchObject({ executor: testExecutor, executionMode: 'simple' });
   });
 });
 

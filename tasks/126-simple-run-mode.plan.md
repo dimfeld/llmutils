@@ -15,7 +15,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-10-16T08:11:33.994Z
 createdAt: 2025-10-16T08:04:19.031Z
-updatedAt: 2025-10-16T09:39:57.392Z
+updatedAt: 2025-10-16T09:43:00.906Z
 progressNotes:
   - timestamp: 2025-10-16T08:16:22.416Z
     text: Added CLI --simple flag plumbing. Updated executor shared options/types
@@ -71,6 +71,15 @@ progressNotes:
       execution, assert agent file generation, and verify verifier failure
       attribution.
     source: "tester: Task16"
+  - timestamp: 2025-10-16T09:42:50.223Z
+    text: Ran bun run check and targeted Claude agent/executor suites; all pass with
+      new simple-mode coverage confirmed.
+    source: "tester: Tasks8-16"
+  - timestamp: 2025-10-16T09:43:00.900Z
+    text: Spot-checked codex_cli simple-mode suite; bun test
+      src/rmplan/executors/codex_cli.simple_mode.test.ts passes, no regressions
+      observed.
+    source: "tester: Task17"
 tasks:
   - title: Add --simple flag to rmplan agent CLI command
     done: true
@@ -403,3 +412,5 @@ Implemented tasks "Modify agent file generation for simple mode" and "Write inte
 Implemented tasks "Create simple mode execution loop", "Create verifier prompts for Codex", "Update main execute method to use simple loop", "Adapt planning-only detection for simple mode", and "Handle task completion in simple mode". Refactored `src/rmplan/executors/codex_cli.ts` so `execute()` routes to a new `executeSimpleMode()` that reuses the implementer retry logic but stops after a verifier pass. The simple path collects implementer/verifier events for captured output, reuses the existing planning-only detection, and shares the automatic task completion hook while skipping it on failure. Added `composeVerifierContext()` to shape verifier inputs with plan status deltas, imported `getVerifierAgentPrompt()` so the verifier instructions include combined tester/reviewer guidance, and adjusted logging to mention the verifier branch. Updated `src/rmplan/executors/codex_cli.test.ts` to assert the sandbox CLI arguments under the new branching model. Verified the changes with `bun run check`, `bun test src/rmplan/executors/codex_cli.test.ts`, `bun test src/rmplan/executors/codex_cli.retry.test.ts`, and `bun test src/rmplan/executors/codex_cli.capture_output.test.ts` to ensure the new flow coexists with the legacy implement-test-review path.
 
 Addressed the reviewer follow-up for tasks "Modify executor build process to pass simple mode flag" and "Create simple mode execution loop" by fixing the config-driven toggle in `src/rmplan/executors/codex_cli.ts`. The executor now treats `planInfo.executionMode`, `ExecutorCommonOptions.simpleMode`, and the new `CodexCliExecutorOptions.simpleMode` as equivalent entry points, so setting `executors.codex-cli.simpleMode: true` in `rmplan.yaml` reliably activates `executeSimpleMode()`. This keeps the CLI flag (`--simple`) as the highest-precedence override while ensuring configuration defaults are honored, preserving the shared implementer retry/plan-delta logic without duplicating state. Re-ran `bun test src/rmplan/executors/codex_cli.simple_mode.test.ts` to confirm the two-phase Codex path still passes its end-to-end assertions after the guard change.
+
+Implemented reviewer-noted fixes for tasks "Add --simple flag to rmplan agent CLI command" and "Create simple mode execution loop" by ensuring the streamlined mode actually reaches the executors in every command path. Updated `src/rmplan/commands/agent/agent.ts` to derive a single `executionMode` flag from both the CLI switch and `executors.<name>.simpleMode` config, plumb that value through `ExecutorCommonOptions`, and reuse it for the batch runner, step loop, and stub-plan shortcut. Extended `src/rmplan/commands/agent/batch_mode.ts` and `src/rmplan/commands/agent/stub_plan.ts` so their `executor.execute` calls now honor the computed `executionMode`, guaranteeing Claude and Codex receive `'simple'` when requested instead of the hard-coded `'normal'`. Strengthened regression coverage in `src/rmplan/commands/agent/agent.test.ts`, `src/rmplan/commands/agent/batch_mode.capture_output.test.ts`, and `src/rmplan/commands/agent/batch_mode.soft_failure.test.ts` to assert the new plumbing, and reran `bun run check` plus the updated Bun test subset to verify type safety and behavior.

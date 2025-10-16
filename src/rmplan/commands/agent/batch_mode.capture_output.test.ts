@@ -73,6 +73,7 @@ describe('executeBatchMode captureOutput integration', () => {
         baseDir: '/tmp/repo',
         dryRun: false,
         executorName: 'codex-cli',
+        executionMode: 'normal',
       },
       summaryCollector
     );
