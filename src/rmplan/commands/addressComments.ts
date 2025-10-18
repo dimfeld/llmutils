@@ -136,7 +136,7 @@ export function createAddressCommentsPrompt({
       ? `rg --line-number --fixed-strings -e "AI:" -e "AI_COMMENT_START" -e "AI_COMMENT_END" -e "AI (id:" ${joinedPaths}`
       : 'rg --line-number --fixed-strings -e "AI:" -e "AI_COMMENT_START" -e "AI_COMMENT_END" -e "AI (id:"';
 
-  return `You are addressing AI-authored review comments that already exist inside the repository's source files.
+  return `You are addressing review comments that already exist inside the repository's source files.
 
 ## Responsibilities
 
@@ -145,18 +145,15 @@ export function createAddressCommentsPrompt({
   } for AI review comment markers. Look for any of these markers:
    - Single-line comments such as \`// AI: ...\`, \`# AI: ...\`, \`-- AI: ...\`, or \`<!-- AI: ... -->\`
    - Block markers \`AI_COMMENT_START\` / \`AI_COMMENT_END\`
-   - Hybrid markers like \`AI (id: ...)\`
-2. **Understand Context**: Inspect the surrounding code to understand the intent behind each comment. When additional context is needed, diff against the \`${baseBranch}\` branch (e.g., \`git diff ${baseBranch} -- <file>\` or \`jj diff --from ${baseBranch} -- <file>\`).
+2. **Understand Context**: Inspect the surrounding code to understand the intent behind each comment. When additional context is needed, diff against the \`${baseBranch}\` branch.
 3. **Implement Fixes**: Apply focused changes that resolve the raised concerns without altering unrelated code.
 4. **Remove Markers**: After addressing each comment, delete the corresponding AI comment lines and any start/end markers.
-5. **Validate**: Run \`bun run check\`, \`bun run lint\`, and \`bun test\`. Ensure existing tests continue to pass and add new ones only when necessary to cover the fixes.
+5. **Validate**: Run type checking, linting, and tests. Ensure existing tests continue to pass and add new ones only when necessary to cover the fixes.
+6. **Double Check**: Before finishing, make sure you have seen all AI comments.
+
+Block comments are used when a review comment applies to multiple lines of code, to make it easier to see which code is being referenced. A single line comment may also apply to multiple lines of code; you infer from the comment and surrounding code what is desired. In both cases, consider all relevant information to make the proper change--your changes can update other related code if that is appropriate.
 
 ${prefixReminder}
-
-## Helpful Commands
-
-- Use ripgrep to locate AI comments:\n  - \`${ripgrepCommand}\`
-- Diff against the base branch when needed:\n  - \`git diff ${baseBranch} -- <path>\`\n  - \`jj diff --from ${baseBranch} -- <path>\`
 
 ${scopeSection}## Base Branch Reference
 
