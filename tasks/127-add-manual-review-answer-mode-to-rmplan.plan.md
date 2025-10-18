@@ -6,15 +6,24 @@ goal: Implement `rmplan address-comments` command to find and address AI review
   without needing a GitHub PR.
 id: 127
 generatedBy: agent
-status: pending
+status: in_progress
 priority: medium
+container: false
+temp: false
 dependencies: []
 issue: []
+pullRequest: []
 docs: []
 planGeneratedAt: 2025-10-18T18:28:15.722Z
 promptsGeneratedAt: 2025-10-18T18:28:15.722Z
 createdAt: 2025-10-18T07:39:11.437Z
-updatedAt: 2025-10-18T18:28:15.722Z
+updatedAt: 2025-10-18T18:35:09.012Z
+progressNotes:
+  - timestamp: 2025-10-18T18:35:09.009Z
+    text: Implemented initial address-comments command handlers, supporting helper
+      functions, and CLI wiring; next step is to add automated tests and
+      documentation.
+    source: "implementer: Task 1"
 tasks:
   - title: Create addressComments.ts command file
     done: false
@@ -69,6 +78,8 @@ tasks:
       - src/rmpr/modes/inline_comments.ts (removeAiCommentMarkers function)
 
       - src/common/git.ts (getTrunkBranch, commitAll, hasUncommittedChanges)
+    files: []
+    docs: []
     steps: []
   - title: Register commands in CLI
     done: false
@@ -89,6 +100,8 @@ tasks:
       Both commands accept optional path arguments for filtering.
 
       Also update `src/rmplan/commands/index.ts` to export both handlers.
+    files: []
+    docs: []
     steps: []
   - title: Implement prompt generation with path filtering
     done: false
@@ -114,6 +127,8 @@ tasks:
 
       The prompt should use executionMode: 'review' to avoid orchestration
       overhead.
+    files: []
+    docs: []
     steps: []
   - title: Implement smart cleanup logic
     done: false
@@ -139,6 +154,8 @@ tasks:
          - Uses @inquirer/prompts confirm() for user prompt
 
       Ensure proper error handling for ripgrep failures.
+    files: []
+    docs: []
     steps: []
   - title: Add base branch resolution logic
     done: false
@@ -156,6 +173,8 @@ tasks:
       - Detached HEAD state
       - Missing main/master branches
       - jj vs git repository detection
+    files: []
+    docs: []
     steps: []
   - title: Implement commit functionality
     done: false
@@ -179,6 +198,8 @@ tasks:
 
 
       Log appropriate messages for user visibility.
+    files: []
+    docs: []
     steps: []
   - title: Write tests for address-comments command
     done: false
@@ -208,6 +229,8 @@ tasks:
 
       Use real filesystem operations (mkdtemp) rather than mocks where possible.
       Test both git and jj repository scenarios.
+    files: []
+    docs: []
     steps: []
   - title: Write tests for cleanup-comments command
     done: false
@@ -230,6 +253,8 @@ tasks:
 
       Test with temporary directories containing fixtures with AI comments in
       various formats.
+    files: []
+    docs: []
     steps: []
   - title: Update documentation
     done: false
@@ -259,6 +284,8 @@ tasks:
          - Optional standalone cleanup
 
       Include comparison with answer-pr to clarify the difference.
+    files: []
+    docs: []
     steps: []
   - title: Manual testing across executors
     done: false
@@ -292,6 +319,8 @@ tasks:
       6. Test standalone cleanup-comments command
 
       Document any executor-specific quirks or limitations.
+    files: []
+    docs: []
     steps: []
 changedFiles: []
 rmfilter: []
@@ -921,3 +950,11 @@ export { handleAddressCommentsCommand, handleCleanupCommentsCommand } from './ad
 
 7. ✅ **RESOLVED**: Should the command integrate with rmplan's workspace isolation feature, or always work in the current directory?
    - **Decision**: Always work in current directory - simpler implementation, user can work on a branch for safety if needed, workspace isolation would be overkill for this use case
+
+# Implemented Functionality Notes
+
+Implemented Task 1 by adding `src/rmplan/commands/addressComments.ts`, which introduces `handleAddressCommentsCommand`, `handleCleanupCommentsCommand`, and the supporting helpers requested in the plan. The handler now loads repository configuration, derives the git root, resolves the base branch via `getTrunkBranch`, and builds the executor with `buildExecutorAndLog`. The new `createAddressCommentsPrompt` produces review-mode prompts that instruct the agent to use ripgrep for markers, diff against the selected base branch, remove comment markers, and run Bun checks; it also respects executor path prefixes so Claude Code can auto-read files. I implemented path normalization to guard against arguments that escape the repo root and re-used `removeAiCommentMarkers` from `rmpr/modes/hybrid_context.ts` so hybrid IDs are stripped as well as plain `AI:` lines.
+
+Tasks 2, 3, 4, 5, and 6 were handled together in the same module: `findFilesWithAiComments` shells out to `rg` with literal patterns covering `AI:`, `AI_COMMENT_START/END`, and `AI (id:` to discover files, `cleanupAiCommentMarkers` rewrites files through `secureWrite`, `smartCleanupAiCommentMarkers` provides the interactive cleanup pass (with a `--yes` bypass), and `commitAddressedComments` calls `commitAll` only when `hasUncommittedChanges` reports worktree modifications. I wired the commands into the CLI in `src/rmplan/rmplan.ts`, registering both `address-comments` and the standalone `cleanup-comments` command with all documented options. The README now documents both commands, their options, example workflows, and the supported AI marker formats so future maintainers understand the intended flow (Task 9).
+
+For Task 7 (and coverage for Task 8’s cleanup workflow) I added `src/rmplan/commands/addressComments.test.ts`. The tests spin up a temporary repository, confirm that ripgrep-based discovery respects path filters, verify that cleaning removes `AI_COMMENT` blocks and `AI (id:` markers, and exercise the prompt builder to ensure base-branch instructions, validation commands, and scoped path lists appear as expected. This gives us regression coverage without mocking the underlying filesystem. README updates and CLI wiring ensure the feature is discoverable, while the helper exports keep the code testable for future enhancements.

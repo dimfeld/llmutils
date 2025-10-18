@@ -701,6 +701,32 @@ program
     await handleAnswerPrCommand(prIdentifier, options, command).catch(handleCommandError);
   });
 
+program
+  .command('address-comments [paths...]')
+  .description(
+    'Find and address AI review comments that have already been inserted into source files.'
+  )
+  .option('--base-branch <branch>', 'Branch to diff against when additional context is needed')
+  .option(`-x, --executor <name>`, 'Executor to use when applying fixes')
+  .addHelpText('after', `Available executors: ${executorNames}`)
+  .option('-m, --model <model>', 'Model identifier to pass to the executor')
+  .option('--commit', 'Commit changes after addressing comments')
+  .option('--dry-run', 'Print the generated prompt instead of running the executor', false)
+  .option('--yes', 'Skip confirmation prompts (useful for CI or non-interactive runs)', false)
+  .action(async (paths, options, command) => {
+    const { handleAddressCommentsCommand } = await import('./commands/addressComments.js');
+    await handleAddressCommentsCommand(paths ?? [], options, command).catch(handleCommandError);
+  });
+
+program
+  .command('cleanup-comments [paths...]')
+  .description('Remove AI comment markers from files without running the executor.')
+  .option('--yes', 'Skip the confirmation prompt and clean up immediately', false)
+  .action(async (paths, options, command) => {
+    const { handleCleanupCommentsCommand } = await import('./commands/addressComments.js');
+    await handleCleanupCommentsCommand(paths ?? [], options, command).catch(handleCommandError);
+  });
+
 // Create the workspace command
 const workspaceCommand = program.command('workspace').description('Manage workspaces for plans');
 

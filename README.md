@@ -41,6 +41,8 @@ assume a repository written with Typescript and PNPM workspaces.
   - [Key Features](#key-features-3)
   - [Usage](#usage-1)
     - [Cleanup Command](#cleanup-command)
+    - [Address Comments Command](#address-comments-command)
+    - [Cleanup Comments Command](#cleanup-comments-command)
   - [Requirements](#requirements-1)
   - [Notes](#notes-1)
   - [External Storage](#external-storage)
@@ -981,6 +983,65 @@ rmplan cleanup src/lib/utils.ts src/components/Button.svelte
 - The command only removes comments that appear after code on the same line, preserving standalone comment lines and empty lines.
 - Files must exist and have a supported extension to be processed.
 - Use `--diff-from` to specify a different base branch for determining changed files when no files are provided.
+
+#### Address Comments Command
+
+Use `rmplan address-comments` when AI review comments are already embedded in your source tree (for example, after running `rmplan answer-pr` in inline or hybrid mode, or when comments were pasted in manually). The command skips GitHub lookups entirely and goes straight to the executor with a prompt that instructs it to:
+
+- Run `rg`/`grep` to locate markers such as `AI:`, `AI_COMMENT_START`/`AI_COMMENT_END`, and `AI (id: …)`
+- Diff against the base branch (defaults to the repository’s trunk bookmark or `main`) whenever additional context is needed
+- Apply minimal changes that satisfy each comment
+- Remove the AI comment markers after the fixes are in place
+- Run `bun run check`, `bun run lint`, and `bun test` before finishing
+
+**Usage:**
+
+```bash
+# Address all AI comments in the repository (auto-detects base branch)
+rmplan address-comments
+
+# Limit the search to specific directories and compare against a custom branch
+rmplan address-comments src/ packages/utils --base-branch release/1.4
+
+# Run with a specific executor, print the prompt without executing, then clean up
+rmplan address-comments --executor claude-code --dry-run
+rmplan cleanup-comments --yes
+```
+
+**Options:**
+
+- `--base-branch <branch>` – Override the branch used for `git diff` / `jj diff`. Defaults to the detected trunk (`main`, `master`, `trunk`, or `default`).
+- `--executor <name>` – Choose the executor; defaults to the configured `defaultExecutor`.
+- `--model <model>` – Forward a specific model identifier to the executor.
+- `--commit` – Automatically run `jj commit -m "Address review comments"` (or `git commit -a -m`) after completion.
+- `--dry-run` – Print the generated prompt without calling the executor.
+- `--yes` – Skip confirmation prompts (applies to the post-run cleanup step).
+
+**AI Comment Marker Formats:**
+
+```ts
+// AI: Single-line review feedback
+# AI: Works across Python, shell, Ruby, etc.
+<!-- AI: HTML / Markdown comments -->
+// AI_COMMENT_START / // AI_COMMENT_END blocks
+// AI (id: comment-xyz): Hybrid comments with stable IDs
+```
+
+The command assumes these markers are already present and focuses on orchestrating the executor to resolve them. It differs from `answer-pr` by not selecting comments, not writing diff context files, and by delegating all searching/diffing to the agent prompt.
+
+#### Cleanup Comments Command
+
+After an executor run (or whenever you want to tidy up), `rmplan cleanup-comments` removes the same AI markers without invoking an LLM. It uses ripgrep to find files that still contain markers, shows the list, and removes them after confirmation.
+
+```bash
+# Remove all remaining AI markers
+rmplan cleanup-comments
+
+# Only clean specific paths, skip the confirmation
+rmplan cleanup-comments src/ --yes
+```
+
+This is useful when an executor handled the code changes but left comment stubs behind, or when you want to manually audit files before clearing the markers.
 
 #### Progress Notes
 
