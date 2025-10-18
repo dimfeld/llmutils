@@ -17,16 +17,21 @@ docs: []
 planGeneratedAt: 2025-10-18T18:28:15.722Z
 promptsGeneratedAt: 2025-10-18T18:28:15.722Z
 createdAt: 2025-10-18T07:39:11.437Z
-updatedAt: 2025-10-18T18:35:09.012Z
+updatedAt: 2025-10-18T19:19:51.785Z
 progressNotes:
   - timestamp: 2025-10-18T18:35:09.009Z
     text: Implemented initial address-comments command handlers, supporting helper
       functions, and CLI wiring; next step is to add automated tests and
       documentation.
     source: "implementer: Task 1"
+  - timestamp: 2025-10-18T18:45:54.094Z
+    text: Added new address-comments tests covering cleanup prompts, commit
+      auto-commit flow, and path validation; suite formatted and bun test
+      passing.
+    source: "tester: Task 7-8"
 tasks:
   - title: Create addressComments.ts command file
-    done: false
+    done: true
     description: >-
       Create `src/rmplan/commands/addressComments.ts` with:
 
@@ -82,7 +87,7 @@ tasks:
     docs: []
     steps: []
   - title: Register commands in CLI
-    done: false
+    done: true
     description: |-
       Update `src/rmplan/cli.ts` to register both new commands:
 
@@ -104,7 +109,7 @@ tasks:
     docs: []
     steps: []
   - title: Implement prompt generation with path filtering
-    done: false
+    done: true
     description: >-
       Create `createAddressCommentsPrompt(baseBranch, paths)` function that:
 
@@ -131,7 +136,7 @@ tasks:
     docs: []
     steps: []
   - title: Implement smart cleanup logic
-    done: false
+    done: true
     description: >-
       Implement the three cleanup functions:
 
@@ -158,7 +163,7 @@ tasks:
     docs: []
     steps: []
   - title: Add base branch resolution logic
-    done: false
+    done: true
     description: |-
       In the main command handler:
 
@@ -177,7 +182,7 @@ tasks:
     docs: []
     steps: []
   - title: Implement commit functionality
-    done: false
+    done: true
     description: >-
       Create `commitAddressedComments()` function:
 
@@ -202,7 +207,7 @@ tasks:
     docs: []
     steps: []
   - title: Write tests for address-comments command
-    done: false
+    done: true
     description: |-
       Create `src/rmplan/commands/addressComments.test.ts` with tests for:
 
@@ -233,7 +238,7 @@ tasks:
     docs: []
     steps: []
   - title: Write tests for cleanup-comments command
-    done: false
+    done: true
     description: >-
       Add tests for the standalone cleanup command:
 
@@ -257,7 +262,7 @@ tasks:
     docs: []
     steps: []
   - title: Update documentation
-    done: false
+    done: true
     description: |-
       Update README.md to document the new commands:
 
@@ -322,7 +327,11 @@ tasks:
     files: []
     docs: []
     steps: []
-changedFiles: []
+changedFiles:
+  - README.md
+  - src/rmplan/commands/addressComments.test.ts
+  - src/rmplan/commands/addressComments.ts
+  - src/rmplan/rmplan.ts
 rmfilter: []
 ---
 

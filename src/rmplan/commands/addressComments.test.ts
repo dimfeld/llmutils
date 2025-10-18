@@ -1,5 +1,5 @@
 import { $ } from 'bun';
-import { afterAll, beforeAll, describe, expect, it, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, test } from 'bun:test';
 import { mkdtemp, rm, writeFile, readFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -9,6 +9,7 @@ import {
   findFilesWithAiComments,
   handleCleanupCommentsCommand,
   smartCleanupAiCommentMarkers,
+  commitAddressedComments,
 } from './addressComments.js';
 
 describe('createAddressCommentsPrompt', () => {
@@ -68,6 +69,25 @@ describe('handleCleanupCommentsCommand', () => {
 
     await rm(repoDir, { recursive: true, force: true });
   });
+
+  it('throws when provided paths outside of the repository', async () => {
+    const repoDir = await mkdtemp(path.join(tmpdir(), 'address-comments-outside-'));
+    await $`git init -b main`.cwd(repoDir).quiet();
+
+    const originalCwd = process.cwd();
+    const outsidePath = path.join(repoDir, '..', 'address-comments-outside-marker.ts');
+
+    process.chdir(repoDir);
+    try {
+      await expect(
+        handleCleanupCommentsCommand([outsidePath], { yes: true }, {} as any)
+      ).rejects.toThrow('outside of the repository root');
+    } finally {
+      process.chdir(originalCwd);
+      await rm(outsidePath, { force: true });
+      await rm(repoDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('address-comments helpers', () => {
@@ -75,13 +95,7 @@ describe('address-comments helpers', () => {
   let srcDir: string;
   let docsDir: string;
 
-  beforeAll(async () => {
-    tempDir = await mkdtemp(path.join(tmpdir(), 'address-comments-test-'));
-    srcDir = path.join(tempDir, 'src');
-    docsDir = path.join(tempDir, 'docs');
-    await mkdir(srcDir, { recursive: true });
-    await mkdir(docsDir, { recursive: true });
-
+  async function seedFixtures() {
     await writeFile(
       path.join(srcDir, 'needs_fix.ts'),
       `export function greet() {
@@ -110,6 +124,20 @@ describe('address-comments helpers', () => {
     );
 
     await writeFile(path.join(srcDir, 'clean.ts'), `export const value = 42;\n`);
+  }
+
+  beforeAll(async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), 'address-comments-test-'));
+    srcDir = path.join(tempDir, 'src');
+    docsDir = path.join(tempDir, 'docs');
+    await mkdir(srcDir, { recursive: true });
+    await mkdir(docsDir, { recursive: true });
+
+    await seedFixtures();
+  });
+
+  beforeEach(async () => {
+    await seedFixtures();
   });
 
   afterAll(async () => {
@@ -126,6 +154,12 @@ describe('address-comments helpers', () => {
     expect(files).toEqual(['src/block_comment.ts', 'src/needs_fix.ts']);
   });
 
+  it('smart cleanup removes AI comment markers when forced', async () => {
+    await smartCleanupAiCommentMarkers(tempDir, ['src'], { yes: true });
+    const updatedNeedsFix = await readFile(path.join(srcDir, 'needs_fix.ts'), 'utf-8');
+    expect(updatedNeedsFix).not.toContain('AI:');
+  });
+
   it('removes AI comment markers from matching files', async () => {
     const cleanedCount = await cleanupAiCommentMarkers(tempDir, ['src']);
     expect(cleanedCount).toBe(2);
@@ -140,13 +174,59 @@ describe('address-comments helpers', () => {
   });
 
   it('skips cleanup when there are no remaining markers', async () => {
+    await cleanupAiCommentMarkers(tempDir, ['src']);
     const cleaned = await cleanupAiCommentMarkers(tempDir, ['src']);
     expect(cleaned).toBe(0);
   });
 
   it('smart cleanup exits cleanly when no markers remain', async () => {
+    await cleanupAiCommentMarkers(tempDir, ['src']);
     await expect(
       smartCleanupAiCommentMarkers(tempDir, ['src'], { yes: true })
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('commitAddressedComments', () => {
+  let repoDir: string;
+  let targetFile: string;
+
+  beforeEach(async () => {
+    repoDir = await mkdtemp(path.join(tmpdir(), 'address-comments-commit-'));
+    await $`git init -b main`.cwd(repoDir).quiet();
+    await $`git config user.email tester@example.com`.cwd(repoDir).quiet();
+    await $`git config user.name Tester`.cwd(repoDir).quiet();
+
+    targetFile = path.join(repoDir, 'example.ts');
+    await writeFile(targetFile, 'export const value = 1;\n');
+    await $`git add .`.cwd(repoDir).quiet();
+    await $`git commit -m "initial"`.cwd(repoDir).quiet();
+  });
+
+  afterEach(async () => {
+    await rm(repoDir, { recursive: true, force: true });
+  });
+
+  it('skips committing when no changes are present', async () => {
+    await commitAddressedComments(repoDir);
+    const commitCount = parseInt(
+      (await $`git rev-list --count HEAD`.cwd(repoDir).quiet().text()).trim(),
+      10
+    );
+    expect(commitCount).toBe(1);
+  });
+
+  it('commits changes with the expected message', async () => {
+    await writeFile(targetFile, 'export const value = 2;\n');
+    await commitAddressedComments(repoDir);
+
+    const commitCount = parseInt(
+      (await $`git rev-list --count HEAD`.cwd(repoDir).quiet().text()).trim(),
+      10
+    );
+    expect(commitCount).toBe(2);
+
+    const message = (await $`git log -1 --pretty=%B`.cwd(repoDir).quiet().text()).trim();
+    expect(message).toBe('Address review comments');
   });
 });
