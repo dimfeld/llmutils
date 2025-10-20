@@ -447,6 +447,22 @@ export const appendResearchParameters = z
 
 export type AppendResearchArguments = z.infer<typeof appendResearchParameters>;
 
+export const updatePlanDetailsParameters = z
+  .object({
+    plan: z.string().describe('Plan ID or file path to update'),
+    details: z.string().describe('New details text to add or replace within the generated section'),
+    append: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe(
+        'If true, append the new details to existing generated content. If false, replace existing generated content (default: false)'
+      ),
+  })
+  .describe('Update plan details within the delimiter-bounded generated section');
+
+export type UpdatePlanDetailsArguments = z.infer<typeof updatePlanDetailsParameters>;
+
 export async function handleAppendResearchTool(
   args: AppendResearchArguments,
   context: GenerateModeRegistrationContext
@@ -459,6 +475,79 @@ export async function handleAppendResearchTool(
   await writePlanFile(planPath, updated);
   const relativePath = path.relative(context.gitRoot, planPath) || planPath;
   return `Appended research to ${relativePath}`;
+}
+
+/**
+ * Updates plan details within the delimiter-bounded generated section.
+ * If append is true, appends to existing generated content.
+ * If append is false, replaces existing generated content.
+ */
+function updateDetailsWithinDelimiters(
+  newDetails: string,
+  originalDetails: string | undefined,
+  append: boolean
+): string {
+  if (!originalDetails) {
+    // No original details, wrap new details in delimiters
+    return `${GENERATED_START_DELIMITER}\n${newDetails.trim()}\n${GENERATED_END_DELIMITER}`;
+  }
+
+  // Check if delimiters already exist in the original
+  const startIndex = originalDetails.indexOf(GENERATED_START_DELIMITER);
+  const endIndex = originalDetails.indexOf(GENERATED_END_DELIMITER);
+
+  if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+    // Delimiters exist - update content between them
+    const before = originalDetails.slice(0, startIndex);
+    const after = originalDetails.slice(endIndex + GENERATED_END_DELIMITER.length);
+    const existingGenerated = originalDetails
+      .slice(startIndex + GENERATED_START_DELIMITER.length, endIndex)
+      .trim();
+
+    let updatedGenerated: string;
+    if (append && existingGenerated) {
+      // Append to existing generated content
+      updatedGenerated = `${existingGenerated}\n\n${newDetails.trim()}`;
+    } else {
+      // Replace existing generated content
+      updatedGenerated = newDetails.trim();
+    }
+
+    return `${before}${GENERATED_START_DELIMITER}\n${updatedGenerated}\n${GENERATED_END_DELIMITER}${after}`;
+  }
+
+  // Delimiters don't exist - insert them before the Research section or at the end
+  const researchStart = findResearchSectionStart(originalDetails);
+
+  if (researchStart !== undefined) {
+    // Insert before the Research section
+    const before = originalDetails.slice(0, researchStart).trim();
+    const after = originalDetails.slice(researchStart).trim();
+    return `${before}\n\n${GENERATED_START_DELIMITER}\n${newDetails.trim()}\n${GENERATED_END_DELIMITER}\n\n${after}`;
+  } else {
+    // No research section - append at the end
+    return `${originalDetails.trim()}\n\n${GENERATED_START_DELIMITER}\n${newDetails.trim()}\n${GENERATED_END_DELIMITER}`;
+  }
+}
+
+export async function handleUpdatePlanDetailsTool(
+  args: UpdatePlanDetailsArguments,
+  context: GenerateModeRegistrationContext
+): Promise<string> {
+  const { plan, planPath } = await resolvePlan(args.plan, context);
+
+  const updatedDetails = updateDetailsWithinDelimiters(args.details, plan.details, args.append);
+
+  const updatedPlan: PlanSchema = {
+    ...plan,
+    details: updatedDetails,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await writePlanFile(planPath, updatedPlan);
+  const relativePath = path.relative(context.gitRoot, planPath) || planPath;
+  const action = args.append ? 'Appended to' : 'Updated';
+  return `${action} details in ${relativePath}`;
 }
 
 type GenerateModeExecutionLogger = {
@@ -577,5 +666,17 @@ export function registerGenerateMode(
       readOnlyHint: true,
     },
     execute: async (args) => handleGetPlanTool(args, context),
+  });
+
+  server.addTool({
+    name: 'update-plan-details',
+    description:
+      'Update plan details within the delimiter-bounded generated section. Can either append to or replace existing generated content while preserving manually-added sections like Research.',
+    parameters: updatePlanDetailsParameters,
+    annotations: {
+      destructiveHint: true,
+      readOnlyHint: false,
+    },
+    execute: async (args) => handleUpdatePlanDetailsTool(args, context),
   });
 }
