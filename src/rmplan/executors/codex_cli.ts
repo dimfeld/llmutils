@@ -133,7 +133,7 @@ export class CodexCliExecutor implements Executor {
     implementerInstructions =
       (implementerInstructions || '') +
       `\n\nOnce you decide how to go about implementing the tasks, do so immediately. No need to wait for approval.\n\n` +
-      implementationNotesGuidance(planInfo.planFilePath) +
+      implementationNotesGuidance(planInfo.planFilePath, planInfo.planId) +
       `\n\nIn your final message, be sure to include the titles of the tasks that you completed.`;
 
     const retryInstructionSuffixes = [
@@ -393,6 +393,7 @@ export class CodexCliExecutor implements Executor {
 
           const fixerPrompt = this.getFixerPrompt({
             planPath: planInfo.planFilePath,
+            planId: planInfo.planId,
             implementerOutput: finalImplementerOutput,
             testerOutput,
             completedTaskTitles: initiallyCompleted.map((t) => t.title),
@@ -548,7 +549,7 @@ export class CodexCliExecutor implements Executor {
     implementerInstructions =
       (implementerInstructions || '') +
       `\n\nOnce you decide how to go about implementing the tasks, do so immediately. No need to wait for approval.\n\n` +
-      implementationNotesGuidance(planInfo.planFilePath) +
+      implementationNotesGuidance(planInfo.planFilePath, planInfo.planId) +
       `\n\nIn your final message, be sure to include the titles of the tasks that you completed.`;
 
     const retryInstructionSuffixes = [
@@ -1129,6 +1130,7 @@ Return JSON only, like: {"completed_titles": ["Task A", "Task B"]}`;
   /** Build a prompt for the fixer step */
   private getFixerPrompt(input: {
     planPath?: string;
+    planId?: string | number;
     implementerOutput: string;
     testerOutput: string;
     completedTaskTitles: string[];
@@ -1158,7 +1160,7 @@ Your job:
 3. Prefer small, safe changes; avoid broad refactors
 4. Run relevant tests and commands as needed
 
-${implementationNotesGuidance(input.planPath)}
+${implementationNotesGuidance(input.planPath, input.planId)}
 
 When complete, summarize what you changed and update the implementation documentation if necessary. If you could not address an issue, clearly explain why.
 

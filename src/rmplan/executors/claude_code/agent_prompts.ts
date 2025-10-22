@@ -90,7 +90,7 @@ ${FAILED_PROTOCOL_INSTRUCTIONS}
 ${formattedProgressNotes}
 
 ### Implementation Approach
-1. First understand the existing code structure and patterns. If you have a plan file to reference and existing work has been done on the plan, you can find it described in the "Implemented Functionality Notes" section of the plan file.
+1. First understand the existing code structure and patterns. If you have a plan file to reference and existing work has been done on the plan, you can find it described in the "# Implementation Notes" section of the plan file's details field.
 2. Look at similar implementations in the codebase
 3. Implement features incrementally - don't try to do everything at once
 4. Test your implementation as you go. Tests must test the actual code and not just simulate or reproduce it. Move functions to another file and export them from there if it makes it easier to test.

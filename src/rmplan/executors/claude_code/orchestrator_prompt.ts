@@ -20,17 +20,22 @@ Use the Bash command 'rmplan add-progress-note ${planId} --source "<agent>: <tas
 `;
 }
 
-export function implementationNotesGuidance(planPath: string | undefined) {
+export function implementationNotesGuidance(
+  planPath: string | undefined,
+  planId?: string | number
+) {
   if (!planPath) {
     return '';
   }
 
+  const planIdentifier = planId || planPath;
+
   return `## Implementation Documentation
 
-After finishing your work, you MUST update the plan file '${planPath}' with detailed notes about what you did.
-Place notes in the "# Implemented Functionality Notes" section at the bottom of the plan file. You can add this if it doesn't exist yet. Make sure you place it all the way at the bottom even if the file is very long.
+After finishing your work, you MUST document what you did using the command:
+'rmplan add-implementation-note ${planIdentifier} "<your detailed notes>"'
 
-Notes must contain:
+Your notes must contain:
 1. Comprehensive description of what you implemented and how it works.
 2. The names of the tasks you were working on.
 3. Technical details such as:
@@ -41,10 +46,9 @@ Notes must contain:
    - Any deviations from the original plan and why
 4. Document for future maintenance - write notes that would help someone else understand the implementation months later
 
-If existing content in this section is outdated, update or replace it. Be verbose and detailed.
-Prefer to write a paragraph instead of a single line.
+Be verbose and detailed. Prefer to write a paragraph instead of a single line.
 
-These notes are crucial for project continuity and help future developers understand the implementation choices made.
+These notes are crucial for project continuity and help future developers understand the implementation choices made. They will be stored in the "# Implementation Notes" section of the plan file.
 `;
 }
 
@@ -65,7 +69,7 @@ You have been provided with multiple incomplete tasks from a project plan. Your 
 4. **Update the plan file** to document your work
 5. Mark the tasks done.
 
-If existing work has been done on the plan, you can find it described in the "Implemented Functionality Notes" section of the plan file.
+If existing work has been done on the plan, you can find it described in the "# Implementation Notes" section of the plan file's details field.
 
 ## Task Selection Guidelines
 
@@ -158,7 +162,7 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
    - The reviewer is instructed to only focus on problems; don't expect positive feedback even if the code is perfect.${reviewFeedbackInstructions}`;
 
   const finalPhases = `${options.batchMode ? '5' : '4'}. **Notes Phase**
-   ${implementationNotesGuidance(options.planFilePath)}
+   ${implementationNotesGuidance(options.planFilePath, planId)}
 
 ${options.batchMode ? '6' : '5'}. **Iteration**
 
@@ -284,7 +288,7 @@ export function wrapWithOrchestrationSimple(
 ): string {
   const batchModeInstructions = buildBatchModeInstructions(options);
   const progressNotesSection = progressNotesGuidance(planId);
-  const implementationDocs = implementationNotesGuidance(options.planFilePath);
+  const implementationDocs = implementationNotesGuidance(options.planFilePath, planId);
 
   const header = `# Two-Phase Orchestration Instructions
 
