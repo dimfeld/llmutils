@@ -56,8 +56,6 @@ export async function runClaudeCodeGeneration(
   // Add model if specified
   if (model?.includes('haiku') || model?.includes('sonnet') || model?.includes('opus')) {
     baseArgs.push('--model', model);
-  } else {
-    baseArgs.push('--model', 'opus');
   }
 
   // Add allowed/disallowed tools configuration

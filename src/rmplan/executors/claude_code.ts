@@ -1085,12 +1085,13 @@ export class ClaudeCodeExecutor implements Executor {
 
       // Automatic model selection for review and planning modes
       let modelToUse = this.sharedOptions.model;
-      if (
-        (planInfo.executionMode === 'review' || planInfo.executionMode === 'planning') &&
-        !modelToUse
-      ) {
-        modelToUse = 'opus';
-      }
+      // Sonnet is good enough now we dont really need opus anymore
+      // if (
+      //   (planInfo.executionMode === 'review' || planInfo.executionMode === 'planning') &&
+      //   !modelToUse
+      // ) {
+      //   modelToUse = 'opus';
+      // }
 
       if (
         modelToUse?.includes('haiku') ||
