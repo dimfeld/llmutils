@@ -211,7 +211,7 @@ Break it down into small, iterative chunks that build on each other. Look at the
 
 Focus on organizing the work into logical phases. Prioritize best practices, incremental progress, and early testing, ensuring no big jumps in complexity at any stage. Make sure that each phase builds on the previous phases, and ends with fully integrated functionality. At the end of the project, include documentation updates in README.md or other files as appropriate.
 
-This plan will be executed by an AI coding agent, so "manual verify" instructions can be added as notes but should not be part of the plan.
+This plan will be executed by an AI coding agent, so do NOT create tasks for manual verification. The plan will be verified separately after implementation.
 
 When testing, prefer to use real tests and not mock functions or modules. Prefer dependency injection instead of mocks. Tests that need IO can create files in a temporary directory.
 
@@ -281,7 +281,7 @@ Break it down into small, iterative chunks that build on each other. Look at the
 
 From here you should have the foundation to provide a series of prompts for a code-generation LLM that will implement each step in a test-driven manner. Prioritize best practices, incremental progress, and early testing, ensuring no big jumps in complexity at any stage. Make sure that each prompt builds on the previous prompts, and ends with everything wired together. There should be no hanging or orphaned code that isn't integrated into a previous step. At the end of the task, update the relevant documentation in README.md or other files too.
 
-This plan will be executed by an AI coding agent, so "manual verify" instructions do not need to be part of the plan.
+This plan will be executed by an AI coding agent, so do NOT create tasks for manual verification. The plan will be verified separately after implementation.
 
 When testing, prefer to use real tests and not mock functions or modules. Prefer dependency injection instead of mocks. Tests that need IO can create files in a temporary directory.
 
@@ -441,6 +441,8 @@ For each task listed above, you need to generate:
 2. **steps**: Implementation steps -- each step should be a prompt a few sentences long
 
 ### Guidelines:
+
+IMPORTANT: Do NOT create tasks or steps for manual verification. The plan will be executed by an AI agent and verified separately after implementation. Focus on automated testing and implementation tasks only.
 
 1. **Test-Driven Development**:
    - Include test creation/modification as early steps when appropriate
@@ -630,6 +632,8 @@ Make sure your plan includes these details:
 
 ${commonGenerateDetails}
 
+IMPORTANT: Do NOT create tasks for manual verification. This plan will be executed by an AI coding agent and verified separately after implementation. Focus on automated testing and implementation tasks only.
+
 Do not perform any implementation or write any files yet.
 
 Use parallel subagents to analyze the requirements against different parts of the codebase, and generate detailed reports.
@@ -706,6 +710,9 @@ The plan should be formatted as follows:
 - Each phase should have a clear goal, details, and tasks
 - Focus on logical progression and incremental functionality
 - Include acceptance criteria for each phase
+
+IMPORTANT: Do NOT create tasks for manual verification. This plan will be executed by an AI coding agent and verified separately after implementation. Focus on automated testing and implementation tasks only.
+
 ${formatInstructions}
 
 Generate the complete plan now.`;
@@ -738,6 +745,8 @@ For now, please:
 - Understand the existing patterns and conventions
 - Identify the key files and components that will be involved
 - Think about the best approach to accomplish this task
+
+IMPORTANT: Do NOT create tasks for manual verification. This plan will be executed by an AI coding agent and verified separately after implementation. Focus on automated testing and implementation tasks only.
 
 Do not perform any implementation or write any files yet.
 
@@ -900,6 +909,8 @@ Please analyze this plan and the codebase. Your task is to:
 5. Understand the existing patterns, frameworks, and conventions used in the codebase
 6. Identify any potential challenges or edge cases
 
+IMPORTANT: Do NOT create tasks or steps for manual verification. The plan will be executed by an AI coding agent and verified separately after implementation. Focus on automated testing and implementation tasks only.
+
 Use parallel subagents to analyze related tasks together.
 You can also use subagents to examine particular aspects of the plan such as system design or UX requirements.
 All subagents should run from the perspective of an experienced, senior employee.
@@ -926,6 +937,8 @@ For each task listed in the plan, you need to generate:
 2. **steps**: Implementation steps -- each step should be a prompt a few sentences long
 
 ### Guidelines:
+
+IMPORTANT: Do NOT create tasks or steps for manual verification. The plan will be executed by an AI agent and verified separately after implementation. Focus on automated testing and implementation tasks only.
 
 1. **Test-Driven Development**:
    - Include test creation/modification as early steps when appropriate
