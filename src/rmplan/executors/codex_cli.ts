@@ -163,9 +163,7 @@ export class CodexCliExecutor implements Executor {
       );
 
       log(`Running implementer step${attempt > 0 ? ` (attempt ${attemptNumber})` : ''}...`);
-      const attemptOutput = await this.executeCodexStep(implementerPrompt.prompt, gitRoot, {
-        planTool: true,
-      });
+      const attemptOutput = await this.executeCodexStep(implementerPrompt.prompt, gitRoot);
       events.push({ type: 'implementer', message: attemptOutput });
       log('Implementer output captured.');
 
@@ -280,7 +278,7 @@ export class CodexCliExecutor implements Executor {
 
       // Execute tester step
       log('Running tester step...');
-      const testerOutput = await this.executeCodexStep(tester.prompt, gitRoot, { planTool: true });
+      const testerOutput = await this.executeCodexStep(tester.prompt, gitRoot);
       events.push({ type: 'tester', message: testerOutput });
       log('Tester output captured.');
 
@@ -400,7 +398,7 @@ export class CodexCliExecutor implements Executor {
             fixInstructions,
           });
 
-          const fixerOutput = await this.executeCodexStep(fixerPrompt, gitRoot, { planTool: true });
+          const fixerOutput = await this.executeCodexStep(fixerPrompt, gitRoot);
           lastFixerOutput = fixerOutput;
           events.push({ type: 'fixer', message: fixerOutput });
           log('Fixer output captured. Re-running reviewer...');
@@ -579,9 +577,7 @@ export class CodexCliExecutor implements Executor {
       );
 
       log(`Running implementer step${attempt > 0 ? ` (attempt ${attemptNumber})` : ''}...`);
-      const attemptOutput = await this.executeCodexStep(implementerPrompt.prompt, gitRoot, {
-        planTool: true,
-      });
+      const attemptOutput = await this.executeCodexStep(implementerPrompt.prompt, gitRoot);
       events.push({ type: 'implementer', message: attemptOutput });
       log('Implementer output captured.');
 
@@ -700,9 +696,7 @@ export class CodexCliExecutor implements Executor {
       );
 
       log('Running verifier step...');
-      const verifierOutput = await this.executeCodexStep(verifierPrompt.prompt, gitRoot, {
-        planTool: true,
-      });
+      const verifierOutput = await this.executeCodexStep(verifierPrompt.prompt, gitRoot);
       events.push({ type: 'verifier', message: verifierOutput });
       log('Verifier output captured.');
 
@@ -958,11 +952,7 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
   /**
    * Runs a single-step Codex execution with JSON streaming enabled and returns the final agent message.
    */
-  private async executeCodexStep(
-    prompt: string,
-    cwd: string,
-    opts: { planTool?: boolean } = {}
-  ): Promise<string> {
+  private async executeCodexStep(prompt: string, cwd: string): Promise<string> {
     const allowAllTools = ['true', '1'].includes(process.env.ALLOW_ALL_TOOLS || '');
     const sandboxSettings = allowAllTools
       ? ['--dangerously-bypass-approvals-and-sandbox']
@@ -990,9 +980,6 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
     }
 
     args.push(prompt, '--json');
-    if (opts.planTool) {
-      args.push('--include-plan-tool');
-    }
 
     const { exitCode, stdout, stderr } = await spawnAndLogOutput(args, {
       cwd,
