@@ -54,8 +54,8 @@ export async function handleListCommand(options: any, command: any, searchTerms?
       // Use explicitly specified statuses
       statusesToShow = new Set(options.status);
     } else {
-      // Default: show pending, deferred, and in_progress
-      statusesToShow = new Set(['pending', 'deferred', 'in_progress']);
+      // Default: show pending and in_progress
+      statusesToShow = new Set(['pending', 'in_progress']);
     }
 
     // Filter plans
@@ -65,6 +65,18 @@ export async function handleListCommand(options: any, command: any, searchTerms?
       // Handle "ready" status filter
       if (statusesToShow.has('ready')) {
         if (isPlanReady(plan, plans)) {
+          return true;
+        }
+      }
+
+      // Handle "blocked" status filter
+      if (statusesToShow.has('blocked')) {
+        const isBlocked = status === 'pending' &&
+          plan.dependencies &&
+          plan.dependencies.length > 0 &&
+          !isPlanReady(plan, plans);
+
+        if (isBlocked) {
           return true;
         }
       }
@@ -178,9 +190,17 @@ export async function handleListCommand(options: any, command: any, searchTerms?
   // Data rows
   for (const plan of planArray) {
     // Display "ready" for pending plans whose dependencies are all done
+    // Display "blocked" for pending plans that have incomplete dependencies
     const actualStatus = plan.status || 'pending';
     const isReady = isPlanReady(plan, plans);
-    const statusDisplay = isReady ? 'ready' : actualStatus;
+
+    // Check if plan is blocked (has dependencies that are not all done)
+    const isBlocked = actualStatus === 'pending' &&
+      plan.dependencies &&
+      plan.dependencies.length > 0 &&
+      !isReady;
+
+    const statusDisplay = isReady ? 'ready' : isBlocked ? 'blocked' : actualStatus;
 
     const statusColor =
       actualStatus === 'done'
@@ -191,11 +211,13 @@ export async function handleListCommand(options: any, command: any, searchTerms?
             ? chalk.dim.gray
             : isReady
               ? chalk.cyan
-              : actualStatus === 'in_progress'
-                ? chalk.yellow
-                : actualStatus === 'pending'
-                  ? chalk.white
-                  : chalk.gray;
+              : isBlocked
+                ? chalk.magenta
+                : actualStatus === 'in_progress'
+                  ? chalk.yellow
+                  : actualStatus === 'pending'
+                    ? chalk.white
+                    : chalk.gray;
 
     const priorityColor =
       plan.priority === 'urgent'

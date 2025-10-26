@@ -6,7 +6,7 @@ goal: Implement `rmplan address-comments` command to find and address AI review
   without needing a GitHub PR.
 id: 127
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 container: false
 temp: false
@@ -17,7 +17,7 @@ docs: []
 planGeneratedAt: 2025-10-18T18:28:15.722Z
 promptsGeneratedAt: 2025-10-18T18:28:15.722Z
 createdAt: 2025-10-18T07:39:11.437Z
-updatedAt: 2025-10-18T19:19:51.785Z
+updatedAt: 2025-10-26T22:54:52.172Z
 progressNotes:
   - timestamp: 2025-10-18T18:35:09.009Z
     text: Implemented initial address-comments command handlers, supporting helper

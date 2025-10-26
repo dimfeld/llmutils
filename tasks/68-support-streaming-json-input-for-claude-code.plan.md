@@ -3,13 +3,13 @@
 title: Support streaming json input for Claude Code
 goal: ""
 id: 68
-status: pending
+status: deferred
 priority: medium
-createdAt: 2025-07-03T00:16:02.256Z
-updatedAt: 2025-07-03T00:16:02.256Z
-tasks: []
 docs:
-    - https://docs.anthropic.com/en/docs/claude-code/sdk#streaming-json-input
+  - https://docs.anthropic.com/en/docs/claude-code/sdk#streaming-json-input
+createdAt: 2025-07-03T00:16:02.256Z
+updatedAt: 2025-10-26T22:55:29.886Z
+tasks: []
 ---
 
 This lets us type messages into Claude Code while running it to provide additional guidance. We should read stdin while Claude Code is running and send it to Claude Code a JSON-formatted message.

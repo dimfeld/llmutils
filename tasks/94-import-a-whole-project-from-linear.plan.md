@@ -3,10 +3,10 @@
 title: Import a whole project from Linear
 goal: ""
 id: 94
-status: pending
+status: deferred
 priority: medium
 createdAt: 2025-08-11T05:26:29.699Z
-updatedAt: 2025-08-11T05:26:29.699Z
+updatedAt: 2025-10-26T22:56:18.778Z
 tasks: []
 ---
 

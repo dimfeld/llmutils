@@ -4,10 +4,10 @@ title: "answer-pr: mode that creates tasks from the pending PR comments"
 goal: Make it easier to answer PRs and deal with chunks of related comments one
   at a time
 id: 64
-status: pending
+status: done
 priority: low
 createdAt: 2025-06-11T20:06:34.141Z
-updatedAt: 2025-07-24T18:48:55.037Z
+updatedAt: 2025-10-26T22:54:21.778Z
 tasks: []
 ---
 
