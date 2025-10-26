@@ -3,10 +3,10 @@
 title: Better handling of running in a specific branch
 goal: ""
 id: 123
-status: pending
+status: deferred
 priority: medium
 createdAt: 2025-09-24T09:39:53.535Z
-updatedAt: 2025-09-24T09:39:53.535Z
+updatedAt: 2025-10-26T23:18:19.324Z
 tasks: []
 ---
 

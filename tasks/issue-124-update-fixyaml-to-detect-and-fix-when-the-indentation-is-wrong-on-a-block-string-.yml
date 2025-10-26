@@ -5,12 +5,12 @@ title: Update fixYaml to detect and fix when the indentation is wrong on a block
 goal: "Implement: Update fixYaml to detect and fix when the indentation is wrong
   on a block string."
 id: 62
-status: pending
+status: deferred
 priority: low
 issue:
   - https://github.com/dimfeld/llmutils/issues/124
 createdAt: 2025-06-08T22:37:56.090Z
-updatedAt: 2025-06-10T07:20:15.346Z
+updatedAt: 2025-10-26T23:18:09.607Z
 tasks: []
 ---
 

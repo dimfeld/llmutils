@@ -71,7 +71,8 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
       // Handle "blocked" status filter
       if (statusesToShow.has('blocked')) {
-        const isBlocked = status === 'pending' &&
+        const isBlocked =
+          status === 'pending' &&
           plan.dependencies &&
           plan.dependencies.length > 0 &&
           !isPlanReady(plan, plans);
@@ -195,10 +196,9 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     const isReady = isPlanReady(plan, plans);
 
     // Check if plan is blocked (has dependencies that are not all done)
-    const isBlocked = actualStatus === 'pending' &&
-      plan.dependencies &&
-      plan.dependencies.length > 0 &&
-      !isReady;
+    const isBlocked =
+      actualStatus === 'pending' &&
+      plan.dependencies?.some((dep) => plans.get(+dep)?.status !== 'done');
 
     const statusDisplay = isReady ? 'ready' : isBlocked ? 'blocked' : actualStatus;
 
