@@ -21,7 +21,6 @@ Managing large features often requires multiple active workspaces, or even multi
    ```
 
    The claim records:
-
    - The plan UUID and (if available) numeric ID
    - The workspace's absolute path (resolved through symlinks)
    - The active user identity
@@ -87,12 +86,12 @@ rmplan release docs-uuid --reset-status
 
 ## Troubleshooting
 
-| Symptom | Explanation | Resolution |
-| --- | --- | --- |
-| `auto-claim` warnings in tests or scripts | Auto-claim is disabled unless the CLI enables it. | Import `enableAutoClaim()` from `src/rmplan/assignments/auto_claim.js` if you need it in custom tooling. |
-| Assignment file parse errors | The JSON file is incomplete or was edited manually. | Remove the file or fix the JSON; rmplan recreates it as needed. |
-| Claims point to stale workspaces | The workspace was deleted or renamed. | Run `rmplan assignments clean-stale` or release the plan manually. |
-| Plan still appears claimed after completion | rmplan removes assignments when plan status transitions to `done` or `cancelled`. | Verify the plan reached the correct status; re-run `rmplan release <plan>` if necessary. |
+| Symptom                                     | Explanation                                                                       | Resolution                                                                                               |
+| ------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `auto-claim` warnings in tests or scripts   | Auto-claim is disabled unless the CLI enables it.                                 | Import `enableAutoClaim()` from `src/rmplan/assignments/auto_claim.js` if you need it in custom tooling. |
+| Assignment file parse errors                | The JSON file is incomplete or was edited manually.                               | Remove the file or fix the JSON; rmplan recreates it as needed.                                          |
+| Claims point to stale workspaces            | The workspace was deleted or renamed.                                             | Run `rmplan assignments clean-stale` or release the plan manually.                                       |
+| Plan still appears claimed after completion | rmplan removes assignments when plan status transitions to `done` or `cancelled`. | Verify the plan reached the correct status; re-run `rmplan release <plan>` if necessary.                 |
 
 ## Related Commands
 
