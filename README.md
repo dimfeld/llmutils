@@ -40,6 +40,7 @@ assume a repository written with Typescript and PNPM workspaces.
 - [rmplan](#rmplan)
   - [Key Features](#key-features-3)
   - [Usage](#usage-1)
+    - [Ready Command](#rmplan-ready)
     - [Cleanup Command](#cleanup-command)
     - [Address Comments Command](#address-comments-command)
     - [Cleanup Comments Command](#cleanup-comments-command)
@@ -521,6 +522,27 @@ rmplan list --sort status --reverse
 # List plans from a specific directory
 rmplan list --dir ./my-plans
 
+# Show all ready plans (default: list format)
+rmplan ready
+
+# Show only pending (exclude in_progress)
+rmplan ready --pending-only
+
+# Filter by priority
+rmplan ready --priority high
+
+# Different output formats
+rmplan ready --format table
+rmplan ready --format json
+
+# Sort options
+rmplan ready --sort id
+rmplan ready --sort title
+rmplan ready --reverse
+
+# Verbose output (shows file paths)
+rmplan ready -v
+
 # Show detailed information about a plan
 rmplan show plan.yml
 
@@ -713,6 +735,79 @@ rmplan validate --verbose
 rmplan validate --no-fix
 
 ````
+
+### `rmplan ready`
+
+List all plans that are ready to execute - plans with status `pending` or `in_progress` that have all dependencies completed.
+
+**Basic usage:**
+
+```bash
+# Show all ready plans (default: list format)
+rmplan ready
+
+# Show only pending (exclude in_progress)
+rmplan ready --pending-only
+
+# Filter by priority
+rmplan ready --priority high
+
+# Different output formats
+rmplan ready --format table
+rmplan ready --format json
+
+# Sort options
+rmplan ready --sort id
+rmplan ready --sort title
+rmplan ready --reverse
+
+# Verbose output (shows file paths)
+rmplan ready -v
+```
+
+**Output Formats:**
+
+- **list** (default): Human-friendly colored output with detailed plan information
+- **table**: Compact table view similar to `rmplan list`
+- **json**: Structured JSON for programmatic consumption
+
+**Readiness Criteria:**
+
+A plan is considered ready when:
+
+1. Status is `pending` or `in_progress`
+2. Has at least one task defined
+3. All dependencies (if any) have status `done`
+
+**MCP Integration:**
+
+The `list-ready-plans` MCP tool provides programmatic access:
+
+```typescript
+// Returns JSON with ready plans
+{
+  "count": 3,
+  "plans": [
+    {
+      "id": 42,
+      "title": "Add authentication",
+      "priority": "high",
+      "status": "pending",
+      "taskCount": 5,
+      "completedTasks": 2,
+      "dependencies": [38, 39],
+      ...
+    }
+  ]
+}
+```
+
+**Parameters:**
+
+- `priority`: Filter by priority level
+- `limit`: Maximum number of plans to return
+- `pendingOnly`: Exclude in_progress plans
+- `sortBy`: Sort field (priority, id, title, created, updated)
 
 ### Plan Validation
 

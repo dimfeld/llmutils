@@ -4,7 +4,7 @@ title: Implement rmplan ready command
 goal: Implement rmplan ready command with multi-format output and MCP integration
 id: 131
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 container: false
 temp: false
@@ -16,7 +16,7 @@ docs: []
 planGeneratedAt: 2025-10-26T23:45:48.368Z
 promptsGeneratedAt: 2025-10-26T23:45:48.368Z
 createdAt: 2025-10-26T22:41:07.692Z
-updatedAt: 2025-10-27T06:28:40.090Z
+updatedAt: 2025-10-27T06:32:04.174Z
 progressNotes:
   - timestamp: 2025-10-27T06:06:45.805Z
     text: Successfully implemented rmplan ready command with all three output
@@ -751,7 +751,7 @@ tasks:
     docs: []
     steps: []
   - title: Update README with ready command documentation
-    done: false
+    done: true
     description: >-
       Add documentation for the new `rmplan ready` command to the README.md
       file.
@@ -890,6 +890,7 @@ tasks:
     docs: []
     steps: []
 changedFiles:
+  - README.md
   - src/rmplan/commands/ready.test.ts
   - src/rmplan/commands/ready.ts
   - src/rmplan/mcp/generate_mode.test.ts
@@ -1699,3 +1700,29 @@ The implementation integrates with existing rmplan infrastructure:
 - If readiness criteria change, update isReadyPlan() function and corresponding tests
 - Consider extracting sorting logic to shared utility if more commands need it (currently duplicated in list.ts, ready.ts, and generate_mode.ts)
 - Task 9 (README documentation) was not completed in this batch - should be done in follow-up
+
+Completed task 9 (Update README with ready command documentation):
+
+Added comprehensive documentation for the new 'rmplan ready' command to README.md in three locations:
+
+1. **Quick usage examples section (lines 524-544)**: Added inline examples showing the basic usage of rmplan ready alongside other command examples, demonstrating all key options including --pending-only, --priority filtering, output formats (--format table/json), sorting (--sort id/title/--reverse), and verbose mode (-v).
+
+2. **Dedicated command section (lines 738-808)**: Created a complete '### rmplan ready' section with:
+   - Overview description of the command's purpose
+   - **Basic usage** subsection with all command examples
+   - **Output Formats** subsection describing list (default), table, and json formats
+   - **Readiness Criteria** subsection explaining the three conditions for a plan to be ready
+   - **MCP Integration** subsection documenting the list-ready-plans MCP tool with example JSON response structure and all available parameters (priority, limit, pendingOnly, sortBy)
+
+3. **Table of Contents (line 43)**: Added 'Ready Command' entry under the rmplan > Usage subsection, linking to #rmplan-ready anchor, positioned before other command entries like Cleanup Command for logical ordering.
+
+The documentation placement follows the established README patterns:
+- Positioned the dedicated section after the usage examples and before 'Plan Validation' section
+- Used consistent formatting with other command documentation
+- Included all information specified in the task requirements
+- Maintained the existing documentation style and structure
+
+All three task requirements were fulfilled:
+✓ Added documentation in the Commands section after list command
+✓ Updated table of contents with link to ready command  
+✓ No quick start section or command comparison tables exist that needed updating
