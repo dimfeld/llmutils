@@ -3,6 +3,7 @@
 title: Add comprehensive MCP tools for autonomous agent workflows
 goal: ""
 id: 138
+generatedBy: agent
 status: pending
 priority: high
 temp: false
@@ -10,9 +11,71 @@ dependencies:
   - 129
   - 132
 parent: 128
+planGeneratedAt: 2025-10-27T05:55:04.816Z
+promptsGeneratedAt: 2025-10-27T05:55:04.816Z
 createdAt: 2025-10-26T22:53:29.123Z
-updatedAt: 2025-10-26T22:53:29.126Z
-tasks: []
+updatedAt: 2025-10-27T05:55:04.816Z
+tasks:
+  - title: Implement helper functions
+    done: false
+    description: Implement getNextPlanId(), generatePlanFilename(),
+      addChildToParent(), and getReadyPlans() helper functions in
+      src/rmplan/mcp/generate_mode.ts. These functions provide the core
+      functionality needed by the MCP tools and resources.
+    steps: []
+  - title: Implement create-plan MCP tool
+    done: false
+    description: Create the create-plan tool with createPlanParameters schema and
+      handleCreatePlanTool handler. This tool allows agents to create new plan
+      files with all initial properties (title, priority, parent, dependencies,
+      etc.). Update parent plan if specified.
+    steps: []
+  - title: Implement update-plan-properties MCP tool
+    done: false
+    description: Create the update-plan-properties tool with
+      updatePlanPropertiesParameters schema and handleUpdatePlanPropertiesTool
+      handler. Support adding/removing dependencies, issues, docs, and updating
+      all plan metadata fields. This provides rmplan set functionality via MCP.
+    steps: []
+  - title: Implement task management MCP tools
+    done: false
+    description: Create add-plan-task and remove-plan-task tools with appropriate
+      schemas and handlers. Allow adding new tasks to plans and removing tasks
+      by index or title match.
+    steps: []
+  - title: Implement plan discovery MCP tools
+    done: false
+    description: Create list-ready-plans and search-plans tools with schemas and
+      handlers. Support filtering by status, priority, assignee, parent, and
+      title substring. Include sorting and limiting results.
+    steps: []
+  - title: Implement plan MCP resources
+    done: false
+    description: "Add three MCP resources to expose plan data for efficient reading:
+      rmplan://plans/list (all plans summary), rmplan://plans/{planId} (specific
+      plan details), and rmplan://plans/ready (ready-to-execute plans).
+      Resources provide read-only access complementing the mutation tools."
+    steps: []
+  - title: Register all tools and resources in registerGenerateMode
+    done: false
+    description: Update the registerGenerateMode() function to register all new
+      tools (create-plan, update-plan-properties, add-plan-task,
+      remove-plan-task, list-ready-plans, search-plans) and resources with
+      appropriate annotations and descriptions.
+    steps: []
+  - title: Add comprehensive tests
+    done: false
+    description: Create tests in src/rmplan/mcp/generate_mode.test.ts for all new
+      tools and resources. Test plan creation, property updates, task
+      management, search/filter functionality, and resource reading. Include
+      integration tests for full workflows.
+    steps: []
+  - title: Create MCP documentation
+    done: false
+    description: Create or update src/rmplan/mcp/README.md with documentation for
+      all tools and resources. Include usage examples, workflows, and guidance
+      on when to use resources vs tools.
+    steps: []
 ---
 
 ## Overview
@@ -552,3 +615,298 @@ Depends on:
 6. Update tool registration
 7. Add tests
 8. Update documentation
+
+<!-- rmplan-generated-start -->
+## Plan Resource for MCP
+
+In addition to the tools, expose plan data through MCP resources so clients can efficiently read plan information without repeatedly calling tools.
+
+### Resource Implementation
+
+File: `src/rmplan/mcp/generate_mode.ts`
+
+Add resource registration in `registerGenerateMode()`:
+
+```typescript
+export function registerGenerateMode(
+  server: FastMCP,
+  context: GenerateModeRegistrationContext
+): void {
+  // ... existing prompts and tools ...
+
+  // Add plan resources
+  server.addResource({
+    uri: 'rmplan://plans/list',
+    name: 'All Plans',
+    description: 'List of all plans in the repository',
+    mimeType: 'application/json',
+    async read() {
+      const tasksDir = await resolveTasksDir(context.config);
+      const { plans } = await readAllPlans(tasksDir);
+      
+      const planList = Array.from(plans.values()).map(plan => ({
+        id: plan.id,
+        title: plan.title,
+        goal: plan.goal,
+        status: plan.status,
+        priority: plan.priority,
+        parent: plan.parent,
+        dependencies: plan.dependencies,
+        assignedTo: plan.assignedTo,
+        taskCount: plan.tasks?.length || 0,
+        completedTasks: plan.tasks?.filter(t => t.done).length || 0,
+        createdAt: plan.createdAt,
+        updatedAt: plan.updatedAt,
+      }));
+
+      return {
+        contents: [
+          {
+            uri: 'rmplan://plans/list',
+            mimeType: 'application/json',
+            text: JSON.stringify(planList, null, 2),
+          },
+        ],
+      };
+    },
+  });
+
+  server.addResource({
+    uri: 'rmplan://plans/{planId}',
+    name: 'Plan Details',
+    description: 'Full details of a specific plan including tasks and details',
+    mimeType: 'application/json',
+    async read(uri: string) {
+      // Extract plan ID from URI: rmplan://plans/123 -> 123
+      const match = uri.match(/^rmplan:\/\/plans\/(.+)$/);
+      if (!match) {
+        throw new Error('Invalid plan URI format');
+      }
+
+      const planId = match[1];
+      const { plan } = await resolvePlan(planId, context);
+
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: 'application/json',
+            text: JSON.stringify(plan, null, 2),
+          },
+        ],
+      };
+    },
+  });
+
+  server.addResource({
+    uri: 'rmplan://plans/ready',
+    name: 'Ready Plans',
+    description: 'Plans ready to execute (all dependencies satisfied)',
+    mimeType: 'application/json',
+    async read() {
+      const tasksDir = await resolveTasksDir(context.config);
+      const readyPlans = await getReadyPlans(tasksDir);
+
+      return {
+        contents: [
+          {
+            uri: 'rmplan://plans/ready',
+            mimeType: 'application/json',
+            text: JSON.stringify(readyPlans, null, 2),
+          },
+        ],
+      };
+    },
+  });
+}
+```
+
+### Resource URIs
+
+Clients can access plan data through these URIs:
+
+1. **rmplan://plans/list** - All plans with summary information
+   - Returns array of plan summaries (id, title, status, priority, task counts)
+   - Useful for overview and filtering in UI
+
+2. **rmplan://plans/{planId}** - Full plan details
+   - Returns complete plan object including all tasks and details
+   - Replace `{planId}` with numeric ID or plan title
+   - Examples: `rmplan://plans/138`, `rmplan://plans/add-mcp-tools`
+
+3. **rmplan://plans/ready** - Ready-to-execute plans
+   - Returns plans with all dependencies satisfied
+   - Filtered to pending/in_progress status
+   - Sorted by priority
+
+### Benefits of Resources vs Tools
+
+**Resources** (pull model):
+- Efficient for reading/browsing data
+- Client can cache and refresh as needed
+- No rate limiting concerns
+- Better for UI display
+
+**Tools** (push model):
+- Better for mutations
+- Can include validation and side effects
+- Provide structured feedback on operations
+
+### Use Case: Agent Plan Discovery
+
+```javascript
+// Agent wants to find work to do
+const readyPlans = await mcp.readResource('rmplan://plans/ready');
+const plans = JSON.parse(readyPlans.contents[0].text);
+
+// Pick highest priority plan
+const nextPlan = plans[0];
+
+// Get full details
+const planDetails = await mcp.readResource(`rmplan://plans/${nextPlan.id}`);
+const fullPlan = JSON.parse(planDetails.contents[0].text);
+
+// Start working on it
+await mcp.call('update-plan-properties', {
+  plan: nextPlan.id.toString(),
+  status: 'in_progress',
+});
+```
+
+### Use Case: UI Integration
+
+```javascript
+// Display plan list in UI
+const allPlans = await mcp.readResource('rmplan://plans/list');
+const plans = JSON.parse(allPlans.contents[0].text);
+
+// Group by status
+const byStatus = plans.reduce((acc, plan) => {
+  acc[plan.status] = acc[plan.status] || [];
+  acc[plan.status].push(plan);
+  return acc;
+}, {});
+
+// Show plan details on selection
+async function showPlan(planId) {
+  const details = await mcp.readResource(`rmplan://plans/${planId}`);
+  const plan = JSON.parse(details.contents[0].text);
+  renderPlanView(plan);
+}
+```
+
+### Implementation Helper Functions
+
+Add to `src/rmplan/mcp/generate_mode.ts`:
+
+```typescript
+async function getReadyPlans(tasksDir: string): Promise<PlanSchema[]> {
+  const { plans, planMap } = await readAllPlans(tasksDir);
+  const readyPlans: PlanSchema[] = [];
+
+  for (const plan of plans.values()) {
+    // Skip if not pending or in_progress
+    if (plan.status !== 'pending' && plan.status !== 'in_progress') {
+      continue;
+    }
+
+    // Check if all dependencies are done
+    const depsReady = (plan.dependencies || []).every(depId => {
+      const dep = planMap.get(depId);
+      return dep && dep.status === 'done';
+    });
+
+    if (depsReady) {
+      readyPlans.push(plan);
+    }
+  }
+
+  // Sort by priority (urgent > high > medium > low > maybe)
+  const priorityOrder = { urgent: 0, high: 1, medium: 2, low: 3, maybe: 4 };
+  readyPlans.sort((a, b) => {
+    const aPriority = priorityOrder[a.priority || 'medium'];
+    const bPriority = priorityOrder[b.priority || 'medium'];
+    return aPriority - bPriority;
+  });
+
+  return readyPlans;
+}
+```
+
+### Testing Resources
+
+File: `src/rmplan/mcp/generate_mode.test.ts`
+
+```typescript
+describe('MCP Resources', () => {
+  it('lists all plans', async () => {
+    // Create test plans
+    await createTestPlan({ id: 1, title: 'Plan 1' });
+    await createTestPlan({ id: 2, title: 'Plan 2' });
+
+    const result = await server.readResource('rmplan://plans/list');
+    const plans = JSON.parse(result.contents[0].text);
+
+    expect(plans).toHaveLength(2);
+    expect(plans[0]).toHaveProperty('id', 1);
+    expect(plans[0]).toHaveProperty('title', 'Plan 1');
+  });
+
+  it('reads specific plan', async () => {
+    await createTestPlan({ id: 42, title: 'Test Plan' });
+
+    const result = await server.readResource('rmplan://plans/42');
+    const plan = JSON.parse(result.contents[0].text);
+
+    expect(plan.id).toBe(42);
+    expect(plan.title).toBe('Test Plan');
+  });
+
+  it('lists ready plans only', async () => {
+    await createTestPlan({ id: 1, status: 'pending', dependencies: [] });
+    await createTestPlan({ id: 2, status: 'done' });
+    await createTestPlan({ id: 3, status: 'pending', dependencies: [2] });
+    await createTestPlan({ id: 4, status: 'pending', dependencies: [5] });
+
+    const result = await server.readResource('rmplan://plans/ready');
+    const plans = JSON.parse(result.contents[0].text);
+
+    // Should include 1 (no deps) and 3 (dep satisfied)
+    // Should exclude 2 (done) and 4 (dep not satisfied)
+    expect(plans.map(p => p.id).sort()).toEqual([1, 3]);
+  });
+});
+```
+
+### Documentation Update
+
+Add to `src/rmplan/mcp/README.md`:
+
+```markdown
+## Resources
+
+rmplan exposes plan data through MCP resources for efficient reading.
+
+### Available Resources
+
+| URI Pattern | Description |
+|------------|-------------|
+| `rmplan://plans/list` | All plans with summary info |
+| `rmplan://plans/{planId}` | Full details of specific plan |
+| `rmplan://plans/ready` | Plans ready to execute |
+
+### Reading Resources
+
+Resources provide read-only access to plan data. Use tools to modify plans.
+
+Example with Claude Desktop MCP client:
+```javascript
+const plans = await mcp.readResource('rmplan://plans/list');
+```
+
+### When to Use Resources vs Tools
+
+- **Use resources** for: Browsing, searching, displaying data
+- **Use tools** for: Creating, updating, deleting plans
+```
+<!-- rmplan-generated-end -->

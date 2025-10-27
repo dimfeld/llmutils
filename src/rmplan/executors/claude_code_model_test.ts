@@ -19,7 +19,8 @@ describe('ClaudeCodeExecutor model selection', () => {
     issueTracker: 'github' as const,
   };
 
-  test('automatically selects opus model for review mode when no model specified', async () => {
+  // removed this logic for now
+  test.skip('automatically selects opus model for review mode when no model specified', async () => {
     let capturedArgs: string[] = [];
 
     await moduleMocker.mock('../../common/process.ts', () => ({
@@ -65,7 +66,8 @@ describe('ClaudeCodeExecutor model selection', () => {
     expect(capturedArgs[modelIndex + 1]).toBe('opus');
   });
 
-  test('automatically selects opus model for planning mode when no model specified', async () => {
+  // removed this logic for now
+  test.skip('automatically selects opus model for planning mode when no model specified', async () => {
     let capturedArgs: string[] = [];
 
     await moduleMocker.mock('../../common/process.ts', () => ({
