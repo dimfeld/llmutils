@@ -23,14 +23,13 @@ export async function handleClaimCommand(
     configPath: globalOpts.config,
   });
 
-  if (typeof plan.id !== 'number' || Number.isNaN(plan.id)) {
-    throw new Error(`Plan ${planArg} does not have a numeric ID and cannot be claimed`);
-  }
-
   const repository = await getRepositoryIdentity();
   const user = getUserIdentity();
 
-  const result = await claimPlan(plan.id, {
+  const planId = typeof plan.id === 'number' && !Number.isNaN(plan.id) ? plan.id : undefined;
+  const planLabel = planId !== undefined ? String(planId) : uuid;
+
+  const result = await claimPlan(planId, {
     uuid,
     repositoryId: repository.repositoryId,
     repositoryRemoteUrl: repository.remoteUrl,
@@ -53,10 +52,10 @@ export async function handleClaimCommand(
       actionDetails.push(`added user ${user}`);
     }
     const suffix = actionDetails.length > 0 ? ` (${actionDetails.join(', ')})` : '';
-    log(`${chalk.green('✓')} Claimed plan ${plan.id} in workspace ${repository.gitRoot}${suffix}`);
+    log(`${chalk.green('✓')} Claimed plan ${planLabel} in workspace ${repository.gitRoot}${suffix}`);
   } else {
     log(
-      `${chalk.yellow('•')} Plan ${plan.id} is already claimed in workspace ${repository.gitRoot}`
+      `${chalk.yellow('•')} Plan ${planLabel} is already claimed in workspace ${repository.gitRoot}`
     );
     if (user) {
       log(`  User: ${user}`);
