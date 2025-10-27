@@ -5,6 +5,7 @@ goal: Enable multi-user workflows in rmplan by supporting user identity via
   environment variables and tracking both plan assignments and status in a
   shared configuration
 id: 139
+uuid: 8b82a7c6-2182-48b7-af3e-2be853519242
 generatedBy: agent
 status: in_progress
 priority: high
@@ -17,7 +18,7 @@ docs: []
 planGeneratedAt: 2025-10-27T08:01:47.867Z
 promptsGeneratedAt: 2025-10-27T08:01:47.867Z
 createdAt: 2025-10-27T05:51:22.359Z
-updatedAt: 2025-10-27T11:09:47.916Z
+updatedAt: 2025-10-27T11:23:22.797Z
 progressNotes:
   - timestamp: 2025-10-27T08:07:27.994Z
     text: Added optional uuid field to plan schema, generate/add stub assignments
@@ -126,6 +127,20 @@ progressNotes:
       commands, and agent parent completion dropping assignments. Updated set
       command no-op test to assert file unchanged. Targeted test suites pass."
     source: "tester: Task 9"
+  - timestamp: 2025-10-27T11:12:55.374Z
+    text: Added assignments.staleTimeout config schema + JSON schema entry and
+      introduced stale_detection helpers with default constant.
+    source: "implementer: Task 10"
+  - timestamp: 2025-10-27T11:19:11.760Z
+    text: Wired rmplan assignments command tree (list, clean-stale, show-conflicts);
+      handlers load shared assignments, render summary/conflict tables, and
+      support stale cleanup with confirmation.
+    source: "implementer: Task 10"
+  - timestamp: 2025-10-27T11:23:22.791Z
+    text: Added stale detection unit tests and new assignments command suite
+      covering list output, conflict display, and clean-stale
+      confirmation/removal scenarios; all relevant tests and type-checks pass.
+    source: "tester: Task 10"
 tasks:
   - title: Add UUID field to plan schema with auto-generation
     done: true
@@ -323,7 +338,6 @@ changedFiles:
   - test-plans/plans/103-testing-infrastructure.yml
   - test-plans/plans/104-test-data-generation.yml
 rmfilter: []
-uuid: 8b82a7c6-2182-48b7-af3e-2be853519242
 ---
 
 <!-- rmplan-generated-start -->

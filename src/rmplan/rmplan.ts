@@ -527,6 +527,35 @@ program
     await handleReleaseCommand(plan, options, command).catch(handleCommandError);
   });
 
+const assignmentsCommand = program
+  .command('assignments')
+  .description('Inspect and manage shared plan assignments');
+
+assignmentsCommand
+  .command('list')
+  .description('Show all shared assignments for the current repository')
+  .action(async (options, command) => {
+    const { handleAssignmentsListCommand } = await import('./commands/assignments.js');
+    await handleAssignmentsListCommand(options, command).catch(handleCommandError);
+  });
+
+assignmentsCommand
+  .command('clean-stale')
+  .description('Remove stale assignments that have not been updated recently')
+  .option('--yes', 'Skip the confirmation prompt')
+  .action(async (options, command) => {
+    const { handleAssignmentsCleanStaleCommand } = await import('./commands/assignments.js');
+    await handleAssignmentsCleanStaleCommand(options, command).catch(handleCommandError);
+  });
+
+assignmentsCommand
+  .command('show-conflicts')
+  .description('List plans claimed by multiple workspaces')
+  .action(async (options, command) => {
+    const { handleAssignmentsShowConflictsCommand } = await import('./commands/assignments.js');
+    await handleAssignmentsShowConflictsCommand(options, command).catch(handleCommandError);
+  });
+
 program
   .command('renumber')
   .description('Renumber plans with alphanumeric IDs or ID conflicts to sequential numeric IDs')

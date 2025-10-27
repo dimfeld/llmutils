@@ -101,6 +101,16 @@ export const rmplanConfigSchema = z
           ),
       })
       .optional(),
+    assignments: z
+      .object({
+        staleTimeout: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('Number of days after which plan assignments are considered stale'),
+      })
+      .optional(),
     /** An array of strings or {find, example} pairs to automatically include as examples when they appear in prompts. */
     autoexamples: z
       .array(
@@ -362,5 +372,6 @@ export function getDefaultConfig(): RmplanConfig {
     defaultExecutor: DEFAULT_EXECUTOR,
     workspaceCreation: undefined,
     prCreation: { draft: true },
+    assignments: { staleTimeout: 7 },
   };
 }
