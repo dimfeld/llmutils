@@ -6,6 +6,7 @@ goal: To create a "simple" execution mode that allows the `review` command to
   perform a review without triggering unintended code modifications, fixing the
   core issue with the current implementation.
 id: 104
+uuid: 176f0191-08ff-4eef-b9b3-f9b0442162e7
 status: done
 priority: high
 dependencies: []
@@ -13,7 +14,7 @@ parent: 103
 planGeneratedAt: 2025-08-13T23:59:15.240Z
 promptsGeneratedAt: 2025-08-14T00:03:28.561Z
 createdAt: 2025-08-13T23:54:11.755Z
-updatedAt: 2025-08-14T00:15:23.392Z
+updatedAt: 2025-10-27T08:39:04.301Z
 project:
   title: Refactor the review command to separate review and autofix functionality
   goal: The goal of this project is to modify the `review` command to perform a

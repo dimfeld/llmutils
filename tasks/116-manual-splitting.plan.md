@@ -5,6 +5,7 @@ goal: To provide users with more control over how plans are split by adding
   manual and interactive methods, in addition to the existing automated
   LLM-based approach.
 id: 116
+uuid: 6adf095a-2444-40a8-9bf1-308fef6867ef
 status: done
 statusDescription: Marking tasks as done via automation
 priority: medium
@@ -16,7 +17,7 @@ docs: []
 planGeneratedAt: 2025-09-10T02:39:46.333Z
 promptsGeneratedAt: 2025-09-10T03:13:45.489Z
 createdAt: 2025-09-10T02:28:16.765Z
-updatedAt: 2025-09-10T03:42:55.373Z
+updatedAt: 2025-10-27T08:39:04.217Z
 tasks:
   - title: Update CLI Definition for Split Command
     done: true

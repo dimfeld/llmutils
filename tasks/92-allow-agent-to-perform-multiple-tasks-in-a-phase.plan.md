@@ -4,15 +4,17 @@ title: Allow agent to perform multiple tasks in a phase at once
 goal: Implement the end-to-end functionality for the new batch task execution
   mode, from CLI flag to final plan modification.
 id: 92
+uuid: f60ca94a-8ee3-4a87-9702-31d8bd65f367
 status: done
 priority: high
 dependencies: []
 planGeneratedAt: 2025-08-09T03:12:30.145Z
 promptsGeneratedAt: 2025-08-09T03:20:02.991Z
 createdAt: 2025-08-09T02:59:32.264Z
-updatedAt: 2025-08-09T05:16:01.780Z
+updatedAt: 2025-10-27T08:39:04.233Z
 tasks:
   - title: "Task 1: Add `--batch-tasks` CLI flag"
+    done: false
     description: >
       Introduce a new boolean flag, `--batch-tasks`, to the `agent` command in
       src/rmplan/commands/agent.ts. This flag will be the entry point for
@@ -40,6 +42,7 @@ tasks:
           it can be accessed within the agent execution logic.
         done: true
   - title: "Task 2: Implement a function to retrieve all incomplete tasks"
+    done: false
     description: >
       Create a new helper function `getAllIncompleteTasks` in
       src/rmplan/plans/find_next.ts that takes a PlanSchema object and returns
@@ -70,6 +73,7 @@ tasks:
           without the done field set.
         done: true
   - title: "Task 3: Create the batch mode execution loop in the agent command"
+    done: false
     description: >
       In the rmplanAgent function, add a new execution path when `--batch-tasks`
       is true. This path will use a while loop that continues as long as there
@@ -113,6 +117,7 @@ tasks:
           existing logic. Include appropriate logging for batch mode operations.
         done: true
   - title: "Task 4: Update the orchestrator prompt for batch processing"
+    done: false
     description: >
       Modify the wrapWithOrchestration function in
       src/rmplan/executors/claude_code/orchestrator_prompt.ts to handle batch
@@ -155,6 +160,7 @@ tasks:
           reasonable subset.
         done: true
   - title: "Task 5: Empower the orchestrator agent to edit the plan file"
+    done: false
     description: >
       Configure the claude-code executor to ensure the orchestrator agent has
       permission to use the Edit tool on the plan file when in batch mode. 
@@ -191,6 +197,7 @@ tasks:
           orchestrator which file to edit.
         done: true
   - title: "Task 6: Update sub-agent prompts to handle batched tasks"
+    done: false
     description: >
       Adjust the prompts for the implementer, tester, and reviewer agents in
       src/rmplan/executors/claude_code/agent_prompts.ts so they understand they
@@ -229,6 +236,7 @@ tasks:
           entire batch.
         done: true
   - title: "Task 7: Add integration tests for the batch execution mode"
+    done: false
     description: >
       Create a comprehensive test suite in src/rmplan/commands/agent.test.ts for
       the batch execution mode functionality.
@@ -272,6 +280,7 @@ tasks:
           correctly in batch mode.
         done: true
   - title: "Task 8: Document the new `--batch-tasks` feature"
+    done: false
     description: >
       Create documentation for the new --batch-tasks feature that explains its
       purpose, usage, and benefits. The documentation should be added to a file

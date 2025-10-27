@@ -5,6 +5,7 @@ title: Option to use Claude Code for generate and prepare commands - Refinement
 goal: To refactor any duplicated code, enhance robustness, and document the new
   feature for end-users.
 id: 75
+uuid: 4cf7c6ea-f240-4d13-8a54-f8fbdf15f86c
 status: done
 priority: medium
 dependencies:
@@ -14,9 +15,10 @@ parent: 72
 planGeneratedAt: 2025-07-23T07:56:27.245Z
 promptsGeneratedAt: 2025-07-23T23:24:55.730Z
 createdAt: 2025-07-23T07:52:38.535Z
-updatedAt: 2025-07-23T23:30:14.228Z
+updatedAt: 2025-10-27T08:39:04.253Z
 tasks:
   - title: Refactor Common Command Logic
+    done: false
     description: Review the `generate` and `prepare` command handlers for any
       duplicated code related to flag checking or service invocation, and
       extract it into a shared helper function or class to improve
@@ -74,6 +76,7 @@ tasks:
           with the refactored implementation.
         done: true
   - title: Update README.md with Feature Documentation
+    done: false
     description: Update the main `README.md` file to document the new `--claude`
       flag. The documentation should explain its purpose, how to use it with
       both `generate` and `prepare` commands, and the benefits of using the

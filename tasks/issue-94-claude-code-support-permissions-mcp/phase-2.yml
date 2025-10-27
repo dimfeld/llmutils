@@ -1,16 +1,13 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Integrate Permissions MCP into the Claude Code Executor
 goal: Modify the `ClaudeCodeExecutor` to use the new permissions MCP when enabled.
-details: With the permissions server script ready, this phase integrates it into
-  the main `ClaudeCodeExecutor`. This involves adding configuration options,
-  detecting when the feature should be active, and dynamically creating the
-  necessary configuration file for the Claude Code CLI. The executor will be
-  responsible for managing the lifecycle of this temporary configuration.
 id: 56
+uuid: 221d894e-8097-4e26-bf9f-0d5caa416d45
 status: done
 priority: high
 dependencies:
-  - "55"
+  - 55
 issue:
   - https://github.com/dimfeld/llmutils/issues/94
 docs:
@@ -18,7 +15,7 @@ docs:
 planGeneratedAt: 2025-06-07T09:18:47.448Z
 promptsGeneratedAt: 2025-06-07T20:36:58.810Z
 createdAt: 2025-06-07T02:05:26.354Z
-updatedAt: 2025-06-07T20:42:47.049Z
+updatedAt: 2025-10-27T08:39:04.268Z
 project:
   title: Implement Interactive Permissions for Claude Code Executor
   goal: Allow the user to respond to tool permissions requests when using the
@@ -32,6 +29,7 @@ project:
     appropriate settings to enable interactive tool-use permissions.
 tasks:
   - title: Add Configuration Option to Enable Permissions MCP
+    done: false
     description: Modify the `claudeCodeOptionsSchema` in
       `src/rmplan/executors/claude_code.ts` by adding a new optional boolean
       field named `enablePermissionsMcp`. This will allow users to enable the
@@ -47,6 +45,7 @@ tasks:
           `z.boolean().optional()`.
         done: true
   - title: Implement MCP Activation Logic
+    done: false
     description: In the `execute` method of the `ClaudeCodeExecutor`, add logic to
       check if the `enablePermissionsMcp` option is true or if the
       `CLAUDE_CODE_MCP` environment variable is set. This will determine whether
@@ -67,6 +66,7 @@ tasks:
           environment variable is set.
         done: true
   - title: Implement Dynamic MCP Configuration File Generation
+    done: false
     description: When the permissions MCP is activated, write a temporary JSON
       configuration file to disk. This file will instruct the Claude Code CLI
       how to start our permissions server, specifying the command (e.g., `bun`)
@@ -111,6 +111,7 @@ tasks:
           to `dynamicMcpConfigFile`.
         done: true
   - title: Update Claude Code CLI Arguments
+    done: false
     description: If the permissions MCP is active, modify the arguments passed to
       the `claude` CLI. Add the `--mcp-config` flag with the path to the
       temporary configuration file and the `--permission-prompt-tool` flag to
@@ -140,6 +141,7 @@ tasks:
           a user-provided one.
         done: true
   - title: Ensure Cleanup of Temporary Resources
+    done: false
     description: Wrap the `claude` process execution in a `try...finally` block to
       ensure that the temporary MCP configuration file and its containing
       directory are deleted after the command finishes, regardless of its
@@ -173,3 +175,6 @@ changedFiles:
   - src/rmplan/executors/claude_code.ts
 rmfilter:
   - src/rmplan/executors/claude_code.ts
+---
+
+With the permissions server script ready, this phase integrates it into the main `ClaudeCodeExecutor`. This involves adding configuration options, detecting when the feature should be active, and dynamically creating the necessary configuration file for the Claude Code CLI. The executor will be responsible for managing the lifecycle of this temporary configuration.

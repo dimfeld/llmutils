@@ -14,10 +14,17 @@ const moduleMocker = new ModuleMocker(import.meta);
 // Mock logging
 const logSpy = mock(() => {});
 const errorSpy = mock(() => {});
+const warnSpy = mock(() => {});
 
 // Mock commitAll for git/jj commands
 const commitAllSpy = mock(async () => 0);
 const getGitRootSpy = mock(async () => '');
+const removeAssignmentSpy = mock(async () => true);
+const getRepositoryIdentitySpy = mock(async () => ({
+  repositoryId: 'test-repo',
+  remoteUrl: null,
+  gitRoot: '',
+}));
 
 describe('markStepDone', () => {
   let tempDir: string;
@@ -27,7 +34,10 @@ describe('markStepDone', () => {
     // Clear mocks
     logSpy.mockClear();
     errorSpy.mockClear();
+    warnSpy.mockClear();
     commitAllSpy.mockClear();
+    removeAssignmentSpy.mockClear();
+    getRepositoryIdentitySpy.mockClear();
 
     // Clear plan cache
     clearPlanCache();
@@ -44,7 +54,8 @@ describe('markStepDone', () => {
     await moduleMocker.mock('../../logging.js', () => ({
       log: logSpy,
       error: errorSpy,
-      warn: mock(() => {}),
+      warn: warnSpy,
+      boldMarkdownHeaders: (text: string) => text,
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -54,6 +65,20 @@ describe('markStepDone', () => {
     await moduleMocker.mock('../../common/process.js', () => ({
       commitAll: commitAllSpy,
       quiet: false,
+    }));
+
+    getRepositoryIdentitySpy.mockResolvedValue({
+      repositoryId: 'test-repo',
+      remoteUrl: null,
+      gitRoot: tempDir,
+    });
+
+    await moduleMocker.mock('../assignments/assignments_io.js', () => ({
+      removeAssignment: removeAssignmentSpy,
+    }));
+
+    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
+      getRepositoryIdentity: getRepositoryIdentitySpy,
     }));
   });
 
@@ -108,6 +133,7 @@ describe('markStepDone', () => {
     // Check that step 2 is now done
     expect(updatedPlan.tasks[0].steps![1].done).toBe(true);
     expect(updatedPlan.tasks[0].steps![2].done).toBe(false);
+    expect(removeAssignmentSpy).not.toHaveBeenCalled();
   });
 
   test('marks multiple steps as done', async () => {
@@ -154,6 +180,7 @@ describe('markStepDone', () => {
     expect(updatedPlan.tasks[0].steps![0].done).toBe(true);
     expect(updatedPlan.tasks[0].steps![1].done).toBe(true);
     expect(updatedPlan.tasks[0].steps![2].done).toBe(false);
+    expect(removeAssignmentSpy).not.toHaveBeenCalled();
   });
 
   test('marks all steps in task as done with task flag', async () => {
@@ -197,6 +224,53 @@ describe('markStepDone', () => {
 
     // Check that all steps in task 1 are done
     expect(updatedPlan.tasks[0].steps!.every((step) => step.done)).toBe(true);
+    expect(removeAssignmentSpy).toHaveBeenCalledTimes(1);
+    const [callArgs] = removeAssignmentSpy.mock.calls;
+    expect(callArgs[0].repositoryId).toBe('test-repo');
+    expect(callArgs[0].uuid).toBe(updatedPlan.uuid);
+  });
+
+  test('logs warning when assignment removal fails after completion', async () => {
+    removeAssignmentSpy.mockImplementationOnce(async () => {
+      throw new Error('simulated failure');
+    });
+
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Task 1',
+          description: 'Do something',
+          steps: [
+            {
+              prompt: 'Do step 1',
+              done: true,
+            },
+            {
+              prompt: 'Do step 2',
+              done: false,
+            },
+          ],
+        },
+      ],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan));
+
+    const result = await markStepDone(planPath, { steps: 1 }, undefined, tempDir, {});
+
+    expect(result.planComplete).toBe(true);
+    const warningMessages = warnSpy.mock.calls.map((args) => args[0]);
+    expect(
+      warningMessages.some((message) =>
+        message.includes('Failed to remove assignment for plan 1: simulated failure')
+      )
+    ).toBe(true);
   });
 
   test('updates plan status to done when all steps complete', async () => {
@@ -402,7 +476,10 @@ describe('markTaskDone', () => {
     // Clear mocks
     logSpy.mockClear();
     errorSpy.mockClear();
+    warnSpy.mockClear();
     commitAllSpy.mockClear();
+    removeAssignmentSpy.mockClear();
+    getRepositoryIdentitySpy.mockClear();
 
     // Clear plan cache
     clearPlanCache();
@@ -419,7 +496,7 @@ describe('markTaskDone', () => {
     await moduleMocker.mock('../../logging.js', () => ({
       log: logSpy,
       error: errorSpy,
-      warn: mock(() => {}),
+      warn: warnSpy,
       boldMarkdownHeaders: (text: string) => text,
     }));
 
@@ -430,6 +507,20 @@ describe('markTaskDone', () => {
     await moduleMocker.mock('../../common/process.js', () => ({
       commitAll: commitAllSpy,
       quiet: false,
+    }));
+
+    getRepositoryIdentitySpy.mockResolvedValue({
+      repositoryId: 'test-repo',
+      remoteUrl: null,
+      gitRoot: tempDir,
+    });
+
+    await moduleMocker.mock('../assignments/assignments_io.js', () => ({
+      removeAssignment: removeAssignmentSpy,
+    }));
+
+    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
+      getRepositoryIdentity: getRepositoryIdentitySpy,
     }));
   });
 
@@ -478,6 +569,7 @@ describe('markTaskDone', () => {
     // Check that the task is now done
     expect(updatedPlan.tasks[0].done).toBe(true);
     expect(updatedPlan.tasks[1].done).toBe(false);
+    expect(removeAssignmentSpy).not.toHaveBeenCalled();
   });
 
   test('updates plan status to done when last task completes', async () => {
@@ -516,6 +608,9 @@ describe('markTaskDone', () => {
     // Check that plan status is done
     expect(updatedPlan.status).toBe('done');
     expect(updatedPlan.tasks[1].done).toBe(true);
+    expect(removeAssignmentSpy).toHaveBeenCalledTimes(1);
+    const [taskDoneCallArgs] = removeAssignmentSpy.mock.calls;
+    expect(taskDoneCallArgs[0].uuid).toBe(updatedPlan.uuid);
   });
 
   test('returns error for invalid task index', async () => {

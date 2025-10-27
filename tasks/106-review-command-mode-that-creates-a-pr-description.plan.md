@@ -5,6 +5,7 @@ goal: To create a new `rmplan description` command that, similar to the `review`
   command, gathers context from a plan and code changes, but uses it to generate
   a comprehensive pull request description.
 id: 106
+uuid: 27e9901d-bf18-480c-8eab-ad70c6fc8e93
 status: done
 priority: medium
 container: true
@@ -12,7 +13,7 @@ dependencies:
   - 107
   - 108
 createdAt: 2025-08-14T00:55:08.903Z
-updatedAt: 2025-08-14T03:51:17.159Z
+updatedAt: 2025-10-27T08:39:04.312Z
 tasks: []
 rmfilter:
   - src/rmplan/commands/review.ts

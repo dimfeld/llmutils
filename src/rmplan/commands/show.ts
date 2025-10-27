@@ -3,15 +3,20 @@
 
 import chalk from 'chalk';
 import { stat } from 'node:fs/promises';
+import * as path from 'node:path';
 import * as clipboard from '../../common/clipboard.js';
-import { log } from '../../logging.js';
+import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
 import {
+  formatWorkspacePath,
   getCombinedGoal,
   getCombinedTitle,
   getCombinedTitleFromSummary,
 } from '../display_utils.js';
+import { AssignmentsFileParseError, readAssignments } from '../assignments/assignments_io.js';
+import type { AssignmentEntry } from '../assignments/assignments_schema.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import {
   findNextPlan,
   isPlanReady,
@@ -27,6 +32,16 @@ type PlanWithFilename = PlanSchema & { filename: string };
 
 const MIN_TIMESTAMP = Number.NEGATIVE_INFINITY;
 
+interface AssignmentDisplayInfo {
+  entry?: AssignmentEntry;
+  formattedWorkspaces: string[];
+  users: string[];
+  assignedAt?: string;
+  updatedAt?: string;
+  currentWorkspace: string | null;
+  conflicts?: string[];
+}
+
 function parseIsoTimestamp(value: string | undefined): number | undefined {
   if (!value) {
     return undefined;
@@ -34,6 +49,81 @@ function parseIsoTimestamp(value: string | undefined): number | undefined {
 
   const parsed = Date.parse(value);
   return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+function formatTimestamp(value: string | undefined): string | null {
+  const parsed = parseIsoTimestamp(value);
+  return parsed !== undefined ? new Date(parsed).toLocaleString() : null;
+}
+
+function applyAssignmentStatus(plan: PlanSchema, entry?: AssignmentEntry): PlanSchema {
+  if (entry?.status) {
+    return {
+      ...plan,
+      status: entry.status,
+    };
+  }
+
+  return plan;
+}
+
+function applyAssignmentsToPlans(
+  plans: Map<number, PlanWithFilename>,
+  assignments: Record<string, AssignmentEntry>
+): Map<number, PlanWithFilename> {
+  const result = new Map<number, PlanWithFilename>();
+
+  for (const [id, candidate] of plans.entries()) {
+    const entry = candidate.uuid ? assignments[candidate.uuid] : undefined;
+    const effectiveStatus = entry?.status ?? candidate.status ?? 'pending';
+    result.set(id, {
+      ...candidate,
+      status: effectiveStatus,
+    });
+  }
+
+  return result;
+}
+
+function buildAssignmentDisplayInfo(
+  plan: PlanSchema,
+  entry: AssignmentEntry | undefined,
+  currentWorkspace: string | null
+): AssignmentDisplayInfo {
+  const uniqueWorkspaces = Array.from(
+    new Set((entry?.workspacePaths ?? []).filter((workspace) => Boolean(workspace?.trim())))
+  );
+
+  const formattedWorkspaces = uniqueWorkspaces.map((workspace) => {
+    const formatted = currentWorkspace
+      ? formatWorkspacePath(workspace, { currentWorkspace })
+      : formatWorkspacePath(workspace);
+    return currentWorkspace && workspace === currentWorkspace ? chalk.green(formatted) : formatted;
+  });
+
+  const users = Array.from(
+    new Set(
+      (entry?.users ?? [])
+        .filter((user) => Boolean(user && user.trim()))
+        .map((user) => user!.trim())
+    )
+  );
+
+  if (users.length === 0 && plan.assignedTo && plan.assignedTo.trim().length > 0) {
+    users.push(plan.assignedTo.trim());
+  }
+
+  const conflicts = formattedWorkspaces.length > 1 ? formattedWorkspaces : undefined;
+
+  return {
+    entry,
+    formattedWorkspaces,
+    users,
+    assignedAt: entry?.assignedAt,
+    updatedAt: entry?.updatedAt,
+    currentWorkspace,
+    conflicts,
+  };
 }
 
 async function getPlanTimestamp(plan: PlanWithFilename): Promise<number> {
@@ -62,14 +152,19 @@ async function displayPlanInfo(
   plan: PlanSchema,
   resolvedPlanFile: string,
   allPlans: Map<number, PlanSchema & { filename: string }>,
-  options: any
+  options: any,
+  assignmentInfo: AssignmentDisplayInfo
 ): Promise<number> {
   // Display "ready" for pending plans whose dependencies are done
-  const actualStatus = plan.status || 'pending';
+  const actualStatus = assignmentInfo.entry?.status ?? plan.status ?? 'pending';
+  const planForReady = {
+    ...plan,
+    status: actualStatus,
+  };
   const isReady = plan.id
     ? isPlanReady(
         {
-          ...plan,
+          ...planForReady,
           filename: resolvedPlanFile,
         },
         allPlans
@@ -90,6 +185,12 @@ async function displayPlanInfo(
 
   let outputLines = 0;
 
+  if (!options.watch && assignmentInfo.conflicts) {
+    warn(
+      `${chalk.yellow('⚠')} Plan is claimed in multiple workspaces: ${assignmentInfo.conflicts.join(', ')}`
+    );
+  }
+
   if (options.short || options.watch) {
     const output = [];
     output.push(chalk.bold('\nPlan Summary:'));
@@ -97,6 +198,29 @@ async function displayPlanInfo(
     output.push(`${chalk.cyan('ID:')} ${plan.id || 'Not set'}`);
     output.push(`${chalk.cyan('Title:')} ${getCombinedTitle(plan)}`);
     output.push(`${chalk.cyan('Status:')} ${statusColor(statusDisplay)}`);
+    if (assignmentInfo.entry) {
+      const workspaceLine =
+        assignmentInfo.formattedWorkspaces.length > 0
+          ? assignmentInfo.formattedWorkspaces.join(', ')
+          : chalk.gray('unassigned');
+      output.push(`${chalk.cyan('Workspace:')} ${workspaceLine}`);
+
+      if (assignmentInfo.users.length > 0) {
+        output.push(`${chalk.cyan('Users:')} ${assignmentInfo.users.join(', ')}`);
+      }
+
+      const assignedAtDisplay = formatTimestamp(assignmentInfo.assignedAt);
+      if (assignedAtDisplay) {
+        output.push(`${chalk.cyan('Assigned:')} ${assignedAtDisplay}`);
+      }
+
+      const updatedAtDisplay = formatTimestamp(assignmentInfo.updatedAt);
+      if (updatedAtDisplay && updatedAtDisplay !== assignedAtDisplay) {
+        output.push(`${chalk.cyan('Updated:')} ${updatedAtDisplay}`);
+      }
+    } else if (plan.assignedTo) {
+      output.push(`${chalk.cyan('Assigned To:')} ${plan.assignedTo}`);
+    }
     if (plan.temp) {
       output.push(`${chalk.cyan('Temp:')} ${chalk.yellow('true')}`);
     }
@@ -194,11 +318,31 @@ async function displayPlanInfo(
                 ? chalk.gray
                 : chalk.white;
     log(`${chalk.cyan('Priority:')} ${plan.priority ? priorityColor(plan.priority) : ''}`);
+    if (assignmentInfo.entry) {
+      const workspaceLine =
+        assignmentInfo.formattedWorkspaces.length > 0
+          ? assignmentInfo.formattedWorkspaces.join(', ')
+          : chalk.gray('unassigned');
+      log(`${chalk.cyan('Workspace:')} ${workspaceLine}`);
+
+      if (assignmentInfo.users.length > 0) {
+        log(`${chalk.cyan('Users:')} ${assignmentInfo.users.join(', ')}`);
+      }
+
+      const assignedAtDisplay = formatTimestamp(assignmentInfo.assignedAt);
+      if (assignedAtDisplay) {
+        log(`${chalk.cyan('Assigned:')} ${assignedAtDisplay}`);
+      }
+
+      const updatedAtDisplay = formatTimestamp(assignmentInfo.updatedAt);
+      if (updatedAtDisplay && updatedAtDisplay !== assignedAtDisplay) {
+        log(`${chalk.cyan('Updated:')} ${updatedAtDisplay}`);
+      }
+    } else if (plan.assignedTo) {
+      log(`${chalk.cyan('Assigned To:')} ${plan.assignedTo}`);
+    }
     if (plan.temp) {
       log(`${chalk.cyan('Temp:')} ${chalk.yellow('true')}`);
-    }
-    if (plan.assignedTo) {
-      log(`${chalk.cyan('Assigned To:')} ${plan.assignedTo}`);
     }
 
     // Display parent plan if present
@@ -534,6 +678,28 @@ export async function handleShowCommand(planFile: string | undefined, options: a
   const allPlans = preloadedPlans;
   const resolvedTasksDir = tasksDir;
 
+  const repository = await getRepositoryIdentity({ cwd: path.dirname(resolvedPlanFile) });
+
+  const fetchAssignments = async (): Promise<Record<string, AssignmentEntry>> => {
+    try {
+      const assignmentsFile = await readAssignments({
+        repositoryId: repository.repositoryId,
+        repositoryRemoteUrl: repository.remoteUrl,
+      });
+      return assignmentsFile.assignments;
+    } catch (error) {
+      if (error instanceof AssignmentsFileParseError) {
+        warn(`${chalk.yellow('⚠')} ${error.message}`);
+        return {};
+      }
+
+      throw error;
+    }
+  };
+
+  let assignmentEntries = await fetchAssignments();
+  let plansWithAssignments = applyAssignmentsToPlans(allPlans, assignmentEntries);
+
   // Find the specific plan from the collection
   let plan: PlanSchema | undefined = selectedPlan;
 
@@ -554,6 +720,10 @@ export async function handleShowCommand(planFile: string | undefined, options: a
   if (!plan) {
     throw new Error(`Failed to load plan from ${resolvedPlanFile}`);
   }
+
+  let planAssignmentEntry = plan.uuid ? assignmentEntries[plan.uuid] : undefined;
+  let displayedPlan = applyAssignmentStatus(plan, planAssignmentEntry);
+  let assignmentInfo = buildAssignmentDisplayInfo(plan, planAssignmentEntry, repository.gitRoot);
 
   // Watch mode implementation
   if (options.watch) {
@@ -588,21 +758,47 @@ export async function handleShowCommand(planFile: string | undefined, options: a
         const updatedPlan = await readPlanFile(resolvedPlanFile);
         const { plans: updatedAllPlans } = await readAllPlans(resolvedTasksDir);
 
-        // Display updated information
-        previousLineCount = await displayPlanInfo(
+        assignmentEntries = await fetchAssignments();
+        plansWithAssignments = applyAssignmentsToPlans(updatedAllPlans, assignmentEntries);
+
+        const updatedPlanEntry = updatedPlan.uuid ? assignmentEntries[updatedPlan.uuid] : undefined;
+        const updatedDisplayedPlan = applyAssignmentStatus(updatedPlan, updatedPlanEntry);
+        const updatedAssignmentInfo = buildAssignmentDisplayInfo(
           updatedPlan,
-          resolvedPlanFile,
-          updatedAllPlans,
-          options
+          updatedPlanEntry,
+          repository.gitRoot
         );
+
+        previousLineCount = await displayPlanInfo(
+          updatedDisplayedPlan,
+          resolvedPlanFile,
+          plansWithAssignments,
+          options,
+          updatedAssignmentInfo
+        );
+
+        displayedPlan = updatedDisplayedPlan;
+        assignmentInfo = updatedAssignmentInfo;
       } catch (error) {
         // If there's an error reading the plan, just continue with the existing data
-        previousLineCount = await displayPlanInfo(plan!, resolvedPlanFile, allPlans, options);
+        previousLineCount = await displayPlanInfo(
+          displayedPlan,
+          resolvedPlanFile,
+          plansWithAssignments,
+          options,
+          assignmentInfo
+        );
       }
     };
 
     // Initial display
-    previousLineCount = await displayPlanInfo(plan, resolvedPlanFile, allPlans, options);
+    previousLineCount = await displayPlanInfo(
+      displayedPlan,
+      resolvedPlanFile,
+      plansWithAssignments,
+      options,
+      assignmentInfo
+    );
 
     // Set up interval to refresh every 5 seconds
     watchInterval = setInterval(refreshDisplay, 5000);
@@ -612,12 +808,18 @@ export async function handleShowCommand(planFile: string | undefined, options: a
   }
 
   // Normal (non-watch) display
-  await displayPlanInfo(plan, resolvedPlanFile, allPlans, options);
+  await displayPlanInfo(
+    displayedPlan,
+    resolvedPlanFile,
+    plansWithAssignments,
+    options,
+    assignmentInfo
+  );
 
   log('');
 
-  if (options.copyDetails && plan.details) {
-    await clipboard.write(plan.details);
+  if (options.copyDetails && displayedPlan.details) {
+    await clipboard.write(displayedPlan.details);
     log(chalk.green(`Copied details to clipboard`));
   }
 }

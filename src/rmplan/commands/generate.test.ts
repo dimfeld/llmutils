@@ -8,6 +8,8 @@ import { clearPlanCache, readPlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 const moduleMocker = new ModuleMocker(import.meta);
 
 // Mock console functions
@@ -2090,6 +2092,7 @@ describe('handleGenerateCommand research preservation integration', () => {
 
     clearPlanCache();
     const savedPlan = await readPlanFile(planPath);
+    expect(savedPlan.uuid).toMatch(UUID_REGEX);
 
     expect(savedPlan.details).toContain('Claude-provided summary');
     expect(savedPlan.details).toContain('## Research');
@@ -2127,6 +2130,7 @@ describe('handleGenerateCommand research preservation integration', () => {
 
     clearPlanCache();
     const savedPlan = await readPlanFile(planPath);
+    expect(savedPlan.uuid).toMatch(UUID_REGEX);
     expect(savedPlan.details).toContain('# Original Plan Details');
     expect(savedPlan.details).not.toMatch(/## Research/);
     expect(savedPlan.details).toContain('Basic details');

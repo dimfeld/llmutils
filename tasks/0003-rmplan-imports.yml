@@ -1,32 +1,13 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Add import analysis options (--with-imports, --with-all-imports) to rmplan
   next command.
-details: >
-  This feature allows `rmplan next` to automatically include imported files
-  relevant to the current task, similar to `rmfilter`.
-
-
-  When `rmplan next` is run with `--with-imports` or `--with-all-imports`:
-
-  1. It will first attempt to extract file references mentioned directly within
-  the generated LLM prompt text for the step.
-
-  2. If no files are found in the prompt, it will fall back to using the `files`
-  list defined in the current task of the plan YAML.
-
-  3. If the `--rmfilter` option is also used, these candidate files and the
-  corresponding import flag (`--with-imports` or `--with-all-imports`) will be
-  passed as a separate command block (`-- <files> <flag>`) to the `rmfilter`
-  process. The original task files will *not* be passed directly in the main
-  arguments.
-
-  4. If `--rmfilter` is *not* used, `rmplan` will perform the import analysis
-  itself using `ImportWalker`, expand the file list, deduplicate it, and include
-  the full list in the generated prompt context.
 id: 7
+uuid: e716161d-5260-4932-812a-8d9b42aa45a0
 status: done
 tasks:
   - title: Add CLI Options and Basic Logic Structure
+    done: false
     description: Add the new command-line options to `rmplan next` and set up the
       conditional logic structure for handling them.
     files:
@@ -72,6 +53,7 @@ tasks:
           implicitly by commander.
         done: true
   - title: Implement Candidate File Extraction
+    done: false
     description: Implement the logic to determine the initial set of files for
       import analysis, using either files mentioned in the prompt or the task's
       file list as a fallback.
@@ -120,6 +102,7 @@ tasks:
           quiet.
         done: true
   - title: Implement --rmfilter Integration
+    done: false
     description: Modify the rmfilter execution logic to pass the candidate files and
       import flags correctly when both `--rmfilter` and an import option are
       used.
@@ -179,6 +162,7 @@ tasks:
           this conditional inclusion.
         done: true
   - title: Implement Standalone Import Analysis
+    done: false
     description: Implement the import analysis directly within rmplan for cases
       where `--rmfilter` is not used, leveraging the existing `ImportWalker` and
       `Resolver`.
@@ -258,6 +242,7 @@ tasks:
           `files` list) are absolute paths.
         done: true
   - title: Refine and Test
+    done: false
     description: Review path handling, add logging, and perform manual testing of
       all scenarios.
     files:
@@ -293,3 +278,13 @@ tasks:
           standalone analysis) is reasonable (e.g., prints a warning and
           continues).
         done: true
+updatedAt: 2025-10-27T08:39:04.208Z
+---
+
+This feature allows `rmplan next` to automatically include imported files relevant to the current task, similar to `rmfilter`.
+
+When `rmplan next` is run with `--with-imports` or `--with-all-imports`:
+1. It will first attempt to extract file references mentioned directly within the generated LLM prompt text for the step.
+2. If no files are found in the prompt, it will fall back to using the `files` list defined in the current task of the plan YAML.
+3. If the `--rmfilter` option is also used, these candidate files and the corresponding import flag (`--with-imports` or `--with-all-imports`) will be passed as a separate command block (`-- <files> <flag>`) to the `rmfilter` process. The original task files will *not* be passed directly in the main arguments.
+4. If `--rmfilter` is *not* used, `rmplan` will perform the import analysis itself using `ImportWalker`, expand the file list, deduplicate it, and include the full list in the generated prompt context.

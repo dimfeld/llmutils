@@ -24,6 +24,10 @@ import { clearPlanCache } from '../plans.js';
 describe('handleListCommand', () => {
   let tempDir: string;
   let tasksDir: string;
+  let repoDir: string;
+  let repositoryId: string;
+  let assignmentsData: Record<string, any>;
+  let currentUser: string | null;
 
   beforeEach(async () => {
     // Clear mocks
@@ -37,8 +41,12 @@ describe('handleListCommand', () => {
 
     // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-list-test-'));
-    tasksDir = path.join(tempDir, 'tasks');
+    repoDir = path.join(tempDir, 'repo');
+    tasksDir = path.join(repoDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
+    repositoryId = 'list-tests';
+    assignmentsData = {};
+    currentUser = 'alice';
     // Set up mocks immediately before imports
     await moduleMocker.mock('../../logging.js', () => ({
       log: mockLog,
@@ -81,9 +89,22 @@ describe('handleListCommand', () => {
       }),
     }));
 
-    // Mock utils
-    await moduleMocker.mock('../../rmfilter/utils.js', () => ({
-      getGitRoot: async () => tempDir,
+    await moduleMocker.mock('../assignments/workspace_identifier.ts', () => ({
+      getRepositoryIdentity: async () => ({
+        repositoryId,
+        remoteUrl: 'https://example.com/repo.git',
+        gitRoot: repoDir,
+      }),
+      getUserIdentity: () => currentUser,
+    }));
+
+    await moduleMocker.mock('../assignments/assignments_io.js', () => ({
+      readAssignments: async () => ({
+        repositoryId,
+        repositoryRemoteUrl: 'https://example.com/repo.git',
+        version: 0,
+        assignments: assignmentsData,
+      }),
     }));
   });
 
@@ -248,13 +269,14 @@ describe('handleListCommand', () => {
     expect(headers2[0]).toBe('ID');
     expect(headers2[1]).toBe('Title');
     expect(headers2[2]).toBe('Status');
-    expect(headers2[3]).toBe('Priority');
-    expect(headers2[4]).toBe('Tasks');
-    expect(headers2[5]).toBe('Steps');
-    expect(headers2[6]).toBe('Notes');
-    expect(headers2[7]).toBe('Depends On');
+    expect(headers2[3]).toBe('Workspace');
+    expect(headers2[4]).toBe('Priority');
+    expect(headers2[5]).toBe('Tasks');
+    expect(headers2[6]).toBe('Steps');
+    expect(headers2[7]).toBe('Notes');
+    expect(headers2[8]).toBe('Depends On');
     // Notes count shows 2 for the plan with notes
-    expect(row[6]).toBe('2');
+    expect(row[7]).toBe('2');
   });
 
   test('filters plans by status when --status flag is used', async () => {
@@ -610,7 +632,7 @@ describe('handleListCommand', () => {
     expect(mainPlanRow).toBeTruthy();
 
     // Check dependencies column (index 6)
-    const depsColumn = mainPlanRow[6];
+    const depsColumn = mainPlanRow[7];
 
     // Should show status indicators:
     // - 1✓ (done)
@@ -863,7 +885,7 @@ describe('handleListCommand', () => {
     expect(mainPlanRow).toBeTruthy();
 
     // Check that the dependency is found and shows as done
-    const depsColumn = mainPlanRow[6];
+    const depsColumn = mainPlanRow[7];
     expect(depsColumn).toContain('10✓');
   });
 
@@ -1143,6 +1165,231 @@ describe('handleListCommand', () => {
     // Taking the last 3 should give us [3, 2, 1]
     const shownIds = tableData.slice(1).map((row) => row[0]);
     expect(shownIds).toEqual([3, 2, 1]);
+  });
+
+  test('includes workspace assignments in table output', async () => {
+    const now = new Date().toISOString();
+    const plan = {
+      id: 1,
+      uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      title: 'Assigned Plan',
+      goal: 'Check workspace display',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+    };
+
+    await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+
+    assignmentsData = {
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': {
+        planId: 1,
+        workspacePaths: [repoDir, path.join(tempDir, 'other-workspace')],
+        users: ['alice', 'bob'],
+        status: 'pending',
+        assignedAt: now,
+        updatedAt: now,
+      },
+    };
+
+    await handleListCommand({}, { parent: { opts: () => ({}) } });
+
+    const tableData = mockTable.mock.calls[0][0];
+    const dataRow = tableData[1];
+
+    expect(dataRow[3]).toBe('this workspace (+1)');
+  });
+
+  test('--assigned filters to plans with assignment entries', async () => {
+    const now = new Date().toISOString();
+
+    const plans = [
+      {
+        id: 1,
+        uuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        title: 'Assigned Plan',
+        status: 'pending',
+        tasks: [],
+        dependencies: [],
+      },
+      {
+        id: 2,
+        uuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        title: 'Free Plan',
+        status: 'pending',
+        tasks: [],
+        dependencies: [],
+      },
+    ];
+
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    assignmentsData = {
+      'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb': {
+        planId: 1,
+        workspacePaths: [repoDir],
+        users: ['alice'],
+        status: 'pending',
+        assignedAt: now,
+        updatedAt: now,
+      },
+    };
+
+    await handleListCommand({ assigned: true }, { parent: { opts: () => ({}) } });
+
+    const tableData = mockTable.mock.calls[0][0];
+    expect(tableData).toHaveLength(2);
+    const titles = tableData.slice(1).map((row: any[]) => row[1]);
+    expect(titles).toEqual(['Assigned Plan']);
+  });
+
+  test('--unassigned filters out claimed plans', async () => {
+    const now = new Date().toISOString();
+
+    const plans = [
+      {
+        id: 1,
+        uuid: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        title: 'Assigned Plan',
+        status: 'pending',
+        tasks: [],
+        dependencies: [],
+      },
+      {
+        id: 2,
+        uuid: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        title: 'Free Plan',
+        status: 'pending',
+        tasks: [],
+        dependencies: [],
+      },
+    ];
+
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    assignmentsData = {
+      'dddddddd-dddd-4ddd-8ddd-dddddddddddd': {
+        planId: 1,
+        workspacePaths: [repoDir],
+        users: ['alice'],
+        status: 'pending',
+        assignedAt: now,
+        updatedAt: now,
+      },
+    };
+
+    await handleListCommand({ unassigned: true }, { parent: { opts: () => ({}) } });
+
+    const tableData = mockTable.mock.calls[0][0];
+    expect(tableData).toHaveLength(2);
+    const titles = tableData.slice(1).map((row: any[]) => row[1]);
+    expect(titles).toEqual(['Free Plan']);
+  });
+
+  test('--user uses assignments for filtering', async () => {
+    const now = new Date().toISOString();
+
+    const plans = [
+      {
+        id: 1,
+        uuid: '01010101-0101-4010-8010-010101010101',
+        title: 'Alice Plan',
+        status: 'pending',
+        tasks: [],
+        dependencies: [],
+      },
+      {
+        id: 2,
+        uuid: '02020202-0202-4020-8020-020202020202',
+        title: 'Bob Plan',
+        status: 'pending',
+        tasks: [],
+        dependencies: [],
+      },
+    ];
+
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    assignmentsData = {
+      '01010101-0101-4010-8010-010101010101': {
+        planId: 1,
+        workspacePaths: [repoDir],
+        users: ['alice'],
+        status: 'pending',
+        assignedAt: now,
+        updatedAt: now,
+      },
+      '02020202-0202-4020-8020-020202020202': {
+        planId: 2,
+        workspacePaths: [path.join(tempDir, 'bob-workspace')],
+        users: ['bob'],
+        status: 'pending',
+        assignedAt: now,
+        updatedAt: now,
+      },
+    };
+
+    await handleListCommand({ user: 'alice' }, { parent: { opts: () => ({}) } });
+
+    const tableData = mockTable.mock.calls[0][0];
+    const titles = tableData.slice(1).map((row: any[]) => row[1]);
+    expect(titles).toEqual(['Alice Plan']);
+  });
+
+  test('--mine uses current user identity when available', async () => {
+    const now = new Date().toISOString();
+
+    const plan = {
+      id: 1,
+      uuid: '30303030-3030-4030-8030-303030303030',
+      title: 'My Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+    };
+
+    await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+
+    assignmentsData = {
+      '30303030-3030-4030-8030-303030303030': {
+        planId: 1,
+        workspacePaths: [repoDir],
+        users: ['alice'],
+        status: 'pending',
+        assignedAt: now,
+        updatedAt: now,
+      },
+    };
+
+    await handleListCommand({ mine: true }, { parent: { opts: () => ({}) } });
+
+    const tableData = mockTable.mock.calls[0][0];
+    expect(tableData).toHaveLength(2);
+  });
+
+  test('--mine warns when user identity is unavailable', async () => {
+    const plan = {
+      id: 1,
+      uuid: '40404040-4040-4040-8040-404040404040',
+      title: 'Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+    };
+
+    await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+
+    currentUser = null;
+
+    await handleListCommand({ mine: true }, { parent: { opts: () => ({}) } });
+
+    expect(mockWarn).toHaveBeenCalled();
   });
 });
 

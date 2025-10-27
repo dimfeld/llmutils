@@ -3,12 +3,13 @@
 title: Implement rmplan add-task and remove-task commands
 goal: ""
 id: 132
+uuid: 7ebf9d14-805e-4178-83a7-a1e91154de23
 status: pending
 priority: medium
 temp: false
 parent: 128
 createdAt: 2025-10-26T22:41:12.354Z
-updatedAt: 2025-10-26T22:41:12.356Z
+updatedAt: 2025-10-27T08:39:04.274Z
 tasks: []
 ---
 

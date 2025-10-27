@@ -5,6 +5,7 @@ title: Allow Claude Code to delete files it created - Introduce Configuration,
 goal: To make the auto-approval feature configurable, add informative logging,
   and update the project documentation.
 id: 89
+uuid: 9e024e7f-2508-487b-a877-369f0e78dcae
 status: done
 priority: high
 dependencies:
@@ -13,9 +14,10 @@ parent: 87
 planGeneratedAt: 2025-07-31T07:57:24.242Z
 promptsGeneratedAt: 2025-07-31T09:31:35.989Z
 createdAt: 2025-07-31T07:52:58.950Z
-updatedAt: 2025-07-31T09:57:13.194Z
+updatedAt: 2025-10-27T08:39:04.298Z
 tasks:
   - title: Add a configuration option to enable or disable auto-approval
+    done: false
     description: >
       The code executor's configuration structure will be updated to include a
       new optional boolean property, `autoApproveCreatedFileDeletion`, which
@@ -37,6 +39,7 @@ tasks:
           in the schema.
         done: true
   - title: Connect the configuration flag to the auto-approval logic
+    done: false
     description: >
       The auto-approval logic implemented in Phase 1 (lines 285-315 of
       claude_code.ts) will be wrapped in a conditional check. The system will
@@ -58,6 +61,7 @@ tasks:
           the flag is false or undefined.
         done: true
   - title: Implement logging for auto-approved deletions
+    done: false
     description: >
       A log statement already exists in the permission handler at line 301-305.
       When a file deletion is successfully auto-approved, it prints
@@ -77,6 +81,7 @@ tasks:
           correctly in Phase 1.
         done: true
   - title: Update tests to cover the configuration flag
+    done: false
     description: >
       The integration tests from Phase 1 will be expanded. New test cases will
       be added to verify that the feature is disabled by default and that it can
@@ -117,6 +122,7 @@ tasks:
           since the feature will now be disabled by default.
         done: true
   - title: Update project documentation
+    done: false
     description: >
       The README.md file will be updated to describe the new
       `autoApproveCreatedFileDeletion` configuration option. The documentation

@@ -5,6 +5,7 @@ title: Use subagents in Claude Code executor - Implement Core Subagent Logic and
 goal: To implement the core functionality of creating, using, and cleaning up
   subagents for a single, complete execution cycle.
 id: 78
+uuid: e7a5e371-9586-4e94-8eca-c4f2e1b2a218
 status: done
 priority: high
 dependencies: []
@@ -12,9 +13,10 @@ parent: 77
 planGeneratedAt: 2025-07-29T19:14:39.578Z
 promptsGeneratedAt: 2025-07-29T19:24:27.635Z
 createdAt: 2025-07-29T19:06:12.623Z
-updatedAt: 2025-07-29T19:45:34.549Z
+updatedAt: 2025-10-27T08:39:04.319Z
 tasks:
   - title: Update Executor Function Signature to Accept Plan Information
+    done: false
     description: >
       The Claude Code executor function will be modified to accept additional
       arguments, specifically the `planId`. This ID is essential for creating
@@ -71,6 +73,7 @@ tasks:
           branch.
         done: true
   - title: Implement Dynamic Agent File Generation
+    done: false
     description: >
       A utility function will be created to dynamically generate the agent
       definition files. This function will take a `planId` and agent details,
@@ -119,6 +122,7 @@ tasks:
           expected format.
         done: true
   - title: Define Prompts for Implementer, Tester, and Reviewer Agents
+    done: false
     description: >
       The specific prompt content for each of the three agents will be defined.
       These prompts will contain their core instructions and will be used by the
@@ -160,6 +164,7 @@ tasks:
           being overly critical.
         done: true
   - title: Update Main Executor Prompt to Orchestrate Subagents
+    done: false
     description: >
       The main prompt sent to the Claude Code executor will be revised. It will
       now include instructions for a primary agent to manage a workflow loop,
@@ -204,6 +209,7 @@ tasks:
           information is provided).
         done: true
   - title: Integrate Agent Lifecycle Management into the Executor
+    done: false
     description: >
       The executor logic will be updated to manage the full lifecycle of the
       agent files. It will call the generation function before starting the main

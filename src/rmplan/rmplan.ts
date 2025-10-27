@@ -41,6 +41,7 @@ import { handleCommandError } from './utils/commands.js';
 import { prioritySchema, statusSchema } from './planSchema.js';
 import { CleanupRegistry } from '../common/cleanup_registry.js';
 import { startMcpServer } from './mcp/server.js';
+import { enableAutoClaim } from './assignments/auto_claim.js';
 
 function intArg(value: string | undefined): number | undefined;
 function intArg(value: string[] | undefined): number[] | undefined;
@@ -400,6 +401,8 @@ program
   .option('--files', 'Show file paths column')
   .option('-u, --user <username>', 'Filter by assignedTo username')
   .option('--mine', 'Show only plans assigned to current user')
+  .option('--assigned', 'Show only plans that are claimed in shared assignments')
+  .option('--unassigned', 'Show only plans that are not claimed in shared assignments')
   .option('-n, --number <count>', 'Limit the number of results shown', (value: string) => {
     const n = Number(value);
     if (Number.isNaN(n) || n <= 0) {
@@ -422,6 +425,9 @@ program
   .option('--reverse', 'Reverse sort order')
   .option('--pending-only', 'Show only pending plans (exclude in_progress)')
   .option('--priority <priority>', 'Filter by priority: low, medium, high, urgent, maybe')
+  .option('--all', 'Show ready plans regardless of assignment ownership')
+  .option('--unassigned', 'Show only ready plans that are not currently claimed')
+  .option('--user <username>', 'Show ready plans claimed by the specified user')
   .option('-v, --verbose', 'Show additional details like file paths')
   .action(async (options, command) => {
     const { handleReadyCommand } = await import('./commands/ready.js');
@@ -503,6 +509,52 @@ program
   .action(async (planArg, options, command) => {
     const { handleEditCommand } = await import('./commands/edit.js');
     await handleEditCommand(planArg, options, command).catch(handleCommandError);
+  });
+
+program
+  .command('claim <plan>')
+  .description('Assign a plan to the current workspace (and optionally user)')
+  .action(async (plan, options, command) => {
+    const { handleClaimCommand } = await import('./commands/claim.js');
+    await handleClaimCommand(plan, options, command).catch(handleCommandError);
+  });
+
+program
+  .command('release <plan>')
+  .description('Release a plan assignment from the current workspace')
+  .option('--reset-status', 'Reset plan status to pending')
+  .action(async (plan, options, command) => {
+    const { handleReleaseCommand } = await import('./commands/release.js');
+    await handleReleaseCommand(plan, options, command).catch(handleCommandError);
+  });
+
+const assignmentsCommand = program
+  .command('assignments')
+  .description('Inspect and manage shared plan assignments');
+
+assignmentsCommand
+  .command('list')
+  .description('Show all shared assignments for the current repository')
+  .action(async (options, command) => {
+    const { handleAssignmentsListCommand } = await import('./commands/assignments.js');
+    await handleAssignmentsListCommand(options, command).catch(handleCommandError);
+  });
+
+assignmentsCommand
+  .command('clean-stale')
+  .description('Remove stale assignments that have not been updated recently')
+  .option('--yes', 'Skip the confirmation prompt')
+  .action(async (options, command) => {
+    const { handleAssignmentsCleanStaleCommand } = await import('./commands/assignments.js');
+    await handleAssignmentsCleanStaleCommand(options, command).catch(handleCommandError);
+  });
+
+assignmentsCommand
+  .command('show-conflicts')
+  .description('List plans claimed by multiple workspaces')
+  .action(async (options, command) => {
+    const { handleAssignmentsShowConflictsCommand } = await import('./commands/assignments.js');
+    await handleAssignmentsShowConflictsCommand(options, command).catch(handleCommandError);
   });
 
 program
@@ -830,6 +882,7 @@ storageCommand
 
 async function run() {
   await loadEnv();
+  enableAutoClaim();
 
   // Set up signal handlers for cleanup
   const cleanupRegistry = CleanupRegistry.getInstance();

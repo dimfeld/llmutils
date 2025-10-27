@@ -1,5 +1,13 @@
 import { describe, test, expect } from 'bun:test';
-import { getCombinedTitle, getCombinedGoal, getCombinedTitleFromSummary } from './display_utils.js';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+import {
+  getCombinedTitle,
+  getCombinedGoal,
+  getCombinedTitleFromSummary,
+  formatWorkspacePath,
+} from './display_utils.js';
 import type { PlanSchema, PlanSummary } from './planSchema.js';
 
 describe('getCombinedTitle', () => {
@@ -63,6 +71,29 @@ describe('getCombinedTitle', () => {
 
     const result = getCombinedTitle(plan);
     expect(result).toBe('Untitled');
+  });
+});
+
+describe('formatWorkspacePath', () => {
+  const homeDir = os.homedir();
+
+  test('returns "this workspace" for current workspace', () => {
+    const workspace = path.join(homeDir, 'projects', 'app');
+    const formatted = formatWorkspacePath(workspace, { currentWorkspace: workspace });
+    expect(formatted).toBe('this workspace');
+  });
+
+  test('prefers relative path when shorter', () => {
+    const current = path.join(homeDir, 'projects', 'repo');
+    const sibling = path.join(homeDir, 'projects', 'other-feature');
+    const formatted = formatWorkspacePath(sibling, { currentWorkspace: current });
+    expect(formatted).toBe(path.relative(current, sibling));
+  });
+
+  test('abbreviates home directory', () => {
+    const sample = path.join(homeDir, 'workspace', 'feature-one');
+    const formatted = formatWorkspacePath(sample);
+    expect(formatted.startsWith('~')).toBe(true);
   });
 });
 

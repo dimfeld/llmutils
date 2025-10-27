@@ -6,6 +6,7 @@ goal: To create a new "hybrid context" mode for `rmpr` that embeds AI-readable
   diff hunk for each comment to the Language Model, offering a richer context
   for generating code changes.
 id: 29
+uuid: 44cd3e99-ac91-49db-ae53-d4cbc0f5b4f9
 status: done
 priority: high
 dependencies:
@@ -15,7 +16,7 @@ issue:
 planGeneratedAt: 2025-06-02T19:27:55.318Z
 promptsGeneratedAt: 2025-06-11T18:35:17.861Z
 createdAt: 2025-06-02T18:37:07.724Z
-updatedAt: 2025-06-11T19:17:05.005Z
+updatedAt: 2025-10-27T08:39:04.294Z
 project:
   title: Enhanced PR Comment Processing with Hybrid Context Mode and Robust Line
     Handling
@@ -70,6 +71,7 @@ project:
     robust and accurate, leading to better-automated code modifications.
 tasks:
   - title: Define the Hybrid Mode's Prompt Structure and Output Format
+    done: false
     description: "This task involves designing the precise format of the LLM prompt
       for the new hybrid mode. The prompt needs to clearly present both the full
       file content with embedded AI comments and the associated diff hunks. A
@@ -109,6 +111,7 @@ tasks:
           comments and markers after addressing them.
         done: true
   - title: Create `hybrid_context.ts` for New Mode Logic
+    done: false
     description: A new file, `src/rmpr/modes/hybrid_context.ts`, will be created to
       house the logic for the hybrid mode. The core function,
       `insertAiCommentsAndPrepareDiffContexts`, will be implemented here. This
@@ -165,6 +168,7 @@ tasks:
           be an object matching the `HybridInsertionResult` interface.
         done: true
   - title: Implement Prompt Generation for Hybrid Mode
+    done: false
     description: Within `hybrid_context.ts`, a function named
       `createHybridContextPrompt` will be developed. This function will take the
       aggregated results from `insertAiCommentsAndPrepareDiffContexts` (across
@@ -205,6 +209,7 @@ tasks:
           it.
         done: true
   - title: Integrate the New Hybrid Mode into `main.ts`
+    done: false
     description: The new "hybrid-context" mode will be integrated into the `rmpr`
       tool's main workflow in `src/rmpr/main.ts`. This involves adding it as an
       option to the `--mode` command-line argument. The `handleRmprCommand`
@@ -254,6 +259,7 @@ tasks:
           clean state.
         done: true
   - title: Write Comprehensive Tests for the Hybrid Mode
+    done: false
     description: Thorough tests will be written for the new hybrid mode. Unit tests
       will cover `insertAiCommentsAndPrepareDiffContexts` to ensure correct AI
       comment insertion, ID generation, and `diffHunk` association. Tests for

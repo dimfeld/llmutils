@@ -4,6 +4,7 @@ title: config to customize PR created by review command - Implementation and
   Integration
 goal: Implement PR creation functionality that uses the new configuration options
 id: 112
+uuid: af4a9d46-1e69-459c-b9b7-2b3057cf2f0b
 status: done
 priority: high
 dependencies:
@@ -12,7 +13,7 @@ parent: 110
 planGeneratedAt: 2025-08-16T00:25:44.550Z
 promptsGeneratedAt: 2025-08-16T06:51:01.707Z
 createdAt: 2025-08-16T00:21:10.187Z
-updatedAt: 2025-08-16T07:08:26.510Z
+updatedAt: 2025-10-27T08:39:04.298Z
 project:
   title: Add configuration options for customizing auto-created PRs in rmplan
   goal: Enable users to configure default settings for PRs created by rmplan

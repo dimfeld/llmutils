@@ -5,6 +5,7 @@ goal: The overall goal is to provide an option to use a two-step Claude Code
   invocation for the `generate` and `prepare` commands, leveraging its planning
   capabilities to improve the quality of the generated output.
 id: 72
+uuid: 5a0d6a82-e30d-43c0-a1f8-6237818f7bf8
 status: done
 priority: medium
 container: true
@@ -13,7 +14,7 @@ dependencies:
   - 74
   - 75
 createdAt: 2025-07-23T07:52:38.535Z
-updatedAt: 2025-07-23T23:30:14.356Z
+updatedAt: 2025-10-27T08:39:04.225Z
 tasks: []
 changedFiles:
   - src/rmplan/commands/generate.test.ts

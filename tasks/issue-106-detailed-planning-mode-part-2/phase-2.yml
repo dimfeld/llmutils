@@ -1,21 +1,18 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Implement `split` Command for Plan Decomposition
 goal: To provide users with a `split` command that can take a large, detailed
   plan file and, using an LLM, break it down into multiple, smaller,
   phase-specific plan files with inferred inter-dependencies.
-details: This phase introduces the `split` command. This command is designed for
-  situations where a single plan file has become too large or complex and needs
-  to be divided into more manageable phases. The core of this command will
-  involve prompting an LLM to reorganize the existing tasks into a multi-phase
-  structure and then saving these phases as individual plan files.
 id: 25
+uuid: d5dd8c64-b455-420b-969c-aa7060ab5af8
 status: done
 dependencies:
-  - "24"
+  - 24
 planGeneratedAt: 2025-05-31T20:32:33.555Z
 promptsGeneratedAt: 2025-06-01T02:43:49.796Z
 createdAt: 2025-05-31T20:32:33.555Z
-updatedAt: 2025-06-01T03:02:51.870Z
+updatedAt: 2025-10-27T08:39:04.326Z
 project:
   title: Enhance rmplan with `add` and `split` commands for improved plan creation
     and organization.
@@ -39,6 +36,7 @@ project:
     plans from scratch and reorganizing existing ones.
 tasks:
   - title: Define `split` command in `rmplan.ts` and implement input plan loading.
+    done: false
     description: >
       This task involves adding the new `split` command to the
       `src/rmplan/rmplan.ts` CLI.
@@ -130,6 +128,7 @@ tasks:
           for each case.
         done: true
   - title: Design LLM prompt for reorganizing tasks into a multi-phase structure.
+    done: false
     description: >
       This task requires creating a new, specialized prompt, likely in
       `src/rmplan/prompt.ts`. The prompt will instruct an LLM to process the
@@ -229,6 +228,7 @@ tasks:
           surrounding text, explanations, or markdown fences.
         done: true
   - title: Implement LLM interaction and parsing for the `split` command.
+    done: false
     description: >
       This task involves integrating the LLM call within the `split` command's
       logic. It will use the prompt designed in the previous task, sending the
@@ -324,6 +324,7 @@ tasks:
         done: true
   - title: Implement creation of new phase-specific plan files using
       `saveMultiPhaseYaml`.
+    done: false
     description: >
       This task focuses on utilizing the existing `saveMultiPhaseYaml` function
       found in `src/rmplan/process_markdown.ts`. The structured multi-phase plan
@@ -388,6 +389,7 @@ tasks:
           it's already robust.
         done: true
   - title: Add tests for the `split` command.
+    done: false
     description: >
       This task involves developing a robust set of tests for the `split`
       command. Test cases should cover:
@@ -480,3 +482,6 @@ changedFiles:
   - src/rmplan/rmplan.ts
 rmfilter:
   - src/rmplan
+---
+
+This phase introduces the `split` command. This command is designed for situations where a single plan file has become too large or complex and needs to be divided into more manageable phases. The core of this command will involve prompting an LLM to reorganize the existing tasks into a multi-phase structure and then saving these phases as individual plan files.

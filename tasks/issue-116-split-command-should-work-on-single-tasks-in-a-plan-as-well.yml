@@ -3,12 +3,13 @@
 title: Split command should work on single tasks in a plan as well
 goal: "Implement: Split command should work on single tasks in a plan as well"
 id: 43
+uuid: d529da78-46be-4c26-968e-e8fd4aee3672
 status: deferred
 priority: medium
 issue:
   - https://github.com/dimfeld/llmutils/issues/116
 createdAt: 2025-06-06T09:36:03.707Z
-updatedAt: 2025-10-26T23:18:24.873Z
+updatedAt: 2025-10-27T08:39:04.252Z
 tasks: []
 ---
 

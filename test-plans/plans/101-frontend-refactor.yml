@@ -1,7 +1,9 @@
 ---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Frontend UI Refactoring
 goal: Modernize the frontend with new component library
 id: 101
+uuid: 79694362-e377-4d8c-b3fa-f6b110fdaec1
 status: pending
 priority: high
 parent: 100
@@ -9,10 +11,10 @@ issue:
   - https://github.com/example/repo/issues/42
 tasks:
   - title: Migrate to new component library
+    done: false
     description: Replace old UI components with modern alternatives
     files:
       - src/components/**/*.tsx
-    done: false
     steps:
       - prompt: Audit existing components and create migration map
         done: false
@@ -21,14 +23,15 @@ tasks:
       - prompt: Migrate complex components (Forms, Tables, Modals)
         done: false
   - title: Update styling system
+    done: false
     description: Convert from CSS modules to styled-components
     files:
       - src/styles/**/*
-    done: false
     steps:
       - prompt: Set up styled-components and theme provider
         done: false
       - prompt: Convert component styles to styled-components
         done: false
+updatedAt: 2025-10-27T08:39:04.236Z
 ---
 This plan is part of the Q1 2024 goals (parent: 100) and focuses on frontend improvements.

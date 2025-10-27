@@ -3,6 +3,7 @@
 title: Add discoveredFrom support to rmplan set command
 goal: ""
 id: 133
+uuid: cf076ee0-2c50-48ce-a549-c267c7fe57fb
 status: pending
 priority: low
 temp: false
@@ -10,7 +11,7 @@ dependencies:
   - 129
 parent: 128
 createdAt: 2025-10-26T22:41:16.609Z
-updatedAt: 2025-10-26T22:41:16.612Z
+updatedAt: 2025-10-27T08:39:04.279Z
 tasks: []
 ---
 

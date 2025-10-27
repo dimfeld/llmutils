@@ -1,37 +1,14 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Write a comprehensive test suite for the state machine functionality in
   `dimfeld/llmutils`, ensuring robustness, correctness, and observability of the
   `StateMachine`, `Node`, `FlowNode`, and `SharedStore` components.
-details: >
-  The project aims to create a suite of unit and integration tests using a
-  test-driven development (TDD) approach. The tests will cover all major aspects
-  of the state machine:
-
-  - Core logic of `SharedStore` (context, scratchpad, events, history,
-  persistence, rollback, retry).
-
-  - `Node` lifecycle (`prep`, `exec`, `post`), error handling, and interaction
-  with `SharedStore`.
-
-  - `FlowNode` behavior, including sub-machine management and event/action
-  translation.
-
-  - `StateMachine` operations: initialization, event processing, state
-  transitions, error handling, retries, persistence integration, and hooks.
-
-  - Telemetry generation: ensuring correct spans, attributes, and events are
-  emitted for observability.
-
-
-  We will use Jest (or a similar testing framework) and create mocks for
-  external dependencies like the `PersistenceAdapter`. For telemetry, we will
-  leverage the `@opentelemetry/sdk-trace-base` with an `InMemorySpanExporter` to
-  capture and verify emitted telemetry data. The tests will be broken down into
-  small, incremental tasks, building upon each other to achieve full coverage.
 id: 13
+uuid: 2d0648a7-92fd-452c-8295-fc0f4b273288
 status: done
 tasks:
   - title: 1. Setup Test Environment and `SharedStore` Context/Scratchpad Tests
+    done: false
     description: >
       This task focuses on setting up the testing environment (assuming Jest)
       and writing the first set of unit tests for the `SharedStore` class. These
@@ -131,6 +108,7 @@ tasks:
               *   Test that it works correctly if the scratchpad is initially undefined (it should likely operate on an empty object or handle this case gracefully, though current implementation might expect an object). The current implementation `this.scratchpad = updater(this.getScratchpad() as TScratchpad);` implies `getScratchpad` should return something the updater can work with, or the updater must be robust. Test with an updater that expects an object.
         done: true
   - title: 2. `SharedStore` Event Queue and History Tests
+    done: false
     description: >
       This task continues testing `SharedStore` by focusing on its event queue
       management (`enqueueEvents`, `processEvents`, `getPendingEvents`,
@@ -205,6 +183,7 @@ tasks:
               *   Parse the JSON and verify its structure and content against a known history.
         done: true
   - title: 3. `SharedStore` Persistence, Rollback, and Retry Tests
+    done: false
     description: >
       This task tests `SharedStore`'s persistence capabilities using the mock
       adapter, and its `withRollback` and `retry` mechanisms. This will also
@@ -312,6 +291,7 @@ tasks:
           `afterAll` if you use `jest.useFakeTimers()`.
         done: true
   - title: 4. `telemetry.ts` Utility Function Tests and Basic Telemetry Setup
+    done: false
     description: >
       This task involves writing unit tests for utility functions in
       `src/state_machine/telemetry.ts` like `flattenAttributes`,
@@ -415,6 +395,7 @@ tasks:
           in later tasks.
         done: true
   - title: 5. Basic `Node` Tests (Lifecycle and Error Handling)
+    done: false
     description: >
       This task focuses on testing the abstract `Node` class. Since `Node` is
       abstract, we'll need to create a concrete implementation for testing.
@@ -555,6 +536,7 @@ tasks:
               *   Check telemetry for retry events on the relevant phase span (e.g., `node.prep.STATE_A`).
         done: true
   - title: 6. `StateMachine` Initialization and Basic Transitions
+    done: false
     description: >
       This task begins testing the `StateMachine` class. It covers
       initialization, loading persisted state (using a mock adapter), and
@@ -665,6 +647,7 @@ tasks:
                   *   Check for `event_processed` event for `incomingEvent`.
         done: true
   - title: 7. `StateMachine` Event Handling, Multiple Transitions, and Terminal States
+    done: false
     description: >
       This task expands `StateMachine` tests to cover scenarios with multiple
       events, sequences of transitions, and handling of `waiting` and `terminal`
@@ -704,6 +687,7 @@ tasks:
               *   If it transitions, the next node's `prep` should be able to process this `actionEvent`.
         done: true
   - title: 8. `StateMachine` Error Handling and Retries
+    done: false
     description: >
       This task focuses on testing the `StateMachine`'s error handling
       capabilities. This includes errors originating from nodes, node-specific
@@ -785,6 +769,7 @@ tasks:
               *   (This tests that the store's retry mechanism, configured by the SM, is working within the node's execution path).
         done: true
   - title: 9. `StateMachine` Persistence Integration
+    done: false
     description: >
       This task tests the integration of persistence with the `StateMachine`. It
       involves verifying that the state is correctly saved to (and loaded from)
@@ -825,6 +810,7 @@ tasks:
           saves events. Test what's explicitly implemented.)
         done: true
   - title: 10. `StateMachine` Hooks
+    done: false
     description: >
       This task is dedicated to testing the various hooks provided by
       `StateMachine`: `onTransition`, `onActions` (if its TODO is resolved or
@@ -898,6 +884,7 @@ tasks:
           *could be* if features are fully implemented.
         done: true
   - title: 11. `FlowNode` Tests and Integration
+    done: false
     description: >
       This task tests the `FlowNode` class, which manages a nested state
       machine. Tests will cover event/action translation, sub-machine execution,
@@ -1011,6 +998,7 @@ tasks:
               *   Verify `parentStateMachine.store.getScratchpad()` for the `flowStepNode`'s state contains `subMachineState` after `testFlowNode.exec` completes but before `testFlowNode.post` (if `post` clears it or if `run` clears it. `SharedStore.clearScratchpad` is called by `StateMachine.handleStateResult` on transition). The sub-machine state is stored in the scratchpad by `FlowNode.exec`.
         done: true
   - title: 12. Advanced Telemetry Verification
+    done: false
     description: >
       Using the OpenTelemetry SDK setup with `InMemorySpanExporter` (from Task
       4), this task focuses on performing more detailed verification of emitted
@@ -1067,6 +1055,7 @@ tasks:
           This is a general instruction. Apply it by modifying existing test files and adding these more detailed assertions where telemetry is relevant.
         done: true
   - title: 13. Documentation Update
+    done: false
     description: >
       Update `src/state_machine/README.md` to include information about the
       newly created test suite, how to run the tests, and any other relevant
@@ -1099,3 +1088,14 @@ tasks:
 
           6.  Ensure the overall README remains coherent and well-formatted.
         done: true
+updatedAt: 2025-10-27T08:39:04.211Z
+---
+
+The project aims to create a suite of unit and integration tests using a test-driven development (TDD) approach. The tests will cover all major aspects of the state machine:
+- Core logic of `SharedStore` (context, scratchpad, events, history, persistence, rollback, retry).
+- `Node` lifecycle (`prep`, `exec`, `post`), error handling, and interaction with `SharedStore`.
+- `FlowNode` behavior, including sub-machine management and event/action translation.
+- `StateMachine` operations: initialization, event processing, state transitions, error handling, retries, persistence integration, and hooks.
+- Telemetry generation: ensuring correct spans, attributes, and events are emitted for observability.
+
+We will use Jest (or a similar testing framework) and create mocks for external dependencies like the `PersistenceAdapter`. For telemetry, we will leverage the `@opentelemetry/sdk-trace-base` with an `InMemorySpanExporter` to capture and verify emitted telemetry data. The tests will be broken down into small, incremental tasks, building upon each other to achieve full coverage.

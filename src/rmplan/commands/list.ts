@@ -4,15 +4,34 @@
 import chalk from 'chalk';
 import * as path from 'path';
 import { table } from 'table';
-import { log } from '../../logging.js';
+
+import { log, warn } from '../../logging.js';
+import { AssignmentsFileParseError, readAssignments } from '../assignments/assignments_io.js';
+import type { AssignmentEntry } from '../assignments/assignments_schema.js';
+import { getRepositoryIdentity, getUserIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
-import { getCombinedTitleFromSummary } from '../display_utils.js';
+import { formatWorkspacePath, getCombinedTitleFromSummary } from '../display_utils.js';
+import type { PlanSchema } from '../planSchema.js';
 import { isPlanReady, isTaskDone, readAllPlans } from '../plans.js';
+
+type PlanWithFilename = PlanSchema & { filename: string };
+
+type ListPlan = PlanWithFilename & {
+  assignmentEntry?: AssignmentEntry;
+  assignedWorkspaces: string[];
+  assignedUsers: string[];
+  isAssigned: boolean;
+  isAssignedHere: boolean;
+};
 
 export async function handleListCommand(options: any, command: any, searchTerms?: string[]) {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
+
+  if (options.assigned && options.unassigned) {
+    throw new Error('Cannot use --assigned and --unassigned together.');
+  }
 
   // Determine directory to search
   let searchDir = options.dir || (await resolveTasksDir(config));
@@ -25,17 +44,90 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     return;
   }
 
-  // Filter plans based on status
-  let planArray = Array.from(plans.values());
+  const repository = await getRepositoryIdentity({ cwd: searchDir });
 
-  // Filter by assignedTo if requested
-  if (options.user || options.mine) {
-    const filterUser = options.mine ? process.env.USER || process.env.USERNAME : options.user;
-    if (filterUser) {
-      planArray = planArray.filter((plan) => plan.assignedTo === filterUser);
-    } else if (options.mine) {
-      log(chalk.yellow('Warning: Could not determine current user from environment'));
+  let assignmentsLookup: Record<string, AssignmentEntry> = {};
+  try {
+    const assignmentsFile = await readAssignments({
+      repositoryId: repository.repositoryId,
+      repositoryRemoteUrl: repository.remoteUrl,
+    });
+    assignmentsLookup = assignmentsFile.assignments;
+  } catch (error) {
+    if (error instanceof AssignmentsFileParseError) {
+      warn(`${chalk.yellow('⚠')} ${error.message}`);
+    } else {
+      throw error;
     }
+  }
+
+  const enrichedPlans = new Map<number, ListPlan>();
+  for (const [planId, plan] of plans.entries()) {
+    const assignmentEntry = plan.uuid ? assignmentsLookup[plan.uuid] : undefined;
+    const assignedWorkspaces = Array.from(
+      new Set(
+        (assignmentEntry?.workspacePaths ?? []).filter((workspace): workspace is string =>
+          Boolean(workspace && workspace.trim())
+        )
+      )
+    );
+
+    const assignedUsers = Array.from(
+      new Set(
+        (assignmentEntry?.users ?? []).filter((user): user is string =>
+          Boolean(user && user.trim())
+        )
+      )
+    );
+
+    if (assignedUsers.length === 0 && plan.assignedTo && plan.assignedTo.trim().length > 0) {
+      assignedUsers.push(plan.assignedTo.trim());
+    }
+
+    const effectiveStatus = assignmentEntry?.status ?? plan.status ?? 'pending';
+    const fallbackAssigned = assignedWorkspaces.length === 0 && assignedUsers.length > 0;
+
+    const listPlan: ListPlan = {
+      ...plan,
+      status: effectiveStatus,
+      assignmentEntry,
+      assignedWorkspaces,
+      assignedUsers,
+      isAssigned: assignedWorkspaces.length > 0 || fallbackAssigned,
+      isAssignedHere: assignedWorkspaces.includes(repository.gitRoot),
+    };
+
+    enrichedPlans.set(planId, listPlan);
+  }
+
+  // Filter plans based on status
+  let planArray = Array.from(enrichedPlans.values());
+
+  let userFilter: string | undefined;
+  if (options.mine) {
+    const identity = getUserIdentity();
+    if (identity) {
+      userFilter = identity;
+    } else {
+      warn(`${chalk.yellow('⚠')} Could not determine current user for --mine filter.`);
+    }
+  } else if (typeof options.user === 'string' && options.user.trim().length > 0) {
+    userFilter = options.user.trim();
+  }
+
+  if (userFilter) {
+    const normalizedFilter = userFilter.toLowerCase();
+    planArray = planArray.filter((plan) => {
+      if (plan.assignedUsers.some((user) => user.toLowerCase() === normalizedFilter)) {
+        return true;
+      }
+
+      if (plan.assignedTo && plan.assignedTo.toLowerCase() === normalizedFilter) {
+        return true;
+      }
+
+      return false;
+    });
   }
 
   // Filter by search terms if provided
@@ -44,6 +136,12 @@ export async function handleListCommand(options: any, command: any, searchTerms?
       const title = getCombinedTitleFromSummary(plan).toLowerCase();
       return searchTerms.some((term: string) => title.includes(term.toLowerCase()));
     });
+  }
+
+  if (options.assigned) {
+    planArray = planArray.filter((plan) => plan.isAssigned);
+  } else if (options.unassigned) {
+    planArray = planArray.filter((plan) => !plan.isAssigned);
   }
 
   if (!options.all) {
@@ -64,7 +162,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
       // Handle "ready" status filter
       if (statusesToShow.has('ready')) {
-        if (isPlanReady(plan, plans)) {
+        if (isPlanReady(plan, enrichedPlans)) {
           return true;
         }
       }
@@ -75,7 +173,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
           status === 'pending' &&
           plan.dependencies &&
           plan.dependencies.length > 0 &&
-          !isPlanReady(plan, plans);
+          !isPlanReady(plan, enrichedPlans);
 
         if (isBlocked) {
           return true;
@@ -171,6 +269,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     chalk.bold('ID'),
     chalk.bold('Title'),
     chalk.bold('Status'),
+    chalk.bold('Workspace'),
     chalk.bold('Priority'),
     chalk.bold('Tasks'),
     chalk.bold('Steps'),
@@ -179,7 +278,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
   const showNotesColumn = planArray.some((p) => (p.progressNotes?.length || 0) > 0);
   if (showNotesColumn) {
-    headers.splice(6, 0, chalk.bold('Notes'));
+    headers.splice(7, 0, chalk.bold('Notes'));
   }
 
   if (options.files) {
@@ -193,12 +292,16 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     // Display "ready" for pending plans whose dependencies are all done
     // Display "blocked" for pending plans that have incomplete dependencies
     const actualStatus = plan.status || 'pending';
-    const isReady = isPlanReady(plan, plans);
+    const isReady = isPlanReady(plan, enrichedPlans);
 
     // Check if plan is blocked (has dependencies that are not all done)
     const isBlocked =
       actualStatus === 'pending' &&
-      plan.dependencies?.some((dep) => plans.get(+dep)?.status !== 'done');
+      plan.dependencies?.some((dep) => {
+        const numericDep = typeof dep === 'number' ? dep : Number(dep);
+        const depPlan = enrichedPlans.get(numericDep);
+        return depPlan?.status !== 'done';
+      });
 
     const statusDisplay = isReady ? 'ready' : isBlocked ? 'blocked' : actualStatus;
 
@@ -240,12 +343,12 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     if (plan.dependencies && plan.dependencies.length > 0) {
       dependenciesDisplay = plan.dependencies
         .map((depId) => {
-          // Try to get the dependency plan
-          let depPlan = plans.get(depId);
+          let depPlan: ListPlan | undefined;
 
-          // If not found and the dependency ID is a numeric string, try as a number
-          if (!depPlan && typeof depId === 'string' && /^\d+$/.test(depId)) {
-            depPlan = plans.get(parseInt(depId, 10));
+          if (typeof depId === 'number') {
+            depPlan = enrichedPlans.get(depId);
+          } else if (typeof depId === 'string' && /^\d+$/.test(depId)) {
+            depPlan = enrichedPlans.get(parseInt(depId, 10));
           }
 
           if (!depPlan) {
@@ -266,10 +369,32 @@ export async function handleListCommand(options: any, command: any, searchTerms?
         .join(', ');
     }
 
+    const workspaceDisplay = (() => {
+      if (plan.assignedWorkspaces.length > 0) {
+        const formatted = plan.assignedWorkspaces.map((workspace) => {
+          const display = formatWorkspacePath(workspace, { currentWorkspace: repository.gitRoot });
+          return workspace === repository.gitRoot ? chalk.green(display) : display;
+        });
+        const [first, ...rest] = formatted;
+        return rest.length > 0 ? `${first} (+${rest.length})` : first;
+      }
+
+      if (plan.assignedUsers.length > 0) {
+        return plan.assignedUsers.join(', ');
+      }
+
+      if (plan.assignedTo) {
+        return plan.assignedTo;
+      }
+
+      return chalk.gray('unassigned');
+    })();
+
     const row = [
       chalk.cyan(plan.id || 'no-id'),
       getCombinedTitleFromSummary(plan) + (plan.temp ? chalk.gray(' (temp)') : ''),
       statusColor(statusDisplay),
+      workspaceDisplay,
       priorityDisplay ? priorityColor(priorityDisplay) : '-',
       (() => {
         const taskCount = plan.tasks?.length || 0;
@@ -293,7 +418,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
     if (showNotesColumn) {
       const n = plan.progressNotes?.length || 0;
-      row.splice(6, 0, n > 0 ? String(n) : '-');
+      row.splice(7, 0, n > 0 ? String(n) : '-');
     }
 
     if (options.files) {
@@ -313,26 +438,34 @@ export async function handleListCommand(options: any, command: any, searchTerms?
   // Configure table options with dynamic column widths
   const terminalWidth = process.stdout.columns || 120; // fallback to 120 if not available
 
-  // Fixed column widths: ID(5), Status(12), Priority(10), Tasks(7), Steps(7), [Notes(7)], Depends(15)
-  const fixedColumnsWidth = 5 + 12 + 10 + 7 + 7 + (showNotesColumn ? 7 : 0) + 15;
-  const fileColumnWidth = options.files ? 20 : 0;
-  const columnCount = options.files ? (showNotesColumn ? 9 : 8) : showNotesColumn ? 8 : 7;
+  const workspaceColumnWidth = 22;
+  const dependsWidth = 15;
+  const fileWidth = 20;
+
+  const fixedColumnsWidth =
+    5 + // ID
+    12 + // Status
+    workspaceColumnWidth +
+    10 + // Priority
+    7 + // Tasks
+    7 + // Steps
+    (showNotesColumn ? 7 : 0) +
+    dependsWidth;
+
+  const fileColumnWidth = options.files ? fileWidth : 0;
+  const columnCount = options.files ? (showNotesColumn ? 10 : 9) : showNotesColumn ? 9 : 8;
   const borderPadding = columnCount * 3 + 1; // 3 chars per column separator + 1 for end
 
-  // Calculate available width for the title column
   const usedWidth = fixedColumnsWidth + fileColumnWidth + borderPadding;
   const availableWidth = terminalWidth - usedWidth;
 
-  // Use the smaller of calculated width or max title length (with some padding)
-  const calculatedTitleWidth = Math.max(20, availableWidth);
-  const titleWidth = Math.min(calculatedTitleWidth, maxTitleLength + 2); // +2 for padding
-  const dependsWidth = 15;
-  const fileWidth = 20;
+  const titleWidth = Math.min(Math.max(20, availableWidth), maxTitleLength + 2);
 
   const tableConfig: any = {
     columns: {
       1: { width: titleWidth, wrapWord: true },
-      [showNotesColumn ? 7 : 6]: { width: dependsWidth, wrapWord: true },
+      3: { width: workspaceColumnWidth, wrapWord: true },
+      [showNotesColumn ? 8 : 7]: { width: dependsWidth, wrapWord: true },
     },
     border: {
       topBody: '─',
@@ -355,7 +488,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
   // Add file column configuration if showing files
   if (options.files) {
-    tableConfig.columns[showNotesColumn ? 8 : 7] = { width: fileWidth, wrapWord: true };
+    tableConfig.columns[showNotesColumn ? 9 : 8] = { width: fileWidth, wrapWord: true };
   }
 
   const output = table(tableData, tableConfig);
@@ -367,7 +500,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
       `Showing ${planArray.length} of ${originalFilteredCount} plan(s) (limited to ${options.number})`
     );
   } else {
-    log(`Showing ${planArray.length} of ${plans.size} plan(s)`);
+    log(`Showing ${planArray.length} of ${enrichedPlans.size} plan(s)`);
   }
 
   // Display duplicate IDs if any exist

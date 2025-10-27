@@ -1,30 +1,25 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Add rmplan set command to quickly update plans
 goal: >
   We want to be able to quickly update things like the priority or status or
   dependencies of a plan from the command line without needing to open it in the
   editor. 
-details: >
-  The `rmplan set` command should be a way to quickly update things like the
-  priority or status or dependencies of a plan from the command line without
-  needing to open it in the editor.
-
-  Arguments supported should be:
-
-  - `--priority [low|medium|high|urgent]`
-
-  - `--status [pending|in progress|done]`
-
-  - `--depends-on planId`
-
-  - `--no-depends-on planId`
-
-  - `--rmfilter [rmfilter1,rmfilter2,rmfilter3]`
-id: "53"
+id: 53
+uuid: 835f68aa-3ffa-4834-9fb1-961252e7e2be
 status: done
 priority: medium
 createdAt: 2025-06-07T03:41:12.059Z
-updatedAt: 2025-06-07T04:10:16.978Z
+updatedAt: 2025-10-27T08:39:04.285Z
 tasks: []
 rmfilter:
   - src/rmplan
+---
+
+The `rmplan set` command should be a way to quickly update things like the priority or status or dependencies of a plan from the command line without needing to open it in the editor.
+Arguments supported should be:
+- `--priority [low|medium|high|urgent]`
+- `--status [pending|in progress|done]`
+- `--depends-on planId`
+- `--no-depends-on planId`
+- `--rmfilter [rmfilter1,rmfilter2,rmfilter3]`

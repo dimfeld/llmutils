@@ -120,9 +120,15 @@ describe('rmplan renumber', () => {
     await handleRenumber({ dryRun: true }, createMockCommand());
 
     // Verify the file still has original content
-    const planAfter = yaml.parse(await Bun.file(path.join(tasksDir, '123.yml')).text());
+    const planAfter = await readPlanFile(path.join(tasksDir, '123.yml'));
     expect(planAfter.id).toBe(123);
-    expect(planAfter).toEqual(originalPlan);
+
+    const stripMetadata = <T extends { updatedAt?: string; uuid?: string }>(input: T) => {
+      const { updatedAt: _updatedAt, uuid: _uuid, ...rest } = input;
+      return rest;
+    };
+
+    expect(stripMetadata(planAfter)).toEqual(stripMetadata(originalPlan as PlanSchema));
   });
 
   test('handles empty tasks directory', async () => {

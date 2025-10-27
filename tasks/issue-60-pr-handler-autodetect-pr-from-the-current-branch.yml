@@ -1,33 +1,15 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Implement a feature for `answer-pr` to automatically detect the relevant
   Pull Request (PR) from the current Git or Jujutsu branch if no PR identifier
   is provided. Additionally, warn the user if an explicitly provided PR number
   doesn't match the current branch.
-details: >
-  The `answer-pr` command currently requires a PR identifier (URL or number).
-  This project will enhance it to:
-
-  1.  Determine the current local branch name, supporting both Git and Jujutsu
-  (jj) SCMs.
-
-  2.  Fetch a list of open PRs from GitHub for the current repository.
-
-  3.  If `answer-pr` is invoked without a PR identifier:
-      *   Attempt to find an open PR whose head branch name matches the current local SCM branch name.
-      *   If a unique match is found, use that PR.
-      *   If multiple matches are found, prompt the user to select one.
-      *   If no match is found, prompt the user to select from all open PRs or enter an identifier manually.
-  4.  If `answer-pr` is invoked *with* a PR identifier:
-      *   After fetching the PR details, compare the PR's head branch name with the current local SCM branch name.
-      *   If they do not match, warn the user and ask for confirmation before proceeding.
-
-  This will improve the usability of `answer-pr` by reducing the need to
-  manually look up PR numbers when working on a feature branch corresponding to
-  a PR.
 id: 15
+uuid: d50dd1c0-fa99-45d1-90f9-7bc955e9929d
 status: done
 tasks:
   - title: 1. Implement SCM Current Branch Detection Utilities
+    done: false
     description: Create utility functions to get the current branch name from Git
       and Jujutsu. Then, create a combined function that tries both.
     files:
@@ -149,6 +131,7 @@ tasks:
           returns `null`.
         done: true
   - title: 2. Implement Fetching Open Pull Requests
+    done: false
     description: Add a function to fetch all open pull requests for a given repository.
     files:
       - src/common/github/pull_requests.ts
@@ -193,6 +176,7 @@ tasks:
               *   Test Case 4: `GITHUB_TOKEN` is not set. Verify an error is thrown.
         done: true
   - title: 3. Modify `answer-pr` Command for Optional PR Identifier
+    done: false
     description: Update the `commander` definition for `answer-pr` to make the
       `prIdentifier` argument optional.
     files:
@@ -214,6 +198,7 @@ tasks:
           `src/rmpr/main.ts`.
         done: true
   - title: 4. Implement PR Autodetection and Selection Logic
+    done: false
     description: >
       Modify `handleRmprCommand` in `src/rmpr/main.ts` to implement the PR
       autodetection and selection flow when no PR identifier is explicitly
@@ -267,6 +252,7 @@ tasks:
           *   Test 6: `prIdentifierArg` is undefined, no PRs match, user cancels `search` prompt -> error occurs.
         done: true
   - title: 5. Implement Branch Mismatch Warning
+    done: false
     description: If a PR identifier was explicitly provided, warn the user if the
       current SCM branch does not match the PR's head branch.
     files:
@@ -319,3 +305,19 @@ tasks:
           *   Test 5: Explicit PR ID, `getCurrentBranchName` returns `null` ->
           No warning, no prompt.
         done: true
+updatedAt: 2025-10-27T08:39:04.288Z
+---
+
+The `answer-pr` command currently requires a PR identifier (URL or number). This project will enhance it to:
+1.  Determine the current local branch name, supporting both Git and Jujutsu (jj) SCMs.
+2.  Fetch a list of open PRs from GitHub for the current repository.
+3.  If `answer-pr` is invoked without a PR identifier:
+    *   Attempt to find an open PR whose head branch name matches the current local SCM branch name.
+    *   If a unique match is found, use that PR.
+    *   If multiple matches are found, prompt the user to select one.
+    *   If no match is found, prompt the user to select from all open PRs or enter an identifier manually.
+4.  If `answer-pr` is invoked *with* a PR identifier:
+    *   After fetching the PR details, compare the PR's head branch name with the current local SCM branch name.
+    *   If they do not match, warn the user and ask for confirmation before proceeding.
+
+This will improve the usability of `answer-pr` by reducing the need to manually look up PR numbers when working on a feature branch corresponding to a PR.

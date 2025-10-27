@@ -4,6 +4,7 @@ title: PR review command - Parent-Child Plan Integration
 goal: Enhance the review command to intelligently handle plan hierarchies and
   multiple plan reviews
 id: 101
+uuid: d013e254-0f7c-47c4-b5e2-ed5fc613be1e
 status: done
 priority: medium
 dependencies:
@@ -12,7 +13,7 @@ parent: 99
 planGeneratedAt: 2025-08-13T20:34:32.142Z
 promptsGeneratedAt: 2025-08-13T21:14:17.043Z
 createdAt: 2025-08-13T20:28:04.715Z
-updatedAt: 2025-08-13T21:36:25.653Z
+updatedAt: 2025-10-27T08:39:04.300Z
 project:
   title: Add PR review command to rmplan for comprehensive code review against
     plan requirements
@@ -93,6 +94,7 @@ tasks:
           a child plan implementing part of the parent.
         done: true
   - title: Add completed children aggregation
+    done: false
     description: >
       Implement functionality to find all completed child plans when reviewing a
       parent, aggregating their requirements and changes to ensure the parent's
@@ -140,6 +142,7 @@ tasks:
           parent have already been implemented.
         done: true
   - title: Support multiple plan arguments
+    done: false
     description: >
       Extend the command to accept multiple plan files/IDs as arguments,
       gathering context for all specified plans and their relationships while
@@ -246,6 +249,7 @@ tasks:
           filtering with getCompletedChildren.
         done: true
   - title: Optimize prompt structure for complex reviews
+    done: false
     description: >
       Design and implement an optimized prompt structure that clearly presents
       multi-plan reviews with hierarchical relationships without overwhelming

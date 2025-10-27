@@ -1,52 +1,16 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Implement the `rmfix` utility, a command-line tool that runs a specified
   command, captures its output, and if the command fails, uses `rmfilter` to
   assemble context and assist in fixing the issue. The utility will support
   various features like npm script detection, structured test output parsing,
   automated fixing, and interactive failure selection.
-details: >-
-  The `rmfix` utility aims to streamline the debugging process by automating
-  context gathering for failed commands, especially test runs. It integrates
-  with `rmfilter` to leverage its context-building capabilities.
-
-
-  Key features include:
-
-  - Running arbitrary commands or npm scripts.
-
-  - Capturing and analyzing command output for failures.
-
-  - Parsing structured test output (TAP, Jest/Vitest JSON).
-
-  - Falling back to regex or LLM-based parsing for unstructured output.
-
-  - Detecting test runners (Jest, Vitest) and injecting appropriate reporters
-  for better parsing.
-
-  - Integrating with `rmfilter` by:
-      - Generating instructions based on command output.
-      - Extracting filenames from output to include in `rmfilter` context with `--with-imports`.
-      - Passing through additional arguments to `rmfilter`.
-  - Interactive selection of failures to fix.
-
-  - Command-line flags for controlling fix behavior (first failure, specific
-  file, all).
-
-  - An `--auto-fix` mode to submit context to an LLM and attempt to apply
-  suggested edits.
-
-  - Referencing YAML plan files for additional context.
-
-  - Exiting with the underlying command's exit code.
-
-
-  The implementation will be primarily in Node.js using Bun as the runtime. It
-  will involve creating a new set of files under `src/rmfix/` and leveraging
-  existing utilities from `src/common/` and `src/rmfilter/`.
 id: 21
+uuid: cffb5343-93b6-4faa-a4e2-1e4d84661eb1
 status: done
 tasks:
   - title: 1. Basic CLI Structure and Command Execution
+    done: false
     description: Set up the basic command-line interface for `rmfix` using
       `commander`. Implement the initial core logic to execute a given command,
       capture its output (stdout, stderr, exit code), stream the output to the
@@ -442,6 +406,7 @@ tasks:
           for now.
         done: true
   - title: 2. NPM Script Detection
+    done: false
     description: Enhance the command execution logic to detect if the provided
       command is an npm script defined in `package.json`. If it is, the command
       should be run using the appropriate package manager (`npm run`, `bun run`,
@@ -557,6 +522,7 @@ tasks:
           `Bun.file().exists()` directly.
         done: true
   - title: 3. Basic `rmfilter` Integration on Failure
+    done: false
     description: If the executed command fails (non-zero exit code), `rmfix` should
       use `rmfilter`'s `generateRmfilterOutput` function to assemble a context
       string. This context will include basic instructions about the failure and
@@ -766,6 +732,7 @@ tasks:
           Then log `rmfilterOutput`.
         done: true
   - title: 4. Filename Extraction and Enhanced `rmfilter` Context
+    done: false
     description: Parse the failed command's output (stdout/stderr) to find
       references to source code filenames. These filenames will be added to the
       `rmfilter` arguments, along with the `--with-imports` flag, to provide
@@ -998,6 +965,7 @@ tasks:
           conversions to `gitRoot` where necessary.
         done: true
   - title: 5. Structured Output Parsing - JSON (Jest/Vitest)
+    done: false
     description: Implement parsing for JSON output from test runners like Jest and
       Vitest. Define a standardized structure for test failures. Add a `--format
       <type>` CLI option to `rmfix` and implement auto-detection (JSON first).
@@ -1160,6 +1128,7 @@ tasks:
           `runRmfix`.
         done: true
   - title: 6. Test Runner Detection and Reporter Injection
+    done: false
     description: Detect if the command to be run is Jest or Vitest. If so, and if
       the user hasn't already specified a JSON reporter, automatically inject
       the appropriate arguments (e.g., `--reporter json` or `--json`) into the
@@ -1552,3 +1521,25 @@ tasks:
             This means the `effectiveScriptArgs` in `prepareCommand` (which combines `scriptBaseArgs` and `initialCommandArgs` from user) should be what `npm run` passes after `--`.
             The current logic for `argsToExecute = ['run', initialCommand]; if (argsForNpmScript.length > 0) { argsToExecute.push('--', ...argsForNpmScript); }` where `argsForNpmScript` has been modified by injection seems correct.
         done: true
+updatedAt: 2025-10-27T08:39:04.254Z
+---
+
+The `rmfix` utility aims to streamline the debugging process by automating context gathering for failed commands, especially test runs. It integrates with `rmfilter` to leverage its context-building capabilities.
+
+Key features include:
+- Running arbitrary commands or npm scripts.
+- Capturing and analyzing command output for failures.
+- Parsing structured test output (TAP, Jest/Vitest JSON).
+- Falling back to regex or LLM-based parsing for unstructured output.
+- Detecting test runners (Jest, Vitest) and injecting appropriate reporters for better parsing.
+- Integrating with `rmfilter` by:
+    - Generating instructions based on command output.
+    - Extracting filenames from output to include in `rmfilter` context with `--with-imports`.
+    - Passing through additional arguments to `rmfilter`.
+- Interactive selection of failures to fix.
+- Command-line flags for controlling fix behavior (first failure, specific file, all).
+- An `--auto-fix` mode to submit context to an LLM and attempt to apply suggested edits.
+- Referencing YAML plan files for additional context.
+- Exiting with the underlying command's exit code.
+
+The implementation will be primarily in Node.js using Bun as the runtime. It will involve creating a new set of files under `src/rmfix/` and leveraging existing utilities from `src/common/` and `src/rmfilter/`.

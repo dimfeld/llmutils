@@ -1,20 +1,17 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Implement `rmplan workspace add` Command and Plan Association
 goal: To deliver a fully functional `rmplan workspace add` command that allows
   manual creation of workspaces, with optional linking to a plan file and
   appropriate status updates for that plan.
-details: This phase focuses on adding the new command to the CLI, implementing
-  the core logic for workspace creation, and handling the optional association
-  with a plan. This includes updating the plan's status in both the source
-  location and the new workspace. Existing workspace management and plan
-  utilities will be leveraged and extended.
 id: 27
+uuid: 2ff4a6a0-0c14-4801-9377-f4f07c83cd7e
 status: done
 dependencies: []
 planGeneratedAt: 2025-06-01T09:05:05.132Z
 promptsGeneratedAt: 2025-06-01T09:14:07.116Z
 createdAt: 2025-06-01T09:05:05.132Z
-updatedAt: 2025-06-01T10:07:22.334Z
+updatedAt: 2025-10-27T08:39:04.261Z
 project:
   title: Add `rmplan workspace add` Command
   goal: The project aims to introduce a new CLI command, `rmplan workspace add`,
@@ -54,6 +51,7 @@ project:
     running an agent or for a task not yet defined by a formal plan file.
 tasks:
   - title: Define `workspace add` CLI command structure
+    done: false
     description: This task involves adding the `workspace add` subcommand to the
       main `rmplan` CLI program defined in `src/rmplan/rmplan.ts`. The command
       should accept an optional positional argument for the plan identifier
@@ -88,6 +86,7 @@ tasks:
           logging the inputs), as the full logic will be developed in Task 5.
         done: true
   - title: Implement helper function to update plan status
+    done: false
     description: Create a new utility function, tentatively named `setPlanStatus`,
       likely within `src/rmplan/plans.ts`. This function will take a plan file
       path and a new status (e.g., 'pending', 'in_progress', 'done') as input.
@@ -144,6 +143,7 @@ tasks:
           parsing/validation.
         done: true
   - title: Adapt `WorkspaceInfo` and related types for optional plan
+    done: false
     description: Modify the `WorkspaceInfo` interface in
       `src/rmplan/workspace/workspace_tracker.ts` and the `Workspace` interface
       in `src/rmplan/workspace/workspace_manager.ts`. The `originalPlanFilePath`
@@ -179,6 +179,7 @@ tasks:
           Update JSDoc for `taskId` to indicate it's the workspace ID.
         done: true
   - title: Enhance `createWorkspace` for optional plan file
+    done: false
     description: >
       Update the `createWorkspace` function in
       `src/rmplan/workspace/workspace_manager.ts`.
@@ -286,6 +287,7 @@ tasks:
           are correctly handled if used.
         done: true
   - title: Implement core logic for `workspace add` command handler
+    done: false
     description: Develop the action handler for the `rmplan rmplan workspace add`
       command. This logic will integrate previous tasks to create workspaces,
       optionally link plans, and update plan statuses.
@@ -345,6 +347,7 @@ tasks:
           Log the generated or provided `workspaceId` being used.
         done: true
   - title: Add comprehensive tests
+    done: false
     description: Write unit and integration tests to ensure the reliability of the
       new functionality. Test cases should cover various scenarios including
       plan-less and plan-associated workspace creation, status updates, and ID
@@ -407,6 +410,7 @@ tasks:
           possible without excessive mocking).
         done: true
   - title: Update documentation
+    done: false
     description: Update the project's `README.md` file and any other relevant
       documentation to include details about the new `rmplan workspace add`
       command. This should cover its purpose, syntax, options, and examples of
@@ -466,3 +470,6 @@ changedFiles:
 rmfilter:
   - src/rmplan
   - src/common
+---
+
+This phase focuses on adding the new command to the CLI, implementing the core logic for workspace creation, and handling the optional association with a plan. This includes updating the plan's status in both the source location and the new workspace. Existing workspace management and plan utilities will be leveraged and extended.

@@ -1,37 +1,16 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Implement a feature in the rmpr tool to automatically add a reply to
   GitHub Pull Request review threads that have been addressed by a commit. The
   reply should include a reference to the commit SHA. If posting the reply fails
   (e.g., due to token permissions), the error should be logged, and the process
   should continue.
-details: >
-  The project involves enhancing the `rmpr` (Review My Pull Request)
-  functionality. When `rmpr` processes selected review comments and commits
-  changes to address them, it should then iterate over each addressed review
-  thread and post a new comment. This comment will inform participants that the
-  issue was handled and provide a link to the specific commit.
-
-
-  This will be achieved by:
-
-  1.  Adding a new function to interact with the GitHub API to post replies to
-  review threads. This function must gracefully handle API errors by logging
-  them and indicating failure without halting the overall `rmpr` process.
-
-  2.  Adding a utility function to retrieve the current Git commit SHA.
-
-  3.  Integrating this new functionality into the main `rmpr` workflow in
-  `src/rmpr/main.ts`. After changes are successfully committed, the tool will
-  fetch the latest commit SHA and use it to post confirmation comments to the
-  relevant PR threads.
-
-
-  The changes will primarily affect `src/rmpr/main.ts`,
-  `src/common/github/pull_requests.ts`, and `src/rmpr/git_utils.ts`.
 id: 12
+uuid: 8bf8840b-53c5-4ffd-9a7e-42be83436875
 status: done
 tasks:
   - title: 1. Add GitHub API Function to Reply to Review Thread
+    done: false
     description: >
       Create a new function in `src/common/github/pull_requests.ts` to add a
       reply comment to a specified pull request review thread. This function
@@ -140,6 +119,7 @@ tasks:
           checking `variables.body` or `variables.pullRequestReviewThreadId`.
         done: true
   - title: 2. Add Git Utility to Get Current Commit SHA
+    done: false
     description: >
       Create a utility function in `src/rmpr/git_utils.ts` to retrieve the SHA
       of the current Git commit (HEAD). This function will use `logSpawn` from
@@ -245,6 +225,7 @@ tasks:
           Leverage this.
         done: true
   - title: 3. Integrate Commenting into rmpr Main Workflow
+    done: false
     description: >
       Modify `src/rmpr/main.ts` to use the newly created functions. After
       successfully committing changes (if `options.commit` is true), the tool
@@ -300,3 +281,14 @@ tasks:
           if `options.commit` is true AND the commit operation itself was
           successful.
         done: true
+updatedAt: 2025-10-27T08:39:04.262Z
+---
+
+The project involves enhancing the `rmpr` (Review My Pull Request) functionality. When `rmpr` processes selected review comments and commits changes to address them, it should then iterate over each addressed review thread and post a new comment. This comment will inform participants that the issue was handled and provide a link to the specific commit.
+
+This will be achieved by:
+1.  Adding a new function to interact with the GitHub API to post replies to review threads. This function must gracefully handle API errors by logging them and indicating failure without halting the overall `rmpr` process.
+2.  Adding a utility function to retrieve the current Git commit SHA.
+3.  Integrating this new functionality into the main `rmpr` workflow in `src/rmpr/main.ts`. After changes are successfully committed, the tool will fetch the latest commit SHA and use it to post confirmation comments to the relevant PR threads.
+
+The changes will primarily affect `src/rmpr/main.ts`, `src/common/github/pull_requests.ts`, and `src/rmpr/git_utils.ts`.

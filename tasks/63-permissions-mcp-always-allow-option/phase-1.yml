@@ -5,6 +5,7 @@ goal: To replace the binary yes/no prompt with a multi-choice prompt that
   includes an "Always Allow" option and to handle the basic in-memory approval
   logic for the current session.
 id: 65
+uuid: fc5129f7-4745-4ce0-9497-5dbc9132f5d2
 status: done
 priority: high
 dependencies: []
@@ -12,7 +13,7 @@ parent: 63
 planGeneratedAt: 2025-06-13T06:34:02.120Z
 promptsGeneratedAt: 2025-06-13T06:38:48.325Z
 createdAt: 2025-06-11T08:25:17.665Z
-updatedAt: 2025-06-13T06:45:37.482Z
+updatedAt: 2025-10-27T08:39:04.307Z
 project:
   title: Enhance Permissions MCP with an "Always Allow" Option and Bash Prefix
     Matching
@@ -49,6 +50,7 @@ project:
     prompting logic.
 tasks:
   - title: Upgrade Permission Prompt to a Select Input
+    done: false
     description: 'Convert the existing boolean `confirm` prompt into a `select`
       prompt. The new prompt will provide the user with three choices: "Allow"
       (for one-time execution), "Disallow" (for one-time denial), and "Always
@@ -74,6 +76,7 @@ tasks:
           implemented in a subsequent task.
         done: true
   - title: Implement In-Memory Storage for "Always Allow" Rules
+    done: false
     description: Create an in-memory data structure, such as a `Set` or `Map`,
       within the `ClaudeCodeExecutor` class. This structure will hold the names
       of tools that the user has marked as "Always Allow" during the current
@@ -88,6 +91,7 @@ tasks:
           for the entire session.
         done: true
   - title: Bypass Prompt for Pre-Approved Tools
+    done: false
     description: Modify the logic in `createPermissionSocketServer` to check the
       in-memory store before displaying the permission prompt. If the tool
       requesting permission is already in the "Always Allow" set, the request
@@ -108,6 +112,7 @@ tasks:
           was automatically approved.
         done: true
   - title: Update State When "Always Allow" is Selected
+    done: false
     description: Enhance the prompt's handling logic so that when a user selects the
       "Always Allow" option, the corresponding `tool_name` is added to the
       in-memory data structure for future reference in the session.

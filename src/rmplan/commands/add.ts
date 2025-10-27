@@ -98,6 +98,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
   // Create the initial plan object adhering to PlanSchema
   const plan: PlanSchema = {
     id: planId,
+    uuid: crypto.randomUUID(),
     title: planTitle,
     goal: '',
     details: '',

@@ -5,6 +5,7 @@ title: Option to use Claude Code for generate and prepare commands - Implement
 goal: To extend the Claude Code functionality to the `prepare` command, reusing
   the orchestration service built in Phase 1.
 id: 74
+uuid: 5c9e77eb-4206-4493-952b-cf5a7c7f6792
 status: done
 priority: high
 dependencies:
@@ -13,9 +14,10 @@ parent: 72
 planGeneratedAt: 2025-07-23T07:56:27.245Z
 promptsGeneratedAt: 2025-07-23T20:53:16.796Z
 createdAt: 2025-07-23T07:52:38.535Z
-updatedAt: 2025-07-23T21:11:35.573Z
+updatedAt: 2025-10-27T08:39:04.263Z
 tasks:
   - title: Add a `--claude` Flag to the `prepare` Command
+    done: false
     description: Modify the command-line interface definition in
       `src/rmplan/rmplan.ts` to add the new boolean `--claude` flag to the
       `prepare` command. This will allow users to opt into the two-step Claude
@@ -30,6 +32,7 @@ tasks:
           already present on the `generate` command.
         done: true
   - title: Integrate the Orchestration Service into the `prepare` Command
+    done: false
     description: Update the `prepare` command's handler and the underlying
       `preparePhase` function to use the Claude Code orchestration service when
       the `--claude` flag is provided. This involves passing the flag down and
@@ -57,6 +60,7 @@ tasks:
           house the Claude Code invocation logic.
         done: true
   - title: Adapt the `prepare` Prompt for Two-Step Invocation
+    done: false
     description: Refactor the prompt construction for the `prepare` command to split
       it into a planning section and a final output generation instruction,
       compatible with the orchestration service. This involves creating new
@@ -102,6 +106,7 @@ tasks:
           file using `writePlanFile`.
         done: true
   - title: Add Integration Tests for the `prepare` Command's Claude Path
+    done: false
     description: Create new integration tests for the `prepare` command with the
       `--claude` flag to verify its correct functionality and output. This will
       involve testing the `preparePhase` function directly.

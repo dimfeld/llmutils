@@ -3,12 +3,13 @@
 title: Add details support to rmplan add command
 goal: ""
 id: 137
+uuid: ece4b9f5-eb81-40ed-85b5-217b93f947e7
 status: pending
 priority: medium
 temp: false
 parent: 128
 createdAt: 2025-10-26T22:51:32.843Z
-updatedAt: 2025-10-26T22:51:32.845Z
+updatedAt: 2025-10-27T08:39:04.202Z
 tasks: []
 ---
 

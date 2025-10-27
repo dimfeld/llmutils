@@ -6,6 +6,7 @@ title: The validate command should check that a plan's parent also depends on
 goal: Implement the parent-child dependency validation logic in the validate
   command with automatic fixing capability
 id: 96
+uuid: 15d32fa0-5ff0-4bdc-9ac1-d7b982c50509
 status: done
 priority: high
 dependencies: []
@@ -13,7 +14,7 @@ parent: 80
 planGeneratedAt: 2025-08-12T00:46:31.546Z
 promptsGeneratedAt: 2025-08-12T00:49:25.602Z
 createdAt: 2025-07-29T19:17:43.223Z
-updatedAt: 2025-08-12T01:09:04.431Z
+updatedAt: 2025-10-27T08:39:04.320Z
 project:
   title: Implement parent-child dependency validation and auto-fix in rmplan
     validate command

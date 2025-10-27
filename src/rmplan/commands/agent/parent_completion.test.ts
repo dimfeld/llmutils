@@ -1,17 +1,26 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { markTaskDone, markStepDone } from '../../plans/mark_done.js';
+import { checkAndMarkParentDone as agentCheckAndMarkParentDone } from './parent_plans.js';
 import { clearPlanCache, readPlanFile, writePlanFile } from '../../plans.js';
 import type { PlanSchema, PlanSchemaInput } from '../../planSchema.js';
 import type { RmplanConfig } from '../../configSchema.js';
+import { ModuleMocker } from '../../../testing.js';
 
 describe('Parent Plan Completion', () => {
   let tempDir: string;
   let tasksDir: string;
   let config: RmplanConfig;
+  const moduleMocker = new ModuleMocker(import.meta);
+  const removeAssignmentSpy = mock(async () => true);
+  const getRepositoryIdentitySpy = mock(async () => ({
+    repositoryId: 'test-repo',
+    remoteUrl: null,
+    gitRoot: '',
+  }));
 
   beforeEach(async () => {
     // Clear plan cache
@@ -27,9 +36,26 @@ describe('Parent Plan Completion', () => {
         tasks: tasksDir,
       },
     };
+
+    removeAssignmentSpy.mockClear();
+    getRepositoryIdentitySpy.mockClear();
+    getRepositoryIdentitySpy.mockResolvedValue({
+      repositoryId: 'test-repo',
+      remoteUrl: null,
+      gitRoot: tempDir,
+    });
+
+    await moduleMocker.mock('../../assignments/assignments_io.js', () => ({
+      removeAssignment: removeAssignmentSpy,
+    }));
+
+    await moduleMocker.mock('../../assignments/workspace_identifier.js', () => ({
+      getRepositoryIdentity: getRepositoryIdentitySpy,
+    }));
   });
 
   afterEach(async () => {
+    moduleMocker.clear();
     // Clean up
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -110,6 +136,50 @@ describe('Parent Plan Completion', () => {
     expect(parent.changedFiles).toContain('file1.ts');
     expect(parent.changedFiles).toContain('file2.ts');
     expect(parent.changedFiles).toContain('file3.ts');
+  });
+
+  test('removes parent assignment when agent check completes container plan', async () => {
+    const parentPlan: PlanSchema = {
+      id: 1,
+      title: 'Parent Plan',
+      goal: 'Parent goal',
+      details: 'Parent details',
+      status: 'in_progress',
+      tasks: [],
+      container: true,
+      updatedAt: new Date().toISOString(),
+    };
+    const parentPath = path.join(tasksDir, 'parent.yaml');
+    await writePlanFile(parentPath, parentPlan);
+
+    const childPlan: PlanSchemaInput = {
+      id: 2,
+      title: 'Child Plan',
+      goal: 'Child goal',
+      details: 'Child details',
+      status: 'done',
+      parent: 1,
+      tasks: [
+        {
+          title: 'Child Task',
+          description: 'Task description',
+          files: [],
+        },
+      ],
+      updatedAt: new Date().toISOString(),
+    };
+    const childPath = path.join(tasksDir, 'child.yaml');
+    await writePlanFile(childPath, childPlan);
+
+    removeAssignmentSpy.mockClear();
+
+    await agentCheckAndMarkParentDone(1, config, tempDir);
+
+    const parent = await readPlanFile(parentPath);
+    expect(parent.status).toBe('done');
+
+    const removalUuids = removeAssignmentSpy.mock.calls.map(([args]) => args.uuid);
+    expect(removalUuids).toContain(parent.uuid);
   });
 
   test('does not mark non-container parent as done even when children complete', async () => {

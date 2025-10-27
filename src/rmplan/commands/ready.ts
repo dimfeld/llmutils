@@ -4,15 +4,31 @@
 import chalk from 'chalk';
 import * as path from 'path';
 import { table, type TableUserConfig } from 'table';
-import { log } from '../../logging.js';
+
+import { log, warn } from '../../logging.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { AssignmentsFileParseError, readAssignments } from '../assignments/assignments_io.js';
+import type { AssignmentEntry } from '../assignments/assignments_schema.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
-import { getCombinedTitleFromSummary } from '../display_utils.js';
+import { formatWorkspacePath, getCombinedTitleFromSummary } from '../display_utils.js';
 import { readAllPlans } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { getGitRoot } from '../../common/git.js';
 
 type PlanWithFilename = PlanSchema & { filename: string };
+
+type ReadyPlan = PlanWithFilename & {
+  assignmentEntry?: AssignmentEntry;
+  assignedWorkspaces: string[];
+  assignedUsers: string[];
+  isAssignedHere: boolean;
+  isUnassigned: boolean;
+};
+
+interface ReadyDisplayContext {
+  currentWorkspace: string | null;
+}
 
 interface ReadyCommandOptions {
   format?: string;
@@ -21,6 +37,9 @@ interface ReadyCommandOptions {
   pendingOnly?: boolean;
   priority?: string;
   verbose?: boolean;
+  all?: boolean;
+  unassigned?: boolean;
+  user?: string;
 }
 
 const VALID_FORMATS = ['list', 'table', 'json'] as const;
@@ -39,8 +58,8 @@ const VALID_PRIORITIES = ['low', 'medium', 'high', 'urgent', 'maybe'] as const;
  * in the design requirements for the 'ready' command.
  */
 function isReadyPlan(
-  plan: PlanWithFilename,
-  allPlans: Map<number, PlanWithFilename>,
+  plan: ReadyPlan,
+  allPlans: Map<number, ReadyPlan>,
   pendingOnly: boolean
 ): boolean {
   const status = plan.status || 'pending';
@@ -76,11 +95,7 @@ function isReadyPlan(
 /**
  * Sort plans by the specified field
  */
-function sortPlans(
-  plans: PlanWithFilename[],
-  sortBy: string,
-  reverse: boolean
-): PlanWithFilename[] {
+function sortPlans(plans: ReadyPlan[], sortBy: string, reverse: boolean): ReadyPlan[] {
   const sorted = [...plans];
 
   sorted.sort((a, b) => {
@@ -203,7 +218,7 @@ function getStatusColor(status?: string): (text: string) => string {
  */
 function formatDependencies(
   dependencies: (string | number)[] | undefined,
-  allPlans: Map<number, PlanWithFilename>
+  allPlans: Map<number, ReadyPlan>
 ): string {
   if (!dependencies || dependencies.length === 0) {
     return chalk.gray('✓ No dependencies');
@@ -242,9 +257,10 @@ function formatDependencies(
  * Display plans in list format (default)
  */
 function displayListFormat(
-  plans: PlanWithFilename[],
-  allPlans: Map<number, PlanWithFilename>,
-  verbose: boolean
+  plans: ReadyPlan[],
+  allPlans: Map<number, ReadyPlan>,
+  verbose: boolean,
+  context: ReadyDisplayContext
 ): void {
   log(chalk.bold(`\n✓ Ready Plans (${plans.length}):\n`));
   log('─'.repeat(80));
@@ -271,6 +287,26 @@ function displayListFormat(
     log(`  Tasks: ${taskDisplay}`);
 
     // Assignment
+    if (plan.assignedWorkspaces.length > 0) {
+      const currentWorkspace = context.currentWorkspace;
+      const workspaceLabels = plan.assignedWorkspaces
+        .map((workspace) => {
+          const formatted = currentWorkspace
+            ? formatWorkspacePath(workspace, { currentWorkspace })
+            : formatWorkspacePath(workspace);
+          const isCurrent = currentWorkspace !== null && workspace === currentWorkspace;
+          return isCurrent ? chalk.green(formatted) : formatted;
+        })
+        .join(', ');
+      log(`  Workspace: ${workspaceLabels}`);
+    } else {
+      log(`  Workspace: ${chalk.gray('unassigned')}`);
+    }
+
+    if (plan.assignedUsers.length > 0) {
+      log(`  Users: ${plan.assignedUsers.join(', ')}`);
+    }
+
     if (plan.assignedTo) {
       log(`  Assigned to: ${plan.assignedTo}`);
     }
@@ -293,8 +329,9 @@ function displayListFormat(
  * Display plans in table format
  */
 function displayTableFormat(
-  plans: PlanWithFilename[],
-  allPlans: Map<number, PlanWithFilename>
+  plans: ReadyPlan[],
+  allPlans: Map<number, ReadyPlan>,
+  context: ReadyDisplayContext
 ): void {
   const tableData: string[][] = [];
 
@@ -305,6 +342,7 @@ function displayTableFormat(
     chalk.bold('Status'),
     chalk.bold('Priority'),
     chalk.bold('Tasks'),
+    chalk.bold('Workspace'),
     chalk.bold('Deps'),
   ]);
 
@@ -320,6 +358,23 @@ function displayTableFormat(
     const doneTasks = plan.tasks?.filter((t) => t.done).length || 0;
     const taskDisplay = doneTasks > 0 ? `${doneTasks}/${taskCount}` : `${taskCount}`;
 
+    // Workspace summary
+    const currentWorkspace = context.currentWorkspace;
+    let workspaceDisplay = '-';
+    if (plan.assignedWorkspaces.length > 0) {
+      const formatted = plan.assignedWorkspaces.map((workspace) => {
+        const display = currentWorkspace
+          ? formatWorkspacePath(workspace, { currentWorkspace })
+          : formatWorkspacePath(workspace);
+        const isCurrent = currentWorkspace !== null && workspace === currentWorkspace;
+        return isCurrent ? chalk.green(display) : display;
+      });
+      const [first, ...rest] = formatted;
+      workspaceDisplay = rest.length > 0 ? `${first} (+${rest.length})` : first;
+    } else {
+      workspaceDisplay = chalk.gray('unassigned');
+    }
+
     // Dependency count
     const depCount = plan.dependencies?.length || 0;
     const depDisplay = depCount > 0 ? `${depCount} done` : '-';
@@ -330,20 +385,25 @@ function displayTableFormat(
       statusColor(status),
       priority ? priorityColor(priority) : '-',
       taskDisplay,
+      workspaceDisplay,
       depCount > 0 ? chalk.green(depDisplay) : depDisplay,
     ]);
   }
 
   // Calculate responsive column widths
   const terminalWidth = process.stdout.columns || 120;
-  // Columns: ID(6) + Status(12) + Priority(10) + Tasks(8) + Deps(12) + borders(7*3=21) = 69
-  const fixedWidth = 69;
+  const workspaceColumnWidth = 22;
+  const depsColumnWidth = 12;
+  // Columns: ID(6) + Status(12) + Priority(10) + Tasks(8) + Workspace + Deps + borders(7*3=21)
+  const fixedWidth = 6 + 12 + 10 + 8 + workspaceColumnWidth + depsColumnWidth + 21;
   const titleWidth = Math.max(30, terminalWidth - fixedWidth);
 
   // Configure table
   const tableConfig: TableUserConfig = {
     columns: {
       1: { width: titleWidth, wrapWord: true },
+      5: { width: workspaceColumnWidth, wrapWord: true },
+      6: { width: depsColumnWidth, wrapWord: true },
     },
     border: {
       topBody: '─',
@@ -371,7 +431,7 @@ function displayTableFormat(
 /**
  * Display plans in JSON format
  */
-async function displayJsonFormat(plans: PlanWithFilename[]): Promise<void> {
+async function displayJsonFormat(plans: ReadyPlan[], context: ReadyDisplayContext): Promise<void> {
   const gitRoot = await getGitRoot();
 
   const result = {
@@ -389,14 +449,48 @@ async function displayJsonFormat(plans: PlanWithFilename[]): Promise<void> {
       filename: path.relative(gitRoot, plan.filename),
       createdAt: plan.createdAt,
       updatedAt: plan.updatedAt,
+      workspacePaths: plan.assignedWorkspaces,
+      users: plan.assignedUsers,
+      isAssignedHere: plan.isAssignedHere,
+      isUnassigned: plan.isUnassigned,
+      assignmentUpdatedAt: plan.assignmentEntry?.updatedAt,
+      assignmentAssignedAt: plan.assignmentEntry?.assignedAt,
+      currentWorkspace: context.currentWorkspace,
     })),
   };
 
   log(JSON.stringify(result, null, 2));
 }
 
+function emitMultiWorkspaceWarnings(plans: ReadyPlan[], context: ReadyDisplayContext): void {
+  for (const plan of plans) {
+    const entry = plan.assignmentEntry;
+    if (!entry) {
+      continue;
+    }
+
+    const uniqueWorkspaces = Array.from(new Set(entry.workspacePaths ?? []));
+    if (uniqueWorkspaces.length <= 1) {
+      continue;
+    }
+
+    const currentWorkspace = context.currentWorkspace;
+    const formatted = uniqueWorkspaces
+      .map((workspace) => {
+        const display = currentWorkspace
+          ? formatWorkspacePath(workspace, { currentWorkspace })
+          : formatWorkspacePath(workspace);
+        const isCurrent = currentWorkspace !== null && workspace === currentWorkspace;
+        return isCurrent ? chalk.green(display) : display;
+      })
+      .join(', ');
+
+    const label = plan.id ?? plan.uuid ?? 'unknown';
+    warn(`${chalk.yellow('⚠')} Plan ${label} is claimed in multiple workspaces: ${formatted}`);
+  }
+}
+
 export async function handleReadyCommand(options: ReadyCommandOptions, command: any) {
-  // Validate input options
   if (options.format && !VALID_FORMATS.includes(options.format as any)) {
     throw new Error(
       `Invalid format: ${options.format}. Valid formats are: ${VALID_FORMATS.join(', ')}`
@@ -415,49 +509,157 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
     );
   }
 
+  const userFilter =
+    typeof options.user === 'string' && options.user.trim().length > 0
+      ? options.user.trim()
+      : undefined;
+  const normalizedUserFilter = userFilter?.toLowerCase();
+
+  if (options.all && options.unassigned) {
+    throw new Error('Cannot combine --all with --unassigned; choose one assignment filter.');
+  }
+
+  if (options.unassigned && normalizedUserFilter) {
+    throw new Error('Cannot combine --unassigned with --user filter.');
+  }
+
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const tasksDir = await resolveTasksDir(config);
-  const { plans } = await readAllPlans(tasksDir);
+  const { plans: rawPlans } = await readAllPlans(tasksDir);
 
-  // Filter to ready plans
-  const pendingOnly = options.pendingOnly || false;
-  let readyPlans = Array.from(plans.values()).filter((plan) =>
-    isReadyPlan(plan, plans, pendingOnly)
+  const repository = await getRepositoryIdentity();
+
+  let assignmentsLookup: Record<string, AssignmentEntry> = {};
+  try {
+    const assignmentsFile = await readAssignments({
+      repositoryId: repository.repositoryId,
+      repositoryRemoteUrl: repository.remoteUrl,
+    });
+    assignmentsLookup = assignmentsFile.assignments;
+  } catch (error) {
+    if (error instanceof AssignmentsFileParseError) {
+      warn(`${chalk.yellow('⚠')} ${error.message}`);
+    } else {
+      throw error;
+    }
+  }
+
+  const enrichedPlans = new Map<number, ReadyPlan>();
+  for (const [planId, plan] of rawPlans.entries()) {
+    const assignmentEntry = plan.uuid ? assignmentsLookup[plan.uuid] : undefined;
+    const assignedWorkspaces = Array.from(
+      new Set(
+        (assignmentEntry?.workspacePaths ?? []).filter((workspace): workspace is string =>
+          Boolean(workspace && workspace.trim())
+        )
+      )
+    );
+    const assignedUsers = Array.from(
+      new Set(
+        (assignmentEntry?.users ?? []).filter((candidate): candidate is string =>
+          Boolean(candidate && candidate.trim())
+        )
+      )
+    );
+
+    const effectiveStatus = assignmentEntry?.status ?? plan.status ?? 'pending';
+
+    const readyPlan: ReadyPlan = {
+      ...plan,
+      status: effectiveStatus,
+      assignmentEntry,
+      assignedWorkspaces,
+      assignedUsers,
+      isAssignedHere: assignedWorkspaces.includes(repository.gitRoot),
+      isUnassigned: assignedWorkspaces.length === 0,
+    };
+
+    enrichedPlans.set(planId, readyPlan);
+  }
+
+  const pendingOnly = options.pendingOnly ?? false;
+  let readyPlans = Array.from(enrichedPlans.values()).filter((plan) =>
+    isReadyPlan(plan, enrichedPlans, pendingOnly)
   );
 
-  // Apply priority filter if specified
   if (options.priority) {
     readyPlans = readyPlans.filter((plan) => plan.priority === options.priority);
   }
 
+  if (normalizedUserFilter) {
+    readyPlans = readyPlans.filter((plan) => {
+      if (
+        plan.assignedUsers.some((candidate) => candidate.toLowerCase() === normalizedUserFilter)
+      ) {
+        return true;
+      }
+
+      const fallbackAssignedTo = plan.assignedTo?.trim();
+      if (fallbackAssignedTo && fallbackAssignedTo.toLowerCase() === normalizedUserFilter) {
+        return true;
+      }
+
+      return false;
+    });
+  }
+
+  if (options.unassigned) {
+    readyPlans = readyPlans.filter((plan) => plan.isUnassigned);
+  } else if (!options.all && !normalizedUserFilter) {
+    readyPlans = readyPlans.filter((plan) => plan.isUnassigned || plan.isAssignedHere);
+  }
+
   if (readyPlans.length === 0) {
     log('No plans are currently ready to execute.');
+
     if (pendingOnly) {
       log('Try without --pending-only to include in_progress plans.');
-    } else {
+    }
+
+    if (options.unassigned) {
+      log('No unassigned plans are ready right now.');
+    } else if (userFilter) {
+      log(`No ready plans are assigned to user "${userFilter}".`);
+    } else if (options.all) {
       log('All pending plans have incomplete dependencies.');
+    } else {
+      log('All ready plans are claimed in other workspaces or blocked by dependencies.');
+    }
+
+    if (!options.all) {
+      log(`Use ${chalk.bold('rmplan ready --all')} to include plans claimed in other workspaces.`);
+    }
+
+    if (!options.unassigned) {
+      log(
+        `Use ${chalk.bold('rmplan ready --unassigned')} to focus on unassigned plans that are ready.`
+      );
     }
     return;
   }
 
-  // Sort plans
   const sortBy = options.sort || 'priority';
   const reverse = options.reverse || false;
   readyPlans = sortPlans(readyPlans, sortBy, reverse);
 
-  // Display in requested format
+  const context: ReadyDisplayContext = {
+    currentWorkspace: repository.gitRoot,
+  };
+
+  emitMultiWorkspaceWarnings(readyPlans, context);
+
   const format = options.format || 'list';
   switch (format) {
     case 'table':
-      displayTableFormat(readyPlans, plans);
+      displayTableFormat(readyPlans, enrichedPlans, context);
       break;
     case 'json':
-      await displayJsonFormat(readyPlans);
+      await displayJsonFormat(readyPlans, context);
       break;
     case 'list':
     default:
-      displayListFormat(readyPlans, plans, options.verbose || false);
+      displayListFormat(readyPlans, enrichedPlans, options.verbose || false, context);
       break;
   }
 }

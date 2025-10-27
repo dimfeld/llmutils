@@ -265,6 +265,7 @@ describe('configLoader', () => {
       expect(config).toEqual({
         issueTracker: 'github',
         defaultExecutor: DEFAULT_EXECUTOR,
+        assignments: { staleTimeout: 7 },
         postApplyCommands: [],
         prCreation: { draft: true },
         workspaceCreation: undefined,

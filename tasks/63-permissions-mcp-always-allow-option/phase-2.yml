@@ -5,6 +5,7 @@ goal: To introduce a specialized, interactive prompt for defining allowed
   prefixes for `Bash` commands when a user chooses the "Always Allow" option for
   them.
 id: 66
+uuid: e682b96c-4701-43f0-852a-d6350cd3ab59
 status: done
 priority: high
 dependencies:
@@ -15,7 +16,7 @@ docs:
 planGeneratedAt: 2025-06-13T06:34:02.120Z
 promptsGeneratedAt: 2025-06-13T07:11:25.761Z
 createdAt: 2025-06-11T08:25:17.665Z
-updatedAt: 2025-06-13T07:16:52.575Z
+updatedAt: 2025-10-27T08:39:04.295Z
 project:
   title: Enhance Permissions MCP with an "Always Allow" Option and Bash Prefix
     Matching
@@ -52,6 +53,7 @@ project:
     prompting logic.
 tasks:
   - title: Create a Custom Interactive Prompt for Prefix Selection
+    done: false
     description: Using the `@inquirer/core` library, develop a new custom prompt
       component. This component will display the `Bash` command and allow the
       user to select a prefix by moving a cursor word-by-word with the left and
@@ -89,6 +91,7 @@ tasks:
           `claude_code.ts`.
         done: true
   - title: Enhance Storage and Integrate Bash Prefix Prompt
+    done: false
     description: Modify the in-memory storage structure to accommodate the new
       `Bash` prefix rules and integrate the new custom prompt. This will require
       changing from a simple `Set` of tool names to a more complex `Map` that
@@ -126,6 +129,7 @@ tasks:
           true)`.
         done: true
   - title: Implement Prefix-Based Approval Logic for Bash Tools
+    done: false
     description: Update the pre-prompt approval check. For incoming `Bash` tool
       requests, the logic must now compare the command's input against the list
       of stored, approved prefixes to determine if it can be automatically

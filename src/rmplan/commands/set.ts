@@ -1,13 +1,15 @@
 import path from 'path';
 import { getGitRoot } from '../../common/git.js';
-import { log } from '../../logging.js';
+import { log, warn } from '../../logging.js';
 import { readAllPlans, readPlanFile, writePlanFile, resolvePlanFile } from '../plans.js';
-import type { Priority } from '../planSchema.js';
 import { resolveTasksDir } from '../configSchema.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import { wouldCreateCircularDependency } from './validate.js';
 import { checkAndMarkParentDone } from './agent/parent_plans.js';
+import { removeAssignment } from '../assignments/assignments_io.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import type { PlanSchema, Priority } from '../planSchema.js';
 
 type Status = 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred';
 
@@ -39,6 +41,7 @@ export async function handleSetCommand(
   options.planFile = resolvedPlanFile;
   const plan = await readPlanFile(options.planFile);
   let modified = false;
+  let shouldRemoveAssignment = false;
 
   // Update priority
   if (options.priority) {
@@ -62,6 +65,10 @@ export async function handleSetCommand(
     if (plan.parent && plan.status === 'done') {
       const config = await loadEffectiveConfig(globalOpts?.config);
       await checkAndMarkParentDone(plan.parent, config);
+    }
+
+    if (plan.uuid && (plan.status === 'done' || plan.status === 'cancelled')) {
+      shouldRemoveAssignment = true;
     }
   }
 
@@ -248,7 +255,33 @@ export async function handleSetCommand(
     plan.updatedAt = new Date().toISOString();
     await writePlanFile(options.planFile, plan);
     log(`Plan ${options.planFile} updated successfully`);
+
+    if (shouldRemoveAssignment) {
+      await removeAssignmentsForPlan(plan);
+    }
   } else {
     log('No changes made');
+  }
+}
+
+async function removeAssignmentsForPlan(plan: PlanSchema): Promise<void> {
+  if (!plan.uuid) {
+    return;
+  }
+
+  try {
+    const repository = await getRepositoryIdentity();
+    await removeAssignment({
+      repositoryId: repository.repositoryId,
+      repositoryRemoteUrl: repository.remoteUrl,
+      uuid: plan.uuid,
+    });
+  } catch (error) {
+    const planLabel = plan.id !== undefined ? `plan ${plan.id}` : `plan ${plan.uuid}`;
+    warn(
+      `Failed to remove assignment for ${planLabel}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
   }
 }

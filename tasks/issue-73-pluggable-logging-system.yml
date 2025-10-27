@@ -1,45 +1,14 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Implement a pluggable logging system for `dimfeld/llmutils` to allow log
   output to be directed to various targets like the console, Discord messages,
   etc., in preparation for chatbot integration.
-details: >
-  The project involves several key changes:
-
-  1.  **Define a `LoggerAdapter` interface**: This interface will specify the
-  contract for all logging adapters, mirroring the methods currently available
-  in `src/logging.ts` (`log`, `error`, `warn`, `writeStdout`, `writeStderr`,
-  `debugLog`).
-
-  2.  **Implement `AsyncLocalStorage` for adapter management**: This will allow
-  setting and retrieving the active logger adapter for the current asynchronous
-  context. Functions `getLoggerAdapter` and `runWithLogger` will be created.
-
-  3.  **Create `ConsoleAdapter`**: This will be the first implementation of
-  `LoggerAdapter`. It will reside in `src/logging/console.ts` and replicate the
-  exact behavior of the current logging functions in `src/logging.ts`, including
-  writing to both the console and the log file.
-
-  4.  **Shared Log File Utilities**: Logic related to `logFile` (`FileSink`),
-  its opening, closing, and writing, will be moved to a new
-  `src/logging/common.ts` file. This prevents circular dependencies and
-  centralizes file logging mechanics.
-
-  5.  **Refactor `src/logging.ts`**: The existing logging functions will be
-  updated to:
-      *   Retrieve the current adapter using `getLoggerAdapter()`.
-      *   If an adapter is found, use it.
-      *   If no adapter is set, default to an instance of `ConsoleAdapter`.
-      *   The functions `openLogFile`, `closeLogFile` will be re-exported from `src/logging/common.ts`.
-      *   The specific `writeLogFile` function (for writing only to the file) will also use the utilities from `src/logging/common.ts`.
-
-  This approach ensures backward compatibility for existing log calls while
-  providing flexibility for future adapter implementations. The changes are
-  broken down into iterative tasks to manage complexity and allow for testing at
-  each stage.
 id: 16
+uuid: e8437a95-a974-407d-8ee3-4c217e456340
 status: done
 tasks:
   - title: 1. Define LoggerAdapter Interface and AsyncLocalStorage Utilities
+    done: false
     description: Create the `LoggerAdapter` interface that all loggers will
       implement, and set up `AsyncLocalStorage` to manage the active logger
       adapter within asynchronous contexts.
@@ -75,6 +44,7 @@ tasks:
           a context where the provided adapter is active.
         done: true
   - title: 2. Create Common Log File Utilities
+    done: false
     description: Move log file management (`logFile` variable, `openLogFile`,
       `closeLogFile`, and file writing logic) from `src/logging.ts` to a new
       dedicated file `src/logging/common.ts`. This will be used by
@@ -139,6 +109,7 @@ tasks:
           ```
         done: true
   - title: 3. Implement ConsoleAdapter
+    done: false
     description: Create the `ConsoleAdapter` in `src/logging/console.ts`. This
       adapter will implement the `LoggerAdapter` interface and contain the
       logging logic previously in `src/logging.ts` (console output and file
@@ -248,6 +219,7 @@ tasks:
           `stripAnsi`.
         done: true
   - title: 4. Refactor `src/logging.ts` to Use Adapters
+    done: false
     description: Update `src/logging.ts` to use the new adapter system. Logging
       functions will delegate to the active adapter or a default
       `ConsoleAdapter`. File operation functions will be re-exported or use
@@ -314,3 +286,19 @@ tasks:
           public API are preserved, either through direct implementation,
           re-exporting from common modules, or by using the adapter pattern.
         done: true
+updatedAt: 2025-10-27T08:39:04.244Z
+---
+
+The project involves several key changes:
+1.  **Define a `LoggerAdapter` interface**: This interface will specify the contract for all logging adapters, mirroring the methods currently available in `src/logging.ts` (`log`, `error`, `warn`, `writeStdout`, `writeStderr`, `debugLog`).
+2.  **Implement `AsyncLocalStorage` for adapter management**: This will allow setting and retrieving the active logger adapter for the current asynchronous context. Functions `getLoggerAdapter` and `runWithLogger` will be created.
+3.  **Create `ConsoleAdapter`**: This will be the first implementation of `LoggerAdapter`. It will reside in `src/logging/console.ts` and replicate the exact behavior of the current logging functions in `src/logging.ts`, including writing to both the console and the log file.
+4.  **Shared Log File Utilities**: Logic related to `logFile` (`FileSink`), its opening, closing, and writing, will be moved to a new `src/logging/common.ts` file. This prevents circular dependencies and centralizes file logging mechanics.
+5.  **Refactor `src/logging.ts`**: The existing logging functions will be updated to:
+    *   Retrieve the current adapter using `getLoggerAdapter()`.
+    *   If an adapter is found, use it.
+    *   If no adapter is set, default to an instance of `ConsoleAdapter`.
+    *   The functions `openLogFile`, `closeLogFile` will be re-exported from `src/logging/common.ts`.
+    *   The specific `writeLogFile` function (for writing only to the file) will also use the utilities from `src/logging/common.ts`.
+
+This approach ensures backward compatibility for existing log calls while providing flexibility for future adapter implementations. The changes are broken down into iterative tasks to manage complexity and allow for testing at each stage.

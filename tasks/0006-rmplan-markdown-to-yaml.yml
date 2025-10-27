@@ -1,25 +1,13 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Update rmplan to generate plans in Markdown and convert to YAML during
   extraction using an LLM.
-details: >
-  The current `rmplan generate` command produces YAML directly, which is hard to
-  review and edit.
-
-  This project updates the workflow:
-
-  1. `rmplan generate` will now prompt the LLM to create the plan in a
-  structured Markdown format.
-
-  2. `rmplan extract` will take this Markdown, use a second LLM call (Gemini
-  Flash) to convert it into the required YAML format, and then validate the
-  result.
-
-  This makes the initial plan generation more user-friendly while automating the
-  conversion to the structured YAML needed by downstream commands.
 id: 9
+uuid: d438de49-b82b-449d-92a4-475e686b2072
 status: done
 tasks:
   - title: Define Markdown Format and Update Generation Prompt
+    done: false
     description: Modify the generation prompt to request Markdown output according
       to a defined structure, instead of YAML.
     files:
@@ -74,6 +62,7 @@ tasks:
               *   Keep the existing `planExampleFormatGeneric` constant as is for now; it will be used later in the conversion step.
         done: true
   - title: Implement Markdown-to-YAML Conversion Function
+    done: false
     description: Refactor the existing cleanup function to perform Markdown-to-YAML
       conversion using Gemini Flash.
     files:
@@ -111,6 +100,7 @@ tasks:
               *   Return the cleaned YAML string.
         done: true
   - title: Integrate Conversion into `extract` Command
+    done: false
     description: Update the `rmplan extract` command to use the new Markdown-to-YAML
       conversion function instead of attempting direct YAML parsing or cleanup.
     files:
@@ -159,3 +149,11 @@ tasks:
           uses the `validatedPlan` obtained after successful conversion and
           validation.
         done: true
+updatedAt: 2025-10-27T08:39:04.320Z
+---
+
+The current `rmplan generate` command produces YAML directly, which is hard to review and edit.
+This project updates the workflow:
+1. `rmplan generate` will now prompt the LLM to create the plan in a structured Markdown format.
+2. `rmplan extract` will take this Markdown, use a second LLM call (Gemini Flash) to convert it into the required YAML format, and then validate the result.
+This makes the initial plan generation more user-friendly while automating the conversion to the structured YAML needed by downstream commands.

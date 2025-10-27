@@ -3,12 +3,13 @@
 title: Update rmfind to use agentic search
 goal: "Implement: Update rmfind to use agentic search"
 id: 59
+uuid: 71cb67ad-201d-438a-9ca4-6741ce780e10
 status: cancelled
 priority: maybe
 issue:
   - https://github.com/dimfeld/llmutils/issues/128
 createdAt: 2025-06-08T22:37:46.402Z
-updatedAt: 2025-10-26T22:55:16.320Z
+updatedAt: 2025-10-27T08:39:04.210Z
 tasks: []
 ---
 

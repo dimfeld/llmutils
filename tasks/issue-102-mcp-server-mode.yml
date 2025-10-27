@@ -3,6 +3,7 @@
 title: MCP Server Mode
 goal: "Implement: MCP Server Mode"
 id: 49
+uuid: fc084c7d-e293-4424-89f5-0d1e7b44ee2f
 status: done
 priority: low
 issue:
@@ -10,7 +11,7 @@ issue:
 docs:
   - https://raw.githubusercontent.com/punkpeye/fastmcp/refs/heads/main/README.md
 createdAt: 2025-06-07T02:05:24.730Z
-updatedAt: 2025-10-26T22:54:13.057Z
+updatedAt: 2025-10-27T08:39:04.278Z
 tasks: []
 ---
 

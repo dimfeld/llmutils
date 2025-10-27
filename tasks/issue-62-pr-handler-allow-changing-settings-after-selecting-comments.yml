@@ -1,57 +1,16 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Implement a feature in the `rmpr` (PR handler) tool to allow users to
   change settings (LLM model for editing, `rmfilter` options for context
   gathering) after selecting review comments but before the LLM prompt is
   generated and executed. This provides flexibility, as users may only realize
   the need for different settings after seeing the specific comments.
-details: >
-  The feature will introduce an interactive step using `inquirer` prompts. After
-  review comments are selected and initial processing is done (including writing
-  AI-annotated files to disk in `inline-comments` mode), the user will be
-  presented with options:
-
-  1.  Continue with current settings.
-
-  2.  Change the LLM model to be used for generating code edits.
-
-  3.  Modify/add `rmfilter` arguments to adjust the context provided to the LLM.
-
-
-  This interaction will be implemented as a loop that continues until the user
-  chooses to proceed. The chosen settings will then be used to construct the
-  arguments for `fullRmfilterRun` and subsequently for the LLM call via
-  `runStreamingPrompt`.
-
-
-  **Key Inquirer Prompts to Use:**
-
-  -   Main menu: `@inquirer/expand` for Continue, Model, RMFILTER choices.
-
-  -   Model picker: `@inquirer/search` for selecting/entering the LLM model
-  name.
-
-  -   RMFILTER options: `@inquirer/input` for entering additional `rmfilter`
-  arguments as a string.
-
-
-  **Workflow Impact:**
-
-  -   The interactive loop will be placed after comment selection and
-  mode-specific preparations (like `inline-comments` file writing), but before
-  `fullRmfilterRun` is invoked.
-
-  -   This loop will be skipped if the `--yes` flag is used.
-
-  -   The LLM model specified via the new 'm' option will be used for the
-  `--model` argument to `rmfilter` (so `rmfilter` knows what model the prompt is
-  for) and for the actual `runStreamingPrompt` call.
-
-  -   Additional `rmfilter` arguments provided via the new 'r' option will be
-  appended to the arguments passed to `fullRmfilterRun`.
 id: 10
+uuid: 25650021-f5a0-4d22-b025-86d589844147
 status: done
 tasks:
   - title: 1. Introduce Interactive Settings Loop Framework
+    done: false
     description: >
       Set up the main interactive loop using `@inquirer/expand`. This loop will
       allow the user to choose between continuing, changing the model, or
@@ -109,6 +68,7 @@ tasks:
           positioned after the loop.
         done: true
   - title: 2. Implement LLM Model Picker
+    done: false
     description: Implement the 'Change LLM model' functionality using
       `@inquirer/search`. The selected model will update the `modelForLlmEdit`
       variable.
@@ -144,6 +104,7 @@ tasks:
               -   Log the change, e.g., `log(`LLM model for editing set to: ${modelForLlmEdit}`);`.
         done: true
   - title: 3. Implement RMFILTER Options Editor
+    done: false
     description: Implement the 'Edit RMFILTER options' functionality using
       `@inquirer/input`. The provided string of arguments will update the
       `additionalUserRmFilterArgs` variable.
@@ -166,6 +127,7 @@ tasks:
               -   Log the change, e.g., `log(`Additional rmfilter args set to: "${additionalUserRmFilterArgs.join(' ')}"`);`.
         done: true
   - title: 4. Integrate Changed Settings into Execution Flow
+    done: false
     description: Ensure that the `modelForLlmEdit` and `additionalUserRmFilterArgs`
       (potentially modified by the user) are correctly used when constructing
       `rmFilterArgs` for `fullRmfilterRun` and when calling
@@ -222,3 +184,23 @@ tasks:
           This ensures that user's choices for model and rmfilter arguments are
           respected in the subsequent processing steps.
         done: true
+updatedAt: 2025-10-27T08:39:04.308Z
+---
+
+The feature will introduce an interactive step using `inquirer` prompts. After review comments are selected and initial processing is done (including writing AI-annotated files to disk in `inline-comments` mode), the user will be presented with options:
+1.  Continue with current settings.
+2.  Change the LLM model to be used for generating code edits.
+3.  Modify/add `rmfilter` arguments to adjust the context provided to the LLM.
+
+This interaction will be implemented as a loop that continues until the user chooses to proceed. The chosen settings will then be used to construct the arguments for `fullRmfilterRun` and subsequently for the LLM call via `runStreamingPrompt`.
+
+**Key Inquirer Prompts to Use:**
+-   Main menu: `@inquirer/expand` for Continue, Model, RMFILTER choices.
+-   Model picker: `@inquirer/search` for selecting/entering the LLM model name.
+-   RMFILTER options: `@inquirer/input` for entering additional `rmfilter` arguments as a string.
+
+**Workflow Impact:**
+-   The interactive loop will be placed after comment selection and mode-specific preparations (like `inline-comments` file writing), but before `fullRmfilterRun` is invoked.
+-   This loop will be skipped if the `--yes` flag is used.
+-   The LLM model specified via the new 'm' option will be used for the `--model` argument to `rmfilter` (so `rmfilter` knows what model the prompt is for) and for the actual `runStreamingPrompt` call.
+-   Additional `rmfilter` arguments provided via the new 'r' option will be appended to the arguments passed to `fullRmfilterRun`.

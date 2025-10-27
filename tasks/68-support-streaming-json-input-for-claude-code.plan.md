@@ -3,12 +3,13 @@
 title: Support streaming json input for Claude Code
 goal: ""
 id: 68
+uuid: 0418238c-9680-4b96-bed3-be43e2b3419b
 status: deferred
 priority: medium
 docs:
   - https://docs.anthropic.com/en/docs/claude-code/sdk#streaming-json-input
 createdAt: 2025-07-03T00:16:02.256Z
-updatedAt: 2025-10-26T22:55:29.886Z
+updatedAt: 2025-10-27T08:39:04.220Z
 tasks: []
 ---
 

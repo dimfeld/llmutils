@@ -1,14 +1,15 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Per-model environment override
 goal: "Implement: Per-model environment override"
-details: For some models it may be useful to support using a different
-  environment variable for the api key. Add values to the rmplan config that
-  allow specifying, for a model or a prefix, a different environment to get the
-  key from and then use that in createModel.
 id: 60
+uuid: 1a87fd8a-b300-45bc-abd8-ba64dc8cf661
 status: done
 issue:
   - https://github.com/dimfeld/llmutils/issues/127
 createdAt: 2025-06-08T22:37:48.094Z
-updatedAt: 2025-06-09T01:14:12.648Z
+updatedAt: 2025-10-27T08:39:04.225Z
 tasks: []
+---
+
+For some models it may be useful to support using a different environment variable for the api key. Add values to the rmplan config that allow specifying, for a model or a prefix, a different environment to get the key from and then use that in createModel.

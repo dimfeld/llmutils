@@ -1,30 +1,13 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Create a new command-line utility `rmplan` for generating and executing
   task plans using an LLM.
-details: >
-  The `rmplan` tool will integrate with the existing `rmfilter` utility. It
-  provides subcommands to:
-
-  1.  `generate`: Create an initial planning prompt and context for a task
-  description using `rmfilter`.
-
-  2.  `extract`: Parse a structured plan (YAML) from LLM output.
-
-  3.  `done`: Mark steps or entire tasks in a plan YAML file as completed.
-
-  4.  `next`: Interactively select the next steps from a plan YAML file and
-  generate context using `rmfilter` to execute them.
-
-  The tool will use a defined Zod schema (`planSchema`) for plan validation and
-  rely on libraries like `commander` for CLI structure, `yaml` for
-  parsing/stringifying, and potentially `inquirer` for user interaction in the
-  `next` command. Existing utilities from `llmutils` like argument parsing, file
-  handling, and subprocess execution (`logSpawn`) should be reused where
-  possible.
 id: 20
+uuid: 68f73fc0-7cec-4b96-859c-562e6672adba
 status: done
 tasks:
   - title: Setup Basic CLI Structure and Update Schema
+    done: false
     description: Initialize the `rmplan` command structure using `commander`, define
       subcommands, add dependencies, and update the `planSchema` with the `done`
       field.
@@ -102,6 +85,7 @@ tasks:
           `commander` setup.
         done: true
   - title: Implement `generate` Subcommand
+    done: false
     description: Implement the logic for the `generate` subcommand, including
       argument handling, prompt generation, temporary file usage, and calling
       `rmfilter`.
@@ -205,6 +189,7 @@ tasks:
           after `--`).
         done: false
   - title: Implement `extract` Subcommand
+    done: false
     description: Implement the logic for the `extract` subcommand to find, parse,
       validate, and output YAML plans from input text.
     files:
@@ -297,6 +282,7 @@ tasks:
           9.  Test outputting to a file (mock `Bun.write`).
         done: false
   - title: Implement `done` Subcommand
+    done: false
     description: Implement the logic for the `done` subcommand to load a plan, mark
       steps/tasks as done, and save the changes.
     files:
@@ -402,6 +388,7 @@ tasks:
           `Bun.write` and check the content passed to it).
         done: false
   - title: Implement `next` Subcommand (Core Logic)
+    done: false
     description: "Implement the non-interactive parts of the `next` subcommand:
       loading the plan, finding the next task/steps, and preparing data for
       prompt generation."
@@ -456,6 +443,7 @@ tasks:
           5.  Test the scenario where all tasks/steps are already completed.
         done: false
   - title: Implement `next` Subcommand (Interaction and `rmfilter` Call)
+    done: false
     description: Add user interaction to select steps and implement the final prompt
       generation and call to `rmfilter`.
     files:
@@ -557,3 +545,12 @@ tasks:
           correct arguments: the task's files, `--bare`, and `--instructions
           @<tempfile>`.
         done: false
+updatedAt: 2025-10-27T08:39:04.235Z
+---
+
+The `rmplan` tool will integrate with the existing `rmfilter` utility. It provides subcommands to:
+1.  `generate`: Create an initial planning prompt and context for a task description using `rmfilter`.
+2.  `extract`: Parse a structured plan (YAML) from LLM output.
+3.  `done`: Mark steps or entire tasks in a plan YAML file as completed.
+4.  `next`: Interactively select the next steps from a plan YAML file and generate context using `rmfilter` to execute them.
+The tool will use a defined Zod schema (`planSchema`) for plan validation and rely on libraries like `commander` for CLI structure, `yaml` for parsing/stringifying, and potentially `inquirer` for user interaction in the `next` command. Existing utilities from `llmutils` like argument parsing, file handling, and subprocess execution (`logSpawn`) should be reused where possible.

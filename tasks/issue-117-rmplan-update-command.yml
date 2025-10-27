@@ -5,6 +5,7 @@ goal: Deliver a fully functional `rmplan update` command that can take an
   existing plan and a text description, use an LLM to generate an updated plan,
   and write the changes back to the original file.
 id: 44
+uuid: 1edc5276-1e85-4373-8830-6e2659a851f4
 status: done
 priority: high
 dependencies: []
@@ -13,7 +14,7 @@ issue:
 planGeneratedAt: 2025-06-10T07:23:41.608Z
 promptsGeneratedAt: 2025-06-10T07:34:01.189Z
 createdAt: 2025-06-06T16:55:35.032Z
-updatedAt: 2025-06-10T08:30:32.823Z
+updatedAt: 2025-10-27T08:39:04.242Z
 project:
   title: Implement the `rmplan update` command
   goal: The goal of this project is to implement a new `rmplan update` command.
@@ -49,6 +50,7 @@ project:
     allowing for changes and refinements as a project evolves.
 tasks:
   - title: Create the `update` command structure
+    done: false
     description: This task involves setting up the boilerplate for the new command.
       We will add the `update` command to the main CLI entry point, define its
       arguments and options, and create the new handler file where the core
@@ -85,6 +87,7 @@ tasks:
           `done.test.ts`.
         done: true
   - title: Implement update description input handling
+    done: false
     description: The command needs to accept the update description from either a
       command-line flag or the user's default text editor. This task will
       implement the logic to handle both input methods, ensuring a flexible user
@@ -129,6 +132,7 @@ tasks:
           interaction to verify the editor-based input flow.
         done: true
   - title: Create a YAML-to-Markdown plan converter
+    done: false
     description: To provide the existing plan as context to the LLM, we need to
       convert it from its structured YAML format into a human-readable Markdown
       format that the LLM is trained on. This task involves creating a new
@@ -172,6 +176,7 @@ tasks:
           expected.
         done: true
   - title: Create the plan update prompt template
+    done: false
     description: A new, specialized prompt is required to instruct the LLM on how to
       perform the update. This task will involve creating a prompt template in
       `src/rmplan/prompt.ts` that includes placeholders for the existing plan
@@ -212,6 +217,7 @@ tasks:
           prompt string.
         done: true
   - title: Implement the core update logic
+    done: false
     description: This task will wire all the components together in the command
       handler. It will read the specified plan, convert it to Markdown,
       construct the full LLM prompt, and reuse the existing `rmfilter` logic
@@ -245,6 +251,7 @@ tasks:
           clipboard.
         done: true
   - title: Adapt the YAML extraction process for updates
+    done: false
     description: The existing `extractMarkdownToYaml` function is designed for
       creating new plans or filling in stubs. This task will involve
       generalizing this function or its calling context to handle updates to a
@@ -296,6 +303,7 @@ tasks:
           changed, and the tasks reflect the LLM's output.
         done: true
   - title: Add comprehensive tests for the update command
+    done: false
     description: To ensure reliability, we will create a suite of tests for the
       `update` command. These tests will cover various scenarios, such as
       adding, removing, and modifying tasks, using different input methods for
@@ -334,6 +342,7 @@ tasks:
           interaction, but should verify the description is passed correctly.
         done: true
   - title: Update user documentation
+    done: false
     description: The final task is to document the new `rmplan update` command. We
       will update the `README.md` and any other relevant documentation to
       include a description of the command, its options, and usage examples.

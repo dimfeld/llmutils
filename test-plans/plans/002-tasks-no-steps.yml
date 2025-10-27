@@ -1,30 +1,33 @@
 ---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Plan with Tasks but No Steps
 goal: Implement a simple authentication system
 id: 2
+uuid: 18b82a61-afda-43a3-be57-c5713df6a59e
 status: in_progress
 priority: medium
 tasks:
   - title: Create user model
+    done: false
     description: Define the user schema and database model
     files:
       - src/models/user.ts
       - src/db/schema.ts
-    done: false
     steps: []
   - title: Implement login endpoint
+    done: false
     description: Create API endpoint for user authentication
     files:
       - src/api/auth/login.ts
       - src/middleware/auth.ts
-    done: false
     steps: []
   - title: Add password hashing
+    done: true
     description: Implement secure password storage using bcrypt
     files:
       - src/utils/crypto.ts
-    done: true
     steps: []
+updatedAt: 2025-10-27T08:39:04.236Z
 ---
 This plan has tasks defined but no detailed steps for each task. This is useful
 when you have a high-level breakdown but haven't yet planned the specific

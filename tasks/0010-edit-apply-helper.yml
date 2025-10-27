@@ -1,35 +1,16 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Improve the error handling for edit application failures in applyLlmEdits
   by implementing an interactive resolution mode using @inquirer/prompts. This
   mode will handle "no exact match" errors by finding the closest match and
   offering to apply it or open in Neovim diff mode, and "not unique" errors by
   allowing the user to select the correct location.
-details: >
-  The current implementation simply prints errors and exits when `diff-editor`
-  or `udiff-simple` fail to apply edits. This project aims to:
-
-  1.  Define a common structure (`EditResult`) to report success or specific
-  failure types (`NoMatchFailure`, `NotUniqueFailure`) from edit processors.
-
-  2.  Implement a `findClosestMatches` algorithm to assist in resolving "no
-  exact match" errors.
-
-  3.  Modify `diff-editor` and `udiff-simple` parsers to return `EditResult[]`
-  instead of throwing errors, incorporating closest match or all match locations
-  into the failure results.
-
-  4.  Add an `--interactive` flag to `apply-llm-edits`.
-
-  5.  Implement the interactive resolution logic in `applyLlmEdits` (or a
-  dedicated module) that uses `@inquirer/prompts` to guide the user through
-  resolving failures based on the `EditResult` type.
-
-  6.  Integrate Neovim diff mode (`nvim -d`) as a resolution option for "no
-  exact match" errors.
 id: 23
+uuid: 12a1e975-0347-4b7e-89af-053424f8f723
 status: done
 tasks:
   - title: 1. Define Common Result Structure & Closest Match Foundation
+    done: false
     description: Create the necessary TypeScript types for representing edit results
       (success/failure) and implement/test the core findClosestMatches
       algorithm.
@@ -306,6 +287,7 @@ tasks:
           You may need to copy/import it.
         done: true
   - title: 2. Modify diff-editor for Structured Results
+    done: false
     description: Update src/editor/diff-editor/parse.ts to return EditResult[]
       instead of throwing errors, integrating findClosestMatches for failures.
     files:
@@ -354,6 +336,7 @@ tasks:
           needed).
         done: true
   - title: 3. Modify udiff-simple for Structured Results
+    done: false
     description: Update src/editor/udiff-simple/parse.ts to return EditResult[],
       handling both "no match" and "not unique" failures and incorporating
       findClosestMatches and match location details.
@@ -525,6 +508,7 @@ tasks:
           accordingly if they call `searchAndReplace` directly.
         done: true
   - title: 4. Integrate Results into applyLlmEdits & Add Interactive Flag
+    done: false
     description: Update applyLlmEdits to handle the structured EditResult[] from
       processors and add the --interactive flag.
     files:
@@ -573,6 +557,7 @@ tasks:
               *   Pass the `interactive` boolean value to the `applyLlmEdits` call.
         done: true
   - title: 5. Implement Interactive Resolution Logic
+    done: false
     description: Implement the resolveFailuresInteractively function using
       @inquirer/prompts to handle user interaction for resolving NoMatchFailure
       and NotUniqueFailure.
@@ -693,3 +678,13 @@ tasks:
           reads, temporary file operations, nvim execution) and user feedback
           clarity. Ensure `dryRun` is respected when writing files.
         done: false
+updatedAt: 2025-10-27T08:39:04.327Z
+---
+
+The current implementation simply prints errors and exits when `diff-editor` or `udiff-simple` fail to apply edits. This project aims to:
+1.  Define a common structure (`EditResult`) to report success or specific failure types (`NoMatchFailure`, `NotUniqueFailure`) from edit processors.
+2.  Implement a `findClosestMatches` algorithm to assist in resolving "no exact match" errors.
+3.  Modify `diff-editor` and `udiff-simple` parsers to return `EditResult[]` instead of throwing errors, incorporating closest match or all match locations into the failure results.
+4.  Add an `--interactive` flag to `apply-llm-edits`.
+5.  Implement the interactive resolution logic in `applyLlmEdits` (or a dedicated module) that uses `@inquirer/prompts` to guide the user through resolving failures based on the `EditResult` type.
+6.  Integrate Neovim diff mode (`nvim -d`) as a resolution option for "no exact match" errors.

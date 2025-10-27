@@ -3,10 +3,11 @@
 title: Encourage more planning and self-verification when running a task
 goal: ""
 id: 69
+uuid: 1ffb7295-2dd3-4916-9013-1fdb02bb5bcb
 status: done
 priority: medium
 createdAt: 2025-07-20T00:16:47.678Z
-updatedAt: 2025-07-20T05:22:35.487Z
+updatedAt: 2025-10-27T08:39:04.232Z
 tasks: []
 rmfilter:
   - src/rmplan/commands/agent.ts

@@ -1,28 +1,18 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Add rmplan promote command
 goal: "Implement: Add rmplan promote command"
-details: >-
-  This should take one or more tasks and promote them to top-level plans. If any
-  tasks remain in the original plan, it should depend on the tasks. All promoted
-  tasks should also depend on each other according to the original order of the
-  tasks.
-
-  The arguments to the command should be the task IDs, where a plan is just the
-  ID and a task within the plan is the ID of the plan, a period, and a one-baed
-  index of the task ID.
-
-  For example `35.2` will get the second task in the plan with ID `35` and
-  promote it. `35.2-6` will get tasks two through six (one-based) in the plan
-  with ID `35` and promote them.
 id: 47
+uuid: d35a6c54-3804-487c-b6e4-bc4c74b36755
 status: done
 issue:
   - https://github.com/dimfeld/llmutils/issues/120
 promptsGeneratedAt: 2025-06-07T02:34:55.340Z
 createdAt: 2025-06-07T02:04:24.921Z
-updatedAt: 2025-06-07T02:51:56.777Z
+updatedAt: 2025-10-27T08:39:04.282Z
 tasks:
   - title: Add `promote` command and Task ID parser
+    done: false
     description: Add the `promote` command to the `rmplan` CLI and create the
       utility for parsing task ID arguments. This sets up the command structure
       and the core logic for identifying which tasks to promote. The task ID
@@ -69,6 +59,7 @@ tasks:
           any invalid input formats.
         done: true
   - title: Implement single task promotion logic
+    done: false
     description: Implement the core logic for promoting a single task to a new
       top-level plan. This involves creating the new plan file, updating the
       original plan by removing the task, and adding a dependency on the new
@@ -122,6 +113,7 @@ tasks:
           and the new file created.
         done: true
   - title: Implement multi-task and range promotion
+    done: false
     description: Extend the promotion logic to handle multiple task IDs and ranges
       (e.g., `1.2-4`). This includes creating chained dependencies between the
       newly created plans to preserve their original execution order.
@@ -155,6 +147,7 @@ tasks:
           plan's `dependencies` array.
         done: true
   - title: Handle edge cases and finalize
+    done: false
     description: Finalize the implementation by handling edge cases, such as
       promoting all tasks from a plan and promoting tasks from different plans
       in a single command invocation.
@@ -199,3 +192,8 @@ changedFiles:
   - src/rmplan/utils/id_parser.ts
 rmfilter:
   - src/rmplan
+---
+
+This should take one or more tasks and promote them to top-level plans. If any tasks remain in the original plan, it should depend on the tasks. All promoted tasks should also depend on each other according to the original order of the tasks.
+The arguments to the command should be the task IDs, where a plan is just the ID and a task within the plan is the ID of the plan, a period, and a one-baed index of the task ID.
+For example `35.2` will get the second task in the plan with ID `35` and promote it. `35.2-6` will get tasks two through six (one-based) in the plan with ID `35` and promote them.

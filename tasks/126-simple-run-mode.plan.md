@@ -5,6 +5,7 @@ goal: Implement a --simple flag for the rmplan agent command that runs executors
   in a streamlined 2-phase "implement and verify" mode instead of the current
   3-phase "implement-test-review" orchestration loop.
 id: 126
+uuid: 227a05fa-5ada-4a86-ace2-941d7ee68265
 generatedBy: agent
 status: done
 priority: medium
@@ -15,7 +16,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-10-16T08:11:33.994Z
 createdAt: 2025-10-16T08:04:19.031Z
-updatedAt: 2025-10-16T10:35:42.285Z
+updatedAt: 2025-10-27T08:39:04.228Z
 progressNotes:
   - timestamp: 2025-10-16T08:16:22.416Z
     text: Added CLI --simple flag plumbing. Updated executor shared options/types
