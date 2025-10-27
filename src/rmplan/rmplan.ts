@@ -413,6 +413,20 @@ program
   });
 
 program
+  .command('ready')
+  .description('List all plans that are ready to execute (pending/in_progress with dependencies done)')
+  .option('--format <format>', 'Output format: list (default), table, json', 'list')
+  .option('--sort <field>', 'Sort by: priority (default), id, title, created, updated', 'priority')
+  .option('--reverse', 'Reverse sort order')
+  .option('--pending-only', 'Show only pending plans (exclude in_progress)')
+  .option('--priority <priority>', 'Filter by priority: low, medium, high, urgent, maybe')
+  .option('-v, --verbose', 'Show additional details like file paths')
+  .action(async (options, command) => {
+    const { handleReadyCommand } = await import('./commands/ready.js');
+    await handleReadyCommand(options, command).catch(handleCommandError);
+  });
+
+program
   .command('prepare [plan]')
   .description(
     'Generate detailed steps and prompts for a specific phase. Can be a file path or plan ID.'

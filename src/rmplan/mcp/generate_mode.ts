@@ -463,6 +463,32 @@ export const updatePlanDetailsParameters = z
 
 export type UpdatePlanDetailsArguments = z.infer<typeof updatePlanDetailsParameters>;
 
+export const listReadyPlansParameters = z
+  .object({
+    priority: prioritySchema
+      .optional()
+      .describe('Filter by priority level (low|medium|high|urgent|maybe)'),
+    limit: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Maximum number of plans to return (default: all)'),
+    pendingOnly: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe('Show only pending plans, exclude in_progress (default: false)'),
+    sortBy: z
+      .enum(['priority', 'id', 'title', 'created', 'updated'])
+      .optional()
+      .default('priority')
+      .describe('Sort field (default: priority)'),
+  })
+  .describe('List all ready plans that can be executed');
+
+export type ListReadyPlansArguments = z.infer<typeof listReadyPlansParameters>;
+
 export async function handleAppendResearchTool(
   args: AppendResearchArguments,
   context: GenerateModeRegistrationContext
@@ -564,6 +590,144 @@ function wrapLogger(log: GenerateModeExecutionLogger, prefix: string): GenerateM
     info: (message, data) => log.info(`${prefix}${message}`, data),
     warn: (message, data) => log.warn(`${prefix}${message}`, data),
   };
+}
+
+export async function handleListReadyPlansTool(
+  args: ListReadyPlansArguments,
+  context: GenerateModeRegistrationContext
+): Promise<string> {
+  try {
+    const { config } = context;
+    const { resolveTasksDir } = await import('../configSchema.js');
+    const tasksDir = await resolveTasksDir(config);
+    const { readAllPlans } = await import('../plans.js');
+    const { plans } = await readAllPlans(tasksDir);
+
+    // Filter for ready plans
+    let readyPlans = Array.from(plans.values()).filter((plan) => {
+      const status = plan.status || 'pending';
+      const statusMatch = args.pendingOnly
+        ? status === 'pending'
+        : status === 'pending' || status === 'in_progress';
+
+      if (!statusMatch) return false;
+      if (!plan.tasks || plan.tasks.length === 0) return false;
+
+      // If no dependencies, it's ready
+      if (!plan.dependencies || plan.dependencies.length === 0) return true;
+
+      // Check if all dependencies are done
+      return plan.dependencies.every((depId) => {
+        let depPlan = plans.get(depId);
+
+        // If not found and the dependency ID is a numeric string, try as a number
+        if (!depPlan && typeof depId === 'string' && /^\d+$/.test(depId)) {
+          depPlan = plans.get(parseInt(depId, 10));
+        }
+
+        return depPlan && depPlan.status === 'done';
+      });
+    });
+
+    // Apply priority filter
+    if (args.priority) {
+      readyPlans = readyPlans.filter((plan) => plan.priority === args.priority);
+    }
+
+    // Sort plans
+    const sortBy = args.sortBy || 'priority';
+    readyPlans.sort((a, b) => {
+      let aVal: string | number;
+      let bVal: string | number;
+
+      switch (sortBy) {
+        case 'title':
+          aVal = (a.title || a.goal || '').toLowerCase();
+          bVal = (b.title || b.goal || '').toLowerCase();
+          break;
+        case 'id': {
+          const aNum = Number(a.id || 0);
+          const bNum = Number(b.id || 0);
+
+          if (!isNaN(aNum) && !isNaN(bNum)) {
+            aVal = aNum;
+            bVal = bNum;
+          } else if (!isNaN(aNum) && isNaN(bNum)) {
+            aVal = aNum;
+            bVal = 0;
+          } else if (isNaN(aNum) && !isNaN(bNum)) {
+            aVal = 0;
+            bVal = bNum;
+          } else {
+            aVal = a.id || '';
+            bVal = b.id || '';
+          }
+          break;
+        }
+        case 'created':
+          aVal = a.createdAt || '';
+          bVal = b.createdAt || '';
+          break;
+        case 'updated':
+          aVal = a.updatedAt || '';
+          bVal = b.updatedAt || '';
+          break;
+        case 'priority':
+        default: {
+          const priorityOrder: Record<string, number> = {
+            urgent: 5,
+            high: 4,
+            medium: 3,
+            low: 2,
+            maybe: 1,
+          };
+
+          aVal = a.priority ? priorityOrder[a.priority] || 0 : 0;
+          bVal = b.priority ? priorityOrder[b.priority] || 0 : 0;
+          break;
+        }
+      }
+
+      // Secondary sort by ID
+      if (aVal === bVal) {
+        aVal = a.id || '';
+        bVal = b.id || '';
+      }
+
+      if (aVal < bVal) return -1;
+      if (aVal > bVal) return 1;
+      return 0;
+    });
+
+    // Apply limit
+    if (args.limit && args.limit > 0) {
+      readyPlans = readyPlans.slice(0, args.limit);
+    }
+
+    // Format as JSON
+    const result = {
+      count: readyPlans.length,
+      plans: readyPlans.map((plan) => ({
+        id: plan.id,
+        title: plan.title || plan.goal || '',
+        goal: plan.goal || '',
+        priority: plan.priority,
+        status: plan.status,
+        taskCount: plan.tasks?.length || 0,
+        completedTasks: plan.tasks?.filter((t) => t.done).length || 0,
+        dependencies: plan.dependencies || [],
+        assignedTo: plan.assignedTo,
+        filename: path.relative(context.gitRoot, plan.filename),
+        createdAt: plan.createdAt,
+        updatedAt: plan.updatedAt,
+      })),
+    };
+
+    return JSON.stringify(result, null, 2);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new UserError(`Failed to list ready plans: ${message}`);
+  }
 }
 
 export function registerGenerateMode(
@@ -678,5 +842,19 @@ export function registerGenerateMode(
       readOnlyHint: false,
     },
     execute: async (args) => handleUpdatePlanDetailsTool(args, context),
+  });
+
+  server.addTool({
+    name: 'list-ready-plans',
+    description:
+      'List all plans that are ready to be executed. A plan is ready when it has status ' +
+      '"pending" or "in_progress", contains tasks, and all its dependencies are marked as ' +
+      '"done". Returns JSON with plan details including ID, title, priority, task counts, and dependencies.',
+    parameters: listReadyPlansParameters,
+    annotations: {
+      destructiveHint: false,
+      readOnlyHint: true,
+    },
+    execute: async (args) => handleListReadyPlansTool(args, context),
   });
 }
