@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import yaml from 'yaml';
 import { clearPlanCache, writePlanFile, readPlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
-import { GENERATED_START_DELIMITER } from '../plan_merge.js';
+import { GENERATED_END_DELIMITER, GENERATED_START_DELIMITER } from '../plan_merge.js';
 import type { GenerateModeRegistrationContext } from '../mcp/generate_mode.js';
 import { ModuleMocker } from '../../testing.js';
 import * as updateMod from './update.js';
@@ -1461,6 +1461,35 @@ describe('mcp update handlers', () => {
     }
   });
 
+  test('mcpUpdatePlanDetails creates generated block when plan lacks details', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-update-details-missing-'));
+    clearPlanCache();
+
+    try {
+      const planPath = path.join(tempDir, 'no-details.plan.md');
+      await writePlanFile(planPath, {
+        ...basePlan,
+        details: undefined,
+      });
+
+      const context = createContext(tempDir);
+
+      const message = await updateMod.mcpUpdatePlanDetails(
+        { plan: planPath, details: 'Fresh generated information', append: false },
+        context
+      );
+
+      expect(message).toContain('Updated details in no-details.plan.md');
+
+      const updatedPlan = await readPlanFile(planPath);
+      expect(updatedPlan.details).toBe(
+        `${GENERATED_START_DELIMITER}\nFresh generated information\n${GENERATED_END_DELIMITER}`
+      );
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test('mcpUpdatePlanTasks merges tasks while preserving completed and metadata', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-update-tasks-'));
     clearPlanCache();
@@ -1527,6 +1556,50 @@ describe('mcp update handlers', () => {
       expect(updatedPlan.tasks[1].description).toBe('Refined work');
       expect(updatedPlan.tasks[2].title).toBe('Follow-up Task');
       expect(updatedPlan.generatedBy).toBe('agent');
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('mcpUpdatePlanTasks surfaces validation errors without modifying plan', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-update-tasks-invalid-'));
+    clearPlanCache();
+
+    try {
+      const planPath = path.join(tempDir, 'invalid.plan.md');
+      await writePlanFile(planPath, basePlan);
+
+      const context = createContext(tempDir);
+      const log = {
+        info: mock(() => {}),
+        debug: mock(() => {}),
+        warn: mock(() => {}),
+        error: mock(() => {}),
+      };
+
+      await expect(
+        updateMod.mcpUpdatePlanTasks(
+          {
+            plan: planPath,
+            // Missing description triggers validation failure inside mergeTasksIntoPlan
+            tasks: [
+              {
+                title: 'Invalid Task Without Description',
+              } as any,
+            ],
+          },
+          context,
+          { log }
+        )
+      ).rejects.toThrow(/Failed to update plan: Plan data failed validation/);
+
+      const unchangedPlan = await readPlanFile(planPath);
+      expect(unchangedPlan.tasks).toHaveLength(basePlan.tasks.length);
+      unchangedPlan.tasks?.forEach((task, index) => {
+        expect(task.title).toBe(basePlan.tasks[index]?.title);
+        expect(task.description).toBe(basePlan.tasks[index]?.description);
+      });
+      expect(log.info).toHaveBeenCalledWith('Merging generated plan data');
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
