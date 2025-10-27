@@ -230,6 +230,49 @@ describe('markStepDone', () => {
     expect(callArgs[0].uuid).toBe(updatedPlan.uuid);
   });
 
+  test('logs warning when assignment removal fails after completion', async () => {
+    removeAssignmentSpy.mockImplementationOnce(async () => {
+      throw new Error('simulated failure');
+    });
+
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Task 1',
+          description: 'Do something',
+          steps: [
+            {
+              prompt: 'Do step 1',
+              done: true,
+            },
+            {
+              prompt: 'Do step 2',
+              done: false,
+            },
+          ],
+        },
+      ],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan));
+
+    const result = await markStepDone(planPath, { steps: 1 }, undefined, tempDir, {});
+
+    expect(result.planComplete).toBe(true);
+    const warningMessages = warnSpy.mock.calls.map((args) => args[0]);
+    expect(
+      warningMessages.some((message) =>
+        message.includes('Failed to remove assignment for plan 1: simulated failure')
+      )
+    ).toBe(true);
+  });
+
   test('updates plan status to done when all steps complete', async () => {
     const plan: PlanSchema = {
       id: 1,

@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach, mock } from 'bun:test';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import yaml from 'yaml';
@@ -163,6 +163,29 @@ describe('rmplan set command', () => {
     expect(callArgs[0].uuid).toBe(updatedPlan.uuid);
   });
 
+  test('logs warning when assignment removal fails', async () => {
+    const planPath = await createTestPlan(113);
+    removeAssignmentSpy.mockImplementationOnce(async () => {
+      throw new Error('lock failure');
+    });
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        status: 'done',
+      },
+      globalOpts
+    );
+
+    const warnings = warnSpy.mock.calls.map((args) => args[0]);
+    expect(
+      warnings.some((message) =>
+        message.includes('Failed to remove assignment for plan 113: lock failure')
+      )
+    ).toBe(true);
+  });
+
   test('should add dependencies', async () => {
     const planPath = await createTestPlan(12);
 
@@ -274,7 +297,7 @@ describe('rmplan set command', () => {
   test('should not update if no changes made', async () => {
     const planPath = await createTestPlan(17);
     const originalPlan = await readPlanFile(planPath);
-    const originalUpdatedAt = originalPlan.updatedAt;
+    const originalContent = await readFile(planPath, 'utf-8');
 
     // Wait a bit to ensure time difference
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -288,7 +311,9 @@ describe('rmplan set command', () => {
     );
 
     const unchangedPlan = await readPlanFile(planPath);
-    expect(unchangedPlan.updatedAt).toBe(originalUpdatedAt);
+    expect(unchangedPlan.updatedAt).toBe(originalPlan.updatedAt);
+    const newContent = await readFile(planPath, 'utf-8');
+    expect(newContent).toBe(originalContent);
   });
 
   test('should add issue URLs', async () => {

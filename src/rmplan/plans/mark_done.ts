@@ -558,6 +558,7 @@ async function checkAndMarkParentDone(
     }
 
     await writePlanFile(parentPlan.filename, parentPlan);
+    await removePlanAssignment(parentPlan, baseDir);
     log(chalk.green(`✓ Parent plan "${parentPlan.title}" marked as complete (all children done)`));
 
     // Recursively check if this parent has a parent

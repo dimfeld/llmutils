@@ -9,6 +9,7 @@ import {
   AssignmentsVersionConflictError,
   getAssignmentsFilePath,
   readAssignments,
+  removeAssignment,
   writeAssignments,
 } from './assignments_io.js';
 
@@ -149,6 +150,49 @@ describe('assignments_io', () => {
     };
 
     await expect(writeAssignments(next)).rejects.toBeInstanceOf(AssignmentsFileParseError);
+  });
+
+  test('removeAssignment deletes entries and bumps version', async () => {
+    const repositoryId = 'test-repo';
+    const base = await readAssignments({ repositoryId });
+    const uuid = '123e4567-e89b-12d3-a456-426614174abc';
+    const assignedAt = new Date().toISOString();
+
+    const withAssignment = {
+      ...base,
+      version: base.version + 1,
+      assignments: {
+        [uuid]: {
+          planId: 77,
+          workspacePaths: ['/tmp/workspace-1'],
+          users: ['carol'],
+          status: 'in_progress' as const,
+          assignedAt,
+          updatedAt: assignedAt,
+        },
+      },
+    };
+
+    await writeAssignments(withAssignment);
+
+    const removed = await removeAssignment({ repositoryId, uuid, repositoryRemoteUrl: null });
+    expect(removed).toBe(true);
+
+    const persisted = await readAssignments({ repositoryId });
+    expect(persisted.assignments[uuid]).toBeUndefined();
+    expect(persisted.version).toBe(withAssignment.version + 1);
+  });
+
+  test('removeAssignment returns false when entry missing', async () => {
+    const repositoryId = 'missing-test';
+    const existing = await readAssignments({ repositoryId });
+    expect(existing.assignments).toEqual({});
+
+    const removed = await removeAssignment({ repositoryId, uuid: 'abcd', repositoryRemoteUrl: null });
+    expect(removed).toBe(false);
+
+    const after = await readAssignments({ repositoryId });
+    expect(after).toEqual(existing);
   });
 
   test('readAssignments rejects repositoryId mismatches', async () => {

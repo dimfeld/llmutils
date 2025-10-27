@@ -18,7 +18,7 @@ docs: []
 planGeneratedAt: 2025-10-27T08:01:47.867Z
 promptsGeneratedAt: 2025-10-27T08:01:47.867Z
 createdAt: 2025-10-27T05:51:22.359Z
-updatedAt: 2025-10-27T10:50:23.099Z
+updatedAt: 2025-10-27T11:08:05.197Z
 progressNotes:
   - timestamp: 2025-10-27T08:07:27.994Z
     text: Added optional uuid field to plan schema, generate/add stub assignments
@@ -120,6 +120,12 @@ progressNotes:
     text: Added unit coverage across mark_step, mark_task, set, and setTask flows to
       confirm assignment cleanup triggers; bun run check and targeted test
       suites all pass.
+    source: "tester: Task 9"
+  - timestamp: 2025-10-27T11:03:19.390Z
+    text: "Added regression coverage for assignment cleanup: verified
+      removeAssignment IO helper, failure-to-remove warnings in mark_done/set
+      commands, and agent parent completion dropping assignments. Updated set
+      command no-op test to assert file unchanged. Targeted test suites pass."
     source: "tester: Task 9"
 tasks:
   - title: Add UUID field to plan schema with auto-generation
@@ -969,3 +975,5 @@ Implemented Task 7 by making 'rmplan ready' assignment-aware: it now loads share
 Task 7: Update ready command with assignment filtering - addressed review feedback by updating handleReadyCommand in src/rmplan/commands/ready.ts to normalize --user inputs, fall back to plan-level assignedTo when assignments.json lacks entries, and preserve original casing in empty-state messaging. Added regression coverage in src/rmplan/commands/ready.test.ts to verify legacy assignedTo filtering and case-insensitive user matching so future edits keep backward compatibility. Tests: bun run check; bun test src/rmplan/commands/ready.test.ts.
 
 Implemented Task 9: Add automatic cleanup when plans marked done by wiring shared assignment removal into every status-completion path. Introduced removeAssignment() in src/rmplan/assignments/assignments_io.ts so other modules can drop a plan’s shared entry with a single atomic compare-and-swap call. mark_done.ts now invokes that helper when markStepDone, markTaskDone, or setTaskDone finish a plan, using getRepositoryIdentity() to resolve the shared assignments path and warning (rather than failing) if the cleanup cannot be persisted. To ensure container parents also release their assignments when children complete, checkAndMarkParentDone in src/rmplan/commands/agent/parent_plans.ts reuses the same helper after it writes the parent plan. handleSetCommand in src/rmplan/commands/set.ts tracks when a status change transitions to done or cancelled and, after persisting the plan, clears the assignment entry so manual status updates behave consistently. Added matching test coverage across mark_done.test.ts, mark_done_set_task.test.ts, and set.test.ts; each suite now stubs getRepositoryIdentity/removeAssignment, asserts cleanup happens exactly once when plans finish, and verifies no-op transitions leave assignments intact. Test runs: bun run check; bun test src/rmplan/plans/mark_done.test.ts; bun test src/rmplan/plans/mark_done_set_task.test.ts; bun test src/rmplan/commands/set.test.ts.
+
+Updated checkAndMarkParentDone in src/rmplan/plans/mark_done.ts to call removePlanAssignment immediately after persisting the parent plan so container parents drop their shared assignment as soon as the last child transitions to done. This keeps Task 9: Add automatic cleanup when plans marked done in sync across code paths and reuses the existing helper that already guards against missing UUIDs and logs persistence errors, while still recursing to grandparents without altering status logic. Verified the behavior by rerunning bun test src/rmplan/plans/mark_done.test.ts to ensure the mark_done workflow stays green.
