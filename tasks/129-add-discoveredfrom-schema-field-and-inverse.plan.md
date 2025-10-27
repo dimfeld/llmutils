@@ -6,14 +6,30 @@ goal: Implement foundational schema and utility changes to track plan discovery
   without data redundancy
 id: 129
 generatedBy: agent
-status: pending
+status: in_progress
 priority: high
+container: false
 temp: false
+dependencies: []
 parent: 128
+issue: []
+pullRequest: []
+docs: []
 planGeneratedAt: 2025-10-27T07:19:12.171Z
 promptsGeneratedAt: 2025-10-27T07:19:12.171Z
 createdAt: 2025-10-26T22:40:58.967Z
-updatedAt: 2025-10-27T07:19:12.171Z
+updatedAt: 2025-10-27T07:26:59.182Z
+progressNotes:
+  - timestamp: 2025-10-27T07:23:12.424Z
+    text: Added optional discoveredFrom field to phase schema and implemented
+      inverse relationship helpers getBlockedPlans, getChildPlans, and
+      getDiscoveredPlans for use across rmplan.
+    source: "implementer: Tasks 1-4"
+  - timestamp: 2025-10-27T07:26:59.176Z
+    text: Expanded rmplan test suite to cover discoveredFrom schema validation,
+      inverse relationship helpers, and read/write integration ensuring new
+      lineage data is preserved and legacy files remain compatible.
+    source: "implementer: Tasks 5-10"
 tasks:
   - title: Add discoveredFrom field to plan schema
     done: false
@@ -22,6 +38,8 @@ tasks:
       `z.coerce.number().int().positive().optional()` with a descriptive comment
       explaining it tracks which plan led to discovering this issue during
       research/implementation.
+    files: []
+    docs: []
     steps: []
   - title: Implement getBlockedPlans utility function
     done: false
@@ -29,18 +47,24 @@ tasks:
       Returns all plans that have `planId` in their `dependencies` array
       (inverse of dependencies). Include JSDoc comments with @param and @returns
       annotations.
+    files: []
+    docs: []
     steps: []
   - title: Implement getChildPlans utility function
     done: false
     description: Add `getChildPlans(planId, allPlans)` to `src/rmplan/plans.ts`.
       Returns all plans where `parent === planId` (inverse of parent). Include
       JSDoc comments with @param and @returns annotations.
+    files: []
+    docs: []
     steps: []
   - title: Implement getDiscoveredPlans utility function
     done: false
     description: Add `getDiscoveredPlans(planId, allPlans)` to
       `src/rmplan/plans.ts`. Returns all plans where `discoveredFrom ===
       planId`. Include JSDoc comments with @param and @returns annotations.
+    files: []
+    docs: []
     steps: []
   - title: Add schema validation tests for discoveredFrom
     done: false
@@ -48,12 +72,16 @@ tasks:
       accepts valid positive integers for `discoveredFrom`, (2) schema rejects
       negative numbers, zero, non-integers, and non-numeric values, (3) field is
       optional and plans without it validate successfully."
+    files: []
+    docs: []
     steps: []
   - title: Add unit tests for getBlockedPlans
     done: false
     description: "Add tests for `getBlockedPlans()` covering: (1) returns plans that
       depend on target plan, (2) returns empty array when no dependents exist,
       (3) handles multiple dependents correctly, (4) works with empty plan map."
+    files: []
+    docs: []
     steps: []
   - title: Add unit tests for getChildPlans
     done: false
@@ -61,6 +89,8 @@ tasks:
       children of parent plan, (2) returns empty array when no children exist,
       (3) handles multiple children correctly, (4) doesn't return grandchildren
       (only direct children), (5) works with empty plan map."
+    files: []
+    docs: []
     steps: []
   - title: Add unit tests for getDiscoveredPlans
     done: false
@@ -68,6 +98,8 @@ tasks:
       discovered from source plan, (2) returns empty array when no discoveries
       exist, (3) handles multiple discovered plans correctly, (4) works with
       empty plan map."
+    files: []
+    docs: []
     steps: []
   - title: Add edge case tests for utility functions
     done: false
@@ -75,6 +107,8 @@ tasks:
       relationships don't cause infinite loops, (2) missing plan IDs are handled
       gracefully, (3) functions work correctly with large plan sets (>100
       plans)."
+    files: []
+    docs: []
     steps: []
   - title: Add integration tests for plan file operations
     done: false
@@ -83,6 +117,8 @@ tasks:
       plans with `discoveredFrom` field, (3) round-trip plans with
       `discoveredFrom` through save/load cycle, (4) verify the field appears in
       loaded plan objects."
+    files: []
+    docs: []
     steps: []
   - title: Add discoveredFrom validation to validate command
     done: false
@@ -91,13 +127,19 @@ tasks:
       validation), (2) warn about orphaned discoveries (references to
       non-existent plans), (3) report validation errors clearly with plan ID and
       referenced plan ID."
+    files: []
+    docs: []
     steps: []
   - title: Run full test suite and type checking
     done: false
     description: Execute `bun test` to verify all tests pass and `bun run check` to
       ensure TypeScript compilation succeeds with no errors. Fix any issues
       found.
+    files: []
+    docs: []
     steps: []
+changedFiles: []
+rmfilter: []
 ---
 
 ## Overview
