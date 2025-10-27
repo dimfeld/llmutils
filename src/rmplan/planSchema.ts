@@ -46,7 +46,7 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
       .optional()
       .describe('Plan details. This can also be in markdown content after the YAML'),
     id: z.coerce.number().int().positive().optional(),
-    uuid: z.string().uuid().optional(),
+    uuid: z.guid().optional(),
     generatedBy: z.enum(['agent', 'oneshot']).optional(),
     status: z.preprocess((s) => {
       if (typeof s === 'string') {

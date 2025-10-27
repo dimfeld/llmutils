@@ -75,7 +75,8 @@
         "staleTimeout": {
           "description": "Number of days after which plan assignments are considered stale",
           "type": "integer",
-          "minimum": 1
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       }
     },

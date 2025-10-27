@@ -35,7 +35,7 @@ export const assignmentsFileSchema = z
     repositoryId: nonEmptyString,
     repositoryRemoteUrl: z.string().min(1).optional().nullable(),
     version: z.number().int().nonnegative(),
-    assignments: z.record(z.string().uuid(), assignmentEntrySchema),
+    assignments: z.record(z.guid(), assignmentEntrySchema),
   })
   .passthrough()
   .describe('Shared rmplan assignments file structure');
