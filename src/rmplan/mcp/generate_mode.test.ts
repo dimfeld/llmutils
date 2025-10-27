@@ -11,7 +11,6 @@ import {
   getPlanParameters,
   handleAppendResearchTool,
   handleGenerateTasksTool,
-  handleGetPlanTool,
   handleListReadyPlansTool,
   listReadyPlansParameters,
   loadGeneratePrompt,
@@ -20,6 +19,7 @@ import {
   loadResearchPrompt,
   type GenerateModeRegistrationContext,
 } from './generate_mode.js';
+import { mcpGetPlan } from '../commands/show.js';
 
 const basePlan: PlanSchema = {
   id: 99999,
@@ -141,9 +141,9 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(updated.priority).toBe('high');
   });
 
-  test('handleGetPlanTool retrieves plan details', async () => {
+  test('mcpGetPlan retrieves plan details', async () => {
     const args = getPlanParameters.parse({ plan: planPath });
-    const result = await handleGetPlanTool(args, context);
+    const result = await mcpGetPlan(args, context);
     expect(result).toContain('Plan ID: 99999');
     expect(result).toContain('Test Plan');
     expect(result).toContain('Ship a high-quality feature');

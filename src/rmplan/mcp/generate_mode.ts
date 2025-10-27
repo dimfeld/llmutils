@@ -8,89 +8,18 @@ import {
   generateClaudeCodeGenerationPrompt,
 } from '../prompt.js';
 import { appendResearchToPlan } from '../research_utils.js';
-import { readPlanFile, writePlanFile, resolvePlanFile, isTaskDone } from '../plans.js';
+import { writePlanFile, isTaskDone } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { planSchema, prioritySchema } from '../planSchema.js';
 import type { RmplanConfig } from '../configSchema.js';
 import { filterAndSortReadyPlans, formatReadyPlansAsJson } from '../ready_plans.js';
+import { buildPlanContext, resolvePlan } from '../plan_display.js';
+import { mcpGetPlan } from '../commands/show.js';
 
 export interface GenerateModeRegistrationContext {
   config: RmplanConfig;
   configPath?: string;
   gitRoot: string;
-}
-
-function formatExistingTasks(plan: PlanSchema): string | undefined {
-  if (!plan.tasks?.length) {
-    return undefined;
-  }
-
-  const taskSummaries = plan.tasks.map((task, index) => {
-    const title = task.title || `Task ${index + 1}`;
-    const stepCount = task.steps?.length ?? 0;
-    const fileCount = task.files?.length ?? 0;
-    const extra: string[] = [];
-    if (stepCount > 0) {
-      extra.push(`${stepCount} step${stepCount === 1 ? '' : 's'}`);
-    }
-    if (fileCount > 0) {
-      extra.push(`${fileCount} file${fileCount === 1 ? '' : 's'}`);
-    }
-    const suffix = extra.length ? ` (${extra.join(', ')})` : '';
-    return `- ${title}${suffix}`;
-  });
-
-  return `### Existing Tasks\n${taskSummaries.join('\n')}`;
-}
-
-function buildPlanContext(
-  plan: PlanSchema,
-  planPath: string,
-  context: GenerateModeRegistrationContext
-): string {
-  const relativePath = path.relative(context.gitRoot, planPath) || planPath;
-  const parts: string[] = [
-    `Plan file: ${relativePath}`,
-    `Plan ID: ${plan.id}`,
-    `Status: ${plan.status}`,
-    `Priority: ${plan.priority}`,
-  ];
-
-  if (plan.title) {
-    parts.push(`Title: ${plan.title}`);
-  }
-  if (plan.goal) {
-    parts.push(`Goal:\n${plan.goal}`);
-  }
-  if (plan.issue?.length) {
-    parts.push(`Linked issues:\n${plan.issue.join('\n')}`);
-  }
-  if (plan.docs?.length) {
-    parts.push(`Documentation references:\n${plan.docs.join('\n')}`);
-  }
-
-  const existingTasks = formatExistingTasks(plan);
-  if (existingTasks) {
-    parts.push(existingTasks);
-  }
-
-  if (plan.details) {
-    parts.push(`Details:\n${plan.details.trim()}`);
-  }
-
-  return parts.join('\n\n');
-}
-
-async function resolvePlan(
-  planArg: string,
-  context: GenerateModeRegistrationContext
-): Promise<{
-  plan: PlanSchema;
-  planPath: string;
-}> {
-  const planPath = await resolvePlanFile(planArg, context.configPath);
-  const plan = await readPlanFile(planPath);
-  return { plan, planPath };
 }
 
 const questionText = `Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Avoid repeating information already captured. As you figure things out, update the details in the plan file if necessary.`;
@@ -423,14 +352,6 @@ export const getPlanParameters = z
 
 export type GetPlanArguments = z.infer<typeof getPlanParameters>;
 
-export async function handleGetPlanTool(
-  args: GetPlanArguments,
-  context: GenerateModeRegistrationContext
-): Promise<string> {
-  const { plan, planPath } = await resolvePlan(args.plan, context);
-  return buildPlanContext(plan, planPath, context);
-}
-
 export const appendResearchParameters = z
   .object({
     plan: z.string().describe('Plan ID or file path to update'),
@@ -717,7 +638,7 @@ export function registerGenerateMode(
       destructiveHint: false,
       readOnlyHint: true,
     },
-    execute: async (args) => handleGetPlanTool(args, context),
+    execute: async (args) => mcpGetPlan(args, context),
   });
 
   server.addTool({

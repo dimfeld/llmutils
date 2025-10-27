@@ -11,7 +11,7 @@ temp: false
 planGeneratedAt: 2025-10-27T19:36:54.793Z
 promptsGeneratedAt: 2025-10-27T19:36:54.793Z
 createdAt: 2025-10-27T06:31:21.571Z
-updatedAt: 2025-10-27T19:57:38.653Z
+updatedAt: 2025-10-27T20:05:14.522Z
 progressNotes:
   - timestamp: 2025-10-27T19:46:00.224Z
     text: Created shared ready_plans module with filtering/sorting utilities,
@@ -23,6 +23,20 @@ progressNotes:
     text: Ran ready plan unit tests, ready command tests, MCP generate mode tests,
       and type checking; all pass.
     source: "tester: Task 1 & 6"
+  - timestamp: 2025-10-27T20:00:42.253Z
+    text: Created shared plan_display module with
+      buildPlanContext/formatExistingTasks/resolvePlan, moved MCP usage to
+      import, and added dedicated tests to cover formatting and plan resolution.
+    source: "implementer: Task 2"
+  - timestamp: 2025-10-27T20:03:35.665Z
+    text: Updated show command to export mcpGetPlan leveraging plan_display
+      utilities and added unit coverage to verify MCP plan retrieval formatting.
+    source: "implementer: Task 4"
+  - timestamp: 2025-10-27T20:05:14.518Z
+    text: Updated generate_mode MCP registration to delegate the get-plan tool to
+      the show command implementation and refreshed tests to reference the new
+      handler.
+    source: "implementer: Task 9"
 tasks:
   - title: Create ready_plans.ts shared utility module
     done: true

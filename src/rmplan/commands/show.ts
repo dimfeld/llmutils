@@ -27,6 +27,8 @@ import {
 import type { PlanSchema } from '../planSchema.js';
 import { findNextReadyDependency } from './find_next_dependency.js';
 import { MAX_NOTE_CHARS } from '../truncation.js';
+import { buildPlanContext, resolvePlan } from '../plan_display.js';
+import type { GenerateModeRegistrationContext, GetPlanArguments } from '../mcp/generate_mode.js';
 
 type PlanWithFilename = PlanSchema & { filename: string };
 
@@ -822,4 +824,12 @@ export async function handleShowCommand(planFile: string | undefined, options: a
     await clipboard.write(displayedPlan.details);
     log(chalk.green(`Copied details to clipboard`));
   }
+}
+
+export async function mcpGetPlan(
+  args: GetPlanArguments,
+  context: GenerateModeRegistrationContext
+): Promise<string> {
+  const { plan, planPath } = await resolvePlan(args.plan, context);
+  return buildPlanContext(plan, planPath, context);
 }
