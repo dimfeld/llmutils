@@ -5,7 +5,6 @@ goal: Enable multi-user workflows in rmplan by supporting user identity via
   environment variables and tracking both plan assignments and status in a
   shared configuration
 id: 139
-uuid: 8b82a7c6-2182-48b7-af3e-2be853519242
 generatedBy: agent
 status: in_progress
 priority: high
@@ -18,7 +17,7 @@ docs: []
 planGeneratedAt: 2025-10-27T08:01:47.867Z
 promptsGeneratedAt: 2025-10-27T08:01:47.867Z
 createdAt: 2025-10-27T05:51:22.359Z
-updatedAt: 2025-10-27T09:24:08.150Z
+updatedAt: 2025-10-27T09:41:56.058Z
 progressNotes:
   - timestamp: 2025-10-27T08:07:27.994Z
     text: Added optional uuid field to plan schema, generate/add stub assignments
@@ -94,6 +93,14 @@ progressNotes:
     text: bun test src/rmplan/commands/release.test.ts and bun run check both
       succeed.
     source: "tester: Task 6"
+  - timestamp: 2025-10-27T09:26:23.124Z
+    text: Reviewed release command tests; identified missing coverage for
+      non-workspace releases and UUID-only plans.
+    source: "tester: Task 6"
+  - timestamp: 2025-10-27T09:27:23.836Z
+    text: Extended release command test suite to cover non-workspace claims,
+      UUID-only plans, and pending reset messaging.
+    source: "tester: Task 6"
 tasks:
   - title: Add UUID field to plan schema with auto-generation
     done: true
@@ -162,7 +169,7 @@ tasks:
     docs: []
     steps: []
   - title: Implement rmplan release command
-    done: false
+    done: true
     description: "Create `src/rmplan/commands/release.ts` with
       handleReleaseCommand(). Logic: resolve plan to UUID, read assignments
       file, remove current workspace from workspacePaths array and current user
@@ -249,6 +256,7 @@ changedFiles:
   - src/rmplan/assignments/assignments_io.ts
   - src/rmplan/assignments/assignments_schema.ts
   - src/rmplan/assignments/claim_plan.ts
+  - src/rmplan/assignments/release_plan.ts
   - src/rmplan/assignments/uuid_lookup.test.ts
   - src/rmplan/assignments/uuid_lookup.ts
   - src/rmplan/assignments/workspace_identifier.test.ts
@@ -259,6 +267,8 @@ changedFiles:
   - src/rmplan/commands/claim.ts
   - src/rmplan/commands/generate.test.ts
   - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/release.test.ts
+  - src/rmplan/commands/release.ts
   - src/rmplan/commands/renumber.test.ts
   - src/rmplan/planSchema.ts
   - src/rmplan/plans/mark_done_set_task.test.ts
@@ -274,6 +284,7 @@ changedFiles:
   - test-plans/plans/103-testing-infrastructure.yml
   - test-plans/plans/104-test-data-generation.yml
 rmfilter: []
+uuid: 8b82a7c6-2182-48b7-af3e-2be853519242
 ---
 
 <!-- rmplan-generated-start -->
@@ -923,3 +934,5 @@ This adjustment keeps Task 5 – Implement rmplan claim command aligned with the
 Added a regression test in src/rmplan/commands/claim.test.ts that seeds an unnumbered plan, runs rmplan claim, and asserts the assignment entry omits planId while still recording workspace/user claims and emitting the updated log output for future reference.
 
 Implemented Task 6: Implement rmplan release command. Added src/rmplan/assignments/release_plan.ts to encapsulate the compare-and-swap removal flow. The helper clones the existing assignment entry, removes the current workspace and user, deletes the assignment entirely when both arrays empty, and emits warnings when other workspaces/users remain. It preserves optimistic locking semantics and bumps the shared assignments version through writeAssignments. Created src/rmplan/commands/release.ts with handleReleaseCommand() which resolves the target plan UUID, invokes releasePlan, mirrors claim-style logging/warnings, and supports the --reset-status flag by writing the plan back to pending via writePlanFile. Wired the new command into rmplan.ts CLI definition. Added coverage in src/rmplan/commands/release.test.ts using ModuleMocker to confirm full removal, idempotent release, partial release warnings, and status reset behavior against the real assignments file.
+
+Implemented a fix for Task 6 – Implement rmplan release command by teaching the assignments layer which user owns each workspace. Added an optional workspaceOwners map to assignments_schema.ts and ensured claimPlan populates and updates it so we know who owns every path going forward. releasePlan now consults that mapping, only removes users when their last workspace is gone, and falls back to conservative heuristics if older assignments lack owner data. The release tests gained a multi-workspace regression that locks in the expected warnings and logging. This prevents us from stripping a user when they still have another checkout while remaining backwards compatible with existing files.

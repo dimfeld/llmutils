@@ -24,6 +24,7 @@ function cloneAssignmentEntry(entry: AssignmentEntry): AssignmentEntry {
     ...entry,
     workspacePaths: [...(entry.workspacePaths ?? [])],
     users: [...(entry.users ?? [])],
+    workspaceOwners: entry.workspaceOwners ? { ...entry.workspaceOwners } : undefined,
   };
 }
 
@@ -79,6 +80,9 @@ export async function claimPlan(
     };
   }
 
+  const workspaceOwners = { ...(entry.workspaceOwners ?? {}) };
+  let workspaceOwnersModified = false;
+
   if (planId !== undefined && planId !== null && entry.planId !== planId) {
     entry.planId = planId;
     modified = true;
@@ -96,6 +100,26 @@ export async function claimPlan(
       addedUser = true;
       modified = true;
     }
+  }
+
+  const previousOwner = workspaceOwners[context.workspacePath];
+  if (context.user) {
+    if (previousOwner !== context.user) {
+      workspaceOwners[context.workspacePath] = context.user;
+      workspaceOwnersModified = true;
+    }
+  } else if (previousOwner !== undefined) {
+    delete workspaceOwners[context.workspacePath];
+    workspaceOwnersModified = true;
+  }
+
+  if (workspaceOwnersModified) {
+    if (Object.keys(workspaceOwners).length > 0) {
+      entry.workspaceOwners = workspaceOwners;
+    } else {
+      delete entry.workspaceOwners;
+    }
+    modified = true;
   }
 
   if (modified) {

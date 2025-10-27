@@ -18,6 +18,10 @@ export const assignmentEntrySchema = z
       .array(nonEmptyString)
       .default([])
       .describe('Absolute workspace paths that have claimed the plan'),
+    workspaceOwners: z
+      .record(nonEmptyString, nonEmptyString)
+      .optional()
+      .describe('Mapping of workspace paths to the user that claimed them'),
     users: z.array(nonEmptyString).default([]).describe('Users that have claimed the plan'),
     status: statusSchema.optional(),
     assignedAt: z.string().datetime(),

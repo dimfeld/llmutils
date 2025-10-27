@@ -29,6 +29,7 @@ describe('handleReleaseCommand', () => {
   const repositoryId = 'multi-user-demo';
   const planUuid = '33333333-3333-4333-8333-333333333333';
   const repositoryRemoteUrl = 'https://example.com/repo.git';
+  const uuidOnlyPlanUuid = '44444444-4444-4444-8444-444444444444';
 
   beforeEach(async () => {
     clearPlanCache();
@@ -192,6 +193,50 @@ describe('handleReleaseCommand', () => {
     );
   });
 
+  test('keeps user assigned when they still have another claimed workspace', async () => {
+    await seedClaim(currentWorkspacePath, currentUser);
+    await seedClaim(otherWorkspaceDir, currentUser);
+
+    const command = { parent: { opts: () => ({}) } };
+    await handleReleaseCommand('1', {}, command);
+
+    const assignments = await readAssignments({ repositoryId });
+    const entry = assignments.assignments[planUuid];
+
+    expect(assignments.version).toBe(3);
+    expect(entry).toBeDefined();
+    expect(entry?.workspacePaths).toEqual([otherWorkspaceDir]);
+    expect(entry?.workspaceOwners).toEqual({ [otherWorkspaceDir]: currentUser });
+    expect(entry?.users).toEqual([currentUser]);
+
+    expect(mockWarn).toHaveBeenCalledWith(
+      `⚠ Plan remains claimed in other workspaces: ${otherWorkspaceDir}`
+    );
+    expect(mockWarn).toHaveBeenCalledWith(`⚠ Plan remains claimed by other users: ${currentUser}`);
+    expect(mockLog).toHaveBeenCalledWith(
+      `✓ Updated assignment for plan 1 in workspace ${currentWorkspacePath} (removed workspace)`
+    );
+  });
+
+  test('logs when plan is not claimed in the current workspace', async () => {
+    await seedClaim(otherWorkspaceDir, 'bob');
+
+    const command = { parent: { opts: () => ({}) } };
+    await handleReleaseCommand('1', {}, command);
+
+    const assignments = await readAssignments({ repositoryId });
+    const entry = assignments.assignments[planUuid];
+
+    expect(assignments.version).toBe(1);
+    expect(entry?.workspacePaths).toEqual([otherWorkspaceDir]);
+    expect(entry?.users).toEqual(['bob']);
+
+    expect(mockWarn).not.toHaveBeenCalled();
+    expect(mockLog).toHaveBeenCalledWith(
+      `• Plan 1 is not claimed in workspace ${currentWorkspacePath}`
+    );
+  });
+
   test('reset status flag writes plan back to pending', async () => {
     await seedClaim(currentWorkspacePath, currentUser);
 
@@ -201,9 +246,38 @@ describe('handleReleaseCommand', () => {
     const refreshedPlan = await readPlanFile(path.join(tasksDir, '1-sample.plan.md'));
     expect(refreshedPlan.status).toBe('pending');
 
+    expect(mockLog).toHaveBeenCalledWith(`✓ Reset status for plan 1 to pending`);
+  });
+
+  test('releases plans without numeric IDs and logs pending reset skip', async () => {
+    const planFilename = path.join(tasksDir, 'uuid-only.plan.md');
+    await writePlanFile(planFilename, {
+      uuid: uuidOnlyPlanUuid,
+      title: 'UUID-only Plan',
+      goal: 'Cover UUID release branch',
+      status: 'pending',
+      details: '',
+      tasks: [],
+    });
+
+    await claimPlan(undefined, {
+      uuid: uuidOnlyPlanUuid,
+      repositoryId,
+      repositoryRemoteUrl,
+      workspacePath: currentWorkspacePath,
+      user: currentUser,
+      now: new Date('2024-01-02T00:00:00.000Z'),
+    });
+
+    const command = { parent: { opts: () => ({}) } };
+    await handleReleaseCommand('uuid-only.plan.md', { resetStatus: true }, command);
+
+    const assignments = await readAssignments({ repositoryId });
+    expect(assignments.assignments[uuidOnlyPlanUuid]).toBeUndefined();
+
     expect(mockLog).toHaveBeenCalledWith(
-      `✓ Reset status for plan 1 to pending`
+      `✓ Released plan ${uuidOnlyPlanUuid} from workspace ${currentWorkspacePath} (removed workspace, removed user ${currentUser})`
     );
+    expect(mockLog).toHaveBeenCalledWith(`• Plan ${uuidOnlyPlanUuid} is already pending`);
   });
 });
-

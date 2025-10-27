@@ -25,6 +25,7 @@ function cloneAssignmentEntry(entry: AssignmentEntry): AssignmentEntry {
     ...entry,
     workspacePaths: [...(entry.workspacePaths ?? [])],
     users: [...(entry.users ?? [])],
+    workspaceOwners: entry.workspaceOwners ? { ...entry.workspaceOwners } : undefined,
   };
 }
 
@@ -66,16 +67,62 @@ export async function releasePlan(
     modified = true;
   }
 
-  if (context.user) {
-    const originalUserCount = entry.users?.length ?? 0;
-    entry.users = (entry.users ?? []).filter((candidate) => candidate !== context.user);
-    removedUser = entry.users.length !== originalUserCount;
-    if (removedUser) {
-      modified = true;
+  let workspaceOwnersChanged = false;
+  if (removedWorkspace && entry.workspaceOwners) {
+    if (Object.prototype.hasOwnProperty.call(entry.workspaceOwners, context.workspacePath)) {
+      delete entry.workspaceOwners[context.workspacePath];
+      workspaceOwnersChanged = true;
+    }
+
+    if (Object.keys(entry.workspaceOwners).length === 0) {
+      delete entry.workspaceOwners;
+      workspaceOwnersChanged = true;
     }
   }
 
-  const entryRemoved = (entry.workspacePaths?.length ?? 0) === 0 && (entry.users?.length ?? 0) === 0;
+  if (workspaceOwnersChanged) {
+    modified = true;
+  }
+
+  if (context.user) {
+    let userHasRemainingWorkspace = true;
+
+    if (removedWorkspace) {
+      const ownerEntries =
+        entry.workspaceOwners !== undefined
+          ? Object.entries(entry.workspaceOwners)
+          : existing.workspaceOwners !== undefined
+            ? Object.entries(existing.workspaceOwners).filter(
+                ([workspace]) => workspace !== context.workspacePath
+              )
+            : [];
+
+      if (ownerEntries.length > 0) {
+        userHasRemainingWorkspace = ownerEntries.some(([, owner]) => owner === context.user);
+      } else {
+        const remainingWorkspaces = entry.workspacePaths.length;
+        const otherUsers = (entry.users ?? []).filter((candidate) => candidate !== context.user);
+
+        if (otherUsers.length === 0) {
+          userHasRemainingWorkspace = remainingWorkspaces > 0;
+        } else {
+          userHasRemainingWorkspace = remainingWorkspaces > otherUsers.length;
+        }
+      }
+    }
+
+    if (!userHasRemainingWorkspace) {
+      const originalUserCount = entry.users?.length ?? 0;
+      entry.users = (entry.users ?? []).filter((candidate) => candidate !== context.user);
+      removedUser = entry.users.length !== originalUserCount;
+      if (removedUser) {
+        modified = true;
+      }
+    }
+  }
+
+  const entryRemoved =
+    (entry.workspacePaths?.length ?? 0) === 0 && (entry.users?.length ?? 0) === 0;
 
   if (!modified && planId !== undefined && planId !== null && existing.planId !== planId) {
     entry.planId = planId;
@@ -116,9 +163,7 @@ export async function releasePlan(
     nextAssignments.assignments[context.uuid] = entry;
 
     if (entry.workspacePaths.length > 0) {
-      warnings.push(
-        `Plan remains claimed in other workspaces: ${entry.workspacePaths.join(', ')}`
-      );
+      warnings.push(`Plan remains claimed in other workspaces: ${entry.workspacePaths.join(', ')}`);
     }
 
     if (entry.users.length > 0) {
@@ -138,4 +183,3 @@ export async function releasePlan(
     remainingEntry,
   };
 }
-

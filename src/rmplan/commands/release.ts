@@ -45,9 +45,7 @@ export async function handleReleaseCommand(
   if (!result.existed) {
     log(`${chalk.yellow('•')} Plan ${planLabel} has no assignments to release`);
   } else if (!result.persisted) {
-    log(
-      `${chalk.yellow('•')} Plan ${planLabel} is not claimed in workspace ${repository.gitRoot}`
-    );
+    log(`${chalk.yellow('•')} Plan ${planLabel} is not claimed in workspace ${repository.gitRoot}`);
     if (user && result.removedUser) {
       log(`  Removed user ${user} from assignment`);
     }
@@ -88,4 +86,3 @@ export async function handleReleaseCommand(
     }
   }
 }
-
