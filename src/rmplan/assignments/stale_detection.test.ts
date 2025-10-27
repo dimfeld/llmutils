@@ -52,9 +52,7 @@ describe('getStaleAssignments', () => {
     };
 
     const result = getStaleAssignments(assignments, 7, referenceDate);
-    expect(result).toEqual([
-      ['bbbbbbbb-bbbb-4bbb-9bbb-bbbbbbbbbbbb', stale],
-    ]);
+    expect(result).toEqual([['bbbbbbbb-bbbb-4bbb-9bbb-bbbbbbbbbbbb', stale]]);
   });
 });
 

@@ -10,7 +10,10 @@ import {
   writeAssignments,
 } from '../assignments/assignments_io.js';
 import type { AssignmentEntry, AssignmentsFile } from '../assignments/assignments_schema.js';
-import { getConfiguredStaleTimeoutDays, isStaleAssignment } from '../assignments/stale_detection.js';
+import {
+  getConfiguredStaleTimeoutDays,
+  isStaleAssignment,
+} from '../assignments/stale_detection.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
@@ -275,7 +278,10 @@ export async function handleAssignmentsListCommand(options: any, command: any): 
   renderListTable(displays, context.staleTimeoutDays);
 }
 
-export async function handleAssignmentsShowConflictsCommand(options: any, command: any): Promise<void> {
+export async function handleAssignmentsShowConflictsCommand(
+  options: any,
+  command: any
+): Promise<void> {
   const context = await loadAssignmentsContext(command);
   const displays = buildAssignmentDisplays(
     context.assignments,
@@ -316,9 +322,7 @@ export async function handleAssignmentsCleanStaleCommand(
     chalk.yellow(
       `Found ${staleDisplays.length} stale assignment${
         staleDisplays.length === 1 ? '' : 's'
-      } older than ${context.staleTimeoutDays} day${
-        context.staleTimeoutDays === 1 ? '' : 's'
-      }.`
+      } older than ${context.staleTimeoutDays} day${context.staleTimeoutDays === 1 ? '' : 's'}.`
     )
   );
   renderListTable(staleDisplays, context.staleTimeoutDays, 'Stale assignments');

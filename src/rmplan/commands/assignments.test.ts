@@ -200,9 +200,9 @@ describe('assignments command handlers', () => {
 
     expect(assignments.assignments).not.toHaveProperty(planUuid);
     expect(assignments.version).toBe(2);
-    expect(logMock.mock.calls.some(([message]) => (message as string).includes('Removed assignment'))).toBe(
-      true
-    );
+    expect(
+      logMock.mock.calls.some(([message]) => (message as string).includes('Removed assignment'))
+    ).toBe(true);
   });
 
   test('clean-stale aborts when confirmation is declined', async () => {
@@ -345,9 +345,7 @@ describe('assignments command handlers', () => {
 
     expect(
       warnMock.mock.calls.some(([message]) =>
-        typeof message === 'string'
-          ? message.includes('Assignments changed while cleaning')
-          : false
+        typeof message === 'string' ? message.includes('Assignments changed while cleaning') : false
       )
     ).toBe(true);
 
