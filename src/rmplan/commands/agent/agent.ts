@@ -41,6 +41,7 @@ import { markParentInProgress } from './parent_plans.js';
 import { executeStubPlan } from './stub_plan.js';
 import { SummaryCollector } from '../../summary/collector.js';
 import { writeOrDisplaySummary } from '../../summary/display.js';
+import { autoClaimPlan, isAutoClaimEnabled } from '../../assignments/auto_claim.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -299,6 +300,22 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
   // Check if the plan needs preparation
   const planData = await readPlanFile(currentPlanFile);
+
+  if (isAutoClaimEnabled()) {
+    if (planData.uuid) {
+      try {
+        await autoClaimPlan(
+          { plan: { ...planData, filename: currentPlanFile }, uuid: planData.uuid },
+          { cwdForIdentity: currentBaseDir }
+        );
+      } catch (err) {
+        const label = planData.id ?? planData.uuid;
+        warn(`Failed to auto-claim plan ${label}: ${err as Error}`);
+      }
+    } else {
+      warn(`Plan at ${currentPlanFile} is missing a UUID; skipping auto-claim.`);
+    }
+  }
 
   // Initialize execution summary collection
   // Default enabled unless explicitly disabled by CLI or env var

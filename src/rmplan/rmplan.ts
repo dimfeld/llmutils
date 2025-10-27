@@ -41,6 +41,7 @@ import { handleCommandError } from './utils/commands.js';
 import { prioritySchema, statusSchema } from './planSchema.js';
 import { CleanupRegistry } from '../common/cleanup_registry.js';
 import { startMcpServer } from './mcp/server.js';
+import { enableAutoClaim } from './assignments/auto_claim.js';
 
 function intArg(value: string | undefined): number | undefined;
 function intArg(value: string[] | undefined): number[] | undefined;
@@ -881,6 +882,7 @@ storageCommand
 
 async function run() {
   await loadEnv();
+  enableAutoClaim();
 
   // Set up signal handlers for cleanup
   const cleanupRegistry = CleanupRegistry.getInstance();

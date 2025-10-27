@@ -5,6 +5,7 @@ goal: Enable multi-user workflows in rmplan by supporting user identity via
   environment variables and tracking both plan assignments and status in a
   shared configuration
 id: 139
+uuid: 8b82a7c6-2182-48b7-af3e-2be853519242
 generatedBy: agent
 status: in_progress
 priority: high
@@ -17,7 +18,7 @@ docs: []
 planGeneratedAt: 2025-10-27T08:01:47.867Z
 promptsGeneratedAt: 2025-10-27T08:01:47.867Z
 createdAt: 2025-10-27T05:51:22.359Z
-updatedAt: 2025-10-27T11:40:50.354Z
+updatedAt: 2025-10-27T12:25:15.299Z
 progressNotes:
   - timestamp: 2025-10-27T08:07:27.994Z
     text: Added optional uuid field to plan schema, generate/add stub assignments
@@ -151,6 +152,37 @@ progressNotes:
       custom stale timeout, and conflict-free scenarios. Verified updates with
       bun run check and targeted bun test runs.
     source: "tester: Task 10"
+  - timestamp: 2025-10-27T11:45:36.820Z
+    text: "Assessed existing code/tests/documentation: core assignment tests already
+      exist (assignments_io, workspace_identifier, uuid_lookup, claim, release,
+      ready/list/show). Documentation updates for multi-workspace workflows and
+      integration coverage for agent/generate auto-claiming remain absent.
+      Discovered auto-claim functionality is not yet wired into generate/agent
+      commands, so Task 11 will need to add that behavior before we can exercise
+      it end-to-end."
+    source: "implementer: Task 11"
+  - timestamp: 2025-10-27T12:10:47.333Z
+    text: "Implemented auto-claim toggles and new coverage: added enable/disable
+      helpers so CLI invocations turn on shared assignments while unit tests
+      stay stable, created integration tests asserting rmplan generate/agent
+      invoke auto-claim, introduced direct auto-claim persistence tests, and
+      documented multi-workspace workflows with a dedicated guide plus README
+      entry."
+    source: "implementer: Task 11"
+  - timestamp: 2025-10-27T12:14:09.071Z
+    text: Ran bun run check to ensure TypeScript types remain valid after multi-user
+      assignment changes.
+    source: "tester: Task 11"
+  - timestamp: 2025-10-27T12:14:24.520Z
+    text: Ran bun test; suite failed because configLoader default expectation does
+      not include new assignments.staleTimeout default of 7, indicating tests
+      need update.
+    source: "tester: Task 11"
+  - timestamp: 2025-10-27T12:15:09.174Z
+    text: Updated configLoader default config test to include
+      assignments.staleTimeout default and reran bun test; entire suite now
+      passes.
+    source: "tester: Task 11"
 tasks:
   - title: Add UUID field to plan schema with auto-generation
     done: true
@@ -354,7 +386,6 @@ changedFiles:
   - test-plans/plans/103-testing-infrastructure.yml
   - test-plans/plans/104-test-data-generation.yml
 rmfilter: []
-uuid: 8b82a7c6-2182-48b7-af3e-2be853519242
 ---
 
 <!-- rmplan-generated-start -->
@@ -1018,3 +1049,7 @@ Updated checkAndMarkParentDone in src/rmplan/plans/mark_done.ts to call removePl
 Task 10 – Add stale assignment detection and cleanup: extended rmplan config and JSON schemas with an optional assignments.staleTimeout knob, defaulted to 7 days via the existing loader, and built src/rmplan/assignments/stale_detection.ts to expose isStaleAssignment/getStaleAssignments plus a config-aware timeout helper. Task 10 also gained a dedicated CLI surface in src/rmplan/commands/assignments.ts and rmplan.ts with list/clean-stale/show-conflicts handlers that read shared assignments.json, render workspace/user summaries, and perform atomic stale cleanup behind the existing optimistic lock. Added focused validation in src/rmplan/assignments/stale_detection.test.ts and src/rmplan/commands/assignments.test.ts to cover timeout resolution, stale detection, confirmation flows, conflict reporting, and interaction with real writeAssignments/readAssignments so future maintainers can lean on these guardrails when evolving the feature.
 
 Documented fix for Task 10 – Add stale assignment detection and cleanup: corrected loadAssignmentsContext in src/rmplan/commands/assignments.ts to call getRepositoryIdentity() without overriding cwd, ensuring repositories using external task storage resolve to the same shared assignments file used by claim/release/ready and preserving the stale cleanup workflow. Verified by bun test src/rmplan/commands/assignments.test.ts and bun run check; no other files required changes.
+
+Implemented Task 11: Added src/rmplan/assignments/auto_claim.ts with enable/disable toggles so the CLI can opt into shared assignments while test suites stay isolated, and factored the claim logging into src/rmplan/assignments/claim_logging.ts for reuse. Wired auto-claim into rmplan generate (src/rmplan/commands/generate.ts) and rmplan agent (src/rmplan/commands/agent/agent.ts), using resolvePlanWithUuid to find the plan UUID and passing cwd hints so repository identity resolves to the active workspace. Updated rmplan.ts to call enableAutoClaim() after environment load to turn the feature on for CLI invocations, and simplified handleClaimCommand (src/rmplan/commands/claim.ts) to use the shared logging. Added regression coverage: src/rmplan/assignments/auto_claim.test.ts exercises the enable/disable path and persistence to assignments.json; src/rmplan/commands/generate.auto_claim.integration.test.ts and src/rmplan/commands/agent/agent.auto_claim.integration.test.ts confirm the commands invoke auto claim when enabled. Documented the workflow via docs/multi-workspace-workflow.md and linked it from README.md.
+
+Addressed reviewer finding that rmplan generate auto-claim recorded external workspace paths when plans lived in shared storage. Updated src/rmplan/commands/generate.ts to pass pathContext.gitRoot into autoClaimPlan so getRepositoryIdentity resolves against the actual checkout instead of path.dirname(plan.filename). This keeps repositoryId hashing and workspacePath values consistent with rmplan ready/--mine across multi-workspace setups and prevents cross-repo assignment collisions. No deviations from the plan; relied on existing pathContext wiring. Validated fix via bun test src/rmplan/commands/generate.auto_claim.integration.test.ts.

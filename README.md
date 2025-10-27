@@ -40,6 +40,7 @@ assume a repository written with Typescript and PNPM workspaces.
 - [rmplan](#rmplan)
   - [Key Features](#key-features-3)
   - [Usage](#usage-1)
+    - [Multi-Workspace Workflows](#multi-workspace-workflows)
     - [Ready Command](#rmplan-ready)
     - [Cleanup Command](#cleanup-command)
     - [Address Comments Command](#address-comments-command)
@@ -318,6 +319,17 @@ The general usage pattern is that you will:
 5. Use the `next` command to get the prompt for the next step(s).
 6. Run the prompt with whatever LLM or coding agent you prefer.
 7. Use the `done` command to mark the next step(s) as done and commit changes.
+
+### Multi-Workspace Workflows
+
+rmplan supports multiple active clones of the same repository by storing plan assignments in a shared configuration directory. Plan claims are keyed by UUID and include the workspace path and user identity so each checkout only surfaces the plans it owns.
+
+- Use `rmplan claim <plan>` (or rely on the built-in auto-claim in `rmplan generate`, `rmplan agent`, and `rmplan run`) to associate the current workspace with a plan.
+- `rmplan ready` shows plans claimed by the current workspace together with unassigned plans; add `--all`, `--unassigned`, or `--user <name>` to adjust the view.
+- Release finished plans with `rmplan release <plan>`; add `--reset-status` to move them back to `pending`.
+- Inspect and clean shared assignments with `rmplan assignments list`, `rmplan assignments show-conflicts`, and `rmplan assignments clean-stale`.
+
+See [docs/multi-workspace-workflow.md](docs/multi-workspace-workflow.md) for a complete walkthrough, team coordination tips, and troubleshooting guidance.
 
 Then repeat steps 5 through 7 until the task is done.
 

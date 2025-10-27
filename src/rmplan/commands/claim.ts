@@ -1,7 +1,5 @@
-import chalk from 'chalk';
-
-import { log, warn } from '../../logging.js';
 import { claimPlan } from '../assignments/claim_plan.js';
+import { logClaimOutcome } from '../assignments/claim_logging.js';
 import { resolvePlanWithUuid } from '../assignments/uuid_lookup.js';
 import { getRepositoryIdentity, getUserIdentity } from '../assignments/workspace_identifier.js';
 
@@ -37,30 +35,9 @@ export async function handleClaimCommand(
     user,
   });
 
-  for (const message of result.warnings) {
-    warn(`${chalk.yellow('⚠')} ${message}`);
-  }
-
-  if (result.persisted) {
-    const actionDetails: string[] = [];
-    if (result.created) {
-      actionDetails.push('created assignment');
-    } else if (result.addedWorkspace) {
-      actionDetails.push('added workspace');
-    }
-    if (result.addedUser && user) {
-      actionDetails.push(`added user ${user}`);
-    }
-    const suffix = actionDetails.length > 0 ? ` (${actionDetails.join(', ')})` : '';
-    log(
-      `${chalk.green('✓')} Claimed plan ${planLabel} in workspace ${repository.gitRoot}${suffix}`
-    );
-  } else {
-    log(
-      `${chalk.yellow('•')} Plan ${planLabel} is already claimed in workspace ${repository.gitRoot}`
-    );
-    if (user) {
-      log(`  User: ${user}`);
-    }
-  }
+  logClaimOutcome(result, {
+    planLabel,
+    workspacePath: repository.gitRoot,
+    user,
+  });
 }

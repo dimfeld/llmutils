@@ -48,6 +48,8 @@ import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import { invokeClaudeCodeForGeneration } from '../claude_utils.js';
 import { findNextReadyDependency } from './find_next_dependency.js';
 import { isURL } from '../context_helpers.ts';
+import { autoClaimPlan, isAutoClaimEnabled } from '../assignments/auto_claim.js';
+import { resolvePlanWithUuid } from '../assignments/uuid_lookup.js';
 
 type PlanWithFilename = PlanSchema & { filename: string };
 
@@ -765,6 +767,18 @@ export async function handleGenerateCommand(
       };
 
       await extractMarkdownToYaml(input, config, options.quiet ?? false, extractOptions);
+
+      const targetPlanArg = planFile ?? outputPath;
+      if (targetPlanArg && isAutoClaimEnabled()) {
+        try {
+          const { plan, uuid } = await resolvePlanWithUuid(targetPlanArg, {
+            configPath: globalOpts.config,
+          });
+          await autoClaimPlan({ plan, uuid }, { cwdForIdentity: gitRoot });
+        } catch (err) {
+          warn(`Failed to auto-claim plan ${targetPlanArg}: ${err as Error}`);
+        }
+      }
     }
   } finally {
     if (wrotePrompt && tmpPromptPath) {
