@@ -17,7 +17,7 @@ docs: []
 planGeneratedAt: 2025-10-27T08:01:47.867Z
 promptsGeneratedAt: 2025-10-27T08:01:47.867Z
 createdAt: 2025-10-27T05:51:22.359Z
-updatedAt: 2025-10-27T08:26:27.468Z
+updatedAt: 2025-10-27T08:27:54.691Z
 progressNotes:
   - timestamp: 2025-10-27T08:07:27.994Z
     text: Added optional uuid field to plan schema, generate/add stub assignments
@@ -35,7 +35,7 @@ progressNotes:
     source: "tester: Task 1"
 tasks:
   - title: Add UUID field to plan schema with auto-generation
-    done: false
+    done: true
     description: Add `uuid` field to plan schema in `src/rmplan/planSchema.ts` as
       `z.string().uuid().optional()`. Update JSON schema generation. Implement
       UUID auto-generation in `rmplan add` and `rmplan generate` commands using
@@ -182,7 +182,15 @@ tasks:
     files: []
     docs: []
     steps: []
-changedFiles: []
+changedFiles:
+  - schema/rmplan-plan-schema.json
+  - src/rmplan/commands/add.test.ts
+  - src/rmplan/commands/add.ts
+  - src/rmplan/commands/generate.test.ts
+  - src/rmplan/commands/generate.ts
+  - src/rmplan/planSchema.ts
+  - src/rmplan/plans.test.ts
+  - src/rmplan/plans.ts
 rmfilter: []
 ---
 
