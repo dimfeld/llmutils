@@ -129,21 +129,20 @@ function comparePlans<T extends PlanSchema>(
     }
     case 'priority':
     default: {
-      comparison = comparePriority(a, b);
-      if (comparison === 0) {
-        const createdComparison = (a.createdAt ?? '').localeCompare(b.createdAt ?? '');
-        comparison = createdComparison !== 0 ? createdComparison : compareIds(a.id, b.id);
+      const priorityComparison = comparePriority(b, a);
+      if (priorityComparison !== 0) {
+        comparison = priorityComparison;
+      } else {
+        comparison = (a.createdAt ?? '').localeCompare(b.createdAt ?? '');
+        if (comparison === 0) {
+          comparison = compareIds(a.id, b.id);
+        }
       }
       break;
     }
   }
 
-  const isPrioritySort = sortBy === 'priority';
   const sortMultiplier = reverse ? -1 : 1;
-
-  if (isPrioritySort) {
-    return -comparison * sortMultiplier;
-  }
 
   return comparison * sortMultiplier;
 }

@@ -11,7 +11,7 @@ temp: false
 planGeneratedAt: 2025-10-27T19:36:54.793Z
 promptsGeneratedAt: 2025-10-27T19:36:54.793Z
 createdAt: 2025-10-27T06:31:21.571Z
-updatedAt: 2025-10-27T19:46:35.753Z
+updatedAt: 2025-10-27T19:56:33.521Z
 progressNotes:
   - timestamp: 2025-10-27T19:46:00.224Z
     text: Created shared ready_plans module with filtering/sorting utilities,
@@ -19,6 +19,10 @@ progressNotes:
       and ran bun check plus targeted eslint; full eslint still fails due to
       pre-existing issues.
     source: "implementer: Task 1 & Task 6"
+  - timestamp: 2025-10-27T19:49:02.379Z
+    text: Ran ready plan unit tests, ready command tests, MCP generate mode tests,
+      and type checking; all pass.
+    source: "tester: Task 1 & 6"
 tasks:
   - title: Create ready_plans.ts shared utility module
     done: false
@@ -939,3 +943,5 @@ Given the different levels of coupling and duplication:
 Should we tackle this incrementally or as one large refactor?
 
 Implemented Task 1 (Create ready_plans.ts shared utility module) and Task 6 (Extract handleListReadyPlansTool to ready.ts). Added new module src/rmplan/ready_plans.ts exposing isReadyPlan, sortReadyPlans, filterAndSortReadyPlans, and formatReadyPlansAsJson with shared priority mapping and git-root aware filename handling. Created src/rmplan/ready_plans.test.ts to cover readiness detection (including numeric-string dependencies), sorting, limiting, and JSON formatting. Updated commands/ready.ts to consume the shared helpers, replace inline readiness/sort logic, and reuse READY_PLAN_SORT_FIELDS while keeping assignment display features intact; the CLI now treats empty-task plans as not ready, so ready.test.ts fixtures were refreshed to ensure each plan under test has at least one task and to assert the new exclusion explicitly. Refactored MCP list-ready-plans handler in mcp/generate_mode.ts to delegate to filterAndSortReadyPlans/formatReadyPlansAsJson, removing the duplicated filtering and sorting logic. Ran bun test on the new module and ready command suites plus bun run check; bun run lint still fails globally because of unrelated pre-existing violations, but targeted eslint on the touched files passes. Formatted touched files with prettier to match project style.
+
+Restored original tie-breaking behavior in the shared ready plan sorter to keep equal-priority plans ordered by creation timestamp while preserving descending priority ordering. Updated sortReadyPlans priority branch in src/rmplan/ready_plans.ts to compare priority in descending order without negating tie-breakers, then fall back to createdAt and id, retaining compatibility with CLI consumers from Task 1 - Create ready_plans.ts shared utility module and Task 6 - Extract handleListReadyPlansTool to ready.ts. Added regression coverage in src/rmplan/ready_plans.test.ts exercising equal-priority plans to confirm the oldest plan surfaces first, ensuring downstream MCP list-ready-plans output remains stable. Verified the fix with bun test runs for ready_plans.test.ts, commands/ready.test.ts, mcp/generate_mode.test.ts, and bun run check so future maintainers know the expected validation suite.

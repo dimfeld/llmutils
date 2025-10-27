@@ -125,6 +125,16 @@ describe('sortReadyPlans', () => {
     const sortedDesc = sortReadyPlans(plans, 'title', true);
     expect(sortedDesc.map((plan) => plan.id)).toEqual([3, 1, 2]);
   });
+
+  it('keeps createdAt ascending when priorities tie', () => {
+    const plans = [
+      createPlan({ id: 1, priority: 'high', createdAt: '2024-01-01T00:00:00Z' }),
+      createPlan({ id: 2, priority: 'high', createdAt: '2024-02-01T00:00:00Z' }),
+    ];
+
+    const sorted = sortReadyPlans(plans, 'priority', false);
+    expect(sorted.map((plan) => plan.id)).toEqual([1, 2]);
+  });
 });
 
 describe('filterAndSortReadyPlans', () => {
