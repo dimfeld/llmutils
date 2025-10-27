@@ -25,6 +25,9 @@ import type { PlanSchema } from '../planSchema.js';
 describe('handleReadyCommand', () => {
   let tempDir: string;
   let tasksDir: string;
+  let repoDir: string;
+  let repositoryId: string;
+  let assignmentsData: Record<string, any>;
 
   beforeEach(async () => {
     // Clear mocks
@@ -38,8 +41,11 @@ describe('handleReadyCommand', () => {
 
     // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-ready-test-'));
-    tasksDir = path.join(tempDir, 'tasks');
+    repoDir = path.join(tempDir, 'repo');
+    tasksDir = path.join(repoDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
+    repositoryId = 'ready-tests';
+    assignmentsData = {};
 
     // Set up mocks
     await moduleMocker.mock('../../logging.js', () => ({
@@ -83,9 +89,26 @@ describe('handleReadyCommand', () => {
       }),
     }));
 
-    // Mock getGitRoot for JSON format tests
+    // Mock git helpers
     await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
+      getGitRoot: async () => repoDir,
+    }));
+
+    await moduleMocker.mock('../assignments/workspace_identifier.ts', () => ({
+      getRepositoryIdentity: async () => ({
+        repositoryId,
+        remoteUrl: 'https://example.com/repo.git',
+        gitRoot: repoDir,
+      }),
+    }));
+
+    await moduleMocker.mock('../assignments/assignments_io.js', () => ({
+      readAssignments: async () => ({
+        repositoryId,
+        repositoryRemoteUrl: 'https://example.com/repo.git',
+        version: 0,
+        assignments: assignmentsData,
+      }),
     }));
   });
 
@@ -640,6 +663,7 @@ describe('handleReadyCommand', () => {
     expect(headerRow).toBeDefined();
     expect(headerRow).toContain('ID');
     expect(headerRow).toContain('Title');
+    expect(headerRow).toContain('Workspace');
 
     // Check data row exists
     expect(tableData[1]).toBeDefined();
@@ -647,6 +671,7 @@ describe('handleReadyCommand', () => {
     expect(dataRow[0]).toBe(1); // ID is passed as number to chalk
     expect(dataRow[1]).toBe('Test plan');
     expect(dataRow[4]).toBe('1/2'); // 1 done out of 2 tasks
+    expect(dataRow[5]).toBe('unassigned');
   });
 
   // Test 13: JSON format works
@@ -695,6 +720,10 @@ describe('handleReadyCommand', () => {
     expect(plan.createdAt).toBe('2025-01-15T10:30:00Z');
     expect(plan.updatedAt).toBe('2025-01-20T14:22:00Z');
     expect(plan.filename).toBeDefined();
+    expect(plan.workspacePaths).toEqual([]);
+    expect(plan.users).toEqual([]);
+    expect(plan.isAssignedHere).toBe(false);
+    expect(plan.isUnassigned).toBe(true);
   });
 
   // Test 14: Verbose mode shows file paths
@@ -874,5 +903,401 @@ describe('handleReadyCommand', () => {
     // Plan should be shown as ready because string '1' should resolve to numeric 1
     expect(logOutput).toContain('Ready Plans (1)');
     expect(logOutput).toContain('Plan with string dependency');
+  });
+
+  test('defaults to showing current workspace assignments and unassigned plans', async () => {
+    const now = new Date().toISOString();
+
+    await createPlan({
+      id: 1,
+      uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      title: 'Unassigned Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+      createdAt: now,
+    });
+
+    await createPlan({
+      id: 2,
+      uuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      title: 'Current Workspace Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+      createdAt: now,
+    });
+
+    await createPlan({
+      id: 3,
+      uuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      title: 'Other Workspace Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+      createdAt: now,
+    });
+
+    assignmentsData = {
+      'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb': {
+        planId: 2,
+        workspacePaths: [repoDir],
+        users: ['alice'],
+        status: 'in_progress',
+        assignedAt: now,
+        updatedAt: now,
+      },
+      'cccccccc-cccc-4ccc-8ccc-cccccccccccc': {
+        planId: 3,
+        workspacePaths: [path.join(tempDir, 'other-workspace')],
+        users: ['bob'],
+        status: 'pending',
+        assignedAt: now,
+        updatedAt: now,
+      },
+    };
+
+    const options = {};
+    const command = createCommand();
+
+    await handleReadyCommand(options, command);
+
+    const logOutput = mockLog.mock.calls.map((call) => call[0]).join('\n');
+
+    expect(logOutput).toContain('Unassigned Plan');
+    expect(logOutput).toContain('Current Workspace Plan');
+    expect(logOutput).not.toContain('Other Workspace Plan');
+    expect(mockWarn).not.toHaveBeenCalled();
+  });
+
+  test('--all shows plans assigned to other workspaces', async () => {
+    const now = new Date().toISOString();
+
+    await createPlan({
+      id: 1,
+      uuid: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      title: 'Other Workspace Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+      createdAt: now,
+    });
+
+    assignmentsData = {
+      'dddddddd-dddd-4ddd-8ddd-dddddddddddd': {
+        planId: 1,
+        workspacePaths: [path.join(tempDir, 'other-workspace')],
+        users: ['carol'],
+        status: 'pending',
+        assignedAt: now,
+        updatedAt: now,
+      },
+    };
+
+    const options = { all: true };
+    const command = createCommand();
+
+    await handleReadyCommand(options, command);
+
+    const logOutput = mockLog.mock.calls.map((call) => call[0]).join('\n');
+
+    expect(logOutput).toContain('Other Workspace Plan');
+  });
+
+  test('--unassigned filters out claimed plans', async () => {
+    const now = new Date().toISOString();
+
+    await createPlan({
+      id: 1,
+      uuid: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      title: 'Available Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+      createdAt: now,
+    });
+
+    await createPlan({
+      id: 2,
+      uuid: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      title: 'Claimed Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+      createdAt: now,
+    });
+
+    assignmentsData = {
+      'ffffffff-ffff-4fff-8fff-ffffffffffff': {
+        planId: 2,
+        workspacePaths: [repoDir],
+        users: ['alice'],
+        status: 'pending',
+        assignedAt: now,
+        updatedAt: now,
+      },
+    };
+
+    const options = { unassigned: true };
+    const command = createCommand();
+
+    await handleReadyCommand(options, command);
+
+    const logOutput = mockLog.mock.calls.map((call) => call[0]).join('\n');
+
+    expect(logOutput).toContain('Available Plan');
+    expect(logOutput).not.toContain('Claimed Plan');
+  });
+
+  test('--user filters by assignment user', async () => {
+    const now = new Date().toISOString();
+
+    await createPlan({
+      id: 1,
+      uuid: '01010101-0101-4010-8010-010101010101',
+      title: 'Alice Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+      createdAt: now,
+    });
+
+    await createPlan({
+      id: 2,
+      uuid: '02020202-0202-4020-8020-020202020202',
+      title: 'Bob Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+      createdAt: now,
+    });
+
+    assignmentsData = {
+      '01010101-0101-4010-8010-010101010101': {
+        planId: 1,
+        workspacePaths: [repoDir],
+        users: ['alice'],
+        status: 'pending',
+        assignedAt: now,
+        updatedAt: now,
+      },
+      '02020202-0202-4020-8020-020202020202': {
+        planId: 2,
+        workspacePaths: [path.join(tempDir, 'bob-workspace')],
+        users: ['bob'],
+        status: 'pending',
+        assignedAt: now,
+        updatedAt: now,
+      },
+    };
+
+    const options = { user: 'alice' };
+    const command = createCommand();
+
+    await handleReadyCommand(options, command);
+
+    const logOutput = mockLog.mock.calls.map((call) => call[0]).join('\n');
+
+    expect(logOutput).toContain('Alice Plan');
+    expect(logOutput).not.toContain('Bob Plan');
+  });
+
+  test('--user falls back to plan assignedTo when assignments are missing', async () => {
+    const now = new Date().toISOString();
+
+    await createPlan({
+      id: 1,
+      title: 'Legacy Alice Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+      assignedTo: 'alice',
+      createdAt: now,
+    });
+
+    await createPlan({
+      id: 2,
+      title: 'Legacy Bob Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+      assignedTo: 'bob',
+      createdAt: now,
+    });
+
+    assignmentsData = {};
+
+    const options = { user: 'alice' };
+    const command = createCommand();
+
+    await handleReadyCommand(options, command);
+
+    const logOutput = mockLog.mock.calls.map((call) => call[0]).join('\n');
+
+    expect(logOutput).toContain('Legacy Alice Plan');
+    expect(logOutput).not.toContain('Legacy Bob Plan');
+  });
+
+  test('--user matches assigned users case-insensitively', async () => {
+    const now = new Date().toISOString();
+
+    await createPlan({
+      id: 1,
+      uuid: '11111111-1111-4111-8111-111111111111',
+      title: 'Case Alice Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+      createdAt: now,
+    });
+
+    await createPlan({
+      id: 2,
+      uuid: '22222222-2222-4222-8222-222222222222',
+      title: 'Case Bob Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+      createdAt: now,
+    });
+
+    assignmentsData = {
+      '11111111-1111-4111-8111-111111111111': {
+        planId: 1,
+        workspacePaths: [repoDir],
+        users: ['alice'],
+        status: 'pending',
+        assignedAt: now,
+        updatedAt: now,
+      },
+      '22222222-2222-4222-8222-222222222222': {
+        planId: 2,
+        workspacePaths: [path.join(tempDir, 'bob-workspace')],
+        users: ['bob'],
+        status: 'pending',
+        assignedAt: now,
+        updatedAt: now,
+      },
+    };
+
+    const options = { user: 'ALICE' };
+    const command = createCommand();
+
+    await handleReadyCommand(options, command);
+
+    const logOutput = mockLog.mock.calls.map((call) => call[0]).join('\n');
+
+    expect(logOutput).toContain('Case Alice Plan');
+    expect(logOutput).not.toContain('Case Bob Plan');
+  });
+
+  test('warns when a plan is claimed in multiple workspaces', async () => {
+    const now = new Date().toISOString();
+
+    await createPlan({
+      id: 1,
+      uuid: '03030303-0303-4030-8030-030303030303',
+      title: 'Shared Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+      createdAt: now,
+    });
+
+    assignmentsData = {
+      '03030303-0303-4030-8030-030303030303': {
+        planId: 1,
+        workspacePaths: [repoDir, path.join(tempDir, 'teammate-workspace')],
+        users: ['alice', 'bob'],
+        status: 'pending',
+        assignedAt: now,
+        updatedAt: now,
+      },
+    };
+
+    const options = {};
+    const command = createCommand();
+
+    await handleReadyCommand(options, command);
+
+    expect(mockWarn).toHaveBeenCalled();
+    const warningOutput = mockWarn.mock.calls.map((call) => call[0]).join('\n');
+    expect(warningOutput).toContain('Plan 1 is claimed in multiple workspaces');
+  });
+
+  test('assignment status overrides plan file status', async () => {
+    const now = new Date().toISOString();
+
+    await createPlan({
+      id: 1,
+      uuid: '04040404-0404-4040-8040-040404040404',
+      title: 'In Progress via Assignment',
+      status: 'done',
+      tasks: [],
+      dependencies: [],
+      createdAt: now,
+    });
+
+    assignmentsData = {
+      '04040404-0404-4040-8040-040404040404': {
+        planId: 1,
+        workspacePaths: [repoDir],
+        users: ['alice'],
+        status: 'in_progress',
+        assignedAt: now,
+        updatedAt: now,
+      },
+    };
+
+    const options = {};
+    const command = createCommand();
+
+    await handleReadyCommand(options, command);
+
+    const logOutput = mockLog.mock.calls.map((call) => call[0]).join('\n');
+
+    expect(logOutput).toContain('In Progress via Assignment');
+    expect(logOutput).toContain('Status: in_progress');
+  });
+
+  test('json output includes assignment metadata', async () => {
+    const now = new Date().toISOString();
+
+    await createPlan({
+      id: 1,
+      uuid: '05050505-0505-4050-8050-050505050505',
+      goal: 'JSON plan',
+      title: 'JSON Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    assignmentsData = {
+      '05050505-0505-4050-8050-050505050505': {
+        planId: 1,
+        workspacePaths: [repoDir],
+        users: ['alice'],
+        status: 'in_progress',
+        assignedAt: now,
+        updatedAt: now,
+      },
+    };
+
+    const options = { format: 'json' };
+    const command = createCommand();
+
+    await handleReadyCommand(options, command);
+
+    const jsonOutput = mockLog.mock.calls[0][0];
+    const result = JSON.parse(jsonOutput);
+
+    expect(result.count).toBe(1);
+    expect(result.plans[0].workspacePaths).toEqual([repoDir]);
+    expect(result.plans[0].users).toEqual(['alice']);
+    expect(result.plans[0].isAssignedHere).toBe(true);
+    expect(result.plans[0].isUnassigned).toBe(false);
   });
 });

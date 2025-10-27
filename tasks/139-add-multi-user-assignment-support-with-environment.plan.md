@@ -17,7 +17,7 @@ docs: []
 planGeneratedAt: 2025-10-27T08:01:47.867Z
 promptsGeneratedAt: 2025-10-27T08:01:47.867Z
 createdAt: 2025-10-27T05:51:22.359Z
-updatedAt: 2025-10-27T09:41:56.058Z
+updatedAt: 2025-10-27T10:33:27.459Z
 progressNotes:
   - timestamp: 2025-10-27T08:07:27.994Z
     text: Added optional uuid field to plan schema, generate/add stub assignments
@@ -101,6 +101,16 @@ progressNotes:
     text: Extended release command test suite to cover non-workspace claims,
       UUID-only plans, and pending reset messaging.
     source: "tester: Task 6"
+  - timestamp: 2025-10-27T10:16:56.797Z
+    text: Implemented ready command assignments filtering, updated list/show
+      displays, and extended tests to cover new workspace/user behavior.
+    source: "implementer: Tasks 7&8"
+  - timestamp: 2025-10-27T10:21:18.863Z
+    text: Moved the assignment-focused list command tests out of the mockTable
+      helper so they actually execute, added coverage for the new
+      filters/workspace column, and reran bun run check plus the relevant
+      command suites.
+    source: "tester: Task 8"
 tasks:
   - title: Add UUID field to plan schema with auto-generation
     done: true
@@ -183,7 +193,7 @@ tasks:
     docs: []
     steps: []
   - title: Update ready command with assignment filtering
-    done: false
+    done: true
     description: "Modify `src/rmplan/commands/ready.ts`: read assignments file,
       filter by current workspace path by default (show plans claimed here OR
       unassigned), add --all flag (ignore assignments), add --unassigned flag
@@ -197,7 +207,7 @@ tasks:
     docs: []
     steps: []
   - title: Update list and show commands with assignment display
-    done: false
+    done: true
     description: "Modify `src/rmplan/commands/list.ts`: read assignments file, add
       assignment indicator column (workspace names or icon), optionally filter
       by --assigned/--unassigned flags. Modify `src/rmplan/commands/show.ts`:
@@ -267,9 +277,17 @@ changedFiles:
   - src/rmplan/commands/claim.ts
   - src/rmplan/commands/generate.test.ts
   - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/list.test.ts
+  - src/rmplan/commands/list.ts
+  - src/rmplan/commands/ready.test.ts
+  - src/rmplan/commands/ready.ts
   - src/rmplan/commands/release.test.ts
   - src/rmplan/commands/release.ts
   - src/rmplan/commands/renumber.test.ts
+  - src/rmplan/commands/show.test.ts
+  - src/rmplan/commands/show.ts
+  - src/rmplan/display_utils.test.ts
+  - src/rmplan/display_utils.ts
   - src/rmplan/planSchema.ts
   - src/rmplan/plans/mark_done_set_task.test.ts
   - src/rmplan/plans.test.ts
@@ -936,3 +954,7 @@ Added a regression test in src/rmplan/commands/claim.test.ts that seeds an unnum
 Implemented Task 6: Implement rmplan release command. Added src/rmplan/assignments/release_plan.ts to encapsulate the compare-and-swap removal flow. The helper clones the existing assignment entry, removes the current workspace and user, deletes the assignment entirely when both arrays empty, and emits warnings when other workspaces/users remain. It preserves optimistic locking semantics and bumps the shared assignments version through writeAssignments. Created src/rmplan/commands/release.ts with handleReleaseCommand() which resolves the target plan UUID, invokes releasePlan, mirrors claim-style logging/warnings, and supports the --reset-status flag by writing the plan back to pending via writePlanFile. Wired the new command into rmplan.ts CLI definition. Added coverage in src/rmplan/commands/release.test.ts using ModuleMocker to confirm full removal, idempotent release, partial release warnings, and status reset behavior against the real assignments file.
 
 Implemented a fix for Task 6 – Implement rmplan release command by teaching the assignments layer which user owns each workspace. Added an optional workspaceOwners map to assignments_schema.ts and ensured claimPlan populates and updates it so we know who owns every path going forward. releasePlan now consults that mapping, only removes users when their last workspace is gone, and falls back to conservative heuristics if older assignments lack owner data. The release tests gained a multi-workspace regression that locks in the expected warnings and logging. This prevents us from stripping a user when they still have another checkout while remaining backwards compatible with existing files.
+
+Implemented Task 7 by making 'rmplan ready' assignment-aware: it now loads shared assignments, prefers their status values, adds --all/--unassigned/--user filters, formats workspace names via formatWorkspacePath, and emits warnings for multi-workspace claims.\n\nImplemented Task 8 by wiring the same assignment metadata into 'rmplan list' and 'rmplan show'. List now exposes --assigned/--unassigned filters, shows a workspace column, and applies assignment status when sorting or rendering dependency badges. Show merges assignment details into both short and full views, displays workspace/user/timestamp info, warns on conflicts, and keeps watch mode in sync by reloading assignments.\n\nCreated formatWorkspacePath plus helper utilities, refreshed ready/list/show tests to cover the new behaviors, and exposed the new CLI flags in rmplan.ts.
+
+Task 7: Update ready command with assignment filtering - addressed review feedback by updating handleReadyCommand in src/rmplan/commands/ready.ts to normalize --user inputs, fall back to plan-level assignedTo when assignments.json lacks entries, and preserve original casing in empty-state messaging. Added regression coverage in src/rmplan/commands/ready.test.ts to verify legacy assignedTo filtering and case-insensitive user matching so future edits keep backward compatibility. Tests: bun run check; bun test src/rmplan/commands/ready.test.ts.

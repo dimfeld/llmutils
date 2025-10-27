@@ -400,6 +400,8 @@ program
   .option('--files', 'Show file paths column')
   .option('-u, --user <username>', 'Filter by assignedTo username')
   .option('--mine', 'Show only plans assigned to current user')
+  .option('--assigned', 'Show only plans that are claimed in shared assignments')
+  .option('--unassigned', 'Show only plans that are not claimed in shared assignments')
   .option('-n, --number <count>', 'Limit the number of results shown', (value: string) => {
     const n = Number(value);
     if (Number.isNaN(n) || n <= 0) {
@@ -422,6 +424,9 @@ program
   .option('--reverse', 'Reverse sort order')
   .option('--pending-only', 'Show only pending plans (exclude in_progress)')
   .option('--priority <priority>', 'Filter by priority: low, medium, high, urgent, maybe')
+  .option('--all', 'Show ready plans regardless of assignment ownership')
+  .option('--unassigned', 'Show only ready plans that are not currently claimed')
+  .option('--user <username>', 'Show ready plans claimed by the specified user')
   .option('-v, --verbose', 'Show additional details like file paths')
   .action(async (options, command) => {
     const { handleReadyCommand } = await import('./commands/ready.js');

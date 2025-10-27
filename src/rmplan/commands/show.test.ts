@@ -12,29 +12,37 @@ const moduleMocker = new ModuleMocker(import.meta);
 // Mock console functions
 const logSpy = mock(() => {});
 const errorSpy = mock(() => {});
+const warnSpy = mock(() => {});
 
 describe('handleShowCommand', () => {
   let tempDir: string;
+  let repoDir: string;
   let tasksDir: string;
+  let repositoryId: string;
+  let assignmentsData: Record<string, any>;
 
   beforeEach(async () => {
     // Clear mocks
     logSpy.mockClear();
     errorSpy.mockClear();
+    warnSpy.mockClear();
 
     // Clear plan cache
     clearPlanCache();
 
     // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-show-test-'));
-    tasksDir = path.join(tempDir, 'tasks');
+    repoDir = path.join(tempDir, 'repo');
+    tasksDir = path.join(repoDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
+    repositoryId = 'show-tests';
+    assignmentsData = {};
 
     // Mock modules
     await moduleMocker.mock('../../logging.js', () => ({
       log: logSpy,
       error: errorSpy,
-      warn: mock(() => {}),
+      warn: warnSpy,
     }));
 
     // Mock config loader
@@ -46,9 +54,21 @@ describe('handleShowCommand', () => {
       }),
     }));
 
-    // Mock utils
-    await moduleMocker.mock('../../rmfilter/utils.js', () => ({
-      getGitRoot: async () => tempDir,
+    await moduleMocker.mock('../assignments/workspace_identifier.ts', () => ({
+      getRepositoryIdentity: async () => ({
+        repositoryId,
+        remoteUrl: 'https://example.com/repo.git',
+        gitRoot: repoDir,
+      }),
+    }));
+
+    await moduleMocker.mock('../assignments/assignments_io.js', () => ({
+      readAssignments: async () => ({
+        repositoryId,
+        repositoryRemoteUrl: 'https://example.com/repo.git',
+        version: 0,
+        assignments: assignmentsData,
+      }),
     }));
   });
 
@@ -456,5 +476,103 @@ describe('handleShowCommand', () => {
     await expect(handleShowCommand(undefined, options, command)).rejects.toThrow(
       'Please provide a plan file or use --latest/--next/--current/--next-ready to find a plan'
     );
+  });
+
+  test('displays workspace and user assignments when present', async () => {
+    const now = new Date().toISOString();
+    const plan = {
+      id: '8',
+      uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      title: 'Assignment Plan',
+      goal: 'Show assignment info',
+      status: 'pending',
+      tasks: [],
+    };
+
+    await fs.writeFile(path.join(tasksDir, '8.yml'), yaml.stringify(plan));
+
+    assignmentsData = {
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': {
+        planId: 8,
+        workspacePaths: [repoDir],
+        users: ['alice'],
+        status: 'in_progress',
+        assignedAt: now,
+        updatedAt: now,
+      },
+    };
+
+    const options = {};
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleShowCommand('8', options, command);
+
+    const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('Workspace:');
+    expect(output).toContain('Users: alice');
+  });
+
+  test('warns when a plan is claimed in multiple workspaces', async () => {
+    const plan = {
+      id: '9',
+      uuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      title: 'Conflicted Plan',
+      goal: 'Warn on conflicts',
+      status: 'pending',
+      tasks: [],
+    };
+
+    await fs.writeFile(path.join(tasksDir, '9.yml'), yaml.stringify(plan));
+
+    assignmentsData = {
+      'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb': {
+        planId: 9,
+        workspacePaths: [repoDir, path.join(tempDir, 'other-workspace')],
+        users: ['alice', 'bob'],
+        status: 'pending',
+        assignedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    };
+
+    const options = {};
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleShowCommand('9', options, command);
+
+    expect(warnSpy).toHaveBeenCalled();
+  });
+
+  test('falls back to assignedTo when no shared assignment exists', async () => {
+    const plan = {
+      id: '10',
+      title: 'Legacy Assignment Plan',
+      goal: 'Check assignedTo fallback',
+      status: 'pending',
+      assignedTo: 'carol',
+      tasks: [],
+    };
+
+    await fs.writeFile(path.join(tasksDir, '10.yml'), yaml.stringify(plan));
+
+    const options = {};
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleShowCommand('10', options, command);
+
+    const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('Assigned To: carol');
   });
 });
