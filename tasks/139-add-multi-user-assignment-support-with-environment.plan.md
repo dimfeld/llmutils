@@ -18,7 +18,7 @@ docs: []
 planGeneratedAt: 2025-10-27T08:01:47.867Z
 promptsGeneratedAt: 2025-10-27T08:01:47.867Z
 createdAt: 2025-10-27T05:51:22.359Z
-updatedAt: 2025-10-27T11:23:22.797Z
+updatedAt: 2025-10-27T11:27:43.653Z
 progressNotes:
   - timestamp: 2025-10-27T08:07:27.994Z
     text: Added optional uuid field to plan schema, generate/add stub assignments
@@ -140,6 +140,17 @@ progressNotes:
     text: Added stale detection unit tests and new assignments command suite
       covering list output, conflict display, and clean-stale
       confirmation/removal scenarios; all relevant tests and type-checks pass.
+    source: "tester: Task 10"
+  - timestamp: 2025-10-27T11:25:40.779Z
+    text: Reviewed assignments command/stale detection code and current tests.
+      Identified missing coverage for yes bypass, parse errors, empty/conflict
+      outputs, and write conflicts.
+    source: "tester: Task 10"
+  - timestamp: 2025-10-27T11:27:43.646Z
+    text: Extended assignments command tests to cover empty listings, --yes
+      confirmation bypass, concurrent write conflicts, parse error handling,
+      custom stale timeout, and conflict-free scenarios. Verified updates with
+      bun run check and targeted bun test runs.
     source: "tester: Task 10"
 tasks:
   - title: Add UUID field to plan schema with auto-generation
@@ -997,3 +1008,5 @@ Task 7: Update ready command with assignment filtering - addressed review feedba
 Implemented Task 9: Add automatic cleanup when plans marked done by wiring shared assignment removal into every status-completion path. Introduced removeAssignment() in src/rmplan/assignments/assignments_io.ts so other modules can drop a plan’s shared entry with a single atomic compare-and-swap call. mark_done.ts now invokes that helper when markStepDone, markTaskDone, or setTaskDone finish a plan, using getRepositoryIdentity() to resolve the shared assignments path and warning (rather than failing) if the cleanup cannot be persisted. To ensure container parents also release their assignments when children complete, checkAndMarkParentDone in src/rmplan/commands/agent/parent_plans.ts reuses the same helper after it writes the parent plan. handleSetCommand in src/rmplan/commands/set.ts tracks when a status change transitions to done or cancelled and, after persisting the plan, clears the assignment entry so manual status updates behave consistently. Added matching test coverage across mark_done.test.ts, mark_done_set_task.test.ts, and set.test.ts; each suite now stubs getRepositoryIdentity/removeAssignment, asserts cleanup happens exactly once when plans finish, and verifies no-op transitions leave assignments intact. Test runs: bun run check; bun test src/rmplan/plans/mark_done.test.ts; bun test src/rmplan/plans/mark_done_set_task.test.ts; bun test src/rmplan/commands/set.test.ts.
 
 Updated checkAndMarkParentDone in src/rmplan/plans/mark_done.ts to call removePlanAssignment immediately after persisting the parent plan so container parents drop their shared assignment as soon as the last child transitions to done. This keeps Task 9: Add automatic cleanup when plans marked done in sync across code paths and reuses the existing helper that already guards against missing UUIDs and logs persistence errors, while still recursing to grandparents without altering status logic. Verified the behavior by rerunning bun test src/rmplan/plans/mark_done.test.ts to ensure the mark_done workflow stays green.
+
+Task 10 – Add stale assignment detection and cleanup: extended rmplan config and JSON schemas with an optional assignments.staleTimeout knob, defaulted to 7 days via the existing loader, and built src/rmplan/assignments/stale_detection.ts to expose isStaleAssignment/getStaleAssignments plus a config-aware timeout helper. Task 10 also gained a dedicated CLI surface in src/rmplan/commands/assignments.ts and rmplan.ts with list/clean-stale/show-conflicts handlers that read shared assignments.json, render workspace/user summaries, and perform atomic stale cleanup behind the existing optimistic lock. Added focused validation in src/rmplan/assignments/stale_detection.test.ts and src/rmplan/commands/assignments.test.ts to cover timeout resolution, stale detection, confirmation flows, conflict reporting, and interaction with real writeAssignments/readAssignments so future maintainers can lean on these guardrails when evolving the feature.

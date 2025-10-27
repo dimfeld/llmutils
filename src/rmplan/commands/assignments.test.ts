@@ -4,7 +4,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { ModuleMocker } from '../../testing.js';
-import { readAssignments, writeAssignments } from '../assignments/assignments_io.js';
+import {
+  readAssignments,
+  writeAssignments,
+  getAssignmentsFilePath,
+} from '../assignments/assignments_io.js';
 import { clearPlanCache, writePlanFile } from '../plans.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
@@ -25,6 +29,7 @@ describe('assignments command handlers', () => {
   let logMock: ReturnType<typeof mock>;
   let warnMock: ReturnType<typeof mock>;
   let confirmMock: ReturnType<typeof mock>;
+  let currentConfig: Record<string, unknown>;
 
   let handleAssignmentsListCommand: (options: any, command: any) => Promise<void>;
   let handleAssignmentsCleanStaleCommand: (options: any, command: any) => Promise<void>;
@@ -65,6 +70,9 @@ describe('assignments command handlers', () => {
     logMock = mock(() => {});
     warnMock = mock(() => {});
     confirmMock = mock(async () => true);
+    currentConfig = {
+      paths: { tasks: tasksDir },
+    };
 
     const chalkIdentity = (value: string) => value;
 
@@ -87,9 +95,7 @@ describe('assignments command handlers', () => {
     }));
 
     await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: { tasks: tasksDir },
-      }),
+      loadEffectiveConfig: async () => currentConfig,
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -162,6 +168,13 @@ describe('assignments command handlers', () => {
     expect(logMock).toHaveBeenLastCalledWith('Total assignments: 1');
   });
 
+  test('handleAssignmentsListCommand reports when no assignments exist', async () => {
+    const command = buildCommandChain();
+    await handleAssignmentsListCommand({}, command);
+
+    expect(logMock).toHaveBeenLastCalledWith('No assignments recorded for this repository.');
+  });
+
   test('clean-stale removes stale assignments after confirmation', async () => {
     await seedAssignments({
       [planUuid]: {
@@ -170,8 +183,8 @@ describe('assignments command handlers', () => {
         workspaceOwners: { [currentWorkspace]: 'alice' },
         users: ['alice'],
         status: 'in_progress',
-        assignedAt: '2024-12-01T00:00:00.000Z',
-        updatedAt: '2024-12-05T00:00:00.000Z',
+        assignedAt: '2000-01-01T00:00:00.000Z',
+        updatedAt: '2000-01-02T00:00:00.000Z',
       },
     });
 
@@ -200,8 +213,8 @@ describe('assignments command handlers', () => {
         workspaceOwners: { [currentWorkspace]: 'alice' },
         users: ['alice'],
         status: 'in_progress',
-        assignedAt: '2024-12-01T00:00:00.000Z',
-        updatedAt: '2024-12-05T00:00:00.000Z',
+        assignedAt: '2000-01-01T00:00:00.000Z',
+        updatedAt: '2000-01-02T00:00:00.000Z',
       },
     });
 
@@ -220,6 +233,8 @@ describe('assignments command handlers', () => {
   });
 
   test('clean-stale reports when no assignments are stale', async () => {
+    currentConfig.assignments = { staleTimeout: 3 };
+
     await seedAssignments({
       [planUuid]: {
         planId: 1,
@@ -236,7 +251,7 @@ describe('assignments command handlers', () => {
     await handleAssignmentsCleanStaleCommand({}, command);
 
     expect(confirmMock).not.toHaveBeenCalled();
-    expect(logMock).toHaveBeenLastCalledWith('No stale assignments found (threshold 7 days).');
+    expect(logMock).toHaveBeenLastCalledWith('No stale assignments found (threshold 3 days).');
   });
 
   test('show-conflicts lists assignments claimed by multiple workspaces', async () => {
@@ -264,5 +279,121 @@ describe('assignments command handlers', () => {
     expect(tableOutput).toContain('this workspace');
     expect(tableOutput).toContain('bob');
     expect(logMock).toHaveBeenLastCalledWith('Conflicting assignments: 1');
+  });
+
+  test('clean-stale skips confirmation when --yes flag provided', async () => {
+    await seedAssignments({
+      [planUuid]: {
+        planId: 1,
+        workspacePaths: [currentWorkspace],
+        workspaceOwners: { [currentWorkspace]: 'alice' },
+        users: ['alice'],
+        status: 'in_progress',
+        assignedAt: '2000-01-01T00:00:00.000Z',
+        updatedAt: '2000-01-02T00:00:00.000Z',
+      },
+    });
+
+    const command = buildCommandChain();
+    await handleAssignmentsCleanStaleCommand({ yes: true }, command);
+
+    expect(confirmMock).not.toHaveBeenCalled();
+
+    const assignments = await readAssignments({
+      repositoryId,
+      repositoryRemoteUrl,
+    });
+
+    expect(assignments.assignments).not.toHaveProperty(planUuid);
+  });
+
+  test('clean-stale warns when assignments file changes during cleanup', async () => {
+    await seedAssignments({
+      [planUuid]: {
+        planId: 1,
+        workspacePaths: [currentWorkspace],
+        workspaceOwners: { [currentWorkspace]: 'alice' },
+        users: ['alice'],
+        status: 'in_progress',
+        assignedAt: '2024-12-01T00:00:00.000Z',
+        updatedAt: '2024-12-05T00:00:00.000Z',
+      },
+    });
+
+    confirmMock.mockImplementationOnce(async () => {
+      await writeAssignments({
+        repositoryId,
+        repositoryRemoteUrl,
+        version: 2,
+        assignments: {
+          [planUuid]: {
+            planId: 1,
+            workspacePaths: [currentWorkspace],
+            workspaceOwners: { [currentWorkspace]: 'alice' },
+            users: ['alice'],
+            status: 'in_progress',
+            assignedAt: '2000-01-01T00:00:00.000Z',
+            updatedAt: '2000-01-03T00:00:00.000Z',
+          },
+        },
+      });
+      return true;
+    });
+
+    const command = buildCommandChain();
+    await handleAssignmentsCleanStaleCommand({}, command);
+
+    expect(
+      warnMock.mock.calls.some(([message]) =>
+        typeof message === 'string'
+          ? message.includes('Assignments changed while cleaning')
+          : false
+      )
+    ).toBe(true);
+
+    const assignments = await readAssignments({
+      repositoryId,
+      repositoryRemoteUrl,
+    });
+
+    expect(assignments.version).toBe(2);
+    expect(assignments.assignments).toHaveProperty(planUuid);
+  });
+
+  test('handleAssignmentsListCommand surfaces parse errors from assignments file', async () => {
+    const assignmentsPath = getAssignmentsFilePath(repositoryId);
+    await fs.mkdir(path.dirname(assignmentsPath), { recursive: true });
+    await fs.writeFile(assignmentsPath, '{invalid json', 'utf-8');
+
+    const command = buildCommandChain();
+
+    await expect(handleAssignmentsListCommand({}, command)).rejects.toThrow(
+      /Failed to parse assignments file/
+    );
+
+    expect(
+      warnMock.mock.calls.some(([message]) =>
+        typeof message === 'string' ? message.includes('⚠') : false
+      )
+    ).toBe(true);
+  });
+
+  test('show-conflicts reports when no conflicts exist', async () => {
+    await seedAssignments({
+      [planUuid]: {
+        planId: 1,
+        workspacePaths: [currentWorkspace],
+        workspaceOwners: { [currentWorkspace]: 'alice' },
+        users: ['alice'],
+        status: 'in_progress',
+        assignedAt: '2025-01-01T00:00:00.000Z',
+        updatedAt: '2025-01-03T00:00:00.000Z',
+      },
+    });
+
+    const command = buildCommandChain();
+    await handleAssignmentsShowConflictsCommand({}, command);
+
+    expect(logMock).toHaveBeenLastCalledWith('No conflicting assignments found.');
   });
 });
