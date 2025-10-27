@@ -13,10 +13,11 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
 import { formatWorkspacePath, getCombinedTitleFromSummary } from '../display_utils.js';
 import { readAllPlans } from '../plans.js';
-import type { PlanSchema } from '../planSchema.js';
+import { READY_PLAN_SORT_FIELDS, isReadyPlan, sortReadyPlans } from '../ready_plans.js';
+import type { EnrichedReadyPlan, ReadyPlanSortField } from '../ready_plans.js';
 import { getGitRoot } from '../../common/git.js';
 
-type PlanWithFilename = PlanSchema & { filename: string };
+type PlanWithFilename = EnrichedReadyPlan;
 
 type ReadyPlan = PlanWithFilename & {
   assignmentEntry?: AssignmentEntry;
@@ -43,141 +44,8 @@ interface ReadyCommandOptions {
 }
 
 const VALID_FORMATS = ['list', 'table', 'json'] as const;
-const VALID_SORT_FIELDS = ['priority', 'id', 'title', 'created', 'updated'] as const;
+const VALID_SORT_FIELDS = READY_PLAN_SORT_FIELDS;
 const VALID_PRIORITIES = ['low', 'medium', 'high', 'urgent', 'maybe'] as const;
-
-/**
- * Check if a plan is ready to execute
- * A plan is ready when:
- * 1. Status is 'pending' OR 'in_progress'
- * 2. All dependencies (if any) have status 'done'
- *
- * Note: This is NOT the same as the existing isPlanReady() function from plans.ts,
- * which only checks for pending status. This function intentionally includes
- * in_progress plans to provide a complete view of executable work, as specified
- * in the design requirements for the 'ready' command.
- */
-function isReadyPlan(
-  plan: ReadyPlan,
-  allPlans: Map<number, ReadyPlan>,
-  pendingOnly: boolean
-): boolean {
-  const status = plan.status || 'pending';
-
-  // Check status
-  const statusMatch = pendingOnly
-    ? status === 'pending'
-    : status === 'pending' || status === 'in_progress';
-
-  if (!statusMatch) {
-    return false;
-  }
-
-  // If no dependencies, it's ready
-  if (!plan.dependencies || plan.dependencies.length === 0) {
-    return true;
-  }
-
-  // Check if all dependencies are done
-  return plan.dependencies.every((depId) => {
-    // Try to get the dependency plan by ID
-    let depPlan = allPlans.get(depId);
-
-    // If not found and the dependency ID is a numeric string, try as a number
-    if (!depPlan && typeof depId === 'string' && /^\d+$/.test(depId)) {
-      depPlan = allPlans.get(parseInt(depId, 10));
-    }
-
-    return depPlan && depPlan.status === 'done';
-  });
-}
-
-/**
- * Sort plans by the specified field
- */
-function sortPlans(plans: ReadyPlan[], sortBy: string, reverse: boolean): ReadyPlan[] {
-  const sorted = [...plans];
-
-  sorted.sort((a, b) => {
-    let aVal: string | number;
-    let bVal: string | number;
-
-    switch (sortBy) {
-      case 'title':
-        aVal = (a.title || a.goal || '').toLowerCase();
-        bVal = (b.title || b.goal || '').toLowerCase();
-        break;
-      case 'id': {
-        const aNum = Number(a.id || 0);
-        const bNum = Number(b.id || 0);
-
-        if (!isNaN(aNum) && !isNaN(bNum)) {
-          aVal = aNum;
-          bVal = bNum;
-        } else if (!isNaN(aNum) && isNaN(bNum)) {
-          aVal = aNum;
-          bVal = 0;
-        } else if (isNaN(aNum) && !isNaN(bNum)) {
-          aVal = 0;
-          bVal = bNum;
-        } else {
-          aVal = a.id || '';
-          bVal = b.id || '';
-        }
-        break;
-      }
-      case 'created':
-        aVal = a.createdAt || '';
-        bVal = b.createdAt || '';
-        break;
-      case 'updated':
-        aVal = a.updatedAt || '';
-        bVal = b.updatedAt || '';
-        break;
-      case 'priority':
-      default: {
-        // Priority order: urgent=5, high=4, medium=3, low=2, maybe=1, undefined=0
-        const priorityOrder: Record<string, number> = {
-          urgent: 5,
-          high: 4,
-          medium: 3,
-          low: 2,
-          maybe: 1,
-        };
-
-        aVal = a.priority ? priorityOrder[a.priority] || 0 : 0;
-        bVal = b.priority ? priorityOrder[b.priority] || 0 : 0;
-        break;
-      }
-    }
-
-    // Secondary sort: by createdAt (oldest first) unless already sorting by created
-    if (aVal === bVal) {
-      if (sortBy === 'created') {
-        aVal = a.id || '';
-        bVal = b.id || '';
-      } else {
-        aVal = a.createdAt || '';
-        bVal = b.createdAt || '';
-      }
-    }
-
-    // For priority sorting, we want descending order by default (urgent first)
-    // For other sorts, ascending order is default
-    const isPrioritySorting = sortBy === 'priority' && a.priority !== b.priority;
-    const compareResult = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
-
-    if (isPrioritySorting) {
-      // Descending by default for priority, unless reverse flag is set
-      return reverse ? compareResult : -compareResult;
-    } else {
-      // Ascending by default for other fields
-      return reverse ? -compareResult : compareResult;
-    }
-  });
-
-  return sorted;
-}
 
 /**
  * Get color for priority
@@ -497,7 +365,7 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
     );
   }
 
-  if (options.sort && !VALID_SORT_FIELDS.includes(options.sort as any)) {
+  if (options.sort && !VALID_SORT_FIELDS.includes(options.sort as ReadyPlanSortField)) {
     throw new Error(
       `Invalid sort field: ${options.sort}. Valid sort fields are: ${VALID_SORT_FIELDS.join(', ')}`
     );
@@ -639,9 +507,9 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
     return;
   }
 
-  const sortBy = options.sort || 'priority';
-  const reverse = options.reverse || false;
-  readyPlans = sortPlans(readyPlans, sortBy, reverse);
+  const sortBy = (options.sort as ReadyPlanSortField | undefined) ?? 'priority';
+  const reverse = options.reverse ?? false;
+  readyPlans = sortReadyPlans(readyPlans, sortBy, reverse);
 
   const context: ReadyDisplayContext = {
     currentWorkspace: repository.gitRoot,

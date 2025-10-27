@@ -12,6 +12,7 @@ import { readPlanFile, writePlanFile, resolvePlanFile, isTaskDone } from '../pla
 import type { PlanSchema } from '../planSchema.js';
 import { planSchema, prioritySchema } from '../planSchema.js';
 import type { RmplanConfig } from '../configSchema.js';
+import { filterAndSortReadyPlans, formatReadyPlansAsJson } from '../ready_plans.js';
 
 export interface GenerateModeRegistrationContext {
   config: RmplanConfig;
@@ -603,130 +604,14 @@ export async function handleListReadyPlansTool(
     const { readAllPlans } = await import('../plans.js');
     const { plans } = await readAllPlans(tasksDir);
 
-    // Filter for ready plans
-    let readyPlans = Array.from(plans.values()).filter((plan) => {
-      const status = plan.status || 'pending';
-      const statusMatch = args.pendingOnly
-        ? status === 'pending'
-        : status === 'pending' || status === 'in_progress';
-
-      if (!statusMatch) return false;
-      if (!plan.tasks || plan.tasks.length === 0) return false;
-
-      // If no dependencies, it's ready
-      if (!plan.dependencies || plan.dependencies.length === 0) return true;
-
-      // Check if all dependencies are done
-      return plan.dependencies.every((depId) => {
-        let depPlan = plans.get(depId);
-
-        // If not found and the dependency ID is a numeric string, try as a number
-        if (!depPlan && typeof depId === 'string' && /^\d+$/.test(depId)) {
-          depPlan = plans.get(parseInt(depId, 10));
-        }
-
-        return depPlan && depPlan.status === 'done';
-      });
+    const readyPlans = filterAndSortReadyPlans(plans, {
+      pendingOnly: args.pendingOnly ?? false,
+      priority: args.priority,
+      sortBy: args.sortBy ?? 'priority',
+      limit: args.limit,
     });
 
-    // Apply priority filter
-    if (args.priority) {
-      readyPlans = readyPlans.filter((plan) => plan.priority === args.priority);
-    }
-
-    // Sort plans
-    const sortBy = args.sortBy || 'priority';
-    readyPlans.sort((a, b) => {
-      let aVal: string | number;
-      let bVal: string | number;
-
-      switch (sortBy) {
-        case 'title':
-          aVal = (a.title || a.goal || '').toLowerCase();
-          bVal = (b.title || b.goal || '').toLowerCase();
-          break;
-        case 'id': {
-          const aNum = Number(a.id || 0);
-          const bNum = Number(b.id || 0);
-
-          if (!isNaN(aNum) && !isNaN(bNum)) {
-            aVal = aNum;
-            bVal = bNum;
-          } else if (!isNaN(aNum) && isNaN(bNum)) {
-            aVal = aNum;
-            bVal = 0;
-          } else if (isNaN(aNum) && !isNaN(bNum)) {
-            aVal = 0;
-            bVal = bNum;
-          } else {
-            aVal = a.id || '';
-            bVal = b.id || '';
-          }
-          break;
-        }
-        case 'created':
-          aVal = a.createdAt || '';
-          bVal = b.createdAt || '';
-          break;
-        case 'updated':
-          aVal = a.updatedAt || '';
-          bVal = b.updatedAt || '';
-          break;
-        case 'priority':
-        default: {
-          const priorityOrder: Record<string, number> = {
-            urgent: 5,
-            high: 4,
-            medium: 3,
-            low: 2,
-            maybe: 1,
-          };
-
-          aVal = a.priority ? priorityOrder[a.priority] || 0 : 0;
-          bVal = b.priority ? priorityOrder[b.priority] || 0 : 0;
-          break;
-        }
-      }
-
-      // Secondary sort by ID
-      if (aVal === bVal) {
-        aVal = a.id || '';
-        bVal = b.id || '';
-      }
-
-      // For priority sorting, we want descending order (urgent first)
-      // For other sorts, ascending order
-      const isPrioritySorting = sortBy === 'priority';
-      const compareResult = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
-
-      return isPrioritySorting ? -compareResult : compareResult;
-    });
-
-    // Apply limit
-    if (args.limit && args.limit > 0) {
-      readyPlans = readyPlans.slice(0, args.limit);
-    }
-
-    // Format as JSON
-    const result = {
-      count: readyPlans.length,
-      plans: readyPlans.map((plan) => ({
-        id: plan.id,
-        title: plan.title || plan.goal || '',
-        goal: plan.goal || '',
-        priority: plan.priority,
-        status: plan.status,
-        taskCount: plan.tasks?.length || 0,
-        completedTasks: plan.tasks?.filter((t) => t.done).length || 0,
-        dependencies: plan.dependencies || [],
-        assignedTo: plan.assignedTo,
-        filename: path.relative(context.gitRoot, plan.filename),
-        createdAt: plan.createdAt,
-        updatedAt: plan.updatedAt,
-      })),
-    };
-
-    return JSON.stringify(result, null, 2);
+    return formatReadyPlansAsJson(readyPlans, { gitRoot: context.gitRoot });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new UserError(`Failed to list ready plans: ${message}`);
