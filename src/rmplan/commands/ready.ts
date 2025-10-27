@@ -136,10 +136,15 @@ function sortPlans(
       }
     }
 
-    // Secondary sort by ID
+    // Secondary sort: by createdAt (oldest first) unless already sorting by created
     if (aVal === bVal) {
-      aVal = a.id || '';
-      bVal = b.id || '';
+      if (sortBy === 'created') {
+        aVal = a.id || '';
+        bVal = b.id || '';
+      } else {
+        aVal = a.createdAt || '';
+        bVal = b.createdAt || '';
+      }
     }
 
     // For priority sorting, we want descending order by default (urgent first)
