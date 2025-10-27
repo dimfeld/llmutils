@@ -1,6 +1,36 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import * as YAML from 'yaml';
 import { fixYaml } from './fix_yaml';
+
+// Suppress console output and YAML warnings during tests
+const originalConsole = {
+  log: console.log,
+  warn: console.warn,
+  error: console.error,
+  info: console.info,
+  debug: console.debug,
+};
+
+const originalEmitWarning = process.emitWarning;
+
+beforeAll(() => {
+  console.log = () => {};
+  console.warn = () => {};
+  console.error = () => {};
+  console.info = () => {};
+  console.debug = () => {};
+  // Suppress YAML library warnings
+  process.emitWarning = () => {};
+});
+
+afterAll(() => {
+  console.log = originalConsole.log;
+  console.warn = originalConsole.warn;
+  console.error = originalConsole.error;
+  console.info = originalConsole.info;
+  console.debug = originalConsole.debug;
+  process.emitWarning = originalEmitWarning;
+});
 
 describe('fixYaml', () => {
   describe('unquoted strings with colons', () => {
