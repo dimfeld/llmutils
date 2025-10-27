@@ -10,6 +10,8 @@ import { getDefaultConfig } from '../configSchema.js';
 import { clearConfigCache } from '../configLoader.js';
 import { handleAddCommand } from './add.js';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 describe('rmplan add command', () => {
   let tempDir: string;
   let tasksDir: string;
@@ -59,6 +61,7 @@ describe('rmplan add command', () => {
     // Read and verify plan content
     const plan = await readPlanFile(planPath);
     expect(plan.id).toBe(1);
+    expect(plan.uuid).toMatch(UUID_REGEX);
     expect(plan.title).toBe('Test Title');
     expect(plan.goal).toBe('');
     expect(plan.details).toBe('');

@@ -6,13 +6,29 @@ goal: Enable multi-user workflows in rmplan by supporting user identity via
   shared configuration
 id: 139
 generatedBy: agent
-status: pending
+status: in_progress
 priority: high
+container: false
 temp: false
+dependencies: []
+issue: []
+pullRequest: []
+docs: []
 planGeneratedAt: 2025-10-27T08:01:47.867Z
 promptsGeneratedAt: 2025-10-27T08:01:47.867Z
 createdAt: 2025-10-27T05:51:22.359Z
-updatedAt: 2025-10-27T08:01:47.867Z
+updatedAt: 2025-10-27T08:14:40.038Z
+progressNotes:
+  - timestamp: 2025-10-27T08:07:27.994Z
+    text: Added optional uuid field to plan schema, generate/add stub assignments
+      now create a UUID, and readPlanFile lazily persists UUIDs for legacy
+      plans. Tests still pending.
+    source: "implementer: Task 1"
+  - timestamp: 2025-10-27T08:13:30.648Z
+    text: "Added focused tests covering UUID generation: rmplan add and generate
+      command outputs now assert UUID presence, and plans.test.ts verifies
+      legacy plans receive and persist generated UUIDs."
+    source: "implementer: Task 1"
 tasks:
   - title: Add UUID field to plan schema with auto-generation
     done: false
@@ -22,6 +38,8 @@ tasks:
       `crypto.randomUUID()`. Add lazy UUID generation in `readPlanFile()` that
       generates and writes back UUID if missing (for existing plans). Include
       test coverage for UUID generation and persistence.
+    files: []
+    docs: []
     steps: []
   - title: Create assignments file schema and utilities
     done: false
@@ -36,6 +54,8 @@ tasks:
       rename), getAssignmentsFilePath(). Include comprehensive tests for I/O
       operations and edge cases (missing file, corrupted JSON, concurrent
       writes)."
+    files: []
+    docs: []
     steps: []
   - title: Implement workspace and repository identification
     done: false
@@ -46,6 +66,8 @@ tasks:
       getUserIdentity() that checks RMPLAN_USER, USER, USERNAME, LOGNAME in
       order. Include path normalization tests (symlinks, relative paths, case
       sensitivity) and repo ID tests (various remote URL formats)."
+    files: []
+    docs: []
     steps: []
   - title: Implement plan UUID lookup utilities
     done: false
@@ -56,6 +78,8 @@ tasks:
       implements the fast-path verification logic (try planId first, fall back
       to UUID scan if mismatch, update cache if needed). Include tests for cache
       hit/miss scenarios and renumbering cases."
+    files: []
+    docs: []
     steps: []
   - title: Implement rmplan claim command
     done: false
@@ -69,6 +93,8 @@ tasks:
       called by other commands. Include tests for: claiming unassigned plans,
       already-claimed plans (same workspace = no-op, different workspace =
       warning), multiple workspace claims."
+    files: []
+    docs: []
     steps: []
   - title: Implement rmplan release command
     done: false
@@ -81,6 +107,8 @@ tasks:
       options: --reset-status (reset to pending). Include tests for releasing
       assigned plans, already-released plans, partial releases (multiple
       workspaces), status handling."
+    files: []
+    docs: []
     steps: []
   - title: Update ready command with assignment filtering
     done: false
@@ -93,6 +121,8 @@ tasks:
       about multi-workspace claims. Maintain backward compatibility (if
       assignments file doesn't exist, behave like before). Include comprehensive
       tests for all filtering modes."
+    files: []
+    docs: []
     steps: []
   - title: Update list and show commands with assignment display
     done: false
@@ -104,6 +134,8 @@ tasks:
       utilities in `src/rmplan/utils/display_utils.ts` if needed for formatting
       workspace paths (abbreviate home directory, show relative to current
       workspace). Include tests for display with and without assignments."
+    files: []
+    docs: []
     steps: []
   - title: Add automatic cleanup when plans marked done
     done: false
@@ -113,6 +145,8 @@ tasks:
       file. Add removeAssignment(uuid) utility in assignments_io.ts. Ensure this
       works for both direct status changes and task completion. Include tests
       for automatic cleanup on done/cancelled."
+    files: []
+    docs: []
     steps: []
   - title: Add stale assignment detection and cleanup
     done: false
@@ -125,6 +159,8 @@ tasks:
       workspace/user details), clean-stale (remove stale assignments with
       confirmation), show-conflicts (list plans claimed in multiple workspaces).
       Include tests for stale detection and cleanup."
+    files: []
+    docs: []
     steps: []
   - title: Add comprehensive tests and documentation
     done: false
@@ -139,7 +175,11 @@ tasks:
       workspaces, claiming plans, handling conflicts, using with teams. Add
       troubleshooting section for common issues. Test entire workflow end-to-end
       with multiple workspace clones."
+    files: []
+    docs: []
     steps: []
+changedFiles: []
+rmfilter: []
 ---
 
 <!-- rmplan-generated-start -->
@@ -767,3 +807,5 @@ rmplan already has a sophisticated locking system for workspace isolation:
 7. **UUID Backfill**: Should UUID generation happen automatically on first read of a plan without UUID, or require explicit opt-in via a migration command?
 
 8. **Locking Strategy**: Should we implement file locking for the shared config file itself (to prevent concurrent writes), or rely on git merge strategies to handle conflicts?
+
+Implemented Task 1: Add UUID field to plan schema with auto-generation. Added an optional uuid field to phaseSchema/PlanSchema (src/rmplan/planSchema.ts) and propagated it into PlanSummary so callers can access the identifier. Updated the add and generate commands (src/rmplan/commands/add.ts, src/rmplan/commands/generate.ts) to issue crypto.randomUUID() when creating new plans, and taught readPlanFile (src/rmplan/plans.ts) to lazily backfill missing UUIDs with persistence and warning logging if the write fails. Regenerated the plan JSON schema (schema/rmplan-plan-schema.json) so editors pick up the new property. Extended the test suite to cover the behavior: add and generate command tests now assert UUID presence, plans.test.ts gained a migration test and expectations allow for UUIDs, and legacy round-trip assertions accept the new field. This work establishes the stable identifier required by the shared assignment tracking design.

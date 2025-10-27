@@ -15,6 +15,7 @@ import { $ } from 'bun';
 
 export type PlanSummary = {
   id: number;
+  uuid?: string;
   title?: string;
   status?: 'pending' | 'in_progress' | 'done' | 'cancelled';
   priority?: 'low' | 'medium' | 'high' | 'urgent';
@@ -568,7 +569,20 @@ export async function readPlanFile(filePath: string): Promise<PlanSchema> {
     throw e;
   }
 
-  return result.data;
+  const plan = result.data;
+
+  if (!plan.uuid) {
+    plan.uuid = crypto.randomUUID();
+    try {
+      await writePlanFile(absolutePath, plan);
+    } catch (error) {
+      warn(
+        `Failed to persist generated UUID for plan at ${absolutePath}: ${(error as Error).message}`
+      );
+    }
+  }
+
+  return plan;
 }
 
 /**

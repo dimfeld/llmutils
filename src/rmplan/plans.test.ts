@@ -18,6 +18,8 @@ import {
 import { planSchema, type PlanSchema } from './planSchema.js';
 import { ModuleMocker } from '../testing.js';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 const moduleMocker = new ModuleMocker(import.meta);
 
 describe('resolvePlanFile', () => {
@@ -414,6 +416,49 @@ describe('Plan relationship utilities', () => {
       expect(children.every((plan) => plan.parent === 1)).toBe(true);
       expect(discovered.every((plan) => plan.discoveredFrom === 1)).toBe(true);
     });
+  });
+});
+
+describe('plan UUID handling', () => {
+  it('generates and persists UUIDs for legacy plans without one', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'rmplan-uuid-'));
+    try {
+      const planPath = join(tempDir, 'legacy.yml');
+      await writeFile(
+        planPath,
+        yaml.stringify({
+          id: 123,
+          title: 'Legacy Plan',
+          goal: 'Add UUID support',
+          details: 'This plan predates UUIDs',
+          status: 'pending',
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+          tasks: [],
+        })
+      );
+
+      clearPlanCache();
+      const uuidSpy = vi
+        .spyOn(crypto, 'randomUUID')
+        .mockReturnValue('11111111-1111-4111-8111-111111111111');
+
+      let plan: PlanSchema;
+      try {
+        plan = await readPlanFile(planPath);
+      } finally {
+        uuidSpy.mockRestore();
+      }
+      expect(plan.uuid).toBe('11111111-1111-4111-8111-111111111111');
+
+      const savedContent = await readFile(planPath, 'utf8');
+      expect(savedContent).toContain('uuid: 11111111-1111-4111-8111-111111111111');
+
+      const rereadPlan = await readPlanFile(planPath);
+      expect(rereadPlan.uuid).toBe(plan.uuid);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -1305,7 +1350,11 @@ const test = "example";
 
     // Also verify that readPlanFile can read it back correctly
     const readBackPlan = await readPlanFile(planPath);
-    expect(readBackPlan).toEqual({ ...planToWrite, updatedAt: expect.any(String) });
+    expect(readBackPlan).toEqual({
+      ...planToWrite,
+      updatedAt: expect.any(String),
+      uuid: expect.stringMatching(UUID_REGEX),
+    });
   });
 
   it('should load legacy plans without discoveredFrom without errors', async () => {
@@ -1445,7 +1494,11 @@ const roundTrip = "test";
     const readBackPlan = await readPlanFile(planPath);
 
     // Assert deep equality
-    expect(readBackPlan).toEqual({ ...originalPlan, updatedAt: expect.any(String) });
+    expect(readBackPlan).toEqual({
+      ...originalPlan,
+      updatedAt: expect.any(String),
+      uuid: expect.stringMatching(UUID_REGEX),
+    });
 
     // Specifically check that complex fields are preserved
     expect(readBackPlan.tasks).toHaveLength(2);
