@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
+import stripAnsi from 'strip-ansi';
 import { handleShowCommand } from './show.js';
 import { clearPlanCache } from '../plans.js';
 import { ModuleMocker } from '../../testing.js';
@@ -124,7 +125,7 @@ describe('handleShowCommand', () => {
     // Check that key information is displayed
     const logCalls = logSpy.mock.calls.map((call) => call[0]);
     const allOutput = logCalls.join('\n');
-    const stripped = allOutput.replace(/\x1b\[[0-9;]*m/g, '');
+    const stripped = stripAnsi(allOutput);
 
     expect(stripped).toContain('Test Plan');
     expect(stripped).toContain('Test goal');
@@ -168,7 +169,7 @@ describe('handleShowCommand', () => {
 
     const logs = logSpy.mock.calls.map((call) => call[0]).join('\n');
 
-    const stripped = logs.replace(/\x1b\[[0-9;]*m/g, '');
+    const stripped = stripAnsi(logs);
 
     expect(stripped).toContain('Plan Summary');
     expect(stripped).toContain('Condensed Plan');
@@ -213,7 +214,7 @@ describe('handleShowCommand', () => {
     await handleShowCommand('55', options, command);
 
     const logs = logSpy.mock.calls.map((c) => c[0]).join('\n');
-    const stripped = logs.replace(/\x1b\[[0-9;]*m/g, '');
+    const stripped = stripAnsi(logs);
     // Section header present
     expect(stripped).toContain('Progress Notes:');
     // Shows only last 10, so Note 1 and Note 2 should be hidden
@@ -259,7 +260,7 @@ describe('handleShowCommand', () => {
     await handleShowCommand('56', options, command);
 
     const logs = logSpy.mock.calls.map((c) => c[0]).join('\n');
-    const stripped = logs.replace(/\x1b\[[0-9;]*m/g, '');
+    const stripped = stripAnsi(logs);
     // Both notes visible, no truncation message
     expect(stripped).toContain('First line');
     expect(stripped).toContain('Line A');
@@ -322,7 +323,7 @@ describe('handleShowCommand', () => {
     expect(logSpy).toHaveBeenCalled();
     const logCalls = logSpy.mock.calls.map((call) => call[0]);
     const allOutput = logCalls.join('\n');
-    const stripped = allOutput.replace(/\x1b\[[0-9;]*m/g, '');
+    const stripped = stripAnsi(allOutput);
 
     expect(stripped).toContain('Found next ready plan: 1');
     expect(stripped).toContain('Ready Plan');
@@ -380,7 +381,7 @@ describe('handleShowCommand', () => {
     expect(logSpy).toHaveBeenCalled();
     const logCalls = logSpy.mock.calls.map((call) => call[0]);
     const allOutput = logCalls.join('\n');
-    const stripped = allOutput.replace(/\x1b\[[0-9;]*m/g, '');
+    const stripped = stripAnsi(allOutput);
 
     expect(stripped).toContain('Found current plan: 1');
     expect(stripped).toContain('In Progress Plan');
@@ -427,7 +428,7 @@ describe('handleShowCommand', () => {
     await handleShowCommand(undefined, options, command);
 
     const logs = logSpy.mock.calls.map((call) => call[0]).join('\n');
-    const stripped = logs.replace(/\x1b\[[0-9;]*m/g, '');
+    const stripped = stripAnsi(logs);
 
     expect(stripped).toContain('Found latest plan: 11 - Latest Plan');
     expect(stripped).toContain('Latest Plan');
@@ -517,7 +518,7 @@ describe('handleShowCommand', () => {
     await handleShowCommand('8', options, command);
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
-    const stripped = output.replace(/\x1b\[[0-9;]*m/g, '');
+    const stripped = stripAnsi(output);
     expect(stripped).toContain('Workspace:');
     expect(stripped).toContain('Users: alice');
   });
@@ -579,7 +580,7 @@ describe('handleShowCommand', () => {
     await handleShowCommand('10', options, command);
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
-    const stripped = output.replace(/\x1b\[[0-9;]*m/g, '');
+    const stripped = stripAnsi(output);
     expect(stripped).toContain('Assigned To: carol');
   });
 });
