@@ -8,12 +8,21 @@ import { getGitRoot } from '../../common/git.js';
 import { logSpawn } from '../../common/process.js';
 import { waitForEnter } from '../../common/terminal.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolvePlanFile, readPlanFile } from '../plans.js';
+import { resolvePlanFile, readPlanFile, writePlanFile } from '../plans.js';
 import { convertYamlToMarkdown, extractMarkdownToYaml } from '../process_markdown.js';
 import { runRmfilterProgrammatically } from '../../rmfilter/rmfilter.js';
 import * as clipboard from '../../common/clipboard.js';
 import { createModel } from '../../common/model_factory.js';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../llm_utils/run_and_apply.js';
+import { resolvePlan } from '../plan_display.js';
+import { mergeTasksIntoPlan, updateDetailsWithinDelimiters } from '../plan_merge.js';
+import type {
+  GenerateModeExecutionLogger,
+  GenerateModeRegistrationContext,
+  GenerateTasksArguments,
+  UpdatePlanDetailsArguments,
+} from '../mcp/generate_mode.js';
+import type { PlanSchema } from '../planSchema.js';
 
 export async function handleUpdateCommand(planFile: string, options: any, command: any) {
   const globalOpts = command.parent.opts();
@@ -240,4 +249,56 @@ Your response must follow the exact structure of the input plan, maintaining:
 - If the existing plan uses phase-based structure, maintain that structure in your update
 - Ensure all changes align with the requested update while keeping the plan coherent
 - NEVER modify completed tasks - they represent work that has already been done`;
+}
+
+export async function mcpUpdatePlanDetails(
+  args: UpdatePlanDetailsArguments,
+  context: GenerateModeRegistrationContext
+): Promise<string> {
+  const { plan, planPath } = await resolvePlan(args.plan, context);
+  const updatedDetails = updateDetailsWithinDelimiters(args.details, plan.details, args.append);
+
+  const updatedPlan: PlanSchema = {
+    ...plan,
+    details: updatedDetails,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await writePlanFile(planPath, updatedPlan);
+
+  const relativePath = path.relative(context.gitRoot, planPath) || planPath;
+  const action = args.append ? 'Appended to' : 'Updated';
+  return `${action} details in ${relativePath}`;
+}
+
+export async function mcpUpdatePlanTasks(
+  args: GenerateTasksArguments,
+  context: GenerateModeRegistrationContext,
+  execContext: { log: GenerateModeExecutionLogger }
+): Promise<string> {
+  const { plan, planPath } = await resolvePlan(args.plan, context);
+
+  try {
+    execContext.log.info('Merging generated plan data');
+
+    const newPlanData: Partial<PlanSchema> = {
+      tasks: args.tasks as PlanSchema['tasks'],
+    };
+
+    if (args.title !== undefined) newPlanData.title = args.title;
+    if (args.goal !== undefined) newPlanData.goal = args.goal;
+    if (args.details !== undefined) newPlanData.details = args.details;
+    if (args.priority !== undefined) newPlanData.priority = args.priority;
+
+    const updatedPlan = await mergeTasksIntoPlan(newPlanData, plan);
+
+    await writePlanFile(planPath, updatedPlan);
+
+    const relativePath = path.relative(context.gitRoot, planPath) || planPath;
+    const taskCount = updatedPlan.tasks.length;
+    return `Successfully updated plan at ${relativePath} with ${taskCount} task${taskCount === 1 ? '' : 's'}`;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to update plan: ${message}`);
+  }
 }

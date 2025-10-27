@@ -11,7 +11,7 @@ temp: false
 planGeneratedAt: 2025-10-27T19:36:54.793Z
 promptsGeneratedAt: 2025-10-27T19:36:54.793Z
 createdAt: 2025-10-27T06:31:21.571Z
-updatedAt: 2025-10-27T20:13:56.855Z
+updatedAt: 2025-10-27T20:25:38.973Z
 progressNotes:
   - timestamp: 2025-10-27T19:46:00.224Z
     text: Created shared ready_plans module with filtering/sorting utilities,
@@ -42,6 +42,21 @@ progressNotes:
       reran plan_display, show, ready_plans, and MCP suites plus type checking;
       all passed.
     source: "tester: Task 2 & 4"
+  - timestamp: 2025-10-27T20:17:36.491Z
+    text: Created plan_merge.ts with delimiter + merge utilities, moved MCP imports
+      to use it, and added plan_merge.test.ts covering research placement,
+      delimiter updates, metadata preservation, and validation errors.
+    source: "implementer: Task 3"
+  - timestamp: 2025-10-27T20:22:24.016Z
+    text: Moved update-plan-details and update-plan-tasks MCP handlers into
+      commands/update.ts using plan_merge utilities, added shared type imports,
+      and extended update.test.ts with end-to-end handler coverage.
+    source: "implementer: Tasks 7 & 8"
+  - timestamp: 2025-10-27T20:25:17.347Z
+    text: Swapped MCP registration to call the new update command handlers, added
+      error wrapping, and refreshed generate_mode tests to exercise
+      mcpUpdatePlanTasks via the shared parameter schemas.
+    source: "implementer: Tasks 7 & 8"
 tasks:
   - title: Create ready_plans.ts shared utility module
     done: true
@@ -979,3 +994,5 @@ Restored original tie-breaking behavior in the shared ready plan sorter to keep 
 Implemented shared plan_display.ts module (Task 2) to centralize plan context helpers. The file now exports PlanDisplayContext/PlanDisplayOptions plus formatExistingTasks, buildPlanContext, and resolvePlan; buildPlanContext gained section toggles so callers can trim content. Added plan_display.test.ts to cover empty vs populated task summaries, option flags, and resolving plans from real files, and updated generate_mode.ts to import the new helpers instead of embedding them.
 
 Task 4 & Task 9 build on Task 2’s utilities: show.ts now imports plan_display helpers and exposes mcpGetPlan so MCP tools reuse the CLI formatter, and show.test.ts got dedicated coverage that exercises real plan files. generate_mode.ts registers the get-plan tool via that new export while keeping the existing zod schema, and generate_mode.test.ts now calls mcpGetPlan to validate end-to-end output. Verified with bun test src/rmplan/plan_display.test.ts, bun test src/rmplan/commands/show.test.ts, bun test src/rmplan/mcp/generate_mode.test.ts, and bun run check.
+
+Implemented Task 3 - Create plan_merge.ts shared utility module, Task 7 - Extract handleUpdatePlanDetailsTool to update.ts, and Task 8 - Extract handleGenerateTasksTool to update.ts. Added src/rmplan/plan_merge.ts exporting delimiter constants, detail merging helpers, and mergeTasksIntoPlan while keeping metadata and completed tasks intact, plus an accompanying plan_merge.test.ts covering research placement, multi-update flows, validation errors, and metadata preservation. Refactored src/rmplan/commands/update.ts to host the MCP tool handlers, reusing resolvePlan, the new plan_merge helpers, and shared logger typing for mcpUpdatePlanDetails and mcpUpdatePlanTasks; extended update.test.ts with filesystem-backed tests that exercise both handlers end to end. Finally connected src/rmplan/mcp/generate_mode.ts to the extracted handlers, wrapped execution with UserError translation, and updated generate_mode.test.ts to call mcpUpdatePlanTasks via the shared zod schemas. Tests exercised: bun test src/rmplan/plan_merge.test.ts src/rmplan/commands/update.test.ts src/rmplan/mcp/generate_mode.test.ts and bun run check.

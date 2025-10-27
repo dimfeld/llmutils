@@ -10,7 +10,6 @@ import {
   generateTasksParameters,
   getPlanParameters,
   handleAppendResearchTool,
-  handleGenerateTasksTool,
   handleListReadyPlansTool,
   listReadyPlansParameters,
   loadGeneratePrompt,
@@ -20,6 +19,7 @@ import {
   type GenerateModeRegistrationContext,
 } from './generate_mode.js';
 import { mcpGetPlan } from '../commands/show.js';
+import { mcpUpdatePlanTasks } from '../commands/update.js';
 
 const basePlan: PlanSchema = {
   id: 99999,
@@ -103,7 +103,7 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(updated.details).toContain('### Notes');
   });
 
-  test('handleGenerateTasksTool updates plan with structured data', async () => {
+  test('mcpUpdatePlanTasks updates plan with structured data', async () => {
     const args = generateTasksParameters.parse({
       plan: planPath,
       goal: 'Ship a high-quality feature',
@@ -126,7 +126,7 @@ describe('rmplan MCP generate mode helpers', () => {
       info() {},
       warn() {},
     };
-    const result = await handleGenerateTasksTool(args, context, { log: stubLogger });
+    const result = await mcpUpdatePlanTasks(args, context, { log: stubLogger });
     expect(result).toContain('Successfully updated plan');
     expect(result).toContain('2 tasks');
 
@@ -152,7 +152,7 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(result).toContain('Priority: medium');
   });
 
-  test('handleGenerateTasksTool adds delimiters on first update', async () => {
+  test('mcpUpdatePlanTasks adds delimiters on first update', async () => {
     const args = generateTasksParameters.parse({
       plan: planPath,
       details: 'First generated details.',
@@ -171,7 +171,7 @@ describe('rmplan MCP generate mode helpers', () => {
       warn() {},
     };
 
-    await handleGenerateTasksTool(args, context, { log: stubLogger });
+    await mcpUpdatePlanTasks(args, context, { log: stubLogger });
 
     const updated = await readPlanFile(planPath);
     expect(updated.details).toContain('<!-- rmplan-generated-start -->');
@@ -179,7 +179,7 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(updated.details).toContain('First generated details.');
   });
 
-  test('handleGenerateTasksTool replaces content between delimiters on subsequent update', async () => {
+  test('mcpUpdatePlanTasks replaces content between delimiters on subsequent update', async () => {
     // First update adds delimiters
     const firstArgs = generateTasksParameters.parse({
       plan: planPath,
@@ -194,7 +194,7 @@ describe('rmplan MCP generate mode helpers', () => {
       warn() {},
     };
 
-    await handleGenerateTasksTool(firstArgs, context, { log: stubLogger });
+    await mcpUpdatePlanTasks(firstArgs, context, { log: stubLogger });
 
     // Second update replaces content between delimiters
     const secondArgs = generateTasksParameters.parse({
@@ -203,7 +203,7 @@ describe('rmplan MCP generate mode helpers', () => {
       tasks: [{ title: 'Task 2', description: 'New description' }],
     });
 
-    await handleGenerateTasksTool(secondArgs, context, { log: stubLogger });
+    await mcpUpdatePlanTasks(secondArgs, context, { log: stubLogger });
 
     const updated = await readPlanFile(planPath);
     expect(updated.details).toContain('<!-- rmplan-generated-start -->');
@@ -212,7 +212,7 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(updated.details).not.toContain('First generated details.');
   });
 
-  test('handleGenerateTasksTool inserts delimiters before Research section', async () => {
+  test('mcpUpdatePlanTasks inserts delimiters before Research section', async () => {
     // Set up plan with research section but no delimiters
     const planWithResearch: PlanSchema = {
       ...basePlan,
@@ -239,7 +239,7 @@ describe('rmplan MCP generate mode helpers', () => {
       warn() {},
     };
 
-    await handleGenerateTasksTool(args, context, { log: stubLogger });
+    await mcpUpdatePlanTasks(args, context, { log: stubLogger });
 
     // Verify delimiters were inserted before Research section
     const updated = await readPlanFile(planPath);
@@ -255,7 +255,7 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(generatedEndIndex).toBeLessThan(researchIndex);
   });
 
-  test('handleGenerateTasksTool preserves research section across multiple updates', async () => {
+  test('mcpUpdatePlanTasks preserves research section across multiple updates', async () => {
     // Set up plan with research section
     const planWithResearch: PlanSchema = {
       ...basePlan,
@@ -276,7 +276,7 @@ describe('rmplan MCP generate mode helpers', () => {
     };
 
     // First update
-    await handleGenerateTasksTool(
+    await mcpUpdatePlanTasks(
       generateTasksParameters.parse({
         plan: planPath,
         details: 'First update.',
@@ -292,7 +292,7 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(updated.details).toContain('Important research data that should be preserved');
 
     // Second update - research should still be preserved
-    await handleGenerateTasksTool(
+    await mcpUpdatePlanTasks(
       generateTasksParameters.parse({
         plan: planPath,
         details: 'Second update.',

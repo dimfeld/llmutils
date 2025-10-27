@@ -8,13 +8,13 @@ import {
   generateClaudeCodeGenerationPrompt,
 } from '../prompt.js';
 import { appendResearchToPlan } from '../research_utils.js';
-import { writePlanFile, isTaskDone } from '../plans.js';
-import type { PlanSchema } from '../planSchema.js';
-import { planSchema, prioritySchema } from '../planSchema.js';
+import { writePlanFile } from '../plans.js';
+import { prioritySchema } from '../planSchema.js';
 import type { RmplanConfig } from '../configSchema.js';
 import { filterAndSortReadyPlans, formatReadyPlansAsJson } from '../ready_plans.js';
 import { buildPlanContext, resolvePlan } from '../plan_display.js';
 import { mcpGetPlan } from '../commands/show.js';
+import { mcpUpdatePlanDetails, mcpUpdatePlanTasks } from '../commands/update.js';
 
 export interface GenerateModeRegistrationContext {
   config: RmplanConfig;
@@ -153,196 +153,6 @@ export const generateTasksParameters = z
 
 export type GenerateTasksArguments = z.infer<typeof generateTasksParameters>;
 
-const GENERATED_START_DELIMITER = '<!-- rmplan-generated-start -->';
-const GENERATED_END_DELIMITER = '<!-- rmplan-generated-end -->';
-
-/**
- * Extracts the research section (## Research) position from markdown details if present.
- * Returns the index where the research section starts, or undefined if not found.
- */
-function findResearchSectionStart(details: string): number | undefined {
-  const researchMatch = details.match(/^## Research$/m);
-  return researchMatch?.index;
-}
-
-/**
- * Merges new details into the original details using delimiters to track generated content.
- * - If delimiters exist, replaces content between them
- * - If delimiters don't exist, inserts them and new content before the Research section (or at the end)
- * This preserves manually-added content like research sections while allowing the tool to update its own content.
- */
-function mergeDetails(
-  newDetails: string | undefined,
-  originalDetails: string | undefined
-): string | undefined {
-  if (!newDetails) {
-    return originalDetails;
-  }
-
-  if (!originalDetails) {
-    // No original details, wrap new details in delimiters
-    return `${GENERATED_START_DELIMITER}\n${newDetails.trim()}\n${GENERATED_END_DELIMITER}`;
-  }
-
-  // Check if delimiters already exist in the original
-  const startIndex = originalDetails.indexOf(GENERATED_START_DELIMITER);
-  const endIndex = originalDetails.indexOf(GENERATED_END_DELIMITER);
-
-  if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
-    // Delimiters exist - replace content between them
-    const before = originalDetails.slice(0, startIndex);
-    const after = originalDetails.slice(endIndex + GENERATED_END_DELIMITER.length);
-    return `${before}${GENERATED_START_DELIMITER}\n${newDetails.trim()}\n${GENERATED_END_DELIMITER}${after}`;
-  }
-
-  // Delimiters don't exist - insert them before the Research section or at the end
-  const researchStart = findResearchSectionStart(originalDetails);
-
-  if (researchStart !== undefined) {
-    // Insert before the Research section
-    const before = originalDetails.slice(0, researchStart).trim();
-    const after = originalDetails.slice(researchStart).trim();
-    return `${before}\n\n${GENERATED_START_DELIMITER}\n${newDetails.trim()}\n${GENERATED_END_DELIMITER}\n\n${after}`;
-  } else {
-    // No research section - append at the end
-    return `${originalDetails.trim()}\n\n${GENERATED_START_DELIMITER}\n${newDetails.trim()}\n${GENERATED_END_DELIMITER}`;
-  }
-}
-
-async function mergeTasksIntoPlan(
-  newPlanData: Partial<PlanSchema>,
-  originalPlan: PlanSchema
-): Promise<PlanSchema> {
-  // Validate the new plan data against the schema
-  const result = planSchema.safeParse({
-    ...originalPlan,
-    ...newPlanData,
-    // Ensure tasks is always an array
-    tasks: newPlanData.tasks || [],
-  });
-
-  if (!result.success) {
-    const errors = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ');
-    throw new UserError(`Plan data failed validation: ${errors}`);
-  }
-
-  const newPlan = result.data;
-
-  // Preserve all metadata from the original plan
-  const updatedPlan: PlanSchema = {
-    ...newPlan,
-    id: originalPlan.id,
-    parent: originalPlan.parent,
-    container: originalPlan.container,
-    baseBranch: originalPlan.baseBranch,
-    changedFiles: originalPlan.changedFiles,
-    pullRequest: originalPlan.pullRequest,
-    issue: originalPlan.issue,
-    docs: originalPlan.docs,
-    assignedTo: originalPlan.assignedTo,
-    rmfilter: originalPlan.rmfilter,
-    dependencies: originalPlan.dependencies,
-    project: originalPlan.project,
-    generatedBy: 'agent',
-    createdAt: originalPlan.createdAt,
-    updatedAt: new Date().toISOString(),
-    planGeneratedAt: new Date().toISOString(),
-    status: originalPlan.status,
-    promptsGeneratedAt: new Date().toISOString(),
-    // Only override these if provided in newPlanData
-    priority: newPlanData.priority !== undefined ? newPlanData.priority : originalPlan.priority,
-    title: newPlanData.title !== undefined ? newPlanData.title : originalPlan.title,
-    goal: newPlanData.goal !== undefined ? newPlanData.goal : originalPlan.goal,
-    details: mergeDetails(newPlanData.details, originalPlan.details),
-  };
-
-  // Merge tasks while preserving completed ones
-  const originalTasks = originalPlan.tasks || [];
-  const newTasks = newPlan.tasks || [];
-
-  // Build a map of completed tasks
-  const completedTasks = new Map<number, PlanSchema['tasks'][0]>();
-  originalTasks.forEach((task, index) => {
-    if (isTaskDone(task)) {
-      completedTasks.set(index, task);
-    }
-  });
-
-  // Parse task IDs from new tasks to match with original tasks
-  const taskIdRegex = /\[TASK-(\d+)\]/;
-  const mergedTasks: PlanSchema['tasks'] = [];
-
-  // First, add all completed tasks in their original positions
-  for (const [index, task] of completedTasks) {
-    mergedTasks[index] = task;
-  }
-
-  // Then process new tasks
-  newTasks.forEach((newTask) => {
-    const match = newTask.title.match(taskIdRegex);
-    if (match) {
-      const taskIndex = parseInt(match[1]) - 1; // Convert to 0-based index
-      // Remove the task ID from the title
-      newTask.title = newTask.title.replace(taskIdRegex, '').trim();
-
-      // Only update if this was not a completed task
-      if (!completedTasks.has(taskIndex)) {
-        mergedTasks[taskIndex] = newTask;
-      }
-    } else {
-      let matchingTitleTask = originalTasks.findIndex((task) => task.title === newTask.title);
-      if (matchingTitleTask >= 0) {
-        if (!completedTasks.has(matchingTitleTask)) {
-          mergedTasks[matchingTitleTask] = newTask;
-        }
-      } else {
-        // New task without ID - add to the end
-        mergedTasks.push(newTask);
-      }
-    }
-  });
-
-  // Filter out any undefined entries
-  updatedPlan.tasks = mergedTasks.filter((task) => task !== undefined);
-
-  return updatedPlan;
-}
-
-export async function handleGenerateTasksTool(
-  args: GenerateTasksArguments,
-  context: GenerateModeRegistrationContext,
-  execContext: { log: GenerateModeExecutionLogger }
-): Promise<string> {
-  const { plan, planPath } = await resolvePlan(args.plan, context);
-
-  try {
-    execContext.log.info('Merging generated plan data');
-
-    // Build partial plan data from arguments
-    const newPlanData: Partial<PlanSchema> = {
-      tasks: args.tasks as PlanSchema['tasks'],
-    };
-
-    // Only include optional fields if they were provided
-    if (args.title !== undefined) newPlanData.title = args.title;
-    if (args.goal !== undefined) newPlanData.goal = args.goal;
-    if (args.details !== undefined) newPlanData.details = args.details;
-    if (args.priority !== undefined) newPlanData.priority = args.priority;
-
-    // Merge with the existing plan
-    const updatedPlan = await mergeTasksIntoPlan(newPlanData, plan);
-
-    // Write the updated plan back to the file
-    await writePlanFile(planPath, updatedPlan);
-
-    const relativePath = path.relative(context.gitRoot, planPath) || planPath;
-    const taskCount = updatedPlan.tasks.length;
-    return `Successfully updated plan at ${relativePath} with ${taskCount} task${taskCount === 1 ? '' : 's'}`;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new UserError(`Failed to update plan: ${message}`);
-  }
-}
 
 export const getPlanParameters = z
   .object({
@@ -425,80 +235,8 @@ export async function handleAppendResearchTool(
   return `Appended research to ${relativePath}`;
 }
 
-/**
- * Updates plan details within the delimiter-bounded generated section.
- * If append is true, appends to existing generated content.
- * If append is false, replaces existing generated content.
- */
-function updateDetailsWithinDelimiters(
-  newDetails: string,
-  originalDetails: string | undefined,
-  append: boolean
-): string {
-  if (!originalDetails) {
-    // No original details, wrap new details in delimiters
-    return `${GENERATED_START_DELIMITER}\n${newDetails.trim()}\n${GENERATED_END_DELIMITER}`;
-  }
 
-  // Check if delimiters already exist in the original
-  const startIndex = originalDetails.indexOf(GENERATED_START_DELIMITER);
-  const endIndex = originalDetails.indexOf(GENERATED_END_DELIMITER);
-
-  if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
-    // Delimiters exist - update content between them
-    const before = originalDetails.slice(0, startIndex);
-    const after = originalDetails.slice(endIndex + GENERATED_END_DELIMITER.length);
-    const existingGenerated = originalDetails
-      .slice(startIndex + GENERATED_START_DELIMITER.length, endIndex)
-      .trim();
-
-    let updatedGenerated: string;
-    if (append && existingGenerated) {
-      // Append to existing generated content
-      updatedGenerated = `${existingGenerated}\n\n${newDetails.trim()}`;
-    } else {
-      // Replace existing generated content
-      updatedGenerated = newDetails.trim();
-    }
-
-    return `${before}${GENERATED_START_DELIMITER}\n${updatedGenerated}\n${GENERATED_END_DELIMITER}${after}`;
-  }
-
-  // Delimiters don't exist - insert them before the Research section or at the end
-  const researchStart = findResearchSectionStart(originalDetails);
-
-  if (researchStart !== undefined) {
-    // Insert before the Research section
-    const before = originalDetails.slice(0, researchStart).trim();
-    const after = originalDetails.slice(researchStart).trim();
-    return `${before}\n\n${GENERATED_START_DELIMITER}\n${newDetails.trim()}\n${GENERATED_END_DELIMITER}\n\n${after}`;
-  } else {
-    // No research section - append at the end
-    return `${originalDetails.trim()}\n\n${GENERATED_START_DELIMITER}\n${newDetails.trim()}\n${GENERATED_END_DELIMITER}`;
-  }
-}
-
-export async function handleUpdatePlanDetailsTool(
-  args: UpdatePlanDetailsArguments,
-  context: GenerateModeRegistrationContext
-): Promise<string> {
-  const { plan, planPath } = await resolvePlan(args.plan, context);
-
-  const updatedDetails = updateDetailsWithinDelimiters(args.details, plan.details, args.append);
-
-  const updatedPlan: PlanSchema = {
-    ...plan,
-    details: updatedDetails,
-    updatedAt: new Date().toISOString(),
-  };
-
-  await writePlanFile(planPath, updatedPlan);
-  const relativePath = path.relative(context.gitRoot, planPath) || planPath;
-  const action = args.append ? 'Appended to' : 'Updated';
-  return `${action} details in ${relativePath}`;
-}
-
-type GenerateModeExecutionLogger = {
+export type GenerateModeExecutionLogger = {
   debug: (message: string, data?: SerializableValue) => void;
   error: (message: string, data?: SerializableValue) => void;
   info: (message: string, data?: SerializableValue) => void;
@@ -612,10 +350,16 @@ export function registerGenerateMode(
       destructiveHint: true,
       readOnlyHint: false,
     },
-    execute: async (args, execContext) =>
-      handleGenerateTasksTool(args, context, {
-        log: wrapLogger(execContext.log, '[update-plan-tasks] '),
-      }),
+    execute: async (args, execContext) => {
+      try {
+        return await mcpUpdatePlanTasks(args, context, {
+          log: wrapLogger(execContext.log, '[update-plan-tasks] '),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new UserError(message);
+      }
+    },
   });
 
   server.addTool({
@@ -650,7 +394,14 @@ export function registerGenerateMode(
       destructiveHint: true,
       readOnlyHint: false,
     },
-    execute: async (args) => handleUpdatePlanDetailsTool(args, context),
+    execute: async (args) => {
+      try {
+        return await mcpUpdatePlanDetails(args, context);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new UserError(message);
+      }
+    },
   });
 
   server.addTool({
