@@ -52,7 +52,9 @@ export async function handleClaimCommand(
       actionDetails.push(`added user ${user}`);
     }
     const suffix = actionDetails.length > 0 ? ` (${actionDetails.join(', ')})` : '';
-    log(`${chalk.green('✓')} Claimed plan ${planLabel} in workspace ${repository.gitRoot}${suffix}`);
+    log(
+      `${chalk.green('✓')} Claimed plan ${planLabel} in workspace ${repository.gitRoot}${suffix}`
+    );
   } else {
     log(
       `${chalk.yellow('•')} Plan ${planLabel} is already claimed in workspace ${repository.gitRoot}`
