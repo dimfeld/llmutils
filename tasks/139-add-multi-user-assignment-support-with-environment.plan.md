@@ -18,7 +18,7 @@ docs: []
 planGeneratedAt: 2025-10-27T08:01:47.867Z
 promptsGeneratedAt: 2025-10-27T08:01:47.867Z
 createdAt: 2025-10-27T05:51:22.359Z
-updatedAt: 2025-10-27T11:27:43.653Z
+updatedAt: 2025-10-27T11:39:24.790Z
 progressNotes:
   - timestamp: 2025-10-27T08:07:27.994Z
     text: Added optional uuid field to plan schema, generate/add stub assignments
@@ -1010,3 +1010,5 @@ Implemented Task 9: Add automatic cleanup when plans marked done by wiring share
 Updated checkAndMarkParentDone in src/rmplan/plans/mark_done.ts to call removePlanAssignment immediately after persisting the parent plan so container parents drop their shared assignment as soon as the last child transitions to done. This keeps Task 9: Add automatic cleanup when plans marked done in sync across code paths and reuses the existing helper that already guards against missing UUIDs and logs persistence errors, while still recursing to grandparents without altering status logic. Verified the behavior by rerunning bun test src/rmplan/plans/mark_done.test.ts to ensure the mark_done workflow stays green.
 
 Task 10 – Add stale assignment detection and cleanup: extended rmplan config and JSON schemas with an optional assignments.staleTimeout knob, defaulted to 7 days via the existing loader, and built src/rmplan/assignments/stale_detection.ts to expose isStaleAssignment/getStaleAssignments plus a config-aware timeout helper. Task 10 also gained a dedicated CLI surface in src/rmplan/commands/assignments.ts and rmplan.ts with list/clean-stale/show-conflicts handlers that read shared assignments.json, render workspace/user summaries, and perform atomic stale cleanup behind the existing optimistic lock. Added focused validation in src/rmplan/assignments/stale_detection.test.ts and src/rmplan/commands/assignments.test.ts to cover timeout resolution, stale detection, confirmation flows, conflict reporting, and interaction with real writeAssignments/readAssignments so future maintainers can lean on these guardrails when evolving the feature.
+
+Documented fix for Task 10 – Add stale assignment detection and cleanup: corrected loadAssignmentsContext in src/rmplan/commands/assignments.ts to call getRepositoryIdentity() without overriding cwd, ensuring repositories using external task storage resolve to the same shared assignments file used by claim/release/ready and preserving the stale cleanup workflow. Verified by bun test src/rmplan/commands/assignments.test.ts and bun run check; no other files required changes.

@@ -60,7 +60,7 @@ async function loadAssignmentsContext(command: any): Promise<AssignmentsContext>
   const config = await loadEffectiveConfig(globalOpts?.config);
   const tasksDir = await resolveTasksDir(config);
 
-  const repository = await getRepositoryIdentity({ cwd: tasksDir });
+  const repository = await getRepositoryIdentity();
 
   let assignments: AssignmentsFile;
   try {
