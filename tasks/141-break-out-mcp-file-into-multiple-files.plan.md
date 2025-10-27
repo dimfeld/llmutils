@@ -11,7 +11,7 @@ temp: false
 planGeneratedAt: 2025-10-27T19:36:54.793Z
 promptsGeneratedAt: 2025-10-27T19:36:54.793Z
 createdAt: 2025-10-27T06:31:21.571Z
-updatedAt: 2025-10-27T20:48:21.865Z
+updatedAt: 2025-10-27T20:55:53.278Z
 progressNotes:
   - timestamp: 2025-10-27T19:46:00.224Z
     text: Created shared ready_plans module with filtering/sorting utilities,
@@ -1031,3 +1031,5 @@ Adjusted the MCP update tests to call writePlanFile with only the supported (pla
 Implemented Task 5 and Task 9 by relocating MCP tool handlers into their owning commands. commands/research.ts now exports mcpAppendResearch(args, context), which resolves the plan via resolvePlan(), appends research with appendResearchToPlan(), writes the file, and reports the relative path so the MCP server stays a thin delegator. commands/research.test.ts gained dedicated tests that exercise heading overrides and timestamp toggles against the new handler to ensure serialization matches the CLI flow.
 
 Extended Task 9 work by adding mcpListReadyPlans() to commands/ready.ts so the CLI owns the MCP listing behavior, reusing filterAndSortReadyPlans()/formatReadyPlansAsJson() and wrapping resolveTasksDir/readAllPlans to preserve error semantics. generate_mode.ts now solely registers prompts and tools, importing the ready, research, update, and show handlers and converting thrown errors into UserError instances; wrapLogger remains to tag logs for update-plan-tasks. generate_mode.test.ts was updated to target mcpAppendResearch/mcpListReadyPlans so coverage follows the new entry points, and bun test plus bun run check validated the refactor.
+
+Handled review feedback for Task 5 (Extract handleAppendResearchTool to research.ts) by renaming the numeric-ID MCP append research fixture to identifier-plan.plan.md, ensuring the test exercises ID-based resolution rather than filename lookup. Updated src/rmplan/commands/research.test.ts accordingly while keeping plan id 103 so resolvePlanFile must fall through to the all-plans scan, guaranteeing regressions in ID resolution will now be caught. No runtime logic changed; this is a targeted test correction for mcpAppendResearch.

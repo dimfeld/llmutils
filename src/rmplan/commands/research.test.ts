@@ -507,6 +507,37 @@ describe('handleResearchCommand', () => {
   });
 
   describe('mcpAppendResearch', () => {
+    test('resolves plans by numeric identifier', async () => {
+      const planFile = path.join(tasksDir, 'identifier-plan.plan.md');
+      await writePlanFile(planFile, {
+        id: 103,
+        title: 'Identifier Plan',
+        goal: 'Check lookup',
+        status: 'pending',
+        priority: 'medium',
+        details: undefined,
+        tasks: [],
+      });
+
+      const context: GenerateModeRegistrationContext = {
+        gitRoot: tempDir,
+        config: {} as any,
+        configPath: undefined,
+      };
+
+      await mcpAppendResearch(
+        {
+          plan: '103',
+          research: 'Lookup via ID succeeds.',
+        },
+        context
+      );
+
+      const updatedPlan = await readPlanFile(planFile);
+      expect(updatedPlan.details).toContain('## Research');
+      expect(updatedPlan.details).toContain('Lookup via ID succeeds.');
+    });
+
     test('appends research with custom heading and timestamp', async () => {
       const planFile = path.join(tasksDir, 'mcp-heading.plan.md');
       await writePlanFile(planFile, {
