@@ -22,6 +22,12 @@ export interface WriteAssignmentsOptions {
   expectedVersion?: number;
 }
 
+export interface RemoveAssignmentOptions {
+  repositoryId: string;
+  repositoryRemoteUrl?: string | null;
+  uuid: string;
+}
+
 export class AssignmentsFileParseError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
@@ -198,4 +204,27 @@ export async function writeAssignments(
   } finally {
     await releaseLock();
   }
+}
+
+export async function removeAssignment(options: RemoveAssignmentOptions): Promise<boolean> {
+  const assignments = await readAssignments({
+    repositoryId: options.repositoryId,
+    repositoryRemoteUrl: options.repositoryRemoteUrl,
+  });
+
+  if (!assignments.assignments[options.uuid]) {
+    return false;
+  }
+
+  const nextAssignments: AssignmentsFile = {
+    ...assignments,
+    version: assignments.version + 1,
+    assignments: { ...assignments.assignments },
+  };
+
+  delete nextAssignments.assignments[options.uuid];
+
+  await writeAssignments(nextAssignments, { expectedVersion: assignments.version });
+
+  return true;
 }

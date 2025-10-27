@@ -2,6 +2,31 @@ import chalk from 'chalk';
 import { debugLog, log, warn } from '../../../logging.js';
 import { resolveTasksDir, type RmplanConfig } from '../../configSchema.js';
 import { clearPlanCache, readAllPlans, writePlanFile } from '../../plans.js';
+import { removeAssignment } from '../../assignments/assignments_io.js';
+import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
+import type { PlanSchema } from '../../planSchema.js';
+
+async function removePlanAssignment(plan: PlanSchema, baseDir?: string): Promise<void> {
+  if (!plan.uuid) {
+    return;
+  }
+
+  try {
+    const repository = await getRepositoryIdentity({ cwd: baseDir });
+    await removeAssignment({
+      repositoryId: repository.repositoryId,
+      repositoryRemoteUrl: repository.remoteUrl,
+      uuid: plan.uuid,
+    });
+  } catch (error) {
+    const planLabel = plan.id !== undefined ? `plan ${plan.id}` : `plan ${plan.uuid}`;
+    warn(
+      `Failed to remove assignment for ${planLabel}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+}
 
 /**
  * Marks a parent plan as in_progress if it's currently pending.
@@ -83,6 +108,7 @@ export async function checkAndMarkParentDone(
     }
 
     await writePlanFile(parentPlan.filename, parentPlan);
+    await removePlanAssignment(parentPlan, baseDir);
     log(chalk.green(`✓ Parent plan "${parentPlan.title}" marked as complete (all children done)`));
 
     // Recursively check if this parent has a parent

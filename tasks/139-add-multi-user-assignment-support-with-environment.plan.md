@@ -5,6 +5,7 @@ goal: Enable multi-user workflows in rmplan by supporting user identity via
   environment variables and tracking both plan assignments and status in a
   shared configuration
 id: 139
+uuid: 8b82a7c6-2182-48b7-af3e-2be853519242
 generatedBy: agent
 status: in_progress
 priority: high
@@ -17,7 +18,7 @@ docs: []
 planGeneratedAt: 2025-10-27T08:01:47.867Z
 promptsGeneratedAt: 2025-10-27T08:01:47.867Z
 createdAt: 2025-10-27T05:51:22.359Z
-updatedAt: 2025-10-27T10:33:27.459Z
+updatedAt: 2025-10-27T10:50:23.099Z
 progressNotes:
   - timestamp: 2025-10-27T08:07:27.994Z
     text: Added optional uuid field to plan schema, generate/add stub assignments
@@ -111,6 +112,15 @@ progressNotes:
       filters/workspace column, and reran bun run check plus the relevant
       command suites.
     source: "tester: Task 8"
+  - timestamp: 2025-10-27T10:39:48.538Z
+    text: Added removeAssignment helper and wired automatic assignment cleanup into
+      mark_done, set, and parent plan flows.
+    source: "implementer: Task 9"
+  - timestamp: 2025-10-27T10:49:53.112Z
+    text: Added unit coverage across mark_step, mark_task, set, and setTask flows to
+      confirm assignment cleanup triggers; bun run check and targeted test
+      suites all pass.
+    source: "tester: Task 9"
 tasks:
   - title: Add UUID field to plan schema with auto-generation
     done: true
@@ -302,7 +312,6 @@ changedFiles:
   - test-plans/plans/103-testing-infrastructure.yml
   - test-plans/plans/104-test-data-generation.yml
 rmfilter: []
-uuid: 8b82a7c6-2182-48b7-af3e-2be853519242
 ---
 
 <!-- rmplan-generated-start -->
@@ -958,3 +967,5 @@ Implemented a fix for Task 6 – Implement rmplan release command by teaching th
 Implemented Task 7 by making 'rmplan ready' assignment-aware: it now loads shared assignments, prefers their status values, adds --all/--unassigned/--user filters, formats workspace names via formatWorkspacePath, and emits warnings for multi-workspace claims.\n\nImplemented Task 8 by wiring the same assignment metadata into 'rmplan list' and 'rmplan show'. List now exposes --assigned/--unassigned filters, shows a workspace column, and applies assignment status when sorting or rendering dependency badges. Show merges assignment details into both short and full views, displays workspace/user/timestamp info, warns on conflicts, and keeps watch mode in sync by reloading assignments.\n\nCreated formatWorkspacePath plus helper utilities, refreshed ready/list/show tests to cover the new behaviors, and exposed the new CLI flags in rmplan.ts.
 
 Task 7: Update ready command with assignment filtering - addressed review feedback by updating handleReadyCommand in src/rmplan/commands/ready.ts to normalize --user inputs, fall back to plan-level assignedTo when assignments.json lacks entries, and preserve original casing in empty-state messaging. Added regression coverage in src/rmplan/commands/ready.test.ts to verify legacy assignedTo filtering and case-insensitive user matching so future edits keep backward compatibility. Tests: bun run check; bun test src/rmplan/commands/ready.test.ts.
+
+Implemented Task 9: Add automatic cleanup when plans marked done by wiring shared assignment removal into every status-completion path. Introduced removeAssignment() in src/rmplan/assignments/assignments_io.ts so other modules can drop a plan’s shared entry with a single atomic compare-and-swap call. mark_done.ts now invokes that helper when markStepDone, markTaskDone, or setTaskDone finish a plan, using getRepositoryIdentity() to resolve the shared assignments path and warning (rather than failing) if the cleanup cannot be persisted. To ensure container parents also release their assignments when children complete, checkAndMarkParentDone in src/rmplan/commands/agent/parent_plans.ts reuses the same helper after it writes the parent plan. handleSetCommand in src/rmplan/commands/set.ts tracks when a status change transitions to done or cancelled and, after persisting the plan, clears the assignment entry so manual status updates behave consistently. Added matching test coverage across mark_done.test.ts, mark_done_set_task.test.ts, and set.test.ts; each suite now stubs getRepositoryIdentity/removeAssignment, asserts cleanup happens exactly once when plans finish, and verifies no-op transitions leave assignments intact. Test runs: bun run check; bun test src/rmplan/plans/mark_done.test.ts; bun test src/rmplan/plans/mark_done_set_task.test.ts; bun test src/rmplan/commands/set.test.ts.

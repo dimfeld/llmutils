@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach, mock } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -6,8 +6,19 @@ import yaml from 'yaml';
 import { readPlanFile } from '../plans.js';
 import { handleSetCommand } from './set.js';
 import type { PlanSchema } from '../planSchema.js';
-import { setDebug } from '../../common/process.js';
 import type { RmplanConfig } from '../configSchema.js';
+import { ModuleMocker } from '../../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
+const logSpy = mock(() => {});
+const warnSpy = mock(() => {});
+const errorSpy = mock(() => {});
+const removeAssignmentSpy = mock(async () => true);
+const getRepositoryIdentitySpy = mock(async () => ({
+  repositoryId: 'test-repo',
+  remoteUrl: null,
+  gitRoot: '',
+}));
 
 describe('rmplan set command', () => {
   let tempDir: string;
@@ -15,6 +26,13 @@ describe('rmplan set command', () => {
   let globalOpts: any;
 
   beforeEach(async () => {
+    moduleMocker.clear();
+    logSpy.mockClear();
+    warnSpy.mockClear();
+    errorSpy.mockClear();
+    removeAssignmentSpy.mockClear();
+    getRepositoryIdentitySpy.mockClear();
+
     tempDir = await mkdtemp(path.join(tmpdir(), 'rmplan-set-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     let config: RmplanConfig = {
@@ -27,9 +45,30 @@ describe('rmplan set command', () => {
     globalOpts = {
       config: path.join(tempDir, '.rmplan.yml'),
     };
+
+    getRepositoryIdentitySpy.mockResolvedValue({
+      repositoryId: 'test-repo',
+      remoteUrl: null,
+      gitRoot: tempDir,
+    });
+
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: logSpy,
+      warn: warnSpy,
+      error: errorSpy,
+    }));
+
+    await moduleMocker.mock('../assignments/assignments_io.js', () => ({
+      removeAssignment: removeAssignmentSpy,
+    }));
+
+    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
+      getRepositoryIdentity: getRepositoryIdentitySpy,
+    }));
   });
 
   afterEach(async () => {
+    moduleMocker.clear();
     await rm(tempDir, { recursive: true });
   });
 
@@ -83,6 +122,45 @@ describe('rmplan set command', () => {
 
     const updatedPlan = await readPlanFile(planPath);
     expect(updatedPlan.status).toBe('in_progress');
+    expect(removeAssignmentSpy).not.toHaveBeenCalled();
+  });
+
+  test('removes assignments when status set to done', async () => {
+    const planPath = await createTestPlan(111);
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        status: 'done',
+      },
+      globalOpts
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.status).toBe('done');
+    expect(removeAssignmentSpy).toHaveBeenCalledTimes(1);
+    const [callArgs] = removeAssignmentSpy.mock.calls;
+    expect(callArgs[0].uuid).toBe(updatedPlan.uuid);
+  });
+
+  test('removes assignments when status set to cancelled', async () => {
+    const planPath = await createTestPlan(112);
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        status: 'cancelled',
+      },
+      globalOpts
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.status).toBe('cancelled');
+    expect(removeAssignmentSpy).toHaveBeenCalledTimes(1);
+    const [callArgs] = removeAssignmentSpy.mock.calls;
+    expect(callArgs[0].uuid).toBe(updatedPlan.uuid);
   });
 
   test('should add dependencies', async () => {

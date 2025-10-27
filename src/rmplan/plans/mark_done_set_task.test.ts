@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -6,6 +6,18 @@ import yaml from 'yaml';
 import { setTaskDone } from './mark_done.js';
 import { clearPlanCache, readPlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
+import { ModuleMocker } from '../../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
+const logSpy = mock(() => {});
+const warnSpy = mock(() => {});
+const errorSpy = mock(() => {});
+const removeAssignmentSpy = mock(async () => true);
+const getRepositoryIdentitySpy = mock(async () => ({
+  repositoryId: 'test-repo',
+  remoteUrl: null,
+  gitRoot: '',
+}));
 
 describe('setTaskDone', () => {
   let tempDir: string;
@@ -15,14 +27,42 @@ describe('setTaskDone', () => {
     // Clear plan cache
     clearPlanCache();
 
+    logSpy.mockClear();
+    warnSpy.mockClear();
+    errorSpy.mockClear();
+    removeAssignmentSpy.mockClear();
+    getRepositoryIdentitySpy.mockClear();
+
     // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-set-task-done-integration-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
+
+    getRepositoryIdentitySpy.mockResolvedValue({
+      repositoryId: 'test-repo',
+      remoteUrl: null,
+      gitRoot: tempDir,
+    });
+
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: logSpy,
+      warn: warnSpy,
+      error: errorSpy,
+      boldMarkdownHeaders: (text: string) => text,
+    }));
+
+    await moduleMocker.mock('../assignments/assignments_io.js', () => ({
+      removeAssignment: removeAssignmentSpy,
+    }));
+
+    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
+      getRepositoryIdentity: getRepositoryIdentitySpy,
+    }));
   });
 
   afterEach(async () => {
     // Clean up
+    moduleMocker.clear();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -71,6 +111,7 @@ describe('setTaskDone', () => {
     expect(updatedPlan.tasks[1].done).toBe(true);
     expect(updatedPlan.tasks[1].steps[0].done).toBe(true);
     expect(updatedPlan.tasks[0].done).toBe(false); // First task should remain unchanged
+    expect(removeAssignmentSpy).not.toHaveBeenCalled();
   });
 
   test('marks task as done by index (one-based)', async () => {
@@ -119,6 +160,7 @@ describe('setTaskDone', () => {
     expect(updatedPlan.tasks[1].steps[0].done).toBe(true);
     expect(updatedPlan.tasks[0].done).toBe(false);
     expect(updatedPlan.tasks[2].done).toBe(false);
+    expect(removeAssignmentSpy).not.toHaveBeenCalled();
   });
 
   test('marks all steps in task as done', async () => {
@@ -161,6 +203,9 @@ describe('setTaskDone', () => {
     expect(updatedPlan.tasks[0].done).toBe(true);
     expect(updatedPlan.tasks[0].steps.every((s) => s.done)).toBe(true);
     expect(updatedPlan.status).toBe('done'); // Plan should be marked complete
+    expect(removeAssignmentSpy).toHaveBeenCalledTimes(1);
+    const [callArgs] = removeAssignmentSpy.mock.calls;
+    expect(callArgs[0].uuid).toBe(updatedPlan.uuid);
   });
 
   test('throws error for invalid task title', async () => {

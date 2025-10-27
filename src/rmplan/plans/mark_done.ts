@@ -12,6 +12,30 @@ import { resolveConfiguredTasksPath } from '../path_resolver.js';
 import { clearPlanCache, readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
 import { type PendingTaskResult, findPendingTask, findNextActionableItem } from './find_next.js';
 import type { PlanSchema } from '../planSchema.js';
+import { removeAssignment } from '../assignments/assignments_io.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+
+async function removePlanAssignment(plan: PlanSchema, baseDir?: string): Promise<void> {
+  if (!plan.uuid) {
+    return;
+  }
+
+  try {
+    const repository = await getRepositoryIdentity({ cwd: baseDir });
+    await removeAssignment({
+      repositoryId: repository.repositoryId,
+      repositoryRemoteUrl: repository.remoteUrl,
+      uuid: plan.uuid,
+    });
+  } catch (error) {
+    const planLabel = plan.id !== undefined ? `plan ${plan.id}` : `plan ${plan.uuid}`;
+    warn(
+      `Failed to remove assignment for ${planLabel}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+}
 
 /**
  * Marks one or more steps as completed in a plan file and updates plan metadata.
@@ -171,6 +195,10 @@ export async function markStepDone(
   // 6. Write updated plan back
   await writePlanFile(planFile, planData);
 
+  if (planComplete) {
+    await removePlanAssignment(planData, baseDir);
+  }
+
   // 7. Optionally commit
   const message = output.join('\n');
   log(boldMarkdownHeaders(message));
@@ -298,6 +326,10 @@ export async function markTaskDone(
 
   // 7. Write updated plan back
   await writePlanFile(planFile, planData);
+
+  if (planComplete) {
+    await removePlanAssignment(planData, baseDir);
+  }
 
   // 8. Optionally commit
   const message = output.join('\n');
@@ -442,6 +474,10 @@ export async function setTaskDone(
 
   // 7. Write updated plan back
   await writePlanFile(planFile, planData);
+
+  if (planComplete) {
+    await removePlanAssignment(planData, baseDir);
+  }
 
   // 8. Optionally commit
   const message = output.join('\n');
