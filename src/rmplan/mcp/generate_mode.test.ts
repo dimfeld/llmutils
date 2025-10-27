@@ -9,8 +9,6 @@ import {
   appendResearchParameters,
   generateTasksParameters,
   getPlanParameters,
-  handleAppendResearchTool,
-  handleListReadyPlansTool,
   listReadyPlansParameters,
   loadGeneratePrompt,
   loadPlanPrompt,
@@ -20,6 +18,8 @@ import {
 } from './generate_mode.js';
 import { mcpGetPlan } from '../commands/show.js';
 import { mcpUpdatePlanTasks } from '../commands/update.js';
+import { mcpAppendResearch } from '../commands/research.js';
+import { mcpListReadyPlans } from '../commands/ready.js';
 
 const basePlan: PlanSchema = {
   id: 99999,
@@ -89,13 +89,13 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(message?.text).toContain('Wait for your human collaborator');
   });
 
-  test('handleAppendResearchTool appends research to the plan file', async () => {
+  test('mcpAppendResearch appends research to the plan file', async () => {
     const args = appendResearchParameters.parse({
       plan: planPath,
       research: '### Notes\n- Found relevant module',
       timestamp: false,
     });
-    const result = await handleAppendResearchTool(args, context);
+    const result = await mcpAppendResearch(args, context);
     expect(result).toContain('Appended research');
 
     const updated = await readPlanFile(planPath);
@@ -310,7 +310,7 @@ describe('rmplan MCP generate mode helpers', () => {
   });
 });
 
-describe('handleListReadyPlansTool', () => {
+describe('mcpListReadyPlans', () => {
   let tmpDir: string;
   let context: GenerateModeRegistrationContext;
 
@@ -369,7 +369,7 @@ describe('handleListReadyPlansTool', () => {
       pendingOnly: false,
     });
 
-    const result = await handleListReadyPlansTool(args, context);
+    const result = await mcpListReadyPlans(args, context);
     const parsed = JSON.parse(result);
 
     expect(parsed.count).toBe(2);
@@ -426,7 +426,7 @@ describe('handleListReadyPlansTool', () => {
       priority: 'high',
     });
 
-    const result = await handleListReadyPlansTool(args, context);
+    const result = await mcpListReadyPlans(args, context);
     const parsed = JSON.parse(result);
 
     expect(parsed.count).toBe(1);
@@ -455,7 +455,7 @@ describe('handleListReadyPlansTool', () => {
       limit: 3,
     });
 
-    const result = await handleListReadyPlansTool(args, context);
+    const result = await mcpListReadyPlans(args, context);
     const parsed = JSON.parse(result);
 
     expect(parsed.count).toBe(3);
@@ -490,7 +490,7 @@ describe('handleListReadyPlansTool', () => {
       pendingOnly: true,
     });
 
-    const result = await handleListReadyPlansTool(args, context);
+    const result = await mcpListReadyPlans(args, context);
     const parsed = JSON.parse(result);
 
     expect(parsed.count).toBe(1);
@@ -526,7 +526,7 @@ describe('handleListReadyPlansTool', () => {
 
     const args = listReadyPlansParameters.parse({});
 
-    const result = await handleListReadyPlansTool(args, context);
+    const result = await mcpListReadyPlans(args, context);
     const parsed = JSON.parse(result);
 
     expect(parsed.count).toBe(0);
@@ -583,7 +583,7 @@ describe('handleListReadyPlansTool', () => {
       sortBy: 'priority',
     });
 
-    const result = await handleListReadyPlansTool(args, context);
+    const result = await mcpListReadyPlans(args, context);
     const parsed = JSON.parse(result);
 
     expect(parsed.count).toBe(4);
@@ -627,7 +627,7 @@ describe('handleListReadyPlansTool', () => {
 
     const args = listReadyPlansParameters.parse({});
 
-    const result = await handleListReadyPlansTool(args, context);
+    const result = await mcpListReadyPlans(args, context);
     const parsed = JSON.parse(result);
 
     expect(parsed.count).toBe(1);
@@ -670,7 +670,7 @@ describe('handleListReadyPlansTool', () => {
 
     const args = listReadyPlansParameters.parse({});
 
-    const result = await handleListReadyPlansTool(args, context);
+    const result = await mcpListReadyPlans(args, context);
     const parsed = JSON.parse(result);
 
     expect(parsed.count).toBe(1);
@@ -696,7 +696,7 @@ describe('handleListReadyPlansTool', () => {
 
     const args = listReadyPlansParameters.parse({});
 
-    const result = await handleListReadyPlansTool(args, context);
+    const result = await mcpListReadyPlans(args, context);
     const parsed = JSON.parse(result);
 
     expect(parsed.count).toBe(1);
@@ -741,7 +741,7 @@ describe('handleListReadyPlansTool', () => {
 
     const args = listReadyPlansParameters.parse({});
 
-    const result = await handleListReadyPlansTool(args, context);
+    const result = await mcpListReadyPlans(args, context);
     const parsed = JSON.parse(result);
 
     // Only the dependency (plan 1) should be ready, not plan 2
@@ -788,7 +788,7 @@ describe('handleListReadyPlansTool', () => {
 
     const args = listReadyPlansParameters.parse({});
 
-    const result = await handleListReadyPlansTool(args, context);
+    const result = await mcpListReadyPlans(args, context);
     const parsed = JSON.parse(result);
 
     // Plan 3 should be ready because all dependencies are done

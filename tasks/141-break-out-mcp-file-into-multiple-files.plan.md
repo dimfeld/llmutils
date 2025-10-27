@@ -11,7 +11,7 @@ temp: false
 planGeneratedAt: 2025-10-27T19:36:54.793Z
 promptsGeneratedAt: 2025-10-27T19:36:54.793Z
 createdAt: 2025-10-27T06:31:21.571Z
-updatedAt: 2025-10-27T20:39:45.670Z
+updatedAt: 2025-10-27T20:48:21.865Z
 progressNotes:
   - timestamp: 2025-10-27T19:46:00.224Z
     text: Created shared ready_plans module with filtering/sorting utilities,
@@ -67,6 +67,21 @@ progressNotes:
       existing details and update-plan tasks validation failures; verified new
       cases with bun test src/rmplan/commands/update.test.ts.
     source: "tester: Task 3/7/8"
+  - timestamp: 2025-10-27T20:44:25.256Z
+    text: Moved append-plan-research MCP handler into commands/research.ts, added
+      mcpAppendResearch export plus tests covering heading/timestamp options,
+      and updated generate_mode to call the shared handler.
+    source: "implementer: Task 5"
+  - timestamp: 2025-10-27T20:45:49.773Z
+    text: Refined generate_mode.ts into a registration layer by importing the ready
+      command MCP handler, removed inline ready-plan logic, and added
+      mcpListReadyPlans implementation in commands/ready.ts.
+    source: "implementer: Task 9"
+  - timestamp: 2025-10-27T20:47:30.835Z
+    text: Ran targeted research, ready, and MCP generate_mode test suites plus bun
+      run check; all passing after re-pointing tests to the new MCP handler
+      exports.
+    source: "tester: Tasks 5 & 9"
 tasks:
   - title: Create ready_plans.ts shared utility module
     done: true
@@ -1012,3 +1027,7 @@ Task 4 & Task 9 build on Task 2’s utilities: show.ts now imports plan_display 
 Implemented Task 3 - Create plan_merge.ts shared utility module, Task 7 - Extract handleUpdatePlanDetailsTool to update.ts, and Task 8 - Extract handleGenerateTasksTool to update.ts. Added src/rmplan/plan_merge.ts exporting delimiter constants, detail merging helpers, and mergeTasksIntoPlan while keeping metadata and completed tasks intact, plus an accompanying plan_merge.test.ts covering research placement, multi-update flows, validation errors, and metadata preservation. Refactored src/rmplan/commands/update.ts to host the MCP tool handlers, reusing resolvePlan, the new plan_merge helpers, and shared logger typing for mcpUpdatePlanDetails and mcpUpdatePlanTasks; extended update.test.ts with filesystem-backed tests that exercise both handlers end to end. Finally connected src/rmplan/mcp/generate_mode.ts to the extracted handlers, wrapped execution with UserError translation, and updated generate_mode.test.ts to call mcpUpdatePlanTasks via the shared zod schemas. Tests exercised: bun test src/rmplan/plan_merge.test.ts src/rmplan/commands/update.test.ts src/rmplan/mcp/generate_mode.test.ts and bun run check.
 
 Adjusted the MCP update tests to call writePlanFile with only the supported (planPath, plan) signature, removing the placeholder { pretty: true } flag that the production writer ignores. This keeps the test scaffolding consistent with the actual implementation used by Task 7 (Extract handleUpdatePlanDetailsTool to update.ts) and Task 8 (Extract handleGenerateTasksTool to update.ts). The change in src/rmplan/commands/update.test.ts ensures both the 'missing details' and 'invalid tasks' fixtures create baseline plans exactly as the runtime code would, so the assertions about leaving files untouched on validation failures remain meaningful without implying a formatting knob that does not exist. No other modules needed adjustments because the tests already cover the updated MCP handlers.
+
+Implemented Task 5 and Task 9 by relocating MCP tool handlers into their owning commands. commands/research.ts now exports mcpAppendResearch(args, context), which resolves the plan via resolvePlan(), appends research with appendResearchToPlan(), writes the file, and reports the relative path so the MCP server stays a thin delegator. commands/research.test.ts gained dedicated tests that exercise heading overrides and timestamp toggles against the new handler to ensure serialization matches the CLI flow.
+
+Extended Task 9 work by adding mcpListReadyPlans() to commands/ready.ts so the CLI owns the MCP listing behavior, reusing filterAndSortReadyPlans()/formatReadyPlansAsJson() and wrapping resolveTasksDir/readAllPlans to preserve error semantics. generate_mode.ts now solely registers prompts and tools, importing the ready, research, update, and show handlers and converting thrown errors into UserError instances; wrapLogger remains to tag logs for update-plan-tasks. generate_mode.test.ts was updated to target mcpAppendResearch/mcpListReadyPlans so coverage follows the new entry points, and bun test plus bun run check validated the refactor.

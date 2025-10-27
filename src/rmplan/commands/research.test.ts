@@ -3,9 +3,10 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { handleResearchCommand } from './research.js';
+import { handleResearchCommand, mcpAppendResearch } from './research.js';
 import { clearPlanCache, writePlanFile, readPlanFile } from '../plans.js';
 import { ModuleMocker } from '../../testing.js';
+import type { GenerateModeRegistrationContext } from '../mcp/generate_mode.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -503,5 +504,78 @@ describe('handleResearchCommand', () => {
     expect(promptContent).toContain('Ask me one question at a time');
     expect(promptContent).toContain('only one question at a time');
     expect(promptContent).toContain('Begin by asking your first question about this project');
+  });
+
+  describe('mcpAppendResearch', () => {
+    test('appends research with custom heading and timestamp', async () => {
+      const planFile = path.join(tasksDir, 'mcp-heading.plan.md');
+      await writePlanFile(planFile, {
+        id: 101,
+        title: 'Test Plan',
+        goal: 'Improve docs',
+        details: 'Existing details section.',
+        status: 'pending',
+        priority: 'medium',
+        tasks: [],
+      });
+
+      const context: GenerateModeRegistrationContext = {
+        gitRoot: tempDir,
+        config: {} as any,
+        configPath: undefined,
+      };
+
+      const result = await mcpAppendResearch(
+        {
+          plan: planFile,
+          research: 'Documented findings about the system.',
+          heading: '## Discoveries',
+          timestamp: true,
+        },
+        context
+      );
+
+      expect(result).toBe(`Appended research to ${path.relative(tempDir, planFile)}`);
+
+      const updatedPlan = await readPlanFile(planFile);
+      expect(updatedPlan.details).toContain('Existing details section.');
+      expect(updatedPlan.details).toContain('## Discoveries');
+      expect(updatedPlan.details).toContain('Documented findings about the system.');
+      expect(updatedPlan.details).toMatch(/### \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/);
+      expect(updatedPlan.updatedAt).toBeDefined();
+    });
+
+    test('appends research without timestamp when disabled', async () => {
+      const planFile = path.join(tasksDir, 'mcp-no-timestamp.plan.md');
+      await writePlanFile(planFile, {
+        id: 102,
+        title: 'Another Plan',
+        goal: 'Collect feedback',
+        details: 'Summary paragraph.',
+        status: 'pending',
+        priority: 'medium',
+        tasks: [],
+      });
+
+      const context: GenerateModeRegistrationContext = {
+        gitRoot: tempDir,
+        config: {} as any,
+        configPath: undefined,
+      };
+
+      await mcpAppendResearch(
+        {
+          plan: planFile,
+          research: 'A set of notes without timestamp.',
+          timestamp: false,
+        },
+        context
+      );
+
+      const updatedPlan = await readPlanFile(planFile);
+      expect(updatedPlan.details).toContain('## Research');
+      expect(updatedPlan.details).toContain('A set of notes without timestamp.');
+      expect(updatedPlan.details).not.toMatch(/### \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/);
+    });
   });
 });

@@ -1,4 +1,3 @@
-import path from 'node:path';
 import { FastMCP, UserError } from 'fastmcp';
 import type { SerializableValue } from 'fastmcp';
 import { z } from 'zod/v4';
@@ -7,13 +6,12 @@ import {
   generateClaudeCodeResearchPrompt,
   generateClaudeCodeGenerationPrompt,
 } from '../prompt.js';
-import { appendResearchToPlan } from '../research_utils.js';
-import { writePlanFile } from '../plans.js';
 import { prioritySchema } from '../planSchema.js';
 import type { RmplanConfig } from '../configSchema.js';
-import { filterAndSortReadyPlans, formatReadyPlansAsJson } from '../ready_plans.js';
 import { buildPlanContext, resolvePlan } from '../plan_display.js';
 import { mcpGetPlan } from '../commands/show.js';
+import { mcpAppendResearch } from '../commands/research.js';
+import { mcpListReadyPlans } from '../commands/ready.js';
 import { mcpUpdatePlanDetails, mcpUpdatePlanTasks } from '../commands/update.js';
 
 export interface GenerateModeRegistrationContext {
@@ -220,20 +218,6 @@ export const listReadyPlansParameters = z
 
 export type ListReadyPlansArguments = z.infer<typeof listReadyPlansParameters>;
 
-export async function handleAppendResearchTool(
-  args: AppendResearchArguments,
-  context: GenerateModeRegistrationContext
-): Promise<string> {
-  const { plan, planPath } = await resolvePlan(args.plan, context);
-  const updated = appendResearchToPlan(plan, args.research, {
-    heading: args.heading,
-    insertedAt: args.timestamp === true ? new Date() : false,
-  });
-  await writePlanFile(planPath, updated);
-  const relativePath = path.relative(context.gitRoot, planPath) || planPath;
-  return `Appended research to ${relativePath}`;
-}
-
 export type GenerateModeExecutionLogger = {
   debug: (message: string, data?: SerializableValue) => void;
   error: (message: string, data?: SerializableValue) => void;
@@ -248,31 +232,6 @@ function wrapLogger(log: GenerateModeExecutionLogger, prefix: string): GenerateM
     info: (message, data) => log.info(`${prefix}${message}`, data),
     warn: (message, data) => log.warn(`${prefix}${message}`, data),
   };
-}
-
-export async function handleListReadyPlansTool(
-  args: ListReadyPlansArguments,
-  context: GenerateModeRegistrationContext
-): Promise<string> {
-  try {
-    const { config } = context;
-    const { resolveTasksDir } = await import('../configSchema.js');
-    const tasksDir = await resolveTasksDir(config);
-    const { readAllPlans } = await import('../plans.js');
-    const { plans } = await readAllPlans(tasksDir);
-
-    const readyPlans = filterAndSortReadyPlans(plans, {
-      pendingOnly: args.pendingOnly ?? false,
-      priority: args.priority,
-      sortBy: args.sortBy ?? 'priority',
-      limit: args.limit,
-    });
-
-    return formatReadyPlansAsJson(readyPlans, { gitRoot: context.gitRoot });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new UserError(`Failed to list ready plans: ${message}`);
-  }
 }
 
 export function registerGenerateMode(
@@ -368,7 +327,7 @@ export function registerGenerateMode(
       destructiveHint: true,
       readOnlyHint: false,
     },
-    execute: async (args) => handleAppendResearchTool(args, context),
+    execute: async (args) => mcpAppendResearch(args, context),
   });
 
   server.addTool({
@@ -413,6 +372,13 @@ export function registerGenerateMode(
       destructiveHint: false,
       readOnlyHint: true,
     },
-    execute: async (args) => handleListReadyPlansTool(args, context),
+    execute: async (args) => {
+      try {
+        return await mcpListReadyPlans(args, context);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new UserError(message);
+      }
+    },
   });
 }

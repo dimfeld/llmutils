@@ -1,3 +1,4 @@
+import path from 'node:path';
 import * as clipboard from '../../common/clipboard.js';
 import { getGitRoot } from '../../common/git.js';
 import { sshAwarePasteAction } from '../../common/ssh_detection.js';
@@ -7,6 +8,11 @@ import { readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { runRmfilterProgrammatically } from '../../rmfilter/rmfilter.js';
 import { appendResearchToPlan } from '../research_utils.js';
+import { resolvePlan } from '../plan_display.js';
+import type {
+  AppendResearchArguments,
+  GenerateModeRegistrationContext,
+} from '../mcp/generate_mode.js';
 
 /**
  * Handles the rmplan research command.
@@ -232,4 +238,20 @@ Please structure your response clearly with headings and organize the informatio
 
 Be thorough but concise, and prioritize information that is most directly relevant to the stated goal and details.
 `;
+}
+
+export async function mcpAppendResearch(
+  args: AppendResearchArguments,
+  context: GenerateModeRegistrationContext
+): Promise<string> {
+  const { plan, planPath } = await resolvePlan(args.plan, context);
+  const updated = appendResearchToPlan(plan, args.research, {
+    heading: args.heading,
+    insertedAt: args.timestamp === true ? new Date() : false,
+  });
+
+  await writePlanFile(planPath, updated);
+
+  const relativePath = path.relative(context.gitRoot, planPath) || planPath;
+  return `Appended research to ${relativePath}`;
 }

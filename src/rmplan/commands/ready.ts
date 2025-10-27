@@ -13,9 +13,19 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
 import { formatWorkspacePath, getCombinedTitleFromSummary } from '../display_utils.js';
 import { readAllPlans } from '../plans.js';
-import { READY_PLAN_SORT_FIELDS, isReadyPlan, sortReadyPlans } from '../ready_plans.js';
+import {
+  READY_PLAN_SORT_FIELDS,
+  filterAndSortReadyPlans,
+  formatReadyPlansAsJson,
+  isReadyPlan,
+  sortReadyPlans,
+} from '../ready_plans.js';
 import type { EnrichedReadyPlan, ReadyPlanSortField } from '../ready_plans.js';
 import { getGitRoot } from '../../common/git.js';
+import type {
+  GenerateModeRegistrationContext,
+  ListReadyPlansArguments,
+} from '../mcp/generate_mode.js';
 
 type PlanWithFilename = EnrichedReadyPlan;
 
@@ -529,5 +539,27 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
     default:
       displayListFormat(readyPlans, enrichedPlans, options.verbose || false, context);
       break;
+  }
+}
+
+export async function mcpListReadyPlans(
+  args: ListReadyPlansArguments,
+  context: GenerateModeRegistrationContext
+): Promise<string> {
+  try {
+    const tasksDir = await resolveTasksDir(context.config);
+    const { plans } = await readAllPlans(tasksDir);
+
+    const readyPlans = filterAndSortReadyPlans(plans, {
+      pendingOnly: args.pendingOnly ?? false,
+      priority: args.priority,
+      sortBy: args.sortBy ?? 'priority',
+      limit: args.limit,
+    });
+
+    return formatReadyPlansAsJson(readyPlans, { gitRoot: context.gitRoot });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to list ready plans: ${message}`);
   }
 }
