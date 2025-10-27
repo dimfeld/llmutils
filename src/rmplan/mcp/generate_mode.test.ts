@@ -375,16 +375,16 @@ describe('handleListReadyPlansTool', () => {
     expect(parsed.count).toBe(2);
     expect(parsed.plans).toHaveLength(2);
 
-    // Medium priority should come before high (ascending order: lower values first)
-    expect(parsed.plans[0].id).toBe(2);
-    expect(parsed.plans[0].title).toBe('Ready Plan 2');
-    expect(parsed.plans[0].priority).toBe('medium');
-    expect(parsed.plans[0].status).toBe('in_progress');
+    // High priority should come before medium (descending order: higher priority first)
+    expect(parsed.plans[0].id).toBe(1);
+    expect(parsed.plans[0].title).toBe('Ready Plan 1');
+    expect(parsed.plans[0].priority).toBe('high');
+    expect(parsed.plans[0].status).toBe('pending');
 
-    expect(parsed.plans[1].id).toBe(1);
-    expect(parsed.plans[1].title).toBe('Ready Plan 1');
-    expect(parsed.plans[1].priority).toBe('high');
-    expect(parsed.plans[1].status).toBe('pending');
+    expect(parsed.plans[1].id).toBe(2);
+    expect(parsed.plans[1].title).toBe('Ready Plan 2');
+    expect(parsed.plans[1].priority).toBe('medium');
+    expect(parsed.plans[1].status).toBe('in_progress');
   });
 
   // Test 2: Respects priority filter
@@ -588,11 +588,11 @@ describe('handleListReadyPlansTool', () => {
 
     expect(parsed.count).toBe(4);
 
-    // Verify order: low > medium > high > urgent (ascending order)
-    expect(parsed.plans[0].id).toBe(1); // low
-    expect(parsed.plans[1].id).toBe(4); // medium
-    expect(parsed.plans[2].id).toBe(3); // high
-    expect(parsed.plans[3].id).toBe(2); // urgent
+    // Verify order: urgent > high > medium > low (descending order: higher priority first)
+    expect(parsed.plans[0].id).toBe(2); // urgent
+    expect(parsed.plans[1].id).toBe(3); // high
+    expect(parsed.plans[2].id).toBe(4); // medium
+    expect(parsed.plans[3].id).toBe(1); // low
   });
 
   // Test 7: Includes all required fields
