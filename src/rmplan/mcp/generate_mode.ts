@@ -153,7 +153,6 @@ export const generateTasksParameters = z
 
 export type GenerateTasksArguments = z.infer<typeof generateTasksParameters>;
 
-
 export const getPlanParameters = z
   .object({
     plan: z.string().describe('Plan ID or file path to retrieve'),
@@ -234,7 +233,6 @@ export async function handleAppendResearchTool(
   const relativePath = path.relative(context.gitRoot, planPath) || planPath;
   return `Appended research to ${relativePath}`;
 }
-
 
 export type GenerateModeExecutionLogger = {
   debug: (message: string, data?: SerializableValue) => void;

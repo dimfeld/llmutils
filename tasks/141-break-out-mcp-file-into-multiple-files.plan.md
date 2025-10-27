@@ -11,7 +11,7 @@ temp: false
 planGeneratedAt: 2025-10-27T19:36:54.793Z
 promptsGeneratedAt: 2025-10-27T19:36:54.793Z
 createdAt: 2025-10-27T06:31:21.571Z
-updatedAt: 2025-10-27T20:38:49.263Z
+updatedAt: 2025-10-27T20:39:45.670Z
 progressNotes:
   - timestamp: 2025-10-27T19:46:00.224Z
     text: Created shared ready_plans module with filtering/sorting utilities,
@@ -153,7 +153,7 @@ tasks:
       - Verify relative path calculation works correctly
     steps: []
   - title: Create plan_merge.ts shared utility module
-    done: false
+    done: true
     description: >-
       Extract plan merging logic and delimiter-based content management.
 
@@ -325,7 +325,7 @@ tasks:
       - Test dependency checking logic
     steps: []
   - title: Extract handleUpdatePlanDetailsTool to update.ts
-    done: false
+    done: true
     description: |-
       Move the update-plan-details MCP tool handler to the update command.
 
@@ -351,7 +351,7 @@ tasks:
       - Test Research section preservation
     steps: []
   - title: Extract handleGenerateTasksTool to update.ts
-    done: false
+    done: true
     description: |-
       Move the update-plan-tasks MCP tool handler to the update command.
 
@@ -489,10 +489,14 @@ changedFiles:
   - src/rmplan/commands/ready.ts
   - src/rmplan/commands/show.test.ts
   - src/rmplan/commands/show.ts
+  - src/rmplan/commands/update.test.ts
+  - src/rmplan/commands/update.ts
   - src/rmplan/mcp/generate_mode.test.ts
   - src/rmplan/mcp/generate_mode.ts
   - src/rmplan/plan_display.test.ts
   - src/rmplan/plan_display.ts
+  - src/rmplan/plan_merge.test.ts
+  - src/rmplan/plan_merge.ts
   - src/rmplan/ready_plans.test.ts
   - src/rmplan/ready_plans.ts
 ---

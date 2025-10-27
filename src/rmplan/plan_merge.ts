@@ -90,7 +90,9 @@ export function updateDetailsWithinDelimiters(
       .trim();
 
     const updatedGenerated =
-      append && existingGenerated ? `${existingGenerated}\n\n${newDetails.trim()}` : newDetails.trim();
+      append && existingGenerated
+        ? `${existingGenerated}\n\n${newDetails.trim()}`
+        : newDetails.trim();
 
     return `${before}${GENERATED_START_DELIMITER}\n${updatedGenerated}\n${GENERATED_END_DELIMITER}${after}`;
   }
@@ -124,7 +126,9 @@ export async function mergeTasksIntoPlan(
   });
 
   if (!result.success) {
-    const errors = result.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join(', ');
+    const errors = result.error.issues
+      .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+      .join(', ');
     throw new Error(`Plan data failed validation: ${errors}`);
   }
 
