@@ -11,6 +11,9 @@ import {
   clearPlanCache,
   readPlanFile,
   writePlanFile,
+  getBlockedPlans,
+  getChildPlans,
+  getDiscoveredPlans,
 } from './plans.js';
 import { planSchema, type PlanSchema } from './planSchema.js';
 import { ModuleMocker } from '../testing.js';
@@ -216,6 +219,201 @@ describe('resolvePlanFile', () => {
     await expect(resolvePlanFile('non-existent-plan-id')).rejects.toThrow(
       'No plan found with ID or file path: non-existent-plan-id'
     );
+  });
+});
+
+describe('Plan relationship utilities', () => {
+  const createPlan = (
+    id: number,
+    overrides: Partial<PlanSchema & { filename: string }> = {}
+  ): PlanSchema & { filename: string } => ({
+    id,
+    title: `Plan ${id}`,
+    goal: `Goal ${id}`,
+    details: `Details ${id}`,
+    status: 'pending',
+    tasks: [],
+    filename: `tasks/${id}.plan.yml`,
+    ...overrides,
+  });
+
+  const toPlanMap = (
+    plans: Array<PlanSchema & { filename: string }>
+  ): Map<number, PlanSchema & { filename: string }> =>
+    new Map<number, PlanSchema & { filename: string }>(plans.map((plan) => [plan.id!, plan]));
+
+  describe('getBlockedPlans', () => {
+    it('returns plans that depend on the target plan', () => {
+      const plans = toPlanMap([createPlan(1), createPlan(2, { dependencies: [1] }), createPlan(3)]);
+
+      const blocked = getBlockedPlans(1, plans).map((plan) => plan.id);
+      expect(blocked).toEqual([2]);
+    });
+
+    it('returns empty array when no dependents exist', () => {
+      const plans = toPlanMap([createPlan(1), createPlan(2, { dependencies: [3] })]);
+
+      const blocked = getBlockedPlans(1, plans);
+      expect(blocked).toHaveLength(0);
+    });
+
+    it('handles multiple dependents correctly', () => {
+      const plans = toPlanMap([
+        createPlan(1),
+        createPlan(2, { dependencies: [1] }),
+        createPlan(3, { dependencies: [1, 4] }),
+        createPlan(4, { dependencies: [] }),
+      ]);
+
+      const blocked = getBlockedPlans(1, plans).map((plan) => plan.id);
+      expect(blocked).toHaveLength(2);
+      expect(blocked).toEqual(expect.arrayContaining([2, 3]));
+    });
+
+    it('works with empty plan map', () => {
+      const blocked = getBlockedPlans(1, new Map());
+      expect(blocked).toEqual([]);
+    });
+  });
+
+  describe('getChildPlans', () => {
+    it('returns direct children of the parent plan', () => {
+      const plans = toPlanMap([createPlan(1), createPlan(2, { parent: 1 }), createPlan(3)]);
+
+      const children = getChildPlans(1, plans).map((plan) => plan.id);
+      expect(children).toEqual([2]);
+    });
+
+    it('returns empty array when no children exist', () => {
+      const plans = toPlanMap([createPlan(1), createPlan(2, { parent: 3 })]);
+
+      const children = getChildPlans(1, plans);
+      expect(children).toHaveLength(0);
+    });
+
+    it('handles multiple children correctly', () => {
+      const plans = toPlanMap([
+        createPlan(1),
+        createPlan(2, { parent: 1 }),
+        createPlan(3, { parent: 1 }),
+        createPlan(4, { parent: 2 }),
+      ]);
+
+      const children = getChildPlans(1, plans).map((plan) => plan.id);
+      expect(children).toHaveLength(2);
+      expect(children).toEqual(expect.arrayContaining([2, 3]));
+    });
+
+    it('does not return grandchildren', () => {
+      const plans = toPlanMap([
+        createPlan(1),
+        createPlan(2, { parent: 1 }),
+        createPlan(3, { parent: 2 }),
+      ]);
+
+      const children = getChildPlans(1, plans).map((plan) => plan.id);
+      expect(children).toEqual([2]);
+      expect(children).not.toContain(3);
+    });
+
+    it('works with empty plan map', () => {
+      const children = getChildPlans(1, new Map());
+      expect(children).toEqual([]);
+    });
+  });
+
+  describe('getDiscoveredPlans', () => {
+    it('returns plans discovered from the source plan', () => {
+      const plans = toPlanMap([createPlan(1), createPlan(2, { discoveredFrom: 1 }), createPlan(3)]);
+
+      const discovered = getDiscoveredPlans(1, plans).map((plan) => plan.id);
+      expect(discovered).toEqual([2]);
+    });
+
+    it('returns empty array when no discoveries exist', () => {
+      const plans = toPlanMap([createPlan(1), createPlan(2, { discoveredFrom: 3 })]);
+
+      const discovered = getDiscoveredPlans(1, plans);
+      expect(discovered).toHaveLength(0);
+    });
+
+    it('handles multiple discovered plans correctly', () => {
+      const plans = toPlanMap([
+        createPlan(1),
+        createPlan(2, { discoveredFrom: 1 }),
+        createPlan(3, { discoveredFrom: 1 }),
+        createPlan(4, { discoveredFrom: 2 }),
+      ]);
+
+      const discovered = getDiscoveredPlans(1, plans).map((plan) => plan.id);
+      expect(discovered).toHaveLength(2);
+      expect(discovered).toEqual(expect.arrayContaining([2, 3]));
+    });
+
+    it('works with empty plan map', () => {
+      const discovered = getDiscoveredPlans(1, new Map());
+      expect(discovered).toEqual([]);
+    });
+  });
+
+  describe('edge cases', () => {
+    it('handles circular relationships without infinite recursion', () => {
+      const plans = toPlanMap([
+        createPlan(1, { dependencies: [2], parent: 2, discoveredFrom: 2 }),
+        createPlan(2, { dependencies: [1], parent: 1, discoveredFrom: 1 }),
+      ]);
+
+      const blocked = getBlockedPlans(1, plans).map((plan) => plan.id);
+      const children = getChildPlans(1, plans).map((plan) => plan.id);
+      const discovered = getDiscoveredPlans(1, plans).map((plan) => plan.id);
+
+      expect(blocked).toEqual([2]);
+      expect(children).toEqual([2]);
+      expect(discovered).toEqual([2]);
+    });
+
+    it('handles missing plan references gracefully', () => {
+      const plans = toPlanMap([
+        createPlan(10, { dependencies: [999], parent: 999, discoveredFrom: 999 }),
+      ]);
+
+      const blocked = getBlockedPlans(999, plans).map((plan) => plan.id);
+      const children = getChildPlans(999, plans).map((plan) => plan.id);
+      const discovered = getDiscoveredPlans(999, plans).map((plan) => plan.id);
+
+      expect(blocked).toEqual([10]);
+      expect(children).toEqual([10]);
+      expect(discovered).toEqual([10]);
+    });
+
+    it('scales to large plan collections', () => {
+      const plans = new Map<number, PlanSchema & { filename: string }>();
+      plans.set(1, createPlan(1));
+
+      for (let id = 2; id <= 51; id++) {
+        plans.set(id, createPlan(id, { dependencies: [1] }));
+      }
+
+      for (let id = 52; id <= 101; id++) {
+        plans.set(id, createPlan(id, { parent: 1 }));
+      }
+
+      for (let id = 102; id <= 151; id++) {
+        plans.set(id, createPlan(id, { discoveredFrom: 1 }));
+      }
+
+      const blocked = getBlockedPlans(1, plans);
+      const children = getChildPlans(1, plans);
+      const discovered = getDiscoveredPlans(1, plans);
+
+      expect(blocked).toHaveLength(50);
+      expect(children).toHaveLength(50);
+      expect(discovered).toHaveLength(50);
+
+      expect(blocked.every((plan) => plan.dependencies?.includes(1))).toBe(true);
+      expect(children.every((plan) => plan.parent === 1)).toBe(true);
+      expect(discovered.every((plan) => plan.discoveredFrom === 1)).toBe(true);
+    });
   });
 });
 
@@ -1110,6 +1308,44 @@ const test = "example";
     expect(readBackPlan).toEqual({ ...planToWrite, updatedAt: expect.any(String) });
   });
 
+  it('should load legacy plans without discoveredFrom without errors', async () => {
+    const planPath = join(tempDir, 'legacy-plan.yml');
+    const legacyPlan = {
+      id: 105,
+      title: 'Legacy Plan',
+      goal: 'Test backward compatibility',
+      details: 'Legacy plan without discoveredFrom field',
+      tasks: [],
+    };
+
+    await writeFile(planPath, yaml.stringify(legacyPlan));
+
+    const plan = await readPlanFile(planPath);
+    expect(plan.discoveredFrom).toBeUndefined();
+    expect(plan.id).toBe(105);
+  });
+
+  it('should persist discoveredFrom through write and read operations', async () => {
+    const planPath = join(tempDir, 'discovered-plan.plan.md');
+    const planWithDiscovery: PlanSchema = {
+      id: 106,
+      title: 'Discovered Plan',
+      goal: 'Track discovery lineage',
+      details: 'Plan discovered while executing parent plan',
+      status: 'pending',
+      discoveredFrom: 42,
+      tasks: [],
+    };
+
+    await writePlanFile(planPath, planWithDiscovery);
+
+    const fileContent = await readFile(planPath, 'utf-8');
+    expect(fileContent).toContain('discoveredFrom: 42');
+
+    const readBackPlan = await readPlanFile(planPath);
+    expect(readBackPlan.discoveredFrom).toBe(42);
+  });
+
   it('should merge YAML details field with markdown body for backward compatibility', async () => {
     const planPath = join(tempDir, 'backward-compat-plan.md');
     const yamlDetails = 'This is the details content from the YAML front matter.';
@@ -1525,5 +1761,48 @@ tasks: []
     for (const plan of plans) {
       expect(() => planSchema.parse(plan)).not.toThrow();
     }
+  });
+
+  it('should accept valid discoveredFrom values', () => {
+    const plan = {
+      id: 200,
+      title: 'Discovered Plan',
+      goal: 'Test discoveredFrom',
+      details: 'Testing discoveredFrom support',
+      tasks: [],
+      discoveredFrom: 42,
+    };
+
+    const parsed = planSchema.parse(plan);
+    expect(parsed.discoveredFrom).toBe(42);
+  });
+
+  it('should reject invalid discoveredFrom values', () => {
+    const basePlan = {
+      id: 201,
+      title: 'Invalid Discovered Plan',
+      goal: 'Invalid discoveredFrom',
+      details: 'Testing invalid discoveredFrom',
+      tasks: [],
+    };
+
+    const invalidValues = [-1, 0, 1.5, 'not-a-number'];
+
+    for (const value of invalidValues) {
+      expect(() => planSchema.parse({ ...basePlan, discoveredFrom: value })).toThrow();
+    }
+  });
+
+  it('should treat discoveredFrom as optional', () => {
+    const plan = {
+      id: 202,
+      title: 'Optional discoveredFrom Plan',
+      goal: 'Optional field test',
+      details: 'Testing optional discoveredFrom',
+      tasks: [],
+    };
+
+    const parsed = planSchema.parse(plan);
+    expect(parsed.discoveredFrom).toBeUndefined();
   });
 });

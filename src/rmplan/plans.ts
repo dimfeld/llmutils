@@ -146,6 +146,45 @@ export async function readAllPlans(
 }
 
 /**
+ * Get all plans that depend on this plan (inverse of dependencies)
+ * @param planId - The plan ID to find dependents for
+ * @param allPlans - Map of all plans
+ * @returns Array of plans that list planId in their dependencies
+ */
+export function getBlockedPlans(
+  planId: number,
+  allPlans: Map<number, PlanSchema & { filename: string }>
+): Array<PlanSchema & { filename: string }> {
+  return Array.from(allPlans.values()).filter((plan) => plan.dependencies?.includes(planId));
+}
+
+/**
+ * Get all child plans (inverse of parent)
+ * @param planId - The parent plan ID
+ * @param allPlans - Map of all plans
+ * @returns Array of plans that have planId as their parent
+ */
+export function getChildPlans(
+  planId: number,
+  allPlans: Map<number, PlanSchema & { filename: string }>
+): Array<PlanSchema & { filename: string }> {
+  return Array.from(allPlans.values()).filter((plan) => plan.parent === planId);
+}
+
+/**
+ * Get plans discovered from this plan during research/implementation
+ * @param planId - The source plan ID
+ * @param allPlans - Map of all plans
+ * @returns Array of plans that were discovered from planId
+ */
+export function getDiscoveredPlans(
+  planId: number,
+  allPlans: Map<number, PlanSchema & { filename: string }>
+): Array<PlanSchema & { filename: string }> {
+  return Array.from(allPlans.values()).filter((plan) => plan.discoveredFrom === planId);
+}
+
+/**
  * Gets the maximum numeric plan ID from the tasks directory.
  * @param tasksDir - The directory containing plan files
  * @returns The maximum numeric ID found, or 0 if none exist

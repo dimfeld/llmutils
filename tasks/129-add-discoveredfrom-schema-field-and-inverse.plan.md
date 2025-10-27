@@ -6,7 +6,7 @@ goal: Implement foundational schema and utility changes to track plan discovery
   without data redundancy
 id: 129
 generatedBy: agent
-status: in_progress
+status: done
 priority: high
 container: false
 temp: false
@@ -18,7 +18,7 @@ docs: []
 planGeneratedAt: 2025-10-27T07:19:12.171Z
 promptsGeneratedAt: 2025-10-27T07:19:12.171Z
 createdAt: 2025-10-26T22:40:58.967Z
-updatedAt: 2025-10-27T07:26:59.182Z
+updatedAt: 2025-10-27T07:44:49.346Z
 progressNotes:
   - timestamp: 2025-10-27T07:23:12.424Z
     text: Added optional discoveredFrom field to phase schema and implemented
@@ -30,9 +30,18 @@ progressNotes:
       inverse relationship helpers, and read/write integration ensuring new
       lineage data is preserved and legacy files remain compatible.
     source: "implementer: Tasks 5-10"
+  - timestamp: 2025-10-27T07:32:21.151Z
+    text: Extended rmplan validate command to detect orphaned discoveredFrom
+      references, automatically strip them when allowed, and covered both fix
+      and --no-fix flows with new tests.
+    source: "implementer: Task 11"
+  - timestamp: 2025-10-27T07:37:38.157Z
+    text: Executed bun test and bun run check; all tests pass after verifying
+      discoveredFrom utilities and validation suites cover requested scenarios.
+    source: "tester: automated coverage"
 tasks:
   - title: Add discoveredFrom field to plan schema
-    done: false
+    done: true
     description: Add the `discoveredFrom` field to `phaseSchema` in
       `src/rmplan/planSchema.ts` after the `parent` field. Use
       `z.coerce.number().int().positive().optional()` with a descriptive comment
@@ -42,7 +51,7 @@ tasks:
     docs: []
     steps: []
   - title: Implement getBlockedPlans utility function
-    done: false
+    done: true
     description: Add `getBlockedPlans(planId, allPlans)` to `src/rmplan/plans.ts`.
       Returns all plans that have `planId` in their `dependencies` array
       (inverse of dependencies). Include JSDoc comments with @param and @returns
@@ -51,7 +60,7 @@ tasks:
     docs: []
     steps: []
   - title: Implement getChildPlans utility function
-    done: false
+    done: true
     description: Add `getChildPlans(planId, allPlans)` to `src/rmplan/plans.ts`.
       Returns all plans where `parent === planId` (inverse of parent). Include
       JSDoc comments with @param and @returns annotations.
@@ -59,7 +68,7 @@ tasks:
     docs: []
     steps: []
   - title: Implement getDiscoveredPlans utility function
-    done: false
+    done: true
     description: Add `getDiscoveredPlans(planId, allPlans)` to
       `src/rmplan/plans.ts`. Returns all plans where `discoveredFrom ===
       planId`. Include JSDoc comments with @param and @returns annotations.
@@ -67,7 +76,7 @@ tasks:
     docs: []
     steps: []
   - title: Add schema validation tests for discoveredFrom
-    done: false
+    done: true
     description: "Create tests in `src/rmplan/plans.test.ts` that verify: (1) schema
       accepts valid positive integers for `discoveredFrom`, (2) schema rejects
       negative numbers, zero, non-integers, and non-numeric values, (3) field is
@@ -76,7 +85,7 @@ tasks:
     docs: []
     steps: []
   - title: Add unit tests for getBlockedPlans
-    done: false
+    done: true
     description: "Add tests for `getBlockedPlans()` covering: (1) returns plans that
       depend on target plan, (2) returns empty array when no dependents exist,
       (3) handles multiple dependents correctly, (4) works with empty plan map."
@@ -84,7 +93,7 @@ tasks:
     docs: []
     steps: []
   - title: Add unit tests for getChildPlans
-    done: false
+    done: true
     description: "Add tests for `getChildPlans()` covering: (1) returns direct
       children of parent plan, (2) returns empty array when no children exist,
       (3) handles multiple children correctly, (4) doesn't return grandchildren
@@ -93,7 +102,7 @@ tasks:
     docs: []
     steps: []
   - title: Add unit tests for getDiscoveredPlans
-    done: false
+    done: true
     description: "Add tests for `getDiscoveredPlans()` covering: (1) returns plans
       discovered from source plan, (2) returns empty array when no discoveries
       exist, (3) handles multiple discovered plans correctly, (4) works with
@@ -102,7 +111,7 @@ tasks:
     docs: []
     steps: []
   - title: Add edge case tests for utility functions
-    done: false
+    done: true
     description: "Add tests covering edge cases: (1) circular references in
       relationships don't cause infinite loops, (2) missing plan IDs are handled
       gracefully, (3) functions work correctly with large plan sets (>100
@@ -111,7 +120,7 @@ tasks:
     docs: []
     steps: []
   - title: Add integration tests for plan file operations
-    done: false
+    done: true
     description: "Create integration tests that: (1) load existing plan files
       without `discoveredFrom` and verify no errors, (2) create and save new
       plans with `discoveredFrom` field, (3) round-trip plans with
@@ -121,7 +130,7 @@ tasks:
     docs: []
     steps: []
   - title: Add discoveredFrom validation to validate command
-    done: false
+    done: true
     description: "Update `src/rmplan/commands/validate.ts` to: (1) check that
       `discoveredFrom` references point to existing plans (similar to dependency
       validation), (2) warn about orphaned discoveries (references to
@@ -131,14 +140,26 @@ tasks:
     docs: []
     steps: []
   - title: Run full test suite and type checking
-    done: false
+    done: true
     description: Execute `bun test` to verify all tests pass and `bun run check` to
       ensure TypeScript compilation succeeds with no errors. Fix any issues
       found.
     files: []
     docs: []
     steps: []
-changedFiles: []
+changedFiles:
+  - README.md
+  - src/rmplan/commands/ready.test.ts
+  - src/rmplan/commands/ready.ts
+  - src/rmplan/commands/validate.test.ts
+  - src/rmplan/commands/validate.ts
+  - src/rmplan/fix_yaml.test.ts
+  - src/rmplan/mcp/generate_mode.test.ts
+  - src/rmplan/mcp/generate_mode.ts
+  - src/rmplan/planSchema.ts
+  - src/rmplan/plans.test.ts
+  - src/rmplan/plans.ts
+  - src/rmplan/rmplan.ts
 rmfilter: []
 ---
 
@@ -466,3 +487,5 @@ const testPlans = new Map<number, PlanSchema & { filename: string }>([
 - Validation follows established dependency validation approach
 - No breaking changes required
 <!-- rmplan-generated-end -->
+
+Implemented 'Add discoveredFrom field to plan schema', 'Implement getBlockedPlans utility function', 'Implement getChildPlans utility function', 'Implement getDiscoveredPlans utility function', 'Add schema validation tests for discoveredFrom', 'Add unit tests for getBlockedPlans', 'Add unit tests for getChildPlans', 'Add unit tests for getDiscoveredPlans', 'Add edge case tests for utility functions', 'Add integration tests for plan file operations', 'Add discoveredFrom validation to validate command', and 'Run full test suite and type checking'. Added an optional discoveredFrom field in src/rmplan/planSchema.ts to persist plan discovery lineage while maintaining backward compatibility. Implemented new inverse lookup helpers in src/rmplan/plans.ts that compute dependents, child plans, and discovered plans on demand from the plan map. Expanded src/rmplan/plans.test.ts with schema validation coverage, comprehensive unit tests for the new helpers (including cycles, missing references, and large data sets), and integration checks that ensure legacy files load while newly written plans round-trip the discoveredFrom field. Updated src/rmplan/commands/validate.ts to detect orphaned discovery references, optionally auto-remove them via a new fixDiscoveredFromReferences helper, and surface the results in command output and summary counters. Added matching tests in src/rmplan/commands/validate.test.ts that cover success, autofix, and --no-fix modes to guard the new behaviour. Verified the changes with bun run check, bun test, and bun run format.

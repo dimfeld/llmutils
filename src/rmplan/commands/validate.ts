@@ -25,6 +25,17 @@ interface FixResult {
   errors: string[];
 }
 
+interface DiscoveredFromIssue {
+  planId: number;
+  referencedPlanId: number;
+  filename: string;
+}
+
+interface DiscoveredFromFixResult {
+  cleared: Array<{ planId: number; referencedPlanId: number; filename: string }>;
+  errors: string[];
+}
+
 const { phaseSchema: strictPhaseSchema } = createPlanSchemas((shape) => z.object(shape).strict());
 
 async function validatePlanFile(filePath: string): Promise<ValidationResult> {
@@ -178,6 +189,30 @@ function validateParentChildRelationships(
   return inconsistencies;
 }
 
+function validateDiscoveredFromReferences(
+  plans: Map<number, PlanSchema & { filename: string }>
+): DiscoveredFromIssue[] {
+  const issues: DiscoveredFromIssue[] = [];
+
+  for (const [planId, plan] of plans.entries()) {
+    if (plan.discoveredFrom === undefined) {
+      continue;
+    }
+
+    const referencedPlanId = plan.discoveredFrom;
+
+    if (!plans.has(referencedPlanId)) {
+      issues.push({
+        planId,
+        referencedPlanId,
+        filename: plan.filename,
+      });
+    }
+  }
+
+  return issues;
+}
+
 export function wouldCreateCircularDependency(
   plans: Map<number, PlanSchema & { filename: string }>,
   parentId: number,
@@ -281,6 +316,44 @@ async function fixParentChildRelationships(
   return { fixedRelationships, errors };
 }
 
+async function fixDiscoveredFromReferences(
+  issues: DiscoveredFromIssue[]
+): Promise<DiscoveredFromFixResult> {
+  const cleared: Array<{ planId: number; referencedPlanId: number; filename: string }> = [];
+  const errors: string[] = [];
+
+  for (const issue of issues) {
+    try {
+      const plan = await readPlanFile(issue.filename);
+
+      if (plan.discoveredFrom !== issue.referencedPlanId) {
+        continue;
+      }
+
+      const updatedPlan: PlanSchema = {
+        ...plan,
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Remove the discoveredFrom field entirely
+      delete (updatedPlan as { discoveredFrom?: number }).discoveredFrom;
+
+      await writePlanFile(issue.filename, updatedPlan);
+      cleared.push({
+        planId: issue.planId,
+        referencedPlanId: issue.referencedPlanId,
+        filename: issue.filename,
+      });
+    } catch (error) {
+      errors.push(
+        `Failed to remove discoveredFrom from plan ${issue.planId} (${issue.filename}): ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  return { cleared, errors };
+}
+
 export async function handleValidateCommand(
   options: { dir?: string; verbose?: boolean; fix?: boolean },
   command: any
@@ -320,16 +393,20 @@ export async function handleValidateCommand(
   // Parent-child validation (only for schema-valid files)
   let parentChildInconsistencies: ParentChildInconsistency[] = [];
   let fixResult: FixResult | null = null;
+  let planMap: Map<number, PlanSchema & { filename: string }> | null = null;
+  let discoveredFromIssues: DiscoveredFromIssue[] = [];
+  let discoveredFixResult: DiscoveredFromFixResult | null = null;
 
   if (validFiles.length > 0) {
     console.log(chalk.blue.bold('Checking parent-child relationships...'));
 
     try {
       // Load all plans for cross-referencing
-      const { plans } = await readAllPlans(tasksDir);
+      const planResults = await readAllPlans(tasksDir);
+      planMap = planResults.plans;
 
       // Find parent-child inconsistencies
-      parentChildInconsistencies = validateParentChildRelationships(plans);
+      parentChildInconsistencies = validateParentChildRelationships(planMap);
 
       if (parentChildInconsistencies.length > 0) {
         console.log(
@@ -358,7 +435,7 @@ export async function handleValidateCommand(
 
           for (const childId of inconsistency.childIds) {
             const wouldCreateCycle = wouldCreateCircularDependency(
-              plans,
+              planMap,
               inconsistency.parentId,
               childId
             );
@@ -402,7 +479,47 @@ export async function handleValidateCommand(
       );
     }
 
-    console.log(); // Extra line for spacing
+    if (planMap) {
+      console.log(); // Separate sections
+      console.log(chalk.blue.bold('Checking discoveredFrom references...'));
+
+      discoveredFromIssues = validateDiscoveredFromReferences(planMap);
+
+      if (discoveredFromIssues.length > 0) {
+        const issueCount = discoveredFromIssues.length;
+        console.log(
+          chalk.yellow.bold(
+            `\nFound ${issueCount} orphaned discovery reference${issueCount === 1 ? '' : 's'}:`
+          )
+        );
+
+        discoveredFromIssues.forEach((issue) => {
+          console.log(
+            chalk.yellow(
+              `  • Plan ${issue.planId} references missing discoveredFrom plan ${issue.referencedPlanId}`
+            )
+          );
+        });
+
+        if (options.fix === false) {
+          console.log(
+            chalk.yellow(`\n--no-fix flag specified, not removing discoveredFrom references.`)
+          );
+          console.log(
+            chalk.yellow('Run without --no-fix to automatically remove invalid references.')
+          );
+        } else {
+          console.log(chalk.blue('\nRemoving invalid discoveredFrom references...'));
+          discoveredFixResult = await fixDiscoveredFromReferences(discoveredFromIssues);
+        }
+      } else if (options.verbose) {
+        console.log(chalk.green('  No orphaned discovery references found.'));
+      }
+
+      console.log(); // Extra line for spacing after discoveredFrom check
+    } else {
+      console.log(); // Maintain spacing when plan map unavailable
+    }
   }
 
   // Display schema validation results
@@ -457,6 +574,26 @@ export async function handleValidateCommand(
     console.log();
   }
 
+  if (discoveredFixResult && discoveredFixResult.cleared.length > 0) {
+    console.log(chalk.blue.bold('DiscoveredFrom References Fixed:'));
+    discoveredFixResult.cleared.forEach((cleared) => {
+      console.log(
+        chalk.green(
+          `  ✓ Removed discoveredFrom reference to ${cleared.referencedPlanId} from plan ${cleared.planId}`
+        )
+      );
+    });
+    console.log();
+  }
+
+  if (discoveredFixResult && discoveredFixResult.errors.length > 0) {
+    console.log(chalk.red.bold('Errors during discoveredFrom fixes:'));
+    discoveredFixResult.errors.forEach((error) => {
+      console.log(chalk.red(`  • ${error}`));
+    });
+    console.log();
+  }
+
   // Summary
   console.log(chalk.bold('Summary:'));
   console.log(`  ${chalk.green(`✓ ${validFiles.length} valid`)}`);
@@ -470,6 +607,17 @@ export async function handleValidateCommand(
   } else if (parentChildInconsistencies.length > 0 && options.fix === false) {
     console.log(
       `  ${chalk.yellow(`⚠ ${parentChildInconsistencies.length} parent-child inconsistencies found (not fixed due to --no-fix)`)}`
+    );
+  }
+
+  const clearedDiscoveredCount = discoveredFixResult?.cleared.length ?? 0;
+  if (clearedDiscoveredCount > 0) {
+    console.log(
+      `  ${chalk.green(`✓ ${clearedDiscoveredCount} discoveredFrom reference${clearedDiscoveredCount === 1 ? '' : 's'} removed`)}`
+    );
+  } else if (discoveredFromIssues.length > 0 && options.fix === false) {
+    console.log(
+      `  ${chalk.yellow(`⚠ ${discoveredFromIssues.length} orphaned discoveredFrom reference${discoveredFromIssues.length === 1 ? '' : 's'} found (not fixed due to --no-fix)`)}`
     );
   }
 

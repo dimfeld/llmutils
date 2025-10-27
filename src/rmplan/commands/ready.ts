@@ -149,7 +149,7 @@ function sortPlans(
 
     // For priority sorting, we want descending order by default (urgent first)
     // For other sorts, ascending order is default
-    const isPrioritySorting = sortBy === 'priority';
+    const isPrioritySorting = sortBy === 'priority' && a.priority !== b.priority;
     const compareResult = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
 
     if (isPrioritySorting) {

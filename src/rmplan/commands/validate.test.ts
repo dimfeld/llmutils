@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { handleValidateCommand } from './validate.js';
 import type { RmplanConfig } from '../configSchema.js';
+import { readPlanFile } from '../plans.js';
 
 describe('validate command', () => {
   let tempDir: string;
@@ -941,6 +942,175 @@ Additional grandchild plan details.`;
       expect(output).toContain('✓ 3 valid');
       // Since parent already includes child 2, there should be no inconsistencies
       expect(output).not.toContain('parent-child inconsistencies');
+    });
+  });
+
+  describe('discoveredFrom validation', () => {
+    test('should pass validation when discoveredFrom references an existing plan', async () => {
+      const sourcePlan = `---
+id: 50
+goal: Source plan
+details: Source details
+tasks:
+  - title: Source task
+    description: Source task description
+    files: []
+    steps: []
+---
+
+Source plan body.`;
+
+      const discoveredPlan = `---
+id: 51
+goal: Discovered plan
+details: Discovered plan details
+discoveredFrom: 50
+tasks:
+  - title: Discovered task
+    description: Discovered task description
+    files: []
+    steps: []
+---
+
+Discovered plan body.`;
+
+      await fs.writeFile(path.join(tempDir, 'source.plan.md'), sourcePlan);
+      await fs.writeFile(path.join(tempDir, 'discovered.plan.md'), discoveredPlan);
+
+      const originalLog = console.log;
+      const originalExit = process.exit;
+      let exitCode: number | undefined;
+      let logOutput: string[] = [];
+
+      console.log = (...args) => {
+        logOutput.push(args.join(' '));
+      };
+
+      process.exit = ((code?: number) => {
+        exitCode = code;
+        throw new Error(`process.exit(${code})`);
+      }) as never;
+
+      try {
+        await handleValidateCommand({ dir: tempDir }, { parent: { opts: () => ({}) } });
+      } catch (err) {
+        // Expected if process.exit is called
+      } finally {
+        console.log = originalLog;
+        process.exit = originalExit;
+      }
+
+      expect(exitCode).toBeUndefined();
+      const output = logOutput.join('\\n');
+      expect(output).toContain('Checking discoveredFrom references...');
+      expect(output).not.toContain('orphaned discovery references');
+      expect(output).not.toContain('discoveredFrom reference removed');
+    });
+
+    test('should detect and remove invalid discoveredFrom references', async () => {
+      const orphanPlan = `---
+id: 60
+goal: Orphan plan
+details: Plan referencing missing discovery source
+discoveredFrom: 999
+tasks:
+  - title: Orphan task
+    description: Task details
+    files: []
+    steps: []
+---
+
+Orphan plan body.`;
+
+      await fs.writeFile(path.join(tempDir, 'orphan.plan.md'), orphanPlan);
+
+      const originalLog = console.log;
+      const originalExit = process.exit;
+      let exitCode: number | undefined;
+      let logOutput: string[] = [];
+
+      console.log = (...args) => {
+        logOutput.push(args.join(' '));
+      };
+
+      process.exit = ((code?: number) => {
+        exitCode = code;
+        throw new Error(`process.exit(${code})`);
+      }) as never;
+
+      try {
+        await handleValidateCommand({ dir: tempDir }, { parent: { opts: () => ({}) } });
+      } catch (err) {
+        // Expected if process.exit is called
+      } finally {
+        console.log = originalLog;
+        process.exit = originalExit;
+      }
+
+      expect(exitCode).toBeUndefined();
+      const output = logOutput.join('\\n');
+      expect(output).toContain('Found 1 orphaned discovery reference');
+      expect(output).toContain('Removing invalid discoveredFrom references...');
+      expect(output).toContain('DiscoveredFrom References Fixed:');
+      expect(output).toContain('Removed discoveredFrom reference to 999 from plan 60');
+      expect(output).toContain('1 discoveredFrom reference removed');
+
+      const plan = await readPlanFile(path.join(tempDir, 'orphan.plan.md'));
+      expect(plan.discoveredFrom).toBeUndefined();
+    });
+
+    test('should warn without fixing when --no-fix flag is provided', async () => {
+      const orphanPlan = `---
+id: 70
+goal: Another orphan plan
+details: Plan referencing missing discovery source
+discoveredFrom: 888
+tasks:
+  - title: Orphan task
+    description: Task details
+    files: []
+    steps: []
+---
+
+Orphan plan body.`;
+
+      await fs.writeFile(path.join(tempDir, 'no-fix.plan.md'), orphanPlan);
+
+      const originalLog = console.log;
+      const originalExit = process.exit;
+      let exitCode: number | undefined;
+      let logOutput: string[] = [];
+
+      console.log = (...args) => {
+        logOutput.push(args.join(' '));
+      };
+
+      process.exit = ((code?: number) => {
+        exitCode = code;
+        throw new Error(`process.exit(${code})`);
+      }) as never;
+
+      try {
+        await handleValidateCommand({ dir: tempDir, fix: false }, { parent: { opts: () => ({}) } });
+      } catch (err) {
+        // Expected if process.exit is called
+      } finally {
+        console.log = originalLog;
+        process.exit = originalExit;
+      }
+
+      expect(exitCode).toBeUndefined();
+      const output = logOutput.join('\\n');
+      expect(output).toContain('Found 1 orphaned discovery reference');
+      expect(output).toContain('--no-fix flag specified, not removing discoveredFrom references.');
+      expect(output).toContain(
+        'orphaned discoveredFrom reference found (not fixed due to --no-fix)'
+      );
+      expect(output).not.toContain('DiscoveredFrom References Fixed:');
+      expect(output).not.toContain('discoveredFrom reference removed');
+
+      const plan = await readPlanFile(path.join(tempDir, 'no-fix.plan.md'));
+      expect(plan.discoveredFrom).toBe(888);
     });
   });
 });

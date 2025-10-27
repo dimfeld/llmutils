@@ -63,6 +63,12 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
     temp: z.boolean().default(false).optional(),
     dependencies: z.array(z.coerce.number().int().positive()).default([]).optional(),
     parent: z.coerce.number().int().positive().optional(),
+    discoveredFrom: z.coerce
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Plan ID that led to discovering this issue during research/implementation'),
     issue: z.array(z.url()).default([]).optional(),
     pullRequest: z.array(z.url()).default([]).optional(),
     docs: z.array(z.string()).default([]).optional(),
