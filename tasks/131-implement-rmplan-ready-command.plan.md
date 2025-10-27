@@ -16,7 +16,7 @@ docs: []
 planGeneratedAt: 2025-10-26T23:45:48.368Z
 promptsGeneratedAt: 2025-10-26T23:45:48.368Z
 createdAt: 2025-10-26T22:41:07.692Z
-updatedAt: 2025-10-27T06:24:29.901Z
+updatedAt: 2025-10-27T06:28:40.090Z
 progressNotes:
   - timestamp: 2025-10-27T06:06:45.805Z
     text: Successfully implemented rmplan ready command with all three output
@@ -77,9 +77,37 @@ progressNotes:
 
       All tests pass (20/20) and type checking passes with no errors.
     source: "implementer: code review fixes"
+  - timestamp: 2025-10-27T06:27:14.283Z
+    text: Fixed two failing MCP tests in generate_mode.test.ts to match corrected
+      descending priority sort order. Test 1 now expects high priority before
+      medium priority, and Test 6 expects urgent>high>medium>low order. All 22
+      tests now pass.
+    source: "tester: Task 8 (MCP tests)"
+  - timestamp: 2025-10-27T06:28:40.086Z
+    text: >-
+      Successfully completed tasks 1-8 in this batch:
+
+      ✓ All implementation and tests complete
+
+      ✓ All 42 tests passing (20 CLI + 22 MCP)
+
+      ✓ TypeScript type checking passes with no errors
+
+      ✓ Critical issues from review fixed: priority sort order corrected, input
+      validation added, TypeScript types improved
+
+      ✓ 8 tasks marked as done in plan file
+
+      ✓ Implementation notes documented
+
+
+      Remaining task 9 (Update README documentation) was intentionally deferred
+      as it requires only documentation updates with no code changes. This can
+      be completed separately.
+    source: "orchestrator: completion"
 tasks:
   - title: Create ready command handler with filtering logic
-    done: false
+    done: true
     description: >-
       Create `src/rmplan/commands/ready.ts` with the core command handler.
 
@@ -148,7 +176,7 @@ tasks:
     docs: []
     steps: []
   - title: Implement list format output (default)
-    done: false
+    done: true
     description: |-
       Add list format output function to `ready.ts` that displays plans in a human-friendly format.
 
@@ -190,7 +218,7 @@ tasks:
     docs: []
     steps: []
   - title: Implement table format output
-    done: false
+    done: true
     description: >-
       Add table format output function to `ready.ts` for compact display similar
       to `rmplan list`.
@@ -240,7 +268,7 @@ tasks:
     docs: []
     steps: []
   - title: Implement JSON format output
-    done: false
+    done: true
     description: >-
       Add JSON format output function to `ready.ts` for programmatic
       consumption.
@@ -316,7 +344,7 @@ tasks:
     docs: []
     steps: []
   - title: Register ready command in CLI
-    done: false
+    done: true
     description: >-
       Add command registration to `src/rmplan/rmplan.ts` following the
       established pattern.
@@ -358,7 +386,7 @@ tasks:
     docs: []
     steps: []
   - title: Add MCP tool for list-ready-plans
-    done: false
+    done: true
     description: >-
       Implement MCP tool in `src/rmplan/mcp/generate_mode.ts` for programmatic
       access to ready plans.
@@ -490,7 +518,7 @@ tasks:
     docs: []
     steps: []
   - title: Write comprehensive tests for ready command
-    done: false
+    done: true
     description: >-
       Create `src/rmplan/commands/ready.test.ts` with comprehensive test
       coverage.
@@ -635,7 +663,7 @@ tasks:
     docs: []
     steps: []
   - title: Write tests for MCP list-ready-plans tool
-    done: false
+    done: true
     description: >-
       Add tests to `src/rmplan/mcp/generate_mode.test.ts` for the new MCP tool.
 
@@ -861,7 +889,12 @@ tasks:
     files: []
     docs: []
     steps: []
-changedFiles: []
+changedFiles:
+  - src/rmplan/commands/ready.test.ts
+  - src/rmplan/commands/ready.ts
+  - src/rmplan/mcp/generate_mode.test.ts
+  - src/rmplan/mcp/generate_mode.ts
+  - src/rmplan/rmplan.ts
 rmfilter: []
 ---
 
@@ -1569,3 +1602,100 @@ The `list-ready-plans` MCP tool will return **JSON structure** for optimal agent
 
 This differs from existing text-based MCP tools but provides superior agent experience for programmatic consumption.
 <!-- rmplan-generated-end -->
+
+# Implementation Notes
+
+Completed tasks 1-6: Implemented the complete 'rmplan ready' command with multi-format output and MCP integration.
+
+## Tasks Completed
+
+### Task 1: Core Command Handler (ready.ts)
+Created src/rmplan/commands/ready.ts with comprehensive filtering logic:
+- Loads config and resolves tasks directory using existing utilities
+- Filters plans for readiness: status is pending OR in_progress (configurable with --pending-only), has at least one task, all dependencies have status 'done'
+- Supports priority filtering with --priority flag
+- Implements flexible sorting with --sort (priority, id, title, created, updated) and --reverse flags
+- Priority sorting: urgent(5) > high(4) > medium(3) > low(2) > maybe(1) - descending order shows most important work first
+- Custom readiness logic was intentional per design requirements (shows both pending AND in_progress plans, unlike existing isPlanReady which only checks pending)
+
+### Task 2-4: Three Output Formats
+Implemented three distinct output formats in ready.ts:
+1. **List format (default)**: Human-friendly colored output with visual separators, dependency summaries, task completion ratios
+2. **Table format**: Compact table using 'table' package with responsive column widths based on terminal size
+3. **JSON format**: Structured output for programmatic consumption with all plan metadata (id, title, goal, priority, status, taskCount, completedTasks, dependencies, assignedTo, filename, timestamps)
+
+All formats follow established color conventions from list.ts:
+- Status: pending=white, in_progress=yellow
+- Priority: urgent=red, high=orange(255,165,0), medium=yellow, low=blue, maybe=gray
+- Dependencies: green checkmark for completed
+
+### Task 5: CLI Registration (rmplan.ts)
+Added command registration in src/rmplan/rmplan.ts after the list command (lines 416-427):
+- Registered 'ready' command with description and all options
+- Added input validation for --format, --sort, and --priority to provide clear error messages for invalid values
+- Proper error handling using handleCommandError pattern
+- Used proper TypeScript types (ReadyCommandOptions interface) instead of 'any'
+
+### Task 6: MCP Tool Integration (generate_mode.ts)
+Implemented list-ready-plans MCP tool in src/rmplan/mcp/generate_mode.ts:
+- Defined listReadyPlansParameters Zod schema (lines 466-490) with priority filter, limit, pendingOnly, and sortBy options
+- Implemented handleListReadyPlansTool() function (lines 595-731) reusing same filtering/sorting logic as CLI
+- Registered tool in registerGenerateMode() (lines 847-859) with proper annotations (destructiveHint: false, readOnlyHint: true)
+- Returns JSON structure matching CLI JSON format for consistency
+
+## Technical Implementation Details
+
+### Files Created:
+- src/rmplan/commands/ready.ts (442 lines) - Complete command implementation with three output formats
+
+### Files Modified:
+- src/rmplan/rmplan.ts - Added CLI command registration
+- src/rmplan/mcp/generate_mode.ts - Added MCP tool implementation
+
+### Key Functions:
+- handleReadyCommand() - Main command handler with input validation
+- isReadyPlan() - Custom readiness checker supporting both pending and in_progress plans
+- formatListOutput() - Human-friendly list format with colors and separators
+- formatTableOutput() - Compact table format with responsive widths
+- formatJsonOutput() - Structured JSON for programmatic use
+- sortPlans() - Flexible sorting by multiple fields with reverse option
+- handleListReadyPlansTool() - MCP tool handler mirroring CLI functionality
+
+### Testing:
+Created comprehensive test suites:
+- src/rmplan/commands/ready.test.ts: 20 test cases covering all command functionality
+- Added 11 test cases to src/rmplan/mcp/generate_mode.test.ts for MCP tool
+- All 42 tests passing, 179 expect() assertions
+- Tests use real filesystem operations with temp directories, minimal mocking
+- Test coverage includes: filtering, sorting, output formats, edge cases, dependency handling
+
+### Design Decisions:
+- Intentionally shows BOTH pending and in_progress plans by default (with --pending-only flag to restrict)
+- Priority sorting is descending (urgent first) to show most important work at top
+- Used responsive table column widths based on terminal size for better UX
+- Git root path resolution for relative filenames in JSON output
+- Input validation prevents crashes from invalid CLI options
+- TypeScript strict typing throughout (no 'any' types)
+
+### Bug Fixes During Review:
+1. Fixed priority sort order (was ascending, corrected to descending)
+2. Added input validation for all CLI options
+3. Replaced 'any' types with proper TypeScript interfaces
+4. Added responsive column widths for table format
+5. Updated all test expectations to match corrected behavior
+
+## Integration Points
+
+The implementation integrates with existing rmplan infrastructure:
+- Reuses loadEffectiveConfig, resolveTasksDir, readAllPlans from existing utilities
+- Follows established patterns from list.ts for filtering, sorting, and color conventions
+- Uses getCombinedTitleFromSummary, getGitRoot from display_utils
+- Matches error handling patterns with handleCommandError
+- MCP tool follows same registration pattern as other tools in generate_mode.ts
+
+## Future Maintenance Notes
+
+- If new priority levels are added, update priority order map in sortPlans()
+- If readiness criteria change, update isReadyPlan() function and corresponding tests
+- Consider extracting sorting logic to shared utility if more commands need it (currently duplicated in list.ts, ready.ts, and generate_mode.ts)
+- Task 9 (README documentation) was not completed in this batch - should be done in follow-up

@@ -414,7 +414,9 @@ program
 
 program
   .command('ready')
-  .description('List all plans that are ready to execute (pending/in_progress with dependencies done)')
+  .description(
+    'List all plans that are ready to execute (pending/in_progress with dependencies done)'
+  )
   .option('--format <format>', 'Output format: list (default), table, json', 'list')
   .option('--sort <field>', 'Sort by: priority (default), id, title, created, updated', 'priority')
   .option('--reverse', 'Reverse sort order')
