@@ -15,6 +15,7 @@ import {
   getChildPlans,
   getDiscoveredPlans,
 } from './plans.js';
+import * as plansModule from './plans.js';
 import { planSchema, type PlanSchema } from './planSchema.js';
 import { ModuleMocker } from '../testing.js';
 
@@ -456,6 +457,43 @@ describe('plan UUID handling', () => {
 
       const rereadPlan = await readPlanFile(planPath);
       expect(rereadPlan.uuid).toBe(plan.uuid);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('throws when UUID persistence fails during legacy plan migration', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'rmplan-uuid-fail-'));
+    try {
+      const planPath = join(tempDir, 'legacy.yml');
+      await writeFile(
+        planPath,
+        yaml.stringify({
+          id: 456,
+          title: 'Legacy Plan',
+          goal: 'Handle UUID persistence failures',
+          details: 'This plan predates UUIDs and has a write failure',
+          status: 'pending',
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+          tasks: [],
+        })
+      );
+
+      clearPlanCache();
+      const writeSpy = vi
+        .spyOn(plansModule, 'writePlanFile')
+        .mockRejectedValueOnce(new Error('simulated write failure'));
+      try {
+        await expect(readPlanFile(planPath)).rejects.toThrow(
+          `Failed to persist generated UUID for plan at ${planPath}`
+        );
+      } finally {
+        writeSpy.mockRestore();
+      }
+
+      const savedContent = await readFile(planPath, 'utf8');
+      expect(savedContent).not.toContain('uuid:');
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }

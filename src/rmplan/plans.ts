@@ -576,9 +576,13 @@ export async function readPlanFile(filePath: string): Promise<PlanSchema> {
     try {
       await writePlanFile(absolutePath, plan);
     } catch (error) {
-      warn(
-        `Failed to persist generated UUID for plan at ${absolutePath}: ${(error as Error).message}`
-      );
+      plan.uuid = undefined;
+      const message = `Failed to persist generated UUID for plan at ${absolutePath}`;
+      warn(`${message}: ${(error as Error).message}`);
+
+      const persistenceError = new Error(`${message}: ${(error as Error).message}`);
+      (persistenceError as Error & { cause?: unknown }).cause = error;
+      throw persistenceError;
     }
   }
 

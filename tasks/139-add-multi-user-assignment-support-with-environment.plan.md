@@ -17,7 +17,7 @@ docs: []
 planGeneratedAt: 2025-10-27T08:01:47.867Z
 promptsGeneratedAt: 2025-10-27T08:01:47.867Z
 createdAt: 2025-10-27T05:51:22.359Z
-updatedAt: 2025-10-27T08:14:40.038Z
+updatedAt: 2025-10-27T08:26:27.468Z
 progressNotes:
   - timestamp: 2025-10-27T08:07:27.994Z
     text: Added optional uuid field to plan schema, generate/add stub assignments
@@ -29,6 +29,10 @@ progressNotes:
       command outputs now assert UUID presence, and plans.test.ts verifies
       legacy plans receive and persist generated UUIDs."
     source: "implementer: Task 1"
+  - timestamp: 2025-10-27T08:17:01.891Z
+    text: Verified UUID-related unit tests (add, generate, plans) and TypeScript
+      check all pass locally.
+    source: "tester: Task 1"
 tasks:
   - title: Add UUID field to plan schema with auto-generation
     done: false
@@ -809,3 +813,9 @@ rmplan already has a sophisticated locking system for workspace isolation:
 8. **Locking Strategy**: Should we implement file locking for the shared config file itself (to prevent concurrent writes), or rely on git merge strategies to handle conflicts?
 
 Implemented Task 1: Add UUID field to plan schema with auto-generation. Added an optional uuid field to phaseSchema/PlanSchema (src/rmplan/planSchema.ts) and propagated it into PlanSummary so callers can access the identifier. Updated the add and generate commands (src/rmplan/commands/add.ts, src/rmplan/commands/generate.ts) to issue crypto.randomUUID() when creating new plans, and taught readPlanFile (src/rmplan/plans.ts) to lazily backfill missing UUIDs with persistence and warning logging if the write fails. Regenerated the plan JSON schema (schema/rmplan-plan-schema.json) so editors pick up the new property. Extended the test suite to cover the behavior: add and generate command tests now assert UUID presence, plans.test.ts gained a migration test and expectations allow for UUIDs, and legacy round-trip assertions accept the new field. This work establishes the stable identifier required by the shared assignment tracking design.
+
+Addressed reviewer feedback on Task 1 — Add UUID field to plan schema with auto-generation by ensuring readPlanFile does not return non-persisted UUIDs.
+
+Updated src/rmplan/plans.ts so that when a legacy plan lacks a UUID, failure to write the backfilled UUID clears the temporary value, logs a warning, and throws a new Error that preserves the original cause message. This guarantees downstream callers never see a UUID unless it was successfully persisted and provides clear diagnostics if the filesystem rejects the write.
+
+Extended src/rmplan/plans.test.ts within the plan UUID handling suite to cover the failure path by spying on writePlanFile, asserting readPlanFile rejects with the new error, and verifying the file remains unchanged. This regression test documents the expected behavior for future migrations and guards against reintroducing silent failures.
