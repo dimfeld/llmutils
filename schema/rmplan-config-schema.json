@@ -434,6 +434,10 @@
               "description": "Enable the review feedback MCP tool for interactive review feedback",
               "default": false,
               "type": "boolean"
+            },
+            "simpleMode": {
+              "description": "Run executor in streamlined implement/verify mode instead of full review loop",
+              "type": "boolean"
             }
           }
         },
