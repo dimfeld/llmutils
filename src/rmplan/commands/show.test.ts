@@ -124,9 +124,10 @@ describe('handleShowCommand', () => {
     // Check that key information is displayed
     const logCalls = logSpy.mock.calls.map((call) => call[0]);
     const allOutput = logCalls.join('\n');
+    const stripped = allOutput.replace(/\x1b\[[0-9;]*m/g, '');
 
-    expect(allOutput).toContain('Test Plan');
-    expect(allOutput).toContain('Test goal');
+    expect(stripped).toContain('Test Plan');
+    expect(stripped).toContain('Test goal');
   });
 
   test('shows condensed summary with --short', async () => {
@@ -212,21 +213,22 @@ describe('handleShowCommand', () => {
     await handleShowCommand('55', options, command);
 
     const logs = logSpy.mock.calls.map((c) => c[0]).join('\n');
+    const stripped = logs.replace(/\x1b\[[0-9;]*m/g, '');
     // Section header present
-    expect(logs).toContain('Progress Notes:');
+    expect(stripped).toContain('Progress Notes:');
     // Shows only last 10, so Note 1 and Note 2 should be hidden
-    expect(logs).not.toContain('Note 1 text goes here');
-    expect(logs).not.toContain('Note 2 text goes here');
+    expect(stripped).not.toContain('Note 1 text goes here');
+    expect(stripped).not.toContain('Note 2 text goes here');
     // Note 3..12 should appear. We check a few
-    expect(logs).toContain('Note 3 text goes here');
+    expect(stripped).toContain('Note 3 text goes here');
     // Latest note appears, collapsed to single line
-    expect(logs).toContain('A multi-line note with details');
+    expect(stripped).toContain('A multi-line note with details');
     // Default view flattens whitespace to single line
-    expect(logs).toContain('A multi-line note with details');
+    expect(stripped).toContain('A multi-line note with details');
     // Hidden count displayed (standardized ASCII)
-    expect(logs).toContain('... and 2 more earlier note(s)');
+    expect(stripped).toContain('... and 2 more earlier note(s)');
     // Timestamps are shown in show output (they are omitted only in prompts)
-    expect(logs).toMatch(/\d{1,2}\/\d{1,2}\/\d{2,4}/);
+    expect(stripped).toMatch(/\d{1,2}\/\d{1,2}\/\d{2,4}/);
   });
 
   test('displays full progress notes with --full preserving line breaks', async () => {
@@ -257,13 +259,14 @@ describe('handleShowCommand', () => {
     await handleShowCommand('56', options, command);
 
     const logs = logSpy.mock.calls.map((c) => c[0]).join('\n');
+    const stripped = logs.replace(/\x1b\[[0-9;]*m/g, '');
     // Both notes visible, no truncation message
-    expect(logs).toContain('First line');
-    expect(logs).toContain('Line A');
-    expect(logs).toContain('Line B');
-    expect(logs).toContain('Line C');
-    expect(logs).not.toContain('more earlier note(s)');
-    expect(logs).toContain('[tester: Task Foo]');
+    expect(stripped).toContain('First line');
+    expect(stripped).toContain('Line A');
+    expect(stripped).toContain('Line B');
+    expect(stripped).toContain('Line C');
+    expect(stripped).not.toContain('more earlier note(s)');
+    expect(stripped).toContain('[tester: Task Foo]');
   });
 
   test('shows error when plan file not found', async () => {
@@ -319,10 +322,11 @@ describe('handleShowCommand', () => {
     expect(logSpy).toHaveBeenCalled();
     const logCalls = logSpy.mock.calls.map((call) => call[0]);
     const allOutput = logCalls.join('\n');
+    const stripped = allOutput.replace(/\x1b\[[0-9;]*m/g, '');
 
-    expect(allOutput).toContain('Found next ready plan: 1');
-    expect(allOutput).toContain('Ready Plan');
-    expect(allOutput).toContain('Ready to start');
+    expect(stripped).toContain('Found next ready plan: 1');
+    expect(stripped).toContain('Ready Plan');
+    expect(stripped).toContain('Ready to start');
   });
 
   test('finds current in-progress plan with --current flag', async () => {
@@ -376,9 +380,10 @@ describe('handleShowCommand', () => {
     expect(logSpy).toHaveBeenCalled();
     const logCalls = logSpy.mock.calls.map((call) => call[0]);
     const allOutput = logCalls.join('\n');
+    const stripped = allOutput.replace(/\x1b\[[0-9;]*m/g, '');
 
-    expect(allOutput).toContain('Found current plan: 1');
-    expect(allOutput).toContain('In Progress Plan');
+    expect(stripped).toContain('Found current plan: 1');
+    expect(stripped).toContain('In Progress Plan');
   });
 
   test('finds most recently updated plan with --latest flag', async () => {
@@ -512,8 +517,9 @@ describe('handleShowCommand', () => {
     await handleShowCommand('8', options, command);
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
-    expect(output).toContain('Workspace:');
-    expect(output).toContain('Users: alice');
+    const stripped = output.replace(/\x1b\[[0-9;]*m/g, '');
+    expect(stripped).toContain('Workspace:');
+    expect(stripped).toContain('Users: alice');
   });
 
   test('warns when a plan is claimed in multiple workspaces', async () => {
@@ -573,6 +579,7 @@ describe('handleShowCommand', () => {
     await handleShowCommand('10', options, command);
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
-    expect(output).toContain('Assigned To: carol');
+    const stripped = output.replace(/\x1b\[[0-9;]*m/g, '');
+    expect(stripped).toContain('Assigned To: carol');
   });
 });
