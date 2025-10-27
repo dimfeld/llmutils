@@ -315,8 +315,8 @@ describe('assignments command handlers', () => {
         workspaceOwners: { [currentWorkspace]: 'alice' },
         users: ['alice'],
         status: 'in_progress',
-        assignedAt: '2024-12-01T00:00:00.000Z',
-        updatedAt: '2024-12-05T00:00:00.000Z',
+        assignedAt: '2000-01-01T00:00:00.000Z',
+        updatedAt: '2000-01-02T00:00:00.000Z',
       },
     });
 
