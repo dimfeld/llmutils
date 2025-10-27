@@ -188,7 +188,11 @@ describe('assignments_io', () => {
     const existing = await readAssignments({ repositoryId });
     expect(existing.assignments).toEqual({});
 
-    const removed = await removeAssignment({ repositoryId, uuid: 'abcd', repositoryRemoteUrl: null });
+    const removed = await removeAssignment({
+      repositoryId,
+      uuid: 'abcd',
+      repositoryRemoteUrl: null,
+    });
     expect(removed).toBe(false);
 
     const after = await readAssignments({ repositoryId });

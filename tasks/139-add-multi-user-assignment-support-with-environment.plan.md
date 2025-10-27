@@ -5,7 +5,6 @@ goal: Enable multi-user workflows in rmplan by supporting user identity via
   environment variables and tracking both plan assignments and status in a
   shared configuration
 id: 139
-uuid: 8b82a7c6-2182-48b7-af3e-2be853519242
 generatedBy: agent
 status: in_progress
 priority: high
@@ -18,7 +17,7 @@ docs: []
 planGeneratedAt: 2025-10-27T08:01:47.867Z
 promptsGeneratedAt: 2025-10-27T08:01:47.867Z
 createdAt: 2025-10-27T05:51:22.359Z
-updatedAt: 2025-10-27T11:08:05.197Z
+updatedAt: 2025-10-27T11:09:47.916Z
 progressNotes:
   - timestamp: 2025-10-27T08:07:27.994Z
     text: Added optional uuid field to plan schema, generate/add stub assignments
@@ -236,7 +235,7 @@ tasks:
     docs: []
     steps: []
   - title: Add automatic cleanup when plans marked done
-    done: false
+    done: true
     description: "Modify `src/rmplan/plans/mark_done.ts` and
       `src/rmplan/commands/set.ts`: when plan status changes to 'done' or
       'cancelled', automatically remove entire assignment entry from assignments
@@ -289,6 +288,8 @@ changedFiles:
   - src/rmplan/assignments/workspace_identifier.ts
   - src/rmplan/commands/add.test.ts
   - src/rmplan/commands/add.ts
+  - src/rmplan/commands/agent/parent_completion.test.ts
+  - src/rmplan/commands/agent/parent_plans.ts
   - src/rmplan/commands/claim.test.ts
   - src/rmplan/commands/claim.ts
   - src/rmplan/commands/generate.test.ts
@@ -300,11 +301,15 @@ changedFiles:
   - src/rmplan/commands/release.test.ts
   - src/rmplan/commands/release.ts
   - src/rmplan/commands/renumber.test.ts
+  - src/rmplan/commands/set.test.ts
+  - src/rmplan/commands/set.ts
   - src/rmplan/commands/show.test.ts
   - src/rmplan/commands/show.ts
   - src/rmplan/display_utils.test.ts
   - src/rmplan/display_utils.ts
   - src/rmplan/planSchema.ts
+  - src/rmplan/plans/mark_done.test.ts
+  - src/rmplan/plans/mark_done.ts
   - src/rmplan/plans/mark_done_set_task.test.ts
   - src/rmplan/plans.test.ts
   - src/rmplan/plans.ts
@@ -318,6 +323,7 @@ changedFiles:
   - test-plans/plans/103-testing-infrastructure.yml
   - test-plans/plans/104-test-data-generation.yml
 rmfilter: []
+uuid: 8b82a7c6-2182-48b7-af3e-2be853519242
 ---
 
 <!-- rmplan-generated-start -->
