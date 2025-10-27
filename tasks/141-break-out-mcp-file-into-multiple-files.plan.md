@@ -11,7 +11,7 @@ temp: false
 planGeneratedAt: 2025-10-27T19:36:54.793Z
 promptsGeneratedAt: 2025-10-27T19:36:54.793Z
 createdAt: 2025-10-27T06:31:21.571Z
-updatedAt: 2025-10-27T19:56:33.521Z
+updatedAt: 2025-10-27T19:57:38.653Z
 progressNotes:
   - timestamp: 2025-10-27T19:46:00.224Z
     text: Created shared ready_plans module with filtering/sorting utilities,
@@ -25,7 +25,7 @@ progressNotes:
     source: "tester: Task 1 & 6"
 tasks:
   - title: Create ready_plans.ts shared utility module
-    done: false
+    done: true
     description: >-
       Extract ready plan detection and filtering logic to eliminate 3x
       duplication.
@@ -234,7 +234,7 @@ tasks:
       - Verify research appending to plan works correctly
     steps: []
   - title: Extract handleListReadyPlansTool to ready.ts
-    done: false
+    done: true
     description: >-
       Move the list-ready-plans MCP tool handler to the ready command, using new
       ready_plans.ts utilities.
@@ -440,6 +440,12 @@ tasks:
 
       - Update any inline comments referencing old structure
     steps: []
+changedFiles:
+  - src/rmplan/commands/ready.test.ts
+  - src/rmplan/commands/ready.ts
+  - src/rmplan/mcp/generate_mode.ts
+  - src/rmplan/ready_plans.test.ts
+  - src/rmplan/ready_plans.ts
 ---
 
 Where possible the tool and prompt implementations should be moved into the relevant file for the corresponding rmplan CLI command.
