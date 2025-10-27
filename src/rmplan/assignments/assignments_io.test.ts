@@ -150,4 +150,21 @@ describe('assignments_io', () => {
 
     await expect(writeAssignments(next)).rejects.toBeInstanceOf(AssignmentsFileParseError);
   });
+
+  test('readAssignments rejects repositoryId mismatches', async () => {
+    const expectedRepositoryId = 'expected-id';
+    const filePath = getAssignmentsFilePath(expectedRepositoryId);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const persisted = {
+      repositoryId: 'different-id',
+      repositoryRemoteUrl: null,
+      version: 2,
+      assignments: {},
+    };
+    await fs.writeFile(filePath, JSON.stringify(persisted), 'utf-8');
+
+    await expect(readAssignments({ repositoryId: expectedRepositoryId })).rejects.toBeInstanceOf(
+      AssignmentsFileParseError
+    );
+  });
 });

@@ -1,19 +1,17 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Implement `add` Command and Enhance `generate` Command
 goal: To enable users to create basic plan files using a new `add` command and
   then populate these files with detailed tasks and steps using an enhanced
   `generate` command.
-details: This phase focuses on introducing the `add` command for scaffolding new
-  plan files. It also involves modifying the existing `generate` command to work
-  with these pre-existing (but empty) plan files, populating them with
-  LLM-generated content in place, rather than always creating a new file.
 id: 24
+uuid: dd0301f2-a1c9-4fce-9849-9936a75f0de2
 status: done
 dependencies: []
 planGeneratedAt: 2025-05-31T20:32:33.555Z
 promptsGeneratedAt: 2025-06-01T02:19:59.271Z
 createdAt: 2025-05-31T20:32:33.555Z
-updatedAt: 2025-06-01T02:39:05.891Z
+updatedAt: 2025-10-27T08:39:04.231Z
 project:
   title: Enhance rmplan with `add` and `split` commands for improved plan creation
     and organization.
@@ -37,6 +35,7 @@ project:
     plans from scratch and reorganizing existing ones.
 tasks:
   - title: Define `add` command in `rmplan.ts` and implement basic YAML file creation.
+    done: false
     description: >
       This task involves adding the `add` command to the main `rmplan.ts`
       command-line interface. The command should accept positional arguments
@@ -114,6 +113,7 @@ tasks:
           created file, e.g., `log(chalk.green('✓ Created plan:'), filePath);`.
         done: true
   - title: "Implement `add` command options: `edit`, `depends-on`, `priority`."
+    done: false
     description: >
       This task will extend the `add` command to support several command-line
       options. The `--edit` option should open the newly generated YAML file in
@@ -166,6 +166,7 @@ tasks:
         done: true
   - title: Modify `generate` command to populate tasks and steps in existing plan
       files.
+    done: false
     description: >
       This task requires updating the existing `generate` command in
       `src/rmplan/rmplan.ts`. When the `generate` command is provided with a
@@ -295,6 +296,7 @@ tasks:
           generated tasks:'), options.plan);`.
         done: true
   - title: Add tests for `add` command and updated `generate` functionality.
+    done: false
     description: >
       This task focuses on creating a comprehensive suite of tests. For the
       `add` command, tests should cover its basic file creation capabilities and
@@ -410,3 +412,6 @@ changedFiles:
   - test-stub-plan.yml
 rmfilter:
   - src/rmplan
+---
+
+This phase focuses on introducing the `add` command for scaffolding new plan files. It also involves modifying the existing `generate` command to work with these pre-existing (but empty) plan files, populating them with LLM-generated content in place, rather than always creating a new file.

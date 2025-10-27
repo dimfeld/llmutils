@@ -1,49 +1,13 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Implement an automatic retry mechanism in apply-llm-edits that asks the
   LLM to fix failed edits before falling back to interactive mode.
-details: >
-  When applying edits suggested by an LLM (especially diff-based edits), they
-  sometimes fail due to context mismatches or incorrect formatting. Currently,
-  `apply-llm-edits` either throws an error or enters an interactive mode to
-  resolve these failures.
-
-
-  This project aims to add an intermediate step: when edits fail, the tool will
-  automatically construct a new prompt for the LLM. This prompt will include the
-  original request context, the LLM's previous (failed) response, and detailed
-  information about the edit failures. The LLM will be asked to provide a
-  corrected set of edits. If these corrected edits *still* fail, the tool will
-  then proceed to the interactive resolution mode (if enabled) or throw an
-  error.
-
-
-  **Core Steps:**
-
-
-  1.  **Refactor:** Isolate the core edit application logic from the main
-  `applyLlmEdits` function to allow reuse during retries.
-
-  2.  **Failure Formatting:** Create a function to format the details of edit
-  failures into a human-readable string suitable for inclusion in an LLM prompt.
-
-  3.  **Original Context Retrieval:** Implement logic to retrieve the context of
-  the original LLM request. This involves:
-      *   Accepting the original prompt directly if available.
-      *   Parsing the `<rmfilter_command>` tag from the LLM's output.
-      *   Reading the cached `rmfilter` output (e.g., `repomix-output.xml`).
-      *   Comparing the command arguments and potentially re-running `rmfilter` if the cache is stale.
-  4.  **LLM Interaction:** Define an interface (e.g., a callback function) for
-  `applyLlmEdits` to request a new completion from an external LLM.
-
-  5.  **Retry Logic:** Integrate these components into `applyLlmEdits` to
-  construct the retry prompt, call the LLM, and attempt to apply the new edits.
-
-  6.  **Fallback:** Ensure the system falls back gracefully to interactive mode
-  or error handling if the retry attempt also fails.
 id: 3
+uuid: b6b7f229-2d15-4780-a843-24670e5c7135
 status: done
 tasks:
   - title: 1 - Refactor Core Edit Application Logic
+    done: false
     description: >
       Extract the main edit processing logic from `applyLlmEdits` into a
       reusable internal function. This will facilitate calling the edit
@@ -119,6 +83,7 @@ tasks:
               *   Ensure `dryRun` and `writeRoot` are passed correctly to the mocked processors.
         done: true
   - title: 2 - Format Failures for LLM Prompt
+    done: false
     description: >
       Create a function that takes the list of failed edits and generates a
       descriptive string summarizing the failures, suitable for instructing an
@@ -189,6 +154,7 @@ tasks:
               *   Test the trimming logic for long text blocks.
         done: true
   - title: 3 - Parse rmfilter_command Tag
+    done: false
     description: >
       Implement functionality to extract the command-line arguments from the
       `<rmfilter_command>` tag potentially present in the LLM output content.
@@ -263,6 +229,7 @@ tasks:
           logic. Test cases: tag present, tag absent, tag empty.
         done: true
   - title: 4 - Re-run rmfilter Programmatically
+    done: false
     description: >
       Create a function to execute the `rmfilter` script with specified
       arguments and capture its output. This is needed if the cached `rmfilter`
@@ -331,6 +298,7 @@ tasks:
               *   Test error handling if argument parsing fails (if applicable within the function).
         done: true
   - title: 5 - Retrieve Original Prompt Context
+    done: false
     description: >
       Implement the logic within `applyLlmEdits` to determine the original
       prompt context, either by using a provided prompt, or by parsing the
@@ -403,6 +371,7 @@ tasks:
               *   Test argument comparison logic (ensure it handles different ordering if necessary, or assumes fixed order).
         done: true
   - title: 6 - Define LLM Requester Interface
+    done: false
     description: >
       Define a clear interface for how `applyLlmEdits` will request completions
       from an external LLM service. This involves adding a callback function to
@@ -446,6 +415,7 @@ tasks:
           connection in this step.
         done: true
   - title: 7 - Construct Retry Prompt Structure
+    done: false
     description: >
       Create a function that assembles the structured prompt
       (User/Assistant/User messages) needed for the LLM retry request.
@@ -511,6 +481,7 @@ tasks:
               *   Verify that the content of the final user message includes the mocked output from `formatFailuresForLlm` and the instructional text.
         done: true
   - title: 8 - Implement Retry Loop in applyLlmEdits
+    done: false
     description: >
       Integrate all the previous steps into the main `applyLlmEdits` function to
       implement the retry logic.
@@ -598,6 +569,7 @@ tasks:
               *   Scenario: Initial application succeeds. Verify no retry logic is triggered.
         done: true
   - title: 9 - CLI Integration (Optional)
+    done: false
     description: >
       Update the CLI command (`cmd.ts`) to potentially support the new retry
       feature, although the core logic is in the library function. This might
@@ -632,3 +604,22 @@ tasks:
               *   Pass `originalPromptContent` (or `undefined`) as the `originalPrompt` option.
               *   Pass `undefined` for the `llmRequester` option for now. The `--retry` flag currently serves only to indicate intent, but doesn't activate the LLM call from the CLI itself. Add a comment explaining this limitation.
         done: true
+updatedAt: 2025-10-27T08:39:04.222Z
+---
+
+When applying edits suggested by an LLM (especially diff-based edits), they sometimes fail due to context mismatches or incorrect formatting. Currently, `apply-llm-edits` either throws an error or enters an interactive mode to resolve these failures.
+
+This project aims to add an intermediate step: when edits fail, the tool will automatically construct a new prompt for the LLM. This prompt will include the original request context, the LLM's previous (failed) response, and detailed information about the edit failures. The LLM will be asked to provide a corrected set of edits. If these corrected edits *still* fail, the tool will then proceed to the interactive resolution mode (if enabled) or throw an error.
+
+**Core Steps:**
+
+1.  **Refactor:** Isolate the core edit application logic from the main `applyLlmEdits` function to allow reuse during retries.
+2.  **Failure Formatting:** Create a function to format the details of edit failures into a human-readable string suitable for inclusion in an LLM prompt.
+3.  **Original Context Retrieval:** Implement logic to retrieve the context of the original LLM request. This involves:
+    *   Accepting the original prompt directly if available.
+    *   Parsing the `<rmfilter_command>` tag from the LLM's output.
+    *   Reading the cached `rmfilter` output (e.g., `repomix-output.xml`).
+    *   Comparing the command arguments and potentially re-running `rmfilter` if the cache is stale.
+4.  **LLM Interaction:** Define an interface (e.g., a callback function) for `applyLlmEdits` to request a new completion from an external LLM.
+5.  **Retry Logic:** Integrate these components into `applyLlmEdits` to construct the retry prompt, call the LLM, and attempt to apply the new edits.
+6.  **Fallback:** Ensure the system falls back gracefully to interactive mode or error handling if the retry attempt also fails.

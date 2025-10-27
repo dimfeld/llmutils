@@ -1,26 +1,25 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: "Claude Code: Support Permissions MCP"
 goal: "Implement: Claude Code: Support Permissions MCP"
-details: >-
-  Claude Code SDK is able to use an MCP server to request permissions. Implement
-  this and then ask the user to respond to permissions when Claude Code needs
-  it. Follow the tutorial for instructions on how to do so.
-
-  The permissions prompt should print the tool_name and input as YAML, and then
-  use an inquirer confirm prompt to ask the user if they want to allow the tool.
 id: 50
+uuid: ec4c2aa1-1fa1-45bc-afce-d91113221b91
 status: done
 priority: medium
 container: true
 dependencies:
-  - "55"
-  - "56"
+  - 55
+  - 56
 issue:
   - https://github.com/dimfeld/llmutils/issues/94
 docs:
   - docs/tutorials/claude-permissions-mcp.md
 createdAt: 2025-06-07T02:05:26.354Z
-updatedAt: 2025-06-07T22:31:30.272Z
+updatedAt: 2025-10-27T08:39:04.201Z
 tasks: []
 rmfilter:
   - src/rmplan/executors/claude_code.ts
+---
+
+Claude Code SDK is able to use an MCP server to request permissions. Implement this and then ask the user to respond to permissions when Claude Code needs it. Follow the tutorial for instructions on how to do so.
+The permissions prompt should print the tool_name and input as YAML, and then use an inquirer confirm prompt to ask the user if they want to allow the tool.

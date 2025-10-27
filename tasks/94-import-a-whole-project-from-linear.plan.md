@@ -3,10 +3,11 @@
 title: Import a whole project from Linear
 goal: ""
 id: 94
+uuid: 5a3679f6-5fed-4907-b499-25a54986259c
 status: deferred
 priority: medium
 createdAt: 2025-08-11T05:26:29.699Z
-updatedAt: 2025-10-26T22:56:18.778Z
+updatedAt: 2025-10-27T08:39:04.278Z
 tasks: []
 ---
 

@@ -1,22 +1,19 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Consolidate Common Utilities and Refine Module Boundaries
 goal: Streamline dependencies across `rmfilter`, `rmpr`, `rmplan`, and `common`
   modules by consolidating shared utilities and clarifying module
   responsibilities, leading to a more modular and maintainable codebase.
-details: This phase addresses the broader code organization. It involves
-  analyzing how `rmfilter`, `rmpr`, and the newly refactored `rmplan` interact
-  with `src/common/` and with each other. The aim is to ensure `src/common/`
-  houses truly common code, move misplaced utilities, and refactor inter-module
-  dependencies for better separation of concerns.
 id: 36
+uuid: db51da84-1e57-44b9-b727-65618e616030
 status: done
 priority: urgent
 dependencies:
-  - "35"
+  - 35
 planGeneratedAt: 2025-06-04T08:24:18.885Z
 promptsGeneratedAt: 2025-06-05T08:01:01.004Z
 createdAt: 2025-06-04T08:24:18.885Z
-updatedAt: 2025-06-05T08:58:44.322Z
+updatedAt: 2025-10-27T08:39:04.277Z
 project:
   title: Refactor codebase to improve modularity and reorganize `rmplan` by
     command functionality
@@ -43,6 +40,7 @@ project:
     incremental progress with continuous testing.
 tasks:
   - title: Consolidate Git Utilities
+    done: false
     description: Review Git-related functions currently in `src/rmfilter/utils.ts`
       and `src/rmpr/git_utils.ts`. Move general Git functionalities (e.g.,
       `getGitRoot`, `getCurrentBranchName`, `hasUncommittedChanges`) into a new
@@ -138,6 +136,7 @@ tasks:
           maintained in `src/common/git.test.ts`.
         done: true
   - title: Consolidate File System Utilities
+    done: false
     description: Review `src/rmfilter/utils.ts` and other modules for
       general-purpose file system utilities (e.g., `validatePath`,
       `secureWrite`, `secureRm`). Move these to a dedicated common module
@@ -192,6 +191,7 @@ tasks:
           functions, ensuring coverage is maintained in `src/common/fs.test.ts`.
         done: true
   - title: Consolidate CLI and Process Utilities
+    done: false
     description: Review `src/rmfilter/utils.ts` for CLI argument parsing
       (`parseCliArgsFromString`) and process spawning utilities (`logSpawn`,
       `spawnAndLogOutput`). Relocate these to appropriate common modules
@@ -265,6 +265,7 @@ tasks:
           functions, ensuring coverage is maintained in the new test files.
         done: true
   - title: Review and Relocate `src/common/` Utilities
+    done: false
     description: Examine each utility within `src/common/`. If a utility is
       exclusively used by a single module (`rmfilter`, `rmpr`, or `rmplan`),
       move it into that module's local utility collection (e.g.,
@@ -337,6 +338,7 @@ tasks:
           necessary.
         done: true
   - title: Refactor `rmfilter`'s Cross-Module Dependencies
+    done: false
     description: Analyze how `rmfilter` interacts with `rmplan` and `rmpr`.
       `rmfilter` currently imports executor-related logic and configuration
       types from `rmplan`. This task aims to decouple this by introducing a
@@ -399,6 +401,7 @@ tasks:
           `runPlanContextWithExecutor`.
         done: true
   - title: Update All Cross-Module Imports
+    done: false
     description: After reorganizing utilities and refactoring dependencies in tasks
       1-5, update all import statements across the `src/common/`,
       `src/rmfilter/`, `src/rmpr/`, and `src/rmplan/` directories to reflect the
@@ -436,6 +439,7 @@ tasks:
           module resolution or incorrect imports at runtime.
         done: true
   - title: Comprehensive Testing
+    done: false
     description: Execute the entire test suite for the project. Perform manual
       verification of the main functionalities of `rmfilter`, `rmplan`, and
       `rmpr` to ensure the reorganization has not introduced regressions.
@@ -594,3 +598,6 @@ rmfilter:
   - src/rmpr
   - src/common
   - src/rmfilter
+---
+
+This phase addresses the broader code organization. It involves analyzing how `rmfilter`, `rmpr`, and the newly refactored `rmplan` interact with `src/common/` and with each other. The aim is to ensure `src/common/` houses truly common code, move misplaced utilities, and refactor inter-module dependencies for better separation of concerns.

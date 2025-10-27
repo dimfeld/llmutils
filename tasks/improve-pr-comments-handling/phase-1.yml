@@ -1,3 +1,4 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Robust Line Number Handling and Removal of
   `originalLine`/`originalStartLine` Usage
@@ -5,24 +6,17 @@ goal: To refactor the existing PR comment processing logic to exclusively use
   current line information (`thread.line`, `thread.startLine`) and correctly
   handle `diffSide`, thereby eliminating all usage of `originalLine` and
   `originalStartLine`.
-details: >
-  This phase focuses on updating the core data structures and logic that deal
-  with line numbers in PR review comments. The primary objective is to make the
-  system rely on the `line` and `startLine` fields provided by the GitHub API,
-  which reflect the comment's position in the *current* version of the diff. If
-  these fields are null (e.g., for outdated comments or file-level comments),
-  the system will need to use other information, such as the `diffHunk` content,
-  for positioning, rather than falling back to `originalLine` fields.
 id: 28
-priority: high
+uuid: e4492de2-1eb6-4ca9-9861-358fd7db8281
 status: done
+priority: high
 dependencies: []
 issue:
   - https://github.com/dimfeld/llmutils/issues/112
 planGeneratedAt: 2025-06-02T19:27:55.318Z
 promptsGeneratedAt: 2025-06-02T20:14:32.992Z
 createdAt: 2025-06-02T18:37:07.724Z
-updatedAt: 2025-06-02T21:05:29.427Z
+updatedAt: 2025-10-27T08:39:04.303Z
 project:
   title: Enhanced PR Comment Processing with Hybrid Context Mode and Robust Line
     Handling
@@ -78,6 +72,7 @@ project:
 tasks:
   - title: Modify `DetailedReviewComment` processing to ignore `originalLine` and
       `originalStartLine`
+    done: false
     description: >
       This task involves a thorough review and update of all code that consumes
       `DetailedReviewComment` objects. The focus will be on ensuring that line
@@ -172,6 +167,7 @@ tasks:
         done: true
   - title: Enhance `findBestMatchLine` for `inline_comments.ts` to operate without
       `originalLine` references
+    done: false
     description: >
       The `findBestMatchLine` function in `src/rmpr/modes/inline_comments.ts`,
       which is crucial for placing AI comments, will be refactored. It must use
@@ -256,6 +252,7 @@ tasks:
         done: true
   - title: "Update `separate_context.ts` to use current line numbers and handle
       `diffSide: 'LEFT'` correctly"
+    done: false
     description: >
       This task focuses on `formatReviewCommentsForSeparateContext` in
       `src/rmpr/modes/separate_context.ts`. The `lines` attribute within the
@@ -332,6 +329,7 @@ tasks:
           lines within the hunk.
         done: true
   - title: Update `selectReviewComments` for accurate display and context
+    done: false
     description: >
       The `selectReviewComments` function in
       `src/common/github/pull_requests.ts`, which provides the interactive
@@ -408,6 +406,7 @@ tasks:
           current line information.
         done: true
   - title: Implement comprehensive tests for the new line handling logic
+    done: false
     description: >
       New unit and integration tests will be developed, and existing ones
       updated, for `inline_comments.ts`, `separate_context.ts`, and
@@ -509,3 +508,6 @@ rmfilter:
   - src/common/github
   - --with-imports
   - docs/github-diffs.md
+---
+
+This phase focuses on updating the core data structures and logic that deal with line numbers in PR review comments. The primary objective is to make the system rely on the `line` and `startLine` fields provided by the GitHub API, which reflect the comment's position in the *current* version of the diff. If these fields are null (e.g., for outdated comments or file-level comments), the system will need to use other information, such as the `diffHunk` content, for positioning, rather than falling back to `originalLine` fields.

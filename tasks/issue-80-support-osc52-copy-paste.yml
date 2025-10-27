@@ -1,64 +1,14 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Implement OSC52 copy/paste support in `llmutils` to enhance functionality
   within SSH sessions, falling back to the existing `clipboardy` mechanism when
   not in SSH or when OSC52 is not available/fails.
-details: >-
-  The project involves detecting SSH sessions, implementing OSC52-compliant copy
-  and read operations, creating a wrapper around clipboard functionalities, and
-  refactoring existing code to use this new wrapper.
-
-
-  **SSH Detection:**
-
-  A utility function will check environment variables like `SSH_CLIENT`,
-  `SSH_CONNECTION`, and `SSH_TTY` to determine if the application is running
-  within an SSH session.
-
-
-  **OSC52 Operations:**
-
-  -   **Copy (`osc52Copy`):** This function will take a string, encode it in
-  Base64, and print the OSC52 escape sequence (`\x1b]52;c;BASE64_TEXT\x07`) to
-  `process.stdout`.
-
-  -   **Read (`osc52Read`):** This function will attempt to read from the
-  clipboard via OSC52. It will send a request sequence (`\x1b]52;p;?\x07`) to
-  `process.stdout` and then attempt to read the terminal's response
-  (`\x1b]52;p;BASE64_DATA\x07`) from `process.stdin`. This operation is complex,
-  involving raw mode for stdin, non-blocking reads, and a timeout. It will
-  return the decoded string or `null` if unsuccessful.
-
-
-  **Clipboard Wrapper (`src/common/clipboard.ts`):**
-
-  This module will provide `read(): Promise<string>` and `write(text: string):
-  Promise<void>` functions.
-
-  -   `write(text)`: If in an SSH session, it will use `osc52Copy`. Otherwise,
-  it will use `clipboardy.write(text)`.
-
-  -   `read()`: If in an SSH session, it will first attempt `osc52Read()`. If
-  `osc52Read()` is successful and returns text, that text is used. If
-  `osc52Read()` fails (returns `null` or throws an error, e.g., due to timeout
-  or lack of terminal support), it will fall back to `clipboardy.read()`. If not
-  in an SSH session, it will directly use `clipboardy.read()`.
-
-
-  **Refactoring:**
-
-  All existing direct usages of `clipboardy.read()` and `clipboardy.write()`
-  throughout the codebase will be replaced with calls to the new wrapper
-  functions.
-
-
-  This approach aims for a robust solution that enhances SSH usability while
-  maintaining existing functionality in local environments. The OSC52 read
-  operation is the most complex and will be implemented with a fallback
-  mechanism.
 id: 17
+uuid: 50228cf2-0658-464b-a43f-fd14bdf88e05
 status: done
 tasks:
   - title: 1. SSH Detection Utility
+    done: false
     description: Create a utility function to detect if the current session is an
       SSH session by checking standard environment variables.
     files:
@@ -137,6 +87,7 @@ tasks:
           Make sure to handle the `undefined` case for restoration correctly.
         done: true
   - title: 2. OSC52 Core Functions (Copy and Read)
+    done: false
     description: Implement the core OSC52 copy and read functionalities. `osc52Copy`
       will send data to the terminal clipboard. `osc52Read` will attempt to
       request and read data from the terminal clipboard.
@@ -341,6 +292,7 @@ tasks:
           `jest.fn()`. It's `mock()` from `bun:test`.
         done: true
   - title: 3. Clipboard Wrapper Implementation
+    done: false
     description: Create a wrapper module for clipboard operations. It will use OSC52
       functions if in an SSH session and `clipboardy` otherwise. Initially,
       `read` will always use `clipboardy` or OSC52 if it succeeds, with
@@ -505,6 +457,7 @@ tasks:
           `jest.fn()`. It's `mock()` from `bun:test`.
         done: true
   - title: 4. Refactor Existing Code to Use Clipboard Wrapper
+    done: false
     description: Systematically replace all direct usages of `clipboardy` with the
       new clipboard wrapper functions. This task is broken down per file for
       incremental changes and testing.
@@ -666,6 +619,7 @@ tasks:
               ```
         done: true
   - title: 5. Documentation Update
+    done: false
     description: Update the README.md to inform users about the new OSC52 copy/paste
       support, especially its benefits for SSH users, and any terminal
       requirements.
@@ -685,3 +639,24 @@ tasks:
           tool's section if applicable (e.g., `rmfilter` or `apply-llm-edits`
           often involve clipboard).
         done: true
+updatedAt: 2025-10-27T08:39:04.239Z
+---
+
+The project involves detecting SSH sessions, implementing OSC52-compliant copy and read operations, creating a wrapper around clipboard functionalities, and refactoring existing code to use this new wrapper.
+
+**SSH Detection:**
+A utility function will check environment variables like `SSH_CLIENT`, `SSH_CONNECTION`, and `SSH_TTY` to determine if the application is running within an SSH session.
+
+**OSC52 Operations:**
+-   **Copy (`osc52Copy`):** This function will take a string, encode it in Base64, and print the OSC52 escape sequence (`\x1b]52;c;BASE64_TEXT\x07`) to `process.stdout`.
+-   **Read (`osc52Read`):** This function will attempt to read from the clipboard via OSC52. It will send a request sequence (`\x1b]52;p;?\x07`) to `process.stdout` and then attempt to read the terminal's response (`\x1b]52;p;BASE64_DATA\x07`) from `process.stdin`. This operation is complex, involving raw mode for stdin, non-blocking reads, and a timeout. It will return the decoded string or `null` if unsuccessful.
+
+**Clipboard Wrapper (`src/common/clipboard.ts`):**
+This module will provide `read(): Promise<string>` and `write(text: string): Promise<void>` functions.
+-   `write(text)`: If in an SSH session, it will use `osc52Copy`. Otherwise, it will use `clipboardy.write(text)`.
+-   `read()`: If in an SSH session, it will first attempt `osc52Read()`. If `osc52Read()` is successful and returns text, that text is used. If `osc52Read()` fails (returns `null` or throws an error, e.g., due to timeout or lack of terminal support), it will fall back to `clipboardy.read()`. If not in an SSH session, it will directly use `clipboardy.read()`.
+
+**Refactoring:**
+All existing direct usages of `clipboardy.read()` and `clipboardy.write()` throughout the codebase will be replaced with calls to the new wrapper functions.
+
+This approach aims for a robust solution that enhances SSH usability while maintaining existing functionality in local environments. The OSC52 read operation is the most complex and will be implemented with a fallback mechanism.

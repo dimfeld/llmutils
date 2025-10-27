@@ -1,12 +1,18 @@
 ---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Q1 2024 Development Goals
 goal: Complete major feature development for Q1
 id: 100
+uuid: 7426fc6d-ad0d-4b90-8119-1939d79eed86
 status: in_progress
 priority: high
 container: true
-dependencies: [101, 102, 103]
+dependencies:
+  - 101
+  - 102
+  - 103
 tasks: []
+updatedAt: 2025-10-27T08:39:04.210Z
 ---
 This is a container plan that organizes other plans but has no tasks of its own.
 It represents a high-level goal that is accomplished by completing its dependencies.

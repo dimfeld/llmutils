@@ -3,6 +3,7 @@
 title: Store task files locally when repository has no config
 goal: Work better with third-party projects
 id: 125
+uuid: 5dddd67a-972c-467e-b74b-3fe6da2dafc0
 generatedBy: agent
 status: done
 priority: medium
@@ -13,7 +14,7 @@ pullRequest: []
 docs: []
 planGeneratedAt: 2025-09-25T09:16:20.304Z
 createdAt: 2025-09-25T08:58:56.840Z
-updatedAt: 2025-09-25T14:11:07.627Z
+updatedAt: 2025-10-27T08:39:04.316Z
 progressNotes:
   - timestamp: 2025-09-25T10:09:43.140Z
     text: Set up new git URL parsing utilities with filesystem-safe name derivation

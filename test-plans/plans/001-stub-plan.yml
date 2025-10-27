@@ -1,10 +1,13 @@
 ---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Stub Plan Example
 goal: This is a stub plan with no tasks
 id: 1
+uuid: d4ccfa6b-17dd-4b99-abae-7506e698d95d
 status: pending
 priority: low
 tasks: []
+updatedAt: 2025-10-27T08:39:04.323Z
 ---
 This is a stub plan that has been created but contains no tasks yet. It represents
 a plan in its initial state before any work has been defined.

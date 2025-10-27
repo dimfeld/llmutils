@@ -1,3 +1,4 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Enhance rmfilter to automatically discover and include relevant .mdc
   (Markdown Domain Configuration) files based on rules defined within the MDC
@@ -5,40 +6,12 @@ goal: Enhance rmfilter to automatically discover and include relevant .mdc
   including files without specific rules by default. Provide an option to
   disable this feature and update the output format for included documentation
   and rules. Use Bun.file for file operations where appropriate.
-details: >
-  The project involves several interconnected parts:
-
-  1.  **MDC Discovery:** Locating `.mdc` files in standard project locations
-  (`.cursor/rules/`) and a user-specific location (`~/.config/rmfilter/rules`).
-
-  2.  **MDC Parsing:** Reading `.mdc` files using `Bun.file` and parsing their
-  frontmatter (YAML) to extract metadata like `description`, `globs`, `grep`,
-  and `type`.
-
-  3.  **Filtering Logic:** Implementing the core mechanism to determine if an
-  MDC file should be included. This involves:
-      *   Checking if the MDC file lacks *both* `globs` and `grep` specifiers (include by default).
-      *   Matching the MDC `globs` against the set of *active source files* selected by `rmfilter`.
-      *   Matching the MDC `grep` terms (case-insensitively) against the *content* of the active source files (read using `Bun.file`).
-  4.  **Integration:** Connecting the discovery, parsing, and filtering logic
-  into the main `rmfilter` execution flow. The filtering needs access to the
-  final set of source files selected by the user's commands.
-
-  5.  **Output Formatting:** Modifying `additional_docs.ts` to structure the
-  included documents and rules using `<documents>`/`<rules>` parent tags and
-  individual `<document>`/`<rule>` child tags, potentially with a `description`
-  attribute.
-
-  6.  **Configuration:** Adding a `--no-mdc` command-line flag to disable the
-  automatic MDC inclusion.
-
-
-  We will use libraries like `fast-glob` for finding files, `gray-matter` for
-  parsing frontmatter, and `micromatch` for glob matching.
 id: 4
+uuid: e1cc448d-6e10-4c12-93a8-09fcf65a0892
 status: done
 tasks:
   - title: 1. Setup MDC Parsing and Discovery Utilities
+    done: false
     description: Create utility functions to find .mdc files in the specified
       locations and parse their frontmatter and content using `Bun.file`. Add a
       new command-line flag `--no-mdc`.
@@ -138,6 +111,7 @@ tasks:
           (Use `bun:test` features like `beforeEach`, `afterEach`).
         done: true
   - title: 2. Implement MDC Filtering Logic (Updated)
+    done: false
     description: Create the logic that filters parsed MDC files. Files without
       `globs` or `grep` are included by default. Otherwise, inclusion depends on
       `globs` matching active source files or `grep` matching active source file
@@ -228,6 +202,7 @@ tasks:
               *   Verify relative path conversion and matching works correctly (e.g., with files in subdirectories).
         done: true
   - title: 3. Update Output Formatting for Docs and Rules
+    done: false
     description: Modify `getAdditionalDocs` to accept processed MDC files and
       generate the output using the new `<documents>` and `<rules>` XML
       structure. Ensure existing `--docs` and `--rules` flags still work and use
@@ -309,6 +284,7 @@ tasks:
               *   Test the case where `filteredMdcFiles` is empty or undefined.
         done: true
   - title: 4. Integrate MDC Processing into Main Workflow
+    done: false
     description: Modify `rmfilter.ts` to orchestrate the MDC discovery, parsing,
       filtering, and integration with the final output generation, respecting
       the `--no-mdc` flag.
@@ -360,3 +336,18 @@ tasks:
           potentially updated `docsTag` and `rulesTag` content when assembling
           `finalOutput`.
         done: true
+updatedAt: 2025-10-27T08:39:04.216Z
+---
+
+The project involves several interconnected parts:
+1.  **MDC Discovery:** Locating `.mdc` files in standard project locations (`.cursor/rules/`) and a user-specific location (`~/.config/rmfilter/rules`).
+2.  **MDC Parsing:** Reading `.mdc` files using `Bun.file` and parsing their frontmatter (YAML) to extract metadata like `description`, `globs`, `grep`, and `type`.
+3.  **Filtering Logic:** Implementing the core mechanism to determine if an MDC file should be included. This involves:
+    *   Checking if the MDC file lacks *both* `globs` and `grep` specifiers (include by default).
+    *   Matching the MDC `globs` against the set of *active source files* selected by `rmfilter`.
+    *   Matching the MDC `grep` terms (case-insensitively) against the *content* of the active source files (read using `Bun.file`).
+4.  **Integration:** Connecting the discovery, parsing, and filtering logic into the main `rmfilter` execution flow. The filtering needs access to the final set of source files selected by the user's commands.
+5.  **Output Formatting:** Modifying `additional_docs.ts` to structure the included documents and rules using `<documents>`/`<rules>` parent tags and individual `<document>`/`<rule>` child tags, potentially with a `description` attribute.
+6.  **Configuration:** Adding a `--no-mdc` command-line flag to disable the automatic MDC inclusion.
+
+We will use libraries like `fast-glob` for finding files, `gray-matter` for parsing frontmatter, and `micromatch` for glob matching.

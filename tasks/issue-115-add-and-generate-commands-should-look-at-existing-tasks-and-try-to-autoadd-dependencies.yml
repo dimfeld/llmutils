@@ -5,12 +5,13 @@ title: Add and generate commands should look at existing tasks and try to
 goal: "Implement: Add and generate commands should look at existing tasks and
   try to autoadd dependencies"
 id: 48
+uuid: 9abec187-2279-4fdd-acf7-3b3deaf864ab
 status: cancelled
 priority: low
 issue:
   - https://github.com/dimfeld/llmutils/issues/115
 createdAt: 2025-06-07T02:05:21.825Z
-updatedAt: 2025-10-26T22:54:07.913Z
+updatedAt: 2025-10-27T08:39:04.237Z
 tasks: []
 ---
 

@@ -1,16 +1,11 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Implement Front Matter Support and Ensure Backward Compatibility
 goal: Modify the core plan file reading and writing functions to support the new
   front matter format, ensuring that existing functionalities are not broken and
   that older plan files remain compatible.
-details: >
-  This phase focuses on the implementation within `src/rmplan/plans.ts` and its
-  corresponding test file, `src/rmplan/plans.test.ts`. We will first update the
-  reading logic to handle the new format, then the writing logic to produce it.
-  A crucial part of this phase is ensuring full backward compatibility for a
-  smooth transition. Each step will be accompanied by dedicated tests to
-  validate its correctness.
 id: 58
+uuid: 7aa02477-e2e0-4fcf-a200-2f560b7a393b
 status: done
 priority: high
 dependencies: []
@@ -19,7 +14,7 @@ issue:
 planGeneratedAt: 2025-06-08T22:44:30.655Z
 promptsGeneratedAt: 2025-06-08T22:49:16.234Z
 createdAt: 2025-06-08T22:37:44.631Z
-updatedAt: 2025-06-08T23:20:40.895Z
+updatedAt: 2025-10-27T08:39:04.197Z
 project:
   title: Revamp plan format to have plan as front matter and details as markdown
     content afterwards
@@ -55,6 +50,7 @@ project:
     combine that with any body text.
 tasks:
   - title: Update `readPlanFile` to parse YAML front matter and a Markdown body
+    done: false
     description: Modify the `readPlanFile` function in `src/rmplan/plans.ts` to
       detect and parse files using the new format. It should correctly separate
       the YAML front matter from the subsequent Markdown content. The Markdown
@@ -94,6 +90,7 @@ tasks:
           YAML.
         done: true
   - title: Update `writePlanFile` to save plans in the new front matter format
+    done: false
     description: Modify the `writePlanFile` function in `src/rmplan/plans.ts`. This
       function will now take a `PlanSchema` object, extract the `details` string
       to be used as the Markdown body, and serialize the remaining fields into a
@@ -121,6 +118,7 @@ tasks:
           matter block.
         done: true
   - title: Ensure `readPlanFile` is backward compatible with old plan formats
+    done: false
     description: Enhance `readPlanFile` to gracefully handle older plan files. If a
       file is read that contains a `details` field within its YAML content
       (either as a legacy pure-YAML file or within the front matter of a
@@ -148,6 +146,7 @@ tasks:
           field. The value from the YAML should come first.
         done: true
   - title: Create comprehensive tests for plan file input and output
+    done: false
     description: Add and update tests in `src/rmplan/plans.test.ts` to thoroughly
       validate the changes to `readPlanFile` and `writePlanFile`. The tests must
       cover reading and writing the new format, reading the old pure-YAML
@@ -185,3 +184,6 @@ changedFiles:
 rmfilter:
   - src/rmplan/plans.ts
   - --with-imports
+---
+
+This phase focuses on the implementation within `src/rmplan/plans.ts` and its corresponding test file, `src/rmplan/plans.test.ts`. We will first update the reading logic to handle the new format, then the writing logic to produce it. A crucial part of this phase is ensuring full backward compatibility for a smooth transition. Each step will be accompanied by dedicated tests to validate its correctness.

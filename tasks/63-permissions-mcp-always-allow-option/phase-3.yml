@@ -4,6 +4,7 @@ title: Persist Approval Rules
 goal: To save the "Always Allow" rules to a configuration file and load them on
   startup, making them persistent across multiple sessions.
 id: 67
+uuid: 17d4048b-8d5b-4a1c-984b-a01222586f18
 status: done
 priority: medium
 dependencies:
@@ -12,7 +13,7 @@ parent: 63
 planGeneratedAt: 2025-06-13T06:34:02.120Z
 promptsGeneratedAt: 2025-06-13T07:27:45.666Z
 createdAt: 2025-06-11T08:25:17.665Z
-updatedAt: 2025-06-13T07:32:34.685Z
+updatedAt: 2025-10-27T08:39:04.302Z
 project:
   title: Enhance Permissions MCP with an "Always Allow" Option and Bash Prefix
     Matching
@@ -49,6 +50,7 @@ project:
     prompting logic.
 tasks:
   - title: Save Permission Rules on Update
+    done: false
     description: Implement logic to write a new "Always Allow" rule to the Claude
       Code local settings file, `.claude/settings.local.json`, and update that
       file every time the "Always Allow" rule is selected. This involves
@@ -92,6 +94,7 @@ tasks:
           configuration file immediately.
         done: true
   - title: Document the New Permission System
+    done: false
     description: Update the project's README.md file to document the new permissions
       system. The documentation should explain the "Always Allow" feature,
       describe how the interactive Bash prefix selection works, and specify

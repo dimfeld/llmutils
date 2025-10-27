@@ -1,3 +1,4 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Implement a new rmpr command-line tool (as a subcommand within the
   existing rmplan structure) to help developers address Pull Request review
@@ -5,68 +6,12 @@ goal: Implement a new rmpr command-line tool (as a subcommand within the
   to select which ones to address, prepare a context for an LLM based on one of
   two modes ("AI Comments" or "Separate Context"), and then invoke the LLM to
   suggest and apply fixes.
-details: >
-  The `rmpr` command will integrate with the GitHub API to retrieve PR
-  information and review comments. Users will interactively select comments. The
-  core functionality lies in constructing a detailed prompt for an LLM.
-
-
-  **Context Components:**
-
-  1.  **Current Code:** The content of the files relevant to the selected review
-  comments, as they are in the PR's head revision. This includes their imports
-  to provide sufficient context to the LLM. `rmfilter` or similar logic should
-  be used for this.
-
-  2.  **Diff from Parent Branch:** The diff of these files against the PR's base
-  branch.
-
-  3.  **Review Comments:** Incorporated based on the chosen mode.
-
-
-  **Editing Modes:**
-
-  1.  **AI Comments Mode:**
-      *   Selected review comments are inserted directly into the source code as specially formatted AI comments (e.g., prefixed with "AI:", using unique start/end markers for multi-line comments).
-      *   The actual working files will be modified to include these AI comments.
-      *   The user gets a chance to review/edit these files before they are sent to the LLM.
-      *   The LLM will be instructed to address these comments and remove the AI comment markers.
-      *   A post-processing step will ensure any remaining AI comment markers are cleaned up.
-  2.  **Separate Context Mode:**
-      *   Selected review comments, along with their associated file paths, line numbers, and diff hunks, are formatted into a separate text block.
-      *   This block is appended to the prompt, along with the original file contents and diffs.
-
-  **Workflow:**
-
-  1.  User invokes `rmpr <pr_identifier>`.
-
-  2.  Tool fetches PR data and unresolved review comments.
-
-  3.  User selects comments via a checkbox dialog.
-
-  4.  User chooses an editing mode (or a default is used).
-
-  5.  Context is prepared:
-      *   Relevant files (from PR and comments) and their imports are fetched.
-      *   Diffs from the parent branch for these files are generated.
-      *   Review comments are integrated based on the mode.
-  6.  If in "AI Comments" mode, AI comments are inserted into files. User is
-  prompted to review/edit these files.
-
-  7.  LLM is called with the constructed prompt.
-
-  8.  LLM's suggested changes are applied using existing mechanisms
-  (`applyLlmEdits`).
-
-  9.  If in "AI Comments" mode, AI comment markers are cleaned from the files.
-
-
-  The implementation will involve creating new modules under `src/rmpr/` and
-  modifying `src/common/github/pull_requests.ts` and `src/rmplan/rmplan.ts`.
 id: 22
+uuid: 164572d6-78c4-4887-8f1b-91c53c863dd5
 status: done
 tasks:
   - title: 1. Basic CLI Structure and PR Identifier Parsing
+    done: false
     description: >
       Set up the `rmpr` subcommand within `src/rmplan/rmplan.ts`. Create the
       main file for `rmpr` logic (`src/rmpr/main.ts`) and implement parsing for
@@ -149,6 +94,7 @@ tasks:
           otherwise). For now, assume github.com.
         done: true
   - title: 2. Fetch PR Data and Enhance Comment Selection
+    done: false
     description: >
       Integrate GitHub API calls to fetch PR details and review comments.
       Enhance the existing comment selection mechanism in
@@ -227,6 +173,7 @@ tasks:
           by Octokit internally).
         done: true
   - title: 3. Git Utilities for File Content and Diffs
+    done: false
     description: >
       Create utility functions to fetch file content at a specific Git ref and
       to get the diff of a file between two refs. These will be used to build
@@ -301,6 +248,7 @@ tasks:
           "Fetched content for X files, diffs for Y files").
         done: true
   - title: 4. Implement "AI Comments" Mode Logic
+    done: false
     description: >
       Develop the logic for the "AI Comments" mode. This includes inserting
       AI-prefixed comments and markers into file content, and generating the
@@ -444,6 +392,7 @@ tasks:
               - Test content where markers might be slightly malformed by LLM (if possible to anticipate).
         done: true
   - title: 5. Implement "Separate Context" Mode Logic
+    done: false
     description: >
       Develop the logic for the "Separate Context" mode. This involves
       formatting the selected review comments and their diff hunks into a text
@@ -559,6 +508,7 @@ tasks:
           inclusion.
         done: true
   - title: 6. Orchestrate Mode Logic, User Review, LLM Call, and Edit Application
+    done: false
     description: >
       Integrate the mode-specific logic into `src/rmpr/main.ts`. Implement the
       user review step for "AI Comments" mode. Call the LLM with the generated
@@ -620,6 +570,7 @@ tasks:
           `src/logging.ts`.
         done: true
   - title: 7. Final Touches and Testing
+    done: false
     description: >
       Perform end-to-end testing of the `rmpr` command with both modes. Refine
       CLI options, help messages, and logging.
@@ -683,3 +634,39 @@ tasks:
           (No code output needed for this step, it's a guide for the developer
           implementing the plan).
         done: true
+updatedAt: 2025-10-27T08:39:04.265Z
+---
+
+The `rmpr` command will integrate with the GitHub API to retrieve PR information and review comments. Users will interactively select comments. The core functionality lies in constructing a detailed prompt for an LLM.
+
+**Context Components:**
+1.  **Current Code:** The content of the files relevant to the selected review comments, as they are in the PR's head revision. This includes their imports to provide sufficient context to the LLM. `rmfilter` or similar logic should be used for this.
+2.  **Diff from Parent Branch:** The diff of these files against the PR's base branch.
+3.  **Review Comments:** Incorporated based on the chosen mode.
+
+**Editing Modes:**
+1.  **AI Comments Mode:**
+    *   Selected review comments are inserted directly into the source code as specially formatted AI comments (e.g., prefixed with "AI:", using unique start/end markers for multi-line comments).
+    *   The actual working files will be modified to include these AI comments.
+    *   The user gets a chance to review/edit these files before they are sent to the LLM.
+    *   The LLM will be instructed to address these comments and remove the AI comment markers.
+    *   A post-processing step will ensure any remaining AI comment markers are cleaned up.
+2.  **Separate Context Mode:**
+    *   Selected review comments, along with their associated file paths, line numbers, and diff hunks, are formatted into a separate text block.
+    *   This block is appended to the prompt, along with the original file contents and diffs.
+
+**Workflow:**
+1.  User invokes `rmpr <pr_identifier>`.
+2.  Tool fetches PR data and unresolved review comments.
+3.  User selects comments via a checkbox dialog.
+4.  User chooses an editing mode (or a default is used).
+5.  Context is prepared:
+    *   Relevant files (from PR and comments) and their imports are fetched.
+    *   Diffs from the parent branch for these files are generated.
+    *   Review comments are integrated based on the mode.
+6.  If in "AI Comments" mode, AI comments are inserted into files. User is prompted to review/edit these files.
+7.  LLM is called with the constructed prompt.
+8.  LLM's suggested changes are applied using existing mechanisms (`applyLlmEdits`).
+9.  If in "AI Comments" mode, AI comment markers are cleaned from the files.
+
+The implementation will involve creating new modules under `src/rmpr/` and modifying `src/common/github/pull_requests.ts` and `src/rmplan/rmplan.ts`.

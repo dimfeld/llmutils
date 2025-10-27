@@ -3,10 +3,11 @@
 title: Better handling of running in a specific branch
 goal: ""
 id: 123
+uuid: 4f663047-7ff4-4366-88b4-fb64a9a22888
 status: deferred
 priority: medium
 createdAt: 2025-09-24T09:39:53.535Z
-updatedAt: 2025-10-26T23:18:19.324Z
+updatedAt: 2025-10-27T08:39:04.299Z
 tasks: []
 ---
 

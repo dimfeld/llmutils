@@ -1,28 +1,12 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Add an 'agent' command to rmplan for automated plan execution.
-details: >-
-  The agent command will automate the process of executing steps defined in an
-  rmplan YAML file.
-
-  It will sequentially:
-
-  1. Prepare the next step using logic similar to `rmplan next --rmfilter`
-  (selecting the first pending step automatically).
-
-  2. Execute the step using logic similar to an assumed `rmrun` command/function
-  (implementation placeholder).
-
-  3. Mark the step as done using logic similar to `rmplan done --commit` if
-  execution succeeds.
-
-  4. Repeat until all steps are completed.
-
-  This requires refactoring the `next` and `done` command logic into reusable
-  functions placed in a new `actions.ts` file.
 id: 14
+uuid: 44a3aaa0-b6d2-41f3-a53e-59e397f1202a
 status: done
 tasks:
   - title: Refactor 'done' command logic into a reusable function
+    done: false
     description: Create actions.ts and move the core logic of finding the next
       pending task and marking steps/tasks as done into `findPendingTask` and
       `markStepDone` functions. Update the 'done' command to use this new
@@ -132,6 +116,7 @@ tasks:
           necessary imports like `Command`.
         done: true
   - title: Refactor 'next' command logic into a reusable function
+    done: false
     description: Move the core logic of preparing the next step (including finding
       files, building the prompt, and optionally calling rmfilter) into a
       `prepareNextStep` function in actions.ts. Add an option to disable
@@ -268,6 +253,7 @@ tasks:
           necessary imports.
         done: true
   - title: Add 'agent' command skeleton and loop structure
+    done: false
     description: Add the basic 'agent <planFile>' command to rmplan.ts. Implement
       the main loop structure that loads the plan and iterates using
       `findPendingTask` until completion or error.
@@ -316,6 +302,7 @@ tasks:
           9. Add necessary imports (`yaml`, `planSchema`, `findPendingTask`).
         done: true
   - title: Integrate 'prepareNextStep' into the agent command
+    done: false
     description: Call the `prepareNextStep` function from within the agent's loop.
       Configure it to use rmfilter and automatically select the first pending
       step. Capture the generated prompt file path.
@@ -355,6 +342,7 @@ tasks:
           6. Import `prepareNextStep` from `./actions.js`.
         done: true
   - title: Add 'rmrun' execution
+    done: false
     description: Define and call a placeholder function `runAndApplyChanges` within
       the agent loop. This function runs the prompt (using rmfilter output) and
       applies changes, returning a success/failure status.
@@ -393,6 +381,7 @@ tasks:
           5. Import `runAndApplyChanges` from `./actions.js`.
         done: true
   - title: Integrate 'markStepDone' into the agent command
+    done: false
     description: If the placeholder `runAndApplyChanges` succeeds, call
       `markStepDone` to mark the step as complete and commit the changes
       automatically.
@@ -418,6 +407,7 @@ tasks:
           4. Import `markStepDone` from `./actions.js`.
         done: true
   - title: Finalize 'agent' command with loop control and logging
+    done: false
     description: Add proper loop termination conditions (plan completion or error),
       refine error handling for file operations and function calls, and ensure
       informative logging for user feedback throughout the process.
@@ -450,3 +440,13 @@ tasks:
           5. Add a final log message outside the loop if it exited due to an
           error, e.g., "Agent stopped due to error.".
         done: true
+updatedAt: 2025-10-27T08:39:04.274Z
+---
+
+The agent command will automate the process of executing steps defined in an rmplan YAML file.
+It will sequentially:
+1. Prepare the next step using logic similar to `rmplan next --rmfilter` (selecting the first pending step automatically).
+2. Execute the step using logic similar to an assumed `rmrun` command/function (implementation placeholder).
+3. Mark the step as done using logic similar to `rmplan done --commit` if execution succeeds.
+4. Repeat until all steps are completed.
+This requires refactoring the `next` and `done` command logic into reusable functions placed in a new `actions.ts` file.

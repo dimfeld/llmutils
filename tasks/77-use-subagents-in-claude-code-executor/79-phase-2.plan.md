@@ -6,6 +6,7 @@ goal: To make the agent file cleanup mechanism resilient to premature
   application termination by implementing a global SIGINT handler and a cleanup
   task registry.
 id: 79
+uuid: 458b10dc-2231-4344-a148-1f8f59b13e3f
 status: done
 priority: high
 dependencies:
@@ -14,9 +15,10 @@ parent: 77
 planGeneratedAt: 2025-07-29T19:14:39.578Z
 promptsGeneratedAt: 2025-07-29T20:38:48.963Z
 createdAt: 2025-07-29T19:06:12.623Z
-updatedAt: 2025-07-29T20:45:59.096Z
+updatedAt: 2025-10-27T08:39:04.317Z
 tasks:
   - title: Create a Centralized Cleanup Handler Registry
+    done: false
     description: >
       A module will be created to manage a list of cleanup functions that need
       to run on process termination. 
@@ -69,6 +71,7 @@ tasks:
           during cleanup execution.
         done: true
   - title: Implement a Global SIGINT Handler
+    done: false
     description: >
       At the application's main entry point in src/rmplan/rmplan.ts,
       process-level listeners for 
@@ -108,6 +111,7 @@ tasks:
           after cleanup to follow Unix convention.
         done: true
   - title: Integrate the Executor with the Cleanup Registry
+    done: false
     description: >
       The Claude Code executor will be modified to register its agent file
       cleanup function with

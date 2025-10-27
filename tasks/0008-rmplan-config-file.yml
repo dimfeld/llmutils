@@ -1,66 +1,14 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Enhance `rmplan` to support loading configuration from a YAML file,
   enabling customizable behavior, starting with post-apply commands for the
   agent.
-details: >
-  The `rmplan` tool currently operates without external configuration. This
-  feature introduces the ability to read settings from a YAML file to customize
-  its operation.
-
-
-  **Configuration File Location:**
-
-  1. Default: `.rmfilter/rmplan.yml` in the Git repository root.
-
-  2. Override: Specified via a new `-c, --config <path>` command-line option.
-
-  3. Absence: If neither the default nor a specified file exists, `rmplan`
-  should proceed with default behavior without error.
-
-
-  **Configuration Schema (Initial):**
-
-  The configuration will be validated using Zod. Initially, it will support
-  `postApplyCommands`:
-
-  ```yaml
-
-  # Example .rmfilter/rmplan.yml
-
-  postApplyCommands:
-    - title: Format Code # User-friendly title for logging
-      command: bun fmt # The command to execute
-      # workingDirectory: sub/directory # Optional, defaults to repo root
-      # env: # Optional environment variables
-      #   MY_VAR: value
-      # allowFailure: true # Optional, defaults to false
-    - title: Run Linters
-      command: bun lint --fix
-      allowFailure: false # Explicitly false (default)
-  ```
-
-
-  **Implementation Strategy:**
-
-  1. Define the Zod schema for the configuration.
-
-  2. Implement logic to find and load the configuration file (handling default
-  path, override path, and non-existence).
-
-  3. Add the `--config` option to the main `rmplan` command.
-
-  4. Integrate config loading into the `rmplan` startup sequence.
-
-  5. Modify the `agent` command to execute the `postApplyCommands` after
-  successfully applying changes via `runAndApplyChanges` but before marking the
-  step as done.
-
-  6. Ensure robust error handling (e.g., invalid YAML, schema validation errors,
-  command execution failures based on `allowFailure`).
 id: 11
+uuid: 013aec80-27ed-477e-8e73-b0f2b4328946
 status: done
 tasks:
   - title: Define Configuration Schema
+    done: false
     description: Define the structure and validation rules for the `rmplan.yml`
       configuration file using Zod. This includes the initial
       `postApplyCommands` section with its nested properties.
@@ -104,6 +52,7 @@ tasks:
           returned object conforms to the `RmplanConfig` type.
         done: true
   - title: Implement Configuration Loading Logic
+    done: false
     description: Create functions to locate, read, parse, and validate the
       configuration file based on the defined schema. Handle default paths,
       command-line overrides, and file non-existence gracefully.
@@ -171,6 +120,7 @@ tasks:
               - Add comprehensive try/catch blocks to handle errors from `findConfigPath` (e.g., specified file not found) and `loadConfig` (e.g., parsing/validation errors) and log user-friendly error messages before re-throwing or exiting if appropriate.
         done: true
   - title: Add Command-Line Option
+    done: false
     description: Add the `-c, --config` option to the main `rmplan` command using
       `commander` to allow users to specify a custom configuration file path.
     files:
@@ -197,6 +147,7 @@ tasks:
           Commander typically parses options before executing command actions.
         done: true
   - title: Integrate Configuration Loading
+    done: false
     description: Modify the `rmplan.ts` script to call the configuration loading
       logic early in the execution flow and make the loaded configuration
       available to the command actions, particularly the `agent` command.
@@ -340,6 +291,7 @@ tasks:
           handlers are defined.
         done: true
   - title: Implement Post-Apply Command Execution
+    done: false
     description: Modify the `agent` command loop to execute the configured
       `postApplyCommands` after changes are successfully applied by
       `runAndApplyChanges`. Handle command execution details like working
@@ -459,3 +411,36 @@ tasks:
              // ... rest of the loop ...
           ```
         done: true
+updatedAt: 2025-10-27T08:39:04.289Z
+---
+
+The `rmplan` tool currently operates without external configuration. This feature introduces the ability to read settings from a YAML file to customize its operation.
+
+**Configuration File Location:**
+1. Default: `.rmfilter/rmplan.yml` in the Git repository root.
+2. Override: Specified via a new `-c, --config <path>` command-line option.
+3. Absence: If neither the default nor a specified file exists, `rmplan` should proceed with default behavior without error.
+
+**Configuration Schema (Initial):**
+The configuration will be validated using Zod. Initially, it will support `postApplyCommands`:
+```yaml
+# Example .rmfilter/rmplan.yml
+postApplyCommands:
+  - title: Format Code # User-friendly title for logging
+    command: bun fmt # The command to execute
+    # workingDirectory: sub/directory # Optional, defaults to repo root
+    # env: # Optional environment variables
+    #   MY_VAR: value
+    # allowFailure: true # Optional, defaults to false
+  - title: Run Linters
+    command: bun lint --fix
+    allowFailure: false # Explicitly false (default)
+```
+
+**Implementation Strategy:**
+1. Define the Zod schema for the configuration.
+2. Implement logic to find and load the configuration file (handling default path, override path, and non-existence).
+3. Add the `--config` option to the main `rmplan` command.
+4. Integrate config loading into the `rmplan` startup sequence.
+5. Modify the `agent` command to execute the `postApplyCommands` after successfully applying changes via `runAndApplyChanges` but before marking the step as done.
+6. Ensure robust error handling (e.g., invalid YAML, schema validation errors, command execution failures based on `allowFailure`).

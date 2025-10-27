@@ -1,22 +1,17 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: "Core: Import a Single GitHub Issue"
 goal: Implement the core functionality of the `rmplan import` command to import
   a single, specified GitHub issue and create a local stub plan file for it.
-details: This phase focuses on establishing the `rmplan import` command and its
-  single-issue import capability using the `--issue` flag. We will heavily
-  leverage existing functions from the `generate` command's workflow,
-  particularly for fetching issue data, prompting the user for content
-  selection, and parsing `rmfilter` arguments. The outcome will be a fully
-  functional, non-interactive import that lays the foundation for the
-  multi-issue interactive mode.
 id: 39
+uuid: bf4094fa-3ed4-4b65-8565-1048b2e1b7df
 status: done
 priority: high
 dependencies: []
 planGeneratedAt: 2025-06-06T08:55:25.742Z
 promptsGeneratedAt: 2025-06-06T08:59:58.038Z
 createdAt: 2025-06-06T05:40:44.136Z
-updatedAt: 2025-06-06T09:07:52.437Z
+updatedAt: 2025-10-27T08:39:04.312Z
 project:
   title: Add `rmplan import` Command to Import GitHub Issues
   goal: The project aims to add a new `rmplan import` command that allows users to
@@ -43,6 +38,7 @@ project:
     consistency and reduce implementation effort.
 tasks:
   - title: Create the `rmplan import` Command Structure
+    done: false
     description: Create the new `rmplan import` command in the main CLI file and set
       up its handler. This involves adding the command definition, defining the
       `--issue` option, and creating the `import.ts` command handler file to
@@ -78,6 +74,7 @@ tasks:
           should throw an error stating that an issue must be specified.
         done: true
   - title: Implement Single-Issue Import Logic
+    done: false
     description: Develop the primary logic for importing a single issue. This
       function will be called when the `--issue` flag is used. It will use the
       existing `getInstructionsFromGithubIssue` helper to fetch the issue data,
@@ -111,6 +108,7 @@ tasks:
           `readAllPlans` to return a plan that contains the target issue URL.
         done: true
   - title: Implement Stub Plan File Creation
+    done: false
     description: Create a function that takes the processed issue data and generates
       a valid, minimal "stub" plan file. This plan will include the issue's
       title, the user-selected details, the associated GitHub issue URL, and any
@@ -165,3 +163,6 @@ rmfilter:
   - --with-imports
   - --
   - src/rmplan/rmplan.ts
+---
+
+This phase focuses on establishing the `rmplan import` command and its single-issue import capability using the `--issue` flag. We will heavily leverage existing functions from the `generate` command's workflow, particularly for fetching issue data, prompting the user for content selection, and parsing `rmfilter` arguments. The outcome will be a fully functional, non-interactive import that lays the foundation for the multi-issue interactive mode.

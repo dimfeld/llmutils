@@ -4,15 +4,17 @@ title: Add "Allow for this session" to permissions MCP
 goal: Add the "Allow for this session" option to the permissions prompt and
   implement session-based approval logic without persistence.
 id: 86
-status: completed
+uuid: 4bfb4674-3e4e-4bf3-b7ad-a9745ddc1ee5
+status: done
 priority: medium
 dependencies: []
 planGeneratedAt: 2025-08-11T08:01:30.287Z
 promptsGeneratedAt: 2025-08-11T08:04:09.303Z
 createdAt: 2025-08-01T19:09:16.510Z
-updatedAt: 2025-08-11T08:04:09.652Z
+updatedAt: 2025-10-27T08:39:04.212Z
 tasks:
   - title: Add "Allow for Session" choice to permissions prompt
+    done: true
     description: >
       Modify the select prompt in src/rmplan/executors/claude_code.ts (around
       line 465-469) to include the new "Allow for Session" option between
@@ -23,7 +25,6 @@ tasks:
       from one-time approval to session approval to permanent approval.
     files:
       - src/rmplan/executors/claude_code.ts
-    done: true
     steps:
       - prompt: >
           Locate the select prompt in the createPermissionSocketServer method
@@ -40,6 +41,7 @@ tasks:
           The order should be: Allow, Allow for Session, Always Allow, Disallow.
         done: true
   - title: Implement session_allow handler logic
+    done: true
     description: >
       Add handling for the 'session_allow' choice in the permission request
       handler (around line 484-522). The logic should set approved = true when
@@ -54,7 +56,6 @@ tasks:
       the rest.
     files:
       - src/rmplan/executors/claude_code.ts
-    done: true
     steps:
       - prompt: >
           In the permission handler after retrieving userChoice, add a condition
@@ -85,6 +86,7 @@ tasks:
           file.
         done: true
   - title: Update logging for session vs persistent approvals
+    done: true
     description: >
       Verify and enhance the auto-approval logging (around lines 374-383) to
       ensure it correctly differentiates between session-based and
@@ -97,7 +99,6 @@ tasks:
       whether the approval will persist.
     files:
       - src/rmplan/executors/claude_code.ts
-    done: true
     steps:
       - prompt: >
           Review the existing auto-approval logging code to confirm it properly
@@ -114,6 +115,7 @@ tasks:
           regular tools.
         done: true
   - title: Add comprehensive test coverage
+    done: true
     description: >
       Create test cases in src/rmplan/executors/claude_code.test.ts to verify
       the new "Allow for Session" functionality. Tests should verify that the
@@ -127,7 +129,6 @@ tasks:
       approvals.
     files:
       - src/rmplan/executors/claude_code.test.ts
-    done: true
     steps:
       - prompt: >
           Add a test that verifies the permissions prompt now includes four
@@ -164,6 +165,7 @@ tasks:
           session approvals.
         done: true
   - title: Test edge cases and integration
+    done: true
     description: >
       Verify edge cases including session approval followed by "Always Allow"
       for the same tool (should upgrade to persistent), multiple session
@@ -175,7 +177,6 @@ tasks:
       introducing unexpected behavior.
     files:
       - src/rmplan/executors/claude_code.test.ts
-    done: true
     steps:
       - prompt: >
           Create a test where a tool is first approved for session, then later

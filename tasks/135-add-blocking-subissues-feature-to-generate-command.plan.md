@@ -3,6 +3,7 @@
 title: Add blocking subissues feature to generate command
 goal: ""
 id: 135
+uuid: ac0b9e9d-cd95-45f1-8ded-15074bd6c800
 generatedBy: agent
 status: pending
 priority: medium
@@ -13,7 +14,7 @@ parent: 128
 planGeneratedAt: 2025-10-26T23:05:27.414Z
 promptsGeneratedAt: 2025-10-26T23:05:27.414Z
 createdAt: 2025-10-26T22:41:26.645Z
-updatedAt: 2025-10-26T23:05:27.415Z
+updatedAt: 2025-10-27T08:39:04.208Z
 tasks:
   - title: Add CLI Flag
     done: false

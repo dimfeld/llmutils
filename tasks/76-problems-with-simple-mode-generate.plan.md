@@ -3,10 +3,11 @@
 title: Problems with simple mode generate
 goal: ""
 id: 76
+uuid: 16ecb411-689b-441f-aa0d-061f95a5e11c
 status: deferred
 priority: high
 createdAt: 2025-07-28T19:26:36.115Z
-updatedAt: 2025-10-26T22:55:51.014Z
+updatedAt: 2025-10-27T08:39:04.252Z
 tasks: []
 ---
 

@@ -1,38 +1,15 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Implement a feature to automatically create a new workspace (Git clone or
   worktree) for running an `rmplan` agent, based on repository-level
   configuration. This includes managing the workspace lifecycle, customizing its
   location, and tracking its association with a specific task.
-details: >
-  The project involves several key areas:
-
-  1.  **Configuration:** Enhancing the `rmplan.yml` schema to define how new
-  workspaces should be created. This includes options for using a custom script
-  or having `llmutils` manage the cloning and setup process.
-
-  2.  **Workspace Management:** A new `WorkspaceManager` service will
-  encapsulate the logic for creating workspaces. This service will handle both
-  script-based and `llmutils`-managed creation, including cloning, branch
-  creation, and running initialization commands.
-
-  3.  **Tracking:** A system for recording which task a workspace was created
-  for, likely using a global JSON file (`~/.llmutils/workspaces.json`).
-
-  4.  **Agent Integration:** Modifying the `rmplan agent` command to utilize the
-  `WorkspaceManager`. The agent will operate within the newly created workspace,
-  ensuring that all file operations and Git commands are contextually correct.
-
-  5.  **Customization:** Allowing users to specify the location for new clones
-  and define repository-specific initialization steps.
-
-
-  The implementation will be broken down into iterative tasks, focusing on
-  building the core components first (configuration, workspace manager basics)
-  and then integrating them into the existing `rmplan agent` workflow.
 id: 2
+uuid: efecbae6-3ed5-46f8-ae4f-4ba5479c1427
 status: done
 tasks:
   - title: 1. Define and Load Workspace Creation Configuration
+    done: false
     description: Update the `rmplan.yml` configuration schema to include options for
       workspace creation. Implement the loading and validation of this new
       configuration.
@@ -94,6 +71,7 @@ tasks:
           error. For file read/parse errors, it returns default config.
         done: true
   - title: 2. WorkspaceManager Structure and Script-Based Creation
+    done: false
     description: Create the `WorkspaceManager` class and implement the script-based
       method for workspace creation.
     files:
@@ -173,6 +151,7 @@ tasks:
                   *   Verify `createWorkspace` handles this (e.g., returns `null`, logs error). This depends on how strictly `WorkspaceCreationConfig` is typed for `scriptPath` when method is 'script'. Assume it will be an error or null return.
         done: true
   - title: 3. `llmutils`-Based Workspace Creation (Clone & Branch)
+    done: false
     description: Implement the repository cloning and branch creation logic for the
       `llmutils` workspace creation method in `WorkspaceManager`.
     files:
@@ -241,6 +220,7 @@ tasks:
                   *   Verify `null` is returned and an error is logged.
         done: true
   - title: 4. Post-Clone Command Execution
+    done: false
     description: Implement the execution of `postCloneCommands` after a workspace is
       successfully created using the `llmutils` method.
     files:
@@ -305,6 +285,7 @@ tasks:
               *   When `overrideGitRoot` is NOT provided, ensure `getGitRoot()` IS called and `cwd` is resolved using its result.
         done: true
   - title: 5. Workspace Tracking
+    done: false
     description: Implement a system to track created workspaces and their
       association with tasks using a global JSON file.
     files:
@@ -394,6 +375,7 @@ tasks:
               *   Returns empty array if no workspaces match.
         done: true
   - title: 6. Integrate Workspace Creation into `rmplan agent`
+    done: false
     description: Modify the `rmplan agent` command to use the `WorkspaceManager` to
       create and operate within a new workspace when specific options are
       provided.
@@ -489,6 +471,7 @@ tasks:
           and `getGitRoot()` (called without args) picks up the new CWD.
         done: true
   - title: 7. Documentation Update
+    done: false
     description: Update `README.md` and any other relevant documentation to describe
       the new workspace auto-creation feature, its configuration, and usage.
     files:
@@ -517,3 +500,14 @@ tasks:
 
           5.  Provide examples of how to configure and use this feature.
         done: true
+updatedAt: 2025-10-27T08:39:04.207Z
+---
+
+The project involves several key areas:
+1.  **Configuration:** Enhancing the `rmplan.yml` schema to define how new workspaces should be created. This includes options for using a custom script or having `llmutils` manage the cloning and setup process.
+2.  **Workspace Management:** A new `WorkspaceManager` service will encapsulate the logic for creating workspaces. This service will handle both script-based and `llmutils`-managed creation, including cloning, branch creation, and running initialization commands.
+3.  **Tracking:** A system for recording which task a workspace was created for, likely using a global JSON file (`~/.llmutils/workspaces.json`).
+4.  **Agent Integration:** Modifying the `rmplan agent` command to utilize the `WorkspaceManager`. The agent will operate within the newly created workspace, ensuring that all file operations and Git commands are contextually correct.
+5.  **Customization:** Allowing users to specify the location for new clones and define repository-specific initialization steps.
+
+The implementation will be broken down into iterative tasks, focusing on building the core components first (configuration, workspace manager basics) and then integrating them into the existing `rmplan agent` workflow.

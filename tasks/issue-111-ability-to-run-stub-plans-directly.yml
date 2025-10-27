@@ -1,15 +1,10 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Implement Direct Stub Plan Execution
 goal: Allow `rmplan run` to execute plans without detailed steps directly after
   a user prompt.
-details: >
-  This phase will modify the `rmplan run` command's logic. When a plan is
-  identified as a "stub" (lacking detailed steps), the user will be prompted to
-  either generate the steps first (current behavior) or execute the plan
-  directly. Direct execution will involve creating a single prompt from the
-  plan's high-level goal and details, running it through the selected executor,
-  and then marking the plan as complete.
 id: 45
+uuid: a7488708-5e2a-446d-8ae8-dff92238b9ed
 status: done
 priority: high
 dependencies: []
@@ -18,7 +13,7 @@ issue:
 planGeneratedAt: 2025-06-06T19:11:15.312Z
 promptsGeneratedAt: 2025-06-06T19:15:37.741Z
 createdAt: 2025-06-06T19:09:23.437Z
-updatedAt: 2025-06-06T19:33:22.074Z
+updatedAt: 2025-10-27T08:39:04.271Z
 project:
   title: Implement the ability to run stub plans directly without prior step
     generation
@@ -34,6 +29,7 @@ project:
     faster workflow for simpler tasks.
 tasks:
   - title: Detect stub plans and prompt the user for action
+    done: false
     description: In the `rmplan run` command logic, when a plan is identified as
       needing preparation (i.e., it lacks detailed steps), present an
       interactive prompt to the user. The prompt will offer the choice to either
@@ -64,6 +60,7 @@ tasks:
           executed. This maintains the current default behavior.
         done: true
   - title: Implement the direct execution logic for stub plans
+    done: false
     description: Create a new logic path for when a user opts for direct execution.
       This path will be responsible for constructing a single, comprehensive
       prompt from the plan's `goal` and `details` fields. This flow will bypass
@@ -83,6 +80,7 @@ tasks:
           prompt using markdown headers (e.g., `# Goal`, `## Details`).
         done: true
   - title: Integrate direct execution with the executor system
+    done: false
     description: Ensure the prompt constructed from the stub plan is correctly
       passed to the configured executor's `execute` method. The existing logic
       for building and configuring executors should be leveraged to ensure that
@@ -102,6 +100,7 @@ tasks:
           loop.
         done: true
   - title: Update plan status to 'done' after direct execution
+    done: false
     description: After the executor successfully completes its task, the plan's
       status must be updated to 'done'. This will involve using existing utility
       functions to modify the plan file. If the run was initiated with a commit
@@ -130,6 +129,7 @@ tasks:
           through to the standard step-by-step execution loop.
         done: true
   - title: Add tests for the new direct execution flow
+    done: false
     description: Develop a suite of tests to validate the new functionality. These
       tests should confirm that the user is prompted correctly for stub plans,
       that the direct execution prompt is constructed as expected, that the
@@ -169,3 +169,6 @@ rmfilter:
   - --
   - src/rmplan/commands/agent.ts
   - --with-imports
+---
+
+This phase will modify the `rmplan run` command's logic. When a plan is identified as a "stub" (lacking detailed steps), the user will be prompted to either generate the steps first (current behavior) or execute the plan directly. Direct execution will involve creating a single prompt from the plan's high-level goal and details, running it through the selected executor, and then marking the plan as complete.

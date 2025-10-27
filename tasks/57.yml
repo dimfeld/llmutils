@@ -1,58 +1,19 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Permissions MCP needs to use HTTP transport
 goal: Update the permissions MCP to use HTTP transport instead of stdio
-details: >
-  When Claude Code starts the MCP in stdio mode, it can't communicate with the
-  user.
-
-  Instead we need to use HTTP SSE transport to get the user's input. Convert it
-  to an FastMCP
-
-  server using the tutorial.
-
-
-  The MCP server should be started with an IPC pipe using Bun.spawn, and it
-  should be able to listen on port 0 and then send the port number
-
-  back to the parent via process.send.
-
-
-  An example of receiving the message:
-
-  ```
-
-  let portPromise = Promise.withResolvers();
-
-  const child = Bun.spawn(["bun", "child.ts"], {
-    ipc(message) {
-      portPromise.resolve(message.port);
-    },
-  });
-
-
-  // await the port number, but with a timeout
-
-  ```
-
-
-  The executor should manually start the MCP before starting claude code, with
-  stdio set to `inherit`, and shut it down when it is done.
-
-  It should listen for the port number from the child process, and then put that
-  port number into the generated MCP JSON.
-
-  The MCP JSON should be updated to use type: 'sse', and url:
-  'http://localhost:${port}/sse'.
-id: "57"
+id: 57
+uuid: 29977eae-aaf8-48e9-a685-929df2e1a843
 status: done
 priority: medium
 docs:
   - docs/tutorials/claude-permissions-mcp.md
 promptsGeneratedAt: 2025-06-07T21:59:43.099Z
 createdAt: 2025-06-07T21:38:52.609Z
-updatedAt: 2025-06-07T22:02:32.613Z
+updatedAt: 2025-10-27T08:39:04.198Z
 tasks:
   - title: Convert Permissions MCP to a FastMCP SSE Server
+    done: false
     description: >
       Refactor `permissions_mcp.ts` to be a FastMCP server using SSE transport.
       It needs to listen on a dynamic port (port 0) and communicate this port
@@ -82,6 +43,7 @@ tasks:
       - prompt: ""
         done: true
   - title: Update Claude Code Executor to Manage the MCP Lifecycle
+    done: false
     description: >
       Modify the `ClaudeCodeExecutor` to spawn the new `permissions_mcp.ts`
       server as a separate process. It will receive the server's port via IPC,
@@ -131,3 +93,27 @@ changedFiles:
 rmfilter:
   - src/rmplan/executors/claude_code.ts
   - src/rmplan/executors/claude_code/permissions_mcp.ts
+---
+
+When Claude Code starts the MCP in stdio mode, it can't communicate with the user.
+Instead we need to use HTTP SSE transport to get the user's input. Convert it to an FastMCP
+server using the tutorial.
+
+The MCP server should be started with an IPC pipe using Bun.spawn, and it should be able to listen on port 0 and then send the port number
+back to the parent via process.send.
+
+An example of receiving the message:
+```
+let portPromise = Promise.withResolvers();
+const child = Bun.spawn(["bun", "child.ts"], {
+  ipc(message) {
+    portPromise.resolve(message.port);
+  },
+});
+
+// await the port number, but with a timeout
+```
+
+The executor should manually start the MCP before starting claude code, with stdio set to `inherit`, and shut it down when it is done.
+It should listen for the port number from the child process, and then put that port number into the generated MCP JSON.
+The MCP JSON should be updated to use type: 'sse', and url: 'http://localhost:${port}/sse'.

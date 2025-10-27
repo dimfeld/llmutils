@@ -1,20 +1,17 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Implement and Test Issue Field Population
 goal: To fix the bug preventing issue URLs from being added to multi-phase plans
   and to add robust testing for this feature.
-details: This phase will address the core bug in `saveMultiPhaseYaml` and then
-  build out the necessary tests to verify the functionality for both single and
-  multi-phase plans. This ensures that any plan generated from a GitHub issue,
-  regardless of its structure, will contain the correct reference back to the
-  issue.
 id: 40
+uuid: 426d2b5d-565d-46a9-93f9-2830ed0012e4
 status: done
 priority: high
 dependencies: []
 planGeneratedAt: 2025-06-06T07:53:25.470Z
 promptsGeneratedAt: 2025-06-06T07:58:27.245Z
 createdAt: 2025-06-06T07:53:25.470Z
-updatedAt: 2025-06-06T07:58:27.251Z
+updatedAt: 2025-10-27T08:39:04.236Z
 project:
   title: Set issue field in plan files when generating from a GitHub issue
   goal: The goal of this project is to ensure that when a plan is generated using
@@ -36,6 +33,7 @@ project:
     multi-phase plan generation scenarios correctly populate the `issue` field.
 tasks:
   - title: Correctly propagate issue URLs in multi-phase plan generation
+    done: false
     description: The `saveMultiPhaseYaml` function in
       `src/rmplan/process_markdown.ts` currently ignores the issue URLs passed
       to it. This task involves modifying the function to correctly use the
@@ -55,6 +53,7 @@ tasks:
           behavior consistent with the single-phase logic.
         done: false
   - title: Add tests for setting the issue field in generated plans
+    done: false
     description: Create tests to verify that the `issue` field is correctly
       populated when generating a plan from a GitHub issue. This should cover
       both the single-phase and multi-phase plan generation scenarios. The tests
@@ -101,3 +100,6 @@ tasks:
 rmfilter:
   - src/rmplan/commands/generate.ts
   - --with-imports
+---
+
+This phase will address the core bug in `saveMultiPhaseYaml` and then build out the necessary tests to verify the functionality for both single and multi-phase plans. This ensures that any plan generated from a GitHub issue, regardless of its structure, will contain the correct reference back to the issue.

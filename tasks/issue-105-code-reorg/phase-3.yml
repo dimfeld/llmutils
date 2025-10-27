@@ -1,18 +1,18 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Documentation and Final Review
 goal: Ensure all project documentation is updated to reflect the new code
   organization and perform a final review of the changes.
-details: This final phase focuses on updating documentation and performing a
-  holistic review of the refactoring work.
 id: 37
+uuid: 6fa97db1-c32b-467f-997a-ff6634a31d83
 status: done
 priority: high
 dependencies:
-  - "36"
+  - 36
 planGeneratedAt: 2025-06-04T08:24:18.886Z
 promptsGeneratedAt: 2025-06-06T06:16:05.626Z
 createdAt: 2025-06-04T08:24:18.886Z
-updatedAt: 2025-06-06T06:39:51.043Z
+updatedAt: 2025-10-27T08:39:04.280Z
 project:
   title: Refactor codebase to improve modularity and reorganize `rmplan` by
     command functionality
@@ -39,6 +39,7 @@ project:
     incremental progress with continuous testing.
 tasks:
   - title: Update README Files
+    done: false
     description: Revise the main `README.md` and `CLAUDE.md` to accurately describe
       the new directory structure, module responsibilities, and key
       architectural changes resulting from the refactoring.
@@ -61,6 +62,7 @@ tasks:
           accurate and demonstrate the new modular approach.
         done: true
   - title: Update Code Comments and JSDoc
+    done: false
     description: Review and update code comments and JSDoc annotations, especially
       for functions or modules that were moved or significantly refactored.
       Ensure comments accurately reflect the current state of the code and its
@@ -98,6 +100,7 @@ tasks:
           other modules.
         done: true
   - title: Final Code Review
+    done: false
     description: Conduct a final review of the refactored codebase, focusing on
       module boundaries and dependency clarity. Identify and fix any remaining
       dependency issues, such as `common` modules importing from feature modules
@@ -131,6 +134,7 @@ tasks:
           point to `src/common/git.ts` as well.
         done: true
   - title: Clean Up Unused Code
+    done: false
     description: Identify and remove any old files, unused functions, or dead code
       that may have resulted from the reorganization. This includes
       consolidating misplaced utilities.
@@ -263,3 +267,6 @@ rmfilter:
   - src/rmpr
   - src/common
   - src/rmfilter
+---
+
+This final phase focuses on updating documentation and performing a holistic review of the refactoring work.

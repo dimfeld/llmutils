@@ -1,19 +1,17 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Reorganize `rmplan` Directory by Command
 goal: Improve the internal structure of the `src/rmplan` module by organizing
   its code based on individual command functionalities, making it easier to
   navigate and maintain.
-details: This phase focuses on refactoring the `src/rmplan` directory.
-  Currently, `src/rmplan/rmplan.ts` likely handles multiple sub-commands. This
-  work will involve identifying these commands and moving their respective logic
-  into dedicated files. Shared utilities within `rmplan` will also be organized.
 id: 35
+uuid: 1349dbdb-1c69-4977-8d1f-6700402e9603
 status: done
 dependencies: []
 planGeneratedAt: 2025-06-04T08:24:18.885Z
 promptsGeneratedAt: 2025-06-04T19:09:54.354Z
 createdAt: 2025-06-04T08:24:18.885Z
-updatedAt: 2025-06-04T20:24:18.182Z
+updatedAt: 2025-10-27T08:39:04.286Z
 project:
   title: Refactor codebase to improve modularity and reorganize `rmplan` by
     command functionality
@@ -40,6 +38,7 @@ project:
     incremental progress with continuous testing.
 tasks:
   - title: Identify `rmplan` Commands and Related Logic
+    done: false
     description: Analyze `src/rmplan/rmplan.ts` and associated files (e.g.,
       `src/rmplan/actions.ts`, `src/rmplan/agent.ts`) to list all distinct
       sub-commands provided by `rmplan` (such as generate, agent/run, next,
@@ -96,6 +95,7 @@ tasks:
           subsequent tasks.
         done: true
   - title: Create New Files for Each `rmplan` Command
+    done: false
     description: For each command identified in the previous task, create a new
       TypeScript file within a new `src/rmplan/commands/` subdirectory (e.g.,
       `src/rmplan/commands/generate.ts`, `src/rmplan/commands/agent.ts`).
@@ -130,6 +130,7 @@ tasks:
           command's handler function.
         done: true
   - title: Relocate Command-Specific Logic
+    done: false
     description: Move the core logic, argument parsing, and helper functions
       specific to each `rmplan` command from their current locations (primarily
       `src/rmplan/rmplan.ts`, `src/rmplan/actions.ts`, `src/rmplan/agent.ts`)
@@ -307,6 +308,7 @@ tasks:
           handlers.
         done: true
   - title: Organize Shared `rmplan` Utilities
+    done: false
     description: Identify functions and types that are used by multiple `rmplan`
       commands but are specific to the `rmplan` domain. Consolidate these into
       existing or new shared utility files within `src/rmplan/` (e.g.,
@@ -363,6 +365,7 @@ tasks:
           moved to a shared module.
         done: true
   - title: Update `rmplan.ts` Entry Point
+    done: false
     description: Refactor `src/rmplan/rmplan.ts` to primarily serve as a command
       dispatcher. It should import and delegate execution to the functions in
       the new command-specific files.
@@ -397,6 +400,7 @@ tasks:
           CLI definition and dispatch.
         done: true
   - title: Update Internal Imports within `rmplan`
+    done: false
     description: Adjust all import statements within the `src/rmplan/` directory to
       reflect the new file structure and module organization.
     files:
@@ -427,6 +431,7 @@ tasks:
           reported issues.
         done: true
   - title: Test `rmplan` Functionality
+    done: false
     description: Run all existing tests related to `rmplan`. Add new unit or
       integration tests as necessary to ensure the refactored command structure
       works correctly and all `rmplan` commands remain functional.
@@ -512,3 +517,6 @@ rmfilter:
   - src/rmpr
   - src/common
   - src/rmfilter
+---
+
+This phase focuses on refactoring the `src/rmplan` directory. Currently, `src/rmplan/rmplan.ts` likely handles multiple sub-commands. This work will involve identifying these commands and moving their respective logic into dedicated files. Shared utilities within `rmplan` will also be organized.

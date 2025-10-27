@@ -3,6 +3,7 @@
 title: Enhance show command with full details and inverse relationships
 goal: ""
 id: 130
+uuid: 44241afa-1440-4f8c-8ff5-c6276ed5ba78
 status: pending
 priority: medium
 temp: false
@@ -10,7 +11,7 @@ dependencies:
   - 129
 parent: 128
 createdAt: 2025-10-26T22:41:03.601Z
-updatedAt: 2025-10-26T22:41:03.604Z
+updatedAt: 2025-10-27T08:39:04.218Z
 tasks: []
 ---
 

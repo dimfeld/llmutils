@@ -258,9 +258,19 @@ describe('setTaskDone', () => {
 
     // Verify nothing changed (except for details field which gets added by readPlanFile)
     const updatedPlan = await readPlanFile(planFile);
-    const { details: _, ...updatedWithoutDetails } = updatedPlan;
-    const { details: __, ...originalWithoutDetails } = plan;
-    expect(updatedWithoutDetails).toEqual(originalWithoutDetails);
+    const sanitize = (input: PlanSchema) => {
+      const { details: _details, ...withoutDetails } = input;
+      const {
+        updatedAt: _updatedAt,
+        uuid: _uuid,
+        ...withoutMetadata
+      } = withoutDetails as typeof withoutDetails & {
+        updatedAt?: string;
+        uuid?: string;
+      };
+      return withoutMetadata;
+    };
+    expect(sanitize(updatedPlan)).toEqual(sanitize(plan));
   });
 
   test('marks plan as complete when last task is done', async () => {

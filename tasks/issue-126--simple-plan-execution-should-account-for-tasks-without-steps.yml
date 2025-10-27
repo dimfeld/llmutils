@@ -4,6 +4,7 @@ title: Implement Direct Execution of Tasks without Steps
 goal: Modify the agent to correctly identify and execute tasks that have a
   description but no explicit steps, and to track their completion status.
 id: 61
+uuid: 5d02747c-f2cc-4e8c-97a8-45d10fc7241a
 status: done
 priority: high
 dependencies: []
@@ -12,7 +13,7 @@ issue:
 planGeneratedAt: 2025-06-09T07:41:35.053Z
 promptsGeneratedAt: 2025-06-09T07:43:16.575Z
 createdAt: 2025-06-08T22:37:49.597Z
-updatedAt: 2025-06-09T08:04:34.439Z
+updatedAt: 2025-10-27T08:39:04.205Z
 project:
   title: '"Simple plan" execution should account for tasks without steps'
   goal: 'Implement: "Simple plan" execution should account for tasks without steps'
@@ -26,6 +27,7 @@ project:
     description and related files as the entirety of the prompt.
 tasks:
   - title: Enhance Plan Schema to Support Task-Level Completion
+    done: false
     description: Update the `planSchema` to include an optional `done` boolean field
       on the task object. This is essential for tracking the completion status
       of tasks that do not have steps, preventing them from being executed
@@ -48,6 +50,7 @@ tasks:
           `readPlanFile`, ensuring the `done` flag is preserved.
         done: true
   - title: Refactor Agent's Initial Plan Analysis
+    done: false
     description: Modify the agent's initial control flow logic that checks if a plan
       `needsPreparation`. This logic must be updated to correctly differentiate
       between a plan with no tasks at all (a true "stub plan") and a plan that
@@ -85,6 +88,7 @@ tasks:
           `executeStubPlan`.
         done: true
   - title: Create a Unified Function to Find the Next Actionable Task
+    done: false
     description: Refactor the logic for determining the next action. Create a new
       function that scans the plan and finds the first incomplete task. This
       function will be used by the agent's main loop to decide which task to
@@ -126,6 +130,7 @@ tasks:
           backward compatibility if needed, but the goal is to phase it out.
         done: true
   - title: Refactor the Agent's Main Loop to Handle Simple Tasks
+    done: false
     description: Modify the agent's main execution loop to use the new task-finding
       function. The loop will then branch its logic based on the task's
       structure. If the current task has steps, it will proceed with the
@@ -152,6 +157,7 @@ tasks:
           next task.
         done: true
   - title: Implement Direct Task Execution and Completion
+    done: false
     description: Implement the new direct execution logic within the agent's main
       loop. This involves constructing a comprehensive prompt from the simple
       task's title, description, and associated files. After the executor
@@ -190,6 +196,7 @@ tasks:
           step-based execution path.
         done: true
   - title: Ensure Plan Completion Logic is Correct
+    done: false
     description: Update all logic that checks for overall plan completion to be
       aware of the new task-level `done` flag. A plan should now be considered
       complete only when all of its tasks are complete. A task is considered

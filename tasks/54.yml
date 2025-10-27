@@ -1,20 +1,17 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Support executor options in rmplan config file
 goal: ""
-details: >
-  Add an `executors` key ot the plan schema and allow placing each executor's
-  options under that.
-
-  Then whenever we run an executor we should use the options from the config
-  file, if present.
-id: "54"
+id: 54
+uuid: a59438a4-ed56-4b34-b68b-0f5457a9a6cb
 status: done
 priority: high
 promptsGeneratedAt: 2025-06-07T20:54:53.686Z
 createdAt: 2025-06-07T08:57:54.404Z
-updatedAt: 2025-06-07T20:59:47.716Z
+updatedAt: 2025-10-27T08:39:04.234Z
 tasks:
   - title: Update Config Schema and Loader for Executor Options
+    done: false
     description: Add an `executors` key to the `rmplanConfigSchema` to hold
       executor-specific options. Then, update the config loader to correctly
       merge these options from main and local config files.
@@ -48,6 +45,7 @@ tasks:
           that options for different executors are combined.
         done: true
   - title: Pass Executor-Specific Options During Instantiation
+    done: false
     description: Update the executor creation logic to retrieve and use the options
       defined in the `executors` section of the `rmplan.yml` configuration file.
     files:
@@ -81,3 +79,7 @@ changedFiles:
   - src/rmplan/executors/build.ts
 rmfilter:
   - src/rmplan
+---
+
+Add an `executors` key ot the plan schema and allow placing each executor's options under that.
+Then whenever we run an executor we should use the options from the config file, if present.

@@ -5,6 +5,7 @@ title: Ability to run, generate, prepare, or agent commands on the next ready
 goal: To create the backend functionality that can identify the next ready or
   pending dependency for a given parent plan.
 id: 82
+uuid: c5a4a763-d7cf-4278-9a14-9d75119fdaeb
 status: done
 priority: high
 dependencies: []
@@ -12,9 +13,10 @@ parent: 81
 planGeneratedAt: 2025-07-29T23:21:36.332Z
 promptsGeneratedAt: 2025-07-31T01:05:58.835Z
 createdAt: 2025-07-29T19:19:03.441Z
-updatedAt: 2025-07-31T03:34:49.445Z
+updatedAt: 2025-10-27T08:39:04.322Z
 tasks:
   - title: Define and Access Plan State
+    done: false
     description: >
       Ensure a clear and accessible method exists to retrieve the current state
       of any given plan. Since the plan state is already defined in the schema
@@ -45,6 +47,7 @@ tasks:
           Follow the test patterns from find_next.test.ts.
         done: true
   - title: Implement Dependency Graph Traversal
+    done: false
     description: >
       Create a function that takes a plan identifier and recursively or
       iteratively finds all its direct and indirect dependencies. This includes
@@ -86,6 +89,7 @@ tasks:
           parent_completion.test.ts.
         done: true
   - title: Create the "Find Next Ready Dependency" Function
+    done: false
     description: >
       Develop the main function that orchestrates the process of finding the
       next ready or pending dependency for a given parent plan. It will use the
@@ -126,6 +130,7 @@ tasks:
           Follow the export patterns from find_next.ts.
         done: true
   - title: Add Comprehensive Tests for Core Logic
+    done: false
     description: >
       Write a suite of unit and integration tests for the dependency discovery
       function. These tests should validate its behavior with different

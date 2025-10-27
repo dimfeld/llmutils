@@ -5,6 +5,7 @@ title: Ability to run, generate, prepare, or agent commands on the next ready
 goal: To enhance the user experience with improved error handling and to provide
   clear documentation for the new feature.
 id: 84
+uuid: e6cf0714-e39c-423f-ae0a-4c4e1a177490
 status: done
 priority: medium
 dependencies:
@@ -13,9 +14,10 @@ parent: 81
 planGeneratedAt: 2025-07-29T23:21:36.332Z
 promptsGeneratedAt: 2025-07-31T18:25:01.862Z
 createdAt: 2025-07-29T19:19:03.441Z
-updatedAt: 2025-07-31T19:19:30.403Z
+updatedAt: 2025-10-27T08:39:04.321Z
 tasks:
   - title: Enhance Error Handling and User Feedback
+    done: false
     description: >
       Review all code paths in the --next-ready implementation to ensure
       potential failures are handled gracefully with descriptive error messages.
@@ -75,6 +77,7 @@ tasks:
           commands using chalk colors (yellow for warnings, red for errors).
         done: true
   - title: Add Logging for Dependency Selection
+    done: false
     description: >
       Implement comprehensive debug logging throughout the dependency discovery
       process to provide visibility into how the next ready dependency is
@@ -131,6 +134,7 @@ tasks:
           tests to capture and verify log messages.
         done: true
   - title: Update Command-Line Help Text
+    done: false
     description: >
       Review and enhance the command-line help documentation for all commands
       that support the --next-ready flag. While the basic help text already
@@ -169,6 +173,7 @@ tasks:
           documentation style.
         done: true
   - title: Update Project Documentation
+    done: false
     description: >
       Create comprehensive documentation for the new --next-ready feature in the
       project README. This documentation should explain the problem it solves,

@@ -5,6 +5,7 @@ title: Ability to run, generate, prepare, or agent commands on the next ready
 goal: To expose the new dependency discovery logic through a command-line flag
   for the `generate`, `prepare`, and `agent` commands.
 id: 83
+uuid: 5b0aeb44-6c70-4574-8290-07ccacb3f2b6
 status: done
 priority: high
 dependencies:
@@ -13,9 +14,10 @@ parent: 81
 planGeneratedAt: 2025-07-29T23:21:36.332Z
 promptsGeneratedAt: 2025-07-31T07:17:59.983Z
 createdAt: 2025-07-29T19:19:03.441Z
-updatedAt: 2025-07-31T08:23:46.441Z
+updatedAt: 2025-10-27T08:39:04.324Z
 tasks:
   - title: Add New CLI Flag to Command Parser
+    done: false
     description: >
       Modify the CLI argument parsing configuration in src/rmplan/rmplan.ts to
       add a new flag, --next-ready, to the generate, prepare, and agent
@@ -45,6 +47,7 @@ tasks:
           function to add this option so it applies to both commands.
         done: true
   - title: Modify `generate` Command to Use New Logic
+    done: false
     description: >
       Update the generate command's implementation in
       src/rmplan/commands/generate.ts to handle the --next-ready flag. When this
@@ -83,6 +86,7 @@ tasks:
           passed directly as the plan argument.
         done: true
   - title: Modify `prepare` Command to Use New Logic
+    done: false
     description: >
       Update the prepare command's implementation in
       src/rmplan/commands/prepare.ts to handle the --next-ready flag. The
@@ -120,6 +124,7 @@ tasks:
           argument handling.
         done: true
   - title: Modify `agent` Command to Use New Logic
+    done: false
     description: >
       Update the agent command's implementation in src/rmplan/commands/agent.ts
       to handle the --next-ready flag. Since the agent command has more complex
@@ -161,6 +166,7 @@ tasks:
           currentPlanFile value when --next-ready redirects to a dependency.
         done: true
   - title: Add End-to-End CLI Tests
+    done: false
     description: >
       Create comprehensive end-to-end tests that execute the actual CLI commands
       with the new --next-ready flag. These tests will set up temporary plan

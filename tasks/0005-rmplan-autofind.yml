@@ -1,21 +1,12 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 goal: Refactor rmfind for programmatic use and add --autofind option to rmplan.
-details: >
-  This plan involves two main parts:
-
-  1. Refactor the `rmfind` tool by separating its core file-finding logic from
-  the command-line interface (CLI) wrapper. This will allow the core logic to be
-  imported and used by other tools like `rmplan`.
-
-  2. Enhance the `rmplan next` command by adding an `--autofind` option. When
-  used, this option will invoke the refactored `rmfind` core logic using the
-  current plan task's details as a query. The files found by `rmfind` will then
-  be automatically included in the list of relevant files, particularly when
-  generating context for `rmfilter`.
 id: 6
+uuid: 0dac1169-c599-40eb-b8c7-bff8f19cf297
 status: done
 tasks:
   - title: Define rmfind Core Interface and Initial File Structure
+    done: false
     description: Create the new core file for rmfind and define the basic function
       signature and option types.
     files:
@@ -74,6 +65,7 @@ tasks:
           `rmfind.ts` for now).
         done: true
   - title: Move Core Finding Logic to rmfind Core
+    done: false
     description: Transfer the file finding logic (glob, grep, AI query) from
       rmfind.ts to core.ts.
     files:
@@ -107,6 +99,7 @@ tasks:
           `core.ts`.
         done: true
   - title: Adapt rmfind CLI Wrapper
+    done: false
     description: Update rmfind.ts to use the new core function and handle CLI
       specific tasks like argument parsing and fzf integration.
     files:
@@ -135,6 +128,7 @@ tasks:
              - Remove the core finding logic that was moved to `core.ts`.
         done: true
   - title: Add --autofind Option to rmplan next
+    done: false
     description: Add the new command-line option to rmplan and pass it down to the
       action handler.
     files:
@@ -168,6 +162,7 @@ tasks:
           (defaulting to `false`).
         done: true
   - title: Implement Autofind Logic in rmplan prepareNextStep
+    done: false
     description: Call the refactored rmfind core logic when --autofind is enabled.
     files:
       - src/rmplan/actions.ts
@@ -206,6 +201,7 @@ tasks:
                - Log the found files if not `quiet`.
         done: true
   - title: Integrate Autofind Results into rmplan
+    done: false
     description: Merge files found by --autofind into the relevant file list and
       rmfilter arguments.
     files:
@@ -311,3 +307,9 @@ tasks:
           prompt later in the `prepareNextStep` function (the part that runs if
           `rmfilter` is false).
         done: true
+updatedAt: 2025-10-27T08:39:04.226Z
+---
+
+This plan involves two main parts:
+1. Refactor the `rmfind` tool by separating its core file-finding logic from the command-line interface (CLI) wrapper. This will allow the core logic to be imported and used by other tools like `rmplan`.
+2. Enhance the `rmplan next` command by adding an `--autofind` option. When used, this option will invoke the refactored `rmfind` core logic using the current plan task's details as a query. The files found by `rmfind` will then be automatically included in the list of relevant files, particularly when generating context for `rmfilter`.

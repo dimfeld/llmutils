@@ -4,13 +4,14 @@ title: Add -n option to list command
 goal: To add the `-n` option to the `list` command, implement the
   result-limiting logic, and verify its correctness with unit tests.
 id: 109
+uuid: d0aeaceb-82bf-4259-82e5-81945f253053
 status: done
 priority: medium
 dependencies: []
 planGeneratedAt: 2025-08-14T01:24:13.332Z
 promptsGeneratedAt: 2025-08-14T01:27:08.412Z
 createdAt: 2025-08-14T01:22:01.173Z
-updatedAt: 2025-08-14T01:42:58.691Z
+updatedAt: 2025-10-27T08:39:04.256Z
 tasks:
   - title: Add the `-n` option to the `list` command definition
     done: true

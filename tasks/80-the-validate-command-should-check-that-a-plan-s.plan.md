@@ -6,6 +6,7 @@ goal: Add validation to ensure bidirectional parent-child relationships in plan
   files, where child plans with a parent field are automatically included in
   their parent's dependencies array, with automatic fixing of inconsistencies.
 id: 80
+uuid: 64642ea2-101e-48ce-a7bb-f69b8f961291
 status: done
 priority: medium
 container: true
@@ -13,7 +14,7 @@ dependencies:
   - 96
   - 97
 createdAt: 2025-07-29T19:17:43.223Z
-updatedAt: 2025-08-12T01:57:04.221Z
+updatedAt: 2025-10-27T08:39:04.278Z
 tasks: []
 ---
 

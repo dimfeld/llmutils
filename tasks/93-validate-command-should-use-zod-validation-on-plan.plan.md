@@ -3,13 +3,14 @@
 title: validate command should use zod validation on plan files instead of custom code
 goal: Convert plan schemas to strict mode and remove manual validation logic
 id: 93
+uuid: 4db1972d-6a70-4226-baba-016a8d1284e0
 status: done
 priority: medium
 dependencies: []
 planGeneratedAt: 2025-08-09T23:13:19.739Z
 promptsGeneratedAt: 2025-08-09T23:15:52.375Z
 createdAt: 2025-08-09T23:01:00.114Z
-updatedAt: 2025-08-09T23:18:34.328Z
+updatedAt: 2025-10-27T08:39:04.240Z
 tasks:
   - title: Update plan schemas to use strict mode
     done: true
@@ -129,6 +130,7 @@ tasks:
           before.
         done: true
   - title: Test validation with sample files
+    done: true
     description: >
       Create test cases or manually verify that the strict validation works
       correctly for various scenarios. This includes testing valid plan files
@@ -140,7 +142,6 @@ tasks:
       fs.mkdtemp().
     files:
       - src/rmplan/commands/validate.test.ts
-    done: true
     steps:
       - prompt: >
           Create a new test file for the validate command using Bun's test
@@ -187,6 +188,7 @@ tasks:
           Verify that invalid files cause process.exit(1) to be called.
         done: true
   - title: Update existing tests if needed
+    done: true
     description: >
       Review and update any existing tests for the validate command to ensure
       they work with the new strict validation. Add new test cases specifically
@@ -198,7 +200,6 @@ tasks:
     files:
       - src/rmplan/commands/import/plan_file_validation.test.ts
       - src/rmplan/process_markdown.test.ts
-    done: true
     steps:
       - prompt: >
           Review plan_file_validation.test.ts to ensure the plan objects created

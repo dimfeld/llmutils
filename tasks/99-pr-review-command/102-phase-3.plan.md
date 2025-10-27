@@ -4,6 +4,7 @@ title: PR review command - Enhanced Review Features and Configuration
 goal: Add advanced review capabilities including custom review criteria,
   configuration options, and improved output formatting
 id: 102
+uuid: 275f1b0c-2bd6-4955-8d76-41503fa5a3ef
 status: done
 priority: low
 dependencies:
@@ -12,7 +13,7 @@ parent: 99
 planGeneratedAt: 2025-08-13T20:34:32.142Z
 promptsGeneratedAt: 2025-08-13T21:48:21.383Z
 createdAt: 2025-08-13T20:28:04.715Z
-updatedAt: 2025-08-13T23:12:11.402Z
+updatedAt: 2025-10-27T08:39:04.309Z
 project:
   title: Add PR review command to rmplan for comprehensive code review against
     plan requirements

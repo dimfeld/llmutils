@@ -5,6 +5,7 @@ goal: Integrate the Linear SDK and refactor the existing GitHub issue-fetching
   logic to use a common, abstract interface, enabling support for both
   platforms.
 id: 91
+uuid: d6114fc2-6855-4e4d-984d-ef0a03fb91cb
 status: done
 priority: medium
 dependencies: []
@@ -13,9 +14,10 @@ docs:
 planGeneratedAt: 2025-08-09T01:09:41.856Z
 promptsGeneratedAt: 2025-08-09T01:16:36.710Z
 createdAt: 2025-08-09T00:50:13.309Z
-updatedAt: 2025-08-09T03:11:26.806Z
+updatedAt: 2025-10-27T08:39:04.224Z
 tasks:
   - title: Update Configuration Schema for Issue Tracker Selection
+    done: false
     description: >
       Add a new configuration option to `configSchema.ts` that allows users to
       select between 'github' and 'linear' as their issue tracker. This setting
@@ -45,6 +47,7 @@ tasks:
           defaults to 'github' when not specified, and rejects invalid values.
         done: true
   - title: Define Generic Issue Tracker Data Structures
+    done: false
     description: >
       Create a set of generic interfaces for issues and comments to decouple the
       application from GitHub-specific data models. This will ensure that data
@@ -83,6 +86,7 @@ tasks:
           ensuring the interfaces are flexible enough to handle both services.
         done: true
   - title: Implement Linear SDK Client Initialization
+    done: false
     description: >
       Create a utility to initialize and provide access to the Linear SDK
       client. This module will be responsible for reading the `LINEAR_API_KEY`
@@ -119,6 +123,7 @@ tasks:
           and properly caches the client instance across multiple calls.
         done: true
   - title: Develop Linear Issue Fetching Logic
+    done: false
     description: >
       Implement functions to fetch an issue and its comments from the Linear API
       using the SDK. This logic will handle parsing Linear issue IDs (e.g.,
@@ -161,6 +166,7 @@ tasks:
           non-existent issues.
         done: true
   - title: Create an Issue Tracker Abstraction Layer
+    done: false
     description: >
       Build a factory or service that provides an issue tracker client (either
       GitHub or Linear) based on the project configuration. This will abstract
@@ -204,6 +210,7 @@ tasks:
           and provides clear error messages when misconfigured.
         done: true
   - title: Refactor `import` Command to Use Abstraction Layer
+    done: false
     description: >
       Update the `rmplan import` command to use the new issue tracker
       abstraction layer. This will involve replacing direct calls to
@@ -256,6 +263,7 @@ tasks:
           correctly.
         done: true
   - title: Add Comprehensive Tests for Linear Integration
+    done: false
     description: >
       Create new tests to validate the Linear API fetching logic and ensure it
       correctly maps data to the generic interfaces. Update existing tests for
@@ -298,6 +306,7 @@ tasks:
           markdown.
         done: true
   - title: Update Project Documentation
+    done: false
     description: >
       Document the new Linear integration feature in the project's `README.md`
       or other relevant documentation files. This should include instructions on

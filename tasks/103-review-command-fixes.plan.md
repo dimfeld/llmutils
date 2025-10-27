@@ -6,6 +6,7 @@ goal: The goal of this project is to modify the `review` command to perform a
   trigger a subsequent fix-up process, providing a more predictable and
   user-controlled workflow.
 id: 103
+uuid: be6ddfa8-5616-4026-8096-a2425cbace4f
 status: done
 priority: medium
 container: true
@@ -14,7 +15,7 @@ dependencies:
   - 105
 parent: 100
 createdAt: 2025-08-13T23:54:11.755Z
-updatedAt: 2025-08-14T00:40:08.843Z
+updatedAt: 2025-10-27T08:39:04.279Z
 tasks: []
 rmfilter:
   - src/rmplan/rmplan.ts

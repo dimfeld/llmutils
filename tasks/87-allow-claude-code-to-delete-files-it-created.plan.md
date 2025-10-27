@@ -6,6 +6,7 @@ goal: The project aims to add a configuration option to the Claude code executor
   command that targets a file previously created or modified by the agent within
   the same session.
 id: 87
+uuid: f728248e-18ed-4ecb-bd5c-a27185537d2c
 status: done
 priority: medium
 container: true
@@ -13,7 +14,7 @@ dependencies:
   - 88
   - 89
 createdAt: 2025-07-31T07:52:58.950Z
-updatedAt: 2025-07-31T09:57:13.296Z
+updatedAt: 2025-10-27T08:39:04.237Z
 tasks: []
 changedFiles:
   - README.md

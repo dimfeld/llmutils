@@ -5,13 +5,14 @@ title: Renumber should account for parent/child relationships when only parent
 goal: To update the `renumber` command to correctly order plan IDs based on
   parent-child hierarchies and sibling dependencies.
 id: 113
+uuid: d6cc9495-6826-4d2d-b5d9-9f8597dd2e65
 status: done
 priority: high
 dependencies: []
 planGeneratedAt: 2025-08-29T05:11:32.894Z
 promptsGeneratedAt: 2025-08-29T05:14:58.450Z
 createdAt: 2025-08-19T19:45:01.416Z
-updatedAt: 2025-08-29T06:01:00.644Z
+updatedAt: 2025-10-27T08:39:04.266Z
 tasks:
   - title: Build Plan Hierarchy Representation
     done: true

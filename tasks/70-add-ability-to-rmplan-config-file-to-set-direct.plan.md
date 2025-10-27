@@ -6,13 +6,14 @@ goal: This phase will deliver the complete functionality by updating the
   configuration model, modifying the CLI commands to respect the new setting,
   adding comprehensive tests, and documenting the feature.
 id: 70
+uuid: 456cb603-04b5-4da6-8312-b60334d010bd
 status: done
 priority: high
 dependencies: []
 planGeneratedAt: 2025-07-20T00:53:52.277Z
 promptsGeneratedAt: 2025-07-20T00:59:04.282Z
 createdAt: 2025-07-20T00:24:53.615Z
-updatedAt: 2025-07-20T05:14:36.700Z
+updatedAt: 2025-10-27T08:39:04.209Z
 project:
   title: Add `direct_mode` Configuration Option
   goal: The project's goal is to introduce a new configuration option,
@@ -65,6 +66,7 @@ project:
     - The project's documentation is updated to reflect the new feature.
 tasks:
   - title: Add `direct_mode` to Configuration Model
+    done: false
     description: Update the configuration data class to include the new optional
       boolean field `planning.direct_mode`. This change will ensure that the
       configuration loading mechanism recognizes the new setting and defaults it
@@ -84,6 +86,7 @@ tasks:
           commands.
         done: true
   - title: Update `generate` and `prepare` Commands to Use New Config
+    done: false
     description: Modify the `generate` and `prepare` command functions to
       incorporate the new configuration setting. The implementation will
       prioritize the command-line flags (`--direct`/`--no-direct`) over the
@@ -124,6 +127,7 @@ tasks:
           the `preparePhase` function in its options object.
         done: true
   - title: Implement Tests for New Configuration Logic
+    done: false
     description: Add new unit and integration tests to verify the correct behavior
       of the `direct_mode` feature. The tests will cover scenarios where the
       configuration is set to true, false, or is absent, and confirm that
@@ -169,6 +173,7 @@ tasks:
           `planning: { direct_mode: true }` is parsed and validated correctly.
         done: true
   - title: Update Project Documentation
+    done: false
     description: Update the `README.md` file and any other relevant user-facing
       documentation. The documentation will clearly explain the new
       `direct_mode` configuration setting, its purpose, how to use it, and how

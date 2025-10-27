@@ -1,23 +1,18 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: "Interactive Mode: List and Import Multiple Issues"
 goal: Enhance the `rmplan import` command to support an interactive mode for
   selecting and importing multiple issues when no specific issue is provided.
-details: This phase builds upon the single-issue import functionality to create
-  a user-friendly, interactive workflow. When `rmplan import` is run without the
-  `--issue` flag, it will fetch all open issues for the current repository. It
-  will then filter out any issues that have already been imported by checking
-  existing plan files. Finally, it will present the user with a checklist of
-  remaining issues, allowing them to select multiple issues to import in a
-  single operation.
 id: 41
+uuid: 6be1e8ce-b009-41cf-89a5-19e609cc46f8
 status: done
 priority: medium
 dependencies:
-  - "39"
+  - 39
 planGeneratedAt: 2025-06-06T08:55:25.742Z
 promptsGeneratedAt: 2025-06-06T09:39:15.402Z
 createdAt: 2025-06-06T05:40:44.136Z
-updatedAt: 2025-06-06T09:48:17.196Z
+updatedAt: 2025-10-27T08:39:04.305Z
 project:
   title: Add `rmplan import` Command to Import GitHub Issues
   goal: The project aims to add a new `rmplan import` command that allows users to
@@ -44,6 +39,7 @@ project:
     consistency and reduce implementation effort.
 tasks:
   - title: Fetch Open Issues for the Current Repository
+    done: false
     description: Implement a new function to fetch all open issues from the GitHub
       repository associated with the current working directory. This will
       involve using the `getGitRepository` utility to identify the repository
@@ -76,6 +72,7 @@ tasks:
           mocked list of issues.
         done: true
   - title: Filter Out Already-Imported Issues
+    done: false
     description: Before displaying the list of open issues, filter it to exclude any
       issues that are already linked in existing local plan files. This will be
       achieved by reading all plans using `readAllPlans` and checking the
@@ -109,6 +106,7 @@ tasks:
           of issues is correctly filtered.
         done: true
   - title: Implement Interactive Issue Selection Prompt
+    done: false
     description: Use the `@inquirer/prompts` library to create an interactive
       checklist prompt. This prompt will display the filtered list of importable
       issues, allowing the user to select one or more to import.
@@ -138,6 +136,7 @@ tasks:
           your tests.
         done: true
   - title: Orchestrate Multi-Issue Import Loop
+    done: false
     description: Modify the `import` command handler to loop through the issues
       selected by the user. For each selected issue, it will call the
       single-issue import and file creation logic developed in Phase 1,
@@ -181,3 +180,6 @@ rmfilter:
   - --with-imports
   - --
   - src/rmplan/rmplan.ts
+---
+
+This phase builds upon the single-issue import functionality to create a user-friendly, interactive workflow. When `rmplan import` is run without the `--issue` flag, it will fetch all open issues for the current repository. It will then filter out any issues that have already been imported by checking existing plan files. Finally, it will present the user with a checklist of remaining issues, allowing them to select multiple issues to import in a single operation.

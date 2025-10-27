@@ -5,6 +5,7 @@ title: config to customize PR created by review command - Configuration Schema
 goal: Add PR creation configuration to the rmplan config schema with proper
   validation
 id: 111
+uuid: 1c6a10b5-605b-46d5-a1a9-d76e09960672
 status: done
 priority: high
 dependencies: []
@@ -12,7 +13,7 @@ parent: 110
 planGeneratedAt: 2025-08-16T00:25:44.550Z
 promptsGeneratedAt: 2025-08-16T00:27:33.193Z
 createdAt: 2025-08-16T00:21:10.187Z
-updatedAt: 2025-08-16T00:37:16.669Z
+updatedAt: 2025-10-27T08:39:04.302Z
 project:
   title: Add configuration options for customizing auto-created PRs in rmplan
   goal: Enable users to configure default settings for PRs created by rmplan

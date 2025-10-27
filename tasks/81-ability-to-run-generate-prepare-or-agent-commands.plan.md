@@ -8,6 +8,7 @@ goal: The project aims to introduce a new command-line flag that allows users to
   first dependency in a "ready" or "pending" state and execute the command on
   it.
 id: 81
+uuid: 01a26e46-236d-45c3-a53d-4f70c65fc91a
 status: done
 priority: medium
 container: true
@@ -16,7 +17,7 @@ dependencies:
   - 83
   - 84
 createdAt: 2025-07-29T19:19:03.441Z
-updatedAt: 2025-07-31T19:19:30.618Z
+updatedAt: 2025-10-27T08:39:04.257Z
 tasks: []
 changedFiles:
   - src/rmplan/commands/agent.test.ts

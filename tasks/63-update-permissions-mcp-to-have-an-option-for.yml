@@ -3,6 +3,7 @@
 title: Update permissions MCP to have an option for "always approve"
 goal: ""
 id: 63
+uuid: e2f78710-fe6f-4044-98d1-dbd5c5b31755
 status: done
 priority: medium
 container: true
@@ -11,7 +12,7 @@ dependencies:
   - 66
   - 67
 createdAt: 2025-06-11T08:25:17.665Z
-updatedAt: 2025-06-13T07:33:35.064Z
+updatedAt: 2025-10-27T08:39:04.272Z
 tasks: []
 rmfilter:
   - src/rmplan/executors/claude_code.ts

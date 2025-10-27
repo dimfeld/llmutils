@@ -17,7 +17,7 @@ docs: []
 planGeneratedAt: 2025-10-27T08:01:47.867Z
 promptsGeneratedAt: 2025-10-27T08:01:47.867Z
 createdAt: 2025-10-27T05:51:22.359Z
-updatedAt: 2025-10-27T08:37:25.178Z
+updatedAt: 2025-10-27T08:52:52.084Z
 progressNotes:
   - timestamp: 2025-10-27T08:07:27.994Z
     text: Added optional uuid field to plan schema, generate/add stub assignments
@@ -53,6 +53,17 @@ progressNotes:
     text: Ran bun run check plus targeted tests for assignments IO and workspace
       identifier modules; all new suites pass.
     source: "tester: Tasks 2&3"
+  - timestamp: 2025-10-27T08:39:41.676Z
+    text: Full test run uncovered regressions in mark_done_set_task.test.ts and
+      renumber.test.ts due to newly persisted plan UUID/updatedAt fields;
+      targeting test updates to account for auto-generated metadata.
+    source: "tester: tasks 2-3"
+  - timestamp: 2025-10-27T08:43:31.484Z
+    text: Updated regression tests to ignore auto-generated uuid/updatedAt metadata,
+      adjusted renumber dry-run assertions to read via readPlanFile, and added a
+      coverage test for repositoryId mismatches in assignments_io. Full suite
+      and type check now pass.
+    source: "tester: tasks 2-3"
 tasks:
   - title: Add UUID field to plan schema with auto-generation
     done: true
@@ -66,7 +77,7 @@ tasks:
     docs: []
     steps: []
   - title: Create assignments file schema and utilities
-    done: false
+    done: true
     description: "Create `src/rmplan/assignments/assignments_schema.ts` with Zod
       schema for assignments file structure. Schema should include:
       repositoryId, repositoryRemoteUrl, version field for optimistic locking,
@@ -82,7 +93,7 @@ tasks:
     docs: []
     steps: []
   - title: Implement workspace and repository identification
-    done: false
+    done: true
     description: "Create `src/rmplan/assignments/workspace_identifier.ts` with:
       getCurrentWorkspacePath() that resolves git root to absolute normalized
       path using fs.realpathSync(), getRepositoryId() that reuses logic from
@@ -204,14 +215,30 @@ tasks:
     steps: []
 changedFiles:
   - schema/rmplan-plan-schema.json
+  - src/rmplan/assignments/assignments_io.test.ts
+  - src/rmplan/assignments/assignments_io.ts
+  - src/rmplan/assignments/assignments_schema.ts
+  - src/rmplan/assignments/workspace_identifier.test.ts
+  - src/rmplan/assignments/workspace_identifier.ts
   - src/rmplan/commands/add.test.ts
   - src/rmplan/commands/add.ts
   - src/rmplan/commands/generate.test.ts
   - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/renumber.test.ts
   - src/rmplan/planSchema.ts
+  - src/rmplan/plans/mark_done_set_task.test.ts
   - src/rmplan/plans.test.ts
   - src/rmplan/plans.ts
+  - test-plans/plans/001-stub-plan.yml
+  - test-plans/plans/002-tasks-no-steps.yml
+  - test-plans/plans/003-tasks-with-steps.yml
+  - test-plans/plans/100-container-plan.yml
+  - test-plans/plans/101-frontend-refactor.yml
+  - test-plans/plans/102-api-optimization.yml
+  - test-plans/plans/103-testing-infrastructure.yml
+  - test-plans/plans/104-test-data-generation.yml
 rmfilter: []
+uuid: 8b82a7c6-2182-48b7-af3e-2be853519242
 ---
 
 <!-- rmplan-generated-start -->
@@ -851,3 +878,5 @@ Extended src/rmplan/plans.test.ts within the plan UUID handling suite to cover t
 Implemented Task 2: Create assignments file schema and utilities by introducing src/rmplan/assignments/assignments_schema.ts with strict Zod definitions for the shared assignments JSON (including UUID-keyed records, planId normalization, and status reuse), and src/rmplan/assignments/assignments_io.ts with atomic read/write helpers, optimistic version checks, platform-aware config path resolution, and custom errors. Added src/rmplan/assignments/assignments_io.test.ts to validate missing-file defaults, persistence flow, corruption handling, and version conflict detection.
 
 Implemented Task 3: Implement workspace and repository identification by creating src/rmplan/assignments/workspace_identifier.ts with helpers for resolving canonical workspace paths (using realpath normalization), deriving repository IDs via git remote parsing and fallback hashing, and computing user identity precedence. Added src/rmplan/assignments/workspace_identifier.test.ts with live git repository fixtures covering symlink normalization, remote-driven IDs, fallback behavior without remotes, and environment variable precedence.
+
+Implemented a lock-based compare-and-swap for assignments persistence to prevent lost updates under concurrent writers. Added LOCK_* timing constants and the acquireFileLock helper in src/rmplan/assignments/assignments_io.ts, and now wrap the optimistic version re-read/write/rename flow in that lock so the last-in rename cannot silently discard a sibling write. Tasks: Task 2: Create assignments file schema and utilities. The lock is a temporary .lock file with retry/timeout and stale-lock cleanup; it stores the pid/timestamp for debugging and releases in a finally block to avoid wedges. Within the lock we re-parse existing state before the compare, then write a temp file and rename atomically, preserving version monotonicity and existing error handling for parse failures and temp cleanup. This keeps optimistic versioning semantics intact for sequential writers while ensuring concurrent claim/release calls get an AssignmentsVersionConflictError instead of clobbering newer data.

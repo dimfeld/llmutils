@@ -1,20 +1,18 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Implement the `research` command
 goal: To implement the core functionality of the `rmplan research` command,
   including prompt generation, clipboard interaction, file-based context using
   `rmfilter`, and updating the plan with research results.
-details: This phase will introduce the `research` command, its associated logic,
-  and tests. It will cover everything from parsing the command-line arguments to
-  generating the research prompt, handling optional file context with
-  `rmfilter`, and saving the research back to the plan file.
 id: 51
+uuid: bc7462b8-6506-4b64-8568-e632f230b8a3
 status: done
 priority: medium
 dependencies: []
 planGeneratedAt: 2025-06-08T09:15:22.393Z
 promptsGeneratedAt: 2025-06-08T09:23:48.459Z
 createdAt: 2025-06-07T02:07:53.027Z
-updatedAt: 2025-06-08T09:38:23.311Z
+updatedAt: 2025-10-27T08:39:04.203Z
 project:
   title: research command
   goal: ""
@@ -37,6 +35,7 @@ project:
     details.
 tasks:
   - title: Define the `research` command structure in `rmplan.ts`
+    done: false
     description: Add the new `research [planArg]` command to the main `rmplan.ts`
       file using `commander`. This includes defining the command, its
       description, the `--rmfilter` option, and setting up the action handler to
@@ -71,6 +70,7 @@ tasks:
           `.catch(handleCommandError)` block.
         done: true
   - title: Create the research command handler and core action logic
+    done: false
     description: Create a new file `src/rmplan/commands/research.ts` with a
       `handleResearchCommand` function. This handler will resolve the plan file
       and call a new core action function in `actions.ts`. The new action
@@ -117,6 +117,7 @@ tasks:
           Log a confirmation message.
         done: true
   - title: Implement the research prompt generation
+    done: false
     description: In `src/rmplan/prompt.ts`, create a new function
       `generateResearchPrompt` that takes the plan's goal and details and
       constructs a prompt instructing an LLM to perform research, find relevant
@@ -141,6 +142,7 @@ tasks:
           towards a well-organized response.
         done: true
   - title: Implement the paste-back and plan update functionality
+    done: false
     description: Extend the core action in `actions.ts`. After copying the prompt,
       use `waitForEnter(true)` to wait for the user to paste their research.
       Append this pasted content to the `details` field of the plan and save the
@@ -175,6 +177,7 @@ tasks:
           plan was updated.
         done: true
   - title: Add support for `--rmfilter` and command-line file arguments
+    done: false
     description: Enhance the core action in `actions.ts` to handle the `--rmfilter`
       option. It should combine `rmfilter` arguments from the plan's `rmfilter`
       field and any arguments passed after `--` on the command line. If these
@@ -211,6 +214,7 @@ tasks:
           research prompt to the clipboard.
         done: true
   - title: Add tests for the new `research` command
+    done: false
     description: "Create a new test file `src/rmplan/commands/research.test.ts`.
       Write tests to cover the new functionality, including: resolving the plan,
       generating the correct prompt, handling the `--rmfilter` option, and
@@ -248,6 +252,7 @@ tasks:
           throws an appropriate error.
         done: true
   - title: Update user documentation
+    done: false
     description: Add a section for the new `rmplan research` command in the
       project's `README.md` or other relevant documentation files, explaining
       its purpose, usage, and options.
@@ -285,3 +290,6 @@ changedFiles:
   - src/rmplan/rmplan.ts
 rmfilter:
   - src/rmplan
+---
+
+This phase will introduce the `research` command, its associated logic, and tests. It will cover everything from parsing the command-line arguments to generating the research prompt, handling optional file context with `rmfilter`, and saving the research back to the plan file.

@@ -1,18 +1,17 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: Documentation and Refinement
 goal: To ensure the new `add` and `split` commands are well-documented,
   user-friendly, and seamlessly integrated into the `rmplan` tool.
-details: This final phase focuses on polishing the newly implemented features.
-  It includes updating all relevant documentation, refining command-line help
-  messages, and ensuring a smooth user experience.
 id: 26
+uuid: c3f58928-c50e-4ec5-8763-7bcd4efd9a21
 status: done
 dependencies:
-  - "25"
+  - 25
 planGeneratedAt: 2025-05-31T20:32:33.556Z
 promptsGeneratedAt: 2025-06-01T08:09:33.849Z
 createdAt: 2025-05-31T20:32:33.556Z
-updatedAt: 2025-06-01T08:24:55.147Z
+updatedAt: 2025-10-27T08:39:04.248Z
 project:
   title: Enhance rmplan with `add` and `split` commands for improved plan creation
     and organization.
@@ -36,6 +35,7 @@ project:
     plans from scratch and reorganizing existing ones.
 tasks:
   - title: Update README.md with `add` and `split` command documentation.
+    done: false
     description: >
       Add comprehensive documentation for the new `add` and `split` commands to
       the README.md file. The documentation should be added to the appropriate
@@ -74,6 +74,7 @@ tasks:
           other commands or sections where appropriate.
         done: true
   - title: Review and refine command-line help text and error messages.
+    done: false
     description: >
       Review and improve the user-facing text for both the `add` and `split`
       commands. This includes:
@@ -114,3 +115,6 @@ changedFiles:
 rmfilter:
   - src/rmplan
   - src/common
+---
+
+This final phase focuses on polishing the newly implemented features. It includes updating all relevant documentation, refining command-line help messages, and ensuring a smooth user experience.
