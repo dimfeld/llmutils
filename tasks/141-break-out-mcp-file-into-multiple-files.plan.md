@@ -11,7 +11,7 @@ temp: false
 planGeneratedAt: 2025-10-27T19:36:54.793Z
 promptsGeneratedAt: 2025-10-27T19:36:54.793Z
 createdAt: 2025-10-27T06:31:21.571Z
-updatedAt: 2025-10-27T20:55:53.278Z
+updatedAt: 2025-10-27T20:57:42.515Z
 progressNotes:
   - timestamp: 2025-10-27T19:46:00.224Z
     text: Created shared ready_plans module with filtering/sorting utilities,
@@ -254,7 +254,7 @@ tasks:
       - Verify MCP tool registration still works
     steps: []
   - title: Extract handleAppendResearchTool to research.ts
-    done: false
+    done: true
     description: >-
       Move the append-plan-research MCP tool handler to the research command.
 
@@ -395,7 +395,7 @@ tasks:
       - Verify logging works correctly
     steps: []
   - title: Refactor generate_mode.ts to registration-only layer
-    done: false
+    done: true
     description: >-
       Clean up generate_mode.ts to be a thin registration layer after all
       handlers are extracted.
@@ -502,6 +502,8 @@ tasks:
 changedFiles:
   - src/rmplan/commands/ready.test.ts
   - src/rmplan/commands/ready.ts
+  - src/rmplan/commands/research.test.ts
+  - src/rmplan/commands/research.ts
   - src/rmplan/commands/show.test.ts
   - src/rmplan/commands/show.ts
   - src/rmplan/commands/update.test.ts
