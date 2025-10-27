@@ -6,12 +6,77 @@ id: 131
 generatedBy: agent
 status: in_progress
 priority: medium
+container: false
 temp: false
+dependencies: []
 parent: 128
+issue: []
+pullRequest: []
+docs: []
 planGeneratedAt: 2025-10-26T23:45:48.368Z
 promptsGeneratedAt: 2025-10-26T23:45:48.368Z
 createdAt: 2025-10-26T22:41:07.692Z
-updatedAt: 2025-10-27T06:02:37.348Z
+updatedAt: 2025-10-27T06:24:29.901Z
+progressNotes:
+  - timestamp: 2025-10-27T06:06:45.805Z
+    text: Successfully implemented rmplan ready command with all three output
+      formats (list, table, json), complete CLI registration, and MCP tool
+      integration. The command filters plans by status (pending/in_progress),
+      checks dependency completion, and supports sorting by
+      priority/id/title/created/updated with optional filters by priority and
+      pending-only flag. All type checking and linting passed.
+    source: "implementer: tasks 1-6"
+  - timestamp: 2025-10-27T06:15:03.629Z
+    text: "Created comprehensive test suites for rmplan ready command and MCP
+      list-ready-plans tool. All 20 CLI tests and 11 MCP tests passing. Key
+      learnings: (1) Priority sorting defaults to ascending order (low to high),
+      use --reverse for descending, (2) Must set config.paths.tasks (not
+      config.tasksDir) in tests to avoid resolveTasksDir finding real git root,
+      (3) writePlanFile auto-sets updatedAt timestamp even if not provided.
+      Tests cover all specified cases including filtering, sorting, output
+      formats, edge cases, and dependency handling."
+    source: "tester: tasks 7-8"
+  - timestamp: 2025-10-27T06:19:26.079Z
+    text: >-
+      Reviewer identified 3 critical issues that must be fixed before marking
+      tasks done:
+
+      1. Priority sort order is backwards (shows low priority first instead of
+      urgent first)
+
+      2. Inconsistent readiness logic (custom isReadyPlan vs existing
+      isPlanReady with different semantics)
+
+      3. Missing input validation for CLI options
+
+
+      Also identified: missing README documentation (task 9), code duplication
+      in sorting logic, hardcoded table widths, and type safety issues.
+
+
+      Will proceed with implementer to fix critical issues.
+    source: "orchestrator: review phase"
+  - timestamp: 2025-10-27T06:24:29.897Z
+    text: >-
+      Fixed critical issues from code review:
+
+      - Fixed backwards priority sorting (now descending:
+      urgent→high→medium→low)
+
+      - Added input validation for --format, --sort, and --priority options
+
+      - Added comment explaining custom readiness logic vs isPlanReady()
+
+      - Replaced 'any' types with proper TypeScript types (ReadyCommandOptions,
+      TableUserConfig)
+
+      - Added responsive column widths for table format using
+      process.stdout.columns
+
+      - Updated test expectations to match corrected priority sort order
+
+      All tests pass (20/20) and type checking passes with no errors.
+    source: "implementer: code review fixes"
 tasks:
   - title: Create ready command handler with filtering logic
     done: false
@@ -79,6 +144,8 @@ tasks:
       };
 
       ```
+    files: []
+    docs: []
     steps: []
   - title: Implement list format output (default)
     done: false
@@ -119,6 +186,8 @@ tasks:
       - Display dependency summary with status indicators
       - Support `--verbose` flag to show file paths
       - Add helpful usage hints at bottom
+    files: []
+    docs: []
     steps: []
   - title: Implement table format output
     done: false
@@ -167,6 +236,8 @@ tasks:
       log(table(tableData, config));
 
       ```
+    files: []
+    docs: []
     steps: []
   - title: Implement JSON format output
     done: false
@@ -241,6 +312,8 @@ tasks:
       }
 
       ```
+    files: []
+    docs: []
     steps: []
   - title: Register ready command in CLI
     done: false
@@ -281,6 +354,8 @@ tasks:
       - Validate `--priority` is valid priority value if specified
 
       - All errors handled by `handleCommandError`
+    files: []
+    docs: []
     steps: []
   - title: Add MCP tool for list-ready-plans
     done: false
@@ -411,6 +486,8 @@ tasks:
       });
 
       ```
+    files: []
+    docs: []
     steps: []
   - title: Write comprehensive tests for ready command
     done: false
@@ -554,6 +631,8 @@ tasks:
           - Plans with 'maybe' priority (should be included)
           - Circular dependencies (should not crash)
           - Missing dependency plans (should handle gracefully)
+    files: []
+    docs: []
     steps: []
   - title: Write tests for MCP list-ready-plans tool
     done: false
@@ -640,6 +719,8 @@ tasks:
       });
 
       ```
+    files: []
+    docs: []
     steps: []
   - title: Update README with ready command documentation
     done: false
@@ -777,7 +858,11 @@ tasks:
       - Quick start section if relevant
 
       - Any command comparison tables
+    files: []
+    docs: []
     steps: []
+changedFiles: []
+rmfilter: []
 ---
 
 ## Overview

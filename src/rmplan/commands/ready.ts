@@ -3,7 +3,7 @@
 
 import chalk from 'chalk';
 import * as path from 'path';
-import { table } from 'table';
+import { table, type TableUserConfig } from 'table';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
@@ -14,12 +14,30 @@ import { getGitRoot } from '../../common/git.js';
 
 type PlanWithFilename = PlanSchema & { filename: string };
 
+interface ReadyCommandOptions {
+  format?: string;
+  sort?: string;
+  reverse?: boolean;
+  pendingOnly?: boolean;
+  priority?: string;
+  verbose?: boolean;
+}
+
+const VALID_FORMATS = ['list', 'table', 'json'] as const;
+const VALID_SORT_FIELDS = ['priority', 'id', 'title', 'created', 'updated'] as const;
+const VALID_PRIORITIES = ['low', 'medium', 'high', 'urgent', 'maybe'] as const;
+
 /**
  * Check if a plan is ready to execute
  * A plan is ready when:
  * 1. Status is 'pending' OR 'in_progress'
  * 2. Has at least one task
  * 3. All dependencies (if any) have status 'done'
+ *
+ * Note: This is NOT the same as the existing isPlanReady() function from plans.ts,
+ * which only checks for pending status. This function intentionally includes
+ * in_progress plans to provide a complete view of executable work, as specified
+ * in the design requirements for the 'ready' command.
  */
 function isReadyPlan(
   plan: PlanWithFilename,
@@ -130,9 +148,18 @@ function sortPlans(
       bVal = b.id || '';
     }
 
-    if (aVal < bVal) return reverse ? 1 : -1;
-    if (aVal > bVal) return reverse ? -1 : 1;
-    return 0;
+    // For priority sorting, we want descending order by default (urgent first)
+    // For other sorts, ascending order is default
+    const isPrioritySorting = sortBy === 'priority';
+    const compareResult = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+
+    if (isPrioritySorting) {
+      // Descending by default for priority, unless reverse flag is set
+      return reverse ? compareResult : -compareResult;
+    } else {
+      // Ascending by default for other fields
+      return reverse ? -compareResult : compareResult;
+    }
   });
 
   return sorted;
@@ -308,11 +335,16 @@ function displayTableFormat(
     ]);
   }
 
+  // Calculate responsive column widths
+  const terminalWidth = process.stdout.columns || 120;
+  // Columns: ID(6) + Status(12) + Priority(10) + Tasks(8) + Deps(12) + borders(7*3=21) = 69
+  const fixedWidth = 69;
+  const titleWidth = Math.max(30, terminalWidth - fixedWidth);
+
   // Configure table
-  const tableConfig: any = {
+  const tableConfig: TableUserConfig = {
     columns: {
-      1: { width: 40, wrapWord: true },
-      5: { width: 15, wrapWord: true },
+      1: { width: titleWidth, wrapWord: true },
     },
     border: {
       topBody: '─',
@@ -364,7 +396,26 @@ async function displayJsonFormat(plans: PlanWithFilename[]): Promise<void> {
   log(JSON.stringify(result, null, 2));
 }
 
-export async function handleReadyCommand(options: any, command: any) {
+export async function handleReadyCommand(options: ReadyCommandOptions, command: any) {
+  // Validate input options
+  if (options.format && !VALID_FORMATS.includes(options.format as any)) {
+    throw new Error(
+      `Invalid format: ${options.format}. Valid formats are: ${VALID_FORMATS.join(', ')}`
+    );
+  }
+
+  if (options.sort && !VALID_SORT_FIELDS.includes(options.sort as any)) {
+    throw new Error(
+      `Invalid sort field: ${options.sort}. Valid sort fields are: ${VALID_SORT_FIELDS.join(', ')}`
+    );
+  }
+
+  if (options.priority && !VALID_PRIORITIES.includes(options.priority as any)) {
+    throw new Error(
+      `Invalid priority: ${options.priority}. Valid priorities are: ${VALID_PRIORITIES.join(', ')}`
+    );
+  }
+
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const tasksDir = await resolveTasksDir(config);

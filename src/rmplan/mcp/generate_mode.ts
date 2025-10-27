@@ -694,9 +694,12 @@ export async function handleListReadyPlansTool(
         bVal = b.id || '';
       }
 
-      if (aVal < bVal) return -1;
-      if (aVal > bVal) return 1;
-      return 0;
+      // For priority sorting, we want descending order (urgent first)
+      // For other sorts, ascending order
+      const isPrioritySorting = sortBy === 'priority';
+      const compareResult = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+
+      return isPrioritySorting ? -compareResult : compareResult;
     });
 
     // Apply limit
