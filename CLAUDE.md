@@ -57,6 +57,11 @@ The codebase is organized into several main modules with improved modularity and
    - Core functionality: `add.ts`, `agent.ts`, `generate.ts`, `list.ts`, `next.ts`, `done.ts`
    - Specialized commands: `answer-pr.ts`, `cleanup.ts`, `extract.ts`, `prepare.ts`, `split.ts`, `validate.ts`, `set.ts`
    - Workspace management: `workspace.ts` with automated isolation support
+   - Shared utilities captured in purpose-built modules:
+     - `plan_display.ts`: Resolves plans and assembles context summaries for both CLI output and MCP tooling
+     - `plan_merge.ts`: Handles delimiter-aware plan detail updates and task merging while preserving metadata
+     - `ready_plans.ts`: Implements readiness detection, filtering, and sorting used by the CLI and MCP list tools
+   - MCP server (`mcp/generate_mode.ts`) now focuses on registering prompts and delegates tool handlers to the relevant command modules
    - Executor system in `executors/` for different LLM integration approaches
    - **Automatic Parent-Child Relationship Maintenance**: All commands (`add`, `set`, `validate`) work together to ensure bidirectional consistency in the dependency graph, automatically updating parent plans when child relationships are created, modified, or removed
 

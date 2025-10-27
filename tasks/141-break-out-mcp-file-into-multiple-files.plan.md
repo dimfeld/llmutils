@@ -11,7 +11,7 @@ temp: false
 planGeneratedAt: 2025-10-27T19:36:54.793Z
 promptsGeneratedAt: 2025-10-27T19:36:54.793Z
 createdAt: 2025-10-27T06:31:21.571Z
-updatedAt: 2025-10-27T20:57:42.515Z
+updatedAt: 2025-10-27T20:59:41.457Z
 progressNotes:
   - timestamp: 2025-10-27T19:46:00.224Z
     text: Created shared ready_plans module with filtering/sorting utilities,
@@ -82,6 +82,17 @@ progressNotes:
       run check; all passing after re-pointing tests to the new MCP handler
       exports.
     source: "tester: Tasks 5 & 9"
+  - timestamp: 2025-10-27T20:58:36.666Z
+    text: Ran targeted and full Bun test suites plus bun run check; all passed. bun
+      run lint still fails with pre-existing issues (missing .js files in
+      tsconfig, no-empty blocks, etc.), matching prior state.
+    source: "tester: Task 10"
+  - timestamp: 2025-10-27T20:59:32.422Z
+    text: Validated CLI and MCP entrypoints (ready --help, mcp-server http startup)
+      after refactor and documented the shared
+      plan_display/plan_merge/ready_plans modules plus thin MCP layer in
+      CLAUDE.md.
+    source: "implementer: Task 10"
 tasks:
   - title: Create ready_plans.ts shared utility module
     done: true
@@ -1035,3 +1046,5 @@ Implemented Task 5 and Task 9 by relocating MCP tool handlers into their owning 
 Extended Task 9 work by adding mcpListReadyPlans() to commands/ready.ts so the CLI owns the MCP listing behavior, reusing filterAndSortReadyPlans()/formatReadyPlansAsJson() and wrapping resolveTasksDir/readAllPlans to preserve error semantics. generate_mode.ts now solely registers prompts and tools, importing the ready, research, update, and show handlers and converting thrown errors into UserError instances; wrapLogger remains to tag logs for update-plan-tasks. generate_mode.test.ts was updated to target mcpAppendResearch/mcpListReadyPlans so coverage follows the new entry points, and bun test plus bun run check validated the refactor.
 
 Handled review feedback for Task 5 (Extract handleAppendResearchTool to research.ts) by renaming the numeric-ID MCP append research fixture to identifier-plan.plan.md, ensuring the test exercises ID-based resolution rather than filename lookup. Updated src/rmplan/commands/research.test.ts accordingly while keeping plan id 103 so resolvePlanFile must fall through to the all-plans scan, guaranteeing regressions in ID resolution will now be caught. No runtime logic changed; this is a targeted test correction for mcpAppendResearch.
+
+Task 10 - Integration testing and validation: Executed targeted Bun tests for ready_plans, plan_display, and plan_merge along with the full command and MCP suites to confirm the refactor behaves consistently across both CLI and server entrypoints. Verified type safety with 'bun run check'; attempted 'bun run lint' which still surfaces longstanding project issues (missing .js stubs, empty blocks) but recorded the failure as a known pre-existing condition. Manually exercised the CLI () and launched the MCP server in HTTP mode to ensure the new thin registration layer boots without runtime errors. Updated CLAUDE.md to document the shared plan_display.ts, plan_merge.ts, and ready_plans.ts modules plus the responsibility shift in mcp/generate_mode.ts so future maintainers understand the post-refactor structure.
