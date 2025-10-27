@@ -11,7 +11,7 @@ temp: false
 planGeneratedAt: 2025-10-27T19:36:54.793Z
 promptsGeneratedAt: 2025-10-27T19:36:54.793Z
 createdAt: 2025-10-27T06:31:21.571Z
-updatedAt: 2025-10-27T20:05:14.522Z
+updatedAt: 2025-10-27T20:13:56.855Z
 progressNotes:
   - timestamp: 2025-10-27T19:46:00.224Z
     text: Created shared ready_plans module with filtering/sorting utilities,
@@ -37,6 +37,11 @@ progressNotes:
       the show command implementation and refreshed tests to reference the new
       handler.
     source: "implementer: Task 9"
+  - timestamp: 2025-10-27T20:09:14.040Z
+    text: Extended plan_display coverage to exercise config-based ID resolution and
+      reran plan_display, show, ready_plans, and MCP suites plus type checking;
+      all passed.
+    source: "tester: Task 2 & 4"
 tasks:
   - title: Create ready_plans.ts shared utility module
     done: true
@@ -81,7 +86,7 @@ tasks:
       - Verify JSON output format matches expected structure
     steps: []
   - title: Create plan_display.ts shared utility module
-    done: false
+    done: true
     description: >-
       Extract plan context building and formatting utilities.
 
@@ -172,7 +177,7 @@ tasks:
       - Test append vs replace modes in updateDetailsWithinDelimiters
     steps: []
   - title: Extract handleGetPlanTool to show.ts
-    done: false
+    done: true
     description: >-
       Move the get-plan MCP tool handler to the show command.
 
@@ -457,7 +462,12 @@ tasks:
 changedFiles:
   - src/rmplan/commands/ready.test.ts
   - src/rmplan/commands/ready.ts
+  - src/rmplan/commands/show.test.ts
+  - src/rmplan/commands/show.ts
+  - src/rmplan/mcp/generate_mode.test.ts
   - src/rmplan/mcp/generate_mode.ts
+  - src/rmplan/plan_display.test.ts
+  - src/rmplan/plan_display.ts
   - src/rmplan/ready_plans.test.ts
   - src/rmplan/ready_plans.ts
 ---
@@ -965,3 +975,7 @@ Should we tackle this incrementally or as one large refactor?
 Implemented Task 1 (Create ready_plans.ts shared utility module) and Task 6 (Extract handleListReadyPlansTool to ready.ts). Added new module src/rmplan/ready_plans.ts exposing isReadyPlan, sortReadyPlans, filterAndSortReadyPlans, and formatReadyPlansAsJson with shared priority mapping and git-root aware filename handling. Created src/rmplan/ready_plans.test.ts to cover readiness detection (including numeric-string dependencies), sorting, limiting, and JSON formatting. Updated commands/ready.ts to consume the shared helpers, replace inline readiness/sort logic, and reuse READY_PLAN_SORT_FIELDS while keeping assignment display features intact; the CLI now treats empty-task plans as not ready, so ready.test.ts fixtures were refreshed to ensure each plan under test has at least one task and to assert the new exclusion explicitly. Refactored MCP list-ready-plans handler in mcp/generate_mode.ts to delegate to filterAndSortReadyPlans/formatReadyPlansAsJson, removing the duplicated filtering and sorting logic. Ran bun test on the new module and ready command suites plus bun run check; bun run lint still fails globally because of unrelated pre-existing violations, but targeted eslint on the touched files passes. Formatted touched files with prettier to match project style.
 
 Restored original tie-breaking behavior in the shared ready plan sorter to keep equal-priority plans ordered by creation timestamp while preserving descending priority ordering. Updated sortReadyPlans priority branch in src/rmplan/ready_plans.ts to compare priority in descending order without negating tie-breakers, then fall back to createdAt and id, retaining compatibility with CLI consumers from Task 1 - Create ready_plans.ts shared utility module and Task 6 - Extract handleListReadyPlansTool to ready.ts. Added regression coverage in src/rmplan/ready_plans.test.ts exercising equal-priority plans to confirm the oldest plan surfaces first, ensuring downstream MCP list-ready-plans output remains stable. Verified the fix with bun test runs for ready_plans.test.ts, commands/ready.test.ts, mcp/generate_mode.test.ts, and bun run check so future maintainers know the expected validation suite.
+
+Implemented shared plan_display.ts module (Task 2) to centralize plan context helpers. The file now exports PlanDisplayContext/PlanDisplayOptions plus formatExistingTasks, buildPlanContext, and resolvePlan; buildPlanContext gained section toggles so callers can trim content. Added plan_display.test.ts to cover empty vs populated task summaries, option flags, and resolving plans from real files, and updated generate_mode.ts to import the new helpers instead of embedding them.
+
+Task 4 & Task 9 build on Task 2’s utilities: show.ts now imports plan_display helpers and exposes mcpGetPlan so MCP tools reuse the CLI formatter, and show.test.ts got dedicated coverage that exercises real plan files. generate_mode.ts registers the get-plan tool via that new export while keeping the existing zod schema, and generate_mode.test.ts now calls mcpGetPlan to validate end-to-end output. Verified with bun test src/rmplan/plan_display.test.ts, bun test src/rmplan/commands/show.test.ts, bun test src/rmplan/mcp/generate_mode.test.ts, and bun run check.

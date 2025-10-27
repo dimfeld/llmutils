@@ -1,10 +1,12 @@
 import { afterAll, describe, expect, it } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import * as yaml from 'yaml';
 
 import type { PlanSchema } from './planSchema.js';
 import { buildPlanContext, formatExistingTasks, resolvePlan } from './plan_display.js';
+import { clearConfigCache } from './configLoader.js';
 
 function createPlan(overrides: Partial<PlanSchema> & { id: PlanSchema['id'] }): PlanSchema {
   return {
@@ -15,18 +17,16 @@ function createPlan(overrides: Partial<PlanSchema> & { id: PlanSchema['id'] }): 
     status: overrides.status ?? 'pending',
     priority: overrides.priority ?? 'medium',
     dependencies: overrides.dependencies ?? [],
-    tasks:
-      overrides.tasks ??
-      [
-        {
-          title: 'Default task',
-          description: 'Complete the initial work',
-          done: false,
-          files: [],
-          docs: [],
-          steps: [],
-        },
-      ],
+    tasks: overrides.tasks ?? [
+      {
+        title: 'Default task',
+        description: 'Complete the initial work',
+        done: false,
+        files: [],
+        docs: [],
+        steps: [],
+      },
+    ],
     progressNotes: overrides.progressNotes,
     parent: overrides.parent,
     assignedTo: overrides.assignedTo,
@@ -126,7 +126,18 @@ describe('buildPlanContext', () => {
       details: 'Confidential details',
     });
 
-    const context = buildPlanContext(plan, planPath, { gitRoot }, { includeGoal: false, includeIssues: false, includeDocs: false, includeTasks: false, includeDetails: false });
+    const context = buildPlanContext(
+      plan,
+      planPath,
+      { gitRoot },
+      {
+        includeGoal: false,
+        includeIssues: false,
+        includeDocs: false,
+        includeTasks: false,
+        includeDetails: false,
+      }
+    );
     expect(context).not.toContain('Goal:');
     expect(context).not.toContain('Linked issues:');
     expect(context).not.toContain('Documentation references:');
@@ -168,5 +179,42 @@ describe('resolvePlan', () => {
     expect(plan.id).toBe(1);
     expect(plan.title).toBe('Sample plan');
     expect(plan.tasks).toHaveLength(1);
+  });
+
+  it('resolves plans by numeric ID using configuration paths', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'plan-display-config-test-'));
+    temporaryDirectories.push(tempDir);
+    const tasksDir = join(tempDir, 'tasks');
+    await mkdir(tasksDir, { recursive: true });
+    const planPath = join(tasksDir, '0300.plan.md');
+    const planContents = [
+      'id: 300',
+      'title: Configured plan',
+      'status: pending',
+      'priority: medium',
+      'tasks:',
+      '  - title: Verify config loading',
+      '    description: Ensure resolvePlan finds plans by ID',
+      '    done: false',
+    ].join('\n');
+    await writeFile(planPath, planContents, 'utf8');
+
+    const configPath = join(tempDir, 'rmplan.yml');
+    const configData = {
+      paths: {
+        tasks: tasksDir,
+      },
+    };
+    await writeFile(configPath, yaml.stringify(configData), 'utf8');
+
+    clearConfigCache();
+    const { plan, planPath: resolvedPath } = await resolvePlan('300', {
+      gitRoot: tempDir,
+      configPath,
+    });
+
+    expect(resolvedPath).toBe(planPath);
+    expect(plan.id).toBe(300);
+    expect(plan.title).toBe('Configured plan');
   });
 });
