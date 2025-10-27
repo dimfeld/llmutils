@@ -514,6 +514,15 @@ program
   });
 
 program
+  .command('release <plan>')
+  .description('Release a plan assignment from the current workspace')
+  .option('--reset-status', 'Reset plan status to pending')
+  .action(async (plan, options, command) => {
+    const { handleReleaseCommand } = await import('./commands/release.js');
+    await handleReleaseCommand(plan, options, command).catch(handleCommandError);
+  });
+
+program
   .command('renumber')
   .description('Renumber plans with alphanumeric IDs or ID conflicts to sequential numeric IDs')
   .option('--dry-run', 'Show what would be renumbered without making changes')
