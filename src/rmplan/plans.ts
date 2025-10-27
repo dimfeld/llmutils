@@ -387,10 +387,6 @@ export function isPlanReady(
     return false;
   }
 
-  if (!plan.tasks || plan.tasks.length === 0) {
-    return false;
-  }
-
   // If no dependencies, it's ready
   if (!plan.dependencies || plan.dependencies.length === 0) {
     return true;

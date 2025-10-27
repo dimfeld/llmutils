@@ -31,8 +31,7 @@ const VALID_PRIORITIES = ['low', 'medium', 'high', 'urgent', 'maybe'] as const;
  * Check if a plan is ready to execute
  * A plan is ready when:
  * 1. Status is 'pending' OR 'in_progress'
- * 2. Has at least one task
- * 3. All dependencies (if any) have status 'done'
+ * 2. All dependencies (if any) have status 'done'
  *
  * Note: This is NOT the same as the existing isPlanReady() function from plans.ts,
  * which only checks for pending status. This function intentionally includes
@@ -52,11 +51,6 @@ function isReadyPlan(
     : status === 'pending' || status === 'in_progress';
 
   if (!statusMatch) {
-    return false;
-  }
-
-  // Must have tasks
-  if (!plan.tasks || plan.tasks.length === 0) {
     return false;
   }
 
@@ -437,7 +431,7 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
     if (pendingOnly) {
       log('Try without --pending-only to include in_progress plans.');
     } else {
-      log('All pending plans have incomplete dependencies or no tasks.');
+      log('All pending plans have incomplete dependencies.');
     }
     return;
   }
