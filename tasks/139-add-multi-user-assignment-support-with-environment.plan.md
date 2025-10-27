@@ -5,6 +5,7 @@ goal: Enable multi-user workflows in rmplan by supporting user identity via
   environment variables and tracking both plan assignments and status in a
   shared configuration
 id: 139
+uuid: 8b82a7c6-2182-48b7-af3e-2be853519242
 generatedBy: agent
 status: in_progress
 priority: high
@@ -17,7 +18,7 @@ docs: []
 planGeneratedAt: 2025-10-27T08:01:47.867Z
 promptsGeneratedAt: 2025-10-27T08:01:47.867Z
 createdAt: 2025-10-27T05:51:22.359Z
-updatedAt: 2025-10-27T08:52:52.084Z
+updatedAt: 2025-10-27T09:01:40.700Z
 progressNotes:
   - timestamp: 2025-10-27T08:07:27.994Z
     text: Added optional uuid field to plan schema, generate/add stub assignments
@@ -64,6 +65,18 @@ progressNotes:
       coverage test for repositoryId mismatches in assignments_io. Full suite
       and type check now pass.
     source: "tester: tasks 2-3"
+  - timestamp: 2025-10-27T08:55:33.482Z
+    text: Implemented uuid lookup utilities and tests covering cache fallback and
+      resolvePlanWithUuid persistence.
+    source: "implementer: Task 4"
+  - timestamp: 2025-10-27T09:00:42.277Z
+    text: Added claim command with shared claimPlan utility, repository/workspace
+      detection, and tests for new claim scenarios and conflicts.
+    source: "implementer: Task 5"
+  - timestamp: 2025-10-27T09:01:09.306Z
+    text: Ran bun run check and targeted tests for uuid_lookup and claim commands;
+      all passing.
+    source: "tester: Tasks 4-5"
 tasks:
   - title: Add UUID field to plan schema with auto-generation
     done: true
@@ -238,7 +251,6 @@ changedFiles:
   - test-plans/plans/103-testing-infrastructure.yml
   - test-plans/plans/104-test-data-generation.yml
 rmfilter: []
-uuid: 8b82a7c6-2182-48b7-af3e-2be853519242
 ---
 
 <!-- rmplan-generated-start -->
@@ -880,3 +892,5 @@ Implemented Task 2: Create assignments file schema and utilities by introducing 
 Implemented Task 3: Implement workspace and repository identification by creating src/rmplan/assignments/workspace_identifier.ts with helpers for resolving canonical workspace paths (using realpath normalization), deriving repository IDs via git remote parsing and fallback hashing, and computing user identity precedence. Added src/rmplan/assignments/workspace_identifier.test.ts with live git repository fixtures covering symlink normalization, remote-driven IDs, fallback behavior without remotes, and environment variable precedence.
 
 Implemented a lock-based compare-and-swap for assignments persistence to prevent lost updates under concurrent writers. Added LOCK_* timing constants and the acquireFileLock helper in src/rmplan/assignments/assignments_io.ts, and now wrap the optimistic version re-read/write/rename flow in that lock so the last-in rename cannot silently discard a sibling write. Tasks: Task 2: Create assignments file schema and utilities. The lock is a temporary .lock file with retry/timeout and stale-lock cleanup; it stores the pid/timestamp for debugging and releases in a finally block to avoid wedges. Within the lock we re-parse existing state before the compare, then write a temp file and rename atomically, preserving version monotonicity and existing error handling for parse failures and temp cleanup. This keeps optimistic versioning semantics intact for sequential writers while ensuring concurrent claim/release calls get an AssignmentsVersionConflictError instead of clobbering newer data.
+
+Task 4 – Added src/rmplan/assignments/uuid_lookup.ts with helpers for scanning UUIDs, verifying cached plan IDs, and resolving plan arguments, plus unit tests that exercise cache hit/miss paths and UUID persistence from legacy files. Task 5 – Introduced src/rmplan/assignments/claim_plan.ts and src/rmplan/commands/claim.ts to persist workspace/user claims via the shared assignments store, hooked the handler into rmplan.ts, and wrote targeted tests covering first-claim, no-op reclaims, and multi-workspace conflict warnings.

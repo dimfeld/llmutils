@@ -506,6 +506,14 @@ program
   });
 
 program
+  .command('claim <plan>')
+  .description('Assign a plan to the current workspace (and optionally user)')
+  .action(async (plan, options, command) => {
+    const { handleClaimCommand } = await import('./commands/claim.js');
+    await handleClaimCommand(plan, options, command).catch(handleCommandError);
+  });
+
+program
   .command('renumber')
   .description('Renumber plans with alphanumeric IDs or ID conflicts to sequential numeric IDs')
   .option('--dry-run', 'Show what would be renumbered without making changes')
