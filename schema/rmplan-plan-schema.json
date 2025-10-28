@@ -30,6 +30,9 @@
         "oneshot"
       ]
     },
+    "simple": {
+      "type": "boolean"
+    },
     "status": {
       "default": "pending",
       "type": "string",
