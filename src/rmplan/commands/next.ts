@@ -24,11 +24,9 @@ export async function handleNextCommand(planFile: string, options: any, command:
     resolvedPlanFile,
     {
       rmfilter: options.rmfilter,
-      previous: options.previous,
       withImports: options.withImports,
       withAllImports: options.withAllImports,
       withImporters: options.withImporters,
-      selectSteps: true,
       autofind: options.autofind,
       rmfilterArgs: cmdLineRmfilterArgs,
     },

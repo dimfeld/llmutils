@@ -132,16 +132,10 @@ export function buildPrDescriptionPrompt(
   if (planData.tasks && planData.tasks.length > 0) {
     planContext.push(`**Tasks:**`);
     planData.tasks.forEach((task, index) => {
-      planContext.push(`${index + 1}. **${task.title}**`);
+      const status = task.done ? '✓' : '○';
+      planContext.push(`${status} ${index + 1}. **${task.title}**`);
       if (task.description) {
         planContext.push(`   ${task.description}`);
-      }
-      if (task.steps && task.steps.length > 0) {
-        planContext.push(`   Steps:`);
-        task.steps.forEach((step, stepIndex) => {
-          const status = step.done ? '✓' : '○';
-          planContext.push(`   ${status} ${stepIndex + 1}. ${step.prompt.split('\n')[0]}`);
-        });
       }
       planContext.push(``);
     });

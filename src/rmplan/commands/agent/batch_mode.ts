@@ -73,16 +73,6 @@ export async function executeBatchMode(
           if (task.description) {
             taskDescription += `\nDescription: ${task.description}`;
           }
-          if (task.steps && task.steps.length > 0) {
-            taskDescription += `\nSteps:`;
-            task.steps.forEach((step, stepIdx) => {
-              const status = step.done ? '[DONE]' : '[TODO]';
-              taskDescription += `\n  ${stepIdx + 1}. ${status} ${step.prompt}`;
-            });
-          }
-          if (task.files && task.files.length > 0) {
-            taskDescription += `\nFiles: ${task.files.join(', ')}`;
-          }
           return taskDescription;
         })
         .join('\n\n');

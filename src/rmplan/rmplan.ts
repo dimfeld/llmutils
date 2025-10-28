@@ -436,31 +436,6 @@ program
   });
 
 program
-  .command('prepare [plan]')
-  .description(
-    'Generate detailed steps and prompts for a specific phase. Can be a file path or plan ID.'
-  )
-  .option('--force', 'Override dependency completion check and proceed with generation.')
-  .option('-m, --model <model_id>', 'Specify the LLM model to use for generating phase details.')
-  .option('--next', 'Prepare the next plan that is ready to be implemented')
-  .option('--current', 'Prepare the current plan (in_progress or next ready plan)')
-  .option(
-    '--next-ready <planIdOrPath>',
-    'Find and operate on the next ready dependency of the specified parent plan (accepts plan ID or file path)'
-  )
-  .option('--direct', 'Call LLM directly instead of copying prompt to clipboard')
-  .option('--no-direct', 'Use clipboard mode even if direct mode is configured')
-  .option('--use-yaml <yaml_file>', 'Skip generation and use existing YAML file as LLM output')
-  .option('--claude', 'Use Claude Code for two-step planning and generation')
-  .option('--no-claude', 'Use traditional copy/paste mode instead of Claude Code')
-  .allowExcessArguments(true)
-  .allowUnknownOption(true)
-  .action(async (yamlFile, options, command) => {
-    const { handlePrepareCommand } = await import('./commands/prepare.js');
-    await handlePrepareCommand(yamlFile, options, command).catch(handleCommandError);
-  });
-
-program
   .command('show [planFile]')
   .description('Display detailed information about a plan. Can be a file path or plan ID.')
   .option('--next', 'Show the next plan that is ready to be implemented')

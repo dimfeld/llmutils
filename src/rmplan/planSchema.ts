@@ -16,20 +16,10 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
     source: z.string().optional(),
   });
 
-  const stepSchema = objectFactory({
-    prompt: z.string(),
-    done: z.boolean().default(false),
-    examples: z.array(z.string()).optional(),
-  });
-
   const taskSchema = objectFactory({
     title: z.string(),
     done: z.boolean().default(false),
     description: z.string(),
-    files: z.array(z.string()).default([]).optional(),
-    examples: z.array(z.string()).optional(),
-    docs: z.array(z.string()).default([]).optional(),
-    steps: z.array(stepSchema).default([]),
   });
 
   const projectSchema = objectFactory({
