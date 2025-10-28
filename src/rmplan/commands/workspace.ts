@@ -325,7 +325,7 @@ async function resolveWorkspaceIdentifier(
       );
     }
 
-    return matches[0]!;
+    return matches[0];
   }
 
   const currentDir = process.cwd();

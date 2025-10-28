@@ -73,7 +73,7 @@ export class SummaryCollector {
       rawContent.length > MAX_OUTPUT_LENGTH ? rawContent.slice(0, MAX_OUTPUT_LENGTH) : rawContent;
     // Truncate steps bodies as well to keep memory in check
     const steps = Array.isArray(input.output?.steps)
-      ? input.output!.steps.map((s) => ({
+      ? input.output.steps.map((s) => ({
           title: String(s.title ?? ''),
           body: truncate(String(s.body ?? ''), input.outputTruncateAt ?? DEFAULT_TRUNCATE_LENGTH),
         }))

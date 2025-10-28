@@ -105,6 +105,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
     status: options.status || 'pending',
     priority: (options.priority as 'low' | 'medium' | 'high' | 'urgent') || 'medium',
     temp: options.temp || false,
+    simple: options.simple || false,
     dependencies: needArrayOrUndefined(options.dependsOn),
     parent: referencedPlan
       ? referencedPlan.id

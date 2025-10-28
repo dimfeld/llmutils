@@ -111,7 +111,7 @@ export async function handleStorageCleanCommand(
       choices,
     });
 
-    const uniqueSelected = deduplicateEntries(selectedNames as string[]);
+    const uniqueSelected = deduplicateEntries(selectedNames);
     for (const name of uniqueSelected) {
       const match = directories.find((entry) => entry.repositoryName === name);
       if (match) {

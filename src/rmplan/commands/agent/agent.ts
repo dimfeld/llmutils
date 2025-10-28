@@ -276,6 +276,16 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   const agentExecutionModel =
     options.model || config.models?.execution || defaultModelForExecutor(executorName, 'execution');
 
+  // Check if the plan needs preparation
+  const planData = await readPlanFile(currentPlanFile);
+
+  // Check if plan has simple field set and respect it
+  // CLI flags take precedence: explicit --simple or --no-simple override plan field
+  const hasExplicitSimpleFlag = 'simple' in options && options.simple !== undefined;
+  if (!hasExplicitSimpleFlag && planData.simple === true) {
+    options.simple = true;
+  }
+
   const executorConfigEntry =
     config.executors && executorName in config.executors
       ? (config.executors as Record<string, unknown>)[executorName]
@@ -297,9 +307,6 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     ? buildExecutorAndLog(executorName, sharedExecutorOptions, config, { simpleMode: true })
     : buildExecutorAndLog(executorName, sharedExecutorOptions, config);
   const executionMode: 'normal' | 'simple' = simpleModeEnabled ? 'simple' : 'normal';
-
-  // Check if the plan needs preparation
-  const planData = await readPlanFile(currentPlanFile);
 
   if (isAutoClaimEnabled()) {
     if (planData.uuid) {
