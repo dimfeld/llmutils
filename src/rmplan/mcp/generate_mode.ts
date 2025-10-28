@@ -27,6 +27,12 @@ export async function loadResearchPrompt(
   context: GenerateModeRegistrationContext
 ) {
   const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
+
+  // If plan has simple: true, skip research and use simple generation flow
+  if (plan.simple) {
+    return loadGeneratePrompt(args, context);
+  }
+
   const contextBlock = buildPlanContext(plan, planPath, context);
 
   const text = `${generateClaudeCodePlanningPrompt(contextBlock, false)}

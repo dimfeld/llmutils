@@ -38,6 +38,7 @@ function createPlan(overrides: Partial<PlanSchema> & { id: number }): PlanSchema
     statusDescription: overrides.statusDescription,
     container: overrides.container,
     temp: overrides.temp,
+    simple: overrides.simple,
     discoveredFrom: overrides.discoveredFrom,
     issue: overrides.issue,
     pullRequest: overrides.pullRequest,

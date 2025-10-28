@@ -438,6 +438,13 @@ export async function handleGenerateCommand(
     // Set up stub plan for use in the rest of the flow
     stubPlan = { data: parsedPlan, path: planFile };
 
+    // Check if plan has simple field set and respect it
+    // CLI flags take precedence: explicit --simple or --no-simple override plan field
+    const hasExplicitSimpleFlag = 'simple' in options && options.simple !== undefined;
+    if (!hasExplicitSimpleFlag && parsedPlan.simple === true) {
+      options.simple = true;
+    }
+
     // Check if this is a stub plan that was loaded from existing file (not created by us)
     const wasCreatedByUs = options.planEditor || options.issue;
 
