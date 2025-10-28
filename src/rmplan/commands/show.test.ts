@@ -632,3 +632,358 @@ describe('mcpGetPlan', () => {
     }
   });
 });
+
+describe('inverse relationships', () => {
+  let tempDir: string;
+  let repoDir: string;
+  let tasksDir: string;
+
+  beforeEach(async () => {
+    logSpy.mockClear();
+    errorSpy.mockClear();
+    warnSpy.mockClear();
+    clearPlanCache();
+
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-inverse-test-'));
+    repoDir = path.join(tempDir, 'repo');
+    tasksDir = path.join(repoDir, 'tasks');
+    await fs.mkdir(tasksDir, { recursive: true });
+
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: logSpy,
+      error: errorSpy,
+      warn: warnSpy,
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: {
+          tasks: tasksDir,
+        },
+      }),
+    }));
+
+    await moduleMocker.mock('../assignments/workspace_identifier.ts', () => ({
+      getRepositoryIdentity: async () => ({
+        repositoryId: 'test-repo',
+        remoteUrl: 'https://example.com/repo.git',
+        gitRoot: repoDir,
+      }),
+    }));
+
+    await moduleMocker.mock('../assignments/assignments_io.js', () => ({
+      readAssignments: async () => ({
+        repositoryId: 'test-repo',
+        repositoryRemoteUrl: 'https://example.com/repo.git',
+        version: 0,
+        assignments: {},
+      }),
+    }));
+  });
+
+  afterEach(async () => {
+    moduleMocker.clear();
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('displays blocked plans in full mode', async () => {
+    const plans = [
+      {
+        id: '100',
+        title: 'Parent Plan',
+        goal: 'Base plan',
+        status: 'done',
+        tasks: [],
+      },
+      {
+        id: '101',
+        title: 'Dependent Plan 1',
+        goal: 'Depends on 100',
+        status: 'in_progress',
+        dependencies: ['100'],
+        tasks: [],
+      },
+      {
+        id: '102',
+        title: 'Dependent Plan 2',
+        goal: 'Also depends on 100',
+        status: 'pending',
+        dependencies: ['100'],
+        tasks: [],
+      },
+    ];
+
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    await handleShowCommand('100', {}, { parent: { opts: () => ({}) } } as any);
+
+    const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    const stripped = stripAnsi(output);
+
+    expect(stripped).toContain('Blocks These Plans:');
+    expect(stripped).toContain('101 - Dependent Plan 1');
+    expect(stripped).toContain('102 - Dependent Plan 2');
+  });
+
+  test('displays child plans in full mode', async () => {
+    const plans = [
+      {
+        id: '200',
+        title: 'Parent Plan',
+        goal: 'Has children',
+        status: 'in_progress',
+        tasks: [],
+      },
+      {
+        id: '201',
+        title: 'Child Plan 1',
+        goal: 'Child of 200',
+        status: 'done',
+        parent: '200',
+        tasks: [],
+      },
+      {
+        id: '202',
+        title: 'Child Plan 2',
+        goal: 'Also child of 200',
+        status: 'pending',
+        parent: '200',
+        tasks: [],
+      },
+    ];
+
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    await handleShowCommand('200', {}, { parent: { opts: () => ({}) } } as any);
+
+    const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    const stripped = stripAnsi(output);
+
+    expect(stripped).toContain('Child Plans:');
+    expect(stripped).toContain('201 - Child Plan 1');
+    expect(stripped).toContain('202 - Child Plan 2');
+  });
+
+  test('displays discovered plans in full mode', async () => {
+    const plans = [
+      {
+        id: '300',
+        title: 'Source Plan',
+        goal: 'Discovered others during research',
+        status: 'done',
+        tasks: [],
+      },
+      {
+        id: '301',
+        title: 'Discovered Plan 1',
+        goal: 'Found during plan 300',
+        status: 'pending',
+        discoveredFrom: '300',
+        tasks: [],
+      },
+      {
+        id: '302',
+        title: 'Discovered Plan 2',
+        goal: 'Also found during plan 300',
+        status: 'pending',
+        discoveredFrom: '300',
+        tasks: [],
+      },
+    ];
+
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    await handleShowCommand('300', {}, { parent: { opts: () => ({}) } } as any);
+
+    const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    const stripped = stripAnsi(output);
+
+    expect(stripped).toContain('Plans Discovered From This:');
+    // Verify status icons are present (○ for pending plans)
+    expect(stripped).toContain('○ 301 - Discovered Plan 1');
+    expect(stripped).toContain('○ 302 - Discovered Plan 2');
+  });
+
+  test('displays status icons correctly for different plan statuses', async () => {
+    const plans = [
+      {
+        id: '350',
+        title: 'Parent Plan',
+        goal: 'Main plan',
+        status: 'pending',
+        tasks: [],
+      },
+      {
+        id: '351',
+        title: 'Pending Plan',
+        goal: 'Not started',
+        status: 'pending',
+        dependencies: ['350'],
+        discoveredFrom: '350',
+        tasks: [],
+      },
+      {
+        id: '352',
+        title: 'In Progress Plan',
+        goal: 'Currently working',
+        status: 'in_progress',
+        dependencies: ['350'],
+        discoveredFrom: '350',
+        tasks: [],
+      },
+      {
+        id: '353',
+        title: 'Done Plan',
+        goal: 'Completed',
+        status: 'done',
+        dependencies: ['350'],
+        discoveredFrom: '350',
+        tasks: [],
+      },
+    ];
+
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    await handleShowCommand('350', {}, { parent: { opts: () => ({}) } } as any);
+
+    const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    const stripped = stripAnsi(output);
+
+    // Verify different status icons
+    expect(stripped).toContain('○ 351 - Pending Plan'); // pending icon
+    expect(stripped).toContain('⏳ 352 - In Progress Plan'); // in_progress icon
+    expect(stripped).toContain('✓ 353 - Done Plan'); // done icon
+  });
+
+  test('displays discovered from source in full mode', async () => {
+    const plans = [
+      {
+        id: '400',
+        title: 'Source Plan',
+        goal: 'Original plan',
+        status: 'done',
+        tasks: [],
+      },
+      {
+        id: '401',
+        title: 'Discovered Plan',
+        goal: 'Found during research',
+        status: 'pending',
+        discoveredFrom: '400',
+        tasks: [],
+      },
+    ];
+
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    await handleShowCommand('401', {}, { parent: { opts: () => ({}) } } as any);
+
+    const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    const stripped = stripAnsi(output);
+
+    expect(stripped).toContain('Discovered From:');
+    expect(stripped).toContain('400 - Source Plan');
+  });
+
+  test('handles missing inverse relationship references gracefully', async () => {
+    const plan = {
+      id: '500',
+      title: 'Orphan Plan',
+      goal: 'References non-existent source',
+      status: 'pending',
+      discoveredFrom: '999',
+      tasks: [],
+    };
+
+    await fs.writeFile(path.join(tasksDir, '500.yml'), yaml.stringify(plan));
+
+    await handleShowCommand('500', {}, { parent: { opts: () => ({}) } } as any);
+
+    const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    const stripped = stripAnsi(output);
+
+    expect(stripped).toContain('Discovered From:');
+    expect(stripped).toContain('999');
+    expect(stripped).toContain('[Plan not found]');
+  });
+
+  test('does not show inverse relationship sections in short mode', async () => {
+    const plans = [
+      {
+        id: '600',
+        title: 'Parent Plan',
+        goal: 'Has relationships',
+        status: 'done',
+        tasks: [],
+      },
+      {
+        id: '601',
+        title: 'Child Plan',
+        goal: 'Child of 600',
+        status: 'pending',
+        parent: '600',
+        tasks: [],
+      },
+    ];
+
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    await handleShowCommand('600', { short: true }, { parent: { opts: () => ({}) } } as any);
+
+    const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    const stripped = stripAnsi(output);
+
+    expect(stripped).not.toContain('Child Plans:');
+    expect(stripped).not.toContain('Blocks These Plans:');
+    expect(stripped).not.toContain('Plans Discovered From This:');
+  });
+
+  test('displays full details without truncation with --full flag', async () => {
+    const longDetails = Array.from({ length: 30 }, (_, i) => `Line ${i + 1} of details`).join('\n');
+
+    const plan = {
+      id: '700',
+      title: 'Long Details Plan',
+      goal: 'Test details display',
+      status: 'pending',
+      details: longDetails,
+      tasks: [],
+    };
+
+    await fs.writeFile(path.join(tasksDir, '700.yml'), yaml.stringify(plan));
+
+    // Test without --full flag (should truncate)
+    await handleShowCommand('700', {}, { parent: { opts: () => ({}) } } as any);
+    let output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    let stripped = stripAnsi(output);
+
+    expect(stripped).toContain('Line 1 of details');
+    expect(stripped).toContain('Line 20 of details');
+    expect(stripped).toContain('... and 10 more lines');
+    expect(stripped).not.toContain('Line 25 of details');
+
+    // Clear logs and test with --full flag (should show all)
+    logSpy.mockClear();
+    await handleShowCommand('700', { full: true }, { parent: { opts: () => ({}) } } as any);
+    output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    stripped = stripAnsi(output);
+
+    expect(stripped).toContain('Line 1 of details');
+    expect(stripped).toContain('Line 20 of details');
+    expect(stripped).toContain('Line 25 of details');
+    expect(stripped).toContain('Line 30 of details');
+    expect(stripped).not.toContain('... and');
+  });
+});

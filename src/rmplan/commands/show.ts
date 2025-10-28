@@ -19,6 +19,9 @@ import type { AssignmentEntry } from '../assignments/assignments_schema.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import {
   findNextPlan,
+  getBlockedPlans,
+  getChildPlans,
+  getDiscoveredPlans,
   isPlanReady,
   readAllPlans,
   readPlanFile,
@@ -67,6 +70,22 @@ function applyAssignmentStatus(plan: PlanSchema, entry?: AssignmentEntry): PlanS
   }
 
   return plan;
+}
+
+/**
+ * Get status icon and color for a plan based on its status
+ */
+function getStatusIconAndColor(status: string | undefined): {
+  icon: string;
+  color: typeof chalk.green;
+} {
+  if (status === 'done') {
+    return { icon: '✓', color: chalk.green };
+  } else if (status === 'in_progress') {
+    return { icon: '⏳', color: chalk.yellow };
+  } else {
+    return { icon: '○', color: chalk.gray };
+  }
 }
 
 function applyAssignmentsToPlans(
@@ -399,6 +418,60 @@ async function displayPlanInfo(
       }
     }
 
+    // Display inverse relationships
+    if (plan.id) {
+      // Show plans that are blocked by this one
+      const blockedPlans = getBlockedPlans(plan.id, allPlans);
+      if (blockedPlans.length > 0) {
+        log('\n' + chalk.bold('Blocks These Plans:'));
+        log('─'.repeat(60));
+        for (const blocked of blockedPlans) {
+          const { icon, color } = getStatusIconAndColor(blocked.status);
+          log(
+            `  ${icon} ${chalk.cyan(blocked.id)} - ${getCombinedTitleFromSummary(blocked)} ${color(`[${blocked.status || 'pending'}]`)}`
+          );
+        }
+      }
+
+      // Show child plans
+      const children = getChildPlans(plan.id, allPlans);
+      if (children.length > 0) {
+        log('\n' + chalk.bold('Child Plans:'));
+        log('─'.repeat(60));
+        for (const child of children) {
+          const { icon, color } = getStatusIconAndColor(child.status);
+          log(
+            `  ${icon} ${chalk.cyan(child.id)} - ${getCombinedTitleFromSummary(child)} ${color(`[${child.status || 'pending'}]`)}`
+          );
+        }
+      }
+
+      // Show plans discovered from this one
+      const discovered = getDiscoveredPlans(plan.id, allPlans);
+      if (discovered.length > 0) {
+        log('\n' + chalk.bold('Plans Discovered From This:'));
+        log('─'.repeat(60));
+        for (const d of discovered) {
+          const { icon, color } = getStatusIconAndColor(d.status);
+          log(
+            `  ${icon} ${chalk.cyan(d.id)} - ${getCombinedTitleFromSummary(d)} ${color(`[${d.status || 'pending'}]`)}`
+          );
+        }
+      }
+
+      // Show the source if this was discovered from another plan
+      if (plan.discoveredFrom) {
+        const source = allPlans.get(plan.discoveredFrom);
+        log('\n' + chalk.bold('Discovered From:'));
+        log('─'.repeat(60));
+        if (source) {
+          log(`  • ${chalk.cyan(plan.discoveredFrom)} - ${getCombinedTitleFromSummary(source)}`);
+        } else {
+          log(`  • ${chalk.cyan(plan.discoveredFrom)} ${chalk.red('[Plan not found]')}`);
+        }
+      }
+    }
+
     // Display docs
     if (plan.docs && plan.docs.length > 0) {
       log('\n' + chalk.bold('Documentation Paths:'));
@@ -425,10 +498,10 @@ async function displayPlanInfo(
       log('─'.repeat(60));
 
       if (!options.full) {
-        const lines = plan.details.split('\\n');
+        const lines = plan.details.split('\n');
         if (lines.length > 20) {
           const truncatedLines = lines.slice(0, 20);
-          log(truncatedLines.join('\\n'));
+          log(truncatedLines.join('\n'));
           log(chalk.gray(`... and ${lines.length - 20} more lines (use --full to see all)`));
         } else {
           log(plan.details);
@@ -452,7 +525,7 @@ async function displayPlanInfo(
         const sourceLabel = (n.source || '').trim();
         if (options.full) {
           // Show full text, preserving line breaks with indentation
-          const lines = text.split('\\n');
+          const lines = text.split('\n');
           const header = `  • ${chalk.gray(ts)}${sourceLabel.length ? `  [${sourceLabel}]` : ''}`;
           log(header);
           if (text.trim().length > 0) {
@@ -517,7 +590,7 @@ async function displayPlanInfo(
           task.steps.forEach((step, stepIdx) => {
             const stepIcon = step.done ? '✓' : '○';
             const stepColor = step.done ? chalk.green : chalk.rgb(170, 170, 170);
-            const prompt = step.prompt.split('\\n')[0];
+            const prompt = step.prompt.split('\n')[0];
             const truncated = prompt.length > 60 ? prompt.substring(0, 60) + '...' : prompt;
             log(`    ${stepIcon} ${stepColor(`Step ${stepIdx + 1}: ${truncated}`)}`);
           });
