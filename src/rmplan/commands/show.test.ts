@@ -4,9 +4,10 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import stripAnsi from 'strip-ansi';
-import { handleShowCommand } from './show.js';
+import { handleShowCommand, mcpGetPlan } from './show.js';
 import { clearPlanCache } from '../plans.js';
 import { ModuleMocker } from '../../testing.js';
+import type { GenerateModeRegistrationContext } from '../mcp/generate_mode.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -582,5 +583,52 @@ describe('handleShowCommand', () => {
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
     const stripped = stripAnsi(output);
     expect(stripped).toContain('Assigned To: carol');
+  });
+});
+
+describe('mcpGetPlan', () => {
+  test('returns formatted plan context for the given file', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-mcp-get-plan-'));
+
+    try {
+      const planPath = path.join(tempDir, '200.plan.yml');
+      const planData = {
+        id: 200,
+        title: 'MCP integration plan',
+        goal: 'Ensure MCP server shares logic',
+        status: 'pending',
+        priority: 'high',
+        details: 'Detailed info for MCP consumers.',
+        tasks: [
+          {
+            title: 'Refactor MCP server',
+            description: 'Move handlers into command modules',
+            done: false,
+            files: ['src/rmplan/mcp/generate_mode.ts'],
+            docs: [],
+            steps: [],
+          },
+        ],
+      };
+      await fs.writeFile(planPath, yaml.stringify(planData), 'utf8');
+
+      const context: GenerateModeRegistrationContext = {
+        config: {} as any,
+        gitRoot: tempDir,
+      };
+
+      const result = await mcpGetPlan({ plan: planPath }, context);
+
+      expect(result).toContain('Plan file: 200.plan.yml');
+      expect(result).toContain('Plan ID: 200');
+      expect(result).toContain('Status: pending');
+      expect(result).toContain('Priority: high');
+      expect(result).toContain('Title: MCP integration plan');
+      expect(result).toContain('Goal:\nEnsure MCP server shares logic');
+      expect(result).toContain('Details:\nDetailed info for MCP consumers.');
+      expect(result).toContain('### Existing Tasks');
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 });

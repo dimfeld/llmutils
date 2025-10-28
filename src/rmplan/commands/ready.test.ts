@@ -508,8 +508,8 @@ describe('handleReadyCommand', () => {
     expect(plan2Index).toBeLessThan(plan1Index);
   });
 
-  // Test 9: Includes plans without tasks
-  test('includes plans without tasks', async () => {
+  // Test 9: Excludes plans without tasks
+  test('excludes plans without tasks', async () => {
     await createPlan({
       id: 1,
       goal: 'Plan with tasks',
@@ -538,9 +538,9 @@ describe('handleReadyCommand', () => {
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
 
-    expect(logOutput).toContain('Ready Plans (2)');
+    expect(logOutput).toContain('Ready Plans (1)');
     expect(logOutput).toContain('Plan with tasks');
-    expect(logOutput).toContain('Plan without tasks');
+    expect(logOutput).not.toContain('Plan without tasks');
   });
 
   // Test 10: Excludes plans with incomplete dependencies
@@ -913,7 +913,7 @@ describe('handleReadyCommand', () => {
       uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       title: 'Unassigned Plan',
       status: 'pending',
-      tasks: [],
+      tasks: [{ title: 'Task', description: 'Do work', done: false }],
       dependencies: [],
       createdAt: now,
     });
@@ -923,7 +923,7 @@ describe('handleReadyCommand', () => {
       uuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
       title: 'Current Workspace Plan',
       status: 'pending',
-      tasks: [],
+      tasks: [{ title: 'Task', description: 'Do work', done: false }],
       dependencies: [],
       createdAt: now,
     });
@@ -933,7 +933,7 @@ describe('handleReadyCommand', () => {
       uuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
       title: 'Other Workspace Plan',
       status: 'pending',
-      tasks: [],
+      tasks: [{ title: 'Task', description: 'Do work', done: false }],
       dependencies: [],
       createdAt: now,
     });
@@ -978,7 +978,7 @@ describe('handleReadyCommand', () => {
       uuid: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
       title: 'Other Workspace Plan',
       status: 'pending',
-      tasks: [],
+      tasks: [{ title: 'Task', description: 'Do work', done: false }],
       dependencies: [],
       createdAt: now,
     });
@@ -1012,7 +1012,7 @@ describe('handleReadyCommand', () => {
       uuid: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
       title: 'Available Plan',
       status: 'pending',
-      tasks: [],
+      tasks: [{ title: 'Task', description: 'Do work', done: false }],
       dependencies: [],
       createdAt: now,
     });
@@ -1022,7 +1022,7 @@ describe('handleReadyCommand', () => {
       uuid: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
       title: 'Claimed Plan',
       status: 'pending',
-      tasks: [],
+      tasks: [{ title: 'Task', description: 'Do work', done: false }],
       dependencies: [],
       createdAt: now,
     });
@@ -1057,7 +1057,7 @@ describe('handleReadyCommand', () => {
       uuid: '01010101-0101-4010-8010-010101010101',
       title: 'Alice Plan',
       status: 'pending',
-      tasks: [],
+      tasks: [{ title: 'Task', description: 'Do work', done: false }],
       dependencies: [],
       createdAt: now,
     });
@@ -1067,7 +1067,7 @@ describe('handleReadyCommand', () => {
       uuid: '02020202-0202-4020-8020-020202020202',
       title: 'Bob Plan',
       status: 'pending',
-      tasks: [],
+      tasks: [{ title: 'Task', description: 'Do work', done: false }],
       dependencies: [],
       createdAt: now,
     });
@@ -1109,7 +1109,7 @@ describe('handleReadyCommand', () => {
       id: 1,
       title: 'Legacy Alice Plan',
       status: 'pending',
-      tasks: [],
+      tasks: [{ title: 'Task', description: 'Do work', done: false }],
       dependencies: [],
       assignedTo: 'alice',
       createdAt: now,
@@ -1119,7 +1119,7 @@ describe('handleReadyCommand', () => {
       id: 2,
       title: 'Legacy Bob Plan',
       status: 'pending',
-      tasks: [],
+      tasks: [{ title: 'Task', description: 'Do work', done: false }],
       dependencies: [],
       assignedTo: 'bob',
       createdAt: now,
@@ -1146,7 +1146,7 @@ describe('handleReadyCommand', () => {
       uuid: '11111111-1111-4111-8111-111111111111',
       title: 'Case Alice Plan',
       status: 'pending',
-      tasks: [],
+      tasks: [{ title: 'Task', description: 'Do work', done: false }],
       dependencies: [],
       createdAt: now,
     });
@@ -1156,7 +1156,7 @@ describe('handleReadyCommand', () => {
       uuid: '22222222-2222-4222-8222-222222222222',
       title: 'Case Bob Plan',
       status: 'pending',
-      tasks: [],
+      tasks: [{ title: 'Task', description: 'Do work', done: false }],
       dependencies: [],
       createdAt: now,
     });
@@ -1199,7 +1199,7 @@ describe('handleReadyCommand', () => {
       uuid: '03030303-0303-4030-8030-030303030303',
       title: 'Shared Plan',
       status: 'pending',
-      tasks: [],
+      tasks: [{ title: 'Task', description: 'Do work', done: false }],
       dependencies: [],
       createdAt: now,
     });
@@ -1233,7 +1233,7 @@ describe('handleReadyCommand', () => {
       uuid: '04040404-0404-4040-8040-040404040404',
       title: 'In Progress via Assignment',
       status: 'done',
-      tasks: [],
+      tasks: [{ title: 'Task', description: 'Do work', done: false }],
       dependencies: [],
       createdAt: now,
     });
@@ -1269,7 +1269,7 @@ describe('handleReadyCommand', () => {
       goal: 'JSON plan',
       title: 'JSON Plan',
       status: 'pending',
-      tasks: [],
+      tasks: [{ title: 'Task', description: 'Do work', done: false }],
       dependencies: [],
       createdAt: now,
       updatedAt: now,
