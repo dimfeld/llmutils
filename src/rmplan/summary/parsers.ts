@@ -10,11 +10,7 @@ function isSteps(val: unknown): val is Array<{ title: string; body: string }> {
   return (
     Array.isArray(val) &&
     val.every(
-      (s) =>
-        s &&
-        typeof s === 'object' &&
-        typeof (s as any).title === 'string' &&
-        typeof (s as any).body === 'string'
+      (s) => s && typeof s === 'object' && typeof s.title === 'string' && typeof s.body === 'string'
     )
   );
 }

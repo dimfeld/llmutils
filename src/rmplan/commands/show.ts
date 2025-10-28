@@ -105,9 +105,7 @@ function buildAssignmentDisplayInfo(
 
   const users = Array.from(
     new Set(
-      (entry?.users ?? [])
-        .filter((user) => Boolean(user && user.trim()))
-        .map((user) => user!.trim())
+      (entry?.users ?? []).filter((user) => Boolean(user && user.trim())).map((user) => user.trim())
     )
   );
 

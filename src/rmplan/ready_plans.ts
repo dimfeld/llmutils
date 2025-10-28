@@ -52,6 +52,10 @@ export function isReadyPlan<T extends PlanSchema>(
     return false;
   }
 
+  if (!plan.tasks || plan.tasks.length === 0) {
+    return false;
+  }
+
   if (!plan.dependencies || plan.dependencies.length === 0) {
     return true;
   }
