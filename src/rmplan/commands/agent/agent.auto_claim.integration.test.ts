@@ -104,7 +104,6 @@ describe('rmplanAgent auto-claim integration', () => {
       };
     });
 
-    await moduleMocker.mock('../../plans/prepare_phase.js', () => ({
       preparePhase: mock(async () => {}),
     }));
 

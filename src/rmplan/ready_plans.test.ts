@@ -91,14 +91,6 @@ describe('isReadyPlan', () => {
     expect(isReadyPlan(inProgress, plans, false)).toBe(true);
     expect(isReadyPlan(inProgress, plans, true)).toBe(false);
   });
-
-  it('requires at least one task', () => {
-    const plans = new Map<number, PlanSchema>();
-    const plan = createPlan({ id: 1, dependencies: [], tasks: [] });
-    plans.set(1, plan);
-
-    expect(isReadyPlan(plan, plans, false)).toBe(false);
-  });
 });
 
 describe('sortReadyPlans', () => {

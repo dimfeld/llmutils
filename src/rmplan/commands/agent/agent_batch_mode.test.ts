@@ -98,7 +98,6 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
       executePostApplyCommand: executePostApplyCommandSpy,
     }));
 
-    await moduleMocker.mock('../../plans/prepare_phase.js', () => ({
       preparePhase: mock(async () => {}),
     }));
 
