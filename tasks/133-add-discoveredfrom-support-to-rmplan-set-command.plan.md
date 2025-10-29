@@ -10,6 +10,9 @@ temp: false
 dependencies:
   - 129
 parent: 128
+references:
+  "128": f69d418b-aaf1-4c29-88a9-f557baf8f81e
+  "129": 1993c51d-3c29-4f8d-9928-6fa7ebea414c
 createdAt: 2025-10-26T22:41:16.609Z
 updatedAt: 2025-10-27T08:39:04.279Z
 tasks: []

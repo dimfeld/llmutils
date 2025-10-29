@@ -10,6 +10,9 @@ priority: low
 dependencies:
   - 101
 parent: 99
+references:
+  "99": b9ee92f5-e5b6-4035-9125-166c3b438180
+  "101": d013e254-0f7c-47c4-b5e2-ed5fc613be1e
 planGeneratedAt: 2025-08-13T20:34:32.142Z
 promptsGeneratedAt: 2025-08-13T21:48:21.383Z
 createdAt: 2025-08-13T20:28:04.715Z

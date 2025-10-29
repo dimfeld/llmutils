@@ -13,6 +13,10 @@ dependencies:
   - 100
   - 101
   - 102
+references:
+  "100": e1866184-0459-4ba2-b92d-1d37dcaf8655
+  "101": d013e254-0f7c-47c4-b5e2-ed5fc613be1e
+  "102": 275f1b0c-2bd6-4955-8d76-41503fa5a3ef
 createdAt: 2025-08-13T20:28:04.715Z
 updatedAt: 2025-10-27T08:39:04.238Z
 tasks: []

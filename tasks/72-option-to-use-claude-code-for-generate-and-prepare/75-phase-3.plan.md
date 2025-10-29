@@ -12,6 +12,10 @@ dependencies:
   - 73
   - 74
 parent: 72
+references:
+  "72": 5a0d6a82-e30d-43c0-a1f8-6237818f7bf8
+  "73": 2044f990-4d7e-43eb-b03c-d11bfca99d13
+  "74": 5c9e77eb-4206-4493-952b-cf5a7c7f6792
 planGeneratedAt: 2025-07-23T07:56:27.245Z
 promptsGeneratedAt: 2025-07-23T23:24:55.730Z
 createdAt: 2025-07-23T07:52:38.535Z

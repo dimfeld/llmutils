@@ -10,6 +10,9 @@ container: true
 dependencies:
   - 55
   - 56
+references:
+  "55": 7875f7b8-f266-46f3-b0db-c843746899f4
+  "56": 221d894e-8097-4e26-bf9f-0d5caa416d45
 issue:
   - https://github.com/dimfeld/llmutils/issues/94
 docs:

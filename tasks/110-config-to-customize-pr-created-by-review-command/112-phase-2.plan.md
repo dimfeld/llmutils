@@ -10,6 +10,9 @@ priority: high
 dependencies:
   - 111
 parent: 110
+references:
+  "110": af507cc3-18ae-496b-8e46-952d382494f0
+  "111": 1c6a10b5-605b-46d5-a1a9-d76e09960672
 planGeneratedAt: 2025-08-16T00:25:44.550Z
 promptsGeneratedAt: 2025-08-16T06:51:01.707Z
 createdAt: 2025-08-16T00:21:10.187Z

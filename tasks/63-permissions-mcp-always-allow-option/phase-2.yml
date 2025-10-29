@@ -11,6 +11,9 @@ priority: high
 dependencies:
   - 65
 parent: 63
+references:
+  "63": e2f78710-fe6f-4044-98d1-dbd5c5b31755
+  "65": fc5129f7-4745-4ce0-9497-5dbc9132f5d2
 docs:
   - https://github.com/SBoudrias/Inquirer.js/blob/main/packages/core/README.md
 planGeneratedAt: 2025-06-13T06:34:02.120Z

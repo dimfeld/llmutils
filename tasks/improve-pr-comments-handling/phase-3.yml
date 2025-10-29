@@ -10,6 +10,8 @@ status: deferred
 priority: low
 dependencies:
   - 29
+references:
+  "29": 44cd3e99-ac91-49db-ae53-d4cbc0f5b4f9
 issue:
   - https://github.com/dimfeld/llmutils/issues/112
 planGeneratedAt: 2025-06-02T19:27:55.318Z

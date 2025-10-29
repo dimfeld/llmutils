@@ -8,6 +8,8 @@ status: pending
 priority: medium
 temp: false
 parent: 128
+references:
+  "128": f69d418b-aaf1-4c29-88a9-f557baf8f81e
 createdAt: 2025-10-26T22:51:32.843Z
 updatedAt: 2025-10-27T08:39:04.202Z
 tasks: []

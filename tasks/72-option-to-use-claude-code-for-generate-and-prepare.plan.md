@@ -13,6 +13,10 @@ dependencies:
   - 73
   - 74
   - 75
+references:
+  "73": 2044f990-4d7e-43eb-b03c-d11bfca99d13
+  "74": 5c9e77eb-4206-4493-952b-cf5a7c7f6792
+  "75": 4cf7c6ea-f240-4d13-8a54-f8fbdf15f86c
 createdAt: 2025-07-23T07:52:38.535Z
 updatedAt: 2025-10-27T08:39:04.225Z
 tasks: []

@@ -11,6 +11,8 @@ status: done
 priority: high
 dependencies:
   - 28
+references:
+  "28": e4492de2-1eb6-4ca9-9861-358fd7db8281
 issue:
   - https://github.com/dimfeld/llmutils/issues/112
 planGeneratedAt: 2025-06-02T19:27:55.318Z

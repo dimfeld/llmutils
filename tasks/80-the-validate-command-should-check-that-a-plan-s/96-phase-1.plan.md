@@ -11,6 +11,8 @@ status: done
 priority: high
 dependencies: []
 parent: 80
+references:
+  "80": 64642ea2-101e-48ce-a7bb-f69b8f961291
 planGeneratedAt: 2025-08-12T00:46:31.546Z
 promptsGeneratedAt: 2025-08-12T00:49:25.602Z
 createdAt: 2025-07-29T19:17:43.223Z

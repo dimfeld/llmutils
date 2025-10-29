@@ -9,6 +9,8 @@ status: pending
 priority: medium
 temp: false
 parent: 128
+references:
+  "128": f69d418b-aaf1-4c29-88a9-f557baf8f81e
 planGeneratedAt: 2025-10-28T23:31:23.749Z
 promptsGeneratedAt: 2025-10-28T23:31:23.749Z
 createdAt: 2025-10-26T22:41:12.354Z

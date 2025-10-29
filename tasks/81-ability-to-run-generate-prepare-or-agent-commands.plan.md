@@ -16,6 +16,10 @@ dependencies:
   - 82
   - 83
   - 84
+references:
+  "82": c5a4a763-d7cf-4278-9a14-9d75119fdaeb
+  "83": 5b0aeb44-6c70-4574-8290-07ccacb3f2b6
+  "84": e6cf0714-e39c-423f-ae0a-4c4e1a177490
 createdAt: 2025-07-29T19:19:03.441Z
 updatedAt: 2025-10-27T08:39:04.257Z
 tasks: []

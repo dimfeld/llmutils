@@ -11,6 +11,9 @@ priority: medium
 dependencies:
   - 83
 parent: 81
+references:
+  "81": 01a26e46-236d-45c3-a53d-4f70c65fc91a
+  "83": 5b0aeb44-6c70-4574-8290-07ccacb3f2b6
 planGeneratedAt: 2025-07-29T23:21:36.332Z
 promptsGeneratedAt: 2025-07-31T18:25:01.862Z
 createdAt: 2025-07-29T19:19:03.441Z

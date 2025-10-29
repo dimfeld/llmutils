@@ -9,6 +9,8 @@ status: done
 priority: high
 dependencies:
   - 36
+references:
+  "36": db51da84-1e57-44b9-b727-65618e616030
 planGeneratedAt: 2025-06-04T08:24:18.886Z
 promptsGeneratedAt: 2025-06-06T06:16:05.626Z
 createdAt: 2025-06-04T08:24:18.886Z

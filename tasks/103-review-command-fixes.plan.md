@@ -14,6 +14,10 @@ dependencies:
   - 104
   - 105
 parent: 100
+references:
+  "100": e1866184-0459-4ba2-b92d-1d37dcaf8655
+  "104": 176f0191-08ff-4eef-b9b3-f9b0442162e7
+  "105": 5f4ad862-8824-4ffe-ba78-dde034295246
 createdAt: 2025-08-13T23:54:11.755Z
 updatedAt: 2025-10-27T08:39:04.279Z
 tasks: []

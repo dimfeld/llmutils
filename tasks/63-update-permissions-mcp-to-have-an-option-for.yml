@@ -11,6 +11,10 @@ dependencies:
   - 65
   - 66
   - 67
+references:
+  "65": fc5129f7-4745-4ce0-9497-5dbc9132f5d2
+  "66": e682b96c-4701-43f0-852a-d6350cd3ab59
+  "67": 17d4048b-8d5b-4a1c-984b-a01222586f18
 createdAt: 2025-06-11T08:25:17.665Z
 updatedAt: 2025-10-27T08:39:04.272Z
 tasks: []

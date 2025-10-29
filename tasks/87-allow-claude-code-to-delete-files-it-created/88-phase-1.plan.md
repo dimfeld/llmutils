@@ -10,6 +10,8 @@ status: done
 priority: high
 dependencies: []
 parent: 87
+references:
+  "87": f728248e-18ed-4ecb-bd5c-a27185537d2c
 planGeneratedAt: 2025-07-31T07:57:24.242Z
 promptsGeneratedAt: 2025-07-31T08:03:03.643Z
 createdAt: 2025-07-31T07:52:58.950Z

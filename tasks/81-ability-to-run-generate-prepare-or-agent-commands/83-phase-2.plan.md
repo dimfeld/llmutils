@@ -11,6 +11,9 @@ priority: high
 dependencies:
   - 82
 parent: 81
+references:
+  "81": 01a26e46-236d-45c3-a53d-4f70c65fc91a
+  "82": c5a4a763-d7cf-4278-9a14-9d75119fdaeb
 planGeneratedAt: 2025-07-29T23:21:36.332Z
 promptsGeneratedAt: 2025-07-31T07:17:59.983Z
 createdAt: 2025-07-29T19:19:03.441Z

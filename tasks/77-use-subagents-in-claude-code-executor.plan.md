@@ -12,6 +12,9 @@ container: true
 dependencies:
   - 78
   - 79
+references:
+  "78": e7a5e371-9586-4e94-8eca-c4f2e1b2a218
+  "79": 458b10dc-2231-4344-a148-1f8f59b13e3f
 createdAt: 2025-07-29T19:06:12.623Z
 updatedAt: 2025-10-27T08:39:04.230Z
 tasks: []
