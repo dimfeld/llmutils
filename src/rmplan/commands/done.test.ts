@@ -17,6 +17,14 @@ describe('handleDoneCommand', () => {
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
 
+    // Write config file so plan resolution works
+    const configDir = path.join(tempDir, '.rmfilter');
+    await fs.mkdir(configDir, { recursive: true });
+    await fs.writeFile(
+      path.join(configDir, 'rmplan.yml'),
+      `paths:\n  tasks: ${tasksDir}\n`
+    );
+
     // Mock markStepDone
     markStepDoneSpy = mock(async () => ({
       planComplete: false,
@@ -58,7 +66,7 @@ describe('handleDoneCommand', () => {
 
     const command = {
       parent: {
-        opts: () => ({}),
+        opts: () => ({ config: path.join(tempDir, '.rmfilter/rmplan.yml') }),
       },
     };
 
@@ -100,7 +108,7 @@ describe('handleDoneCommand', () => {
 
     const command = {
       parent: {
-        opts: () => ({}),
+        opts: () => ({ config: path.join(tempDir, '.rmfilter/rmplan.yml') }),
       },
     };
 
@@ -117,7 +125,7 @@ describe('handleDoneCommand', () => {
     );
   });
 
-  test('uses plan from options.plan when provided', async () => {
+  test('uses plan ID as first argument', async () => {
     const plan: PlanSchema = {
       id: '1',
       title: 'Test Plan',
@@ -135,17 +143,15 @@ describe('handleDoneCommand', () => {
 
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
 
-    const options = {
-      plan: '1',
-    };
+    const options = {};
 
     const command = {
       parent: {
-        opts: () => ({}),
+        opts: () => ({ config: path.join(tempDir, '.rmfilter/rmplan.yml') }),
       },
     };
 
-    await handleDoneCommand(undefined, options, command);
+    await handleDoneCommand('1', options, command);
 
     expect(markStepDoneSpy).toHaveBeenCalledWith(
       expect.stringContaining('1.yml'),
