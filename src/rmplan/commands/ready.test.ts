@@ -508,8 +508,8 @@ describe('handleReadyCommand', () => {
     expect(plan2Index).toBeLessThan(plan1Index);
   });
 
-  // Test 9: Excludes plans without tasks
-  test('excludes plans without tasks', async () => {
+  // Test 9: Includes plans without tasks
+  test('includes plans without tasks', async () => {
     await createPlan({
       id: 1,
       goal: 'Plan with tasks',
@@ -538,9 +538,9 @@ describe('handleReadyCommand', () => {
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
 
-    expect(logOutput).toContain('Ready Plans (1)');
+    expect(logOutput).toContain('Ready Plans (2)');
     expect(logOutput).toContain('Plan with tasks');
-    expect(logOutput).not.toContain('Plan without tasks');
+    expect(logOutput).toContain('Plan without tasks');
   });
 
   // Test 10: Excludes plans with incomplete dependencies

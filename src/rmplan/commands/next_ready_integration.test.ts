@@ -4,7 +4,6 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { handleGenerateCommand } from './generate.js';
-import { handlePrepareCommand } from './prepare.js';
 import { handleAgentCommand } from './agent/agent.js';
 import { clearPlanCache } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
@@ -243,59 +242,6 @@ describe('--next-ready CLI flag integration tests', () => {
         call.some((arg) => arg && arg.toString().includes('Plan not found: 999'))
       );
       expect(hasNotFoundMessage).toBe(true);
-    });
-  });
-
-  describe('prepare command with --next-ready', () => {
-    test('should find and prepare next ready dependency', async () => {
-      // Mock preparePhase function
-      const preparePhaseSpy = mock(async () => {});
-      await moduleMocker.mock('../plans/prepare_phase.js', () => ({
-        preparePhase: preparePhaseSpy,
-      }));
-
-      // Create test plans
-      await createPlanFile({
-        id: 1,
-        title: 'Parent Plan',
-        filename: '1-parent.yml',
-        status: 'in_progress',
-        dependencies: [2],
-        tasks: [{ title: 'Parent task', description: 'Do parent work' }],
-      });
-
-      await createPlanFile({
-        id: 2,
-        title: 'Ready Dependency',
-        filename: '2-ready.yml',
-        status: 'pending',
-        tasks: [{ title: 'Ready task', description: 'Ready to prepare' }],
-      });
-
-      const options = {
-        nextReady: '1',
-        parent: {
-          opts: () => ({}),
-        },
-      };
-
-      const command = {
-        parent: {
-          opts: () => ({}),
-        },
-      };
-
-      await handlePrepareCommand(undefined, options, command);
-
-      // Should have logged success message
-      expect(logSpy).toHaveBeenCalled();
-
-      // Should have called preparePhase with the ready dependency
-      expect(preparePhaseSpy).toHaveBeenCalledWith(
-        path.join(tasksDir, '2-ready.yml'),
-        expect.any(Object),
-        expect.any(Object)
-      );
     });
   });
 

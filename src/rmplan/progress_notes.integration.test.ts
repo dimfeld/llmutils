@@ -142,11 +142,11 @@ describe('Progress Notes Integration', () => {
       'Agent B: added tests and fixes',
     ]);
 
-    // Now perform a plan update (mark a step done) and verify notes persist
+    // Now perform a plan update (mark task done) and verify notes persist
     const doneCmd = { parent: { opts: () => ({ config: configPath }) } } as any;
-    await handleDoneCommand('202', { steps: '1' }, doneCmd);
+    await handleDoneCommand('202', {}, doneCmd);
     updated = await readPlanFile(planFile);
-    expect(updated.tasks?.[0].steps?.[0].done).toBe(true);
+    expect(updated.tasks?.[0].done).toBe(true);
     expect(updated.progressNotes?.map((n) => n.text)).toEqual([
       'Agent A: implemented core logic',
       'Agent B: added tests and fixes',
