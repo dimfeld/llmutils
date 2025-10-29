@@ -111,12 +111,6 @@ describe('rmplan CLI integration tests (internal handlers)', () => {
           title: 'Task 1',
           description: 'First task',
           done: false,
-          steps: [
-            {
-              prompt: 'Do step 1',
-              done: false,
-            },
-          ],
         },
       ],
     };
@@ -129,12 +123,12 @@ describe('rmplan CLI integration tests (internal handlers)', () => {
     expect(calls).toContain('Task 1');
   });
 
-  test('rmplan done marks steps as complete', async () => {
-    // Create a test plan with steps
+  test('rmplan done marks task as complete', async () => {
+    // Create a test plan with a task
     const plan: PlanSchema = {
       id: 1,
       title: 'Done Test Plan',
-      goal: 'Test marking steps done',
+      goal: 'Test marking task done',
       details: 'Details',
       status: 'in_progress',
       tasks: [
@@ -142,36 +136,23 @@ describe('rmplan CLI integration tests (internal handlers)', () => {
           title: 'Task 1',
           description: 'First task',
           done: false,
-          steps: [
-            {
-              prompt: 'Do step 1',
-              done: false,
-            },
-            {
-              prompt: 'Do step 2',
-              done: false,
-            },
-          ],
         },
       ],
     };
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
 
     const command = { parent: { opts: () => ({ config: configPath }) } } as any;
-    await handleDoneCommand('1', { steps: '1' }, command);
+    await handleDoneCommand('1', {}, command);
 
-    // Verify the step was marked as done
+    // Verify the task was marked as done
     const updatedPlan = await readPlanFile(path.join(tasksDir, '1.yml'));
 
-    // The plan should have tasks with steps
+    // The plan should have tasks
     expect(updatedPlan.tasks).toBeDefined();
     expect(updatedPlan.tasks.length).toBeGreaterThan(0);
-    expect(updatedPlan.tasks[0].steps).toBeDefined();
-    expect(updatedPlan.tasks[0].steps.length).toBeGreaterThan(0);
 
-    // Check step status
-    expect(updatedPlan.tasks[0].steps[0].done).toBe(true);
-    expect(updatedPlan.tasks[0].steps[1].done).toBe(false);
+    // Check task status
+    expect(updatedPlan.tasks[0].done).toBe(true);
   });
 
   test('rmplan list --status filters by status', async () => {

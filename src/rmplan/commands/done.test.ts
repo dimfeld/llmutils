@@ -34,6 +34,11 @@ describe('handleDoneCommand', () => {
     await moduleMocker.mock('../plans/mark_done.js', () => ({
       markStepDone: markStepDoneSpy,
     }));
+
+    // Mock getGitRoot to return tempDir
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
   });
 
   afterEach(async () => {
