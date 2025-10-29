@@ -1406,15 +1406,12 @@ describe('mcp update handlers', () => {
       {
         title: 'Completed Task',
         description: 'Already finished',
-        steps: [
-          { prompt: 'Do thing', done: true },
-          { prompt: 'Verify thing', done: true },
-        ],
+        done: true,
       },
       {
         title: 'Pending Task',
         description: 'Work remaining',
-        steps: [{ prompt: 'Investigate', done: false }],
+        done: false,
       },
     ],
   };
@@ -1517,20 +1514,17 @@ describe('mcp update handlers', () => {
             {
               title: 'Completed Task [TASK-1]',
               description: 'Should stay untouched',
-              steps: [{ prompt: 'Do thing', done: false }],
+              done: false,
             },
             {
               title: 'Pending Task [TASK-2]',
               description: 'Refined work',
-              steps: [
-                { prompt: 'Investigate', done: false },
-                { prompt: 'Implement', done: false },
-              ],
+              done: false,
             },
             {
               title: 'Follow-up Task',
               description: 'New work',
-              steps: [{ prompt: 'Plan', done: false }],
+              done: false,
             },
           ],
         },
@@ -1551,7 +1545,7 @@ describe('mcp update handlers', () => {
       expect(updatedPlan.tasks).toHaveLength(3);
       expect(updatedPlan.tasks[0].title).toBe(basePlan.tasks[0].title);
       expect(updatedPlan.tasks[0].description).toBe(basePlan.tasks[0].description);
-      expect(updatedPlan.tasks[0].steps).toEqual(basePlan.tasks[0].steps);
+      expect(updatedPlan.tasks[0].done).toBe(true);
       expect(updatedPlan.tasks[1].title).toBe('Pending Task');
       expect(updatedPlan.tasks[1].description).toBe('Refined work');
       expect(updatedPlan.tasks[2].title).toBe('Follow-up Task');

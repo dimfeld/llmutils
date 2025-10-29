@@ -143,12 +143,12 @@ describe('handleShowCommand', () => {
         {
           title: 'Task Title 1',
           description: 'Hidden description',
-          steps: [{ prompt: 'Hidden step', done: true }],
+          done: true,
         },
         {
           title: 'Task Title 2',
           description: 'Another hidden description',
-          steps: [],
+          done: false,
         },
       ],
       progressNotes: [
@@ -184,7 +184,6 @@ describe('handleShowCommand', () => {
     expect(stripped).not.toContain('Goal:');
     expect(stripped).not.toContain('Details:');
     expect(stripped).not.toContain('Hidden description');
-    expect(stripped).not.toContain('Hidden step');
   });
 
   test('displays progress notes count and formatted list (default)', async () => {

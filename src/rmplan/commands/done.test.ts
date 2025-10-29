@@ -10,7 +10,7 @@ describe('handleDoneCommand', () => {
   let tempDir: string;
   let tasksDir: string;
   let markStepDoneSpy: ReturnType<typeof mock>;
-  const moduleMocker = new ModuleMocker();
+  const moduleMocker = new ModuleMocker(import.meta);
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(await fs.realpath('/tmp'), 'rmplan-done-test-'));

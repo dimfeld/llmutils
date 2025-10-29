@@ -192,7 +192,7 @@ tasks:
       expect(logOutput.join('\\n')).toContain('Unknown keys: tasks.0.unknownTaskKey');
     });
 
-    test('should detect unknown keys in steps array', async () => {
+    test('should detect removed fields (steps, files) as invalid', async () => {
       const invalidPlan = `goal: Test plan
 details: Test details
 tasks:
@@ -202,7 +202,6 @@ tasks:
     steps:
       - prompt: Step 1
         done: false
-        unknownStepKey: invalid
 `;
 
       await fs.writeFile(path.join(tempDir, 'invalid-step.yml'), invalidPlan);
@@ -233,7 +232,7 @@ tasks:
 
       expect(exitCode).toBe(1); // Should exit with error
       expect(logOutput.join('\\n')).toContain('✗ 1 invalid');
-      expect(logOutput.join('\\n')).toContain('Unknown keys: tasks.0.steps.0.unknownStepKey');
+      expect(logOutput.join('\\n')).toContain('Unknown keys: tasks.0.files, tasks.0.steps');
     });
 
     test('should detect unknown keys in project section', async () => {
@@ -291,7 +290,6 @@ tasks:
     steps:
       - prompt: Step 1
         done: false
-        unknownStep: invalid
 project:
   title: Project title
   goal: Project goal
@@ -330,7 +328,8 @@ project:
       expect(output).toContain('unknownRoot1');
       expect(output).toContain('unknownRoot2');
       expect(output).toContain('tasks.0.unknownTask');
-      expect(output).toContain('tasks.0.steps.0.unknownStep');
+      expect(output).toContain('tasks.0.files');
+      expect(output).toContain('tasks.0.steps');
       expect(output).toContain('project.unknownProject');
     });
   });
