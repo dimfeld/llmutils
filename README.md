@@ -395,6 +395,10 @@ The `research` command generates a research prompt based on a plan's goal and de
 
 The `update` command allows you to modify an existing plan by providing a natural language description of the desired changes. This enables iterative refinement of plans as requirements evolve or new information becomes available. The command uses an LLM to intelligently update the plan's tasks and structure while preserving important metadata.
 
+The `add-task` command appends a new task to an existing plan, keeping task metadata consistent whether you supply details inline, launch the editor, or step through the interactive prompt. It automatically normalizes status, priority, and dependency references so freshly added tasks behave like the rest of the plan.
+
+The `remove-task` command deletes one or more tasks from a plan using the index, title matching, or an interactive picker. It confirms destructive changes, warns when removing a task will shift subsequent numbering, and then persists the update back to disk.
+
 When running `rmplan next` to paste the prompt into a web chat or send to an API, you should include the --rmfilter option to include the relevant files and documentation in the prompt. Omit this option when using the prompt with Cursor, Claude Code, or other agentic editors because they will read the files themselves.
 
 **Note**: When working with plan files, you can use either the file path (e.g., `plan.yml`) or the plan ID (e.g., `123`) for commands like `done`, `next`, `agent`, and `run`. The plan ID is found in the `id` field of the YAML file and rmplan will automatically search for matching plans in the configured tasks directory.
@@ -500,6 +504,18 @@ rmplan update my-feature-123 --editor
 
 # Update with additional context from rmfilter
 rmplan update tasks/feature.yml "Remove the database migration task" -- src/**/*.ts
+
+# Append a task to a plan and open it in your editor for details
+rmplan add-task tasks/feature.yml --edit
+
+# Quickly add a pending task with inline metadata
+rmplan add-task tasks/feature.yml "Write smoke tests" --priority medium
+
+# Remove a task by its title (will confirm on duplicates)
+rmplan remove-task tasks/feature.yml "Write smoke tests"
+
+# Remove tasks using the interactive selector when you are unsure of the index
+rmplan remove-task tasks/feature.yml --interactive
 
 # List all plan files in the tasks directory (shows pending and in_progress by default)
 rmplan list

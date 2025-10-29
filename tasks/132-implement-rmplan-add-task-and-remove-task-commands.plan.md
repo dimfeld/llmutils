@@ -19,7 +19,7 @@ docs: []
 planGeneratedAt: 2025-10-28T23:31:23.749Z
 promptsGeneratedAt: 2025-10-28T23:31:23.749Z
 createdAt: 2025-10-26T22:41:12.354Z
-updatedAt: 2025-10-29T03:14:13.438Z
+updatedAt: 2025-10-29T03:28:12.044Z
 progressNotes:
   - timestamp: 2025-10-29T03:03:00.217Z
     text: Implemented new task_operations utilities providing title search,
@@ -44,6 +44,10 @@ progressNotes:
     text: Ran TypeScript checks and the full Bun test suite to validate new task
       management features; all checks passed successfully.
     source: "implementer: Verification"
+  - timestamp: 2025-10-29T03:18:41.288Z
+    text: Added integration coverage for rmplan add-task and remove-task commands;
+      bun run check and targeted integration suite both pass.
+    source: "tester: integration tests"
 tasks:
   - title: Create shared task utilities module
     done: false
@@ -1785,3 +1789,5 @@ None - all necessary information has been gathered from the codebase exploration
 # Implementation Notes
 
 Implemented shared task operations utilities (findTaskByTitle, selectTaskInteractive, promptForTaskInfo) in src/rmplan/utils/task_operations.ts to centralize task search and interactive prompting logic used by new features. Added rmplan add-task (src/rmplan/commands/add-task.ts) and rmplan remove-task (src/rmplan/commands/remove-task.ts) commands with CLI wiring, non-interactive flag handling, editor support, confirmation prompts, and shared normalization of files/docs metadata. Extended MCP generate_mode (src/rmplan/mcp/generate_mode.ts) with add-plan-task and remove-plan-task tools, including Zod schemas, task creation/removal helpers, and log instrumentation; updated CLI registration in src/rmplan/rmplan.ts. Created comprehensive unit tests for utilities, commands, and MCP helpers across src/rmplan/utils/task_operations.test.ts, src/rmplan/commands/add-task.test.ts, src/rmplan/commands/remove-task.test.ts, and src/rmplan/mcp/generate_mode.test.ts to cover happy paths, interactive flows, edge cases, and error handling. Covered plan tasks: 'Create shared task utilities module', 'Implement add-task command handler', 'Implement remove-task command handler', and associated MCP/tooling test tasks.
+
+Documented the new task management commands by expanding README.md: added narrative coverage in the Additional Commands section explaining how `rmplan add-task` normalizes metadata across editor, inline, and interactive flows, and how `rmplan remove-task` supports index/title/interactive selection with safety prompts. Added cheat sheet entries showing representative `rmplan add-task`/`rmplan remove-task` invocations so operators have copy-paste ready examples. This fulfills plan task 'Update documentation' and keeps the CLI reference in sync with the new utilities and command handlers.
