@@ -854,4 +854,97 @@ describe('rmplan set command', () => {
     expect(updatedChild.parent).toBe(210);
     expect(updatedParent.dependencies).toEqual([211]); // Should still be [211], not [211, 211]
   });
+
+  test('should set discoveredFrom field', async () => {
+    const planPath = await createTestPlan(40);
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        discoveredFrom: 38,
+      },
+      globalOpts
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.discoveredFrom).toBe(38);
+    expect(updatedPlan.updatedAt).toBeDefined();
+  });
+
+  test('should remove discoveredFrom field', async () => {
+    const planPath = await createTestPlan(41);
+
+    // First set discoveredFrom
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        discoveredFrom: 38,
+      },
+      globalOpts
+    );
+
+    let updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.discoveredFrom).toBe(38);
+
+    // Then remove it
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        noDiscoveredFrom: true,
+      },
+      globalOpts
+    );
+
+    updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.discoveredFrom).toBeUndefined();
+  });
+
+  test('should handle removing discoveredFrom when none exists', async () => {
+    const planPath = await createTestPlan(42);
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        noDiscoveredFrom: true,
+      },
+      globalOpts
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.discoveredFrom).toBeUndefined();
+  });
+
+  test('should allow changing discoveredFrom value', async () => {
+    const planPath = await createTestPlan(43);
+
+    // First set discoveredFrom to 38
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        discoveredFrom: 38,
+      },
+      globalOpts
+    );
+
+    let updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.discoveredFrom).toBe(38);
+
+    // Change it to 39
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        discoveredFrom: 39,
+      },
+      globalOpts
+    );
+
+    updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.discoveredFrom).toBe(39);
+  });
 });

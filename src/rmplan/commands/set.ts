@@ -23,6 +23,8 @@ export interface SetOptions {
   noDependsOn?: number[];
   parent?: number;
   noParent?: boolean;
+  discoveredFrom?: number;
+  noDiscoveredFrom?: boolean;
   rmfilter?: string[];
   issue?: string[];
   noIssue?: string[];
@@ -202,6 +204,21 @@ export async function handleSetCommand(
       } else {
         log('No parent to remove');
       }
+    }
+  }
+
+  // Handle discoveredFrom operations (set discoveredFrom or remove discoveredFrom)
+  if (options.discoveredFrom !== undefined) {
+    plan.discoveredFrom = options.discoveredFrom;
+    modified = true;
+    log(`Set discoveredFrom to ${options.discoveredFrom}`);
+  } else if (options.noDiscoveredFrom) {
+    if (plan.discoveredFrom !== undefined) {
+      delete plan.discoveredFrom;
+      modified = true;
+      log('Removed discoveredFrom');
+    } else {
+      log('No discoveredFrom to remove');
     }
   }
 

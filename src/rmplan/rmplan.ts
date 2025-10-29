@@ -636,6 +636,14 @@ program
   .option('--no-d, --no-depends-on <planIds...>', 'Remove plan IDs from dependencies')
   .option('--parent <planId>', 'Set the parent plan ID')
   .option('--no-parent', 'Remove the parent plan association')
+  .option('--discovered-from <planId>', 'Set the plan this was discovered from', (value) => {
+    const n = Number(value);
+    if (Number.isNaN(n) || n <= 0 || !Number.isInteger(n)) {
+      throw new Error(`discovered-from must be a positive integer, saw ${value}`);
+    }
+    return n;
+  })
+  .option('--no-discovered-from', 'Remove the discoveredFrom association')
   .option(
     '--rmfilter <files...>',
     'Set rmfilter files (comma-separated list or multiple arguments)'
