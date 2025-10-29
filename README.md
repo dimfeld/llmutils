@@ -294,13 +294,13 @@ You can find the task plans for this repository under the "tasks" directory.
 - **Plan Creation**: Use the `add` command to quickly create new plan stub files with metadata like dependencies and priority.
 - **Issue Import**: Use the `import` command to convert GitHub or Linear issues into structured plan files, with support for both single-issue and interactive multi-issue import modes, automatic duplicate prevention, and selective content inclusion.
 - **Plan Splitting**: Use the `split` command to intelligently break down large, complex plans into multiple phase-based plans using an LLM.
-- **Research Integration**: Use the `research` command (or the Claude Code generate/prepare flow) to capture findings and append them under the `## Research` section of a plan's `details` markdown for future reference.
+- **Research Integration**: Use the `research` command (or the Claude Code generate flow) to capture findings and append them under the `## Research` section of a plan's `details` markdown for future reference.
 - **YAML Conversion**: Convert the Markdown project plan into a structured YAML format for running tasks.
 - **Task Execution**: Execute the next steps in a plan, generating prompts for LLMs and optionally integrating with `rmfilter` for context.
 - **Progress Tracking**: Mark tasks and steps as done, with support for committing changes to git or jj.
 - **Progress Notes**: Add timestamped progress notes to plans during execution; notes appear in `rmplan show`, are counted in `rmplan list`, and are included in agent prompts (timestamps omitted).
 - **Plan Inspection**: Display detailed information about plans including dependencies with resolution, tasks with completion status, and metadata.
-- **Smart Plan Selection**: Find the next ready plan (status pending with all dependencies complete) using `--next` flag on `show`, `agent`, `run`, and `prepare` commands.
+- **Smart Plan Selection**: Find the next ready plan (status pending with all dependencies complete) using `--next` flag on `show`, `agent`, and `run` commands.
 - **Dependency-Based Execution**: Use `--next-ready <parentPlan>` to automatically find and execute the next actionable dependency in complex multi-phase projects, with intelligent prioritization and comprehensive error feedback.
 - **Flexible Input**: Accept plans from files, editor input, or clipboard, and output results to files or stdout.
 - **Workspace Auto-Creation**: Automatically create isolated workspaces (Git clones or worktrees) for each task, ensuring clean execution environments.
@@ -337,13 +337,13 @@ Alternatively, you can use the `agent` command (or its alias `run`) to automate 
 
 ### Using with Claude Code
 
-The `generate` and `prepare` commands support a `--claude` flag that leverages Anthropic's Claude Code model for enhanced planning and generation capabilities. This feature now uses a three-step invocation process that preserves Claude's research notes:
+The `generate` command supports a `--claude` flag that leverages Anthropic's Claude Code model for enhanced planning and generation capabilities. This feature uses a three-step invocation process that preserves Claude's research notes:
 
 1. **Planning Phase**: Claude Code analyzes the task and drafts an execution approach.
 2. **Research Capture**: The same session summarizes key findings, which rmplan appends to the plan file under a `## Research` heading in the `details` field.
 3. **Generation Phase**: Claude Code produces the final structured plan output using the accumulated context.
 
-`rmplan generate --claude` always runs all three steps. `rmplan prepare --claude` runs the research capture phase when the plan's `generatedBy` metadata is `oneshot`, and otherwise keeps the traditional two-step flow. If the research capture step fails for any reason, the orchestrator falls back to the planning → generation flow so existing automation keeps working.
+If the research capture step fails for any reason, the orchestrator falls back to the planning → generation flow so existing automation keeps working.
 
 **Requirements**: The `claude-code` CLI tool must be installed and available in your system's PATH.
 
@@ -355,9 +355,6 @@ rmplan generate --plan tasks/feature.md --claude -- src/**/*.ts
 
 # Generate from a GitHub issue using Claude Code
 rmplan generate --issue 42 --claude -- src/api/**/*.ts
-
-# Prepare detailed steps for a phase using Claude Code
-rmplan prepare tasks/phase-1.yml --claude
 
 # You can combine with other options as usual
 rmplan generate --plan-editor --claude --commit -- src/**/*.ts
@@ -390,8 +387,6 @@ When the research capture step runs, open the plan file and scroll to the `## Re
 
 ### Additional Commands
 
-The `prepare` command is used to generate detailed steps and prompts for a phase plan that doesn't already have them. This is useful when you have a high-level plan outline but need to expand it with specific implementation steps.
-
 The `add` command allows you to quickly create new plan stub files with just a title. These stubs can then be populated with detailed tasks using the `generate` command. This is particularly useful when you want to quickly capture ideas for future work or create a set of related plans with proper dependencies.
 
 The `split` command helps manage complexity by using an LLM to intelligently break down a large, detailed plan into multiple smaller, phase-based plans. Each phase becomes a separate plan file with proper dependencies, allowing you to tackle complex projects incrementally while maintaining the full context and details from the original plan.
@@ -402,7 +397,7 @@ The `update` command allows you to modify an existing plan by providing a natura
 
 When running `rmplan next` to paste the prompt into a web chat or send to an API, you should include the --rmfilter option to include the relevant files and documentation in the prompt. Omit this option when using the prompt with Cursor, Claude Code, or other agentic editors because they will read the files themselves.
 
-**Note**: When working with plan files, you can use either the file path (e.g., `plan.yml`) or the plan ID (e.g., `123`) for commands like `done`, `next`, `agent`, `run`, and `prepare`. The plan ID is found in the `id` field of the YAML file and rmplan will automatically search for matching plans in the configured tasks directory.
+**Note**: When working with plan files, you can use either the file path (e.g., `plan.yml`) or the plan ID (e.g., `123`) for commands like `done`, `next`, `agent`, and `run`. The plan ID is found in the `id` field of the YAML file and rmplan will automatically search for matching plans in the configured tasks directory.
 
 Run `rmplan` with different commands to manage project plans:
 
@@ -455,20 +450,8 @@ rmplan next my-feature-123 --rmfilter
 # Mark the next step as done and commit changes
 rmplan done plan.yml --commit
 
-# Mark the next 2 steps as done and commit changes
-rmplan done plan.yml --commit --steps 2
-
 # You can also use plan IDs instead of file paths
 rmplan done my-feature-123 --commit
-
-# Generate detailed steps and prompts for a phase that doesn't have them yet
-rmplan prepare plan.yml
-
-# Prepare the next ready plan
-rmplan prepare --next
-
-# Force preparation even if dependencies aren't complete
-rmplan prepare plan.yml --force
 
 # Generate a research prompt based on a plan's goals and details
 rmplan research plan.yml
@@ -884,9 +867,6 @@ rmplan show --next-ready 100
 rmplan generate --next-ready 100 -- src/database/**/*.ts
 # Operates on plan 101 instead of 100
 
-# Prepare detailed steps for the ready dependency
-rmplan prepare --next-ready 100 --direct
-
 # Execute the next ready dependency automatically
 rmplan agent --next-ready 100
 # or using the run alias
@@ -904,9 +884,6 @@ rmplan agent --next-ready 100 --workspace feature-work --steps 2
 
 # Use Claude Code executor for the ready dependency
 rmplan run --next-ready 100 --executor claude-code --dry-run
-
-# Prepare with custom model
-rmplan prepare --next-ready parent-plan --claude --direct
 ```
 
 #### Continuous Workflow
@@ -949,7 +926,7 @@ rmplan show --next-ready 100
 # Dependencies need preparation
 rmplan show --next-ready 100
 # → 2 dependencies have no actionable tasks
-# → Try: Run 'rmplan prepare' to add detailed steps
+# → Try: Use 'rmplan generate' or 'rmplan update' to add detailed tasks
 
 # Dependencies are blocked
 rmplan show --next-ready 100
@@ -978,18 +955,6 @@ priority: high    # Critical path items
 priority: medium  # Normal implementation
 priority: low     # Nice-to-have features
 priority: maybe   # Optional (excluded from --next-ready)
-```
-
-**3. Prepared Tasks**
-
-```bash
-# Ensure dependencies have actionable tasks
-rmplan prepare 101  # Database schema
-rmplan prepare 102  # API endpoints
-rmplan prepare 103  # Frontend components
-
-# Now --next-ready can execute them automatically
-rmplan agent --next-ready 100
 ```
 
 ### Debugging
@@ -1858,13 +1823,13 @@ rmplan extract --output tasks/0002-refactor-it.yml
 # Execute the next step with repository context
 rmplan next tasks/0002-refactor-it-plan.yml --rmfilter -- src/api/**/*.ts --grep fetch
 
-# Mark multiple steps as done and commit
-rmplan done tasks/0002-refactor-it-plan.yml --steps 2 --commit
+# Mark a task as done and commit
+rmplan done tasks/0002-refactor-it-plan.yml --commit
 
-# Or Automatically execute all the steps in a plan
+# Or Automatically execute all tasks in a plan
 rmplan agent tasks/0002-refactor-it-plan.yml
 
-# Automatically execute steps using a custom configuration file
+# Automatically execute tasks using a custom configuration file
 rmplan agent tasks/0003-new-feature.yml --config path/to/my-rmplan-config.yml
 
 # Execute the next ready dependency of a parent plan automatically

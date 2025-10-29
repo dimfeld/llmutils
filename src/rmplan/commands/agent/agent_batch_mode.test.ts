@@ -98,10 +98,6 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
       executePostApplyCommand: executePostApplyCommandSpy,
     }));
 
-    await moduleMocker.mock('../../plans/prepare_phase.js', () => ({
-      preparePhase: mock(async () => {}),
-    }));
-
     await moduleMocker.mock('../../plans.js', () => ({
       resolvePlanFile: resolvePlanFileSpy,
       readPlanFile: mock(async (filePath: string) => {
@@ -347,88 +343,6 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
       expect(callArgs.task.description).not.toContain('Task 2: Task 2'); // This one is done
     });
 
-    test('batch prompt includes task steps when available', async () => {
-      const mockGetAllIncompleteTasks = mock(() => [
-        {
-          taskIndex: 0,
-          task: {
-            title: 'Complex Task',
-            description: 'Task with steps',
-            steps: [
-              { prompt: 'First step', done: true },
-              { prompt: 'Second step', done: false },
-              { prompt: 'Third step', done: false },
-            ],
-          },
-        },
-      ]);
-
-      await moduleMocker.mock('../../plans/find_next.js', () => ({
-        getAllIncompleteTasks: mockGetAllIncompleteTasks,
-        findNextActionableItem: mock(() => null),
-      }));
-
-      await createPlanFile({
-        tasks: [
-          {
-            title: 'Complex Task',
-            description: 'Task with steps',
-            steps: [
-              { prompt: 'First step', done: true },
-              { prompt: 'Second step', done: false },
-              { prompt: 'Third step', done: false },
-            ],
-          },
-        ],
-      });
-
-      const options = { log: false, dryRun: true, nonInteractive: true } as any;
-      const globalCliOptions = {};
-
-      await rmplanAgent(planFile, options, globalCliOptions);
-
-      const callArgs = buildExecutionPromptWithoutStepsSpy.mock.calls[0][0];
-      expect(callArgs.task.description).toContain('Steps:');
-      expect(callArgs.task.description).toContain('[DONE] First step');
-      expect(callArgs.task.description).toContain('[TODO] Second step');
-      expect(callArgs.task.description).toContain('[TODO] Third step');
-    });
-
-    test('batch prompt includes task files when specified', async () => {
-      const mockGetAllIncompleteTasks = mock(() => [
-        {
-          taskIndex: 0,
-          task: {
-            title: 'File Task',
-            description: 'Task with files',
-            files: ['src/file1.ts', 'src/file2.ts'],
-          },
-        },
-      ]);
-
-      await moduleMocker.mock('../../plans/find_next.js', () => ({
-        getAllIncompleteTasks: mockGetAllIncompleteTasks,
-        findNextActionableItem: mock(() => null),
-      }));
-
-      await createPlanFile({
-        tasks: [
-          {
-            title: 'File Task',
-            description: 'Task with files',
-            files: ['src/file1.ts', 'src/file2.ts'],
-          },
-        ],
-      });
-
-      const options = { log: false, dryRun: true, nonInteractive: true } as any;
-      const globalCliOptions = {};
-
-      await rmplanAgent(planFile, options, globalCliOptions);
-
-      const callArgs = buildExecutionPromptWithoutStepsSpy.mock.calls[0][0];
-      expect(callArgs.task.description).toContain('Files: src/file1.ts, src/file2.ts');
-    });
   });
 
   describe('plan status management', () => {

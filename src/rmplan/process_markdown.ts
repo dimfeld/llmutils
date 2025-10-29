@@ -73,24 +73,6 @@ export function convertYamlToMarkdown(
       // Task description
       taskSections.push(`**Description:** ${task.description}`);
 
-      // Files (if present)
-      if (task.files && task.files.length > 0) {
-        taskSections.push(`**Files:**\n${task.files.map((file) => `- ${file}`).join('\n')}`);
-      }
-
-      // Steps (if present)
-      if (task.steps && task.steps.length > 0) {
-        taskSections.push('**Steps:** *(All completed)*');
-
-        task.steps.forEach((step, stepIndex) => {
-          // Escape any triple backticks in the prompt by adding a zero-width space
-          const escapedPrompt = step.prompt.replace(/```/g, '\u200b```');
-          taskSections.push(
-            `${stepIndex + 1}.  **Prompt:** ✓\n    \`\`\`\n    ${escapedPrompt.split('\n').join('\n    ')}\n    \`\`\``
-          );
-        });
-      }
-
       sections.push(taskSections.join('\n'));
       sections.push('---');
     }
@@ -113,25 +95,6 @@ export function convertYamlToMarkdown(
 
       // Task description
       taskSections.push(`**Description:** ${task.description}`);
-
-      // Files (if present)
-      if (task.files && task.files.length > 0) {
-        taskSections.push(`**Files:**\n${task.files.map((file) => `- ${file}`).join('\n')}`);
-      }
-
-      // Steps (if present)
-      if (task.steps && task.steps.length > 0) {
-        taskSections.push('**Steps:**');
-
-        task.steps.forEach((step, stepIndex) => {
-          // Escape any triple backticks in the prompt by adding a zero-width space
-          const escapedPrompt = step.prompt.replace(/```/g, '\u200b```');
-          const doneMarker = step.done ? ' ✓' : '';
-          taskSections.push(
-            `${stepIndex + 1}.  **Prompt:**${doneMarker}\n    \`\`\`\n    ${escapedPrompt.split('\n').join('\n    ')}\n    \`\`\``
-          );
-        });
-      }
 
       sections.push(taskSections.join('\n'));
       sections.push('---');
@@ -377,12 +340,8 @@ export async function extractMarkdownToYaml(
       validatedPlan.planGeneratedAt =
         validatedPlan.planGeneratedAt || originalPlan.planGeneratedAt || new Date().toISOString();
 
-      // Update promptsGeneratedAt if prompts were regenerated
-      if (validatedPlan.tasks[0]?.steps?.[0]?.prompt) {
-        validatedPlan.promptsGeneratedAt = new Date().toISOString();
-      } else {
-        validatedPlan.promptsGeneratedAt = originalPlan.promptsGeneratedAt;
-      }
+      // Preserve promptsGeneratedAt from original
+      validatedPlan.promptsGeneratedAt = originalPlan.promptsGeneratedAt;
 
       // Set status from original if not set
       if (!validatedPlan.status) {
@@ -408,9 +367,6 @@ export async function extractMarkdownToYaml(
       validatedPlan.updatedAt = now;
       validatedPlan.planGeneratedAt = now;
 
-      if (validatedPlan.tasks[0]?.steps?.[0]?.prompt) {
-        validatedPlan.promptsGeneratedAt = now;
-      }
 
       // Set defaults for status if not already set
       if (!validatedPlan.status) {
@@ -663,11 +619,8 @@ export async function saveMultiPhaseYaml(
     combinedPlan.planGeneratedAt =
       combinedPlan.planGeneratedAt || original.planGeneratedAt || new Date().toISOString();
 
-    if (combinedPlan.tasks[0]?.steps?.[0]?.prompt) {
-      combinedPlan.promptsGeneratedAt = new Date().toISOString();
-    } else {
-      combinedPlan.promptsGeneratedAt = original.promptsGeneratedAt;
-    }
+    // Preserve promptsGeneratedAt from original
+    combinedPlan.promptsGeneratedAt = original.promptsGeneratedAt;
 
     if (!combinedPlan.status) {
       combinedPlan.status = original.status || 'pending';
@@ -680,9 +633,6 @@ export async function saveMultiPhaseYaml(
     combinedPlan.createdAt = options.stubPlan?.data?.createdAt || now;
     combinedPlan.updatedAt = now;
     combinedPlan.planGeneratedAt = now;
-    if (combinedPlan.tasks[0]?.steps?.[0]?.prompt) {
-      combinedPlan.promptsGeneratedAt = now;
-    }
     if (!combinedPlan.status) {
       combinedPlan.status = 'pending';
     }

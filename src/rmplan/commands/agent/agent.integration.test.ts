@@ -277,13 +277,6 @@ describe('rmplan agent integration (execution summaries)', () => {
       }),
     }));
 
-    // Mock preparePhase used when simple tasks are present in non-interactive mode
-    await moduleMocker.mock('../../plans/prepare_phase.js', () => ({
-      preparePhase: mock(async () => {
-        // No-op in tests; in real runs this generates steps/context
-      }),
-    }));
-
     // Executor returns any string; parser handles it generically for Claude name too
     await moduleMocker.mock('../../executors/index.js', () => ({
       buildExecutorAndLog: mock((_name: string, _opts: any, _config: any) => ({

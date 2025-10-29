@@ -45,17 +45,7 @@ export function formatExistingTasks(
 
   const taskSummaries = plan.tasks.map((task, index) => {
     const title = task.title || `Task ${index + 1}`;
-    const stepCount = task.steps?.length ?? 0;
-    const fileCount = task.files?.length ?? 0;
-    const extra: string[] = [];
-    if (stepCount > 0) {
-      extra.push(`${stepCount} step${stepCount === 1 ? '' : 's'}`);
-    }
-    if (fileCount > 0) {
-      extra.push(`${fileCount} file${fileCount === 1 ? '' : 's'}`);
-    }
-    const suffix = extra.length ? ` (${extra.join(', ')})` : '';
-    return `- ${title}${suffix}`;
+    return `- ${title}`;
   });
 
   return `### Existing Tasks\n${taskSummaries.join('\n')}`;

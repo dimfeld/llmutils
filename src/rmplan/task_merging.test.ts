@@ -53,15 +53,12 @@ describe('task merging logic', () => {
       {
         title: 'Completed Task',
         description: 'This is done',
-        steps: [
-          { prompt: 'Step 1', done: true },
-          { prompt: 'Step 2', done: true },
-        ],
+        done: true,
       },
       {
         title: 'Pending Task',
         description: 'This is not done',
-        steps: [{ prompt: 'Step 1', done: false }],
+        done: false,
       },
     ];
 
@@ -69,15 +66,12 @@ describe('task merging logic', () => {
       {
         title: 'Completed Task [TASK-1]',
         description: 'This should be ignored',
-        steps: [{ prompt: 'Modified step', done: false }],
+        done: false,
       },
       {
         title: 'Updated Pending Task [TASK-2]',
         description: 'Updated description',
-        steps: [
-          { prompt: 'Updated step 1', done: false },
-          { prompt: 'New step 2', done: false },
-        ],
+        done: false,
       },
     ];
 
@@ -89,20 +83,14 @@ describe('task merging logic', () => {
     expect(result[0]).toEqual({
       title: 'Completed Task',
       description: 'This is done',
-      steps: [
-        { prompt: 'Step 1', done: true },
-        { prompt: 'Step 2', done: true },
-      ],
+      done: true,
     });
 
     // Pending task should be updated
     expect(result[1]).toEqual({
       title: 'Updated Pending Task',
       description: 'Updated description',
-      steps: [
-        { prompt: 'Updated step 1', done: false },
-        { prompt: 'New step 2', done: false },
-      ],
+      done: false,
     });
   });
 
@@ -111,7 +99,7 @@ describe('task merging logic', () => {
       {
         title: 'Existing Task',
         description: 'Existing',
-        steps: [{ prompt: 'Step', done: false }],
+        done: false,
       },
     ];
 
@@ -119,12 +107,12 @@ describe('task merging logic', () => {
       {
         title: 'Existing Task [TASK-1]',
         description: 'Updated existing',
-        steps: [{ prompt: 'Updated step', done: false }],
+        done: false,
       },
       {
         title: 'New Task Without ID',
         description: 'Brand new task',
-        steps: [{ prompt: 'New step', done: false }],
+        done: false,
       },
     ];
 
@@ -142,17 +130,17 @@ describe('task merging logic', () => {
       {
         title: 'Task 1',
         description: 'Keep this',
-        steps: [{ prompt: 'Step', done: true }], // Completed
+        done: true, // Completed
       },
       {
         title: 'Task 2',
         description: 'Remove this',
-        steps: [{ prompt: 'Step', done: false }], // Pending
+        done: false, // Pending
       },
       {
         title: 'Task 3',
         description: 'Keep this too',
-        steps: [{ prompt: 'Step', done: false }], // Pending
+        done: false, // Pending
       },
     ];
 
@@ -160,13 +148,13 @@ describe('task merging logic', () => {
       {
         title: 'Task 1 [TASK-1]',
         description: 'Should be ignored',
-        steps: [{ prompt: 'Modified', done: false }],
+        done: false,
       },
       // Task 2 is missing - it was removed
       {
         title: 'Task 3 [TASK-3]',
         description: 'Updated task 3',
-        steps: [{ prompt: 'Updated step', done: false }],
+        done: false,
       },
     ];
 
@@ -178,14 +166,14 @@ describe('task merging logic', () => {
     expect(result[0]).toEqual({
       title: 'Task 1',
       description: 'Keep this',
-      steps: [{ prompt: 'Step', done: true }],
+      done: true,
     });
 
     // Task 3 updated (now at index 1)
     expect(result[1]).toEqual({
       title: 'Task 3',
       description: 'Updated task 3',
-      steps: [{ prompt: 'Updated step', done: false }],
+      done: false,
     });
   });
 
@@ -194,17 +182,17 @@ describe('task merging logic', () => {
       {
         title: 'Task 1',
         description: 'First',
-        steps: [{ prompt: 'Step', done: false }],
+        done: false,
       },
       {
         title: 'Task 2',
         description: 'Second',
-        steps: [{ prompt: 'Step', done: true }], // Completed
+        done: true, // Completed
       },
       {
         title: 'Task 3',
         description: 'Third',
-        steps: [{ prompt: 'Step', done: false }],
+        done: false,
       },
     ];
 
@@ -212,12 +200,12 @@ describe('task merging logic', () => {
       {
         title: 'New Task 3 [TASK-3]',
         description: 'Replaced third',
-        steps: [{ prompt: 'New step', done: false }],
+        done: false,
       },
       {
         title: 'New Task at End',
         description: 'Added to end',
-        steps: [{ prompt: 'New', done: false }],
+        done: false,
       },
     ];
 

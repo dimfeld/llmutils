@@ -38,20 +38,20 @@ async function removePlanAssignment(plan: PlanSchema, baseDir?: string): Promise
 }
 
 /**
- * Marks one or more steps as completed in a plan file and updates plan metadata.
+ * Marks a task as completed in a plan file and updates plan metadata.
  * This function integrates with the refactored common utilities for Git operations
  * and uses src/common/process.ts for commit operations when requested.
  *
  * The function handles:
- * - Updating step completion status in the plan file
+ * - Updating task completion status in the plan file
  * - Refreshing plan metadata including timestamps and changed files
  * - Determining if the entire plan is now complete
  * - Optionally committing changes using the appropriate VCS (Git/Jujutsu)
  * - Providing formatted output for user feedback
  *
  * @param planFile - Path or ID of the plan file to update
- * @param options - Configuration for which steps to mark and whether to commit
- * @param currentTask - Optional specific task/step indices to mark (overrides automatic detection)
+ * @param options - Configuration for whether to commit
+ * @param currentTask - Optional specific task index to mark (overrides automatic detection)
  * @param baseDir - Optional base directory for Git operations
  * @param config - Optional RmplanConfig for path configuration
  * @returns Promise resolving to completion status and user-facing message
@@ -59,8 +59,8 @@ async function removePlanAssignment(plan: PlanSchema, baseDir?: string): Promise
  */
 export async function markStepDone(
   planFile: string,
-  options: { task?: boolean; steps?: number; commit?: boolean },
-  currentTask?: { taskIndex: number; stepIndex: number },
+  options: { commit?: boolean },
+  currentTask?: { taskIndex: number },
   baseDir?: string,
   config?: RmplanConfig
 ): Promise<{ planComplete: boolean; message: string }> {
@@ -70,21 +70,14 @@ export async function markStepDone(
   // 2. Find the starting point
   let pending: PendingTaskResult | null = null;
   if (currentTask) {
-    const { taskIndex, stepIndex } = currentTask;
-    if (
-      taskIndex >= 0 &&
-      taskIndex < planData.tasks.length &&
-      stepIndex >= 0 &&
-      stepIndex < planData.tasks[taskIndex].steps.length
-    ) {
+    const { taskIndex } = currentTask;
+    if (taskIndex >= 0 && taskIndex < planData.tasks.length) {
       pending = {
         taskIndex,
-        stepIndex,
         task: planData.tasks[taskIndex],
-        step: planData.tasks[taskIndex].steps[stepIndex],
       };
     } else {
-      throw new Error('Invalid currentTask indices');
+      throw new Error('Invalid currentTask index');
     }
   } else {
     pending = findPendingTask(planData);
@@ -92,59 +85,17 @@ export async function markStepDone(
 
   // 3. Handle no pending tasks
   if (!pending) {
-    return { planComplete: true, message: 'All steps in the plan are already done.' };
+    return { planComplete: true, message: 'All tasks in the plan are already done.' };
   }
 
   let output: string[] = [];
-  // 4. Mark steps/tasks as done
+  // 4. Mark task as done
   const { task } = pending;
-  if (options.task) {
-    const pendingSteps = task.steps.filter((step) => !step.done);
-    for (const step of pendingSteps) {
-      step.done = true;
-    }
-    log('Marked all steps in task done\n');
-    output.push(task.title);
-
-    for (let i = 0; i < pendingSteps.length; i++) {
-      const step = pendingSteps[i];
-      output.push(`\n## Step ${i + 1}\n\n${step.prompt}`);
-    }
-  } else {
-    const numSteps = options.steps || 1;
-    let nowDoneSteps = task.steps.slice(pending.stepIndex, pending.stepIndex + numSteps);
-    for (const step of nowDoneSteps) {
-      step.done = true;
-    }
-
-    log(
-      chalk.bold(
-        `Marked ${nowDoneSteps.length} ${nowDoneSteps.length === 1 ? 'step' : 'steps'} done\n`
-      )
-    );
-
-    const allSteps = pending.stepIndex === 0 && pending.stepIndex + numSteps === task.steps.length;
-    if (allSteps) {
-      output.push(task.title);
-    } else if (nowDoneSteps.length > 1) {
-      output.push(
-        `${task.title} steps ${pending.stepIndex + 1}-${pending.stepIndex + nowDoneSteps.length}`
-      );
-    } else if (task.steps.length > 1) {
-      output.push(`${task.title} step ${pending.stepIndex + 1}`);
-    } else {
-      output.push(`${task.title}`);
-    }
-
-    if (nowDoneSteps.length > 1) {
-      for (const step of nowDoneSteps) {
-        output.push(
-          boldMarkdownHeaders(`\n## Step ${task.steps.indexOf(step) + 1}\n\n${step.prompt}`)
-        );
-      }
-    } else {
-      output.push(`\n${task.steps[pending.stepIndex].prompt}`);
-    }
+  task.done = true;
+  log(chalk.bold(`Marked task done\n`));
+  output.push(task.title);
+  if (task.description) {
+    output.push(`\n${task.description}`);
   }
 
   // 5. Update metadata fields
@@ -360,7 +311,7 @@ export async function markTaskDone(
  *
  * The function handles:
  * - Finding tasks by title (exact match) or index (one-based)
- * - Updating task and all its steps' completion status
+ * - Updating task completion status
  * - Refreshing plan metadata including timestamps and changed files
  * - Determining if the entire plan is now complete
  * - Optionally committing changes using the appropriate VCS (Git/Jujutsu)
@@ -410,21 +361,15 @@ export async function setTaskDone(
     return { planComplete: false, message: `Task "${task.title}" is already marked as done.` };
   }
 
-  // 4. Mark task and all its steps as done
+  // 4. Mark task as done
   task.done = true;
-  for (const step of task.steps) {
-    step.done = true;
-  }
-  log(chalk.bold(`Marked task "${task.title}" and all its steps as done\n`));
+  log(chalk.bold(`Marked task "${task.title}" as done\n`));
 
   // 5. Build output message
   let output: string[] = [];
   output.push(`${task.title}`);
   if (task.description) {
     output.push(`\n${task.description}`);
-  }
-  if (task.steps.length > 0) {
-    output.push(`\n(${task.steps.length} steps marked as done)`);
   }
 
   // 6. Update metadata fields

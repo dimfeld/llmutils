@@ -25,15 +25,10 @@ details: Add login and signup functionality
 tasks:
   - title: Create login form
     description: Build the user interface for login
-    files:
-      - src/components/LoginForm.tsx
-    steps:
-      - prompt: Design the login form UI
-        done: false
+    done: false
   - title: Implement auth service
     description: Create authentication service
-    files: []
-    steps: []
+    done: false
 ---
 
 Additional plan details in markdown format.
@@ -76,8 +71,7 @@ details: This is a test plan
 tasks:
   - title: Task 1
     description: First task
-    files: []
-    steps: []
+    done: false
 `;
 
       await fs.writeFile(path.join(tempDir, 'valid.yml'), validPlan);
@@ -157,8 +151,8 @@ tasks:
   - title: Task 1
     description: First task
     unknownTaskKey: invalid
-    files: []
-    steps: []
+
+
 `;
 
       await fs.writeFile(path.join(tempDir, 'invalid-task.yml'), invalidPlan);
@@ -192,7 +186,7 @@ tasks:
       expect(logOutput.join('\\n')).toContain('Unknown keys: tasks.0.unknownTaskKey');
     });
 
-    test('should detect unknown keys in steps array', async () => {
+    test('should detect removed fields (steps, files) as invalid', async () => {
       const invalidPlan = `goal: Test plan
 details: Test details
 tasks:
@@ -202,7 +196,6 @@ tasks:
     steps:
       - prompt: Step 1
         done: false
-        unknownStepKey: invalid
 `;
 
       await fs.writeFile(path.join(tempDir, 'invalid-step.yml'), invalidPlan);
@@ -233,7 +226,7 @@ tasks:
 
       expect(exitCode).toBe(1); // Should exit with error
       expect(logOutput.join('\\n')).toContain('✗ 1 invalid');
-      expect(logOutput.join('\\n')).toContain('Unknown keys: tasks.0.steps.0.unknownStepKey');
+      expect(logOutput.join('\\n')).toContain('Unknown keys: tasks.0.files, tasks.0.steps');
     });
 
     test('should detect unknown keys in project section', async () => {
@@ -291,7 +284,6 @@ tasks:
     steps:
       - prompt: Step 1
         done: false
-        unknownStep: invalid
 project:
   title: Project title
   goal: Project goal
@@ -330,7 +322,8 @@ project:
       expect(output).toContain('unknownRoot1');
       expect(output).toContain('unknownRoot2');
       expect(output).toContain('tasks.0.unknownTask');
-      expect(output).toContain('tasks.0.steps.0.unknownStep');
+      expect(output).toContain('tasks.0.files');
+      expect(output).toContain('tasks.0.steps');
       expect(output).toContain('project.unknownProject');
     });
   });
@@ -338,16 +331,12 @@ project:
   describe('frontmatter format validation', () => {
     test('should validate frontmatter format files correctly', async () => {
       const frontmatterPlan = `---
-goal: Implement user authentication  
+goal: Implement user authentication
 details: Add login and signup functionality
 tasks:
   - title: Create login form
     description: Build the user interface for login
-    files:
-      - src/components/LoginForm.tsx
-    steps:
-      - prompt: Design the login form UI
-        done: false
+    done: false
 ---
 
 # Additional Markdown Content
@@ -531,8 +520,9 @@ dependencies: [2]
 tasks:
   - title: Parent task
     description: Parent task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional parent plan details.`;
@@ -546,8 +536,9 @@ parent: 1
 tasks:
   - title: Child task
     description: Child task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional child plan details.`;
@@ -594,8 +585,9 @@ details: This is the parent
 tasks:
   - title: Parent task
     description: Parent task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional parent plan details.`;
@@ -609,8 +601,9 @@ parent: 1
 tasks:
   - title: Child task
     description: Child task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional child plan details.`;
@@ -666,8 +659,9 @@ details: This is the parent
 tasks:
   - title: Parent task
     description: Parent task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional parent plan details.`;
@@ -681,8 +675,9 @@ parent: 1
 tasks:
   - title: Child task 1
     description: Child task 1 description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional child 1 plan details.`;
@@ -695,8 +690,9 @@ parent: 1
 tasks:
   - title: Child task 2
     description: Child task 2 description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional child 2 plan details.`;
@@ -752,8 +748,9 @@ details: This is the parent
 tasks:
   - title: Parent task
     description: Parent task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional parent plan details.`;
@@ -767,8 +764,9 @@ parent: 1
 tasks:
   - title: Child task
     description: Child task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional child plan details.`;
@@ -824,8 +822,9 @@ parent: 999
 tasks:
   - title: Child task
     description: Child task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional child plan details.`;
@@ -873,8 +872,9 @@ dependencies: [2]
 tasks:
   - title: Parent task
     description: Parent task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional parent plan details.`;
@@ -889,8 +889,9 @@ dependencies: [3]
 tasks:
   - title: Child task
     description: Child task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional child plan details.`;
@@ -903,8 +904,9 @@ dependencies: [1]
 tasks:
   - title: Grandchild task
     description: Grandchild task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional grandchild plan details.`;
@@ -945,6 +947,233 @@ Additional grandchild plan details.`;
     });
   });
 
+  describe('obsolete task keys', () => {
+    test('should detect and remove obsolete task keys (files, docs, steps, examples)', async () => {
+      const planWithObsoleteKeys = `---
+id: 100
+goal: Test plan with obsolete keys
+details: Plan with tasks containing obsolete fields
+tasks:
+  - title: Task with obsolete keys
+    description: First task
+    done: false
+    files: []
+    steps:
+      - prompt: Step 1
+        done: false
+    docs: some docs
+    examples: some examples
+  - title: Clean task
+    description: Second task
+    done: false
+---
+
+Plan body.`;
+
+      await fs.writeFile(path.join(tempDir, 'obsolete.plan.md'), planWithObsoleteKeys);
+
+      const originalLog = console.log;
+      const originalExit = process.exit;
+      let exitCode: number | undefined;
+      let logOutput: string[] = [];
+
+      console.log = (...args) => {
+        logOutput.push(args.join(' '));
+      };
+
+      process.exit = ((code?: number) => {
+        exitCode = code;
+        throw new Error(`process.exit(${code})`);
+      }) as never;
+
+      try {
+        await handleValidateCommand({ dir: tempDir }, { parent: { opts: () => ({}) } });
+      } catch (err) {
+        // Expected if process.exit is called
+      } finally {
+        console.log = originalLog;
+        process.exit = originalExit;
+      }
+
+      expect(exitCode).toBeUndefined();
+      const output = logOutput.join('\\n');
+      expect(output).toContain('Found 1 plan with 1 task containing obsolete keys');
+      expect(output).toContain('Auto-fixing obsolete task keys before validation');
+      expect(output).toContain('✓ Fixed 1 plan, removed 4 obsolete key');
+
+      // Verify the plan was actually updated
+      const updatedPlan = await readPlanFile(path.join(tempDir, 'obsolete.plan.md'));
+      expect(updatedPlan.tasks[0]).not.toHaveProperty('files');
+      expect(updatedPlan.tasks[0]).not.toHaveProperty('steps');
+      expect(updatedPlan.tasks[0]).not.toHaveProperty('docs');
+      expect(updatedPlan.tasks[0]).not.toHaveProperty('examples');
+      expect(updatedPlan.tasks[0]).toHaveProperty('title');
+      expect(updatedPlan.tasks[0]).toHaveProperty('description');
+      expect(updatedPlan.tasks[0]).toHaveProperty('done');
+    });
+
+    test('should handle multiple tasks with obsolete keys', async () => {
+      const planWithMultipleObsoleteTasks = `---
+id: 101
+goal: Plan with multiple obsolete tasks
+details: Multiple tasks with obsolete fields
+tasks:
+  - title: Task 1
+    description: First task
+    files: []
+  - title: Task 2
+    description: Second task
+    steps:
+      - prompt: Step
+        done: false
+  - title: Task 3
+    description: Third task
+    docs: docs
+    examples: examples
+---
+
+Plan body.`;
+
+      await fs.writeFile(path.join(tempDir, 'multiple-obsolete.plan.md'), planWithMultipleObsoleteTasks);
+
+      const originalLog = console.log;
+      const originalExit = process.exit;
+      let exitCode: number | undefined;
+      let logOutput: string[] = [];
+
+      console.log = (...args) => {
+        logOutput.push(args.join(' '));
+      };
+
+      process.exit = ((code?: number) => {
+        exitCode = code;
+        throw new Error(`process.exit(${code})`);
+      }) as never;
+
+      try {
+        await handleValidateCommand({ dir: tempDir }, { parent: { opts: () => ({}) } });
+      } catch (err) {
+        // Expected if process.exit is called
+      } finally {
+        console.log = originalLog;
+        process.exit = originalExit;
+      }
+
+      expect(exitCode).toBeUndefined();
+      const output = logOutput.join('\\n');
+      expect(output).toContain('Found 1 plan with 3 tasks containing obsolete keys');
+      expect(output).toContain('✓ Fixed 1 plan, removed 4 obsolete key');
+
+      // Verify all tasks were cleaned
+      const updatedPlan = await readPlanFile(path.join(tempDir, 'multiple-obsolete.plan.md'));
+      expect(updatedPlan.tasks[0]).not.toHaveProperty('files');
+      expect(updatedPlan.tasks[1]).not.toHaveProperty('steps');
+      expect(updatedPlan.tasks[2]).not.toHaveProperty('docs');
+      expect(updatedPlan.tasks[2]).not.toHaveProperty('examples');
+    });
+
+    test('should not fix when --no-fix flag is used', async () => {
+      const planWithObsoleteKeys = `---
+id: 102
+goal: Plan with obsolete keys
+details: Testing no-fix flag
+tasks:
+  - title: Task 1
+    description: First task
+    files: []
+    steps:
+      - prompt: Step
+        done: false
+---
+
+Plan body.`;
+
+      await fs.writeFile(path.join(tempDir, 'no-fix-obsolete.plan.md'), planWithObsoleteKeys);
+
+      const originalLog = console.log;
+      const originalExit = process.exit;
+      let exitCode: number | undefined;
+      let logOutput: string[] = [];
+
+      console.log = (...args) => {
+        logOutput.push(args.join(' '));
+      };
+
+      process.exit = ((code?: number) => {
+        exitCode = code;
+        throw new Error(`process.exit(${code})`);
+      }) as never;
+
+      try {
+        await handleValidateCommand({ dir: tempDir, fix: false }, { parent: { opts: () => ({}) } });
+      } catch (err) {
+        // Expected if process.exit is called (due to schema validation errors)
+      } finally {
+        console.log = originalLog;
+        process.exit = originalExit;
+      }
+
+      // When --no-fix is used, obsolete keys cause schema validation to fail, so exit code should be 1
+      expect(exitCode).toBe(1);
+      const output = logOutput.join('\\n');
+      expect(output).toContain('Found 1 plan with 1 task containing obsolete keys');
+      expect(output).toContain('--no-fix flag specified, will report as validation errors');
+      expect(output).toContain('✗ 1 invalid');
+      expect(output).toContain('Unknown keys: tasks.0.files, tasks.0.steps');
+      expect(output).toContain('1 plan with 1 task containing obsolete keys (not fixed due to --no-fix)');
+
+      // Verify the plan was NOT updated
+      const plan = await readPlanFile(path.join(tempDir, 'no-fix-obsolete.plan.md'));
+      expect(plan.tasks[0]).toHaveProperty('files');
+      expect(plan.tasks[0]).toHaveProperty('steps');
+    });
+
+    test('should show nothing when no obsolete keys found', async () => {
+      const cleanPlan = `---
+id: 103
+goal: Clean plan
+details: No obsolete keys
+tasks:
+  - title: Task 1
+    description: First task
+    done: false
+---
+
+Plan body.`;
+
+      await fs.writeFile(path.join(tempDir, 'clean.plan.md'), cleanPlan);
+
+      const originalLog = console.log;
+      const originalExit = process.exit;
+      let exitCode: number | undefined;
+      let logOutput: string[] = [];
+
+      console.log = (...args) => {
+        logOutput.push(args.join(' '));
+      };
+
+      process.exit = ((code?: number) => {
+        exitCode = code;
+        throw new Error(`process.exit(${code})`);
+      }) as never;
+
+      try {
+        await handleValidateCommand({ dir: tempDir, verbose: true }, { parent: { opts: () => ({}) } });
+      } catch (err) {
+        // Expected if process.exit is called
+      } finally {
+        console.log = originalLog;
+        process.exit = originalExit;
+      }
+
+      expect(exitCode).toBeUndefined();
+      const output = logOutput.join('\\n');
+      // When no obsolete keys are found, no message is shown about obsolete keys
+      expect(output).not.toContain('obsolete');
+      expect(output).toContain('✓ 1 valid');
+    });
+  });
+
   describe('discoveredFrom validation', () => {
     test('should pass validation when discoveredFrom references an existing plan', async () => {
       const sourcePlan = `---
@@ -954,8 +1183,9 @@ details: Source details
 tasks:
   - title: Source task
     description: Source task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Source plan body.`;
@@ -968,8 +1198,9 @@ discoveredFrom: 50
 tasks:
   - title: Discovered task
     description: Discovered task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Discovered plan body.`;
@@ -1016,8 +1247,8 @@ discoveredFrom: 999
 tasks:
   - title: Orphan task
     description: Task details
-    files: []
-    steps: []
+
+
 ---
 
 Orphan plan body.`;
@@ -1068,8 +1299,8 @@ discoveredFrom: 888
 tasks:
   - title: Orphan task
     description: Task details
-    files: []
-    steps: []
+
+
 ---
 
 Orphan plan body.`;

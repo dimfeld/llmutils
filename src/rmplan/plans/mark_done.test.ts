@@ -1,96 +1,28 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import * as os from 'node:os';
+import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import yaml from 'yaml';
-import { markStepDone, markTaskDone } from './mark_done.js';
-import { clearPlanCache, readPlanFile } from '../plans.js';
+import { markStepDone, markTaskDone, setTaskDone } from './mark_done.js';
+import { readPlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
-import { ModuleMocker } from '../../testing.js';
-import { findNextActionableItem } from './find_next.js';
-
-const moduleMocker = new ModuleMocker(import.meta);
-
-// Mock logging
-const logSpy = mock(() => {});
-const errorSpy = mock(() => {});
-const warnSpy = mock(() => {});
-
-// Mock commitAll for git/jj commands
-const commitAllSpy = mock(async () => 0);
-const getGitRootSpy = mock(async () => '');
-const removeAssignmentSpy = mock(async () => true);
-const getRepositoryIdentitySpy = mock(async () => ({
-  repositoryId: 'test-repo',
-  remoteUrl: null,
-  gitRoot: '',
-}));
 
 describe('markStepDone', () => {
   let tempDir: string;
   let tasksDir: string;
 
   beforeEach(async () => {
-    // Clear mocks
-    logSpy.mockClear();
-    errorSpy.mockClear();
-    warnSpy.mockClear();
-    commitAllSpy.mockClear();
-    removeAssignmentSpy.mockClear();
-    getRepositoryIdentitySpy.mockClear();
-
-    // Clear plan cache
-    clearPlanCache();
-
-    // Create temporary directory
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-actions-test-'));
+    tempDir = await fs.mkdtemp(path.join(await fs.realpath('/tmp'), 'rmplan-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
-
-    // Update getGitRoot mock to return tempDir
-    getGitRootSpy.mockResolvedValue(tempDir);
-
-    // Mock modules
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      error: errorSpy,
-      warn: warnSpy,
-      boldMarkdownHeaders: (text: string) => text,
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: getGitRootSpy,
-    }));
-
-    await moduleMocker.mock('../../common/process.js', () => ({
-      commitAll: commitAllSpy,
-      quiet: false,
-    }));
-
-    getRepositoryIdentitySpy.mockResolvedValue({
-      repositoryId: 'test-repo',
-      remoteUrl: null,
-      gitRoot: tempDir,
-    });
-
-    await moduleMocker.mock('../assignments/assignments_io.js', () => ({
-      removeAssignment: removeAssignmentSpy,
-    }));
-
-    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: getRepositoryIdentitySpy,
-    }));
   });
 
   afterEach(async () => {
-    // Clean up mocks
-    moduleMocker.clear();
-
-    // Clean up
-    await fs.rm(tempDir, { recursive: true, force: true });
+    if (tempDir) {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 
-  test('marks single step as done', async () => {
+  test('marks current task as done', async () => {
     const plan: PlanSchema = {
       id: 1,
       title: 'Test Plan',
@@ -100,301 +32,13 @@ describe('markStepDone', () => {
       tasks: [
         {
           title: 'Task 1',
-          description: 'Do something',
-          steps: [
-            {
-              prompt: 'Do step 1',
-              done: true,
-            },
-            {
-              prompt: 'Do step 2',
-              done: false,
-            },
-            {
-              prompt: 'Do step 3',
-              done: false,
-            },
-          ],
-        },
-      ],
-    };
-
-    const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
-
-    const result = await markStepDone(planPath, { steps: 1 }, undefined, tempDir, {});
-
-    expect(result.planComplete).toBe(false);
-    expect(result.message).toContain('Task 1 step 2');
-
-    // Read the updated plan
-    const updatedPlan = await readPlanFile(planPath);
-
-    // Check that step 2 is now done
-    expect(updatedPlan.tasks[0].steps![1].done).toBe(true);
-    expect(updatedPlan.tasks[0].steps![2].done).toBe(false);
-    expect(removeAssignmentSpy).not.toHaveBeenCalled();
-  });
-
-  test('marks multiple steps as done', async () => {
-    const plan: PlanSchema = {
-      id: 1,
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'in_progress',
-      tasks: [
-        {
-          title: 'Task 1',
-          description: 'Do something',
-          steps: [
-            {
-              prompt: 'Do step 1',
-              done: false,
-            },
-            {
-              prompt: 'Do step 2',
-              done: false,
-            },
-            {
-              prompt: 'Do step 3',
-              done: false,
-            },
-          ],
-        },
-      ],
-    };
-
-    const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
-
-    const result = await markStepDone(planPath, { steps: 2 }, undefined, tempDir, {});
-
-    expect(result.planComplete).toBe(false);
-    expect(result.message).toContain('Task 1 steps 1-2');
-
-    // Read the updated plan
-    const updatedPlan = await readPlanFile(planPath);
-
-    // Check that steps 1 and 2 are now done
-    expect(updatedPlan.tasks[0].steps![0].done).toBe(true);
-    expect(updatedPlan.tasks[0].steps![1].done).toBe(true);
-    expect(updatedPlan.tasks[0].steps![2].done).toBe(false);
-    expect(removeAssignmentSpy).not.toHaveBeenCalled();
-  });
-
-  test('marks all steps in task as done with task flag', async () => {
-    const plan: PlanSchema = {
-      id: 1,
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'in_progress',
-      tasks: [
-        {
-          title: 'Task 1',
-          description: 'Do something',
-          steps: [
-            {
-              prompt: 'Do step 1',
-              done: true,
-            },
-            {
-              prompt: 'Do step 2',
-              done: false,
-            },
-            {
-              prompt: 'Do step 3',
-              done: false,
-            },
-          ],
-        },
-      ],
-    };
-
-    const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
-
-    const result = await markStepDone(planPath, { task: true }, undefined, tempDir, {});
-
-    expect(result.planComplete).toBe(true);
-
-    // Read the updated plan
-    const updatedPlan = await readPlanFile(planPath);
-
-    // Check that all steps in task 1 are done
-    expect(updatedPlan.tasks[0].steps!.every((step) => step.done)).toBe(true);
-    expect(removeAssignmentSpy).toHaveBeenCalledTimes(1);
-    const [callArgs] = removeAssignmentSpy.mock.calls;
-    expect(callArgs[0].repositoryId).toBe('test-repo');
-    expect(callArgs[0].uuid).toBe(updatedPlan.uuid);
-  });
-
-  test('logs warning when assignment removal fails after completion', async () => {
-    removeAssignmentSpy.mockImplementationOnce(async () => {
-      throw new Error('simulated failure');
-    });
-
-    const plan: PlanSchema = {
-      id: 1,
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'in_progress',
-      tasks: [
-        {
-          title: 'Task 1',
-          description: 'Do something',
-          steps: [
-            {
-              prompt: 'Do step 1',
-              done: true,
-            },
-            {
-              prompt: 'Do step 2',
-              done: false,
-            },
-          ],
-        },
-      ],
-    };
-
-    const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
-
-    const result = await markStepDone(planPath, { steps: 1 }, undefined, tempDir, {});
-
-    expect(result.planComplete).toBe(true);
-    const warningMessages = warnSpy.mock.calls.map((args) => args[0]);
-    expect(
-      warningMessages.some((message) =>
-        message.includes('Failed to remove assignment for plan 1: simulated failure')
-      )
-    ).toBe(true);
-  });
-
-  test('updates plan status to done when all steps complete', async () => {
-    const plan: PlanSchema = {
-      id: 1,
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'in_progress',
-      tasks: [
-        {
-          title: 'Task 1',
-          description: 'Do something',
-          steps: [
-            {
-              prompt: 'Do step 1',
-              done: true,
-            },
-            {
-              prompt: 'Do step 2',
-              done: false,
-            },
-          ],
-        },
-      ],
-    };
-
-    const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
-
-    const result = await markStepDone(planPath, { steps: 1 }, undefined, tempDir, {});
-
-    expect(result.planComplete).toBe(true);
-
-    // Read the updated plan
-    const updatedPlan = await readPlanFile(planPath);
-
-    // Check that plan status is done
-    expect(updatedPlan.status).toBe('done');
-  });
-
-  test('handles plan with no steps', async () => {
-    const plan: PlanSchema = {
-      id: 1,
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'pending',
-      tasks: [],
-    };
-
-    const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
-
-    const result = await markStepDone(planPath, { steps: 1 }, undefined, tempDir, {});
-
-    expect(result.planComplete).toBe(true);
-    expect(result.message).toBe('All steps in the plan are already done.');
-  });
-
-  test('commits changes when commit flag is true', async () => {
-    const plan: PlanSchema = {
-      id: 1,
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'in_progress',
-      tasks: [
-        {
-          title: 'Task 1',
-          description: 'Do something',
-          steps: [
-            {
-              prompt: 'Do step 1',
-              done: false,
-            },
-          ],
-        },
-      ],
-    };
-
-    const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
-
-    await markStepDone(planPath, { steps: 1, commit: true }, undefined, tempDir, {});
-
-    // Should have called commitAll
-    expect(commitAllSpy).toHaveBeenCalled();
-    expect(commitAllSpy).toHaveBeenCalledWith(expect.stringContaining('Task 1'), tempDir);
-  });
-
-  test('plan completion with mix of simple and complex tasks', async () => {
-    const plan: PlanSchema = {
-      id: 1,
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'in_progress',
-      tasks: [
-        {
-          title: 'Simple Task 1',
-          description: 'No steps',
-          done: true,
-          steps: [],
-        },
-        {
-          title: 'Complex Task 2',
-          description: 'Has steps',
-          steps: [
-            {
-              prompt: 'Step 1',
-              done: true,
-            },
-            {
-              prompt: 'Step 2',
-              done: false,
-            },
-          ],
-        },
-        {
-          title: 'Simple Task 3',
-          description: 'Another simple task',
+          description: 'Do first task',
           done: false,
-          steps: [],
+        },
+        {
+          title: 'Task 2',
+          description: 'Do second task',
+          done: false,
         },
       ],
     };
@@ -402,27 +46,16 @@ describe('markStepDone', () => {
     const planPath = path.join(tasksDir, '1.yml');
     await fs.writeFile(planPath, yaml.stringify(plan));
 
-    // Mark the last step of complex task 2 - should NOT complete the plan yet
-    const result1 = await markStepDone(planPath, { steps: 1 }, undefined, tempDir, {});
+    const result = await markStepDone(planPath, {}, undefined, tempDir, {});
 
-    expect(result1.planComplete).toBe(false);
+    expect(result.planComplete).toBe(false);
 
-    // Read the updated plan
-    const updatedPlan1 = await readPlanFile(planPath);
-    expect(updatedPlan1.status).toBe('in_progress');
-    expect(updatedPlan1.tasks[1].steps![1].done).toBe(true);
-
-    // Now we need to mark Simple Task 3 as done separately using markTaskDone
-    clearPlanCache(); // Clear cache to force re-read
-
-    // Verify that the plan still has pending work
-    const planData = await readPlanFile(planPath);
-    const nextItem = findNextActionableItem(planData);
-    expect(nextItem).not.toBeNull();
-    expect(nextItem?.type).toBe('task');
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.tasks[0].done).toBe(true);
+    expect(updatedPlan.tasks[1].done).toBe(false);
   });
 
-  test('marks last step and completes plan when no simple tasks remain', async () => {
+  test('completes plan when marking last task', async () => {
     const plan: PlanSchema = {
       id: 1,
       title: 'Test Plan',
@@ -431,24 +64,37 @@ describe('markStepDone', () => {
       status: 'in_progress',
       tasks: [
         {
-          title: 'Simple Task 1',
+          title: 'Task 1',
+          description: 'Do task',
+          done: false,
+        },
+      ],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan));
+
+    const result = await markStepDone(planPath, {}, undefined, tempDir, {});
+
+    expect(result.planComplete).toBe(true);
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.status).toBe('done');
+    expect(updatedPlan.tasks[0].done).toBe(true);
+  });
+
+  test('handles plan with no pending tasks', async () => {
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'done',
+      tasks: [
+        {
+          title: 'Task 1',
           description: 'Already done',
           done: true,
-          steps: [],
-        },
-        {
-          title: 'Complex Task 2',
-          description: 'Last task with steps',
-          steps: [
-            {
-              prompt: 'Step 1',
-              done: true,
-            },
-            {
-              prompt: 'Step 2',
-              done: false,
-            },
-          ],
         },
       ],
     };
@@ -456,15 +102,10 @@ describe('markStepDone', () => {
     const planPath = path.join(tasksDir, '1.yml');
     await fs.writeFile(planPath, yaml.stringify(plan));
 
-    // Mark the last step - should complete the plan
-    const result = await markStepDone(planPath, { steps: 1 }, undefined, tempDir, {});
+    const result = await markStepDone(planPath, {}, undefined, tempDir, {});
 
     expect(result.planComplete).toBe(true);
-
-    // Read the updated plan
-    const updatedPlan = await readPlanFile(planPath);
-    expect(updatedPlan.status).toBe('done');
-    expect(updatedPlan.tasks[1].steps![1].done).toBe(true);
+    expect(result.message).toBe('All tasks in the plan are already done.');
   });
 });
 
@@ -473,66 +114,18 @@ describe('markTaskDone', () => {
   let tasksDir: string;
 
   beforeEach(async () => {
-    // Clear mocks
-    logSpy.mockClear();
-    errorSpy.mockClear();
-    warnSpy.mockClear();
-    commitAllSpy.mockClear();
-    removeAssignmentSpy.mockClear();
-    getRepositoryIdentitySpy.mockClear();
-
-    // Clear plan cache
-    clearPlanCache();
-
-    // Create temporary directory
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-markTaskDone-test-'));
+    tempDir = await fs.mkdtemp(path.join(await fs.realpath('/tmp'), 'rmplan-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
-
-    // Update getGitRoot mock to return tempDir
-    getGitRootSpy.mockResolvedValue(tempDir);
-
-    // Mock modules
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      error: errorSpy,
-      warn: warnSpy,
-      boldMarkdownHeaders: (text: string) => text,
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: getGitRootSpy,
-    }));
-
-    await moduleMocker.mock('../../common/process.js', () => ({
-      commitAll: commitAllSpy,
-      quiet: false,
-    }));
-
-    getRepositoryIdentitySpy.mockResolvedValue({
-      repositoryId: 'test-repo',
-      remoteUrl: null,
-      gitRoot: tempDir,
-    });
-
-    await moduleMocker.mock('../assignments/assignments_io.js', () => ({
-      removeAssignment: removeAssignmentSpy,
-    }));
-
-    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: getRepositoryIdentitySpy,
-    }));
   });
 
   afterEach(async () => {
-    // Clean up mocks
-    moduleMocker.clear();
-
-    // Clean up
-    await fs.rm(tempDir, { recursive: true, force: true });
+    if (tempDir) {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 
-  test('marks simple task as done', async () => {
+  test('marks specific task as done by index', async () => {
     const plan: PlanSchema = {
       id: 1,
       title: 'Test Plan',
@@ -541,56 +134,14 @@ describe('markTaskDone', () => {
       status: 'in_progress',
       tasks: [
         {
-          title: 'Simple Task 1',
-          description: 'Do something simple',
+          title: 'Task 1',
+          description: 'First task',
           done: false,
-          steps: [],
         },
         {
-          title: 'Another Task',
-          description: 'Do something else',
+          title: 'Task 2',
+          description: 'Second task',
           done: false,
-          steps: [],
-        },
-      ],
-    };
-
-    const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
-
-    const result = await markTaskDone(planPath, 0, {}, tempDir, {});
-
-    expect(result.planComplete).toBe(false);
-    expect(result.message).toContain('Simple Task 1');
-
-    // Read the updated plan
-    const updatedPlan = await readPlanFile(planPath);
-
-    // Check that the task is now done
-    expect(updatedPlan.tasks[0].done).toBe(true);
-    expect(updatedPlan.tasks[1].done).toBe(false);
-    expect(removeAssignmentSpy).not.toHaveBeenCalled();
-  });
-
-  test('updates plan status to done when last task completes', async () => {
-    const plan: PlanSchema = {
-      id: 1,
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'in_progress',
-      tasks: [
-        {
-          title: 'First Task',
-          description: 'Already done',
-          done: true,
-          steps: [],
-        },
-        {
-          title: 'Last Task',
-          description: 'Final task to complete',
-          done: false,
-          steps: [],
         },
       ],
     };
@@ -600,17 +151,11 @@ describe('markTaskDone', () => {
 
     const result = await markTaskDone(planPath, 1, {}, tempDir, {});
 
-    expect(result.planComplete).toBe(true);
+    expect(result.planComplete).toBe(false);
 
-    // Read the updated plan
     const updatedPlan = await readPlanFile(planPath);
-
-    // Check that plan status is done
-    expect(updatedPlan.status).toBe('done');
+    expect(updatedPlan.tasks[0].done).toBe(false);
     expect(updatedPlan.tasks[1].done).toBe(true);
-    expect(removeAssignmentSpy).toHaveBeenCalledTimes(1);
-    const [taskDoneCallArgs] = removeAssignmentSpy.mock.calls;
-    expect(taskDoneCallArgs[0].uuid).toBe(updatedPlan.uuid);
   });
 
   test('returns error for invalid task index', async () => {
@@ -622,10 +167,9 @@ describe('markTaskDone', () => {
       status: 'in_progress',
       tasks: [
         {
-          title: 'Only Task',
-          description: 'Do something',
+          title: 'Task 1',
+          description: 'First task',
           done: false,
-          steps: [],
         },
       ],
     };
@@ -633,12 +177,27 @@ describe('markTaskDone', () => {
     const planPath = path.join(tasksDir, '1.yml');
     await fs.writeFile(planPath, yaml.stringify(plan));
 
-    await expect(markTaskDone(planPath, 5, {}, tempDir, {})).rejects.toThrow(
-      'Invalid task index: 5. Plan has 1 tasks.'
-    );
+    await expect(markTaskDone(planPath, 5, {}, tempDir, {})).rejects.toThrow();
+  });
+});
+
+describe('setTaskDone', () => {
+  let tempDir: string;
+  let tasksDir: string;
+
+  beforeEach(async () => {
+    tempDir = await fs.mkdtemp(path.join(await fs.realpath('/tmp'), 'rmplan-test-'));
+    tasksDir = path.join(tempDir, 'tasks');
+    await fs.mkdir(tasksDir, { recursive: true });
   });
 
-  test('handles already completed task gracefully', async () => {
+  afterEach(async () => {
+    if (tempDir) {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('marks task as done by title', async () => {
     const plan: PlanSchema = {
       id: 1,
       title: 'Test Plan',
@@ -647,91 +206,14 @@ describe('markTaskDone', () => {
       status: 'in_progress',
       tasks: [
         {
-          title: 'Already Done Task',
-          description: 'This was done before',
-          done: true,
-          steps: [],
-        },
-      ],
-    };
-
-    const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
-
-    const result = await markTaskDone(planPath, 0, {}, tempDir, {});
-
-    expect(result.planComplete).toBe(false);
-    expect(result.message).toBe('Task "Already Done Task" is already marked as done.');
-  });
-
-  test('commits changes when commit flag is true', async () => {
-    const plan: PlanSchema = {
-      id: 1,
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'in_progress',
-      tasks: [
-        {
-          title: 'Task to Commit',
-          description: 'This will be committed',
+          title: 'Task 1',
+          description: 'First task',
           done: false,
-          steps: [],
-        },
-      ],
-    };
-
-    const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
-
-    await markTaskDone(planPath, 0, { commit: true }, tempDir, {});
-
-    // Should have called commitAll
-    expect(commitAllSpy).toHaveBeenCalled();
-    expect(commitAllSpy).toHaveBeenCalledWith(expect.stringContaining('Task to Commit'), tempDir);
-  });
-
-  test('plan is only marked done when all simple and complex tasks are complete', async () => {
-    const plan: PlanSchema = {
-      id: 1,
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'in_progress',
-      tasks: [
-        {
-          title: 'Complex Task 1',
-          description: 'Has steps',
-          steps: [
-            {
-              prompt: 'Step 1',
-              done: true,
-            },
-            {
-              prompt: 'Step 2',
-              done: true,
-            },
-          ],
         },
         {
-          title: 'Simple Task 2',
-          description: 'No steps',
+          title: 'Task 2',
+          description: 'Second task',
           done: false,
-          steps: [],
-        },
-        {
-          title: 'Complex Task 3',
-          description: 'More steps',
-          steps: [
-            {
-              prompt: 'Step 1',
-              done: true,
-            },
-            {
-              prompt: 'Step 2',
-              done: false,
-            },
-          ],
         },
       ],
     };
@@ -739,14 +221,36 @@ describe('markTaskDone', () => {
     const planPath = path.join(tasksDir, '1.yml');
     await fs.writeFile(planPath, yaml.stringify(plan));
 
-    // Mark the simple task as done - should NOT complete the plan
-    const result = await markTaskDone(planPath, 1, {}, tempDir, {});
+    const result = await setTaskDone(planPath, { taskIdentifier: 'Task 2' }, tempDir, {});
 
     expect(result.planComplete).toBe(false);
 
-    // Read the updated plan
     const updatedPlan = await readPlanFile(planPath);
-    expect(updatedPlan.status).toBe('in_progress');
+    expect(updatedPlan.tasks[0].done).toBe(false);
     expect(updatedPlan.tasks[1].done).toBe(true);
+  });
+
+  test('returns error for non-existent task title', async () => {
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Task 1',
+          description: 'First task',
+          done: false,
+        },
+      ],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan));
+
+    await expect(
+      setTaskDone(planPath, { taskIdentifier: 'Nonexistent Task' }, tempDir, {})
+    ).rejects.toThrow();
   });
 });

@@ -287,17 +287,9 @@ async function displayPlanInfo(
       output.push('\n' + chalk.bold('Tasks:'));
       output.push('─'.repeat(60));
       plan.tasks.forEach((task, i) => {
-        const steps = task.steps ?? [];
-        const totalSteps = steps.length;
-        const doneSteps = steps.filter((s) => s.done).length;
-        const taskComplete =
-          (totalSteps > 0 && doneSteps === totalSteps) || (totalSteps === 0 && task.done);
-        const taskIcon = taskComplete ? '✓' : totalSteps > 0 && doneSteps > 0 ? '⏳' : '○';
-        const taskColor = taskComplete
-          ? chalk.green
-          : totalSteps > 0 && doneSteps > 0
-            ? chalk.yellow
-            : chalk.white;
+        const taskComplete = task.done;
+        const taskIcon = taskComplete ? '✓' : '○';
+        const taskColor = taskComplete ? chalk.green : chalk.white;
         const title = task.title || '(untitled task)';
         const index = (i + 1).toString().padStart(2, ' ');
         output.push(`  ${taskIcon} ${taskColor(index + '. ' + title)}`);
@@ -560,41 +552,12 @@ async function displayPlanInfo(
       log('─'.repeat(60));
 
       plan.tasks.forEach((task, taskIdx) => {
-        const totalSteps = task.steps.length;
-        const doneSteps = task.steps.filter((s) => s.done).length;
-        const taskComplete =
-          (totalSteps > 0 && doneSteps === totalSteps) || (totalSteps === 0 && task.done);
-        const taskIcon = taskComplete ? '✓' : totalSteps > 0 && doneSteps > 0 ? '⏳' : '○';
-        const taskColor = taskComplete
-          ? chalk.green
-          : totalSteps > 0 && doneSteps > 0
-            ? chalk.yellow
-            : chalk.white;
+        const taskComplete = task.done;
+        const taskIcon = taskComplete ? '✓' : '○';
+        const taskColor = taskComplete ? chalk.green : chalk.white;
 
         log(`\n${taskIcon} ${chalk.bold(`Task ${taskIdx + 1}:`)} ${taskColor(task.title)}`);
-        if (totalSteps > 0) {
-          log(`  Progress: ${doneSteps}/${totalSteps} steps completed`);
-        }
         log(`  ${chalk.rgb(200, 200, 200)(task.description)}`);
-
-        if (task.files && task.files.length > 0) {
-          log(`  Files: ${task.files.join(', ')}`);
-        }
-
-        if (task.docs && task.docs.length > 0) {
-          log(`  Docs: ${task.docs.join(', ')}`);
-        }
-
-        if (task.steps && task.steps.length > 0) {
-          log('  Steps:');
-          task.steps.forEach((step, stepIdx) => {
-            const stepIcon = step.done ? '✓' : '○';
-            const stepColor = step.done ? chalk.green : chalk.rgb(170, 170, 170);
-            const prompt = step.prompt.split('\n')[0];
-            const truncated = prompt.length > 60 ? prompt.substring(0, 60) + '...' : prompt;
-            log(`    ${stepIcon} ${stepColor(`Step ${stepIdx + 1}: ${truncated}`)}`);
-          });
-        }
       });
     }
 

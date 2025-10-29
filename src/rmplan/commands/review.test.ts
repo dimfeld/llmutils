@@ -240,15 +240,12 @@ describe('buildReviewPrompt', () => {
         {
           title: 'Add authentication',
           description: 'Implement user login/logout functionality',
-          steps: [
-            { prompt: 'Create login component', done: true },
-            { prompt: 'Add validation logic', done: false },
-          ],
+          done: false,
         },
         {
           title: 'Add data validation',
           description: 'Validate user input',
-          steps: [{ prompt: 'Create validators', done: false }],
+          done: false,
         },
       ],
     };
@@ -291,8 +288,6 @@ index 1234567..abcdefg 100644
     expect(prompt).toContain('Tasks:**');
     expect(prompt).toContain('1. **Add authentication**');
     expect(prompt).toContain('Implement user login/logout functionality');
-    expect(prompt).toContain('✓ 1. Create login component');
-    expect(prompt).toContain('○ 2. Add validation logic');
     expect(prompt).toContain('2. **Add data validation**');
 
     // Verify diff content is included

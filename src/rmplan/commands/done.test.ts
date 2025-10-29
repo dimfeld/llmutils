@@ -1,91 +1,54 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import * as os from 'node:os';
+import { describe, expect, test, beforeEach, afterEach, mock } from 'bun:test';
+import fs from 'node:fs/promises';
+import path from 'path';
 import yaml from 'yaml';
 import { handleDoneCommand } from './done.js';
-import { clearPlanCache } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
-
-const moduleMocker = new ModuleMocker(import.meta);
-
-// Mock console functions
-const logSpy = mock(() => {});
-const errorSpy = mock(() => {});
-
-// Mock markStepDone from actions.js
-const markStepDoneSpy = mock(async () => ({
-  planComplete: false,
-  message: 'Marked 1 step done',
-}));
-
-// Mock WorkspaceLock
-const releaseLockSpy = mock(async () => true);
-const getLockInfoSpy = mock(async () => null);
 
 describe('handleDoneCommand', () => {
   let tempDir: string;
   let tasksDir: string;
+  let markStepDoneSpy: ReturnType<typeof mock>;
+  const moduleMocker = new ModuleMocker(import.meta);
 
   beforeEach(async () => {
-    // Clear mocks
-    logSpy.mockClear();
-    errorSpy.mockClear();
-    markStepDoneSpy.mockClear();
-    releaseLockSpy.mockClear();
-    getLockInfoSpy.mockClear();
-
-    // Clear plan cache
-    clearPlanCache();
-
-    // Create temporary directory
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-done-test-'));
+    tempDir = await fs.mkdtemp(path.join(await fs.realpath('/tmp'), 'rmplan-done-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
 
-    // Mock modules
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      error: errorSpy,
-      warn: mock(() => {}),
+    // Write config file so plan resolution works
+    const configDir = path.join(tempDir, '.rmfilter');
+    await fs.mkdir(configDir, { recursive: true });
+    await fs.writeFile(
+      path.join(configDir, 'rmplan.yml'),
+      `paths:\n  tasks: ${tasksDir}\n`
+    );
+
+    // Mock markStepDone
+    markStepDoneSpy = mock(async () => ({
+      planComplete: false,
+      message: 'Task marked as done',
     }));
 
     await moduleMocker.mock('../plans/mark_done.js', () => ({
       markStepDone: markStepDoneSpy,
     }));
 
-    await moduleMocker.mock('../workspace/workspace_lock.js', () => ({
-      WorkspaceLock: {
-        releaseLock: releaseLockSpy,
-        getLockInfo: getLockInfoSpy,
-      },
-    }));
-
-    // Mock config loader
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: {
-          tasks: tasksDir,
-        },
-      }),
-    }));
-
-    // Mock utils
+    // Mock getGitRoot to return tempDir
     await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
+      getGitRoot: mock(async () => tempDir),
     }));
   });
 
   afterEach(async () => {
-    // Clean up mocks
     moduleMocker.clear();
-
-    // Clean up
-    await fs.rm(tempDir, { recursive: true, force: true });
+    if (tempDir) {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 
-  test('calls markStepDone with correct parameters for single step', async () => {
+  test('calls markStepDone with correct parameters', async () => {
     // Create a test plan
     const plan: PlanSchema = {
       id: '1',
@@ -97,21 +60,18 @@ describe('handleDoneCommand', () => {
         {
           title: 'Test Task',
           description: 'Test task description',
-          files: [],
-          steps: [{ prompt: 'Test step prompt', done: false }],
+          done: false,
         },
       ],
     };
 
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
 
-    const options = {
-      steps: '1',
-    };
+    const options = {};
 
     const command = {
       parent: {
-        opts: () => ({}),
+        opts: () => ({ config: path.join(tempDir, '.rmfilter/rmplan.yml') }),
       },
     };
 
@@ -121,95 +81,6 @@ describe('handleDoneCommand', () => {
     expect(markStepDoneSpy).toHaveBeenCalledWith(
       expect.stringContaining('1.yml'),
       {
-        task: undefined,
-        steps: 1,
-        commit: undefined,
-      },
-      undefined,
-      tempDir,
-      expect.any(Object)
-    );
-  });
-
-  test('calls markStepDone with multiple steps', async () => {
-    const plan: PlanSchema = {
-      id: '1',
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'in_progress',
-      tasks: [
-        {
-          title: 'Test Task',
-          description: 'Test task description',
-          steps: [{ prompt: 'Test step prompt', done: false }],
-          files: [],
-        },
-      ],
-    };
-
-    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
-
-    const options = {
-      steps: '3',
-    };
-
-    const command = {
-      parent: {
-        opts: () => ({}),
-      },
-    };
-
-    await handleDoneCommand('1', options, command);
-
-    expect(markStepDoneSpy).toHaveBeenCalledWith(
-      expect.stringContaining('1.yml'),
-      {
-        task: undefined,
-        steps: 3,
-        commit: undefined,
-      },
-      undefined,
-      tempDir,
-      expect.any(Object)
-    );
-  });
-
-  test('calls markStepDone with task flag', async () => {
-    const plan: PlanSchema = {
-      id: '1',
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'in_progress',
-      tasks: [
-        {
-          title: 'Test Task',
-          description: 'Test task description',
-          steps: [{ prompt: 'Test step prompt', done: false }],
-        },
-      ],
-    };
-
-    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
-
-    const options = {
-      task: true,
-    };
-
-    const command = {
-      parent: {
-        opts: () => ({}),
-      },
-    };
-
-    await handleDoneCommand('1', options, command);
-
-    expect(markStepDoneSpy).toHaveBeenCalledWith(
-      expect.stringContaining('1.yml'),
-      {
-        task: true,
-        steps: 1,
         commit: undefined,
       },
       undefined,
@@ -229,7 +100,7 @@ describe('handleDoneCommand', () => {
         {
           title: 'Test Task',
           description: 'Test task description',
-          steps: [{ prompt: 'Test step prompt', done: false }],
+          done: false,
         },
       ],
     };
@@ -237,13 +108,12 @@ describe('handleDoneCommand', () => {
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
 
     const options = {
-      steps: '1',
       commit: true,
     };
 
     const command = {
       parent: {
-        opts: () => ({}),
+        opts: () => ({ config: path.join(tempDir, '.rmfilter/rmplan.yml') }),
       },
     };
 
@@ -252,8 +122,6 @@ describe('handleDoneCommand', () => {
     expect(markStepDoneSpy).toHaveBeenCalledWith(
       expect.stringContaining('1.yml'),
       {
-        task: undefined,
-        steps: 1,
         commit: true,
       },
       undefined,
@@ -262,7 +130,7 @@ describe('handleDoneCommand', () => {
     );
   });
 
-  test('releases workspace lock when plan is complete', async () => {
+  test('uses plan ID as first argument', async () => {
     const plan: PlanSchema = {
       id: '1',
       title: 'Test Plan',
@@ -273,141 +141,31 @@ describe('handleDoneCommand', () => {
         {
           title: 'Test Task',
           description: 'Test task description',
-          steps: [{ prompt: 'Test step prompt', done: false }],
+          done: false,
         },
       ],
     };
 
     await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
 
-    // Mock markStepDone to return planComplete: true
-    markStepDoneSpy.mockResolvedValue({
-      planComplete: true,
-      message: 'All steps complete',
-    });
-
-    getLockInfoSpy.mockResolvedValueOnce({
-      type: 'pid',
-      pid: process.pid,
-      command: 'rmplan agent',
-      startedAt: new Date().toISOString(),
-      hostname: os.hostname(),
-      version: 2,
-    });
-
-    const options = {
-      steps: '1',
-    };
+    const options = {};
 
     const command = {
       parent: {
-        opts: () => ({}),
+        opts: () => ({ config: path.join(tempDir, '.rmfilter/rmplan.yml') }),
       },
     };
 
     await handleDoneCommand('1', options, command);
 
-    expect(releaseLockSpy).toHaveBeenCalledWith(tempDir);
-    expect(logSpy).toHaveBeenCalledWith('Released workspace lock');
-  });
-
-  test('logs reminder when persistent lock remains after plan completes', async () => {
-    const plan: PlanSchema = {
-      id: '1',
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'in_progress',
-      tasks: [
-        {
-          title: 'Test Task',
-          description: 'Test task description',
-          steps: [{ prompt: 'Test step prompt', done: false }],
-        },
-      ],
-    };
-
-    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
-
-    markStepDoneSpy.mockResolvedValue({
-      planComplete: true,
-      message: 'All steps complete',
-    });
-
-    getLockInfoSpy.mockResolvedValueOnce({
-      type: 'persistent',
-      pid: process.pid,
-      command: 'manual lock',
-      startedAt: new Date().toISOString(),
-      hostname: os.hostname(),
-      version: 2,
-    });
-
-    const options = {
-      steps: '1',
-    };
-
-    const command = {
-      parent: {
-        opts: () => ({}),
+    expect(markStepDoneSpy).toHaveBeenCalledWith(
+      expect.stringContaining('1.yml'),
+      {
+        commit: undefined,
       },
-    };
-
-    await handleDoneCommand('1', options, command);
-
-    expect(releaseLockSpy).not.toHaveBeenCalled();
-    expect(logSpy).toHaveBeenCalledWith(
-      'Workspace remains locked. Use "rmplan workspace unlock" to release it.'
+      undefined,
+      tempDir,
+      expect.any(Object)
     );
-  });
-
-  test('handles errors from markStepDone', async () => {
-    const plan: PlanSchema = {
-      id: '1',
-      title: 'Test Plan',
-      goal: 'Test goal',
-      details: 'Test details',
-      status: 'in_progress',
-      tasks: [
-        {
-          title: 'Test Task',
-          description: 'Test task description',
-          steps: [{ prompt: 'Test step prompt', done: false }],
-        },
-      ],
-    };
-
-    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
-
-    // Mock markStepDone to throw an error
-    markStepDoneSpy.mockImplementation(async () => {
-      throw new Error('Test error');
-    });
-
-    const options = {
-      steps: '1',
-    };
-
-    const command = {
-      parent: {
-        opts: () => ({}),
-      },
-    };
-
-    await expect(handleDoneCommand('1', options, command)).rejects.toThrow('Test error');
-  });
-
-  test('handles non-existent plan file', async () => {
-    const options = {
-      steps: '1',
-    };
-
-    const command = {
-      parent: {
-        opts: () => ({}),
-      },
-    };
-
-    await expect(handleDoneCommand('nonexistent', options, command)).rejects.toThrow();
   });
 });

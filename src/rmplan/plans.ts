@@ -737,7 +737,7 @@ export async function getImportedIssueUrls(tasksDir: string): Promise<Set<string
 }
 
 export function isTaskDone(task: PlanSchema['tasks'][0]): boolean {
-  return task.done || ((task.steps?.length ?? 0) > 0 && task.steps.every((step) => step.done));
+  return task.done;
 }
 
 /**

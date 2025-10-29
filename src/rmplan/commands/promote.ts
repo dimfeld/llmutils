@@ -107,16 +107,8 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
           details: originalPlan.details || '',
         },
         status: 'pending',
-        rmfilter: taskToPromote.files,
-        // usually won't be any steps, but promote them to tasks if there are
-        tasks: taskToPromote.steps.map((step) => ({
-          title: '',
-          description: step.prompt,
-          steps: [],
-          done: step.done,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        })),
+        // Task has no files or steps anymore - if needed, those should be part of the description
+        tasks: [],
         dependencies,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),

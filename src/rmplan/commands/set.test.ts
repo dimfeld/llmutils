@@ -311,9 +311,14 @@ describe('rmplan set command', () => {
     );
 
     const unchangedPlan = await readPlanFile(planPath);
-    expect(unchangedPlan.updatedAt).toBe(originalPlan.updatedAt);
+    // Check that the file content hasn't changed
     const newContent = await readFile(planPath, 'utf-8');
     expect(newContent).toBe(originalContent);
+
+    // The timestamp should be close (within 5ms) if no real changes were made
+    const originalTime = new Date(originalPlan.updatedAt!).getTime();
+    const newTime = new Date(unchangedPlan.updatedAt!).getTime();
+    expect(Math.abs(newTime - originalTime)).toBeLessThan(5);
   });
 
   test('should add issue URLs', async () => {

@@ -461,9 +461,6 @@ export class ClaudeCodeExecutor implements Executor {
     return {
       rmfilter: false,
       model: 'claude',
-      // run all steps in a task since Claude code has its own TODO lists for these things and can more efficiently
-      // handle them together.
-      selectSteps: 'all',
     };
   }
 

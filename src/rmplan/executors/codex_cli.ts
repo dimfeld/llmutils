@@ -52,7 +52,6 @@ export class CodexCliExecutor implements Executor {
     // Use rmfilter to provide repo context; omit boilerplate instructions to reduce token usage
     return {
       rmfilter: false,
-      selectSteps: 'all',
       // This is currently ignored
       model: 'gpt5-codex',
     } satisfies Partial<PrepareNextStepOptions>;

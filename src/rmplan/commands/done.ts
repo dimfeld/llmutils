@@ -17,8 +17,6 @@ export async function handleDoneCommand(planFile: string, options: any, command:
   const result = await markStepDone(
     resolvedPlanFile,
     {
-      task: options.task,
-      steps: options.steps ? parseInt(options.steps, 10) : 1,
       commit: options.commit,
     },
     undefined,

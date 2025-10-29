@@ -27,15 +27,12 @@ const basePlan: PlanSchema = {
     {
       title: 'Completed Task',
       description: 'Already done',
-      steps: [
-        { prompt: 'Step 1', done: true },
-        { prompt: 'Step 2', done: true },
-      ],
+      done: true,
     },
     {
       title: 'Pending Task',
       description: 'Needs work',
-      steps: [{ prompt: 'Investigate', done: false }],
+      done: false,
     },
   ],
 };
@@ -135,20 +132,17 @@ describe('mergeTasksIntoPlan', () => {
         {
           title: 'Completed Task [TASK-1]',
           description: 'Should stay untouched',
-          steps: [{ prompt: 'Changed', done: false }],
+          done: false,
         },
         {
           title: 'Pending Task [TASK-2]',
           description: 'Refined description',
-          steps: [
-            { prompt: 'Investigate', done: false },
-            { prompt: 'Implement', done: false },
-          ],
+          done: false,
         },
         {
           title: 'New Task Without ID',
           description: 'Follow-up work',
-          steps: [{ prompt: 'Do it', done: false }],
+          done: false,
         },
       ],
     };
