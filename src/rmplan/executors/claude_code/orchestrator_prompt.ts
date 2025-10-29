@@ -314,6 +314,7 @@ You have two specialized agents:
 You MUST follow this simplified loop:
 
 ${taskSelectionPhase}
+   - Explore the repository and create a plan on how to implement the task.
    - Call the implementer agent via the Task tool with subagent_type="rmplan-${planId}-implementer"
    - Provide precise task instructions and relevant context
    - Wait for the implementer to finish before moving on

@@ -545,7 +545,7 @@ export class CodexCliExecutor implements Executor {
     let implementerInstructions = await this.loadAgentInstructionsFor('implementer', gitRoot);
     implementerInstructions =
       (implementerInstructions || '') +
-      `\n\nOnce you decide how to go about implementing the tasks, do so immediately. No need to wait for approval.\n\n` +
+      `\n\nCreate a plan for the tasks, and then implement that plan. Once you decide on the plan, implement it immediately. No need to ask for approval.\n\n` +
       implementationNotesGuidance(planInfo.planFilePath, planInfo.planId) +
       `\n\nIn your final message, be sure to include the titles of the tasks that you completed.`;
 
