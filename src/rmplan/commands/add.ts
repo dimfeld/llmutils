@@ -157,6 +157,23 @@ export async function handleAddCommand(title: string[], options: any, command: a
     assign: options.assign,
   });
 
+  // Collect details if provided
+  if (options.details) {
+    plan.details = options.details;
+  } else if (options.detailsFile) {
+    if (options.detailsFile === '-') {
+      // Read from stdin
+      const { readStdin } = await import('../utils/editor.js');
+      plan.details = await readStdin();
+    } else {
+      // Read from file
+      plan.details = await fs.readFile(options.detailsFile, 'utf-8');
+    }
+  } else if (options.editorDetails) {
+    const { openEditorForInput } = await import('../utils/editor.js');
+    plan.details = await openEditorForInput('Enter plan details (markdown):');
+  }
+
   // Update parent plan dependencies - handles both regular parent and cleanup cases
   const parentPlanId = referencedPlan ? referencedPlan.id : options.parent;
   if (parentPlanId !== undefined) {
