@@ -192,7 +192,7 @@ details: Test details
 tasks:
   - title: Task 1
     description: First task
-
+    files: []
     steps:
       - prompt: Step 1
         done: false

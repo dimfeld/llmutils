@@ -92,18 +92,12 @@ test('prepareNextStep includes autoexamples when present in prompt', async () =>
     id: 123,
     title: 'Test plan',
     goal: 'Test plan',
-    details: 'Test details',
+    details: 'Test details. This step includes example1 in its prompt',
     tasks: [
       {
         title: 'Test task',
         description: 'Test description',
-        files: ['test.ts'],
-        steps: [
-          {
-            prompt: 'This step includes example1 in its prompt',
-            done: false,
-          },
-        ],
+        done: false,
       },
     ],
   };

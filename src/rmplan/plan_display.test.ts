@@ -57,7 +57,7 @@ describe('formatExistingTasks', () => {
     expect(formatExistingTasks(plan, { includeTasks: false })).toBeUndefined();
   });
 
-  it('summarizes tasks with step and file counts', () => {
+  it('summarizes tasks', () => {
     const plan = createPlan({
       id: 1,
       tasks: [
@@ -65,24 +65,18 @@ describe('formatExistingTasks', () => {
           title: 'Initial setup',
           description: 'Prepare repository',
           done: false,
-          files: ['src/index.ts'],
-          docs: [],
-          steps: [{ prompt: 'Clone repo', done: true, examples: [] }],
         },
         {
           title: '',
           description: 'Write feature',
           done: false,
-          files: [],
-          docs: [],
-          steps: [],
         },
       ],
     });
 
     const summary = formatExistingTasks(plan);
     expect(summary).toContain('### Existing Tasks');
-    expect(summary).toContain('- Initial setup (1 step, 1 file)');
+    expect(summary).toContain('- Initial setup');
     expect(summary).toContain('- Task 2');
   });
 });
