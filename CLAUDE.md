@@ -56,14 +56,15 @@ The codebase is organized into several main modules with improved modularity and
    - Modular command structure in `commands/` directory with separate files per sub-command
    - Core functionality: `add.ts`, `agent.ts`, `generate.ts`, `list.ts`, `next.ts`, `done.ts`
    - Specialized commands: `answer-pr.ts`, `cleanup.ts`, `extract.ts`, `split.ts`, `validate.ts`, `set.ts`
-   - Workspace management: `workspace.ts` with automated isolation support
-   - Shared utilities captured in purpose-built modules:
+  - Workspace management: `workspace.ts` with automated isolation support
+  - Shared utilities captured in purpose-built modules:
      - `plan_display.ts`: Resolves plans and assembles context summaries for both CLI output and MCP tooling
      - `plan_merge.ts`: Handles delimiter-aware plan detail updates and task merging while preserving metadata
      - `ready_plans.ts`: Implements readiness detection, filtering, and sorting used by the CLI and MCP list tools
-   - MCP server (`mcp/generate_mode.ts`) now focuses on registering prompts and delegates tool handlers to the relevant command modules
-   - Executor system in `executors/` for different LLM integration approaches
-   - **Automatic Parent-Child Relationship Maintenance**: All commands (`add`, `set`, `validate`) work together to ensure bidirectional consistency in the dependency graph, automatically updating parent plans when child relationships are created, modified, or removed
+     - `utils/task_operations.ts`: Centralizes task prompting helpers (interactive input, title search, selection menus) used by both CLI commands and MCP tools for task management
+  - MCP server (`mcp/generate_mode.ts`) now focuses on registering prompts and delegates tool handlers to the relevant command modules
+  - Executor system in `executors/` for different LLM integration approaches
+  - **Automatic Parent-Child Relationship Maintenance**: All commands (`add`, `set`, `validate`) work together to ensure bidirectional consistency in the dependency graph, automatically updating parent plans when child relationships are created, modified, or removed
 
 4. **apply-llm-edits**: Processes LLM-generated edits and applies them to the codebase
    - Supports different edit formats (unified diff, search/replace, XML, whole-file)
@@ -149,6 +150,7 @@ When adding new features, ensure test coverage for:
 - Happy path functionality
 - Edge cases and error handling
 - Different file formats and configurations
+- Reuse the cross-interface scenarios in `src/rmplan/commands/task-management.integration.test.ts` when modifying task management commands or MCP tools; they ensure CLI and MCP behavior stays aligned.
 
 - Don't mock in tests if you can help it.
 - Make sure that tests actually test the real code. Don't mock so many things in tests that you aren't testing anything.

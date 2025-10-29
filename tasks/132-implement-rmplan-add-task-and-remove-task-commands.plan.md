@@ -19,7 +19,7 @@ docs: []
 planGeneratedAt: 2025-10-28T23:31:23.749Z
 promptsGeneratedAt: 2025-10-28T23:31:23.749Z
 createdAt: 2025-10-26T22:41:12.354Z
-updatedAt: 2025-10-29T03:32:17.022Z
+updatedAt: 2025-10-29T03:41:11.069Z
 progressNotes:
   - timestamp: 2025-10-29T03:03:00.217Z
     text: Implemented new task_operations utilities providing title search,
@@ -48,6 +48,25 @@ progressNotes:
     text: Added integration coverage for rmplan add-task and remove-task commands;
       bun run check and targeted integration suite both pass.
     source: "tester: integration tests"
+  - timestamp: 2025-10-29T03:33:59.794Z
+    text: Reviewed existing add/remove task command handlers, unit tests, and
+      current README coverage to confirm gaps for the requested integration
+      workflows.
+    source: "implementer: Task 11"
+  - timestamp: 2025-10-29T03:39:11.125Z
+    text: Added end-to-end coverage in
+      src/rmplan/commands/task-management.integration.test.ts for CLI add/remove
+      flows, diverse MCP tool combinations, and cross-interface round-trips.
+    source: "implementer: Task 11"
+  - timestamp: 2025-10-29T03:39:15.964Z
+    text: Updated README with explicit add-task/remove-task command descriptions,
+      workflow examples, and new MCP tool documentation; noted shared utilities
+      and integration tests in CLAUDE.md.
+    source: "implementer: Task 12"
+  - timestamp: 2025-10-29T03:40:54.984Z
+    text: Ran bun run check and the full bun test suite; new task-management
+      integration specs passed alongside existing suites.
+    source: "tester: Task 11"
 tasks:
   - title: Create shared task utilities module
     done: true
@@ -1804,3 +1823,5 @@ Implemented shared task operations utilities (findTaskByTitle, selectTaskInterac
 Documented the new task management commands by expanding README.md: added narrative coverage in the Additional Commands section explaining how `rmplan add-task` normalizes metadata across editor, inline, and interactive flows, and how `rmplan remove-task` supports index/title/interactive selection with safety prompts. Added cheat sheet entries showing representative `rmplan add-task`/`rmplan remove-task` invocations so operators have copy-paste ready examples. This fulfills plan task 'Update documentation' and keeps the CLI reference in sync with the new utilities and command handlers.
 
 Documented the rmplan add-task and remove-task commands accurately for the Update documentation task. Updated README.md to describe the real flag combinations, spelling out that add-task requires --title with either --description or --editor unless --interactive is used, plus optional --files/--docs metadata, and that remove-task needs exactly one of --index/--title/--interactive (with --yes to skip confirmation). Refined the CLI cheat sheet examples so they demonstrate the supported syntax, including editor launch, inline metadata, title matching, and zero-based index removal. This keeps the user-facing guidance in sync with the command implementations and prevents confusion about unsupported flags.
+
+Implemented Task 11: Integration testing and Task 12: Update documentation. Created src/rmplan/commands/task-management.integration.test.ts to exercise add-task/remove-task workflows end-to-end, covering CLI add+show, CLI remove+show with warning checks, CLI round-trip add/remove symmetry, MCP add-plan-task/remove-plan-task sequencing, and mixed CLI/MCP flows. The suite sets up temporary task directories with ModuleMocker stubs for logging, config loading, git root resolution, assignments, and clipboard to keep handlers deterministic, then asserts both plan file mutations and command output. Updated README.md with an explicit command list for add-task/remove-task, a task-management workflow snippet, and expanded MCP server documentation that details the new add-plan-task and remove-plan-task tools with parameter guidance and index-shift warnings. Extended CLAUDE.md to document the shared task_operations utility module and to call out the new integration suite as required coverage when modifying task management features. Verified changes with bun run check and bun test to ensure the new tests pass alongside the existing suite.
