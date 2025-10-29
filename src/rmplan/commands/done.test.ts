@@ -20,10 +20,7 @@ describe('handleDoneCommand', () => {
     // Write config file so plan resolution works
     const configDir = path.join(tempDir, '.rmfilter');
     await fs.mkdir(configDir, { recursive: true });
-    await fs.writeFile(
-      path.join(configDir, 'rmplan.yml'),
-      `paths:\n  tasks: ${tasksDir}\n`
-    );
+    await fs.writeFile(path.join(configDir, 'rmplan.yml'), `paths:\n  tasks: ${tasksDir}\n`);
 
     // Mock markStepDone
     markStepDoneSpy = mock(async () => ({

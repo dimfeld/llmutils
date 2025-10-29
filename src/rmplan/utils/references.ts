@@ -181,9 +181,7 @@ export function fixReferenceMismatches(
 
   // Update dependencies
   if (updatedPlan.dependencies && updatedPlan.dependencies.length > 0) {
-    updatedPlan.dependencies = updatedPlan.dependencies.map(
-      (id) => idMapping.get(id) ?? id
-    );
+    updatedPlan.dependencies = updatedPlan.dependencies.map((id) => idMapping.get(id) ?? id);
   }
 
   // Update discoveredFrom

@@ -370,7 +370,7 @@ rmplan mcp-server --mode generate
 
 The server communicates over stdio by default. To expose an HTTP streaming endpoint instead, pass `--transport http --port <port>`. The command respects the global `--config` flag so you can point it at a specific `rmplan` configuration file when starting the server.
 
-The generate mode publishes two prompts and two tools:
+The generate mode publishes two prompts and several tools:
 
 - **Prompts**
   - `perform-research` – loads the plan and returns the standard research template so the client can capture findings under `## Research`.
@@ -378,6 +378,8 @@ The generate mode publishes two prompts and two tools:
 - **Tools**
   - `generate-plan-tasks` – builds the full planning prompt for the target plan. When `planning.direct_mode` is enabled (or the tool input sets `direct: true`), the tool calls the configured model directly and streams the generated tasks back. Otherwise it returns the prompt text so the client can run it manually.
   - `append-plan-research` – appends research Markdown to the plan’s `details` field under the `## Research` heading, creating the section if needed.
+  - `add-plan-task` – creates a new pending task inside an existing plan. Parameters: `plan`, `title`, and `description`, plus optional `files` and `docs` arrays for related paths. The handler normalizes list entries to avoid duplicates.
+  - `remove-plan-task` – deletes a single task identified by either `taskTitle` (partial, case-insensitive match) or `taskIndex` (0-based). Provide exactly one selector; prefer `taskTitle` so workflows stay stable when indices shift after deletion. The response includes a warning when later indices move.
 
 Plan arguments accept either a numeric ID (resolved via the configured tasks directory) or an explicit file path, matching the rest of the `rmplan` CLI.
 
@@ -387,6 +389,9 @@ When the research capture step runs, open the plan file and scroll to the `## Re
 
 ### Additional Commands
 
+- `rmplan add-task <plan>` – Append a new pending task to an existing plan without editing YAML manually.
+- `rmplan remove-task <plan>` – Remove a task by title, index, or interactive selection (title matching is recommended to avoid index drift).
+
 The `add` command allows you to quickly create new plan stub files with just a title. These stubs can then be populated with detailed tasks using the `generate` command. This is particularly useful when you want to quickly capture ideas for future work or create a set of related plans with proper dependencies.
 
 The `split` command helps manage complexity by using an LLM to intelligently break down a large, detailed plan into multiple smaller, phase-based plans. Each phase becomes a separate plan file with proper dependencies, allowing you to tackle complex projects incrementally while maintaining the full context and details from the original plan.
@@ -394,6 +399,24 @@ The `split` command helps manage complexity by using an LLM to intelligently bre
 The `research` command generates a research prompt based on a plan's goal and details, helping you gather additional context or information to enhance the plan. The `--rmfilter` option incorporates file context into the research prompt using `rmfilter`, allowing you to include relevant code files and documentation. After running the research prompt through an LLM, the command provides an interactive paste-back mechanism where you can paste the research findings, and they will be automatically appended to the plan file's `details` field beneath the `## Research` heading for future reference.
 
 The `update` command allows you to modify an existing plan by providing a natural language description of the desired changes. This enables iterative refinement of plans as requirements evolve or new information becomes available. The command uses an LLM to intelligently update the plan's tasks and structure while preserving important metadata.
+
+The `add-task` command appends a new task to an existing plan. Supply `--title` together with either `--description` or `--editor` when running non-interactively, or pass `--interactive` to walk through prompts for the title, description, and optional metadata. Use `--files` and `--docs` to record related paths so new tasks match the format of the rest of the plan. The command normalizes file and doc lists so repeated values collapse automatically.
+
+The `remove-task` command deletes exactly one task from a plan by zero-based index, partial title match, or an interactive picker. Prefer `--title` whenever possible so scripts remain stable across edits—indices shift immediately after removal. Choose a single selection mode via `--index`, `--title`, or `--interactive`, and add `--yes` to skip the confirmation prompt when scripting. The CLI prints a warning whenever a removal affects later indices.
+
+#### Task management workflows
+
+```bash
+# Add a task
+rmplan add-task 42 --title "Add tests" --description "Add unit tests for new feature"
+
+# Remove a task by title (recommended)
+rmplan remove-task 42 --title "Add tests"
+
+# Interactive task management
+rmplan add-task 42 --interactive
+rmplan remove-task 42 --interactive
+```
 
 When running `rmplan next` to paste the prompt into a web chat or send to an API, you should include the --rmfilter option to include the relevant files and documentation in the prompt. Omit this option when using the prompt with Cursor, Claude Code, or other agentic editors because they will read the files themselves.
 
@@ -500,6 +523,21 @@ rmplan update my-feature-123 --editor
 
 # Update with additional context from rmfilter
 rmplan update tasks/feature.yml "Remove the database migration task" -- src/**/*.ts
+
+# Append a task to a plan and open your editor for the description
+rmplan add-task tasks/feature.yml --title "Review audit logs" --editor
+
+# Quickly add a pending task with inline metadata
+rmplan add-task tasks/feature.yml --title "Write smoke tests" --description "Cover sign-in and billing paths" --files src/auth.ts tests/smoke.test.ts
+
+# Remove a task by its title (partial match; confirms before deleting)
+rmplan remove-task tasks/feature.yml --title "Write smoke tests"
+
+# Remove a task by index (0-based) without confirmation
+rmplan remove-task tasks/feature.yml --index 2 --yes
+
+# Remove tasks using the interactive selector when you are unsure of the index
+rmplan remove-task tasks/feature.yml --interactive
 
 # List all plan files in the tasks directory (shows pending and in_progress by default)
 rmplan list

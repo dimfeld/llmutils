@@ -367,7 +367,6 @@ export async function extractMarkdownToYaml(
       validatedPlan.updatedAt = now;
       validatedPlan.planGeneratedAt = now;
 
-
       // Set defaults for status if not already set
       if (!validatedPlan.status) {
         validatedPlan.status = 'pending';

@@ -719,7 +719,9 @@ export async function handleValidateCommand(
 
     if (uuidIssues.length > 0) {
       console.log(
-        chalk.yellow.bold(`\nFound ${uuidIssues.length} plan${uuidIssues.length === 1 ? '' : 's'} without UUIDs.`)
+        chalk.yellow.bold(
+          `\nFound ${uuidIssues.length} plan${uuidIssues.length === 1 ? '' : 's'} without UUIDs.`
+        )
       );
 
       if (options.fix === false) {

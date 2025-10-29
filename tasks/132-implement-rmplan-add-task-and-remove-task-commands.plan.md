@@ -5,19 +5,80 @@ goal: ""
 id: 132
 uuid: 7ebf9d14-805e-4178-83a7-a1e91154de23
 generatedBy: agent
-status: pending
+status: done
 priority: medium
+container: false
 temp: false
+dependencies: []
 parent: 128
 references:
   "128": f69d418b-aaf1-4c29-88a9-f557baf8f81e
+issue: []
+pullRequest: []
+docs: []
 planGeneratedAt: 2025-10-28T23:31:23.749Z
 promptsGeneratedAt: 2025-10-28T23:31:23.749Z
 createdAt: 2025-10-26T22:41:12.354Z
-updatedAt: 2025-10-28T23:31:23.749Z
+updatedAt: 2025-10-29T03:49:48.072Z
+progressNotes:
+  - timestamp: 2025-10-29T03:03:00.217Z
+    text: Implemented new task_operations utilities providing title search,
+      interactive selection, and editor-backed task info prompts for reuse
+      across upcoming commands.
+    source: "implementer: Create shared task utilities module"
+  - timestamp: 2025-10-29T03:04:24.866Z
+    text: Added add-task and remove-task command handlers leveraging shared
+      utilities, normalized option inputs, and integrated both commands into the
+      main rmplan CLI.
+    source: "implementer: Implement add/remove task commands"
+  - timestamp: 2025-10-29T03:09:59.338Z
+    text: Added add-plan-task and remove-plan-task MCP handlers with validation,
+      normalized metadata handling, and registered them in generate mode for
+      autonomous agent workflows.
+    source: "implementer: Implement MCP task management tools"
+  - timestamp: 2025-10-29T03:10:04.032Z
+    text: Created unit tests covering task utilities, add/remove command handlers,
+      and MCP task operations ensuring new features are validated end-to-end.
+    source: "implementer: Write unit tests"
+  - timestamp: 2025-10-29T03:12:25.897Z
+    text: Ran TypeScript checks and the full Bun test suite to validate new task
+      management features; all checks passed successfully.
+    source: "implementer: Verification"
+  - timestamp: 2025-10-29T03:18:41.288Z
+    text: Added integration coverage for rmplan add-task and remove-task commands;
+      bun run check and targeted integration suite both pass.
+    source: "tester: integration tests"
+  - timestamp: 2025-10-29T03:33:59.794Z
+    text: Reviewed existing add/remove task command handlers, unit tests, and
+      current README coverage to confirm gaps for the requested integration
+      workflows.
+    source: "implementer: Task 11"
+  - timestamp: 2025-10-29T03:39:11.125Z
+    text: Added end-to-end coverage in
+      src/rmplan/commands/task-management.integration.test.ts for CLI add/remove
+      flows, diverse MCP tool combinations, and cross-interface round-trips.
+    source: "implementer: Task 11"
+  - timestamp: 2025-10-29T03:39:15.964Z
+    text: Updated README with explicit add-task/remove-task command descriptions,
+      workflow examples, and new MCP tool documentation; noted shared utilities
+      and integration tests in CLAUDE.md.
+    source: "implementer: Task 12"
+  - timestamp: 2025-10-29T03:40:54.984Z
+    text: Ran bun run check and the full bun test suite; new task-management
+      integration specs passed alongside existing suites.
+    source: "tester: Task 11"
+  - timestamp: 2025-10-29T03:42:51.166Z
+    text: Reviewing existing unit and integration suites for add/remove task flows;
+      preparing to run regression tests to confirm new coverage.
+    source: "tester: Task 11"
+  - timestamp: 2025-10-29T03:44:06.879Z
+    text: Augmented unit suites with negative-path coverage for add-task title
+      validation and remove-task selector enforcement; reran full bun test suite
+      to confirm all 2,345 specs pass.
+    source: "tester: Task 11"
 tasks:
   - title: Create shared task utilities module
-    done: false
+    done: true
     description: >-
       Create `src/rmplan/utils/task_operations.ts` with shared utility functions
       for task manipulation:
@@ -36,7 +97,7 @@ tasks:
       These utilities will be used by both add-task and remove-task commands to
       ensure consistent behavior.
   - title: Implement add-task command handler
-    done: false
+    done: true
     description: >-
       Create `src/rmplan/commands/add-task.ts` with `handleAddTaskCommand()`
       function:
@@ -104,7 +165,7 @@ tasks:
 
       - Handle editor cancellation gracefully
   - title: Implement remove-task command handler
-    done: false
+    done: true
     description: >-
       Create `src/rmplan/commands/remove-task.ts` with
       `handleRemoveTaskCommand()` function:
@@ -172,7 +233,7 @@ tasks:
 
       - Handle confirmation cancellation (user selects 'no')
   - title: Register CLI commands in rmplan.ts
-    done: false
+    done: true
     description: >-
       Add command registrations to `src/rmplan/rmplan.ts`:
 
@@ -218,7 +279,7 @@ tasks:
       Ensure commands are registered in the appropriate location (likely after
       other task-related commands).
   - title: Implement MCP add-plan-task tool
-    done: false
+    done: true
     description: >-
       Add MCP tool for adding tasks in `src/rmplan/mcp/generate_mode.ts`:
 
@@ -297,7 +358,7 @@ tasks:
 
       ```
   - title: Implement MCP remove-plan-task tool
-    done: false
+    done: true
     description: >-
       Add MCP tool for removing tasks in `src/rmplan/mcp/generate_mode.ts`:
 
@@ -384,7 +445,7 @@ tasks:
 
       ```
   - title: Write tests for task utilities
-    done: false
+    done: true
     description: >-
       Create `src/rmplan/utils/task_operations.test.ts` with comprehensive
       tests:
@@ -433,7 +494,7 @@ tasks:
 
       - Use real task type definitions from schema
   - title: Write tests for add-task command
-    done: false
+    done: true
     description: |-
       Create `src/rmplan/commands/add-task.test.ts` with comprehensive tests:
 
@@ -462,7 +523,7 @@ tasks:
       - Verify all fields set correctly
       - Verify timestamp updated
   - title: Write tests for remove-task command
-    done: false
+    done: true
     description: |-
       Create `src/rmplan/commands/remove-task.test.ts` with comprehensive tests:
 
@@ -497,7 +558,7 @@ tasks:
       - Verify task count decreased by 1
       - Verify timestamp updated
   - title: Write tests for MCP tools
-    done: false
+    done: true
     description: |-
       Add tests to `src/rmplan/mcp/generate_mode.test.ts` for the new MCP tools:
 
@@ -533,7 +594,7 @@ tasks:
       - Verify plan modifications
       - Verify return messages are descriptive
   - title: Integration testing
-    done: false
+    done: true
     description: >-
       Create integration tests that verify end-to-end workflows:
 
@@ -580,7 +641,7 @@ tasks:
 
       - Timestamps updated appropriately
   - title: Update documentation
-    done: false
+    done: true
     description: >-
       Update project documentation to include the new commands:
 
@@ -640,6 +701,32 @@ tasks:
       - Document the task utilities module
 
       - Note testing patterns used
+changedFiles:
+  - CLAUDE.md
+  - README.md
+  - src/rmplan/commands/add-task.test.ts
+  - src/rmplan/commands/add-task.ts
+  - src/rmplan/commands/agent/agent.test.ts
+  - src/rmplan/commands/agent/agent.ts
+  - src/rmplan/commands/agent/agent_batch_mode.test.ts
+  - src/rmplan/commands/done.test.ts
+  - src/rmplan/commands/remove-task.test.ts
+  - src/rmplan/commands/remove-task.ts
+  - src/rmplan/commands/renumber.ts
+  - src/rmplan/commands/task-management.integration.test.ts
+  - src/rmplan/commands/validate.test.ts
+  - src/rmplan/commands/validate.ts
+  - src/rmplan/mcp/generate_mode.test.ts
+  - src/rmplan/mcp/generate_mode.ts
+  - src/rmplan/planSchema.ts
+  - src/rmplan/plans/prepare_step.ts
+  - src/rmplan/process_markdown.ts
+  - src/rmplan/rmplan.integration.test.ts
+  - src/rmplan/rmplan.ts
+  - src/rmplan/utils/references.ts
+  - src/rmplan/utils/task_operations.test.ts
+  - src/rmplan/utils/task_operations.ts
+rmfilter: []
 ---
 
 ## Overview
@@ -1750,3 +1837,13 @@ Test coverage should include:
 ### Follow-up Questions
 
 None - all necessary information has been gathered from the codebase exploration. The implementation can proceed with confidence following the established patterns.
+
+# Implementation Notes
+
+Implemented shared task operations utilities (findTaskByTitle, selectTaskInteractive, promptForTaskInfo) in src/rmplan/utils/task_operations.ts to centralize task search and interactive prompting logic used by new features. Added rmplan add-task (src/rmplan/commands/add-task.ts) and rmplan remove-task (src/rmplan/commands/remove-task.ts) commands with CLI wiring, non-interactive flag handling, editor support, confirmation prompts, and shared normalization of files/docs metadata. Extended MCP generate_mode (src/rmplan/mcp/generate_mode.ts) with add-plan-task and remove-plan-task tools, including Zod schemas, task creation/removal helpers, and log instrumentation; updated CLI registration in src/rmplan/rmplan.ts. Created comprehensive unit tests for utilities, commands, and MCP helpers across src/rmplan/utils/task_operations.test.ts, src/rmplan/commands/add-task.test.ts, src/rmplan/commands/remove-task.test.ts, and src/rmplan/mcp/generate_mode.test.ts to cover happy paths, interactive flows, edge cases, and error handling. Covered plan tasks: 'Create shared task utilities module', 'Implement add-task command handler', 'Implement remove-task command handler', and associated MCP/tooling test tasks.
+
+Documented the new task management commands by expanding README.md: added narrative coverage in the Additional Commands section explaining how `rmplan add-task` normalizes metadata across editor, inline, and interactive flows, and how `rmplan remove-task` supports index/title/interactive selection with safety prompts. Added cheat sheet entries showing representative `rmplan add-task`/`rmplan remove-task` invocations so operators have copy-paste ready examples. This fulfills plan task 'Update documentation' and keeps the CLI reference in sync with the new utilities and command handlers.
+
+Documented the rmplan add-task and remove-task commands accurately for the Update documentation task. Updated README.md to describe the real flag combinations, spelling out that add-task requires --title with either --description or --editor unless --interactive is used, plus optional --files/--docs metadata, and that remove-task needs exactly one of --index/--title/--interactive (with --yes to skip confirmation). Refined the CLI cheat sheet examples so they demonstrate the supported syntax, including editor launch, inline metadata, title matching, and zero-based index removal. This keeps the user-facing guidance in sync with the command implementations and prevents confusion about unsupported flags.
+
+Implemented Task 11: Integration testing and Task 12: Update documentation. Created src/rmplan/commands/task-management.integration.test.ts to exercise add-task/remove-task workflows end-to-end, covering CLI add+show, CLI remove+show with warning checks, CLI round-trip add/remove symmetry, MCP add-plan-task/remove-plan-task sequencing, and mixed CLI/MCP flows. The suite sets up temporary task directories with ModuleMocker stubs for logging, config loading, git root resolution, assignments, and clipboard to keep handlers deterministic, then asserts both plan file mutations and command output. Updated README.md with an explicit command list for add-task/remove-task, a task-management workflow snippet, and expanded MCP server documentation that details the new add-plan-task and remove-plan-task tools with parameter guidance and index-shift warnings. Extended CLAUDE.md to document the shared task_operations utility module and to call out the new integration suite as required coverage when modifying task management features. Verified changes with bun run check and bun test to ensure the new tests pass alongside the existing suite.

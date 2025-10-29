@@ -589,9 +589,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       }
 
       log(
-        boldMarkdownHeaders(
-          `# Iteration ${stepCount}: Task ${pendingTaskInfo.taskIndex + 1}...`
-        )
+        boldMarkdownHeaders(`# Iteration ${stepCount}: Task ${pendingTaskInfo.taskIndex + 1}...`)
       );
 
       const { promptFilePath, taskIndex, rmfilterArgs } = stepPreparationResult;

@@ -575,6 +575,32 @@ program
   });
 
 program
+  .command('add-task <plan>')
+  .description('Add a task to an existing plan (file path or plan ID)')
+  .option('--title <title>', 'Task title')
+  .option('--description <desc>', 'Task description')
+  .option('--editor', 'Open editor for description')
+  .option('--files <files...>', 'Related files')
+  .option('--docs <docs...>', 'Documentation paths')
+  .option('--interactive', 'Prompt for all fields interactively')
+  .action(async (plan, options, command) => {
+    const { handleAddTaskCommand } = await import('./commands/add-task.js');
+    await handleAddTaskCommand(plan, options, command).catch(handleCommandError);
+  });
+
+program
+  .command('remove-task <plan>')
+  .description('Remove a task from a plan (file path or plan ID)')
+  .option('--index <index>', 'Task index (0-based)', (val: string) => parseInt(val, 10))
+  .option('--title <title>', 'Find task by title (partial match)')
+  .option('--interactive', 'Select task interactively')
+  .option('--yes', 'Skip confirmation prompt')
+  .action(async (plan, options, command) => {
+    const { handleRemoveTaskCommand } = await import('./commands/remove-task.js');
+    await handleRemoveTaskCommand(plan, options, command).catch(handleCommandError);
+  });
+
+program
   .command('update <planFile> [description]')
   .description('Update an existing plan using natural language description of changes')
   .option('--editor', 'Open editor to provide the update description')

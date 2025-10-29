@@ -6,7 +6,9 @@ import yaml from 'yaml';
 import { clearPlanCache, readPlanFile, readAllPlans } from './plans.js';
 import type { PlanSchema } from './planSchema.js';
 import { handleAddCommand } from './commands/add.js';
+import { handleAddTaskCommand } from './commands/add-task.js';
 import { handleDoneCommand } from './commands/done.js';
+import { handleRemoveTaskCommand } from './commands/remove-task.js';
 import { ModuleMocker } from '../testing.js';
 
 // Handlers that rely on mocked modules are imported dynamically in beforeEach
@@ -155,6 +157,44 @@ describe('rmplan CLI integration tests (internal handlers)', () => {
     expect(updatedPlan.tasks[0].done).toBe(true);
   });
 
+  test('rmplan add-task appends a new task to an existing plan', async () => {
+    const command = { parent: { opts: () => ({ config: configPath }) } } as any;
+
+    await handleAddCommand(['Integration', 'AddTask', 'Plan'], {}, command);
+
+    const planFiles = await fs.readdir(tasksDir);
+    expect(planFiles).toHaveLength(1);
+    const planFilePath = path.join(tasksDir, planFiles[0] as string);
+
+    const initialPlan = await readPlanFile(planFilePath);
+    expect(initialPlan.tasks ?? []).toHaveLength(0);
+
+    mockLog.mockClear();
+    await handleAddTaskCommand(
+      planFilePath,
+      {
+        title: 'Integration Task',
+        description: 'Created via add-task integration test',
+        files: ['src/service.ts'],
+      },
+      command
+    );
+
+    const updatedPlan = await readPlanFile(planFilePath);
+    expect(updatedPlan.tasks).toHaveLength(1);
+    const [task] = updatedPlan.tasks;
+    expect(task?.title).toBe('Integration Task');
+    expect(task?.description).toBe('Created via add-task integration test');
+    expect(task?.files).toEqual(['src/service.ts']);
+    expect(task?.docs).toEqual([]);
+    expect(task?.steps).toEqual([]);
+    expect(task?.done).toBeFalse();
+    expect(typeof updatedPlan.updatedAt).toBe('string');
+
+    const logOutput = mockLog.mock.calls.flat().join('\n');
+    expect(logOutput).toContain('Added task "Integration Task"');
+  });
+
   test('rmplan list --status filters by status', async () => {
     // Create plans with different statuses
     const plans = [
@@ -196,6 +236,54 @@ describe('rmplan CLI integration tests (internal handlers)', () => {
     expect(calls).toContain('Done Plan');
     expect(calls).not.toContain('Pending Plan');
     expect(calls).not.toContain('In Progress Plan');
+  });
+
+  test('rmplan remove-task deletes the selected task and reports shifts', async () => {
+    const command = { parent: { opts: () => ({ config: configPath }) } } as any;
+
+    await handleAddCommand(['Integration', 'Task', 'Removal'], {}, command);
+
+    const planFiles = await fs.readdir(tasksDir);
+    expect(planFiles).toHaveLength(1);
+    const planFilePath = path.join(tasksDir, planFiles[0] as string);
+
+    await handleAddTaskCommand(
+      planFilePath,
+      {
+        title: 'First Task',
+        description: 'Initial task to remove later',
+      },
+      command
+    );
+    await handleAddTaskCommand(
+      planFilePath,
+      {
+        title: 'Second Task',
+        description: 'Task that should remain',
+      },
+      command
+    );
+    const preRemovalPlan = await readPlanFile(planFilePath);
+    expect(preRemovalPlan.tasks).toHaveLength(2);
+
+    mockLog.mockClear();
+    await handleRemoveTaskCommand(
+      planFilePath,
+      {
+        index: 0,
+        yes: true,
+      },
+      command
+    );
+
+    const updatedPlan = await readPlanFile(planFilePath);
+    expect(updatedPlan.tasks).toHaveLength(1);
+    expect(updatedPlan.tasks[0]?.title).toBe('Second Task');
+    expect(typeof updatedPlan.updatedAt).toBe('string');
+
+    const logOutput = mockLog.mock.calls.flat().join('\n');
+    expect(logOutput).toContain('Removed task "First Task"');
+    expect(logOutput).toContain('have shifted');
   });
 
   test('rmplan show --next finds next ready plan', async () => {

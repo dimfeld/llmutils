@@ -7,9 +7,13 @@ import type { PlanSchema } from '../planSchema.js';
 import { writePlanFile, readPlanFile, clearPlanCache } from '../plans.js';
 import {
   appendResearchParameters,
+  addPlanTaskParameters,
   generateTasksParameters,
   getPlanParameters,
   listReadyPlansParameters,
+  mcpAddPlanTask,
+  mcpRemovePlanTask,
+  removePlanTaskParameters,
   loadGeneratePrompt,
   loadPlanPrompt,
   loadQuestionsPrompt,
@@ -307,6 +311,90 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(updated.details).not.toContain('First update.');
     expect(updated.details).toContain('## Research');
     expect(updated.details).toContain('Important research data that should be preserved');
+  });
+
+  test('mcpAddPlanTask appends a new task with metadata', async () => {
+    const args = addPlanTaskParameters.parse({
+      plan: planPath,
+      title: 'Investigate issue',
+      description: 'Reproduce the bug and identify the failing component.',
+      files: ['src/issues.ts'],
+      docs: ['docs/triage.md'],
+    });
+
+    const stubLogger = {
+      debug() {},
+      error() {},
+      info() {},
+      warn() {},
+    };
+
+    const result = await mcpAddPlanTask(args, context, { log: stubLogger });
+    expect(result).toContain('Added task "Investigate issue"');
+
+    const updated = await readPlanFile(planPath);
+    expect(updated.tasks).toHaveLength(1);
+    const task = updated.tasks[0];
+    expect(task?.title).toBe('Investigate issue');
+    expect(task?.description).toContain('Reproduce the bug');
+    expect(task?.files).toEqual(['src/issues.ts']);
+    expect(task?.docs).toEqual(['docs/triage.md']);
+    expect(task?.done).toBeFalse();
+    expect(Array.isArray(task?.steps)).toBeTrue();
+  });
+
+  test('mcpRemovePlanTask removes by title and reports shifts', async () => {
+    const addArgs = addPlanTaskParameters.parse({
+      plan: planPath,
+      title: 'First Task',
+      description: 'Initial task',
+    });
+    const addArgsSecond = addPlanTaskParameters.parse({
+      plan: planPath,
+      title: 'Follow-up Task',
+      description: 'Secondary task',
+    });
+
+    const stubLogger = {
+      debug() {},
+      error() {},
+      info() {},
+      warn() {},
+    };
+
+    await mcpAddPlanTask(addArgs, context, { log: stubLogger });
+    await mcpAddPlanTask(addArgsSecond, context, { log: stubLogger });
+
+    const removeArgs = removePlanTaskParameters.parse({
+      plan: planPath,
+      taskTitle: 'first',
+    });
+
+    const result = await mcpRemovePlanTask(removeArgs, context, { log: stubLogger });
+    expect(result).toContain('Removed task "First Task"');
+    expect(result).toContain('have shifted');
+
+    const updated = await readPlanFile(planPath);
+    expect(updated.tasks).toHaveLength(1);
+    expect(updated.tasks[0]?.title).toBe('Follow-up Task');
+  });
+
+  test('mcpRemovePlanTask errors on missing selectors', async () => {
+    const addArgs = addPlanTaskParameters.parse({
+      plan: planPath,
+      title: 'Existing Task',
+      description: 'Something to remove',
+    });
+
+    await mcpAddPlanTask(addArgs, context);
+
+    const args = removePlanTaskParameters.parse({
+      plan: planPath,
+    });
+
+    await expect(mcpRemovePlanTask(args, context)).rejects.toThrow(
+      'Provide either taskTitle or taskIndex to remove a task.'
+    );
   });
 });
 

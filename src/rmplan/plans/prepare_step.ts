@@ -233,10 +233,7 @@ export async function prepareNextStep(
     }
   }
 
-  promptParts.push(
-    `## Task: ${activeTask.title}\n`,
-    `Description: ${activeTask.description}`
-  );
+  promptParts.push(`## Task: ${activeTask.title}\n`, `Description: ${activeTask.description}`);
 
   if (!rmfilter) {
     // Get additional docs using findAdditionalDocs when rmfilter is false
