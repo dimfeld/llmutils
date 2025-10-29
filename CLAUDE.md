@@ -55,7 +55,7 @@ The codebase is organized into several main modules with improved modularity and
 3. **rmplan**: Manages step-by-step project plans with LLM integration, organized by sub-commands
    - Modular command structure in `commands/` directory with separate files per sub-command
    - Core functionality: `add.ts`, `agent.ts`, `generate.ts`, `list.ts`, `next.ts`, `done.ts`
-   - Specialized commands: `answer-pr.ts`, `cleanup.ts`, `extract.ts`, `prepare.ts`, `split.ts`, `validate.ts`, `set.ts`
+   - Specialized commands: `answer-pr.ts`, `cleanup.ts`, `extract.ts`, `split.ts`, `validate.ts`, `set.ts`
    - Workspace management: `workspace.ts` with automated isolation support
    - Shared utilities captured in purpose-built modules:
      - `plan_display.ts`: Resolves plans and assembles context summaries for both CLI output and MCP tooling
@@ -88,8 +88,7 @@ The codebase is organized into several main modules with improved modularity and
 
 ## rmplan Claude Code Workflow
 
-- `rmplan generate --claude` now runs a three-step Claude Code session: planning → research capture → plan generation. The middle step prompts Claude to summarize its findings, which are appended under a `## Research` heading in the plan's `details` markdown before the plan is parsed.
-- `rmplan prepare --claude` uses this same research capture step when the target plan's `generatedBy` field is `oneshot`. Other plans keep the original two-step flow.
+- `rmplan generate --claude` runs a three-step Claude Code session: planning → research capture → plan generation. The middle step prompts Claude to summarize its findings, which are appended under a `## Research` heading in the plan's `details` markdown before the plan is parsed.
 - Research notes are preserved on disk inside the plan file. Open the plan and scroll to the `## Research` section in the `details` field to review or edit Claude's findings later.
 - If the research capture step fails, the orchestrator falls back to the traditional two-step process so existing workflows keep working.
 
