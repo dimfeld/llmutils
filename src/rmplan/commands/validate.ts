@@ -36,6 +36,19 @@ interface DiscoveredFromFixResult {
   errors: string[];
 }
 
+interface ObsoleteKeyIssue {
+  filename: string;
+  planId?: number;
+  taskIndices: number[];
+  keysToRemove: string[];
+}
+
+interface ObsoleteKeyFixResult {
+  fixedPlans: number;
+  totalKeysRemoved: number;
+  errors: string[];
+}
+
 const { phaseSchema: strictPhaseSchema } = createPlanSchemas((shape) => z.object(shape).strict());
 
 async function validatePlanFile(filePath: string): Promise<ValidationResult> {
@@ -354,6 +367,97 @@ async function fixDiscoveredFromReferences(
   return { cleared, errors };
 }
 
+const OBSOLETE_TASK_KEYS = ['files', 'docs', 'steps', 'examples'];
+
+function detectObsoleteTaskKeys(
+  plans: Map<number, PlanSchema & { filename: string }>
+): ObsoleteKeyIssue[] {
+  const issues: ObsoleteKeyIssue[] = [];
+
+  for (const [planId, plan] of plans.entries()) {
+    if (!plan.tasks || plan.tasks.length === 0) {
+      continue;
+    }
+
+    const taskIndices: number[] = [];
+    const keysFound = new Set<string>();
+
+    plan.tasks.forEach((task: any, index: number) => {
+      const obsoleteKeys = OBSOLETE_TASK_KEYS.filter((key) => key in task);
+      if (obsoleteKeys.length > 0) {
+        taskIndices.push(index);
+        obsoleteKeys.forEach((key) => keysFound.add(key));
+      }
+    });
+
+    if (taskIndices.length > 0) {
+      issues.push({
+        filename: plan.filename,
+        planId,
+        taskIndices,
+        keysToRemove: Array.from(keysFound),
+      });
+    }
+  }
+
+  return issues;
+}
+
+async function fixObsoleteTaskKeys(issues: ObsoleteKeyIssue[]): Promise<ObsoleteKeyFixResult> {
+  let fixedPlans = 0;
+  let totalKeysRemoved = 0;
+  const errors: string[] = [];
+
+  for (const issue of issues) {
+    try {
+      const plan = await readPlanFile(issue.filename);
+
+      if (!plan.tasks || plan.tasks.length === 0) {
+        continue;
+      }
+
+      let hasChanges = false;
+      let keysRemovedInPlan = 0;
+
+      plan.tasks = plan.tasks.map((task: any, index: number) => {
+        if (!issue.taskIndices.includes(index)) {
+          return task;
+        }
+
+        const cleanedTask = { ...task };
+        let taskModified = false;
+
+        for (const key of OBSOLETE_TASK_KEYS) {
+          if (key in cleanedTask) {
+            delete cleanedTask[key];
+            taskModified = true;
+            keysRemovedInPlan++;
+          }
+        }
+
+        if (taskModified) {
+          hasChanges = true;
+        }
+
+        return cleanedTask;
+      });
+
+      if (hasChanges) {
+        plan.updatedAt = new Date().toISOString();
+        await writePlanFile(issue.filename, plan);
+        fixedPlans++;
+        totalKeysRemoved += keysRemovedInPlan;
+      }
+    } catch (error) {
+      errors.push(
+        `Failed to fix obsolete keys in ${issue.filename}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  return { fixedPlans, totalKeysRemoved, errors };
+}
+
 export async function handleValidateCommand(
   options: { dir?: string; verbose?: boolean; fix?: boolean },
   command: any
@@ -381,7 +485,58 @@ export async function handleValidateCommand(
     )
   );
 
-  // Validate all files
+  // First pass: Load all plans to check for obsolete keys
+  let planMap: Map<number, PlanSchema & { filename: string }> | null = null;
+  let obsoleteKeyIssues: ObsoleteKeyIssue[] = [];
+  let obsoleteKeyFixResult: ObsoleteKeyFixResult | null = null;
+
+  try {
+    const planResults = await readAllPlans(tasksDir);
+    planMap = planResults.plans;
+
+    // Detect obsolete keys
+    obsoleteKeyIssues = detectObsoleteTaskKeys(planMap);
+
+    if (obsoleteKeyIssues.length > 0) {
+      const totalTasks = obsoleteKeyIssues.reduce((sum, issue) => sum + issue.taskIndices.length, 0);
+      console.log(
+        chalk.yellow.bold(
+          `Found ${obsoleteKeyIssues.length} plan${obsoleteKeyIssues.length === 1 ? '' : 's'} with ${totalTasks} task${totalTasks === 1 ? '' : 's'} containing obsolete keys.`
+        )
+      );
+
+      if (options.fix === false) {
+        console.log(chalk.yellow('--no-fix flag specified, will report as validation errors.\n'));
+      } else {
+        console.log(chalk.blue('Auto-fixing obsolete task keys before validation...'));
+        obsoleteKeyFixResult = await fixObsoleteTaskKeys(obsoleteKeyIssues);
+
+        if (obsoleteKeyFixResult.fixedPlans > 0) {
+          console.log(
+            chalk.green(
+              `✓ Fixed ${obsoleteKeyFixResult.fixedPlans} plan${obsoleteKeyFixResult.fixedPlans === 1 ? '' : 's'}, removed ${obsoleteKeyFixResult.totalKeysRemoved} obsolete key${obsoleteKeyFixResult.totalKeysRemoved === 1 ? '' : 's'}\n`
+            )
+          );
+        }
+
+        if (obsoleteKeyFixResult.errors.length > 0) {
+          console.log(chalk.red.bold('Errors during obsolete key fixes:'));
+          obsoleteKeyFixResult.errors.forEach((error) => {
+            console.log(chalk.red(`  • ${error}`));
+          });
+          console.log();
+        }
+      }
+    }
+  } catch (error) {
+    console.log(
+      chalk.yellow(
+        `Warning: Could not check for obsolete keys: ${error instanceof Error ? error.message : String(error)}`
+      )
+    );
+  }
+
+  // Validate all files (after fixing obsolete keys if applicable)
   const results = await Promise.all(
     planFiles.map((file) => validatePlanFile(path.join(tasksDir, file)))
   );
@@ -393,7 +548,6 @@ export async function handleValidateCommand(
   // Parent-child validation (only for schema-valid files)
   let parentChildInconsistencies: ParentChildInconsistency[] = [];
   let fixResult: FixResult | null = null;
-  let planMap: Map<number, PlanSchema & { filename: string }> | null = null;
   let discoveredFromIssues: DiscoveredFromIssue[] = [];
   let discoveredFixResult: DiscoveredFromFixResult | null = null;
 
@@ -401,9 +555,11 @@ export async function handleValidateCommand(
     console.log(chalk.blue.bold('Checking parent-child relationships...'));
 
     try {
-      // Load all plans for cross-referencing
-      const planResults = await readAllPlans(tasksDir);
-      planMap = planResults.plans;
+      // Reload plans if we haven't loaded them yet (shouldn't happen, but being safe)
+      if (!planMap) {
+        const planResults = await readAllPlans(tasksDir);
+        planMap = planResults.plans;
+      }
 
       // Find parent-child inconsistencies
       parentChildInconsistencies = validateParentChildRelationships(planMap);
@@ -618,6 +774,22 @@ export async function handleValidateCommand(
   } else if (discoveredFromIssues.length > 0 && options.fix === false) {
     console.log(
       `  ${chalk.yellow(`⚠ ${discoveredFromIssues.length} orphaned discoveredFrom reference${discoveredFromIssues.length === 1 ? '' : 's'} found (not fixed due to --no-fix)`)}`
+    );
+  }
+
+  const fixedObsoleteCount = obsoleteKeyFixResult?.fixedPlans ?? 0;
+  const totalKeysRemoved = obsoleteKeyFixResult?.totalKeysRemoved ?? 0;
+  if (fixedObsoleteCount > 0) {
+    console.log(
+      `  ${chalk.green(`✓ Removed ${totalKeysRemoved} obsolete key${totalKeysRemoved === 1 ? '' : 's'} from ${fixedObsoleteCount} plan${fixedObsoleteCount === 1 ? '' : 's'}`)}`
+    );
+  } else if (obsoleteKeyIssues.length > 0 && options.fix === false) {
+    const totalObsoleteTasks = obsoleteKeyIssues.reduce(
+      (sum, issue) => sum + issue.taskIndices.length,
+      0
+    );
+    console.log(
+      `  ${chalk.yellow(`⚠ ${obsoleteKeyIssues.length} plan${obsoleteKeyIssues.length === 1 ? '' : 's'} with ${totalObsoleteTasks} task${totalObsoleteTasks === 1 ? '' : 's'} containing obsolete keys (not fixed due to --no-fix)`)}`
     );
   }
 
