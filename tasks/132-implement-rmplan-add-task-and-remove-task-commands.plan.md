@@ -5,16 +5,45 @@ goal: ""
 id: 132
 uuid: 7ebf9d14-805e-4178-83a7-a1e91154de23
 generatedBy: agent
-status: pending
+status: in_progress
 priority: medium
+container: false
 temp: false
+dependencies: []
 parent: 128
 references:
   "128": f69d418b-aaf1-4c29-88a9-f557baf8f81e
+issue: []
+pullRequest: []
+docs: []
 planGeneratedAt: 2025-10-28T23:31:23.749Z
 promptsGeneratedAt: 2025-10-28T23:31:23.749Z
 createdAt: 2025-10-26T22:41:12.354Z
-updatedAt: 2025-10-28T23:31:23.749Z
+updatedAt: 2025-10-29T03:14:13.438Z
+progressNotes:
+  - timestamp: 2025-10-29T03:03:00.217Z
+    text: Implemented new task_operations utilities providing title search,
+      interactive selection, and editor-backed task info prompts for reuse
+      across upcoming commands.
+    source: "implementer: Create shared task utilities module"
+  - timestamp: 2025-10-29T03:04:24.866Z
+    text: Added add-task and remove-task command handlers leveraging shared
+      utilities, normalized option inputs, and integrated both commands into the
+      main rmplan CLI.
+    source: "implementer: Implement add/remove task commands"
+  - timestamp: 2025-10-29T03:09:59.338Z
+    text: Added add-plan-task and remove-plan-task MCP handlers with validation,
+      normalized metadata handling, and registered them in generate mode for
+      autonomous agent workflows.
+    source: "implementer: Implement MCP task management tools"
+  - timestamp: 2025-10-29T03:10:04.032Z
+    text: Created unit tests covering task utilities, add/remove command handlers,
+      and MCP task operations ensuring new features are validated end-to-end.
+    source: "implementer: Write unit tests"
+  - timestamp: 2025-10-29T03:12:25.897Z
+    text: Ran TypeScript checks and the full Bun test suite to validate new task
+      management features; all checks passed successfully.
+    source: "implementer: Verification"
 tasks:
   - title: Create shared task utilities module
     done: false
@@ -640,6 +669,8 @@ tasks:
       - Document the task utilities module
 
       - Note testing patterns used
+changedFiles: []
+rmfilter: []
 ---
 
 ## Overview
@@ -1750,3 +1781,7 @@ Test coverage should include:
 ### Follow-up Questions
 
 None - all necessary information has been gathered from the codebase exploration. The implementation can proceed with confidence following the established patterns.
+
+# Implementation Notes
+
+Implemented shared task operations utilities (findTaskByTitle, selectTaskInteractive, promptForTaskInfo) in src/rmplan/utils/task_operations.ts to centralize task search and interactive prompting logic used by new features. Added rmplan add-task (src/rmplan/commands/add-task.ts) and rmplan remove-task (src/rmplan/commands/remove-task.ts) commands with CLI wiring, non-interactive flag handling, editor support, confirmation prompts, and shared normalization of files/docs metadata. Extended MCP generate_mode (src/rmplan/mcp/generate_mode.ts) with add-plan-task and remove-plan-task tools, including Zod schemas, task creation/removal helpers, and log instrumentation; updated CLI registration in src/rmplan/rmplan.ts. Created comprehensive unit tests for utilities, commands, and MCP helpers across src/rmplan/utils/task_operations.test.ts, src/rmplan/commands/add-task.test.ts, src/rmplan/commands/remove-task.test.ts, and src/rmplan/mcp/generate_mode.test.ts to cover happy paths, interactive flows, edge cases, and error handling. Covered plan tasks: 'Create shared task utilities module', 'Implement add-task command handler', 'Implement remove-task command handler', and associated MCP/tooling test tasks.

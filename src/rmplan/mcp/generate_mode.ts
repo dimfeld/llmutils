@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { FastMCP, UserError } from 'fastmcp';
 import type { SerializableValue } from 'fastmcp';
 import { z } from 'zod/v4';
@@ -6,13 +7,15 @@ import {
   generateClaudeCodeResearchPrompt,
   generateClaudeCodeGenerationPrompt,
 } from '../prompt.js';
-import { prioritySchema } from '../planSchema.js';
+import { prioritySchema, type PlanSchema } from '../planSchema.js';
 import type { RmplanConfig } from '../configSchema.js';
 import { buildPlanContext, resolvePlan } from '../plan_display.js';
 import { mcpGetPlan } from '../commands/show.js';
 import { mcpAppendResearch } from '../commands/research.js';
 import { mcpListReadyPlans } from '../commands/ready.js';
 import { mcpUpdatePlanDetails, mcpUpdatePlanTasks } from '../commands/update.js';
+import { writePlanFile } from '../plans.js';
+import { findTaskByTitle } from '../utils/task_operations.js';
 
 export interface GenerateModeRegistrationContext {
   config: RmplanConfig;
@@ -198,6 +201,36 @@ export const updatePlanDetailsParameters = z
 
 export type UpdatePlanDetailsArguments = z.infer<typeof updatePlanDetailsParameters>;
 
+export const addPlanTaskParameters = z
+  .object({
+    plan: z.string().describe('Plan ID or file path'),
+    title: z.string().describe('Task title'),
+    description: z.string().describe('Task description'),
+    files: z.array(z.string()).optional().describe('Related file paths'),
+    docs: z.array(z.string()).optional().describe('Documentation paths'),
+  })
+  .describe('Add a new task to an existing plan');
+
+export type AddPlanTaskArguments = z.infer<typeof addPlanTaskParameters>;
+
+export const removePlanTaskParameters = z
+  .object({
+    plan: z.string().describe('Plan ID or file path'),
+    taskIndex: z
+      .number()
+      .optional()
+      .describe('Task index (0-based). Indices of later tasks shift after removal.'),
+    taskTitle: z
+      .string()
+      .optional()
+      .describe(
+        'Task title to search for (partial match, case-insensitive). Preferred over index.'
+      ),
+  })
+  .describe('Remove a task from a plan by title (preferred) or index.');
+
+export type RemovePlanTaskArguments = z.infer<typeof removePlanTaskParameters>;
+
 export const listReadyPlansParameters = z
   .object({
     priority: prioritySchema
@@ -238,6 +271,124 @@ function wrapLogger(log: GenerateModeExecutionLogger, prefix: string): GenerateM
     info: (message, data) => log.info(`${prefix}${message}`, data),
     warn: (message, data) => log.warn(`${prefix}${message}`, data),
   };
+}
+
+export async function mcpAddPlanTask(
+  args: AddPlanTaskArguments,
+  context: GenerateModeRegistrationContext,
+  execContext?: { log: GenerateModeExecutionLogger }
+): Promise<string> {
+  type PlanTask = NonNullable<PlanSchema['tasks']>[number];
+  type PlanTaskWithMetadata = PlanTask & { files?: string[]; docs?: string[]; steps?: unknown[] };
+
+  const { plan, planPath } = await resolvePlan(args.plan, context);
+
+  const title = args.title.trim();
+  const description = args.description.trim();
+  if (!title) {
+    throw new UserError('Task title cannot be empty.');
+  }
+  if (!description) {
+    throw new UserError('Task description cannot be empty.');
+  }
+
+  const tasks = Array.isArray(plan.tasks) ? plan.tasks : [];
+  const newTask: PlanTaskWithMetadata = {
+    title,
+    description,
+    done: false,
+    files: normalizeList(args.files),
+    docs: normalizeList(args.docs),
+    steps: [],
+  };
+
+  tasks.push(newTask);
+  plan.tasks = tasks;
+  plan.updatedAt = new Date().toISOString();
+
+  await writePlanFile(planPath, plan);
+
+  const index = tasks.length - 1;
+  const relativePath = path.relative(context.gitRoot, planPath) || planPath;
+  execContext?.log.info('Added task to plan', {
+    planId: plan.id ?? null,
+    planPath: relativePath,
+    index,
+  });
+
+  const planIdentifier = plan.id ? `plan ${plan.id}` : relativePath;
+  return `Added task "${title}" to ${planIdentifier} at index ${index}.`;
+}
+
+export async function mcpRemovePlanTask(
+  args: RemovePlanTaskArguments,
+  context: GenerateModeRegistrationContext,
+  execContext?: { log: GenerateModeExecutionLogger }
+): Promise<string> {
+  const { plan, planPath } = await resolvePlan(args.plan, context);
+
+  if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) {
+    throw new UserError('Plan has no tasks to remove.');
+  }
+
+  const index = resolveRemovalIndex(plan.tasks, args);
+  if (index < 0 || index >= plan.tasks.length) {
+    throw new UserError(
+      `Task index ${index} is out of bounds for plan with ${plan.tasks.length} task(s).`
+    );
+  }
+
+  const previousLength = plan.tasks.length;
+  const [removedTask] = plan.tasks.splice(index, 1);
+  if (!removedTask) {
+    throw new UserError(`Failed to remove task at index ${index}.`);
+  }
+
+  plan.updatedAt = new Date().toISOString();
+  await writePlanFile(planPath, plan);
+
+  const relativePath = path.relative(context.gitRoot, planPath) || planPath;
+  execContext?.log.info('Removed task from plan', {
+    planId: plan.id ?? null,
+    planPath: relativePath,
+    index,
+  });
+
+  const shiftedCount = index < previousLength - 1 ? previousLength - index - 1 : 0;
+  const shiftWarning =
+    shiftedCount > 0 ? ` Indices of ${shiftedCount} subsequent task(s) have shifted.` : '';
+  const planIdentifier = plan.id ? `plan ${plan.id}` : relativePath;
+
+  return `Removed task "${removedTask.title}" from ${planIdentifier} (index ${index}).${shiftWarning}`;
+}
+
+function resolveRemovalIndex(tasks: PlanSchema['tasks'], args: RemovePlanTaskArguments): number {
+  if (args.taskTitle) {
+    const index = findTaskByTitle(tasks, args.taskTitle);
+    if (index === -1) {
+      throw new UserError(`No task found with title containing "${args.taskTitle}".`);
+    }
+    return index;
+  }
+
+  if (args.taskIndex !== undefined) {
+    if (!Number.isInteger(args.taskIndex) || args.taskIndex < 0) {
+      throw new UserError('taskIndex must be a non-negative integer.');
+    }
+    return args.taskIndex;
+  }
+
+  throw new UserError('Provide either taskTitle or taskIndex to remove a task.');
+}
+
+function normalizeList(values?: string[]): string[] {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  return values
+    .map((value) => value.trim())
+    .filter((value, index, arr) => value.length > 0 && arr.indexOf(value) === index);
 }
 
 export function registerGenerateMode(
@@ -317,6 +468,46 @@ export function registerGenerateMode(
       try {
         return await mcpUpdatePlanTasks(args, context, {
           log: wrapLogger(execContext.log, '[update-plan-tasks] '),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new UserError(message);
+      }
+    },
+  });
+
+  server.addTool({
+    name: 'add-plan-task',
+    description: 'Add a new task to an existing plan.',
+    parameters: addPlanTaskParameters,
+    annotations: {
+      destructiveHint: true,
+      readOnlyHint: false,
+    },
+    execute: async (args, execContext) => {
+      try {
+        return await mcpAddPlanTask(args, context, {
+          log: wrapLogger(execContext.log, '[add-plan-task] '),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new UserError(message);
+      }
+    },
+  });
+
+  server.addTool({
+    name: 'remove-plan-task',
+    description: 'Remove a task from a plan by title (preferred) or index.',
+    parameters: removePlanTaskParameters,
+    annotations: {
+      destructiveHint: true,
+      readOnlyHint: false,
+    },
+    execute: async (args, execContext) => {
+      try {
+        return await mcpRemovePlanTask(args, context, {
+          log: wrapLogger(execContext.log, '[remove-plan-task] '),
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
