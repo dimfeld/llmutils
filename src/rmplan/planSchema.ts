@@ -65,7 +65,9 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
       .record(z.string(), z.guid())
       .default({})
       .optional()
-      .describe('Maps numeric plan IDs to their UUIDs for deterministic tracking across renumbering'),
+      .describe(
+        'Maps numeric plan IDs to their UUIDs for deterministic tracking across renumbering'
+      ),
     issue: z.array(z.url()).default([]).optional(),
     pullRequest: z.array(z.url()).default([]).optional(),
     docs: z.array(z.string()).default([]).optional(),

@@ -144,7 +144,6 @@ describe.skip('rmplanAgent - Parent Plan Status Updates', () => {
       findNextActionableItem: findNextActionableItemSpy,
     }));
 
-
     await moduleMocker.mock('../../plans/prepare_step.js', () => ({
       prepareNextStep: prepareNextStepSpy,
     }));
@@ -386,7 +385,6 @@ describe.skip('rmplanAgent - Direct Execution Flow', () => {
       findPendingTask: findPendingTaskSpy,
       findNextActionableItem: findNextActionableItemSpy,
     }));
-
 
     await moduleMocker.mock('../../plans/prepare_step.js', () => ({
       prepareNextStep: prepareNextStepSpy,

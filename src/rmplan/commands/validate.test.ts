@@ -1035,7 +1035,10 @@ tasks:
 
 Plan body.`;
 
-      await fs.writeFile(path.join(tempDir, 'multiple-obsolete.plan.md'), planWithMultipleObsoleteTasks);
+      await fs.writeFile(
+        path.join(tempDir, 'multiple-obsolete.plan.md'),
+        planWithMultipleObsoleteTasks
+      );
 
       const originalLog = console.log;
       const originalExit = process.exit;
@@ -1121,7 +1124,9 @@ Plan body.`;
       expect(output).toContain('--no-fix flag specified, will report as validation errors');
       expect(output).toContain('✗ 1 invalid');
       expect(output).toContain('Unknown keys: tasks.0.files, tasks.0.steps');
-      expect(output).toContain('1 plan with 1 task containing obsolete keys (not fixed due to --no-fix)');
+      expect(output).toContain(
+        '1 plan with 1 task containing obsolete keys (not fixed due to --no-fix)'
+      );
 
       // Verify the plan was NOT updated
       const plan = await readPlanFile(path.join(tempDir, 'no-fix-obsolete.plan.md'));
@@ -1159,7 +1164,10 @@ Plan body.`;
       }) as never;
 
       try {
-        await handleValidateCommand({ dir: tempDir, verbose: true }, { parent: { opts: () => ({}) } });
+        await handleValidateCommand(
+          { dir: tempDir, verbose: true },
+          { parent: { opts: () => ({}) } }
+        );
       } catch (err) {
         // Expected if process.exit is called
       } finally {

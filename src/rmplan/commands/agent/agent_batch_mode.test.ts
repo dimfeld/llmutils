@@ -342,7 +342,6 @@ describe('rmplanAgent - Batch Mode Execution Loop', () => {
       expect(callArgs.task.description).toContain('Task 3: Task 3');
       expect(callArgs.task.description).not.toContain('Task 2: Task 2'); // This one is done
     });
-
   });
 
   describe('plan status management', () => {

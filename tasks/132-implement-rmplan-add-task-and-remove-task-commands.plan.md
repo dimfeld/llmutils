@@ -19,7 +19,7 @@ docs: []
 planGeneratedAt: 2025-10-28T23:31:23.749Z
 promptsGeneratedAt: 2025-10-28T23:31:23.749Z
 createdAt: 2025-10-26T22:41:12.354Z
-updatedAt: 2025-10-29T03:28:12.044Z
+updatedAt: 2025-10-29T03:32:17.022Z
 progressNotes:
   - timestamp: 2025-10-29T03:03:00.217Z
     text: Implemented new task_operations utilities providing title search,
@@ -50,7 +50,7 @@ progressNotes:
     source: "tester: integration tests"
 tasks:
   - title: Create shared task utilities module
-    done: false
+    done: true
     description: >-
       Create `src/rmplan/utils/task_operations.ts` with shared utility functions
       for task manipulation:
@@ -69,7 +69,7 @@ tasks:
       These utilities will be used by both add-task and remove-task commands to
       ensure consistent behavior.
   - title: Implement add-task command handler
-    done: false
+    done: true
     description: >-
       Create `src/rmplan/commands/add-task.ts` with `handleAddTaskCommand()`
       function:
@@ -137,7 +137,7 @@ tasks:
 
       - Handle editor cancellation gracefully
   - title: Implement remove-task command handler
-    done: false
+    done: true
     description: >-
       Create `src/rmplan/commands/remove-task.ts` with
       `handleRemoveTaskCommand()` function:
@@ -205,7 +205,7 @@ tasks:
 
       - Handle confirmation cancellation (user selects 'no')
   - title: Register CLI commands in rmplan.ts
-    done: false
+    done: true
     description: >-
       Add command registrations to `src/rmplan/rmplan.ts`:
 
@@ -251,7 +251,7 @@ tasks:
       Ensure commands are registered in the appropriate location (likely after
       other task-related commands).
   - title: Implement MCP add-plan-task tool
-    done: false
+    done: true
     description: >-
       Add MCP tool for adding tasks in `src/rmplan/mcp/generate_mode.ts`:
 
@@ -330,7 +330,7 @@ tasks:
 
       ```
   - title: Implement MCP remove-plan-task tool
-    done: false
+    done: true
     description: >-
       Add MCP tool for removing tasks in `src/rmplan/mcp/generate_mode.ts`:
 
@@ -417,7 +417,7 @@ tasks:
 
       ```
   - title: Write tests for task utilities
-    done: false
+    done: true
     description: >-
       Create `src/rmplan/utils/task_operations.test.ts` with comprehensive
       tests:
@@ -466,7 +466,7 @@ tasks:
 
       - Use real task type definitions from schema
   - title: Write tests for add-task command
-    done: false
+    done: true
     description: |-
       Create `src/rmplan/commands/add-task.test.ts` with comprehensive tests:
 
@@ -495,7 +495,7 @@ tasks:
       - Verify all fields set correctly
       - Verify timestamp updated
   - title: Write tests for remove-task command
-    done: false
+    done: true
     description: |-
       Create `src/rmplan/commands/remove-task.test.ts` with comprehensive tests:
 
@@ -530,7 +530,7 @@ tasks:
       - Verify task count decreased by 1
       - Verify timestamp updated
   - title: Write tests for MCP tools
-    done: false
+    done: true
     description: |-
       Add tests to `src/rmplan/mcp/generate_mode.test.ts` for the new MCP tools:
 
@@ -673,7 +673,18 @@ tasks:
       - Document the task utilities module
 
       - Note testing patterns used
-changedFiles: []
+changedFiles:
+  - README.md
+  - src/rmplan/commands/add-task.test.ts
+  - src/rmplan/commands/add-task.ts
+  - src/rmplan/commands/remove-task.test.ts
+  - src/rmplan/commands/remove-task.ts
+  - src/rmplan/mcp/generate_mode.test.ts
+  - src/rmplan/mcp/generate_mode.ts
+  - src/rmplan/rmplan.integration.test.ts
+  - src/rmplan/rmplan.ts
+  - src/rmplan/utils/task_operations.test.ts
+  - src/rmplan/utils/task_operations.ts
 rmfilter: []
 ---
 
@@ -1791,3 +1802,5 @@ None - all necessary information has been gathered from the codebase exploration
 Implemented shared task operations utilities (findTaskByTitle, selectTaskInteractive, promptForTaskInfo) in src/rmplan/utils/task_operations.ts to centralize task search and interactive prompting logic used by new features. Added rmplan add-task (src/rmplan/commands/add-task.ts) and rmplan remove-task (src/rmplan/commands/remove-task.ts) commands with CLI wiring, non-interactive flag handling, editor support, confirmation prompts, and shared normalization of files/docs metadata. Extended MCP generate_mode (src/rmplan/mcp/generate_mode.ts) with add-plan-task and remove-plan-task tools, including Zod schemas, task creation/removal helpers, and log instrumentation; updated CLI registration in src/rmplan/rmplan.ts. Created comprehensive unit tests for utilities, commands, and MCP helpers across src/rmplan/utils/task_operations.test.ts, src/rmplan/commands/add-task.test.ts, src/rmplan/commands/remove-task.test.ts, and src/rmplan/mcp/generate_mode.test.ts to cover happy paths, interactive flows, edge cases, and error handling. Covered plan tasks: 'Create shared task utilities module', 'Implement add-task command handler', 'Implement remove-task command handler', and associated MCP/tooling test tasks.
 
 Documented the new task management commands by expanding README.md: added narrative coverage in the Additional Commands section explaining how `rmplan add-task` normalizes metadata across editor, inline, and interactive flows, and how `rmplan remove-task` supports index/title/interactive selection with safety prompts. Added cheat sheet entries showing representative `rmplan add-task`/`rmplan remove-task` invocations so operators have copy-paste ready examples. This fulfills plan task 'Update documentation' and keeps the CLI reference in sync with the new utilities and command handlers.
+
+Documented the rmplan add-task and remove-task commands accurately for the Update documentation task. Updated README.md to describe the real flag combinations, spelling out that add-task requires --title with either --description or --editor unless --interactive is used, plus optional --files/--docs metadata, and that remove-task needs exactly one of --index/--title/--interactive (with --yes to skip confirmation). Refined the CLI cheat sheet examples so they demonstrate the supported syntax, including editor launch, inline metadata, title matching, and zero-based index removal. This keeps the user-facing guidance in sync with the command implementations and prevents confusion about unsupported flags.

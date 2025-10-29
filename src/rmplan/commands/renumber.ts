@@ -1105,7 +1105,10 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
           }
 
           // Update discoveredFrom if it was changed
-          if (typeof plan.discoveredFrom === 'number' && hierarchicalIdMappings.has(plan.discoveredFrom)) {
+          if (
+            typeof plan.discoveredFrom === 'number' &&
+            hierarchicalIdMappings.has(plan.discoveredFrom)
+          ) {
             const newDiscoveredFrom = hierarchicalIdMappings.get(plan.discoveredFrom)!;
             plan.discoveredFrom = newDiscoveredFrom;
             planModified = true;
