@@ -427,12 +427,25 @@ async function fixObsoleteTaskKeys(issues: ObsoleteKeyIssue[]): Promise<Obsolete
         const cleanedTask = { ...task };
         let taskModified = false;
 
+        // Check if steps array exists and all steps are done
+        const shouldMarkTaskDone =
+          'steps' in cleanedTask &&
+          Array.isArray(cleanedTask.steps) &&
+          cleanedTask.steps.length > 0 &&
+          cleanedTask.steps.every((step: any) => step.done === true);
+
         for (const key of OBSOLETE_TASK_KEYS) {
           if (key in cleanedTask) {
             delete cleanedTask[key];
             taskModified = true;
             keysRemovedInPlan++;
           }
+        }
+
+        // Set task.done = true if all steps were completed
+        if (shouldMarkTaskDone) {
+          cleanedTask.done = true;
+          taskModified = true;
         }
 
         if (taskModified) {
