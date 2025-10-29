@@ -1061,6 +1061,50 @@ rmplan cleanup src/lib/utils.ts src/components/Button.svelte
 - Files must exist and have a supported extension to be processed.
 - Use `--diff-from` to specify a different base branch for determining changed files when no files are provided.
 
+#### Compact Command
+
+The `compact` command reduces the footprint of completed plans by collapsing verbose generated sections into concise summaries while preserving critical decisions and outcomes. It uses the configured LLM executor (Claude Code by default) to rewrite the content between the rmplan-generated delimiters, condense the `## Research` section, and replace progress notes with a single archival summary.
+
+**Usage Examples:**
+
+```bash
+# Compact a specific plan in place
+rmplan compact 144
+
+# Preview changes without writing to disk
+rmplan compact 144 --dry-run
+
+# Override executor and minimum age threshold
+rmplan compact tasks/144-old-plan-compaction.plan.md --executor direct-call --age 14 --yes
+```
+
+**Options:**
+
+- `--executor <name>` – Executor to use for the LLM call (default: `claude-code`)
+- `--model <model>` – Override the executor’s model
+- `--age <days>` – Minimum number of days since the plan was last updated before compaction (default configured in `rmplan.compaction.minimumAgeDays`, falling back to 30)
+- `--dry-run` – Generate the compacted content and display a size comparison without writing changes
+- `--yes` – Skip the confirmation prompt when applying changes
+
+**Behavior:**
+
+- Only `done`, `cancelled`, or `deferred` plans are eligible. Pending work is rejected.
+- Generated details are replaced via the rmplan delimiters, preserving any manual Markdown around them.
+- `## Research` is replaced with a distilled summary or created if it was missing.
+- Progress notes are replaced with a single timestamped summary note sourced from the compaction output.
+- Archival metadata (`compactedAt`, `compactedBy`, `compactedOriginalBytes`, `compactedBytes`, and `compactedReductionBytes`) is stored in the frontmatter for future audits.
+
+**Configuration:**
+
+Add a `compaction` block to your rmplan configuration to adjust defaults:
+
+```yaml
+compaction:
+  minimumAgeDays: 45
+  defaultExecutor: claude-code
+  defaultModel: anthropic/claude-3-5-sonnet
+```
+
 #### Progress Notes
 
 Record significant milestones, deviations, or discoveries during execution. Notes are timestamped and persisted in the plan file.

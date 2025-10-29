@@ -201,6 +201,41 @@ export const rmplanConfigSchema = z
           .describe('Path to a planning document file to include in all planning prompts'),
       })
       .optional(),
+    /** Compaction command configuration */
+    compaction: z
+      .object({
+        defaultExecutor: z
+          .string()
+          .optional()
+          .describe('Default executor to use when compacting plans'),
+        defaultModel: z
+          .string()
+          .optional()
+          .describe('Default model identifier to use for compaction prompts'),
+        minimumAgeDays: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe('Minimum age in days before a plan becomes eligible for compaction'),
+        sections: z
+          .object({
+            details: z
+              .boolean()
+              .optional()
+              .describe('Whether the details section should be compacted'),
+            research: z
+              .boolean()
+              .optional()
+              .describe('Whether the research section should be compacted'),
+            progressNotes: z
+              .boolean()
+              .optional()
+              .describe('Whether progress notes should be condensed into a summary'),
+          })
+          .optional(),
+      })
+      .optional(),
     /** Custom instructions for specialized agents */
     agents: z
       .object({

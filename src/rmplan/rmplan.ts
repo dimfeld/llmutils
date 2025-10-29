@@ -160,6 +160,25 @@ program
   });
 
 program
+  .command('compact [plan]')
+  .description('Compact completed plans for archival by summarizing verbose sections')
+  .option('--executor <name>', 'Executor to use for compaction (default: claude-code)')
+  .option('--model <model>', 'Model to use for the executor')
+  .option('--age <days>', 'Minimum age in days before compaction', (value) => {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isNaN(parsed) || parsed < 0) {
+      throw new Error(`Invalid age: ${value}`);
+    }
+    return parsed;
+  })
+  .option('--dry-run', 'Preview compacted content without writing changes')
+  .option('--yes', 'Skip confirmation prompt and write changes immediately')
+  .action(async (planArg, options, command) => {
+    const { handleCompactCommand } = await import('./commands/compact.js');
+    await handleCompactCommand(planArg, options, command).catch(handleCommandError);
+  });
+
+program
   .command('add [title...]')
   .description('Create a new plan stub file that can be filled with tasks using generate')
   .option('--edit', 'Open the newly created plan file in your editor')
