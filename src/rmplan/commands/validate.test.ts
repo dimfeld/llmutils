@@ -25,15 +25,10 @@ details: Add login and signup functionality
 tasks:
   - title: Create login form
     description: Build the user interface for login
-    files:
-      - src/components/LoginForm.tsx
-    steps:
-      - prompt: Design the login form UI
-        done: false
+    done: false
   - title: Implement auth service
     description: Create authentication service
-    files: []
-    steps: []
+    done: false
 ---
 
 Additional plan details in markdown format.
@@ -76,8 +71,7 @@ details: This is a test plan
 tasks:
   - title: Task 1
     description: First task
-    files: []
-    steps: []
+    done: false
 `;
 
       await fs.writeFile(path.join(tempDir, 'valid.yml'), validPlan);
@@ -157,8 +151,8 @@ tasks:
   - title: Task 1
     description: First task
     unknownTaskKey: invalid
-    files: []
-    steps: []
+
+
 `;
 
       await fs.writeFile(path.join(tempDir, 'invalid-task.yml'), invalidPlan);
@@ -198,7 +192,7 @@ details: Test details
 tasks:
   - title: Task 1
     description: First task
-    files: []
+
     steps:
       - prompt: Step 1
         done: false
@@ -337,16 +331,12 @@ project:
   describe('frontmatter format validation', () => {
     test('should validate frontmatter format files correctly', async () => {
       const frontmatterPlan = `---
-goal: Implement user authentication  
+goal: Implement user authentication
 details: Add login and signup functionality
 tasks:
   - title: Create login form
     description: Build the user interface for login
-    files:
-      - src/components/LoginForm.tsx
-    steps:
-      - prompt: Design the login form UI
-        done: false
+    done: false
 ---
 
 # Additional Markdown Content
@@ -530,8 +520,9 @@ dependencies: [2]
 tasks:
   - title: Parent task
     description: Parent task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional parent plan details.`;
@@ -545,8 +536,9 @@ parent: 1
 tasks:
   - title: Child task
     description: Child task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional child plan details.`;
@@ -593,8 +585,9 @@ details: This is the parent
 tasks:
   - title: Parent task
     description: Parent task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional parent plan details.`;
@@ -608,8 +601,9 @@ parent: 1
 tasks:
   - title: Child task
     description: Child task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional child plan details.`;
@@ -665,8 +659,9 @@ details: This is the parent
 tasks:
   - title: Parent task
     description: Parent task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional parent plan details.`;
@@ -680,8 +675,9 @@ parent: 1
 tasks:
   - title: Child task 1
     description: Child task 1 description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional child 1 plan details.`;
@@ -694,8 +690,9 @@ parent: 1
 tasks:
   - title: Child task 2
     description: Child task 2 description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional child 2 plan details.`;
@@ -751,8 +748,9 @@ details: This is the parent
 tasks:
   - title: Parent task
     description: Parent task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional parent plan details.`;
@@ -766,8 +764,9 @@ parent: 1
 tasks:
   - title: Child task
     description: Child task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional child plan details.`;
@@ -823,8 +822,9 @@ parent: 999
 tasks:
   - title: Child task
     description: Child task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional child plan details.`;
@@ -872,8 +872,9 @@ dependencies: [2]
 tasks:
   - title: Parent task
     description: Parent task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional parent plan details.`;
@@ -888,8 +889,9 @@ dependencies: [3]
 tasks:
   - title: Child task
     description: Child task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional child plan details.`;
@@ -902,8 +904,9 @@ dependencies: [1]
 tasks:
   - title: Grandchild task
     description: Grandchild task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Additional grandchild plan details.`;
@@ -953,8 +956,9 @@ details: Source details
 tasks:
   - title: Source task
     description: Source task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Source plan body.`;
@@ -967,8 +971,9 @@ discoveredFrom: 50
 tasks:
   - title: Discovered task
     description: Discovered task description
-    files: []
-    steps: []
+    done: false
+
+
 ---
 
 Discovered plan body.`;
@@ -1015,8 +1020,8 @@ discoveredFrom: 999
 tasks:
   - title: Orphan task
     description: Task details
-    files: []
-    steps: []
+
+
 ---
 
 Orphan plan body.`;
@@ -1067,8 +1072,8 @@ discoveredFrom: 888
 tasks:
   - title: Orphan task
     description: Task details
-    files: []
-    steps: []
+
+
 ---
 
 Orphan plan body.`;
