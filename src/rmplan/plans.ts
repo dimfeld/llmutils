@@ -574,7 +574,8 @@ export async function readPlanFile(filePath: string): Promise<PlanSchema> {
   if (!plan.uuid) {
     plan.uuid = crypto.randomUUID();
     try {
-      await writePlanFile(absolutePath, plan);
+      // Skip updating the timestamp when adding UUID - this is a structural addition not a content change
+      await writePlanFile(absolutePath, plan, { skipUpdatedAt: true });
     } catch (error) {
       plan.uuid = undefined;
       const message = `Failed to persist generated UUID for plan at ${absolutePath}`;

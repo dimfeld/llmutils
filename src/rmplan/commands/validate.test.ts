@@ -647,7 +647,8 @@ Additional child plan details.`;
       const updatedParentContent = await fs.readFile(path.join(tempDir, 'parent.plan.md'), 'utf-8');
       expect(updatedParentContent).toContain('dependencies:');
       expect(updatedParentContent).toContain('- 2');
-      expect(updatedParentContent).toContain('updatedAt:');
+      // Validation fixes should not update the timestamp
+      expect(updatedParentContent).not.toContain('updatedAt:');
     });
 
     test('should handle multiple children with same parent', async () => {
