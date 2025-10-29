@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { generateAgentFiles, removeAgentFiles, type AgentDefinition } from './agent_generator.ts';
+import { buildAgentsArgument, type AgentDefinition } from './agent_generator.ts';
 import { ModuleMocker } from '../../../testing.ts';
 
 describe('agent_generator', () => {
@@ -30,8 +30,8 @@ describe('agent_generator', () => {
     }
   });
 
-  describe('generateAgentFiles', () => {
-    test('creates agents directory if it does not exist', async () => {
+  describe('buildAgentsArgument', () => {
+    test('builds JSON argument for single agent', () => {
       const agents: AgentDefinition[] = [
         {
           name: 'implementer',
@@ -40,290 +40,186 @@ describe('agent_generator', () => {
         },
       ];
 
-      await generateAgentFiles('test-plan-123', agents);
+      const result = buildAgentsArgument(agents);
+      const parsed = JSON.parse(result);
 
-      // Check that directory was created
-      const stats = await fs.stat(agentsDir);
-      expect(stats.isDirectory()).toBe(true);
+      expect(parsed).toEqual({
+        implementer: {
+          description: 'Implements new features',
+          prompt: 'You are an implementation agent.',
+        },
+      });
     });
 
-    test('creates agent files with correct format', async () => {
+    test('builds JSON argument for multiple agents', () => {
       const agents: AgentDefinition[] = [
         {
           name: 'implementer',
           description: 'Implements new features',
-          prompt: 'You are an implementation agent that writes code.',
+          prompt: 'You are an implementation agent.',
         },
         {
           name: 'tester',
           description: 'Tests the implementation',
-          prompt: 'You are a testing agent that writes tests.',
+          prompt: 'You are a testing agent.',
         },
         {
           name: 'reviewer',
-          description: 'Reviews the code',
-          prompt: 'You are a code review agent.',
+          description: 'Reviews code',
+          prompt: 'You are a review agent.',
         },
       ];
 
-      await generateAgentFiles('test-plan-456', agents);
+      const result = buildAgentsArgument(agents);
+      const parsed = JSON.parse(result);
 
-      // Check each file
-      for (const agent of agents) {
-        const fileName = `rmplan-test-plan-456-${agent.name}.md`;
-        const filePath = path.join(agentsDir, fileName);
-
-        const content = await fs.readFile(filePath, 'utf-8');
-
-        // Check YAML frontmatter
-        expect(content).toContain('---');
-        expect(content).toContain(`name: rmplan-test-plan-456-${agent.name}`);
-        expect(content).toContain(`description: ${agent.description}`);
-        expect(content).toContain('---');
-
-        // Check prompt content
-        expect(content).toContain(agent.prompt);
-
-        // Verify exact format
-        const expectedContent = `---
-name: rmplan-test-plan-456-${agent.name}
-description: ${agent.description}
----
-
-${agent.prompt}
-`;
-        expect(content).toBe(expectedContent);
-      }
-    });
-
-    test('overwrites existing agent files', async () => {
-      const agent: AgentDefinition = {
-        name: 'implementer',
-        description: 'Original description',
-        prompt: 'Original prompt',
-      };
-
-      // Create initial file
-      await generateAgentFiles('test-plan-789', [agent]);
-
-      // Update agent definition
-      agent.description = 'Updated description';
-      agent.prompt = 'Updated prompt';
-
-      // Generate again
-      await generateAgentFiles('test-plan-789', [agent]);
-
-      // Check that file was updated
-      const filePath = path.join(agentsDir, 'rmplan-test-plan-789-implementer.md');
-      const content = await fs.readFile(filePath, 'utf-8');
-
-      expect(content).toContain('Updated description');
-      expect(content).toContain('Updated prompt');
-      expect(content).not.toContain('Original');
-    });
-
-    test('includes model in frontmatter when provided', async () => {
-      const agents: AgentDefinition[] = [
-        {
-          name: 'implementer',
+      expect(parsed).toEqual({
+        implementer: {
           description: 'Implements new features',
-          prompt: 'You are an implementation agent that writes code.',
-          model: 'claude-3-haiku',
+          prompt: 'You are an implementation agent.',
         },
-        {
-          name: 'tester',
+        tester: {
           description: 'Tests the implementation',
-          prompt: 'You are a testing agent that writes tests.',
-          // No model specified
+          prompt: 'You are a testing agent.',
         },
-      ];
-
-      await generateAgentFiles('test-plan-model', agents);
-
-      // Check implementer file has model
-      const implementerPath = path.join(agentsDir, 'rmplan-test-plan-model-implementer.md');
-      const implementerContent = await fs.readFile(implementerPath, 'utf-8');
-
-      expect(implementerContent).toContain('model: claude-3-haiku');
-      const expectedImplementerContent = `---
-name: rmplan-test-plan-model-implementer
-description: Implements new features
-model: claude-3-haiku
----
-
-You are an implementation agent that writes code.
-`;
-      expect(implementerContent).toBe(expectedImplementerContent);
-
-      // Check tester file doesn't have model
-      const testerPath = path.join(agentsDir, 'rmplan-test-plan-model-tester.md');
-      const testerContent = await fs.readFile(testerPath, 'utf-8');
-
-      expect(testerContent).not.toContain('model:');
-      const expectedTesterContent = `---
-name: rmplan-test-plan-model-tester
-description: Tests the implementation
----
-
-You are a testing agent that writes tests.
-`;
-      expect(testerContent).toBe(expectedTesterContent);
+        reviewer: {
+          description: 'Reviews code',
+          prompt: 'You are a review agent.',
+        },
+      });
     });
 
-    test('removes stale agent files for the plan before writing new ones', async () => {
-      await fs.mkdir(agentsDir, { recursive: true });
-      const staleFiles = [
-        path.join(agentsDir, 'rmplan-simple-plan-tester.md'),
-        path.join(agentsDir, 'rmplan-simple-plan-reviewer.md'),
-      ];
-      for (const file of staleFiles) {
-        await fs.writeFile(file, 'stale content', 'utf-8');
-      }
-
+    test('includes model when provided', () => {
       const agents: AgentDefinition[] = [
         {
           name: 'implementer',
           description: 'Implements new features',
-          prompt: 'Implement the requested changes.',
+          prompt: 'You are an implementation agent.',
+          model: 'sonnet',
         },
+      ];
+
+      const result = buildAgentsArgument(agents);
+      const parsed = JSON.parse(result);
+
+      expect(parsed).toEqual({
+        implementer: {
+          description: 'Implements new features',
+          prompt: 'You are an implementation agent.',
+          model: 'sonnet',
+        },
+      });
+    });
+
+    test('includes tools when provided', () => {
+      const agents: AgentDefinition[] = [
         {
-          name: 'verifier',
-          description: 'Verifies the implementation',
-          prompt: 'Run checks and tests to validate the work.',
+          name: 'implementer',
+          description: 'Implements new features',
+          prompt: 'You are an implementation agent.',
+          tools: ['Read', 'Write', 'Edit'],
         },
       ];
 
-      await generateAgentFiles('simple-plan', agents);
+      const result = buildAgentsArgument(agents);
+      const parsed = JSON.parse(result);
 
-      const files = (await fs.readdir(agentsDir)).sort();
-      expect(files).toEqual([
-        'rmplan-simple-plan-implementer.md',
-        'rmplan-simple-plan-verifier.md',
-      ]);
+      expect(parsed).toEqual({
+        implementer: {
+          description: 'Implements new features',
+          prompt: 'You are an implementation agent.',
+          tools: ['Read', 'Write', 'Edit'],
+        },
+      });
     });
-  });
 
-  describe('removeAgentFiles', () => {
-    test('removes all agent files for a given plan ID', async () => {
-      // Create some agent files
+    test('includes both model and tools when provided', () => {
       const agents: AgentDefinition[] = [
-        { name: 'implementer', description: 'Impl', prompt: 'Impl prompt' },
-        { name: 'tester', description: 'Test', prompt: 'Test prompt' },
-        { name: 'reviewer', description: 'Review', prompt: 'Review prompt' },
+        {
+          name: 'reviewer',
+          description: 'Reviews code',
+          prompt: 'You are a review agent.',
+          model: 'opus',
+          tools: ['Read', 'Grep', 'Glob'],
+        },
       ];
 
-      await generateAgentFiles('remove-test-123', agents);
+      const result = buildAgentsArgument(agents);
+      const parsed = JSON.parse(result);
 
-      // Also create a file for a different plan to ensure it's not removed
-      await generateAgentFiles('other-plan-456', [
-        { name: 'keeper', description: 'Keep me', prompt: 'Should not be removed' },
-      ]);
-
-      // Remove files for the first plan
-      await removeAgentFiles('remove-test-123');
-
-      // Check that correct files were removed
-      const remainingFiles = await fs.readdir(agentsDir);
-      expect(remainingFiles).toHaveLength(1);
-      expect(remainingFiles[0]).toBe('rmplan-other-plan-456-keeper.md');
+      expect(parsed).toEqual({
+        reviewer: {
+          description: 'Reviews code',
+          prompt: 'You are a review agent.',
+          model: 'opus',
+          tools: ['Read', 'Grep', 'Glob'],
+        },
+      });
     });
 
-    test('handles non-existent files gracefully', async () => {
-      // Try to remove files that don't exist
-      // Should not throw any errors
-      await removeAgentFiles('non-existent-plan');
-    });
-
-    test('handles non-existent agents directory gracefully', async () => {
-      // Remove the entire .claude directory
-      await rm(path.join(tempDir, '.claude'), { recursive: true, force: true });
-
-      // Should not throw
-      await removeAgentFiles('any-plan');
-    });
-
-    test('removes files with special characters in plan ID', async () => {
-      // Create agent with special characters in plan ID
+    test('omits tools when empty array', () => {
       const agents: AgentDefinition[] = [
-        { name: 'implementer', description: 'Impl', prompt: 'Impl prompt' },
+        {
+          name: 'implementer',
+          description: 'Implements new features',
+          prompt: 'You are an implementation agent.',
+          tools: [],
+        },
       ];
 
-      const specialPlanId = 'test-plan_123-abc';
-      await generateAgentFiles(specialPlanId, agents);
+      const result = buildAgentsArgument(agents);
+      const parsed = JSON.parse(result);
 
-      // Verify file was created
-      const filePath = path.join(agentsDir, `rmplan-${specialPlanId}-implementer.md`);
-      await expect(fs.stat(filePath)).resolves.toBeTruthy();
-
-      // Remove the file
-      await removeAgentFiles(specialPlanId);
-
-      // Verify file was removed
-      await expect(fs.stat(filePath)).rejects.toThrow();
+      expect(parsed).toEqual({
+        implementer: {
+          description: 'Implements new features',
+          prompt: 'You are an implementation agent.',
+        },
+      });
+      expect(parsed.implementer.tools).toBeUndefined();
     });
-  });
 
-  describe('edge cases', () => {
-    test('handles empty agents array', async () => {
-      await generateAgentFiles('empty-plan', [
+    test('handles empty agents array', () => {
+      const agents: AgentDefinition[] = [];
+
+      const result = buildAgentsArgument(agents);
+      const parsed = JSON.parse(result);
+
+      expect(parsed).toEqual({});
+    });
+
+    test('handles multi-line prompts', () => {
+      const agents: AgentDefinition[] = [
         {
           name: 'implementer',
           description: 'Implements features',
-          prompt: 'Do work',
+          prompt: `Line 1
+Line 2
+Line 3`,
         },
-      ]);
+      ];
 
-      const preFiles = await fs.readdir(agentsDir);
-      expect(preFiles).toContain('rmplan-empty-plan-implementer.md');
+      const result = buildAgentsArgument(agents);
+      const parsed = JSON.parse(result);
 
-      // Should not throw when given empty array and should remove stale plan files
-      await generateAgentFiles('empty-plan', []);
-
-      const stats = await fs.stat(agentsDir);
-      expect(stats.isDirectory()).toBe(true);
-      const postFiles = await fs.readdir(agentsDir);
-      expect(postFiles).not.toContain('rmplan-empty-plan-implementer.md');
+      expect(parsed.implementer.prompt).toBe('Line 1\nLine 2\nLine 3');
     });
 
-    test('handles agent names with spaces', async () => {
-      const agent: AgentDefinition = {
-        name: 'code reviewer',
-        description: 'Reviews code with spaces',
-        prompt: 'I review code',
-      };
+    test('handles special characters in prompts', () => {
+      const agents: AgentDefinition[] = [
+        {
+          name: 'implementer',
+          description: 'Implements features',
+          prompt: 'Test "quotes" and \'apostrophes\' and \\ backslashes',
+        },
+      ];
 
-      await generateAgentFiles('space-plan', [agent]);
+      const result = buildAgentsArgument(agents);
+      const parsed = JSON.parse(result);
 
-      const fileName = 'rmplan-space-plan-code reviewer.md';
-      const filePath = path.join(agentsDir, fileName);
-
-      const content = await fs.readFile(filePath, 'utf-8');
-      expect(content).toContain('name: rmplan-space-plan-code reviewer');
-    });
-
-    test('handles multi-line prompts', async () => {
-      const agent: AgentDefinition = {
-        name: 'multi',
-        description: 'Multi-line prompt test',
-        prompt: `This is a multi-line prompt.
-
-It has several paragraphs.
-
-And even some code:
-\`\`\`typescript
-function example() {
-  return 42;
-}
-\`\`\``,
-      };
-
-      await generateAgentFiles('multi-plan', [agent]);
-
-      const filePath = path.join(agentsDir, 'rmplan-multi-plan-multi.md');
-      const content = await fs.readFile(filePath, 'utf-8');
-
-      expect(content).toContain('This is a multi-line prompt.');
-      expect(content).toContain('function example()');
+      expect(parsed.implementer.prompt).toBe(
+        'Test "quotes" and \'apostrophes\' and \\ backslashes'
+      );
     });
   });
 });

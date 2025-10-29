@@ -138,22 +138,13 @@ describe('ClaudeCodeExecutor model selection', () => {
     }));
 
     await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
-      generateAgentFiles: mock(() => Promise.resolve()),
-      removeAgentFiles: mock(() => Promise.resolve()),
+      buildAgentsArgument: mock(() => '{}'),
     }));
 
     await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
       getImplementerPrompt: mock(() => ({ name: 'implementer', prompt: 'test' })),
       getTesterPrompt: mock(() => ({ name: 'tester', prompt: 'test' })),
       getReviewerPrompt: mock(() => ({ name: 'reviewer', prompt: 'test' })),
-    }));
-
-    await moduleMocker.mock('../../common/cleanup_registry.ts', () => ({
-      CleanupRegistry: {
-        getInstance: mock(() => ({
-          register: mock(() => mock()),
-        })),
-      },
     }));
 
     const executor = new ClaudeCodeExecutor(
@@ -252,13 +243,13 @@ describe('ClaudeCodeExecutor model selection', () => {
       wrapWithOrchestrationSimple: wrapSimple,
     }));
 
-    let agentDefinitions: Array<{ name: string }> | undefined;
-    const generateAgentFiles = mock(async (_planId: string, defs: Array<{ name: string }>) => {
-      agentDefinitions = defs;
+    let capturedAgentDefs: any;
+    const buildAgentsArgument = mock((defs: any) => {
+      capturedAgentDefs = defs;
+      return '{}';
     });
     await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
-      generateAgentFiles,
-      removeAgentFiles: mock(async () => {}),
+      buildAgentsArgument,
     }));
 
     const implementerPrompt = { name: 'implementer', prompt: 'impl' };
@@ -274,14 +265,6 @@ describe('ClaudeCodeExecutor model selection', () => {
       getTesterPrompt,
       getVerifierAgentPrompt,
       getReviewerPrompt: mock(() => ({ name: 'reviewer', prompt: 'review' })),
-    }));
-
-    await moduleMocker.mock('../../common/cleanup_registry.ts', () => ({
-      CleanupRegistry: {
-        getInstance: mock(() => ({
-          register: mock(() => mock()),
-        })),
-      },
     }));
 
     const loadAgentInstructionsMock = mock(async (_instructionPath: string, _gitRoot: string) => {
@@ -334,8 +317,8 @@ describe('ClaudeCodeExecutor model selection', () => {
       expect(wrapSimple).toHaveBeenCalledTimes(1);
       expect(wrapSimple.mock.calls[0][1]).toBe('simple-plan');
       expect(wrapSimple.mock.calls[0][2]).toMatchObject({ planFilePath: '/plans/simple.plan.md' });
-      expect(agentDefinitions).toBeTruthy();
-      expect(agentDefinitions?.map((def) => def.name)).toEqual(['implementer', 'verifier']);
+      expect(capturedAgentDefs).toBeTruthy();
+      expect(capturedAgentDefs?.map((def: any) => def.name)).toEqual(['implementer', 'verifier']);
       expect(getImplementerPrompt).toHaveBeenCalledTimes(1);
       expect(getVerifierAgentPrompt).toHaveBeenCalledTimes(1);
       expect(getTesterPrompt).not.toHaveBeenCalled();

@@ -3,9 +3,7 @@ import * as clipboard from '../../common/clipboard.ts';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import * as fsSync from 'node:fs';
 import { debugLog, log } from '../../logging.ts';
-import { CleanupRegistry } from '../../common/cleanup_registry.ts';
 import { createLineSplitter, debug, spawnAndLogOutput } from '../../common/process.ts';
 import { getGitRoot } from '../../common/git.ts';
 import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
@@ -23,11 +21,7 @@ import {
   wrapWithOrchestration,
   wrapWithOrchestrationSimple,
 } from './claude_code/orchestrator_prompt.ts';
-import {
-  generateAgentFiles,
-  removeAgentFiles,
-  type AgentDefinition,
-} from './claude_code/agent_generator.ts';
+import { buildAgentsArgument, type AgentDefinition } from './claude_code/agent_generator.ts';
 import {
   getImplementerPrompt,
   getVerifierAgentPrompt,
@@ -808,9 +802,8 @@ export class ClaudeCodeExecutor implements Executor {
     }
 
     let { disallowedTools, allowAllTools, mcpConfigFile, interactive } = this.options;
-    let unregisterCleanup: (() => void) | undefined;
 
-    // Get git root early since we'll need it for cleanup handler
+    // Get git root for agent instructions and other operations
     const gitRoot = await getGitRoot();
 
     // TODO Interactive mode isn't integrated with the logging
@@ -929,9 +922,9 @@ export class ClaudeCodeExecutor implements Executor {
       await Bun.file(dynamicMcpConfigFile).write(JSON.stringify(mcpConfig, null, 2));
     }
 
-    // Generate agent files when plan information is provided
+    // Build agent definitions when plan information is provided
+    let agentDefinitions: AgentDefinition[] | undefined;
     if (planContextAvailable) {
-      let agentDefinitions: AgentDefinition[] | undefined;
       let agentCreationMessage: string | undefined;
 
       if (planInfo.executionMode === 'normal') {
@@ -971,7 +964,7 @@ export class ClaudeCodeExecutor implements Executor {
             this.options.agents?.reviewer?.model
           ),
         ];
-        agentCreationMessage = `Created implementer/tester/reviewer agent files for plan ${planId}`;
+        agentCreationMessage = `Configured implementer/tester/reviewer agents for plan ${planId}`;
       } else if (planInfo.executionMode === 'simple') {
         const implementerInstructions = this.rmplanConfig.agents?.implementer?.instructions
           ? await this.loadAgentInstructions(
@@ -1007,42 +1000,7 @@ export class ClaudeCodeExecutor implements Executor {
             this.options.agents?.tester?.model
           ),
         ];
-        agentCreationMessage = `Created implementer/verifier agent files for plan ${planId}`;
-      }
-
-      if (agentDefinitions) {
-        await generateAgentFiles(planId, agentDefinitions);
-        log(chalk.blue(agentCreationMessage ?? `Created agent files for plan ${planId}`));
-
-        // Register cleanup handler for agent files
-        const cleanupRegistry = CleanupRegistry.getInstance();
-        unregisterCleanup = cleanupRegistry.register(() => {
-          try {
-            const agentsDir = path.join(gitRoot, '.claude', 'agents');
-
-            // Use synchronous operations since this may be called from signal handlers
-            try {
-              const files = fsSync.readdirSync(agentsDir);
-              const matchingFiles = files.filter((file) =>
-                file.match(new RegExp(`^rmplan-${planId}-.*\\.md$`))
-              );
-
-              for (const file of matchingFiles) {
-                const filePath = path.join(agentsDir, file);
-                try {
-                  fsSync.unlinkSync(filePath);
-                } catch (err) {
-                  console.error(`Failed to remove agent file ${filePath}:`, err);
-                }
-              }
-            } catch (err) {
-              // Directory might not exist
-              debugLog('Error reading agents directory during cleanup:', err);
-            }
-          } catch (err) {
-            debugLog('Error during agent file cleanup:', err);
-          }
-        });
+        agentCreationMessage = `Configured implementer/verifier agents for plan ${planId}`;
       }
     }
 
@@ -1100,6 +1058,11 @@ export class ClaudeCodeExecutor implements Executor {
       } else {
         log('Using default model: sonnet\n');
         args.push('--model', 'sonnet');
+      }
+
+      // Add agents argument if agent definitions were created
+      if (agentDefinitions && agentDefinitions.length > 0) {
+        args.push('--agents', buildAgentsArgument(agentDefinitions));
       }
 
       if (interactive) {
@@ -1253,20 +1216,6 @@ export class ClaudeCodeExecutor implements Executor {
       // Clean up temporary MCP configuration directory if it was created
       if (tempMcpConfigDir) {
         await fs.rm(tempMcpConfigDir, { recursive: true, force: true });
-      }
-
-      // Clean up agent files when they were created for this execution
-      if (
-        planContextAvailable &&
-        (planInfo.executionMode === 'normal' || planInfo.executionMode === 'simple')
-      ) {
-        await removeAgentFiles(planId);
-        debugLog(`Removed agent files for plan ${planId}`);
-      }
-
-      // Unregister the cleanup handler since we've cleaned up normally
-      if (unregisterCleanup) {
-        unregisterCleanup();
       }
     }
   }

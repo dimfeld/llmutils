@@ -219,20 +219,8 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     expect(out.failureDetails?.problems).toContain('X');
   });
 
-  test('simple mode generates implementer and verifier agents and prunes stale files', async () => {
+  test('simple mode generates implementer and verifier agents', async () => {
     const planRoot = await fs.mkdtemp(path.join(tmpdir(), 'claude-simple-mode-'));
-    const agentsDir = path.join(planRoot, '.claude', 'agents');
-    await fs.mkdir(agentsDir, { recursive: true });
-    await fs.writeFile(
-      path.join(agentsDir, 'rmplan-simple-plan-tester.md'),
-      'stale tester',
-      'utf-8'
-    );
-    await fs.writeFile(
-      path.join(agentsDir, 'rmplan-simple-plan-reviewer.md'),
-      'stale reviewer',
-      'utf-8'
-    );
 
     const recordedArgs: string[][] = [];
     const wrapSimple = mock((_content: string) => 'WRAPPED_SIMPLE');
@@ -267,15 +255,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
       }));
 
       await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
-        removeAgentFiles: mock(async () => Promise.resolve()),
-      }));
-
-      await moduleMocker.mock('../../common/cleanup_registry.ts', () => ({
-        CleanupRegistry: {
-          getInstance: mock(() => ({
-            register: mock(() => mock()),
-          })),
-        },
+        buildAgentsArgument: mock(() => '{}'),
       }));
 
       const { ClaudeCodeExecutor } = await import('./claude_code.ts');
@@ -297,18 +277,6 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
       expect(recordedArgs.length).toBeGreaterThan(0);
       const args = recordedArgs[0];
       expect(args).toContain('WRAPPED_SIMPLE');
-
-      const files = (await fs.readdir(agentsDir)).sort();
-      expect(files).toEqual([
-        'rmplan-simple-plan-implementer.md',
-        'rmplan-simple-plan-verifier.md',
-      ]);
-
-      const verifierContent = await fs.readFile(
-        path.join(agentsDir, 'rmplan-simple-plan-verifier.md'),
-        'utf-8'
-      );
-      expect(verifierContent).toContain('name: rmplan-simple-plan-verifier');
     } finally {
       await fs.rm(planRoot, { recursive: true, force: true });
     }
