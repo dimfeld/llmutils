@@ -7,6 +7,7 @@ import type { PlanSchema } from '../planSchema.js';
 import { getCurrentBranchName, getChangedFilesOnBranch } from '../../common/git.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
 import { debugLog, log } from '../../logging.js';
+import { ensureReferences } from '../utils/references.js';
 
 /**
  * Validates that a file path is safe and doesn't contain path traversal attacks.
@@ -67,6 +68,82 @@ interface RenumberCommand {
 const TRUNK_BRANCHES = ['main', 'master'] as const;
 
 // Helper functions for hierarchical renumbering
+
+/**
+ * Updates references in all plans after renumbering.
+ * Uses UUID tracking to determine which plans need their parent/dependencies/discoveredFrom updated.
+ *
+ * @param allPlans Map of all plans
+ * @param idMappings Map of old ID (as string or number) -> new ID
+ */
+function updateReferencesAfterRenumbering(
+  allPlans: Map<string, Record<string, any>>,
+  idMappings: Map<string, number> | Map<number, number>
+): void {
+  // Build a map of UUID -> old ID -> new ID for quick lookups
+  const uuidToIdChange = new Map<string, { oldId: number; newId: number }>();
+
+  // Check first entry to determine map type
+  const firstKey = idMappings.keys().next().value;
+  const isStringKeyed = typeof firstKey === 'string';
+
+  for (const [_filePath, plan] of allPlans) {
+    if (!plan.id || !plan.uuid) continue;
+
+    const oldId = Number(plan.id);
+    // Get the new ID based on the mapping type
+    let newId: number | undefined;
+    if (isStringKeyed) {
+      newId = (idMappings as Map<string, number>).get(String(oldId));
+    } else {
+      newId = (idMappings as Map<number, number>).get(oldId);
+    }
+    if (newId !== undefined && newId !== oldId) {
+      uuidToIdChange.set(plan.uuid, { oldId, newId });
+    }
+  }
+
+  // Now update all plans that reference renumbered plans
+  for (const [_filePath, plan] of allPlans) {
+    if (!plan.references) continue;
+
+    let planModified = false;
+
+    // For each reference in this plan
+    for (const [idStr, uuid] of Object.entries(plan.references as Record<string, string>)) {
+      const oldId = Number(idStr);
+      const idChange = uuidToIdChange.get(uuid);
+
+      if (idChange && idChange.oldId === oldId) {
+        // This reference points to a plan that was renumbered
+        // Update parent field if it matches
+        if (plan.parent === oldId) {
+          plan.parent = idChange.newId;
+          planModified = true;
+        }
+
+        // Update dependencies if they match
+        if (Array.isArray(plan.dependencies)) {
+          const oldIndex = plan.dependencies.indexOf(oldId);
+          if (oldIndex !== -1) {
+            plan.dependencies[oldIndex] = idChange.newId;
+            planModified = true;
+          }
+        }
+
+        // Update discoveredFrom if it matches
+        if (plan.discoveredFrom === oldId) {
+          plan.discoveredFrom = idChange.newId;
+          planModified = true;
+        }
+
+        // Update the reference itself
+        delete plan.references[oldId];
+        plan.references[idChange.newId] = uuid;
+      }
+    }
+  }
+}
 
 /**
  * Builds a map of parent plan IDs to their direct children.
@@ -917,6 +994,10 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
         `  ✓ Renumbered ${plan.currentId || 'missing'} → ${nextId} in ${path.relative(tasksDirectory, plan.filePath)}`
       );
     }
+
+    // Update references after conflict resolution renumbering
+    log('\nUpdating references after conflict resolution...');
+    updateReferencesAfterRenumbering(allPlans, idMappings);
   } else {
     log('No ID conflicts found.');
   }
@@ -1023,11 +1104,22 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
             }
           }
 
+          // Update discoveredFrom if it was changed
+          if (typeof plan.discoveredFrom === 'number' && hierarchicalIdMappings.has(plan.discoveredFrom)) {
+            const newDiscoveredFrom = hierarchicalIdMappings.get(plan.discoveredFrom)!;
+            plan.discoveredFrom = newDiscoveredFrom;
+            planModified = true;
+          }
+
           // If plan was modified, mark it for writing
           if (planModified) {
             plansToWrite.add(filePath);
           }
         }
+
+        // Update references after hierarchical renumbering
+        log('\nUpdating references after hierarchical renumbering...');
+        updateReferencesAfterRenumbering(allPlans, hierarchicalIdMappings);
       }
     } else {
       log('No hierarchical ordering violations found');

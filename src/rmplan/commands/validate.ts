@@ -7,6 +7,12 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { createPlanSchemas, type PlanSchema } from '../planSchema.js';
 import { resolveTasksDir } from '../configSchema.js';
 import { readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
+import {
+  ensureReferences,
+  verifyReferences,
+  fixReferenceMismatches,
+  type ReferenceVerificationResult,
+} from '../utils/references.js';
 interface ValidationResult {
   filename: string;
   isValid: boolean;
@@ -46,6 +52,27 @@ interface ObsoleteKeyIssue {
 interface ObsoleteKeyFixResult {
   fixedPlans: number;
   totalKeysRemoved: number;
+  errors: string[];
+}
+
+interface UuidIssue {
+  planId: number;
+  filename: string;
+}
+
+interface UuidFixResult {
+  generated: Array<{ planId: number; uuid: string; filename: string }>;
+  errors: string[];
+}
+
+interface ReferenceIssue {
+  planId: number;
+  filename: string;
+  verificationResult: ReferenceVerificationResult;
+}
+
+interface ReferenceFixResult {
+  updated: Array<{ planId: number; filename: string }>;
   errors: string[];
 }
 
@@ -471,6 +498,134 @@ async function fixObsoleteTaskKeys(issues: ObsoleteKeyIssue[]): Promise<Obsolete
   return { fixedPlans, totalKeysRemoved, errors };
 }
 
+/**
+ * Detects plans without UUIDs
+ */
+function detectMissingUuids(planMap: Map<number, PlanSchema & { filename: string }>): UuidIssue[] {
+  const issues: UuidIssue[] = [];
+
+  for (const [planId, plan] of planMap.entries()) {
+    if (!plan.uuid) {
+      issues.push({ planId, filename: plan.filename });
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Generates UUIDs for plans that don't have them
+ */
+async function fixMissingUuids(issues: UuidIssue[]): Promise<UuidFixResult> {
+  const generated: UuidFixResult['generated'] = [];
+  const errors: string[] = [];
+
+  for (const issue of issues) {
+    try {
+      const plan = await readPlanFile(issue.filename);
+      const uuid = crypto.randomUUID();
+      plan.uuid = uuid;
+      await writePlanFile(issue.filename, plan, { skipUpdatedAt: true });
+      generated.push({ planId: issue.planId, uuid, filename: issue.filename });
+    } catch (error) {
+      errors.push(
+        `Failed to generate UUID for plan ${issue.planId}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  return { generated, errors };
+}
+
+/**
+ * Detects plans with incomplete or inconsistent references
+ */
+function detectReferenceIssues(
+  planMap: Map<number, PlanSchema & { filename: string }>,
+  uuidToId: Map<string, number>
+): ReferenceIssue[] {
+  const issues: ReferenceIssue[] = [];
+
+  for (const [planId, plan] of planMap.entries()) {
+    const verificationResult = verifyReferences(plan, planMap, uuidToId);
+    if (!verificationResult.isValid) {
+      issues.push({ planId, filename: plan.filename, verificationResult });
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Fixes reference issues by updating parent/dependencies/discoveredFrom
+ * to point to the correct plan IDs based on UUIDs
+ */
+async function fixReferenceIssues(
+  issues: ReferenceIssue[],
+  planMap: Map<number, PlanSchema & { filename: string }>
+): Promise<ReferenceFixResult> {
+  const updated: ReferenceFixResult['updated'] = [];
+  const errors: string[] = [];
+
+  for (const issue of issues) {
+    try {
+      const plan = await readPlanFile(issue.filename);
+      const fixedPlan = fixReferenceMismatches(plan, issue.verificationResult);
+
+      // Update references after fixing mismatches
+      const { updatedPlan } = ensureReferences(fixedPlan, planMap);
+
+      await writePlanFile(issue.filename, updatedPlan, { skipUpdatedAt: true });
+      updated.push({ planId: issue.planId, filename: issue.filename });
+    } catch (error) {
+      errors.push(
+        `Failed to fix references for plan ${issue.planId}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  return { updated, errors };
+}
+
+/**
+ * Ensures all plans have complete reference entries
+ */
+async function ensureAllReferences(
+  planMap: Map<number, PlanSchema & { filename: string }>
+): Promise<{ updated: number; errors: string[] }> {
+  let updated = 0;
+  const errors: string[] = [];
+
+  for (const [_planId, plan] of planMap.entries()) {
+    try {
+      const { updatedPlan, plansWithGeneratedUuids } = ensureReferences(plan, planMap);
+
+      // Only write if something changed
+      const hasNewReferences =
+        JSON.stringify(updatedPlan.references) !== JSON.stringify(plan.references);
+
+      if (hasNewReferences || plansWithGeneratedUuids.length > 0) {
+        await writePlanFile(plan.filename, updatedPlan, { skipUpdatedAt: true });
+        updated++;
+
+        // Write plans that had UUIDs generated
+        for (const { id: genId } of plansWithGeneratedUuids) {
+          const genPlan = planMap.get(genId);
+          if (genPlan) {
+            await writePlanFile(genPlan.filename, genPlan, { skipUpdatedAt: true });
+          }
+        }
+      }
+    } catch (error) {
+      errors.push(
+        `Failed to ensure references for ${plan.filename}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  return { updated, errors };
+}
+
 export async function handleValidateCommand(
   options: { dir?: string; verbose?: boolean; fix?: boolean },
   command: any
@@ -550,6 +705,127 @@ export async function handleValidateCommand(
         `Warning: Could not check for obsolete keys: ${error instanceof Error ? error.message : String(error)}`
       )
     );
+  }
+
+  // UUID validation and fixing
+  let uuidIssues: UuidIssue[] = [];
+  let uuidFixResult: UuidFixResult | null = null;
+  let uuidToId = new Map<string, number>();
+  let idToUuid = new Map<number, string>();
+
+  if (planMap) {
+    console.log(chalk.blue.bold('Checking for missing UUIDs...'));
+    uuidIssues = detectMissingUuids(planMap);
+
+    if (uuidIssues.length > 0) {
+      console.log(
+        chalk.yellow.bold(`\nFound ${uuidIssues.length} plan${uuidIssues.length === 1 ? '' : 's'} without UUIDs.`)
+      );
+
+      if (options.fix === false) {
+        console.log(chalk.yellow('--no-fix flag specified, will report as validation errors.\n'));
+      } else {
+        console.log(chalk.blue('Auto-generating UUIDs...'));
+        uuidFixResult = await fixMissingUuids(uuidIssues);
+
+        if (uuidFixResult.generated.length > 0) {
+          console.log(
+            chalk.green(
+              `✓ Generated ${uuidFixResult.generated.length} UUID${uuidFixResult.generated.length === 1 ? '' : 's'}\n`
+            )
+          );
+
+          // Reload plans to get the new UUIDs
+          const reloadedPlans = await readAllPlans(tasksDir, false);
+          planMap = reloadedPlans.plans;
+          uuidToId = reloadedPlans.uuidToId;
+          idToUuid = reloadedPlans.idToUuid;
+        }
+
+        if (uuidFixResult.errors.length > 0) {
+          console.log(chalk.red.bold('Errors during UUID generation:'));
+          uuidFixResult.errors.forEach((error) => {
+            console.log(chalk.red(`  • ${error}`));
+          });
+          console.log();
+        }
+      }
+    } else {
+      // Load UUID maps even if no missing UUIDs
+      const planResults = await readAllPlans(tasksDir, false);
+      uuidToId = planResults.uuidToId;
+      idToUuid = planResults.idToUuid;
+    }
+  }
+
+  // Reference validation and fixing
+  let referenceIssues: ReferenceIssue[] = [];
+  let referenceFixResult: ReferenceFixResult | null = null;
+
+  if (planMap && uuidToId.size > 0) {
+    console.log(chalk.blue.bold('Checking reference consistency...'));
+    referenceIssues = detectReferenceIssues(planMap, uuidToId);
+
+    if (referenceIssues.length > 0) {
+      console.log(
+        chalk.yellow.bold(
+          `\nFound ${referenceIssues.length} plan${referenceIssues.length === 1 ? '' : 's'} with reference mismatches.`
+        )
+      );
+
+      if (options.fix === false) {
+        console.log(chalk.yellow('--no-fix flag specified, will report as validation errors.\n'));
+      } else {
+        console.log(chalk.blue('Auto-fixing reference mismatches...'));
+        referenceFixResult = await fixReferenceIssues(referenceIssues, planMap);
+
+        if (referenceFixResult.updated.length > 0) {
+          console.log(
+            chalk.green(
+              `✓ Fixed ${referenceFixResult.updated.length} plan${referenceFixResult.updated.length === 1 ? '' : 's'} with reference mismatches\n`
+            )
+          );
+
+          // Reload plans to get updated references
+          const reloadedPlans = await readAllPlans(tasksDir, false);
+          planMap = reloadedPlans.plans;
+        }
+
+        if (referenceFixResult.errors.length > 0) {
+          console.log(chalk.red.bold('Errors during reference fixes:'));
+          referenceFixResult.errors.forEach((error) => {
+            console.log(chalk.red(`  • ${error}`));
+          });
+          console.log();
+        }
+      }
+    }
+
+    // Ensure all plans have complete references
+    if (options.fix !== false) {
+      console.log(chalk.blue.bold('Ensuring all references are complete...'));
+      const ensureResult = await ensureAllReferences(planMap);
+
+      if (ensureResult.updated > 0) {
+        console.log(
+          chalk.green(
+            `✓ Updated ${ensureResult.updated} plan${ensureResult.updated === 1 ? '' : 's'} with missing references\n`
+          )
+        );
+
+        // Reload plans one more time
+        const reloadedPlans = await readAllPlans(tasksDir, false);
+        planMap = reloadedPlans.plans;
+      }
+
+      if (ensureResult.errors.length > 0) {
+        console.log(chalk.red.bold('Errors during reference updates:'));
+        ensureResult.errors.forEach((error) => {
+          console.log(chalk.red(`  • ${error}`));
+        });
+        console.log();
+      }
+    }
   }
 
   // Validate all files (after fixing obsolete keys if applicable)
@@ -806,6 +1082,28 @@ export async function handleValidateCommand(
     );
     console.log(
       `  ${chalk.yellow(`⚠ ${obsoleteKeyIssues.length} plan${obsoleteKeyIssues.length === 1 ? '' : 's'} with ${totalObsoleteTasks} task${totalObsoleteTasks === 1 ? '' : 's'} containing obsolete keys (not fixed due to --no-fix)`)}`
+    );
+  }
+
+  const generatedUuidCount = uuidFixResult?.generated.length ?? 0;
+  if (generatedUuidCount > 0) {
+    console.log(
+      `  ${chalk.green(`✓ Generated ${generatedUuidCount} UUID${generatedUuidCount === 1 ? '' : 's'}`)}`
+    );
+  } else if (uuidIssues.length > 0 && options.fix === false) {
+    console.log(
+      `  ${chalk.yellow(`⚠ ${uuidIssues.length} plan${uuidIssues.length === 1 ? '' : 's'} missing UUID${uuidIssues.length === 1 ? '' : 's'} (not fixed due to --no-fix)`)}`
+    );
+  }
+
+  const fixedReferenceCount = referenceFixResult?.updated.length ?? 0;
+  if (fixedReferenceCount > 0) {
+    console.log(
+      `  ${chalk.green(`✓ Fixed ${fixedReferenceCount} plan${fixedReferenceCount === 1 ? '' : 's'} with reference mismatches`)}`
+    );
+  } else if (referenceIssues.length > 0 && options.fix === false) {
+    console.log(
+      `  ${chalk.yellow(`⚠ ${referenceIssues.length} plan${referenceIssues.length === 1 ? '' : 's'} with reference mismatches (not fixed due to --no-fix)`)}`
     );
   }
 

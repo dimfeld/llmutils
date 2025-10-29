@@ -40,6 +40,8 @@ let cachedPlans = new Map<
     plans: Map<number, PlanSchema & { filename: string }>;
     maxNumericId: number;
     duplicates: Record<number, string[]>;
+    uuidToId: Map<string, number>;
+    idToUuid: Map<number, string>;
   }
 >();
 
@@ -57,6 +59,8 @@ export async function readAllPlans(
   plans: Map<number, PlanSchema & { filename: string }>;
   maxNumericId: number;
   duplicates: Record<number, string[]>;
+  uuidToId: Map<string, number>;
+  idToUuid: Map<number, string>;
 }> {
   let existing = readCache ? cachedPlans.get(directory) : undefined;
   if (existing) {
@@ -67,6 +71,8 @@ export async function readAllPlans(
   const promises: Promise<void>[] = [];
   let maxNumericId = 0;
   const seenIds = new Map<number, string[]>();
+  const uuidToId = new Map<string, number>();
+  const idToUuid = new Map<number, string>();
 
   debugLog(`Starting to scan directory for plan files: ${directory}`);
 
@@ -110,11 +116,19 @@ export async function readAllPlans(
         seenIds.set(idKey, [fullPath]);
       }
 
-      plans.set(idKey, {
+      const planWithFilename = {
         ...plan,
         id: summaryId, // Use the converted ID (numeric if it was a numeric string)
         filename: fullPath,
-      });
+      };
+
+      plans.set(idKey, planWithFilename);
+
+      // Build UUID maps if plan has a UUID
+      if (plan.uuid) {
+        uuidToId.set(plan.uuid, idKey);
+        idToUuid.set(idKey, plan.uuid);
+      }
     } catch (error) {
       if ((error as Error).name !== 'PlanFileError') {
         // Log detailed error information
@@ -141,7 +155,7 @@ export async function readAllPlans(
     }
   }
 
-  const retVal = { plans, maxNumericId, duplicates };
+  const retVal = { plans, maxNumericId, duplicates, uuidToId, idToUuid };
   cachedPlans.set(directory, retVal);
   return retVal;
 }
