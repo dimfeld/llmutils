@@ -29,18 +29,6 @@ tasks:
       other commands in the file for option definitions and help text. The
       `--auto` flag should be a boolean, `--tasks` should accept a string
       specifier, and `--select` should be a boolean for interactive selection.
-    files:
-      - src/rmplan/rmplan.ts
-    docs: []
-    steps:
-      - prompt: >
-          Add the new command line options to the split command definition in
-          rmplan.ts. Add `--auto` as a boolean flag for the existing LLM-based
-          behavior, `--tasks <specifier>` to accept a task index specifier
-          string, and `--select` for interactive task selection. Include
-          appropriate help text explaining each option and follow the existing
-          patterns used by other commands in the file.
-        done: true
   - title: Refactor the Split Command Handler
     done: true
     description: >
@@ -51,21 +39,6 @@ tasks:
       flag is used, and implement validation to ensure flags are mutually
       exclusive. This establishes the foundation for adding manual and
       interactive splitting functionality.
-    files:
-      - src/rmplan/commands/split.ts
-    docs: []
-    steps:
-      - prompt: >
-          Refactor the existing handleSplitCommand function to move all current
-          LLM-based splitting logic into a conditional block that only executes
-          when options.auto is true. Add branching logic to handle different
-          splitting modes based on which flag is present.
-        done: true
-      - prompt: >
-          Add validation logic to ensure that --auto, --tasks, and --select
-          flags are mutually exclusive. Throw appropriate error messages if more
-          than one flag is specified or if no mode flag is provided.
-        done: true
   - title: Create a Task Specifier Parsing Utility
     done: true
     description: >
@@ -75,24 +48,6 @@ tasks:
       combinations. It should validate input format, handle edge cases, and
       provide clear error messages for malformed input. Use one-based indexing
       in the input but return zero-based indices for internal use.
-    files:
-      - src/rmplan/utils/task_specifier_parser.ts
-      - src/rmplan/utils/task_specifier_parser.test.ts
-    docs: []
-    steps:
-      - prompt: >
-          Create a new utility file with a parseTaskSpecifier function that
-          takes a string like "1-3,5,7" and returns a sorted array of unique
-          zero-based indices. Handle single numbers, ranges, and comma-separated
-          combinations. Include comprehensive error handling for malformed
-          input.
-        done: true
-      - prompt: >
-          Write comprehensive unit tests for the parseTaskSpecifier function
-          covering various input formats, edge cases, error conditions, and
-          malformed input scenarios. Test single numbers, ranges, combinations,
-          and invalid inputs.
-        done: true
   - title: Implement Core Manual Splitting Logic
     done: true
     description: >
@@ -103,31 +58,6 @@ tasks:
       parent reference, removing selected tasks from the parent plan, adding the
       child plan ID to parent dependencies, and setting the `container` flag if
       no tasks remain in the parent.
-    files:
-      - src/rmplan/commands/split.ts
-      - src/rmplan/commands/split.test.ts
-    docs: []
-    steps:
-      - prompt: >
-          Create comprehensive integration tests for manual splitting
-          functionality. Set up test fixtures with temporary plan files and test
-          the complete workflow: parsing task specifiers, splitting plans,
-          verifying parent and child plan contents, and ensuring proper ID
-          generation and file relationships.
-        done: true
-      - prompt: >
-          Implement the core manual splitting logic as a new function that takes
-          a plan and array of task indices. Generate a new plan ID, create a
-          child plan with selected tasks and proper parent reference, update the
-          parent plan by removing tasks and adding dependency, and set container
-          flag if parent becomes empty.
-        done: true
-      - prompt: >
-          Add the file saving functionality that writes both the updated parent
-          plan and new child plan to disk using the existing writePlanFile
-          utility. Ensure proper filename generation using the pattern from the
-          add command.
-        done: true
   - title: Implement Child Plan Title and Details Generation
     done: true
     description: >
@@ -138,28 +68,6 @@ tasks:
       field and use an LLM call to Gemini Flash 2.0 to generate a concise title.
       Follow existing patterns for LLM integration using createModel and
       generateText from the ai package.
-    files:
-      - src/rmplan/commands/split.ts
-      - src/rmplan/commands/split.test.ts
-    docs: []
-    steps:
-      - prompt: >
-          Implement the logic for single task scenarios where the child plan's
-          title comes directly from the selected task's title and the details
-          come from the task's description. Add this to the manual splitting
-          function.
-        done: true
-      - prompt: >
-          For multiple task scenarios, implement markdown formatting that
-          combines all selected task titles and descriptions into the child
-          plan's details field, using task titles as section headers.
-        done: true
-      - prompt: >
-          Add LLM integration for generating concise titles when multiple tasks
-          are selected. Use createModel with 'google/gemini-2.0-flash' and
-          generateText to create a one-line title based on the combined task
-          information. Include proper error handling for LLM failures.
-        done: true
   - title: Add Tests for Manual Splitting
     done: true
     description: >
@@ -169,22 +77,6 @@ tasks:
       splitting behavior. Include tests for edge cases, error conditions,
       filename generation, parent-child relationships, and container flag
       handling.
-    files:
-      - src/rmplan/commands/split.test.ts
-    docs: []
-    steps:
-      - prompt: >
-          Add integration tests that create temporary plan files with multiple
-          tasks, run the split command with --tasks flag using various specifier
-          formats, and verify the resulting parent and child plan files have
-          correct content, relationships, and IDs.
-        done: true
-      - prompt: >
-          Add tests for edge cases including splitting all tasks (container
-          flag), splitting single tasks, invalid task indices, empty specifiers,
-          and error conditions. Verify appropriate error messages are shown for
-          invalid inputs.
-        done: true
   - title: Implement Interactive Task Selection Prompt
     done: true
     description: >
@@ -194,22 +86,6 @@ tasks:
       existing patterns from issue_utils.ts for checkbox usage, including proper
       message formatting, choice creation, and cancellation handling. The prompt
       should show task titles and provide keyboard shortcuts.
-    files:
-      - src/rmplan/commands/split.ts
-    docs: []
-    steps:
-      - prompt: >
-          Import the checkbox function from @inquirer/prompts and implement the
-          interactive task selection logic. Create choices array from the plan's
-          tasks, showing task titles with appropriate formatting. Include
-          keyboard shortcuts and make the selection optional to allow
-          cancellation.
-        done: true
-      - prompt: >
-          Add proper cancellation handling for the interactive prompt. If the
-          user cancels or selects no tasks, exit gracefully with an appropriate
-          message rather than proceeding with an empty selection.
-        done: true
   - title: Integrate Interactive Selection with Core Logic
     done: true
     description: >
@@ -218,22 +94,6 @@ tasks:
       selected indices that should be passed to the manual splitting functions.
       Ensure proper error handling throughout the integration and maintain
       consistency with the manual --tasks flag behavior.
-    files:
-      - src/rmplan/commands/split.ts
-    docs: []
-    steps:
-      - prompt: >
-          Integrate the checkbox prompt results with the manual splitting logic
-          by converting the selected task indices from the interactive prompt
-          and passing them to the existing splitting functions. Ensure the flow
-          matches the --tasks flag behavior.
-        done: true
-      - prompt: >
-          Add comprehensive error handling for the integration between
-          interactive selection and manual splitting, including validation of
-          selected indices and proper error messages for any failures during the
-          splitting process.
-        done: true
   - title: Finalize Command Argument Handling
     done: true
     description: >
@@ -243,29 +103,6 @@ tasks:
       Define the default behavior when no mode flag is specified to guide users
       on proper usage. Add comprehensive tests for all argument validation
       scenarios.
-    files:
-      - src/rmplan/commands/split.ts
-      - src/rmplan/commands/split.test.ts
-    docs: []
-    steps:
-      - prompt: >
-          Add comprehensive argument validation that checks for mutually
-          exclusive flags and provides clear error messages. When no mode flag
-          is specified, display helpful guidance on how to use the split command
-          with the available options.
-        done: true
-      - prompt: >
-          Add tests for all argument validation scenarios including mutually
-          exclusive flag combinations, missing flags, and verify that
-          appropriate error messages are displayed. Test the help text
-          functionality when no mode is specified.
-        done: true
-      - prompt: >
-          Add final integration tests that verify the complete command works
-          end-to-end for all three modes (auto, tasks, select) and confirm that
-          user feedback messages are appropriate and informative throughout the
-          splitting process.
-        done: true
 changedFiles:
   - src/common/linear.ts
   - src/rmplan/commands/import/import.ts

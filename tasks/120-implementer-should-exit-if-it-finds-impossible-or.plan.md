@@ -33,9 +33,6 @@ tasks:
       encounters requirements it cannot resolve due to conflicts or
       impossibility, it should exit with a line starting with "FAILED:" followed
       by a structured report.
-    files:
-      - src/rmplan/executors/claude_code/agent_prompts.ts
-    steps: []
   - title: Update Shared Agent Prompts
     done: true
     description: >
@@ -49,9 +46,6 @@ tasks:
       location that makes sense for that agent's role. For implementers, it goes
       in the error handling section. For testers, it goes after the test failure
       handling. For reviewers, it goes in the verdict section.
-    files:
-      - src/rmplan/executors/claude_code/agent_prompts.ts
-    steps: []
   - title: Update Claude Orchestrator Prompt
     done: true
     description: >
@@ -65,9 +59,6 @@ tasks:
       agents. It should check each agent's output for failure indicators and if
       any agent fails, the orchestrator should propagate that failure with
       additional context about which agent failed and why.
-    files:
-      - src/rmplan/executors/claude_code/orchestrator_prompt.ts
-    steps: []
   - title: Update Codex Fixer Prompt
     done: true
     description: >
@@ -79,9 +70,6 @@ tasks:
       The fixer agent is unique to Codex and runs when the reviewer finds
       issues. It also needs to be able to report when fixes are impossible due
       to conflicting requirements or fundamental issues that can't be resolved.
-    files:
-      - src/rmplan/executors/codex_cli.ts
-    steps: []
   - title: Enhance ExecutorOutput Interface
     done: true
     description: >
@@ -94,9 +82,6 @@ tasks:
       information while maintaining backward compatibility through optional
       fields. The success field defaults to true when not specified, preserving
       existing behavior.
-    files:
-      - src/rmplan/executors/types.ts
-    steps: []
   - title: Create Failure Detection Utilities
     done: true
     description: >
@@ -109,10 +94,6 @@ tasks:
       The utilities should handle various formats of failure messages, extract
       structured information when possible, and provide a consistent interface
       for checking if content contains a failure indicator.
-    files:
-      - src/rmplan/executors/failure_detection.ts
-      - src/rmplan/executors/failure_detection.test.ts
-    steps: []
   - title: Add Failure Detection to Claude Executor
     done: true
     description: >
@@ -124,9 +105,6 @@ tasks:
       The Claude executor needs to check the captured output for failure
       indicators and return structured failure information. This should work
       with different capture modes (all, result, none).
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps: []
   - title: Update Claude Output Processing
     done: true
     description: >
@@ -139,9 +117,6 @@ tasks:
       The formatter processes JSON messages from the Claude CLI. It needs to
       identify assistant messages that contain failure indicators and flag them
       appropriately.
-    files:
-      - src/rmplan/executors/claude_code/format.ts
-    steps: []
   - title: Handle Orchestrator Subagent Failures
     done: true
     description: >
@@ -153,9 +128,6 @@ tasks:
       Since this file doesn't exist based on the codebase analysis, this
       handling will be done in the main claude_code.ts file where orchestration
       output is processed.
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps: []
   - title: Add Failure Detection to Codex Executor
     done: true
     description: >
@@ -167,9 +139,6 @@ tasks:
       The Codex executor runs multiple agents sequentially and needs to check
       each one's output. It should stop processing when a failure is detected
       and return the failure information.
-    files:
-      - src/rmplan/executors/codex_cli.ts
-    steps: []
   - title: Make Task Completion Conditional
     done: true
     description: >
@@ -181,9 +150,6 @@ tasks:
       Currently the finally block unconditionally marks tasks as done. This
       needs to become conditional based on whether a failure was detected during
       execution.
-    files:
-      - src/rmplan/executors/codex_cli.ts
-    steps: []
   - title: Update Codex Output Processing
     done: true
     description: >
@@ -193,9 +159,6 @@ tasks:
 
       The Codex formatter needs similar failure detection capabilities as the
       Claude formatter to identify when agents report failures.
-    files:
-      - src/rmplan/executors/codex_cli/format.ts
-    steps: []
   - title: Update Serial Mode Agent Loop
     done: true
     description: >
@@ -207,9 +170,6 @@ tasks:
       The agent loop needs to check the ExecutorOutput for the success field and
       handle failures appropriately. This includes displaying the failure
       details to the user and exiting with a non-zero code.
-    files:
-      - src/rmplan/commands/agent/agent.ts
-    steps: []
   - title: Update Batch Mode Handler
     done: true
     description: >
@@ -221,9 +181,6 @@ tasks:
       Batch mode needs similar failure handling as serial mode but should break
       out of the batch loop when a failure is detected rather than continuing to
       process more tasks.
-    files:
-      - src/rmplan/commands/agent/batch_mode.ts
-    steps: []
   - title: Enhance Summary Collection
     done: true
     description: >
@@ -235,10 +192,6 @@ tasks:
       The summary collector already captures executor output but needs to
       specially handle failure cases to ensure they're prominently displayed in
       the summary.
-    files:
-      - src/rmplan/summary/collector.ts
-      - src/rmplan/summary/display.ts
-    steps: []
   - title: Create Failure Detection Tests
     done: true
     description: >
@@ -250,9 +203,6 @@ tasks:
       Tests should cover detection accuracy, parsing of structured failure
       messages, edge cases, and ensure the utilities work correctly with
       real-world failure message formats.
-    files:
-      - src/rmplan/executors/failure_detection.test.ts
-    steps: []
   - title: Test Executor Failure Scenarios
     done: true
     description: >
@@ -264,10 +214,6 @@ tasks:
       Tests should verify that executors correctly detect failures, return
       appropriate ExecutorOutput with failure information, and handle various
       failure scenarios.
-    files:
-      - src/rmplan/executors/claude_code.test.ts
-      - src/rmplan/executors/codex_cli.test.ts
-    steps: []
   - title: Test Agent Loop Failure Handling
     done: true
     description: >
@@ -278,10 +224,6 @@ tasks:
       These integration tests ensure the agent command properly handles executor
       failures, exits with correct codes, and displays appropriate error
       messages to users.
-    files:
-      - src/rmplan/commands/agent/agent.test.ts
-      - src/rmplan/commands/agent/batch_mode.test.ts
-    steps: []
   - title: Update Documentation
     done: true
     description: >
@@ -293,10 +235,6 @@ tasks:
       Documentation should explain the new failure detection feature, when it
       triggers, what the failure messages look like, and how users can resolve
       common failure scenarios.
-    files:
-      - README.md
-      - CLAUDE.md
-    steps: []
 changedFiles:
   - CLAUDE.md
   - README.md

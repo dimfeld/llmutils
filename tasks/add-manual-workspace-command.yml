@@ -51,135 +51,30 @@ project:
     running an agent or for a task not yet defined by a formal plan file.
 tasks:
   - title: Define `workspace add` CLI command structure
-    done: false
+    done: true
     description: This task involves adding the `workspace add` subcommand to the
       main `rmplan` CLI program defined in `src/rmplan/rmplan.ts`. The command
       should accept an optional positional argument for the plan identifier
       (which can be a plan ID or a file path) and an optional `--id
       <workspaceId>` option for specifying a custom workspace ID.
-    files:
-      - src/rmplan/rmplan.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/rmplan.ts`, import necessary utilities like
-          `loadEffectiveConfig`, `getGitRoot`, `generateProjectId`,
-          `resolvePlanFile`, and the upcoming `setPlanStatus` and
-          `createWorkspace`.
-
-          Define a new subcommand `workspace` under the main `program`.
-        done: true
-      - prompt: >
-          Within the `workspace` subcommand, add an `add` command.
-
-          This `add` command should accept an optional positional argument named
-          `planIdentifier`.
-
-          It should also accept an optional option `--id <workspaceId>` for
-          specifying a custom workspace ID.
-        done: true
-      - prompt: >
-          Assign an asynchronous action handler to the `workspace add` command.
-          This handler will take `planIdentifier` (string | undefined) and
-          `options` (containing `id?: string`) as arguments.
-
-          The initial implementation of this handler can be a placeholder (e.g.,
-          logging the inputs), as the full logic will be developed in Task 5.
-        done: true
   - title: Implement helper function to update plan status
-    done: false
+    done: true
     description: Create a new utility function, tentatively named `setPlanStatus`,
       likely within `src/rmplan/plans.ts`. This function will take a plan file
       path and a new status (e.g., 'pending', 'in_progress', 'done') as input.
       It will be responsible for reading the specified YAML plan file, updating
       its `status` and `updatedAt` fields, and then writing the modified plan
       back to the file system. This function will not handle git commits itself.
-    files:
-      - src/rmplan/plans.ts
-      - src/rmplan/plans.test.ts
-      - src/rmplan/planSchema.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/plans.test.ts`, write test cases for the
-          `setPlanStatus` function.
-
-          Cover scenarios like:
-
-          - Successfully updating status and `updatedAt` for a valid plan.
-
-          - Handling non-existent plan files.
-
-          - Handling files that are not valid YAML.
-
-          - Ensuring `updatedAt` is more recent after an update.
-        done: true
-      - prompt: >
-          In `src/rmplan/plans.ts`, implement the `setPlanStatus` function.
-
-          It should accept `planFilePath: string` and `newStatus:
-          PlanSchema['status']` as parameters and return `Promise<void>`.
-
-          Import `PlanSchema` and `planSchema` from `src/rmplan/planSchema.ts`.
-
-          The function should:
-
-          1. Read the content of the plan file at `planFilePath`.
-
-          2. Parse the YAML content. Use `fixYaml` if necessary before parsing,
-          similar to how `process_markdown.ts` handles YAML.
-
-          3. Validate the parsed content against `planSchema`. If invalid, throw
-          an error.
-
-          4. Update the `status` field to `newStatus`.
-
-          5. Update the `updatedAt` field to the current ISO string (`new
-          Date().toISOString()`).
-
-          6. Serialize the modified plan object back to YAML.
-
-          7. Write the YAML string back to `planFilePath`.
-
-          Ensure robust error handling for file operations and YAML
-          parsing/validation.
-        done: true
   - title: Adapt `WorkspaceInfo` and related types for optional plan
-    done: false
+    done: true
     description: Modify the `WorkspaceInfo` interface in
       `src/rmplan/workspace/workspace_tracker.ts` and the `Workspace` interface
       in `src/rmplan/workspace/workspace_manager.ts`. The `originalPlanFilePath`
       field in these interfaces should be made optional to reflect that a
       workspace might be created without an associated plan. The `taskId` field
       in these types will represent the workspace ID.
-    files:
-      - src/rmplan/workspace/workspace_tracker.ts
-      - src/rmplan/workspace/workspace_manager.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/workspace/workspace_tracker.ts`, modify the
-          `WorkspaceInfo` interface.
-
-          Change the `originalPlanFilePath` field from `string` to `string |
-          undefined` (or `string?` if using TypeScript shorthand for optional
-          properties).
-
-          Update any related JSDoc comments for `originalPlanFilePath` and
-          `taskId` to clarify that `taskId` is the workspace ID and
-          `originalPlanFilePath` links to a plan, if any.
-        done: true
-      - prompt: >
-          In `src/rmplan/workspace/workspace_manager.ts`, modify the `Workspace`
-          interface.
-
-          Change the `originalPlanFilePath` field from `string` to `string |
-          undefined`.
-
-          Add a new optional field `planFilePathInWorkspace?: string` to store
-          the path of the copied plan within the workspace.
-
-          Update JSDoc for `taskId` to indicate it's the workspace ID.
-        done: true
   - title: Enhance `createWorkspace` for optional plan file
-    done: false
+    done: true
     description: >
       Update the `createWorkspace` function in
       `src/rmplan/workspace/workspace_manager.ts`.
@@ -198,264 +93,23 @@ tasks:
 
       - Adjust the call to `recordWorkspace` for an optional
       `originalPlanFilePath`.
-    files:
-      - src/rmplan/workspace/workspace_manager.ts
-      - src/rmplan/workspace/workspace_manager.test.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/workspace/workspace_manager.ts`, modify the
-          `createWorkspace` function signature.
-
-          Change the `originalPlanFilePath` parameter from
-          `originalPlanFilePath: string` to `originalPlanFilePath: string |
-          undefined`.
-        done: true
-      - prompt: >
-          Update the branch name generation within `createWorkspace`. Instead of
-          `llmutils-task/\${taskId}`, use `llmutils-ws/\${taskId}`.
-
-          The `taskId` parameter already represents the workspace ID.
-        done: true
-      - prompt: >
-          After successful repository clone and branch checkout, and before
-          running post-clone commands:
-
-          If `originalPlanFilePath` is provided:
-
-          1. Construct the `planFilePathInWorkspace` by joining the
-          `targetClonePath` (workspace root) and the basename of
-          `originalPlanFilePath`.
-
-          2. Copy the file from `originalPlanFilePath` to
-          `planFilePathInWorkspace`. You can use
-          `Bun.file(originalPlanFilePath).text()` and `Bun.write()` or
-          `fs.copyFile`. Log this action.
-
-          Else, `planFilePathInWorkspace` remains `undefined`.
-        done: true
-      - prompt: >
-          Modify the setup of environment variables for `postCloneCommands`.
-
-          The `LLMUTILS_PLAN_FILE_PATH` variable should only be set if a plan
-          was processed. Its value should be `planFilePathInWorkspace` (the path
-          to the plan *inside* the new workspace).
-
-          ```typescript
-
-          const envVars: Record<string, string> = {
-            ...commandConfig.env,
-            LLMUTILS_TASK_ID: taskId, // This is the workspace ID
-          };
-
-          if (planFilePathInWorkspace) { // Check the variable holding the
-          copied plan's path
-            envVars.LLMUTILS_PLAN_FILE_PATH = planFilePathInWorkspace;
-          }
-
-          // ... update commandWithEnv.env with envVars
-
-          ```
-        done: true
-      - prompt: >
-          Update the call to `recordWorkspace` within `createWorkspace`.
-
-          The `originalPlanFilePath` argument passed to `recordWorkspace` should
-          be the `originalPlanFilePath` received by `createWorkspace` (which can
-          be `undefined`).
-        done: true
-      - prompt: >
-          Update the returned `Workspace` object to include the new
-          `planFilePathInWorkspace` field (which can be `undefined`).
-
-          Its structure will be `{ path: targetClonePath, originalPlanFilePath,
-          planFilePathInWorkspace, taskId }`.
-        done: true
-      - prompt: >
-          In `src/rmplan/workspace/workspace_manager.test.ts`, update existing
-          tests and add new ones for `createWorkspace` to cover:
-
-          - Workspace creation without a plan (`originalPlanFilePath` is
-          `undefined`).
-
-          - Workspace creation with a plan:
-            - Verify the plan is copied to the workspace.
-            - Verify `LLMUTILS_PLAN_FILE_PATH` is set correctly for post-clone commands (points to the plan inside the workspace).
-          - Verify the new branch naming convention
-          (`llmutils-ws/<workspaceId>`).
-
-          Ensure mocks for `fs` operations (like copyFile) and `recordWorkspace`
-          are correctly handled if used.
-        done: true
   - title: Implement core logic for `workspace add` command handler
-    done: false
+    done: true
     description: Develop the action handler for the `rmplan rmplan workspace add`
       command. This logic will integrate previous tasks to create workspaces,
       optionally link plans, and update plan statuses.
-    files:
-      - src/rmplan/rmplan.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/rmplan.ts`, within the action handler for `rmplan
-          workspace add`:
-
-          1. Load `RmplanConfig` using
-          `loadEffectiveConfig(globalCliOptions.config)`.
-
-          2. Determine the main repository root using `getGitRoot()`. Fallback
-          to `process.cwd()` if not in a git repo.
-
-          3. Determine the `workspaceId`: if `options.id` is provided, use it;
-          otherwise, generate one using `generateProjectId()`.
-        done: true
-      - prompt: >
-          If `planIdentifier` (the positional argument) is provided:
-
-          1. Resolve it to an absolute `originalPlanPath` using
-          `resolvePlanFile(planIdentifier, globalCliOptions.config)`. Handle
-          potential errors if the plan is not found.
-
-          2. Call `setPlanStatus(originalPlanPath, 'in_progress')` to update the
-          status of the plan in its original location.
-
-          3. Invoke `createWorkspace(mainRepoRoot, workspaceId,
-          originalPlanPath, config)`.
-        done: true
-      - prompt: >
-          Continuing from the previous step (if `planIdentifier` was provided):
-
-          4. If `createWorkspace` returns a workspace object (`workspaceResult`)
-          and `workspaceResult.planFilePathInWorkspace` is defined:
-             Call `setPlanStatus(workspaceResult.planFilePathInWorkspace, 'in_progress')` to update the status of the copied plan file within the new workspace.
-             Log a success message including the new workspace path and the associated plan.
-          5. If `createWorkspace` fails (returns `null`), log an error message.
-        done: true
-      - prompt: >
-          If `planIdentifier` is NOT provided:
-
-          1. Invoke `createWorkspace(mainRepoRoot, workspaceId, undefined,
-          config)`.
-
-          2. If `createWorkspace` is successful, log a success message
-          indicating the new workspace path and that no plan is associated.
-
-          3. If `createWorkspace` fails, log an error message.
-        done: true
-      - prompt: >
-          Ensure all operations are wrapped in a try/catch block to handle
-          errors gracefully and provide informative messages to the user.
-
-          Log the generated or provided `workspaceId` being used.
-        done: true
   - title: Add comprehensive tests
-    done: false
+    done: true
     description: Write unit and integration tests to ensure the reliability of the
       new functionality. Test cases should cover various scenarios including
       plan-less and plan-associated workspace creation, status updates, and ID
       handling.
-    files:
-      - src/rmplan/rmplan.test.ts
-      - src/rmplan/plans.test.ts
-    steps:
-      - prompt: >
-          Create a new test file (e.g.,
-          `src/rmplan/commands/workspace_add.test.ts`) or augment an existing
-          one like `src/rmplan/rmplan.test.ts`.
-
-          Mock external dependencies such as `createWorkspace`, `setPlanStatus`,
-          `resolvePlanFile`, `generateProjectId`, `loadEffectiveConfig`,
-          `getGitRoot`.
-
-          Focus on testing the command's argument parsing and flow logic.
-
-          Test scenarios:
-
-          - Calling `rmplan workspace add` without any arguments (should
-          generate workspace ID, call `createWorkspace` with undefined plan).
-
-          - Calling with a plan file path (should call `resolvePlanFile`,
-          `setPlanStatus` twice, `createWorkspace` with plan).
-
-          - Calling with a plan ID (should behave similarly to file path).
-
-          - Calling with `--id <customWorkspaceId>` (should use custom ID).
-
-          - Handling `resolvePlanFile` error.
-
-          - Handling `createWorkspace` error.
-        done: true
-      - prompt: >
-          Write integration-style tests (these might still involve some mocking,
-          but test more of the actual functions interacting).
-
-          Set up a temporary directory with mock plan files.
-
-          Test scenarios:
-
-          - Actual creation of a workspace directory (mock `spawnAndLogOutput`
-          for git commands within `createWorkspace` if it's too complex to run
-          real git, or allow `createWorkspace` to be tested more directly if its
-          tests are thorough).
-
-          - Verification of plan file copying and status updates in mock plan
-          files.
-
-          - Use `fs.mkdtemp` for temporary test directories and ensure cleanup.
-
-          Consider testing the full CLI invocation if feasible, or test the
-          command handler function directly.
-        done: true
-      - prompt: >
-          Ensure the tests for `setPlanStatus` (from Task 2) are comprehensive
-          and cover edge cases like invalid YAML content or file permissions (if
-          possible without excessive mocking).
-        done: true
   - title: Update documentation
-    done: false
+    done: true
     description: Update the project's `README.md` file and any other relevant
       documentation to include details about the new `rmplan workspace add`
       command. This should cover its purpose, syntax, options, and examples of
       usage.
-    files:
-      - README.md
-    steps:
-      - prompt: >
-          Open `README.md`. Locate the CLI commands section.
-
-          Add a new entry for `rmplan workspace add`.
-
-          Describe its purpose: explicitly creating a new workspace, optionally
-          linking it to a plan.
-        done: true
-      - prompt: >
-          Document the syntax for `rmplan workspace add [planIdentifier] [--id
-          <workspaceId>]`.
-
-          Explain the optional `planIdentifier` (can be a plan ID or file path).
-
-          Explain the optional `--id <workspaceId>` option.
-        done: true
-      - prompt: >
-          Provide examples of usage:
-
-          - Creating a workspace without a plan: `rmplan workspace add`
-
-          - Creating a workspace with a specific ID, no plan: `rmplan workspace
-          add --id my-custom-ws`
-
-          - Creating a workspace and associating it with a plan by file path:
-          `rmplan workspace add path/to/my-plan.yml`
-
-          - Creating a workspace with a plan by ID and a custom workspace ID:
-          `rmplan workspace add my-plan-id --id my-dev-space`
-        done: true
-      - prompt: >
-          Briefly explain the behavior when a plan is associated: the plan's
-          status is updated to `in_progress` in both the original location and
-          the new workspace, and the plan file is copied into the workspace.
-
-          If there are other documentation files detailing CLI commands (e.g., a
-          dedicated `docs/cli.md`), update them similarly.
-        done: true
 changedFiles:
   - README.md
   - src/rmplan/plans.test.ts

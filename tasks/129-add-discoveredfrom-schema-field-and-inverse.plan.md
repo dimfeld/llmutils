@@ -48,78 +48,51 @@ tasks:
       `z.coerce.number().int().positive().optional()` with a descriptive comment
       explaining it tracks which plan led to discovering this issue during
       research/implementation.
-    files: []
-    docs: []
-    steps: []
   - title: Implement getBlockedPlans utility function
     done: true
     description: Add `getBlockedPlans(planId, allPlans)` to `src/rmplan/plans.ts`.
       Returns all plans that have `planId` in their `dependencies` array
       (inverse of dependencies). Include JSDoc comments with @param and @returns
       annotations.
-    files: []
-    docs: []
-    steps: []
   - title: Implement getChildPlans utility function
     done: true
     description: Add `getChildPlans(planId, allPlans)` to `src/rmplan/plans.ts`.
       Returns all plans where `parent === planId` (inverse of parent). Include
       JSDoc comments with @param and @returns annotations.
-    files: []
-    docs: []
-    steps: []
   - title: Implement getDiscoveredPlans utility function
     done: true
     description: Add `getDiscoveredPlans(planId, allPlans)` to
       `src/rmplan/plans.ts`. Returns all plans where `discoveredFrom ===
       planId`. Include JSDoc comments with @param and @returns annotations.
-    files: []
-    docs: []
-    steps: []
   - title: Add schema validation tests for discoveredFrom
     done: true
     description: "Create tests in `src/rmplan/plans.test.ts` that verify: (1) schema
       accepts valid positive integers for `discoveredFrom`, (2) schema rejects
       negative numbers, zero, non-integers, and non-numeric values, (3) field is
       optional and plans without it validate successfully."
-    files: []
-    docs: []
-    steps: []
   - title: Add unit tests for getBlockedPlans
     done: true
     description: "Add tests for `getBlockedPlans()` covering: (1) returns plans that
       depend on target plan, (2) returns empty array when no dependents exist,
       (3) handles multiple dependents correctly, (4) works with empty plan map."
-    files: []
-    docs: []
-    steps: []
   - title: Add unit tests for getChildPlans
     done: true
     description: "Add tests for `getChildPlans()` covering: (1) returns direct
       children of parent plan, (2) returns empty array when no children exist,
       (3) handles multiple children correctly, (4) doesn't return grandchildren
       (only direct children), (5) works with empty plan map."
-    files: []
-    docs: []
-    steps: []
   - title: Add unit tests for getDiscoveredPlans
     done: true
     description: "Add tests for `getDiscoveredPlans()` covering: (1) returns plans
       discovered from source plan, (2) returns empty array when no discoveries
       exist, (3) handles multiple discovered plans correctly, (4) works with
       empty plan map."
-    files: []
-    docs: []
-    steps: []
   - title: Add edge case tests for utility functions
     done: true
     description: "Add tests covering edge cases: (1) circular references in
       relationships don't cause infinite loops, (2) missing plan IDs are handled
       gracefully, (3) functions work correctly with large plan sets (>100
       plans)."
-    files: []
-    docs: []
-    steps: []
   - title: Add integration tests for plan file operations
     done: true
     description: "Create integration tests that: (1) load existing plan files
@@ -127,9 +100,6 @@ tasks:
       plans with `discoveredFrom` field, (3) round-trip plans with
       `discoveredFrom` through save/load cycle, (4) verify the field appears in
       loaded plan objects."
-    files: []
-    docs: []
-    steps: []
   - title: Add discoveredFrom validation to validate command
     done: true
     description: "Update `src/rmplan/commands/validate.ts` to: (1) check that
@@ -137,17 +107,11 @@ tasks:
       validation), (2) warn about orphaned discoveries (references to
       non-existent plans), (3) report validation errors clearly with plan ID and
       referenced plan ID."
-    files: []
-    docs: []
-    steps: []
   - title: Run full test suite and type checking
     done: true
     description: Execute `bun test` to verify all tests pass and `bun run check` to
       ensure TypeScript compilation succeeds with no errors. Fix any issues
       found.
-    files: []
-    docs: []
-    steps: []
 changedFiles:
   - README.md
   - src/rmplan/commands/ready.test.ts

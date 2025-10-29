@@ -5,6 +5,7 @@ goal: Enable multi-user workflows in rmplan by supporting user identity via
   environment variables and tracking both plan assignments and status in a
   shared configuration
 id: 139
+uuid: 8b82a7c6-2182-48b7-af3e-2be853519242
 generatedBy: agent
 status: done
 priority: high
@@ -191,9 +192,6 @@ tasks:
       `crypto.randomUUID()`. Add lazy UUID generation in `readPlanFile()` that
       generates and writes back UUID if missing (for existing plans). Include
       test coverage for UUID generation and persistence.
-    files: []
-    docs: []
-    steps: []
   - title: Create assignments file schema and utilities
     done: true
     description: "Create `src/rmplan/assignments/assignments_schema.ts` with Zod
@@ -207,9 +205,6 @@ tasks:
       rename), getAssignmentsFilePath(). Include comprehensive tests for I/O
       operations and edge cases (missing file, corrupted JSON, concurrent
       writes)."
-    files: []
-    docs: []
-    steps: []
   - title: Implement workspace and repository identification
     done: true
     description: "Create `src/rmplan/assignments/workspace_identifier.ts` with:
@@ -219,9 +214,6 @@ tasks:
       getUserIdentity() that checks RMPLAN_USER, USER, USERNAME, LOGNAME in
       order. Include path normalization tests (symlinks, relative paths, case
       sensitivity) and repo ID tests (various remote URL formats)."
-    files: []
-    docs: []
-    steps: []
   - title: Implement plan UUID lookup utilities
     done: true
     description: "Create `src/rmplan/assignments/uuid_lookup.ts` with:
@@ -231,9 +223,6 @@ tasks:
       implements the fast-path verification logic (try planId first, fall back
       to UUID scan if mismatch, update cache if needed). Include tests for cache
       hit/miss scenarios and renumbering cases."
-    files: []
-    docs: []
-    steps: []
   - title: Implement rmplan claim command
     done: true
     description: "Create `src/rmplan/commands/claim.ts` with handleClaimCommand().
@@ -246,9 +235,6 @@ tasks:
       called by other commands. Include tests for: claiming unassigned plans,
       already-claimed plans (same workspace = no-op, different workspace =
       warning), multiple workspace claims."
-    files: []
-    docs: []
-    steps: []
   - title: Implement rmplan release command
     done: true
     description: "Create `src/rmplan/commands/release.ts` with
@@ -260,9 +246,6 @@ tasks:
       options: --reset-status (reset to pending). Include tests for releasing
       assigned plans, already-released plans, partial releases (multiple
       workspaces), status handling."
-    files: []
-    docs: []
-    steps: []
   - title: Update ready command with assignment filtering
     done: true
     description: "Modify `src/rmplan/commands/ready.ts`: read assignments file,
@@ -274,9 +257,6 @@ tasks:
       about multi-workspace claims. Maintain backward compatibility (if
       assignments file doesn't exist, behave like before). Include comprehensive
       tests for all filtering modes."
-    files: []
-    docs: []
-    steps: []
   - title: Update list and show commands with assignment display
     done: true
     description: "Modify `src/rmplan/commands/list.ts`: read assignments file, add
@@ -287,9 +267,6 @@ tasks:
       utilities in `src/rmplan/utils/display_utils.ts` if needed for formatting
       workspace paths (abbreviate home directory, show relative to current
       workspace). Include tests for display with and without assignments."
-    files: []
-    docs: []
-    steps: []
   - title: Add automatic cleanup when plans marked done
     done: true
     description: "Modify `src/rmplan/plans/mark_done.ts` and
@@ -298,9 +275,6 @@ tasks:
       file. Add removeAssignment(uuid) utility in assignments_io.ts. Ensure this
       works for both direct status changes and task completion. Include tests
       for automatic cleanup on done/cancelled."
-    files: []
-    docs: []
-    steps: []
   - title: Add stale assignment detection and cleanup
     done: true
     description: "Add configuration option `assignments.staleTimeout` (default 7
@@ -312,9 +286,6 @@ tasks:
       workspace/user details), clean-stale (remove stale assignments with
       confirmation), show-conflicts (list plans claimed in multiple workspaces).
       Include tests for stale detection and cleanup."
-    files: []
-    docs: []
-    steps: []
   - title: Add comprehensive tests and documentation
     done: true
     description: "Create test files: assignments_io.test.ts (file operations, atomic
@@ -328,9 +299,6 @@ tasks:
       workspaces, claiming plans, handling conflicts, using with teams. Add
       troubleshooting section for common issues. Test entire workflow end-to-end
       with multiple workspace clones."
-    files: []
-    docs: []
-    steps: []
 changedFiles:
   - README.md
   - docs/multi-workspace-workflow.md
@@ -394,7 +362,6 @@ changedFiles:
   - test-plans/plans/103-testing-infrastructure.yml
   - test-plans/plans/104-test-data-generation.yml
 rmfilter: []
-uuid: 8b82a7c6-2182-48b7-af3e-2be853519242
 ---
 
 <!-- rmplan-generated-start -->

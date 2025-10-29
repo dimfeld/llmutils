@@ -18,7 +18,7 @@ createdAt: 2025-07-29T19:06:12.623Z
 updatedAt: 2025-10-27T08:39:04.317Z
 tasks:
   - title: Create a Centralized Cleanup Handler Registry
-    done: false
+    done: true
     description: >
       A module will be created to manage a list of cleanup functions that need
       to run on process termination. 
@@ -34,44 +34,8 @@ tasks:
 
       The module will use a Map to store cleanup functions with unique IDs
       generated using incrementing numbers.
-    files:
-      - src/common/cleanup_registry.ts
-      - src/common/cleanup_registry.test.ts
-    steps:
-      - prompt: >
-          Create src/common/cleanup_registry.test.ts with tests for the cleanup
-          registry functionality.
-
-          Include tests for registering handlers, unregistering handlers,
-          executing all handlers,
-
-          handling errors during cleanup execution, and ensuring cleanup
-          functions run only once.
-        done: true
-      - prompt: >
-          Create src/common/cleanup_registry.ts implementing a singleton
-          CleanupRegistry class.
-
-          Include a Map to store handlers by ID, a counter for generating unique
-          IDs,
-
-          a register() method that returns an unregister function, and an
-          executeAll() method
-
-          that runs all handlers synchronously and clears the registry
-          afterwards.
-        done: true
-      - prompt: >
-          Update the CleanupRegistry to handle errors gracefully during
-          executeAll() by wrapping
-
-          each handler call in a try-catch block. Add a debug log for any errors
-          that occur
-
-          during cleanup execution.
-        done: true
   - title: Implement a Global SIGINT Handler
-    done: false
+    done: true
     description: >
       At the application's main entry point in src/rmplan/rmplan.ts,
       process-level listeners for 
@@ -89,29 +53,8 @@ tasks:
 
       The signal handlers should be registered early in the run() function
       before command parsing.
-    files:
-      - src/rmplan/rmplan.ts
-    steps:
-      - prompt: >
-          Import the CleanupRegistry from '../common/cleanup_registry.ts' at the
-          top of src/rmplan/rmplan.ts
-
-          alongside other imports.
-        done: true
-      - prompt: >
-          In the run() function of src/rmplan/rmplan.ts, right after loadEnv()
-          is called,
-
-          set up signal handlers for 'exit', 'SIGINT', 'SIGTERM', and 'SIGHUP'
-          that call
-
-          CleanupRegistry.getInstance().executeAll(). For SIGINT, also call
-          process.exit(130)
-
-          after cleanup to follow Unix convention.
-        done: true
   - title: Integrate the Executor with the Cleanup Registry
-    done: false
+    done: true
     description: >
       The Claude Code executor will be modified to register its agent file
       cleanup function with
@@ -132,52 +75,6 @@ tasks:
       signal handlers.
 
       Tests will be updated to verify the integration works correctly.
-    files:
-      - src/rmplan/executors/claude_code.ts
-      - src/rmplan/executors/claude_code.test.ts
-    steps:
-      - prompt: >
-          Import CleanupRegistry from '../../common/cleanup_registry.ts' in
-          src/rmplan/executors/claude_code.ts
-
-          and import fs (not fs/promises) from 'node:fs' for synchronous
-          operations.
-        done: true
-      - prompt: >
-          In the execute() method of src/rmplan/executors/claude_code.ts, after
-          calling generateAgentFiles(),
-
-          register a cleanup function with CleanupRegistry that synchronously
-          removes the agent files.
-
-          Store the returned unregister function in a variable declared before
-          the try block.
-        done: true
-      - prompt: >
-          Update the cleanup function to use fs.readdirSync to find files
-          matching the pattern
-
-          rmplan-${planId}-*.md in the agents directory, then use fs.unlinkSync
-          to remove each file.
-
-          Wrap the operations in try-catch to handle errors gracefully.
-        done: true
-      - prompt: >
-          In the finally block of execute(), call the stored unregister function
-          if it exists
-
-          to remove the cleanup handler from the registry, ensuring it only runs
-          on abnormal termination.
-        done: true
-      - prompt: >
-          Update src/rmplan/executors/claude_code.test.ts to add tests verifying
-          that the cleanup
-
-          handler is registered when agent files are created and unregistered in
-          the finally block.
-
-          Mock the CleanupRegistry to verify the register and unregister calls.
-        done: true
 changedFiles:
   - src/common/cleanup_registry.test.ts
   - src/common/cleanup_registry.ts

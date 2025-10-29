@@ -50,134 +50,35 @@ project:
     combine that with any body text.
 tasks:
   - title: Update `readPlanFile` to parse YAML front matter and a Markdown body
-    done: false
+    done: true
     description: Modify the `readPlanFile` function in `src/rmplan/plans.ts` to
       detect and parse files using the new format. It should correctly separate
       the YAML front matter from the subsequent Markdown content. The Markdown
       content will be loaded into the `details` field of the returned
       `PlanSchema` object. Files without front matter should be treated as pure
       YAML to support the old format.
-    files:
-      - src/rmplan/plans.ts
-      - src/rmplan/plans.test.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/plans.test.ts`, add a new `describe` block for "Plan
-          File Reading and Writing". Inside it, create a test case that verifies
-          `readPlanFile` can correctly parse a file with YAML front matter. The
-          test should create a temporary file containing YAML front matter
-          (enclosed by `---`) and a Markdown body, then assert that the parsed
-          `PlanSchema` object contains the front matter data and that the
-          Markdown body is correctly placed in the `details` field. This test
-          will initially fail.
-        done: true
-      - prompt: >
-          In `src/rmplan/plans.ts`, modify the `readPlanFile` function to handle
-          YAML front matter. The function should check if the file content
-          starts with `---`. If it does, use string manipulation or a regular
-          expression to separate the front matter from the body. Parse the front
-          matter as YAML, and assign the body content to the `details` field of
-          the resulting plan object. If the file does not contain front matter,
-          it should be parsed as a single YAML document to maintain backward
-          compatibility.
-        done: true
-      - prompt: >
-          In `src/rmplan/plans.test.ts`, add another test within the new
-          `describe` block to ensure backward compatibility. This test should
-          create a temporary file containing only YAML content (the old format),
-          including a `details` key. Verify that `readPlanFile` still parses
-          this file correctly and that the `details` field is populated from the
-          YAML.
-        done: true
   - title: Update `writePlanFile` to save plans in the new front matter format
-    done: false
+    done: true
     description: Modify the `writePlanFile` function in `src/rmplan/plans.ts`. This
       function will now take a `PlanSchema` object, extract the `details` string
       to be used as the Markdown body, and serialize the remaining fields into a
       YAML front matter block. This ensures that any plan saved by the system
       will conform to the new, more readable format.
-    files:
-      - src/rmplan/plans.ts
-      - src/rmplan/plans.test.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/plans.test.ts`, add a test case for `writePlanFile`. It
-          should create a `PlanSchema` object that includes a `details` field.
-          After calling `writePlanFile`, read the content of the newly created
-          file. Assert that the file is formatted with YAML front matter (the
-          `details` field should not be present in the YAML part) and that the
-          original `details` string constitutes the body of the file.
-        done: true
-      - prompt: >
-          In `src/rmplan/plans.ts`, update the `writePlanFile` function. It
-          should separate the `details` field from the rest of the plan object.
-          Serialize the plan object (without `details`) into a YAML string.
-          Construct the final file content by wrapping the YAML string in `---`
-          separators, followed by the `details` content. Ensure the existing
-          `yaml-language-server` schema comment is included within the front
-          matter block.
-        done: true
   - title: Ensure `readPlanFile` is backward compatible with old plan formats
-    done: false
+    done: true
     description: Enhance `readPlanFile` to gracefully handle older plan files. If a
       file is read that contains a `details` field within its YAML content
       (either as a legacy pure-YAML file or within the front matter of a
       new-format file), its value must be combined with any Markdown body text
       present. This prevents data loss and ensures a seamless transition.
-    files:
-      - src/rmplan/plans.ts
-      - src/rmplan/plans.test.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/plans.test.ts`, add a test case for the backward
-          compatibility scenario. Create a temporary file that has both a
-          `details` key in its YAML front matter and a separate Markdown body.
-          When `readPlanFile` is called on this file, assert that the resulting
-          `details` field in the `PlanSchema` object contains the content from
-          both the YAML key and the Markdown body, concatenated together with a
-          newline.
-        done: true
-      - prompt: >
-          In `src/rmplan/plans.ts`, modify `readPlanFile` to implement the
-          content-merging logic. After parsing the YAML and extracting the
-          Markdown body (if any), check if the parsed object contains a
-          `details` property. If both a YAML `details` value and a Markdown body
-          exist, combine them into a single string for the final `details`
-          field. The value from the YAML should come first.
-        done: true
   - title: Create comprehensive tests for plan file input and output
-    done: false
+    done: true
     description: Add and update tests in `src/rmplan/plans.test.ts` to thoroughly
       validate the changes to `readPlanFile` and `writePlanFile`. The tests must
       cover reading and writing the new format, reading the old pure-YAML
       format, and the specific backward-compatibility case where `details`
       exists in both the front matter and the Markdown body. All tests will use
       real file operations in a temporary directory.
-    files:
-      - src/rmplan/plans.test.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/plans.test.ts`, implement a round-trip test to ensure
-          symmetry between reading and writing. The test should define a
-          `PlanSchema` object, use `writePlanFile` to save it, then use
-          `readPlanFile` to read it back. Finally, assert that the object read
-          from the file is deeply equal to the original object.
-        done: true
-      - prompt: >
-          Add a test to verify the migration path for old-format files. The test
-          should programmatically create a pure-YAML plan file. Then, read this
-          file using `readPlanFile` and write the resulting object back to a new
-          file using `writePlanFile`. Assert that the new file has been
-          correctly converted to the new front matter format.
-        done: true
-      - prompt: >
-          Add a test for the backward-compatibility merge-and-write scenario.
-          Create a file with `details` in both the front matter and the body.
-          Read it with `readPlanFile`, then write it back with `writePlanFile`.
-          Verify that the newly written file is in the standard front matter
-          format and that its body contains the combined details from the
-          original file.
-        done: true
 changedFiles:
   - src/rmplan/plans.test.ts
   - src/rmplan/plans.ts

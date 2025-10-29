@@ -45,32 +45,6 @@ tasks:
       - Invalid configurations are rejected appropriately
 
       - The schema remains backward compatible (works without agents section)
-    files:
-      - src/rmplan/configSchema.ts
-      - src/rmplan/configSchema.test.ts
-    steps:
-      - prompt: >
-          In configSchema.test.ts, add a new describe block for 'agents field'
-          that tests the new agents configuration.
-
-          Include tests for: valid agent configurations with all three agents,
-          partial configurations with only some agents,
-
-          invalid field names within agents, and ensuring the field is optional.
-        done: true
-      - prompt: >
-          In configSchema.ts, add the new `agents` field to rmplanConfigSchema
-          after the `planning` field.
-
-          Create the structure with optional implementer, tester, and reviewer
-          objects, each containing an optional instructions string field.
-
-          Add appropriate descriptions for each field to document their purpose.
-        done: true
-      - prompt: >
-          Run the tests to ensure the new schema validation works correctly and
-          all existing tests still pass.
-        done: true
   - title: "Task 2: Modify agent prompt functions to accept custom instructions"
     done: true
     description: >
@@ -102,36 +76,6 @@ tasks:
       compatibility)
 
       - Custom instructions appear in the expected location within the prompt
-    files:
-      - src/rmplan/executors/claude_code/agent_prompts.ts
-      - src/rmplan/executors/claude_code/agent_prompts.test.ts
-    steps:
-      - prompt: >
-          In agent_prompts.test.ts, add tests for each agent prompt function
-          that verify custom instructions are included
-
-          when provided. Test that the custom instructions appear after the
-          context section and that prompts still work
-
-          without custom instructions.
-        done: true
-      - prompt: >
-          Update the function signatures of getImplementerPrompt,
-          getTesterPrompt, and getReviewerPrompt to accept
-
-          an optional second parameter `customInstructions?: string`.
-        done: true
-      - prompt: >
-          In each prompt function, add logic to include the custom instructions
-          if provided. Insert them as a
-
-          "## Custom Instructions" section after the "## Context and Task"
-          section but before the primary responsibilities.
-        done: true
-      - prompt: >
-          Run the tests to ensure custom instructions are properly included and
-          all existing functionality remains intact.
-        done: true
   - title: "Task 3: Load and pass custom instructions in `ClaudeCodeExecutor`"
     done: true
     description: >
@@ -159,37 +103,6 @@ tasks:
       Error handling will log warnings for missing files but not fail the
       execution, similar to how other optional configuration files are handled
       in the codebase.
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps:
-      - prompt: >
-          Create a helper function `loadAgentInstructions` that takes an
-          instruction path and git root, resolves the path
-
-          (absolute or relative), reads the file content, and returns it.
-          Include try-catch error handling that logs
-
-          warnings for missing files and returns undefined.
-        done: true
-      - prompt: >
-          In the execute method, after getting the git root and before
-          generating agent files, add code to load
-
-          custom instructions for each agent if they're specified in
-          rmplanConfig.agents. Store the loaded
-
-          instructions in variables like implementerInstructions,
-          testerInstructions, and reviewerInstructions.
-        done: true
-      - prompt: >
-          Update the calls to getImplementerPrompt, getTesterPrompt, and
-          getReviewerPrompt to pass the loaded
-
-          custom instructions as the second parameter. Ensure the agent
-          definitions are created correctly with
-
-          the custom instructions included.
-        done: true
   - title: "Task 4: Add an integration test for custom agent instructions"
     done: true
     description: >
@@ -217,36 +130,6 @@ tasks:
       instructions. It will use real file operations (following the testing
       philosophy of preferring real filesystem operations over mocks where
       possible).
-    files:
-      - src/rmplan/executors/claude_code.test.ts
-    steps:
-      - prompt: >
-          Add a new test 'includes custom instructions from config files in
-          agent prompts' that creates a temporary
-
-          directory using fs.mkdtemp, writes instruction files for implementer,
-          tester, and reviewer agents, and
-
-          creates a config object referencing these files.
-        done: true
-      - prompt: >
-          In the test, mock the agent prompt functions to capture the
-          customInstructions parameter passed to them.
-
-          Set up other necessary mocks similar to existing tests (git root,
-          process spawning, etc.).
-        done: true
-      - prompt: >
-          Create a ClaudeCodeExecutor with the config containing agent
-          instructions, execute it with test content,
-
-          and verify that each agent prompt function was called with the correct
-          custom instructions from the files.
-        done: true
-      - prompt: >
-          Clean up the temporary directory after the test completes and ensure
-          all tests pass.
-        done: true
 rmfilter:
   - src/rmplan/configSchema.ts
   - src/rmplan/executors/claude_code.ts

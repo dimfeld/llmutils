@@ -74,9 +74,6 @@ tasks:
       literal \n escape sequences vs actual newlines. If literal sequences are
       found, add .replace(/\\n/g, '\n') before splitting. Test with details
       longer than 20 lines to verify complete display.
-    files: []
-    docs: []
-    steps: []
   - title: Add 'Blocks These Plans' section
     done: true
     description: Add inverse dependency display in show.ts after the Dependencies
@@ -85,9 +82,6 @@ tasks:
       display with status icon (✓/⏳/○), plan ID in cyan, title from
       getCombinedTitleFromSummary(), and status in appropriate color. Only show
       section if blockedPlans.length > 0.
-    files: []
-    docs: []
-    steps: []
   - title: Add 'Child Plans' section
     done: true
     description: "Add child plan display in show.ts after the 'Blocks These Plans'
@@ -95,18 +89,12 @@ tasks:
       formatting as blocked plans: status icon, cyan ID, title, colored status.
       Handle missing plan references with 'Plan not found' warnings. Only show
       section if children.length > 0."
-    files: []
-    docs: []
-    steps: []
   - title: Add 'Plans Discovered From This' section
     done: true
     description: Add discovered plans display in show.ts after the 'Child Plans'
       section. Import getDiscoveredPlans from plans.ts. Display each discovered
       plan with bullet point (•), cyan ID, title, and colored status. Only show
       section if discovered.length > 0.
-    files: []
-    docs: []
-    steps: []
   - title: Add 'Discovered From' section
     done: true
     description: Add source plan display in show.ts after 'Plans Discovered From
@@ -114,9 +102,6 @@ tasks:
       source plan in allPlans. Display with bullet point, cyan ID, and title.
       Show 'Plan not found' warning if source plan is missing. Only show section
       if plan.discoveredFrom is set.
-    files: []
-    docs: []
-    steps: []
   - title: Write automated tests for enhanced show command
     done: true
     description: "Create or update src/rmplan/commands/show.test.ts with tests for:
@@ -126,9 +111,6 @@ tasks:
       lists don't display sections, (5) Short mode still works without showing
       inverse relationships. Use real filesystem with temporary directories and
       fixture files."
-    files: []
-    docs: []
-    steps: []
 changedFiles:
   - src/rmplan/commands/show.test.ts
   - src/rmplan/commands/show.ts

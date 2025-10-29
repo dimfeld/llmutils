@@ -50,7 +50,7 @@ project:
     prompting logic.
 tasks:
   - title: Save Permission Rules on Update
-    done: false
+    done: true
     description: Implement logic to write a new "Always Allow" rule to the Claude
       Code local settings file, `.claude/settings.local.json`, and update that
       file every time the "Always Allow" rule is selected. This involves
@@ -59,71 +59,12 @@ tasks:
       new rule is permanently added by the user. The file I/O should be robust,
       handling cases where the file or directory doesn't exist and preserving
       other settings within the JSON file.
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps:
-      - prompt: >
-          In `ClaudeCodeExecutor`, create two private helper methods:
-          `getSettingsFilePath` to locate `.claude/settings.local.json` relative
-          to the git root, and `loadPermissions` to read this file.
-          `loadPermissions` should parse the `permissions.allow` array,
-          populating the `alwaysAllowedTools` map. It must correctly handle
-          `Bash(prefix:*)` entries by extracting the prefix, and other entries
-          as simple tool names. Ensure it is resilient to the file or keys not
-          existing.
-        done: true
-      - prompt: >
-          In `ClaudeCodeExecutor`, create a private async method
-          `savePermissions`. This method will read the current settings file,
-          convert the `alwaysAllowedTools` map back into an array of strings
-          (e.g., `WebSearch`, `Bash(git status:*)`), merge them into the
-          `permissions.allow` array ensuring no duplicates, and write the
-          updated configuration object back to the file, preserving any other
-          existing settings.
-        done: true
-      - prompt: >
-          At the beginning of the `execute` method in `ClaudeCodeExecutor`, add
-          a call to `await this.loadPermissions()` to initialize the in-memory
-          ruleset from the settings file before the `claude` process is started.
-        done: true
-      - prompt: >
-          In the `createPermissionSocketServer` method's `data` event handler,
-          after a user selects "Always Allow" and the in-memory
-          `this.alwaysAllowedTools` map is updated, add a call to `await
-          this.savePermissions()`. This will persist the new rule to the JSON
-          configuration file immediately.
-        done: true
   - title: Document the New Permission System
-    done: false
+    done: true
     description: Update the project's README.md file to document the new permissions
       system. The documentation should explain the "Always Allow" feature,
       describe how the interactive Bash prefix selection works, and specify
       where the permissions configuration file is stored, including its format.
-    files:
-      - README.md
-    steps:
-      - prompt: >
-          Create a new file `README.md` if it doesn't exist. Add a new section
-          titled "Claude Code Executor: Interactive Tool Permissions". In this
-          section, describe the new permission prompt that appears when Claude
-          attempts to use a tool, explaining the "Allow", "Disallow", and
-          "Always Allow" options.
-        done: true
-      - prompt: >
-          Within the new documentation section, add a subsection explaining the
-          special handling for `Bash` commands. Describe how choosing "Always
-          Allow" for a `Bash` tool triggers an interactive prefix selection
-          prompt, and explain how to use the arrow keys and 'a' key to define a
-          safe command prefix for automatic approval.
-        done: true
-      - prompt: >
-          Conclude the new section by documenting the persistence mechanism.
-          State that "Always Allow" rules are saved to a
-          `.claude/settings.local.json` file in the project's root directory.
-          Include a sample snippet of this JSON file to illustrate the format of
-          the `permissions.allow` array for both standard tools and `Bash`
-          prefixes.
-        done: true
 changedFiles:
   - README.md
   - src/rmplan/actions.ts

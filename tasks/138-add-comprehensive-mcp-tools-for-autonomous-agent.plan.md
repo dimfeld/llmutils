@@ -23,60 +23,51 @@ tasks:
       addChildToParent(), and getReadyPlans() helper functions in
       src/rmplan/mcp/generate_mode.ts. These functions provide the core
       functionality needed by the MCP tools and resources.
-    steps: []
   - title: Implement create-plan MCP tool
     done: false
     description: Create the create-plan tool with createPlanParameters schema and
       handleCreatePlanTool handler. This tool allows agents to create new plan
       files with all initial properties (title, priority, parent, dependencies,
       etc.). Update parent plan if specified.
-    steps: []
   - title: Implement update-plan-properties MCP tool
     done: false
     description: Create the update-plan-properties tool with
       updatePlanPropertiesParameters schema and handleUpdatePlanPropertiesTool
       handler. Support adding/removing dependencies, issues, docs, and updating
       all plan metadata fields. This provides rmplan set functionality via MCP.
-    steps: []
   - title: Implement task management MCP tools
     done: false
     description: Create add-plan-task and remove-plan-task tools with appropriate
       schemas and handlers. Allow adding new tasks to plans and removing tasks
       by index or title match.
-    steps: []
   - title: Implement plan discovery MCP tools
     done: false
     description: Create list-ready-plans and search-plans tools with schemas and
       handlers. Support filtering by status, priority, assignee, parent, and
       title substring. Include sorting and limiting results.
-    steps: []
   - title: Implement plan MCP resources
     done: false
     description: "Add three MCP resources to expose plan data for efficient reading:
       rmplan://plans/list (all plans summary), rmplan://plans/{planId} (specific
       plan details), and rmplan://plans/ready (ready-to-execute plans).
       Resources provide read-only access complementing the mutation tools."
-    steps: []
   - title: Register all tools and resources in registerGenerateMode
     done: false
     description: Update the registerGenerateMode() function to register all new
       tools (create-plan, update-plan-properties, add-plan-task,
       remove-plan-task, list-ready-plans, search-plans) and resources with
       appropriate annotations and descriptions.
-    steps: []
   - title: Add comprehensive tests
     done: false
     description: Create tests in src/rmplan/mcp/generate_mode.test.ts for all new
       tools and resources. Test plan creation, property updates, task
       management, search/filter functionality, and resource reading. Include
       integration tests for full workflows.
-    steps: []
   - title: Create MCP documentation
     done: false
     description: Create or update src/rmplan/mcp/README.md with documentation for
       all tools and resources. Include usage examples, workflows, and guidance
       on when to use resources vs tools.
-    steps: []
 ---
 
 ## Overview

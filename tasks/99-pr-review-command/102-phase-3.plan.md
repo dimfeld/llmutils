@@ -67,29 +67,6 @@ tasks:
 
       Reference the existing 'agents' and 'planning' sections for patterns on
       how to structure nested configuration with file paths and boolean options.
-    files:
-      - src/rmplan/configSchema.test.ts
-      - src/rmplan/configSchema.ts
-      - src/rmplan/commands/review.ts
-    steps:
-      - prompt: >
-          Create tests in configSchema.test.ts for the new review configuration
-          section. Test validation of focus areas array, output format enum
-          values, and file path resolution for custom instructions and save
-          locations.
-        done: true
-      - prompt: >
-          Extend rmplanConfigSchema in configSchema.ts with a new 'review'
-          section containing: focusAreas (array of strings), outputFormat (enum:
-          json/markdown/terminal), saveLocation (string path),
-          customInstructionsPath (string path), incrementalReview (boolean), and
-          excludePatterns (array of glob patterns).
-        done: true
-      - prompt: >
-          Update the review command handler to load and use the review
-          configuration settings, falling back to sensible defaults when not
-          specified. Pass configuration values to the appropriate functions.
-        done: true
   - title: Implement custom review instructions
     done: true
     description: >
@@ -111,25 +88,6 @@ tasks:
 
       Use the existing pattern from agent_prompts.ts where custom instructions
       are inserted into the prompt template.
-    files:
-      - src/rmplan/commands/review.test.ts
-      - src/rmplan/commands/review.ts
-      - src/rmplan/rmplan.ts
-    steps:
-      - prompt: >
-          Add tests for custom review instructions in review.test.ts, including
-          loading from file, CLI override behavior, and focus area filtering.
-        done: true
-      - prompt: >
-          Add CLI options to the review command in rmplan.ts: --instructions for
-          inline text, --instructions-file for file path, and --focus for
-          comma-separated focus areas.
-        done: true
-      - prompt: >
-          Update handleReviewCommand to load custom instructions from config or
-          CLI, merge them appropriately, and pass them to buildReviewPrompt
-          which should then pass them to getReviewerPrompt.
-        done: true
   - title: Create structured output formatting
     done: true
     description: >
@@ -150,30 +108,6 @@ tasks:
 
       Use chalk for terminal colors and the table package for structured
       terminal output similar to list.ts.
-    files:
-      - src/rmplan/formatters/review_formatter.test.ts
-      - src/rmplan/formatters/review_formatter.ts
-      - src/rmplan/commands/review.ts
-    steps:
-      - prompt: >
-          Create review_formatter.test.ts with tests for parsing reviewer output
-          into structured ReviewResult objects and formatting them as JSON,
-          Markdown, and terminal output.
-        done: true
-      - prompt: >
-          Implement review_formatter.ts with a ReviewResult interface containing
-          severity levels, issue categories, and file locations. Create
-          formatter classes for each output format with a common interface.
-        done: true
-      - prompt: >
-          Parse the executor output to extract review findings, categorize them
-          by severity (critical/major/minor), and format using chalk for
-          terminal output with clear visual hierarchy.
-        done: true
-      - prompt: >
-          Update the review command to use the formatter based on config or CLI
-          option, displaying formatted output and optionally saving to file.
-        done: true
   - title: Add review result persistence
     done: true
     description: >
@@ -193,31 +127,6 @@ tasks:
 
       Use the existing file writing patterns and consider integration with Git
       operations from git.ts.
-    files:
-      - src/rmplan/review_persistence.test.ts
-      - src/rmplan/review_persistence.ts
-      - src/rmplan/commands/review.ts
-      - src/rmplan/rmplan.ts
-    steps:
-      - prompt: >
-          Create review_persistence.test.ts with tests for saving review
-          results, managing review history, and handling file I/O errors
-          gracefully.
-        done: true
-      - prompt: >
-          Implement review_persistence.ts with functions to save review results
-          with metadata, maintain a history index file, and optionally create
-          Git notes using git commands.
-        done: true
-      - prompt: >
-          Add --save and --output-file CLI options to the review command in
-          rmplan.ts for controlling result persistence.
-        done: true
-      - prompt: >
-          Update the review command to save results using the persistence
-          module, creating the reviews directory if needed and handling the save
-          location from config or CLI.
-        done: true
   - title: Build incremental review support
     done: true
     description: >
@@ -237,35 +146,6 @@ tasks:
 
       Build on getChangedFilesOnBranch and the diff generation logic already in
       review.ts.
-    files:
-      - src/rmplan/incremental_review.test.ts
-      - src/rmplan/incremental_review.ts
-      - src/rmplan/commands/review.ts
-      - src/rmplan/rmplan.ts
-    steps:
-      - prompt: >
-          Create incremental_review.test.ts with tests for tracking last review
-          points, detecting changes since last review, and handling both Git and
-          jj repositories.
-        done: true
-      - prompt: >
-          Implement incremental_review.ts with functions to store/retrieve last
-          review metadata, calculate diff ranges, and filter files based on
-          modification time.
-        done: true
-      - prompt: >
-          Add --incremental, --since-last-review, and --since CLI options to the
-          review command for controlling incremental review behavior.
-        done: true
-      - prompt: >
-          Update generateDiffForReview in review.ts to support incremental diffs
-          using stored metadata, showing only changes since the specified point.
-        done: true
-      - prompt: >
-          Integrate incremental review tracking into the main review flow,
-          automatically storing review points and providing clear feedback about
-          what's being reviewed.
-        done: true
 ---
 
 Implement additional features to make the review command more powerful and customizable. Add configuration options for review behavior, support for custom review instructions, and enhanced output formatting. Include options to focus reviews on specific aspects (security, performance, etc.) and to save review results.

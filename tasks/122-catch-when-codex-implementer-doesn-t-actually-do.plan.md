@@ -83,7 +83,6 @@ tasks:
       - Add `compareRepositoryStates()` to detect any changes between states
 
       - Ensure support for both git and jj repositories
-    steps: []
   - title: Implement Planning Detection Logic
     done: true
     description: >-
@@ -99,7 +98,6 @@ tasks:
       - Combine text analysis with repository state comparison
 
       - Return structured detection result with retry recommendation
-    steps: []
   - title: Create Unit Tests for Detection
     done: true
     description: >-
@@ -113,7 +111,6 @@ tasks:
       - Test combined detection logic with different combinations
 
       - Include edge cases like file deletions, permission errors
-    steps: []
   - title: Add State Capture to Codex CLI Executor
     done: true
     description: |-
@@ -122,7 +119,6 @@ tasks:
       - Add state capture after implementer execution (after line 136)
       - Store retry count in execution context
       - Ensure state capture doesn't interfere with existing flow
-    steps: []
   - title: Implement Detection and Retry Loop
     done: true
     description: |-
@@ -134,7 +130,6 @@ tasks:
         - Retry 2: "IMPORTANT: Execute the actual code changes immediately."
         - Retry 3: "CRITICAL: You must write actual code files NOW."
       - Preserve original context and task information across retries
-    steps: []
   - title: Add Logging and Observability
     done: true
     description: >-
@@ -148,7 +143,6 @@ tasks:
       - Log final outcome (success after retry, or exhausted retries)
 
       - Ensure logs are actionable and help with debugging
-    steps: []
   - title: Create Integration Tests
     done: true
     description: |-
@@ -158,7 +152,6 @@ tasks:
       - Test exhausted retry scenarios (all retries fail)
       - Test with both git and jj repositories
       - Test edge cases (no planning text but no changes, etc.)
-    steps: []
   - title: Test Edge Cases and Error Scenarios
     done: true
     description: |-
@@ -168,7 +161,6 @@ tasks:
       - Test with direct commits (using `git commit` or `jj commit`)
       - Test concurrent file system modifications
       - Verify graceful degradation in sandboxed environments
-    steps: []
   - title: Update Documentation
     done: true
     description: |-
@@ -178,7 +170,6 @@ tasks:
       - Add troubleshooting section for common scenarios
       - Include examples of when retry is triggered
       - Document any configuration options or environment variables
-    steps: []
 changedFiles:
   - CLAUDE.md
   - src/common/git.test.ts

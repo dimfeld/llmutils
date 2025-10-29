@@ -36,7 +36,7 @@ project:
     plans from scratch and reorganizing existing ones.
 tasks:
   - title: Define `split` command in `rmplan.ts` and implement input plan loading.
-    done: false
+    done: true
     description: >
       This task involves adding the new `split` command to the
       `src/rmplan/rmplan.ts` CLI.
@@ -50,85 +50,8 @@ tasks:
 
       It should handle resolving the file path, reading its content, parsing
       YAML, and validating against the `PlanSchema`.
-    files:
-      - src/rmplan/rmplan.ts
-      - src/rmplan/rmplan.test.ts
-      - src/rmplan/planSchema.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/rmplan.test.ts`, add a new test suite for the `split`
-          command.
-
-          Start with a basic test case to ensure the `split` command is defined
-          and can be called with a file argument.
-
-          You don't need to implement the full functionality yet, just the
-          command structure.
-        done: true
-      - prompt: >
-          In `src/rmplan/rmplan.ts`, define a new command `split <planFile>`
-          using `program.command()`.
-
-          Add a description for the command, e.g., "Split a large plan file into
-          multiple phase-specific plan files."
-
-          The command should have an async action that takes `planFile` as an
-          argument.
-        done: true
-      - prompt: >
-          Inside the `split` command's action in `src/rmplan/rmplan.ts`:
-
-          1. Resolve the input `planFile` argument to an absolute path using
-          `path.resolve()`.
-
-          2. Read the content of the resolved plan file using `await
-          Bun.file(resolvedPlanFile).text()`. Handle potential file read errors.
-
-          3. Parse the file content as YAML using `yaml.parse()`. Handle
-          potential YAML parsing errors.
-        done: true
-      - prompt: >
-          Still in the `split` command's action, after parsing the YAML:
-
-          1. Import `planSchema` from `src/rmplan/planSchema.ts`.
-
-          2. Validate the parsed YAML object against `planSchema` using
-          `planSchema.safeParse()`.
-
-          3. If validation fails, log an error showing `result.error.issues` and
-          exit the process.
-
-          4. If validation succeeds, store the validated plan data. For now, log
-          the plan's title and goal using `log()`.
-        done: true
-      - prompt: >
-          In `src/rmplan/rmplan.test.ts`, add a test case for the `split`
-          command that verifies successful loading and parsing of a valid plan
-          file.
-
-          Create a fixture YAML file (e.g., `test-plan-to-split.yml`) in a
-          temporary test directory. This fixture should conform to `PlanSchema`
-          and include some tasks.
-
-          The test should check if the command action correctly loads and parses
-          this file (e.g., by checking logged output or a mock function call if
-          you refactor).
-        done: true
-      - prompt: >
-          In `src/rmplan/rmplan.test.ts`, add test cases for the `split` command
-          to handle error scenarios:
-
-          1. Input file does not exist.
-
-          2. Input file is not valid YAML.
-
-          3. Input file is valid YAML but does not conform to `PlanSchema`.
-
-          Ensure the command exits gracefully with an appropriate error message
-          for each case.
-        done: true
   - title: Design LLM prompt for reorganizing tasks into a multi-phase structure.
-    done: false
+    done: true
     description: >
       This task requires creating a new, specialized prompt, likely in
       `src/rmplan/prompt.ts`. The prompt will instruct an LLM to process the
@@ -154,81 +77,8 @@ tasks:
       that can be easily parsed, ideally matching the input structure expected
       by the `saveMultiPhaseYaml` function (a top-level object with `title`,
       `goal`, `details`, and a `phases` array).
-    files:
-      - src/rmplan/prompt.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/prompt.ts`, create a new exported function named
-          `generateSplitPlanPrompt` that accepts an object conforming to
-          `PlanSchema` (the original plan) as an argument and returns a string
-          (the LLM prompt).
-        done: true
-      - prompt: >
-          Inside `generateSplitPlanPrompt`, construct the prompt. Start by
-          explaining the overall goal: to take a single, detailed project plan
-          and reorganize its tasks into a multi-phase structure.
-
-          Mention that the input will be the `title`, `goal`, `details`, and the
-          full `tasks` array (including `description`, `files`, and `steps`) of
-          the original plan.
-        done: true
-      - prompt: >
-          Instruct the LLM to perform the following actions:
-
-          1.  Define an overarching project `title`, `goal`, and `details`.
-          These can be derived from the input plan's top-level fields or kept
-          similar.
-
-          2.  Logically group the provided tasks into a sequence of distinct
-          `phases`.
-
-          3.  For each new phase, generate a phase-specific `title`, `goal`, and
-          `details`.
-
-          4.  Assign the original tasks (preserving all their content like
-          `description`, `files`, and `steps`) to these newly defined phases.
-
-          5.  Infer and explicitly list dependencies between the new phases. For
-          example, "Phase 2 depends on Phase 1".
-        done: true
-      - prompt: >
-          Specify the desired output format. The LLM should output a YAML
-          structure.
-
-          This YAML should be a single top-level object containing:
-
-          - `title`: The overarching project title.
-
-          - `goal`: The overarching project goal.
-
-          - `details`: The overarching project details.
-
-          - `phases`: An array of phase objects.
-
-          Each object in the `phases` array should itself be structured like a
-          plan (e.g., having `title`, `goal`, `details`, `tasks`,
-          `dependencies`).
-
-          Reference the `phaseExampleFormatGeneric` from `src/rmplan/prompt.ts`
-          for the overall structure and `planExampleFormatGeneric` for the
-          structure of each phase within the `phases` array as a guide for the
-          LLM.
-        done: true
-      - prompt: >
-          Emphasize that all original task details (including `description`,
-          `files`, and `steps` for each task) must be preserved and correctly
-          assigned to the new phases.
-
-          Add a note that programmatic phase IDs (like `projectid-1`) will be
-          handled later, but the LLM should define dependencies in a
-          human-readable way that can be mapped to these IDs (e.g., "Phase 2
-          depends on Phase 1" or `dependencies: ["Phase 1"]`).
-
-          Instruct the LLM to output *only* the raw YAML string, without any
-          surrounding text, explanations, or markdown fences.
-        done: true
   - title: Implement LLM interaction and parsing for the `split` command.
-    done: false
+    done: true
     description: >
       This task involves integrating the LLM call within the `split` command's
       logic. It will use the prompt designed in the previous task, sending the
@@ -238,93 +88,9 @@ tasks:
       `convertMarkdownToYaml` and `findYamlStart`, to transform the LLM's
       (potentially Markdown-formatted) output into a structured JavaScript
       object representing the multi-phase plan.
-    files:
-      - src/rmplan/rmplan.ts
-      - src/rmplan/prompt.ts
-      - src/common/model_factory.ts
-      - src/rmplan/process_markdown.ts
-      - src/rmplan/fix_yaml.ts
-      - src/rmplan/planSchema.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/rmplan.ts`, within the `split` command's action (after
-          successfully loading and validating the input plan):
-
-          1. Import `generateSplitPlanPrompt` from `src/rmplan/prompt.ts`.
-
-          2. Call `generateSplitPlanPrompt` with the loaded `planData` to get
-          the LLM prompt string.
-        done: true
-      - prompt: >
-          Still in the `split` command's action:
-
-          1. Import `generateText` from the `ai` library and `createModel` from
-          `src/common/model_factory.ts`.
-
-          2. Determine the model ID to use (e.g., from
-          `config.models?.convert_yaml` or a suitable default like
-          `google/gemini-2.0-flash`).
-
-          3. Call `generateText` with the created model, the prompt from the
-          previous step, and appropriate parameters (e.g., `temperature: 0.2`).
-
-          4. Retrieve the LLM's response text.
-        done: true
-      - prompt: >
-          After getting the LLM's response text:
-
-          1. Import `findYamlStart` from `src/rmplan/process_markdown.ts`.
-
-          2. Use `findYamlStart` to extract the raw YAML block from the LLM's
-          response.
-
-          3. Import `fixYaml` from `src/rmplan/fix_yaml.ts`.
-
-          4. Use `fixYaml` to clean the extracted YAML string.
-
-          5. Parse the cleaned YAML string into a JavaScript object using
-          `yaml.parse()`.
-        done: true
-      - prompt: >
-          In `src/rmplan/planSchema.ts`, define a new Zod schema named
-          `multiPhasePlanSchema`. This schema should represent the structure of
-          the LLM's output for a multi-phase plan:
-
-          - `title`: optional string
-
-          - `goal`: string
-
-          - `details`: optional string
-
-          - `phases`: an array of `phaseSchema` (which is an alias for
-          `planSchema`).
-
-          Export this new schema.
-        done: true
-      - prompt: >
-          Back in `src/rmplan/rmplan.ts`, in the `split` command's action:
-
-          1. Import the newly created `multiPhasePlanSchema` from
-          `src/rmplan/planSchema.ts`.
-
-          2. Validate the parsed JavaScript object (from the LLM's YAML output)
-          against `multiPhasePlanSchema`.
-
-          3. If validation fails, log an error with details and exit. Consider
-          saving the invalid YAML to a debug file (e.g.,
-          `rmplan-split-invalid.yml`).
-
-          4. If validation succeeds, store the validated multi-phase plan
-          object. For now, log a success message.
-        done: true
-      - prompt: >
-          Add error handling around the LLM call (`generateText`) and YAML
-          parsing steps. Catch any exceptions, log informative error messages,
-          and exit gracefully.
-        done: true
   - title: Implement creation of new phase-specific plan files using
       `saveMultiPhaseYaml`.
-    done: false
+    done: true
     description: >
       This task focuses on utilizing the existing `saveMultiPhaseYaml` function
       found in `src/rmplan/process_markdown.ts`. The structured multi-phase plan
@@ -335,59 +101,6 @@ tasks:
       This task also includes ensuring that `projectId` and `phaseId` are
       correctly generated (using `id_utils.ts`) and embedded in the respective
       phase files.
-    files:
-      - src/rmplan/rmplan.ts
-      - src/rmplan/process_markdown.ts
-      - src/rmplan/id_utils.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/rmplan.ts`, within the `split` command's action, after
-          successfully obtaining the validated multi-phase plan object:
-
-          1. Import `saveMultiPhaseYaml` from `src/rmplan/process_markdown.ts`.
-
-          2. Determine the output directory path for the new phase files. This
-          directory should be created in the same location as the original input
-          plan file. Name it by taking the base name of the input plan file
-          (without extension) and appending "-phases" (e.g., if input is
-          `my-plan.yml`, output dir is `my-plan-phases/`). Use `path.dirname`,
-          `path.basename`, and `path.extname`.
-        done: true
-      - prompt: >
-          Prepare the `options` argument for `saveMultiPhaseYaml`. The key field
-          is `output`, which should be the directory path determined in the
-          previous step.
-
-          The `projectId` can be left for `saveMultiPhaseYaml` to generate using
-          `generateProjectId` from `src/rmplan/id_utils.ts`.
-
-          The `issueUrl` is not directly applicable here unless a new option is
-          added to `split`.
-        done: true
-      - prompt: >
-          Call `await saveMultiPhaseYaml(parsedMultiPhasePlan, extractOptions,
-          config, quiet)` where `parsedMultiPhasePlan` is the object from Task
-          3, `extractOptions` contains the `output` path, `config` is the loaded
-          `RmplanConfig`, and `quiet` is from command options (or default to
-          false).
-
-          The `saveMultiPhaseYaml` function already handles `projectId` and
-          `phaseId` generation, embedding project info, and processing
-          dependencies.
-        done: true
-      - prompt: >
-          Log the message returned by `saveMultiPhaseYaml` (which indicates
-          where files were written or if errors occurred).
-        done: true
-      - prompt: >
-          Review `saveMultiPhaseYaml` in `src/rmplan/process_markdown.ts` to
-          confirm its existing logic for generating `projectId` (using
-          `generateProjectId`) and `phaseId` (using `generatePhaseId`) is
-          suitable. Also, verify its handling of phase dependencies (mapping
-          human-readable names like "Phase 1" to generated phase IDs) aligns
-          with the LLM prompt design from Task 2. No changes should be needed if
-          it's already robust.
-        done: true
   - title: Add tests for the `split` command.
     done: false
     description: >
@@ -405,72 +118,6 @@ tasks:
 
       4.  Checking the content of these generated phase files for correctness,
       including task distribution, phase metadata, and inferred dependencies.
-    files:
-      - src/rmplan/rmplan.test.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/rmplan.test.ts`, create a fixture input plan file
-          (e.g., `large-plan-fixture.yml`) in the temporary test directory. This
-          plan should be detailed enough to be a good candidate for splitting
-          (e.g., multiple distinct tasks).
-        done: false
-      - prompt: >
-          Write a new test case for the `split` command. In this test:
-
-          1. Mock the `generateText` function from the `ai` library. The mock
-          should return a predefined string simulating an LLM's YAML output for
-          a multi-phase plan, based on the `large-plan-fixture.yml`. This YAML
-          string should include a top-level `title`, `goal`, `details`, and a
-          `phases` array with at least two phases. Each phase should have tasks
-          from the original fixture and define dependencies (e.g.,
-          `dependencies: ["Phase 1"]`).
-        done: false
-      - prompt: >
-          In the `split` command test case, after running the command with the
-          fixture file:
-
-          1. Verify that a new subdirectory is created (e.g.,
-          `large-plan-fixture-phases/`) in the temporary test directory.
-
-          2. Verify that the correct number of phase-specific YAML files (e.g.,
-          `phase-1.yml`, `phase-2.yml`) are created inside this subdirectory.
-        done: false
-      - prompt: >
-          For each generated phase file in the test:
-
-          1. Read and parse its YAML content.
-
-          2. Validate its structure against `PlanSchema` (or `phaseSchema`).
-
-          3. Check that the `id` field is correctly generated (e.g., matches a
-          pattern like `timestamp+random-1`).
-
-          4. Check that the `project` block (containing overall title, goal,
-          details from the mocked LLM output) is present and correct.
-
-          5. Verify that the tasks assigned to this phase (based on your mocked
-          LLM output) are present with their original details (description,
-          files, steps).
-
-          6. Verify that the `dependencies` field correctly lists the generated
-          phase IDs (e.g., `dependencies: ["projectid-1"]`).
-        done: false
-      - prompt: >
-          Add a test case where the mocked LLM output results in only one phase.
-          Ensure the `split` command handles this gracefully, creating a single
-          phase file in the subdirectory.
-        done: false
-      - prompt: >
-          Add a test case to simulate an LLM returning malformed YAML or YAML
-          that doesn't match `multiPhasePlanSchema`. Verify that the `split`
-          command handles this error gracefully (e.g., logs an error and exits,
-          doesn't create files).
-        done: false
-      - prompt: >
-          Ensure all tests clean up any created directories and files. Utilize
-          the existing `tempDir` and `afterEach` or `afterAll` hooks in
-          `rmplan.test.ts` for cleanup.
-        done: false
 changedFiles:
   - CLAUDE.md
   - src/rmplan/actions.ts

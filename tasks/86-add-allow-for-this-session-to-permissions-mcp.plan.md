@@ -23,23 +23,6 @@ tasks:
       shows three options: Allow, Disallow, and Always Allow. The new option
       should be inserted as the second choice to provide a logical progression
       from one-time approval to session approval to permanent approval.
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps:
-      - prompt: >
-          Locate the select prompt in the createPermissionSocketServer method
-          that displays tool permission choices.
-
-          Add a new choice with name "Allow for Session" and value
-          "session_allow" between the existing "Allow" and "Always Allow"
-          options.
-        done: true
-      - prompt: >
-          Ensure the new choice follows the existing format and maintains the
-          same styling as other choices.
-
-          The order should be: Allow, Allow for Session, Always Allow, Disallow.
-        done: true
   - title: Implement session_allow handler logic
     done: true
     description: >
@@ -54,37 +37,6 @@ tasks:
       infrastructure where tools in alwaysAllowedTools but not in
       configAllowedTools are treated as session-only will automatically handle
       the rest.
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps:
-      - prompt: >
-          In the permission handler after retrieving userChoice, add a condition
-          to check if userChoice === 'session_allow'.
-
-          Set approved = true for this case, similar to how it's done for
-          'always_allow'.
-        done: true
-      - prompt: >
-          Add an if block to handle session_allow that mirrors the always_allow
-          logic but without persistence.
-
-          For Bash tools, use prefixPrompt to get the prefix selection and add
-          it to alwaysAllowedTools.
-        done: true
-      - prompt: >
-          For non-Bash tools in session_allow, add the tool to
-          alwaysAllowedTools with value true.
-
-          Add appropriate logging using chalk.blue to indicate the tool was
-          added for the current session only.
-        done: true
-      - prompt: >
-          Ensure the session_allow handler does NOT call addPermissionToFile()
-          method.
-
-          The tool should only exist in alwaysAllowedTools, not in the settings
-          file.
-        done: true
   - title: Update logging for session vs persistent approvals
     done: true
     description: >
@@ -97,23 +49,6 @@ tasks:
       "Tool X automatically approved (configured in allowlist)". This
       differentiation helps users understand why a tool was auto-approved and
       whether the approval will persist.
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps:
-      - prompt: >
-          Review the existing auto-approval logging code to confirm it properly
-          differentiates between session and config approvals.
-
-          Verify that tools not in configAllowedTools are logged as "(always
-          allowed (session))".
-        done: true
-      - prompt: >
-          If needed, adjust the log messages to make the distinction between
-          session and persistent approvals clearer.
-
-          Ensure consistency in the message format for both Bash commands and
-          regular tools.
-        done: true
   - title: Add comprehensive test coverage
     done: true
     description: >
@@ -127,43 +62,6 @@ tasks:
       that the settings file is not modified when using session approvals. Build
       on the existing test patterns that already test session vs config-based
       approvals.
-    files:
-      - src/rmplan/executors/claude_code.test.ts
-    steps:
-      - prompt: >
-          Add a test that verifies the permissions prompt now includes four
-          choices with "Allow for Session" as the second option.
-
-          Mock the select prompt and verify it's called with the correct choices
-          array.
-        done: true
-      - prompt: >
-          Create a test that simulates selecting "Allow for Session" for a
-          regular tool.
-
-          Verify the tool is added to alwaysAllowedTools but addPermissionToFile
-          is not called.
-        done: true
-      - prompt: >
-          Add a test for "Allow for Session" with Bash commands that verifies
-          prefixPrompt is called.
-
-          Ensure the selected prefix is added to alwaysAllowedTools but not
-          persisted to settings.
-        done: true
-      - prompt: >
-          Create a test that verifies auto-approval works for session-approved
-          tools on subsequent requests.
-
-          Check that the log message indicates session-based approval.
-        done: true
-      - prompt: >
-          Add a test that verifies the settings file remains unchanged when
-          using session approvals.
-
-          Mock file operations to ensure addPermissionToFile is never called for
-          session approvals.
-        done: true
   - title: Test edge cases and integration
     done: true
     description: >
@@ -175,44 +73,6 @@ tasks:
       as before. These tests ensure the new feature integrates seamlessly with
       existing functionality without breaking backward compatibility or
       introducing unexpected behavior.
-    files:
-      - src/rmplan/executors/claude_code.test.ts
-    steps:
-      - prompt: >
-          Create a test where a tool is first approved for session, then later
-          approved with "Always Allow".
-
-          Verify the tool transitions from session-only to persistent approval
-          correctly.
-        done: true
-      - prompt: >
-          Add a test for multiple session approvals of different Bash command
-          prefixes.
-
-          Ensure each prefix is tracked separately in the alwaysAllowedTools
-          array.
-        done: true
-      - prompt: >
-          Test that existing "Always Allow" functionality still works exactly as
-          before.
-
-          Verify it adds to both alwaysAllowedTools and calls
-          addPermissionToFile.
-        done: true
-      - prompt: >
-          Create an integration test that simulates a full session with mixed
-          approval types.
-
-          Verify session approvals don't persist after the executor is
-          recreated.
-        done: true
-      - prompt: >
-          Add a test for the MCP server integration to ensure session approvals
-          work correctly through the socket.
-
-          Verify the permission response is sent with approved=true for session
-          approvals.
-        done: true
 ---
 
 # Original Plan Details

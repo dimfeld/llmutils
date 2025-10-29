@@ -74,34 +74,6 @@ tasks:
 
       - Prevent circular dependencies using the validation logic from
       validate.ts
-    files:
-      - src/rmplan/commands/set.ts
-    steps:
-      - prompt: >
-          Modify the "Set parent" section (lines 107-123) to also update the
-          parent plan's dependencies array. Load the parent plan, add the
-          current plan's ID to its dependencies if not already present, update
-          its updatedAt timestamp, and save it back to disk.
-        done: true
-      - prompt: >
-          Modify the "Remove parent" section (lines 125-134) to also update the
-          old parent plan. Before deleting the parent field, store the old
-          parent ID, then load that parent plan, remove the current plan's ID
-          from its dependencies array, update its updatedAt timestamp, and save
-          it.
-        done: true
-      - prompt: >
-          Add logic to handle changing parents. In the "Set parent" section,
-          first check if the plan already has a parent. If it does and it's
-          different from the new parent, remove the child from the old parent's
-          dependencies before adding it to the new parent's dependencies.
-        done: true
-      - prompt: >
-          Add circular dependency prevention by importing and using the
-          `wouldCreateCircularDependency` function from validate.ts. Before
-          adding a child to a parent's dependencies, check if it would create a
-          cycle and throw an error if it would.
-        done: true
   - title: Add tests for set command updates
     done: true
     description: >
@@ -129,40 +101,6 @@ tasks:
 
       Follow the existing test patterns in the file, using temporary directories
       and the createTestPlan helper function.
-    files:
-      - src/rmplan/commands/set.test.ts
-    steps:
-      - prompt: >
-          Add a test "should update parent plan dependencies when setting
-          parent" that creates two plans, sets one as the parent of the other,
-          then verifies both the child has the parent field set AND the parent
-          has the child in its dependencies array.
-        done: true
-      - prompt: >
-          Add a test "should remove child from parent dependencies when removing
-          parent" that creates a parent-child relationship, then uses
-          --no-parent to remove it, and verifies the child is removed from the
-          parent's dependencies array.
-        done: true
-      - prompt: >
-          Add a test "should update both old and new parent when changing
-          parent" that creates three plans (child, old parent, new parent),
-          establishes initial relationship, changes the parent, then verifies
-          old parent no longer has the child in dependencies and new parent
-          does.
-        done: true
-      - prompt: >
-          Add a test "should prevent circular dependencies when setting parent"
-          that creates two plans where plan A depends on plan B, then attempts
-          to set plan B's parent to plan A, and verifies this throws an
-          appropriate error.
-        done: true
-      - prompt: >
-          Add a test "should handle setting parent to same value without
-          duplicating dependencies" that sets a parent, then sets the same
-          parent again, and verifies the parent's dependencies array doesn't
-          contain duplicate entries.
-        done: true
   - title: Update documentation
     done: true
     description: >
@@ -185,37 +123,6 @@ tasks:
       - Examples of common workflows with parent-child plans
 
       - How circular dependency prevention works
-    files:
-      - README.md
-      - CLAUDE.md
-    steps:
-      - prompt: >
-          In README.md, add a new subsection under the rmplan section called
-          "### Plan Validation" that documents the validate command. Explain
-          that it validates plan file schemas and parent-child relationships,
-          automatically fixing inconsistencies where child plans reference
-          parents that don't include them in dependencies. Include a usage
-          example.
-        done: true
-      - prompt: >
-          In README.md, update the documentation for the set command to explain
-          that when setting or changing a parent, it automatically updates the
-          parent plan's dependencies to maintain bidirectional relationships.
-          Add examples showing --parent and --no-parent usage.
-        done: true
-      - prompt: >
-          In CLAUDE.md under the "## Repository Structure" section where rmplan
-          is described, add a note about the automatic parent-child relationship
-          maintenance feature. Explain that all commands (add, set, validate)
-          work together to ensure consistency in the dependency graph.
-        done: true
-      - prompt: >
-          Create a documentation file at docs/parent-child-relationships.md that
-          provides a comprehensive guide to working with parent-child plan
-          relationships, including examples of creating hierarchical plans, how
-          the automatic maintenance works, and best practices for organizing
-          multi-phase projects.
-        done: true
   - title: Add integration tests
     done: true
     description: >
@@ -228,34 +135,6 @@ tasks:
       The tests should simulate real-world usage patterns and verify that the
       parent-child relationships remain consistent across all operations. Place
       these in a new test file or add to cli_integration.test.ts if appropriate.
-    files:
-      - src/rmplan/commands/cli_integration.test.ts
-    steps:
-      - prompt: >
-          Add an integration test "parent-child workflow with add and validate"
-          that uses the add command to create a parent plan and child plan with
-          --parent option, then runs validate to ensure no inconsistencies are
-          found.
-        done: true
-      - prompt: >
-          Add an integration test "parent-child workflow with set and validate"
-          that creates two independent plans, uses set command to establish
-          parent-child relationship, runs validate to ensure no inconsistencies,
-          then uses set --no-parent to remove the relationship and validates
-          again.
-        done: true
-      - prompt: >
-          Add an integration test "complex hierarchy validation" that creates a
-          multi-level hierarchy (grandparent -> parent -> child), modifies
-          relationships using set command, and validates the entire structure
-          remains consistent after each change.
-        done: true
-      - prompt: >
-          Add an integration test "validate auto-fix integration" that manually
-          creates an inconsistent state (child with parent field but parent
-          missing dependency), runs validate command, then verifies the parent
-          plan was automatically updated to include the child.
-        done: true
 ---
 
 Ensure that all commands that can modify parent-child relationships maintain bidirectional consistency. The set command should be updated to automatically update parent dependencies when setting or changing a parent field. Similarly, when removing a parent relationship, the child should be removed from the parent's dependencies. This phase ensures the codebase maintains consistency going forward, preventing the issues that the validate command fixes.

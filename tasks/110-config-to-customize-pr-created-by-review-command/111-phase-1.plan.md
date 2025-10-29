@@ -66,22 +66,6 @@ tasks:
 
       - The titlePrefix field should be a simple optional string (sanitization
       happens at usage time via sanitizeProcessInput)
-    files:
-      - src/rmplan/configSchema.ts
-    steps:
-      - prompt: >
-          Add a new `prCreation` configuration section to the rmplanConfigSchema
-          after the `answerPr` section (around line 135).
-
-          Include two fields: `draft` (boolean, optional, default true with
-          description about PR draft status) and 
-
-          `titlePrefix` (string, optional with description about prefix added to
-          PR titles).
-
-          Follow the same pattern as the `answerPr` and `review` sections using
-          .strict().optional() with proper descriptions.
-        done: true
   - title: Update getDefaultConfig function
     done: true
     description: >
@@ -90,16 +74,6 @@ tasks:
       `draft: true` to maintain backward compatibility. This ensures that
       existing code that doesn't specify PR creation settings will continue to
       create draft PRs as they do currently.
-    files:
-      - src/rmplan/configSchema.ts
-    steps:
-      - prompt: >
-          Update the getDefaultConfig function to include a `prCreation` field
-          with `{ draft: true }` as the default value.
-
-          This maintains backward compatibility by ensuring PRs are created as
-          drafts by default when config doesn't specify otherwise.
-        done: true
   - title: Add config schema tests
     done: true
     description: >
@@ -123,45 +97,6 @@ tasks:
       - Integration with other config fields
 
       - Edge cases like empty string for titlePrefix and special characters
-    files:
-      - src/rmplan/configSchema.test.ts
-    steps:
-      - prompt: >
-          Add a new describe block for 'prCreation field' in
-          configSchema.test.ts following the pattern of the existing 'review
-          field' tests.
-
-          Include tests for valid configurations with all fields, partial
-          configs, and ensure the field is optional.
-        done: true
-      - prompt: >
-          Add tests to verify draft field defaults to true when not specified in
-          config and when prCreation object exists but draft is undefined.
-
-          Also test that explicitly setting draft to false is preserved
-          correctly.
-        done: true
-      - prompt: >
-          Add validation tests that reject invalid types: non-boolean values for
-          draft and non-string values for titlePrefix.
-
-          Include tests for null and numeric values following the existing
-          validation test patterns.
-        done: true
-      - prompt: >
-          Add tests for edge cases including empty titlePrefix string (should be
-          valid), special characters in titlePrefix,
-
-          empty prCreation object, and rejection of unknown fields within
-          prCreation due to .strict().
-        done: true
-      - prompt: >
-          Add a test verifying prCreation works correctly alongside other
-          configuration fields like issueTracker and review.
-
-          Also update the getDefaultConfig test to verify it includes the new
-          prCreation field with draft: true.
-        done: true
 rmfilter:
   - src/rmplan/configSchema.ts
   - src/rmplan/commands/description.ts

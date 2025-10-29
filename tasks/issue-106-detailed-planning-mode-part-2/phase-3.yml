@@ -35,7 +35,7 @@ project:
     plans from scratch and reorganizing existing ones.
 tasks:
   - title: Update README.md with `add` and `split` command documentation.
-    done: false
+    done: true
     description: >
       Add comprehensive documentation for the new `add` and `split` commands to
       the README.md file. The documentation should be added to the appropriate
@@ -51,30 +51,8 @@ tasks:
       - Any relevant notes or best practices
 
       - Integration with the existing documentation structure
-    files:
-      - README.md
-    steps:
-      - prompt: >
-          Locate the rmplan commands section in README.md and add documentation
-          for the `add` command. Include a description explaining that it
-          creates new plan stub files, document all options (--edit,
-          --depends-on, --priority), and provide usage examples showing basic
-          usage, creating with dependencies, and opening in editor.
-        done: true
-      - prompt: >
-          Add documentation for the `split` command in the same section. Explain
-          that it uses an LLM to intelligently break down large plan files into
-          phase-based plans, preserving all task details while organizing them
-          into logical phases with proper dependencies. Include usage examples
-          and explain the output structure.
-        done: true
-      - prompt: >
-          Ensure the new documentation follows the existing style and formatting
-          conventions used in the README. Add any relevant cross-references to
-          other commands or sections where appropriate.
-        done: true
   - title: Review and refine command-line help text and error messages.
-    done: false
+    done: true
     description: >
       Review and improve the user-facing text for both the `add` and `split`
       commands. This includes:
@@ -88,21 +66,6 @@ tasks:
       - Success messages and progress indicators
 
       The goal is to ensure all text is clear, concise, and helpful for users.
-    files:
-      - src/rmplan/rmplan.ts
-    steps:
-      - prompt: >
-          Review the command descriptions for `add` and `split` in rmplan.ts.
-          Ensure they are concise but informative. The descriptions should
-          immediately convey the value and use case for each command.
-        done: true
-      - prompt: >
-          Review all error messages related to these commands, including
-          validation errors, file operation failures, and dependency checks.
-          Ensure error messages are informative and guide users toward
-          resolution. Check that success messages and progress indicators
-          provide clear feedback about what's happening.
-        done: true
 changedFiles:
   - .rmfilter/config/rmplan.yml
   - CLAUDE.md

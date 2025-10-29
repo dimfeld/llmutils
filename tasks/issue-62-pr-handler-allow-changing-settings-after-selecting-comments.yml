@@ -8,183 +8,31 @@ goal: Implement a feature in the `rmpr` (PR handler) tool to allow users to
 id: 10
 uuid: 25650021-f5a0-4d22-b025-86d589844147
 status: done
+updatedAt: 2025-10-27T08:39:04.308Z
 tasks:
   - title: 1. Introduce Interactive Settings Loop Framework
-    done: false
+    done: true
     description: >
       Set up the main interactive loop using `@inquirer/expand`. This loop will
       allow the user to choose between continuing, changing the model, or
       editing rmfilter options. Initialize state variables that will be modified
       by this loop.
-    files:
-      - src/rmpr/main.ts
-      - src/rmfilter/utils.ts
-    steps:
-      - prompt: >
-          Modify `src/rmpr/main.ts`.
-
-
-          1.  Ensure `parseCliArgsFromString` is imported from
-          `../rmfilter/utils.js`. Add it to the existing import statement if
-          necessary:
-              ```typescript
-              import { commitAll, getGitRoot, secureWrite, parseCliArgsFromString } from '../rmfilter/utils.js';
-              ```
-
-          2.  Locate the section after `instructions` has been defined for both
-          `inline-comments` and `separate-context` modes, and *before*
-          `rmFilterArgs` is constructed and `fullRmfilterRun` is called.
-
-
-          3.  Initialize two new `let` variables here:
-              -   `modelForLlmEdit`: Initialize with `options.model || config?.models?.execution || DEFAULT_RUN_MODEL`. This will store the model name for the main LLM editing task and can be updated by the user.
-              -   `additionalUserRmFilterArgs`: Initialize as an empty string array `[]`. This will store any extra rmfilter arguments the user provides.
-
-          4.  Implement the main interactive loop:
-              -   This loop should only run if `!options.yes`.
-              -   Start with a log message indicating that settings can now be adjusted, and if in `inline-comments` mode with files written, remind the user they can review those files. Example:
-                  ```typescript
-                  log('\nSettings can be adjusted before generating the LLM prompt.');
-                  if (options.mode === 'inline-comments' && filesProcessedWithAiComments.size > 0 && !options.dryRun) {
-                    log('AI comments have been written to the relevant files. You can examine and edit them directly on disk before continuing.');
-                  } else if (options.mode === 'inline-comments' && filesProcessedWithAiComments.size > 0 && options.dryRun) {
-                    log('AI comments *would have been* written to files for review (this is a dry run).');
-                  }
-                  ```
-              -   Use a `while` loop that continues until a flag (e.g., `userWantsToContinue`) is true.
-              -   Inside the loop, use `await expand({ message: 'What would you like to do?', choices: [...] })` from `@inquirer/expand` (import it: `import expand from '@inquirer/expand';`).
-              -   The choices for `expand` should be:
-                  -   `{ key: 'c', name: 'Continue to generate LLM prompt', value: 'continue' }`
-                  -   `{ key: 'm', name: 'Change LLM model for editing', value: 'model' }`
-                  -   `{ key: 'r', name: 'Edit rmfilter options for context', value: 'rmfilter' }`
-              -   Based on the `value` returned:
-                  -   If `'continue'`, set `userWantsToContinue = true;`.
-                  -   If `'model'`, for now, just log "Model selection chosen (to be implemented)".
-                  -   If `'rmfilter'`, for now, just log "RMFILTER editing chosen (to be implemented)".
-
-          5.  The construction of `rmFilterArgs` and the call to
-          `fullRmfilterRun` should occur *after* this loop. We will modify
-          `rmFilterArgs` construction in a later task. For now, ensure it's
-          positioned after the loop.
-        done: true
   - title: 2. Implement LLM Model Picker
-    done: false
+    done: true
     description: Implement the 'Change LLM model' functionality using
       `@inquirer/search`. The selected model will update the `modelForLlmEdit`
       variable.
-    files:
-      - src/rmpr/main.ts
-    steps:
-      - prompt: >
-          Modify `src/rmpr/main.ts`, building upon the previous step.
-
-
-          1.  Import `search` from `@inquirer/search`: `import search from
-          '@inquirer/search';`.
-
-
-          2.  In the interactive loop, when the user selects the `'model'`
-          option:
-              -   Define a list of available models. For now, use a hardcoded list, ensuring the current `modelForLlmEdit` is included:
-                  ```typescript
-                  const defaultModels = ['gpt-4-turbo', 'gpt-4', 'gpt-3.5-turbo', 'claude-3-opus', 'claude-3-sonnet', 'claude-2']; // Or a more relevant list
-                  const availableModels = [...new Set([...defaultModels, modelForLlmEdit])].sort();
-                  ```
-              -   Use `await search({ message: 'Select or type to filter LLM model:', source: async (input) => { ... } })` to prompt the user.
-              -   The `source` function should filter `availableModels` based on the `input` (case-insensitive) and return them in the format `{ name: string, value: string }`. If `input` is empty, return all `availableModels`. Example for the `source` function:
-                  ```typescript
-                  source: async (input) => {
-                    const filtered = availableModels.filter(modelName =>
-                      input ? modelName.toLowerCase().includes(input.toLowerCase()) : true
-                    );
-                    return filtered.map(modelName => ({ name: modelName, value: modelName, description: modelName === modelForLlmEdit ? 'current' : undefined }));
-                  }
-                  ```
-              -   Update `modelForLlmEdit` with the string value returned by the `search` prompt.
-              -   Log the change, e.g., `log(`LLM model for editing set to: ${modelForLlmEdit}`);`.
-        done: true
   - title: 3. Implement RMFILTER Options Editor
-    done: false
+    done: true
     description: Implement the 'Edit RMFILTER options' functionality using
       `@inquirer/input`. The provided string of arguments will update the
       `additionalUserRmFilterArgs` variable.
-    files:
-      - src/rmpr/main.ts
-    steps:
-      - prompt: >
-          Modify `src/rmpr/main.ts`, building upon the previous steps.
-
-
-          1.  Import `input` from `@inquirer/input`: `import input from
-          '@inquirer/input';`.
-
-
-          2.  In the interactive loop, when the user selects the `'rmfilter'`
-          option:
-              -   Use `await input({ message: 'Enter additional rmfilter arguments (space-separated):', default: additionalUserRmFilterArgs.join(' ') })` to get a string of arguments from the user.
-              -   The `default` value should be the current `additionalUserRmFilterArgs` joined by spaces, so the user can easily edit them.
-              -   Parse the returned string into an array of arguments using `parseCliArgsFromString(newArgsStr.trim())`. Store this in `additionalUserRmFilterArgs`.
-              -   Log the change, e.g., `log(`Additional rmfilter args set to: "${additionalUserRmFilterArgs.join(' ')}"`);`.
-        done: true
   - title: 4. Integrate Changed Settings into Execution Flow
-    done: false
+    done: true
     description: Ensure that the `modelForLlmEdit` and `additionalUserRmFilterArgs`
       (potentially modified by the user) are correctly used when constructing
       `rmFilterArgs` for `fullRmfilterRun` and when calling
       `runStreamingPrompt`.
-    files:
-      - src/rmpr/main.ts
-    steps:
-      - prompt: >
-          Modify `src/rmpr/main.ts`, building upon the previous steps.
-
-
-          1.  Ensure the construction of `rmFilterArgs` array happens *after*
-          the interactive settings loop.
-
-
-          2.  When constructing `rmFilterArgs`:
-              -   The `--model` argument should use the potentially updated `modelForLlmEdit` variable.
-                  Example:
-                  ```typescript
-                  let rmFilterArgs: string[] = [
-                    '--with-diff',
-                    '--diff-from',
-                    pullRequest.headRefName, // Ensure pullRequest is in scope or use the correct variable
-                    '--instructions',
-                    instructions,
-                    '--model',
-                    modelForLlmEdit, // Use the (potentially updated) modelForLlmEdit
-                  ];
-                  ```
-              -   After adding arguments derived from per-file `rmprOptions` (from `commentsByFilePath`), append the `additionalUserRmFilterArgs` to `rmFilterArgs`:
-                  ```typescript
-                  // ... (after loop adding args from argsFromRmprOptions)
-                  rmFilterArgs.push(...additionalUserRmFilterArgs);
-                  ```
-
-          3.  When calling `runStreamingPrompt` (if `options.run` is true):
-              -   Ensure the `model` property in its options object is set to `modelForLlmEdit`.
-                  Example:
-                  ```typescript
-                  const { text } = await runStreamingPrompt({
-                    messages: [{ role: 'user', content: llmPrompt }],
-                    model: modelForLlmEdit, // Use the (potentially updated) modelForLlmEdit
-                    temperature: 0,
-                  });
-                  ```
-
-          4.  When setting up the `retryRequester` for `applyLlmEdits`:
-              -   Ensure it also uses `modelForLlmEdit`.
-                  Example:
-                  ```typescript
-                  retryRequester: options.run ? createRetryRequester(modelForLlmEdit) : undefined,
-                  ```
-
-          This ensures that user's choices for model and rmfilter arguments are
-          respected in the subsequent processing steps.
-        done: true
-updatedAt: 2025-10-27T08:39:04.308Z
 ---
 
 The feature will introduce an interactive step using `inquirer` prompts. After review comments are selected and initial processing is done (including writing AI-annotated files to disk in `inline-comments` mode), the user will be presented with options:

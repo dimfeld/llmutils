@@ -45,18 +45,6 @@ tasks:
       mode will be used by the review command to bypass orchestration, while
       normal mode maintains the current behavior with full multi-agent
       orchestration.
-    files:
-      - src/rmplan/executors/types.ts
-    steps:
-      - prompt: >
-          Add an optional `executionMode` property to the `ExecutePlanInfo`
-          interface with type `'simple' | 'normal'`.
-
-          Document the property to explain that 'simple' mode bypasses
-          orchestration and runs prompts directly,
-
-          while 'normal' mode uses the full multi-agent orchestration workflow.
-        done: true
   - title: Implement Simple Execution Logic in ClaudeCodeExecutor
     done: true
     description: >
@@ -68,29 +56,6 @@ tasks:
       review runs as a single direct prompt. The implementation should preserve
       the existing behavior for normal mode and other features like output
       capture.
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps:
-      - prompt: >
-          In the `execute` method, add a check for `planInfo?.executionMode ===
-          'simple'` before the orchestration wrapping logic.
-
-          When in simple mode, skip the `wrapWithOrchestration` call and keep
-          the original contextContent unchanged.
-        done: true
-      - prompt: >
-          Ensure that agent file generation (the `generateAgentFiles` and
-          cleanup logic) is only executed when NOT in simple mode.
-
-          Move the agent file generation block inside a conditional that checks
-          for normal mode or undefined executionMode.
-        done: true
-      - prompt: >
-          Verify that all other features like output capture, permissions MCP,
-          and interactive mode continue to work correctly
-
-          in both simple and normal execution modes.
-        done: true
   - title: Set Review Command to Use Simple Execution Mode
     done: true
     description: >
@@ -100,16 +65,6 @@ tasks:
       operation by default without invoking the multi-agent orchestration. The
       review will run as a single direct prompt to Claude, providing the review
       analysis without attempting to fix any issues.
-    files:
-      - src/rmplan/commands/review.ts
-    steps:
-      - prompt: >
-          In the `handleReviewCommand` function, locate where the executor's
-          `execute` method is called with the ExecutePlanInfo object.
-
-          Add `executionMode: 'simple'` to the ExecutePlanInfo object to enable
-          simple execution mode for reviews.
-        done: true
   - title: Add Tests for Simple Execution Mode
     done: true
     description: >
@@ -120,37 +75,6 @@ tasks:
       The tests should use the existing testing patterns with ModuleMocker and
       verify behavior through spies and mocks on the key functions that should
       be skipped in simple mode.
-    files:
-      - src/rmplan/executors/claude_code.test.ts
-      - src/rmplan/commands/review.test.ts
-    steps:
-      - prompt: >
-          In claude_code.test.ts, add a test case that verifies when
-          executionMode is 'simple', the orchestration wrapper
-
-          is not applied to the context content. Mock the wrapWithOrchestration
-          function and verify it's not called in simple mode.
-        done: true
-      - prompt: >
-          Add another test in claude_code.test.ts to verify that agent files are
-          not generated when in simple execution mode.
-
-          Mock the generateAgentFiles and removeAgentFiles functions and ensure
-          they're not called when executionMode is 'simple'.
-        done: true
-      - prompt: >
-          In review.test.ts, add or update a test to verify that
-          handleReviewCommand passes executionMode: 'simple' to the executor.
-
-          Mock the executor's execute method and verify it receives the correct
-          ExecutePlanInfo with executionMode set to 'simple'.
-        done: true
-      - prompt: >
-          Add a test to verify that normal mode (or undefined executionMode)
-          continues to work as before, with orchestration
-
-          and agent file generation happening as expected.
-        done: true
 rmfilter:
   - src/rmplan/rmplan.ts
   - src/rmplan/commands/review.ts

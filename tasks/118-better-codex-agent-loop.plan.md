@@ -30,39 +30,6 @@ tasks:
       `claude_code/format.ts` but adapted for Codex's JSON format, including
       proper truncation of long outputs and extraction of the final agent
       response.
-    files:
-      - src/rmplan/executors/codex_cli/format.ts
-      - src/rmplan/executors/codex_cli/format.test.ts
-    docs: []
-    steps:
-      - prompt: >
-          Create a new file `src/rmplan/executors/codex_cli/format.ts` that
-          defines TypeScript types for all the Codex JSON message types
-          described in the phase context (task_started, agent_reasoning,
-          exec_command_begin/end, token_count, etc.). Include a union type for
-          all message types and proper typing for each message structure.
-        done: true
-      - prompt: >
-          Implement a `formatCodexJsonMessage` function that takes a JSON string
-          line, parses it, and returns a formatted object with message content
-          and type information. The function should handle all message types,
-          provide appropriate formatting for console output with timestamps and
-          colors (using chalk), and truncate long command outputs to 20 lines as
-          specified.
-        done: true
-      - prompt: >
-          Add logic to extract and return the final `agent_message` content from
-          the JSON stream. This should identify when an agent has completed its
-          work and return the final text response that represents the output of
-          that execution step.
-        done: true
-      - prompt: >
-          Create comprehensive tests in
-          `src/rmplan/executors/codex_cli/format.test.ts` that verify the JSON
-          parsing works correctly for all message types, handles malformed JSON
-          gracefully, properly truncates long outputs, and correctly extracts
-          final agent messages from realistic Codex output sequences.
-        done: true
   - title: Implement a Reusable Single-Step Codex Runner
     done: true
     description: >
@@ -72,30 +39,6 @@ tasks:
       should stream formatted logs to the console and return the final,
       extracted `agent_message` as a string. This provides the core building
       block for all subsequent multi-step operations.
-    files:
-      - src/rmplan/executors/codex_cli.ts
-    docs: []
-    steps:
-      - prompt: >
-          Add a private `executeCodexStep` method to the `CodexCliExecutor`
-          class that takes a prompt string as input and returns a
-          Promise<string>. The method should use `spawnAndLogOutput` to execute
-          `codex exec --json` with the provided prompt, using the same sandbox
-          settings as the current implementation.
-        done: true
-      - prompt: >
-          Integrate the Codex JSON parser as a `formatStdout` callback in the
-          `executeCodexStep` method. Import the `formatCodexJsonMessage`
-          function and use it to process each line of output, displaying
-          formatted messages to the console and capturing the final agent
-          message for return.
-        done: true
-      - prompt: >
-          Add proper error handling to the `executeCodexStep` method to handle
-          cases where Codex exits with a non-zero code, JSON parsing fails, or
-          no final agent message is found. Include appropriate error messages
-          and logging to help debug issues during development.
-        done: true
   - title: Refactor CodexCliExecutor to Execute a Single Implementer Step
     done: true
     description: >
@@ -105,29 +48,6 @@ tasks:
       `executeCodexStep` method, and log the final captured output. This
       replaces the old single-prompt logic and validates the new execution
       foundation before proceeding to multi-step orchestration.
-    files:
-      - src/rmplan/executors/codex_cli.ts
-    docs: []
-    steps:
-      - prompt: >
-          Import the `getImplementerPrompt` function from
-          `../claude_code/agent_prompts.ts` in the CodexCliExecutor file. Update
-          the main `execute` method to use `getImplementerPrompt` instead of
-          `buildCodexOrchestrationPrompt`, passing the contextContent and any
-          custom instructions from the rmplanConfig.
-        done: true
-      - prompt: >
-          Replace the single `spawnAndLogOutput` call in the `execute` method
-          with a call to the new `executeCodexStep` method, passing the
-          implementer prompt. Capture the returned agent message and log it to
-          verify the single-step execution is working correctly.
-        done: true
-      - prompt: >
-          Update any existing tests for the CodexCliExecutor to work with the
-          new single-step implementer approach, ensuring that the refactored
-          execution still handles the captureOutput modes correctly and
-          maintains backward compatibility for basic use cases.
-        done: true
   - title: Integrate Plan File Analysis
     done: true
     description: >
@@ -137,30 +57,6 @@ tasks:
       providing correct context to the tester and reviewer prompts, allowing
       them to focus on newly completed work and understand what remains to be
       done.
-    files:
-      - src/rmplan/executors/codex_cli.ts
-    docs: []
-    steps:
-      - prompt: >
-          Import the `readPlanFile` function from `../../plans.ts` in the
-          CodexCliExecutor. At the beginning of the `execute` method, use
-          `readPlanFile` to read the plan file specified in
-          `planInfo.planFilePath` and parse its contents to extract the list of
-          tasks with their current status.
-        done: true
-      - prompt: >
-          Create helper methods to analyze the plan data and categorize tasks
-          into "completed" (status: done) and "pending" (status: pending or
-          in_progress) lists. Store this information in instance variables or
-          pass it through the execution flow so it can be used in subsequent
-          tester and reviewer prompts.
-        done: true
-      - prompt: >
-          Add logging to show which tasks are identified as completed vs pending
-          when the executor starts, providing visibility into the plan analysis
-          results. This will help with debugging and understanding which tasks
-          the agents will be focusing on.
-        done: true
   - title: Orchestrate the Implementer-to-Tester Flow
     done: true
     description: >
@@ -169,29 +65,6 @@ tasks:
       and used to construct the prompt for the tester using `getTesterPrompt`,
       along with the list of newly completed tasks. The tester step will then be
       executed using the same single-step runner infrastructure.
-    files:
-      - src/rmplan/executors/codex_cli.ts
-    docs: []
-    steps:
-      - prompt: >
-          Import the `getTesterPrompt` function from the Claude Code agent
-          prompts. Modify the `execute` method to capture the implementer output
-          and use it along with the completed tasks list to construct a tester
-          prompt. The tester should focus on testing the work that was just
-          implemented.
-        done: true
-      - prompt: >
-          Execute the tester step using the `executeCodexStep` method with the
-          tester prompt. Capture the tester's output for use in the next step of
-          the chain. Add appropriate logging to show the transition from
-          implementer to tester phase.
-        done: true
-      - prompt: >
-          Ensure the tester receives proper context about what was implemented
-          by including the implementer's output in the tester prompt. The tester
-          should be able to understand what code was written and create
-          appropriate tests for it.
-        done: true
   - title: Orchestrate the Tester-to-Reviewer Flow
     done: true
     description: >
@@ -200,27 +73,6 @@ tasks:
       reviewer using `getReviewerPrompt`. The reviewer step will then be
       executed, completing the initial implement-test-review cycle before any
       fix loop logic is added.
-    files:
-      - src/rmplan/executors/codex_cli.ts
-    docs: []
-    steps:
-      - prompt: >
-          Import the `getReviewerPrompt` function from the Claude Code agent
-          prompts. Extend the execution chain to capture the tester output and
-          use it along with the implementer output and completed tasks to
-          construct a comprehensive reviewer prompt.
-        done: true
-      - prompt: >
-          Execute the reviewer step using the `executeCodexStep` method with the
-          reviewer prompt. The reviewer should receive context about both what
-          was implemented and what was tested, allowing it to provide
-          comprehensive feedback on the entire development cycle.
-        done: true
-      - prompt: >
-          Capture the reviewer's output for analysis in the next step. Add
-          logging to show the transition to the review phase and indicate that
-          the initial implement-test-review cycle is complete.
-        done: true
   - title: Parse and Handle the Reviewer's Verdict
     done: true
     description: >
@@ -229,30 +81,6 @@ tasks:
       executor will log the verdict and terminate gracefully, preparing for the
       implementation of the fix loop in the next phase. This completes the basic
       agent loop without fix logic.
-    files:
-      - src/rmplan/executors/codex_cli.ts
-    docs: []
-    steps:
-      - prompt: >
-          Create a helper method `parseReviewerVerdict` that analyzes the
-          reviewer's output text and extracts the verdict. Look for lines
-          containing "VERDICT:" followed by either "ACCEPTABLE" or
-          "NEEDS_FIXES". Return a structured result indicating the verdict and
-          any additional context.
-        done: true
-      - prompt: >
-          Integrate the verdict parsing into the main execution flow. After the
-          reviewer step completes, parse the verdict and log the result clearly
-          to the console. If the verdict is ACCEPTABLE, log success and complete
-          execution. If NEEDS_FIXES, log that fixes are needed (but don't
-          implement fix logic yet).
-        done: true
-      - prompt: >
-          Add error handling for cases where the reviewer output doesn't contain
-          a clear verdict or contains an unexpected format. Provide helpful
-          error messages and default to a safe behavior (treat as NEEDS_FIXES)
-          when the verdict cannot be determined reliably.
-        done: true
   - title: Create the Review Analysis Prompt and Logic
     done: true
     description: >
@@ -263,37 +91,6 @@ tasks:
       with a Zod schema to get a structured response indicating if fixes are
       needed and providing specific instructions, helping to avoid unnecessary
       work on issues that are out of scope for the current batch.
-    files:
-      - src/rmplan/executors/codex_cli/review_analysis.ts
-      - src/rmplan/executors/codex_cli/review_analysis.test.ts
-    docs: []
-    steps:
-      - prompt: >
-          Create a new file `src/rmplan/executors/codex_cli/review_analysis.ts`
-          with a Zod schema for the review analysis response. The schema should
-          include a boolean `needs_fixes` field and an optional string
-          `fix_instructions` field for specific guidance on what to fix.
-        done: true
-      - prompt: >
-          Implement a `analyzeReviewFeedback` function that takes the reviewer
-          output, completed tasks, pending tasks, implementer output, and
-          repository-specific review document (if present) as parameters.
-          Construct a comprehensive prompt that asks the LLM to determine if the
-          reviewer's concerns are valid given the scope of work.
-        done: true
-      - prompt: >
-          Use the Vercel AI SDK's `generateObject` function with the
-          `gemini-flash-2.5` model to execute the analysis prompt. Import the
-          `createModel` function from `src/common/model_factory.ts` and handle
-          the structured response generation with proper error handling.
-        done: true
-      - prompt: >
-          Create tests in
-          `src/rmplan/executors/codex_cli/review_analysis.test.ts` that verify
-          the analysis function works correctly with different types of reviewer
-          feedback, handles edge cases gracefully, and produces sensible fix
-          instructions when fixes are actually needed.
-        done: true
   - title: Integrate Review Analysis into the Agent Loop
     done: true
     description: >
@@ -303,29 +100,6 @@ tasks:
       flagged issues are deemed not actionable within the current scope of work.
       This prevents the executor from attempting unnecessary fixes based on
       out-of-scope reviewer feedback.
-    files:
-      - src/rmplan/executors/codex_cli.ts
-    docs: []
-    steps:
-      - prompt: >
-          Import the `analyzeReviewFeedback` function from the review analysis
-          module. Modify the verdict handling logic to call this function when
-          the reviewer verdict is NEEDS_FIXES, passing all the required context
-          including the reviewer output, task lists, and implementer output.
-        done: true
-      - prompt: >
-          Use the analysis result to make an intelligent decision about whether
-          to proceed with fixes. If the analysis indicates that fixes are not
-          needed (due to out-of-scope issues), log this decision and exit
-          successfully. If fixes are needed, log the specific fix instructions
-          and prepare to enter the fix loop.
-        done: true
-      - prompt: >
-          Add comprehensive logging to show the review analysis process and
-          decision-making. Users should understand why the executor decided to
-          attempt fixes or why it determined that the reviewer's concerns were
-          not actionable for the current scope.
-        done: true
   - title: Implement the Fixer Step
     done: true
     description: >
@@ -335,30 +109,6 @@ tasks:
       prompt will then be executed by the single-step Codex runner to attempt to
       address the issues identified by the reviewer and validated by the
       analysis.
-    files:
-      - src/rmplan/executors/codex_cli.ts
-    docs: []
-    steps:
-      - prompt: >
-          Create a `getFixerPrompt` helper method that constructs a
-          comprehensive prompt for the fixer step. The prompt should include the
-          original implementer output, tester output, completed tasks list, and
-          the specific fix instructions from the review analysis. The fixer
-          should understand what was previously done and what specifically needs
-          to be corrected.
-        done: true
-      - prompt: >
-          Implement the fixer execution logic by calling `executeCodexStep` with
-          the fixer prompt. The fixer should be able to make targeted
-          corrections based on the specific instructions rather than starting
-          over or making broad changes to the codebase.
-        done: true
-      - prompt: >
-          Add appropriate logging for the fixer step to show that correction
-          work is being attempted and what specific issues are being addressed.
-          Capture the fixer's output for use in the subsequent reviewer
-          re-evaluation.
-        done: true
   - title: Implement the Full Fix-and-Review Loop
     done: true
     description: >
@@ -368,30 +118,6 @@ tasks:
       This completes the full agent loop with intelligent fixing capabilities,
       ensuring that the code meets quality standards before the executor
       finishes.
-    files:
-      - src/rmplan/executors/codex_cli.ts
-    docs: []
-    steps:
-      - prompt: >
-          Implement a fix loop that iterates up to 5 times, running the fixer
-          step followed by re-executing the reviewer on the updated code. Track
-          the iteration count and provide clear logging about which iteration is
-          running and what the current status is.
-        done: true
-      - prompt: >
-          After each fixer execution, re-run the reviewer step to evaluate the
-          fixes that were made. Parse the new reviewer verdict and either
-          continue the loop (if NEEDS_FIXES) or exit successfully (if
-          ACCEPTABLE). Ensure that each reviewer re-evaluation receives the
-          updated context including any changes made by the fixer.
-        done: true
-      - prompt: >
-          Add termination conditions for the fix loop: exit successfully when
-          the reviewer says ACCEPTABLE, exit with a warning after 5 iterations
-          even if not acceptable, and handle any errors during the fix process
-          gracefully. Provide clear final status reporting so users understand
-          whether the code was successfully improved to meet standards.
-        done: true
 changedFiles:
   - src/rmplan/commands/add.test.ts
   - src/rmplan/commands/cli_integration.test.ts

@@ -29,23 +29,6 @@ tasks:
       different executor types, and include file change tracking. The design
       should be memory-safe with appropriate limits and follow the established
       patterns from the review formatter system.
-    files:
-      - src/rmplan/summary/types.ts
-    steps:
-      - prompt: >
-          Create src/rmplan/summary/types.ts with comprehensive TypeScript
-          interfaces for execution summaries. Define ExecutionSummary interface
-          with fields for plan metadata (planId, planTitle, planFilePath),
-          execution timing (startTime, endTime, duration), step results array,
-          file changes, execution mode (serial/batch), and error tracking.
-          Create StepResult interface for individual step outcomes including
-          step title, executor output, success status, timing, and any errors.
-          Add ExecutionMetadata interface for batch iterations, total steps
-          executed, and aggregate statistics. Follow patterns from
-          src/rmplan/formatters/review_formatter.ts ReviewResult interface.
-          Include proper JSDoc comments and export all types for use across the
-          codebase.
-        done: true
   - title: Create Summary Collection Module
     done: true
     description: >
@@ -59,24 +42,6 @@ tasks:
       the Git-based change detection using getChangedFilesOnBranch(). The
       implementation should follow established patterns from the review system
       and include proper error handling for failed operations.
-    files:
-      - src/rmplan/summary/collector.ts
-    steps:
-      - prompt: >
-          Create src/rmplan/summary/collector.ts with a SummaryCollector class
-          that manages execution summary collection. Implement constructor that
-          initializes with plan metadata (planId, title, filePath,
-          executionMode). Add addStepResult method to collect individual step
-          outcomes with memory limits (max 10MB per step output). Create
-          trackFileChanges method that integrates with existing
-          getChangedFilesOnBranch function from src/common/git.ts to detect
-          modified files. Include addError method for collecting execution
-          errors and recordExecutionStart/End methods for timing tracking. Add
-          getExecutionSummary method that returns the final ExecutionSummary
-          object. Implement memory safeguards following patterns from
-          review_formatter.ts with MAX_OUTPUT_LENGTH limits and proper
-          sanitization.
-        done: true
   - title: Modify Agent Execution for Summary Collection
     done: true
     description: >
@@ -90,30 +55,6 @@ tasks:
       both serial and batch execution modes and handle execution errors by
       adding them to the summary. The changes should be backward compatible and
       not affect existing functionality when summary is disabled.
-    files:
-      - src/rmplan/commands/agent/agent.ts
-    steps:
-      - prompt: >
-          Modify src/rmplan/commands/agent/agent.ts to integrate summary
-          collection. In the rmplanAgent function, initialize a SummaryCollector
-          at the start using plan metadata. Update executor calls to include
-          captureOutput: 'result' in planInfo when summary collection is enabled
-          (default to enabled for now). After each executor.execute() call,
-          collect the returned output using summaryCollector.addStepResult().
-          Add file change tracking after markStepDone and markTaskDone calls
-          using summaryCollector.trackFileChanges(). Handle execution errors by
-          adding them to the summary via summaryCollector.addError(). Ensure the
-          summary collection doesn't interfere with existing execution flow and
-          maintains backward compatibility.
-        done: true
-      - prompt: >
-          Add summary display at the end of rmplanAgent function execution.
-          After the main execution loop completes (either in serial mode or
-          after batch mode), call a displayExecutionSummary function with the
-          collected summary data. Handle both successful completion and error
-          scenarios. Ensure proper cleanup and final summary generation even
-          when execution encounters errors or is interrupted.
-        done: true
   - title: Update Batch Mode for Summary Aggregation
     done: true
     description: >
@@ -127,27 +68,6 @@ tasks:
       calls happen until all tasks are complete. This requires careful handling
       of step numbering, timing across iterations, and proper cleanup at the end
       of batch execution.
-    files:
-      - src/rmplan/commands/agent/batch_mode.ts
-    steps:
-      - prompt: >
-          Modify src/rmplan/commands/agent/batch_mode.ts executeBatchMode
-          function to accept an optional SummaryCollector parameter. Update all
-          executor.execute() calls within the batch loop to use captureOutput:
-          'result' when summaryCollector is provided. After each batch
-          iteration, collect the executor output and add it to the summary as a
-          step result. Track cumulative file changes across iterations and
-          maintain proper iteration numbering in the summary data. Ensure the
-          summary state persists correctly between batch iterations and that
-          timing information reflects the total batch execution time.
-        done: true
-      - prompt: >
-          Add final summary aggregation at the end of batch mode execution.
-          Before the function returns, if a summaryCollector is provided,
-          perform final file change detection and record the end of execution
-          timing. Ensure proper cleanup and that the summaryCollector contains
-          complete information about all batch iterations and their results.
-        done: true
   - title: Implement Basic Summary Display
     done: true
     description: >
@@ -161,33 +81,6 @@ tasks:
       existing formatting utilities like boldMarkdownHeaders, table library for
       structured data, and the established color scheme from the review
       formatter system.
-    files:
-      - src/rmplan/summary/display.ts
-    steps:
-      - prompt: >
-          Create src/rmplan/summary/display.ts with a displayExecutionSummary
-          function that takes an ExecutionSummary and formats it for terminal
-          output. Follow the TerminalFormatter pattern from review_formatter.ts.
-          Create sections for execution overview with plan details, timing, and
-          success status using chalk.bold for headers and appropriate colors
-          (green for success, red for errors). Add a summary table showing total
-          steps executed, files modified, and execution duration using the table
-          library with the same border configuration as review formatter.
-          Include proper spacing and dividers using '─'.repeat(60) pattern from
-          existing code.
-        done: true
-      - prompt: >
-          Add detailed sections to the summary display for step results and file
-          changes. Create a step results section that lists each executed step
-          with its status, timing, and key output excerpts (truncated for
-          readability). Add a file changes section that lists all modified,
-          created, and deleted files with appropriate color coding (green for
-          created, yellow for modified, red for deleted). Include an execution
-          metadata section with batch iteration count if applicable, total
-          duration, and any errors encountered. Use consistent formatting with
-          existing code patterns and ensure proper error handling for display
-          operations.
-        done: true
   - title: Add Summary Tests
     done: true
     description: >
@@ -200,31 +93,6 @@ tasks:
       possible to ensure integration confidence. Test scenarios should cover
       different executor outputs, file change detection, memory limits, and both
       serial and batch execution modes.
-    files:
-      - src/rmplan/summary/collector.test.ts
-      - src/rmplan/summary/display.test.ts
-    steps:
-      - prompt: >
-          Create src/rmplan/summary/collector.test.ts with comprehensive unit
-          tests for the SummaryCollector class. Use ModuleMocker to mock logging
-          and git functions following patterns from existing test files. Test
-          collector initialization, addStepResult with various output sizes and
-          content types, trackFileChanges integration with mocked git functions,
-          error collection and handling, and memory limit enforcement. Create
-          test scenarios with temporary directories using fs.mkdtemp() and
-          realistic plan metadata. Test both successful operations and error
-          conditions, ensuring proper cleanup in afterEach hooks.
-        done: true
-      - prompt: >
-          Create src/rmplan/summary/display.test.ts to test the summary display
-          functionality. Mock the chalk and table dependencies to capture
-          formatting calls and verify output structure. Test
-          displayExecutionSummary with various summary data scenarios including
-          successful executions, failed executions, batch mode summaries, and
-          empty summaries. Verify proper color usage, section formatting, table
-          structure, and error handling. Test edge cases like very long output
-          truncation, empty file changes lists, and missing metadata fields.
-        done: true
   - title: Add Executor-Specific Output Parsing
     done: true
     description: >
@@ -237,30 +105,6 @@ tasks:
       extract the most relevant information for summaries, and provide error
       handling for malformed or missing output. The implementation should be
       extensible for future executor types.
-    files:
-      - src/rmplan/summary/parsers.ts
-    steps:
-      - prompt: >
-          Create src/rmplan/summary/parsers.ts with executor-specific output
-          parsing functions. Implement parseClaudeOutput function that extracts
-          rawMessage content from Claude Code executor responses, handling the
-          JSON stream format used by the Claude Code executor. Add
-          parseCodexOutput function that extracts final agent messages from
-          Codex CLI executor output, parsing the structured workflow results.
-          Create parseGenericOutput function as a fallback for other executors
-          that returns the output content directly. Each parser should handle
-          malformed input gracefully and return standardized parsed result
-          objects with content, metadata, and success indicators.
-        done: true
-      - prompt: >
-          Add a main parseExecutorOutput function that dispatches to the
-          appropriate parser based on executor type. This function should accept
-          executor name/type and raw output, then route to the correct
-          specialized parser. Include proper error handling that returns
-          meaningful fallback results when parsing fails. Add TypeScript
-          interfaces for parsed output results and ensure all parsers return
-          consistent data structures for use by the SummaryCollector.
-        done: true
   - title: Update Executors for Summary Support
     done: true
     description: >
@@ -272,32 +116,6 @@ tasks:
       type) to summary results. The changes should maintain backward
       compatibility with existing execution modes and not affect performance
       when summary collection is disabled.
-    files:
-      - src/rmplan/executors/claude_code/claude_code.ts
-      - src/rmplan/executors/codx_cli/codx_cli.ts
-    steps:
-      - prompt: >
-          Review and update src/rmplan/executors/claude_code/claude_code.ts to
-          ensure proper rawMessage extraction for summary collection. Verify
-          that when captureOutput: 'result' is used, the executor returns the
-          clean rawMessage content from the final assistant response. Check that
-          the existing formatJsonMessage and captureOutput logic properly
-          extracts the meaningful content without formatting artifacts. Add
-          executor metadata (name: 'claude_code', type: 'interactive') to the
-          response data structure for summary collection identification. Ensure
-          backward compatibility is maintained.
-        done: true
-      - prompt: >
-          Review and update src/rmplan/executors/codx_cli/codx_cli.ts to ensure
-          proper final agent message capture for summary collection. Verify that
-          the executor returns the final agent messages from each workflow step
-          (implementer, tester, reviewer) when captureOutput: 'result' is
-          enabled. Check that the message extraction from the Codx CLI JSON
-          output properly captures the meaningful agent responses. Add executor
-          metadata (name: 'codx_cli', type: 'workflow') to the response for
-          summary identification. Maintain existing functionality for all
-          execution modes.
-        done: true
   - title: Enhance Summary Display Formatting
     done: true
     description: >
@@ -311,30 +129,6 @@ tasks:
       and performance metrics. The enhanced display should maintain consistency
       with existing formatting patterns while providing richer information
       presentation.
-    files:
-      - src/rmplan/summary/display.ts
-    steps:
-      - prompt: >
-          Enhance the displayExecutionSummary function in
-          src/rmplan/summary/display.ts with improved section organization and
-          visual hierarchy. Add distinct section headers for Overview, Step
-          Results, File Changes, and Execution Metadata using chalk.bold with
-          different colors. Implement progress indicators showing X/Y steps
-          completed with percentage. Add timestamp and duration formatting with
-          human-readable time displays (e.g., "2m 34s"). Create helper functions
-          for consistent spacing, section dividers, and hierarchical indentation
-          following existing code patterns.
-        done: true
-      - prompt: >
-          Add advanced formatting features including output truncation for long
-          step results with "..." indicators and show-more hints. Implement
-          basic syntax highlighting for code snippets in step outputs using
-          simple keyword detection and chalk colors. Add statistics summary with
-          completion rates, average step duration, and file change counts.
-          Include error summary section with clear formatting for any execution
-          errors encountered. Ensure all enhancements maintain backward
-          compatibility and graceful degradation for missing data.
-        done: true
   - title: Add CLI Configuration Options
     done: true
     description: >
@@ -347,30 +141,6 @@ tasks:
       run commands, modify the help text to document the new options, and ensure
       the options integrate properly with the existing command structure and
       configuration system.
-    files:
-      - src/rmplan/rmplan.ts
-      - src/rmplan/commands/agent/agent.ts
-    steps:
-      - prompt: >
-          Update src/rmplan/rmplan.ts to add new CLI options for summary
-          control. In the createAgentCommand function, add --no-summary boolean
-          flag to disable summary display and --summary-file string option to
-          specify output file for summaries. Update the command help text to
-          document these new options with clear descriptions. Ensure the options
-          are available for both 'agent' and 'run' commands since they share the
-          same option set through createAgentCommand. Follow existing patterns
-          for option definition and help text formatting.
-        done: true
-      - prompt: >
-          Modify src/rmplan/commands/agent/agent.ts to use the new CLI options.
-          Update rmplanAgent function to check for the --no-summary flag and
-          conditionally initialize summary collection. Add logic to handle
-          --summary-file option by writing summary output to the specified file
-          instead of displaying to console. Add environment variable support for
-          RMPLAN_SUMMARY_ENABLED to set default summary behavior. Ensure proper
-          error handling for file write operations and that summary collection
-          is disabled when --no-summary is used.
-        done: true
   - title: Implement Error Handling and Edge Cases
     done: true
     description: >
@@ -383,33 +153,6 @@ tasks:
       handling should ensure that summary collection failures don't interrupt or
       break the main execution flow, and users receive helpful feedback about
       any summary-related issues.
-    files:
-      - src/rmplan/summary/collector.ts
-      - src/rmplan/summary/display.ts
-      - src/rmplan/summary/parsers.ts
-    steps:
-      - prompt: >
-          Add comprehensive error handling to src/rmplan/summary/collector.ts.
-          Wrap all external operations (git calls, file operations) in try-catch
-          blocks with appropriate error logging. Implement memory limits for
-          step results and executor output with graceful truncation when limits
-          are exceeded. Add validation for input parameters and handle
-          null/undefined values safely. Create fallback behaviors when file
-          change tracking fails or git operations timeout. Ensure that any
-          collector errors are logged but don't throw exceptions that could
-          interrupt execution.
-        done: true
-      - prompt: >
-          Enhance error handling in src/rmplan/summary/display.ts and
-          parsers.ts. Add validation for summary data structure completeness and
-          provide defaults for missing fields. Handle display formatting errors
-          gracefully with fallback to plain text output. In parsers.ts, add
-          robust error handling for malformed executor output with clear error
-          messages and safe fallback parsing. Implement timeout protection for
-          parsing operations and memory limits for output processing. Ensure all
-          error conditions result in user-friendly messages rather than cryptic
-          stack traces.
-        done: true
   - title: Add Integration Tests and Documentation
     done: false
     description: >
@@ -422,32 +165,6 @@ tasks:
       documentation to include examples of summary output and explain the new
       functionality. The integration tests should use real temporary
       environments and validate end-to-end functionality.
-    files:
-      - src/rmplan/commands/agent/agent.integration.test.ts
-      - CLAUDE.md
-    steps:
-      - prompt: >
-          Create src/rmplan/commands/agent/agent.integration.test.ts with
-          comprehensive integration tests for the summary functionality. Set up
-          test environments with temporary directories and real plan files using
-          fs.mkdtemp(). Test the complete agent execution flow with summary
-          collection enabled using mock executors that return realistic output
-          patterns. Test both serial and batch execution modes with summary
-          aggregation. Verify file change tracking works correctly with actual
-          file operations. Test error scenarios and edge cases with malformed
-          plans and executor failures. Ensure tests clean up properly and don't
-          leave artifacts.
-        done: false
-      - prompt: >
-          Update CLAUDE.md to document the new summary functionality. Add a
-          section explaining how execution summaries work, what information they
-          provide, and how to use the CLI options (--no-summary,
-          --summary-file). Include examples of typical summary output showing
-          different execution scenarios. Document the environment variable
-          configuration options and explain how summary collection integrates
-          with different executor types. Add any relevant notes about
-          performance considerations and memory usage for large executions.
-        done: false
 changedFiles:
   - src/common/git.ts
   - src/dependency_graph/__snapshots__/walk_imports.test.ts.snap

@@ -29,146 +29,37 @@ project:
     appropriate settings to enable interactive tool-use permissions.
 tasks:
   - title: Add Configuration Option to Enable Permissions MCP
-    done: false
+    done: true
     description: Modify the `claudeCodeOptionsSchema` in
       `src/rmplan/executors/claude_code.ts` by adding a new optional boolean
       field named `enablePermissionsMcp`. This will allow users to enable the
       feature via their `rmplan.json` configuration.
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/executors/claude_code.ts`, locate the
-          `claudeCodeOptionsSchema`
-
-          Zod object and add a new field `enablePermissionsMcp` of type
-          `z.boolean().optional()`.
-        done: true
   - title: Implement MCP Activation Logic
-    done: false
+    done: true
     description: In the `execute` method of the `ClaudeCodeExecutor`, add logic to
       check if the `enablePermissionsMcp` option is true or if the
       `CLAUDE_CODE_MCP` environment variable is set. This will determine whether
       to activate the permissions flow for the current execution.
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps:
-      - prompt: >
-          In the `execute` method of `ClaudeCodeExecutor`, destructure
-          `enablePermissionsMcp`
-
-          from `this.options`. Then, create a new boolean constant
-          `isPermissionsMcpEnabled`
-
-          that is set to `true` if `enablePermissionsMcp` is true or if the
-          `CLAUDE_CODE_MCP`
-
-          environment variable is set.
-        done: true
   - title: Implement Dynamic MCP Configuration File Generation
-    done: false
+    done: true
     description: When the permissions MCP is activated, write a temporary JSON
       configuration file to disk. This file will instruct the Claude Code CLI
       how to start our permissions server, specifying the command (e.g., `bun`)
       and the path to the `permissions_mcp.ts` script. The path to the script
       must be resolved correctly from the executor's location.
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps:
-      - prompt: >
-          Import `os`, `path`, and `fs/promises` at the top of
-          `src/rmplan/executors/claude_code.ts`.
-
-          These will be used for creating and cleaning up temporary files and
-          directories.
-        done: true
-      - prompt: >
-          Inside the `execute` method, declare a variable `tempMcpConfigDir`
-          initialized
-
-          to `undefined` that will hold the path to our temporary directory.
-
-          Also declare a variable `dynamicMcpConfigFile` to hold the path to the
-          generated config file.
-        done: true
-      - prompt: |
-          Within an `if (isPermissionsMcpEnabled)` block, implement the logic to
-          generate the configuration file. First, create a temporary directory
-          using `fs.promises.mkdtemp` and assign its path to `tempMcpConfigDir`.
-        done: true
-      - prompt: >
-          Still inside the `if (isPermissionsMcpEnabled)` block, resolve the
-          absolute
-
-          path to `src/rmplan/executors/claude_code/permissions_mcp.ts` using
-
-          `Bun.resolveSync` and `import.meta.dir`. Then, construct the MCP JSON
-
-          configuration object, and write it to a file named `mcp-config.json`
-
-          inside the temporary directory. Assign the full path of this new file
-
-          to `dynamicMcpConfigFile`.
-        done: true
   - title: Update Claude Code CLI Arguments
-    done: false
+    done: true
     description: If the permissions MCP is active, modify the arguments passed to
       the `claude` CLI. Add the `--mcp-config` flag with the path to the
       temporary configuration file and the `--permission-prompt-tool` flag to
       tell Claude Code which tool to use for permission checks (e.g.,
       `mcp__permissions__approval_prompt`).
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps:
-      - prompt: >
-          Modify the argument handling logic in the `execute` method. If
-          `isPermissionsMcpEnabled`
-
-          is true, push the `--mcp-config` flag with the `dynamicMcpConfigFile`
-
-          path to the `args` array. Also, push the `--permission-prompt-tool`
-
-          flag with the value `mcp__permissions__approval_prompt`.
-        done: true
-      - prompt: >
-          Adjust the existing logic that handles the `mcpConfigFile` option. It
-
-          should now be in an `else if` block, so it only runs if
-          `isPermissionsMcpEnabled`
-
-          is false, preventing conflicts between the dynamic configuration and
-
-          a user-provided one.
-        done: true
   - title: Ensure Cleanup of Temporary Resources
-    done: false
+    done: true
     description: Wrap the `claude` process execution in a `try...finally` block to
       ensure that the temporary MCP configuration file and its containing
       directory are deleted after the command finishes, regardless of its
       success or failure. This prevents cluttering the filesystem.
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps:
-      - prompt: >
-          Restructure the `execute` method to wrap the main logic, including the
-
-          dynamic file generation and the `claude` process execution
-          (`spawnAndLogOutput`
-
-          or `Bun.spawn`), within a `try` block.
-        done: true
-      - prompt: >
-          Add a `finally` block after the `try` block. Inside the `finally`
-          block,
-
-          check if `tempMcpConfigDir` has been assigned a path. If it has, use
-
-          `fs.promises.rm` with the `{ recursive: true, force: true }` options
-
-          to delete the entire temporary directory and its contents, ensuring no
-
-          artifacts are left behind.
-        done: true
 changedFiles:
   - docs/tutorials/claude-permissions-mcp.md
   - src/rmplan/executors/claude_code/permissions_mcp.ts

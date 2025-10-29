@@ -66,130 +66,33 @@ project:
     - The project's documentation is updated to reflect the new feature.
 tasks:
   - title: Add `direct_mode` to Configuration Model
-    done: false
+    done: true
     description: Update the configuration data class to include the new optional
       boolean field `planning.direct_mode`. This change will ensure that the
       configuration loading mechanism recognizes the new setting and defaults it
       to `False` if it's not present in a user's config file, maintaining
       backward compatibility.
-    files:
-      - src/rmplan/configSchema.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/configSchema.ts`, add a new optional object named
-          `planning` to the `rmplanConfigSchema`.
-        done: true
-      - prompt: >
-          Within the new `planning` object in `rmplanConfigSchema`, add an
-          optional boolean field named `direct_mode`. This field will control
-          the default behavior for direct mode in the `generate` and `prepare`
-          commands.
-        done: true
   - title: Update `generate` and `prepare` Commands to Use New Config
-    done: false
+    done: true
     description: Modify the `generate` and `prepare` command functions to
       incorporate the new configuration setting. The implementation will
       prioritize the command-line flags (`--direct`/`--no-direct`) over the
       `direct_mode` setting from the config file, which in turn will be used as
       the default if no flag is specified.
-    files:
-      - src/rmplan/rmplan.ts
-      - src/rmplan/commands/generate.ts
-      - src/rmplan/commands/prepare.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/rmplan.ts`, update the `generate` and `prepare` command
-          definitions to include a `--no-direct` flag. This will allow users to
-          override a `direct_mode: true` setting from the configuration file.
-          Commander will automatically handle the boolean logic for `--direct`
-          and `--no-direct`.
-        done: true
-      - prompt: >
-          In `src/rmplan/commands/generate.ts`, modify the
-          `handleGenerateCommand` function to determine the effective `direct`
-          mode setting. Implement a clear order of precedence:
-
-          1. Use the value from the command-line flag (`--direct` or
-          `--no-direct`) if provided.
-
-          2. If no flag is present, use the value of
-          `config.planning?.direct_mode`.
-
-          3. If neither is set, default to `false`.
-
-          Pass this calculated value to the relevant logic that handles direct
-          execution.
-        done: true
-      - prompt: >
-          In `src/rmplan/commands/prepare.ts`, apply the same precedence logic
-          to the `handlePrepareCommand` function to determine the effective
-          `direct` mode. This calculated boolean value should then be passed to
-          the `preparePhase` function in its options object.
-        done: true
   - title: Implement Tests for New Configuration Logic
-    done: false
+    done: true
     description: Add new unit and integration tests to verify the correct behavior
       of the `direct_mode` feature. The tests will cover scenarios where the
       configuration is set to true, false, or is absent, and confirm that
       command-line flags correctly override the configuration for both the
       `generate` and `prepare` commands.
-    files:
-      - src/rmplan/commands/prepare.test.ts
-      - src/rmplan/commands/generate.test.ts
-      - src/rmplan/configLoader.test.ts
-    steps:
-      - prompt: >
-          Create a new test file `src/rmplan/commands/prepare.test.ts`. Set up
-          the basic test structure with mocks for dependencies like
-          `configLoader` and `preparePhase`, using `generate.test.ts` as a
-          template.
-        done: true
-      - prompt: >
-          In `src/rmplan/commands/prepare.test.ts`, add a test suite to verify
-          the `direct_mode` logic. Write individual tests for each precedence
-          scenario:
-
-          - No flag, no config (`direct` should be `false`).
-
-          - No flag, config `direct_mode: true` (`direct` should be `true`).
-
-          - No flag, config `direct_mode: false` (`direct` should be `false`).
-
-          - `--direct` flag overrides config `direct_mode: false`.
-
-          - `--no-direct` flag overrides config `direct_mode: true`.
-
-          Use `moduleMocker` to provide different mock configurations for each
-          test.
-        done: true
-      - prompt: >
-          In `src/rmplan/commands/generate.test.ts`, add a similar test suite to
-          verify the `direct_mode` logic for the `handleGenerateCommand`
-          function, covering the same set of precedence scenarios.
-        done: true
-      - prompt: >
-          In `src/rmplan/configLoader.test.ts`, add a test to
-          `loadEffectiveConfig` to ensure that a configuration containing
-          `planning: { direct_mode: true }` is parsed and validated correctly.
-        done: true
   - title: Update Project Documentation
-    done: false
+    done: true
     description: Update the `README.md` file and any other relevant user-facing
       documentation. The documentation will clearly explain the new
       `direct_mode` configuration setting, its purpose, how to use it, and how
       it interacts with the existing `--direct` and `--no-direct` command-line
       flags.
-    files:
-      - docs/direct_mode_feature.md
-    steps:
-      - prompt: >
-          Create a new documentation file at `docs/direct_mode_feature.md`. In
-          this file, explain the new `planning.direct_mode` configuration
-          option. Describe its purpose for the `generate` and `prepare`
-          commands, detail the precedence logic with the `--direct` and
-          `--no-direct` flags, and provide a clear YAML snippet showing how to
-          use it in the `rmplan.yml` config file.
-        done: true
 changedFiles:
   - docs/direct_mode_feature.md
   - src/rmplan/commands/generate.test.ts

@@ -33,7 +33,6 @@ tasks:
 
       These utilities will be used by both add-task and remove-task commands to
       ensure consistent behavior.
-    steps: []
   - title: Implement add-task command handler
     done: false
     description: >-
@@ -102,7 +101,6 @@ tasks:
       - Throw error if required fields missing (non-interactive mode)
 
       - Handle editor cancellation gracefully
-    steps: []
   - title: Implement remove-task command handler
     done: false
     description: >-
@@ -171,7 +169,6 @@ tasks:
       - Throw error if no selection method provided
 
       - Handle confirmation cancellation (user selects 'no')
-    steps: []
   - title: Register CLI commands in rmplan.ts
     done: false
     description: >-
@@ -218,7 +215,6 @@ tasks:
 
       Ensure commands are registered in the appropriate location (likely after
       other task-related commands).
-    steps: []
   - title: Implement MCP add-plan-task tool
     done: false
     description: >-
@@ -298,7 +294,6 @@ tasks:
       });
 
       ```
-    steps: []
   - title: Implement MCP remove-plan-task tool
     done: false
     description: >-
@@ -386,7 +381,6 @@ tasks:
       });
 
       ```
-    steps: []
   - title: Write tests for task utilities
     done: false
     description: >-
@@ -436,7 +430,6 @@ tasks:
       - Create sample task arrays for testing
 
       - Use real task type definitions from schema
-    steps: []
   - title: Write tests for add-task command
     done: false
     description: |-
@@ -466,7 +459,6 @@ tasks:
       - Verify task exists in tasks array
       - Verify all fields set correctly
       - Verify timestamp updated
-    steps: []
   - title: Write tests for remove-task command
     done: false
     description: |-
@@ -502,7 +494,6 @@ tasks:
       - Verify remaining tasks shifted correctly
       - Verify task count decreased by 1
       - Verify timestamp updated
-    steps: []
   - title: Write tests for MCP tools
     done: false
     description: |-
@@ -539,7 +530,6 @@ tasks:
       - Read plan file after execution
       - Verify plan modifications
       - Verify return messages are descriptive
-    steps: []
   - title: Integration testing
     done: false
     description: >-
@@ -587,7 +577,6 @@ tasks:
       - No data corruption or schema violations
 
       - Timestamps updated appropriately
-    steps: []
   - title: Update documentation
     done: false
     description: >-
@@ -649,7 +638,6 @@ tasks:
       - Document the task utilities module
 
       - Note testing patterns used
-    steps: []
 ---
 
 ## Overview

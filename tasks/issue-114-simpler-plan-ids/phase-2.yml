@@ -44,8 +44,6 @@ tasks:
     description: Modify `readAllPlans` in `src/rmplan/plans.ts` to detect duplicate
       numeric IDs. As it reads plans, it should identify if multiple plan files
       contain the same numeric `id` value.
-    files: []
-    steps: []
   - title: Develop ID Conflict Resolution Strategy
     done: false
     description: "Create a new function, e.g., `resolveIdConflicts(plansMap)`, in
@@ -58,30 +56,22 @@ tasks:
       re-assigned plans. - Rename the files of re-assigned plans to match their
       new `[NEW_ID].yml` format. - Return a map of plans with all conflicts
       resolved."
-    files: []
-    steps: []
   - title: Integrate Conflict Resolution into Plan Loading
     done: false
     description: Modify `readAllPlans` to call the `resolveIdConflicts` function
       before returning its final map of plans. This ensures that any part of the
       system using `readAllPlans` receives a conflict-free set of plans.
-    files: []
-    steps: []
   - title: Implement Logging for Conflict Resolution
     done: false
     description: Add logging within the conflict resolution process to inform the
       user when ID conflicts are detected and how they are resolved (which plans
       were re-assigned to which new IDs).
-    files: []
-    steps: []
   - title: Test ID Conflict Resolution
     done: false
     description: "Create tests for various conflict scenarios: - Two plans with the
       same ID. - Multiple plans with the same ID. - Scenarios involving plans
       with and without `createdAt`/`updatedAt` timestamps to test
       prioritization. - Verify file renaming and internal ID updates."
-    files: []
-    steps: []
 rmfilter:
   - src/rmplan
   - src/common

@@ -20,13 +20,11 @@ tasks:
     done: false
     description: Add `--with-blocking-subissues` flag to generate command in
       `src/rmplan/rmplan.ts`
-    steps: []
   - title: Update Generate Command Prompt
     done: false
     description: Modify `src/rmplan/commands/generate.ts` to add blocking subissues
       section to the LLM prompt when the flag is enabled. Include instructions
       for the LLM to identify prerequisites and format them appropriately.
-    steps: []
   - title: Update MCP Generate Prompts
     done: false
     description: >-
@@ -44,20 +42,17 @@ tasks:
       The prompts should instruct Claude to identify prerequisite work and
       consider creating separate plans for complex prerequisites with proper
       dependencies.
-    steps: []
   - title: Parse and Create Subissues
     done: false
     description: Implement parsing logic to extract blocking subissue information
       from LLM output. Add interactive prompt to ask user if they want to create
       the identified subissues as separate plans. Create the plans
       programmatically using appropriate functions and update dependencies.
-    steps: []
   - title: Add discoveredFrom Tracking
     done: false
     description: When creating blocking subissue plans, use the `--discovered-from`
       field to link them back to the parent plan that identified them. This
       requires plan 129 to be completed first.
-    steps: []
   - title: Add Tests
     done: false
     description: |-
@@ -68,7 +63,6 @@ tasks:
       - User declines creation: no plans created
       - Dependencies correctly added to parent plan
       - discoveredFrom field is set correctly
-    steps: []
 ---
 
 ## Overview

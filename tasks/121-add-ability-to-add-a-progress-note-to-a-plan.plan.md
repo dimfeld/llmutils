@@ -31,12 +31,10 @@ tasks:
       })).default([]).optional()
 
       ```
-    steps: []
   - title: Regenerate JSON Schema
     done: true
     description: Run `bun run scripts/update-json-schemas.ts` to regenerate the JSON
       schema file that provides IDE support for plan files.
-    steps: []
   - title: Add Schema Validation Tests
     done: true
     description: |
@@ -46,7 +44,6 @@ tasks:
       - Missing required fields are caught
       - Empty arrays are handled correctly
       - Backward compatibility with plans lacking progressNotes
-    steps: []
   - title: Create Command Handler
     done: true
     description: |
@@ -55,7 +52,6 @@ tasks:
       - Handler function that loads plan, adds note, saves plan
       - Proper error handling and user feedback
       - Integration with plan resolution and config loading
-    steps: []
   - title: Register Command in CLI
     done: true
     description: >
@@ -73,7 +69,6 @@ tasks:
       })
 
       ```
-    steps: []
   - title: Write Command Tests
     done: true
     description: |
@@ -83,7 +78,6 @@ tasks:
       - Preserving existing notes when adding new ones
       - Proper timestamp formatting
       - Error handling for invalid inputs
-    steps: []
   - title: Add Progress Notes to Prompt Builder
     done: true
     description: |
@@ -92,7 +86,6 @@ tasks:
       - Include notes in `buildExecutionPromptWithoutSteps()` after plan context
       - Format notes with timestamps and proper markdown
       - Handle empty notes array gracefully
-    steps: []
   - title: Update Show Command
     done: true
     description: |
@@ -101,7 +94,6 @@ tasks:
       - Format with timestamps and indentation
       - Show note count in summary
       - Handle long notes with appropriate truncation
-    steps: []
   - title: Update List Command
     done: true
     description: |
@@ -109,7 +101,6 @@ tasks:
       - Add progress note count to plan listings
       - Only show count when notes exist
       - Maintain clean output format
-    steps: []
   - title: Update Agent Documentation
     done: true
     description: |
@@ -117,7 +108,6 @@ tasks:
       - Update `src/rmplan/executors/claude_code/orchestrator_prompt.ts`
       - Add instructions for when to use progress notes
       - Include example of adding progress notes
-    steps: []
   - title: Write Integration Tests
     done: true
     description: |
@@ -126,7 +116,6 @@ tasks:
       - Notes appear correctly in agent prompts
       - Multiple agents can add notes without conflicts
       - Notes persist through plan updates
-    steps: []
   - title: Test Plan Operations Compatibility
     done: true
     description: |
@@ -135,7 +124,6 @@ tasks:
       - Plan merging (notes are combined)
       - Plan inheritance (notes are preserved)
       - Plan validation and cleanup
-    steps: []
   - title: Handle Edge Cases
     done: true
     description: |
@@ -145,7 +133,6 @@ tasks:
       - Concurrent note additions
       - Maximum number of notes (implement rotation if needed)
       - Notes with multi-line text
-    steps: []
   - title: Update Documentation
     done: true
     description: |
@@ -154,7 +141,6 @@ tasks:
       - Document `add-progress-note` command usage
       - Provide examples of when agents should add notes
       - Include progress notes in workflow examples
-    steps: []
 changedFiles:
   - README.md
   - schema/rmplan-plan-schema.json

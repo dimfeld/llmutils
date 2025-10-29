@@ -80,8 +80,6 @@ tasks:
       particularly the complete removal of `originalLine` and
       `originalStartLine` usage and the implications for how comments
       (especially outdated ones) are processed.
-    files: []
-    steps: []
   - title: Review and Refine Prompts for the Hybrid Mode
     done: false
     description: >
@@ -91,8 +89,6 @@ tasks:
       instructions to achieve the desired outcomes more reliably. The goal is to
       ensure the AI can make optimal use of both the inline comments and the
       diff contexts.
-    files: []
-    steps: []
   - title: Evaluate and Document Handling of Unplaceable Comments
     done: false
     description: >
@@ -101,8 +97,6 @@ tasks:
       comments where `diffHunk` matching fails to find a confident location
       without `originalLine`) are handled in the new hybrid mode and existing
       modes. This includes how they are presented to the LLM, if at all.
-    files: []
-    steps: []
 rmfilter:
   - src/rmpr
   - src/common/github

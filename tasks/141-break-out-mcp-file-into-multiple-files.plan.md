@@ -148,7 +148,6 @@ tasks:
       - Test filtering with priority and pending-only options
 
       - Verify JSON output format matches expected structure
-    steps: []
   - title: Create plan_display.ts shared utility module
     done: true
     description: >-
@@ -190,7 +189,6 @@ tasks:
       - Test resolvePlan with valid plan IDs and file paths
 
       - Verify relative path calculation works correctly
-    steps: []
   - title: Create plan_merge.ts shared utility module
     done: true
     description: >-
@@ -239,7 +237,6 @@ tasks:
       - Test metadata field preservation
 
       - Test append vs replace modes in updateDetailsWithinDelimiters
-    steps: []
   - title: Extract handleGetPlanTool to show.ts
     done: true
     description: >-
@@ -276,7 +273,6 @@ tasks:
       - Add test for mcpGetPlan function
 
       - Verify MCP tool registration still works
-    steps: []
   - title: Extract handleAppendResearchTool to research.ts
     done: true
     description: >-
@@ -315,7 +311,6 @@ tasks:
       - Test with custom heading and timestamp options
 
       - Verify research appending to plan works correctly
-    steps: []
   - title: Extract handleListReadyPlansTool to ready.ts
     done: true
     description: >-
@@ -362,7 +357,6 @@ tasks:
       - Verify JSON output matches expected format
 
       - Test dependency checking logic
-    steps: []
   - title: Extract handleUpdatePlanDetailsTool to update.ts
     done: true
     description: |-
@@ -388,7 +382,6 @@ tasks:
       - Test append vs replace modes
       - Verify delimiter-based updates work correctly
       - Test Research section preservation
-    steps: []
   - title: Extract handleGenerateTasksTool to update.ts
     done: true
     description: |-
@@ -417,7 +410,6 @@ tasks:
       - Test task ID matching ([TASK-N] format)
       - Test metadata preservation (parent, dependencies, etc.)
       - Verify logging works correctly
-    steps: []
   - title: Refactor generate_mode.ts to registration-only layer
     done: true
     description: >-
@@ -476,7 +468,6 @@ tasks:
       - Verify all prompts still load correctly
 
       - Check for any circular dependency issues
-    steps: []
   - title: Integration testing and validation
     done: true
     description: >-
@@ -522,7 +513,6 @@ tasks:
       - Add notes about shared utilities (plan_display, plan_merge, ready_plans)
 
       - Update any inline comments referencing old structure
-    steps: []
 changedFiles:
   - CLAUDE.md
   - src/rmplan/commands/ready.test.ts

@@ -25,34 +25,6 @@ tasks:
       to be returned as the tool's result. The implementation follows the
       existing patterns established by the `approval_prompt` tool, using the
       same FastMCP server infrastructure and Unix socket communication protocol.
-    files:
-      - src/rmplan/executors/claude_code/permissions_mcp.ts
-    steps:
-      - prompt: >
-          Create a new Zod schema called `ReviewFeedbackInputSchema` that
-          accepts a single string field called `reviewerFeedback` with a
-          description indicating it contains the output from the reviewer
-          subagent that needs user feedback.
-        done: false
-      - prompt: >
-          Add a new tool to the FastMCP server called `review_feedback_prompt`
-          using `server.addTool()`. The tool should use the
-          `ReviewFeedbackInputSchema` for parameters and have a description
-          indicating it prompts the user for feedback on reviewer output.
-        done: false
-      - prompt: >
-          Implement the tool's execute function to send a
-          `review_feedback_request` message to the parent process via the Unix
-          socket, following the same pattern as `requestPermissionFromParent`.
-          The message should include the `reviewerFeedback` parameter and wait
-          for a `review_feedback_response` containing the user's input.
-        done: false
-      - prompt: >
-          Return the user's feedback as a JSON response in the same format as
-          the approval tool, with the user's input as the text content. Handle
-          communication errors gracefully by returning an appropriate error
-          message if the socket communication fails.
-        done: false
   - title: Implement User Prompt Handling in the Main Executor
     done: true
     description: >
@@ -64,31 +36,6 @@ tasks:
       sending it back to the MCP server. The implementation follows the existing
       socket message handling patterns but introduces multi-line text input
       capabilities.
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps:
-      - prompt: >
-          Import the `editor` function from `@inquirer/prompts` at the top of
-          the file to enable multi-line text input for capturing user feedback.
-        done: false
-      - prompt: >
-          In the `createPermissionSocketServer` method's socket data handler,
-          add a new condition to handle `review_feedback_request` message type
-          alongside the existing `permission_request` handling.
-        done: false
-      - prompt: >
-          Implement the review feedback request handling by extracting the
-          `reviewerFeedback` from the message, displaying it to the user with
-          appropriate formatting, and prompting them for multi-line input using
-          the `editor` function with a message like "Please provide your
-          feedback on the reviewer's analysis:".
-        done: false
-      - prompt: >
-          Send the user's response back to the MCP server as a
-          `review_feedback_response` message containing the user's input text.
-          Handle any errors from the editor prompt gracefully and return an
-          empty string if the user cancels or if an error occurs.
-        done: false
   - title: Add Configurable Timeout for the Review Feedback Prompt
     done: true
     description: >
@@ -99,34 +46,6 @@ tasks:
       is reached, the prompt will be cancelled, and an empty string will be
       returned as the user's feedback. The implementation mirrors the existing
       timeout mechanism used for permission prompts.
-    files:
-      - src/rmplan/executors/schemas.ts
-      - src/rmplan/executors/claude_code.ts
-    steps:
-      - prompt: >
-          Add a new optional field `reviewFeedbackTimeout` to the
-          `permissionsMcp` object in `claudeCodeOptionsSchema`. The field should
-          be a number with a description indicating it's the timeout in
-          milliseconds for review feedback prompts.
-        done: false
-      - prompt: >
-          In the `claude_code.ts` file, modify the review feedback request
-          handler to implement timeout functionality using `Promise.race`
-          between the editor prompt and a timeout promise, similar to the
-          existing permission prompt timeout implementation.
-        done: false
-      - prompt: >
-          Use the `reviewFeedbackTimeout` configuration value if available, or
-          fall back to the general `timeout` value if `reviewFeedbackTimeout` is
-          not specified. If the timeout is reached, cancel the editor prompt
-          using an AbortController and return an empty string as the user's
-          feedback.
-        done: false
-      - prompt: >
-          Add appropriate logging to indicate when the review feedback prompt
-          has timed out, following the same pattern as the permission prompt
-          timeout logging.
-        done: false
   - title: Update Orchestrator Prompt to Use the New Tool
     done: true
     description: >
@@ -137,27 +56,6 @@ tasks:
       reviewer subagent. The modification ensures that after each review phase,
       the user has an opportunity to provide feedback on the reviewer's
       findings.
-    files:
-      - src/rmplan/executors/claude_code/orchestrator_prompt.ts
-    steps:
-      - prompt: >
-          Locate the review phase instructions in the
-          `buildWorkflowInstructions` function and modify them to include a step
-          instructing the orchestrator to call the review feedback tool after
-          receiving output from the reviewer agent.
-        done: false
-      - prompt: >
-          Add specific instructions that the orchestrator should call
-          `mcp__permissions__review_feedback_prompt` with the reviewer's output
-          as the `reviewerFeedback` parameter, and wait for the user's response
-          before proceeding.
-        done: false
-      - prompt: >
-          Update the review phase description to indicate that the user's
-          feedback from this tool should be considered when determining whether
-          to proceed to the next phase or return to implementation for
-          revisions.
-        done: false
   - title: Update Orchestrator Prompt to Prioritize User Feedback
     done: true
     description: >
@@ -168,27 +66,6 @@ tasks:
       even if the reviewer has marked an issue as high priority. This ensures
       that the user maintains ultimate control over the development process and
       can override reviewer recommendations when appropriate.
-    files:
-      - src/rmplan/executors/claude_code/orchestrator_prompt.ts
-    steps:
-      - prompt: >
-          Add a new section in the `buildImportantGuidelines` function
-          specifically about user feedback priority, stating that user feedback
-          from the review feedback tool always takes precedence over reviewer
-          agent suggestions.
-        done: false
-      - prompt: >
-          Include explicit instructions that even if the reviewer agent marks
-          something as high priority or critical, the user's feedback can
-          override these recommendations, and the orchestrator should respect
-          the user's judgment.
-        done: false
-      - prompt: >
-          Add guidance that if the user indicates certain reviewer feedback is
-          incorrect or not important, the orchestrator should proceed
-          accordingly rather than insisting on addressing reviewer concerns that
-          the user has dismissed.
-        done: false
 rmfilter:
   - src/rmplan/executors/claude_code.ts
   - src/rmplan/executors/claude_code

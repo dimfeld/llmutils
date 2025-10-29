@@ -50,85 +50,28 @@ project:
     prompting logic.
 tasks:
   - title: Upgrade Permission Prompt to a Select Input
-    done: false
+    done: true
     description: 'Convert the existing boolean `confirm` prompt into a `select`
       prompt. The new prompt will provide the user with three choices: "Allow"
       (for one-time execution), "Disallow" (for one-time denial), and "Always
       Allow" (to approve all future requests for this tool).'
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/executors/claude_code.ts`, import `select` from
-          `@inquirer/prompts` in addition to the existing `confirm` import.
-        done: true
-      - prompt: >
-          Within the `createPermissionSocketServer` method, replace the
-          `confirm` call with a `select` call. The new prompt should have a
-          similar message but present the user with three choices: "Allow",
-          "Disallow", and "Always Allow".
-        done: true
-      - prompt: >
-          Store the string result from the `select` prompt in a variable (e.g.,
-          `userChoice`). Update the logic to set the `approved` variable to
-          `true` if the user selects "Allow" or "Always Allow", and `false` for
-          "Disallow". The special handling for "Always Allow" will be
-          implemented in a subsequent task.
-        done: true
   - title: Implement In-Memory Storage for "Always Allow" Rules
-    done: false
+    done: true
     description: Create an in-memory data structure, such as a `Set` or `Map`,
       within the `ClaudeCodeExecutor` class. This structure will hold the names
       of tools that the user has marked as "Always Allow" during the current
       application session.
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps:
-      - prompt: >
-          In the `ClaudeCodeExecutor` class definition, add a new private
-          instance property named `alwaysAllowedTools`. Initialize this property
-          as a `new Set<string>()` to hold the names of tools that are approved
-          for the entire session.
-        done: true
   - title: Bypass Prompt for Pre-Approved Tools
-    done: false
+    done: true
     description: Modify the logic in `createPermissionSocketServer` to check the
       in-memory store before displaying the permission prompt. If the tool
       requesting permission is already in the "Always Allow" set, the request
       should be approved automatically without any user interaction.
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps:
-      - prompt: >
-          In the `createPermissionSocketServer` method, at the beginning of the
-          `socket.on('data', ...)` event handler, add logic to check if the
-          `tool_name` from the incoming message exists in the
-          `this.alwaysAllowedTools` set.
-        done: true
-      - prompt: >
-          If the `tool_name` is found in the set, send an `approved: true`
-          response directly to the socket and return from the handler to bypass
-          the user prompt. Be sure to add a log message indicating that the tool
-          was automatically approved.
-        done: true
   - title: Update State When "Always Allow" is Selected
-    done: false
+    done: true
     description: Enhance the prompt's handling logic so that when a user selects the
       "Always Allow" option, the corresponding `tool_name` is added to the
       in-memory data structure for future reference in the session.
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps:
-      - prompt: >
-          In `createPermissionSocketServer`, modify the logic that processes the
-          result from the `select` prompt.
-        done: true
-      - prompt: >
-          If the user's choice is "Always Allow", add the `tool_name` from the
-          permission request to the `this.alwaysAllowedTools` set before sending
-          the approval response. The logic to set `approved` to `true` should
-          already be in place from the first task.
-        done: true
 changedFiles:
   - src/rmplan/executors/claude_code.ts
 rmfilter:

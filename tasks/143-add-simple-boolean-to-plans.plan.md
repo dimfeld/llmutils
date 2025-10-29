@@ -58,9 +58,6 @@ tasks:
       is properly typed in PlanSchema and PhaseSchema types. Add schema
       validation test cases to verify the field is correctly parsed and defaults
       to false."
-    files: []
-    docs: []
-    steps: []
   - title: Add --simple flag to rmplan add command
     done: true
     description: Update src/rmplan/rmplan.ts to add `.option('--simple', 'Mark this
@@ -68,9 +65,6 @@ tasks:
       definition. Update src/rmplan/commands/add.ts handleAddCommand to read
       options.simple and set it on the plan object before writing. Add test
       cases for creating plans with --simple flag.
-    files: []
-    docs: []
-    steps: []
   - title: Update MCP generate prompt to check plan.simple field
     done: true
     description: "Modify the MCP prompt registration in
@@ -79,9 +73,6 @@ tasks:
       the research phase and return the generate-plan-simple prompt directly. If
       false or undefined, use the normal research → generate flow. Ensure this
       logic correctly reads the plan schema."
-    files: []
-    docs: []
-    steps: []
   - title: Update generate command to respect plan.simple field
     done: true
     description: "In src/rmplan/commands/generate.ts handleGenerateCommand, after
@@ -89,9 +80,6 @@ tasks:
       options.simple = true unless the user explicitly passed --no-simple on the
       command line. Implement precedence: explicit CLI flags override plan
       field. Add test cases for plan-driven simple mode selection."
-    files: []
-    docs: []
-    steps: []
   - title: Test simple field integration across workflows
     done: true
     description: "Create comprehensive tests verifying: (1) Plans created with
@@ -101,9 +89,6 @@ tasks:
       correctly override plan field, (5) Existing plans without simple field
       default to false, (6) Agent/run commands honor simple field during
       execution."
-    files: []
-    docs: []
-    steps: []
 changedFiles:
   - src/rmplan/commands/add.ts
   - src/rmplan/commands/agent/agent.ts

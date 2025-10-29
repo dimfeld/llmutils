@@ -173,9 +173,6 @@ tasks:
       };
 
       ```
-    files: []
-    docs: []
-    steps: []
   - title: Implement list format output (default)
     done: true
     description: |-
@@ -215,9 +212,6 @@ tasks:
       - Display dependency summary with status indicators
       - Support `--verbose` flag to show file paths
       - Add helpful usage hints at bottom
-    files: []
-    docs: []
-    steps: []
   - title: Implement table format output
     done: true
     description: >-
@@ -265,9 +259,6 @@ tasks:
       log(table(tableData, config));
 
       ```
-    files: []
-    docs: []
-    steps: []
   - title: Implement JSON format output
     done: true
     description: >-
@@ -341,9 +332,6 @@ tasks:
       }
 
       ```
-    files: []
-    docs: []
-    steps: []
   - title: Register ready command in CLI
     done: true
     description: >-
@@ -383,9 +371,6 @@ tasks:
       - Validate `--priority` is valid priority value if specified
 
       - All errors handled by `handleCommandError`
-    files: []
-    docs: []
-    steps: []
   - title: Add MCP tool for list-ready-plans
     done: true
     description: >-
@@ -515,9 +500,6 @@ tasks:
       });
 
       ```
-    files: []
-    docs: []
-    steps: []
   - title: Write comprehensive tests for ready command
     done: true
     description: >-
@@ -660,9 +642,6 @@ tasks:
           - Plans with 'maybe' priority (should be included)
           - Circular dependencies (should not crash)
           - Missing dependency plans (should handle gracefully)
-    files: []
-    docs: []
-    steps: []
   - title: Write tests for MCP list-ready-plans tool
     done: true
     description: >-
@@ -748,9 +727,6 @@ tasks:
       });
 
       ```
-    files: []
-    docs: []
-    steps: []
   - title: Update README with ready command documentation
     done: true
     description: >-
@@ -887,9 +863,6 @@ tasks:
       - Quick start section if relevant
 
       - Any command comparison tables
-    files: []
-    docs: []
-    steps: []
 changedFiles:
   - README.md
   - src/rmplan/commands/ready.test.ts

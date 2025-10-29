@@ -88,152 +88,92 @@ tasks:
       various git remote URL formats and extract normalized repository
       information. Include support for GitHub, GitLab, Bitbucket, and generic
       git URLs.
-    files: []
-    docs: []
-    steps: []
   - title: Implement Repository Name Derivation
     done: true
     description: Add `deriveRepositoryName()` function that converts parsed URLs to
       filesystem-safe directory names. Handle special characters, ensure
       uniqueness, and provide fallback for local-only repositories.
-    files: []
-    docs: []
-    steps: []
   - title: Update getGitRepository Function
     done: true
     description: Refactor `getGitRepository()` in `src/common/git.ts` to use the new
       parser for more robust URL handling while maintaining backward
       compatibility.
-    files: []
-    docs: []
-    steps: []
   - title: Add Comprehensive Tests
     done: true
     description: Write unit tests covering all supported URL formats, edge cases,
       and fallback scenarios. Include tests for repositories without remotes.
-    files: []
-    docs: []
-    steps: []
   - title: Create RepositoryConfigResolver Class
     done: true
     description: Implement `src/rmplan/repository_config_resolver.ts` with methods
       for determining external config paths, checking existence, and creating
       directory structure.
-    files: []
-    docs: []
-    steps: []
   - title: Extend Config Loading Logic
     done: true
     description: Update `loadEffectiveConfig()` in `src/rmplan/configLoader.ts` to
       use RepositoryConfigResolver when no local config exists. Add
       `isUsingExternalStorage` flag to config.
-    files: []
-    docs: []
-    steps: []
   - title: Add User Messaging
     done: true
     description: Implement clear messaging that informs users when external
       configuration storage is being used, including the specific path being
       used.
-    files: []
-    docs: []
-    steps: []
   - title: Create Directory Structure Tests
     done: true
     description: Add integration tests that verify directory creation, permission
       handling, and config discovery with various repository configurations.
-    files: []
-    docs: []
-    steps: []
   - title: Update resolveTasksDir Function
     done: true
     description: Modify `resolveTasksDir()` in `src/rmplan/configSchema.ts` to check
       for external storage mode and return appropriate directory path.
-    files: []
-    docs: []
-    steps: []
   - title: Verify Plan Operations Compatibility
     done: true
     description: Test and fix any issues with plan file operations when using
       external storage, ensuring proper path resolution for both plans and
       repository files.
-    files: []
-    docs: []
-    steps: []
   - title: Add Path Resolution Helpers
     done: true
     description: Create helper functions to manage path resolution between
       repository files and external storage, ensuring clear separation of
       concerns.
-    files: []
-    docs: []
-    steps: []
   - title: Create Integration Tests
     done: true
     description: Write comprehensive integration tests covering all plan commands
       with external storage, including edge cases like moving between
       repositories.
-    files: []
-    docs: []
-    steps: []
   - title: Update Claude Code Executor
     done: true
     description: Modify `src/rmplan/executors/claude_code.ts` to add `--add-dir`
       argument when external storage is active, passing the repository config
       directory path.
-    files: []
-    docs: []
-    steps: []
   - title: Update Codex CLI Executor
     done: true
     description: Modify `src/rmplan/executors/codex_cli.ts` to include external
       config directory in `sandbox_workspace_write.writable_roots`
       configuration.
-    files: []
-    docs: []
-    steps: []
   - title: Add Conditional Logic
     done: true
     description: Implement logic to only add directory access when
       `isUsingExternalStorage` flag is true in the configuration.
-    files: []
-    docs: []
-    steps: []
   - title: Test Executor Configurations
     done: true
     description: Create tests verifying correct command construction for both
       executors with and without external storage.
-    files: []
-    docs: []
-    steps: []
   - title: Update README Documentation
     done: true
     description: Add comprehensive documentation to README explaining external
       storage, including when it's used, directory structure, and examples.
-    files: []
-    docs: []
-    steps: []
   - title: Improve User Messaging
     done: true
     description: Enhance messages shown when external storage is activated to
       include helpful information about storage location and management.
-    files: []
-    docs: []
-    steps: []
   - title: Add Storage Management Commands (Optional)
     done: true
     description: Consider adding `rmplan storage list` and `rmplan storage clean`
       commands for managing external storage directories.
-    files: []
-    docs: []
-    steps: []
   - title: Create Example Workflows
     done: true
     description: Document example workflows for common scenarios like contributing
       to open-source projects or working with client repositories.
-    files: []
-    docs: []
-    steps: []
 changedFiles:
   - README.md
   - src/common/git.test.ts

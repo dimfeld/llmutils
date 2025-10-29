@@ -39,128 +39,27 @@ project:
     incremental progress with continuous testing.
 tasks:
   - title: Update README Files
-    done: false
+    done: true
     description: Revise the main `README.md` and `CLAUDE.md` to accurately describe
       the new directory structure, module responsibilities, and key
       architectural changes resulting from the refactoring.
-    files:
-      - README.md
-      - CLAUDE.md
-    steps:
-      - prompt: >
-          Review and update `CLAUDE.md`. Pay close attention to the "Repository
-          Structure" and "Core Architecture" sections. Ensure they reflect the
-          new modular organization, particularly the separation of `rmplan` into
-          sub-command files and the consolidation of utilities into
-          `src/common`. Update any workflow examples that might be affected by
-          these changes.
-        done: true
-      - prompt: >
-          Review and update the root `README.md` file. Update the project's
-          description and architecture sections to reflect the refactoring.
-          Ensure that usage examples for `rmplan`, `rmfilter`, and `rmpr` are
-          accurate and demonstrate the new modular approach.
-        done: true
   - title: Update Code Comments and JSDoc
-    done: false
+    done: true
     description: Review and update code comments and JSDoc annotations, especially
       for functions or modules that were moved or significantly refactored.
       Ensure comments accurately reflect the current state of the code and its
       new responsibilities.
-    files:
-      - src/rmplan/rmplan.ts
-      - src/rmpr/main.ts
-      - src/rmfilter/rmfilter.ts
-      - src/common/git.ts
-      - src/common/fs.ts
-      - src/common/process.ts
-      - src/rmplan/actions.ts
-    steps:
-      - prompt: >
-          Review `src/rmplan/rmplan.ts` and the command handlers in
-          `src/rmplan/commands/`. Add or update JSDoc comments to explain the
-          new command-delegation architecture. Ensure each command handler file
-          has a module-level comment describing its purpose.
-        done: true
-      - prompt: >
-          Review `src/rmpr/main.ts` and `src/rmfilter/rmfilter.ts`. Update
-          module-level comments and JSDoc for key functions to clarify their
-          responsibilities and their interactions with the `src/common` modules.
-        done: true
-      - prompt: >
-          Review the utility modules in `src/common/`, such as `git.ts`,
-          `fs.ts`, and `process.ts`. Add clear JSDoc comments to all exported
-          functions, explaining their purpose, parameters, and return values.
-          Add module-level comments to describe the scope of each utility file.
-        done: true
-      - prompt: >
-          Review `src/rmplan/actions.ts`. This file contains core logic that was
-          likely impacted by the refactoring. Update comments and JSDoc to
-          reflect any changes in function responsibilities or interactions with
-          other modules.
-        done: true
   - title: Final Code Review
-    done: false
+    done: true
     description: Conduct a final review of the refactored codebase, focusing on
       module boundaries and dependency clarity. Identify and fix any remaining
       dependency issues, such as `common` modules importing from feature modules
       (`rmfilter`, `rmplan`, `rmpr`).
-    files:
-      - src/common/github/identifiers.ts
-      - src/rmfilter/utils.ts
-      - src/common/git.ts
-      - src/rmpr/main.ts
-    steps:
-      - prompt: >
-          Analyze the dependency graph and identify that
-          `src/common/github/identifiers.ts` incorrectly imports
-          `getGitRepository` from `src/rmfilter/utils.ts`. This violates the
-          principle that common utilities should not depend on feature-specific
-          modules.
-        done: true
-      - prompt: >
-          Move the `getGitRepository` function from `src/rmfilter/utils.ts` to
-          `src/common/git.ts` to make it a truly common utility, available to
-          all modules without creating improper dependencies.
-        done: true
-      - prompt: >
-          Update the import statement in `src/common/github/identifiers.ts` to
-          import `getGitRepository` from its new location in
-          `src/common/git.ts`.
-        done: true
-      - prompt: >
-          Search the codebase for any other usages of `getGitRepository` (e.g.,
-          in `rmpr/main.ts` or its dependencies) and update their imports to
-          point to `src/common/git.ts` as well.
-        done: true
   - title: Clean Up Unused Code
-    done: false
+    done: true
     description: Identify and remove any old files, unused functions, or dead code
       that may have resulted from the reorganization. This includes
       consolidating misplaced utilities.
-    files:
-      - src/rmplan/utils/env.ts
-      - src/common/env.ts
-      - src/rmplan/rmplan.ts
-    steps:
-      - prompt: >
-          The `loadEnv` function is currently in `src/rmplan/utils/env.ts` and
-          re-exported by `src/common/env.ts`. Move the implementation of
-          `loadEnv` from `src/rmplan/utils/env.ts` into `src/common/env.ts` to
-          centralize it properly.
-        done: true
-      - prompt: >
-          Update `src/rmplan/rmplan.ts` and any other files that use `loadEnv`
-          to import it directly from `src/common/env.ts`.
-        done: true
-      - prompt: |
-          Delete the now-redundant `src/rmplan/utils/env.ts` file.
-        done: true
-      - prompt: >
-          Perform a codebase-wide search for any other unused files, functions,
-          or exports that are remnants of the refactoring. A tool like `knip` or
-          `ts-prune` can be helpful here. Remove any identified dead code.
-        done: true
 changedFiles:
   - .cursor/rules/testing.mdc
   - CLAUDE.md

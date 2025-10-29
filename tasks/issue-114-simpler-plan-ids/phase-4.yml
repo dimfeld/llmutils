@@ -49,8 +49,6 @@ tasks:
       filename convention. - Confirm compatibility with plans generated from
       multiphase task separation. - Update any internal logic that might have
       relied on the old ID format or phase structure."
-    files: []
-    steps: []
   - title: Deprecate or Refactor `generatePhaseId`
     done: false
     description: Evaluate the `generatePhaseId` function in
@@ -58,8 +56,6 @@ tasks:
       entities with their own file IDs, this function may be obsolete and can be
       removed. If a concept of "phase" is still used for grouping or display,
       refactor as needed.
-    files: []
-    steps: []
   - title: Comprehensive Integration Testing
     done: false
     description: "Develop and execute integration tests that cover: - End-to-end
@@ -67,8 +63,6 @@ tasks:
       ID conflict resolution during typical Git workflows (simulated merges). -
       Processing of multiphase plans into individual task-plans and their
       subsequent execution. - All `rmplan` CLI commands with various options."
-    files: []
-    steps: []
   - title: Update Documentation
     done: false
     description: "Update `README.md` and any other user-facing or developer
@@ -76,8 +70,6 @@ tasks:
       file naming. - The automatic ID conflict resolution mechanism. - The
       change in how multiphase plans are processed and saved as individual
       tasks. - Any changes to CLI command behavior or output."
-    files: []
-    steps: []
 rmfilter:
   - src/rmplan
   - src/common

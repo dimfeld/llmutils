@@ -39,19 +39,6 @@ tasks:
       to it. This task involves modifying the function to correctly use the
       `options.issueUrls` and populate the `issue` field for each generated
       phase file.
-    files:
-      - src/rmplan/process_markdown.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/process_markdown.ts`, modify the `saveMultiPhaseYaml`
-          function to correctly handle `options.issueUrls`. Remove the unused
-          `issueUrl` variable declaration. Inside the first `for` loop that
-          iterates over `parsedYaml.phases`, add logic to assign
-          `options.issueUrls` to `phase.issue` if `options.issueUrls` is
-          provided and has content. This will ensure the issue URL from the
-          command is propagated to each generated phase file, making its
-          behavior consistent with the single-phase logic.
-        done: false
   - title: Add tests for setting the issue field in generated plans
     done: false
     description: Create tests to verify that the `issue` field is correctly
@@ -60,43 +47,6 @@ tasks:
       will need to mock the GitHub API and LLM responses to provide predictable
       data and assert that the generated YAML files contain the expected issue
       URL.
-    files:
-      - src/rmplan/process_markdown.test.ts
-    steps:
-      - prompt: >
-          Create a new test file at `src/rmplan/process_markdown.test.ts`. Set
-          up the test suite with `beforeEach` and `afterEach` hooks to manage a
-          temporary directory for output files using `fs.mkdtemp`. Use the
-          `ModuleMocker` from `src/testing.js` to mock dependencies,
-          specifically `id_utils.generateNumericPlanId` to return a predictable
-          ID (e.g., 101) and `common/process.commitAll` to prevent actual git
-          operations during tests.
-        done: false
-      - prompt: >
-          Add a test case to verify that `extractMarkdownToYaml` correctly adds
-          an issue URL to a single-phase plan. Provide a valid single-phase YAML
-          string as the input text to bypass the LLM conversion step. In the
-          options object passed to the function, include an `issueUrls` array
-          with a sample GitHub issue URL. After calling the function, read the
-          generated YAML file from the temporary directory and assert that its
-          `issue` field contains the provided URL.
-        done: false
-      - prompt: >
-          Add a test case to verify that `extractMarkdownToYaml` correctly adds
-          an issue URL to all files of a multi-phase plan. Provide a valid
-          multi-phase YAML string as input. In the options, include an
-          `issueUrls` array with a sample URL. After the function runs, verify
-          that a subdirectory for the plan was created, then read each of the
-          generated phase YAML files. Assert that every file contains the
-          correct `issue` field with the provided URL.
-        done: false
-      - prompt: >
-          Enhance the previous tests or add new ones to confirm that the `issue`
-          field is correctly omitted when `options.issueUrls` is not provided.
-          Run both single-phase and multi-phase scenarios without the
-          `issueUrls` option and assert that the generated YAML files do not
-          contain an `issue` field.
-        done: false
 rmfilter:
   - src/rmplan/commands/generate.ts
   - --with-imports

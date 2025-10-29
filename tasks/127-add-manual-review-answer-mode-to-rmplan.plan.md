@@ -84,9 +84,6 @@ tasks:
       - src/rmpr/modes/inline_comments.ts (removeAiCommentMarkers function)
 
       - src/common/git.ts (getTrunkBranch, commitAll, hasUncommittedChanges)
-    files: []
-    docs: []
-    steps: []
   - title: Register commands in CLI
     done: true
     description: |-
@@ -106,9 +103,6 @@ tasks:
       Both commands accept optional path arguments for filtering.
 
       Also update `src/rmplan/commands/index.ts` to export both handlers.
-    files: []
-    docs: []
-    steps: []
   - title: Implement prompt generation with path filtering
     done: true
     description: >-
@@ -133,9 +127,6 @@ tasks:
 
       The prompt should use executionMode: 'review' to avoid orchestration
       overhead.
-    files: []
-    docs: []
-    steps: []
   - title: Implement smart cleanup logic
     done: true
     description: >-
@@ -160,9 +151,6 @@ tasks:
          - Uses @inquirer/prompts confirm() for user prompt
 
       Ensure proper error handling for ripgrep failures.
-    files: []
-    docs: []
-    steps: []
   - title: Add base branch resolution logic
     done: true
     description: |-
@@ -179,9 +167,6 @@ tasks:
       - Detached HEAD state
       - Missing main/master branches
       - jj vs git repository detection
-    files: []
-    docs: []
-    steps: []
   - title: Implement commit functionality
     done: true
     description: >-
@@ -204,9 +189,6 @@ tasks:
 
 
       Log appropriate messages for user visibility.
-    files: []
-    docs: []
-    steps: []
   - title: Write tests for address-comments command
     done: true
     description: |-
@@ -235,9 +217,6 @@ tasks:
 
       Use real filesystem operations (mkdtemp) rather than mocks where possible.
       Test both git and jj repository scenarios.
-    files: []
-    docs: []
-    steps: []
   - title: Write tests for cleanup-comments command
     done: true
     description: >-
@@ -259,9 +238,6 @@ tasks:
 
       Test with temporary directories containing fixtures with AI comments in
       various formats.
-    files: []
-    docs: []
-    steps: []
   - title: Update documentation
     done: true
     description: |-
@@ -290,9 +266,6 @@ tasks:
          - Optional standalone cleanup
 
       Include comparison with answer-pr to clarify the difference.
-    files: []
-    docs: []
-    steps: []
   - title: Manual testing across executors
     done: false
     description: |-
@@ -325,9 +298,6 @@ tasks:
       6. Test standalone cleanup-comments command
 
       Document any executor-specific quirks or limitations.
-    files: []
-    docs: []
-    steps: []
 changedFiles:
   - README.md
   - src/rmplan/commands/addressComments.test.ts

@@ -361,7 +361,14 @@ async function fixDiscoveredFromReferences(
   return { cleared, errors };
 }
 
-const OBSOLETE_TASK_KEYS = ['files', 'docs', 'steps', 'examples'];
+const OBSOLETE_TASK_KEYS = [
+  'files',
+  'docs',
+  'steps',
+  'examples',
+  'include_importers',
+  'include_imports',
+];
 
 function detectObsoleteTaskKeys(
   plans: Map<number, PlanSchema & { filename: string }>
@@ -504,7 +511,10 @@ export async function handleValidateCommand(
     obsoleteKeyIssues = detectObsoleteTaskKeys(planMap);
 
     if (obsoleteKeyIssues.length > 0) {
-      const totalTasks = obsoleteKeyIssues.reduce((sum, issue) => sum + issue.taskIndices.length, 0);
+      const totalTasks = obsoleteKeyIssues.reduce(
+        (sum, issue) => sum + issue.taskIndices.length,
+        0
+      );
       console.log(
         chalk.yellow.bold(
           `Found ${obsoleteKeyIssues.length} plan${obsoleteKeyIssues.length === 1 ? '' : 's'} with ${totalTasks} task${totalTasks === 1 ? '' : 's'} containing obsolete keys.`

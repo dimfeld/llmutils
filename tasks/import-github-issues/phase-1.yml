@@ -38,115 +38,26 @@ project:
     consistency and reduce implementation effort.
 tasks:
   - title: Create the `rmplan import` Command Structure
-    done: false
+    done: true
     description: Create the new `rmplan import` command in the main CLI file and set
       up its handler. This involves adding the command definition, defining the
       `--issue` option, and creating the `import.ts` command handler file to
       which the action will be delegated.
-    files:
-      - src/rmplan/rmplan.ts
-      - src/rmplan/commands/import.ts
-      - src/rmplan/commands/import.test.ts
-    steps:
-      - prompt: >
-          Create a new test file `src/rmplan/commands/import.test.ts`. Set up a
-          basic test suite for the `handleImportCommand` function, but leave the
-          tests as placeholders for now. This establishes the testing foundation
-          for the new command.
-        done: true
-      - prompt: >
-          In `src/rmplan/rmplan.ts`, add a new command definition for `import`.
-          It should accept an optional `[issue]` positional argument. This
-          structure should mirror existing commands like `generate`. The action
-          should dynamically import `handleImportCommand` from the new
-          `src/rmplan/commands/import.ts` file.
-        done: true
-      - prompt: >
-          In `src/rmplan/rmplan.ts`, add an `--issue <url|number>` option to the
-          `import` command as an alternative way to specify the target issue.
-        done: true
-      - prompt: >
-          Create the new command handler file `src/rmplan/commands/import.ts`.
-          Implement the `handleImportCommand` function that accepts an optional
-          issue string and the command options. The function should determine
-          the issue specifier from either the positional argument or the
-          `--issue` flag. For this initial phase, if no issue is provided, it
-          should throw an error stating that an issue must be specified.
-        done: true
   - title: Implement Single-Issue Import Logic
-    done: false
+    done: true
     description: Develop the primary logic for importing a single issue. This
       function will be called when the `--issue` flag is used. It will use the
       existing `getInstructionsFromGithubIssue` helper to fetch the issue data,
       prompt the user to select which body and comments to include, and parse
       any embedded `rmfilter` arguments from the text.
-    files:
-      - src/rmplan/commands/import.ts
-      - src/rmplan/commands/import.test.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/commands/import.ts`, modify `handleImportCommand` to
-          call the `getInstructionsFromGithubIssue` function from
-          `src/common/github/issues.ts`. Pass the resolved issue specifier to
-          it. This function will handle fetching the issue, prompting for
-          content selection, and parsing `rmpr` options.
-        done: true
-      - prompt: >
-          Implement a check to prevent creating duplicate plans. Before
-          proceeding with an import, use `readAllPlans` from
-          `src/rmplan/plans.ts` to get all existing plans. Iterate through them
-          and check if any plan's `issue` field contains the URL of the issue
-          being imported. If a match is found, log a warning and exit gracefully
-          without creating a new file.
-        done: true
-      - prompt: >
-          In `src/rmplan/commands/import.test.ts`, write a test for the
-          single-issue import logic. Use the `ModuleMocker` to mock
-          `getInstructionsFromGithubIssue` to return predictable data. Verify
-          that the handler correctly receives and processes this data. Also, add
-          a test case to ensure the duplicate check works by mocking
-          `readAllPlans` to return a plan that contains the target issue URL.
-        done: true
   - title: Implement Stub Plan File Creation
-    done: false
+    done: true
     description: Create a function that takes the processed issue data and generates
       a valid, minimal "stub" plan file. This plan will include the issue's
       title, the user-selected details, the associated GitHub issue URL, and any
       parsed `rmfilter` arguments. It will be assigned a new, unique plan ID and
       will not contain any tasks, making it ready for the `rmplan generate`
       command.
-    files:
-      - src/rmplan/commands/import.ts
-      - src/rmplan/commands/import.test.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/commands/import.ts`, create a helper function that
-          takes the data from `getInstructionsFromGithubIssue` and constructs a
-          `PlanSchema` object. Map the issue's title to the plan's `title` and
-          `goal`, the selected text to `details`, the issue URL to the `issue`
-          array, and any parsed `rmprOptions` to the `rmfilter` field. Ensure
-          the `tasks` array is empty.
-        done: true
-      - prompt: >
-          In the new helper function, assign a unique numeric ID to the plan.
-          Use `getMaxNumericPlanId` from `src/rmplan/plans.ts` to get the next
-          available ID. Also, set the `createdAt` and `updatedAt` timestamps,
-          and default the `status` to `pending`.
-        done: true
-      - prompt: >
-          In `handleImportCommand`, after generating the stub plan object,
-          determine the output file path. Use the `suggestedFileName` from the
-          issue data and resolve it against the configured `tasks` directory.
-          Use the `writePlanFile` function from `src/rmplan/plans.ts` to save
-          the new stub plan file to disk and log a success message.
-        done: true
-      - prompt: >
-          Update the tests in `src/rmplan/commands/import.test.ts` to verify the
-          file creation process. Mock `getMaxNumericPlanId` and `writePlanFile`.
-          Assert that `writePlanFile` is called with the correct file path and a
-          valid `PlanSchema` object that matches the expected stub structure,
-          including the correct ID, metadata, and empty task list.
-        done: true
 changedFiles:
   - src/common/model_factory.ts
   - src/rmplan/commands/generate.ts

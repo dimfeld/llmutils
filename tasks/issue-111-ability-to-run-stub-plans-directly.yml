@@ -29,7 +29,7 @@ project:
     faster workflow for simpler tasks.
 tasks:
   - title: Detect stub plans and prompt the user for action
-    done: false
+    done: true
     description: In the `rmplan run` command logic, when a plan is identified as
       needing preparation (i.e., it lacks detailed steps), present an
       interactive prompt to the user. The prompt will offer the choice to either
@@ -37,130 +37,34 @@ tasks:
       directly using its high-level description. In non-interactive mode, the
       process should default to the safer, existing behavior of generating
       steps.
-    files:
-      - src/rmplan/commands/agent.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/commands/agent.ts`, import the `select` function from
-          `@inquirer/prompts`.
-        done: true
-      - prompt: >
-          In the `rmplanAgent` function, locate the `if (needsPreparation)`
-          block. Inside this block, add a condition to check if the session is
-          interactive (`!options.nonInteractive`).
-        done: true
-      - prompt: >
-          If the session is interactive, use the `select` prompt to ask the user
-          whether to "Generate detailed steps first" or "Run the plan directly".
-          Store the user's choice in a new variable.
-        done: true
-      - prompt: >
-          Modify the logic so that if the user chooses to generate steps, or if
-          the session is non-interactive, the existing `preparePhase` call is
-          executed. This maintains the current default behavior.
-        done: true
   - title: Implement the direct execution logic for stub plans
-    done: false
+    done: true
     description: Create a new logic path for when a user opts for direct execution.
       This path will be responsible for constructing a single, comprehensive
       prompt from the plan's `goal` and `details` fields. This flow will bypass
       the standard step-by-step execution loop and prepare for a one-shot
       execution of the entire plan.
-    files:
-      - src/rmplan/commands/agent.ts
-    steps:
-      - prompt: >
-          In `rmplanAgent`, create a new logic branch to handle the "run
-          directly" choice from the user prompt. This branch should bypass the
-          main `while` loop for step-by-step execution.
-        done: true
-      - prompt: >
-          Inside this new branch, construct a single prompt string. Combine the
-          `planData.goal` and `planData.details` into a clear, well-structured
-          prompt using markdown headers (e.g., `# Goal`, `## Details`).
-        done: true
   - title: Integrate direct execution with the executor system
-    done: false
+    done: true
     description: Ensure the prompt constructed from the stub plan is correctly
       passed to the configured executor's `execute` method. The existing logic
       for building and configuring executors should be leveraged to ensure that
       any executor can handle this new, single-prompt execution model.
-    files:
-      - src/rmplan/commands/agent.ts
-    steps:
-      - prompt: >
-          In the direct execution logic branch, call `await executor.execute()`
-          using the prompt constructed from the plan's high-level details. The
-          `executor` instance is already available in the function scope.
-        done: true
-      - prompt: >
-          Wrap the `executor.execute()` call in a `try...catch` block to handle
-          potential errors. If an error occurs, set the `hasError` flag to true
-          and log the error, mirroring the error handling in the main execution
-          loop.
-        done: true
   - title: Update plan status to 'done' after direct execution
-    done: false
+    done: true
     description: After the executor successfully completes its task, the plan's
       status must be updated to 'done'. This will involve using existing utility
       functions to modify the plan file. If the run was initiated with a commit
       flag, the changes, including the updated plan file, should be committed to
       version control with a message derived from the plan's title.
-    files:
-      - src/rmplan/commands/agent.ts
-    steps:
-      - prompt: >
-          Import `setPlanStatus` from `src/rmplan/plans.ts` and `commitAll` from
-          `src/common/process.ts` into `src/rmplan/commands/agent.ts`.
-        done: true
-      - prompt: >
-          After the `executor.execute()` call succeeds in the direct execution
-          path, invoke `await setPlanStatus(currentPlanFile, 'done')` to update
-          the plan's status.
-        done: true
-      - prompt: >
-          Check if the `options.commit` flag is true. If so, create a commit
-          message based on the plan's title (e.g., `feat(plan): Complete
-          '${planData.title}'`) and use `commitAll` to commit the changes.
-        done: true
-      - prompt: >
-          After completing the direct execution and potential commit, ensure the
-          `rmplanAgent` function exits gracefully, preventing it from falling
-          through to the standard step-by-step execution loop.
-        done: true
   - title: Add tests for the new direct execution flow
-    done: false
+    done: true
     description: Develop a suite of tests to validate the new functionality. These
       tests should confirm that the user is prompted correctly for stub plans,
       that the direct execution prompt is constructed as expected, that the
       executor is invoked properly, and that the plan status is correctly
       updated to 'done' upon completion. The tests should also verify that
       non-interactive mode correctly defaults to the step-generation flow.
-    files:
-      - src/rmplan/commands/agent.test.ts
-    steps:
-      - prompt: >
-          Create a new test file `src/rmplan/commands/agent.test.ts`. Set up
-          `beforeEach` to create a temporary directory with a stub plan file (a
-          plan with no steps). Use the `ModuleMocker` for mocking dependencies.
-        done: true
-      - prompt: >
-          Write a test for the interactive "run directly" flow. Mock
-          `@inquirer/prompts` to simulate the user selecting this option. Assert
-          that the executor's `execute` method is called with the correctly
-          formatted prompt and that `setPlanStatus` is called with 'done'.
-        done: true
-      - prompt: >
-          Write a test for the interactive "generate steps" flow. Mock
-          `@inquirer/prompts` to simulate this choice. Assert that
-          `preparePhase` is called and that the direct execution logic is not
-          triggered.
-        done: true
-      - prompt: >
-          Write a test for the non-interactive mode. Run the agent with
-          `nonInteractive: true`. Assert that `preparePhase` is called by
-          default and that no interactive prompt is shown.
-        done: true
 changedFiles:
   - src/rmplan/commands/agent.test.ts
   - src/rmplan/commands/agent.ts

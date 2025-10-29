@@ -69,84 +69,54 @@ tasks:
       conditional execution that runs the research prompt between planning and
       generation when provided, maintaining session state across all three
       steps.
-    files: []
-    docs: []
-    steps: []
   - title: Create research extraction prompt template
     done: true
     description: Add a new prompt function `generateClaudeCodeResearchPrompt()` to
       `/src/rmplan/prompt.ts` that instructs Claude to format and output all
       research findings in a structured markdown format suitable for appending
       to the plan file.
-    files: []
-    docs: []
-    steps: []
   - title: Update orchestrator response handling
     done: true
     description: Enhance the JSON stream processing in the orchestrator to capture
       research output separately from the final plan output, ensuring proper
       formatting and error handling for the intermediate research step.
-    files: []
-    docs: []
-    steps: []
   - title: Update generate command for three-step flow
     done: true
     description: Modify `/src/rmplan/commands/generate.ts` to always use the
       three-step process when in Claude mode. Update the
       `invokeClaudeCodeForGeneration` wrapper in `/src/rmplan/claude_utils.ts`
       to pass the research prompt to the orchestrator.
-    files: []
-    docs: []
-    steps: []
   - title: Add conditional research extraction to prepare command
     done: true
     description: Update `/src/rmplan/commands/prepare.ts` to check the plan's
       `generatedBy` field and conditionally include the research extraction step
       for 'oneshot' plans. Ensure proper plan file reading and updating with
       research content.
-    files: []
-    docs: []
-    steps: []
   - title: Implement research content insertion logic
     done: true
     description: Create a utility function to append research findings to the plan's
       details field with proper formatting, timestamps, and markdown structure.
       Ensure the research section is preserved during subsequent plan updates.
-    files: []
-    docs: []
-    steps: []
   - title: Create orchestrator unit tests
     done: true
     description: Write comprehensive unit tests for the modified orchestrator in
       `/src/rmplan/executors/claude_code_orchestrator.test.ts`, covering
       successful three-step flow, two-step fallback, and error scenarios.
-    files: []
-    docs: []
-    steps: []
   - title: Add integration tests for commands
     done: true
     description: Create integration tests for generate and prepare commands that
       verify research extraction behavior, including tests for the conditional
       logic based on generatedBy field and proper plan file updates.
-    files: []
-    docs: []
-    steps: []
   - title: Test edge cases and error recovery
     done: true
     description: Implement tests for edge cases including research extraction
       failures, malformed outputs, session interruptions, and verify graceful
       degradation to two-step flow when needed.
-    files: []
-    docs: []
-    steps: []
   - title: Update documentation
     done: true
     description: Update CLAUDE.md and relevant documentation to describe the new
       three-step process, when research extraction occurs, and how to access
       preserved research findings in plan files.
-    files: []
-    docs: []
-    steps: []
 changedFiles:
   - CLAUDE.md
   - README.md

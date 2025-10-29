@@ -12,173 +12,28 @@ createdAt: 2025-06-07T02:04:24.921Z
 updatedAt: 2025-10-27T08:39:04.282Z
 tasks:
   - title: Add `promote` command and Task ID parser
-    done: false
+    done: true
     description: Add the `promote` command to the `rmplan` CLI and create the
       utility for parsing task ID arguments. This sets up the command structure
       and the core logic for identifying which tasks to promote. The task ID
       format is `PLAN_ID.TASK_INDEX` or `PLAN_ID.START_INDEX-END_INDEX`, where
       indices are 1-based.
-    files:
-      - src/rmplan/rmplan.ts
-      - src/rmplan/commands/promote.ts
-      - src/rmplan/utils/id_parser.ts
-      - src/rmplan/utils/id_parser.test.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/rmplan.ts`, add a new command definition for `promote
-          <taskIds...>` with the description "Promote tasks from a plan to new
-          top-level plans". This command should accept a variable number of task
-          ID arguments.
-        done: true
-      - prompt: >
-          Create a new file `src/rmplan/commands/promote.ts` and add a
-          placeholder `handlePromoteCommand` function. This function will take
-          `taskIds` (an array of strings) and `options` as arguments. For now,
-          it can just log the received arguments.
-        done: true
-      - prompt: >
-          In `src/rmplan/rmplan.ts`, import the new `handlePromoteCommand` and
-          wire it up to the `promote` command's action handler. Ensure the
-          handler is wrapped in `handleCommandError` for consistent error
-          handling.
-        done: true
-      - prompt: >
-          Create a new test file `src/rmplan/utils/id_parser.test.ts`. Write
-          tests for a `parseTaskIds` function. Test cases should cover single
-          task IDs (e.g., '35.2'), ranges ('35.2-6'), multiple arguments
-          ('35.2', '36.1'), and invalid formats. The function should return an
-          array of objects like `{ planId: string | number, taskIndex: number
-          }`. Remember that task indices are 1-based in the input string but
-          should be 0-based in the output for array access.
-        done: true
-      - prompt: >
-          Create `src/rmplan/utils/id_parser.ts` and implement the
-          `parseTaskIds` function to pass the tests. This function will take an
-          array of strings, parse them, expand any ranges, and return a flat
-          list of structured task identifiers. It should throw a clear error for
-          any invalid input formats.
-        done: true
   - title: Implement single task promotion logic
-    done: false
+    done: true
     description: Implement the core logic for promoting a single task to a new
       top-level plan. This involves creating the new plan file, updating the
       original plan by removing the task, and adding a dependency on the new
       plan.
-    files:
-      - src/rmplan/commands/promote.ts
-      - src/rmplan/commands/promote.test.ts
-    steps:
-      - prompt: >
-          Create the test file `src/rmplan/commands/promote.test.ts`. Set up a
-          test environment with a temporary directory and a sample plan file
-          containing multiple tasks. Use real filesystem operations as per our
-          testing guidelines.
-        done: true
-      - prompt: >
-          In `promote.test.ts`, write a test case for promoting a single task
-          (e.g., from a plan with ID '1', promote task '1.2'). The test should
-          assert that a new plan file (e.g., '2.yml') is created, its content
-          correctly reflects the promoted task (task title becomes plan goal),
-          and the original plan ('1.yml') is updated to remove the task and add
-          a dependency on the new plan's ID ('2').
-        done: true
-      - prompt: >
-          In `src/rmplan/commands/promote.ts`, begin implementing the
-          `handlePromoteCommand`. Use the `parseTaskIds` utility created in the
-          previous task. For now, you can assume only one task ID is passed.
-        done: true
-      - prompt: >
-          Use `resolvePlanFile` to get the full path to the original plan file
-          and `readPlanFile` to load its content.
-        done: true
-      - prompt: >
-          Extract the specified task from the original plan. Create a new
-          `PlanSchema` object for the new plan. The task's `title` should become
-          the new plan's `goal`, and the task's `description` should become the
-          `details`. The new plan will have an empty `tasks` array, making it a
-          stub plan.
-        done: true
-      - prompt: >
-          Use `generateNumericPlanId` to get a new, unique ID for the new plan.
-          Then, use `writePlanFile` to save the new plan to disk.
-        done: true
-      - prompt: >
-          Modify the original plan object in memory: remove the promoted task
-          from its `tasks` array and add the new plan's ID to its `dependencies`
-          array.
-        done: true
-      - prompt: >
-          Write the updated original plan back to its file using
-          `writePlanFile`. Add logging to inform the user about the promotion
-          and the new file created.
-        done: true
   - title: Implement multi-task and range promotion
-    done: false
+    done: true
     description: Extend the promotion logic to handle multiple task IDs and ranges
       (e.g., `1.2-4`). This includes creating chained dependencies between the
       newly created plans to preserve their original execution order.
-    files:
-      - src/rmplan/commands/promote.ts
-      - src/rmplan/commands/promote.test.ts
-    steps:
-      - prompt: >
-          In `promote.test.ts`, add a test case for promoting a range of tasks
-          (e.g., `1.2-4`). Verify that multiple new plans are created and that
-          they have the correct chained dependencies (e.g., the plan for task 3
-          depends on the plan for task 2, and the plan for task 4 depends on the
-          plan for task 3).
-        done: true
-      - prompt: >
-          In `handlePromoteCommand`, refactor the logic to handle an array of
-          task identifiers from `parseTaskIds`. Group the parsed task
-          identifiers by their `planId` so that all promotions from a single
-          original plan can be processed as a single transaction.
-        done: true
-      - prompt: >
-          Within the loop for each `planId` group, first generate all necessary
-          new plan IDs sequentially. Then, as you create each new plan object,
-          add a dependency on the ID of the previously created plan in the
-          sequence. The first promoted task will have no new dependencies.
-        done: true
-      - prompt: >
-          Update the original plan by removing all promoted tasks at once. Be
-          careful with array indices as you remove items. After removing the
-          tasks, add the IDs of all the newly created plans to the original
-          plan's `dependencies` array.
-        done: true
   - title: Handle edge cases and finalize
-    done: false
+    done: true
     description: Finalize the implementation by handling edge cases, such as
       promoting all tasks from a plan and promoting tasks from different plans
       in a single command invocation.
-    files:
-      - src/rmplan/commands/promote.ts
-      - src/rmplan/commands/promote.test.ts
-    steps:
-      - prompt: >
-          In `promote.test.ts`, add a test case where all tasks from a plan are
-          promoted. The original plan should now have an empty `tasks` array and
-          dependencies on all the new plans. Its status should not change
-          automatically.
-        done: true
-      - prompt: >
-          Add a test for promoting tasks from two different plans in a single
-          command invocation (e.g., `rmplan promote 1.2 2.1`). Verify that both
-          original plans are updated correctly and the correct new plans are
-          created with sequential IDs.
-        done: true
-      - prompt: >
-          Refine the logic in `handlePromoteCommand` to correctly handle these
-          scenarios. Ensure that `generateNumericPlanId` is called before each
-          new plan creation to guarantee unique, sequential IDs across the
-          entire operation, even when promoting from multiple source plans.
-        done: true
-      - prompt: >
-          Review and improve the logging output to be clear and informative,
-          especially for complex promotions involving multiple new plans and
-          modified original plans. The user should understand exactly what was
-          created and what was changed.
-        done: true
 changedFiles:
   - debug_promote.js
   - src/common/github/issues.ts

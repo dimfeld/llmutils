@@ -133,161 +133,101 @@ tasks:
     description: Update `/src/rmplan/rmplan.ts` to add the --simple option after
       line 349 in the `createAgentCommand()` function. Follow the pattern of
       existing flags like --serial-tasks.
-    files: []
-    docs: []
-    steps: []
   - title: Update executor type definitions for simple mode
     done: true
     description: Modify `/src/rmplan/executors/types.ts` to support simple mode in
       ExecutorCommonOptions or ExecutePlanInfo. Consider adding an executionMode
       variant or a separate simpleMode boolean field.
-    files: []
-    docs: []
-    steps: []
   - title: Update executor schemas to include simpleMode option
     done: true
     description: Add simpleMode field to both claudeCodeOptionsSchema and
       codexCliOptionsSchema in `/src/rmplan/executors/schemas.ts`. Include
       proper zod validation and descriptions.
-    files: []
-    docs: []
-    steps: []
   - title: Modify executor build process to pass simple mode flag
     done: true
     description: Update `/src/rmplan/executors/build.ts` buildExecutorAndLog
       function to accept and pass executor-specific options. Modify the call
       site in `/src/rmplan/commands/agent/agent.ts` to pass the simple flag when
       present.
-    files: []
-    docs: []
-    steps: []
   - title: Create simple mode orchestrator prompt
     done: true
     description: Add new `wrapWithOrchestrationSimple()` function in
       `/src/rmplan/executors/claude_code/orchestrator_prompt.ts` that provides
       2-phase orchestration instructions (implement → verify) instead of the
       current 3-phase flow.
-    files: []
-    docs: []
-    steps: []
   - title: Create verifier agent prompt
     done: true
     description: Add `getVerifierAgentPrompt()` function in
       `/src/rmplan/executors/claude_code/agent_prompts.ts` that combines testing
       and validation responsibilities. The verifier should run type checking,
       linting, tests, and add tests if needed.
-    files: []
-    docs: []
-    steps: []
   - title: Update Claude Code executor to branch on simple mode
     done: true
     description: Modify `/src/rmplan/executors/claude_code.ts` execute() method
       around line 789 to check for simple mode and use
       wrapWithOrchestrationSimple() instead of wrapWithOrchestration() when
       appropriate.
-    files: []
-    docs: []
-    steps: []
   - title: Modify agent file generation for simple mode
     done: true
     description: Update `/src/rmplan/executors/claude_code/agent_generator.ts` to
       conditionally generate implementer and verifier agents in simple mode
       instead of implementer, tester, and reviewer agents.
-    files: []
-    docs: []
-    steps: []
   - title: Add failure detection for verifier agent
     done: true
     description: "Extend failure detection in
       `/src/rmplan/executors/failure_detection.ts` to recognize failures from
       the new verifier agent using the existing FAILED: protocol."
-    files: []
-    docs: []
-    steps: []
   - title: Create simple mode execution loop
     done: true
     description: Add new method in `/src/rmplan/executors/codex_cli.ts` for simple
       mode execution that implements the 2-phase loop (implement → verify)
       without the review and fix iteration phases.
-    files: []
-    docs: []
-    steps: []
   - title: Create verifier prompts for Codex
     done: true
     description: Add verifier prompt generation functions in Codex executor that
       instruct the agent to run verification commands and ensure all checks
       pass.
-    files: []
-    docs: []
-    steps: []
   - title: Update main execute method to use simple loop
     done: true
     description: Modify the execute() method in Codex CLI executor to check for
       simple mode and call the new simple execution loop instead of the full
       orchestration loop.
-    files: []
-    docs: []
-    steps: []
   - title: Adapt planning-only detection for simple mode
     done: true
     description: Ensure the planning-only detection and retry mechanism works
       correctly in simple mode, with appropriate retry messages for the
       simplified workflow.
-    files: []
-    docs: []
-    steps: []
   - title: Handle task completion in simple mode
     done: true
     description: Adapt the auto task completion logic to work with the simplified
       output from the 2-phase execution.
-    files: []
-    docs: []
-    steps: []
   - title: Write unit tests for simple mode prompts
     done: true
     description: Create tests for wrapWithOrchestrationSimple() and
       getVerifierAgentPrompt() functions to ensure correct prompt generation.
-    files: []
-    docs: []
-    steps: []
   - title: Write integration tests for Claude Code simple mode
     done: true
     description: Add tests in the Claude Code executor test file that verify the
       complete 2-phase flow works correctly, including agent file generation and
       failure handling.
-    files: []
-    docs: []
-    steps: []
   - title: Write integration tests for Codex CLI simple mode
     done: true
     description: Add tests for the Codex CLI executor's simple mode loop, including
       planning-only detection and retry behavior in the simplified context.
-    files: []
-    docs: []
-    steps: []
   - title: Test interaction with other flags
     done: true
     description: Verify that --simple flag works correctly with other options like
       --batch, --serial-tasks, and --dry-run, ensuring no conflicts or
       unexpected behavior.
-    files: []
-    docs: []
-    steps: []
   - title: Update README and documentation
     done: true
     description: Update the main README.md to document the new --simple flag,
       explaining when to use it and how it differs from the standard execution
       mode. Include examples of usage.
-    files: []
-    docs: []
-    steps: []
   - title: Add CLAUDE.md notes about simple mode
     done: true
     description: Update the CLAUDE.md file with implementation details about the
       simple mode architecture for future development reference.
-    files: []
-    docs: []
-    steps: []
 changedFiles:
   - CLAUDE.md
   - README.md

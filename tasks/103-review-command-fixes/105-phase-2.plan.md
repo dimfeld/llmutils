@@ -45,23 +45,6 @@ tasks:
       following the same pattern as other boolean flags in the codebase.
       Reference the existing options like --dry-run and --save for consistency
       in naming and placement.
-    files:
-      - src/rmplan/rmplan.ts
-    steps:
-      - prompt: >
-          Add a new --autofix option to the review command definition in
-          rmplan.ts after the existing options.
-
-          The option should be a boolean flag with a description explaining that
-          it automatically fixes issues found during review.
-        done: true
-      - prompt: >
-          Also add a --no-autofix option to explicitly disable autofix even if
-          it might be configured elsewhere,
-
-          following the pattern used for other boolean options like
-          --save/--no-save.
-        done: true
   - title: Implement Autofix and Interactive Prompt Logic
     done: true
     description: >
@@ -74,36 +57,6 @@ tasks:
       follow the existing pattern in the codebase, with a clear message and
       appropriate default value. Store the user's decision in a variable that
       will be used to determine whether to proceed with the autofix execution.
-    files:
-      - src/rmplan/commands/review.ts
-    steps:
-      - prompt: >
-          Import the confirm function from @inquirer/prompts at the top of
-          review.ts,
-
-          following the existing import patterns in the file.
-        done: true
-      - prompt: >
-          After the reviewResult is created (around line 428), add logic to
-          check if reviewResult.summary.totalIssues > 0.
-
-          If there are issues and options.autofix is not set, create an
-          interactive confirmation prompt.
-        done: true
-      - prompt: >
-          Create the confirm prompt with a message like "Issues were found
-          during review. Would you like to automatically fix them?"
-
-          Set the default to false for safety. Store the result in a
-          shouldAutofix variable.
-        done: true
-      - prompt: >
-          Combine the autofix flag and prompt result to determine if autofix
-          should proceed:
-
-          const performAutofix = options.autofix || (shouldAutofix &&
-          !options.noAutofix).
-        done: true
   - title: Create and Execute Autofix Prompt
     done: true
     description: >
@@ -118,36 +71,6 @@ tasks:
       executor configuration as the initial review but with the different
       execution mode. Log appropriate messages to inform the user that autofix
       is being executed.
-    files:
-      - src/rmplan/commands/review.ts
-    steps:
-      - prompt: >
-          Create a helper function buildAutofixPrompt that takes the planData,
-          reviewResult, and diffResult as parameters.
-
-          The function should construct a prompt that includes the review
-          findings and instructions to fix all identified issues.
-        done: true
-      - prompt: >
-          In the autofix prompt, include the plan context, the list of issues
-          from reviewResult.issues,
-
-          and clear instructions to fix each issue while maintaining the plan
-          requirements.
-        done: true
-      - prompt: >
-          If performAutofix is true, log a message indicating that autofix is
-          being executed,
-
-          then call executor.execute with the autofix prompt and executionMode
-          set to 'normal' or undefined.
-        done: true
-      - prompt: >
-          After the autofix execution completes, log a success message.
-
-          Handle any errors that might occur during autofix execution with
-          appropriate error messages.
-        done: true
   - title: Add Tests for Autofix Feature
     done: true
     description: >
@@ -160,42 +83,6 @@ tasks:
       simulate user input and verify that the executor is called with the
       correct executionMode in each scenario. Follow the existing test patterns
       in review.test.ts, using the ModuleMocker class for mocking dependencies.
-    files:
-      - src/rmplan/commands/review.test.ts
-    steps:
-      - prompt: >
-          Add a test case that verifies when --autofix flag is provided and
-          issues are found,
-
-          the executor is called twice: once with executionMode 'simple' for
-          review, then with 'normal' for autofix.
-        done: true
-      - prompt: >
-          Add a test case for the interactive prompt scenario: when issues are
-          found without --autofix flag,
-
-          mock the confirm function to return true and verify the autofix
-          execution occurs.
-        done: true
-      - prompt: >
-          Add a test case where the user declines the autofix prompt (confirm
-          returns false),
-
-          and verify that the executor is only called once for the review, not
-          for autofix.
-        done: true
-      - prompt: >
-          Add a test case where no issues are found (totalIssues = 0),
-
-          and verify that no prompt appears and no autofix execution occurs
-          regardless of the --autofix flag.
-        done: true
-      - prompt: >
-          Add a test to verify that --no-autofix flag prevents autofix even when
-          issues are found,
-
-          ensuring no prompt appears and no second execution occurs.
-        done: true
 rmfilter:
   - src/rmplan/rmplan.ts
   - src/rmplan/commands/review.ts

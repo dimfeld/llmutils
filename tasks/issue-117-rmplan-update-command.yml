@@ -50,327 +50,57 @@ project:
     allowing for changes and refinements as a project evolves.
 tasks:
   - title: Create the `update` command structure
-    done: false
+    done: true
     description: This task involves setting up the boilerplate for the new command.
       We will add the `update` command to the main CLI entry point, define its
       arguments and options, and create the new handler file where the core
       logic will reside.
-    files:
-      - src/rmplan/rmplan.ts
-      - src/rmplan/commands/update.ts
-      - src/rmplan/commands/update.test.ts
-    steps:
-      - prompt: >
-          Create a new command handler file at `src/rmplan/commands/update.ts`.
-
-          This file should export an async function `handleUpdateCommand` that
-          accepts `planFile`, `options`, and `command` arguments, similar to
-          other command handlers.
-        done: true
-      - prompt: >
-          In `src/rmplan/rmplan.ts`, import the `handleUpdateCommand` and add a
-          new command definition for `update`.
-
-          The command should take a required `planFile` argument. It should also
-          define an optional `description` argument and an `--editor` flag for
-          providing the update text.
-
-          Look at the `generate` command for an example of how to handle
-          optional arguments and flags.
-        done: true
-      - prompt: >
-          Create a new test file at `src/rmplan/commands/update.test.ts`.
-
-          Set up a basic test suite using Bun's test runner. Add a placeholder
-          test to ensure the file is correctly set up, and mock the necessary
-          dependencies like logging and config loading, following the pattern in
-          `done.test.ts`.
-        done: true
   - title: Implement update description input handling
-    done: false
+    done: true
     description: The command needs to accept the update description from either a
       command-line flag or the user's default text editor. This task will
       implement the logic to handle both input methods, ensuring a flexible user
       experience.
-    files:
-      - src/rmplan/commands/update.ts
-      - src/rmplan/commands/update.test.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/commands/update.ts`, implement the logic within
-          `handleUpdateCommand` to retrieve the update description.
-
-          The function should first check if the `description` argument is
-          provided. If it is, use its value.
-        done: true
-      - prompt: >
-          If the `description` argument is not provided, implement the logic to
-          open the user's default text editor.
-
-          Create a temporary file, open it with the editor specified by
-          `$EDITOR` (or `nano` as a fallback), and wait for the editor process
-          to exit.
-
-          You can reference the editor-opening logic in `handleGenerateCommand`
-          for the `--plan-editor` option.
-        done: true
-      - prompt: >
-          After the editor process closes, read the content from the temporary
-          file to get the update description.
-
-          Ensure the temporary file is deleted after its content has been read,
-          even if an error occurs.
-        done: true
-      - prompt: >
-          In `src/rmplan/commands/update.test.ts`, add tests to verify both
-          input methods.
-
-          One test should simulate providing the description via the
-          command-line argument.
-
-          Another test should mock the editor process and temporary file
-          interaction to verify the editor-based input flow.
-        done: true
   - title: Create a YAML-to-Markdown plan converter
-    done: false
+    done: true
     description: To provide the existing plan as context to the LLM, we need to
       convert it from its structured YAML format into a human-readable Markdown
       format that the LLM is trained on. This task involves creating a new
       utility function that performs this conversion, effectively reversing the
       process of the existing Markdown-to-YAML extractor.
-    files:
-      - src/rmplan/process_markdown.ts
-      - src/rmplan/process_markdown.test.ts
-    steps:
-      - prompt: >
-          Create a new test file `src/rmplan/process_markdown.test.ts`.
-
-          Write a test case for a new function `convertYamlToMarkdown`. This
-          test should take a sample `PlanSchema` object and assert that the
-          output is a correctly formatted Markdown string, following the
-          structure defined by `planMarkdownExampleFormat` in
-          `src/rmplan/prompt.ts`.
-        done: true
-      - prompt: >
-          In `src/rmplan/process_markdown.ts`, create and export a new function
-          `convertYamlToMarkdown(plan: PlanSchema): string`.
-
-          This function will take a plan object and serialize it into a Markdown
-          string.
-        done: true
-      - prompt: >
-          Implement the `convertYamlToMarkdown` function. It should generate a
-          Markdown document with sections for Title, Goal, Priority, and
-          Details.
-
-          Then, it should iterate through the `tasks` array, creating a `##
-          Task:` section for each task, including its description, files, and a
-          numbered list of step prompts.
-
-          Ensure the output format matches the `planMarkdownExampleFormat` from
-          `src/rmplan/prompt.ts`.
-        done: true
-      - prompt: >
-          Run the test you created in the first step and ensure it passes,
-          confirming that the YAML-to-Markdown conversion is working as
-          expected.
-        done: true
   - title: Create the plan update prompt template
-    done: false
+    done: true
     description: A new, specialized prompt is required to instruct the LLM on how to
       perform the update. This task will involve creating a prompt template in
       `src/rmplan/prompt.ts` that includes placeholders for the existing plan
       (in Markdown) and the user's update description.
-    files:
-      - src/rmplan/prompt.ts
-      - src/rmplan/prompt.test.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/prompt.ts`, create and export a new function
-          `generateUpdatePrompt(planAsMarkdown: string, updateDescription:
-          string): string`.
-        done: true
-      - prompt: >
-          Implement the `generateUpdatePrompt` function. The prompt should
-          instruct the LLM to act as a project manager updating a plan.
-
-          It needs to clearly state that the LLM will receive an existing plan
-          in Markdown and a description of the desired changes.
-
-          The primary instruction is to return the *entire updated plan* in the
-          exact same Markdown format.
-        done: true
-      - prompt: >
-          The prompt must explicitly mention that the LLM can add, remove, or
-          modify any part of the plan (title, goal, tasks, steps, etc.) based on
-          the user's request, but it should preserve any unmodified parts.
-
-          Reference the `planMarkdownExampleFormat` as the required output
-          format.
-        done: true
-      - prompt: >
-          In `src/rmplan/prompt.test.ts`, add a new test case for
-          `generateUpdatePrompt`.
-
-          This test should verify that the function correctly embeds the
-          provided `planAsMarkdown` and `updateDescription` into the final
-          prompt string.
-        done: true
   - title: Implement the core update logic
-    done: false
+    done: true
     description: This task will wire all the components together in the command
       handler. It will read the specified plan, convert it to Markdown,
       construct the full LLM prompt, and reuse the existing `rmfilter` logic
       from the `generate` command to gather relevant codebase context before
       presenting the final prompt to the LLM.
-    files:
-      - src/rmplan/commands/update.ts
-      - src/rmplan/commands/update.test.ts
-    steps:
-      - prompt: >
-          In `handleUpdateCommand`, after getting the plan file path and update
-          description, use `resolvePlanFile` and `readPlanFile` to load the plan
-          data.
-        done: true
-      - prompt: >
-          Call the `convertYamlToMarkdown` function (from Task 3) to convert the
-          loaded plan object into its Markdown representation.
-        done: true
-      - prompt: >
-          Use the `generateUpdatePrompt` function (from Task 4) with the plan's
-          Markdown and the user's update description to create the final LLM
-          prompt.
-        done: true
-      - prompt: >
-          Integrate the `rmfilter` logic from the `generate` command. This
-          involves creating a temporary file for the prompt, collecting
-          `rmfilter` arguments from the plan and the command line, and then
-          calling `logSpawn` to execute `rmfilter` with the `--copy` flag.
-
-          This will place the final, context-aware prompt onto the user's
-          clipboard.
-        done: true
   - title: Adapt the YAML extraction process for updates
-    done: false
+    done: true
     description: The existing `extractMarkdownToYaml` function is designed for
       creating new plans or filling in stubs. This task will involve
       generalizing this function or its calling context to handle updates to a
       full, existing plan. The goal is to merge the LLM's changes while
       preserving important metadata like the plan ID and creation timestamp, and
       then write the result back to the original file.
-    files:
-      - src/rmplan/process_markdown.ts
-      - src/rmplan/commands/update.ts
-      - src/rmplan/commands/update.test.ts
-    steps:
-      - prompt: >
-          In `handleUpdateCommand`, after the `rmfilter` process completes, use
-          the `waitForEnter` utility to pause and wait for the user to paste the
-          LLM's Markdown output from their clipboard. This mirrors the flow in
-          `handleGenerateCommand`.
-        done: true
-      - prompt: >
-          Modify the `ExtractMarkdownToYamlOptions` interface in
-          `src/rmplan/process_markdown.ts` to include an optional `updatePlan`
-          field. This field will hold the original plan's data and file path,
-          e.g., `updatePlan?: { data: PlanSchema; path: string }`.
-        done: true
-      - prompt: >
-          In `extractMarkdownToYaml`, add logic to handle the new `updatePlan`
-          option. If it's present, use the `id` and `createdAt` from
-          `updatePlan.data` for the new plan. The `updatedAt` timestamp should
-          be set to the current time. This ensures that core metadata is
-          preserved during an update.
-        done: true
-      - prompt: >
-          In `handleUpdateCommand`, call `extractMarkdownToYaml` with the pasted
-          Markdown.
-
-          Populate the `updatePlan` option with the original plan data and its
-          file path.
-
-          Set the `output` option to the original plan's file path to ensure the
-          file is overwritten.
-        done: true
-      - prompt: >
-          In `src/rmplan/commands/update.test.ts`, add a test to verify the
-          update process.
-
-          The test should mock the LLM's Markdown output for an updated plan.
-
-          It should then call the handler and assert that the original plan file
-          is overwritten, `id` and `createdAt` are preserved, `updatedAt` is
-          changed, and the tasks reflect the LLM's output.
-        done: true
   - title: Add comprehensive tests for the update command
-    done: false
+    done: true
     description: To ensure reliability, we will create a suite of tests for the
       `update` command. These tests will cover various scenarios, such as
       adding, removing, and modifying tasks, using different input methods for
       the update description, and verifying that the plan file is correctly
       updated.
-    files:
-      - src/rmplan/commands/update.test.ts
-    steps:
-      - prompt: >
-          In `src/rmplan/commands/update.test.ts`, write a test case for adding
-          a new task.
-
-          Set up an initial plan file, provide an "add task" description, mock
-          the LLM's Markdown response containing the new task, and verify that
-          the final YAML file is correctly updated.
-        done: true
-      - prompt: >
-          Write a test case for removing a task.
-
-          This test should start with a plan containing multiple tasks, provide
-          a "remove task X" description, mock the LLM's response without that
-          task, and verify the task is absent in the updated YAML file.
-        done: true
-      - prompt: >
-          Write a test case for modifying an existing task.
-
-          The test should mock an LLM response where a task's description or
-          steps have been altered and verify the changes are correctly applied
-          to the YAML file.
-        done: true
-      - prompt: >
-          Write a test to confirm that providing the update description via the
-          `description` argument works as expected.
-
-          This test can be simpler and may not need to mock the full LLM
-          interaction, but should verify the description is passed correctly.
-        done: true
   - title: Update user documentation
-    done: false
+    done: true
     description: The final task is to document the new `rmplan update` command. We
       will update the `README.md` and any other relevant documentation to
       include a description of the command, its options, and usage examples.
-    files:
-      - README.md
-    steps:
-      - prompt: >
-          In `README.md`, add a new section for the `rmplan update` command
-          under the "Commands" heading.
-
-          Provide a brief description of what the command does, explaining its
-          purpose for iterative plan refinement.
-        done: true
-      - prompt: >
-          Document the command's usage, showing the syntax: `rmplan update
-          <planFile> [description]`.
-
-          Explain the arguments and list the available options, including
-          `--editor` and how to pass `rmfilter` arguments.
-        done: true
-      - prompt: >
-          Add a clear and practical example of using the `rmplan update`
-          command.
-
-          Show a command like `rmplan update 123.yml --description "Add a new
-          task for database setup and remove the placeholder task."` to
-          illustrate its use.
-        done: true
 changedFiles:
   - README.md
   - src/rmplan/commands/update.test.ts

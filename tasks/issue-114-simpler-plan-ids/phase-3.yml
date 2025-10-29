@@ -49,8 +49,6 @@ tasks:
       in `parsedYaml.phases`. - Then, iterate through each `task` within that
       phase. - For each such `task`, it will orchestrate the creation of an
       individual plan file as described in the following tasks."
-    files: []
-    steps: []
   - title: Implement Individual Task-Plan Creation Logic
     done: false
     description: >
@@ -74,23 +72,17 @@ tasks:
           - Initial simple approach: If the multiphase LLM output defines dependencies between phases (e.g., Phase 2 depends on Phase 1), then all task-plans generated from Phase 2 will depend on all task-plans generated from Phase 1.
           - Task-plans generated from tasks within the same original phase can be made to depend on the preceding task-plan from that same phase to enforce sequence.
           - This requires careful mapping of original task positions to new numeric plan IDs.
-    files: []
-    steps: []
   - title: Save Individual Task-Plans
     done: false
     description: Each newly created task-plan object (from Task 2) must be saved as
       a separate YAML file named `[ID].yml` in the configured tasks directory
       using the `writePlanFile` function.
-    files: []
-    steps: []
   - title: Update `rmplan split` Command (If Applicable)
     done: false
     description: Review the `rmplan split` command. If it relies on
       `saveMultiPhaseYaml` or similar logic that produces phase-level files, it
       needs to be updated to use or trigger the new task-separation logic,
       ensuring its output is a set of individual task-plans.
-    files: []
-    steps: []
   - title: Test Multiphase Plan Extraction and Saving
     done: false
     description: "Create tests for `rmplan extract` (and `rmplan split` if
@@ -99,8 +91,6 @@ tasks:
       - Check that each task-plan file (`[ID].yml`) has the correct numeric ID,
       content (derived from the original task), project context, and dependency
       links."
-    files: []
-    steps: []
 rmfilter:
   - src/rmplan
   - src/common

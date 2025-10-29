@@ -17,7 +17,7 @@ createdAt: 2025-08-09T00:50:13.309Z
 updatedAt: 2025-10-27T08:39:04.224Z
 tasks:
   - title: Update Configuration Schema for Issue Tracker Selection
-    done: false
+    done: true
     description: >
       Add a new configuration option to `configSchema.ts` that allows users to
       select between 'github' and 'linear' as their issue tracker. This setting
@@ -29,25 +29,8 @@ tasks:
       rmplanConfigSchema object, similar to how other service configurations are
       handled in the codebase. The field should use a zod enum validator to
       ensure only valid values are accepted.
-    files:
-      - src/rmplan/configSchema.ts
-      - src/rmplan/configSchema.test.ts
-    steps:
-      - prompt: >
-          Add a new optional field `issueTracker` to the rmplanConfigSchema in
-          configSchema.ts using z.enum(['github', 'linear']).
-
-          Set the default value to 'github' and add a description explaining it
-          controls which issue tracking service to use.
-        done: true
-      - prompt: >
-          Create a test file configSchema.test.ts that validates the new
-          issueTracker field accepts both 'github' and 'linear' values,
-
-          defaults to 'github' when not specified, and rejects invalid values.
-        done: true
   - title: Define Generic Issue Tracker Data Structures
-    done: false
+    done: true
     description: >
       Create a set of generic interfaces for issues and comments to decouple the
       application from GitHub-specific data models. This will ensure that data
@@ -60,33 +43,8 @@ tasks:
       modules. The types should cover all fields currently used by the import
       and generate commands, including issue metadata, body content, comments,
       and user information.
-    files:
-      - src/common/issue_tracker/types.ts
-      - src/common/issue_tracker/types.test.ts
-    steps:
-      - prompt: >
-          Create src/common/issue_tracker/types.ts with TypeScript interfaces
-          for IssueData (containing id, number/key, title, body, htmlUrl,
-          createdAt, updatedAt),
-
-          CommentData (containing id, body, user info, createdAt), and
-          IssueWithComments (combining issue and comments array).
-        done: true
-      - prompt: >
-          Add an IssueTrackerClient interface that defines methods:
-          fetchIssue(identifier: string), fetchAllOpenIssues(), 
-
-          and parseIssueIdentifier(spec: string) that returns parsed issue info
-          or null.
-        done: true
-      - prompt: >
-          Create a test file that validates the type definitions work correctly
-          with sample data from both GitHub and Linear formats,
-
-          ensuring the interfaces are flexible enough to handle both services.
-        done: true
   - title: Implement Linear SDK Client Initialization
-    done: false
+    done: true
     description: >
       Create a utility to initialize and provide access to the Linear SDK
       client. This module will be responsible for reading the `LINEAR_API_KEY`
@@ -98,32 +56,8 @@ tasks:
       variables and configuration. The module should provide clear error
       messages if the API key is missing when Linear is selected as the issue
       tracker.
-    files:
-      - src/common/issue_tracker/linear_client.ts
-      - src/common/issue_tracker/linear_client.test.ts
-    steps:
-      - prompt: >
-          Create linear_client.ts that exports a function getLinearClient()
-          which reads LINEAR_API_KEY from environment variables,
-
-          initializes the LinearClient from @linear/sdk with the API key, and
-          caches the client instance for reuse.
-        done: true
-      - prompt: >
-          Add error handling that throws a descriptive error if LINEAR_API_KEY
-          is not set when attempting to create the client.
-
-          Include a helper function to check if Linear is configured (API key
-          present).
-        done: true
-      - prompt: >
-          Create tests that verify the client initialization works with a valid
-          API key, throws appropriate errors when the key is missing,
-
-          and properly caches the client instance across multiple calls.
-        done: true
   - title: Develop Linear Issue Fetching Logic
-    done: false
+    done: true
     description: >
       Implement functions to fetch an issue and its comments from the Linear API
       using the SDK. This logic will handle parsing Linear issue IDs (e.g.,
@@ -134,39 +68,8 @@ tasks:
       The implementation should follow the patterns in
       src/common/github/issues.ts but work with Linear's GraphQL API through the
       SDK. Include support for fetching all open issues in a team/project.
-    files:
-      - src/common/issue_tracker/linear.ts
-      - src/common/issue_tracker/linear.test.ts
-    steps:
-      - prompt: >
-          Create linear.ts implementing the IssueTrackerClient interface for
-          Linear. Start with parseIssueIdentifier that handles Linear issue keys
-          (TEAM-123 format)
-
-          and URLs (linear.app/team/issue/...), extracting the issue identifier.
-        done: true
-      - prompt: >
-          Implement fetchIssue method that uses the Linear SDK to fetch an issue
-          by identifier, including its comments through the GraphQL API.
-
-          Map the Linear issue and comment data to the generic IssueData and
-          CommentData interfaces.
-        done: true
-      - prompt: >
-          Implement fetchAllOpenIssues that queries Linear for all open issues
-          in the user's workspace, handling pagination if needed.
-
-          Return them mapped to the generic IssueData format.
-        done: true
-      - prompt: >
-          Create comprehensive tests using the ModuleMocker to mock Linear SDK
-          responses, testing issue fetching, comment retrieval,
-
-          identifier parsing for various formats, and error handling for
-          non-existent issues.
-        done: true
   - title: Create an Issue Tracker Abstraction Layer
-    done: false
+    done: true
     description: >
       Build a factory or service that provides an issue tracker client (either
       GitHub or Linear) based on the project configuration. This will abstract
@@ -177,40 +80,8 @@ tasks:
       Follow the factory pattern used in model_factory.ts. The factory should
       read the configuration, validate that the selected tracker is properly
       configured (API keys present), and return the appropriate implementation.
-    files:
-      - src/common/issue_tracker/github.ts
-      - src/common/issue_tracker/factory.ts
-      - src/common/issue_tracker/factory.test.ts
-    steps:
-      - prompt: >
-          Create github.ts that implements IssueTrackerClient by wrapping the
-          existing functions from src/common/github/issues.ts.
-
-          Map the GitHub API responses to the generic interfaces, maintaining
-          backward compatibility.
-        done: true
-      - prompt: >
-          Create factory.ts with a getIssueTracker function that reads the
-          issueTracker config value and returns either the GitHub or Linear
-          implementation.
-
-          Include validation that the selected tracker is properly configured
-          (GITHUB_TOKEN or LINEAR_API_KEY present).
-        done: true
-      - prompt: >
-          Add a helper function in factory.ts to check which trackers are
-          available based on configured API keys,
-
-          useful for providing helpful error messages to users.
-        done: true
-      - prompt: >
-          Create tests for the factory that verify it returns the correct
-          implementation based on config, handles missing API keys gracefully,
-
-          and provides clear error messages when misconfigured.
-        done: true
   - title: Refactor `import` Command to Use Abstraction Layer
-    done: false
+    done: true
     description: >
       Update the `rmplan import` command to use the new issue tracker
       abstraction layer. This will involve replacing direct calls to
@@ -222,48 +93,8 @@ tasks:
       The refactoring should maintain all existing functionality while adding
       Linear support. The command should automatically detect which tracker to
       use based on configuration.
-    files:
-      - src/rmplan/commands/import.ts
-      - src/rmplan/commands/generate.ts
-      - src/rmplan/issue_utils.ts
-      - src/rmplan/commands/import.test.ts
-    steps:
-      - prompt: >
-          Update import.ts to import getIssueTracker from the factory instead of
-          GitHub-specific functions.
-
-          Replace fetchIssueAndComments and fetchAllOpenIssues calls with the
-          generic tracker methods.
-        done: true
-      - prompt: >
-          Modify the issue selection logic in import.ts to work with the generic
-          IssueData interface,
-
-          ensuring the interactive selection works for both GitHub and Linear
-          issues.
-        done: true
-      - prompt: >
-          Update issue_utils.ts to use the generic IssueData type instead of
-          GitHub-specific types,
-
-          adjusting the createStubPlanFromIssue function to work with the
-          abstracted data.
-        done: true
-      - prompt: >
-          Update generate.ts to use getIssueTracker for fetching issues when the
-          --issue flag is used,
-
-          maintaining compatibility with the existing RmprOptions parsing.
-        done: true
-      - prompt: >
-          Update existing import.test.ts to test both GitHub and Linear
-          implementations,
-
-          using the ModuleMocker to mock the factory and verify both paths work
-          correctly.
-        done: true
   - title: Add Comprehensive Tests for Linear Integration
-    done: false
+    done: true
     description: >
       Create new tests to validate the Linear API fetching logic and ensure it
       correctly maps data to the generic interfaces. Update existing tests for
@@ -274,39 +105,8 @@ tasks:
       Follow the testing patterns established in the codebase, using the
       ModuleMocker for external dependencies and real filesystem operations
       where appropriate.
-    files:
-      - src/rmplan/commands/integration_linear.test.ts
-      - src/common/issue_tracker/integration.test.ts
-    steps:
-      - prompt: >
-          Create integration_linear.test.ts that tests the full import workflow
-          with Linear issues,
-
-          including importing single issues, batch importing, and updating
-          existing plans from Linear.
-        done: true
-      - prompt: >
-          Add tests for edge cases like Linear issues without comments, issues
-          with many comments,
-
-          and handling of Linear-specific fields like priority and status.
-        done: true
-      - prompt: >
-          Create integration.test.ts that tests the issue tracker abstraction
-          works correctly for both services,
-
-          verifying that switching between GitHub and Linear via config works as
-          expected.
-        done: true
-      - prompt: >
-          Add tests that verify the plan files created from Linear issues have
-          the correct structure,
-
-          including proper issue URLs and formatted content from Linear's
-          markdown.
-        done: true
   - title: Update Project Documentation
-    done: false
+    done: true
     description: >
       Document the new Linear integration feature in the project's `README.md`
       or other relevant documentation files. This should include instructions on
@@ -317,30 +117,6 @@ tasks:
       The documentation should include examples of using the import command with
       Linear issues and explain any differences in behavior between GitHub and
       Linear integration.
-    files:
-      - README.md
-      - docs/linear-integration.md
-    steps:
-      - prompt: >
-          Add a new section to README.md explaining Linear integration support,
-          including how to set the LINEAR_API_KEY environment variable
-
-          and configure issueTracker in rmplan.yml with a clear example
-          configuration.
-        done: true
-      - prompt: >
-          Create docs/linear-integration.md with detailed documentation
-          including Linear issue ID formats (TEAM-123),
-
-          supported Linear features, example workflows, and any limitations
-          compared to GitHub integration.
-        done: true
-      - prompt: >
-          Add examples showing how to import Linear issues using both
-          interactive mode and direct issue IDs,
-
-          including sample output to help users understand the feature.
-        done: true
 changedFiles:
   - README.md
   - docs/linear-integration.md

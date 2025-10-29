@@ -29,19 +29,6 @@ tasks:
       in the codebase 
 
       (see lines 149-150 for the `add` command as an example).
-    files:
-      - src/rmplan/rmplan.ts
-    steps:
-      - prompt: >
-          Add a new option to the `list` command (around line 336) for limiting
-          the number of results.
-
-          Use `.option('-n, --number <count>', 'Limit the number of results
-          shown', intArg)` to define the option.
-
-          This follows the existing pattern where intArg is passed as the third
-          argument to handle integer parsing.
-        done: true
   - title: Implement the result limiting logic in the `handleListCommand` function
     done: true
     description: >
@@ -61,27 +48,6 @@ tasks:
       message at line 317 should accurately 
 
       reflect when limiting is applied.
-    files:
-      - src/rmplan/commands/list.ts
-    steps:
-      - prompt: >
-          After the sorting logic (after line 136), add a check for the
-          `options.number` parameter.
-
-          If it's present and is a positive integer, limit the planArray to the
-          last N items using 
-
-          `planArray = planArray.slice(-options.number)`.
-        done: true
-      - prompt: >
-          Update the final status message (around line 317) to indicate when
-          results are limited.
-
-          Store the original filtered count before limiting, then show a message
-          like 
-
-          "Showing 5 of 12 plan(s) (limited to 5)" when the limit is applied.
-        done: true
   - title: Add unit tests for the new `-n` option
     done: true
     description: >
@@ -101,45 +67,6 @@ tasks:
       patterns in the file, using the 
 
       ModuleMocker and temporary directories.
-    files:
-      - src/rmplan/commands/list.test.ts
-    steps:
-      - prompt: >
-          Add a test case that creates 10 plan files and uses the `-n` option
-          with value 5.
-
-          Verify that the table output contains exactly 6 rows (1 header + 5
-          data rows) and that
-
-          the status message indicates "Showing 5 of 10 plan(s)".
-        done: true
-      - prompt: >
-          Add a test for the edge case where `-n` is larger than the number of
-          available plans.
-
-          Create 3 plans and use `-n` with value 10. Verify all 3 plans are
-          shown and the message
-
-          correctly indicates "Showing 3 of 3 plan(s)".
-        done: true
-      - prompt: >
-          Add a test that combines the `-n` option with status filtering.
-
-          Create plans with different statuses, filter by status, and apply a
-          limit.
-
-          Verify the limit is applied after filtering and the correct plans are
-          shown.
-        done: true
-      - prompt: >
-          Add a test that verifies the `-n` option works correctly with sorting.
-
-          Create plans with different IDs, sort by ID in reverse order, and
-          limit to 3 results.
-
-          Verify that the last 3 items after sorting are displayed (which should
-          be the 3 highest IDs).
-        done: true
 rmfilter:
   - src/rmplan/commands/list.ts
   - src/rmplan/rmplan.ts

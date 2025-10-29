@@ -38,26 +38,6 @@ tasks:
 
       - Exact Bash commands like "Bash(pwd)" which should be stored without the
       wildcard
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps:
-      - prompt: >
-          At the beginning of the `execute` method in claude_code.ts, after the
-          `allowedTools` array is constructed (around line 542), add code to
-          parse and populate the `alwaysAllowedTools` map.
-
-          Parse each entry in `allowedTools`: if it's a simple tool name, set it
-          to `true` in the map. If it matches the pattern "Bash(...)", extract
-          the command pattern and add it to an array of allowed Bash prefixes.
-        done: true
-      - prompt: >
-          For Bash command patterns, handle both exact matches (like
-          "Bash(pwd)") and wildcard patterns (like "Bash(jj commit:*)").
-
-          Strip the trailing ":*" from wildcard patterns to get the prefix.
-          Store all Bash patterns in a single array under the "Bash" key in the
-          map.
-        done: true
   - title: "Task 2: Update the permission handler to use the allowlist for
       auto-approval"
     done: true
@@ -77,18 +57,6 @@ tasks:
       choices. The log message should clearly indicate when a tool is
       auto-approved based on the pre-configured allowlist versus runtime
       choices.
-    files:
-      - src/rmplan/executors/claude_code.ts
-    steps:
-      - prompt: >
-          In the `createPermissionSocketServer` method where tools are
-          auto-approved from `alwaysAllowedTools` (around lines 266 and 275),
-          update the log messages to indicate that the approval is based on the
-          configuration allowlist.
-
-          Change the messages from "automatically approved (always allowed)" to
-          something like "automatically approved (configured in allowlist)".
-        done: true
   - title: "Task 3: Add unit tests for allowlist-based auto-approval"
     done: true
     description: >
@@ -106,37 +74,6 @@ tasks:
       approval/denial response and the appropriate log messages. Use the
       existing test structure from the tracked file deletion tests as a
       reference (starting around line 1365).
-    files:
-      - src/rmplan/executors/claude_code.test.ts
-    steps:
-      - prompt: >
-          Add a new test suite in claude_code.test.ts called "allowlist-based
-          auto-approval" that tests the pre-configured allowlist functionality.
-
-          Create a test that verifies a simple tool like "Edit" is auto-approved
-          when it's in the allowedTools configuration.
-        done: true
-      - prompt: >
-          Add a test that verifies Bash commands matching an allowed prefix
-          pattern are auto-approved.
-
-          Test both exact matches (like "jj commit -m 'test'") and prefix
-          matches with additional arguments.
-        done: true
-      - prompt: >
-          Add a test that verifies tools and commands NOT in the allowlist still
-          trigger the normal permission prompt.
-
-          Mock the select prompt to return a response and verify the prompt was
-          called.
-        done: true
-      - prompt: >
-          Add a test that verifies the correct log messages are generated when
-          auto-approving based on the configuration.
-
-          Use a spy on the log function to capture and verify the message
-          indicates configuration-based approval.
-        done: true
 rmfilter:
   - src/rmplan/executors/claude_code.ts
   - src/rmplan/executors/claude_code
