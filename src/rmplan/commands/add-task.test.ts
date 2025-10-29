@@ -149,4 +149,16 @@ describe('handleAddTaskCommand', () => {
       'Task description is required unless using --interactive or providing one via --editor.'
     );
   });
+
+  test('throws when title is missing in non-interactive mode', async () => {
+    await expect(
+      handleAddTaskCommand(
+        planFile,
+        {
+          description: 'Missing the title field',
+        },
+        { parent: { opts: () => ({}) } }
+      )
+    ).rejects.toThrow('Task title is required unless using --interactive.');
+  });
 });

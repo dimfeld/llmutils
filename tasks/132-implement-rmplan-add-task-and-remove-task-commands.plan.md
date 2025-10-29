@@ -5,7 +5,7 @@ goal: ""
 id: 132
 uuid: 7ebf9d14-805e-4178-83a7-a1e91154de23
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 container: false
 temp: false
@@ -19,7 +19,7 @@ docs: []
 planGeneratedAt: 2025-10-28T23:31:23.749Z
 promptsGeneratedAt: 2025-10-28T23:31:23.749Z
 createdAt: 2025-10-26T22:41:12.354Z
-updatedAt: 2025-10-29T03:41:11.069Z
+updatedAt: 2025-10-29T03:49:48.072Z
 progressNotes:
   - timestamp: 2025-10-29T03:03:00.217Z
     text: Implemented new task_operations utilities providing title search,
@@ -66,6 +66,15 @@ progressNotes:
   - timestamp: 2025-10-29T03:40:54.984Z
     text: Ran bun run check and the full bun test suite; new task-management
       integration specs passed alongside existing suites.
+    source: "tester: Task 11"
+  - timestamp: 2025-10-29T03:42:51.166Z
+    text: Reviewing existing unit and integration suites for add/remove task flows;
+      preparing to run regression tests to confirm new coverage.
+    source: "tester: Task 11"
+  - timestamp: 2025-10-29T03:44:06.879Z
+    text: Augmented unit suites with negative-path coverage for add-task title
+      validation and remove-task selector enforcement; reran full bun test suite
+      to confirm all 2,345 specs pass.
     source: "tester: Task 11"
 tasks:
   - title: Create shared task utilities module
@@ -585,7 +594,7 @@ tasks:
       - Verify plan modifications
       - Verify return messages are descriptive
   - title: Integration testing
-    done: false
+    done: true
     description: >-
       Create integration tests that verify end-to-end workflows:
 
@@ -632,7 +641,7 @@ tasks:
 
       - Timestamps updated appropriately
   - title: Update documentation
-    done: false
+    done: true
     description: >-
       Update project documentation to include the new commands:
 
@@ -693,15 +702,28 @@ tasks:
 
       - Note testing patterns used
 changedFiles:
+  - CLAUDE.md
   - README.md
   - src/rmplan/commands/add-task.test.ts
   - src/rmplan/commands/add-task.ts
+  - src/rmplan/commands/agent/agent.test.ts
+  - src/rmplan/commands/agent/agent.ts
+  - src/rmplan/commands/agent/agent_batch_mode.test.ts
+  - src/rmplan/commands/done.test.ts
   - src/rmplan/commands/remove-task.test.ts
   - src/rmplan/commands/remove-task.ts
+  - src/rmplan/commands/renumber.ts
+  - src/rmplan/commands/task-management.integration.test.ts
+  - src/rmplan/commands/validate.test.ts
+  - src/rmplan/commands/validate.ts
   - src/rmplan/mcp/generate_mode.test.ts
   - src/rmplan/mcp/generate_mode.ts
+  - src/rmplan/planSchema.ts
+  - src/rmplan/plans/prepare_step.ts
+  - src/rmplan/process_markdown.ts
   - src/rmplan/rmplan.integration.test.ts
   - src/rmplan/rmplan.ts
+  - src/rmplan/utils/references.ts
   - src/rmplan/utils/task_operations.test.ts
   - src/rmplan/utils/task_operations.ts
 rmfilter: []

@@ -135,6 +135,27 @@ describe('handleRemoveTaskCommand', () => {
     ).rejects.toThrow('Task index 99 is out of bounds');
   });
 
+  test('throws when no selection mode is provided', async () => {
+    await expect(
+      handleRemoveTaskCommand(planFile, {}, { parent: { opts: () => ({}) } })
+    ).rejects.toThrow('Specify one of --title, --index, or --interactive to choose a task.');
+  });
+
+  test('throws when multiple selection modes are provided', async () => {
+    await expect(
+      handleRemoveTaskCommand(
+        planFile,
+        {
+          title: 'Task One',
+          index: 0,
+        },
+        { parent: { opts: () => ({}) } }
+      )
+    ).rejects.toThrow(
+      'Please use only one of --title, --index, or --interactive when removing a task.'
+    );
+  });
+
   test('does not remove when confirmation is declined', async () => {
     const confirmSpy = mock(async () => false);
     await moduleMocker.mock('@inquirer/prompts', () => ({

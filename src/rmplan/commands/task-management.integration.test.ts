@@ -130,7 +130,14 @@ describe('task management integration workflows', () => {
       goal: 'Verify remove workflow',
       status: 'in_progress',
       tasks: [
-        { title: 'Task One', description: 'First item', done: false, files: [], docs: [], steps: [] },
+        {
+          title: 'Task One',
+          description: 'First item',
+          done: false,
+          files: [],
+          docs: [],
+          steps: [],
+        },
         {
           title: 'Task Two',
           description: 'Middle item',
@@ -139,7 +146,14 @@ describe('task management integration workflows', () => {
           docs: [],
           steps: [],
         },
-        { title: 'Task Three', description: 'Last item', done: true, files: [], docs: [], steps: [] },
+        {
+          title: 'Task Three',
+          description: 'Last item',
+          done: true,
+          files: [],
+          docs: [],
+          steps: [],
+        },
       ],
     };
     await writePlanFile(planFile, plan);
