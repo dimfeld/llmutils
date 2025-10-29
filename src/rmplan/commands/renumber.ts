@@ -1268,8 +1268,8 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
             await fs.promises.copyFile(operation.originalPath, backupPath);
           }
 
-          // Write the new file
-          await writePlanFile(operation.newPath, operation.plan);
+          // Write the new file without updating timestamp
+          await writePlanFile(operation.newPath, operation.plan, { skipUpdatedAt: true });
 
           // If this was a rename operation, remove the original file
           if (operation.needsRename && operation.originalPath !== operation.newPath) {

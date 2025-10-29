@@ -593,10 +593,13 @@ export async function readPlanFile(filePath: string): Promise<PlanSchema> {
  * Writes a plan to a YAML file with the yaml-language-server schema line.
  * @param filePath - The path where to write the YAML file
  * @param plan - The plan data to write
+ * @param options - Optional flags to control write behavior
+ * @param options.skipUpdatedAt - If true, does not update the updatedAt timestamp (useful for validation/renumbering operations)
  */
 export async function writePlanFile(
   filePath: string,
-  input: PlanSchemaInput & { filename?: string }
+  input: PlanSchemaInput & { filename?: string },
+  options?: { skipUpdatedAt?: boolean }
 ): Promise<void> {
   const absolutePath = resolve(filePath);
   // Plans from readAllPlans will have a filename which we want to strip out
@@ -611,7 +614,9 @@ export async function writePlanFile(
     throw new Error(`Invalid plan data:\n${errors}`);
   }
 
-  result.data.updatedAt = new Date().toISOString();
+  if (!options?.skipUpdatedAt) {
+    result.data.updatedAt = new Date().toISOString();
+  }
 
   // Separate the details field from the rest of the plan
   const { details, ...planWithoutDetails } = result.data;

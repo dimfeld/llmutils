@@ -310,12 +310,11 @@ async function fixParentChildRelationships(
       }
 
       if (hasChanges) {
-        // Update the plan with new dependencies and updatedAt timestamp
+        // Update the plan with new dependencies
         parentPlan.dependencies = newDependencies;
-        parentPlan.updatedAt = new Date().toISOString();
 
-        // Write the updated plan back to file
-        await writePlanFile(inconsistency.parentFilename, parentPlan);
+        // Write the updated plan back to file without updating timestamp
+        await writePlanFile(inconsistency.parentFilename, parentPlan, { skipUpdatedAt: true });
 
         fixedRelationships++;
       }
@@ -343,15 +342,10 @@ async function fixDiscoveredFromReferences(
         continue;
       }
 
-      const updatedPlan: PlanSchema = {
-        ...plan,
-        updatedAt: new Date().toISOString(),
-      };
-
       // Remove the discoveredFrom field entirely
-      delete (updatedPlan as { discoveredFrom?: number }).discoveredFrom;
+      delete (plan as { discoveredFrom?: number }).discoveredFrom;
 
-      await writePlanFile(issue.filename, updatedPlan);
+      await writePlanFile(issue.filename, plan, { skipUpdatedAt: true });
       cleared.push({
         planId: issue.planId,
         referencedPlanId: issue.referencedPlanId,
@@ -456,8 +450,7 @@ async function fixObsoleteTaskKeys(issues: ObsoleteKeyIssue[]): Promise<Obsolete
       });
 
       if (hasChanges) {
-        plan.updatedAt = new Date().toISOString();
-        await writePlanFile(issue.filename, plan);
+        await writePlanFile(issue.filename, plan, { skipUpdatedAt: true });
         fixedPlans++;
         totalKeysRemoved += keysRemovedInPlan;
       }
