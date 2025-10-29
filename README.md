@@ -395,9 +395,9 @@ The `research` command generates a research prompt based on a plan's goal and de
 
 The `update` command allows you to modify an existing plan by providing a natural language description of the desired changes. This enables iterative refinement of plans as requirements evolve or new information becomes available. The command uses an LLM to intelligently update the plan's tasks and structure while preserving important metadata.
 
-The `add-task` command appends a new task to an existing plan, keeping task metadata consistent whether you supply details inline, launch the editor, or step through the interactive prompt. It automatically normalizes status, priority, and dependency references so freshly added tasks behave like the rest of the plan.
+The `add-task` command appends a new task to an existing plan. Supply `--title` together with either `--description` or `--editor` when running non-interactively, or pass `--interactive` to walk through prompts for the title, description, and optional metadata. Use `--files` and `--docs` to record related paths so new tasks match the format of the rest of the plan.
 
-The `remove-task` command deletes one or more tasks from a plan using the index, title matching, or an interactive picker. It confirms destructive changes, warns when removing a task will shift subsequent numbering, and then persists the update back to disk.
+The `remove-task` command deletes exactly one task from a plan by zero-based index, partial title match, or an interactive picker. Choose a single selection mode via `--index`, `--title`, or `--interactive`, and add `--yes` to skip the confirmation prompt when scripting.
 
 When running `rmplan next` to paste the prompt into a web chat or send to an API, you should include the --rmfilter option to include the relevant files and documentation in the prompt. Omit this option when using the prompt with Cursor, Claude Code, or other agentic editors because they will read the files themselves.
 
@@ -505,14 +505,17 @@ rmplan update my-feature-123 --editor
 # Update with additional context from rmfilter
 rmplan update tasks/feature.yml "Remove the database migration task" -- src/**/*.ts
 
-# Append a task to a plan and open it in your editor for details
-rmplan add-task tasks/feature.yml --edit
+# Append a task to a plan and open your editor for the description
+rmplan add-task tasks/feature.yml --title "Review audit logs" --editor
 
 # Quickly add a pending task with inline metadata
-rmplan add-task tasks/feature.yml "Write smoke tests" --priority medium
+rmplan add-task tasks/feature.yml --title "Write smoke tests" --description "Cover sign-in and billing paths" --files src/auth.ts tests/smoke.test.ts
 
-# Remove a task by its title (will confirm on duplicates)
-rmplan remove-task tasks/feature.yml "Write smoke tests"
+# Remove a task by its title (partial match; confirms before deleting)
+rmplan remove-task tasks/feature.yml --title "Write smoke tests"
+
+# Remove a task by index (0-based) without confirmation
+rmplan remove-task tasks/feature.yml --index 2 --yes
 
 # Remove tasks using the interactive selector when you are unsure of the index
 rmplan remove-task tasks/feature.yml --interactive
