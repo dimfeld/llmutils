@@ -183,6 +183,7 @@ progress_notes_summary: |
     expect(result.plan.details).toContain('## Summary');
     expect(result.plan.details).toContain('<!-- rmplan-generated-start -->');
     expect(result.plan.details).toContain('## Research');
+    expect(result.plan.details).not.toContain('Extensive research notes that will be summarized.');
     expect(result.plan.progressNotes?.length).toBe(1);
     expect(result.plan.progressNotes?.[0].text).toContain('Compaction summary');
 
@@ -191,6 +192,58 @@ progress_notes_summary: |
     expect(metadata.compactedOriginalBytes).toBeGreaterThan(0);
     expect(metadata.compactedBytes).toBeGreaterThan(0);
     expect(typeof metadata.compactedReductionBytes).toBe('number');
+  });
+
+  test('compactPlan parses fenced YAML output and preserves manual details', async () => {
+    const plan = await readPlanFile(planPath);
+    plan.details = `<!-- rmplan-generated-start -->
+## Expected Behavior
+- Original generated details to replace.
+<!-- rmplan-generated-end -->
+
+## Manual Notes
+- Retain this manual section.
+`;
+    await writePlanFile(planPath, plan);
+
+    const config: RmplanConfig = {
+      ...getDefaultConfig(),
+      compaction: {
+        minimumAgeDays: 30,
+        defaultExecutor: 'claude-code',
+      },
+      executors: {},
+    };
+
+    const stubExecutor: Executor = {
+      execute: async () =>
+        [
+          '```yaml',
+          'details_markdown: |',
+          '  ## Summary',
+          '  - Fenced YAML parsed successfully',
+          'research_markdown: |',
+          '  - Research distilled in fenced output',
+          'progress_notes_summary: |',
+          '  Summaries applied without issues.',
+          '```',
+        ].join('\n'),
+    };
+
+    const result = await compactPlan({
+      plan: await readPlanFile(planPath),
+      planFilePath: planPath,
+      executor: stubExecutor,
+      executorName: 'claude-code',
+      config,
+      minimumAgeDays: 30,
+    });
+
+    expect(result.plan.details).toContain('## Summary');
+    expect(result.plan.details).toContain('## Manual Notes');
+    expect(result.plan.details).toContain('## Research');
+    expect(result.plan.details).toContain('Research distilled in fenced output');
+    expect(result.plan.details).not.toContain('Original generated details to replace.');
   });
 
   test('handleCompactCommand in dry-run mode does not write changes', async () => {
@@ -217,6 +270,30 @@ progress_notes_summary: |
     expect(metadata.compactedReductionBytes).toBeDefined();
   });
 
+  test('handleCompactCommand warns when plan was recently updated', async () => {
+    const plan: PlanSchema = {
+      id: 303,
+      title: 'Fresh Plan',
+      goal: 'Ensure warning',
+      status: 'done',
+      uuid: '22222222-2222-2222-2222-222222222222',
+      updatedAt: new Date().toISOString(),
+      details: `<!-- rmplan-generated-start -->
+## Expected Behavior
+- Fresh work
+<!-- rmplan-generated-end -->
+`,
+      tasks: [],
+    };
+    await writePlanFile(planPath, plan);
+
+    await handleCompactCommand(planPath, { dryRun: true }, { parent: { opts: () => ({}) } } as any);
+
+    expect(mockWarn).toHaveBeenCalled();
+    const warningMessage = mockWarn.mock.calls[0]?.[0];
+    expect(warningMessage).toContain('Consider waiting before compacting.');
+  });
+
   test('handleCompactCommand rejects non-completed plans', async () => {
     const plan: PlanSchema = {
       id: 202,
@@ -233,5 +310,37 @@ progress_notes_summary: |
     await expect(
       handleCompactCommand(pendingPath, {}, { parent: { opts: () => ({}) } } as any)
     ).rejects.toThrow('Only done, cancelled, or deferred plans can be compacted');
+  });
+
+  test('compactPlan throws when executor omits details_markdown', async () => {
+    const plan = await readPlanFile(planPath);
+    const config: RmplanConfig = {
+      ...getDefaultConfig(),
+      compaction: {
+        minimumAgeDays: 30,
+        defaultExecutor: 'claude-code',
+      },
+      executors: {},
+    };
+
+    const stubExecutor: Executor = {
+      execute: async () => ({
+        content: `research_markdown: |
+  - No generated details returned
+progress_notes_summary: |
+  Tasks completed.`,
+      }),
+    };
+
+    await expect(
+      compactPlan({
+        plan,
+        planFilePath: planPath,
+        executor: stubExecutor,
+        executorName: 'claude-code',
+        config,
+        minimumAgeDays: 30,
+      })
+    ).rejects.toThrow('Compaction response omitted details_markdown content.');
   });
 });
