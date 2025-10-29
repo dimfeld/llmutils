@@ -11,11 +11,11 @@ import { prioritySchema, type PlanSchema } from '../planSchema.js';
 import type { RmplanConfig } from '../configSchema.js';
 import { buildPlanContext, resolvePlan } from '../plan_display.js';
 import { mcpGetPlan } from '../commands/show.js';
-import { mcpAppendResearch } from '../commands/research.js';
 import { mcpListReadyPlans } from '../commands/ready.js';
-import { mcpUpdatePlanDetails, mcpUpdatePlanTasks } from '../commands/update.js';
 import { writePlanFile } from '../plans.js';
 import { findTaskByTitle } from '../utils/task_operations.js';
+import { mergeTasksIntoPlan, updateDetailsWithinDelimiters } from '../plan_merge.js';
+import { appendResearchToPlan } from '../research_utils.js';
 
 export interface GenerateModeRegistrationContext {
   config: RmplanConfig;
@@ -389,6 +389,74 @@ function normalizeList(values?: string[]): string[] {
   return values
     .map((value) => value.trim())
     .filter((value, index, arr) => value.length > 0 && arr.indexOf(value) === index);
+}
+
+export async function mcpAppendResearch(
+  args: AppendResearchArguments,
+  context: GenerateModeRegistrationContext
+): Promise<string> {
+  const { plan, planPath } = await resolvePlan(args.plan, context);
+  const updated = appendResearchToPlan(plan, args.research, {
+    heading: args.heading,
+    insertedAt: args.timestamp === true ? new Date() : false,
+  });
+
+  await writePlanFile(planPath, updated);
+
+  const relativePath = path.relative(context.gitRoot, planPath) || planPath;
+  return `Appended research to ${relativePath}`;
+}
+
+export async function mcpUpdatePlanDetails(
+  args: UpdatePlanDetailsArguments,
+  context: GenerateModeRegistrationContext
+): Promise<string> {
+  const { plan, planPath } = await resolvePlan(args.plan, context);
+  const updatedDetails = updateDetailsWithinDelimiters(args.details, plan.details, args.append);
+
+  const updatedPlan: PlanSchema = {
+    ...plan,
+    details: updatedDetails,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await writePlanFile(planPath, updatedPlan);
+
+  const relativePath = path.relative(context.gitRoot, planPath) || planPath;
+  const action = args.append ? 'Appended to' : 'Updated';
+  return `${action} details in ${relativePath}`;
+}
+
+export async function mcpUpdatePlanTasks(
+  args: GenerateTasksArguments,
+  context: GenerateModeRegistrationContext,
+  execContext: { log: GenerateModeExecutionLogger }
+): Promise<string> {
+  const { plan, planPath } = await resolvePlan(args.plan, context);
+
+  try {
+    execContext.log.info('Merging generated plan data');
+
+    const newPlanData: Partial<PlanSchema> = {
+      tasks: args.tasks as PlanSchema['tasks'],
+    };
+
+    if (args.title !== undefined) newPlanData.title = args.title;
+    if (args.goal !== undefined) newPlanData.goal = args.goal;
+    if (args.details !== undefined) newPlanData.details = args.details;
+    if (args.priority !== undefined) newPlanData.priority = args.priority;
+
+    const updatedPlan = await mergeTasksIntoPlan(newPlanData, plan);
+
+    await writePlanFile(planPath, updatedPlan);
+
+    const relativePath = path.relative(context.gitRoot, planPath) || planPath;
+    const taskCount = updatedPlan.tasks.length;
+    return `Successfully updated plan at ${relativePath} with ${taskCount} task${taskCount === 1 ? '' : 's'}`;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to update plan: ${message}`);
+  }
 }
 
 export function registerGenerateMode(

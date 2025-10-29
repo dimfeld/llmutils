@@ -43,8 +43,6 @@ assume a repository written with Typescript and PNPM workspaces.
     - [Multi-Workspace Workflows](#multi-workspace-workflows)
     - [Ready Command](#rmplan-ready)
     - [Cleanup Command](#cleanup-command)
-    - [Address Comments Command](#address-comments-command)
-    - [Cleanup Comments Command](#cleanup-comments-command)
   - [Requirements](#requirements-1)
   - [Notes](#notes-1)
   - [External Storage](#external-storage)
@@ -294,7 +292,7 @@ You can find the task plans for this repository under the "tasks" directory.
 - **Plan Creation**: Use the `add` command to quickly create new plan stub files with metadata like dependencies and priority.
 - **Issue Import**: Use the `import` command to convert GitHub or Linear issues into structured plan files, with support for both single-issue and interactive multi-issue import modes, automatic duplicate prevention, and selective content inclusion.
 - **Plan Splitting**: Use the `split` command to intelligently break down large, complex plans into multiple phase-based plans using an LLM.
-- **Research Integration**: Use the `research` command (or the Claude Code generate flow) to capture findings and append them under the `## Research` section of a plan's `details` markdown for future reference.
+- **Research Integration**: Use the Claude Code generate flow to capture findings and append them under the `## Research` section of a plan's `details` markdown for future reference.
 - **YAML Conversion**: Convert the Markdown project plan into a structured YAML format for running tasks.
 - **Task Execution**: Execute the next steps in a plan, generating prompts for LLMs and optionally integrating with `rmfilter` for context.
 - **Progress Tracking**: Mark tasks and steps as done, with support for committing changes to git or jj.
@@ -316,7 +314,7 @@ The general usage pattern is that you will:
 2. Paste the output of that into a language model. As of April 2025, Google Gemini 2.5 Pro is probably the best choice.
 3. Copy its output to the clipboard.
 4. Press enter to continue, which will extract the Markdown plan and write it as YAML. (You can also run the `extract` command directly to do this.)
-5. Use the `next` command to get the prompt for the next step(s).
+5. Use the `show` command to get the prompt for the next step(s).
 6. Run the prompt with whatever LLM or coding agent you prefer.
 7. Use the `done` command to mark the next step(s) as done and commit changes.
 
@@ -396,10 +394,6 @@ The `add` command allows you to quickly create new plan stub files with just a t
 
 The `split` command helps manage complexity by using an LLM to intelligently break down a large, detailed plan into multiple smaller, phase-based plans. Each phase becomes a separate plan file with proper dependencies, allowing you to tackle complex projects incrementally while maintaining the full context and details from the original plan.
 
-The `research` command generates a research prompt based on a plan's goal and details, helping you gather additional context or information to enhance the plan. The `--rmfilter` option incorporates file context into the research prompt using `rmfilter`, allowing you to include relevant code files and documentation. After running the research prompt through an LLM, the command provides an interactive paste-back mechanism where you can paste the research findings, and they will be automatically appended to the plan file's `details` field beneath the `## Research` heading for future reference.
-
-The `update` command allows you to modify an existing plan by providing a natural language description of the desired changes. This enables iterative refinement of plans as requirements evolve or new information becomes available. The command uses an LLM to intelligently update the plan's tasks and structure while preserving important metadata.
-
 The `add-task` command appends a new task to an existing plan. Supply `--title` together with either `--description` or `--editor` when running non-interactively, or pass `--interactive` to walk through prompts for the title, description, and optional metadata. Use `--files` and `--docs` to record related paths so new tasks match the format of the rest of the plan. The command normalizes file and doc lists so repeated values collapse automatically.
 
 The `remove-task` command deletes exactly one task from a plan by zero-based index, partial title match, or an interactive picker. Prefer `--title` whenever possible so scripts remain stable across edits—indices shift immediately after removal. Choose a single selection mode via `--index`, `--title`, or `--interactive`, and add `--yes` to skip the confirmation prompt when scripting. The CLI prints a warning whenever a removal affects later indices.
@@ -418,9 +412,7 @@ rmplan add-task 42 --interactive
 rmplan remove-task 42 --interactive
 ```
 
-When running `rmplan next` to paste the prompt into a web chat or send to an API, you should include the --rmfilter option to include the relevant files and documentation in the prompt. Omit this option when using the prompt with Cursor, Claude Code, or other agentic editors because they will read the files themselves.
-
-**Note**: When working with plan files, you can use either the file path (e.g., `plan.yml`) or the plan ID (e.g., `123`) for commands like `done`, `next`, `agent`, and `run`. The plan ID is found in the `id` field of the YAML file and rmplan will automatically search for matching plans in the configured tasks directory.
+**Note**: When working with plan files, you can use either the file path (e.g., `plan.yml`) or the plan ID (e.g., `123`) for commands like `done`, `agent`, `run`, and `show`. The plan ID is found in the `id` field of the YAML file and rmplan will automatically search for matching plans in the configured tasks directory.
 
 Run `rmplan` with different commands to manage project plans:
 
@@ -460,30 +452,17 @@ rmplan extract output.txt --output plan.yml
 # Extract a plan from clipboard or stdin. Write to stdout
 rmplan extract
 
-# Prepare the next step(s) and build the context with rmfilter
-# This automatically passes the prompt output as the instructions to rmfilter
-rmplan next plan.yml --rmfilter -- src/**/*.ts
+# Show detailed information about a plan
+rmplan show plan.yml
 
-# Include previous steps in the prompt
-rmplan next plan.yml --previous
+# Show the next ready plan
+rmplan show --next
 
-# You can also use plan IDs instead of file paths
-rmplan next my-feature-123 --rmfilter
-
-# Mark the next step as done and commit changes
+# Mark a task as done and commit changes
 rmplan done plan.yml --commit
 
 # You can also use plan IDs instead of file paths
 rmplan done my-feature-123 --commit
-
-# Generate a research prompt based on a plan's goals and details
-rmplan research plan.yml
-
-# Generate research prompt with file context using rmfilter
-rmplan research plan.yml --rmfilter -- src/**/*.ts --grep auth
-
-# Research using plan ID instead of file path
-rmplan research my-feature-123 --rmfilter -- docs/architecture.md
 
 # Create a new plan stub file with a title and optional metadata
 rmplan add "Implement OAuth authentication" --output tasks/oauth-auth.yml
@@ -511,18 +490,6 @@ rmplan split tasks/large-feature.yml --output-dir ./feature-phases
 
 # Split and include specific documentation for context
 rmplan split tasks/complex-refactor.yml --output-dir ./refactor-phases -- docs/architecture.md
-
-# Update an existing plan with natural language changes
-rmplan update tasks/feature.yml "Add error handling to the API calls"
-
-# Update using direct mode (runs LLM automatically)
-rmplan update tasks/feature.yml "Add error handling" --direct --model claude-3-5-sonnet-20241022
-
-# Update using plan ID and open editor for description
-rmplan update my-feature-123 --editor
-
-# Update with additional context from rmfilter
-rmplan update tasks/feature.yml "Remove the database migration task" -- src/**/*.ts
 
 # Append a task to a plan and open your editor for the description
 rmplan add-task tasks/feature.yml --title "Review audit logs" --editor
@@ -964,7 +931,7 @@ rmplan show --next-ready 100
 # Dependencies need preparation
 rmplan show --next-ready 100
 # → 2 dependencies have no actionable tasks
-# → Try: Use 'rmplan generate' or 'rmplan update' to add detailed tasks
+# → Try: Use 'rmplan generate' to add detailed tasks
 
 # Dependencies are blocked
 rmplan show --next-ready 100
@@ -1093,65 +1060,6 @@ rmplan cleanup src/lib/utils.ts src/components/Button.svelte
 - The command only removes comments that appear after code on the same line, preserving standalone comment lines and empty lines.
 - Files must exist and have a supported extension to be processed.
 - Use `--diff-from` to specify a different base branch for determining changed files when no files are provided.
-
-#### Address Comments Command
-
-Use `rmplan address-comments` when AI review comments are already embedded in your source tree (for example, after running `rmplan answer-pr` in inline or hybrid mode, or when comments were pasted in manually). The command skips GitHub lookups entirely and goes straight to the executor with a prompt that instructs it to:
-
-- Run `rg`/`grep` to locate markers such as `AI:`, `AI_COMMENT_START`/`AI_COMMENT_END`, and `AI (id: …)`
-- Diff against the base branch (defaults to the repository’s trunk bookmark or `main`) whenever additional context is needed
-- Apply minimal changes that satisfy each comment
-- Remove the AI comment markers after the fixes are in place
-- Run `bun run check`, `bun run lint`, and `bun test` before finishing
-
-**Usage:**
-
-```bash
-# Address all AI comments in the repository (auto-detects base branch)
-rmplan address-comments
-
-# Limit the search to specific directories and compare against a custom branch
-rmplan address-comments src/ packages/utils --base-branch release/1.4
-
-# Run with a specific executor, print the prompt without executing, then clean up
-rmplan address-comments --executor claude-code --dry-run
-rmplan cleanup-comments --yes
-```
-
-**Options:**
-
-- `--base-branch <branch>` – Override the branch used for `git diff` / `jj diff`. Defaults to the detected trunk (`main`, `master`, `trunk`, or `default`).
-- `--executor <name>` – Choose the executor; defaults to the configured `defaultExecutor`.
-- `--model <model>` – Forward a specific model identifier to the executor.
-- `--commit` – Automatically run `jj commit -m "Address review comments"` (or `git commit -a -m`) after completion.
-- `--dry-run` – Print the generated prompt without calling the executor.
-- `--yes` – Skip confirmation prompts (applies to the post-run cleanup step).
-
-**AI Comment Marker Formats:**
-
-```ts
-// AI: Single-line review feedback
-# AI: Works across Python, shell, Ruby, etc.
-<!-- AI: HTML / Markdown comments -->
-// AI_COMMENT_START / // AI_COMMENT_END blocks
-// AI (id: comment-xyz): Hybrid comments with stable IDs
-```
-
-The command assumes these markers are already present and focuses on orchestrating the executor to resolve them. It differs from `answer-pr` by not selecting comments, not writing diff context files, and by delegating all searching/diffing to the agent prompt.
-
-#### Cleanup Comments Command
-
-After an executor run (or whenever you want to tidy up), `rmplan cleanup-comments` removes the same AI markers without invoking an LLM. It uses ripgrep to find files that still contain markers, shows the list, and removes them after confirmation.
-
-```bash
-# Remove all remaining AI markers
-rmplan cleanup-comments
-
-# Only clean specific paths, skip the confirmation
-rmplan cleanup-comments src/ --yes
-```
-
-This is useful when an executor handled the code changes but left comment stubs behind, or when you want to manually audit files before clearing the markers.
 
 #### Progress Notes
 
@@ -1858,8 +1766,8 @@ rmplan import https://linear.app/workspace/issue/TEAM-123
 # Note: The `generate` command will do this automatically if you want.
 rmplan extract --output tasks/0002-refactor-it.yml
 
-# Execute the next step with repository context
-rmplan next tasks/0002-refactor-it-plan.yml --rmfilter -- src/api/**/*.ts --grep fetch
+# Show the plan to see what's next
+rmplan show tasks/0002-refactor-it-plan.yml
 
 # Mark a task as done and commit
 rmplan done tasks/0002-refactor-it-plan.yml --commit
@@ -1885,15 +1793,6 @@ rmplan add "Add logging system" --depends-on auth --priority medium --edit
 
 # Split a complex plan into manageable phases
 rmplan split tasks/big-refactor.yml --output-dir ./refactor-phases
-
-# Update an existing plan with new requirements
-rmplan update tasks/feature.yml "Add a new task for database setup and remove the placeholder task"
-
-# Update using direct mode with a specific model
-rmplan update tasks/feature.yml "Add error handling" --direct --model gpt-4o
-
-# Update a plan using an editor for the description
-rmplan update 123.yml --editor
 
 # Multi-phase planning workflow
 # 1. Generate a phase-based plan

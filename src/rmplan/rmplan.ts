@@ -25,8 +25,8 @@
  * # Generate a new plan
  * rmplan generate --plan "Add user authentication" src/auth
  *
- * # Execute next steps
- * rmplan next my-plan.yml --rmfilter
+ * # Execute the plan with automated agent
+ * rmplan agent my-plan.yml --rmfilter
  *
  * # Mark steps as completed
  * rmplan done my-plan.yml --commit
@@ -245,41 +245,6 @@ program
   .action(async (planFile, options, command) => {
     const { handleMergeCommand } = await import('./commands/merge.js');
     await handleMergeCommand(planFile, options, command).catch(handleCommandError);
-  });
-
-program
-  .command('next <planFile>')
-  .description(
-    'Prepare the next step(s) from a plan YAML for execution. Can be a file path or plan ID.'
-  )
-  .option('--rmfilter', 'Use rmfilter to generate the prompt')
-  .option('--previous', 'Include information about previous completed steps')
-  .option('--with-imports', 'Include direct imports of files found in the prompt or task files')
-  .option(
-    '--with-all-imports',
-    'Include the entire import tree of files found in the prompt or task files'
-  )
-  .option('--with-importers', 'Include importers of files found in the prompt or task files')
-  .option('--autofind', 'Automatically run rmfind to find relevant files based on the plan task')
-  .allowExcessArguments(true)
-  .allowUnknownOption(true)
-  .action(async (planFile, options, command) => {
-    const { handleNextCommand } = await import('./commands/next.js');
-    await handleNextCommand(planFile, options, command).catch(handleCommandError);
-  });
-
-program
-  .command('research <planArg> [research-goal]')
-  .description('Generate a research prompt for a plan and append the results.')
-  .option('--rmfilter', `Use rmfilter to include the plan's file context in the prompt.`)
-  .option('--tutorial', 'Generate the research output as a tutorial')
-  .option('--prd', 'Generate a Q&A mode prompt to iteratively develop a detailed specification')
-  .usage('<planArg> [research-goal] [ -- custom rmfilter options]')
-  .allowExcessArguments(true)
-  .allowUnknownOption(true)
-  .action(async (planArg, goal, options, command) => {
-    const { handleResearchCommand } = await import('./commands/research.js');
-    await handleResearchCommand(planArg, goal, options, command).catch(handleCommandError);
   });
 
 program
@@ -601,21 +566,6 @@ program
   });
 
 program
-  .command('update <planFile> [description]')
-  .description('Update an existing plan using natural language description of changes')
-  .option('--editor', 'Open editor to provide the update description')
-  .option('-m, --model <model>', 'Model to use for LLM (only used with --direct)')
-  .option('--direct', 'Execute update directly using LLM instead of copy-paste workflow')
-  .option('--no-direct', 'Use copy-paste workflow (default)')
-  .option('--commit', 'Commit changes after updating the plan')
-  .action(async (planFile, description, options, command) => {
-    const { handleUpdateCommand } = await import('./commands/update.js');
-    await handleUpdateCommand(planFile, { ...options, description }, command).catch(
-      handleCommandError
-    );
-  });
-
-program
   .command('set <planFile>')
   .description(
     'Update plan properties like priority, status, dependencies, and rmfilter. Can be a file path or plan ID.'
@@ -789,32 +739,6 @@ program
   .action(async (prIdentifier, options, command) => {
     const { handleAnswerPrCommand } = await import('./commands/answerPr.js');
     await handleAnswerPrCommand(prIdentifier, options, command).catch(handleCommandError);
-  });
-
-program
-  .command('address-comments [paths...]')
-  .description(
-    'Find and address AI review comments that have already been inserted into source files.'
-  )
-  .option('--base-branch <branch>', 'Branch to diff against when additional context is needed')
-  .option(`-x, --executor <name>`, 'Executor to use when applying fixes')
-  .addHelpText('after', `Available executors: ${executorNames}`)
-  .option('-m, --model <model>', 'Model identifier to pass to the executor')
-  .option('--commit', 'Commit changes after addressing comments')
-  .option('--dry-run', 'Print the generated prompt instead of running the executor', false)
-  .option('--yes', 'Skip confirmation prompts (useful for CI or non-interactive runs)', false)
-  .action(async (paths, options, command) => {
-    const { handleAddressCommentsCommand } = await import('./commands/addressComments.js');
-    await handleAddressCommentsCommand(paths ?? [], options, command).catch(handleCommandError);
-  });
-
-program
-  .command('cleanup-comments [paths...]')
-  .description('Remove AI comment markers from files without running the executor.')
-  .option('--yes', 'Skip the confirmation prompt and clean up immediately', false)
-  .action(async (paths, options, command) => {
-    const { handleCleanupCommentsCommand } = await import('./commands/addressComments.js');
-    await handleCleanupCommentsCommand(paths ?? [], options, command).catch(handleCommandError);
   });
 
 // Create the workspace command

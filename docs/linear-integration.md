@@ -156,10 +156,10 @@ rmplan generate --issue TEAM-456 --rmfilter -- \
   --with-imports \
   --with-tests
 
-# 2. Execute the plan step by step
-rmplan next tasks/team-456-implement-oauth.yml --rmfilter -- src/auth/**/*.ts
+# 2. Execute the plan automatically
+rmplan agent tasks/team-456-implement-oauth.yml
 
-# 3. Mark steps as completed and commit changes
+# 3. Or mark steps as completed manually and commit changes
 rmplan done tasks/team-456-implement-oauth.yml --commit
 ```
 

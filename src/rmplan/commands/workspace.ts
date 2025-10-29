@@ -212,7 +212,10 @@ export async function handleWorkspaceAddCommand(
   log(`  1. cd ${workspace.path}`);
   if (resolvedPlanFilePath) {
     log(
-      `  2. rmplan next ${path.basename(workspace.planFilePathInWorkspace || resolvedPlanFilePath)}`
+      `  2. rmplan agent ${path.basename(workspace.planFilePathInWorkspace || resolvedPlanFilePath)}`
+    );
+    log(
+      `     or rmplan show ${path.basename(workspace.planFilePathInWorkspace || resolvedPlanFilePath)} to view the plan`
     );
   } else {
     log('  2. Start working on your task');

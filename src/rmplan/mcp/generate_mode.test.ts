@@ -21,8 +21,7 @@ import {
   type GenerateModeRegistrationContext,
 } from './generate_mode.js';
 import { mcpGetPlan } from '../commands/show.js';
-import { mcpUpdatePlanTasks } from '../commands/update.js';
-import { mcpAppendResearch } from '../commands/research.js';
+import { mcpUpdatePlanTasks, mcpAppendResearch } from './generate_mode.js';
 import { mcpListReadyPlans } from '../commands/ready.js';
 
 const basePlan: PlanSchema = {

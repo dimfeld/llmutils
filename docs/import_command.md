@@ -94,7 +94,7 @@ The import command is designed to work seamlessly with the existing rmplan workf
 
 1. **Import**: Use `rmplan import` to create stub plans from GitHub issues
 2. **Generate**: Use `rmplan generate` to add detailed implementation steps
-3. **Execute**: Use `rmplan next`, `rmplan agent`, or manual execution to implement
+3. **Execute**: Use `rmplan agent` to automatically implement, or use `rmplan show` to view and execute manually
 4. **Track**: Use `rmplan done` to mark progress and commit changes
 
 ## Requirements
