@@ -201,14 +201,15 @@ export function getVerifierAgentPrompt(
   contextContent: string,
   planId?: string | number,
   customInstructions?: string,
-  model?: string
+  model?: string,
+  includeTaskCompletionInstructions: boolean = false
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
     : '';
   const progressNotesSection = progressNotesGuidance(planId);
   const formattedProgressNotes = progressNotesSection ? `\n${progressNotesSection}\n` : '\n';
-  const taskCompletionInstructions = planId
+  const taskCompletionInstructions = planId && includeTaskCompletionInstructions
     ? `\n## Marking Tasks as Done
 
 IMPORTANT: When you determine that the work is acceptable and all verification checks pass, you MUST mark the completed tasks as done using the rmplan set-task-done command. Use the task titles from the plan to identify which tasks to mark complete.
@@ -221,6 +222,18 @@ rmplan set-task-done ${planId} "Task Title Here"
 Do this for each task that was successfully implemented and verified before providing your final approval.\n`
     : '';
 
+  const primaryResponsibilities = [
+    '1. Review the implementer\'s output and current repository state to understand the changes',
+    '2. Confirm that all new or modified behavior has adequate automated test coverage, adding tests if gaps remain',
+    '3. Run required quality gates (type checking, linting, tests) and any other project-required verification commands',
+    '4. Diagnose and clearly report any failures with actionable guidance for the implementer',
+    '5. Only approve the work when every required command succeeds without errors',
+  ];
+
+  if (includeTaskCompletionInstructions) {
+    primaryResponsibilities.push('6. Mark completed tasks as done in the plan file when verification passes');
+  }
+
   return {
     name: 'verifier',
     description:
@@ -231,12 +244,7 @@ Do this for each task that was successfully implemented and verified before prov
 ## Context and Task
 ${contextContent}${customInstructionsSection}
 ## Your Primary Responsibilities:
-1. Review the implementer's output and current repository state to understand the changes
-2. Confirm that all new or modified behavior has adequate automated test coverage, adding tests if gaps remain
-3. Run required quality gates (type checking, linting, tests) and any other project-required verification commands
-4. Diagnose and clearly report any failures with actionable guidance for the implementer
-5. Only approve the work when every required command succeeds without errors
-6. Mark completed tasks as done in the plan file when verification passes
+${primaryResponsibilities.join('\n')}
 
 ${formattedProgressNotes}${taskCompletionInstructions}
 
@@ -271,7 +279,8 @@ export function getReviewerPrompt(
   planId?: string | number,
   customInstructions?: string,
   model?: string,
-  useSubagents: boolean = false
+  useSubagents: boolean = false,
+  includeTaskCompletionInstructions: boolean = false
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
@@ -281,7 +290,7 @@ export function getReviewerPrompt(
   const subagentDirective = useSubagents
     ? 'CRITICAL: Use the available sub-agents to delegate in-depth analysis, run tests, and create findings before delivering your final verdict.\n\n'
     : '';
-  const taskCompletionInstructions = planId
+  const taskCompletionInstructions = planId && includeTaskCompletionInstructions
     ? `\n## Marking Tasks as Done
 
 IMPORTANT: When you provide a verdict of ACCEPTABLE, you MUST mark the completed tasks as done using the rmplan set-task-done command. Use the task titles from the plan to identify which tasks to mark complete.
@@ -293,6 +302,19 @@ rmplan set-task-done ${planId} "Task Title Here"
 
 Do this for each task that was successfully implemented and reviewed before providing your ACCEPTABLE verdict.\n`
     : '';
+
+  const reviewerPrimaryResponsibilities = [
+    '1. Identify bugs, logic errors, and correctness issues',
+    '2. Find violations of project patterns and conventions. (But ignore formatting, indentation, etc.)',
+    '3. Detect security vulnerabilities and unsafe practices',
+    '4. Flag performance problems and inefficiencies',
+    '5. Identify missing error handling and edge cases',
+    '6. Find inadequate or broken tests',
+  ];
+
+  if (includeTaskCompletionInstructions) {
+    reviewerPrimaryResponsibilities.push('7. Mark completed tasks as done in the plan file when review is acceptable');
+  }
 
   return {
     name: 'reviewer',
@@ -311,13 +333,7 @@ Make sure that your feedback is congruent with the requirements of the project. 
 ## Context and Task
 ${contextContent}${customInstructionsSection}
 ## Your Primary Responsibilities:
-1. Identify bugs, logic errors, and correctness issues
-2. Find violations of project patterns and conventions. (But ignore formatting, indentation, etc.)
-3. Detect security vulnerabilities and unsafe practices
-4. Flag performance problems and inefficiencies
-5. Identify missing error handling and edge cases
-6. Find inadequate or broken tests
-7. Mark completed tasks as done in the plan file when review is acceptable
+${reviewerPrimaryResponsibilities.join('\n')}
 
 ${taskCompletionInstructions}
 

@@ -311,7 +311,9 @@ export class CodexCliExecutor implements Executor {
         reviewerContext,
         planContextAvailable ? planInfo.planId : undefined,
         reviewerInstructions,
-        this.sharedOptions.model
+        this.sharedOptions.model,
+        false, // useSubagents
+        true // includeTaskCompletionInstructions
       );
 
       // Execute reviewer step
@@ -432,7 +434,8 @@ export class CodexCliExecutor implements Executor {
             initiallyPending.map((t) => t.title),
             fixInstructions,
             fixerOutput,
-            reviewerInstructions
+            reviewerInstructions,
+            planContextAvailable ? planInfo.planId : undefined
           );
 
           const rerunReviewerOutput = await this.executeCodexStep(rerunReviewerContext, gitRoot);
@@ -691,7 +694,8 @@ export class CodexCliExecutor implements Executor {
         ),
         planContextAvailable ? planInfo.planId : undefined,
         verifierInstructions,
-        this.sharedOptions.model
+        this.sharedOptions.model,
+        true // includeTaskCompletionInstructions
       );
 
       log('Running verifier step...');
@@ -842,7 +846,8 @@ export class CodexCliExecutor implements Executor {
     pendingTitles: string[],
     previousReview: string,
     fixerOutput: string,
-    customInstructions?: string
+    customInstructions?: string,
+    planId?: string | number
   ) {
     const baseContext = this.composeReviewerContext(
       originalContext,
@@ -856,11 +861,24 @@ export class CodexCliExecutor implements Executor {
       ? `\n\n## Project-Specific Review Guidelines\n\n${customInstructions}`
       : '';
 
+    const taskCompletionInstructions = planId
+      ? `\n\n## Marking Tasks as Done
+
+IMPORTANT: When you provide a verdict of ACCEPTABLE, you MUST mark the completed tasks as done using the rmplan set-task-done command. Use the task titles from the plan to identify which tasks to mark complete.
+
+For example:
+\`\`\`bash
+rmplan set-task-done ${planId} "Task Title Here"
+\`\`\`
+
+Do this for each task that was successfully implemented and reviewed before providing your ACCEPTABLE verdict.`
+      : '';
+
     return `You are a fix verification assistant focused on determining whether previously identified issues have been adequately addressed by the implementer's fixes.
 
 Your job is to verify that specific issues flagged in the previous review have been resolved, NOT to conduct a full new code review. Focus exclusively on whether the fixes address the concerns that were raised.
 
-${baseContext}${customInstructionsSection}
+${baseContext}${customInstructionsSection}${taskCompletionInstructions}
 
 ## Previous Review Issues
 
