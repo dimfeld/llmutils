@@ -64,8 +64,13 @@ await moduleMocker.mock('../configLoader.js', () => ({
   loadEffectiveConfig: mockLoadEffectiveConfig,
 }));
 
-const { handleCompactCommand, compactPlan, validateCompaction, generateCompactionPrompt } =
-  await import('./compact.js');
+const {
+  handleCompactCommand,
+  compactPlan,
+  validateCompaction,
+  generateCompactionPrompt,
+  writeCompactedPlanWithBackup,
+} = await import('./compact.js');
 
 describe('compact command', () => {
   let tempDir: string;
@@ -350,6 +355,11 @@ progress_notes_summary: |
 
     expect(result.plan.details).toBe(originalDetails);
     expect(result.plan.progressNotes).toEqual(originalProgressNotes);
+    expect(result.appliedSections).toEqual({
+      details: false,
+      research: false,
+      progressNotes: false,
+    });
   });
 
   test('handleCompactCommand in dry-run mode does not write changes', async () => {
@@ -361,9 +371,15 @@ progress_notes_summary: |
     expect(after).toBe(before);
     expect(mockConfirm).not.toHaveBeenCalled();
     expect(executorExecute).toHaveBeenCalledTimes(1);
+    expect(
+      mockLog.mock.calls.some(
+        ([message]) => typeof message === 'string' && message.includes('Plan compaction preview')
+      )
+    ).toBe(true);
   });
 
   test('handleCompactCommand writes compacted plan when confirmed', async () => {
+    const beforeContent = await fs.readFile(planPath, 'utf-8');
     await handleCompactCommand(planPath, { yes: true }, { parent: { opts: () => ({}) } } as any);
 
     const updated = await readPlanFile(planPath);
@@ -374,6 +390,44 @@ progress_notes_summary: |
     expect(metadata.compactedAt).toBeDefined();
     expect(metadata.compactedOriginalBytes).toBeGreaterThan(0);
     expect(metadata.compactedReductionBytes).toBeDefined();
+
+    const backupFiles = (await fs.readdir(tempDir)).filter((file) =>
+      file.startsWith(path.basename(planPath) + '.backup-')
+    );
+    expect(backupFiles.length).toBe(1);
+    const backupContent = await fs.readFile(path.join(tempDir, backupFiles[0]), 'utf-8');
+    expect(backupContent).toBe(beforeContent);
+    expect(
+      mockLog.mock.calls.some(
+        ([message]) => typeof message === 'string' && message.includes('Backup saved to')
+      )
+    ).toBe(true);
+  });
+
+  test('writeCompactedPlanWithBackup restores original content when writer fails', async () => {
+    const plan = await readPlanFile(planPath);
+    const originalContent = await fs.readFile(planPath, 'utf-8');
+
+    await expect(
+      writeCompactedPlanWithBackup({
+        planPath,
+        plan,
+        originalContent,
+        writer: async () => {
+          throw new Error('simulated failure');
+        },
+      })
+    ).rejects.toThrow('Failed to write compacted plan with backup.');
+
+    const restored = await fs.readFile(planPath, 'utf-8');
+    expect(restored).toBe(originalContent);
+
+    const backupFiles = (await fs.readdir(tempDir)).filter((file) =>
+      file.startsWith(path.basename(planPath) + '.backup-')
+    );
+    expect(backupFiles.length).toBe(1);
+    const backupContent = await fs.readFile(path.join(tempDir, backupFiles[0]), 'utf-8');
+    expect(backupContent).toBe(originalContent);
   });
 
   test('handleCompactCommand warns when plan was recently updated', async () => {

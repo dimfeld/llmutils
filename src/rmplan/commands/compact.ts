@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { confirm } from '@inquirer/prompts';
 import yaml from 'yaml';
+import * as path from 'node:path';
 import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
@@ -42,6 +43,12 @@ interface CompactionSectionToggles {
   progressNotes?: boolean;
 }
 
+type AppliedSections = {
+  details: boolean;
+  research: boolean;
+  progressNotes: boolean;
+};
+
 interface SectionMetrics {
   originalGeneratedLength: number;
   compactedGeneratedLength: number;
@@ -62,6 +69,9 @@ interface CompactionArtifacts {
   sections: CompactionSections;
   metrics: SectionMetrics;
   stats: CompactionStats;
+  appliedSections: AppliedSections;
+  toggles: CompactionSectionToggles;
+  originalContent: string;
 }
 
 interface CompactionValidationResult {
@@ -151,8 +161,9 @@ export async function handleCompactCommand(
     minimumAgeDays,
   });
 
+  reportCompactionPreview(compactionResult, options.dryRun ? 'dry-run' : 'preview');
+
   if (options.dryRun) {
-    reportDryRun(compactionResult);
     return;
   }
 
@@ -168,8 +179,13 @@ export async function handleCompactCommand(
     }
   }
 
-  await writePlanFile(resolvedPlanFile, compactionResult.plan);
-  reportSuccessfulCompaction(plan, compactionResult);
+  const backupPath = await writeCompactedPlanWithBackup({
+    planPath: resolvedPlanFile,
+    plan: compactionResult.plan,
+    originalContent: compactionResult.originalContent,
+  });
+
+  reportSuccessfulCompaction(plan, compactionResult, backupPath);
 }
 
 export async function compactPlan(
@@ -185,9 +201,9 @@ export async function compactPlan(
   const executorOutput = await runCompactionPrompt(executor, prompt, planClone, planFilePath);
   const compactionSections = await parseCompactionResponse(executorOutput, config);
 
-  const sectionToggles = config.compaction?.sections;
+  const sectionToggles = config.compaction?.sections ?? {};
 
-  applyCompactionSections(
+  const appliedSections = applyCompactionSections(
     planClone,
     compactionSections,
     executorName,
@@ -217,6 +233,9 @@ export async function compactPlan(
     prompt,
     executorOutput,
     sections: compactionSections,
+    appliedSections,
+    toggles: sectionToggles,
+    originalContent: originalFileContent,
     stats: {
       originalBytes,
       compactedBytes,
@@ -225,26 +244,77 @@ export async function compactPlan(
   };
 }
 
-function reportDryRun(result: CompactionArtifacts & { plan: PlanSchema }) {
-  const { stats, sections, metrics } = result;
+function reportCompactionPreview(
+  result: CompactionArtifacts & { plan: PlanSchema },
+  mode: 'dry-run' | 'preview'
+) {
+  const { stats, sections, metrics, appliedSections, toggles } = result;
   const reduction = stats.originalBytes - stats.compactedBytes;
   const reductionPercent = stats.originalBytes > 0 ? (reduction / stats.originalBytes) * 100 : 0;
 
-  log(chalk.cyan('\nDry Run: Plan compaction summary'));
+  const header =
+    mode === 'dry-run'
+      ? '\nDry Run: Plan compaction preview'
+      : '\nPlan compaction preview (no changes written yet)';
+  log(chalk.cyan(header));
   log(`Original size: ${stats.originalBytes} bytes`);
   log(
     `Compacted size: ${stats.compactedBytes} bytes (${reduction >= 0 ? '-' : '+'}${Math.abs(reduction)} bytes, ${reductionPercent.toFixed(1)}%)`
   );
-  log('\nGenerated details preview:\n');
-  log(sections.detailsMarkdown.trim() ? sections.detailsMarkdown.trim() : '(empty)');
+
+  const detailsToggle = toggles.details ?? true;
+  const researchToggle = toggles.research ?? true;
+  const progressToggle = toggles.progressNotes ?? true;
+
+  const detailStatus = detailsToggle
+    ? appliedSections.details
+      ? 'will replace content between rmplan delimiters'
+      : 'no changes (executor returned no generated details)'
+    : 'unchanged (disabled by config)';
+
+  const researchStatus = researchToggle
+    ? appliedSections.research
+      ? 'will replace the ## Research section'
+      : 'unchanged (no research content returned)'
+    : 'unchanged (disabled by config)';
+
+  const progressStatus = progressToggle
+    ? appliedSections.progressNotes
+      ? 'will be replaced with a single summary note'
+      : 'unchanged (no progress summary provided)'
+    : 'unchanged (disabled by config)';
+
+  log('\nSections to update:');
+  log(`- generated details: ${detailStatus}`);
+  log(`- research: ${researchStatus}`);
+  log(`- progress notes: ${progressStatus}`);
+
+  const detailsPreview =
+    sections.detailsMarkdown.trim() !== '' ? sections.detailsMarkdown.trim() : '(empty)';
+  const detailsHeading = detailsToggle
+    ? '\nGenerated details preview:'
+    : '\nGenerated details preview (section disabled by config):';
+  log(detailsHeading);
+  log(`${detailsPreview}`);
 
   if (sections.researchMarkdown) {
-    log('\nCompacted research section:\n');
+    let researchHeading: string;
+    if (!researchToggle) {
+      researchHeading = '\nCompacted research section (section disabled by config):';
+    } else if (!appliedSections.research) {
+      researchHeading = '\nCompacted research section (executor returned no distilled content):';
+    } else {
+      researchHeading = '\nCompacted research section:';
+    }
+    log(researchHeading);
     log(sections.researchMarkdown.trim());
   }
 
   if (sections.progressNotesSummary) {
-    log('\nProgress notes summary:\n');
+    const notesHeading = progressToggle
+      ? '\nProgress notes summary:'
+      : '\nProgress notes summary (section disabled by config):';
+    log(notesHeading);
     log(sections.progressNotesSummary.trim());
   }
 
@@ -260,7 +330,8 @@ function reportDryRun(result: CompactionArtifacts & { plan: PlanSchema }) {
 
 function reportSuccessfulCompaction(
   originalPlan: PlanSchema,
-  result: CompactionArtifacts & { plan: PlanSchema }
+  result: CompactionArtifacts & { plan: PlanSchema },
+  backupPath?: string
 ) {
   const { stats } = result;
   const reduction = stats.originalBytes - stats.compactedBytes;
@@ -275,6 +346,64 @@ function reportSuccessfulCompaction(
       )} bytes (${reductionPercent.toFixed(1)}%).`
     )
   );
+  if (backupPath) {
+    log(chalk.gray(`Backup saved to ${backupPath}`));
+  }
+}
+
+interface WriteCompactedPlanOptions {
+  planPath: string;
+  plan: PlanSchema;
+  originalContent: string;
+  writer?: typeof writePlanFile;
+}
+
+export async function writeCompactedPlanWithBackup(
+  options: WriteCompactedPlanOptions
+): Promise<string> {
+  const { planPath, plan, originalContent, writer = writePlanFile } = options;
+
+  const backupPath = await createPlanBackup(planPath, originalContent);
+
+  try {
+    await writer(planPath, plan);
+    return backupPath;
+  } catch (error) {
+    try {
+      await Bun.write(planPath, originalContent);
+    } catch (restoreError) {
+      const restoreMessage = [
+        'Failed to write compacted plan and restore original content.',
+        error instanceof Error ? error.message : String(error),
+        restoreError instanceof Error ? restoreError.message : String(restoreError),
+        `Backup preserved at ${backupPath}`,
+      ].join(' ');
+      throw new Error(restoreMessage, {
+        cause: restoreError instanceof Error ? restoreError : undefined,
+      });
+    }
+
+    const messageParts = [
+      'Failed to write compacted plan with backup.',
+      error instanceof Error ? error.message : String(error),
+      `Original content restored. Backup preserved at ${backupPath}`,
+    ];
+
+    throw new Error(messageParts.join(' '), {
+      cause: error instanceof Error ? error : undefined,
+    });
+  }
+}
+
+async function createPlanBackup(planPath: string, content: string): Promise<string> {
+  const directory = path.dirname(planPath);
+  const baseName = path.basename(planPath);
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupName = `${baseName}.backup-${timestamp}`;
+  const backupPath = path.join(directory, backupName);
+
+  await Bun.write(backupPath, content);
+  return backupPath;
 }
 
 export function generateCompactionPrompt(
@@ -458,19 +587,24 @@ function applyCompactionSections(
   executorName: string,
   originalBytes: number,
   sectionToggles?: CompactionSectionToggles
-) {
+): AppliedSections {
   const applyDetails = sectionToggles?.details ?? true;
   const applyResearch = sectionToggles?.research ?? true;
   const applyProgressNotes = sectionToggles?.progressNotes ?? true;
+
+  const hasResearchContent =
+    typeof sections.researchMarkdown === 'string' && sections.researchMarkdown.trim() !== '';
 
   const mergedDetails = applyDetails
     ? mergeDetails(sections.detailsMarkdown, plan.details)
     : plan.details;
 
-  if (applyResearch) {
-    plan.details = updateResearchSection(mergedDetails, sections.researchMarkdown);
-  } else if (applyDetails) {
-    plan.details = mergedDetails;
+  if (applyDetails || (applyResearch && hasResearchContent)) {
+    const updatedDetails =
+      applyResearch && hasResearchContent
+        ? updateResearchSection(mergedDetails, sections.researchMarkdown)
+        : mergedDetails;
+    plan.details = updatedDetails;
   }
 
   if (applyProgressNotes) {
@@ -491,6 +625,12 @@ function applyCompactionSections(
   metadataCarrier.compactedAt = new Date().toISOString();
   metadataCarrier.compactedBy = executorName;
   metadataCarrier.compactedOriginalBytes = originalBytes;
+
+  return {
+    details: applyDetails,
+    research: applyResearch && hasResearchContent,
+    progressNotes: applyProgressNotes,
+  };
 }
 
 function updateResearchSection(
