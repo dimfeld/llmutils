@@ -19,7 +19,7 @@ docs: []
 planGeneratedAt: 2025-10-29T22:44:18.265Z
 promptsGeneratedAt: 2025-10-29T22:44:18.265Z
 createdAt: 2025-10-27T19:26:47.021Z
-updatedAt: 2025-10-30T00:40:52.226Z
+updatedAt: 2025-10-30T00:47:34.127Z
 progressNotes:
   - timestamp: 2025-10-29T23:37:35.209Z
     text: Implemented initial compact command scaffold with executor integration and
@@ -70,6 +70,14 @@ progressNotes:
     text: Added coverage for missing progress note summary and confirmation abort
       path; bun test src/rmplan/commands/compact.test.ts now passes 18 cases.
     source: "tester: Tasks 6-7"
+  - timestamp: 2025-10-30T00:46:11.227Z
+    text: Implemented compact-plan MCP prompt loader, registered it with the server,
+      and documented availability in README.
+    source: "implementer: Task 11"
+  - timestamp: 2025-10-30T00:47:15.094Z
+    text: Ran bun run check and bun test src/rmplan/mcp/generate_mode.test.ts to
+      validate the new compact-plan prompt.
+    source: "tester: Task 11"
 tasks:
   - title: Create compact command handler
     done: true
@@ -792,3 +800,9 @@ Addressed reviewer feedback for Task 5 – Implement validation step by tighteni
 Implemented Task 6: Add dry-run mode and Task 7: Implement file writing with backup. Updated src/rmplan/commands/compact.ts so compactPlan now returns the executor output alongside applied section flags, configuration toggles, and the original plan content. handleCompactCommand reuses a new reportCompactionPreview() helper to show the size delta, section status, and content previews for both dry-run and applying flows, then calls writeCompactedPlanWithBackup() which snapshots the original file to <plan>.backup-<timestamp>, attempts to write via writePlanFile(), and restores from the captured content if the write fails. applyCompactionSections now reports which sections actually changed and respects missing research summaries, while reportSuccessfulCompaction logs the backup location for auditing. Added writeCompactedPlanWithBackup() tests plus assertions about preview logging and backup creation in src/rmplan/commands/compact.test.ts to enforce the new behavior. These changes ensure dry runs surface the intended edits, compaction applies only to enabled sections, and users always have a recoverable backup when we write the condensed plan.
 
 Addressed review fixes for compact command size tracking and metrics. Updated src/rmplan/commands/compact.ts to recompute serialization after attaching compaction metadata using an iterative loop so compactedBytes/compactedReductionBytes reflect the actual post-metadata file size. Adjusted calculateMetrics to derive "after" lengths from the finalized plan details/progress notes, ensuring toggle-suppressed sections report accurate deltas during previews. Revised reportSuccessfulCompaction to surface the signed byte delta instead of clamping negative growth, avoiding contradictory logging. These changes keep compaction previews, stats, and completion messages aligned with what is written to disk.
+
+Task 11: Add MCP prompt for compaction. Implemented loadCompactPlanPrompt in src/rmplan/mcp/prompts/compact_plan.ts to resolve plans through the MCP context, enforce eligible statuses, reuse generateCompactionPrompt for consistent instructions, surface age warnings when the plan was updated within the minimum threshold, and append a reminder to review the YAML with a human before applying it.
+
+Hooked the new loader into registerGenerateMode by importing it in src/rmplan/mcp/generate_mode.ts, adding the compact-plan prompt registration with explicit UserError handling when the plan argument is missing, and updated README.md to describe the additional prompt in the MCP server documentation.
+
+Extended src/rmplan/mcp/generate_mode.test.ts with coverage for the compact prompt, ensuring it produces the expected instructions and rejects pending plans. These changes keep the compaction workflow aligned across CLI and MCP clients and highlight the review requirement before writing condensed plans.

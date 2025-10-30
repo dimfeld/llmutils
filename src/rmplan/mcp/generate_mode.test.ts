@@ -22,6 +22,7 @@ import {
   loadResearchPrompt,
   type GenerateModeRegistrationContext,
 } from './generate_mode.js';
+import { loadCompactPlanPrompt } from './prompts/compact_plan.js';
 import { mcpGetPlan } from '../commands/show.js';
 import { mcpUpdatePlanTasks, mcpAppendResearch } from './generate_mode.js';
 import { mcpListReadyPlans } from '../commands/ready.js';
@@ -92,6 +93,29 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(message?.text).toContain('Plan ID: 99999');
     expect(message?.text).toContain('Test Plan');
     expect(message?.text).toContain('Wait for your human collaborator');
+  });
+
+  test('loadCompactPlanPrompt builds compaction instructions for eligible plans', async () => {
+    const donePlan: PlanSchema = {
+      ...basePlan,
+      status: 'done',
+      updatedAt: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString(),
+      details: `${basePlan.details}\n\n## Research\n- Deep dive`,
+    };
+    await writePlanFile(planPath, donePlan);
+
+    const prompt = await loadCompactPlanPrompt({ plan: planPath }, context);
+    const message = prompt.messages[0]?.content;
+    expect(message?.text).toContain('You are an expert technical editor');
+    expect(message?.text).toContain('Output format (YAML only, no prose outside this block)');
+    expect(message?.text).toContain('Full plan file:');
+    expect(message?.text).toContain('share it with your human collaborator for review');
+  });
+
+  test('loadCompactPlanPrompt rejects plans that are not completed', async () => {
+    await expect(loadCompactPlanPrompt({ plan: planPath }, context)).rejects.toThrow(
+      'Only done, cancelled, or deferred plans can be compacted.'
+    );
   });
 
   test('mcpAppendResearch appends research to the plan file', async () => {

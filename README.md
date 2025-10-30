@@ -368,11 +368,12 @@ rmplan mcp-server --mode generate
 
 The server communicates over stdio by default. To expose an HTTP streaming endpoint instead, pass `--transport http --port <port>`. The command respects the global `--config` flag so you can point it at a specific `rmplan` configuration file when starting the server.
 
-The generate mode publishes two prompts and several tools:
+The generate mode publishes three prompts and several tools:
 
 - **Prompts**
   - `perform-research` – loads the plan and returns the standard research template so the client can capture findings under `## Research`.
   - `plan-questions` – shares plan context and instructs the model to ask focused, iterative questions that move the plan forward.
+  - `compact-plan` – loads a completed plan (status `done`, `cancelled`, or `deferred`), builds the compaction YAML prompt, and reminds the model to share the condensed output with a human for review before applying it.
 - **Tools**
   - `generate-plan-tasks` – builds the full planning prompt for the target plan. When `planning.direct_mode` is enabled (or the tool input sets `direct: true`), the tool calls the configured model directly and streams the generated tasks back. Otherwise it returns the prompt text so the client can run it manually.
   - `append-plan-research` – appends research Markdown to the plan’s `details` field under the `## Research` heading, creating the section if needed.
