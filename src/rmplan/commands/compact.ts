@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { readPlanFile, resolvePlanFile } from '../plans.js';
+import { readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
   buildExecutorAndLog,
@@ -187,6 +187,9 @@ export async function compactPlan(args: CompactPlanArgs): Promise<void> {
   const originalFileContent = await Bun.file(planFilePath).text();
   const sectionToggles = config.compaction?.sections ?? {};
 
+  // Capture the original updatedAt timestamp before compaction
+  const originalUpdatedAt = plan.updatedAt;
+
   const prompt = generateCompactionPrompt(
     plan,
     planFilePath,
@@ -196,6 +199,16 @@ export async function compactPlan(args: CompactPlanArgs): Promise<void> {
   );
 
   await runCompactionPrompt(executor, prompt, plan, planFilePath);
+
+  // Read the plan after compaction to update timestamps
+  const compactedPlan = await readPlanFile(planFilePath);
+
+  // Preserve the original updatedAt and set compactedAt
+  compactedPlan.updatedAt = originalUpdatedAt;
+  compactedPlan.compactedAt = new Date().toISOString();
+
+  // Write back with skipUpdatedAt flag to preserve our timestamp
+  await writePlanFile(planFilePath, compactedPlan, { skipUpdatedAt: true });
 }
 
 export function generateCompactionPrompt(

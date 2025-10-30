@@ -329,4 +329,42 @@ describe('compact command', () => {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
+
+  test('compactPlan preserves updatedAt and sets compactedAt', async () => {
+    const plan = await readPlanFile(planPath);
+    const originalUpdatedAt = '2024-01-15T10:30:00.000Z';
+    plan.updatedAt = originalUpdatedAt;
+    await writePlanFile(planPath, plan);
+
+    const config: RmplanConfig = {
+      ...getDefaultConfig(),
+      executors: {},
+    };
+
+    const stubExecutor: Executor = {
+      execute: async () => ({ success: true }),
+    };
+
+    const beforeCompaction = Date.now();
+
+    await compactPlan({
+      plan,
+      planFilePath: planPath,
+      executor: stubExecutor,
+      executorName: 'claude-code',
+      config,
+      minimumAgeDays: 30,
+    });
+
+    const compactedPlan = await readPlanFile(planPath);
+
+    // Verify updatedAt is preserved
+    expect(compactedPlan.updatedAt).toBe(originalUpdatedAt);
+
+    // Verify compactedAt is set and recent
+    expect(compactedPlan.compactedAt).toBeDefined();
+    const compactedAt = new Date(compactedPlan.compactedAt!).getTime();
+    expect(compactedAt).toBeGreaterThanOrEqual(beforeCompaction);
+    expect(compactedAt).toBeLessThanOrEqual(Date.now());
+  });
 });

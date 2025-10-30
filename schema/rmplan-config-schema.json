@@ -264,6 +264,42 @@
         }
       }
     },
+    "compaction": {
+      "type": "object",
+      "properties": {
+        "defaultExecutor": {
+          "description": "Default executor to use when compacting plans",
+          "type": "string"
+        },
+        "defaultModel": {
+          "description": "Default model identifier to use for compaction prompts",
+          "type": "string"
+        },
+        "minimumAgeDays": {
+          "description": "Minimum age in days before a plan becomes eligible for compaction",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sections": {
+          "type": "object",
+          "properties": {
+            "details": {
+              "description": "Whether the details section should be compacted",
+              "type": "boolean"
+            },
+            "research": {
+              "description": "Whether the research section should be compacted",
+              "type": "boolean"
+            },
+            "progressNotes": {
+              "description": "Whether progress notes should be condensed into a summary",
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
     "agents": {
       "description": "Custom instructions for implementer, tester, and reviewer agents",
       "type": "object",
