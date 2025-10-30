@@ -19,7 +19,7 @@ docs: []
 planGeneratedAt: 2025-10-29T22:44:18.265Z
 promptsGeneratedAt: 2025-10-29T22:44:18.265Z
 createdAt: 2025-10-27T19:26:47.021Z
-updatedAt: 2025-10-30T00:04:02.475Z
+updatedAt: 2025-10-30T00:07:41.342Z
 progressNotes:
   - timestamp: 2025-10-29T23:37:35.209Z
     text: Implemented initial compact command scaffold with executor integration and
@@ -34,6 +34,16 @@ progressNotes:
       recent plan warning behavior, and missing details validation; bun test
       src/rmplan/commands/compact.test.ts now passes with 7 cases.
     source: "tester: Task 8"
+  - timestamp: 2025-10-30T00:05:34.088Z
+    text: Updated generateCompactionPrompt to spell out preservation vs compression
+      rules, added anti-hallucination guidance, and embedded a sample YAML
+      output so executors have a concrete target.
+    source: "implementer: Task 4"
+  - timestamp: 2025-10-30T00:07:04.511Z
+    text: Reworked validateCompaction to return structured results, enforce required
+      field invariants, and detect serialization/control-character issues; added
+      targeted unit coverage for task mutations and unreadable output.
+    source: "implementer: Task 5"
 tasks:
   - title: Create compact command handler
     done: true
@@ -748,3 +758,5 @@ const isCompactionCandidate = isCompletedStatus && isOldEnough && hasNoDependent
 Implemented compact command (Tasks 1-7) that resolves plan files, enforces completed-status/age checks, invokes the configured executor, and rewrites generated details, research, and progress notes while recording compaction metadata. Added dedicated compaction prompt builder emphasizing preservation of goal, outcome, and decisions, plus validation to ensure schema compliance and task/metadata integrity before writes. Introduced compaction configuration schema (Task 9) and CLI wiring (Task 2) with options for executor, model, age, dry-run, and confirmation bypass. Created test suite (Task 8) verifying core compaction behavior, dry-run safety, and status enforcement using module mocks for executors/config; updated README with usage examples and option descriptions (Task 10).
 
 Addressed reviewer fixes for the compact command. Task: Fix research section delimiter corruption. Task: Honor compaction section toggles. Updated src/rmplan/commands/compact.ts so updateResearchSection scans for the rmplan generated delimiters before replacing `## Research` headings, ensuring an executor-supplied research heading inside `details_markdown` no longer truncates the manual sections or removes the `<!-- rmplan-generated-end -->` marker. At the same time, applyCompactionSections now accepts compaction section toggles and only mutates details, research, or progress notes when the matching `config.compaction.sections` flag is true, while still recording compaction metadata. Added regression coverage in src/rmplan/commands/compact.test.ts that exercises an executor response containing an extra research heading and verifies both the delimiter preservation and the new configuration gating to guide future maintenance.
+
+Expanded the compaction prompt (Task 4: Create compaction prompt template) to explicitly delineate which plan details must be preserved versus trimmed, emphasized anti-hallucination rules, and embedded a representative YAML example so executors consistently target the desired structure. Reworked validateCompaction (Task 5: Implement validation step) into a structured validator that enforces schema parsing, required field presence, invariant metadata comparisons, and readability checks by serializing the plan and scanning for control characters. The validator now returns both the normalized plan and any issues so compactPlan can surface precise failures. Added targeted tests in src/rmplan/commands/compact.test.ts ensuring validateCompaction flags task mutations and non-printable output, and updated the import to exercise the new export. These changes integrate with existing compaction flow by keeping mergeDetails and serialization untouched while strengthening pre-write safeguards.

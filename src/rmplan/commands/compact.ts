@@ -64,6 +64,11 @@ interface CompactionArtifacts {
   stats: CompactionStats;
 }
 
+interface CompactionValidationResult {
+  plan: PlanSchema;
+  issues: string[];
+}
+
 interface CompactPlanArgs {
   plan: PlanSchema;
   planFilePath: string;
@@ -190,7 +195,12 @@ export async function compactPlan(
     sectionToggles
   );
 
-  const validatedPlan = validateCompaction(plan, planClone);
+  const validationResult = validateCompaction(plan, planClone);
+  if (validationResult.issues.length > 0) {
+    throw new Error(`Compacted plan failed validation:\n - ${validationResult.issues.join('\n - ')}`);
+  }
+
+  const validatedPlan = validationResult.plan;
   const serializedPlan = serializePlan(validatedPlan);
   const compactedBytes = Buffer.byteLength(serializedPlan, 'utf8');
   const metadataCarrier = validatedPlan as PlanSchema & Record<string, unknown>;
@@ -281,33 +291,58 @@ export function generateCompactionPrompt(
     : 'No tasks listed.';
 
   return [
-    `You are assisting with archiving completed engineering plans by compacting them.`,
+    'You are an expert technical editor assisting with archiving completed engineering plans by compacting them for long-term storage.',
     `Plan ID: ${planId}`,
     `Plan Title: ${plan.title ?? 'Untitled'}`,
     `Current Status: ${plan.status}`,
     `Minimum age threshold: ${minimumAgeDays} days`,
     '',
-    'Goals:',
-    '- Preserve key decisions, final outcomes, acceptance criteria results, and implementation approach.',
-    '- Remove verbose research logs, brainstorming, or exploratory details that are no longer needed.',
-    '- Summaries must stay factual and draw only from the provided plan content. Do not add new information.',
+    'Preserve (must remain explicit and factual):',
+    '- Original goal and final outcome or current disposition.',
+    '- Key technical decisions, trade-offs, and rationale that explain why the outcome was chosen.',
+    '- Acceptance criteria results or validation evidence proving completion.',
+    '- Implementation or rollout approach at a high level.',
     '',
-    'Output format (YAML, no prose outside the YAML block):',
+    'Compress or omit when redundant:',
+    '- Exploratory research steps, dead-ends, brainstorming transcripts, and verbose progress logs.',
+    '- Inline status updates already implied by the outcome.',
+    '- Duplicate explanations that do not change the final understanding.',
+    '',
+    'Critical instructions:',
+    '- Do not invent or hallucinate new work. Pull only from the provided plan text.',
+    '- Maintain chronological clarity where helpful, but keep prose succinct.',
+    '- Respect existing Markdown delimiters and do not introduce HTML comments.',
+    '- Prefer bullet lists with hyphen markers and wrap lines at roughly 120 characters.',
+    '',
+    'Output format (YAML only, no prose outside this block):',
     '```yaml',
     'details_markdown: |',
-    '  ... concise Markdown capturing:',
-    '  - plan goal and scope',
-    '  - final outcome/results',
-    '  - critical technical decisions and rationale',
-    '  - implementation overview as needed',
+    '  ## Summary',
+    '  - <Concise recap of the plan goal, scope, final outcome/results>',
+    '  ## Decisions',
+    '  - <Bulleted list capturing critical technical decisions and rationale>',
     'research_markdown: |',
-    '  ... distilled findings from research (omit if not applicable)',
+    '  - <Distilled research findings that explain why the chosen solution worked>',
     'progress_notes_summary: |',
-    '  ... concise chronological summary showing how acceptance criteria were met',
+    '  - <Chronological highlights showing how acceptance criteria were satisfied>',
     '```',
     '',
-    'If a section would be empty, still provide the key with a short statement such as "None" or "Not applicable".',
-    'Ensure Markdown lists use hyphen bullets and wrap lines at 120 characters or less.',
+    'Example of a well-compacted output (illustrative only—never reuse its content):',
+    '```yaml',
+    'details_markdown: |',
+    '  ## Summary',
+    '  - Migrated analytics ingestion to the v2 pipeline, eliminating nightly backlogs.',
+    '  ## Decisions',
+    '  - Selected batched writes over streaming to keep within API quotas.',
+    '  - Documented schema diffs for downstream teams in /docs/analytics-migration.md.',
+    'research_markdown: |',
+    '  - Benchmarks showed 35% faster ETL when skipping legacy normalization.',
+    'progress_notes_summary: |',
+    '  - Validated new pipeline with staging data set 2024-03-18.',
+    '  - Deployed to production and monitored 48h with no regressions.',
+    '```',
+    '',
+    'If a section has nothing meaningful to retain, still provide the key with a short statement such as "None" or "Not applicable".',
     '',
     'Plan tasks for context:',
     tasks,
@@ -523,7 +558,10 @@ function updateResearchSection(
   return result ? `${result}\n` : result;
 }
 
-function validateCompaction(originalPlan: PlanSchema, compactedPlan: PlanSchema): PlanSchema {
+export function validateCompaction(
+  originalPlan: PlanSchema,
+  compactedPlan: PlanSchema
+): CompactionValidationResult {
   const issues: string[] = [];
 
   const parsed = phaseSchema.safeParse(compactedPlan);
@@ -535,20 +573,26 @@ function validateCompaction(originalPlan: PlanSchema, compactedPlan: PlanSchema)
 
   const normalizedPlan = parsed.success ? parsed.data : compactedPlan;
 
-  const compareFields: Array<keyof PlanSchema> = [
+  const requiredFields: Array<keyof PlanSchema> = ['id', 'uuid', 'title', 'goal', 'status', 'tasks'];
+  for (const field of requiredFields) {
+    if (normalizedPlan[field] === undefined) {
+      issues.push(`Required field "${String(field)}" is missing after compaction.`);
+    }
+  }
+
+  const invariantFields: Array<keyof PlanSchema> = [
     'id',
     'uuid',
     'title',
     'goal',
     'status',
-    'priority',
     'dependencies',
     'parent',
     'references',
     'tasks',
   ];
 
-  for (const field of compareFields) {
+  for (const field of invariantFields) {
     const beforeValue = originalPlan[field];
     const afterValue = normalizedPlan[field];
     if (field === 'tasks' || field === 'dependencies' || field === 'references') {
@@ -564,11 +608,26 @@ function validateCompaction(originalPlan: PlanSchema, compactedPlan: PlanSchema)
     }
   }
 
-  if (issues.length > 0) {
-    throw new Error(`Compacted plan failed validation:\n - ${issues.join('\n - ')}`);
+  if (typeof normalizedPlan.details !== 'string' && normalizedPlan.details !== undefined) {
+    issues.push('Details section must remain a string.');
   }
 
-  return normalizedPlan;
+  try {
+    const serialized = serializePlan(normalizedPlan);
+    if (serialized.length === 0) {
+      issues.push('Serialized plan content is empty after compaction.');
+    }
+    if (/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(serialized)) {
+      issues.push('Serialized plan contains non-printable control characters.');
+    }
+  } catch (error) {
+    issues.push(`Failed to serialize compacted plan: ${(error as Error).message}`);
+  }
+
+  return {
+    plan: normalizedPlan,
+    issues,
+  };
 }
 
 function serializePlan(plan: PlanSchema): string {

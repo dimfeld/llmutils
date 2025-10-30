@@ -64,7 +64,7 @@ await moduleMocker.mock('../configLoader.js', () => ({
   loadEffectiveConfig: mockLoadEffectiveConfig,
 }));
 
-const { handleCompactCommand, compactPlan } = await import('./compact.js');
+const { handleCompactCommand, compactPlan, validateCompaction } = await import('./compact.js');
 
 describe('compact command', () => {
   let tempDir: string;
@@ -447,5 +447,25 @@ progress_notes_summary: |
         minimumAgeDays: 30,
       })
     ).rejects.toThrow('Compaction response omitted details_markdown content.');
+  });
+
+  test('validateCompaction reports issues when tasks change', async () => {
+    const plan = await readPlanFile(planPath);
+    const mutated = structuredClone(plan);
+    mutated.tasks = [...mutated.tasks, { title: 'New task', description: 'Should not exist', done: false }];
+
+    const result = validateCompaction(plan, mutated);
+    expect(result.issues).toContain('Field "tasks" was modified during compaction.');
+  });
+
+  test('validateCompaction flags non-printable output', async () => {
+    const plan = await readPlanFile(planPath);
+    const mutated = structuredClone(plan);
+    mutated.details = `Problematic${String.fromCharCode(0)}text`;
+
+    const result = validateCompaction(plan, mutated);
+    expect(result.issues.some((issue) => issue.includes('non-printable control characters'))).toBe(
+      true
+    );
   });
 });
