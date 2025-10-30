@@ -39,47 +39,22 @@ interface CompactPlanArgs {
 }
 
 export async function handleCompactCommand(
-  planArg: string | undefined,
+  planArgs: string[] | undefined,
   options: CompactCommandOptions,
   command: Command
 ) {
-  if (!planArg) {
-    throw new Error('A plan identifier (ID or path) is required for compaction.');
+  if (!planArgs || planArgs.length === 0) {
+    throw new Error('At least one plan identifier (ID or path) is required for compaction.');
   }
 
   const globalOptions = command.parent?.opts?.() ?? {};
   const config = await loadEffectiveConfig(globalOptions.config);
-  const resolvedPlanFile = await resolvePlanFile(planArg, globalOptions.config);
-
-  const plan = await readPlanFile(resolvedPlanFile);
-
-  if (!COMPLETED_STATUSES.has(plan.status)) {
-    throw new Error(
-      `Plan ${plan.id ?? planArg} has status "${plan.status}". Only done, cancelled, or deferred plans can be compacted.`
-    );
-  }
 
   const minimumAgeDays =
     options.age ??
     config.compaction?.minimumAgeDays ??
     (config as any)?.compaction?.minimumAgeDays ??
     DEFAULT_MINIMUM_AGE_DAYS;
-
-  if (plan.updatedAt) {
-    const updatedAt = new Date(plan.updatedAt);
-    if (!Number.isNaN(updatedAt.valueOf())) {
-      const ageDays = (Date.now() - updatedAt.valueOf()) / (1000 * 60 * 60 * 24);
-      if (ageDays < minimumAgeDays) {
-        warn(
-          chalk.yellow(
-            `Plan ${plan.id ?? planArg} was updated ${ageDays.toFixed(
-              1
-            )} days ago (threshold ${minimumAgeDays}). Consider waiting before compacting.`
-          )
-        );
-      }
-    }
-  }
 
   const executorName =
     options.executor ??
@@ -102,18 +77,108 @@ export async function handleCompactCommand(
 
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
 
-  log(chalk.cyan(`\nStarting compaction of plan ${plan.id ?? planArg}...`));
+  // Validate and prepare all plans first
+  const plansToCompact: Array<{
+    planArg: string;
+    planFilePath: string;
+    plan: PlanSchema;
+  }> = [];
 
-  await compactPlan({
-    plan,
-    planFilePath: resolvedPlanFile,
-    executor,
-    executorName,
-    config,
-    minimumAgeDays,
-  });
+  for (const planArg of planArgs) {
+    try {
+      const resolvedPlanFile = await resolvePlanFile(planArg, globalOptions.config);
+      const plan = await readPlanFile(resolvedPlanFile);
 
-  log(chalk.green(`✓ Compaction of plan ${plan.id ?? planArg} completed.`));
+      if (!COMPLETED_STATUSES.has(plan.status)) {
+        warn(
+          chalk.yellow(
+            `Skipping plan ${plan.id ?? planArg}: status "${plan.status}". Only done, cancelled, or deferred plans can be compacted.`
+          )
+        );
+        continue;
+      }
+
+      if (plan.updatedAt) {
+        const updatedAt = new Date(plan.updatedAt);
+        if (!Number.isNaN(updatedAt.valueOf())) {
+          const ageDays = (Date.now() - updatedAt.valueOf()) / (1000 * 60 * 60 * 24);
+          if (ageDays < minimumAgeDays) {
+            warn(
+              chalk.yellow(
+                `Plan ${plan.id ?? planArg} was updated ${ageDays.toFixed(
+                  1
+                )} days ago (threshold ${minimumAgeDays}). Consider waiting before compacting.`
+              )
+            );
+          }
+        }
+      }
+
+      plansToCompact.push({
+        planArg,
+        planFilePath: resolvedPlanFile,
+        plan,
+      });
+    } catch (err) {
+      warn(chalk.red(`Error loading plan ${planArg}: ${err as Error}`));
+    }
+  }
+
+  if (plansToCompact.length === 0) {
+    throw new Error('No valid plans to compact.');
+  }
+
+  log(
+    chalk.cyan(
+      `\nStarting compaction of ${plansToCompact.length} plan${plansToCompact.length > 1 ? 's' : ''}...`
+    )
+  );
+
+  // Process plans concurrently with a limit of 10
+  const CONCURRENCY_LIMIT = 10;
+  const results: Array<{ planArg: string; success: boolean; error?: Error }> = [];
+
+  for (let i = 0; i < plansToCompact.length; i += CONCURRENCY_LIMIT) {
+    const batch = plansToCompact.slice(i, i + CONCURRENCY_LIMIT);
+    const batchResults = await Promise.allSettled(
+      batch.map(async ({ planArg, planFilePath, plan }) => {
+        try {
+          log(chalk.cyan(`Compacting plan ${plan.id ?? planArg}...`));
+          await compactPlan({
+            plan,
+            planFilePath,
+            executor,
+            executorName,
+            config,
+            minimumAgeDays,
+          });
+          log(chalk.green(`✓ Compaction of plan ${plan.id ?? planArg} completed.`));
+          return { planArg, success: true };
+        } catch (err) {
+          warn(chalk.red(`✗ Failed to compact plan ${plan.id ?? planArg}: ${err as Error}`));
+          return { planArg, success: false, error: err as Error };
+        }
+      })
+    );
+
+    for (const result of batchResults) {
+      if (result.status === 'fulfilled') {
+        results.push(result.value);
+      } else {
+        results.push({ planArg: 'unknown', success: false, error: result.reason });
+      }
+    }
+  }
+
+  // Summary
+  const successCount = results.filter((r) => r.success).length;
+  const failureCount = results.length - successCount;
+
+  log(chalk.cyan(`\n=== Compaction Summary ===`));
+  log(chalk.green(`✓ Successfully compacted: ${successCount}`));
+  if (failureCount > 0) {
+    log(chalk.red(`✗ Failed: ${failureCount}`));
+  }
 }
 
 export async function compactPlan(args: CompactPlanArgs): Promise<void> {

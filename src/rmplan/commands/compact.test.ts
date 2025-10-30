@@ -233,8 +233,8 @@ describe('compact command', () => {
     } as any;
 
     await expect(
-      handleCompactCommand(planPath, { executor: 'claude-code' }, mockCommand)
-    ).rejects.toThrow('Only done, cancelled, or deferred plans can be compacted');
+      handleCompactCommand([planPath], { executor: 'claude-code' }, mockCommand)
+    ).rejects.toThrow('No valid plans to compact');
   });
 
   test('handleCompactCommand warns about plan age', async () => {
@@ -246,7 +246,7 @@ describe('compact command', () => {
       parent: () => ({ opts: () => ({}) }),
     } as any;
 
-    await handleCompactCommand(planPath, { executor: 'claude-code' }, mockCommand);
+    await handleCompactCommand([planPath], { executor: 'claude-code' }, mockCommand);
 
     expect(mockWarn).toHaveBeenCalledWith(expect.stringContaining('was updated'));
     expect(mockWarn).toHaveBeenCalledWith(expect.stringContaining('threshold'));
@@ -278,5 +278,55 @@ describe('compact command', () => {
         minimumAgeDays: 30,
       })
     ).rejects.toThrow('Something went wrong');
+  });
+
+  test('handleCompactCommand processes multiple plans concurrently', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'compact-multi-'));
+    const plansDir = path.join(tempDir, 'plans');
+    await fs.mkdir(plansDir, { recursive: true });
+
+    // Create three test plans
+    const planPaths: string[] = [];
+    for (let i = 1; i <= 3; i++) {
+      const plan: PlanSchema = {
+        id: i,
+        title: `Test Plan ${i}`,
+        goal: `Goal for plan ${i}`,
+        status: 'done',
+        tasks: [
+          {
+            title: `Task ${i}`,
+            description: `Description for task ${i}`,
+            done: true,
+          },
+        ],
+        createdAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
+        updatedAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+
+      const planPath = path.join(plansDir, `plan-${i}.md`);
+      await writePlanFile(planPath, plan);
+      planPaths.push(planPath);
+    }
+
+    const mockCommand = {
+      parent: () => ({ opts: () => ({ config: tempDir }) }),
+    } as any;
+
+    // Reset mocks to track calls for this test
+    mockLog.mockClear();
+    mockWarn.mockClear();
+    executorExecute.mockClear();
+
+    try {
+      await handleCompactCommand(planPaths, { executor: 'claude-code' }, mockCommand);
+
+      // Verify all three plans were processed
+      expect(executorExecute).toHaveBeenCalledTimes(3);
+      expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('3 plans'));
+      expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Successfully compacted: 3'));
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 });

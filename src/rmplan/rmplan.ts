@@ -160,7 +160,7 @@ program
   });
 
 program
-  .command('compact [plan]')
+  .command('compact [plans...]')
   .description('Compact completed plans for archival by summarizing verbose sections')
   .option('--executor <name>', 'Executor to use for compaction (default: claude-code)')
   .option('--model <model>', 'Model to use for the executor')
@@ -173,9 +173,9 @@ program
   })
   .option('--dry-run', 'Preview compacted content without writing changes')
   .option('--yes', 'Skip confirmation prompt and write changes immediately')
-  .action(async (planArg, options, command) => {
+  .action(async (planArgs, options, command) => {
     const { handleCompactCommand } = await import('./commands/compact.js');
-    await handleCompactCommand(planArg, options, command).catch(handleCommandError);
+    await handleCompactCommand(planArgs, options, command).catch(handleCommandError);
   });
 
 program
