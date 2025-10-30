@@ -234,16 +234,7 @@ export type RemovePlanTaskArguments = z.infer<typeof removePlanTaskParameters>;
 export const updatePlanTaskParameters = z
   .object({
     plan: z.string().describe('Plan ID or file path'),
-    taskIndex: z
-      .number()
-      .optional()
-      .describe('Task index (0-based) to update'),
-    taskTitle: z
-      .string()
-      .optional()
-      .describe(
-        'Task title to search for (partial match, case-insensitive). Preferred over index.'
-      ),
+    taskTitle: z.string().describe('Task title to search for (partial match, case-insensitive)'),
     newTitle: z.string().optional().describe('New task title'),
     newDescription: z.string().optional().describe('New task description'),
     done: z.boolean().optional().describe('Mark task as done or not done'),
@@ -395,11 +386,7 @@ export async function mcpUpdatePlanTask(
   }
 
   // Ensure at least one update field is provided
-  if (
-    args.newTitle === undefined &&
-    args.newDescription === undefined &&
-    args.done === undefined
-  ) {
+  if (args.newTitle === undefined && args.newDescription === undefined && args.done === undefined) {
     throw new UserError(
       'At least one of newTitle, newDescription, or done must be provided to update a task.'
     );
@@ -632,7 +619,7 @@ export function registerGenerateMode(
   server.addTool({
     name: 'update-plan-tasks',
     description:
-      'Update an rmplan file with generated tasks and details. Takes pre-generated plan content (in markdown or YAML format) and merges it into the existing plan file, preserving metadata and completed tasks.',
+      'Update an rmplan file with generated tasks and details. Takes pre-generated plan content and merges it into the existing plan file, preserving metadata and completed tasks.',
     parameters: generateTasksParameters,
     annotations: {
       destructiveHint: true,
@@ -693,7 +680,7 @@ export function registerGenerateMode(
   server.addTool({
     name: 'update-plan-task',
     description:
-      'Update an existing task in a plan by title (preferred) or index. Can update the title, description, and/or done status.',
+      'Update a single existing task in a plan by title index. Can update the title, description, and/or done status.',
     parameters: updatePlanTaskParameters,
     annotations: {
       destructiveHint: true,
