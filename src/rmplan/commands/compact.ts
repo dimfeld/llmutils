@@ -197,7 +197,9 @@ export async function compactPlan(
 
   const validationResult = validateCompaction(plan, planClone);
   if (validationResult.issues.length > 0) {
-    throw new Error(`Compacted plan failed validation:\n - ${validationResult.issues.join('\n - ')}`);
+    throw new Error(
+      `Compacted plan failed validation:\n - ${validationResult.issues.join('\n - ')}`
+    );
   }
 
   const validatedPlan = validationResult.plan;
@@ -573,7 +575,14 @@ export function validateCompaction(
 
   const normalizedPlan = parsed.success ? parsed.data : compactedPlan;
 
-  const requiredFields: Array<keyof PlanSchema> = ['id', 'uuid', 'title', 'goal', 'status', 'tasks'];
+  const requiredFields: Array<keyof PlanSchema> = [
+    'id',
+    'uuid',
+    'title',
+    'goal',
+    'status',
+    'tasks',
+  ];
   for (const field of requiredFields) {
     if (normalizedPlan[field] === undefined) {
       issues.push(`Required field "${String(field)}" is missing after compaction.`);

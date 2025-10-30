@@ -64,12 +64,8 @@ await moduleMocker.mock('../configLoader.js', () => ({
   loadEffectiveConfig: mockLoadEffectiveConfig,
 }));
 
-const {
-  handleCompactCommand,
-  compactPlan,
-  validateCompaction,
-  generateCompactionPrompt,
-} = await import('./compact.js');
+const { handleCompactCommand, compactPlan, validateCompaction, generateCompactionPrompt } =
+  await import('./compact.js');
 
 describe('compact command', () => {
   let tempDir: string;
@@ -457,7 +453,10 @@ progress_notes_summary: |
   test('validateCompaction reports issues when tasks change', async () => {
     const plan = await readPlanFile(planPath);
     const mutated = structuredClone(plan);
-    mutated.tasks = [...mutated.tasks, { title: 'New task', description: 'Should not exist', done: false }];
+    mutated.tasks = [
+      ...mutated.tasks,
+      { title: 'New task', description: 'Should not exist', done: false },
+    ];
 
     const result = validateCompaction(plan, mutated);
     expect(result.issues).toContain('Field "tasks" was modified during compaction.');
