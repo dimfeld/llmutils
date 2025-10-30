@@ -19,7 +19,7 @@ docs: []
 planGeneratedAt: 2025-10-29T22:44:18.265Z
 promptsGeneratedAt: 2025-10-29T22:44:18.265Z
 createdAt: 2025-10-27T19:26:47.021Z
-updatedAt: 2025-10-30T00:26:49.626Z
+updatedAt: 2025-10-30T00:38:12.957Z
 progressNotes:
   - timestamp: 2025-10-29T23:37:35.209Z
     text: Implemented initial compact command scaffold with executor integration and
@@ -62,6 +62,14 @@ progressNotes:
     text: Ran bun run format, bun run check, and bun test after updating the compact
       command; all checks passed with new backup helper and preview coverage.
     source: "tester: Task 6-7"
+  - timestamp: 2025-10-30T00:28:36.869Z
+    text: Ran bun test src/rmplan/commands/compact.test.ts; all 16 tests passed in
+      347ms.
+    source: "tester: Tasks 6-7"
+  - timestamp: 2025-10-30T00:29:36.076Z
+    text: Added coverage for missing progress note summary and confirmation abort
+      path; bun test src/rmplan/commands/compact.test.ts now passes 18 cases.
+    source: "tester: Tasks 6-7"
 tasks:
   - title: Create compact command handler
     done: true
@@ -782,3 +790,5 @@ Expanded the compaction prompt (Task 4: Create compaction prompt template) to ex
 Addressed reviewer feedback for Task 5 – Implement validation step by tightening validateCompaction so parent metadata cannot disappear unnoticed. Updated src/rmplan/commands/compact.ts to explicitly compare invariant fields when either side is undefined, reusing the existing JSON-based equality for defined values to retain consistency while surfacing removals and additions of parent data. Added regression coverage in src/rmplan/commands/compact.test.ts that constructs a plan with a parent and verifies the validator now flags the removal, ensuring future compactions preserve critical parent/child relationships.
 
 Implemented Task 6: Add dry-run mode and Task 7: Implement file writing with backup. Updated src/rmplan/commands/compact.ts so compactPlan now returns the executor output alongside applied section flags, configuration toggles, and the original plan content. handleCompactCommand reuses a new reportCompactionPreview() helper to show the size delta, section status, and content previews for both dry-run and applying flows, then calls writeCompactedPlanWithBackup() which snapshots the original file to <plan>.backup-<timestamp>, attempts to write via writePlanFile(), and restores from the captured content if the write fails. applyCompactionSections now reports which sections actually changed and respects missing research summaries, while reportSuccessfulCompaction logs the backup location for auditing. Added writeCompactedPlanWithBackup() tests plus assertions about preview logging and backup creation in src/rmplan/commands/compact.test.ts to enforce the new behavior. These changes ensure dry runs surface the intended edits, compaction applies only to enabled sections, and users always have a recoverable backup when we write the condensed plan.
+
+Addressed review fixes for compact command size tracking and metrics. Updated src/rmplan/commands/compact.ts to recompute serialization after attaching compaction metadata using an iterative loop so compactedBytes/compactedReductionBytes reflect the actual post-metadata file size. Adjusted calculateMetrics to derive "after" lengths from the finalized plan details/progress notes, ensuring toggle-suppressed sections report accurate deltas during previews. Revised reportSuccessfulCompaction to surface the signed byte delta instead of clamping negative growth, avoiding contradictory logging. These changes keep compaction previews, stats, and completion messages aligned with what is written to disk.

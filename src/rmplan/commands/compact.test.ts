@@ -362,6 +362,43 @@ progress_notes_summary: |
     });
   });
 
+  test('compactPlan records default progress note when executor omits summary', async () => {
+    const plan = await readPlanFile(planPath);
+    const config: RmplanConfig = {
+      ...getDefaultConfig(),
+      compaction: {
+        minimumAgeDays: 30,
+        defaultExecutor: 'claude-code',
+      },
+      executors: {},
+    };
+
+    const stubExecutor: Executor = {
+      execute: async () => ({
+        content: `details_markdown: |
+  ## Summary
+  - Progress summary omitted
+research_markdown: |
+  - Research distilled
+`,
+      }),
+    };
+
+    const result = await compactPlan({
+      plan,
+      planFilePath: planPath,
+      executor: stubExecutor,
+      executorName: 'claude-code',
+      config,
+      minimumAgeDays: 30,
+    });
+
+    expect(result.plan.progressNotes).toHaveLength(1);
+    expect(result.plan.progressNotes?.[0].text).toContain(
+      'Compaction performed with no additional progress notes provided by the executor.'
+    );
+  });
+
   test('handleCompactCommand in dry-run mode does not write changes', async () => {
     const before = await fs.readFile(planPath, 'utf-8');
 
@@ -402,6 +439,34 @@ progress_notes_summary: |
         ([message]) => typeof message === 'string' && message.includes('Backup saved to')
       )
     ).toBe(true);
+  });
+
+  test('handleCompactCommand aborts write when user denies confirmation', async () => {
+    const beforeContent = await fs.readFile(planPath, 'utf-8');
+    mockConfirm.mockReset().mockResolvedValueOnce(false);
+
+    const originalIsTTY = process.stdout.isTTY;
+    (process.stdout as any).isTTY = true;
+
+    try {
+      await handleCompactCommand(planPath, {}, { parent: { opts: () => ({}) } } as any);
+    } finally {
+      (process.stdout as any).isTTY = originalIsTTY;
+    }
+
+    const afterContent = await fs.readFile(planPath, 'utf-8');
+    expect(afterContent).toBe(beforeContent);
+    expect(mockConfirm).toHaveBeenCalledTimes(1);
+    expect(
+      mockLog.mock.calls.some(
+        ([message]) => typeof message === 'string' && message.includes('Compaction aborted by user.')
+      )
+    ).toBe(true);
+
+    const backupFiles = (await fs.readdir(tempDir)).filter((file) =>
+      file.startsWith(path.basename(planPath) + '.backup-')
+    );
+    expect(backupFiles.length).toBe(0);
   });
 
   test('writeCompactedPlanWithBackup restores original content when writer fails', async () => {

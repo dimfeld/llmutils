@@ -219,12 +219,20 @@ export async function compactPlan(
   }
 
   const validatedPlan = validationResult.plan;
-  const serializedPlan = serializePlan(validatedPlan);
-  const compactedBytes = Buffer.byteLength(serializedPlan, 'utf8');
   const metadataCarrier = validatedPlan as PlanSchema & Record<string, unknown>;
   if (metadataCarrier.compactedOriginalBytes === undefined) {
     metadataCarrier.compactedOriginalBytes = originalBytes;
   }
+  let serializedPlan = '';
+  let compactedBytes = 0;
+  let previousCompactedBytes: number | undefined;
+  do {
+    metadataCarrier.compactedBytes = compactedBytes;
+    metadataCarrier.compactedReductionBytes = originalBytes - compactedBytes;
+    serializedPlan = serializePlan(validatedPlan);
+    previousCompactedBytes = compactedBytes;
+    compactedBytes = Buffer.byteLength(serializedPlan, 'utf8');
+  } while (compactedBytes !== previousCompactedBytes);
   metadataCarrier.compactedBytes = compactedBytes;
   metadataCarrier.compactedReductionBytes = originalBytes - compactedBytes;
 
@@ -240,7 +248,7 @@ export async function compactPlan(
       originalBytes,
       compactedBytes,
     },
-    metrics: calculateMetrics(plan, validatedPlan, compactionSections),
+    metrics: calculateMetrics(plan, validatedPlan),
   };
 }
 
@@ -340,10 +348,9 @@ function reportSuccessfulCompaction(
   const planId = originalPlan.id ?? 'unknown';
   log(
     chalk.green(
-      `✓ Compacted plan ${planId}. Size reduced by ${Math.max(
-        0,
-        reduction
-      )} bytes (${reductionPercent.toFixed(1)}%).`
+      `✓ Compacted plan ${planId}. Size change of ${reduction} bytes (${reductionPercent.toFixed(
+        1
+      )}%).`
     )
   );
   if (backupPath) {
@@ -805,16 +812,12 @@ function serializePlan(plan: PlanSchema): string {
   return content;
 }
 
-function calculateMetrics(
-  originalPlan: PlanSchema,
-  compactedPlan: PlanSchema,
-  sections: CompactionSections
-): SectionMetrics {
+function calculateMetrics(originalPlan: PlanSchema, compactedPlan: PlanSchema): SectionMetrics {
   return {
     originalGeneratedLength: extractGeneratedContent(originalPlan.details).length,
-    compactedGeneratedLength: sections.detailsMarkdown.length,
+    compactedGeneratedLength: extractGeneratedContent(compactedPlan.details).length,
     originalResearchLength: extractResearchContent(originalPlan.details).length,
-    compactedResearchLength: sections.researchMarkdown?.length ?? 0,
+    compactedResearchLength: extractResearchContent(compactedPlan.details).length,
     originalProgressNotesCount: Array.isArray(originalPlan.progressNotes)
       ? originalPlan.progressNotes.length
       : 0,
