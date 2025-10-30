@@ -246,6 +246,111 @@ progress_notes_summary: |
     expect(result.plan.details).not.toContain('Original generated details to replace.');
   });
 
+  test('compactPlan preserves generated delimiters when executor includes research heading', async () => {
+    const plan = await readPlanFile(planPath);
+    plan.details = `<!-- rmplan-generated-start -->
+## Summary
+- Generated block already contains a Research section.
+## Research
+- Generated content referencing research.
+<!-- rmplan-generated-end -->
+
+## Research
+
+- Manual research that should be replaced.
+
+## Follow-up
+- Keep this manual content.
+`;
+    await writePlanFile(planPath, plan);
+
+    const config: RmplanConfig = {
+      ...getDefaultConfig(),
+      compaction: {
+        minimumAgeDays: 30,
+        defaultExecutor: 'claude-code',
+      },
+      executors: {},
+    };
+
+    const stubExecutor: Executor = {
+      execute: async () => ({
+        content: `details_markdown: |
+  ## Summary
+  - Updated generated details.
+  ## Research
+  - Research heading included by executor inside generated content.
+research_markdown: |
+  - Manual research replaced safely.
+progress_notes_summary: |
+  Compaction completed.
+`,
+      }),
+    };
+
+    const result = await compactPlan({
+      plan: await readPlanFile(planPath),
+      planFilePath: planPath,
+      executor: stubExecutor,
+      executorName: 'claude-code',
+      config,
+      minimumAgeDays: 30,
+    });
+
+    expect(result.plan.details).toContain('<!-- rmplan-generated-end -->');
+    expect(result.plan.details).toContain(
+      'Research heading included by executor inside generated content.'
+    );
+    expect(result.plan.details).toContain('Manual research replaced safely.');
+    expect(result.plan.details).not.toContain('Manual research that should be replaced.');
+    expect(result.plan.details).toContain('## Follow-up');
+  });
+
+  test('compactPlan honors compaction section toggles from configuration', async () => {
+    const plan = await readPlanFile(planPath);
+    const originalDetails = plan.details;
+    const originalProgressNotes = structuredClone(plan.progressNotes);
+
+    const config: RmplanConfig = {
+      ...getDefaultConfig(),
+      compaction: {
+        minimumAgeDays: 30,
+        defaultExecutor: 'claude-code',
+        sections: {
+          details: false,
+          research: false,
+          progressNotes: false,
+        },
+      },
+      executors: {},
+    };
+
+    const stubExecutor: Executor = {
+      execute: async () => ({
+        content: `details_markdown: |
+  ## Summary
+  - This content should not be merged due to config.
+research_markdown: |
+  - This research should be ignored.
+progress_notes_summary: |
+  This summary should not replace progress notes.
+`,
+      }),
+    };
+
+    const result = await compactPlan({
+      plan,
+      planFilePath: planPath,
+      executor: stubExecutor,
+      executorName: 'claude-code',
+      config,
+      minimumAgeDays: 30,
+    });
+
+    expect(result.plan.details).toBe(originalDetails);
+    expect(result.plan.progressNotes).toEqual(originalProgressNotes);
+  });
+
   test('handleCompactCommand in dry-run mode does not write changes', async () => {
     const before = await fs.readFile(planPath, 'utf-8');
 

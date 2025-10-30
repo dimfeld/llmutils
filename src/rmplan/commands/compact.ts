@@ -36,6 +36,12 @@ interface CompactionSections {
   progressNotesSummary?: string | null;
 }
 
+interface CompactionSectionToggles {
+  details?: boolean;
+  research?: boolean;
+  progressNotes?: boolean;
+}
+
 interface SectionMetrics {
   originalGeneratedLength: number;
   compactedGeneratedLength: number;
@@ -174,7 +180,15 @@ export async function compactPlan(
   const executorOutput = await runCompactionPrompt(executor, prompt, planClone, planFilePath);
   const compactionSections = await parseCompactionResponse(executorOutput, config);
 
-  applyCompactionSections(planClone, compactionSections, executorName, originalBytes);
+  const sectionToggles = config.compaction?.sections;
+
+  applyCompactionSections(
+    planClone,
+    compactionSections,
+    executorName,
+    originalBytes,
+    sectionToggles
+  );
 
   const validatedPlan = validateCompaction(plan, planClone);
   const serializedPlan = serializePlan(validatedPlan);
@@ -405,23 +419,36 @@ function applyCompactionSections(
   plan: PlanSchema,
   sections: CompactionSections,
   executorName: string,
-  originalBytes: number
+  originalBytes: number,
+  sectionToggles?: CompactionSectionToggles
 ) {
-  const mergedDetails = mergeDetails(sections.detailsMarkdown, plan.details);
-  const updatedDetails = updateResearchSection(mergedDetails, sections.researchMarkdown);
-  plan.details = updatedDetails;
+  const applyDetails = sectionToggles?.details ?? true;
+  const applyResearch = sectionToggles?.research ?? true;
+  const applyProgressNotes = sectionToggles?.progressNotes ?? true;
 
-  const progressSummary = sections.progressNotesSummary
-    ? `Compaction summary:\n${sections.progressNotesSummary.trim()}`
-    : 'Compaction performed with no additional progress notes provided by the executor.';
+  const mergedDetails = applyDetails
+    ? mergeDetails(sections.detailsMarkdown, plan.details)
+    : plan.details;
 
-  plan.progressNotes = [
-    {
-      timestamp: new Date().toISOString(),
-      text: progressSummary,
-      source: 'rmplan compact',
-    },
-  ];
+  if (applyResearch) {
+    plan.details = updateResearchSection(mergedDetails, sections.researchMarkdown);
+  } else if (applyDetails) {
+    plan.details = mergedDetails;
+  }
+
+  if (applyProgressNotes) {
+    const progressSummary = sections.progressNotesSummary
+      ? `Compaction summary:\n${sections.progressNotesSummary.trim()}`
+      : 'Compaction performed with no additional progress notes provided by the executor.';
+
+    plan.progressNotes = [
+      {
+        timestamp: new Date().toISOString(),
+        text: progressSummary,
+        source: 'rmplan compact',
+      },
+    ];
+  }
 
   const metadataCarrier = plan as PlanSchema & Record<string, unknown>;
   metadataCarrier.compactedAt = new Date().toISOString();
@@ -444,13 +471,34 @@ function updateResearchSection(
     return details;
   }
 
+  const trimmedResearch = researchMarkdown.trim();
   const lines = details.split('\n');
-  const startIndex = lines.findIndex((line) => line.trim().toLowerCase() === '## research');
+  let startIndex = -1;
+  let insideGenerated = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const trimmedLine = lines[i].trim();
+
+    if (trimmedLine === GENERATED_START_DELIMITER) {
+      insideGenerated = true;
+      continue;
+    }
+
+    if (trimmedLine === GENERATED_END_DELIMITER) {
+      insideGenerated = false;
+      continue;
+    }
+
+    if (!insideGenerated && trimmedLine.toLowerCase() === '## research') {
+      startIndex = i;
+      break;
+    }
+  }
 
   if (startIndex === -1) {
     const trimmedDetails = details.trimEnd();
     const separator = trimmedDetails ? '\n\n' : '';
-    return `${trimmedDetails}${separator}## Research\n\n${researchMarkdown.trim()}`.trimEnd();
+    return `${trimmedDetails}${separator}## Research\n\n${trimmedResearch}`.trimEnd();
   }
 
   let endIndex = lines.length;
@@ -464,14 +512,15 @@ function updateResearchSection(
 
   const prefix = lines.slice(0, startIndex).join('\n').trimEnd();
   const suffix = lines.slice(endIndex).join('\n').trim();
-  const researchBlock = `## Research\n\n${researchMarkdown.trim()}`;
+  const researchBlock = `## Research\n\n${trimmedResearch}`;
 
   const pieces = [];
   if (prefix) pieces.push(prefix);
   pieces.push(researchBlock);
   if (suffix) pieces.push(suffix);
 
-  return pieces.join('\n\n').trim() + '\n';
+  const result = pieces.join('\n\n').trimEnd();
+  return result ? `${result}\n` : result;
 }
 
 function validateCompaction(originalPlan: PlanSchema, compactedPlan: PlanSchema): PlanSchema {
