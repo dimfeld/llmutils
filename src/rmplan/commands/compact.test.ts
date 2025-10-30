@@ -459,7 +459,8 @@ research_markdown: |
     expect(mockConfirm).toHaveBeenCalledTimes(1);
     expect(
       mockLog.mock.calls.some(
-        ([message]) => typeof message === 'string' && message.includes('Compaction aborted by user.')
+        ([message]) =>
+          typeof message === 'string' && message.includes('Compaction aborted by user.')
       )
     ).toBe(true);
 
