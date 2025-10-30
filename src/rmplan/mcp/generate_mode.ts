@@ -231,6 +231,27 @@ export const removePlanTaskParameters = z
 
 export type RemovePlanTaskArguments = z.infer<typeof removePlanTaskParameters>;
 
+export const updatePlanTaskParameters = z
+  .object({
+    plan: z.string().describe('Plan ID or file path'),
+    taskIndex: z
+      .number()
+      .optional()
+      .describe('Task index (0-based) to update'),
+    taskTitle: z
+      .string()
+      .optional()
+      .describe(
+        'Task title to search for (partial match, case-insensitive). Preferred over index.'
+      ),
+    newTitle: z.string().optional().describe('New task title'),
+    newDescription: z.string().optional().describe('New task description'),
+    done: z.boolean().optional().describe('Mark task as done or not done'),
+  })
+  .describe('Update an existing task in a plan by title (preferred) or index.');
+
+export type UpdatePlanTaskArguments = z.infer<typeof updatePlanTaskParameters>;
+
 export const listReadyPlansParameters = z
   .object({
     priority: prioritySchema
@@ -362,7 +383,92 @@ export async function mcpRemovePlanTask(
   return `Removed task "${removedTask.title}" from ${planIdentifier} (index ${index}).${shiftWarning}`;
 }
 
+export async function mcpUpdatePlanTask(
+  args: UpdatePlanTaskArguments,
+  context: GenerateModeRegistrationContext,
+  execContext?: { log: GenerateModeExecutionLogger }
+): Promise<string> {
+  const { plan, planPath } = await resolvePlan(args.plan, context);
+
+  if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) {
+    throw new UserError('Plan has no tasks to update.');
+  }
+
+  // Ensure at least one update field is provided
+  if (
+    args.newTitle === undefined &&
+    args.newDescription === undefined &&
+    args.done === undefined
+  ) {
+    throw new UserError(
+      'At least one of newTitle, newDescription, or done must be provided to update a task.'
+    );
+  }
+
+  const index = resolveTaskIndex(plan.tasks, args, 'update');
+  if (index < 0 || index >= plan.tasks.length) {
+    throw new UserError(
+      `Task index ${index} is out of bounds for plan with ${plan.tasks.length} task(s).`
+    );
+  }
+
+  const task = plan.tasks[index];
+  if (!task) {
+    throw new UserError(`Task at index ${index} not found.`);
+  }
+
+  const oldTitle = task.title;
+  const updates: string[] = [];
+
+  if (args.newTitle !== undefined) {
+    const trimmedTitle = args.newTitle.trim();
+    if (!trimmedTitle) {
+      throw new UserError('New task title cannot be empty.');
+    }
+    task.title = trimmedTitle;
+    updates.push(`title to "${trimmedTitle}"`);
+  }
+
+  if (args.newDescription !== undefined) {
+    const trimmedDescription = args.newDescription.trim();
+    if (!trimmedDescription) {
+      throw new UserError('New task description cannot be empty.');
+    }
+    task.description = trimmedDescription;
+    updates.push('description');
+  }
+
+  if (args.done !== undefined) {
+    task.done = args.done;
+    updates.push(`done status to ${args.done}`);
+  }
+
+  plan.updatedAt = new Date().toISOString();
+  await writePlanFile(planPath, plan);
+
+  const relativePath = path.relative(context.gitRoot, planPath) || planPath;
+  execContext?.log.info('Updated task in plan', {
+    planId: plan.id ?? null,
+    planPath: relativePath,
+    index,
+    updates: updates.join(', '),
+  });
+
+  const planIdentifier = plan.id ? `plan ${plan.id}` : relativePath;
+  const updatesText = updates.length > 0 ? ` Updated: ${updates.join(', ')}.` : '';
+
+  return `Updated task "${oldTitle}" in ${planIdentifier} (index ${index}).${updatesText}`;
+}
+
 function resolveRemovalIndex(tasks: PlanSchema['tasks'], args: RemovePlanTaskArguments): number {
+  return resolveTaskIndex(tasks, args, 'remove');
+}
+
+function resolveTaskIndex(
+  tasks: PlanSchema['tasks'],
+  args: { taskTitle?: string; taskIndex?: number },
+  operation: 'remove' | 'update'
+): number {
   if (args.taskTitle) {
     const index = findTaskByTitle(tasks, args.taskTitle);
     if (index === -1) {
@@ -378,7 +484,7 @@ function resolveRemovalIndex(tasks: PlanSchema['tasks'], args: RemovePlanTaskArg
     return args.taskIndex;
   }
 
-  throw new UserError('Provide either taskTitle or taskIndex to remove a task.');
+  throw new UserError(`Provide either taskTitle or taskIndex to ${operation} a task.`);
 }
 
 function normalizeList(values?: string[]): string[] {
@@ -576,6 +682,27 @@ export function registerGenerateMode(
       try {
         return await mcpRemovePlanTask(args, context, {
           log: wrapLogger(execContext.log, '[remove-plan-task] '),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new UserError(message);
+      }
+    },
+  });
+
+  server.addTool({
+    name: 'update-plan-task',
+    description:
+      'Update an existing task in a plan by title (preferred) or index. Can update the title, description, and/or done status.',
+    parameters: updatePlanTaskParameters,
+    annotations: {
+      destructiveHint: true,
+      readOnlyHint: false,
+    },
+    execute: async (args, execContext) => {
+      try {
+        return await mcpUpdatePlanTask(args, context, {
+          log: wrapLogger(execContext.log, '[update-plan-task] '),
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

@@ -13,7 +13,9 @@ import {
   listReadyPlansParameters,
   mcpAddPlanTask,
   mcpRemovePlanTask,
+  mcpUpdatePlanTask,
   removePlanTaskParameters,
+  updatePlanTaskParameters,
   loadGeneratePrompt,
   loadPlanPrompt,
   loadQuestionsPrompt,
@@ -393,6 +395,256 @@ describe('rmplan MCP generate mode helpers', () => {
 
     await expect(mcpRemovePlanTask(args, context)).rejects.toThrow(
       'Provide either taskTitle or taskIndex to remove a task.'
+    );
+  });
+
+  test('mcpUpdatePlanTask updates task title by title selector', async () => {
+    const addArgs = addPlanTaskParameters.parse({
+      plan: planPath,
+      title: 'Original Task',
+      description: 'Original description',
+    });
+
+    const stubLogger = {
+      debug() {},
+      error() {},
+      info() {},
+      warn() {},
+    };
+
+    await mcpAddPlanTask(addArgs, context, { log: stubLogger });
+
+    const updateArgs = updatePlanTaskParameters.parse({
+      plan: planPath,
+      taskTitle: 'original',
+      newTitle: 'Updated Task Title',
+    });
+
+    const result = await mcpUpdatePlanTask(updateArgs, context, { log: stubLogger });
+    expect(result).toContain('Updated task "Original Task"');
+    expect(result).toContain('title to "Updated Task Title"');
+
+    const updated = await readPlanFile(planPath);
+    expect(updated.tasks).toHaveLength(1);
+    expect(updated.tasks[0]?.title).toBe('Updated Task Title');
+    expect(updated.tasks[0]?.description).toBe('Original description');
+  });
+
+  test('mcpUpdatePlanTask updates task description by index', async () => {
+    const addArgs = addPlanTaskParameters.parse({
+      plan: planPath,
+      title: 'Task Title',
+      description: 'Original description',
+    });
+
+    const stubLogger = {
+      debug() {},
+      error() {},
+      info() {},
+      warn() {},
+    };
+
+    await mcpAddPlanTask(addArgs, context, { log: stubLogger });
+
+    const updateArgs = updatePlanTaskParameters.parse({
+      plan: planPath,
+      taskIndex: 0,
+      newDescription: 'Updated description with more details',
+    });
+
+    const result = await mcpUpdatePlanTask(updateArgs, context, { log: stubLogger });
+    expect(result).toContain('Updated task "Task Title"');
+    expect(result).toContain('description');
+
+    const updated = await readPlanFile(planPath);
+    expect(updated.tasks).toHaveLength(1);
+    expect(updated.tasks[0]?.title).toBe('Task Title');
+    expect(updated.tasks[0]?.description).toBe('Updated description with more details');
+  });
+
+  test('mcpUpdatePlanTask updates task done status', async () => {
+    const addArgs = addPlanTaskParameters.parse({
+      plan: planPath,
+      title: 'Task to Complete',
+      description: 'Task description',
+    });
+
+    const stubLogger = {
+      debug() {},
+      error() {},
+      info() {},
+      warn() {},
+    };
+
+    await mcpAddPlanTask(addArgs, context, { log: stubLogger });
+
+    const updateArgs = updatePlanTaskParameters.parse({
+      plan: planPath,
+      taskTitle: 'complete',
+      done: true,
+    });
+
+    const result = await mcpUpdatePlanTask(updateArgs, context, { log: stubLogger });
+    expect(result).toContain('Updated task "Task to Complete"');
+    expect(result).toContain('done status to true');
+
+    const updated = await readPlanFile(planPath);
+    expect(updated.tasks).toHaveLength(1);
+    expect(updated.tasks[0]?.done).toBeTrue();
+  });
+
+  test('mcpUpdatePlanTask updates multiple fields at once', async () => {
+    const addArgs = addPlanTaskParameters.parse({
+      plan: planPath,
+      title: 'Multi-update Task',
+      description: 'Original description',
+    });
+
+    const stubLogger = {
+      debug() {},
+      error() {},
+      info() {},
+      warn() {},
+    };
+
+    await mcpAddPlanTask(addArgs, context, { log: stubLogger });
+
+    const updateArgs = updatePlanTaskParameters.parse({
+      plan: planPath,
+      taskIndex: 0,
+      newTitle: 'Updated Title',
+      newDescription: 'Updated description',
+      done: true,
+    });
+
+    const result = await mcpUpdatePlanTask(updateArgs, context, { log: stubLogger });
+    expect(result).toContain('Updated task "Multi-update Task"');
+    expect(result).toContain('title to "Updated Title"');
+    expect(result).toContain('description');
+    expect(result).toContain('done status to true');
+
+    const updated = await readPlanFile(planPath);
+    expect(updated.tasks).toHaveLength(1);
+    expect(updated.tasks[0]?.title).toBe('Updated Title');
+    expect(updated.tasks[0]?.description).toBe('Updated description');
+    expect(updated.tasks[0]?.done).toBeTrue();
+  });
+
+  test('mcpUpdatePlanTask errors when no update fields provided', async () => {
+    const addArgs = addPlanTaskParameters.parse({
+      plan: planPath,
+      title: 'Task',
+      description: 'Description',
+    });
+
+    await mcpAddPlanTask(addArgs, context);
+
+    const updateArgs = updatePlanTaskParameters.parse({
+      plan: planPath,
+      taskIndex: 0,
+    });
+
+    await expect(mcpUpdatePlanTask(updateArgs, context)).rejects.toThrow(
+      'At least one of newTitle, newDescription, or done must be provided to update a task.'
+    );
+  });
+
+  test('mcpUpdatePlanTask errors when task title is not found', async () => {
+    const addArgs = addPlanTaskParameters.parse({
+      plan: planPath,
+      title: 'Existing Task',
+      description: 'Description',
+    });
+
+    await mcpAddPlanTask(addArgs, context);
+
+    const updateArgs = updatePlanTaskParameters.parse({
+      plan: planPath,
+      taskTitle: 'nonexistent',
+      newTitle: 'Updated',
+    });
+
+    await expect(mcpUpdatePlanTask(updateArgs, context)).rejects.toThrow(
+      'No task found with title containing "nonexistent"'
+    );
+  });
+
+  test('mcpUpdatePlanTask errors when task index is out of bounds', async () => {
+    const addArgs = addPlanTaskParameters.parse({
+      plan: planPath,
+      title: 'Task',
+      description: 'Description',
+    });
+
+    await mcpAddPlanTask(addArgs, context);
+
+    const updateArgs = updatePlanTaskParameters.parse({
+      plan: planPath,
+      taskIndex: 5,
+      newTitle: 'Updated',
+    });
+
+    await expect(mcpUpdatePlanTask(updateArgs, context)).rejects.toThrow(
+      'Task index 5 is out of bounds'
+    );
+  });
+
+  test('mcpUpdatePlanTask errors on empty title', async () => {
+    const addArgs = addPlanTaskParameters.parse({
+      plan: planPath,
+      title: 'Task',
+      description: 'Description',
+    });
+
+    await mcpAddPlanTask(addArgs, context);
+
+    const updateArgs = updatePlanTaskParameters.parse({
+      plan: planPath,
+      taskIndex: 0,
+      newTitle: '   ',
+    });
+
+    await expect(mcpUpdatePlanTask(updateArgs, context)).rejects.toThrow(
+      'New task title cannot be empty'
+    );
+  });
+
+  test('mcpUpdatePlanTask errors on empty description', async () => {
+    const addArgs = addPlanTaskParameters.parse({
+      plan: planPath,
+      title: 'Task',
+      description: 'Description',
+    });
+
+    await mcpAddPlanTask(addArgs, context);
+
+    const updateArgs = updatePlanTaskParameters.parse({
+      plan: planPath,
+      taskIndex: 0,
+      newDescription: '   ',
+    });
+
+    await expect(mcpUpdatePlanTask(updateArgs, context)).rejects.toThrow(
+      'New task description cannot be empty'
+    );
+  });
+
+  test('mcpUpdatePlanTask errors on missing selectors', async () => {
+    const addArgs = addPlanTaskParameters.parse({
+      plan: planPath,
+      title: 'Task',
+      description: 'Description',
+    });
+
+    await mcpAddPlanTask(addArgs, context);
+
+    const updateArgs = updatePlanTaskParameters.parse({
+      plan: planPath,
+      newTitle: 'Updated',
+    });
+
+    await expect(mcpUpdatePlanTask(updateArgs, context)).rejects.toThrow(
+      'Provide either taskTitle or taskIndex to update a task'
     );
   });
 });
