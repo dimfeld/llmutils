@@ -64,7 +64,12 @@ await moduleMocker.mock('../configLoader.js', () => ({
   loadEffectiveConfig: mockLoadEffectiveConfig,
 }));
 
-const { handleCompactCommand, compactPlan, validateCompaction } = await import('./compact.js');
+const {
+  handleCompactCommand,
+  compactPlan,
+  validateCompaction,
+  generateCompactionPrompt,
+} = await import('./compact.js');
 
 describe('compact command', () => {
   let tempDir: string;
@@ -467,5 +472,53 @@ progress_notes_summary: |
     expect(result.issues.some((issue) => issue.includes('non-printable control characters'))).toBe(
       true
     );
+  });
+
+  test('validateCompaction returns normalized plan with no issues when untouched', async () => {
+    const plan = await readPlanFile(planPath);
+    const result = validateCompaction(plan, structuredClone(plan));
+
+    expect(result.issues).toEqual([]);
+    expect(result.plan).toEqual(plan);
+  });
+
+  test('validateCompaction flags missing required metadata and dependency changes', async () => {
+    const plan = await readPlanFile(planPath);
+    const mutated = structuredClone(plan);
+    // Remove required field
+    delete (mutated as Partial<PlanSchema>).goal;
+    // Introduce dependency modification
+    mutated.dependencies = ['extra-plan'];
+
+    const result = validateCompaction(plan, mutated);
+    expect(result.issues).toContain('Required field "goal" is missing after compaction.');
+    expect(result.issues).toContain('Field "dependencies" was modified during compaction.');
+  });
+
+  test('validateCompaction flags parent removal', async () => {
+    const plan = await readPlanFile(planPath);
+    const planWithParent: PlanSchema = { ...plan, parent: 'upstream-plan' };
+    const mutated = structuredClone(planWithParent);
+    delete mutated.parent;
+
+    const result = validateCompaction(planWithParent, mutated);
+    expect(result.issues).toContain('Field "parent" changed from "upstream-plan" to "undefined".');
+  });
+
+  test('generateCompactionPrompt includes preservation guidance and plan context', async () => {
+    const plan = await readPlanFile(planPath);
+    const fileContent = await fs.readFile(planPath, 'utf-8');
+
+    const prompt = generateCompactionPrompt(plan, fileContent, 45);
+
+    expect(prompt).toContain('Preserve (must remain explicit and factual):');
+    expect(prompt).toContain('Compress or omit when redundant:');
+    expect(prompt).toContain('Output format (YAML only, no prose outside this block):');
+    expect(prompt).toContain('Example of a well-compacted output');
+    expect(prompt).toContain('Plan ID: 101');
+    expect(prompt).toContain('Plan tasks for context:');
+    expect(prompt).toContain('1. Task A (done)');
+    expect(prompt).toContain('Full plan file:');
+    expect(prompt).toContain(fileContent.trim());
   });
 });

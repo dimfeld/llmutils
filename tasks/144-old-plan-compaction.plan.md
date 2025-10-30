@@ -19,7 +19,7 @@ docs: []
 planGeneratedAt: 2025-10-29T22:44:18.265Z
 promptsGeneratedAt: 2025-10-29T22:44:18.265Z
 createdAt: 2025-10-27T19:26:47.021Z
-updatedAt: 2025-10-30T00:07:41.342Z
+updatedAt: 2025-10-30T00:16:19.508Z
 progressNotes:
   - timestamp: 2025-10-29T23:37:35.209Z
     text: Implemented initial compact command scaffold with executor integration and
@@ -44,6 +44,10 @@ progressNotes:
       field invariants, and detect serialization/control-character issues; added
       targeted unit coverage for task mutations and unreadable output.
     source: "implementer: Task 5"
+  - timestamp: 2025-10-30T00:09:25.340Z
+    text: Added tests covering prompt instructions, validation success, and metadata
+      invariants for compact command.
+    source: "tester: Tasks 4-5"
 tasks:
   - title: Create compact command handler
     done: true
@@ -760,3 +764,5 @@ Implemented compact command (Tasks 1-7) that resolves plan files, enforces compl
 Addressed reviewer fixes for the compact command. Task: Fix research section delimiter corruption. Task: Honor compaction section toggles. Updated src/rmplan/commands/compact.ts so updateResearchSection scans for the rmplan generated delimiters before replacing `## Research` headings, ensuring an executor-supplied research heading inside `details_markdown` no longer truncates the manual sections or removes the `<!-- rmplan-generated-end -->` marker. At the same time, applyCompactionSections now accepts compaction section toggles and only mutates details, research, or progress notes when the matching `config.compaction.sections` flag is true, while still recording compaction metadata. Added regression coverage in src/rmplan/commands/compact.test.ts that exercises an executor response containing an extra research heading and verifies both the delimiter preservation and the new configuration gating to guide future maintenance.
 
 Expanded the compaction prompt (Task 4: Create compaction prompt template) to explicitly delineate which plan details must be preserved versus trimmed, emphasized anti-hallucination rules, and embedded a representative YAML example so executors consistently target the desired structure. Reworked validateCompaction (Task 5: Implement validation step) into a structured validator that enforces schema parsing, required field presence, invariant metadata comparisons, and readability checks by serializing the plan and scanning for control characters. The validator now returns both the normalized plan and any issues so compactPlan can surface precise failures. Added targeted tests in src/rmplan/commands/compact.test.ts ensuring validateCompaction flags task mutations and non-printable output, and updated the import to exercise the new export. These changes integrate with existing compaction flow by keeping mergeDetails and serialization untouched while strengthening pre-write safeguards.
+
+Addressed reviewer feedback for Task 5 – Implement validation step by tightening validateCompaction so parent metadata cannot disappear unnoticed. Updated src/rmplan/commands/compact.ts to explicitly compare invariant fields when either side is undefined, reusing the existing JSON-based equality for defined values to retain consistency while surfacing removals and additions of parent data. Added regression coverage in src/rmplan/commands/compact.test.ts that constructs a plan with a parent and verifies the validator now flags the removal, ensuring future compactions preserve critical parent/child relationships.

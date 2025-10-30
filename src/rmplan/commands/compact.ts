@@ -599,12 +599,17 @@ export function validateCompaction(
       if (JSON.stringify(beforeValue) !== JSON.stringify(afterValue)) {
         issues.push(`Field "${String(field)}" was modified during compaction.`);
       }
-    } else if (
-      beforeValue !== undefined &&
-      afterValue !== undefined &&
-      JSON.stringify(beforeValue) !== JSON.stringify(afterValue)
-    ) {
-      issues.push(`Field "${String(field)}" changed from "${beforeValue}" to "${afterValue}".`);
+    } else {
+      const beforeDefined = beforeValue !== undefined;
+      const afterDefined = afterValue !== undefined;
+
+      if (beforeDefined && afterDefined) {
+        if (JSON.stringify(beforeValue) !== JSON.stringify(afterValue)) {
+          issues.push(`Field "${String(field)}" changed from "${beforeValue}" to "${afterValue}".`);
+        }
+      } else if (beforeDefined !== afterDefined) {
+        issues.push(`Field "${String(field)}" changed from "${beforeValue}" to "${afterValue}".`);
+      }
     }
   }
 
