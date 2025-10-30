@@ -1093,7 +1093,6 @@ rmplan compact tasks/144-old-plan-compaction.plan.md --executor direct-call --ag
 - Generated details are replaced via the rmplan delimiters, preserving any manual Markdown around them.
 - `## Research` is replaced with a distilled summary or created if it was missing.
 - Progress notes are replaced with a single timestamped summary note sourced from the compaction output.
-- Archival metadata (`compactedAt`, `compactedBy`, `compactedOriginalBytes`, `compactedBytes`, and `compactedReductionBytes`) is stored in the frontmatter for future audits.
 
 **Configuration:**
 

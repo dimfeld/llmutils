@@ -133,8 +133,6 @@ export async function compactPlan(args: CompactPlanArgs): Promise<void> {
   await runCompactionPrompt(executor, prompt, plan, planFilePath);
 }
 
-
-
 export function generateCompactionPrompt(
   plan: PlanSchema,
   planFilePath: string,
@@ -154,7 +152,7 @@ export function generateCompactionPrompt(
 
   const applyDetails = sectionToggles?.details ?? true;
   const applyResearch = sectionToggles?.research ?? true;
-  const applyProgressNotes = sectionToggles?.progressNotes ?? true;
+  const applyProgressNotes = sectionToggles?.progressNotes ?? false;
 
   const sectionsToCompact = [];
   if (applyDetails) sectionsToCompact.push('generated details (content between delimiters)');
@@ -175,6 +173,7 @@ export function generateCompactionPrompt(
     `Sections to compact: ${sectionsToCompact.join(', ')}`,
     '',
     'Preserve (must remain explicit and factual):',
+    '- Information about the original intentions of the plan',
     '- Original goal and final outcome or current disposition.',
     '- Key technical decisions, trade-offs, and rationale that explain why the outcome was chosen.',
     '- Acceptance criteria results or validation evidence proving completion.',
@@ -182,20 +181,22 @@ export function generateCompactionPrompt(
     '',
     'Compress or omit when redundant:',
     '- Exploratory research steps, dead-ends, brainstorming transcripts, and verbose progress logs.',
+    '- Research findings not directly relevant to the implementation or decisions made.',
     '- Inline status updates already implied by the outcome.',
     '- Duplicate explanations that do not change the final understanding.',
     '',
     'Critical instructions:',
     '- Do not invent or hallucinate new work. Pull only from the provided plan text.',
+    '- Focus foremost on what was done and why',
     '- Maintain chronological clarity where helpful, but keep prose succinct.',
     '- Prefer bullet lists with hyphen markers and wrap lines at roughly 120 characters.',
     '',
     'Editing guidelines:',
     applyDetails
-      ? '- Generated details: Replace content BETWEEN the HTML comment delimiters (<!-- rmplan-generated-start --> and <!-- rmplan-generated-end -->). Do NOT remove the delimiters themselves. Content outside these delimiters should be preserved unchanged.'
+      ? '- Generated details: Replace content BETWEEN the HTML comment delimiters (<!-- rmplan-generated-start --> and <!-- rmplan-generated-end -->). You may remove the delimiters.'
       : '- Generated details: Do NOT modify (disabled by configuration)',
     applyResearch
-      ? '- Research section: Find and replace the "## Research" section that appears OUTSIDE the generated delimiters. If no Research section exists, you may add one after the generated content.'
+      ? '- Research section: Find and replace the "## Research" section that appears OUTSIDE the generated delimiters. If no Research section exists, that is ok.'
       : '- Research section: Do NOT modify (disabled by configuration)',
     applyProgressNotes
       ? '- Progress notes: Replace the entire progressNotes array in the YAML frontmatter with a single entry containing a compaction summary. Use timestamp: current ISO timestamp, source: "rmplan compact", text: "Compaction summary:\\n<your summary>"'
@@ -221,8 +222,13 @@ export function generateCompactionPrompt(
     'Example of a well-compacted research section (if enabled):',
     '```markdown',
     '## Research',
-    '- Benchmarks showed 35% faster ETL when skipping legacy normalization.',
+    '- Benchmarks showed 35% faster ETL when skipping legacy normalization (directly informed implementation choice).',
     '```',
+    '',
+    'Research section guidelines (if enabled):',
+    '- Only include findings that directly influenced the implementation, decisions, or outcome',
+    '- Omit exploratory research, alternative approaches not taken, and background information',
+    '- Each bullet should clearly connect to what was actually done in the plan',
     '',
     'Example of a compacted progress notes entry (if enabled):',
     '```yaml',
@@ -239,10 +245,6 @@ export function generateCompactionPrompt(
     '- id, uuid, title, goal, status',
     '- tasks array',
     '- dependencies, parent, references',
-    '',
-    'After compacting, add these metadata fields to the YAML frontmatter (or update if they exist):',
-    '- compactedAt: (current ISO timestamp)',
-    '- compactedBy: (the executor name, e.g., "claude-code")',
     '',
     'Plan tasks for context:',
     tasks,
@@ -284,7 +286,3 @@ async function runCompactionPrompt(
     }
   }
 }
-
-
-
-
