@@ -34,8 +34,15 @@ export async function loadCompactPlanPrompt(
     (context.config as any)?.compaction?.minimumAgeDays ??
     DEFAULT_MINIMUM_AGE_DAYS;
 
+  const sectionToggles = context.config.compaction?.sections ?? {};
   const planFileContent = await Bun.file(planPath).text();
-  const basePrompt = generateCompactionPrompt(plan, planFileContent, minimumAgeDays);
+  const basePrompt = generateCompactionPrompt(
+    plan,
+    planPath,
+    planFileContent,
+    minimumAgeDays,
+    sectionToggles
+  );
 
   const reminders: string[] = [];
 
@@ -45,7 +52,7 @@ export async function loadCompactPlanPrompt(
   }
 
   reminders.push(
-    'After generating the YAML summary, share it with your human collaborator for review before applying the changes to the plan file.'
+    'After compacting the plan file, let your human collaborator know the compaction is complete.'
   );
 
   const reminderText = reminders.length > 0 ? `\n\n${reminders.join('\n')}` : '';

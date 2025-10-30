@@ -107,9 +107,9 @@ describe('rmplan MCP generate mode helpers', () => {
     const prompt = await loadCompactPlanPrompt({ plan: planPath }, context);
     const message = prompt.messages[0]?.content;
     expect(message?.text).toContain('You are an expert technical editor');
-    expect(message?.text).toContain('Output format (YAML only, no prose outside this block)');
-    expect(message?.text).toContain('Full plan file:');
-    expect(message?.text).toContain('share it with your human collaborator for review');
+    expect(message?.text).toContain('Read the plan file at:');
+    expect(message?.text).toContain('Compact the plan by editing the file directly');
+    expect(message?.text).toContain('let your human collaborator know the compaction is complete');
   });
 
   test('loadCompactPlanPrompt rejects plans that are not completed', async () => {
@@ -140,7 +140,7 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(messageText).toContain('Minimum age threshold: 60 days');
     expect(messageText).toContain('Warning: This plan was last updated');
     expect(messageText).toContain(
-      'share it with your human collaborator for review before applying the changes to the plan file.'
+      'let your human collaborator know the compaction is complete'
     );
   });
 

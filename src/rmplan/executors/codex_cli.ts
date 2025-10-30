@@ -978,7 +978,8 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
     const formatter = createCodexStdoutFormatter();
     const args = [
       'codex',
-      '--search',
+      '--enable',
+      'web_search_request',
       'exec',
       // For the types of tasks we're doing we already want high.
       // Make this configurable in the future

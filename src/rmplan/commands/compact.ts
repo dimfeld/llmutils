@@ -1,14 +1,9 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { confirm } from '@inquirer/prompts';
-import yaml from 'yaml';
-import * as path from 'node:path';
 import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
+import { readPlanFile, resolvePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
-import { phaseSchema } from '../planSchema.js';
-import { mergeDetails, GENERATED_START_DELIMITER, GENERATED_END_DELIMITER } from '../plan_merge.js';
 import {
   buildExecutorAndLog,
   ClaudeCodeExecutorName,
@@ -18,7 +13,6 @@ import type { Executor, ExecutorOutput } from '../executors/types.js';
 import type { RmplanConfig } from '../configSchema.js';
 import { getGitRoot } from '../../common/git.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
-import { fixYaml } from '../fix_yaml.js';
 
 const COMPLETED_STATUSES = new Set(['done', 'cancelled', 'deferred']);
 const DEFAULT_MINIMUM_AGE_DAYS = 30;
@@ -26,57 +20,13 @@ const DEFAULT_MINIMUM_AGE_DAYS = 30;
 interface CompactCommandOptions {
   executor?: string;
   model?: string;
-  dryRun?: boolean;
   age?: number;
-  yes?: boolean;
-}
-
-interface CompactionSections {
-  detailsMarkdown: string;
-  researchMarkdown?: string | null;
-  progressNotesSummary?: string | null;
 }
 
 interface CompactionSectionToggles {
   details?: boolean;
   research?: boolean;
   progressNotes?: boolean;
-}
-
-type AppliedSections = {
-  details: boolean;
-  research: boolean;
-  progressNotes: boolean;
-};
-
-interface SectionMetrics {
-  originalGeneratedLength: number;
-  compactedGeneratedLength: number;
-  originalResearchLength: number;
-  compactedResearchLength: number;
-  originalProgressNotesCount: number;
-  compactedProgressNotesCount: number;
-}
-
-interface CompactionStats {
-  originalBytes: number;
-  compactedBytes: number;
-}
-
-interface CompactionArtifacts {
-  prompt: string;
-  executorOutput: string;
-  sections: CompactionSections;
-  metrics: SectionMetrics;
-  stats: CompactionStats;
-  appliedSections: AppliedSections;
-  toggles: CompactionSectionToggles;
-  originalContent: string;
-}
-
-interface CompactionValidationResult {
-  plan: PlanSchema;
-  issues: string[];
 }
 
 interface CompactPlanArgs {
@@ -152,7 +102,9 @@ export async function handleCompactCommand(
 
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
 
-  const compactionResult = await compactPlan({
+  log(chalk.cyan(`\nStarting compaction of plan ${plan.id ?? planArg}...`));
+
+  await compactPlan({
     plan,
     planFilePath: resolvedPlanFile,
     executor,
@@ -161,262 +113,34 @@ export async function handleCompactCommand(
     minimumAgeDays,
   });
 
-  reportCompactionPreview(compactionResult, options.dryRun ? 'dry-run' : 'preview');
-
-  if (options.dryRun) {
-    return;
-  }
-
-  if (process.stdout.isTTY && !options.yes) {
-    const confirmed = await confirm({
-      message: 'Write compacted plan back to disk?',
-      default: true,
-    });
-
-    if (!confirmed) {
-      log(chalk.yellow('Compaction aborted by user.'));
-      return;
-    }
-  }
-
-  const backupPath = await writeCompactedPlanWithBackup({
-    planPath: resolvedPlanFile,
-    plan: compactionResult.plan,
-    originalContent: compactionResult.originalContent,
-  });
-
-  reportSuccessfulCompaction(plan, compactionResult, backupPath);
+  log(chalk.green(`✓ Compaction of plan ${plan.id ?? planArg} completed.`));
 }
 
-export async function compactPlan(
-  args: CompactPlanArgs
-): Promise<CompactionArtifacts & { plan: PlanSchema }> {
-  const { plan, executor, executorName, config, planFilePath } = args;
-  const planClone: PlanSchema = structuredClone(plan);
+export async function compactPlan(args: CompactPlanArgs): Promise<void> {
+  const { plan, executor, config, planFilePath, minimumAgeDays } = args;
 
   const originalFileContent = await Bun.file(planFilePath).text();
-  const originalBytes = Buffer.byteLength(originalFileContent, 'utf8');
-
-  const prompt = generateCompactionPrompt(planClone, originalFileContent, args.minimumAgeDays);
-  const executorOutput = await runCompactionPrompt(executor, prompt, planClone, planFilePath);
-  const compactionSections = await parseCompactionResponse(executorOutput, config);
-
   const sectionToggles = config.compaction?.sections ?? {};
 
-  const appliedSections = applyCompactionSections(
-    planClone,
-    compactionSections,
-    executorName,
-    originalBytes,
+  const prompt = generateCompactionPrompt(
+    plan,
+    planFilePath,
+    originalFileContent,
+    minimumAgeDays,
     sectionToggles
   );
 
-  const validationResult = validateCompaction(plan, planClone);
-  if (validationResult.issues.length > 0) {
-    throw new Error(
-      `Compacted plan failed validation:\n - ${validationResult.issues.join('\n - ')}`
-    );
-  }
-
-  const validatedPlan = validationResult.plan;
-  const metadataCarrier = validatedPlan as PlanSchema & Record<string, unknown>;
-  if (metadataCarrier.compactedOriginalBytes === undefined) {
-    metadataCarrier.compactedOriginalBytes = originalBytes;
-  }
-  let serializedPlan = '';
-  let compactedBytes = 0;
-  let previousCompactedBytes: number | undefined;
-  do {
-    metadataCarrier.compactedBytes = compactedBytes;
-    metadataCarrier.compactedReductionBytes = originalBytes - compactedBytes;
-    serializedPlan = serializePlan(validatedPlan);
-    previousCompactedBytes = compactedBytes;
-    compactedBytes = Buffer.byteLength(serializedPlan, 'utf8');
-  } while (compactedBytes !== previousCompactedBytes);
-  metadataCarrier.compactedBytes = compactedBytes;
-  metadataCarrier.compactedReductionBytes = originalBytes - compactedBytes;
-
-  return {
-    plan: validatedPlan,
-    prompt,
-    executorOutput,
-    sections: compactionSections,
-    appliedSections,
-    toggles: sectionToggles,
-    originalContent: originalFileContent,
-    stats: {
-      originalBytes,
-      compactedBytes,
-    },
-    metrics: calculateMetrics(plan, validatedPlan),
-  };
+  await runCompactionPrompt(executor, prompt, plan, planFilePath);
 }
 
-function reportCompactionPreview(
-  result: CompactionArtifacts & { plan: PlanSchema },
-  mode: 'dry-run' | 'preview'
-) {
-  const { stats, sections, metrics, appliedSections, toggles } = result;
-  const reduction = stats.originalBytes - stats.compactedBytes;
-  const reductionPercent = stats.originalBytes > 0 ? (reduction / stats.originalBytes) * 100 : 0;
 
-  const header =
-    mode === 'dry-run'
-      ? '\nDry Run: Plan compaction preview'
-      : '\nPlan compaction preview (no changes written yet)';
-  log(chalk.cyan(header));
-  log(`Original size: ${stats.originalBytes} bytes`);
-  log(
-    `Compacted size: ${stats.compactedBytes} bytes (${reduction >= 0 ? '-' : '+'}${Math.abs(reduction)} bytes, ${reductionPercent.toFixed(1)}%)`
-  );
-
-  const detailsToggle = toggles.details ?? true;
-  const researchToggle = toggles.research ?? true;
-  const progressToggle = toggles.progressNotes ?? true;
-
-  const detailStatus = detailsToggle
-    ? appliedSections.details
-      ? 'will replace content between rmplan delimiters'
-      : 'no changes (executor returned no generated details)'
-    : 'unchanged (disabled by config)';
-
-  const researchStatus = researchToggle
-    ? appliedSections.research
-      ? 'will replace the ## Research section'
-      : 'unchanged (no research content returned)'
-    : 'unchanged (disabled by config)';
-
-  const progressStatus = progressToggle
-    ? appliedSections.progressNotes
-      ? 'will be replaced with a single summary note'
-      : 'unchanged (no progress summary provided)'
-    : 'unchanged (disabled by config)';
-
-  log('\nSections to update:');
-  log(`- generated details: ${detailStatus}`);
-  log(`- research: ${researchStatus}`);
-  log(`- progress notes: ${progressStatus}`);
-
-  const detailsPreview =
-    sections.detailsMarkdown.trim() !== '' ? sections.detailsMarkdown.trim() : '(empty)';
-  const detailsHeading = detailsToggle
-    ? '\nGenerated details preview:'
-    : '\nGenerated details preview (section disabled by config):';
-  log(detailsHeading);
-  log(`${detailsPreview}`);
-
-  if (sections.researchMarkdown) {
-    let researchHeading: string;
-    if (!researchToggle) {
-      researchHeading = '\nCompacted research section (section disabled by config):';
-    } else if (!appliedSections.research) {
-      researchHeading = '\nCompacted research section (executor returned no distilled content):';
-    } else {
-      researchHeading = '\nCompacted research section:';
-    }
-    log(researchHeading);
-    log(sections.researchMarkdown.trim());
-  }
-
-  if (sections.progressNotesSummary) {
-    const notesHeading = progressToggle
-      ? '\nProgress notes summary:'
-      : '\nProgress notes summary (section disabled by config):';
-    log(notesHeading);
-    log(sections.progressNotesSummary.trim());
-  }
-
-  log('\nSection metrics:');
-  log(
-    `Generated details length: ${metrics.originalGeneratedLength} -> ${metrics.compactedGeneratedLength}`
-  );
-  log(`Research length: ${metrics.originalResearchLength} -> ${metrics.compactedResearchLength}`);
-  log(
-    `Progress notes: ${metrics.originalProgressNotesCount} -> ${metrics.compactedProgressNotesCount}`
-  );
-}
-
-function reportSuccessfulCompaction(
-  originalPlan: PlanSchema,
-  result: CompactionArtifacts & { plan: PlanSchema },
-  backupPath?: string
-) {
-  const { stats } = result;
-  const reduction = stats.originalBytes - stats.compactedBytes;
-  const reductionPercent = stats.originalBytes > 0 ? (reduction / stats.originalBytes) * 100 : 0;
-
-  const planId = originalPlan.id ?? 'unknown';
-  log(
-    chalk.green(
-      `✓ Compacted plan ${planId}. Size change of ${reduction} bytes (${reductionPercent.toFixed(
-        1
-      )}%).`
-    )
-  );
-  if (backupPath) {
-    log(chalk.gray(`Backup saved to ${backupPath}`));
-  }
-}
-
-interface WriteCompactedPlanOptions {
-  planPath: string;
-  plan: PlanSchema;
-  originalContent: string;
-  writer?: typeof writePlanFile;
-}
-
-export async function writeCompactedPlanWithBackup(
-  options: WriteCompactedPlanOptions
-): Promise<string> {
-  const { planPath, plan, originalContent, writer = writePlanFile } = options;
-
-  const backupPath = await createPlanBackup(planPath, originalContent);
-
-  try {
-    await writer(planPath, plan);
-    return backupPath;
-  } catch (error) {
-    try {
-      await Bun.write(planPath, originalContent);
-    } catch (restoreError) {
-      const restoreMessage = [
-        'Failed to write compacted plan and restore original content.',
-        error instanceof Error ? error.message : String(error),
-        restoreError instanceof Error ? restoreError.message : String(restoreError),
-        `Backup preserved at ${backupPath}`,
-      ].join(' ');
-      throw new Error(restoreMessage, {
-        cause: restoreError instanceof Error ? restoreError : undefined,
-      });
-    }
-
-    const messageParts = [
-      'Failed to write compacted plan with backup.',
-      error instanceof Error ? error.message : String(error),
-      `Original content restored. Backup preserved at ${backupPath}`,
-    ];
-
-    throw new Error(messageParts.join(' '), {
-      cause: error instanceof Error ? error : undefined,
-    });
-  }
-}
-
-async function createPlanBackup(planPath: string, content: string): Promise<string> {
-  const directory = path.dirname(planPath);
-  const baseName = path.basename(planPath);
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const backupName = `${baseName}.backup-${timestamp}`;
-  const backupPath = path.join(directory, backupName);
-
-  await Bun.write(backupPath, content);
-  return backupPath;
-}
 
 export function generateCompactionPrompt(
   plan: PlanSchema,
+  planFilePath: string,
   planFileContent: string,
-  minimumAgeDays: number
+  minimumAgeDays: number,
+  sectionToggles?: CompactionSectionToggles
 ): string {
   const planId = plan.id ?? 'unknown';
   const tasks = Array.isArray(plan.tasks)
@@ -428,12 +152,27 @@ export function generateCompactionPrompt(
         .join('\n')
     : 'No tasks listed.';
 
+  const applyDetails = sectionToggles?.details ?? true;
+  const applyResearch = sectionToggles?.research ?? true;
+  const applyProgressNotes = sectionToggles?.progressNotes ?? true;
+
+  const sectionsToCompact = [];
+  if (applyDetails) sectionsToCompact.push('generated details (content between delimiters)');
+  if (applyResearch) sectionsToCompact.push('research section');
+  if (applyProgressNotes) sectionsToCompact.push('progress notes');
+
   return [
     'You are an expert technical editor assisting with archiving completed engineering plans by compacting them for long-term storage.',
     `Plan ID: ${planId}`,
     `Plan Title: ${plan.title ?? 'Untitled'}`,
     `Current Status: ${plan.status}`,
     `Minimum age threshold: ${minimumAgeDays} days`,
+    '',
+    'YOUR TASK:',
+    `Read the plan file at: ${planFilePath}`,
+    'Compact the plan by editing the file directly using the Read and Edit tools.',
+    '',
+    `Sections to compact: ${sectionsToCompact.join(', ')}`,
     '',
     'Preserve (must remain explicit and factual):',
     '- Original goal and final outcome or current disposition.',
@@ -449,46 +188,71 @@ export function generateCompactionPrompt(
     'Critical instructions:',
     '- Do not invent or hallucinate new work. Pull only from the provided plan text.',
     '- Maintain chronological clarity where helpful, but keep prose succinct.',
-    '- Respect existing Markdown delimiters and do not introduce HTML comments.',
     '- Prefer bullet lists with hyphen markers and wrap lines at roughly 120 characters.',
     '',
-    'Output format (YAML only, no prose outside this block):',
-    '```yaml',
-    'details_markdown: |',
-    '  ## Summary',
-    '  - <Concise recap of the plan goal, scope, final outcome/results>',
-    '  ## Decisions',
-    '  - <Bulleted list capturing critical technical decisions and rationale>',
-    'research_markdown: |',
-    '  - <Distilled research findings that explain why the chosen solution worked>',
-    'progress_notes_summary: |',
-    '  - <Chronological highlights showing how acceptance criteria were satisfied>',
+    'Editing guidelines:',
+    applyDetails
+      ? '- Generated details: Replace content BETWEEN the HTML comment delimiters (<!-- rmplan-generated-start --> and <!-- rmplan-generated-end -->). Do NOT remove the delimiters themselves. Content outside these delimiters should be preserved unchanged.'
+      : '- Generated details: Do NOT modify (disabled by configuration)',
+    applyResearch
+      ? '- Research section: Find and replace the "## Research" section that appears OUTSIDE the generated delimiters. If no Research section exists, you may add one after the generated content.'
+      : '- Research section: Do NOT modify (disabled by configuration)',
+    applyProgressNotes
+      ? '- Progress notes: Replace the entire progressNotes array in the YAML frontmatter with a single entry containing a compaction summary. Use timestamp: current ISO timestamp, source: "rmplan compact", text: "Compaction summary:\\n<your summary>"'
+      : '- Progress notes: Do NOT modify (disabled by configuration)',
+    '',
+    'Structure of a well-compacted generated details section (if enabled):',
+    '```markdown',
+    '## Summary',
+    '- Concise recap of the plan goal, scope, final outcome/results',
+    '## Decisions',
+    '- Bulleted list capturing critical technical decisions and rationale',
     '```',
     '',
-    'Example of a well-compacted output (illustrative only—never reuse its content):',
-    '```yaml',
-    'details_markdown: |',
-    '  ## Summary',
-    '  - Migrated analytics ingestion to the v2 pipeline, eliminating nightly backlogs.',
-    '  ## Decisions',
-    '  - Selected batched writes over streaming to keep within API quotas.',
-    '  - Documented schema diffs for downstream teams in /docs/analytics-migration.md.',
-    'research_markdown: |',
-    '  - Benchmarks showed 35% faster ETL when skipping legacy normalization.',
-    'progress_notes_summary: |',
-    '  - Validated new pipeline with staging data set 2024-03-18.',
-    '  - Deployed to production and monitored 48h with no regressions.',
+    'Example of a well-compacted generated section (illustrative only—never reuse its content):',
+    '```markdown',
+    '## Summary',
+    '- Migrated analytics ingestion to the v2 pipeline, eliminating nightly backlogs.',
+    '## Decisions',
+    '- Selected batched writes over streaming to keep within API quotas.',
+    '- Documented schema diffs for downstream teams in /docs/analytics-migration.md.',
     '```',
     '',
-    'If a section has nothing meaningful to retain, still provide the key with a short statement such as "None" or "Not applicable".',
+    'Example of a well-compacted research section (if enabled):',
+    '```markdown',
+    '## Research',
+    '- Benchmarks showed 35% faster ETL when skipping legacy normalization.',
+    '```',
+    '',
+    'Example of a compacted progress notes entry (if enabled):',
+    '```yaml',
+    'progressNotes:',
+    '  - timestamp: 2024-03-20T10:30:00.000Z',
+    '    source: rmplan compact',
+    '    text: |',
+    '      Compaction summary:',
+    '      - Validated new pipeline with staging data set 2024-03-18.',
+    '      - Deployed to production and monitored 48h with no regressions.',
+    '```',
+    '',
+    'IMPORTANT: You MUST NOT modify any of the following fields in the YAML frontmatter:',
+    '- id, uuid, title, goal, status',
+    '- tasks array',
+    '- dependencies, parent, references',
+    '',
+    'After compacting, add these metadata fields to the YAML frontmatter (or update if they exist):',
+    '- compactedAt: (current ISO timestamp)',
+    '- compactedBy: (the executor name, e.g., "claude-code")',
     '',
     'Plan tasks for context:',
     tasks,
     '',
-    'Full plan file:',
+    'Current plan file content:',
     '---',
     planFileContent.trim(),
     '---',
+    '',
+    'Now read the plan file and compact it by editing directly.',
   ].join('\n');
 }
 
@@ -497,372 +261,30 @@ async function runCompactionPrompt(
   prompt: string,
   plan: PlanSchema,
   planFilePath: string
-): Promise<string> {
+): Promise<void> {
   const executionResult = await executor.execute(prompt, {
     planId: plan.id?.toString() ?? 'unknown',
     planTitle: plan.title ?? 'Untitled Plan',
     planFilePath,
-    captureOutput: 'result',
+    captureOutput: 'none',
     executionMode: 'planning',
   });
 
-  if (!executionResult) {
-    throw new Error(
-      'Executor did not return any output. Compaction requires the result block from the executor.'
-    );
-  }
-
   const normalized = executionResult as unknown;
 
-  if (typeof normalized === 'string') {
-    return normalized.trim();
+  // Check if executor reported failure
+  if (normalized && typeof normalized === 'object') {
+    const structured = normalized as ExecutorOutput;
+    if (structured.success === false) {
+      const reason =
+        structured.failureDetails?.problems ??
+        structured.failureDetails?.requirements ??
+        'Executor reported failure without details.';
+      throw new Error(`Compaction executor failed: ${reason}`);
+    }
   }
-
-  const structured = normalized as ExecutorOutput;
-
-  if (structured.success === false) {
-    const reason =
-      structured.failureDetails?.problems ??
-      structured.failureDetails?.requirements ??
-      'Executor reported failure without details.';
-    throw new Error(`Compaction executor failed: ${reason}`);
-  }
-
-  const content = structured.content?.toString().trim();
-  if (content) {
-    return content;
-  }
-
-  throw new Error('Executor response did not include compacted content.');
 }
 
-async function parseCompactionResponse(
-  rawOutput: string,
-  config: RmplanConfig
-): Promise<CompactionSections> {
-  const sanitized = stripMarkdownFence(rawOutput);
-  let parsed: any;
 
-  try {
-    parsed = yaml.parse(sanitized, { strict: false });
-  } catch {
-    const fixed = await fixYaml(sanitized, 3, config);
-    parsed = fixed;
-  }
 
-  if (!parsed || typeof parsed !== 'object') {
-    throw new Error('Compaction response did not contain a valid YAML object.');
-  }
 
-  const details = (parsed.details_markdown ?? parsed.detailsMarkdown ?? '').toString().trim();
-  const research = parsed.research_markdown ?? parsed.researchMarkdown;
-  const progress = parsed.progress_notes_summary ?? parsed.progressNotesSummary;
-
-  if (!details) {
-    throw new Error('Compaction response omitted details_markdown content.');
-  }
-
-  return {
-    detailsMarkdown: details,
-    researchMarkdown: typeof research === 'string' ? research.trim() : undefined,
-    progressNotesSummary: typeof progress === 'string' ? progress.trim() : undefined,
-  };
-}
-
-function stripMarkdownFence(output: string): string {
-  const trimmed = output.trim();
-  if (trimmed.startsWith('```')) {
-    const firstLineBreak = trimmed.indexOf('\n');
-    if (firstLineBreak === -1) {
-      return trimmed.replace(/```/g, '').trim();
-    }
-    const fenceLanguage = trimmed.slice(0, firstLineBreak).trim();
-    const withoutFence = trimmed.slice(firstLineBreak + 1);
-    if (fenceLanguage.startsWith('```')) {
-      const closingIndex = withoutFence.lastIndexOf('```');
-      if (closingIndex !== -1) {
-        return withoutFence.slice(0, closingIndex).trim();
-      }
-    }
-  }
-  return trimmed;
-}
-
-function applyCompactionSections(
-  plan: PlanSchema,
-  sections: CompactionSections,
-  executorName: string,
-  originalBytes: number,
-  sectionToggles?: CompactionSectionToggles
-): AppliedSections {
-  const applyDetails = sectionToggles?.details ?? true;
-  const applyResearch = sectionToggles?.research ?? true;
-  const applyProgressNotes = sectionToggles?.progressNotes ?? true;
-
-  const hasResearchContent =
-    typeof sections.researchMarkdown === 'string' && sections.researchMarkdown.trim() !== '';
-
-  const mergedDetails = applyDetails
-    ? mergeDetails(sections.detailsMarkdown, plan.details)
-    : plan.details;
-
-  if (applyDetails || (applyResearch && hasResearchContent)) {
-    const updatedDetails =
-      applyResearch && hasResearchContent
-        ? updateResearchSection(mergedDetails, sections.researchMarkdown)
-        : mergedDetails;
-    plan.details = updatedDetails;
-  }
-
-  if (applyProgressNotes) {
-    const progressSummary = sections.progressNotesSummary
-      ? `Compaction summary:\n${sections.progressNotesSummary.trim()}`
-      : 'Compaction performed with no additional progress notes provided by the executor.';
-
-    plan.progressNotes = [
-      {
-        timestamp: new Date().toISOString(),
-        text: progressSummary,
-        source: 'rmplan compact',
-      },
-    ];
-  }
-
-  const metadataCarrier = plan as PlanSchema & Record<string, unknown>;
-  metadataCarrier.compactedAt = new Date().toISOString();
-  metadataCarrier.compactedBy = executorName;
-  metadataCarrier.compactedOriginalBytes = originalBytes;
-
-  return {
-    details: applyDetails,
-    research: applyResearch && hasResearchContent,
-    progressNotes: applyProgressNotes,
-  };
-}
-
-function updateResearchSection(
-  details: string | undefined,
-  researchMarkdown?: string | null
-): string | undefined {
-  if (!details) {
-    if (!researchMarkdown) {
-      return details;
-    }
-    return `## Research\n\n${researchMarkdown.trim()}`;
-  }
-
-  if (!researchMarkdown) {
-    return details;
-  }
-
-  const trimmedResearch = researchMarkdown.trim();
-  const lines = details.split('\n');
-  let startIndex = -1;
-  let insideGenerated = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const trimmedLine = lines[i].trim();
-
-    if (trimmedLine === GENERATED_START_DELIMITER) {
-      insideGenerated = true;
-      continue;
-    }
-
-    if (trimmedLine === GENERATED_END_DELIMITER) {
-      insideGenerated = false;
-      continue;
-    }
-
-    if (!insideGenerated && trimmedLine.toLowerCase() === '## research') {
-      startIndex = i;
-      break;
-    }
-  }
-
-  if (startIndex === -1) {
-    const trimmedDetails = details.trimEnd();
-    const separator = trimmedDetails ? '\n\n' : '';
-    return `${trimmedDetails}${separator}## Research\n\n${trimmedResearch}`.trimEnd();
-  }
-
-  let endIndex = lines.length;
-  for (let i = startIndex + 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (/^#{1,6}\s/.test(line) && line.trim().toLowerCase() !== '## research') {
-      endIndex = i;
-      break;
-    }
-  }
-
-  const prefix = lines.slice(0, startIndex).join('\n').trimEnd();
-  const suffix = lines.slice(endIndex).join('\n').trim();
-  const researchBlock = `## Research\n\n${trimmedResearch}`;
-
-  const pieces = [];
-  if (prefix) pieces.push(prefix);
-  pieces.push(researchBlock);
-  if (suffix) pieces.push(suffix);
-
-  const result = pieces.join('\n\n').trimEnd();
-  return result ? `${result}\n` : result;
-}
-
-export function validateCompaction(
-  originalPlan: PlanSchema,
-  compactedPlan: PlanSchema
-): CompactionValidationResult {
-  const issues: string[] = [];
-
-  const parsed = phaseSchema.safeParse(compactedPlan);
-  if (!parsed.success) {
-    parsed.error.issues.forEach((issue) =>
-      issues.push(`${issue.path.join('.') || '(root)'}: ${issue.message}`)
-    );
-  }
-
-  const normalizedPlan = parsed.success ? parsed.data : compactedPlan;
-
-  const requiredFields: Array<keyof PlanSchema> = [
-    'id',
-    'uuid',
-    'title',
-    'goal',
-    'status',
-    'tasks',
-  ];
-  for (const field of requiredFields) {
-    if (normalizedPlan[field] === undefined) {
-      issues.push(`Required field "${String(field)}" is missing after compaction.`);
-    }
-  }
-
-  const invariantFields: Array<keyof PlanSchema> = [
-    'id',
-    'uuid',
-    'title',
-    'goal',
-    'status',
-    'dependencies',
-    'parent',
-    'references',
-    'tasks',
-  ];
-
-  for (const field of invariantFields) {
-    const beforeValue = originalPlan[field];
-    const afterValue = normalizedPlan[field];
-    if (field === 'tasks' || field === 'dependencies' || field === 'references') {
-      if (JSON.stringify(beforeValue) !== JSON.stringify(afterValue)) {
-        issues.push(`Field "${String(field)}" was modified during compaction.`);
-      }
-    } else {
-      const beforeDefined = beforeValue !== undefined;
-      const afterDefined = afterValue !== undefined;
-
-      if (beforeDefined && afterDefined) {
-        if (JSON.stringify(beforeValue) !== JSON.stringify(afterValue)) {
-          issues.push(`Field "${String(field)}" changed from "${beforeValue}" to "${afterValue}".`);
-        }
-      } else if (beforeDefined !== afterDefined) {
-        issues.push(`Field "${String(field)}" changed from "${beforeValue}" to "${afterValue}".`);
-      }
-    }
-  }
-
-  if (typeof normalizedPlan.details !== 'string' && normalizedPlan.details !== undefined) {
-    issues.push('Details section must remain a string.');
-  }
-
-  try {
-    const serialized = serializePlan(normalizedPlan);
-    if (serialized.length === 0) {
-      issues.push('Serialized plan content is empty after compaction.');
-    }
-    if (/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(serialized)) {
-      issues.push('Serialized plan contains non-printable control characters.');
-    }
-  } catch (error) {
-    issues.push(`Failed to serialize compacted plan: ${(error as Error).message}`);
-  }
-
-  return {
-    plan: normalizedPlan,
-    issues,
-  };
-}
-
-function serializePlan(plan: PlanSchema): string {
-  const schemaLine =
-    '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json';
-  const { details, ...planWithoutDetails } = plan;
-  const yamlContent = yaml.stringify(planWithoutDetails);
-
-  let content = '---\n';
-  content += `${schemaLine}\n`;
-  content += yamlContent;
-  content += '---\n';
-
-  if (details) {
-    content += `\n${details.trimEnd()}`;
-    if (!details.endsWith('\n')) {
-      content += '\n';
-    }
-  }
-
-  return content;
-}
-
-function calculateMetrics(originalPlan: PlanSchema, compactedPlan: PlanSchema): SectionMetrics {
-  return {
-    originalGeneratedLength: extractGeneratedContent(originalPlan.details).length,
-    compactedGeneratedLength: extractGeneratedContent(compactedPlan.details).length,
-    originalResearchLength: extractResearchContent(originalPlan.details).length,
-    compactedResearchLength: extractResearchContent(compactedPlan.details).length,
-    originalProgressNotesCount: Array.isArray(originalPlan.progressNotes)
-      ? originalPlan.progressNotes.length
-      : 0,
-    compactedProgressNotesCount: Array.isArray(compactedPlan.progressNotes)
-      ? compactedPlan.progressNotes.length
-      : 0,
-  };
-}
-
-function extractGeneratedContent(details: string | undefined): string {
-  if (!details) {
-    return '';
-  }
-
-  const startIndex = details.indexOf(GENERATED_START_DELIMITER);
-  const endIndex = details.indexOf(GENERATED_END_DELIMITER);
-
-  if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
-    return details.slice(startIndex + GENERATED_START_DELIMITER.length, endIndex).trim();
-  }
-
-  return details.trim();
-}
-
-function extractResearchContent(details: string | undefined): string {
-  if (!details) {
-    return '';
-  }
-
-  const lines = details.split('\n');
-  const startIndex = lines.findIndex((line) => line.trim().toLowerCase() === '## research');
-  if (startIndex === -1) {
-    return '';
-  }
-
-  let endIndex = lines.length;
-  for (let i = startIndex + 1; i < lines.length; i++) {
-    if (/^#{1,6}\s/.test(lines[i])) {
-      endIndex = i;
-      break;
-    }
-  }
-
-  return lines
-    .slice(startIndex + 1, endIndex)
-    .join('\n')
-    .trim();
-}
