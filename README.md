@@ -368,11 +368,12 @@ rmplan mcp-server --mode generate
 
 The server communicates over stdio by default. To expose an HTTP streaming endpoint instead, pass `--transport http --port <port>`. The command respects the global `--config` flag so you can point it at a specific `rmplan` configuration file when starting the server.
 
-The generate mode publishes two prompts and several tools:
+The generate mode publishes three prompts and several tools:
 
 - **Prompts**
   - `perform-research` – loads the plan and returns the standard research template so the client can capture findings under `## Research`.
   - `plan-questions` – shares plan context and instructs the model to ask focused, iterative questions that move the plan forward.
+  - `compact-plan` – loads a completed plan (status `done`, `cancelled`, or `deferred`), builds the compaction YAML prompt, and reminds the model to share the condensed output with a human for review before applying it.
 - **Tools**
   - `generate-plan-tasks` – builds the full planning prompt for the target plan. When `planning.direct_mode` is enabled (or the tool input sets `direct: true`), the tool calls the configured model directly and streams the generated tasks back. Otherwise it returns the prompt text so the client can run it manually.
   - `append-plan-research` – appends research Markdown to the plan’s `details` field under the `## Research` heading, creating the section if needed.
@@ -1060,6 +1061,49 @@ rmplan cleanup src/lib/utils.ts src/components/Button.svelte
 - The command only removes comments that appear after code on the same line, preserving standalone comment lines and empty lines.
 - Files must exist and have a supported extension to be processed.
 - Use `--diff-from` to specify a different base branch for determining changed files when no files are provided.
+
+#### Compact Command
+
+The `compact` command reduces the footprint of completed plans by collapsing verbose generated sections into concise summaries while preserving critical decisions and outcomes. It uses the configured LLM executor (Claude Code by default) to rewrite the content between the rmplan-generated delimiters, condense the `## Research` section, and replace progress notes with a single archival summary.
+
+**Usage Examples:**
+
+```bash
+# Compact a specific plan in place
+rmplan compact 144
+
+# Preview changes without writing to disk
+rmplan compact 144 --dry-run
+
+# Override executor and minimum age threshold
+rmplan compact tasks/144-old-plan-compaction.plan.md --executor direct-call --age 14 --yes
+```
+
+**Options:**
+
+- `--executor <name>` – Executor to use for the LLM call (default: `claude-code`)
+- `--model <model>` – Override the executor’s model
+- `--age <days>` – Minimum number of days since the plan was last updated before compaction (default configured in `rmplan.compaction.minimumAgeDays`, falling back to 30)
+- `--dry-run` – Generate the compacted content and display a size comparison without writing changes
+- `--yes` – Skip the confirmation prompt when applying changes
+
+**Behavior:**
+
+- Only `done`, `cancelled`, or `deferred` plans are eligible. Pending work is rejected.
+- Generated details are replaced via the rmplan delimiters, preserving any manual Markdown around them.
+- `## Research` is replaced with a distilled summary or created if it was missing.
+- Progress notes are replaced with a single timestamped summary note sourced from the compaction output.
+
+**Configuration:**
+
+Add a `compaction` block to your rmplan configuration to adjust defaults:
+
+```yaml
+compaction:
+  minimumAgeDays: 45
+  defaultExecutor: claude-code
+  defaultModel: anthropic/claude-3-5-sonnet
+```
 
 #### Progress Notes
 

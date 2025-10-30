@@ -22,6 +22,7 @@ import {
   loadResearchPrompt,
   type GenerateModeRegistrationContext,
 } from './generate_mode.js';
+import { loadCompactPlanPrompt } from './prompts/compact_plan.js';
 import { mcpGetPlan } from '../commands/show.js';
 import { mcpUpdatePlanTasks, mcpAppendResearch } from './generate_mode.js';
 import { mcpListReadyPlans } from '../commands/ready.js';
@@ -92,6 +93,72 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(message?.text).toContain('Plan ID: 99999');
     expect(message?.text).toContain('Test Plan');
     expect(message?.text).toContain('Wait for your human collaborator');
+  });
+
+  test('loadCompactPlanPrompt builds compaction instructions for eligible plans', async () => {
+    const donePlan: PlanSchema = {
+      ...basePlan,
+      status: 'done',
+      updatedAt: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString(),
+      details: `${basePlan.details}\n\n## Research\n- Deep dive`,
+    };
+    await writePlanFile(planPath, donePlan);
+
+    const prompt = await loadCompactPlanPrompt({ plan: planPath }, context);
+    const message = prompt.messages[0]?.content;
+    expect(message?.text).toContain('You are an expert technical editor');
+    expect(message?.text).toContain('Read the plan file at:');
+    expect(message?.text).toContain('Compact the plan by editing the file directly');
+    expect(message?.text).toContain('let your human collaborator know the compaction is complete');
+  });
+
+  test('loadCompactPlanPrompt rejects plans that are not completed', async () => {
+    await expect(loadCompactPlanPrompt({ plan: planPath }, context)).rejects.toThrow(
+      'Only done, cancelled, or deferred plans can be compacted.'
+    );
+  });
+
+  test('loadCompactPlanPrompt requires a plan identifier', async () => {
+    await expect(loadCompactPlanPrompt({ plan: '   ' }, context)).rejects.toThrow(
+      'Plan ID or file path is required to build a compaction prompt.'
+    );
+  });
+
+  test('loadCompactPlanPrompt appends an age warning when plan is younger than minimum threshold', async () => {
+    const recentPlan: PlanSchema = {
+      ...basePlan,
+      status: 'done',
+      updatedAt: new Date().toISOString(),
+      details: `${basePlan.details}\n\n## Research\n- Recent notes`,
+    };
+    await writePlanFile(planPath, recentPlan);
+
+    context.config.compaction = { minimumAgeDays: 60 };
+
+    const prompt = await loadCompactPlanPrompt({ plan: planPath }, context);
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+    expect(messageText).toContain('Minimum age threshold: 60 days');
+    expect(messageText).toContain('Warning: This plan was last updated');
+    expect(messageText).toContain(
+      'let your human collaborator know the compaction is complete'
+    );
+  });
+
+  test('loadCompactPlanPrompt respects configured minimum age when no warning is needed', async () => {
+    const olderPlan: PlanSchema = {
+      ...basePlan,
+      status: 'done',
+      updatedAt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
+      details: `${basePlan.details}\n\n## Research\n- Long-running work`,
+    };
+    await writePlanFile(planPath, olderPlan, { skipUpdatedAt: true });
+
+    context.config.compaction = { minimumAgeDays: 7 };
+
+    const prompt = await loadCompactPlanPrompt({ plan: planPath }, context);
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+    expect(messageText).toContain('Minimum age threshold: 7 days');
+    expect(messageText).not.toContain('Warning: This plan was last updated');
   });
 
   test('mcpAppendResearch appends research to the plan file', async () => {

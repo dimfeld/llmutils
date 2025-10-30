@@ -76,6 +76,7 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
     promptsGeneratedAt: z.string().datetime().optional(),
     createdAt: z.string().datetime().optional(),
     updatedAt: z.string().datetime().optional(),
+    compactedAt: z.string().datetime().optional(),
     progressNotes: z.array(progressNoteSchema).default([]).optional(),
     project: projectSchema.optional(),
     tasks: z.array(taskSchema),

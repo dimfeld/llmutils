@@ -16,6 +16,7 @@ import { writePlanFile } from '../plans.js';
 import { findTaskByTitle } from '../utils/task_operations.js';
 import { mergeTasksIntoPlan, updateDetailsWithinDelimiters } from '../plan_merge.js';
 import { appendResearchToPlan } from '../research_utils.js';
+import { loadCompactPlanPrompt } from './prompts/compact_plan.js';
 
 export interface GenerateModeRegistrationContext {
   config: RmplanConfig;
@@ -581,6 +582,25 @@ export function registerGenerateMode(
       },
     ],
     load: async (args) => loadQuestionsPrompt({ plan: args.plan }, context),
+  });
+
+  server.addPrompt({
+    name: 'compact-plan',
+    description:
+      'Summarize a completed plan for archival by generating the compaction YAML output for review.',
+    arguments: [
+      {
+        name: 'plan',
+        description: 'Plan ID or file path to compact',
+        required: true,
+      },
+    ],
+    load: async (args) => {
+      if (!args.plan) {
+        throw new UserError('Plan ID or file path is required for this prompt');
+      }
+      return loadCompactPlanPrompt({ plan: args.plan }, context);
+    },
   });
 
   server.addPrompt({
