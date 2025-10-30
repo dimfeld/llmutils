@@ -7,7 +7,7 @@ goal: Implement a command to compact completed plans for archival purposes,
 id: 144
 uuid: fa3280d0-1624-4c73-9471-590f641765f5
 generatedBy: agent
-status: in_progress
+status: done
 priority: low
 container: false
 temp: false
@@ -19,7 +19,7 @@ docs: []
 planGeneratedAt: 2025-10-29T22:44:18.265Z
 promptsGeneratedAt: 2025-10-29T22:44:18.265Z
 createdAt: 2025-10-27T19:26:47.021Z
-updatedAt: 2025-10-30T00:47:34.127Z
+updatedAt: 2025-10-30T00:57:33.875Z
 progressNotes:
   - timestamp: 2025-10-29T23:37:35.209Z
     text: Implemented initial compact command scaffold with executor integration and
@@ -77,6 +77,11 @@ progressNotes:
   - timestamp: 2025-10-30T00:47:15.094Z
     text: Ran bun run check and bun test src/rmplan/mcp/generate_mode.test.ts to
       validate the new compact-plan prompt.
+    source: "tester: Task 11"
+  - timestamp: 2025-10-30T00:50:51.995Z
+    text: Expanded MCP compact prompt tests to cover missing identifier errors, age
+      warnings, and config thresholds before rerunning bun test
+      src/rmplan/mcp/generate_mode.test.ts.
     source: "tester: Task 11"
 tasks:
   - title: Create compact command handler
@@ -244,7 +249,7 @@ tasks:
       - Document what's preserved vs. compacted
       - Add to command reference section
   - title: Add MCP prompt for compaction
-    done: false
+    done: true
     description: >-
       Create MCP prompt in `src/rmplan/mcp/prompts/` directory to enable
       compaction from within Claude Code:
@@ -274,6 +279,9 @@ changedFiles:
   - src/rmplan/commands/compact.test.ts
   - src/rmplan/commands/compact.ts
   - src/rmplan/configSchema.ts
+  - src/rmplan/mcp/generate_mode.test.ts
+  - src/rmplan/mcp/generate_mode.ts
+  - src/rmplan/mcp/prompts/compact_plan.ts
   - src/rmplan/rmplan.ts
 rmfilter: []
 ---
