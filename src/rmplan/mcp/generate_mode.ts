@@ -902,4 +902,107 @@ export function registerGenerateMode(
       }
     },
   });
+
+  server.addTool({
+    name: 'create-plan',
+    description: 'Create a new plan file with specified properties',
+    parameters: createPlanParameters,
+    annotations: {
+      destructiveHint: true,
+      readOnlyHint: false,
+    },
+    execute: async (args, execContext) => {
+      try {
+        return await mcpCreatePlan(args, context, {
+          log: wrapLogger(execContext.log, '[create-plan] '),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new UserError(message);
+      }
+    },
+  });
+
+  // Add MCP resources for browsing plan data
+  server.addResource({
+    uri: 'rmplan://plans/list',
+    name: 'All Plans',
+    description: 'List of all plans in the repository',
+    mimeType: 'application/json',
+    async load() {
+      const tasksDir = await resolveTasksDir(context.config);
+      const { plans } = await readAllPlans(tasksDir);
+
+      const planList = Array.from(plans.values()).map((plan) => ({
+        id: plan.id,
+        title: plan.title,
+        goal: plan.goal,
+        status: plan.status,
+        priority: plan.priority,
+        parent: plan.parent,
+        dependencies: plan.dependencies,
+        assignedTo: plan.assignedTo,
+        taskCount: plan.tasks?.length || 0,
+        completedTasks: plan.tasks?.filter((t) => t.done).length || 0,
+        createdAt: plan.createdAt,
+        updatedAt: plan.updatedAt,
+      }));
+
+      return {
+        text: JSON.stringify(planList, null, 2),
+      };
+    },
+  });
+
+  server.addResourceTemplate({
+    uriTemplate: 'rmplan://plans/{planId}',
+    name: 'Plan Details',
+    description: 'Full details of a specific plan including tasks and details',
+    mimeType: 'application/json',
+    arguments: [
+      {
+        name: 'planId',
+        description: 'Plan ID or file path',
+        required: true,
+      },
+    ],
+    async load(args) {
+      const { plan } = await resolvePlan(args.planId, context);
+      return {
+        text: JSON.stringify(plan, null, 2),
+      };
+    },
+  });
+
+  server.addResource({
+    uri: 'rmplan://plans/ready',
+    name: 'Ready Plans',
+    description: 'Plans ready to execute (all dependencies satisfied)',
+    mimeType: 'application/json',
+    async load() {
+      const tasksDir = await resolveTasksDir(context.config);
+      const { plans } = await readAllPlans(tasksDir);
+
+      const readyPlans = filterAndSortReadyPlans(plans, {
+        pendingOnly: false,
+        sortBy: 'priority',
+      });
+
+      const enrichedPlans = readyPlans.map((plan) => {
+        const planId = typeof plan.id === 'number' ? plan.id : 0;
+        return {
+          ...plan,
+          filename: plans.get(planId)?.filename || '',
+        };
+      });
+
+      const jsonOutput = formatReadyPlansAsJson(enrichedPlans, {
+        gitRoot: context.gitRoot,
+      });
+
+      return {
+        text: jsonOutput,
+      };
+    },
+  });
 }
