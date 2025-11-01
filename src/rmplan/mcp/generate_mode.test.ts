@@ -8,15 +8,11 @@ import { writePlanFile, readPlanFile, clearPlanCache, readAllPlans } from '../pl
 import { resolvePlan } from '../plan_display.js';
 import {
   appendResearchParameters,
-  addPlanTaskParameters,
   generateTasksParameters,
   getPlanParameters,
   listReadyPlansParameters,
-  mcpAddPlanTask,
-  mcpRemovePlanTask,
-  mcpUpdatePlanTask,
-  removePlanTaskParameters,
-  updatePlanTaskParameters,
+  managePlanTaskParameters,
+  mcpManagePlanTask,
   loadGeneratePrompt,
   loadPlanPrompt,
   loadQuestionsPrompt,
@@ -380,9 +376,11 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(updated.details).toContain('Important research data that should be preserved');
   });
 
-  test('mcpAddPlanTask appends a new task with metadata', async () => {
-    const args = addPlanTaskParameters.parse({
+  // Tests for unified mcpManagePlanTask function
+  test('mcpManagePlanTask with action=add creates task with metadata', async () => {
+    const args = managePlanTaskParameters.parse({
       plan: planPath,
+      action: 'add',
       title: 'Investigate issue',
       description: 'Reproduce the bug and identify the failing component.',
       files: ['src/issues.ts'],
@@ -396,7 +394,7 @@ describe('rmplan MCP generate mode helpers', () => {
       warn() {},
     };
 
-    const result = await mcpAddPlanTask(args, context, { log: stubLogger });
+    const result = await mcpManagePlanTask(args, context, { log: stubLogger });
     expect(result).toContain('Added task "Investigate issue"');
 
     const updated = await readPlanFile(planPath);
@@ -410,18 +408,7 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(Array.isArray(task?.steps)).toBeTrue();
   });
 
-  test('mcpRemovePlanTask removes by title and reports shifts', async () => {
-    const addArgs = addPlanTaskParameters.parse({
-      plan: planPath,
-      title: 'First Task',
-      description: 'Initial task',
-    });
-    const addArgsSecond = addPlanTaskParameters.parse({
-      plan: planPath,
-      title: 'Follow-up Task',
-      description: 'Secondary task',
-    });
-
+  test('mcpManagePlanTask with action=remove deletes by title and reports shifts', async () => {
     const stubLogger = {
       debug() {},
       error() {},
@@ -429,15 +416,37 @@ describe('rmplan MCP generate mode helpers', () => {
       warn() {},
     };
 
-    await mcpAddPlanTask(addArgs, context, { log: stubLogger });
-    await mcpAddPlanTask(addArgsSecond, context, { log: stubLogger });
+    await mcpManagePlanTask(
+      managePlanTaskParameters.parse({
+        plan: planPath,
+        action: 'add',
+        title: 'First Task',
+        description: 'Initial task',
+      }),
+      context,
+      { log: stubLogger }
+    );
+    await mcpManagePlanTask(
+      managePlanTaskParameters.parse({
+        plan: planPath,
+        action: 'add',
+        title: 'Follow-up Task',
+        description: 'Secondary task',
+      }),
+      context,
+      { log: stubLogger }
+    );
 
-    const removeArgs = removePlanTaskParameters.parse({
-      plan: planPath,
-      taskTitle: 'first',
-    });
+    const result = await mcpManagePlanTask(
+      managePlanTaskParameters.parse({
+        plan: planPath,
+        action: 'remove',
+        taskTitle: 'first',
+      }),
+      context,
+      { log: stubLogger }
+    );
 
-    const result = await mcpRemovePlanTask(removeArgs, context, { log: stubLogger });
     expect(result).toContain('Removed task "First Task"');
     expect(result).toContain('have shifted');
 
@@ -446,31 +455,29 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(updated.tasks[0]?.title).toBe('Follow-up Task');
   });
 
-  test('mcpRemovePlanTask errors on missing selectors', async () => {
-    const addArgs = addPlanTaskParameters.parse({
-      plan: planPath,
-      title: 'Existing Task',
-      description: 'Something to remove',
-    });
-
-    await mcpAddPlanTask(addArgs, context);
-
-    const args = removePlanTaskParameters.parse({
-      plan: planPath,
-    });
-
-    await expect(mcpRemovePlanTask(args, context)).rejects.toThrow(
-      'Provide either taskTitle or taskIndex to remove a task.'
+  test('mcpManagePlanTask with action=remove errors on missing selectors', async () => {
+    await mcpManagePlanTask(
+      managePlanTaskParameters.parse({
+        plan: planPath,
+        action: 'add',
+        title: 'Existing Task',
+        description: 'Something to remove',
+      }),
+      context
     );
+
+    await expect(
+      mcpManagePlanTask(
+        managePlanTaskParameters.parse({
+          plan: planPath,
+          action: 'remove',
+        }),
+        context
+      )
+    ).rejects.toThrow('Provide either taskTitle or taskIndex to remove a task.');
   });
 
-  test('mcpUpdatePlanTask updates task title by title selector', async () => {
-    const addArgs = addPlanTaskParameters.parse({
-      plan: planPath,
-      title: 'Original Task',
-      description: 'Original description',
-    });
-
+  test('mcpManagePlanTask with action=update modifies task title by title selector', async () => {
     const stubLogger = {
       debug() {},
       error() {},
@@ -478,15 +485,28 @@ describe('rmplan MCP generate mode helpers', () => {
       warn() {},
     };
 
-    await mcpAddPlanTask(addArgs, context, { log: stubLogger });
+    await mcpManagePlanTask(
+      managePlanTaskParameters.parse({
+        plan: planPath,
+        action: 'add',
+        title: 'Original Task',
+        description: 'Original description',
+      }),
+      context,
+      { log: stubLogger }
+    );
 
-    const updateArgs = updatePlanTaskParameters.parse({
-      plan: planPath,
-      taskTitle: 'original',
-      newTitle: 'Updated Task Title',
-    });
+    const result = await mcpManagePlanTask(
+      managePlanTaskParameters.parse({
+        plan: planPath,
+        action: 'update',
+        taskTitle: 'original',
+        title: 'Updated Task Title',
+      }),
+      context,
+      { log: stubLogger }
+    );
 
-    const result = await mcpUpdatePlanTask(updateArgs, context, { log: stubLogger });
     expect(result).toContain('Updated task "Original Task"');
     expect(result).toContain('title to "Updated Task Title"');
 
@@ -496,13 +516,7 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(updated.tasks[0]?.description).toBe('Original description');
   });
 
-  test('mcpUpdatePlanTask updates task description by index', async () => {
-    const addArgs = addPlanTaskParameters.parse({
-      plan: planPath,
-      title: 'Task Title',
-      description: 'Original description',
-    });
-
+  test('mcpManagePlanTask with action=update modifies description by index', async () => {
     const stubLogger = {
       debug() {},
       error() {},
@@ -510,15 +524,28 @@ describe('rmplan MCP generate mode helpers', () => {
       warn() {},
     };
 
-    await mcpAddPlanTask(addArgs, context, { log: stubLogger });
+    await mcpManagePlanTask(
+      managePlanTaskParameters.parse({
+        plan: planPath,
+        action: 'add',
+        title: 'Task Title',
+        description: 'Original description',
+      }),
+      context,
+      { log: stubLogger }
+    );
 
-    const updateArgs = updatePlanTaskParameters.parse({
-      plan: planPath,
-      taskIndex: 0,
-      newDescription: 'Updated description with more details',
-    });
+    const result = await mcpManagePlanTask(
+      managePlanTaskParameters.parse({
+        plan: planPath,
+        action: 'update',
+        taskIndex: 0,
+        description: 'Updated description with more details',
+      }),
+      context,
+      { log: stubLogger }
+    );
 
-    const result = await mcpUpdatePlanTask(updateArgs, context, { log: stubLogger });
     expect(result).toContain('Updated task "Task Title"');
     expect(result).toContain('description');
 
@@ -528,13 +555,7 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(updated.tasks[0]?.description).toBe('Updated description with more details');
   });
 
-  test('mcpUpdatePlanTask updates task done status', async () => {
-    const addArgs = addPlanTaskParameters.parse({
-      plan: planPath,
-      title: 'Task to Complete',
-      description: 'Task description',
-    });
-
+  test('mcpManagePlanTask with action=update modifies done status', async () => {
     const stubLogger = {
       debug() {},
       error() {},
@@ -542,15 +563,28 @@ describe('rmplan MCP generate mode helpers', () => {
       warn() {},
     };
 
-    await mcpAddPlanTask(addArgs, context, { log: stubLogger });
+    await mcpManagePlanTask(
+      managePlanTaskParameters.parse({
+        plan: planPath,
+        action: 'add',
+        title: 'Task to Complete',
+        description: 'Task description',
+      }),
+      context,
+      { log: stubLogger }
+    );
 
-    const updateArgs = updatePlanTaskParameters.parse({
-      plan: planPath,
-      taskTitle: 'complete',
-      done: true,
-    });
+    const result = await mcpManagePlanTask(
+      managePlanTaskParameters.parse({
+        plan: planPath,
+        action: 'update',
+        taskTitle: 'complete',
+        done: true,
+      }),
+      context,
+      { log: stubLogger }
+    );
 
-    const result = await mcpUpdatePlanTask(updateArgs, context, { log: stubLogger });
     expect(result).toContain('Updated task "Task to Complete"');
     expect(result).toContain('done status to true');
 
@@ -559,13 +593,7 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(updated.tasks[0]?.done).toBeTrue();
   });
 
-  test('mcpUpdatePlanTask updates multiple fields at once', async () => {
-    const addArgs = addPlanTaskParameters.parse({
-      plan: planPath,
-      title: 'Multi-update Task',
-      description: 'Original description',
-    });
-
+  test('mcpManagePlanTask with action=update modifies multiple fields at once', async () => {
     const stubLogger = {
       debug() {},
       error() {},
@@ -573,17 +601,30 @@ describe('rmplan MCP generate mode helpers', () => {
       warn() {},
     };
 
-    await mcpAddPlanTask(addArgs, context, { log: stubLogger });
+    await mcpManagePlanTask(
+      managePlanTaskParameters.parse({
+        plan: planPath,
+        action: 'add',
+        title: 'Multi-update Task',
+        description: 'Original description',
+      }),
+      context,
+      { log: stubLogger }
+    );
 
-    const updateArgs = updatePlanTaskParameters.parse({
-      plan: planPath,
-      taskIndex: 0,
-      newTitle: 'Updated Title',
-      newDescription: 'Updated description',
-      done: true,
-    });
+    const result = await mcpManagePlanTask(
+      managePlanTaskParameters.parse({
+        plan: planPath,
+        action: 'update',
+        taskIndex: 0,
+        title: 'Updated Title',
+        description: 'Updated description',
+        done: true,
+      }),
+      context,
+      { log: stubLogger }
+    );
 
-    const result = await mcpUpdatePlanTask(updateArgs, context, { log: stubLogger });
     expect(result).toContain('Updated task "Multi-update Task"');
     expect(result).toContain('title to "Updated Title"');
     expect(result).toContain('description');
@@ -596,121 +637,160 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(updated.tasks[0]?.done).toBeTrue();
   });
 
-  test('mcpUpdatePlanTask errors when no update fields provided', async () => {
-    const addArgs = addPlanTaskParameters.parse({
-      plan: planPath,
-      title: 'Task',
-      description: 'Description',
-    });
+  test('mcpManagePlanTask with action=update errors when no update fields provided', async () => {
+    await mcpManagePlanTask(
+      managePlanTaskParameters.parse({
+        plan: planPath,
+        action: 'add',
+        title: 'Task',
+        description: 'Description',
+      }),
+      context
+    );
 
-    await mcpAddPlanTask(addArgs, context);
-
-    const updateArgs = updatePlanTaskParameters.parse({
-      plan: planPath,
-      taskIndex: 0,
-    });
-
-    await expect(mcpUpdatePlanTask(updateArgs, context)).rejects.toThrow(
+    await expect(
+      mcpManagePlanTask(
+        managePlanTaskParameters.parse({
+          plan: planPath,
+          action: 'update',
+          taskIndex: 0,
+        }),
+        context
+      )
+    ).rejects.toThrow(
       'At least one of newTitle, newDescription, or done must be provided to update a task.'
     );
   });
 
-  test('mcpUpdatePlanTask errors when task title is not found', async () => {
-    const addArgs = addPlanTaskParameters.parse({
-      plan: planPath,
-      title: 'Existing Task',
-      description: 'Description',
-    });
-
-    await mcpAddPlanTask(addArgs, context);
-
-    const updateArgs = updatePlanTaskParameters.parse({
-      plan: planPath,
-      taskTitle: 'nonexistent',
-      newTitle: 'Updated',
-    });
-
-    await expect(mcpUpdatePlanTask(updateArgs, context)).rejects.toThrow(
-      'No task found with title containing "nonexistent"'
+  test('mcpManagePlanTask with action=update errors when task title not found', async () => {
+    await mcpManagePlanTask(
+      managePlanTaskParameters.parse({
+        plan: planPath,
+        action: 'add',
+        title: 'Existing Task',
+        description: 'Description',
+      }),
+      context
     );
+
+    await expect(
+      mcpManagePlanTask(
+        managePlanTaskParameters.parse({
+          plan: planPath,
+          action: 'update',
+          taskTitle: 'nonexistent',
+          title: 'Updated',
+        }),
+        context
+      )
+    ).rejects.toThrow('No task found with title containing "nonexistent"');
   });
 
-  test('mcpUpdatePlanTask errors when task index is out of bounds', async () => {
-    const addArgs = addPlanTaskParameters.parse({
-      plan: planPath,
-      title: 'Task',
-      description: 'Description',
-    });
-
-    await mcpAddPlanTask(addArgs, context);
-
-    const updateArgs = updatePlanTaskParameters.parse({
-      plan: planPath,
-      taskIndex: 5,
-      newTitle: 'Updated',
-    });
-
-    await expect(mcpUpdatePlanTask(updateArgs, context)).rejects.toThrow(
-      'Task index 5 is out of bounds'
+  test('mcpManagePlanTask with action=update errors when index out of bounds', async () => {
+    await mcpManagePlanTask(
+      managePlanTaskParameters.parse({
+        plan: planPath,
+        action: 'add',
+        title: 'Task',
+        description: 'Description',
+      }),
+      context
     );
+
+    await expect(
+      mcpManagePlanTask(
+        managePlanTaskParameters.parse({
+          plan: planPath,
+          action: 'update',
+          taskIndex: 5,
+          title: 'Updated',
+        }),
+        context
+      )
+    ).rejects.toThrow('Task index 5 is out of bounds');
   });
 
-  test('mcpUpdatePlanTask errors on empty title', async () => {
-    const addArgs = addPlanTaskParameters.parse({
-      plan: planPath,
-      title: 'Task',
-      description: 'Description',
-    });
-
-    await mcpAddPlanTask(addArgs, context);
-
-    const updateArgs = updatePlanTaskParameters.parse({
-      plan: planPath,
-      taskIndex: 0,
-      newTitle: '   ',
-    });
-
-    await expect(mcpUpdatePlanTask(updateArgs, context)).rejects.toThrow(
-      'New task title cannot be empty'
+  test('mcpManagePlanTask with action=update errors on empty title', async () => {
+    await mcpManagePlanTask(
+      managePlanTaskParameters.parse({
+        plan: planPath,
+        action: 'add',
+        title: 'Task',
+        description: 'Description',
+      }),
+      context
     );
+
+    await expect(
+      mcpManagePlanTask(
+        managePlanTaskParameters.parse({
+          plan: planPath,
+          action: 'update',
+          taskIndex: 0,
+          title: '   ',
+        }),
+        context
+      )
+    ).rejects.toThrow('New task title cannot be empty');
   });
 
-  test('mcpUpdatePlanTask errors on empty description', async () => {
-    const addArgs = addPlanTaskParameters.parse({
-      plan: planPath,
-      title: 'Task',
-      description: 'Description',
-    });
-
-    await mcpAddPlanTask(addArgs, context);
-
-    const updateArgs = updatePlanTaskParameters.parse({
-      plan: planPath,
-      taskIndex: 0,
-      newDescription: '   ',
-    });
-
-    await expect(mcpUpdatePlanTask(updateArgs, context)).rejects.toThrow(
-      'New task description cannot be empty'
+  test('mcpManagePlanTask with action=update errors on empty description', async () => {
+    await mcpManagePlanTask(
+      managePlanTaskParameters.parse({
+        plan: planPath,
+        action: 'add',
+        title: 'Task',
+        description: 'Description',
+      }),
+      context
     );
+
+    await expect(
+      mcpManagePlanTask(
+        managePlanTaskParameters.parse({
+          plan: planPath,
+          action: 'update',
+          taskIndex: 0,
+          description: '   ',
+        }),
+        context
+      )
+    ).rejects.toThrow('New task description cannot be empty');
   });
 
-  test('mcpUpdatePlanTask errors on missing selectors', async () => {
-    const addArgs = addPlanTaskParameters.parse({
+  test('mcpManagePlanTask with action=update errors on missing selectors', async () => {
+    await mcpManagePlanTask(
+      managePlanTaskParameters.parse({
+        plan: planPath,
+        action: 'add',
+        title: 'Task',
+        description: 'Description',
+      }),
+      context
+    );
+
+    await expect(
+      mcpManagePlanTask(
+        managePlanTaskParameters.parse({
+          plan: planPath,
+          action: 'update',
+          title: 'Updated',
+        }),
+        context
+      )
+    ).rejects.toThrow('Provide either taskTitle or taskIndex to update a task');
+  });
+
+  test('mcpManagePlanTask with action=add errors when title or description missing', async () => {
+    const args = managePlanTaskParameters.parse({
       plan: planPath,
-      title: 'Task',
-      description: 'Description',
+      action: 'add',
+      title: 'Only Title',
+      // description is missing
     });
 
-    await mcpAddPlanTask(addArgs, context);
-
-    const updateArgs = updatePlanTaskParameters.parse({
-      plan: planPath,
-      newTitle: 'Updated',
-    });
-
-    await expect(mcpUpdatePlanTask(updateArgs, context)).rejects.toThrow(
-      'Provide either taskTitle or taskIndex to update a task'
+    await expect(mcpManagePlanTask(args, context)).rejects.toThrow(
+      'title and description are required for add action'
     );
   });
 });

@@ -206,51 +206,50 @@ export const updatePlanDetailsParameters = z
 
 export type UpdatePlanDetailsArguments = z.infer<typeof updatePlanDetailsParameters>;
 
-export const addPlanTaskParameters = z
+export const managePlanTaskParameters = z
   .object({
     plan: z.string().describe('Plan ID or file path'),
-    title: z.string().describe('Task title'),
-    description: z.string().describe('Task description'),
-    files: z.array(z.string()).optional().describe('Related file paths'),
-    docs: z.array(z.string()).optional().describe('Documentation paths'),
-  })
-  .describe('Add a new task to an existing plan');
-
-export type AddPlanTaskArguments = z.infer<typeof addPlanTaskParameters>;
-
-export const removePlanTaskParameters = z
-  .object({
-    plan: z.string().describe('Plan ID or file path'),
-    taskIndex: z
-      .number()
-      .optional()
-      .describe('Task index (0-based). Indices of later tasks shift after removal.'),
+    action: z.enum(['add', 'update', 'remove']).describe('Action to perform on the task'),
+    // Task identification (for update and remove)
     taskTitle: z
       .string()
       .optional()
-      .describe(
-        'Task title to search for (partial match, case-insensitive). Preferred over index.'
-      ),
-  })
-  .describe('Remove a task from a plan by title (preferred) or index.');
-
-export type RemovePlanTaskArguments = z.infer<typeof removePlanTaskParameters>;
-
-export const updatePlanTaskParameters = z
-  .object({
-    plan: z.string().describe('Plan ID or file path'),
-    taskTitle: z
-      .string()
-      .optional()
-      .describe('Task title to search for (partial match, case-insensitive)'),
+      .describe('Task title to search for (partial match, case-insensitive). Preferred over index.'),
     taskIndex: z.number().int().optional().describe('Task index (0-based)'),
-    newTitle: z.string().optional().describe('New task title'),
-    newDescription: z.string().optional().describe('New task description'),
-    done: z.boolean().optional().describe('Mark task as done or not done'),
+    // Task creation/update fields
+    title: z.string().optional().describe('Task title (required for add, optional for update)'),
+    description: z.string().optional().describe('Task description (required for add, optional for update)'),
+    done: z.boolean().optional().describe('Mark task as done or not done (update only)'),
+    files: z.array(z.string()).optional().describe('Related file paths (add only)'),
+    docs: z.array(z.string()).optional().describe('Documentation paths (add only)'),
   })
-  .describe('Update an existing task in a plan by title (preferred) or index.');
+  .describe('Manage tasks in a plan: add, update, or remove');
 
-export type UpdatePlanTaskArguments = z.infer<typeof updatePlanTaskParameters>;
+export type ManagePlanTaskArguments = z.infer<typeof managePlanTaskParameters>;
+
+// Legacy types for internal functions
+type AddPlanTaskArguments = {
+  plan: string;
+  title: string;
+  description: string;
+  files?: string[];
+  docs?: string[];
+};
+
+type RemovePlanTaskArguments = {
+  plan: string;
+  taskIndex?: number;
+  taskTitle?: string;
+};
+
+type UpdatePlanTaskArguments = {
+  plan: string;
+  taskTitle?: string;
+  taskIndex?: number;
+  newTitle?: string;
+  newDescription?: string;
+  done?: boolean;
+};
 
 export const listReadyPlansParameters = z
   .object({
@@ -311,6 +310,56 @@ function wrapLogger(log: GenerateModeExecutionLogger, prefix: string): GenerateM
     info: (message, data) => log.info(`${prefix}${message}`, data),
     warn: (message, data) => log.warn(`${prefix}${message}`, data),
   };
+}
+
+export async function mcpManagePlanTask(
+  args: ManagePlanTaskArguments,
+  context: GenerateModeRegistrationContext,
+  execContext?: { log: GenerateModeExecutionLogger }
+): Promise<string> {
+  switch (args.action) {
+    case 'add': {
+      if (!args.title || !args.description) {
+        throw new UserError('title and description are required for add action');
+      }
+      return mcpAddPlanTask(
+        {
+          plan: args.plan,
+          title: args.title,
+          description: args.description,
+          files: args.files,
+          docs: args.docs,
+        },
+        context,
+        execContext
+      );
+    }
+    case 'update': {
+      return mcpUpdatePlanTask(
+        {
+          plan: args.plan,
+          taskTitle: args.taskTitle,
+          taskIndex: args.taskIndex,
+          newTitle: args.title,
+          newDescription: args.description,
+          done: args.done,
+        },
+        context,
+        execContext
+      );
+    }
+    case 'remove': {
+      return mcpRemovePlanTask(
+        {
+          plan: args.plan,
+          taskTitle: args.taskTitle,
+          taskIndex: args.taskIndex,
+        },
+        context,
+        execContext
+      );
+    }
+  }
 }
 
 export async function mcpAddPlanTask(
@@ -766,58 +815,18 @@ export function registerGenerateMode(
   });
 
   server.addTool({
-    name: 'add-plan-task',
-    description: 'Add a new task to an existing plan.',
-    parameters: addPlanTaskParameters,
-    annotations: {
-      destructiveHint: true,
-      readOnlyHint: false,
-    },
-    execute: async (args, execContext) => {
-      try {
-        return await mcpAddPlanTask(args, context, {
-          log: wrapLogger(execContext.log, '[add-plan-task] '),
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        throw new UserError(message);
-      }
-    },
-  });
-
-  server.addTool({
-    name: 'remove-plan-task',
-    description: 'Remove a task from a plan by title (preferred) or index.',
-    parameters: removePlanTaskParameters,
-    annotations: {
-      destructiveHint: true,
-      readOnlyHint: false,
-    },
-    execute: async (args, execContext) => {
-      try {
-        return await mcpRemovePlanTask(args, context, {
-          log: wrapLogger(execContext.log, '[remove-plan-task] '),
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        throw new UserError(message);
-      }
-    },
-  });
-
-  server.addTool({
-    name: 'update-plan-task',
+    name: 'manage-plan-task',
     description:
-      'Update a single existing task in a plan by title index. Can update the title, description, and/or done status.',
-    parameters: updatePlanTaskParameters,
+      'Manage tasks in a plan. Use action="add" to create a new task, action="update" to modify an existing task (by title or index), or action="remove" to delete a task.',
+    parameters: managePlanTaskParameters,
     annotations: {
       destructiveHint: true,
       readOnlyHint: false,
     },
     execute: async (args, execContext) => {
       try {
-        return await mcpUpdatePlanTask(args, context, {
-          log: wrapLogger(execContext.log, '[update-plan-task] '),
+        return await mcpManagePlanTask(args, context, {
+          log: wrapLogger(execContext.log, '[manage-plan-task] '),
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
