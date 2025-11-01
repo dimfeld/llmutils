@@ -8,9 +8,7 @@ goal: Implement a feature in the `rmpr` (PR handler) tool to allow users to
 id: 10
 uuid: 25650021-f5a0-4d22-b025-86d589844147
 status: done
-dependencies:
-  - 147
-updatedAt: 2025-11-01T08:54:16.828Z
+updatedAt: 2025-10-27T08:39:04.308Z
 tasks:
   - title: 1. Introduce Interactive Settings Loop Framework
     done: true

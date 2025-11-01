@@ -9,14 +9,12 @@ id: 1
 uuid: 73cb497c-4ee0-4664-b071-ea32cf03d894
 status: done
 priority: high
-dependencies:
-  - 2
 issue:
   - https://api.github.com/repos/dimfeld/llmutils/issues/98
 planGeneratedAt: 2025-05-29T02:13:21.502Z
 promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 createdAt: 2025-05-29T02:13:21.502Z
-updatedAt: 2025-11-01T08:54:16.567Z
+updatedAt: 2025-05-29T03:48:40.485Z
 tasks:
   - title: 1. Define Phase Schema and ID Utilities
     done: true
