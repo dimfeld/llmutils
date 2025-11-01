@@ -743,7 +743,6 @@ export async function handleGenerateCommand(
         // Use the shared Claude Code invocation helper
         const claudeResult = await invokeClaudeCodeForGeneration(planningPrompt, generationPrompt, {
           model: config.models?.stepGeneration,
-          includeDefaultTools: true,
           researchPrompt,
         });
 
