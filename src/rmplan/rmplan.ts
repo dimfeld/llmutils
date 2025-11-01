@@ -126,6 +126,10 @@ program
   .option('--claude', 'Use Claude Code for two-step planning and generation')
   .option('--no-claude', 'Use traditional copy/paste mode instead of Claude Code')
   .option(
+    '--with-blocking-subissues',
+    'Prompt LLM to identify and create blocking prerequisite plans'
+  )
+  .option(
     '--next-ready <planIdOrPath>',
     'Find and operate on the next ready dependency of the specified parent plan (accepts plan ID or file path)'
   )

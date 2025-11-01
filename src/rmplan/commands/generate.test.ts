@@ -4,7 +4,11 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { handleGenerateCommand } from './generate.js';
-import { clearPlanCache, readPlanFile } from '../plans.js';
+import {
+  generateClaudeCodePlanningPrompt,
+  generateClaudeCodeSimplePlanningPrompt,
+} from '../prompt.js';
+import { clearPlanCache, readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
 
@@ -790,6 +794,32 @@ describe('handleGenerateCommand with --next-ready flag', () => {
   });
 });
 
+describe('blocking subissue prompts', () => {
+  test('generateClaudeCodePlanningPrompt includes blocking instructions when enabled', () => {
+    const prompt = generateClaudeCodePlanningPrompt('Feature overview', {
+      withBlockingSubissues: true,
+      parentPlanId: 42,
+    });
+
+    expect(prompt).toContain('# Blocking Subissues');
+    expect(prompt).toContain('rmplan add "Blocking Title" --parent 42 --discovered-from 42');
+    expect(prompt).toContain('## Blocking Subissue: [Title]');
+    expect(prompt).toContain('- Tasks: [High-level task list]');
+  });
+
+  test('generateClaudeCodeSimplePlanningPrompt includes blocking instructions when enabled', () => {
+    const prompt = generateClaudeCodeSimplePlanningPrompt('Simple task', {
+      withBlockingSubissues: true,
+      parentPlanId: 7,
+    });
+
+    expect(prompt).toContain('# Blocking Subissues');
+    expect(prompt).toContain('rmplan add "Blocking Title" --parent 7 --discovered-from 7');
+    expect(prompt).toContain('## Blocking Subissue: [Title]');
+    expect(prompt).toContain('- Tasks: [High-level task list]');
+  });
+});
+
 describe('handleGenerateCommand with --claude flag', () => {
   let tempDir: string;
   let tasksDir: string;
@@ -806,6 +836,7 @@ describe('handleGenerateCommand with --claude flag', () => {
     researchOutput: undefined,
   }));
   const extractMarkdownToYamlSpy = mock(async () => {});
+  const warnSpy = mock(() => {});
 
   beforeEach(async () => {
     // Clear mocks
@@ -817,6 +848,7 @@ describe('handleGenerateCommand with --claude flag', () => {
     waitForEnterSpy.mockClear();
     invokeClaudeCodeForGenerationSpy.mockClear();
     extractMarkdownToYamlSpy.mockClear();
+    warnSpy.mockClear();
 
     // Clear plan cache
     clearPlanCache();
@@ -830,7 +862,7 @@ describe('handleGenerateCommand with --claude flag', () => {
     await moduleMocker.mock('../../logging.js', () => ({
       log: logSpy,
       error: errorSpy,
-      warn: mock(() => {}),
+      warn: warnSpy,
     }));
 
     await moduleMocker.mock('../../common/clipboard.js', () => ({
@@ -858,6 +890,7 @@ describe('handleGenerateCommand with --claude flag', () => {
         },
         models: {
           planning: 'test-model',
+          stepGeneration: 'test-model',
         },
       }),
     }));
@@ -1006,6 +1039,166 @@ phases:
       expect.objectContaining({
         researchContent: 'Research findings from Claude',
       })
+    );
+  });
+
+  test('reports newly created blocking plans linked to the current plan', async () => {
+    const planPath = path.join(tasksDir, '101-parent.plan.md');
+
+    await writePlanFile(planPath, {
+      id: 101,
+      title: 'Parent Plan',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: new Date().toISOString(),
+      details: '',
+      tasks: [],
+      dependencies: [],
+    });
+
+    const options = {
+      plan: planPath,
+      claude: true,
+      withBlockingSubissues: true,
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    const command = {
+      args: [],
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    invokeClaudeCodeForGenerationSpy.mockImplementationOnce(async () => {
+      const blockerPath = path.join(tasksDir, '102-blocker.plan.md');
+      await writePlanFile(blockerPath, {
+        id: 102,
+        title: 'Blocking Plan',
+        status: 'pending',
+        priority: 'high',
+        parent: 101,
+        discoveredFrom: 101,
+        createdAt: new Date().toISOString(),
+        details: 'Prerequisite tasks that unblock the parent plan.',
+        tasks: [],
+        dependencies: [],
+      });
+
+      return {
+        generationOutput:
+          '# yaml-language-server: $schema=https://example.com\nid: 101\ntitle: Parent Plan',
+        researchOutput: undefined,
+      };
+    });
+
+    await handleGenerateCommand(undefined, options, command);
+
+    const logMessages = logSpy.mock.calls.map((args) => String(args[0]));
+    expect(logMessages.some((msg) => msg.includes('Created 1 blocking plan'))).toBe(true);
+    expect(logMessages.some((msg) => msg.includes('#102 Blocking Plan'))).toBe(true);
+    expect(warnSpy.mock.calls.length).toBe(0);
+  });
+
+  test('warns about newly created plans that are not linked to the current plan', async () => {
+    const planPath = path.join(tasksDir, '201-parent.plan.md');
+
+    await writePlanFile(planPath, {
+      id: 201,
+      title: 'Parent Plan',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: new Date().toISOString(),
+      details: '',
+      tasks: [],
+      dependencies: [],
+    });
+
+    const options = {
+      plan: planPath,
+      claude: true,
+      withBlockingSubissues: true,
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    const command = {
+      args: [],
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    invokeClaudeCodeForGenerationSpy.mockImplementationOnce(async () => {
+      const blockerPath = path.join(tasksDir, '202-unrelated.plan.md');
+      await writePlanFile(blockerPath, {
+        id: 202,
+        title: 'Unrelated Plan',
+        status: 'pending',
+        priority: 'low',
+        parent: 999,
+        discoveredFrom: 999,
+        createdAt: new Date().toISOString(),
+        details: 'Work that does not block the parent plan.',
+        tasks: [],
+        dependencies: [],
+      });
+
+      return {
+        generationOutput:
+          '# yaml-language-server: $schema=https://example.com\nid: 201\ntitle: Parent Plan',
+        researchOutput: undefined,
+      };
+    });
+
+    await handleGenerateCommand(undefined, options, command);
+
+    const logMessages = logSpy.mock.calls.map((args) => String(args[0]));
+    expect(
+      logMessages.some((msg) => msg.includes('No blocking plans were created automatically'))
+    ).toBe(true);
+
+    const warnMessages = warnSpy.mock.calls.map((args) => String(args[0]));
+    expect(warnMessages.some((msg) => msg.includes('not linked to plan 201'))).toBe(true);
+  });
+
+  test('disables blocker detection when plan lacks numeric id', async () => {
+    const planPath = path.join(tasksDir, 'stub-without-id.plan.md');
+
+    await writePlanFile(planPath, {
+      title: 'Plan Without ID',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: new Date().toISOString(),
+      details: '',
+      tasks: [],
+      dependencies: [],
+    });
+
+    const options = {
+      plan: planPath,
+      claude: true,
+      withBlockingSubissues: true,
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    const command = {
+      args: [],
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleGenerateCommand(undefined, options, command);
+
+    const warnMessages = warnSpy.mock.calls.map((args) => String(args[0]));
+    expect(warnMessages.some((msg) => msg.includes('requires a plan with a numeric ID'))).toBe(
+      true
     );
   });
 });

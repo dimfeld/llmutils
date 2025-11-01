@@ -5,8 +5,9 @@ goal: ""
 id: 135
 uuid: ac0b9e9d-cd95-45f1-8ded-15074bd6c800
 generatedBy: agent
-status: pending
+status: in_progress
 priority: medium
+container: false
 temp: false
 dependencies:
   - 129
@@ -14,42 +15,66 @@ parent: 128
 references:
   "128": f69d418b-aaf1-4c29-88a9-f557baf8f81e
   "129": 1993c51d-3c29-4f8d-9928-6fa7ebea414c
+issue: []
+pullRequest: []
+docs: []
 planGeneratedAt: 2025-11-01T19:45:53.007Z
 promptsGeneratedAt: 2025-11-01T19:45:53.007Z
 createdAt: 2025-10-26T22:41:26.645Z
-updatedAt: 2025-11-01T19:47:22.167Z
+updatedAt: 2025-11-01T20:21:49.184Z
+progressNotes:
+  - timestamp: 2025-11-01T19:59:48.737Z
+    text: Added CLI flag, prompt instructions, and blocking plan detection snapshot
+      logic. Updated Claude/simple prompts to include rmplan add guidance and
+      blocking summary section, and wired withBlockingSubissues option through
+      CLI and MCP pathways.
+    source: "implementer: tasks 1-3"
+  - timestamp: 2025-11-01T20:03:27.624Z
+    text: Reviewed generate command changes and test suite. Existing tests only
+      cover prompt text; no assertions around new blocking plan
+      detection/reporting or warn path when blockers missing. Planning to add
+      targeted tests.
+    source: "tester: tasks 9-11"
+  - timestamp: 2025-11-01T20:11:51.866Z
+    text: Added CLI blocking-plan detection tests covering successful creation,
+      unrelated plan warning, and missing numeric ID guard. bun test
+      src/rmplan/commands/generate.test.ts passes. Full bun test currently fails
+      due to task-management integration test importing addPlanTaskParameters
+      from generate_mode.ts, which no longer exports that symbol (pre-existing
+      issue).
+    source: "tester: tasks 9-11"
 tasks:
   - title: Add --with-blocking-subissues CLI flag
-    done: false
+    done: true
     description: Add the new boolean flag to the generate command definition in
       src/rmplan/rmplan.ts. Follow existing patterns for boolean flags
       (--autofind, --commit, etc.). No default value needed - flag presence
       enables the feature.
   - title: Update multi-phase prompt generation
-    done: false
+    done: true
     description: Modify generateClaudeCodePlanningPrompt() in src/rmplan/prompt.ts
       to accept an optional withBlockingSubissues parameter. When true, append
       the blocking subissues section to the prompt. This section should instruct
       the LLM to identify prerequisite work and format it with title, priority,
       reason, and high-level tasks.
   - title: Update simple mode prompt generation
-    done: false
+    done: true
     description: Modify generateClaudeCodeSimplePlanningPrompt() in
       src/rmplan/prompt.ts to also support the withBlockingSubissues parameter.
       Use similar but more concise wording appropriate for simple mode.
   - title: Update MCP generate-plan prompt
-    done: false
+    done: true
     description: Modify loadResearchPrompt() in src/rmplan/mcp/generate_mode.ts to
       check for a withBlockingSubissues option and pass it to the prompt
       generation functions. The MCP prompt should support the same blocking
       subissues detection as CLI.
   - title: Update MCP generate-plan-simple prompt
-    done: false
+    done: true
     description: Modify loadGeneratePrompt() in src/rmplan/mcp/generate_mode.ts to
       support withBlockingSubissues option, ensuring simple mode via MCP also
       has this capability.
   - title: Add tests for prompt generation
-    done: false
+    done: true
     description: Add tests in src/rmplan/commands/generate.test.ts (or create if
       needed) to verify that when withBlockingSubissues is true, the generated
       prompts include the blocking subissues section. Test both multi-phase and
@@ -67,7 +92,7 @@ tasks:
       clear description. Update README.md to document the new feature with
       example usage and expected LLM response format.
   - title: Snapshot plan IDs before LLM invocation
-    done: false
+    done: true
     description: In handleGenerateCommand(), before calling
       invokeClaudeCodeForGeneration(), capture the list of existing plan IDs
       using readAllPlans(). Store this snapshot to compare against after LLM
@@ -76,7 +101,7 @@ tasks:
     docs: []
     steps: []
   - title: Add rmplan add instructions to prompts
-    done: false
+    done: true
     description: "Update the prompt generation functions to include instructions for
       creating blocking plans. Tell the LLM: 'If you identify prerequisite work
       that should be done first, create those as separate plans using `rmplan
@@ -88,7 +113,7 @@ tasks:
     docs: []
     steps: []
   - title: Detect and report newly created plans
-    done: false
+    done: true
     description: "After LLM execution completes, call readAllPlans() again and
       compare against the snapshot. Identify new plan IDs that weren't present
       before. For each new plan, check if it has parent or discoveredFrom
@@ -97,6 +122,13 @@ tasks:
     files: []
     docs: []
     steps: []
+changedFiles:
+  - src/rmplan/commands/generate.test.ts
+  - src/rmplan/commands/generate.ts
+  - src/rmplan/mcp/generate_mode.ts
+  - src/rmplan/prompt.ts
+  - src/rmplan/rmplan.ts
+rmfilter: []
 ---
 
 ## Overview
@@ -809,3 +841,9 @@ From CLAUDE.md: "Tests should be useful; if a test needs to mock almost all of t
 
 8. **Priority Inheritance:** Should blocking subissues inherit priority from the main plan or allow LLM to suggest different priorities?
    - **Recommendation:** Allow LLM to suggest, but provide option to override all to match main plan priority
+
+# Implementation Notes
+
+Implemented tasks 1, 2, 3, 6, 9, 10, and 11: Add --with-blocking-subissues CLI flag; Update multi-phase prompt generation; Update simple mode prompt generation; Add tests for prompt generation; Snapshot plan IDs before LLM invocation; Add rmplan add instructions to prompts; Detect and report newly created plans. Introduced the new flag in src/rmplan/rmplan.ts and enforced Claude-mode-only execution inside src/rmplan/commands/generate.ts. Updated prompt builders in src/rmplan/prompt.ts to accept option objects, inject the Blocking Subissues guidance, and remind the agent to summarize blockers. Wired the withBlockingSubissues option through the CLI flow by snapshotting plan IDs, propagating prompt options, and logging newly created blocking plans after invokeClaudeCodeForGeneration, including warnings for unrelated plans. Extended MCP entry points in src/rmplan/mcp/generate_mode.ts to forward the new flag, register prompt arguments, and parse boolean values robustly. Added coverage in src/rmplan/commands/generate.test.ts to confirm that both planning prompt variants emit the blocking instructions. These changes ensure agents receive explicit rmplan add guidance for blockers while the CLI automatically detects and reports any subplans created during generation.
+
+Restored MCP task parameter exports and relaxed the blocking-subissue flag guard. Specifically, I reintroduced exported Zod schemas for addPlanTaskParameters and removePlanTaskParameters in src/rmplan/mcp/generate_mode.ts, deriving the internal argument types from those schemas so the task-management integration tests can continue to parse tool inputs without duplication. The remove schema now enforces that callers provide either taskTitle or taskIndex while leaving normalization to the existing helpers. I also replaced the hard error in src/rmplan/commands/generate.ts with a warning when --with-blocking-subissues is used outside Claude mode; this keeps the enhanced prompt path available for direct and clipboard workflows while making it clear that automatic blocker detection still depends on Claude automation. Tasks addressed: restore MCP exports for task management tools; allow --with-blocking-subissues in non-Claude flows.
