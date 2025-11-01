@@ -20,6 +20,7 @@ Both interfaces operate on plan files stored in the repository's tasks directory
 Create a new plan file with specified properties. Automatically updates parent plan dependencies to maintain bidirectional relationships.
 
 **Parameters:**
+
 - `title` (required): Plan title
 - `goal` (optional): High-level goal of the plan
 - `details` (optional): Plan details in markdown format
@@ -34,6 +35,7 @@ Create a new plan file with specified properties. Automatically updates parent p
 - `temp` (optional): Mark as temporary plan (boolean)
 
 **Example:**
+
 ```javascript
 const result = await mcp.call('create-plan', {
   title: 'Fix authentication edge case',
@@ -51,6 +53,7 @@ const result = await mcp.call('create-plan', {
 Add a new task to an existing plan.
 
 **Parameters:**
+
 - `plan` (required): Plan ID or file path
 - `title` (required): Task title
 - `description` (required): Task description
@@ -58,6 +61,7 @@ Add a new task to an existing plan.
 - `docs` (optional): Array of documentation paths
 
 **Example:**
+
 ```javascript
 await mcp.call('add-plan-task', {
   plan: '42',
@@ -72,6 +76,7 @@ await mcp.call('add-plan-task', {
 Remove a task from a plan by title (preferred) or index.
 
 **Parameters:**
+
 - `plan` (required): Plan ID or file path
 - `taskTitle` (optional): Task title to search for (partial match, case-insensitive)
 - `taskIndex` (optional): Task index (0-based)
@@ -79,6 +84,7 @@ Remove a task from a plan by title (preferred) or index.
 **Note:** Either `taskTitle` or `taskIndex` must be provided. `taskTitle` is preferred as indices shift when tasks are removed.
 
 **Example:**
+
 ```javascript
 await mcp.call('remove-plan-task', {
   plan: '42',
@@ -91,6 +97,7 @@ await mcp.call('remove-plan-task', {
 Update a single existing task in a plan by title or index.
 
 **Parameters:**
+
 - `plan` (required): Plan ID or file path
 - `taskTitle` (optional): Task title to search for (partial match, case-insensitive)
 - `taskIndex` (optional): Task index (0-based)
@@ -101,6 +108,7 @@ Update a single existing task in a plan by title or index.
 **Note:** Either `taskTitle` or `taskIndex` must be provided.
 
 **Example:**
+
 ```javascript
 await mcp.call('update-plan-task', {
   plan: '42',
@@ -116,6 +124,7 @@ await mcp.call('update-plan-task', {
 Merge generated tasks and metadata into an existing plan. This is typically used after generating a plan with an LLM.
 
 **Parameters:**
+
 - `plan` (required): Plan ID or file path to update
 - `tasks` (required): Array of task objects with `title`, `description`, and optional `done` boolean
 - `title` (optional): Plan title
@@ -124,6 +133,7 @@ Merge generated tasks and metadata into an existing plan. This is typically used
 - `priority` (optional): Priority level for the plan
 
 **Example:**
+
 ```javascript
 await mcp.call('update-plan-tasks', {
   plan: '42',
@@ -143,11 +153,13 @@ await mcp.call('update-plan-tasks', {
 Update plan details within the delimiter-bounded generated section. Can append to or replace existing generated content while preserving manually-added sections like Research.
 
 **Parameters:**
+
 - `plan` (required): Plan ID or file path to update
 - `details` (required): New details text to add or replace within the generated section
 - `append` (optional): If true, append to existing generated content; if false, replace it (default: false)
 
 **Example:**
+
 ```javascript
 await mcp.call('update-plan-details', {
   plan: '42',
@@ -161,12 +173,14 @@ await mcp.call('update-plan-details', {
 Append research findings to the plan details under a Research section.
 
 **Parameters:**
+
 - `plan` (required): Plan ID or file path to update
 - `research` (required): Extensive research notes to append under the Research section
 - `heading` (optional): Override the section heading (defaults to "## Research")
 - `timestamp` (optional): Include an automatic timestamp heading (default: false)
 
 **Example:**
+
 ```javascript
 await mcp.call('append-plan-research', {
   plan: '42',
@@ -182,11 +196,13 @@ await mcp.call('append-plan-research', {
 Retrieve the full plan details by numeric ID or file path.
 
 **Parameters:**
+
 - `plan` (required): Plan ID or file path to retrieve
 
 **Returns:** JSON string containing the complete plan object with metadata, goal, details, tasks, and related information.
 
 **Example:**
+
 ```javascript
 const planJson = await mcp.call('get-plan', { plan: '42' });
 const plan = JSON.parse(planJson);
@@ -198,6 +214,7 @@ console.log(plan.title, plan.status, plan.tasks);
 List all plans that are ready to be worked on. A plan is ready when it has status "pending" or "in_progress", contains at least one task, and all its dependencies are marked as "done".
 
 **Parameters:**
+
 - `priority` (optional): Filter by priority level (low|medium|high|urgent|maybe)
 - `limit` (optional): Maximum number of plans to return (default: all)
 - `pendingOnly` (optional): Show only pending plans, exclude in_progress (default: false)
@@ -206,13 +223,14 @@ List all plans that are ready to be worked on. A plan is ready when it has statu
 **Returns:** JSON array of ready plans with their details.
 
 **Example:**
+
 ```javascript
 const readyJson = await mcp.call('list-ready-plans', {
   limit: 5,
   sortBy: 'priority',
 });
 const readyPlans = JSON.parse(readyJson);
-readyPlans.forEach(plan => {
+readyPlans.forEach((plan) => {
   console.log(`[${plan.id}] ${plan.title} (${plan.priority})`);
 });
 ```
@@ -226,6 +244,7 @@ Resources provide read-only access to plan data via URI-based browsing. Unlike t
 List of all plans in the repository with summary information.
 
 **Returns:** JSON array with the following fields for each plan:
+
 - `id`: Plan ID
 - `title`: Plan title
 - `goal`: High-level goal
@@ -240,6 +259,7 @@ List of all plans in the repository with summary information.
 - `updatedAt`: ISO timestamp when plan was last updated
 
 **Example:**
+
 ```javascript
 const allPlans = await mcp.readResource('rmplan://plans/list');
 const plans = JSON.parse(allPlans.contents[0].text);
@@ -265,6 +285,7 @@ Full details of a specific plan including all metadata, tasks, and details.
 **Returns:** JSON object containing the complete plan structure.
 
 **Example:**
+
 ```javascript
 // Get plan by ID
 const plan42 = await mcp.readResource('rmplan://plans/42');
@@ -273,7 +294,7 @@ const plan = JSON.parse(plan42.contents[0].text);
 console.log(plan.title);
 console.log(`Status: ${plan.status}`);
 console.log(`Tasks: ${plan.tasks.length}`);
-plan.tasks.forEach(task => {
+plan.tasks.forEach((task) => {
   const status = task.done ? '✓' : ' ';
   console.log(`  [${status}] ${task.title}`);
 });
@@ -286,6 +307,7 @@ Plans ready to execute (all dependencies satisfied). This includes both stub pla
 **Returns:** JSON array of plans that are ready to work on, filtered and sorted by priority.
 
 **Example:**
+
 ```javascript
 const readyPlans = await mcp.readResource('rmplan://plans/ready');
 const plans = JSON.parse(readyPlans.contents[0].text);
@@ -302,6 +324,7 @@ const fullPlan = JSON.parse(planDetails.contents[0].text);
 ## When to Use Resources vs Tools
 
 ### Use Resources When:
+
 - **Browsing or querying** plan data without modifying it
 - **Discovering work** by checking ready plans
 - **Building dashboards** or reporting on plan status
@@ -311,6 +334,7 @@ const fullPlan = JSON.parse(planDetails.contents[0].text);
 Resources are pull-based and read-only, making them ideal for non-destructive operations.
 
 ### Use Tools When:
+
 - **Creating new plans** as you discover additional work
 - **Modifying plan metadata** like priority, status, or dependencies
 - **Managing tasks** by adding, removing, or updating them
@@ -455,9 +479,9 @@ const plans = JSON.parse(allPlans.contents[0].text);
 // Calculate statistics
 const stats = {
   total: plans.length,
-  pending: plans.filter(p => p.status === 'pending').length,
-  inProgress: plans.filter(p => p.status === 'in_progress').length,
-  done: plans.filter(p => p.status === 'done').length,
+  pending: plans.filter((p) => p.status === 'pending').length,
+  inProgress: plans.filter((p) => p.status === 'in_progress').length,
+  done: plans.filter((p) => p.status === 'done').length,
   totalTasks: plans.reduce((sum, p) => sum + p.taskCount, 0),
   completedTasks: plans.reduce((sum, p) => sum + p.completedTasks, 0),
 };
@@ -474,6 +498,7 @@ console.log(`  Pending: ${stats.pending}`);
 ### Parent-Child Relationships
 
 When creating a child plan with a `parent` parameter, the create-plan tool automatically:
+
 1. Sets the child's `parent` field to the specified parent ID
 2. Adds the child's ID to the parent's `dependencies` array
 3. Updates the parent plan file on disk
@@ -501,6 +526,7 @@ This maintains bidirectional consistency in the dependency graph.
 ## Error Handling
 
 All MCP tools throw `UserError` exceptions for user-facing errors:
+
 - Plan not found
 - Invalid plan ID
 - Task not found
