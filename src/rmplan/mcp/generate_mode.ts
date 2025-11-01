@@ -862,9 +862,11 @@ export function registerGenerateMode(
   server.addTool({
     name: 'list-ready-plans',
     description:
-      'List all plans that are ready to be executed. A plan is ready when it has status ' +
-      '"pending" or "in_progress", contains tasks, and all its dependencies are marked as ' +
-      '"done". Returns JSON with plan details including ID, title, priority, task counts, and dependencies.',
+      'List all plans that are ready to be worked on. A plan is ready when it has status ' +
+      '"pending" or "in_progress" and all its dependencies are marked as "done". ' +
+      'This includes stub plans without tasks (awaiting task generation) and ' +
+      'plans with existing tasks ready for implementation. ' +
+      'Returns JSON with plan details including ID, title, priority, task counts, and dependencies.',
     parameters: listReadyPlansParameters,
     annotations: {
       destructiveHint: false,

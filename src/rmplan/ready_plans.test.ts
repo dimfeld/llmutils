@@ -91,6 +91,35 @@ describe('isReadyPlan', () => {
     expect(isReadyPlan(inProgress, plans, false)).toBe(true);
     expect(isReadyPlan(inProgress, plans, true)).toBe(false);
   });
+
+  it('returns true for plans with no tasks (stub plans awaiting generation)', () => {
+    const plans = new Map<number, PlanSchema>();
+    const noTasks = createPlan({ id: 1, status: 'pending', dependencies: [], tasks: [] });
+    plans.set(1, noTasks);
+
+    const result = isReadyPlan(noTasks, plans, false);
+    // Unlike findNextReadyDependency, ready_plans considers taskless plans as ready
+    // because they may need task generation via `rmplan generate`
+    expect(result).toBe(true);
+  });
+
+  it('returns true for plans with undefined tasks (stub plans awaiting generation)', () => {
+    const plans = new Map<number, PlanSchema>();
+    // Need to bypass the createPlan helper's default task creation
+    const undefinedTasks: PlanSchema = {
+      id: 1,
+      title: 'Plan 1',
+      status: 'pending',
+      dependencies: [],
+      tasks: undefined as any,
+    };
+    plans.set(1, undefinedTasks);
+
+    const result = isReadyPlan(undefinedTasks, plans, false);
+    // Unlike findNextReadyDependency, ready_plans considers taskless plans as ready
+    // because they may need task generation via `rmplan generate`
+    expect(result).toBe(true);
+  });
 });
 
 describe('sortReadyPlans', () => {

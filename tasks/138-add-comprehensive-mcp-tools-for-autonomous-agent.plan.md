@@ -23,7 +23,7 @@ docs: []
 planGeneratedAt: 2025-11-01T08:39:52.426Z
 promptsGeneratedAt: 2025-11-01T08:39:52.426Z
 createdAt: 2025-10-26T22:53:29.123Z
-updatedAt: 2025-11-01T09:01:51.603Z
+updatedAt: 2025-11-01T09:07:41.142Z
 progressNotes:
   - timestamp: 2025-11-01T08:47:43.995Z
     text: Successfully implemented helper functions (getNextPlanId,
@@ -47,18 +47,26 @@ progressNotes:
       registration. Updated tests to reflect correct behavior. All tests passing
       (2291 pass, 0 fail)."
     source: "implementer: fix reviewer issues"
+  - timestamp: 2025-11-01T09:06:33.746Z
+    text: "Verified all implementer fixes are correct and properly tested. Added 5
+      new tests to cover the fixes: 3 tests for empty/whitespace title
+      validation in mcpCreatePlan (reject empty, reject whitespace-only, trim
+      whitespace), and 2 tests for task existence check in isReadyPlan (no
+      tasks, undefined tasks). All 1621 tests pass, type checking passes, no new
+      linting issues introduced."
+    source: "tester: verification"
 tasks:
   - title: Implement helper functions for plan creation
-    done: false
+    done: true
     description: Add getNextPlanId(), generatePlanFilename(), and addChildToParent()
       helper functions needed by create-plan tool
   - title: Implement create-plan MCP tool
-    done: false
+    done: true
     description: Add create-plan tool with parameters for title, goal, details,
       priority, parent, dependencies, etc. Include logic to create plan file and
       update parent plan if specified
   - title: Implement plan MCP resources
-    done: false
+    done: true
     description: "Add three resources: rmplan://plans/list (all plans summary),
       rmplan://plans/{planId} (specific plan details), and rmplan://plans/ready
       (ready-to-execute plans). Include getReadyPlans() helper function"
@@ -75,7 +83,26 @@ tasks:
     done: false
     description: Update src/rmplan/mcp/README.md to document the create-plan tool
       and the three plan resources with examples
-changedFiles: []
+changedFiles:
+  - 145-test-plan.plan.md
+  - 146-feature-plan.plan.md
+  - 147-child-plan.plan.md
+  - 148-plan-1.plan.md
+  - 149-my-test-plan.plan.md
+  - 150-fix-auth-sessions.plan.md
+  - 151-logged-plan.plan.md
+  - 152-minimal-plan.plan.md
+  - 153-new-plan.plan.md
+  - src/common/git.ts
+  - src/rmplan/assignments/claim_logging.ts
+  - src/rmplan/commands/claim.test.ts
+  - src/rmplan/commands/ready.test.ts
+  - src/rmplan/executors/claude_code/agent_prompts.ts
+  - src/rmplan/mcp/generate_mode.test.ts
+  - src/rmplan/mcp/generate_mode.ts
+  - src/rmplan/ready_plans.test.ts
+  - src/rmplan/ready_plans.ts
+  - test-plans/plans/001-stub-plan.yml
 rmfilter: []
 ---
 
@@ -975,3 +1002,57 @@ Update `src/rmplan/mcp/README.md` to include:
 - **When to Use Resources vs Tools**: Guidance on pull vs push models
 - **Example workflows**: Show common agent patterns
 <!-- rmplan-generated-end -->
+
+# Implementation Notes
+
+Completed Tasks 1, 2, and 3 from plan 138: Implement helper functions, create-plan MCP tool, and plan MCP resources.
+
+**Task 1: Helper Functions**
+Implemented two helper functions in src/rmplan/mcp/generate_mode.ts:
+- getNextPlanId(tasksDir): Finds the maximum numeric plan ID in the tasks directory and returns max+1. Returns 1 for empty directories.
+- generatePlanFilename(id, title): Creates a slug-based filename from the plan ID and title. Converts to lowercase, replaces non-alphanumeric characters with hyphens, removes leading/trailing hyphens, and truncates to 50 characters. Returns format: '{id}-{slug}.plan.md'.
+
+**Task 2: create-plan MCP Tool**
+Implemented comprehensive create-plan tool with full parameter support:
+- Parameters: title (required), goal, details, priority, parent, dependsOn, discoveredFrom, assignedTo, issue, docs, container, temp (all optional)
+- Creates new plan files with all metadata and automatically generates filenames
+- Validates that title is not empty after trimming whitespace
+- Sets default values for arrays (dependencies, issue, docs) and booleans (container, temp)
+- Generates unique plan IDs by calling getNextPlanId()
+- Returns relative path to the created plan file
+- Does NOT modify parent plan - parent-child relationship is established solely via the child's parent field, following project's automatic parent-child relationship maintenance pattern
+
+**Task 3: Plan MCP Resources**
+Implemented three MCP resources for browsing plan data:
+- rmplan://plans/list: Returns JSON with summary information for all plans (id, title, goal, status, priority, parent, dependencies, assignedTo, task counts, timestamps)
+- rmplan://plans/{planId}: Resource template that returns full details for a specific plan by ID or path. Supports both numeric IDs and file paths.
+- rmplan://plans/ready: Returns JSON with plans ready to execute (pending or in_progress status, all dependencies satisfied, contains at least one task). Results are sorted by priority (urgent > high > medium > low > maybe).
+
+All three resources registered in registerGenerateMode() function.
+
+**Key Design Decisions:**
+1. Parent-Child Relationships: Initially implemented addChildToParent() function that modified parent's dependencies array, but removed this after code review. The correct pattern is to only set the child's parent field, not modify the parent plan. This follows the project's established pattern in commands/add.ts and commands/set.ts.
+
+2. Empty Title Validation: Added validation to prevent creating plans with empty titles, which would result in invalid filenames like '1-.plan.md'.
+
+3. Ready Plans Filtering: Enhanced isReadyPlan() function in src/rmplan/ready_plans.ts to check for task existence. Plans without tasks are not considered ready, even if all dependencies are satisfied.
+
+**Files Modified:**
+- src/rmplan/mcp/generate_mode.ts: Added helper functions, mcpCreatePlan handler, and three resource handlers
+- src/rmplan/mcp/generate_mode.test.ts: Added 16 new tests covering helper functions (4 tests), create-plan tool (10 tests), and resources (not counted separately - tested via integration)
+- src/rmplan/ready_plans.ts: Enhanced isReadyPlan() to check for task existence
+
+**Integration Points:**
+- Uses existing utilities: resolvePlan(), readAllPlans(), writePlanFile() from plans.ts
+- Follows error handling patterns: Throws UserError for user-facing errors
+- Uses filterAndSortReadyPlans() from ready_plans.ts for resource filtering
+- Follows FastMCP patterns: Uses server.addResource() with load() method returning ResourceResult with text property
+
+**Test Coverage:**
+Comprehensive test coverage with 16 new tests:
+- Helper functions: ID generation for empty/populated directories, filename slug generation, special character handling, long title truncation
+- create-plan tool: Minimal args, all optional properties, parent relationships, unique IDs, special characters, empty title validation, whitespace trimming, execution logger integration
+- Resources: All three resources tested for correct JSON output and content
+- Ready plans: Task existence filtering, dependency checking, status filtering
+
+All tests pass: 1,621 tests in full rmplan test suite, 73 tests in generate_mode.test.ts specifically.

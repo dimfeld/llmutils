@@ -777,8 +777,9 @@ rmplan ready -v
 A plan is considered ready when:
 
 1. Status is `pending` or `in_progress`
-2. Has at least one task defined
-3. All dependencies (if any) have status `done`
+2. All dependencies (if any) have status `done`
+
+Note: Unlike `--next-ready` which focuses on plans with actionable tasks, `rmplan ready` includes stub plans without tasks. These plans are ready to have tasks generated via `rmplan generate` or the MCP `create-plan` tool.
 
 **MCP Integration:**
 

@@ -1534,6 +1534,33 @@ describe('mcpCreatePlan', () => {
     const plan = await readPlanFile(planPath);
     expect(plan.id).toBe(6);
   });
+
+  test('rejects empty title', async () => {
+    const { mcpCreatePlan, createPlanParameters } = await import('./generate_mode.js');
+
+    const args = createPlanParameters.parse({ title: '' });
+    await expect(mcpCreatePlan(args, context)).rejects.toThrow('Plan title cannot be empty');
+  });
+
+  test('rejects whitespace-only title', async () => {
+    const { mcpCreatePlan, createPlanParameters } = await import('./generate_mode.js');
+
+    const args = createPlanParameters.parse({ title: '   ' });
+    await expect(mcpCreatePlan(args, context)).rejects.toThrow('Plan title cannot be empty');
+  });
+
+  test('trims whitespace from title', async () => {
+    const { mcpCreatePlan, createPlanParameters } = await import('./generate_mode.js');
+
+    const args = createPlanParameters.parse({ title: '  Trimmed Plan  ' });
+    const result = await mcpCreatePlan(args, context);
+
+    expect(result).toContain('Created plan 1 at');
+
+    const planPath = path.join(tmpDir, '1-trimmed-plan.plan.md');
+    const plan = await readPlanFile(planPath);
+    expect(plan.title).toBe('Trimmed Plan');
+  });
 });
 
 describe('MCP Resources', () => {
