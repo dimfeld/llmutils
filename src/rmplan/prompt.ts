@@ -163,7 +163,6 @@ export interface PhaseGenerationContext {
 type BlockingSubissueInstructionOptions = {
   withBlockingSubissues?: boolean;
   parentPlanId?: number;
-  concise?: boolean;
 };
 
 function getBlockingSubissueInstructions(options: BlockingSubissueInstructionOptions): string {
@@ -174,22 +173,6 @@ function getBlockingSubissueInstructions(options: BlockingSubissueInstructionOpt
   const planIdLabel =
     options.parentPlanId !== undefined ? String(options.parentPlanId) : '<parent-plan-id>';
   const commandExample = `rmplan add "Blocking Title" --parent ${planIdLabel} --discovered-from ${planIdLabel} --priority <high|medium|low|urgent> --details "Why this is needed first"`;
-
-  if (options.concise) {
-    return `
-# Blocking Subissues
-
-If any prerequisite work must happen before this plan can move forward:
-- Create a dedicated plan for each prerequisite immediately using \
-  \`${commandExample}\`. Add \`--depends-on\` when a blocking plan requires another blocker to finish first. The parent plan's dependencies update automatically.
-- Summarize the blocking plans you created under a "## Blocking Subissues" heading before the main output using this structure:
-  ## Blocking Subissue: [Title]
-  - Priority: [high|medium|low|urgent]
-  - Reason: [Why this must be done first]
-  - Tasks: [High-level task list]
-- Keep these blockers narrowly focused on the work that truly blocks the primary plan.
-`;
-  }
 
   return `
 # Blocking Subissues
@@ -330,7 +313,6 @@ export function simplePlanPrompt(
   const blockingSection = getBlockingSubissueInstructions({
     withBlockingSubissues: options.withBlockingSubissues,
     parentPlanId: options.parentPlanId,
-    concise: true,
   });
 
   return `This is a description for a task in the repository that needs exploration and planning.
@@ -839,7 +821,6 @@ export function generateClaudeCodeSimplePlanningPrompt(
   const blockingSection = getBlockingSubissueInstructions({
     withBlockingSubissues,
     parentPlanId,
-    concise: true,
   });
 
   let prompt = `This is a description for a task in the repository that needs exploration and planning.
