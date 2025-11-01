@@ -8,7 +8,7 @@ import {
   generateClaudeCodePlanningPrompt,
   generateClaudeCodeSimplePlanningPrompt,
 } from '../prompt.js';
-import { clearPlanCache, readPlanFile, writePlanFile } from '../plans.js';
+import { clearPlanCache, readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
 
@@ -1099,6 +1099,101 @@ phases:
     const logMessages = logSpy.mock.calls.map((args) => String(args[0]));
     expect(logMessages.some((msg) => msg.includes('Created 1 blocking plan'))).toBe(true);
     expect(logMessages.some((msg) => msg.includes('#102 Blocking Plan'))).toBe(true);
+    expect(warnSpy.mock.calls.length).toBe(0);
+  });
+
+  test('creates blocking plans via rmplan add and updates relationships end-to-end', async () => {
+    const parentPlanId = 301;
+    const planPath = path.join(tasksDir, '301-parent.plan.md');
+
+    await writePlanFile(planPath, {
+      id: parentPlanId,
+      title: 'Parent Plan',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: new Date().toISOString(),
+      details: '',
+      tasks: [],
+      dependencies: [],
+    });
+
+    clearPlanCache();
+    const { plans: baselinePlans } = await readAllPlans(tasksDir, false);
+    expect(baselinePlans.has(parentPlanId)).toBe(true);
+
+    const options = {
+      plan: planPath,
+      claude: true,
+      withBlockingSubissues: true,
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    const command = {
+      args: [],
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    invokeClaudeCodeForGenerationSpy.mockImplementationOnce(async () => {
+      const { handleAddCommand } = await import('./add.js');
+
+      await handleAddCommand(
+        ['Blocking', 'Plan'],
+        {
+          parent: parentPlanId,
+          priority: 'high',
+          details: 'Critical prerequisite that must land before execution.',
+          discoveredFrom: parentPlanId,
+        },
+        {
+          parent: {
+            opts: () => ({}),
+          },
+        }
+      );
+
+      clearPlanCache();
+      const { plans: availablePlans } = await readAllPlans(tasksDir, false);
+      const blockingPlan = Array.from(availablePlans.values()).find(
+        (plan) => plan.id !== parentPlanId && plan.parent === parentPlanId
+      );
+
+      if (!blockingPlan || blockingPlan.id === undefined) {
+        throw new Error('Blocking plan was not created by rmplan add');
+      }
+
+      expect(blockingPlan.discoveredFrom).toBe(parentPlanId);
+
+      return {
+        generationOutput: `# yaml-language-server: $schema=https://example.com\nid: ${parentPlanId}\ntitle: Parent Plan`,
+        researchOutput: undefined,
+      };
+    });
+
+    await handleGenerateCommand(undefined, options, command);
+
+    const logMessages = logSpy.mock.calls.map((args) => String(args[0]));
+    expect(logMessages.some((msg) => msg.includes('Created 1 blocking plan'))).toBe(true);
+
+    clearPlanCache();
+    const { plans: refreshedPlans } = await readAllPlans(tasksDir, false);
+
+    const blockingPlan = Array.from(refreshedPlans.values()).find(
+      (plan) => plan.id !== parentPlanId && plan.parent === parentPlanId
+    );
+    expect(blockingPlan).toBeDefined();
+    expect(blockingPlan!.discoveredFrom).toBe(parentPlanId);
+    expect(blockingPlan!.priority).toBe('high');
+    expect(blockingPlan!.details).toContain('Critical prerequisite');
+
+    const updatedParentPlan = refreshedPlans.get(parentPlanId);
+    expect(updatedParentPlan).toBeDefined();
+    expect(updatedParentPlan!.dependencies).toContain(blockingPlan!.id);
+
+    expect(extractMarkdownToYamlSpy).toHaveBeenCalledTimes(1);
     expect(warnSpy.mock.calls.length).toBe(0);
   });
 

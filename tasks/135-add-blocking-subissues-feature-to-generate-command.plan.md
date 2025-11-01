@@ -5,7 +5,7 @@ goal: ""
 id: 135
 uuid: ac0b9e9d-cd95-45f1-8ded-15074bd6c800
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 container: false
 temp: false
@@ -21,7 +21,7 @@ docs: []
 planGeneratedAt: 2025-11-01T19:45:53.007Z
 promptsGeneratedAt: 2025-11-01T19:45:53.007Z
 createdAt: 2025-10-26T22:41:26.645Z
-updatedAt: 2025-11-01T20:21:49.184Z
+updatedAt: 2025-11-01T20:46:33.760Z
 progressNotes:
   - timestamp: 2025-11-01T19:59:48.737Z
     text: Added CLI flag, prompt instructions, and blocking plan detection snapshot
@@ -43,6 +43,15 @@ progressNotes:
       from generate_mode.ts, which no longer exports that symbol (pre-existing
       issue).
     source: "tester: tasks 9-11"
+  - timestamp: 2025-11-01T20:33:18.813Z
+    text: Implemented the blocking subissue end-to-end test that calls rmplan add
+      and rmplan set inside the Claude executor mock, then updated README with
+      the new --with-blocking-subissues guidance and example output.
+    source: "implementer: Task 7 & 8"
+  - timestamp: 2025-11-01T20:35:27.934Z
+    text: Reviewed blocking subissue integration tests and prompt coverage; bun test
+      (file + full suite) passes with 0 failures.
+    source: "tester: tasks 7-8"
 tasks:
   - title: Add --with-blocking-subissues CLI flag
     done: true
@@ -80,14 +89,14 @@ tasks:
       prompts include the blocking subissues section. Test both multi-phase and
       simple mode variants.
   - title: Add integration test for end-to-end flow
-    done: false
+    done: true
     description: "Create an integration test that mocks an LLM agent which calls
       `rmplan add` commands during execution. Verify: new plans are created,
       parent/discoveredFrom relationships are set correctly, main plan
       dependencies are updated automatically, detection logic correctly
       identifies the new plans and reports them."
   - title: Update CLI help and documentation
-    done: false
+    done: true
     description: Ensure the --with-blocking-subissues flag appears in help text with
       clear description. Update README.md to document the new feature with
       example usage and expected LLM response format.
@@ -123,6 +132,8 @@ tasks:
     docs: []
     steps: []
 changedFiles:
+  - README.md
+  - src/rmplan/commands/add.ts
   - src/rmplan/commands/generate.test.ts
   - src/rmplan/commands/generate.ts
   - src/rmplan/mcp/generate_mode.ts
@@ -847,3 +858,7 @@ From CLAUDE.md: "Tests should be useful; if a test needs to mock almost all of t
 Implemented tasks 1, 2, 3, 6, 9, 10, and 11: Add --with-blocking-subissues CLI flag; Update multi-phase prompt generation; Update simple mode prompt generation; Add tests for prompt generation; Snapshot plan IDs before LLM invocation; Add rmplan add instructions to prompts; Detect and report newly created plans. Introduced the new flag in src/rmplan/rmplan.ts and enforced Claude-mode-only execution inside src/rmplan/commands/generate.ts. Updated prompt builders in src/rmplan/prompt.ts to accept option objects, inject the Blocking Subissues guidance, and remind the agent to summarize blockers. Wired the withBlockingSubissues option through the CLI flow by snapshotting plan IDs, propagating prompt options, and logging newly created blocking plans after invokeClaudeCodeForGeneration, including warnings for unrelated plans. Extended MCP entry points in src/rmplan/mcp/generate_mode.ts to forward the new flag, register prompt arguments, and parse boolean values robustly. Added coverage in src/rmplan/commands/generate.test.ts to confirm that both planning prompt variants emit the blocking instructions. These changes ensure agents receive explicit rmplan add guidance for blockers while the CLI automatically detects and reports any subplans created during generation.
 
 Restored MCP task parameter exports and relaxed the blocking-subissue flag guard. Specifically, I reintroduced exported Zod schemas for addPlanTaskParameters and removePlanTaskParameters in src/rmplan/mcp/generate_mode.ts, deriving the internal argument types from those schemas so the task-management integration tests can continue to parse tool inputs without duplication. The remove schema now enforces that callers provide either taskTitle or taskIndex while leaving normalization to the existing helpers. I also replaced the hard error in src/rmplan/commands/generate.ts with a warning when --with-blocking-subissues is used outside Claude mode; this keeps the enhanced prompt path available for direct and clipboard workflows while making it clear that automatic blocker detection still depends on Claude automation. Tasks addressed: restore MCP exports for task management tools; allow --with-blocking-subissues in non-Claude flows.
+
+Added an end-to-end regression test for Task 7 that exercises the blocking-subissue workflow inside src/rmplan/commands/generate.test.ts by invoking handleAddCommand and handleSetCommand inside the Claude executor mock. The test asserts that rmplan add creates a new child plan, rmplan set records discoveredFrom, the parent plan gains the dependency, and the CLI log reports the blockers, ensuring future regressions are caught. For Task 8 I expanded README.md with a new 'Blocking Subissues' subsection describing the --with-blocking-subissues flag, example invocation, expected Markdown format, and the confirmation message users should see so operators understand how the automation behaves.
+
+Implemented --discovered-from support in rmplan add so the blocking subissue workflow described in the prompts/docs actually executes without crashing. Touched src/rmplan/rmplan.ts to expose the new option in the CLI (with positive-integer validation that reuses intArg) and extended src/rmplan/commands/add.ts to validate the referenced plan exists before setting plan.discoveredFrom on the newly created record. Updated src/rmplan/commands/generate.test.ts to mimic the documented flow by invoking handleAddCommand with discoveredFrom and asserting the discoveredFrom field is propagated; this guards the regression that the reviewer reported. Tasks covered: Add --with-blocking-subissues CLI flag, Add integration test for end-to-end flow. Verified with bun test src/rmplan/commands/add.test.ts src/rmplan/commands/generate.test.ts so future maintainers know the scenario stays green.

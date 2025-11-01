@@ -203,6 +203,13 @@ program
   .option('-i, --issue <urls...>', 'Add GitHub issue URLs to the plan')
   .option('--doc <paths...>', 'Add documentation file paths to the plan')
   .option('--assign <username>', 'Assign the plan to a user')
+  .option('--discovered-from <planId>', 'Set the plan this was discovered from', (value) => {
+    const n = Number(value);
+    if (Number.isNaN(n) || !Number.isInteger(n) || n <= 0) {
+      throw new Error(`discovered-from must be a positive integer, saw ${value}`);
+    }
+    return n;
+  })
   .option('--cleanup <planId>', 'Create a cleanup plan for the specified plan ID')
   .option('--temp', 'Mark this plan as temporary (can be deleted with cleanup-temp command)')
   .option('--simple', 'Mark this plan as simple (skips research phase in generation)')
@@ -211,6 +218,7 @@ program
     options.dependsOn = intArg(options.dependsOn);
     options.parent = intArg(options.parent);
     options.cleanup = intArg(options.cleanup);
+    options.discoveredFrom = intArg(options.discoveredFrom);
     await handleAddCommand(title, options, command).catch(handleCommandError);
   });
 
