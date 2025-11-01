@@ -38,6 +38,27 @@ function getDependency<T>(plans: Map<number, T>, dependency: number | string): T
   return undefined;
 }
 
+/**
+ * Determines if a plan is "ready" to be worked on.
+ *
+ * A plan is considered ready if:
+ * 1. It has the correct status (pending or in_progress)
+ * 2. All its dependencies are complete (status === 'done')
+ *
+ * IMPORTANT: Unlike findNextReadyDependency and dependency_traversal which are used for
+ * hierarchical workflows and skip plans without tasks, this function is used by the
+ * `rmplan ready` command and MCP list-ready-plans tool. These are designed to show ALL
+ * plans that are ready to have work done on them, including stub plans that need tasks
+ * generated via `rmplan generate` or the MCP create-plan flow.
+ *
+ * Plans without tasks ARE considered ready here because:
+ * - They may be stub plans awaiting task generation
+ * - They may be container/organizational plans
+ * - The user should see them as available to work on (generate tasks, add details, etc.)
+ *
+ * This is intentionally different from findNextReadyDependency which focuses on
+ * finding the next plan with actionable implementation tasks.
+ */
 export function isReadyPlan<T extends PlanSchema>(
   plan: T,
   allPlans: Map<number, T>,
@@ -51,6 +72,9 @@ export function isReadyPlan<T extends PlanSchema>(
   if (!statusMatch) {
     return false;
   }
+
+  // INTENTIONAL: We DO allow plans without tasks to be considered ready.
+  // This differs from findNextReadyDependency's behavior. See function comment above.
 
   if (!plan.dependencies || plan.dependencies.length === 0) {
     return true;

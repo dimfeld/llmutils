@@ -36,9 +36,7 @@ export function logClaimOutcome(
       return;
     }
 
-    log(`${chalk.yellow('•')} Plan ${planLabel} is already claimed in workspace ${workspacePath}`);
-    if (user) {
-      log(`  User: ${user}`);
-    }
+    // Don't log anything if the plan is already claimed by the current workspace (no warnings)
+    // Warnings are only present if claimed by other workspaces/users
   }
 }

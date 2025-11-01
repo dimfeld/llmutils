@@ -18,9 +18,9 @@ import { $ } from 'bun';
 import { findUp } from 'find-up';
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
-import { debugLog, log } from '../logging.js';
-import { CURRENT_DIFF, parseJjRename } from '../rmfilter/additional_docs.js';
-import { fallbackRepositoryNameFromGitRoot, parseGitRemoteUrl } from './git_url_parser.js';
+import { debugLog, log } from '../logging.ts';
+import { CURRENT_DIFF, parseJjRename } from '../rmfilter/additional_docs.ts';
+import { fallbackRepositoryNameFromGitRoot, parseGitRemoteUrl } from './git_url_parser.ts';
 import chalk from 'chalk';
 
 let cachedGitRoot = new Map<string, string>();

@@ -508,8 +508,8 @@ describe('handleReadyCommand', () => {
     expect(plan2Index).toBeLessThan(plan1Index);
   });
 
-  // Test 9: Includes plans without tasks
-  test('includes plans without tasks', async () => {
+  // Test 9: Includes plans without tasks (stub plans awaiting task generation)
+  test('includes plans without tasks (stub plans ready for task generation)', async () => {
     await createPlan({
       id: 1,
       goal: 'Plan with tasks',
@@ -522,7 +522,7 @@ describe('handleReadyCommand', () => {
 
     await createPlan({
       id: 2,
-      goal: 'Plan without tasks',
+      goal: 'Stub plan without tasks',
       status: 'pending',
       priority: 'medium',
       tasks: [],
@@ -538,9 +538,11 @@ describe('handleReadyCommand', () => {
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
 
+    // Unlike findNextReadyDependency, the ready command includes taskless plans
+    // because they are ready to have tasks generated via `rmplan generate`
     expect(logOutput).toContain('Ready Plans (2)');
     expect(logOutput).toContain('Plan with tasks');
-    expect(logOutput).toContain('Plan without tasks');
+    expect(logOutput).toContain('Stub plan without tasks');
   });
 
   // Test 10: Excludes plans with incomplete dependencies

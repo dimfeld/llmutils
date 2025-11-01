@@ -205,6 +205,7 @@ export function getDiscoveredPlans(
  * @returns The maximum numeric ID found, or 0 if none exist
  */
 export async function getMaxNumericPlanId(tasksDir: string): Promise<number> {
+  clearPlanCache();
   const { maxNumericId } = await readAllPlans(tasksDir);
   return maxNumericId;
 }

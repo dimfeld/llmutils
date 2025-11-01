@@ -20,7 +20,8 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
 import { createModel } from '../../common/model_factory.js';
 import { DEFAULT_RUN_MODEL, runStreamingPrompt } from '../llm_utils/run_and_apply.js';
-import { generateNumericPlanId, slugify } from '../id_utils.js';
+import { generateNumericPlanId } from '../id_utils.js';
+import { generatePlanFilename } from '../utils/filename.js';
 import {
   generateSuggestedFilename,
   readAllPlans,
@@ -141,8 +142,7 @@ async function createStubPlanFromText(
   }
 
   // Create filename using plan ID + slugified title
-  const slugifiedTitle = slugify(planTitle);
-  const filename = `${planId}-${slugifiedTitle}.plan.md`;
+  const filename = generatePlanFilename(planId, planTitle);
 
   // Construct the full path to the new plan file
   const filePath = path.join(targetDir, filename);

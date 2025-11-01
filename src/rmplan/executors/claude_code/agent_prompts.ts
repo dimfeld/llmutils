@@ -209,8 +209,9 @@ export function getVerifierAgentPrompt(
     : '';
   const progressNotesSection = progressNotesGuidance(planId);
   const formattedProgressNotes = progressNotesSection ? `\n${progressNotesSection}\n` : '\n';
-  const taskCompletionInstructions = planId && includeTaskCompletionInstructions
-    ? `\n## Marking Tasks as Done
+  const taskCompletionInstructions =
+    planId && includeTaskCompletionInstructions
+      ? `\n## Marking Tasks as Done
 
 IMPORTANT: When you determine that the work is acceptable and all verification checks pass, you MUST mark the completed tasks as done using the rmplan set-task-done command. Use the task titles from the plan to identify which tasks to mark complete.
 
@@ -220,10 +221,10 @@ rmplan set-task-done ${planId} "Task Title Here"
 \`\`\`
 
 Do this for each task that was successfully implemented and verified before providing your final approval.\n`
-    : '';
+      : '';
 
   const primaryResponsibilities = [
-    '1. Review the implementer\'s output and current repository state to understand the changes',
+    "1. Review the implementer's output and current repository state to understand the changes",
     '2. Confirm that all new or modified behavior has adequate automated test coverage, adding tests if gaps remain',
     '3. Run required quality gates (type checking, linting, tests) and any other project-required verification commands',
     '4. Diagnose and clearly report any failures with actionable guidance for the implementer',
@@ -231,7 +232,9 @@ Do this for each task that was successfully implemented and verified before prov
   ];
 
   if (includeTaskCompletionInstructions) {
-    primaryResponsibilities.push('6. Mark completed tasks as done in the plan file when verification passes');
+    primaryResponsibilities.push(
+      '6. Mark completed tasks as done in the plan file when verification passes'
+    );
   }
 
   return {
@@ -290,8 +293,9 @@ export function getReviewerPrompt(
   const subagentDirective = useSubagents
     ? 'CRITICAL: Use the available sub-agents to delegate in-depth analysis, run tests, and create findings before delivering your final verdict.\n\n'
     : '';
-  const taskCompletionInstructions = planId && includeTaskCompletionInstructions
-    ? `\n## Marking Tasks as Done
+  const taskCompletionInstructions =
+    planId && includeTaskCompletionInstructions
+      ? `\n## Marking Tasks as Done
 
 IMPORTANT: When you provide a verdict of ACCEPTABLE, you MUST mark the completed tasks as done using the rmplan set-task-done command. Use the task titles from the plan to identify which tasks to mark complete.
 
@@ -301,7 +305,7 @@ rmplan set-task-done ${planId} "Task Title Here"
 \`\`\`
 
 Do this for each task that was successfully implemented and reviewed before providing your ACCEPTABLE verdict.\n`
-    : '';
+      : '';
 
   const reviewerPrimaryResponsibilities = [
     '1. Identify bugs, logic errors, and correctness issues',
@@ -313,7 +317,9 @@ Do this for each task that was successfully implemented and reviewed before prov
   ];
 
   if (includeTaskCompletionInstructions) {
-    reviewerPrimaryResponsibilities.push('7. Mark completed tasks as done in the plan file when review is acceptable');
+    reviewerPrimaryResponsibilities.push(
+      '7. Mark completed tasks as done in the plan file when review is acceptable'
+    );
   }
 
   return {

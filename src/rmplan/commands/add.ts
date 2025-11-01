@@ -6,7 +6,8 @@ import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { generateNumericPlanId, slugify } from '../id_utils.js';
+import { generateNumericPlanId } from '../id_utils.js';
+import { generatePlanFilename } from '../utils/filename.js';
 import { writePlanFile, readAllPlans, readPlanFile } from '../plans.js';
 import { prioritySchema, statusSchema, type PlanSchema } from '../planSchema.js';
 import { needArrayOrUndefined } from '../../common/cli.js';
@@ -69,8 +70,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
   const planId = await generateNumericPlanId(targetDir);
 
   // Create filename using plan ID + slugified title
-  const slugifiedTitle = slugify(planTitle);
-  const filename = `${planId}-${slugifiedTitle}.plan.md`;
+  const filename = generatePlanFilename(planId, planTitle);
 
   // Construct the full path to the new plan file
   const filePath = path.join(targetDir, filename);
@@ -221,8 +221,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
 
     // If the title changed, rename the file to match
     if (editedPlan.title && editedPlan.title !== planTitle) {
-      const newSlugifiedTitle = slugify(editedPlan.title);
-      const newFilename = `${planId}-${newSlugifiedTitle}.plan.md`;
+      const newFilename = generatePlanFilename(planId, editedPlan.title);
       const newFilePath = path.join(targetDir, newFilename);
 
       // Only rename if the new filename is different
