@@ -19,7 +19,8 @@ import {
 import { fixYaml } from '../fix_yaml.js';
 import type { Command } from 'commander';
 import { resolveTasksDir } from '../configSchema.js';
-import { generateNumericPlanId, slugify } from '../id_utils.js';
+import { generateNumericPlanId } from '../id_utils.js';
+import { generatePlanFilename } from '../utils/filename.js';
 import { generateText } from 'ai';
 import { checkbox } from '@inquirer/prompts';
 
@@ -138,7 +139,7 @@ export async function manualSplitPlan(
     tasks: [],
   };
 
-  const filename = `${childId}-${slugify(childTitle || 'split')}.plan.md`;
+  const filename = generatePlanFilename(childId, childTitle || 'split');
   const childPath = path.join(tasksDir, filename);
 
   // Update parent: remove selected tasks and add dependency

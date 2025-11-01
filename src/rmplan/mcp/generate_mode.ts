@@ -19,6 +19,8 @@ import { mergeTasksIntoPlan, updateDetailsWithinDelimiters } from '../plan_merge
 import { appendResearchToPlan } from '../research_utils.js';
 import { loadCompactPlanPrompt } from './prompts/compact_plan.js';
 import { filterAndSortReadyPlans, formatReadyPlansAsJson } from '../ready_plans.js';
+import { generateNumericPlanId } from '../id_utils.js';
+import { generatePlanFilename } from '../utils/filename.js';
 
 export interface GenerateModeRegistrationContext {
   config: RmplanConfig;
@@ -27,33 +29,6 @@ export interface GenerateModeRegistrationContext {
 }
 
 const questionText = `Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Avoid repeating information already captured. As you figure things out, update the details in the plan file if necessary.`;
-
-/**
- * Gets the next available plan ID by finding the maximum numeric ID and adding 1.
- * @param tasksDir - The directory containing plan files
- * @returns The next available plan ID
- */
-export async function getNextPlanId(tasksDir: string): Promise<number> {
-  const { plans } = await readAllPlans(tasksDir);
-  const ids = Array.from(plans.keys()).filter((id) => typeof id === 'number');
-  return ids.length > 0 ? Math.max(...ids) + 1 : 1;
-}
-
-/**
- * Generates a plan filename from an ID and title.
- * Creates a slug from the title and combines it with the ID.
- * @param id - The plan ID
- * @param title - The plan title
- * @returns A filename in the format: {id}-{slug}.plan.md
- */
-export function generatePlanFilename(id: number, title: string): string {
-  const slug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .substring(0, 50);
-  return `${id}-${slug}.plan.md`;
-}
 
 export async function loadResearchPrompt(
   args: { plan?: string },
@@ -616,7 +591,7 @@ export async function mcpCreatePlan(
   }
 
   const tasksDir = await resolveTasksDir(context.config);
-  const nextId = await getNextPlanId(tasksDir);
+  const nextId = await generateNumericPlanId(tasksDir);
 
   const plan: PlanSchema = {
     id: nextId,
@@ -669,7 +644,7 @@ export async function mcpCreatePlan(
       }
 
       // Write the updated parent plan
-      await writePlanFile(parentPlan.filename!, parentPlan);
+      await writePlanFile(parentPlan.filename, parentPlan);
       execContext?.log.info('Updated parent plan dependencies', {
         parentId: parentPlan.id,
         childId: nextId,

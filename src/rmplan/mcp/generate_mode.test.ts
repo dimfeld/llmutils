@@ -1234,8 +1234,8 @@ describe('Helper Functions', () => {
 
   describe('getNextPlanId', () => {
     test('returns 1 for empty directory', async () => {
-      const { getNextPlanId } = await import('./generate_mode.js');
-      const nextId = await getNextPlanId(tmpDir);
+      const { generateNumericPlanId } = await import('../id_utils.js');
+      const nextId = await generateNumericPlanId(tmpDir);
       expect(nextId).toBe(1);
     });
 
@@ -1244,23 +1244,23 @@ describe('Helper Functions', () => {
       await createPlan({ id: 5, title: 'Plan 5', status: 'pending', tasks: [] });
       await createPlan({ id: 3, title: 'Plan 3', status: 'pending', tasks: [] });
 
-      const { getNextPlanId } = await import('./generate_mode.js');
-      const nextId = await getNextPlanId(tmpDir);
+      const { generateNumericPlanId } = await import('../id_utils.js');
+      const nextId = await generateNumericPlanId(tmpDir);
       expect(nextId).toBe(6);
     });
 
     test('handles single plan correctly', async () => {
       await createPlan({ id: 42, title: 'Solo Plan', status: 'pending', tasks: [] });
 
-      const { getNextPlanId } = await import('./generate_mode.js');
-      const nextId = await getNextPlanId(tmpDir);
+      const { generateNumericPlanId } = await import('../id_utils.js');
+      const nextId = await generateNumericPlanId(tmpDir);
       expect(nextId).toBe(43);
     });
   });
 
   describe('generatePlanFilename', () => {
     test('creates valid slugs from titles', async () => {
-      const { generatePlanFilename } = await import('./generate_mode.js');
+      const { generatePlanFilename } = await import('../utils/filename.js');
 
       expect(generatePlanFilename(1, 'Simple Title')).toBe('1-simple-title.plan.md');
       expect(generatePlanFilename(42, 'Add Feature X')).toBe('42-add-feature-x.plan.md');
@@ -1270,7 +1270,7 @@ describe('Helper Functions', () => {
     });
 
     test('handles special characters correctly', async () => {
-      const { generatePlanFilename } = await import('./generate_mode.js');
+      const { generatePlanFilename } = await import('../utils/filename.js');
 
       expect(generatePlanFilename(1, 'Test & Development')).toBe('1-test-development.plan.md');
       expect(generatePlanFilename(2, 'API/V2 Migration')).toBe('2-api-v2-migration.plan.md');
@@ -1278,7 +1278,7 @@ describe('Helper Functions', () => {
     });
 
     test('truncates long titles to 50 characters', async () => {
-      const { generatePlanFilename } = await import('./generate_mode.js');
+      const { generatePlanFilename } = await import('../utils/filename.js');
 
       const longTitle =
         'This is a very long title that should be truncated to fifty characters max';
@@ -1289,14 +1289,14 @@ describe('Helper Functions', () => {
     });
 
     test('removes leading and trailing dashes', async () => {
-      const { generatePlanFilename } = await import('./generate_mode.js');
+      const { generatePlanFilename } = await import('../utils/filename.js');
 
       expect(generatePlanFilename(1, '---Test---')).toBe('1-test.plan.md');
       expect(generatePlanFilename(2, '!!!Important!!!')).toBe('2-important.plan.md');
     });
 
     test('handles empty-like titles', async () => {
-      const { generatePlanFilename } = await import('./generate_mode.js');
+      const { generatePlanFilename } = await import('../utils/filename.js');
 
       expect(generatePlanFilename(1, '!!!')).toBe('1-.plan.md');
       expect(generatePlanFilename(2, '   ')).toBe('2-.plan.md');
