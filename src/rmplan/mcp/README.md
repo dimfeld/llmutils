@@ -371,8 +371,8 @@ a user-friendly error message.
 Add proper error handling in the password reset flow.`,
 });
 
-// The new plan is now tracked and will appear in ready plans
-// after plan 42 is completed (since discoveredFrom creates a dependency)
+// The new plan is now tracked and will appear in ready plans immediately.
+// The discoveredFrom field helps track that this was discovered during plan 42.
 ```
 
 ### Managing Plan Lifecycle
