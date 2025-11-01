@@ -33,7 +33,7 @@ const questionText = `Ask one concise, high-impact question at a time that will 
  * @param tasksDir - The directory containing plan files
  * @returns The next available plan ID
  */
-async function getNextPlanId(tasksDir: string): Promise<number> {
+export async function getNextPlanId(tasksDir: string): Promise<number> {
   const { plans } = await readAllPlans(tasksDir);
   const ids = Array.from(plans.keys()).filter((id) => typeof id === 'number');
   return ids.length > 0 ? Math.max(...ids) + 1 : 1;
@@ -46,41 +46,13 @@ async function getNextPlanId(tasksDir: string): Promise<number> {
  * @param title - The plan title
  * @returns A filename in the format: {id}-{slug}.plan.md
  */
-function generatePlanFilename(id: number, title: string): string {
+export function generatePlanFilename(id: number, title: string): string {
   const slug = title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .substring(0, 50);
   return `${id}-${slug}.plan.md`;
-}
-
-/**
- * Adds a child plan to a parent plan's dependencies.
- * @param parentId - The parent plan ID
- * @param childId - The child plan ID to add to parent's dependencies
- * @param context - The MCP context with config and git root
- */
-async function addChildToParent(
-  parentId: number,
-  childId: number,
-  context: GenerateModeRegistrationContext
-): Promise<void> {
-  const tasksDir = await resolveTasksDir(context.config);
-  const { plans } = await readAllPlans(tasksDir);
-  const parent = plans.get(parentId);
-
-  if (!parent) {
-    throw new UserError(`Parent plan ${parentId} not found`);
-  }
-
-  // Add child to parent's dependencies if not already there
-  const deps = new Set(parent.dependencies || []);
-  deps.add(childId);
-  parent.dependencies = Array.from(deps);
-  parent.updatedAt = new Date().toISOString();
-
-  await writePlanFile(parent.filename, parent);
 }
 
 export async function loadResearchPrompt(
@@ -292,7 +264,11 @@ export type RemovePlanTaskArguments = z.infer<typeof removePlanTaskParameters>;
 export const updatePlanTaskParameters = z
   .object({
     plan: z.string().describe('Plan ID or file path'),
-    taskTitle: z.string().describe('Task title to search for (partial match, case-insensitive)'),
+    taskTitle: z
+      .string()
+      .optional()
+      .describe('Task title to search for (partial match, case-insensitive)'),
+    taskIndex: z.number().int().optional().describe('Task index (0-based)'),
     newTitle: z.string().optional().describe('New task title'),
     newDescription: z.string().optional().describe('New task description'),
     done: z.boolean().optional().describe('Mark task as done or not done'),
@@ -634,12 +610,17 @@ export async function mcpCreatePlan(
   context: GenerateModeRegistrationContext,
   execContext?: { log: GenerateModeExecutionLogger }
 ): Promise<string> {
+  const title = args.title.trim();
+  if (!title) {
+    throw new UserError('Plan title cannot be empty.');
+  }
+
   const tasksDir = await resolveTasksDir(context.config);
   const nextId = await getNextPlanId(tasksDir);
 
   const plan: PlanSchema = {
     id: nextId,
-    title: args.title,
+    title,
     goal: args.goal,
     details: args.details,
     priority: args.priority,
@@ -657,14 +638,10 @@ export async function mcpCreatePlan(
     tasks: [],
   };
 
-  const filename = generatePlanFilename(nextId, args.title);
+  const filename = generatePlanFilename(nextId, title);
   const planPath = path.join(tasksDir, filename);
 
   await writePlanFile(planPath, plan);
-
-  if (args.parent) {
-    await addChildToParent(args.parent, nextId, context);
-  }
 
   const relativePath = path.relative(context.gitRoot, planPath) || planPath;
   execContext?.log.info('Created plan', {
@@ -911,16 +888,10 @@ export function registerGenerateMode(
       destructiveHint: true,
       readOnlyHint: false,
     },
-    execute: async (args, execContext) => {
-      try {
-        return await mcpCreatePlan(args, context, {
-          log: wrapLogger(execContext.log, '[create-plan] '),
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        throw new UserError(message);
-      }
-    },
+    execute: async (args, execContext) =>
+      mcpCreatePlan(args, context, {
+        log: wrapLogger(execContext.log, '[create-plan] '),
+      }),
   });
 
   // Add MCP resources for browsing plan data
