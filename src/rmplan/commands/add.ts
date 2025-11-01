@@ -32,6 +32,21 @@ export async function handleAddCommand(title: string[], options: any, command: a
   // Load all plans once at the beginning to avoid race conditions
   const { plans: allPlans } = await readAllPlans(targetDir);
 
+  // Validate discoveredFrom option if provided
+  if (options.discoveredFrom !== undefined) {
+    if (typeof options.discoveredFrom !== 'number' || Number.isNaN(options.discoveredFrom)) {
+      throw new Error('--discovered-from option requires a numeric plan ID');
+    }
+    const discoveredFromPlanId = Number(options.discoveredFrom);
+    if (!Number.isInteger(discoveredFromPlanId) || discoveredFromPlanId <= 0) {
+      throw new Error('--discovered-from option requires a positive integer plan ID');
+    }
+    if (!allPlans.has(discoveredFromPlanId)) {
+      throw new Error(`Plan with ID ${discoveredFromPlanId} not found`);
+    }
+    options.discoveredFrom = discoveredFromPlanId;
+  }
+
   // Handle cleanup option
   if (options.cleanup !== undefined) {
     // Validate that cleanup plan ID is provided and is positive
@@ -112,6 +127,8 @@ export async function handleAddCommand(title: string[], options: any, command: a
       : options.parent
         ? Number(options.parent)
         : undefined,
+    discoveredFrom:
+      options.discoveredFrom !== undefined ? Number(options.discoveredFrom) : undefined,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     tasks: [],

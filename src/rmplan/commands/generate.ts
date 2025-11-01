@@ -210,6 +210,17 @@ export async function handleGenerateCommand(
   const effectiveClaudeMode =
     options.claude !== undefined ? options.claude : (config.planning?.claude_mode ?? true);
 
+  const requestedBlockingSubissues = Boolean(options.withBlockingSubissues);
+  if (requestedBlockingSubissues && !effectiveClaudeMode) {
+    warn(
+      chalk.yellow(
+        '--with-blocking-subissues will augment the prompts, but automatic blocker detection currently requires Claude mode. Continuing without Claude automation.'
+      )
+    );
+  }
+
+  let blockingSubissuesEnabled = requestedBlockingSubissues;
+
   // Find '--' in process.argv to get extra args for rmfilter
   const doubleDashIdx = process.argv.indexOf('--');
   const userCliRmfilterArgs = doubleDashIdx !== -1 ? process.argv.slice(doubleDashIdx + 1) : [];
@@ -335,6 +346,8 @@ export async function handleGenerateCommand(
 
   let planFile: string | undefined = options.plan;
   let parsedPlan: PlanSchema | null = null;
+  let currentPlanId: number | undefined;
+  let blockingPlanBaseline: Set<number> | undefined;
 
   if (options.plan) {
     const filePath = await resolvePlanFile(options.plan, globalOpts.config);
@@ -435,6 +448,7 @@ export async function handleGenerateCommand(
   // Special handling for stub YAML plans
   let stubPlan: { data: PlanSchema; path: string } | undefined;
   if (parsedPlan && planFile) {
+    currentPlanId = parsedPlan.id;
     // Set up stub plan for use in the rest of the flow
     stubPlan = { data: parsedPlan, path: planFile };
 
@@ -492,6 +506,15 @@ export async function handleGenerateCommand(
     }
   }
 
+  if (blockingSubissuesEnabled && currentPlanId === undefined) {
+    warn(
+      chalk.yellow(
+        '⚠️  --with-blocking-subissues requires a plan with a numeric ID. Could not determine plan ID, disabling blocker detection for this run.'
+      )
+    );
+    blockingSubissuesEnabled = false;
+  }
+
   if (!planText) {
     throw new Error('No plan text was provided.');
   }
@@ -513,8 +536,20 @@ export async function handleGenerateCommand(
     fullPlanText = `${planText}\n\n## Planning Rules\n\n${planningDocContent}`;
   }
 
+  if (blockingSubissuesEnabled) {
+    const { plans } = await readAllPlans(tasksDirectory);
+    blockingPlanBaseline = new Set(plans.keys());
+  }
+
   // planText now contains the loaded plan
-  const promptString = options.simple ? simplePlanPrompt(fullPlanText) : planPrompt(fullPlanText);
+  const promptOptions = {
+    withBlockingSubissues: blockingSubissuesEnabled,
+    parentPlanId: currentPlanId,
+  } as const;
+
+  const promptString = options.simple
+    ? simplePlanPrompt(fullPlanText, promptOptions)
+    : planPrompt(fullPlanText, promptOptions);
 
   let exitRes: number | undefined;
   let rmfilterOutputPath: string | undefined;
@@ -685,12 +720,22 @@ export async function handleGenerateCommand(
         // Generate the prompts for Claude Code
         // For simple mode: skip research and don't pass planText to generation
         const planningPrompt = options.simple
-          ? generateClaudeCodeSimplePlanningPrompt(fullPlanText)
-          : generateClaudeCodePlanningPrompt(fullPlanText);
+          ? generateClaudeCodeSimplePlanningPrompt(fullPlanText, {
+              withBlockingSubissues: blockingSubissuesEnabled,
+              parentPlanId: currentPlanId,
+            })
+          : generateClaudeCodePlanningPrompt(fullPlanText, {
+              withBlockingSubissues: blockingSubissuesEnabled,
+              parentPlanId: currentPlanId,
+            });
 
         const generationPrompt = options.simple
-          ? generateClaudeCodeGenerationPrompt('')
-          : generateClaudeCodeGenerationPrompt(fullPlanText);
+          ? generateClaudeCodeGenerationPrompt('', {
+              withBlockingSubissues: blockingSubissuesEnabled,
+            })
+          : generateClaudeCodeGenerationPrompt(fullPlanText, {
+              withBlockingSubissues: blockingSubissuesEnabled,
+            });
 
         // Only include research prompt for non-simple mode
         const researchPrompt = options.simple ? undefined : generateClaudeCodeResearchPrompt();
@@ -698,9 +743,68 @@ export async function handleGenerateCommand(
         // Use the shared Claude Code invocation helper
         const claudeResult = await invokeClaudeCodeForGeneration(planningPrompt, generationPrompt, {
           model: config.models?.stepGeneration,
-          includeDefaultTools: true,
           researchPrompt,
         });
+
+        if (blockingSubissuesEnabled && blockingPlanBaseline && currentPlanId !== undefined) {
+          const { plans: updatedPlans } = await readAllPlans(tasksDirectory, false);
+          const newlyObservedPlans = Array.from(updatedPlans.entries())
+            .filter(([id]) => !blockingPlanBaseline.has(id))
+            .map(([, plan]) => plan);
+
+          const relevantBlockingPlans = newlyObservedPlans.filter(
+            (plan) => plan.parent === currentPlanId || plan.discoveredFrom === currentPlanId
+          );
+
+          const unrelatedPlans = newlyObservedPlans.filter(
+            (plan) => plan.parent !== currentPlanId && plan.discoveredFrom !== currentPlanId
+          );
+
+          if (relevantBlockingPlans.length > 0) {
+            relevantBlockingPlans.sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
+
+            const summary = relevantBlockingPlans
+              .map((plan) => {
+                const idLabel = plan.id !== undefined ? `#${plan.id}` : plan.filename;
+                const titlePart = plan.title ? ` ${plan.title}` : '';
+                return `${idLabel}${titlePart}`.trim();
+              })
+              .join(', ');
+
+            log(
+              chalk.green(
+                `✓ Created ${relevantBlockingPlans.length} blocking plan${
+                  relevantBlockingPlans.length === 1 ? '' : 's'
+                }: ${summary}`
+              )
+            );
+          } else {
+            log(
+              chalk.blue(
+                `No blocking plans were created automatically for plan ${currentPlanId}. If blockers are required, create them manually with rmplan add.`
+              )
+            );
+          }
+
+          if (unrelatedPlans.length > 0) {
+            unrelatedPlans.sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
+            const summary = unrelatedPlans
+              .map((plan) => {
+                const idLabel = plan.id !== undefined ? `#${plan.id}` : plan.filename;
+                const titlePart = plan.title ? ` ${plan.title}` : '';
+                return `${idLabel}${titlePart}`.trim();
+              })
+              .join(', ');
+
+            warn(
+              chalk.yellow(
+                `⚠️  Detected ${unrelatedPlans.length} new plan${
+                  unrelatedPlans.length === 1 ? '' : 's'
+                } not linked to plan ${currentPlanId}: ${summary}`
+              )
+            );
+          }
+        }
 
         if (claudeResult.researchOutput?.trim()) {
           if (planFile) {

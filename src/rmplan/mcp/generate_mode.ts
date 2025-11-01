@@ -30,20 +30,59 @@ export interface GenerateModeRegistrationContext {
 
 const questionText = `Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Avoid repeating information already captured. As you figure things out, update the details in the plan file if necessary.`;
 
+function parseBooleanOption(value: unknown): boolean {
+  if (value === undefined || value === null) {
+    return false;
+  }
+
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (
+      normalized === '' ||
+      normalized === 'false' ||
+      normalized === '0' ||
+      normalized === 'no' ||
+      normalized === 'n'
+    ) {
+      return false;
+    }
+    if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'y') {
+      return true;
+    }
+  }
+
+  return Boolean(value);
+}
+
 export async function loadResearchPrompt(
-  args: { plan?: string },
+  args: { plan?: string; withBlockingSubissues?: unknown },
   context: GenerateModeRegistrationContext
 ) {
   const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
 
+  const withBlockingSubissues = parseBooleanOption(args.withBlockingSubissues);
+  const parentPlanId = typeof plan.id === 'number' ? plan.id : undefined;
+
   // If plan has simple: true, skip research and use simple generation flow
   if (plan.simple) {
-    return loadGeneratePrompt(args, context);
+    return loadGeneratePrompt({ plan: args.plan, withBlockingSubissues }, context);
   }
 
   const contextBlock = buildPlanContext(plan, planPath, context);
 
-  const text = `${generateClaudeCodePlanningPrompt(contextBlock, false)}
+  const text = `${generateClaudeCodePlanningPrompt(contextBlock, {
+    includeNextInstructionSentence: false,
+    withBlockingSubissues,
+    parentPlanId,
+  })}
 
 ${generateClaudeCodeResearchPrompt(`Once your research is complete`)}
 
@@ -112,7 +151,7 @@ export async function loadPlanPrompt(
 }
 
 export async function loadGeneratePrompt(
-  args: { plan?: string },
+  args: { plan?: string; withBlockingSubissues?: unknown },
   context: GenerateModeRegistrationContext
 ) {
   let contextBlock = '';
@@ -121,7 +160,12 @@ export async function loadGeneratePrompt(
     contextBlock = buildPlanContext(plan, planPath, context);
   }
 
-  const text = `${generateClaudeCodeGenerationPrompt(contextBlock, false)}
+  const withBlockingSubissues = parseBooleanOption(args.withBlockingSubissues);
+
+  const text = `${generateClaudeCodeGenerationPrompt(contextBlock, {
+    includeMarkdownFormat: false,
+    withBlockingSubissues,
+  })}
 
 Use the update-plan-tasks tool to save the generated plan with the following structure:
 - title: The overall project title
@@ -151,6 +195,44 @@ const taskSchema = z.object({
   description: z.string().describe('Detailed description of what needs to be done'),
   done: z.boolean().optional().describe('Whether this task is completed (default: false)'),
 });
+
+export const addPlanTaskParameters = z
+  .object({
+    plan: z.string().describe('Plan ID or file path'),
+    title: z.string().min(1, 'Task title cannot be empty.').describe('Task title to add'),
+    description: z
+      .string()
+      .min(1, 'Task description cannot be empty.')
+      .describe('Detailed description for the new task'),
+    files: z.array(z.string()).optional().describe('Related file paths (add only)'),
+    docs: z.array(z.string()).optional().describe('Documentation paths (add only)'),
+  })
+  .describe('Add a task to a plan');
+
+export const removePlanTaskParameters = z
+  .object({
+    plan: z.string().describe('Plan ID or file path'),
+    taskTitle: z
+      .string()
+      .optional()
+      .describe('Task title to search for (partial match, case-insensitive).'),
+    taskIndex: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe('Task index (0-based) to remove.'),
+  })
+  .superRefine((value, ctx) => {
+    if (value.taskTitle === undefined && value.taskIndex === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Provide either taskTitle or taskIndex to remove a task.',
+        path: ['taskTitle'],
+      });
+    }
+  })
+  .describe('Remove a task from a plan');
 
 export const generateTasksParameters = z
   .object({
@@ -214,11 +296,16 @@ export const managePlanTaskParameters = z
     taskTitle: z
       .string()
       .optional()
-      .describe('Task title to search for (partial match, case-insensitive). Preferred over index.'),
+      .describe(
+        'Task title to search for (partial match, case-insensitive). Preferred over index.'
+      ),
     taskIndex: z.number().int().optional().describe('Task index (0-based)'),
     // Task creation/update fields
     title: z.string().optional().describe('Task title (required for add, optional for update)'),
-    description: z.string().optional().describe('Task description (required for add, optional for update)'),
+    description: z
+      .string()
+      .optional()
+      .describe('Task description (required for add, optional for update)'),
     done: z.boolean().optional().describe('Mark task as done or not done (update only)'),
     files: z.array(z.string()).optional().describe('Related file paths (add only)'),
     docs: z.array(z.string()).optional().describe('Documentation paths (add only)'),
@@ -228,19 +315,9 @@ export const managePlanTaskParameters = z
 export type ManagePlanTaskArguments = z.infer<typeof managePlanTaskParameters>;
 
 // Legacy types for internal functions
-type AddPlanTaskArguments = {
-  plan: string;
-  title: string;
-  description: string;
-  files?: string[];
-  docs?: string[];
-};
+type AddPlanTaskArguments = z.infer<typeof addPlanTaskParameters>;
 
-type RemovePlanTaskArguments = {
-  plan: string;
-  taskIndex?: number;
-  taskTitle?: string;
-};
+type RemovePlanTaskArguments = z.infer<typeof removePlanTaskParameters>;
 
 type UpdatePlanTaskArguments = {
   plan: string;
@@ -724,8 +801,18 @@ export function registerGenerateMode(
         description: 'Plan ID or file path to generate',
         required: true,
       },
+      {
+        name: 'withBlockingSubissues',
+        description:
+          'Set to true to instruct the agent to create blocking prerequisite plans before generating the main plan.',
+        required: false,
+      },
     ],
-    load: async (args) => loadResearchPrompt({ plan: args.plan }, context),
+    load: async (args) =>
+      loadResearchPrompt(
+        { plan: args.plan, withBlockingSubissues: args.withBlockingSubissues },
+        context
+      ),
   });
 
   server.addPrompt({
@@ -789,8 +876,18 @@ export function registerGenerateMode(
         description: 'Plan ID or file path to generate tasks for',
         required: false,
       },
+      {
+        name: 'withBlockingSubissues',
+        description:
+          'Set to true to instruct the agent to create blocking prerequisite plans before generating the main plan.',
+        required: false,
+      },
     ],
-    load: async (args) => loadGeneratePrompt({ plan: args.plan }, context),
+    load: async (args) =>
+      loadGeneratePrompt(
+        { plan: args.plan, withBlockingSubissues: args.withBlockingSubissues },
+        context
+      ),
   });
 
   server.addTool({

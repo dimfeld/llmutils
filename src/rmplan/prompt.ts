@@ -160,6 +160,37 @@ export interface PhaseGenerationContext {
   // Potentially add baseBranch if needed
 }
 
+type BlockingSubissueInstructionOptions = {
+  withBlockingSubissues?: boolean;
+  parentPlanId?: number;
+};
+
+function getBlockingSubissueInstructions(options: BlockingSubissueInstructionOptions): string {
+  if (!options.withBlockingSubissues) {
+    return '';
+  }
+
+  const planIdLabel =
+    options.parentPlanId !== undefined ? String(options.parentPlanId) : '<parent-plan-id>';
+  const commandExample = `rmplan add "Blocking Title" --parent ${planIdLabel} --discovered-from ${planIdLabel} --priority <high|medium|low|urgent> --details "Why this is needed first"`;
+
+  return `
+# Blocking Subissues
+
+Before producing the main implementation plan, determine whether any prerequisite work must be completed first. For every prerequisite that truly blocks the main plan:
+1. Create a new plan immediately with \
+   \`${commandExample}\`. Include \`--depends-on\` if a blocking plan should wait on another blocker. The parent plan's dependencies will be updated automatically.
+2. Capture clear details in the blocking plan so future agents know why it is required and how to execute it.
+3. Document the blockers you created under a "## Blocking Subissues" heading before the primary plan output using this exact format:
+   ## Blocking Subissue: [Title]
+   - Priority: [high|medium|low|urgent]
+   - Reason: [Why this must be done first]
+   - Tasks: [High-level task list]
+
+Only create blocking plans for work that must land before the main implementation can begin.
+`;
+}
+
 const commonGenerateDetails = `
 Expected Behavior/Outcome
 - A clear, concise description of the new user-facing behavior.
@@ -187,8 +218,16 @@ Implementation Notes
 - **Conflicting, Unclear, or Impossible Requirements, if any** -- you can omit this section if there are none
 `;
 
-export function planPrompt(plan: string) {
+export function planPrompt(
+  plan: string,
+  options: { withBlockingSubissues?: boolean; parentPlanId?: number } = {}
+) {
   // The first half of this prompt is a variant of the planning prompt from https://harper.blog/2025/02/16/my-llm-codegen-workflow-atm/
+  const blockingSection = getBlockingSubissueInstructions({
+    withBlockingSubissues: options.withBlockingSubissues,
+    parentPlanId: options.parentPlanId,
+  });
+
   return `This is a description for an upcoming feature, and you will be tasked with creating a plan for it.
 
 # Project Description
@@ -216,6 +255,8 @@ This plan will be executed by an AI coding agent, so do NOT create tasks for man
 When testing, prefer to use real tests and not mock functions or modules. Prefer dependency injection instead of mocks. Tests that need IO can create files in a temporary directory.
 
 The goal is to output a high-level phase-based plan. Focus on the overall structure and organization of the project, breaking it into phases and tasks.
+
+${blockingSection}
 
 When generating the final output, create a phase-based plan with:
 - A title: A concise single-sentence title that captures the essence of the project
@@ -265,7 +306,15 @@ If there are any changes requested or comments made after your create this plan,
 `;
 }
 
-export function simplePlanPrompt(plan: string) {
+export function simplePlanPrompt(
+  plan: string,
+  options: { withBlockingSubissues?: boolean; parentPlanId?: number } = {}
+) {
+  const blockingSection = getBlockingSubissueInstructions({
+    withBlockingSubissues: options.withBlockingSubissues,
+    parentPlanId: options.parentPlanId,
+  });
+
   return `This is a description for a task in the repository that needs exploration and planning.
 
 # Task Description
@@ -284,6 +333,8 @@ From here you should have the foundation to provide a series of prompts for a co
 This plan will be executed by an AI coding agent, so do NOT create tasks for manual verification. The plan will be verified separately after implementation.
 
 When testing, prefer to use real tests and not mock functions or modules. Prefer dependency injection instead of mocks. Tests that need IO can create files in a temporary directory.
+
+${blockingSection}
 
 The goal is to output prompts, but context, etc is important as well. Include plenty of information about which files to edit, what to do and how to do it, but you do not need to output code samples.
 
@@ -601,8 +652,23 @@ ${yaml.stringify(plan.tasks, null, 2)}
 
 export function generateClaudeCodePlanningPrompt(
   planText: string,
-  includeNextInstructionSentence = true
+  options: {
+    includeNextInstructionSentence?: boolean;
+    withBlockingSubissues?: boolean;
+    parentPlanId?: number;
+  } = {}
 ): string {
+  const {
+    includeNextInstructionSentence = true,
+    withBlockingSubissues = false,
+    parentPlanId,
+  } = options;
+
+  const blockingSection = getBlockingSubissueInstructions({
+    withBlockingSubissues,
+    parentPlanId,
+  });
+
   let prompt = `This is a description for an upcoming feature that I want you to analyze and prepare a plan for.
 
 # Project Description
@@ -635,6 +701,8 @@ ${commonGenerateDetails}
 IMPORTANT: Do NOT create tasks for manual verification. This plan will be executed by an AI coding agent and verified separately after implementation. Focus on automated testing and implementation tasks only.
 
 Do not perform any implementation or write any files yet.
+
+${blockingSection}
 
 Use parallel subagents to analyze the requirements against different parts of the codebase, and generate detailed reports.
 Then prepare to synthesize these reports into the final plan.`;
@@ -678,8 +746,13 @@ so the more you include from your exploration, the better.
 
 export function generateClaudeCodeGenerationPrompt(
   planText: string,
-  includeMarkdownFormat = true
+  options: {
+    includeMarkdownFormat?: boolean;
+    withBlockingSubissues?: boolean;
+  } = {}
 ): string {
+  const { includeMarkdownFormat = true, withBlockingSubissues = false } = options;
+
   let formatInstructions = '';
   if (includeMarkdownFormat) {
     formatInstructions = `
@@ -701,6 +774,17 @@ ${planText}
 `
     : '';
 
+  const blockingReminder = withBlockingSubissues
+    ? `
+Before presenting the main plan output, summarize any blocking plans you created under a "## Blocking Subissues" heading using this structure:
+## Blocking Subissue: [Title]
+- Priority: [high|medium|low|urgent]
+- Reason: [Why this must be done first]
+- Tasks: [High-level task list]
+
+`
+    : '';
+
   return `Based on your analysis of the codebase and the project description, please now generate a detailed implementation plan.
 
 ${projectReminder}
@@ -715,13 +799,30 @@ IMPORTANT: Do NOT create tasks for manual verification. This plan will be execut
 
 ${formatInstructions}
 
+${blockingReminder}
+
 Generate the complete plan now.`;
 }
 
 export function generateClaudeCodeSimplePlanningPrompt(
   planText: string,
-  includeNextInstructionSentence = true
+  options: {
+    includeNextInstructionSentence?: boolean;
+    withBlockingSubissues?: boolean;
+    parentPlanId?: number;
+  } = {}
 ): string {
+  const {
+    includeNextInstructionSentence = true,
+    withBlockingSubissues = false,
+    parentPlanId,
+  } = options;
+
+  const blockingSection = getBlockingSubissueInstructions({
+    withBlockingSubissues,
+    parentPlanId,
+  });
+
   let prompt = `This is a description for a task in the repository that needs exploration and planning.
 
 # Task Description
@@ -749,6 +850,8 @@ For now, please:
 IMPORTANT: Do NOT create tasks for manual verification. This plan will be executed by an AI coding agent and verified separately after implementation. Focus on automated testing and implementation tasks only.
 
 Do not perform any implementation or write any files yet.
+
+${blockingSection}
 
 Use parallel subagents to analyze the requirements against different parts of the codebase, and generate detailed reports.
 Then prepare to synthesize these reports into the final plan.`;

@@ -358,6 +358,36 @@ rmplan generate --issue 42 --claude -- src/api/**/*.ts
 rmplan generate --plan-editor --claude --commit -- src/**/*.ts
 ```
 
+#### Blocking Subissues
+
+Add the `--with-blocking-subissues` flag when you want the agent to surface and schedule prerequisite work before planning the main implementation. In Claude mode, the orchestrator instructs the model to run `rmplan add` for each blocker, automatically setting `--parent`, `--discovered-from`, and any inter-blocker dependencies.
+
+```bash
+# Generate plan 42, asking Claude Code to create prerequisite plans first
+rmplan generate 42 --claude --with-blocking-subissues
+```
+
+When blockers are discovered, Claude summarizes them ahead of the main output using the shared template:
+
+```markdown
+## Blocking Subissue: Set up authentication infrastructure
+
+- Priority: high
+- Reason: The main tasks require auth middleware which doesn't exist yet
+- Tasks:
+  1. Install passport.js and configure strategies
+  2. Create auth middleware
+  3. Add user session management
+```
+
+Each generated blocker becomes a child of the parent plan and is added to its dependency list, enforcing the correct execution order. The CLI reports the new plans so you can jump straight into them:
+
+```
+✓ Created 2 blocking plans: #143 Set up authentication infrastructure, #144 Research rate limiting approaches
+```
+
+If you enable the flag outside of Claude mode the prompts are still augmented, but you will need to create the blocking plans manually.
+
 ### MCP server mode
 
 `rmplan` includes an MCP server that exposes the interactive generate workflow to MCP-compatible clients. Launch it with:
