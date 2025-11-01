@@ -159,10 +159,7 @@ describe('handleClaimCommand', () => {
     ]);
 
     expect(mockWarn).not.toHaveBeenCalled();
-    expect(mockLog.mock.calls).toEqual([
-      [`• Plan 1 is already claimed in workspace ${currentWorkspacePath}`],
-      [`  User: alice`],
-    ]);
+    expect(mockLog).not.toHaveBeenCalled();
   });
 
   test('claiming from a different workspace warns about conflicts', async () => {

@@ -9,14 +9,16 @@ import {
 } from '../prompt.js';
 import { prioritySchema, type PlanSchema } from '../planSchema.js';
 import type { RmplanConfig } from '../configSchema.js';
+import { resolveTasksDir } from '../configSchema.js';
 import { buildPlanContext, resolvePlan } from '../plan_display.js';
 import { mcpGetPlan } from '../commands/show.js';
 import { mcpListReadyPlans } from '../commands/ready.js';
-import { writePlanFile } from '../plans.js';
+import { readAllPlans, writePlanFile } from '../plans.js';
 import { findTaskByTitle } from '../utils/task_operations.js';
 import { mergeTasksIntoPlan, updateDetailsWithinDelimiters } from '../plan_merge.js';
 import { appendResearchToPlan } from '../research_utils.js';
 import { loadCompactPlanPrompt } from './prompts/compact_plan.js';
+import { filterAndSortReadyPlans, formatReadyPlansAsJson } from '../ready_plans.js';
 
 export interface GenerateModeRegistrationContext {
   config: RmplanConfig;
@@ -25,6 +27,61 @@ export interface GenerateModeRegistrationContext {
 }
 
 const questionText = `Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Avoid repeating information already captured. As you figure things out, update the details in the plan file if necessary.`;
+
+/**
+ * Gets the next available plan ID by finding the maximum numeric ID and adding 1.
+ * @param tasksDir - The directory containing plan files
+ * @returns The next available plan ID
+ */
+async function getNextPlanId(tasksDir: string): Promise<number> {
+  const { plans } = await readAllPlans(tasksDir);
+  const ids = Array.from(plans.keys()).filter((id) => typeof id === 'number');
+  return ids.length > 0 ? Math.max(...ids) + 1 : 1;
+}
+
+/**
+ * Generates a plan filename from an ID and title.
+ * Creates a slug from the title and combines it with the ID.
+ * @param id - The plan ID
+ * @param title - The plan title
+ * @returns A filename in the format: {id}-{slug}.plan.md
+ */
+function generatePlanFilename(id: number, title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .substring(0, 50);
+  return `${id}-${slug}.plan.md`;
+}
+
+/**
+ * Adds a child plan to a parent plan's dependencies.
+ * @param parentId - The parent plan ID
+ * @param childId - The child plan ID to add to parent's dependencies
+ * @param context - The MCP context with config and git root
+ */
+async function addChildToParent(
+  parentId: number,
+  childId: number,
+  context: GenerateModeRegistrationContext
+): Promise<void> {
+  const tasksDir = await resolveTasksDir(context.config);
+  const { plans } = await readAllPlans(tasksDir);
+  const parent = plans.get(parentId);
+
+  if (!parent) {
+    throw new UserError(`Parent plan ${parentId} not found`);
+  }
+
+  // Add child to parent's dependencies if not already there
+  const deps = new Set(parent.dependencies || []);
+  deps.add(childId);
+  parent.dependencies = Array.from(deps);
+  parent.updatedAt = new Date().toISOString();
+
+  await writePlanFile(parent.filename, parent);
+}
 
 export async function loadResearchPrompt(
   args: { plan?: string },
@@ -269,6 +326,25 @@ export const listReadyPlansParameters = z
   .describe('List all ready plans that can be executed');
 
 export type ListReadyPlansArguments = z.infer<typeof listReadyPlansParameters>;
+
+export const createPlanParameters = z
+  .object({
+    title: z.string().describe('Plan title'),
+    goal: z.string().optional().describe('High-level goal'),
+    details: z.string().optional().describe('Plan details (markdown)'),
+    priority: prioritySchema.optional().describe('Priority level'),
+    parent: z.number().optional().describe('Parent plan ID'),
+    dependsOn: z.array(z.number()).optional().describe('Plan IDs this depends on'),
+    discoveredFrom: z.number().optional().describe('Plan ID this was discovered from'),
+    assignedTo: z.string().optional().describe('Username to assign plan to'),
+    issue: z.array(z.string()).optional().describe('GitHub issue URLs'),
+    docs: z.array(z.string()).optional().describe('Documentation file paths'),
+    container: z.boolean().optional().describe('Mark as container plan'),
+    temp: z.boolean().optional().describe('Mark as temporary plan'),
+  })
+  .describe('Create a new plan file');
+
+export type CreatePlanArguments = z.infer<typeof createPlanParameters>;
 
 export type GenerateModeExecutionLogger = {
   debug: (message: string, data?: SerializableValue) => void;
@@ -551,6 +627,52 @@ export async function mcpUpdatePlanTasks(
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Failed to update plan: ${message}`);
   }
+}
+
+export async function mcpCreatePlan(
+  args: CreatePlanArguments,
+  context: GenerateModeRegistrationContext,
+  execContext?: { log: GenerateModeExecutionLogger }
+): Promise<string> {
+  const tasksDir = await resolveTasksDir(context.config);
+  const nextId = await getNextPlanId(tasksDir);
+
+  const plan: PlanSchema = {
+    id: nextId,
+    title: args.title,
+    goal: args.goal,
+    details: args.details,
+    priority: args.priority,
+    parent: args.parent,
+    dependencies: args.dependsOn || [],
+    discoveredFrom: args.discoveredFrom,
+    assignedTo: args.assignedTo,
+    issue: args.issue || [],
+    docs: args.docs || [],
+    container: args.container || false,
+    temp: args.temp || false,
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    tasks: [],
+  };
+
+  const filename = generatePlanFilename(nextId, args.title);
+  const planPath = path.join(tasksDir, filename);
+
+  await writePlanFile(planPath, plan);
+
+  if (args.parent) {
+    await addChildToParent(args.parent, nextId, context);
+  }
+
+  const relativePath = path.relative(context.gitRoot, planPath) || planPath;
+  execContext?.log.info('Created plan', {
+    planId: nextId,
+    planPath: relativePath,
+  });
+
+  return `Created plan ${nextId} at ${relativePath}`;
 }
 
 export function registerGenerateMode(
