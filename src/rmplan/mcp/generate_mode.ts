@@ -643,6 +643,40 @@ export async function mcpCreatePlan(
 
   await writePlanFile(planPath, plan);
 
+  // Update parent plan dependencies to maintain bidirectional relationship
+  if (args.parent !== undefined) {
+    const { plans } = await readAllPlans(tasksDir);
+    const parentPlan = plans.get(args.parent);
+    if (!parentPlan) {
+      throw new UserError(`Parent plan ${args.parent} not found`);
+    }
+
+    // Add this plan's ID to the parent's dependencies
+    if (!parentPlan.dependencies) {
+      parentPlan.dependencies = [];
+    }
+    if (!parentPlan.dependencies.includes(nextId)) {
+      parentPlan.dependencies.push(nextId);
+      parentPlan.updatedAt = new Date().toISOString();
+
+      if (parentPlan.status === 'done') {
+        parentPlan.status = 'in_progress';
+        execContext?.log.info('Parent plan status changed', {
+          parentId: parentPlan.id,
+          oldStatus: 'done',
+          newStatus: 'in_progress',
+        });
+      }
+
+      // Write the updated parent plan
+      await writePlanFile(parentPlan.filename!, parentPlan);
+      execContext?.log.info('Updated parent plan dependencies', {
+        parentId: parentPlan.id,
+        childId: nextId,
+      });
+    }
+  }
+
   const relativePath = path.relative(context.gitRoot, planPath) || planPath;
   execContext?.log.info('Created plan', {
     planId: nextId,

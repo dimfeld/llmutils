@@ -1419,9 +1419,9 @@ describe('mcpCreatePlan', () => {
 
     expect(result).toContain('Created plan 11 at');
 
-    // Parent plan should NOT be modified - parent-child relationship is established by child.parent field
+    // Parent plan should be modified to maintain bidirectional relationship
     const parentPlan = await readPlanFile(path.join(tmpDir, '10-test.plan.md'));
-    expect(parentPlan.dependencies).toEqual([]);
+    expect(parentPlan.dependencies).toContain(11);
 
     const childPlan = await readPlanFile(path.join(tmpDir, '11-child-plan.plan.md'));
     expect(childPlan.parent).toBe(10);
