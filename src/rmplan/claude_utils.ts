@@ -20,7 +20,6 @@ export async function invokeClaudeCodeForGeneration(
   generationPrompt: string,
   options: {
     model?: string;
-    includeDefaultTools?: boolean;
     researchPrompt?: string;
   }
 ): Promise<ClaudeCodeGenerationResult> {
@@ -32,7 +31,8 @@ export async function invokeClaudeCodeForGeneration(
     generationPrompt,
     researchPrompt: options.researchPrompt,
     options: {
-      includeDefaultTools: options.includeDefaultTools ?? true,
+      includeDefaultTools: true,
+      allowedTools: ['Bash(rmplan add:*)'],
     },
     model: options.model,
   });
