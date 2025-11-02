@@ -51,6 +51,7 @@ interface ReadyCommandOptions {
   all?: boolean;
   unassigned?: boolean;
   user?: string;
+  hasTasks?: boolean;
 }
 
 const VALID_FORMATS = ['list', 'table', 'json'] as const;
@@ -162,7 +163,8 @@ function displayListFormat(
     const taskCount = plan.tasks?.length || 0;
     const doneTasks = plan.tasks?.filter((t) => t.done).length || 0;
     const taskDisplay = doneTasks > 0 ? `${taskCount} (${doneTasks} done)` : `${taskCount}`;
-    log(`  Tasks: ${taskDisplay}`);
+    const taskColor = taskCount === 0 ? chalk.red : chalk.green;
+    log(taskColor(`  Tasks: ${taskDisplay}`));
 
     // Assignment
     if (plan.assignedWorkspaces.length > 0) {
@@ -322,6 +324,7 @@ async function displayJsonFormat(plans: ReadyPlan[], context: ReadyDisplayContex
       status: plan.status,
       taskCount: plan.tasks?.length || 0,
       completedTasks: plan.tasks?.filter((t) => t.done).length || 0,
+      needsGenerate: (plan.tasks?.length || 0) === 0,
       dependencies: plan.dependencies || [],
       assignedTo: plan.assignedTo,
       filename: path.relative(gitRoot, plan.filename),
@@ -488,6 +491,10 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
     readyPlans = readyPlans.filter((plan) => plan.isUnassigned || plan.isAssignedHere);
   }
 
+  if (options.hasTasks) {
+    readyPlans = readyPlans.filter((plan) => (plan.tasks?.length ?? 0) > 0);
+  }
+
   if (readyPlans.length === 0) {
     log('No plans are currently ready to execute.');
 
@@ -513,6 +520,10 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
       log(
         `Use ${chalk.bold('rmplan ready --unassigned')} to focus on unassigned plans that are ready.`
       );
+    }
+
+    if (options.hasTasks) {
+      log('Try without --has-tasks to include plans without tasks defined.');
     }
     return;
   }

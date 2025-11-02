@@ -221,6 +221,7 @@ export function formatReadyPlansAsJson<T extends PlanSchema>(
       status: plan.status,
       taskCount: plan.tasks?.length ?? 0,
       completedTasks: plan.tasks?.filter((task) => task.done).length ?? 0,
+      needsGenerate: (plan.tasks?.length ?? 0) === 0,
       dependencies: plan.dependencies ?? [],
       assignedTo: plan.assignedTo,
       filename: gitRoot ? path.relative(gitRoot, plan.filename) : plan.filename,

@@ -428,6 +428,7 @@ program
   .option('--all', 'Show ready plans regardless of assignment ownership')
   .option('--unassigned', 'Show only ready plans that are not currently claimed')
   .option('--user <username>', 'Show ready plans claimed by the specified user')
+  .option('--has-tasks', 'Show only ready plans that have tasks defined')
   .option('-v, --verbose', 'Show additional details like file paths')
   .action(async (options, command) => {
     const { handleReadyCommand } = await import('./commands/ready.js');
