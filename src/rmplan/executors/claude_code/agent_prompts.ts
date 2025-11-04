@@ -202,7 +202,8 @@ export function getVerifierAgentPrompt(
   planId?: string | number,
   customInstructions?: string,
   model?: string,
-  includeTaskCompletionInstructions: boolean = false
+  includeTaskCompletionInstructions: boolean = false,
+  includeVerdictInstructions: boolean = false
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
@@ -223,6 +224,46 @@ rmplan set-task-done ${planId} "Task Title Here"
 Do this for each task that was successfully implemented and verified before providing your final approval.\n`
       : '';
 
+  const verdictInstructions = includeVerdictInstructions
+    ? `
+
+## Response Format
+
+After completing all verification steps, you MUST provide a final verdict using this format:
+
+**Issues Found** (if any):
+
+---
+
+1. CRITICAL: [Description of critical issue - tests failing, type errors, security vulnerabilities]
+
+[Details including affected files, line numbers, and what needs to be fixed]
+
+---
+
+2. MAJOR: [Description of major issue - missing test coverage, linting errors, pattern violations]
+
+[Details including affected files, line numbers, and what needs to be fixed]
+
+---
+
+3. MINOR: [Description of minor issue - style inconsistencies, minor optimizations]
+
+[Details and suggestions]
+
+---
+
+**VERDICT:** NEEDS_FIXES | ACCEPTABLE
+
+### Verdict Guidelines:
+- **ACCEPTABLE**: All required commands pass (type checking, linting, tests), no critical issues found, implementation meets requirements
+- **NEEDS_FIXES**: Tests fail, type checking errors, linting failures, critical bugs, security issues, or missing test coverage
+
+If ACCEPTABLE: Briefly confirm that all verification checks passed.
+If NEEDS_FIXES: Summarize the critical issues that must be addressed.
+`
+    : '';
+
   const primaryResponsibilities = [
     "1. Review the implementer's output and current repository state to understand the changes",
     '2. Confirm that all new or modified behavior has adequate automated test coverage, adding tests if gaps remain',
@@ -242,7 +283,7 @@ Do this for each task that was successfully implemented and verified before prov
     description:
       'Validates the implementation by running required checks, adding missing tests, and confirming readiness',
     model,
-    prompt: `You are a verification agent responsible for ensuring the implementation is production-ready.
+    prompt: `You are a verification agent responsible for ensuring that tasks were implemented properly.
 
 ## Context and Task
 ${contextContent}${customInstructionsSection}
@@ -254,7 +295,6 @@ ${formattedProgressNotes}${taskCompletionInstructions}
 ## Handling Multiple Tasks:
 - ${contextTaskFocus}
 - Treat the batch as an integrated change set—tests should cover interactions between tasks when relevant
-- Consolidate verification runs where possible to minimize redundant command execution
 - Document which tasks and commands you verified so the orchestrator can track progress
 
 ## Verification Workflow
@@ -271,7 +311,7 @@ ${formattedProgressNotes}${taskCompletionInstructions}
 - Use existing project scripts/utilities to run checks instead of ad-hoc commands whenever possible
 - Do not skip steps even if earlier runs succeeded—the verification phase is authoritative
 
-${FAILED_PROTOCOL_INSTRUCTIONS}
+${FAILED_PROTOCOL_INSTRUCTIONS}${verdictInstructions}
 
 Remember: your role is to verify quality, not re-implement the feature. Focus on identifying gaps, running checks, and reporting precise issues back to the orchestrator. Do not mark plan tasks as done; report findings so the orchestrator can coordinate next steps.`,
   };

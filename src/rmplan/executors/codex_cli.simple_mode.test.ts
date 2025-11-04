@@ -158,8 +158,11 @@ describe('CodexCliExecutor simple mode', () => {
     });
     (executor as any).loadAgentInstructionsFor = loadInstructionsMock;
 
-    const markCompletedSpy = mock(async () => {});
-    (executor as any).markCompletedTasksFromImplementer = markCompletedSpy;
+    const parseCompletedTasksMock = mock(async () => ['Add feature']);
+    (executor as any).parseCompletedTasksFromImplementer = parseCompletedTasksMock;
+
+    const markTasksDoneSpy = mock(async () => {});
+    (executor as any).markTasksAsDone = markTasksDoneSpy;
 
     const result = (await executor.execute('CTX CONTENT', {
       planId: 'plan-123',
@@ -191,8 +194,10 @@ describe('CodexCliExecutor simple mode', () => {
     );
 
     expect(loadInstructionsMock).toHaveBeenCalledTimes(3);
-    expect(markCompletedSpy).toHaveBeenCalledTimes(1);
-    expect(markCompletedSpy.mock.calls[0][0]).toContain('Implementation complete. ✅');
+    expect(parseCompletedTasksMock).toHaveBeenCalledTimes(1);
+    expect(markTasksDoneSpy).toHaveBeenCalledTimes(1);
+    expect(markTasksDoneSpy.mock.calls[0][0]).toBe('/tmp/plan.md'); // planFilePath
+    expect(markTasksDoneSpy.mock.calls[0][1]).toEqual(['Add feature']); // task titles
 
     expect(result).toBeDefined();
     expect(Array.isArray(result.steps)).toBeTrue();
@@ -295,8 +300,11 @@ describe('CodexCliExecutor simple mode', () => {
 
     const loadInstructionsMock = mock(async () => undefined);
     (executor as any).loadAgentInstructionsFor = loadInstructionsMock;
-    const markCompletedSpy = mock(async () => {});
-    (executor as any).markCompletedTasksFromImplementer = markCompletedSpy;
+    const parseCompletedTasksMock = mock(async () => ['Add feature']);
+    (executor as any).parseCompletedTasksFromImplementer = parseCompletedTasksMock;
+
+    const markTasksDoneSpy = mock(async () => {});
+    (executor as any).markTasksAsDone = markTasksDoneSpy;
 
     await executor.execute('CTX', {
       planId: 'plan-789',
@@ -308,7 +316,7 @@ describe('CodexCliExecutor simple mode', () => {
 
     expect(spawnMock).toHaveBeenCalledTimes(3);
     expect(loadInstructionsMock).toHaveBeenCalledTimes(3);
-    expect(markCompletedSpy).toHaveBeenCalledTimes(1);
+    expect(markTasksDoneSpy).toHaveBeenCalledTimes(1);
     expect(
       warnMessages.some((msg) =>
         msg.includes('produced planning output without repository changes')
@@ -408,8 +416,11 @@ describe('CodexCliExecutor simple mode', () => {
 
     const loadInstructionsMock = mock(async () => undefined);
     (executor as any).loadAgentInstructionsFor = loadInstructionsMock;
-    const markCompletedSpy = mock(async () => {});
-    (executor as any).markCompletedTasksFromImplementer = markCompletedSpy;
+    const parseCompletedTasksMock = mock(async () => ['Add feature']);
+    (executor as any).parseCompletedTasksFromImplementer = parseCompletedTasksMock;
+
+    const markTasksDoneSpy = mock(async () => {});
+    (executor as any).markTasksAsDone = markTasksDoneSpy;
 
     const result = (await executor.execute('CTX', {
       planId: 'plan-fail',
@@ -428,7 +439,7 @@ describe('CodexCliExecutor simple mode', () => {
     expect(result.steps).toHaveLength(2);
     expect(result.steps[1].title).toBe('Codex Verifier');
     expect(result.steps[1].body).toContain('FAILED: Verifier reports blocking issues');
-    expect(markCompletedSpy).not.toHaveBeenCalled();
+    expect(markTasksDoneSpy).not.toHaveBeenCalled();
     expect(
       warnMessages.some((msg) =>
         msg.includes('Skipping automatic task completion marking due to executor failure')
@@ -520,8 +531,11 @@ describe('CodexCliExecutor simple mode', () => {
 
     const loadInstructionsMock = mock(async () => undefined);
     (executor as any).loadAgentInstructionsFor = loadInstructionsMock;
-    const markCompletedSpy = mock(async () => {});
-    (executor as any).markCompletedTasksFromImplementer = markCompletedSpy;
+    const parseCompletedTasksMock = mock(async () => ['Add feature']);
+    (executor as any).parseCompletedTasksFromImplementer = parseCompletedTasksMock;
+
+    const markTasksDoneSpy = mock(async () => {});
+    (executor as any).markTasksAsDone = markTasksDoneSpy;
 
     const result = (await executor.execute('CTX', {
       planId: 'plan-shared',
@@ -533,7 +547,7 @@ describe('CodexCliExecutor simple mode', () => {
 
     expect(spawnMock).toHaveBeenCalledTimes(3);
     expect(loadInstructionsMock).toHaveBeenCalledTimes(3);
-    expect(markCompletedSpy).toHaveBeenCalledTimes(1);
+    expect(markTasksDoneSpy).toHaveBeenCalledTimes(1);
     expect(
       warnMessages.some((msg) =>
         msg.includes('produced planning output without repository changes')
@@ -638,8 +652,11 @@ describe('CodexCliExecutor simple mode', () => {
 
     const loadInstructionsMock = mock(async () => undefined);
     (executor as any).loadAgentInstructionsFor = loadInstructionsMock;
-    const markCompletedSpy = mock(async () => {});
-    (executor as any).markCompletedTasksFromImplementer = markCompletedSpy;
+    const parseCompletedTasksMock = mock(async () => ['Add feature']);
+    (executor as any).parseCompletedTasksFromImplementer = parseCompletedTasksMock;
+
+    const markTasksDoneSpy = mock(async () => {});
+    (executor as any).markTasksAsDone = markTasksDoneSpy;
 
     const result = (await executor.execute('CTX CONTEXT', {
       planId: 'plan-options',
@@ -651,7 +668,7 @@ describe('CodexCliExecutor simple mode', () => {
 
     expect(spawnMock).toHaveBeenCalledTimes(2);
     expect(loadInstructionsMock).toHaveBeenCalledTimes(3);
-    expect(markCompletedSpy).toHaveBeenCalledTimes(1);
+    expect(markTasksDoneSpy).toHaveBeenCalledTimes(1);
     expect(result.steps).toHaveLength(2);
     expect(result.steps[0]).toEqual({
       title: 'Codex Implementer',

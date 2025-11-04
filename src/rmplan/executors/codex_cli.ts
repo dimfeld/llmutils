@@ -245,19 +245,19 @@ export class CodexCliExecutor implements Executor {
     const finalImplementerOutput =
       implementerOutput ?? events.filter((e) => e.type === 'implementer').pop()?.message ?? '';
 
+    let newlyCompletedTitles: string[] = [];
     try {
-      // Re-read plan file to detect newly-completed tasks (if any)
-      let newlyCompletedTitles: string[] = [];
+      // Parse completed tasks from implementer output
       if (planContextAvailable) {
-        try {
-          const updatedPlan = await readPlanFile(planInfo.planFilePath);
-          const { completed: afterCompleted } = this.categorizeTasks(updatedPlan);
-          const beforeTitles = new Set(initiallyCompleted.map((t) => t.title));
-          newlyCompletedTitles = afterCompleted
-            .map((t) => t.title)
-            .filter((title) => !beforeTitles.has(title));
-        } catch (e) {
-          // Non-fatal; proceed without delta if re-read fails
+        newlyCompletedTitles = await this.parseCompletedTasksFromImplementer(
+          finalImplementerOutput,
+          planInfo,
+          gitRoot
+        );
+        if (newlyCompletedTitles.length > 0) {
+          log(
+            `Identified ${newlyCompletedTitles.length} completed task(s): ${newlyCompletedTitles.join(', ')}`
+          );
         }
       }
 
@@ -489,8 +489,8 @@ export class CodexCliExecutor implements Executor {
         if (aggregated != null) return aggregated;
       }
     } finally {
-      if (!hadFailure && planContextAvailable) {
-        await this.markCompletedTasksFromImplementer(finalImplementerOutput, planInfo, gitRoot);
+      if (!hadFailure && planContextAvailable && newlyCompletedTitles.length > 0) {
+        await this.markTasksAsDone(planInfo.planFilePath, newlyCompletedTitles, gitRoot);
       } else if (hadFailure) {
         warn('Skipping automatic task completion marking due to executor failure.');
       }
@@ -661,18 +661,19 @@ export class CodexCliExecutor implements Executor {
     const finalImplementerOutput =
       implementerOutput ?? events.filter((e) => e.type === 'implementer').pop()?.message ?? '';
 
+    let newlyCompletedTitles: string[] = [];
     try {
-      let newlyCompletedTitles: string[] = [];
+      // Parse completed tasks from implementer output to pass to verifier
       if (planContextAvailable) {
-        try {
-          const updatedPlan = await readPlanFile(planInfo.planFilePath);
-          const { completed: afterCompleted } = this.categorizeTasks(updatedPlan);
-          const beforeTitles = new Set(initiallyCompleted.map((t) => t.title));
-          newlyCompletedTitles = afterCompleted
-            .map((t) => t.title)
-            .filter((title) => !beforeTitles.has(title));
-        } catch (e) {
-          // Non-fatal; proceed without delta if re-read fails
+        newlyCompletedTitles = await this.parseCompletedTasksFromImplementer(
+          finalImplementerOutput,
+          planInfo,
+          gitRoot
+        );
+        if (newlyCompletedTitles.length > 0) {
+          log(
+            `Identified ${newlyCompletedTitles.length} completed task(s): ${newlyCompletedTitles.join(', ')}`
+          );
         }
       }
 
@@ -695,7 +696,8 @@ export class CodexCliExecutor implements Executor {
         planContextAvailable ? planInfo.planId : undefined,
         verifierInstructions,
         this.sharedOptions.model,
-        true // includeTaskCompletionInstructions
+        false, // includeTaskCompletionInstructions - we mark tasks ourselves
+        true // includeVerdictInstructions - request a verdict from verifier
       );
 
       log('Running verifier step...');
@@ -716,12 +718,22 @@ export class CodexCliExecutor implements Executor {
         };
       }
 
+      // Parse and log the verifier verdict
+      const verdict = parseReviewerVerdict(verifierOutput);
+      if (verdict === 'ACCEPTABLE') {
+        log('Verification verdict: ACCEPTABLE');
+      } else if (verdict === 'NEEDS_FIXES') {
+        warn('Verification verdict: NEEDS_FIXES - Issues identified but simple mode does not loop');
+      } else {
+        warn('Failed to parse verification verdict, treating as completion');
+      }
+
       const aggregated = buildAggregatedOutput();
       if (aggregated != null) return aggregated;
       return;
     } finally {
-      if (!hadFailure && planContextAvailable) {
-        await this.markCompletedTasksFromImplementer(finalImplementerOutput, planInfo, gitRoot);
+      if (!hadFailure && planContextAvailable && newlyCompletedTitles.length > 0) {
+        await this.markTasksAsDone(planInfo.planFilePath, newlyCompletedTitles, gitRoot);
       } else if (hadFailure) {
         warn('Skipping automatic task completion marking due to executor failure.');
       }
@@ -1030,18 +1042,18 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
 
   /**
    * Analyze the implementer output with Gemini 2.5 Flash to determine which plan tasks
-   * have been fully completed, and mark those tasks as done in the plan file.
-   * This is a conservative, best-effort step and will silently skip on any failure.
+   * have been fully completed. Returns an array of task titles that were completed.
+   * This is a conservative, best-effort step and will return empty array on any failure.
    */
-  private async markCompletedTasksFromImplementer(
+  private async parseCompletedTasksFromImplementer(
     implementerOutput: string,
     planInfo: ExecutePlanInfo,
     gitRoot: string
-  ): Promise<void> {
+  ): Promise<string[]> {
     try {
       const planFilePath = planInfo.planFilePath.trim();
       if (!planFilePath) {
-        return;
+        return [];
       }
 
       // Skip entirely during tests or when explicitly disabled. This prevents
@@ -1051,16 +1063,16 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
         process.env.RMPLAN_DISABLE_AUTO_MARK === '1' ||
         process.env.RMPLAN_DISABLE_AUTO_MARK === 'true';
       if (disableAutoMark) {
-        warn('Skipping automatic task completion marking in test/disabled mode');
-        return;
+        warn('Skipping automatic task completion parsing in test/disabled mode');
+        return [];
       }
 
       // Skip if no Google API key is available to avoid network calls in test/dev
       const hasGoogleKey =
         !!process.env.GOOGLE_API_KEY || !!process.env.GOOGLE_GENERATIVE_AI_API_KEY;
       if (!hasGoogleKey) {
-        warn('Skipping automatic task completion marking due to missing Google API key');
-        return;
+        warn('Skipping automatic task completion parsing due to missing Google API key');
+        return [];
       }
 
       const plan = await readPlanFile(planFilePath);
@@ -1074,7 +1086,7 @@ If ACCEPTABLE: Briefly confirm that the major concerns have been addressed
       }));
 
       const pending = tasks.filter((t) => !t.done);
-      if (pending.length === 0) return;
+      if (pending.length === 0) return [];
 
       const model = await createModel('google/gemini-2.0-flash');
 
@@ -1109,26 +1121,42 @@ Return JSON only, like: {"completed_titles": ["Task A", "Task B"]}`;
       });
 
       const pendingTitles = new Set(pending.map((t) => t.title));
-      for (const title of res.object.completed_titles) {
-        if (!pendingTitles.has(title)) continue;
-        try {
-          await setTaskDone(
-            planFilePath,
-            { taskIdentifier: title, commit: false },
-            gitRoot,
-            this.rmplanConfig
-          );
-          log(`Marked task done (from implementer analysis): ${title}`);
-        } catch (e) {
-          warn(
-            `Failed to mark task done for title "${title}": ${e instanceof Error ? e.message : String(e)}`
-          );
-        }
-      }
+      const validCompletedTitles = res.object.completed_titles.filter((title) =>
+        pendingTitles.has(title)
+      );
+
+      return validCompletedTitles;
     } catch (e) {
       warn(
-        `Skipping automatic task completion marking due to error: ${e instanceof Error ? e.message : String(e)}`
+        `Skipping automatic task completion parsing due to error: ${e instanceof Error ? e.message : String(e)}`
       );
+      return [];
+    }
+  }
+
+  /**
+   * Mark the specified tasks as done in the plan file.
+   * This is a best-effort operation that logs warnings on failure.
+   */
+  private async markTasksAsDone(
+    planFilePath: string,
+    taskTitles: string[],
+    gitRoot: string
+  ): Promise<void> {
+    for (const title of taskTitles) {
+      try {
+        await setTaskDone(
+          planFilePath,
+          { taskIdentifier: title, commit: false },
+          gitRoot,
+          this.rmplanConfig
+        );
+        log(`Marked task done (from implementer analysis): ${title}`);
+      } catch (e) {
+        warn(
+          `Failed to mark task done for title "${title}": ${e instanceof Error ? e.message : String(e)}`
+        );
+      }
     }
   }
 
