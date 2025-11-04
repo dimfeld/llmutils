@@ -1,85 +1,75 @@
-# llmutils
+# rmplan
 
-Command-line utilities for managing context with chat-oriented programming, and applying edits back. The codebase is designed with a modular architecture for enhanced maintainability and clear separation of concerns.
+AI-powered project planning and execution system for software development. Generate detailed plans from GitHub/Linear issues, execute them with automated agents, and track progress through complex multi-phase projects.
 
-The scripts are:
+**Core capabilities:**
+- **Smart Planning**: Generate detailed implementation plans using LLMs with automatic research phases
+- **Issue Tracking**: Track issues and their dependencies
+- **Automated Execution**: Run plans step-by-step with workspace isolation and automatic progress tracking
+- **MCP Integration**: Full Model Context Protocol server for AI agent access
+- **Workspace Management**: Execute plans in isolated git clones with automatic dependency handling
+- **Multi-Workspace Coordination**: Claim and track plans across multiple repository checkouts
 
-- `rmfilter` - A wrapper around repomix which can analyze import trees to gather all the files referenced by a root file, and add instructions and other rules to the repomix output. Supports both "whole file" and "diff" edit modes.
-- `apply-llm-edits` - Once you've pasted the rmfilter output into a chat model and get the output, you can use this script to apply the edits back to your codebase.
-- `rmrun` - Send the rmfilter output to a language model and apply the edits back.
-- `rmfind` - Find relevant files to use with rmfilter
-- `rmplan` - Generate and manage step-by-step project plans for code changes using LLMs, with support for creating, importing from GitHub issues, validating, splitting, and executing tasks. Includes multi-phase planning for breaking large features into incremental deliverables and automated dependency-based execution for complex project workflows.
-- `rmpr` - Handle pull request comments and reviews with AI assistance
+**Older tools:**
 
-All tools include built-in OSC52 clipboard support to help with clipboard use during SSH sessions.
+These tools are deprecated as coding agents have largely replaced them, but sill exist in this codebase.
 
-Some of the features, such as dependency analysis, only work with the code I've been writing at work recently, and so
-assume a repository written with Typescript and PNPM workspaces.
+- `rmfilter`: Context gathering wrapper around repomix for LLM prompts
+- `apply-llm-edits`: Apply LLM-generated code changes to your repository
+- `rmfind`: AI-powered file search with interactive selection
+
+---
 
 # Table of Contents
 
 - [Installation](#installation)
-  - [Build Instructions](#build-instructions)
-- [Key Features](#key-features)
-  - [SSH Support with OSC52](#ssh-support-with-osc52)
-- [Configuration and Presets](#configuration-and-presets)
-  - [YAML Configuration](#yaml-configuration)
-  - [Example Config File](#example-config-file)
-  - [Using Config Files](#using-config-files)
-  - [Preset System](#preset-system)
-  - [Combining CLI and Config](#combining-cli-and-config)
-  - [MDC File Support](#mdc-file-support)
-    - [Key Features of MDC Support](#key-features-of-mdc-support)
-    - [MDC File Format](#mdc-file-format)
-  - [Model Presets](#model-presets)
-- [rmfind](#rmfind)
-  - [Key Features](#key-features-2)
-  - [Usage](#usage)
-  - [Requirements](#requirements)
-  - [Notes](#notes)
-- [rmplan](#rmplan)
-  - [Key Features](#key-features-3)
-  - [Usage](#usage-1)
-    - [Multi-Workspace Workflows](#multi-workspace-workflows)
-    - [Ready Command](#rmplan-ready)
-    - [Cleanup Command](#cleanup-command)
-  - [Requirements](#requirements-1)
-  - [Notes](#notes-1)
-  - [External Storage](#external-storage)
-  - [Configuration](#configuration)
-    - [Paths](#paths)
-    - [Documentation Search Paths](#documentation-search-paths)
-    - [Workspace Auto-Creation](#workspace-auto-creation)
-    - [Automatic Examples](#automatic-examples)
-    - [Post-Apply Commands](#post-apply-commands)
+- [Quick Start](#quick-start)
+- [Plan Structure](#plan-structure)
+- [Core Commands](#core-commands)
+  - [generate - Create Plans](#generate---create-plans)
+  - [agent/run - Execute Plans](#agentrun---execute-plans)
+  - [add - Create Plan Stubs](#add---create-plan-stubs)
+  - [show - View Plan Details](#show---view-plan-details)
+  - [ready - List Ready Plans](#ready---list-ready-plans)
+- [MCP Server](#mcp-server)
+  - [Prompts](#prompts)
+  - [Tools](#tools)
+  - [Starting the Server](#starting-the-server)
+- [Workspace Management](#workspace-management)
+  - [Why Workspaces](#why-workspaces)
+  - [Configuration](#workspace-configuration)
+  - [Commands](#workspace-commands)
+- [Configuration](#configuration)
+  - [Workspace Auto-Creation](#workspace-auto-creation)
   - [Executors](#executors)
-    - [Available Executors](#available-executors)
-  - [Multi-Phase Project Planning](#multi-phase-project-planning)
-- [rmpr](#rmpr)
-  - [Key Features](#key-features-4)
-  - [Usage](#usage-2)
-  - [Options Editor](#options-editor)
-- [Usage Examples](#usage-examples)
-  - [Using rmfilter](#using-rmfilter)
-  - [Using rmplan](#using-rmplan)
-  - [Using rmpr](#using-rmpr)
-  - [Applying LLM Edits](#applying-llm-edits)
+  - [Post-Apply Commands](#post-apply-commands)
+  - [Documentation Search Paths](#documentation-search-paths)
+  - [Model API Keys](#model-api-keys)
+- [Advanced Features](#advanced-features)
+  - [Multi-Workspace Assignments](#multi-workspace-assignments)
+  - [Plan Validation](#plan-validation)
+  - [Progress Notes](#progress-notes)
+  - [Plan Compaction](#plan-compaction)
+- [Supporting Tools](#supporting-tools)
+  - [rmfilter](#rmfilter)
+  - [apply-llm-edits](#apply-llm-edits)
+  - [rmfind](#rmfind)
+- [Complete Command Reference](#complete-command-reference)
+
+---
 
 ## Installation
 
-This project assumes you have these tools installed:
-
+**Prerequisites:**
 - [Bun](https://bun.sh/)
 - [ripgrep](https://github.com/BurntSushi/ripgrep)
 - [repomix](https://github.com/yamadashy/repomix)
 - [fzf](https://github.com/junegunn/fzf) (for rmfind)
-- [bat](https://github.com/sharkdp/bat) (for rmfind and rmrun)
-- [claude Code](https://github.com/anthropics/claude-code) (optional, for Claude Code support)
-- [OpenAI Codex](https://github.com/openai/codex) (optional, for Codex support)
+- [bat](https://github.com/sharkdp/bat) (for rmfind)
+- [Claude Code](https://github.com/anthropics/claude-code)
+- [OpenAI Codex](https://github.com/openai/codex) (optional)
 
-### Build Instructions
-
-Clone the repository, install dependencies, and then install globally:
+**Install:**
 
 ```bash
 git clone https://github.com/dimfeld/llmutils.git
@@ -88,548 +78,308 @@ bun install
 pnpm add -g file://$(pwd)
 ```
 
-## Key Features
-
-### SSH Support with OSC52
-
-llmutils now includes built-in OSC52 clipboard support for improved functionality when working over SSH sessions:
-
-- **Automatic SSH Detection**: Automatically detects when you're running in an SSH session by checking environment variables like `SSH_CLIENT` and `SSH_CONNECTION`.
-
-- **Clipboard Integration**:
-  - **Copy Operations**: When running in an SSH session, automatically uses OSC52 escape sequences to copy content to your local machine's clipboard.
-  - **Read Operations**: First attempts to read from the local clipboard using OSC52, with an automatic fallback to standard mechanisms if OSC52 fails or times out.
-
-- **Terminal Requirements**: For full OSC52 functionality, your terminal emulator must support OSC52 escape sequences. Modern terminal emulators generally have good support, but may need extra configuration to enable all features.
-
-#### Manual Pasting
-
-Reading from the clipboard over an SSH session doesn't work well inside of many terminal emulators or workspace managers. To accommodate that, at any time when you would normally press enter to have the tools read the clipboard, you can instead just manually paste your clipboard contents in and it will read it.
-
-## Configuration and Presets
-
-`rmfilter` supports configuration through YAML files, allowing you to define reusable settings and commands. You can specify a config file directly with `--config` or use presets with `--preset`, which are stored in `.rmfilter/` directories or `$HOME/.config/rmfilter/`.
-
-### YAML Configuration
-
-The YAML config file allows you to set global options and define multiple commands. Here's the structure:
-
-- **Global options**: Options like `edit-format`, `output`, `copy`, `instructions`, etc., that apply to all commands.
-- **Commands**: An array of command-specific settings, each containing `globs` and command options like `grep`, `with-imports`, etc.
-
-The configuration is validated against a schema (available at `https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmfilter-config-schema.json`). You can reference it in your YAML file with:
-
-```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmfilter-config-schema.json
-```
-
-### Example Config File
-
-Here's an example YAML configuration:
-
-```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmfilter-config-schema.json
-edit-format: diff
-copy: true
-instructions: |
-  Update all API calls to use the new endpoint format
-docs:
-  - 'docs/**/*.md'
-rules:
-  - '.cursorrules'
-commands:
-  - globs:
-      - 'src/api/**/*.ts'
-    grep:
-      - 'fetch'
-    with-imports: true
-    with-tests: true
-    example-file: 'fetch=src/api/fetchData.ts'
-  - globs:
-      - 'src/tests/api/**/*.ts'
-    grep: 'test'
-    example: 'apiTest'
-```
-
-This config:
-
-- Sets the edit format to `diff` and copies output to the clipboard.
-- Includes instructions for updating API calls and references a file for additional instructions.
-- Includes all markdown files in `docs/` and `.cursorrules` for context.
-- Defines two commands: one for API source files with `fetch`, including their imports, test files, and a specific example file, and another for test files with an example pattern.
-
-### Using Config Files
-
-To use a config file directly:
-
-```bash
-rmfilter --config path/to/config.yml
-```
-
-### Preset System
-
-Presets are named YAML files stored in:
-
-- `.rmfilter/` directories, searched from the current directory up to the git root.
-- `$HOME/.config/rmfilter/` for user-wide presets.
-
-To use a preset:
-
-```bash
-rmfilter --preset example
-```
-
-This loads `.rmfilter/example.yml` (or from `$HOME/.config/rmfilter/example.yml` if not found locally).
-
-### Combining CLI and Config
-
-CLI arguments override YAML settings. For example:
-
-```bash
-rmfilter --preset example --edit-format diff src/extra/**/*.ts
-```
-
-This uses the `example` preset but changes the edit format to `diff` and adds an extra glob.
-
-### MDC File Support
-
-`rmfilter` supports `.mdc` (Markdown Domain Configuration) files, which are used to define project-specific rules and documentation, particularly for AI-powered code editors like Cursor. These files are automatically detected and processed to provide additional context for your tasks.
-
-#### Key Features of MDC Support
-
-- **Automatic Detection**: `rmfilter` searches for `.mdc` files in the `.cursor/rules/` directory of your project and in `~/.config/rmfilter/rules/`. It includes these files based on their relevance to the active source files.
-- **Glob-based Filtering**: MDC files can specify `globs` in their frontmatter (e.g., `*.tsx`, `app/controllers/**/*.rb`) to indicate which source files they apply to. Only MDC files matching the active source files are included.
-- **Grep-based Filtering**: MDC files can include a `grep` field (e.g., `grep: superform, supervalidate`) to match against specific terms (case-insensitive). The grep terms are searched in both the instructions passed to `rmfilter` and the source file contents. This ensures only relevant MDC files are included based on the current task context.
-- **Type Classification**: MDC files can have a `type` field (e.g., `docs` or `rules`) to categorize them as documentation or coding rules. These are organized into `<documents>` or `<rules>` tags in the output, respectively. The default value is `rules`.
-- **Suppression Option**: Use the `--no-autodocs` CLI flag to disable automatic MDC file processing if needed.
-
-MDC files with both `globs` and `grep` must match both to be included. Note that the `grep` field is unique to this tool, not part of Cursor's implementation. An MDC file with neither `globs` nor `grep` will always be included, unless the `no-autodocs` option is passed.
-
-#### MDC File Format
-
-An `.mdc` file is a Markdown-based file with a YAML frontmatter header. Here's an example:
-
-```markdown
----
-description: Rules for Svelte components with Superforms
-globs: '*.svelte, *.ts' # Or a YAML array
-type: docs
-grep: superform, supervalidate # Or a YAML array
-name: svelte-superform
 ---
 
-Docs for Superforms would go here
-```
+## Quick Start
 
-- **Frontmatter Fields**: Includes `description` (purpose of the rule), `globs` (file patterns), `grep` (search terms), `type` (docs or rules), and optional fields like `name` or `metadata`.
-- **Body**: Contains the rules or documentation in Markdown, often with coding standards or AI instructions.
-
-### Model Presets
-
-The `--model` option can be passed to `rmfilter` to configure settings for particular AI models. The supported options are:
-
-- `--model grok`: Sets the edit format to `diff` and adds an instruction to the prompt about not creating artifacts.
-- `--model gemini`: Adds an "overeager" guideline to the prompt (copied from Aider) about closely keeping to the scope of the task.
-
-## rmfind
-
-The `rmfind` utility helps you locate relevant files in your repository using a combination of glob patterns, ripgrep patterns, and natural language queries. It integrates with `fzf` for interactive file selection, allowing you to refine your file list efficiently. The output can be copied to the clipboard and formatted as a space-separated list or YAML array.
-
-### Key Features {#key-features-2}
-
-- **Glob-based file search**: Find files matching specific patterns (e.g., `src/**/*.ts`).
-- **Ripgrep integration**: Filter files by content using ripgrep patterns, with options for whole-word matching and case expansion (e.g., snake_case to camelCase).
-- **Natural language queries**: Use AI to filter files based on a query (e.g., "find files related to user authentication").
-- **Interactive selection**: Pipe results to `fzf` for interactive file selection with a preview window (requires `fzf` and `bat` for syntax highlighting).
-- **Flexible output**: Output file paths as a space-separated list or YAML array, with automatic clipboard copying.
-
-### Usage
-
-Run `rmfind` with various options to find and select files:
+Here's a complete workflow from issue to implementation:
 
 ```bash
-# Find Typescript files in src/ and select interactively with fzf
-rmfind src/**/*.ts
-
-# Filter files containing "fetch" or "api" and select with fzf
-rmfind src/**/*.ts --grep fetch --grep api
-
-# Use a natural language query to find relevant files
-rmfind src/**/*.ts --query "files handling user authentication"
-
-# Search from the git root and output as YAML
-rmfind --gitroot src/**/*.ts --yaml
-
-# Combine globbing and grep with whole-word matching
-rmfind src/**/*.ts --grep user --whole-word
-
-# Use a specific AI model for querying
-rmfind src/**/*.ts --query "database migrations" --model google/gemini-2.5-flash-preview-05-20
-```
-
-### Requirements
-
-- `fzf`: For interactive file selection.
-- `bat`: For syntax-highlighted previews in `fzf` (optional, falls back to `cat` if unavailable).
-- `ripgrep`: For content-based filtering.
-- AI SDK: Required for natural language queries (configured with the `--model` option).
-
-### Notes
-
-- The `--query` option requires an AI model and may incur usage costs depending on the model provider.
-- Use `--debug` to see detailed logs for troubleshooting.
-- The `--quiet` flag suppresses non-error output for cleaner scripting.
-
-## rmplan
-
-The `rmplan` utility generates and manages step-by-step project plans for code changes using LLMs. It supports creating, validating, and executing tasks, ensuring incremental progress with detailed prompts for code generation.
-
-You can find the task plans for this repository under the "tasks" directory.
-
-### Key Features {#key-features-3}
-
-- **Plan Generation**: Create detailed project plans from a text description, breaking down tasks into small, testable steps.
-- **Plan Creation**: Use the `add` command to quickly create new plan stub files with metadata like dependencies and priority.
-- **Issue Import**: Use the `import` command to convert GitHub or Linear issues into structured plan files, with support for both single-issue and interactive multi-issue import modes, automatic duplicate prevention, and selective content inclusion.
-- **Plan Splitting**: Use the `split` command to intelligently break down large, complex plans into multiple phase-based plans using an LLM.
-- **Research Integration**: Use the Claude Code generate flow to capture findings and append them under the `## Research` section of a plan's `details` markdown for future reference.
-- **YAML Conversion**: Convert the Markdown project plan into a structured YAML format for running tasks.
-- **Task Execution**: Execute the next steps in a plan, generating prompts for LLMs and optionally integrating with `rmfilter` for context.
-- **Progress Tracking**: Mark tasks and steps as done, with support for committing changes to git or jj.
-- **Progress Notes**: Add timestamped progress notes to plans during execution; notes appear in `rmplan show`, are counted in `rmplan list`, and are included in agent prompts (timestamps omitted).
-- **Plan Inspection**: Display detailed information about plans including dependencies with resolution, tasks with completion status, and metadata.
-- **Smart Plan Selection**: Find the next ready plan (status pending with all dependencies complete) using `--next` flag on `show`, `agent`, and `run` commands.
-- **Dependency-Based Execution**: Use `--next-ready <parentPlan>` to automatically find and execute the next actionable dependency in complex multi-phase projects, with intelligent prioritization and comprehensive error feedback.
-- **Flexible Input**: Accept plans from files, editor input, or clipboard, and output results to files or stdout.
-- **Workspace Auto-Creation**: Automatically create isolated workspaces (Git clones or worktrees) for each task, ensuring clean execution environments.
-- **Manual Workspace Management**: Use the `workspace add` command to explicitly create workspaces with or without plan associations, and `workspace list` to view all workspaces and their lock status.
-- **MCP Server Mode**: Run `rmplan mcp-server` to expose prompts and tools over the Model Context Protocol for interactive plan research and generation.
-
-### Usage
-
-The general usage pattern is that you will:
-
-1. Use the `generate` command to generate a planning prompt. Pass `rmfilter` arguments after a `--` to add the appropriate files to
-   inform the generation.
-2. Paste the output of that into a language model. As of April 2025, Google Gemini 2.5 Pro is probably the best choice.
-3. Copy its output to the clipboard.
-4. Press enter to continue, which will extract the Markdown plan and write it as YAML. (You can also run the `extract` command directly to do this.)
-5. Use the `show` command to get the prompt for the next step(s).
-6. Run the prompt with whatever LLM or coding agent you prefer.
-7. Use the `done` command to mark the next step(s) as done and commit changes.
-
-### Multi-Workspace Workflows
-
-rmplan supports multiple active clones of the same repository by storing plan assignments in a shared configuration directory. Plan claims are keyed by UUID and include the workspace path and user identity so each checkout only surfaces the plans it owns.
-
-- Use `rmplan claim <plan>` (or rely on the built-in auto-claim in `rmplan generate`, `rmplan agent`, and `rmplan run`) to associate the current workspace with a plan.
-- `rmplan ready` shows plans claimed by the current workspace together with unassigned plans; add `--all`, `--unassigned`, or `--user <name>` to adjust the view.
-- Release finished plans with `rmplan release <plan>`; add `--reset-status` to move them back to `pending`.
-- Inspect and clean shared assignments with `rmplan assignments list`, `rmplan assignments show-conflicts`, and `rmplan assignments clean-stale`.
-
-See [docs/multi-workspace-workflow.md](docs/multi-workspace-workflow.md) for a complete walkthrough, team coordination tips, and troubleshooting guidance.
-
-Then repeat steps 5 through 7 until the task is done.
-
-Alternatively, you can use the `agent` command (or its alias `run`) to automate steps 5 through 7, executing the plan step-by-step with LLM integration and automatic progress tracking.
-
-### Using with Claude Code
-
-The `generate` command supports a `--claude` flag that leverages Anthropic's Claude Code model for enhanced planning and generation capabilities. This feature uses a three-step invocation process that preserves Claude's research notes:
-
-1. **Planning Phase**: Claude Code analyzes the task and drafts an execution approach.
-2. **Research Capture**: The same session summarizes key findings, which rmplan appends to the plan file under a `## Research` heading in the `details` field.
-3. **Generation Phase**: Claude Code produces the final structured plan output using the accumulated context.
-
-If the research capture step fails for any reason, the orchestrator falls back to the planning → generation flow so existing automation keeps working.
-
-**Requirements**: The `claude-code` CLI tool must be installed and available in your system's PATH.
-
-**Examples**:
-
-```bash
-# Generate a plan using Claude Code instead of the default model
-rmplan generate --plan tasks/feature.md --claude -- src/**/*.ts
-
-# Generate from a GitHub issue using Claude Code
-rmplan generate --issue 42 --claude -- src/api/**/*.ts
-
-# You can combine with other options as usual
-rmplan generate --plan-editor --claude --commit -- src/**/*.ts
-```
-
-#### Blocking Subissues
-
-Add the `--with-blocking-subissues` flag when you want the agent to surface and schedule prerequisite work before planning the main implementation. In Claude mode, the orchestrator instructs the model to run `rmplan add` for each blocker, automatically setting `--parent`, `--discovered-from`, and any inter-blocker dependencies.
-
-```bash
-# Generate plan 42, asking Claude Code to create prerequisite plans first
-rmplan generate 42 --claude --with-blocking-subissues
-```
-
-When blockers are discovered, Claude summarizes them ahead of the main output using the shared template:
-
-```markdown
-## Blocking Subissue: Set up authentication infrastructure
-
-- Priority: high
-- Reason: The main tasks require auth middleware which doesn't exist yet
-- Tasks:
-  1. Install passport.js and configure strategies
-  2. Create auth middleware
-  3. Add user session management
-```
-
-Each generated blocker becomes a child of the parent plan and is added to its dependency list, enforcing the correct execution order. The CLI reports the new plans so you can jump straight into them:
-
-```
-✓ Created 2 blocking plans: #143 Set up authentication infrastructure, #144 Research rate limiting approaches
-```
-
-If you enable the flag outside of Claude mode the prompts are still augmented, but you will need to create the blocking plans manually.
-
-### MCP server mode
-
-`rmplan` includes an MCP server that exposes the interactive generate workflow to MCP-compatible clients. Launch it with:
-
-```bash
-rmplan mcp-server --mode generate
-```
-
-The server communicates over stdio by default. To expose an HTTP streaming endpoint instead, pass `--transport http --port <port>`. The command respects the global `--config` flag so you can point it at a specific `rmplan` configuration file when starting the server.
-
-The generate mode publishes three prompts and several tools:
-
-- **Prompts**
-  - `perform-research` – loads the plan and returns the standard research template so the client can capture findings under `## Research`.
-  - `plan-questions` – shares plan context and instructs the model to ask focused, iterative questions that move the plan forward.
-  - `compact-plan` – loads a completed plan (status `done`, `cancelled`, or `deferred`), builds the compaction YAML prompt, and reminds the model to share the condensed output with a human for review before applying it.
-- **Tools**
-  - `generate-plan-tasks` – builds the full planning prompt for the target plan. When `planning.direct_mode` is enabled (or the tool input sets `direct: true`), the tool calls the configured model directly and streams the generated tasks back. Otherwise it returns the prompt text so the client can run it manually.
-  - `append-plan-research` – appends research Markdown to the plan’s `details` field under the `## Research` heading, creating the section if needed.
-  - `add-plan-task` – creates a new pending task inside an existing plan. Parameters: `plan`, `title`, and `description`, plus optional `files` and `docs` arrays for related paths. The handler normalizes list entries to avoid duplicates.
-  - `remove-plan-task` – deletes a single task identified by either `taskTitle` (partial, case-insensitive match) or `taskIndex` (0-based). Provide exactly one selector; prefer `taskTitle` so workflows stay stable when indices shift after deletion. The response includes a warning when later indices move.
-
-Plan arguments accept either a numeric ID (resolved via the configured tasks directory) or an explicit file path, matching the rest of the `rmplan` CLI.
-
-The `--claude` flag works seamlessly with all other options for both commands. When not specified, the commands use their default behavior of calling the configured LLM directly.
-
-When the research capture step runs, open the plan file and scroll to the `## Research` section in the `details` markdown to review Claude's investigation notes. These entries are timestamped and persist through subsequent plan edits.
-
-### Additional Commands
-
-- `rmplan add-task <plan>` – Append a new pending task to an existing plan without editing YAML manually.
-- `rmplan remove-task <plan>` – Remove a task by title, index, or interactive selection (title matching is recommended to avoid index drift).
-
-The `add` command allows you to quickly create new plan stub files with just a title. These stubs can then be populated with detailed tasks using the `generate` command. This is particularly useful when you want to quickly capture ideas for future work or create a set of related plans with proper dependencies.
-
-The `split` command helps manage complexity by using an LLM to intelligently break down a large, detailed plan into multiple smaller, phase-based plans. Each phase becomes a separate plan file with proper dependencies, allowing you to tackle complex projects incrementally while maintaining the full context and details from the original plan.
-
-The `add-task` command appends a new task to an existing plan. Supply `--title` together with either `--description` or `--editor` when running non-interactively, or pass `--interactive` to walk through prompts for the title, description, and optional metadata. Use `--files` and `--docs` to record related paths so new tasks match the format of the rest of the plan. The command normalizes file and doc lists so repeated values collapse automatically.
-
-The `remove-task` command deletes exactly one task from a plan by zero-based index, partial title match, or an interactive picker. Prefer `--title` whenever possible so scripts remain stable across edits—indices shift immediately after removal. Choose a single selection mode via `--index`, `--title`, or `--interactive`, and add `--yes` to skip the confirmation prompt when scripting. The CLI prints a warning whenever a removal affects later indices.
-
-#### Task management workflows
-
-```bash
-# Add a task
-rmplan add-task 42 --title "Add tests" --description "Add unit tests for new feature"
-
-# Remove a task by title (recommended)
-rmplan remove-task 42 --title "Add tests"
-
-# Interactive task management
-rmplan add-task 42 --interactive
-rmplan remove-task 42 --interactive
-```
-
-**Note**: When working with plan files, you can use either the file path (e.g., `plan.yml`) or the plan ID (e.g., `123`) for commands like `done`, `agent`, `run`, and `show`. The plan ID is found in the `id` field of the YAML file and rmplan will automatically search for matching plans in the configured tasks directory.
-
-Run `rmplan` with different commands to manage project plans:
-
-````bash
-# Generate a plan from a text file and pass extra args to rmfilter
-rmplan generate --plan plan.txt -- src/**/*.ts --grep auth
-
-# Open an editor to write a plan and generate a prompt, and include apps/web as context
-rmplan generate --plan-editor -- apps/web
-
-# Generate a plan from a GitHub issue. This assumes you have a GitHub token set in the GITHUB_TOKEN environment variable
-rmplan generate --issue https://github.com/dimfeld/llmutils/issues/28
-
-# Generate a plan from the GitHub issue for this repository with this number
-rmplan generate --issue 28
-
-# Generate a plan and commit the resulting YAML file
-rmplan generate --plan plan.txt --commit -- src/**/*.ts
-
-# Start the MCP server for interactive plan generation
-rmplan mcp-server --mode generate
-
-# Import GitHub issues as stub plan files
-# Import a specific issue by number or URL
-rmplan import --issue 123
-rmplan import --issue https://github.com/owner/repo/issues/456
-
-# Interactive mode to select and import multiple issues
-rmplan import
-
-# Import with custom output location
-rmplan import --issue 123 --output custom-tasks/feature-123.yml
-
-# Extract and validate a plan from a file
-rmplan extract output.txt --output plan.yml
-
-# Extract a plan from clipboard or stdin. Write to stdout
-rmplan extract
-
-# Show detailed information about a plan
-rmplan show plan.yml
-
-# Show the next ready plan
-rmplan show --next
-
-# Mark a task as done and commit changes
-rmplan done plan.yml --commit
-
-# You can also use plan IDs instead of file paths
-rmplan done my-feature-123 --commit
-
-# Create a new plan stub file with a title and optional metadata
-rmplan add "Implement OAuth authentication" --output tasks/oauth-auth.yml
-
-# Create a plan with dependencies
-rmplan add "Add user roles" --depends-on oauth-auth --output tasks/user-roles.yml
-
-# Create a high-priority plan and open in editor
-rmplan add "Fix security vulnerability" --priority high --edit
-
-# Set or update plan metadata and relationships
-rmplan set plan.yml --parent parent-plan-123 --priority high --status in_progress
-
-# Change a plan's parent (automatically updates both old and new parent dependencies)
-rmplan set plan.yml --parent new-parent-plan
-
-# Remove a parent relationship (automatically removes child from parent's dependencies)
-rmplan set plan.yml --no-parent
-
-# Update plan properties using plan ID instead of file path
-rmplan set my-feature-123 --status done --priority medium
-
-# Split a large plan into phase-based plans using an LLM
-rmplan split tasks/large-feature.yml --output-dir ./feature-phases
-
-# Split and include specific documentation for context
-rmplan split tasks/complex-refactor.yml --output-dir ./refactor-phases -- docs/architecture.md
-
-# Append a task to a plan and open your editor for the description
-rmplan add-task tasks/feature.yml --title "Review audit logs" --editor
-
-# Quickly add a pending task with inline metadata
-rmplan add-task tasks/feature.yml --title "Write smoke tests" --description "Cover sign-in and billing paths" --files src/auth.ts tests/smoke.test.ts
-
-# Remove a task by its title (partial match; confirms before deleting)
-rmplan remove-task tasks/feature.yml --title "Write smoke tests"
-
-# Remove a task by index (0-based) without confirmation
-rmplan remove-task tasks/feature.yml --index 2 --yes
-
-# Remove tasks using the interactive selector when you are unsure of the index
-rmplan remove-task tasks/feature.yml --interactive
-
-# List all plan files in the tasks directory (shows pending and in_progress by default)
-rmplan list
-
-# List all plans including completed ones
-rmplan list --all
-
-# List only plans with specific statuses
-rmplan list --status done
-rmplan list --status pending in_progress
-
-# List plans with custom sorting
-rmplan list --sort status --reverse
-
-# List plans from a specific directory
-rmplan list --dir ./my-plans
-
-# Show all ready plans (default: list format)
+# 1. Generate a plan from a GitHub issue
+rmplan generate --issue 123 -- src/api/**/*.ts
+# Claude Code analyzes the issue, researches the codebase, and creates a detailed plan
+# Research findings are saved to the plan's ## Research section
+# Plan saved to tasks/123-feature-name.yml
+
+# 2. Review the generated plan
+rmplan show 123
+# Shows: title, goal, status, tasks, latest progress notes
+
+# 3. Execute the plan automatically
+rmplan agent 123 --executor claude-code
+# Creates isolated workspace
+# Executes each task with LLM
+# Runs tests and formatting
+# Commits changes
+# Tracks progress notes
+
+# 4. Track progress
+rmplan show 123 --short
+# Quick view of status and latest activity
+
+# 5. List all ready plans
 rmplan ready
+# Shows plans with all dependencies satisfied
+```
 
-# Show only pending (exclude in_progress)
-rmplan ready --pending-only
+**Alternative workflow with MCP:**
 
-# Filter by priority
-rmplan ready --priority high
+If you're using Claude Code or another MCP-compatible client:
 
-# Different output formats
-rmplan ready --format table
-rmplan ready --format json
+```bash
+# Start the MCP server
+rmplan mcp-server --mode generate
 
-# Sort options
-rmplan ready --sort id
-rmplan ready --sort title
-rmplan ready --reverse
+# In your MCP client (e.g., Claude Code):
+# 1. Use "generate-plan" prompt with plan ID 123
+# 2. Claude researches, generates tasks interactively, and updates the plan
+```
 
-# Verbose output (shows file paths)
-rmplan ready -v
+---
 
-# Show detailed information about a plan
-rmplan show plan.yml
+## Plan Structure
 
-# Show plan information using its ID
-rmplan show my-feature-123
+Plans are stored as YAML files with Markdown content (`.plan.md` or `.yml`):
 
-# Show a condensed summary with just status, latest note, and task titles
-rmplan show my-feature-123 --short
+```yaml
+---
+# Core Metadata
+title: Implement user authentication
+goal: Add secure user login and session management
+id: 123                          # Numeric ID for easy reference
+uuid: abc-def-123                # Stable unique identifier
+status: in_progress              # pending|in_progress|done|cancelled|deferred
+priority: high                   # low|medium|high|urgent|maybe
+simple: false                    # If true, skip research phase
 
-# Show the next plan that is ready to be implemented
-rmplan show --next
+# Relationships
+parent: 100                      # Parent plan ID
+dependencies: [101, 102]         # Must complete these first
+discoveredFrom: 99               # Plan that discovered the need for this one
 
-# Show the next ready dependency of a parent plan
-rmplan show --next-ready 100
+# Tasks
+tasks:
+  - title: Set up authentication middleware
+    description: |
+      Create Express middleware for JWT validation
+      Include token refresh logic
+    done: false
 
-# Automatically execute steps in a plan, choosing a specific model
-rmplan agent plan.yml --model google/gemini-2.5-flash-preview-05-20
-# Or use the 'run' alias
-rmplan run plan.yml --model google/gemini-2.5-flash-preview-05-20
+  - title: Add login endpoint
+    description: |
+      POST /api/login endpoint
+      Return JWT token on successful auth
+    done: false
 
-# Execute a specific number of steps automatically
-rmplan agent plan.yml --steps 3
+# Metadata
+issue:
+  - https://github.com/user/repo/issues/123
+assignedTo: alice
+docs:
+  - docs/security-policy.md
 
-# Execute the next ready plan (pending with all dependencies complete)
+# Timestamps
+createdAt: 2025-01-15T10:00:00Z
+updatedAt: 2025-01-15T14:30:00Z
+planGeneratedAt: 2025-01-15T10:15:00Z
+
+# Progress Tracking
+progressNotes:
+  - timestamp: 2025-01-15T12:00:00Z
+    source: "implementer: Set up auth middleware"
+    text: "Completed middleware implementation, added tests"
+---
+
+<!-- Optional manual content -->
+
+<!-- rmplan-generated-start -->
+# Implementation Plan
+
+## Overview
+This plan implements user authentication using JWT tokens...
+
+## Research
+- Reviewed existing session management in src/sessions/
+- Found passport.js already configured
+- Need to integrate with existing user model
+
+<!-- rmplan-generated-end -->
+```
+
+**Key Concepts:**
+
+- **Delimiters**: `<!-- rmplan-generated-start/end -->` preserve AI-generated content while allowing manual edits outside
+- **UUID References**: Plans can reference each other by UUID for stable cross-references
+- **Progress Notes**: Timestamped notes from agents or manual updates, shown in CLI and included in prompts
+- **Status Flow**: `pending` → `in_progress` → `done` (or `cancelled`/`deferred`)
+
+---
+
+## Core Commands
+
+### generate - Create Plans
+
+Generate detailed implementation plans from various sources.
+
+**Basic usage:**
+
+```bash
+# From a GitHub issue (automatically fetches issue details)
+rmplan generate --issue 123 -- src/**/*.ts
+
+# From a text file describing the feature
+rmplan generate --plan tasks/feature-description.md -- src/api/**/*.ts
+
+# Using your editor to write the description
+rmplan generate --plan-editor -- src/**/*.ts
+
+# From a Linear issue (requires issueTracker: 'linear' in config)
+rmplan generate --issue TEAM-456 -- src/**/*.ts
+
+# Generate for existing stub plan
+rmplan generate 123 -- src/**/*.ts
+```
+
+**Generation modes:**
+
+```bash
+# Claude Code mode (default - best results)
+rmplan generate --issue 123 --claude -- src/**/*.ts
+# Three-phase process:
+# 1. Planning: Claude analyzes and drafts approach
+# 2. Research: Captures findings to ## Research section
+# 3. Generation: Produces structured tasks
+
+# Simple mode (skip research for quick fixes)
+rmplan generate --issue 123 --simple -- src/**/*.ts
+
+# Direct API mode (uses configured LLM directly)
+rmplan generate --issue 123 --direct -- src/**/*.ts
+```
+
+**Advanced features:**
+
+```bash
+# Discover and create blocking subissues first
+rmplan generate 42 --claude --with-blocking-subissues
+# Creates prerequisite plans automatically
+# Sets up proper parent/dependency relationships
+# Example output:
+# ✓ Created 2 blocking plans: #143 Auth infrastructure, #144 Rate limiting
+
+# Generate for next ready dependency
+rmplan generate --next-ready 100 -- src/**/*.ts
+# Finds next actionable child plan of plan 100
+
+# Auto-commit the generated plan
+rmplan generate --issue 123 --commit -- src/**/*.ts
+```
+
+**How it works:**
+
+1. Loads issue/description and any existing plan stub
+2. If needed, runs `rmfilter` with provided arguments to gather code context. Claude Code and Codex modes skip this
+   step.
+3. Calls LLM (via executor: Claude Code, Codex, direct API, or clipboard)
+4. Extracts YAML plan from response
+5. Writes plan file to configured tasks directory
+6. Optionally commits changes
+
+**Research Phase:**
+
+In Claude Code mode (default), the research phase:
+- Investigates the codebase structure
+- Identifies relevant patterns and dependencies
+- Documents findings in the plan's `## Research` section
+- Provides context for task generation
+
+Skip research with `--simple` when:
+- Making trivial changes
+- Plan already has extensive research
+- Time is critical
+
+---
+
+### agent/run - Execute Plans
+
+Automated execution of plans with LLM integration.
+
+**Basic usage:**
+
+```bash
+# Execute a specific plan
+rmplan agent 123
+
+# Execute using 'run' alias
+rmplan run 123
+
+# Execute next ready plan (all dependencies done)
 rmplan agent --next
-# Or using the run alias
-rmplan run --next
 
-# Execute plan with auto-created workspace
-rmplan agent plan.yml --workspace task-123
+# Execute with specific executor
+rmplan agent 123 --executor claude-code
+```
 
-# You can also use plan IDs instead of file paths
-rmplan agent my-feature-123 --steps 3
+**Execution modes:**
 
-# Run a streamlined implement → verify loop instead of the full review cycle
-rmplan agent plan.yml --simple
+```bash
+# Batch mode (default) - all tasks in parallel
+rmplan agent 123
 
-### Simple Mode (--simple)
+# Serial mode - one task at a time
+rmplan agent 123 --serial-tasks
 
-Add `--simple` when a task only needs a fast implementation pass plus automated verification. In simple mode the executors skip the three-phase implement → test → review loop and instead run an implementer agent followed immediately by a verifier agent. The verifier is responsible for type-checking, linting, and testing (`bun run check`, `bun run lint`, and `bun test`) and for adding or updating tests if the change would otherwise land without coverage. Failures from the verifier stop the run and surface in the same structured failure report used for other agents.
+# Simple mode - skip full review cycle
+rmplan agent 123 --simple
+# Flow: implement → verify (type check, lint, test)
+# Instead of: implement → test → review
 
-Simple mode works with both Claude Code and Codex CLI executors. You can enable it ad hoc with `--simple`, or set `executors.<name>.simpleMode: true` in `rmplan.yaml` to make the streamlined flow the default for a specific executor. The flag composes with other options such as `--batch`/`--serial-tasks`, `--dry-run`, and workspace selection so you can keep the same workflows while shortening straightforward iterations.
+# Limit execution to N steps
+rmplan agent 123 --steps 3
+```
 
-### Execution Summaries
+**Workspace integration:**
 
-`rmplan run` and `rmplan agent` produce an execution summary at the end of a run, aggregating step outputs, status, file changes, and timing.
+```bash
+# Auto workspace (finds or creates)
+rmplan agent 123 --auto-workspace
 
-- Flags: use `--no-summary` to disable; `--summary-file <path>` to write to a file instead of stdout.
-- Env: `RMPLAN_SUMMARY_ENABLED=0` disables summaries by default. CLI flags take precedence for disabling when enabled (for example, `--no-summary` overrides `RMPLAN_SUMMARY_ENABLED=true`). When summaries are disabled by the environment, passing `--summary-file` does not force-enable summaries; unset the env var or set it to `1/true` to enable.
-- Early validation: if a plan fails schema validation before execution starts, no summary is produced.
-- Executors: Claude Code and Codex CLI have tailored parsing; other executors contribute raw text (or none) and are still listed.
+# Manual workspace selection
+rmplan agent 123 --workspace feature-xyz
 
-Example (abbreviated):
+# Agent command handles:
+# - Creating isolated git clone
+# - Checking out appropriate branch
+# - Running post-clone commands (npm install, etc.)
+# - Locking workspace during execution
+# - Releasing lock on completion
+```
 
-```text
-Execution Summary: My Plan Title (3/3 • 100%)
+**Execution flow:**
+
+For each task/step:
+1. **Build prompt**: Runs `rmfilter` with configured context
+2. **Execute**: Sends to LLM via executor (Claude Code, Codex CLI, etc.)
+3. **Post-apply**: Runs formatting, linting, tests
+4. **Mark done**: Updates task status
+5. **Commit**: Commits changes with descriptive message
+6. **Progress note**: Records completion with timestamp
+
+Stops on:
+- Executor failure
+- Post-apply command failure (unless `allowFailure: true`)
+- All tasks complete
+
+**Execution summaries:**
+
+Enabled by default, shows:
+- Steps executed and status
+- File changes
+- Timing information
+- Error details
+
+```bash
+# Disable summary
+rmplan agent 123 --no-summary
+
+# Write summary to file
+rmplan agent 123 --summary-file report.txt
+```
+
+**Example output:**
+
+```
+Execution Summary: Implement authentication (3/3 • 100%)
 ┌───────────────┬────────────────┐
 │ Plan ID       │ 123            │
 │ Mode          │ serial         │
@@ -640,1291 +390,1224 @@ Execution Summary: My Plan Title (3/3 • 100%)
 └───────────────┴────────────────┘
 
 Step Results
-✔ Task 1 (codex-cli) [#1] 12s
-…
+✔ Set up middleware (claude-code) [#1] 24s
+✔ Add login endpoint (claude-code) [#2] 31s
+✔ Add tests (claude-code) [#3] 17s
 
 File Changes
-• tasks/123-some-plan.yml
-• src/feature/new.ts
+• tasks/123-implement-auth.plan.md
+• src/middleware/auth.ts
+• src/routes/auth.ts
+• tests/auth.test.ts
 ```
 
-Error example (abbreviated):
+---
 
-```text
-Execution Summary: Plan With Failures (1/2 • 50%)
-┌───────────────┬────────────────┐
-│ Steps Executed│ 2              │
-│ Failed Steps  │ 1              │
-└───────────────┴────────────────┘
+### add - Create Plan Stubs
 
-Step Results
-✔ Step 1 (claude-code) [#1] 12s
-…
-
-✖ Step 2 (claude-code) [#2] 23s
-Error: executor boom
-```
-
-See CLAUDE.md for more details about what’s captured and configuration options.
-
-# Executor Failure Handling
-
-When an executor (Claude Code or Codex CLI) encounters conflicting or impossible requirements it cannot safely resolve, it fails fast instead of attempting an incorrect implementation.
-
-Protocol and behavior:
-
-- Agents emit a line starting with `FAILED:` as the first non-empty line of the final message, followed by a concise summary.
-- A structured report should follow, with these sections when possible:
-  - Requirements: what was being attempted
-  - Problems: why the requirements are conflicting or impossible
-  - Possible solutions: suggested next steps to resolve
-- Executors detect the `FAILED:` protocol and return a structured failure result.
-- rmplan’s main agent loop stops immediately on failure, prints a summary, and exits with a non‑zero status code.
-- Tasks are not marked as done when a failure occurs.
-- Execution summaries (when enabled) capture the failure details and source agent.
-
-Example:
-
-```
-FAILED: Implementer cannot proceed due to mutually exclusive API shapes
-
-Requirements:
-- /v1/items returns an array of Item
-- Keep legacy map<string, Item> shape for compatibility
-
-Problems:
-- Response formats are mutually exclusive for a single endpoint
-
-Possible solutions:
-- Clarify expected shape and accept a breaking change, or
-- Add versioned endpoint /v2/items with the new array format
-```
-
-Notes:
-
-- The Claude orchestrator monitors implementer/tester/reviewer output and propagates failures.
-- The Codex fixer also participates in this protocol; failures short‑circuit the fix loop and skip auto‑marking tasks as done.
-
-# Clean up end-of-line comments from changed files (by git diff, jj diff)
-
-rmplan cleanup
-
-# Cleanup end-of-line comments in all files modified compared to a base branch
-
-rmplan cleanup --diff-from main
-
-# Clean up end-of-line comments from specific files
-
-rmplan cleanup src/lib/utils.ts src/components/Button.svelte
-
-# Answer PR review comments, automatically detecting the current PR
-
-rmplan answer-pr
-
-# Answer PR review comments for a specific PR
-
-rmplan answer-pr dimfeld/llmutils#82
-
-# List all workspaces and their lock status
-
-rmplan workspace list
-
-# List workspaces for a specific repository
-
-rmplan workspace list --repo https://github.com/dimfeld/llmutils.git
-
-# Create a new workspace without associating it with a plan
-
-rmplan workspace add
-
-# Create a workspace with a specific ID
-
-rmplan workspace add --id my-custom-ws
-
-# Create a workspace and associate it with a plan by file path
-
-rmplan workspace add path/to/my-plan.yml
-
-# Create a workspace with a plan by ID and a custom workspace ID
-
-rmplan workspace add my-plan-id --id my-dev-space
-
-# Validate all plan files for schema and parent-child relationship consistency
-
-rmplan validate
-
-# Validate specific plan files
-
-rmplan validate tasks/feature-1.yml tasks/feature-2.yml
-
-# Validate with detailed output showing what was checked and fixed
-
-rmplan validate --verbose
-
-# Validate without auto-fixing inconsistencies (report-only mode)
-
-rmplan validate --no-fix
-
-````
-
-### `rmplan ready`
-
-List all plans that are ready to execute - plans with status `pending` or `in_progress` that have all dependencies completed.
+Quickly create plan stub files for future work.
 
 **Basic usage:**
 
 ```bash
-# Show all ready plans (default: list format)
+# Create basic stub
+rmplan add "Implement OAuth authentication"
+# Creates tasks/<id>-implement-oauth-authentication.yml
+
+# Specify output location
+rmplan add "Add logging system" --output tasks/logging.yml
+
+# With priority
+rmplan add "Fix security issue" --priority high
+
+# Simple plan (skip research phase)
+rmplan add "Quick refactor" --simple
+```
+
+**With relationships:**
+
+```bash
+# Set parent plan
+rmplan add "Add user roles" --parent 100
+
+# Set dependencies
+rmplan add "Integration tests" --depends-on 101,102
+
+# Mark as discovered from another plan
+rmplan add "Refactor auth" --discovered-from 99
+```
+
+**Open in editor:**
+
+```bash
+# Create and immediately edit
+rmplan add "Complex feature" --edit
+```
+
+**Use cases:**
+
+- Capture ideas during review/planning
+- Create placeholders for blocking issues
+- Set up plan hierarchy before generating details
+- Quick task creation for known work
+
+**Next step:**
+
+After creating stubs, use `rmplan generate <id>` to add detailed tasks.
+
+---
+
+### show - View Plan Details
+
+Display plan information, status, and tasks.
+
+**Basic usage:**
+
+```bash
+# Show specific plan
+rmplan show 123
+
+# Show by file path
+rmplan show tasks/feature.yml
+
+# Short summary (status + latest note + task titles only)
+rmplan show 123 --short
+```
+
+**Plan discovery:**
+
+```bash
+# Show next ready plan (status pending, all deps done)
+rmplan show --next
+
+# Show next ready dependency of parent plan
+rmplan show --next-ready 100
+```
+
+**Full details:**
+
+```bash
+# Show all progress notes (not just latest 10)
+rmplan show 123 --full
+```
+
+**Example output:**
+
+```
+Plan #123: Implement user authentication
+═══════════════════════════════════════
+
+Status: in_progress  Priority: high  Simple: false
+Parent: #100 (User management system)
+Dependencies: #101 (Database schema) ✓ done
+              #102 (Session storage) ✓ done
+
+Goal:
+Add secure user login and session management
+
+Latest Progress Note (2025-01-15 12:00):
+[implementer: Set up auth middleware] Completed middleware implementation, added tests
+
+Tasks (2/3 done):
+✓ 1. Set up authentication middleware
+✓ 2. Add login endpoint
+  3. Add integration tests
+
+Files: src/middleware/auth.ts, src/routes/auth.ts
+Docs: docs/security-policy.md
+
+Created: 2025-01-15 10:00
+Updated: 2025-01-15 14:30
+```
+
+---
+
+### ready - List Ready Plans
+
+Show all plans ready to execute (dependencies satisfied).
+
+**Basic usage:**
+
+```bash
+# List all ready plans
 rmplan ready
 
-# Show only pending (exclude in_progress)
+# Pending only (exclude in_progress)
 rmplan ready --pending-only
 
 # Filter by priority
 rmplan ready --priority high
-
-# Different output formats
-rmplan ready --format table
-rmplan ready --format json
-
-# Sort options
-rmplan ready --sort id
-rmplan ready --sort title
-rmplan ready --reverse
-
-# Verbose output (shows file paths)
-rmplan ready -v
+rmplan ready --priority urgent
 ```
 
-**Output Formats:**
+**Output formats:**
 
-- **list** (default): Human-friendly colored output with detailed plan information
-- **table**: Compact table view similar to `rmplan list`
-- **json**: Structured JSON for programmatic consumption
+```bash
+# List format (default, colorful and detailed)
+rmplan ready
 
-**Readiness Criteria:**
+# Table format (compact)
+rmplan ready --format table
 
-A plan is considered ready when:
+# JSON (for scripting)
+rmplan ready --format json
+```
 
+**Sorting:**
+
+```bash
+# Sort by priority (default)
+rmplan ready
+
+# Sort by ID
+rmplan ready --sort id
+
+# Sort by title
+rmplan ready --sort title
+
+# Reverse order
+rmplan ready --reverse
+```
+
+**Readiness criteria:**
+
+A plan is ready when:
 1. Status is `pending` or `in_progress`
-2. All dependencies (if any) have status `done`
+2. All dependencies have status `done`
+3. Priority is not `maybe`
 
-Note: Unlike `--next-ready` which focuses on plans with actionable tasks, `rmplan ready` includes stub plans without tasks. These plans are ready to have tasks generated via `rmplan generate` or the MCP `create-plan` tool.
+Note: Includes stub plans without tasks (ready for `rmplan generate`)
 
-**MCP Integration:**
+**Example output:**
 
-The `list-ready-plans` MCP tool provides programmatic access:
+```
+Ready Plans (4)
+══════════════
 
+[HIGH] #123 Implement authentication
+  Status: pending • Tasks: 0/3 • Dependencies: 2 done
+  Created: 2025-01-15
+
+[HIGH] #125 Add authorization middleware
+  Status: in_progress • Tasks: 1/2 • Dependencies: 1 done
+  Created: 2025-01-16
+
+[MEDIUM] #130 User profile endpoint
+  Status: pending • Tasks: 0/0 • Dependencies: none
+  Created: 2025-01-17
+
+[LOW] #145 Improve error messages
+  Status: pending • Tasks: 2/5 • Dependencies: 3 done
+  Created: 2025-01-18
+```
+
+**Workflow integration:**
+
+```bash
+# See what's ready
+rmplan ready
+
+# Execute next ready plan
+rmplan agent --next
+
+# Or execute specific ready plan
+rmplan agent 123
+```
+
+---
+
+## MCP Server
+
+The MCP (Model Context Protocol) server exposes rmplan functionality for AI agents like Claude Code, enabling interactive research, planning, and task management.
+
+### Prompts
+
+The server provides structured prompts that guide AI agents through rmplan workflows:
+
+**1. `generate-plan`** - Full planning workflow with research
+
+Loads a plan and guides through:
+- Planning phase: Analyze task and draft approach
+- Research phase: Investigate codebase and capture findings
+- Generation phase: Create structured tasks
+
+Research findings are automatically appended to the plan's `## Research` section.
+
+**2. `generate-plan-simple`** - Skip research, generate tasks directly
+
+Use when:
+- Making simple changes
+- Research already exists
+- Time is critical
+
+**3. `plan-questions`** - Collaborative refinement
+
+Ask focused questions to improve plan quality before generation.
+
+**4. `load-plan`** - Display plan and wait for guidance
+
+Shows plan details and waits for human instructions.
+
+**5. `compact-plan`** - Summarize completed plans
+
+For plans with status `done`, `cancelled`, or `deferred`:
+- Condenses generated sections
+- Summarizes research
+- Creates archival progress summary
+
+### Tools
+
+**Plan Management:**
+
+**`create-plan`** - Create new plan with metadata
 ```typescript
-// Returns JSON with ready plans
 {
-  "count": 3,
-  "plans": [
+  title: "Implement OAuth",
+  priority: "high",
+  parent: 100,
+  dependsOn: [101, 102],
+  simple: false
+}
+```
+
+**`get-plan`** - Retrieve plan by ID or path
+```typescript
+{ plan: "123" }  // or "tasks/feature.yml"
+```
+
+**`update-plan-tasks`** - Merge generated tasks into plan
+```typescript
+{
+  plan: "123",
+  title: "Updated title",
+  goal: "Refined goal",
+  details: "## Implementation notes\n...",
+  tasks: [
     {
-      "id": 42,
-      "title": "Add authentication",
-      "priority": "high",
-      "status": "pending",
-      "taskCount": 5,
-      "completedTasks": 2,
-      "dependencies": [38, 39],
-      ...
+      title: "Task 1",
+      description: "Details...",
+      done: false,
+      files: ["src/auth.ts"],
+      docs: ["docs/auth.md"]
     }
   ]
 }
 ```
 
-**Parameters:**
+**`update-plan-details`** - Update generated section content
+```typescript
+{
+  plan: "123",
+  details: "## New analysis\n...",
+  append: false  // true to append, false to replace
+}
+```
 
-- `priority`: Filter by priority level
-- `limit`: Maximum number of plans to return
-- `pendingOnly`: Exclude in_progress plans
-- `sortBy`: Sort field (priority, id, title, created, updated)
+**Task Management:**
 
-### Plan Validation
+**`manage-plan-task`** - Add, update, or remove tasks
 
-The `validate` command ensures the integrity of your plan files by checking both YAML schema compliance and parent-child relationship consistency. When child plans reference a parent but that parent doesn't include the child in its dependencies array, the validate command automatically fixes these inconsistencies by updating the parent plan files.
+Add task:
+```typescript
+{
+  plan: "123",
+  action: "add",
+  title: "Add validation",
+  description: "Validate user input...",
+  files: ["src/validators.ts"],
+  docs: ["docs/validation.md"]
+}
+```
 
-**Key validation features:**
+Update task (by title - recommended):
+```typescript
+{
+  plan: "123",
+  action: "update",
+  taskTitle: "Add validation",  // partial match, case-insensitive
+  description: "Updated description...",
+  done: true
+}
+```
 
-- **Schema Validation**: Verifies plan files conform to the expected YAML structure
-- **Parent-Child Consistency**: Ensures bidirectional relationships between parent and child plans
-- **Automatic Fixing**: Updates parent plans to include missing child dependencies
-- **Clear Reporting**: Shows which relationships were fixed and provides validation summaries
-- **Circular Dependency Prevention**: Detects and prevents circular references in the dependency graph
+Remove task:
+```typescript
+{
+  plan: "123",
+  action: "remove",
+  taskTitle: "Add validation"  // prefer title over index
+}
+```
 
-**Usage:**
+**Research:**
+
+**`append-plan-research`** - Add findings to ## Research section
+```typescript
+{
+  plan: "123",
+  research: "## Authentication Flow\n\nFound existing passport.js setup...",
+  timestamp: true  // optional, adds timestamp heading
+}
+```
+
+**Discovery:**
+
+**`list-ready-plans`** - Find executable plans
+```typescript
+{
+  pendingOnly: false,  // exclude in_progress
+  priority: "high",    // filter by priority
+  sortBy: "priority",  // or "id", "title", "created", "updated"
+  limit: 10
+}
+```
+
+Returns:
+```json
+{
+  "count": 3,
+  "plans": [
+    {
+      "id": 123,
+      "title": "Implement auth",
+      "priority": "high",
+      "status": "pending",
+      "taskCount": 3,
+      "completedTasks": 0,
+      "dependencies": [101, 102],
+      "filePath": "tasks/123-implement-auth.yml"
+    }
+  ]
+}
+```
+
+### Starting the Server
+
+**stdio transport (default):**
 
 ```bash
-# Validate all plan files in the tasks directory
-rmplan validate
-
-# Validate specific plan files
-rmplan validate tasks/feature-1.yml tasks/feature-2.yml
-
-# Validate and see detailed output
-rmplan validate --verbose
-
-# Validate without auto-fixing (report only)
-rmplan validate --no-fix
+rmplan mcp-server --mode generate
 ```
 
-When inconsistencies are found, the validate command will automatically update parent plan files and report what was changed, ensuring your project's dependency graph remains consistent and reliable.
-
-## Working with Plan Dependencies
-
-The `--next-ready` feature enables automated workflow management for complex, multi-phase projects by automatically finding the next actionable task in your dependency chain. This eliminates the need to manually track which plans are ready to work on, allowing you to focus on implementation rather than project coordination.
-
-### Overview
-
-When working with large projects, you often break work into phases with clear dependencies:
-
-- Phase 1: Database schema → Phase 2: API endpoints → Phase 3: Frontend components
-- Phase 4: Authentication (parallel to Phase 1) → Phase 5: Auth integration (depends on Phase 3 & 4)
-
-The `--next-ready` flag automatically traverses your dependency graph using breadth-first search to find the next plan that is ready to be implemented (all dependencies complete, has actionable tasks, appropriate priority).
-
-### Key Benefits
-
-- **Automated Discovery**: No manual tracking of which plans are ready
-- **Intelligent Prioritization**: Considers status, priority level, and plan ID for consistent ordering
-- **Comprehensive Feedback**: Clear explanations when no ready dependencies exist
-- **Seamless Integration**: Works with all existing rmplan commands and options
-
-### Usage Examples
-
-#### Basic Dependency Workflow
+**HTTP transport:**
 
 ```bash
-# Show the next ready dependency without executing
-rmplan show --next-ready 100
-# Output: Found ready plan: Database Schema Setup (ID: 101)
-
-# Generate planning prompt for the next ready dependency
-rmplan generate --next-ready 100 -- src/database/**/*.ts
-# Operates on plan 101 instead of 100
-
-# Execute the next ready dependency automatically
-rmplan agent --next-ready 100
-# or using the run alias
-rmplan run --next-ready 100
+rmplan mcp-server --mode generate --transport http --port 3000
 ```
 
-#### Integration with Existing Options
+**With custom config:**
 
 ```bash
-# Generate with file context and auto-commit
-rmplan generate --next-ready parent-plan --commit -- src/**/*.ts --grep auth
-
-# Execute with workspace isolation and specific step count
-rmplan agent --next-ready 100 --workspace feature-work --steps 2
-
-# Use Claude Code executor for the ready dependency
-rmplan run --next-ready 100 --executor claude-code --dry-run
+rmplan mcp-server --mode generate --config path/to/rmplan.yml
 ```
 
-#### Continuous Workflow
+**MCP Client Configuration:**
 
-```bash
-# 1. Start with parent plan containing dependencies
-rmplan show 100
-# Parent Plan: "User Authentication System" (5 dependencies)
+Add to your MCP client settings (e.g., Claude Code):
 
-# 2. Work on first ready dependency
-rmplan agent --next-ready 100
-# Executes: "Database Schema Setup" (ID: 101)
-
-# 3. After completion, next dependency becomes ready
-rmplan show --next-ready 100
-# Found ready plan: API Endpoints (ID: 102)
-
-# 4. Continue until all dependencies complete
-rmplan agent --next-ready 100
-# Executes: "API Endpoints" (ID: 102)
-
-# 5. Eventually returns to parent plan
-rmplan show --next-ready 100
-# All dependencies complete - ready to work on parent plan
+```json
+{
+  "mcpServers": {
+    "rmplan": {
+      "command": "rmplan",
+      "args": ["mcp-server", "--mode", "generate"]
+    }
+  }
+}
 ```
 
-### Error Handling and Feedback
+**Example Workflow:**
 
-The feature provides detailed guidance when dependencies aren't ready:
+1. Start server: `rmplan mcp-server --mode generate`
+2. In Claude Code or other MCP client:
+   - "Use the generate-plan prompt for plan 123"
+   - Claude researches codebase
+   - "Can you add a task for input validation?"
+   - Use `manage-plan-task` tool to add
+   - Review with `get-plan`
+3. Execute: `rmplan agent 123`
 
-```bash
-# No dependencies exist
-rmplan show --next-ready 100
-# → No dependencies found for this plan
+---
 
-# All dependencies complete
-rmplan show --next-ready 100
-# → All dependencies are complete - ready to work on the parent plan
+## Workspace Management
 
-# Dependencies need preparation
-rmplan show --next-ready 100
-# → 2 dependencies have no actionable tasks
-# → Try: Use 'rmplan generate' to add detailed tasks
+### Why Workspaces
 
-# Dependencies are blocked
-rmplan show --next-ready 100
-# → 3 dependencies are blocked by incomplete prerequisites
-# → Try: Work on the blocking dependencies first
+Workspaces isolate plan execution in dedicated git clones to avoid conflicts with your main development environment.
+
+**Benefits:**
+
+- **Safety**: No risk of breaking your working code
+- **Parallelization**: Execute multiple plans simultaneously
+- **Clean state**: Each plan starts with a fresh environment
+- **Experimentation**: Try approaches without affecting main branch
+- **Automatic setup**: Post-clone commands ensure dependencies are installed
+
+**Without workspaces:**
+```
+main-repo/        ← You're editing files here
+├── src/
+│   └── auth.ts   ← Agent might conflict with your changes
+└── tasks/
 ```
 
-### Organizing Plans for Dependencies
+**With workspaces:**
+```
+main-repo/        ← You keep working here safely
+└── tasks/
 
-To maximize effectiveness:
-
-**1. Clear Dependency Chains**
-
-```yaml
-# Child plans specify their dependencies
-id: 102
-title: 'API Endpoints'
-dependencies: [101] # Depends on Database Schema (101)
-parent: 100 # Part of larger feature (100)
+workspaces/
+├── task-123/     ← Agent works here
+│   ├── src/
+│   └── tasks/
+└── task-124/     ← Another agent works here
+    ├── src/
+    └── tasks/
 ```
 
-**2. Appropriate Priorities**
+### Workspace Configuration
 
-```yaml
-priority: high    # Critical path items
-priority: medium  # Normal implementation
-priority: low     # Nice-to-have features
-priority: maybe   # Optional (excluded from --next-ready)
-```
-
-### Debugging
-
-Use `--debug` to see detailed dependency discovery logging:
-
-```bash
-rmplan show --next-ready 100 --debug
-# Shows: BFS traversal, filtering decisions, readiness checks, sorting logic
-```
-
-#### Workspace Commands
-
-##### Workspace List
-
-The `workspace list` command displays all workspaces and their lock status for a repository. This helps you track which workspaces are in use and identify any stale locks.
-
-**Syntax:** `rmplan workspace list [--repo <url>]`
-
-**Options:**
-
-- `--repo <url>`: Filter by repository URL. If not specified, uses the current repository.
-
-**Output includes:**
-
-- Lock status (🔒 for locked, 🔓 for available)
-- Workspace path
-- Associated task ID
-- Branch name
-- Creation timestamp
-- For locked workspaces: PID, hostname, and lock age in hours
-
-##### Workspace Add
-
-The `workspace add` command allows you to manually create and initialize a new workspace. This provides explicit control over workspace creation, which is particularly useful when you want to set up a workspace environment before running an agent or for tasks not yet defined by a formal plan file.
-
-**Key Features:**
-
-- Create workspaces with or without associating them to a plan
-- Optionally specify a custom workspace ID
-- When a plan is associated, the plan's status is automatically updated to `in_progress` in both the original location and the new workspace
-- The plan file is copied into the new workspace when associated
-
-**Syntax:** `rmplan workspace add [planIdentifier] [--id <workspaceId>]`
-
-**Options:**
-
-- `planIdentifier` (optional): Can be either a plan ID or file path. If provided, the workspace will be associated with this plan.
-- `--id <workspaceId>` (optional): Specify a custom workspace ID. If not provided, a unique ID will be automatically generated.
-
-**Usage Examples:**
-
-```bash
-# Create a workspace without a plan
-rmplan workspace add
-
-# Create a workspace with a specific ID, no plan
-rmplan workspace add --id my-custom-ws
-
-# Create a workspace and associate it with a plan by file path
-rmplan workspace add path/to/my-plan.yml
-
-# Create a workspace with a plan by ID and a custom workspace ID
-rmplan workspace add my-plan-id --id my-dev-space
-```
-
-**Behavior:**
-
-- When no plan is specified, creates an empty workspace ready for manual use
-- When a plan is specified:
-  - The plan file is resolved (by ID or path)
-  - Its status is updated to `in_progress` in the current context
-  - The plan file is copied to the new workspace
-  - The plan's status in the new workspace is also set to `in_progress`
-- All workspaces are tracked in `~/.config/rmfilter/workspaces.json`
-
-#### Cleanup Command
-
-The `cleanup` command removes end-of-line comments (comments that appear after code on the same line) from files. It supports `.svelte`, `.js`, `.ts`, `.py`, and `.rs` files and is useful for removing redundant comments often added by LLMs, such as `// import x` after an import statement.
-
-By default, it processes all changed files in the current revision. You can use the `--diff-from` option to specify a different base for determining changed files.
-
-**Usage Examples:**
-
-```bash
-# Remove end-of-line comments from all changed files in the current revision
-rmplan cleanup
-
-# Remove end-of-line comments compared to a specific branch
-rmplan cleanup --diff-from feature-branch
-
-# Remove end-of-line comments from specific files
-rmplan cleanup src/lib/utils.ts src/components/Button.svelte
-```
-
-**Notes:**
-
-- The command only removes comments that appear after code on the same line, preserving standalone comment lines and empty lines.
-- Files must exist and have a supported extension to be processed.
-- Use `--diff-from` to specify a different base branch for determining changed files when no files are provided.
-
-#### Compact Command
-
-The `compact` command reduces the footprint of completed plans by collapsing verbose generated sections into concise summaries while preserving critical decisions and outcomes. It uses the configured LLM executor (Claude Code by default) to rewrite the content between the rmplan-generated delimiters, condense the `## Research` section, and replace progress notes with a single archival summary.
-
-**Usage Examples:**
-
-```bash
-# Compact a specific plan in place
-rmplan compact 144
-
-# Preview changes without writing to disk
-rmplan compact 144 --dry-run
-
-# Override executor and minimum age threshold
-rmplan compact tasks/144-old-plan-compaction.plan.md --executor direct-call --age 14 --yes
-```
-
-**Options:**
-
-- `--executor <name>` – Executor to use for the LLM call (default: `claude-code`)
-- `--model <model>` – Override the executor’s model
-- `--age <days>` – Minimum number of days since the plan was last updated before compaction (default configured in `rmplan.compaction.minimumAgeDays`, falling back to 30)
-- `--dry-run` – Generate the compacted content and display a size comparison without writing changes
-- `--yes` – Skip the confirmation prompt when applying changes
-
-**Behavior:**
-
-- Only `done`, `cancelled`, or `deferred` plans are eligible. Pending work is rejected.
-- Generated details are replaced via the rmplan delimiters, preserving any manual Markdown around them.
-- `## Research` is replaced with a distilled summary or created if it was missing.
-- Progress notes are replaced with a single timestamped summary note sourced from the compaction output.
-
-**Configuration:**
-
-Add a `compaction` block to your rmplan configuration to adjust defaults:
-
-```yaml
-compaction:
-  minimumAgeDays: 45
-  defaultExecutor: claude-code
-  defaultModel: anthropic/claude-3-5-sonnet
-```
-
-#### Progress Notes
-
-Record significant milestones, deviations, or discoveries during execution. Notes are timestamped and persisted in the plan file.
-
-Usage:
-
-```bash
-rmplan add-progress-note <planIdOrPath> --source "<agent>: <task>" "<note text>"
-```
-
-Examples:
-
-```bash
-rmplan add-progress-note 123 --source "implementer: Refactor API" "Finished initial refactor; updated API surface and tests"
-rmplan add-progress-note tasks/123-feature.plan.md --source "tester: Flaky Test Investigation" "Investigated flaky test; root cause is async race in setup"
-```
-
-Behavior:
-
-- `rmplan show` displays the latest 10 notes by default (use `--full` for all).
-- `rmplan list` shows a Notes column when any plan has notes.
-- Agent prompts include a “Progress Notes” section (timestamps omitted to reduce noise), limited to the last 50 notes with a summary line like "... and N more earlier note(s)" when older notes are hidden.
-- Set the `--source` value to identify the agent (implementer/tester/reviewer/human) and the specific task the note covers; this label is displayed in CLI output and agent prompts. Omitting the flag stores the note without origin metadata.
-
-### Requirements
-
-- Set the `GOOGLE_GENERATIVE_AI_API_KEY` environment variable to use the extract command.
-
-### Notes
-
-- The `--rmfilter` option requires additional arguments for `rmfilter` (passed after `--`).
-- Use `--previous` to include completed steps for context in the LLM prompt.
-- The `--commit` option supports both git and jj for version control.
-- The `agent` command automates step execution, using `rmfilter` to generate context, running the step with an LLM, and marking it as done with a commit. It stops on errors or when the plan is complete.
-
-### External Storage {#external-storage}
-
-When a repository does not include `.rmfilter/config/rmplan.yml`, `rmplan` automatically stores configuration and plan files in an external directory at `~/.config/rmfilter/repositories/<repository-name>/`. The repository name is derived from the `origin` remote when available and sanitized so the directory is filesystem-safe; repositories without remotes fall back to the Git root folder name.
-
-The external directory always contains:
-
-- `.rmfilter/config/rmplan.yml` — the repository-specific configuration file created on first use
-- `tasks/` — the plan directory where new plans are written and discovered
-
-On the first load in external-storage mode, `rmplan` prints a multi-line message describing the base directory, config file, plan directory, detected remote (listed as `host/owner/repository` with any credentials stripped), and how to opt-out. To disable external storage, create `.rmfilter/config/rmplan.yml` inside the repository; future runs will respect the in-repo config and stop using the external location.
-
-Claude Code and Codex executors automatically receive access to the external directory via `--add-dir` and sandbox writable-roots arguments, so agents can read and write the generated plans without additional configuration.
-
-#### Example Workflows
-
-- **Contribute to open source without committing plans**: When you clone a third-party repository without permission to add dotfiles, run `rmplan generate` or any other plan command normally. The first invocation seeds `~/.config/rmfilter/repositories/<host__owner__repo>/` and you can inspect the generated plans with `rmplan storage list --size` or open the tasks directory directly.
-- **Jump between client repositories**: Each remote gets its own sanitized directory name, so switching branches or repositories automatically reuses the correct external configuration. Use `rmplan storage list --json` to script against the stored metadata when you need to automate audits.
-- **Remove stale scratch data**: When you finish a contract or want to reclaim disk space, run `rmplan storage clean` to interactively select repositories to delete. Add `--dry-run` to preview the paths and `--force` only when you are sure a directory no longer contains plans you care about.
-
-### Configuration
-
-`rmplan` can be configured using a YAML file to customize its behavior.
-
-- **Location**: By default, `rmplan` looks for a configuration file at `.rmfilter/config/rmplan.yml` relative to the Git repository root.
-- **Override**: You can specify a different configuration file using the global `--config <path>` option.
-- **Schema**: The configuration format is defined by a JSON schema, available at `https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json`. You can reference this schema in your YAML file for editor support:
-  ```yaml
-  # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
-  ```
-
-#### Paths
-
-The `paths.tasks` setting allows you to specify the directory where the task documents are locations. This is used when automatically
-writing a plan from a GitHub issue.
-
-#### Documentation Search Paths
-
-The `paths.docs` setting allows you to specify additional directories where `rmfilter` should search for `.md` and `.mdc` documentation files to auto-include. This extends the default MDC file search behavior to include custom documentation directories.
-
-**Configuration in `rmplan.yml`:**
-
-```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
-
-paths:
-  docs:
-    - ./docs # Search in docs/ directory
-    - ./project-docs # Search in project-docs/ directory
-    - ../shared-docs # Can also reference directories outside the repo
-```
-
-**Key Features:**
-
-- **Automatic MDC/MD File Discovery**: Searches specified directories and their subdirectories for `.md` and `.mdc` files
-- **Frontmatter Support**: Files must have valid YAML frontmatter to be processed
-- **Grep Term Matching in Instructions**: MDC files with `grep` terms will now also match if those terms appear in the instructions passed to `rmfilter`, not just in source files
-- **Seamless Integration**: Works alongside the existing MDC file search in `.cursor/rules/` and `~/.config/rmfilter/rules/`
-
-**How It Works:**
-
-1. When `rmfilter` runs, it loads the rmplan configuration to find any configured docs paths
-2. It searches these directories for `.md` and `.mdc` files with frontmatter
-3. Files are filtered based on their frontmatter rules (globs, grep terms, alwaysApply)
-4. Grep terms are now matched against both:
-   - The instructions text provided to `rmfilter`
-   - The content of source files (as before)
-5. Matching documentation is included in the output
-
-This feature is particularly useful for:
-
-- Maintaining project-specific documentation that should be included based on the task at hand
-- Sharing documentation across multiple projects
-- Organizing documentation outside of the `.cursor` directory structure
-- Including relevant documentation when specific terms appear in your instructions
-
-#### Workspace Auto-Creation
-
-The `workspaceCreation` section allows you to configure how `rmplan agent` automatically creates isolated workspaces for tasks. This feature provides a clean, dedicated environment for each task execution, avoiding conflicts with other work in your main repository.
-
-**Configuration in `rmplan.yml`:**
+Configure in `.rmfilter/config/rmplan.yml`:
 
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
 
 workspaceCreation:
-  cloneMethod: 'cp' # or git/mac-cow
-  sourceDirectory: '/path/to/source/repo' # Required for cp/mac-cow
-  repositoryUrl: 'https://github.com/username/repo.git' # Optional, inferred if not specified
-  cloneLocation: '/path/to/workspaces' # Required: location for new workspaces
+  # How to create workspace copies
+  cloneMethod: cp           # cp | git | mac-cow
+
+  # Source directory (required for cp/mac-cow)
+  sourceDirectory: /home/user/projects/myapp
+
+  # Repository URL (auto-detected if omitted)
+  repositoryUrl: https://github.com/user/myapp.git
+
+  # Where to create workspaces (REQUIRED)
+  cloneLocation: /home/user/workspaces
+
+  # Extra files to copy (beyond git-tracked files)
   copyAdditionalGlobs:
-    - '.env.local' # Optional files to copy even if ignored by Git
+    - .env.local
+    - .env.development
+    - config/local.json
+
+  # Commands to run after creating workspace
   postCloneCommands:
-    - 'npm install'
-    - 'npm run build'
+    - npm install
+    - npm run build
+    - cp ../.env.local .
 ```
 
-**Key Features:**
+**Clone methods:**
 
-- **Automatic Workspace Management**:
-  - Automatically clones your repository
-  - Creates a task-specific branch
-  - Runs configurable post-clone commands
-  - Tracks workspaces in `~/.config/rmfilter/workspaces.json`
-- **Git-aware Copy Options** (cp/mac-cow):
-  - Copies only files tracked by Git, skipping `.gitignore` entries by default
-  - Use `copyAdditionalGlobs` to include extra files (e.g., local env files) when needed
+- **`cp`**: Fast copy of git-tracked files only
+  - Pros: Very fast, uses minimal disk space
+  - Cons: Requires source directory
 
-- **Required Configuration**:
-  - `cloneLocation` must be specified in the configuration
-  - Repository URL can be inferred from the current Git repository or explicitly set
+- **`git`**: Git worktree (shares .git directory)
+  - Pros: Efficient disk usage, shares git history
+  - Cons: Some operations affect all worktrees
+
+- **`mac-cow`**: macOS copy-on-write (APFS clones)
+  - Pros: Faster, shares unchanged files
+  - Cons: macOS only
+
+### Workspace Commands
+
+**Create workspace:**
+
+```bash
+# Create with plan association
+rmplan workspace add 123
+
+# Create with custom ID
+rmplan workspace add 123 --id feature-oauth
+
+# Create without plan (manual workspace)
+rmplan workspace add --id scratch-work
+```
+
+**List workspaces:**
+
+```bash
+# All workspaces for current repository
+rmplan workspace list
+
+# Specific repository
+rmplan workspace list --repo https://github.com/user/repo.git
+```
+
+Example output:
+```
+Workspaces for github.com/user/repo
+
+🔒 /home/user/workspaces/task-123
+   Task: 123 • Branch: task-123
+   Locked by PID 12345 on hostname (2h ago)
+   Created: 2025-01-15 10:00
+
+🔓 /home/user/workspaces/task-124
+   Task: 124 • Branch: task-124
+   Available
+   Created: 2025-01-15 11:30
+```
+
+**Using workspaces with agent:**
+
+```bash
+# Auto workspace (finds unlocked or creates new)
+rmplan agent 123 --auto-workspace
+
+# Manual workspace
+rmplan agent 123 --workspace task-123
+
+# Auto workspace handles:
+# 1. Search for existing workspaces
+# 2. Check lock status
+# 3. Detect and clear stale locks (prompts for confirmation)
+# 4. Create new workspace if all are locked
+# 5. Acquire lock
+# 6. Copy plan file to workspace
+# 7. Execute
+# 8. Release lock on completion
+```
+
+**Workspace tracking:**
+
+Workspaces are tracked in `~/.config/rmfilter/workspaces.json`:
+
+```json
+{
+  "workspaces": [
+    {
+      "id": "task-123",
+      "path": "/home/user/workspaces/task-123",
+      "taskId": "123",
+      "repositoryUrl": "https://github.com/user/repo.git",
+      "createdAt": "2025-01-15T10:00:00Z",
+      "branch": "task-123",
+      "lock": {
+        "pid": 12345,
+        "hostname": "dev-machine",
+        "startedAt": "2025-01-15T14:00:00Z"
+      }
+    }
+  ]
+}
+```
+
+**Lock management:**
+
+Locks prevent concurrent execution in the same workspace:
+- **Acquired**: When agent starts
+- **Released**: When agent completes or is interrupted
+- **Stale detection**: Checks if PID still exists
+- **Auto cleanup**: Prompts to clear stale locks
+
+---
+
+## Configuration
+
+Configure rmplan via `.rmfilter/config/rmplan.yml`:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
+
+# Paths
+paths:
+  tasks: ./tasks              # Where plan files are stored
+  docs:                       # Extra documentation search paths
+    - ./docs
+    - ./project-docs
+
+# Default executor for agent command
+defaultExecutor: claude-code  # or codex-cli, direct-call, copy-paste
+
+# Workspace auto-creation (see Workspace Management section)
+workspaceCreation:
+  cloneMethod: cp
+  cloneLocation: /path/to/workspaces
+  sourceDirectory: /path/to/source
+  # ... (see workspace section for full config)
+
+# Planning configuration
+planning:
+  direct_mode: false          # Use LLM API directly instead of clipboard
+  claude_mode: true           # Use Claude Code for generation (default)
+
+# Post-apply commands (run after each step)
+postApplyCommands:
+  - title: Format Code
+    command: bun run format
+    allowFailure: true
+    hideOutputOnSuccess: true
+
+# Model API keys (custom env vars)
+modelApiKeys:
+  'anthropic/': 'MY_ANTHROPIC_KEY'
+  'openai/': 'MY_OPENAI_KEY'
+
+# Auto-examples (find patterns in prompts)
+autoexamples:
+  - PostgresTestEnvironment
+  - find: Select
+    example: <Select
+
+# Issue tracker
+issueTracker: github          # or 'linear'
+```
+
+### Workspace Auto-Creation
+
+See [Workspace Management](#workspace-management) section for details.
+
+### Executors
+
+Executors handle LLM interaction and code application:
+
+**Available executors:**
+
+- **`claude-code`** (recommended): Anthropic's Claude Code CLI
+  - Agent-based workflow
+  - Reads files, applies edits, runs commands
+  - Supports implement/test/review cycle
+
+- **`codex-cli`**: OpenAI Codex CLI
+  - Implement/test/review loop
+  - Auto-retry for planning-only responses
+
+- **`direct-call`**: Direct API calls
+  - Calls any LLM via API
+  - Applies edits automatically
+  - No agent capabilities
+
+- **`copy-paste`** (default): Manual workflow
+  - Copies prompt to clipboard
+  - Waits for you to paste LLM response
+  - Good for web UIs
+
+**Configure executor:**
+
+```yaml
+# In rmplan.yml
+defaultExecutor: claude-code
+
+executors:
+  claude-code:
+    model: anthropic/claude-3.5-sonnet
+    simpleMode: false         # Use --simple mode by default
+    permissionsMcp:
+      enabled: false          # Interactive permission system
+      autoApproveCreatedFileDeletion: false
+
+  codex-cli:
+    model: openai/gpt-4o
+    simpleMode: false
+
+  direct-call:
+    model: google/gemini-2.5-flash-preview-05-20
+```
+
+**Override via CLI:**
+
+```bash
+rmplan agent 123 --executor claude-code --model anthropic/claude-opus
+```
+
+### Post-Apply Commands
+
+Run commands after each step execution (before marking done):
+
+```yaml
+postApplyCommands:
+  - title: Type Check
+    command: bun run check
+    allowFailure: false       # Stop execution if this fails
+
+  - title: Format Code
+    command: bun run format
+    allowFailure: true        # Continue even if formatting fails
+    hideOutputOnSuccess: true # Only show output on error
+
+  - title: Run Tests
+    command: bun test
+    workingDirectory: apps/api  # Run in subdirectory
+    env:                      # Custom environment variables
+      NODE_ENV: test
+      CI: true
+```
+
+**Use cases:**
+
+- Code formatting (prettier, biome)
+- Linting (eslint, ruff)
+- Type checking (tsc, mypy)
+- Testing (jest, pytest, bun test)
+- Custom validation scripts
+
+### Documentation Search Paths
+
+Configure where rmplan searches for `.md` and `.mdc` documentation files:
+
+```yaml
+paths:
+  docs:
+    - ./docs
+    - ./project-docs
+    - ../shared-docs
+```
+
+Documentation files must have YAML frontmatter:
+
+```markdown
+---
+description: Authentication patterns
+type: docs              # or 'rules'
+globs: '*.ts, src/auth/**'
+grep: auth, login       # Match in instructions or source
+---
+
+Documentation content here...
+```
+
+Files are included in prompts when:
+- Globs match source files
+- Grep terms appear in instructions or source files
+- `alwaysApply: true` in frontmatter
+
+### Model API Keys
+
+Use custom environment variables for API keys:
+
+```yaml
+modelApiKeys:
+  # Provider-level (all models)
+  'anthropic/': 'MY_ANTHROPIC_KEY'
+  'openai/': 'MY_OPENAI_KEY'
+
+  # Model-specific (overrides provider)
+  'anthropic/claude-3.5-sonnet': 'SONNET_KEY'
+  'google/gemini-2.5-flash': 'GEMINI_KEY'
+```
+
+Falls back to default env vars if custom not found:
+- `ANTHROPIC_API_KEY`
+- `OPENAI_API_KEY`
+- `GOOGLE_GENERATIVE_AI_API_KEY`
+
+---
+
+## Advanced Features
+
+### Multi-Workspace Assignments
+
+Track plan ownership across multiple repository checkouts.
+
+**Configuration:**
+
+Assignments stored in: `~/.config/rmplan/shared/<repo-id>/assignments.json`
+
+**Commands:**
+
+```bash
+# Claim a plan for current workspace
+rmplan claim 123
+
+# Release plan (free it for others)
+rmplan release 123
+
+# Release and reset status to pending
+rmplan release 123 --reset-status
+
+# List assignments
+rmplan assignments list
+
+# Show conflicts (same plan claimed multiple times)
+rmplan assignments show-conflicts
+
+# Clean stale assignments (deleted workspaces, old claims)
+rmplan assignments clean-stale
+```
+
+**Auto-claiming:**
+
+The `agent`, `generate`, and `run` commands automatically claim plans for the current workspace.
+
+**Filtering ready plans:**
+
+```bash
+# Current workspace + unassigned (default)
+rmplan ready
+
+# All assignments
+rmplan ready --all
+
+# Unassigned only
+rmplan ready --unassigned
+
+# Specific user
+rmplan ready --user alice
+```
+
+**Use cases:**
+
+- Team collaboration on same repository
+- Multiple developers working on different plans
+- CI/CD systems claiming plans for execution
+
+See `docs/multi-workspace-workflow.md` for details.
+
+### Plan Validation
+
+Ensure plan file integrity and relationship consistency.
+
+**Basic validation:**
+
+```bash
+# Validate all plans in tasks directory
+rmplan validate
+
+# Validate specific plans
+rmplan validate 123 124
+
+# Report only (no auto-fix)
+rmplan validate --no-fix
+
+# Verbose output
+rmplan validate --verbose
+```
+
+**What it checks:**
+
+1. **Schema compliance**: YAML structure matches expected format
+2. **Parent-child consistency**: Bidirectional relationships are correct
+3. **Circular dependencies**: Detects and prevents cycles
+4. **File existence**: Plan files exist at expected paths
+
+**Auto-fixing:**
+
+When child plan references parent but parent doesn't include child in dependencies:
+```
+Found inconsistency:
+  Plan #123 has parent #100
+  But plan #100 dependencies don't include #123
+
+Fixing: Adding #123 to plan #100 dependencies
+```
+
+Validation runs automatically during:
+- `rmplan add` with `--parent`
+- `rmplan set` with relationship changes
+- Plan file writes
+
+### Progress Notes
+
+Record milestones, deviations, and discoveries during execution.
+
+**Add notes:**
+
+```bash
+# Manual note
+rmplan add-progress-note 123 --source "human: review" "Identified edge case in validation"
+
+# Agents add automatically
+# [implementer: Task 1] Completed refactor, updated tests
+```
+
+**View notes:**
+
+```bash
+# Show latest 10 notes (default)
+rmplan show 123
+
+# Show all notes
+rmplan show 123 --full
+
+# Short view (latest note only)
+rmplan show 123 --short
+```
+
+**Notes in prompts:**
+
+Agent prompts include up to 50 latest notes (timestamps omitted for clarity):
+```
+Progress Notes:
+[implementer: Set up auth] Completed middleware implementation
+[tester: Set up auth] All tests passing
+[implementer: Add login] Endpoint functional, needs rate limiting
+... and 12 more earlier note(s)
+```
+
+**Notes in lists:**
+
+```bash
+rmplan list
+# Shows Notes column when plans have notes
+```
+
+### Plan Compaction
+
+Reduce completed plan footprint while preserving key decisions.
 
 **Usage:**
 
 ```bash
-# Create a workspace with a specific task ID
-rmplan agent plan.yml --workspace my-feature-123
+# Compact a completed plan
+rmplan compact 144
 
-# The agent runs in the new workspace automatically
+# Preview without writing
+rmplan compact 144 --dry-run
+
+# Skip confirmation
+rmplan compact 144 --yes
+
+# Custom executor and age threshold
+rmplan compact 144 --executor direct-call --age 14
 ```
 
-**Workspace Tracking:**
+**What it does:**
 
-Workspaces are tracked in `~/.config/rmfilter/workspaces.json`, which maintains a record of:
+1. Condenses generated details (between delimiters)
+2. Summarizes research section
+3. Replaces progress notes with archival summary
+4. Preserves manual content outside delimiters
 
-- The task ID each workspace was created for
-- The absolute path to each workspace
-- Creation timestamp
-- Original repository URL
+**Requirements:**
 
-This tracking allows for workspace reuse when the same task ID is specified multiple times.
+- Status must be `done`, `cancelled`, or `deferred`
+- Plan must be older than `minimumAgeDays` (default: 30)
 
-#### Automatic Examples
-
-When `autoexamples` is set, rmplan will search the generated prompt
-for the provided values, and when it runs `rmfilter`, matching values will be automatically added
-as `--example` options to the command line for all matching strings.
-
-This can help the coding model to see the proper patterns for using particular pieces of code.
+**Configuration:**
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
-
-autoexamples:
-  - PostgresTestEnvironment
-  # Find Select, but pass "<Select" to rmfilter so that we will be sure to get a component tag
-  - find: Select
-    example: <Select
+compaction:
+  minimumAgeDays: 45
+  defaultExecutor: claude-code
+  defaultModel: anthropic/claude-3.5-sonnet
 ```
 
-#### Post-Apply Commands
+---
 
-The `postApplyCommands` setting allows you to define commands that should be executed automatically by the `rmplan agent` after it successfully applies changes from the LLM but _before_ it marks the step as done and commits. This is useful for tasks like code formatting or linting.
+## Supporting Tools
 
-**Example `.rmfilter/config/rmplan.yml`:**
+### rmfilter
 
-```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
+Context gathering wrapper around repomix for creating LLM prompts.
 
-postApplyCommands:
-  - title: Format Code # User-friendly title for logging
-    command: bun run format # The command string to execute
-    allowFailure: true # Optional: If true, the agent continues even if this command fails (default: false)
-    hideOutputOnSuccess: true # Optional: Show output only if the command fails
-    # workingDirectory: sub/dir # Optional: Run command in a specific directory relative to repo root (default: repo root)
-    # env: # Optional: Environment variables for the command
-    #   NODE_ENV: production
-
-  - title: Run Linters
-    command: bun run lint --fix
-    allowFailure: false # Default behavior: agent stops if command fails
-```
-
-**Fields:**
-
-- `title`: (Required) A short description logged when the command runs.
-- `command`: (Required) The command line string to execute.
-- `allowFailure`: (Optional) Boolean, defaults to `false`. If `false`, the agent will stop if the command exits with a non-zero status.
-- `hideOutputOnSuccess`: (Optional) Boolean, defaults to `false`. If `true`, the command's output is displayed only if it fails.
-- `workingDirectory`: (Optional) String path relative to the repository root where the command should be executed. Defaults to the repository root.
-- `env`: (Optional) An object mapping environment variable names to string values for the command's execution context.
-
-#### Model API Keys
-
-The `modelApiKeys` setting allows you to specify custom environment variables for API keys on a per-model or per-provider basis. This is useful when you need to use different API keys for different models or when your API keys are stored in non-standard environment variables.
-
-**Example `.rmfilter/config/rmplan.yml`:**
-
-```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
-
-modelApiKeys:
-  # Use a specific environment variable for all OpenAI models
-  'openai/': 'MY_OPENAI_API_KEY'
-
-  # Use a different key for a specific model
-  'anthropic/claude-3.5-sonnet': 'CLAUDE_SONNET_KEY'
-
-  # General key for other Anthropic models
-  'anthropic/': 'MY_ANTHROPIC_KEY'
-
-  # Keys for other providers
-  'groq/': 'GROQ_API_KEY'
-  'cerebras/': 'CEREBRAS_KEY'
-```
-
-**How It Works:**
-
-1. When creating a model instance, rmplan checks the `modelApiKeys` configuration
-2. It first looks for an exact match (e.g., `anthropic/claude-3.5-sonnet`)
-3. If no exact match is found, it looks for a prefix match (e.g., `anthropic/`)
-4. If a match is found, it uses the specified environment variable instead of the default
-5. If the custom environment variable is not set, it falls back to the provider's default environment variable
-
-**Notes:**
-
-- Exact matches take precedence over prefix matches
-- Google Vertex AI doesn't use API keys, so any custom key configuration for `vertex/` providers will be ignored
-- If a custom environment variable is specified but not found, the system will fall back to the default environment variable for that provider
-
-#### answer-pr Configuration
-
-The `answerPr` section allows you to set default values for the `rmplan answer-pr` command. These defaults are used when the corresponding command-line options are not explicitly provided.
-
-**Example `.rmfilter/config/rmplan.yml`:**
-
-```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
-
-answerPr:
-  # Default mode for handling PR comments
-  # Options: 'inline-comments', 'separate-context', 'hybrid'
-  mode: hybrid
-
-  # Whether to automatically commit changes after processing
-  commit: true
-
-  # Whether to post replies to review threads after committing
-  comment: true
-```
-
-**Fields:**
-
-- `mode`: (Optional) The default mode for handling PR comments. Options are:
-  - `inline-comments`: Inserts AI comment markers directly into the code files
-  - `separate-context`: Includes PR comments as separate context in the prompt
-  - `hybrid`: Combines both approaches for maximum context
-- `commit`: (Optional) Boolean, defaults to `false` if not specified. When `true`, automatically commits changes after processing
-- `comment`: (Optional) Boolean, defaults to `false` if not specified. When `true`, posts replies to handled review threads after committing
-
-**How It Works:**
-
-1. When you run `rmplan answer-pr` without specifying options, the command checks the configuration
-2. For any option not provided on the command line, it uses the value from the configuration
-3. Command-line options always take precedence over configuration defaults
-4. If neither command-line nor configuration provides a value, built-in defaults are used
-
-**Example Usage:**
+**Basic usage:**
 
 ```bash
-# With the above configuration, this command:
-rmplan answer-pr
-
-# Is equivalent to:
-rmplan answer-pr --mode hybrid --commit --comment
-
-# But you can still override individual options:
-rmplan answer-pr --mode inline-comments  # Uses inline-comments mode but keeps commit and comment from config
-```
-
-### Linear Integration
-
-`rmplan` includes native support for Linear issues alongside GitHub integration. Any rmplan command that reads from GitHub issues can instead read from Linear by configuring your project to use Linear as the issue tracker.
-
-**Configuration in `.rmfilter/config/rmplan.yml`:**
-
-```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
-
-# Set Linear as your issue tracker
-issueTracker: 'linear'
-```
-
-**Environment Setup:**
-
-To use Linear integration, you need to set the `LINEAR_API_KEY` environment variable:
-
-```bash
-# Get your API key from https://linear.app/settings/api
-export LINEAR_API_KEY="lin_api_1234567890abcdef"
-```
-
-**Supported Linear Features:**
-
-- Import Linear issues as rmplan task files using `rmplan import`
-- Generate plans directly from Linear issues using `rmplan generate --issue`
-- Support for Linear issue ID formats like `TEAM-123`
-- Support for Linear URLs: `https://linear.app/workspace/issue/TEAM-123`
-- Full comment support - comments from Linear issues are included in imported plans
-- Interactive multi-issue selection for bulk importing
-
-**Example Usage:**
-
-```bash
-# Import a specific Linear issue by ID
-rmplan import TEAM-123
-
-# Import using a Linear URL
-rmplan import https://linear.app/workspace/issue/TEAM-123
-
-# Generate a plan directly from a Linear issue
-rmplan generate --issue TEAM-456 -- src/**/*.ts
-
-# Interactive mode to select and import multiple Linear issues
-rmplan import
-```
-
-**Linear Issue ID Format:**
-
-Linear issues use the format `TEAM-123` where:
-
-- `TEAM` is your Linear team identifier (uppercase letters and numbers)
-- `123` is the issue number
-
-**Limitations:**
-
-- Linear doesn't support pull requests, so PR-related rmplan commands remain GitHub-only
-- Linear issue states may differ from GitHub (e.g., "In Progress" vs "open")
-- Linear comments don't support the same rich formatting as GitHub comments
-
-### Executors
-
-The executor system in rmplan provides a flexible way to execute plan steps with different AI models or tools. Executors handle the interaction with language models, applying edits to the codebase, and integrating with external tools.
-
-#### Available Executors
-
-- **CopyPasteExecutor (default)**: Copies the prompt to the clipboard for you to paste into a web UI and then manually apply the model's response.
-
-- **OneCallExecutor**: Sends the prompt to an API-accessible LLM directly without user intervention.
-
-- **CopyOnlyExecutor**: Just copies the prompt to the clipboard without applying any edits.
-
-- **ClaudeCodeExecutor**: Executes the plan using Claude Code CLI, providing an agent-based approach that can read files, apply edits, and run commands directly.
-
-- **CodexCliExecutor**: Integrates the Codex CLI with a implement/test/review loop and adds rmplan safeguards like planning-only auto-retries.
-
-To specify an executor, use the `--executor` option:
-
-```bash
-# Use Claude Code to execute the plan
-rmplan agent plan.yml --executor claude-code
-
-# Use direct API calls to execute the plan
-rmplan agent plan.yml --executor direct-call
-```
-
-### Claude Code Executor: Interactive Tool Permissions
-
-**Note**: The interactive permission system is disabled by default. To enable it, set the `CLAUDE_CODE_PERMISSIONS` environment variable to `true` or configure it in your rmplan configuration file:
-
-```yaml
-# In .rmfilter/config/rmplan.local.yml
-executors:
-  claude-code:
-    permissionsMcp:
-      enabled: true
-```
-
-When enabled, the Claude Code executor includes an interactive permission system that allows you to control which tool invocations are automatically approved. When Claude attempts to use a tool during execution, you'll see a permission prompt with three options:
-
-- **Allow**: Permits this specific tool invocation only
-- **Disallow**: Denies this specific tool invocation
-- **Always Allow**: Permanently approves this tool (or command prefix for Bash tools) for automatic execution in future sessions
-
-#### Special Handling for Bash Commands
-
-The `Bash` tool receives special treatment due to its powerful nature. When you select "Always Allow" for a Bash command, an interactive prefix selection interface appears:
-
-1. The interface displays command tokens that you can navigate using arrow keys
-2. Press the right arrow to include more of the command in the approved prefix
-3. Press the left arrow to include less of the command
-4. Press 'a' to select all the words in the command
-5. Press Enter to confirm your selection
-
-#### Permission Persistence
-
-"Always Allow" rules are automatically saved to the `.claude/settings.local.json` file in your project's root directory. This ensures your preferences persist across sessions.
-
-#### Automatic File Deletion Approval
-
-The Claude Code executor includes an optional feature to automatically approve deletion of files that were created or modified by Claude Code within the same session. This reduces the number of manual approvals needed for routine cleanup tasks.
-
-To enable this feature, configure the `autoApproveCreatedFileDeletion` option in your rmplan configuration file:
-
-```yaml
-# In .rmfilter/config/rmplan.local.yml
-executors:
-  claude-code:
-    permissionsMcp:
-      autoApproveCreatedFileDeletion: true
-```
-
-**How it works:**
-
-- When enabled, Claude Code tracks all files that are created or modified using the `Write`, `Edit`, or `MultiEdit` tools during the session
-- If Claude Code attempts to run `rm <path>` or `rm -f <path>` on any of these tracked files, the command is automatically approved
-- When a deletion is auto-approved, a log message is displayed indicating which file was automatically approved for deletion
-- Files not created or modified by Claude Code in the current session will still require manual approval
-- The feature is disabled by default (`false`) for security
-
-This feature is particularly useful when Claude Code creates temporary test files, configuration files, or other artifacts that need to be cleaned up as part of the implementation process.
-
-## Multi-Phase Project Planning
-
-The `rmplan` utility supports a detailed planning mode that enables breaking large software features into phases, with each phase delivering a working component that builds on previous phases. This approach ensures incremental, validated progress through complex implementations.
-
-### Overview
-
-Phase-based planning is designed for projects that are too large or complex to implement in a single pass. Instead of generating all implementation details upfront, this mode:
-
-- Breaks the project into distinct phases, each with clear goals and deliverables
-- Generates high-level plans first, then creates detailed implementation steps for each phase as needed
-- Ensures each phase delivers working functionality that can be tested and merged
-- Tracks dependencies between phases to ensure proper sequencing
-
-### Workflow
-
-The multi-phase workflow consists of three main commands:
-
-1. **`rmplan generate --input plan.md --output feature_plan.md`**: Generates a high-level markdown plan with phases. This command now outputs a structured markdown document containing:
-   - Overall project goal and details
-   - Multiple phases, each with goals, dependencies, and high-level tasks
-
-2. **`rmplan parse --input feature_plan.md --output-dir ./my_feature_plan`**: Parses the markdown plan into individual phase YAML files. This creates a directory structure with one YAML file per phase.
-
-3. **`rmplan generate-phase --phase ./my_feature_plan/my_project_id/phase_1.yaml`**: Generates detailed implementation steps for a specific phase. This populates the phase YAML with concrete prompts, file lists, and other details needed for execution.
-
-**Alternative approach with `split`**: If you already have a detailed, single-file plan that has grown too large or complex, you can use the `rmplan split` command to intelligently break it down into phase-based plans. This command uses an LLM to analyze the existing tasks and create a logical phase structure with proper dependencies, preserving all the original task details.
-
-The iterative process is:
-
-- Generate the overall plan
-- Parse it into phases
-- For each phase: generate details → implement → review → merge
-- Proceed to the next phase only after the previous one is complete
-
-### File Structure
-
-After parsing a multi-phase plan, you'll have this structure:
-
-```
-project-directory/
-├── plan.md                  # Original input for `rmplan generate`
-├── feature_plan.md          # Generated phase-based markdown plan
-└── my_feature_plan/         # Directory specified in `rmplan parse --output-dir`
-    └── my_project_id/       # Directory named after the auto-generated/specified project ID
-        ├── phase_1.yaml
-        ├── phase_2.yaml
-        └── ...
-```
-
-### Markdown Plan Structure
-
-The generated markdown plan (`feature_plan.md`) follows this structure:
-
-```markdown
-## Project Goal
-
-[Overall project description]
-
-## Project Details
-
-[Additional context and requirements]
-
-### Phase 1: [Phase Title]
-
-#### Goal
-
-[What this phase accomplishes]
-
-#### Dependencies
-
-- None (for first phase)
-- Phase X: [Dependency description] (for later phases)
-
-#### Details
-
-[Phase-specific context]
-
-##### Task: [Task Title]
-
-[High-level task description without implementation details]
-```
-
-### Phase YAML Structure
-
-Each phase YAML file follows the standard `planSchema` with these key differences:
-
-- Tasks initially have empty `steps[]` arrays
-- `projectId` links all phases together
-- `phaseId` identifies the specific phase
-- Dependencies are tracked in the phase metadata
-
-The `rmplan generate-phase` command populates the empty `steps[]` with detailed implementation instructions.
-
-### Project Naming
-
-The `projectId` is automatically determined in this order:
-
-1. From a GitHub issue number (if using `--issue`)
-2. Auto-generated using a timestamp-based ID
-
-### Single-Phase Projects
-
-If the generated markdown plan contains no `### Phase X` headers, `rmplan parse` treats it as a single-phase project, maintaining backward compatibility with existing workflows.
-
-### Error Handling
-
-The system includes robust error handling:
-
-- Invalid markdown structure saves the raw content for manual correction
-- Parsing errors save partial outputs to disk
-- LLM response errors save the raw response for inspection
-- All error outputs include helpful messages about next steps
-
-## answer-pr
-
-The `rmplan answer-pr` command helps handle GitHub pull request review comments using language models. It can fetch PR comments, let you select which ones to address, and automate responses with AI assistance.
-
-### Key Features {#key-features-4}
-
-- **PR Comment Selection**: Fetch and interactively select which PR comments to address.
-- **Automatic PR Detection**: Automatically detect the current PR from your branch.
-- **Comment Modes**: Choose between inline comment markers or separate context for addressing feedback.
-- **Integration with Executors**: Use the same executor system as rmplan for applying changes.
-- **Automatic Replies**: Optionally post replies to the handled threads after committing changes.
-- **Special Comment Options**: Parse special options from PR comments to customize how they're handled.
-
-### Usage
-
-Handle PR comments with AI assistance:
-
-```bash
-# Automatically detect the current PR and address comments
-rmplan answer-pr
-
-# Answer comments for a specific PR
-rmplan answer-pr dimfeld/llmutils#82
-
-# Use specific options (disable interactive mode and autocommit)
-rmplan answer-pr --yes --commit
-
-# Use Claude Code as the executor
-rmplan answer-pr --executor claude-code
-
-# Post replies to review threads after committing
-rmplan answer-pr --commit --comment
-
-# Dry run (prepare the prompt without executing)
-rmplan answer-pr --dry-run
-```
-
-### Options Editor
-
-When handling PR comments, an interactive options editor allows you to adjust settings before generating and executing the LLM prompt:
-
-- **Change LLM model**: Select a different model for addressing the comments.
-- **Edit rmfilter options**: Add or modify context-gathering options.
-- **Toggle autocommit**: Enable or disable automatically committing changes.
-- **Toggle review thread replies**: Enable or disable posting replies to review threads.
-
-You can also include special options in PR comments to customize how they're handled:
-
-```
-Add validation here for user input
-
-rmpr: with-imports
-rmpr: include src/forms
-```
-
-## Usage Examples
-
-### Using rmfilter
-
-Filter and process files in your repository with various options:
-
-```bash
-# Basic file filtering with multiple globs
+# Gather files matching patterns
 rmfilter src/**/*.ts tests/**/*.ts
 
-# Use repo: prefix to specify paths relative to the git root
-rmfilter repo:src/lib/auth.ts repo:src/routes/admin \
-  --grep users --grep email --with-imports \
-  --instructions 'Add a checkbox to the "add a user" sheet that determines whether or not a verification email is sent. Set verified=true and skip sending the email when the checkbox is not set. It should be set by default' --copy
+# With instructions
+rmfilter src/auth/**/*.ts --instructions "Add JWT validation" --copy
 
-# Use pkg: prefix in a monorepo to specify paths relative to the package, if the CWD is inside a package
-rmfilter pkg:lib/utils.ts package:tests/utils.test.ts \
-  --grep "util" --copy
+# Include import trees
+rmfilter src/auth.ts --with-imports
 
-# Filter with multiple grep patterns and case expansion
-rmfilter --grep "function" --grep "class" --expand src/**/*.ts
+# With grep filters
+rmfilter src/**/*.ts --grep "auth" --grep "login"
 
-# Include full import tree and limit to largest files
-rmfilter --with-all-imports --largest 5 src/lib/*.ts
-
-# Filter with examples, test files, and custom output
-rmfilter --example "fetchData" --example-file "fetch=src/api/fetchData.ts" --with-tests --output filtered.txt src/**/*.ts
-
-# Process files with diff and custom instructions
-rmfilter --with-diff --instructions "Optimize all functions" src/**/*.ts
-
-# Multiple commands with different filters. Copy output to clipboard
-rmfilter src/lib/*.ts --grep "export" -- src/tests/*.ts --grep "labels" \
-  --instructions 'Add a field to a class' --copy
-
-# Open instructions in the editor
-rmfilter src/**/*.ts --instructions-editor --copy
+# Add test files
+rmfilter src/feature.ts --with-tests
 ```
 
-### Using rmplan
+**Presets:**
 
-Generate and manage project plans:
+Create reusable configurations in `.rmfilter/`:
 
-```bash
-# Read a project description, and create a detailed plan for implementing it
-rmplan generate --plan tasks/0002-refactor-it.md -- src/api/**/*.ts
-
-# Or read the plan from a Github issue
-rmplan generate --issue 28 -- src/api/**/*.ts
-
-# Or read the plan from a Linear issue
-rmplan generate --issue TEAM-456 -- src/api/**/*.ts
-# This creates a plan file with Linear-specific metadata:
-# - issue: ["https://linear.app/workspace/issue/TEAM-456"]
-# - Includes all Linear comments formatted with author attribution
-
-# Generate a plan for the next ready dependency of a parent plan
-rmplan generate --next-ready 100 -- src/api/**/*.ts
-
-# Import GitHub issues as stub plans for later detailed planning
-rmplan import --issue 123
-rmplan import  # Interactive mode to select multiple issues
-
-# Import Linear issues (requires issueTracker: 'linear' in config)
-# rmplan import TEAM-789
-# ✓ Connected to Linear workspace: MyCompany
-# ✓ Found Linear issue: TEAM-789 - Fix authentication bug
-# ✓ Processing issue comments (2 found)
-# ✓ Generated plan file: tasks/team-789-fix-authentication-bug.yml
-
-rmplan import https://linear.app/workspace/issue/TEAM-123
-
-# Interactive Linear import with sample output:
-# rmplan import
-# ✓ Connected to Linear workspace: MyCompany
-# ✓ Found 12 open Linear issues
-#
-# Select issues to import (Space to select, Enter to confirm):
-# ❯ ◯ TEAM-123 - Implement user authentication
-#   ◯ TEAM-124 - Add password reset functionality
-#   ◯ TEAM-125 - Create user profile page
-#   ◯ PROJ-001 - Database migration for user roles
-#
-# Selected 2 issues for import
-# ✓ Imported: tasks/team-123-implement-user-authentication.yml
-# ✓ Imported: tasks/team-124-add-password-reset-functionality.yml
-
-# Read the plan from the clipboard, convert to YAML, and write to a file
-# Note: The `generate` command will do this automatically if you want.
-rmplan extract --output tasks/0002-refactor-it.yml
-
-# Show the plan to see what's next
-rmplan show tasks/0002-refactor-it-plan.yml
-
-# Mark a task as done and commit
-rmplan done tasks/0002-refactor-it-plan.yml --commit
-
-# Or Automatically execute all tasks in a plan
-rmplan agent tasks/0002-refactor-it-plan.yml
-
-# Automatically execute tasks using a custom configuration file
-rmplan agent tasks/0003-new-feature.yml --config path/to/my-rmplan-config.yml
-
-# Execute the next ready dependency of a parent plan automatically
-rmplan agent --next-ready 100
-
-# Use Claude Code executor for a more integrated experience
-rmplan agent tasks/0003-new-feature.yml --executor claude-code
-
-# Execute a plan in a newly created, isolated workspace
-rmplan agent tasks/my-feature.yml --workspace feature-xyz
-
-# Create new plan stubs for quick capture of future work
-rmplan add "Implement user authentication" --output tasks/auth.yml
-rmplan add "Add logging system" --depends-on auth --priority medium --edit
-
-# Split a complex plan into manageable phases
-rmplan split tasks/big-refactor.yml --output-dir ./refactor-phases
-
-# Multi-phase planning workflow
-# 1. Generate a phase-based plan
-rmplan generate --input tasks/large-feature.md --output tasks/large-feature-plan.md -- src/**/*.ts
-
-# 2. Parse the markdown plan into phase YAML files
-rmplan parse --input tasks/large-feature-plan.md --output-dir ./large-feature-phases
-
-# 3. Generate detailed steps for the first phase
-rmplan generate-phase --phase ./large-feature-phases/project-xyz/phase_1.yaml
-
-# 4. Execute the phase (using any of the execution methods)
-rmplan agent ./large-feature-phases/project-xyz/phase_1.yaml
+```yaml
+# .rmfilter/auth.yml
+edit-format: diff
+copy: true
+instructions: Update authentication logic
+commands:
+  - globs: ['src/auth/**/*.ts']
+    with-imports: true
+    with-tests: true
 ```
 
-### Using answer-pr
-
-Handle PR comments:
-
+Use with:
 ```bash
-# Detect the current PR and handle comments
-rmplan answer-pr
-
-# Handle comments for a specific PR
-rmplan answer-pr 82
-
-# Use Claude Code executor and autocommit
-rmplan answer-pr --executor claude-code --commit
-
-# Commit and reply to comments
-rmplan answer-pr --commit --comment
+rmfilter --preset auth
 ```
 
-### Applying LLM Edits
+**MDC file support:**
 
-Process LLM-generated edits from different sources:
+Automatically includes `.mdc` documentation files from:
+- `.cursor/rules/`
+- `~/.config/rmfilter/rules/`
+- Paths configured in `paths.docs`
+
+Based on glob/grep frontmatter matching.
+
+### apply-llm-edits
+
+Apply LLM-generated code changes to your repository.
+
+**Usage:**
 
 ```bash
-
-# Apply edits from clipboard (works in both local and SSH sessions thanks to OSC52 support)
-rmfilter src/**/*.ts --copy
+# From clipboard (OSC52 support for SSH)
 apply-llm-edits
 
-# Apply edits from stdin with custom working directory
-cat edits.txt | apply-llm-edits --stdin --cwd
+# From stdin
+cat changes.txt | apply-llm-edits --stdin
 
-# Dry run to preview changes
+# Dry run (preview changes)
 apply-llm-edits --dry-run
 
-# Run and apply in one go
-rmfilter src/**/*.ts --instructions 'Make it better'
-rmrun
+# With custom working directory
+apply-llm-edits --cwd /path/to/project
 ```
+
+**Workflow:**
+
+1. Run `rmfilter` and copy output
+2. Paste to LLM (web UI or API)
+3. Copy LLM response
+4. Run `apply-llm-edits`
+5. Review and commit changes
+
+### rmfind
+
+AI-powered file search with interactive selection.
+
+**Usage:**
+
+```bash
+# Basic glob search with fzf
+rmfind src/**/*.ts
+
+# With content grep
+rmfind src/**/*.ts --grep auth --grep login
+
+# Natural language query (requires LLM)
+rmfind src/**/*.ts --query "files handling user authentication"
+
+# Output as YAML array
+rmfind src/**/*.ts --yaml
+
+# Whole-word matching
+rmfind src/**/*.ts --grep getUserData --whole-word
+```
+
+**Requirements:**
+
+- `fzf` for interactive selection
+- `bat` for syntax-highlighted previews
+- `ripgrep` for content filtering
+- LLM API access for `--query`
+
+---
+
+## Complete Command Reference
+
+### Plan Lifecycle
+
+```bash
+# Create stub
+rmplan add "Feature name" [--output FILE] [--parent ID] [--priority LEVEL]
+
+# Generate detailed tasks
+rmplan generate [--issue NUM | --plan FILE | --plan-editor] -- [RMFILTER_ARGS]
+rmplan generate ID -- [RMFILTER_ARGS]
+
+# Execute plan
+rmplan agent ID [--executor NAME] [--workspace ID] [--steps N]
+rmplan run ID  # alias for agent
+
+# Track progress
+rmplan show ID [--short | --full]
+rmplan add-progress-note ID --source "SOURCE" "NOTE"
+
+# Mark complete
+rmplan done ID [--commit]
+
+# Compact for archival
+rmplan compact ID [--dry-run] [--yes]
+```
+
+### Plan Discovery
+
+```bash
+# List all plans
+rmplan list [--all] [--status STATUS] [--sort FIELD]
+
+# List ready plans
+rmplan ready [--pending-only] [--priority LEVEL] [--format FORMAT]
+
+# Show next ready
+rmplan show --next
+rmplan show --next-ready PARENT_ID
+
+# Execute next ready
+rmplan agent --next
+rmplan agent --next-ready PARENT_ID
+```
+
+### Plan Management
+
+```bash
+# Set metadata
+rmplan set ID --parent PARENT --priority LEVEL --status STATUS
+
+# Add/remove tasks
+rmplan add-task ID --title "Title" --description "Desc" [--files FILE]
+rmplan remove-task ID --title "Title" [--yes]
+
+# Import from issues
+rmplan import [--issue NUM] [--output FILE]
+rmplan import  # interactive multi-select
+
+# Validate
+rmplan validate [PLANS...] [--no-fix] [--verbose]
+
+# Split into phases
+rmplan split PLAN --output-dir DIR
+```
+
+### Workspace Management
+
+```bash
+# Create workspace
+rmplan workspace add [ID] [--id WORKSPACE_ID]
+
+# List workspaces
+rmplan workspace list [--repo URL]
+
+# Assignments
+rmplan claim ID
+rmplan release ID [--reset-status]
+rmplan assignments list
+rmplan assignments clean-stale
+```
+
+### MCP Server
+
+```bash
+# Start server
+rmplan mcp-server --mode generate [--transport TRANSPORT] [--port PORT]
+```
+
+### Utilities
+
+```bash
+# Cleanup comments
+rmplan cleanup [FILES...] [--diff-from BRANCH]
+
+# Answer PR comments
+rmplan answer-pr [PR] [--mode MODE] [--commit] [--comment]
+
+# Extract plan from text
+rmplan extract [--input FILE] [--output FILE]
+```
+
+---
 
 ## Acknowledgements
 
-- [repomix](https://github.com/yamadashy/repomix) and [ripgrep](https://github.com/BurntSushi/ripgrep) provide a lot of
-  the internal functionality.
-- The editor prompts and much of the code for applying edits are from [Aider](https://github.com/Aider-AI/aider).
-- The plan generation prompt is adapted from https://harper.blog/2025/02/16/my-llm-codegen-workflow-atm/
+- [repomix](https://github.com/yamadashy/repomix) and [ripgrep](https://github.com/BurntSushi/ripgrep) for context gathering
+- [Aider](https://github.com/Aider-AI/aider) for edit application patterns
+- Plan generation approach inspired by [harper.blog](https://harper.blog/2025/02/16/my-llm-codegen-workflow-atm/)
