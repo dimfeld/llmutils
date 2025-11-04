@@ -165,7 +165,7 @@ export async function convertMarkdownToYaml(
   config: RmplanConfig,
   quiet = false
 ): Promise<string> {
-  const modelSpec = config.models?.convert_yaml || 'google/gemini-2.5-flash-preview-05-20';
+  const modelSpec = config.models?.convert_yaml || 'google/gemini-2.5-flash';
   const prompt = markdownToYamlConversionPrompt.replace('{markdownInput}', markdownInput);
   let result = streamText({
     model: await createModel(modelSpec, config),

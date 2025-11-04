@@ -164,7 +164,7 @@ export async function fixYaml(inputYaml: string, maxAttempts: number = 5, config
 
 // Function to fix YAML using LLM
 async function fixYamlWithLLM(yamlText: string, config: RmplanConfig): Promise<string> {
-  const modelSpec = config.models?.convert_yaml || 'google/gemini-2.5-flash-preview-05-20';
+  const modelSpec = config.models?.convert_yaml || 'google/gemini-2.5-flash';
 
   const prompt = `You are an AI assistant specialized in fixing invalid YAML syntax. Your task is to take the provided YAML text and fix any syntax errors to make it valid YAML.
 
