@@ -3,6 +3,7 @@
 AI-powered project planning and execution system for software development. Generate detailed plans from GitHub/Linear issues, execute them with automated agents, and track progress through complex multi-phase projects.
 
 **Core capabilities:**
+
 - **Smart Planning**: Generate detailed implementation plans using LLMs with automatic research phases
 - **Issue Tracking**: Track issues and their dependencies
 - **Automated Execution**: Run plans step-by-step with workspace isolation and automatic progress tracking
@@ -61,6 +62,7 @@ These tools are deprecated as coding agents have largely replaced them, but sill
 ## Installation
 
 **Prerequisites:**
+
 - [Bun](https://bun.sh/)
 - [ripgrep](https://github.com/BurntSushi/ripgrep)
 - [repomix](https://github.com/yamadashy/repomix)
@@ -278,12 +280,14 @@ rmplan generate --issue 123 --commit -- src/**/*.ts
 **Research Phase:**
 
 In Claude Code mode (default), the research phase:
+
 - Investigates the codebase structure
 - Identifies relevant patterns and dependencies
 - Documents findings in the plan's `## Research` section
 - Provides context for task generation
 
 Skip research with `--simple` when:
+
 - Making trivial changes
 - Plan already has extensive research
 - Time is critical
@@ -348,6 +352,7 @@ rmplan agent 123 --workspace feature-xyz
 **Execution flow:**
 
 For each task/step:
+
 1. **Build prompt**: Runs `rmfilter` with configured context
 2. **Execute**: Sends to LLM via executor (Claude Code, Codex CLI, etc.)
 3. **Post-apply**: Runs formatting, linting, tests
@@ -356,6 +361,7 @@ For each task/step:
 6. **Progress note**: Records completion with timestamp
 
 Stops on:
+
 - Executor failure
 - Post-apply command failure (unless `allowFailure: true`)
 - All tasks complete
@@ -363,6 +369,7 @@ Stops on:
 **Execution summaries:**
 
 Enabled by default, shows:
+
 - Steps executed and status
 - File changes
 - Timing information
@@ -572,6 +579,7 @@ rmplan ready --reverse
 **Readiness criteria:**
 
 A plan is ready when:
+
 1. Status is `pending` or `in_progress`
 2. All dependencies have status `done`
 3. Priority is not `maybe`
@@ -627,6 +635,7 @@ The server provides structured prompts that guide AI agents through rmplan workf
 **1. `generate-plan`** - Full planning workflow with research
 
 Loads a plan and guides through:
+
 - Planning phase: Analyze task and draft approach
 - Research phase: Investigate codebase and capture findings
 - Generation phase: Create structured tasks
@@ -636,6 +645,7 @@ Research findings are automatically appended to the plan's `## Research` section
 **2. `generate-plan-simple`** - Skip research, generate tasks directly
 
 Use when:
+
 - Making simple changes
 - Research already exists
 - Time is critical
@@ -651,6 +661,7 @@ Shows plan details and waits for human instructions.
 **5. `compact-plan`** - Summarize completed plans
 
 For plans with status `done`, `cancelled`, or `deferred`:
+
 - Condenses generated sections
 - Summarizes research
 - Creates archival progress summary
@@ -660,6 +671,7 @@ For plans with status `done`, `cancelled`, or `deferred`:
 **Plan Management:**
 
 **`create-plan`** - Create new plan with metadata
+
 ```typescript
 {
   title: "Implement OAuth",
@@ -671,11 +683,15 @@ For plans with status `done`, `cancelled`, or `deferred`:
 ```
 
 **`get-plan`** - Retrieve plan by ID or path
+
 ```typescript
-{ plan: "123" }  // or "tasks/feature.yml"
+{
+  plan: '123';
+} // or "tasks/feature.yml"
 ```
 
 **`update-plan-tasks`** - Merge generated tasks into plan
+
 ```typescript
 {
   plan: "123",
@@ -695,6 +711,7 @@ For plans with status `done`, `cancelled`, or `deferred`:
 ```
 
 **`update-plan-details`** - Update generated section content
+
 ```typescript
 {
   plan: "123",
@@ -708,6 +725,7 @@ For plans with status `done`, `cancelled`, or `deferred`:
 **`manage-plan-task`** - Add, update, or remove tasks
 
 Add task:
+
 ```typescript
 {
   plan: "123",
@@ -720,6 +738,7 @@ Add task:
 ```
 
 Update task (by title - recommended):
+
 ```typescript
 {
   plan: "123",
@@ -731,6 +750,7 @@ Update task (by title - recommended):
 ```
 
 Remove task:
+
 ```typescript
 {
   plan: "123",
@@ -742,6 +762,7 @@ Remove task:
 **Research:**
 
 **`append-plan-research`** - Add findings to ## Research section
+
 ```typescript
 {
   plan: "123",
@@ -753,6 +774,7 @@ Remove task:
 **Discovery:**
 
 **`list-ready-plans`** - Find executable plans
+
 ```typescript
 {
   pendingOnly: false,  // exclude in_progress
@@ -763,6 +785,7 @@ Remove task:
 ```
 
 Returns:
+
 ```json
 {
   "count": 3,
@@ -844,6 +867,7 @@ Workspaces isolate plan execution in dedicated git clones to avoid conflicts wit
 - **Automatic setup**: Post-clone commands ensure dependencies are installed
 
 **Without workspaces:**
+
 ```
 main-repo/        ← You're editing files here
 ├── src/
@@ -852,6 +876,7 @@ main-repo/        ← You're editing files here
 ```
 
 **With workspaces:**
+
 ```
 main-repo/        ← You keep working here safely
 └── tasks/
@@ -874,7 +899,7 @@ Configure in `.rmfilter/config/rmplan.yml`:
 
 workspaceCreation:
   # How to create workspace copies
-  cloneMethod: cp           # cp | git | mac-cow
+  cloneMethod: cp # cp | git | mac-cow
 
   # Source directory (required for cp/mac-cow)
   sourceDirectory: /home/user/projects/myapp
@@ -938,6 +963,7 @@ rmplan workspace list --repo https://github.com/user/repo.git
 ```
 
 Example output:
+
 ```
 Workspaces for github.com/user/repo
 
@@ -999,6 +1025,7 @@ Workspaces are tracked in `~/.config/rmfilter/workspaces.json`:
 **Lock management:**
 
 Locks prevent concurrent execution in the same workspace:
+
 - **Acquired**: When agent starts
 - **Released**: When agent completes or is interrupted
 - **Stale detection**: Checks if PID still exists
@@ -1015,13 +1042,13 @@ Configure rmplan via `.rmfilter/config/rmplan.yml`:
 
 # Paths
 paths:
-  tasks: ./tasks              # Where plan files are stored
-  docs:                       # Extra documentation search paths
+  tasks: ./tasks # Where plan files are stored
+  docs: # Extra documentation search paths
     - ./docs
     - ./project-docs
 
 # Default executor for agent command
-defaultExecutor: claude-code  # or codex-cli, direct-call, copy-paste
+defaultExecutor: claude-code # or codex-cli, direct-call, copy-paste
 
 # Workspace auto-creation (see Workspace Management section)
 workspaceCreation:
@@ -1032,8 +1059,8 @@ workspaceCreation:
 
 # Planning configuration
 planning:
-  direct_mode: false          # Use LLM API directly instead of clipboard
-  claude_mode: true           # Use Claude Code for generation (default)
+  direct_mode: false # Use LLM API directly instead of clipboard
+  claude_mode: true # Use Claude Code for generation (default)
 
 # Post-apply commands (run after each step)
 postApplyCommands:
@@ -1054,7 +1081,7 @@ autoexamples:
     example: <Select
 
 # Issue tracker
-issueTracker: github          # or 'linear'
+issueTracker: github # or 'linear'
 ```
 
 ### Workspace Auto-Creation
@@ -1095,9 +1122,9 @@ defaultExecutor: claude-code
 executors:
   claude-code:
     model: anthropic/claude-3.5-sonnet
-    simpleMode: false         # Use --simple mode by default
+    simpleMode: false # Use --simple mode by default
     permissionsMcp:
-      enabled: false          # Interactive permission system
+      enabled: false # Interactive permission system
       autoApproveCreatedFileDeletion: false
 
   codex-cli:
@@ -1122,17 +1149,17 @@ Run commands after each step execution (before marking done):
 postApplyCommands:
   - title: Type Check
     command: bun run check
-    allowFailure: false       # Stop execution if this fails
+    allowFailure: false # Stop execution if this fails
 
   - title: Format Code
     command: bun run format
-    allowFailure: true        # Continue even if formatting fails
+    allowFailure: true # Continue even if formatting fails
     hideOutputOnSuccess: true # Only show output on error
 
   - title: Run Tests
     command: bun test
-    workingDirectory: apps/api  # Run in subdirectory
-    env:                      # Custom environment variables
+    workingDirectory: apps/api # Run in subdirectory
+    env: # Custom environment variables
       NODE_ENV: test
       CI: true
 ```
@@ -1162,15 +1189,16 @@ Documentation files must have YAML frontmatter:
 ```markdown
 ---
 description: Authentication patterns
-type: docs              # or 'rules'
+type: docs # or 'rules'
 globs: '*.ts, src/auth/**'
-grep: auth, login       # Match in instructions or source
+grep: auth, login # Match in instructions or source
 ---
 
 Documentation content here...
 ```
 
 Files are included in prompts when:
+
 - Globs match source files
 - Grep terms appear in instructions or source files
 - `alwaysApply: true` in frontmatter
@@ -1191,6 +1219,7 @@ modelApiKeys:
 ```
 
 Falls back to default env vars if custom not found:
+
 - `ANTHROPIC_API_KEY`
 - `OPENAI_API_KEY`
 - `GOOGLE_GENERATIVE_AI_API_KEY`
@@ -1287,6 +1316,7 @@ rmplan validate --verbose
 **Auto-fixing:**
 
 When child plan references parent but parent doesn't include child in dependencies:
+
 ```
 Found inconsistency:
   Plan #123 has parent #100
@@ -1296,6 +1326,7 @@ Fixing: Adding #123 to plan #100 dependencies
 ```
 
 Validation runs automatically during:
+
 - `rmplan add` with `--parent`
 - `rmplan set` with relationship changes
 - Plan file writes
@@ -1330,6 +1361,7 @@ rmplan show 123 --short
 **Notes in prompts:**
 
 Agent prompts include up to 50 latest notes (timestamps omitted for clarity):
+
 ```
 Progress Notes:
 [implementer: Set up auth] Completed middleware implementation
@@ -1429,6 +1461,7 @@ commands:
 ```
 
 Use with:
+
 ```bash
 rmfilter --preset auth
 ```
@@ -1436,6 +1469,7 @@ rmfilter --preset auth
 **MDC file support:**
 
 Automatically includes `.mdc` documentation files from:
+
 - `.cursor/rules/`
 - `~/.config/rmfilter/rules/`
 - Paths configured in `paths.docs`
