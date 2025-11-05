@@ -63,27 +63,52 @@ function parseBooleanOption(value: unknown): boolean {
 }
 
 export async function loadResearchPrompt(
-  args: { plan?: string; withBlockingSubissues?: unknown },
+  args: { plan?: string; allowMultiplePlans?: unknown },
   context: GenerateModeRegistrationContext
 ) {
   clearPlanCache();
   const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
 
-  const withBlockingSubissues = parseBooleanOption(args.withBlockingSubissues);
+  const allowMultiplePlans = parseBooleanOption(args.allowMultiplePlans);
   const parentPlanId = typeof plan.id === 'number' ? plan.id : undefined;
 
   // If plan has simple: true, skip research and use simple generation flow
   if (plan.simple) {
-    return loadGeneratePrompt({ plan: args.plan, withBlockingSubissues }, context);
+    return loadGeneratePrompt({ plan: args.plan, allowMultiplePlans }, context);
   }
 
   const contextBlock = buildPlanContext(plan, planPath, context);
 
+  const multiplePlansGuidance = allowMultiplePlans
+    ? `
+
+# Multiple Plan Creation
+
+If you determine that the scope of this plan is large enough that it would benefit from being broken down into multiple independent plans, you should create additional plans. Consider creating multiple plans when:
+
+1. The work can be naturally divided into separate phases or parts that can be merged independently
+2. Different aspects of the work could be worked on in parallel by different agents
+3. The plan has distinct areas of functionality that have minimal interdependencies
+4. Breaking it down would reduce cognitive load and make each plan more focused
+
+When creating multiple plans:
+- Use the create-plan tool to create each new plan with appropriate title, goal, details, and priority
+- Set the parent field to ${parentPlanId !== undefined ? parentPlanId : 'the current plan ID'} for all child plans
+- Use the dependencies field to specify which plans should be completed before others
+- Document the relationship between plans in each plan's details section
+- Each plan should be independently implementable and testable
+- Each plan should deliver real, demonstrable functionality that works end-to-end
+
+IMPORTANT: Do NOT split plans by architectural layers (frontend/backend, UI/API, client/server). Each plan should deliver a complete, working feature that spans all necessary layers. Split by feature areas or functional domains instead, ensuring each plan produces real, testable value.
+
+Only create multiple plans if it genuinely improves the project organization. For smaller or tightly coupled features, a single plan is preferred.`
+    : '';
+
   const text = `${generateClaudeCodePlanningPrompt(contextBlock, {
     includeNextInstructionSentence: false,
-    withBlockingSubissues,
+    withBlockingSubissues: false,
     parentPlanId,
-  })}
+  })}${multiplePlansGuidance}
 
 ${generateClaudeCodeResearchPrompt(`Once your research is complete`)}
 
@@ -154,22 +179,49 @@ export async function loadPlanPrompt(
 }
 
 export async function loadGeneratePrompt(
-  args: { plan?: string; withBlockingSubissues?: unknown },
+  args: { plan?: string; allowMultiplePlans?: unknown },
   context: GenerateModeRegistrationContext
 ) {
   clearPlanCache();
   let contextBlock = '';
+  let parentPlanId: number | undefined;
   if (args.plan) {
     const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
     contextBlock = buildPlanContext(plan, planPath, context);
+    parentPlanId = typeof plan.id === 'number' ? plan.id : undefined;
   }
 
-  const withBlockingSubissues = parseBooleanOption(args.withBlockingSubissues);
+  const allowMultiplePlans = parseBooleanOption(args.allowMultiplePlans);
+
+  const multiplePlansGuidance = allowMultiplePlans
+    ? `
+
+# Multiple Plan Creation
+
+If you determine that the scope of this plan is large enough that it would benefit from being broken down into multiple independent plans, you should create additional plans. Consider creating multiple plans when:
+
+1. The work can be naturally divided into separate phases or parts that can be merged independently
+2. Different aspects of the work could be worked on in parallel by different agents
+3. The plan has distinct areas of functionality that have minimal interdependencies
+4. Breaking it down would reduce cognitive load and make each plan more focused
+
+When creating multiple plans:
+- Use the create-plan tool to create each new plan with appropriate title, goal, details, and priority
+- Set the parent field to ${parentPlanId !== undefined ? parentPlanId : 'the current plan ID'} for all child plans
+- Use the dependencies field to specify which plans should be completed before others
+- Document the relationship between plans in each plan's details section
+- Each plan should be independently implementable and testable
+- Each plan should deliver real, demonstrable functionality that works end-to-end
+
+IMPORTANT: Do NOT split plans by architectural layers (frontend/backend, UI/API, client/server). Each plan should deliver a complete, working feature that spans all necessary layers. Split by feature areas or functional domains instead, ensuring each plan produces real, testable value.
+
+Only create multiple plans if it genuinely improves the project organization. For smaller or tightly coupled features, a single plan is preferred.`
+    : '';
 
   const text = `${generateClaudeCodeGenerationPrompt(contextBlock, {
     includeMarkdownFormat: false,
-    withBlockingSubissues,
-  })}
+    withBlockingSubissues: false,
+  })}${multiplePlansGuidance}
 
 Use the update-plan-tasks tool to save the generated plan with the following structure:
 - title: The overall project title
@@ -814,17 +866,14 @@ export function registerGenerateMode(
         required: true,
       },
       {
-        name: 'withBlockingSubissues',
+        name: 'allowMultiplePlans',
         description:
-          'Set to true to instruct the agent to create blocking prerequisite plans before generating the main plan.',
+          'Set to true to allow the agent to create multiple independent plans if the scope is large enough to benefit from breaking it down into phases or parts that can be merged independently.',
         required: false,
       },
     ],
     load: async (args) =>
-      loadResearchPrompt(
-        { plan: args.plan, withBlockingSubissues: args.withBlockingSubissues },
-        context
-      ),
+      loadResearchPrompt({ plan: args.plan, allowMultiplePlans: args.allowMultiplePlans }, context),
   });
 
   server.addPrompt({
@@ -889,17 +938,14 @@ export function registerGenerateMode(
         required: false,
       },
       {
-        name: 'withBlockingSubissues',
+        name: 'allowMultiplePlans',
         description:
-          'Set to true to instruct the agent to create blocking prerequisite plans before generating the main plan.',
+          'Set to true to allow the agent to create multiple independent plans if the scope is large enough to benefit from breaking it down into phases or parts that can be merged independently.',
         required: false,
       },
     ],
     load: async (args) =>
-      loadGeneratePrompt(
-        { plan: args.plan, withBlockingSubissues: args.withBlockingSubissues },
-        context
-      ),
+      loadGeneratePrompt({ plan: args.plan, allowMultiplePlans: args.allowMultiplePlans }, context),
   });
 
   server.addTool({
