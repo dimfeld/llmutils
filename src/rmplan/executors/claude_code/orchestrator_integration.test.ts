@@ -9,7 +9,7 @@ test('wrapWithOrchestration integrates batch mode properly', () => {
   // Test non-batch mode (default behavior)
   const nonBatchResult = wrapWithOrchestration(contextContent, planId);
   expect(nonBatchResult).toContain('multi-agent development workflow');
-  expect(nonBatchResult).toContain(`rmplan-${planId}-implementer`);
+  expect(nonBatchResult).toContain(`rmplan-implementer`);
   expect(nonBatchResult).not.toContain('BATCH TASK PROCESSING MODE');
   expect(nonBatchResult).not.toContain('@/path/to/test/plan.yml');
 
@@ -28,7 +28,7 @@ test('wrapWithOrchestration integrates batch mode properly', () => {
   expect(batchResult).toContain('Related functionality');
   expect(batchResult).toContain('Shared files');
   expect(batchResult).toContain('done: true');
-  expect(batchResult).toContain(`rmplan-${planId}-implementer`);
+  expect(batchResult).toContain(`rmplan-implementer`);
   expect(batchResult).toContain('Test context content for implementation');
 
   // Test batch mode disabled explicitly
@@ -39,7 +39,7 @@ test('wrapWithOrchestration integrates batch mode properly', () => {
 
   expect(explicitNonBatchResult).not.toContain('# Batch Task Processing Mode');
   expect(explicitNonBatchResult).not.toContain('@/path/to/test/plan.yml');
-  expect(explicitNonBatchResult).toContain(`rmplan-${planId}-implementer`);
+  expect(explicitNonBatchResult).toContain(`rmplan-implementer`);
 });
 
 test('wrapWithOrchestration handles missing planFilePath gracefully', () => {

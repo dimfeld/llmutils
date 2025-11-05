@@ -28,8 +28,8 @@ describe('orchestrator_prompt failure protocol', () => {
   it('wraps content with two-phase instructions in simple mode', () => {
     const out = wrapWithOrchestrationSimple('Context', 'abc', { batchMode: false });
     expect(out).toContain('Two-Phase Orchestration Instructions');
-    expect(out).toContain('rmplan-abc-implementer');
-    expect(out).toContain('rmplan-abc-verifier');
+    expect(out).toContain('rmplan-implementer');
+    expect(out).toContain('rmplan-verifier');
     expect(out).toContain('implement → verify');
     expect(out).toContain('FAILED:');
   });

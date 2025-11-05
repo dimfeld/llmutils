@@ -14,17 +14,18 @@ export function buildAgentsArgument(agents: AgentDefinition[]): string {
   const agentsObj: Record<string, any> = {};
 
   for (const agent of agents) {
-    agentsObj[agent.name] = {
+    const name = `rmplan-${agent.name}`;
+    agentsObj[name] = {
       description: agent.description,
       prompt: agent.prompt,
     };
 
     if (agent.model) {
-      agentsObj[agent.name].model = agent.model;
+      agentsObj[name].model = agent.model;
     }
 
     if (agent.tools && agent.tools.length > 0) {
-      agentsObj[agent.name].tools = agent.tools;
+      agentsObj[name].tools = agent.tools;
     }
   }
 

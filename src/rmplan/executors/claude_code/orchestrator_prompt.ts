@@ -117,9 +117,9 @@ function buildAvailableAgents(planId: string): string {
   return `## Available Agents
 
 You have access to three specialized agents that you MUST use for this task:
-- **rmplan-${planId}-implementer**: Use this agent to implement new features and write code
-- **rmplan-${planId}-tester**: Use this agent to write and run tests for the implementation
-- **rmplan-${planId}-reviewer**: Use this agent to review code quality and suggest improvements`;
+- **rmplan-implementer**: Use this agent to implement new features and write code
+- **rmplan-tester**: Use this agent to write and run tests for the implementation
+- **rmplan-reviewer**: Use this agent to review code quality and suggest improvements`;
 }
 
 /**
@@ -136,12 +136,12 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
     : `1. **Implementation Phase**`;
 
   const implementationSteps = `
-   - Use the Task tool to invoke the implementer agent with subagent_type="rmplan-${planId}-implementer"
+   - Use the Task tool to invoke the implementer agent with subagent_type="rmplan-implementer"
    - Provide the implementer with the specific task requirements from the context below
    - Wait for the implementer to complete their work`;
 
   const testingPhase = `${options.batchMode ? '3' : '2'}. **Testing Phase**
-   - After implementation is complete, use the Task tool to invoke the tester agent with subagent_type="rmplan-${planId}-tester"
+   - After implementation is complete, use the Task tool to invoke the tester agent with subagent_type="rmplan-tester"
    - Ask the tester to create comprehensive tests for the implemented functionality, if needed
    - Emphasize that tests must test actual implementation code. Testing a reproduction or simulation of the code is useless.
    - Have the tester run the tests and work on fixing any failures`;
@@ -156,7 +156,7 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
       : '';
 
   const reviewPhase = `${options.batchMode ? '4' : '3'}. **Review Phase**
-   - Use the Task tool to invoke the reviewer agent with subagent_type="rmplan-${planId}-reviewer"
+   - Use the Task tool to invoke the reviewer agent with subagent_type="rmplan-reviewer"
    - Tell the reviewer which tasks were just implemented and what project requirements those changes fulfill.
    - Ask the reviewer to analyze the codebase and ensures its quality and adherence to the task requirements
    - The reviewer is instructed to only focus on problems; don't expect positive feedback even if the code is perfect.${reviewFeedbackInstructions}`;
@@ -297,8 +297,8 @@ You are coordinating a streamlined two-phase workflow (implement → verify) for
   const availableAgents = `## Available Agents
 
 You have two specialized agents:
-- **rmplan-${planId}-implementer**: Implements the requested functionality and updates code/tests as needed.
-- **rmplan-${planId}-verifier**: Runs verification commands (typecheck, lint, tests) and ensures the work meets requirements.`;
+- **rmplan-implementer**: Implements the requested functionality and updates code/tests as needed.
+- **rmplan-verifier**: Runs verification commands (typecheck, lint, tests) and ensures the work meets requirements.`;
 
   const taskSelectionPhase = options.batchMode
     ? `1. **Task Selection Phase**
@@ -315,12 +315,12 @@ You MUST follow this simplified loop:
 
 ${taskSelectionPhase}
    - Explore the repository and create a plan on how to implement the task.
-   - Call the implementer agent via the Task tool with subagent_type="rmplan-${planId}-implementer"
+   - Call the implementer agent via the Task tool with subagent_type="rmplan-implementer"
    - Provide precise task instructions and relevant context
    - Wait for the implementer to finish before moving on
 
 ${options.batchMode ? '3' : '2'}. **Verification Phase**
-   - Invoke the verifier agent with subagent_type="rmplan-${planId}-verifier"
+   - Invoke the verifier agent with subagent_type="rmplan-verifier"
    - Direct the verifier to:
      - Ensure tests exist for new or changed behavior (adding tests if gaps remain)
      - Run type checking (e.g. \`bun run check\`)
