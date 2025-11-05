@@ -3,6 +3,7 @@
 
 import * as path from 'node:path';
 import { checkbox } from '@inquirer/prompts';
+import chalk from 'chalk';
 import { error, log, warn } from '../../../logging.js';
 import { getIssueTracker } from '../../../common/issue_tracker/factory.js';
 import type { IssueWithComments, IssueTrackerClient } from '../../../common/issue_tracker/types.js';
@@ -22,13 +23,89 @@ import {
   type IssueInstructionData,
   type HierarchicalIssueInstructionData,
 } from '../../issue_utils.js';
-import type { PlanSchema } from '../../planSchema.js';
+import { prioritySchema, statusSchema, type PlanSchema } from '../../planSchema.js';
 import {
   parseCommandOptionsFromComment,
   combineRmprOptions,
   type RmprOptions,
 } from '../../../rmpr/comment_options.js';
 import { singleLineWithPrefix, limitLines } from '../../../common/formatting.js';
+import { needArrayOrUndefined } from '../../../common/cli.js';
+
+/**
+ * Apply command-line options to a plan
+ *
+ * @param plan - The plan to apply options to
+ * @param options - The command-line options
+ */
+function applyCommandOptions(plan: PlanSchema, options: any): void {
+  if (options.priority) {
+    plan.priority = options.priority;
+  }
+
+  if (options.status) {
+    plan.status = options.status;
+  }
+
+  if (options.temp) {
+    plan.temp = true;
+  }
+
+  if (options.parent !== undefined) {
+    plan.parent = Number(options.parent);
+  }
+
+  if (options.dependsOn) {
+    const deps = needArrayOrUndefined(options.dependsOn);
+    if (deps) {
+      plan.dependencies = deps;
+    }
+  }
+
+  if (options.assign) {
+    plan.assignedTo = options.assign;
+  }
+}
+
+/**
+ * Update parent plan to include this plan as a dependency
+ *
+ * @param parentPlanId - The parent plan ID
+ * @param childPlanId - The child plan ID
+ * @param allPlans - Map of all plans
+ * @param tasksDir - The tasks directory
+ */
+async function updateParentPlanDependencies(
+  parentPlanId: number,
+  childPlanId: number,
+  allPlans: Map<number, PlanSchema & { filename: string }>,
+  tasksDir: string
+): Promise<void> {
+  const parentPlan = allPlans.get(parentPlanId);
+  if (!parentPlan) {
+    throw new Error(`Parent plan with ID ${parentPlanId} not found`);
+  }
+
+  // Add this plan's ID to the parent's dependencies
+  if (!parentPlan.dependencies) {
+    parentPlan.dependencies = [];
+  }
+  if (!parentPlan.dependencies.includes(childPlanId)) {
+    parentPlan.dependencies.push(childPlanId);
+    parentPlan.updatedAt = new Date().toISOString();
+
+    if (parentPlan.status === 'done') {
+      parentPlan.status = 'in_progress';
+      log(chalk.yellow(`  Parent plan "${parentPlan.title}" marked as in_progress`));
+    }
+
+    // Write the updated parent plan
+    await writePlanFile(parentPlan.filename, parentPlan);
+    log(
+      chalk.gray(`  Updated parent plan ${parentPlan.id} to include dependency on ${childPlanId}`)
+    );
+  }
+}
 
 /**
  * Select comments from an issue that aren't already in the existing plan details
@@ -106,12 +183,16 @@ async function selectNewComments(
  * @param issueSpecifier - The issue number or URL
  * @param tasksDir - Directory where plan files are stored
  * @param issueTracker - The issue tracker client to use
+ * @param options - Command-line options to apply to the imported plans
+ * @param allPlans - Map of all existing plans
  * @returns Object with success count and parent plan ID
  */
 async function importHierarchicalIssue(
   issueSpecifier: string,
   tasksDir: string,
-  issueTracker: IssueTrackerClient
+  issueTracker: IssueTrackerClient,
+  options: any,
+  allPlans: Map<number, PlanSchema & { filename: string }>
 ): Promise<{ successCount: number; parentPlanId?: number }> {
   log(`Importing issue hierarchically: ${issueSpecifier}`);
 
@@ -134,10 +215,9 @@ async function importHierarchicalIssue(
   let currentMaxId = maxId;
 
   // Check if parent plan already exists
-  const { plans } = await readAllPlans(tasksDir, false);
   let existingParentPlan: (PlanSchema & { filename: string }) | undefined;
 
-  for (const plan of plans.values()) {
+  for (const plan of allPlans.values()) {
     if (plan.issue && plan.issue.includes(parentIssueUrl)) {
       existingParentPlan = plan;
       break;
@@ -184,6 +264,9 @@ async function importHierarchicalIssue(
     parentPlan = createStubPlanFromIssue(hierarchicalData.parentIssue, parentPlanId);
     currentMaxId = parentPlanId;
 
+    // Apply command-line options to the new parent plan
+    applyCommandOptions(parentPlan, options);
+
     const filenameSuffix = hierarchicalData.parentIssue.suggestedFileName.endsWith('.plan.md')
       ? hierarchicalData.parentIssue.suggestedFileName
       : hierarchicalData.parentIssue.suggestedFileName.endsWith('.md')
@@ -202,7 +285,7 @@ async function importHierarchicalIssue(
 
     // Check if child already exists
     let existingChildPlan: (PlanSchema & { filename: string }) | undefined;
-    for (const plan of plans.values()) {
+    for (const plan of allPlans.values()) {
       if (plan.issue && plan.issue.includes(childIssueUrl)) {
         existingChildPlan = plan;
         break;
@@ -257,6 +340,11 @@ async function importHierarchicalIssue(
       childPlan = createStubPlanFromIssue(child.issueData, currentMaxId);
       childPlan.parent = existingParentPlan?.id ?? parentPlanId;
 
+      // Apply command-line options to the new child plan (but don't override parent)
+      const childOptions = { ...options };
+      delete childOptions.parent; // Parent is already set from hierarchy
+      applyCommandOptions(childPlan, childOptions);
+
       const childFilenameSuffix = child.issueData.suggestedFileName.endsWith('.plan.md')
         ? child.issueData.suggestedFileName
         : child.issueData.suggestedFileName.endsWith('.md')
@@ -295,6 +383,12 @@ async function importHierarchicalIssue(
     );
   }
 
+  // Update parent plan dependencies if parent option was provided
+  // (Only for the top-level parent plan created from the issue)
+  if (options.parent !== undefined && parentPlan.id !== undefined) {
+    await updateParentPlanDependencies(Number(options.parent), parentPlan.id, allPlans, tasksDir);
+  }
+
   return {
     successCount,
     parentPlanId: existingParentPlan?.id ?? parentPlanId,
@@ -307,6 +401,8 @@ async function importHierarchicalIssue(
  * @param issueSpecifier - The issue number or URL
  * @param tasksDir - Directory where plan files are stored
  * @param issueTracker - The issue tracker client to use
+ * @param options - Command-line options to apply to the imported plans
+ * @param allPlans - Map of all existing plans
  * @param withSubissues - Whether to import subissues hierarchically
  * @returns True if import was successful, false if already imported
  */
@@ -314,10 +410,18 @@ async function importSingleIssue(
   issueSpecifier: string,
   tasksDir: string,
   issueTracker: IssueTrackerClient,
+  options: any,
+  allPlans: Map<number, PlanSchema & { filename: string }>,
   withSubissues = false
 ): Promise<boolean> {
   if (withSubissues && issueTracker.fetchIssueWithChildren) {
-    const result = await importHierarchicalIssue(issueSpecifier, tasksDir, issueTracker);
+    const result = await importHierarchicalIssue(
+      issueSpecifier,
+      tasksDir,
+      issueTracker,
+      options,
+      allPlans
+    );
     return result.successCount > 0;
   }
   log(`Importing issue: ${issueSpecifier}`);
@@ -327,10 +431,8 @@ async function importSingleIssue(
   const issueUrl = data.issue.htmlUrl;
 
   // Check for existing plans
-  const { plans } = await readAllPlans(tasksDir, false);
-
   let existingPlan: (PlanSchema & { filename: string }) | undefined;
-  for (const plan of plans.values()) {
+  for (const plan of allPlans.values()) {
     if (plan.issue && plan.issue.includes(issueUrl)) {
       existingPlan = plan;
       break;
@@ -464,6 +566,9 @@ async function importSingleIssue(
   // Create stub plan using the shared utility function
   const stubPlan = createStubPlanFromIssue(issueData, newId);
 
+  // Apply command-line options to the new plan
+  applyCommandOptions(stubPlan, options);
+
   // Generate filename from the suggested name but with .plan.md extension
   const filenameSuffix = issueData.suggestedFileName.endsWith('.plan.md')
     ? issueData.suggestedFileName
@@ -479,6 +584,11 @@ async function importSingleIssue(
 
   log(`Created stub plan file: ${fullPath}`);
   log(`Plan ID: ${newId}`);
+
+  // Update parent plan dependencies if parent option was provided
+  if (options.parent !== undefined) {
+    await updateParentPlanDependencies(Number(options.parent), newId, allPlans, tasksDir);
+  }
 
   return true;
 }
@@ -497,6 +607,40 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
   // Get configuration and tasks directory
   const config = await loadEffectiveConfig();
   const { tasksDir } = await resolvePlanPathContext(config);
+
+  // Load all plans upfront for validation and dependency updates
+  const { plans: allPlans } = await readAllPlans(tasksDir, false);
+
+  // Validate priority if provided
+  if (options.priority) {
+    const validPriorities = prioritySchema.options;
+    if (!validPriorities.includes(options.priority)) {
+      throw new Error(
+        `Invalid priority level: ${options.priority}. Must be one of: ${validPriorities.join(', ')}`
+      );
+    }
+  }
+
+  // Validate status if provided
+  if (options.status) {
+    const validStatuses = statusSchema.options;
+    if (!validStatuses.includes(options.status)) {
+      throw new Error(
+        `Invalid status: ${options.status}. Must be one of: ${validStatuses.join(', ')}`
+      );
+    }
+  }
+
+  // Validate parent plan if provided
+  if (options.parent !== undefined) {
+    const parentPlanId = Number(options.parent);
+    if (!Number.isInteger(parentPlanId) || parentPlanId <= 0) {
+      throw new Error('--parent option requires a positive integer plan ID');
+    }
+    if (!allPlans.has(parentPlanId)) {
+      throw new Error(`Parent plan with ID ${parentPlanId} not found`);
+    }
+  }
 
   // Get the issue tracker client
   const issueTracker = await getIssueTracker(config);
@@ -558,6 +702,8 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
         issueNumber.toString(),
         tasksDir,
         issueTracker,
+        options,
+        allPlans,
         options.withSubissues
       );
       if (success) {
@@ -597,6 +743,8 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
     issueSpecifier,
     tasksDir,
     issueTracker,
+    options,
+    allPlans,
     options.withSubissues
   );
   if (success) {

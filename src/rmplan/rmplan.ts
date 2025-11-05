@@ -227,6 +227,15 @@ program
   .description('Import GitHub issues and create corresponding local plan files')
   .option('--issue <url|number>', 'Issue URL or number to import')
   .option('--with-subissues', 'Include subissues when importing (Linear only)')
+  .option('-p, --priority <level>', 'Set the priority level (low, medium, high, urgent)')
+  .option('--parent <planId>', 'Set the parent plan ID')
+  .option(
+    '-s, --status <status>',
+    'Set the initial status (pending, in_progress, done, cancelled, deferred)'
+  )
+  .option('-d, --depends-on <ids...>', 'Specify plan IDs that this plan depends on')
+  .option('--assign <username>', 'Assign the plan to a user')
+  .option('--temp', 'Mark this plan as temporary (can be deleted with cleanup-temp command)')
   .action(async (issue, options, command) => {
     const { handleImportCommand } = await import('./commands/import/import.js');
     await handleImportCommand(issue, options, command).catch(handleCommandError);
