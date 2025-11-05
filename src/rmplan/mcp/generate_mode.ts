@@ -13,7 +13,7 @@ import { resolveTasksDir } from '../configSchema.js';
 import { buildPlanContext, resolvePlan } from '../plan_display.js';
 import { mcpGetPlan } from '../commands/show.js';
 import { mcpListReadyPlans } from '../commands/ready.js';
-import { readAllPlans, writePlanFile } from '../plans.js';
+import { readAllPlans, writePlanFile, clearPlanCache } from '../plans.js';
 import { findTaskByTitle } from '../utils/task_operations.js';
 import { mergeTasksIntoPlan, updateDetailsWithinDelimiters } from '../plan_merge.js';
 import { appendResearchToPlan } from '../research_utils.js';
@@ -66,6 +66,7 @@ export async function loadResearchPrompt(
   args: { plan?: string; withBlockingSubissues?: unknown },
   context: GenerateModeRegistrationContext
 ) {
+  clearPlanCache();
   const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
 
   const withBlockingSubissues = parseBooleanOption(args.withBlockingSubissues);
@@ -107,6 +108,7 @@ export async function loadQuestionsPrompt(
   args: { plan?: string },
   context: GenerateModeRegistrationContext
 ) {
+  clearPlanCache();
   let contextBlock = '';
   if (args.plan) {
     const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
@@ -132,6 +134,7 @@ export async function loadPlanPrompt(
   args: { plan: string },
   context: GenerateModeRegistrationContext
 ) {
+  clearPlanCache();
   const { plan, planPath } = await resolvePlan(args.plan, context);
   const contextBlock = buildPlanContext(plan, planPath, context);
 
@@ -154,6 +157,7 @@ export async function loadGeneratePrompt(
   args: { plan?: string; withBlockingSubissues?: unknown },
   context: GenerateModeRegistrationContext
 ) {
+  clearPlanCache();
   let contextBlock = '';
   if (args.plan) {
     const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
@@ -394,6 +398,7 @@ export async function mcpManagePlanTask(
   context: GenerateModeRegistrationContext,
   execContext?: { log: GenerateModeExecutionLogger }
 ): Promise<string> {
+  clearPlanCache();
   switch (args.action) {
     case 'add': {
       if (!args.title || !args.description) {
@@ -444,6 +449,7 @@ export async function mcpAddPlanTask(
   context: GenerateModeRegistrationContext,
   execContext?: { log: GenerateModeExecutionLogger }
 ): Promise<string> {
+  clearPlanCache();
   type PlanTask = NonNullable<PlanSchema['tasks']>[number];
   type PlanTaskWithMetadata = PlanTask & { files?: string[]; docs?: string[]; steps?: unknown[] };
 
@@ -491,6 +497,7 @@ export async function mcpRemovePlanTask(
   context: GenerateModeRegistrationContext,
   execContext?: { log: GenerateModeExecutionLogger }
 ): Promise<string> {
+  clearPlanCache();
   const { plan, planPath } = await resolvePlan(args.plan, context);
 
   if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) {
@@ -533,6 +540,7 @@ export async function mcpUpdatePlanTask(
   context: GenerateModeRegistrationContext,
   execContext?: { log: GenerateModeExecutionLogger }
 ): Promise<string> {
+  clearPlanCache();
   const { plan, planPath } = await resolvePlan(args.plan, context);
 
   if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) {
@@ -642,6 +650,7 @@ export async function mcpAppendResearch(
   args: AppendResearchArguments,
   context: GenerateModeRegistrationContext
 ): Promise<string> {
+  clearPlanCache();
   const { plan, planPath } = await resolvePlan(args.plan, context);
   const updated = appendResearchToPlan(plan, args.research, {
     heading: args.heading,
@@ -658,6 +667,7 @@ export async function mcpUpdatePlanDetails(
   args: UpdatePlanDetailsArguments,
   context: GenerateModeRegistrationContext
 ): Promise<string> {
+  clearPlanCache();
   const { plan, planPath } = await resolvePlan(args.plan, context);
   const updatedDetails = updateDetailsWithinDelimiters(args.details, plan.details, args.append);
 
@@ -679,6 +689,7 @@ export async function mcpUpdatePlanTasks(
   context: GenerateModeRegistrationContext,
   execContext: { log: GenerateModeExecutionLogger }
 ): Promise<string> {
+  clearPlanCache();
   const { plan, planPath } = await resolvePlan(args.plan, context);
 
   try {
@@ -711,6 +722,7 @@ export async function mcpCreatePlan(
   context: GenerateModeRegistrationContext,
   execContext?: { log: GenerateModeExecutionLogger }
 ): Promise<string> {
+  clearPlanCache();
   const title = args.title.trim();
   if (!title) {
     throw new UserError('Plan title cannot be empty.');
@@ -1018,6 +1030,7 @@ export function registerGenerateMode(
     description: 'List of all plans in the repository',
     mimeType: 'application/json',
     async load() {
+      clearPlanCache();
       const tasksDir = await resolveTasksDir(context.config);
       const { plans } = await readAllPlans(tasksDir);
 
@@ -1055,6 +1068,7 @@ export function registerGenerateMode(
       },
     ],
     async load(args) {
+      clearPlanCache();
       const { plan } = await resolvePlan(args.planId, context);
       return {
         text: JSON.stringify(plan, null, 2),
@@ -1068,6 +1082,7 @@ export function registerGenerateMode(
     description: 'Plans ready to execute (all dependencies satisfied)',
     mimeType: 'application/json',
     async load() {
+      clearPlanCache();
       const tasksDir = await resolveTasksDir(context.config);
       const { plans } = await readAllPlans(tasksDir);
 

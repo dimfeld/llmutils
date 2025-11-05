@@ -2,6 +2,7 @@ import { UserError } from 'fastmcp';
 import type { GenerateModeRegistrationContext } from '../generate_mode.js';
 import { resolvePlan } from '../../plan_display.js';
 import { generateCompactionPrompt } from '../../commands/compact.js';
+import { clearPlanCache } from '../../plans.js';
 
 const COMPLETED_STATUSES = new Set(['done', 'cancelled', 'deferred']);
 const DEFAULT_MINIMUM_AGE_DAYS = 30;
@@ -14,6 +15,7 @@ export async function loadCompactPlanPrompt(
   args: LoadCompactPlanArgs,
   context: GenerateModeRegistrationContext
 ) {
+  clearPlanCache();
   const planIdentifier = args.plan?.trim();
   if (!planIdentifier) {
     throw new UserError('Plan ID or file path is required to build a compaction prompt.');
