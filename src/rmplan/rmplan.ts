@@ -103,6 +103,17 @@ program
   });
 
 program
+  .command('init')
+  .description('Initialize a repository with a sample rmplan configuration file')
+  .option('--force', 'Overwrite existing configuration file if it exists')
+  .option('--minimal', 'Create a minimal configuration with only essential settings')
+  .option('-y, --yes', 'Use default values without prompting')
+  .action(async (options, command) => {
+    const { handleInitCommand } = await import('./commands/init.js');
+    await handleInitCommand(options, command).catch(handleCommandError);
+  });
+
+program
   .command('generate [plan]')
   .description('Generate planning prompt and context for a task')
   .option('--plan <plan>', 'Plan to use')
