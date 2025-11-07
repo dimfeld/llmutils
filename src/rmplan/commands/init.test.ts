@@ -9,7 +9,7 @@ import { ModuleMocker } from '../../testing.js';
 describe('rmplan init command', () => {
   let tempDir: string;
   let originalCwd: string;
-  const moduleMocker = new ModuleMocker();
+  const moduleMocker = new ModuleMocker(import.meta);
 
   beforeEach(async () => {
     // Create temporary directory
