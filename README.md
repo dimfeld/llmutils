@@ -87,6 +87,12 @@ pnpm add -g file://$(pwd)
 Here's a complete workflow from issue to implementation:
 
 ```bash
+# 0. Initialize rmplan in your repository (first time only)
+rmplan init
+# Interactive setup: creates .rmfilter/config/rmplan.yml
+# Choose tasks directory, executor, and other preferences
+# Use --yes for defaults or --minimal for minimal config
+
 # 1. Generate a plan from a GitHub issue
 rmplan generate --issue 123 -- src/api/**/*.ts
 # Claude Code analyzes the issue, researches the codebase, and creates a detailed plan
@@ -1035,7 +1041,34 @@ Locks prevent concurrent execution in the same workspace:
 
 ## Configuration
 
-Configure rmplan via `.rmfilter/config/rmplan.yml`:
+### Initializing Configuration
+
+The easiest way to set up rmplan is with the `init` command:
+
+```bash
+# Interactive setup (recommended for first-time users)
+rmplan init
+
+# Use defaults without prompting
+rmplan init --yes
+
+# Create minimal configuration
+rmplan init --minimal
+
+# Overwrite existing configuration
+rmplan init --force
+```
+
+The `init` command will:
+
+- Create `.rmfilter/config/rmplan.yml` with sample configuration
+- Set up the tasks directory (default: `tasks/`)
+- Guide you through choosing an executor and other preferences
+- Configure common settings like code formatting commands
+
+### Manual Configuration
+
+You can also manually configure rmplan via `.rmfilter/config/rmplan.yml`:
 
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json

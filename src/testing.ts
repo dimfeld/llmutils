@@ -36,7 +36,7 @@ export class ModuleMocker {
 
   async mock(modulePath: string, renderMocks: () => Record<string, any>) {
     // Resolve the module path relative to the calling file
-    const resolvedPath = this.importMeta.resolveSync(modulePath);
+    const resolvedPath = Bun.resolveSync(modulePath, this.importMeta.dirname);
 
     let original: Record<string, any>;
     try {
