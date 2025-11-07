@@ -149,24 +149,14 @@ async function promptForConfig(): Promise<RmplanConfigInput> {
     message: 'Which executor should be used by default?',
     choices: [
       {
-        name: 'copy-only - Copy context without executing (safest)',
-        value: 'copy-only',
-        description: 'Just copy the context to clipboard without running any LLM',
-      },
-      {
-        name: 'claude-code - Use Claude Code for execution',
+        name: 'claude-code - Claude Code',
         value: 'claude-code',
         description: 'Recommended if you use Claude Code',
       },
       {
-        name: 'copy-paste - Copy to clipboard and prompt for edits',
-        value: 'copy-paste',
-        description: 'Interactive workflow with manual paste',
-      },
-      {
-        name: 'direct-call - Direct LLM API call and apply edits',
-        value: 'direct-call',
-        description: 'Fully automated workflow',
+        name: 'codex-cli - OpenAI Codex',
+        value: 'codex-cli',
+        description: 'Recommended if you use OpenAI Codex',
       },
     ],
     default: DEFAULT_EXECUTOR,

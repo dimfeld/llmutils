@@ -3,4 +3,4 @@
  * This file exists to avoid circular dependencies.
  */
 
-export const DEFAULT_EXECUTOR = 'copy-only';
+export const DEFAULT_EXECUTOR = 'claude-code';
