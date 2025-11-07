@@ -44,7 +44,7 @@ describe('agent_generator', () => {
       const parsed = JSON.parse(result);
 
       expect(parsed).toEqual({
-        implementer: {
+        'rmplan-implementer': {
           description: 'Implements new features',
           prompt: 'You are an implementation agent.',
         },
@@ -74,15 +74,15 @@ describe('agent_generator', () => {
       const parsed = JSON.parse(result);
 
       expect(parsed).toEqual({
-        implementer: {
+        'rmplan-implementer': {
           description: 'Implements new features',
           prompt: 'You are an implementation agent.',
         },
-        tester: {
+        'rmplan-tester': {
           description: 'Tests the implementation',
           prompt: 'You are a testing agent.',
         },
-        reviewer: {
+        'rmplan-reviewer': {
           description: 'Reviews code',
           prompt: 'You are a review agent.',
         },
@@ -103,7 +103,7 @@ describe('agent_generator', () => {
       const parsed = JSON.parse(result);
 
       expect(parsed).toEqual({
-        implementer: {
+        'rmplan-implementer': {
           description: 'Implements new features',
           prompt: 'You are an implementation agent.',
           model: 'sonnet',
@@ -125,7 +125,7 @@ describe('agent_generator', () => {
       const parsed = JSON.parse(result);
 
       expect(parsed).toEqual({
-        implementer: {
+        'rmplan-implementer': {
           description: 'Implements new features',
           prompt: 'You are an implementation agent.',
           tools: ['Read', 'Write', 'Edit'],
@@ -148,7 +148,7 @@ describe('agent_generator', () => {
       const parsed = JSON.parse(result);
 
       expect(parsed).toEqual({
-        reviewer: {
+        'rmplan-reviewer': {
           description: 'Reviews code',
           prompt: 'You are a review agent.',
           model: 'opus',
@@ -171,12 +171,12 @@ describe('agent_generator', () => {
       const parsed = JSON.parse(result);
 
       expect(parsed).toEqual({
-        implementer: {
+        'rmplan-implementer': {
           description: 'Implements new features',
           prompt: 'You are an implementation agent.',
         },
       });
-      expect(parsed.implementer.tools).toBeUndefined();
+      expect(parsed['rmplan-implementer'].tools).toBeUndefined();
     });
 
     test('handles empty agents array', () => {
@@ -202,7 +202,7 @@ Line 3`,
       const result = buildAgentsArgument(agents);
       const parsed = JSON.parse(result);
 
-      expect(parsed.implementer.prompt).toBe('Line 1\nLine 2\nLine 3');
+      expect(parsed['rmplan-implementer'].prompt).toBe('Line 1\nLine 2\nLine 3');
     });
 
     test('handles special characters in prompts', () => {
@@ -217,7 +217,7 @@ Line 3`,
       const result = buildAgentsArgument(agents);
       const parsed = JSON.parse(result);
 
-      expect(parsed.implementer.prompt).toBe(
+      expect(parsed['rmplan-implementer'].prompt).toBe(
         'Test "quotes" and \'apostrophes\' and \\ backslashes'
       );
     });
