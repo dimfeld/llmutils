@@ -159,6 +159,7 @@ async function createStubPlanFromText(
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     tasks: [],
+    tags: [],
   };
 
   // Add issue URLs if provided

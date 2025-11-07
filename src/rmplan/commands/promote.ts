@@ -109,6 +109,7 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
         status: 'pending',
         // Task has no files or steps anymore - if needed, those should be part of the description
         tasks: [],
+        tags: originalPlan.tags ? [...originalPlan.tags] : [],
         dependencies,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),

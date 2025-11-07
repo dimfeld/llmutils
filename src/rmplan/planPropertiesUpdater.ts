@@ -1,11 +1,15 @@
 import { log } from '../logging.js';
+import type { RmplanConfig } from './configSchema.js';
 import type { PlanSchema } from './planSchema.js';
+import { normalizeTags, validateTags } from './utils/tags.js';
 
 export interface PlanPropertyOptions {
   rmfilter?: string[];
   issue?: string[];
   doc?: string[];
   assign?: string;
+  tag?: string[];
+  noTag?: string[];
 }
 
 /**
@@ -14,7 +18,11 @@ export interface PlanPropertyOptions {
  * @param options The options containing property values to set
  * @returns true if any modifications were made
  */
-export function updatePlanProperties(plan: PlanSchema, options: PlanPropertyOptions): boolean {
+export function updatePlanProperties(
+  plan: PlanSchema,
+  options: PlanPropertyOptions,
+  config?: RmplanConfig
+): boolean {
   let modified = false;
 
   // Update rmfilter
@@ -63,5 +71,41 @@ export function updatePlanProperties(plan: PlanSchema, options: PlanPropertyOpti
     log(`Assigned to ${options.assign}`);
   }
 
+  if (options.tag && options.tag.length > 0) {
+    const validatedTags = validateTags(options.tag, config);
+    if (validatedTags.length > 0) {
+      const existingTags = normalizeTags(plan.tags);
+      const mergedTags = normalizeTags([...existingTags, ...validatedTags]);
+      if (!arraysEqual(existingTags, mergedTags)) {
+        plan.tags = mergedTags;
+        modified = true;
+        log(`Updated tags: ${mergedTags.join(', ')}`);
+      }
+    }
+  }
+
+  if (options.noTag && options.noTag.length > 0) {
+    const tagsToRemove = new Set(normalizeTags(options.noTag));
+    if (tagsToRemove.size > 0) {
+      const existingTags = normalizeTags(plan.tags);
+      if (existingTags.length > 0) {
+        const filteredTags = existingTags.filter((tag) => !tagsToRemove.has(tag));
+        if (!arraysEqual(existingTags, filteredTags)) {
+          plan.tags = filteredTags;
+          modified = true;
+          log(`Removed ${existingTags.length - filteredTags.length} tag(s)`);
+        }
+      }
+    }
+  }
+
   return modified;
+}
+
+function arraysEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  return a.every((value, index) => value === b[index]);
 }

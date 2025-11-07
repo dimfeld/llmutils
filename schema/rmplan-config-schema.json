@@ -80,6 +80,20 @@
         }
       }
     },
+    "tags": {
+      "description": "Configuration for plan tags, including allowlists",
+      "type": "object",
+      "properties": {
+        "allowed": {
+          "description": "List of allowed tags. If set, only these tags can be added to plans.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "autoexamples": {
       "type": "array",
       "items": {

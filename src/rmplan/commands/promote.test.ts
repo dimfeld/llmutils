@@ -126,6 +126,31 @@ describe('handlePromoteCommand', () => {
     expect(logSpy).toHaveBeenCalled();
   });
 
+  test('promoted plan carries over tags from original plan', async () => {
+    const originalPlan: PlanSchema = {
+      id: 1,
+      goal: 'Tagged parent',
+      title: 'Parent Plan',
+      tags: ['backend', 'urgent'],
+      tasks: [
+        {
+          title: 'Tagged Task',
+          description: 'Needs its own plan',
+        },
+      ],
+    };
+
+    await createPlanFile('1', originalPlan);
+
+    await handlePromoteCommand(['1.1'], {});
+
+    const childPlan = await readPlanFile(path.join(tasksDir, '2.plan.md'));
+    expect(childPlan.tags).toEqual(['backend', 'urgent']);
+
+    const updatedParent = await readPlanFile(path.join(tasksDir, '1.yml'));
+    expect(updatedParent.tags).toEqual(['backend', 'urgent']);
+  });
+
   test('should promote a range of tasks to new top-level plans with chained dependencies', async () => {
     // Create a sample plan with multiple tasks
     const originalPlan: PlanSchema = {

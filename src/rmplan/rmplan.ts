@@ -213,6 +213,7 @@ program
   )
   .option('-i, --issue <urls...>', 'Add GitHub issue URLs to the plan')
   .option('--doc <paths...>', 'Add documentation file paths to the plan')
+  .option('--tag <tags...>', 'Add tags to the plan (repeatable)')
   .option('--assign <username>', 'Assign the plan to a user')
   .option('--discovered-from <planId>', 'Set the plan this was discovered from', (value) => {
     const n = Number(value);
@@ -657,6 +658,8 @@ program
   .option('--no-i, --no-issue <urls...>', 'Remove GitHub issue URLs from the plan')
   .option('--doc <paths...>', 'Add documentation file paths to the plan')
   .option('--no-doc <paths...>', 'Remove documentation file paths from the plan')
+  .option('--tag <tags...>', 'Add tags to the plan (repeatable)')
+  .option('--no-tag <tags...>', 'Remove tags from the plan')
   .option('--assign <username>', 'Assign the plan to a user')
   .option('--no-assign', 'Remove the plan assignment')
   .option('--sd, --status-description <description>', 'Set a description for the current status')

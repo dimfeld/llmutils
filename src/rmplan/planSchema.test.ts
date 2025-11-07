@@ -73,3 +73,42 @@ describe('planSchema progressNotes', () => {
     expect(parsed.progressNotes === undefined || parsed.progressNotes.length === 0).toBe(true);
   });
 });
+
+describe('planSchema tags', () => {
+  test('accepts valid tag arrays', () => {
+    const plan = {
+      title: 'Tagged Plan',
+      goal: 'Test goal',
+      details: 'Details',
+      tasks: [],
+      tags: ['frontend', 'bug'],
+    };
+
+    const parsed = planSchema.parse(plan);
+    expect(parsed.tags).toEqual(['frontend', 'bug']);
+  });
+
+  test('rejects non-string tag entries', () => {
+    const plan = {
+      title: 'Invalid Tags Plan',
+      goal: 'Test goal',
+      details: 'Details',
+      tasks: [],
+      tags: ['frontend', 123],
+    } as any;
+
+    expect(() => planSchema.parse(plan)).toThrow();
+  });
+
+  test('defaults to empty tags when missing', () => {
+    const plan = {
+      title: 'No Tags Plan',
+      goal: 'Test goal',
+      details: 'Details',
+      tasks: [],
+    };
+
+    const parsed = planSchema.parse(plan);
+    expect(parsed.tags === undefined || parsed.tags.length === 0).toBe(true);
+  });
+});

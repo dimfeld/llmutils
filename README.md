@@ -450,6 +450,18 @@ rmplan add "Integration tests" --depends-on 101,102
 rmplan add "Refactor auth" --discovered-from 99
 ```
 
+**Tag plans:**
+
+```bash
+# Add tags during creation (tags are normalized to lowercase)
+rmplan add "UI refresh" --tag frontend --tag urgent
+
+# Update tags later
+rmplan set 123 --tag backend --no-tag frontend
+```
+
+Configure an allowlist via `tags.allowed` in `rmplan.yml` to restrict tags to a shared vocabulary across the team.
+
 **Open in editor:**
 
 ```bash
@@ -1575,7 +1587,7 @@ rmfind src/**/*.ts --grep getUserData --whole-word
 
 ```bash
 # Create stub
-rmplan add "Feature name" [--output FILE] [--parent ID] [--priority LEVEL]
+rmplan add "Feature name" [--output FILE] [--parent ID] [--priority LEVEL] [--tag TAG...]
 
 # Generate detailed tasks
 rmplan generate [--issue NUM | --plan FILE | --plan-editor] -- [RMFILTER_ARGS]
@@ -1618,7 +1630,7 @@ rmplan agent --next-ready PARENT_ID
 
 ```bash
 # Set metadata
-rmplan set ID --parent PARENT --priority LEVEL --status STATUS
+rmplan set ID --parent PARENT --priority LEVEL --status STATUS [--tag TAG...] [--no-tag TAG...]
 
 # Add/remove tasks
 rmplan add-task ID --title "Title" --description "Desc" [--files FILE]

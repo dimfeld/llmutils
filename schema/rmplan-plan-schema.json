@@ -231,6 +231,13 @@
       "items": {
         "type": "string"
       }
+    },
+    "tags": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "required": [

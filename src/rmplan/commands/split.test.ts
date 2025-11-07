@@ -89,6 +89,32 @@ describe('rmplan split - manual', () => {
     expect(child.details).toContain('Description 2');
   });
 
+  test('child plan inherits parent tags during split', async () => {
+    const parentPlan: PlanSchema = {
+      id: 1,
+      goal: 'Parent goal',
+      title: 'Parent Plan',
+      tags: ['frontend', 'urgent'],
+      tasks: [
+        { title: 'Task 1', description: 'Description 1' },
+        { title: 'Task 2', description: 'Description 2' },
+      ],
+    };
+    const parentFile = join(testDir, '1-parent.plan.md');
+    await writePlanFile(parentFile, parentPlan);
+
+    const command = { parent: { opts: () => ({}) } } as any;
+
+    await handleSplitCommand(parentFile, { tasks: '1' }, command);
+
+    const updatedParent = await readPlanFile(parentFile);
+    expect(updatedParent.tags).toEqual(['frontend', 'urgent']);
+
+    const childFile = join(testDir, '2-task-1.plan.md');
+    const child = await readPlanFile(childFile);
+    expect(child.tags).toEqual(['frontend', 'urgent']);
+  });
+
   test('split preserves parent progress notes and does not copy to child', async () => {
     const parentPlan: PlanSchema = {
       id: 1,

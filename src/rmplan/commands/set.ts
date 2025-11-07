@@ -3,6 +3,7 @@ import { getGitRoot } from '../../common/git.js';
 import { log, warn } from '../../logging.js';
 import { readAllPlans, readPlanFile, writePlanFile, resolvePlanFile } from '../plans.js';
 import { resolveTasksDir } from '../configSchema.js';
+import type { RmplanConfig } from '../configSchema.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import { wouldCreateCircularDependency } from './validate.js';
@@ -32,6 +33,8 @@ export interface SetOptions {
   noDoc?: string[];
   assign?: string;
   noAssign?: boolean;
+  tag?: string[];
+  noTag?: string[];
 }
 
 export async function handleSetCommand(
@@ -44,6 +47,14 @@ export async function handleSetCommand(
   const plan = await readPlanFile(options.planFile);
   let modified = false;
   let shouldRemoveAssignment = false;
+  let cachedConfig: RmplanConfig | undefined;
+
+  const getConfig = async (): Promise<RmplanConfig> => {
+    if (!cachedConfig) {
+      cachedConfig = await loadEffectiveConfig(globalOpts?.config);
+    }
+    return cachedConfig;
+  };
 
   // Update priority
   if (options.priority) {
@@ -65,7 +76,7 @@ export async function handleSetCommand(
     }
 
     if (plan.parent && plan.status === 'done') {
-      const config = await loadEffectiveConfig(globalOpts?.config);
+      const config = await getConfig();
       await checkAndMarkParentDone(plan.parent, config);
     }
 
@@ -123,7 +134,7 @@ export async function handleSetCommand(
   // Handle parent operations (set parent or remove parent)
   if (options.parent !== undefined || options.noParent) {
     // Load all plans once for both operations
-    const config = await loadEffectiveConfig(globalOpts.config);
+    const config = await getConfig();
     const planDir = await resolveTasksDir(config);
     const { plans: allPlans } = await readAllPlans(planDir);
 
@@ -223,12 +234,22 @@ export async function handleSetCommand(
   }
 
   // Update properties using shared function
-  const propertiesModified = updatePlanProperties(plan, {
-    rmfilter: options.rmfilter,
-    issue: options.issue,
-    doc: options.doc,
-    assign: options.assign,
-  });
+  const needsTagConfig = Boolean(
+    (options.tag && options.tag.length > 0) || (options.noTag && options.noTag.length > 0)
+  );
+  const configForTags = needsTagConfig ? await getConfig() : undefined;
+  const propertiesModified = updatePlanProperties(
+    plan,
+    {
+      rmfilter: options.rmfilter,
+      issue: options.issue,
+      doc: options.doc,
+      assign: options.assign,
+      tag: options.tag,
+      noTag: options.noTag,
+    },
+    configForTags
+  );
   if (propertiesModified) {
     modified = true;
   }

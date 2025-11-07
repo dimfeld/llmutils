@@ -8,6 +8,7 @@ import { handleSetCommand } from './set.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { RmplanConfig } from '../configSchema.js';
 import { ModuleMocker } from '../../testing.js';
+import { clearConfigCache } from '../configLoader.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 const logSpy = mock(() => {});
@@ -24,9 +25,11 @@ describe('rmplan set command', () => {
   let tempDir: string;
   let tasksDir: string;
   let globalOpts: any;
+  let configPath: string;
 
   beforeEach(async () => {
     moduleMocker.clear();
+    clearConfigCache();
     logSpy.mockClear();
     warnSpy.mockClear();
     errorSpy.mockClear();
@@ -41,9 +44,10 @@ describe('rmplan set command', () => {
       },
     };
     await mkdir(tasksDir, { recursive: true });
-    await Bun.file(path.join(tempDir, '.rmplan.yml')).write(yaml.stringify(config));
+    configPath = path.join(tempDir, '.rmplan.yml');
+    await Bun.file(configPath).write(yaml.stringify(config));
     globalOpts = {
-      config: path.join(tempDir, '.rmplan.yml'),
+      config: configPath,
     };
 
     getRepositoryIdentitySpy.mockResolvedValue({
@@ -69,10 +73,11 @@ describe('rmplan set command', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
+    clearConfigCache();
     await rm(tempDir, { recursive: true });
   });
 
-  const createTestPlan = async (id: number) => {
+  const createTestPlan = async (id: number, overrides?: Partial<PlanSchema>) => {
     const planPath = path.join(tasksDir, `${id}.yml`);
     const plan: PlanSchema = {
       id,
@@ -84,6 +89,10 @@ describe('rmplan set command', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+
+    if (overrides) {
+      Object.assign(plan, overrides);
+    }
     const yamlContent = yaml.stringify(plan);
     const schemaLine =
       '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
@@ -946,5 +955,77 @@ describe('rmplan set command', () => {
 
     updatedPlan = await readPlanFile(planPath);
     expect(updatedPlan.discoveredFrom).toBe(39);
+  });
+
+  test('adds tags with normalization and deduplication', async () => {
+    const planPath = await createTestPlan(200);
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        tag: ['Frontend', 'frontend', 'Urgent', ''],
+      },
+      globalOpts
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.tags).toEqual(['frontend', 'urgent']);
+  });
+
+  test('removes specified tags', async () => {
+    const planPath = await createTestPlan(201, { tags: ['frontend', 'bug', 'urgent'] });
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        noTag: ['BUG'],
+      },
+      globalOpts
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.tags).toEqual(['frontend', 'urgent']);
+  });
+
+  test('supports adding and removing tags in one command', async () => {
+    const planPath = await createTestPlan(202, { tags: ['frontend'] });
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        tag: ['Bug'],
+        noTag: ['frontend'],
+      },
+      globalOpts
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.tags).toEqual(['bug']);
+  });
+
+  test('rejects tags not in allowlist', async () => {
+    await Bun.file(configPath).write(
+      yaml.stringify({
+        paths: { tasks: tasksDir },
+        tags: { allowed: ['frontend', 'backend'] },
+      })
+    );
+    clearConfigCache();
+
+    const planPath = await createTestPlan(203);
+
+    await expect(
+      handleSetCommand(
+        planPath,
+        {
+          planFile: planPath,
+          tag: ['urgent'],
+        },
+        globalOpts
+      )
+    ).rejects.toThrow(/Invalid tag/);
   });
 });

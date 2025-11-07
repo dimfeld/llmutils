@@ -801,6 +801,7 @@ export async function mcpCreatePlan(
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     tasks: [],
+    tags: [],
   };
 
   const filename = generatePlanFilename(nextId, title);

@@ -211,6 +211,26 @@ describe('configLoader', () => {
     expect(messageText).not.toMatch(/x-oauth-basic/);
   });
 
+  test('loadEffectiveConfig applies tags allowlist overrides from local config', async () => {
+    const mainConfigPath = path.join(configDir, 'rmplan.yml');
+    const tasksPath = path.join(testDir, 'tasks');
+    await fs.mkdir(tasksPath, { recursive: true });
+    const mainConfig = yaml.stringify({
+      paths: { tasks: tasksPath },
+      tags: { allowed: ['frontend', 'backend'] },
+    });
+    await fs.writeFile(mainConfigPath, mainConfig, 'utf-8');
+
+    const localConfigPath = path.join(configDir, 'rmplan.local.yml');
+    const localConfig = yaml.stringify({
+      tags: { allowed: ['urgent'] },
+    });
+    await fs.writeFile(localConfigPath, localConfig, 'utf-8');
+
+    const config = await loadEffectiveConfig();
+    expect(config.tags?.allowed).toEqual(['urgent']);
+  });
+
   test('findConfigPath falls back to external repository config path when default config does not exist', async () => {
     await fs.rm(path.join(configDir, 'rmplan.yml'), { force: true });
 

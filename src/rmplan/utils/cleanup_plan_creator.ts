@@ -21,6 +21,7 @@ export interface CleanupPlanOptions {
   rmfilter?: string[];
   issue?: string[];
   doc?: string[];
+  tag?: string[];
 }
 
 export interface CleanupPlanResult {
@@ -105,15 +106,21 @@ export async function createCleanupPlan(
     updatedAt: new Date().toISOString(),
     tasks: [],
     rmfilter: Array.from(filePaths).sort(), // Convert to sorted array
+    tags: [],
   };
 
   // Apply additional properties using the shared function
-  updatePlanProperties(plan, {
-    rmfilter: options.rmfilter,
-    issue: options.issue,
-    doc: options.doc,
-    assign: options.assign,
-  });
+  updatePlanProperties(
+    plan,
+    {
+      rmfilter: options.rmfilter,
+      issue: options.issue,
+      doc: options.doc,
+      assign: options.assign,
+      tag: options.tag,
+    },
+    config
+  );
 
   // Update parent plan dependencies
   if (!referencedPlan.dependencies) {

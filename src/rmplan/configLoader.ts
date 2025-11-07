@@ -51,6 +51,7 @@ function mergeConfigs(mainConfig: RmplanConfig, localConfig: RmplanConfig): Rmpl
   mergeConfigKey('paths');
   mergeConfigKey('postApplyCommands');
   mergeConfigKey('planning');
+  mergeConfigKey('tags');
 
   // Handle executors: deep merge objects
   if (localConfig.executors !== undefined) {

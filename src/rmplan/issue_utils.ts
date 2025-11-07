@@ -451,6 +451,7 @@ export function createStubPlanFromIssue(
     tasks: [], // Empty tasks array - this is the "stub" part
     createdAt: now,
     updatedAt: now,
+    tags: [],
   };
 
   // Add project information if present in the issue

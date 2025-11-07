@@ -83,6 +83,7 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
     baseBranch: z.string().optional(),
     changedFiles: z.array(z.string()).default([]).optional(),
     rmfilter: z.array(z.string()).default([]).optional(),
+    tags: z.array(z.string()).default([]).optional(),
   }).describe('rmplan phase file schema');
 
   const multiPhasePlanSchema = objectFactory({
