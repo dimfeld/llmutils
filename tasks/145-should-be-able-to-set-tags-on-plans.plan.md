@@ -18,7 +18,7 @@ docs: []
 planGeneratedAt: 2025-11-07T18:28:25.095Z
 promptsGeneratedAt: 2025-11-07T18:28:25.095Z
 createdAt: 2025-11-07T18:16:10.651Z
-updatedAt: 2025-11-08T03:27:19.740Z
+updatedAt: 2025-11-08T03:52:43.401Z
 progressNotes:
   - timestamp: 2025-11-08T02:39:46.849Z
     text: Added tags schema/config fields, normalization helpers, and CLI plumbing
@@ -52,6 +52,27 @@ progressNotes:
     text: Reviewed tag filtering/display changes plus list/ready/show tests; no
       issues found.
     source: "reviewer: tasks 6-10,17-18"
+  - timestamp: 2025-11-08T03:32:44.360Z
+    text: Extended the MCP schemas to support tags (create-plan args + list-ready
+      filters), validated/normalized tags during plan creation, and added
+      tag-aware filtering plus JSON output in the MCP ready tool along with
+      ready_plans formatter.
+    source: "implementer: tasks 11-13"
+  - timestamp: 2025-11-08T03:33:01.948Z
+    text: Added MCP coverage for tags (create-plan accepts/validates tags,
+      list-ready filters by tags, and JSON output exposes normalized tags) plus
+      ran bun test on generate_mode and ready_plans suites and bun run check.
+    source: "tester: task 19"
+  - timestamp: 2025-11-08T03:38:06.433Z
+    text: Added CLI↔MCP tag integration tests covering CLI creation with MCP
+      filtering, MCP creation updated via CLI set, and shared allowlist
+      enforcement.
+    source: "tester: task 20"
+  - timestamp: 2025-11-08T03:47:58.189Z
+    text: "Identified issues in the new MCP tag support: limit is applied before tag
+      filtering in list-ready, and the function never invalidates the plan cache
+      so CLI tag updates are invisible without a manual clear."
+    source: "reviewer: tasks 11-13,19-20"
 tasks:
   - title: Add tags field to plan schemas
     done: true
@@ -120,21 +141,21 @@ tasks:
       formats (list, table, JSON). Follow same display patterns as list command.
       Ensure tags are visible but don't clutter the output.
   - title: Add tags parameter to MCP create-plan tool
-    done: false
+    done: true
     description: "In src/rmplan/mcp/generate_mode.ts, add `tags:
       z.array(z.string()).optional()` to createPlanParameters schema (lines
       ~413-428). In mcpCreatePlan implementation (lines ~786-804), load config
       and validate tags using validateTags before setting plan.tags. Handle
       validation errors appropriately for MCP response."
   - title: Add tags filtering to MCP list-ready-plans tool
-    done: false
+    done: true
     description: "In src/rmplan/mcp/generate_mode.ts, add `tags:
       z.array(z.string()).optional()` to listReadyPlansParameters schema (lines
       ~387-409). In mcpListReadyPlans implementation (lines ~556-576), apply tag
       filtering with OR logic after getting ready plans. Normalize filter tags
       to lowercase. No validation needed."
   - title: Add tags to MCP list-ready-plans output
-    done: false
+    done: true
     description: In src/rmplan/mcp/generate_mode.ts, add tags field to the plan
       object in list-ready-plans output JSON (lines ~209-233). Include the full
       tags array in the response for each plan.
@@ -167,13 +188,13 @@ tasks:
       ready plans by tags, OR logic with multiple tags, and tags display in all
       output formats (list, table, JSON)."
   - title: Write tests for MCP tag operations
-    done: false
+    done: true
     description: "Add tests to src/rmplan/mcp/generate_mode.test.ts for: create-plan
       with tags parameter, list-ready-plans with tags filter, tag normalization
       in MCP tools, tag validation against allowed tags in MCP tools, and tags
       in output JSON."
   - title: Write integration tests for cross-interface tag consistency
-    done: false
+    done: true
     description: "Following the pattern in
       src/rmplan/commands/task-management.integration.test.ts, create tests that
       verify tag operations work consistently across CLI and MCP interfaces.
@@ -640,3 +661,9 @@ Regression coverage: new planSchema tests assert tag parsing, set.test.ts verifi
 Addressed review feedback for tasks 'Add tags field to plan schemas' and 'Add tag normalization utility function'. Regenerated schema/rmplan-config-schema.json via 'bun scripts/update-json-schemas.ts' so the JSON schema now declares the tags.allowed block that matches RmplanConfig, enabling editor validation for tag allowlists. Updated validateTags in src/rmplan/utils/tags.ts to treat any configured tags.allowed array as authoritative (including an empty array) by normalizing the allowlist, checking every proposed tag against it, and emitting a clear 'No tags are currently allowed by configuration.' error when violated. Added a regression in src/rmplan/utils/tags.test.ts that asserts tags.allowed: [] blocks additions to prevent future regressions. Validated the helpers with 'bun test src/rmplan/utils/tags.test.ts'.
 
 Implemented tag-aware filtering and display across rmplan list/ready/show plus regression tests. Added formatTagsSummary utility, extended CLI flags (--tag) for list/ready, and updated the list/ready table renderers to include a Tags column with truncation. Ready/list list formats now normalize filter input and reject unt tagged plans when filtering; ready JSON output also exposes the tags array. The show command prints tags (or 'none') in metadata blocks, and the README documents tag filtering usage. Added dedicated tests covering tag filtering semantics (single, OR, case-insensitive), table/header expectations, and tag visibility in list/table/json outputs.
+
+Implemented MCP tag support for tasks 11, 12, 13, and 19. Added tag inputs to createPlanParameters/listReadyPlansParameters and wired validateTags into mcpCreatePlan so new plans store normalized tags while honoring config allowlists. Extended mcpListReadyPlans to normalize incoming tag filters, apply OR logic against plan metadata, and feed the enriched tag arrays into formatReadyPlansAsJson which now emits tags via normalizeTags. Updated ready_plans.ts plus ready.ts to ensure both CLI and MCP share the same filtering/display logic and expanded ready_plans.test.ts to assert JSON output includes normalized tags. Added new coverage in mcp/generate_mode.test.ts for create-plan tag acceptance/validation, list-ready tag filtering, and tags in MCP JSON responses. Verified changes with bun test (generate_mode + ready_plans suites) and bun run check.
+
+Worked on Task 12 'Add tags filtering to MCP list-ready-plans tool' and Task 19 'Write tests for MCP tag operations'. The MCP entry point now bypasses the shared plan cache by calling readAllPlans(tasksDir, false) and reapplies the limit after any tag filtering so the --limit/limit parameter no longer drops valid plans that sit outside the first N unfiltered entries. This change lives in src/rmplan/commands/ready.ts within mcpListReadyPlans and keeps the existing sorting/priority filtering intact while guaranteeing that subsequent MCP invocations observe edits performed via rmplan add/set in other processes.
+
+Extended the automated coverage to lock in this behavior. In src/rmplan/mcp/generate_mode.test.ts I added 'applies limit after tag filtering' plus 'reloads plan data without manual cache clearing' to prove the new ordering and cache-busting semantics, asserting that tagged plans are returned even when their priority would have excluded them before filtering and that editing a plan file is reflected on the very next MCP call. In src/rmplan/tags.integration.test.ts I removed the extra clearPlanCache() calls inside each test body so the integration suite exercises the same production code path and relies on the MCP layer's new invalidation instead of test-only helpers. This keeps the CLI↔MCP flow honest while still clearing the cache in beforeEach/afterEach to isolate test fixtures.

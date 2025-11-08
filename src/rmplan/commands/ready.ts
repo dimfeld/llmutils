@@ -588,14 +588,30 @@ export async function mcpListReadyPlans(
 ): Promise<string> {
   try {
     const tasksDir = await resolveTasksDir(context.config);
-    const { plans } = await readAllPlans(tasksDir);
+    // Bypass the in-memory cache so MCP clients always see the latest edits.
+    const { plans } = await readAllPlans(tasksDir, false);
 
-    const readyPlans = filterAndSortReadyPlans(plans, {
+    let readyPlans = filterAndSortReadyPlans(plans, {
       pendingOnly: args.pendingOnly ?? false,
       priority: args.priority,
       sortBy: args.sortBy ?? 'priority',
-      limit: args.limit,
     });
+
+    const desiredTags = normalizeTags(args.tags);
+    if (desiredTags.length > 0) {
+      const tagFilter = new Set(desiredTags);
+      readyPlans = readyPlans.filter((plan) => {
+        const planTags = normalizeTags(plan.tags);
+        if (planTags.length === 0) {
+          return false;
+        }
+        return planTags.some((tag) => tagFilter.has(tag));
+      });
+    }
+
+    if (args.limit && args.limit > 0) {
+      readyPlans = readyPlans.slice(0, args.limit);
+    }
 
     return formatReadyPlansAsJson(readyPlans, { gitRoot: context.gitRoot });
   } catch (error) {
