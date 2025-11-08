@@ -49,6 +49,7 @@ function createPlan(overrides: Partial<PlanSchema> & { id: number }): PlanSchema
     baseBranch: overrides.baseBranch,
     changedFiles: overrides.changedFiles,
     rmfilter: overrides.rmfilter,
+    tags: overrides.tags,
   };
 }
 
@@ -180,7 +181,7 @@ describe('formatReadyPlansAsJson', () => {
   it('formats plans with relative filenames', () => {
     const plans: Array<EnrichedReadyPlan> = [
       {
-        ...createPlan({ id: 1, priority: 'medium' }),
+        ...createPlan({ id: 1, priority: 'medium', tags: ['Frontend', 'backend'] }),
         filename: '/repo/tasks/001.plan.yaml',
       },
     ];
@@ -196,6 +197,7 @@ describe('formatReadyPlansAsJson', () => {
       taskCount: 1,
       completedTasks: 0,
       filename: 'tasks/001.plan.yaml',
+      tags: ['backend', 'frontend'],
     });
   });
 });

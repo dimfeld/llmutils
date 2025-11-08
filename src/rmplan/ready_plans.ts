@@ -1,6 +1,7 @@
 import * as path from 'path';
 
 import type { PlanSchema } from './planSchema.js';
+import { normalizeTags } from './utils/tags.js';
 
 const PRIORITY_ORDER: Record<string, number> = {
   urgent: 5,
@@ -227,6 +228,7 @@ export function formatReadyPlansAsJson<T extends PlanSchema>(
       filename: gitRoot ? path.relative(gitRoot, plan.filename) : plan.filename,
       createdAt: plan.createdAt,
       updatedAt: plan.updatedAt,
+      tags: normalizeTags(plan.tags),
     })),
   };
 

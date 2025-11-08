@@ -21,6 +21,7 @@ import { loadCompactPlanPrompt } from './prompts/compact_plan.js';
 import { filterAndSortReadyPlans, formatReadyPlansAsJson } from '../ready_plans.js';
 import { generateNumericPlanId } from '../id_utils.js';
 import { generatePlanFilename } from '../utils/filename.js';
+import { validateTags } from '../utils/tags.js';
 
 export interface GenerateModeRegistrationContext {
   config: RmplanConfig;
@@ -405,6 +406,10 @@ export const listReadyPlansParameters = z
       .optional()
       .default('priority')
       .describe('Sort field (default: priority)'),
+    tags: z
+      .array(z.string())
+      .optional()
+      .describe('Filter to plans that include any of the provided tags'),
   })
   .describe('List all ready plans that can be executed');
 
@@ -422,6 +427,7 @@ export const createPlanParameters = z
     assignedTo: z.string().optional().describe('Username to assign plan to'),
     issue: z.array(z.string()).optional().describe('GitHub issue URLs'),
     docs: z.array(z.string()).optional().describe('Documentation file paths'),
+    tags: z.array(z.string()).optional().describe('Tags to assign to the plan'),
     container: z.boolean().optional().describe('Mark as container plan'),
     temp: z.boolean().optional().describe('Mark as temporary plan'),
   })
@@ -780,6 +786,14 @@ export async function mcpCreatePlan(
     throw new UserError('Plan title cannot be empty.');
   }
 
+  let planTags: string[] = [];
+  try {
+    planTags = validateTags(args.tags, context.config);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new UserError(message);
+  }
+
   const tasksDir = await resolveTasksDir(context.config);
   const nextId = await generateNumericPlanId(tasksDir);
 
@@ -795,13 +809,13 @@ export async function mcpCreatePlan(
     assignedTo: args.assignedTo,
     issue: args.issue || [],
     docs: args.docs || [],
+    tags: planTags,
     container: args.container || false,
     temp: args.temp || false,
     status: 'pending',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     tasks: [],
-    tags: [],
   };
 
   const filename = generatePlanFilename(nextId, title);
