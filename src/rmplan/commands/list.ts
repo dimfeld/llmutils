@@ -11,9 +11,14 @@ import type { AssignmentEntry } from '../assignments/assignments_schema.js';
 import { getRepositoryIdentity, getUserIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
-import { formatWorkspacePath, getCombinedTitleFromSummary } from '../display_utils.js';
+import {
+  formatTagsSummary,
+  formatWorkspacePath,
+  getCombinedTitleFromSummary,
+} from '../display_utils.js';
 import type { PlanSchema } from '../planSchema.js';
 import { isPlanReady, isTaskDone, readAllPlans } from '../plans.js';
+import { normalizeTags } from '../utils/tags.js';
 
 type PlanWithFilename = PlanSchema & { filename: string };
 
@@ -144,6 +149,18 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     planArray = planArray.filter((plan) => !plan.isAssigned);
   }
 
+  const desiredTags = normalizeTags(options.tag);
+  if (desiredTags.length > 0) {
+    const tagFilter = new Set(desiredTags);
+    planArray = planArray.filter((plan) => {
+      const planTags = normalizeTags(plan.tags);
+      if (planTags.length === 0) {
+        return false;
+      }
+      return planTags.some((tag) => tagFilter.has(tag));
+    });
+  }
+
   if (!options.all) {
     // Determine which statuses to show
     let statusesToShow: Set<string>;
@@ -261,6 +278,11 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     planArray = planArray.slice(-options.number);
   }
 
+  const workspaceColumnWidth = 22;
+  const dependsWidth = 15;
+  const fileWidth = 20;
+  const tagsColumnWidth = 18;
+
   // Prepare table data
   const tableData: string[][] = [];
 
@@ -271,6 +293,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     chalk.bold('Status'),
     chalk.bold('Workspace'),
     chalk.bold('Priority'),
+    chalk.bold('Tags'),
     chalk.bold('Tasks'),
     chalk.bold('Steps'),
     chalk.bold('Depends On'),
@@ -278,7 +301,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
   const showNotesColumn = planArray.some((p) => (p.progressNotes?.length || 0) > 0);
   if (showNotesColumn) {
-    headers.splice(7, 0, chalk.bold('Notes'));
+    headers.splice(headers.length - 1, 0, chalk.bold('Notes'));
   }
 
   if (options.files) {
@@ -396,6 +419,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
       statusColor(statusDisplay),
       workspaceDisplay,
       priorityDisplay ? priorityColor(priorityDisplay) : '-',
+      formatTagsSummary(plan.tags, { maxLength: tagsColumnWidth }),
       (() => {
         const taskCount = plan.tasks?.length || 0;
         if (taskCount) {
@@ -414,7 +438,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
     if (showNotesColumn) {
       const n = plan.progressNotes?.length || 0;
-      row.splice(7, 0, n > 0 ? String(n) : '-');
+      row.splice(row.length - 1, 0, n > 0 ? String(n) : '-');
     }
 
     if (options.files) {
@@ -434,22 +458,19 @@ export async function handleListCommand(options: any, command: any, searchTerms?
   // Configure table options with dynamic column widths
   const terminalWidth = process.stdout.columns || 120; // fallback to 120 if not available
 
-  const workspaceColumnWidth = 22;
-  const dependsWidth = 15;
-  const fileWidth = 20;
-
   const fixedColumnsWidth =
     5 + // ID
     12 + // Status
     workspaceColumnWidth +
     10 + // Priority
+    tagsColumnWidth +
     7 + // Tasks
     7 + // Steps
     (showNotesColumn ? 7 : 0) +
     dependsWidth;
 
   const fileColumnWidth = options.files ? fileWidth : 0;
-  const columnCount = options.files ? (showNotesColumn ? 10 : 9) : showNotesColumn ? 9 : 8;
+  const columnCount = options.files ? (showNotesColumn ? 11 : 10) : showNotesColumn ? 10 : 9;
   const borderPadding = columnCount * 3 + 1; // 3 chars per column separator + 1 for end
 
   const usedWidth = fixedColumnsWidth + fileColumnWidth + borderPadding;
@@ -457,11 +478,14 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
   const titleWidth = Math.min(Math.max(20, availableWidth), maxTitleLength + 2);
 
+  const dependsColumnIndex = 8 + (showNotesColumn ? 1 : 0);
+
   const tableConfig: any = {
     columns: {
       1: { width: titleWidth, wrapWord: true },
       3: { width: workspaceColumnWidth, wrapWord: true },
-      [showNotesColumn ? 8 : 7]: { width: dependsWidth, wrapWord: true },
+      5: { width: tagsColumnWidth, wrapWord: true },
+      [dependsColumnIndex]: { width: dependsWidth, wrapWord: true },
     },
     border: {
       topBody: '─',
@@ -484,7 +508,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
   // Add file column configuration if showing files
   if (options.files) {
-    tableConfig.columns[showNotesColumn ? 9 : 8] = { width: fileWidth, wrapWord: true };
+    tableConfig.columns[showNotesColumn ? 10 : 9] = { width: fileWidth, wrapWord: true };
   }
 
   const output = table(tableData, tableConfig);

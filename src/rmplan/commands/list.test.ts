@@ -265,18 +265,19 @@ describe('handleListCommand', () => {
     // Find the row for plan id 3
     const row = tableData2.find((r: any[]) => r[0] === 3);
     expect(row).toBeTruthy();
-    // Columns should be: ID, Title, Status, Priority, Tasks, Steps, Notes, Depends On
+    // Columns should be: ID, Title, Status, Workspace, Priority, Tags, Tasks, Steps, Notes, Depends On
     expect(headers2[0]).toBe('ID');
     expect(headers2[1]).toBe('Title');
     expect(headers2[2]).toBe('Status');
     expect(headers2[3]).toBe('Workspace');
     expect(headers2[4]).toBe('Priority');
-    expect(headers2[5]).toBe('Tasks');
-    expect(headers2[6]).toBe('Steps');
-    expect(headers2[7]).toBe('Notes');
-    expect(headers2[8]).toBe('Depends On');
+    expect(headers2[5]).toBe('Tags');
+    expect(headers2[6]).toBe('Tasks');
+    expect(headers2[7]).toBe('Steps');
+    expect(headers2[8]).toBe('Notes');
+    expect(headers2[9]).toBe('Depends On');
     // Notes count shows 2 for the plan with notes
-    expect(row[7]).toBe('2');
+    expect(row[8]).toBe('2');
   });
 
   test('filters plans by status when --status flag is used', async () => {
@@ -631,8 +632,8 @@ describe('handleListCommand', () => {
     const mainPlanRow = tableData.find((row) => row[0] === 4);
     expect(mainPlanRow).toBeTruthy();
 
-    // Check dependencies column (index 6)
-    const depsColumn = mainPlanRow[7];
+    // Check dependencies column (last index)
+    const depsColumn = mainPlanRow[mainPlanRow.length - 1];
 
     // Should show status indicators:
     // - 1✓ (done)
@@ -885,7 +886,7 @@ describe('handleListCommand', () => {
     expect(mainPlanRow).toBeTruthy();
 
     // Check that the dependency is found and shows as done
-    const depsColumn = mainPlanRow[7];
+    const depsColumn = mainPlanRow[mainPlanRow.length - 1];
     expect(depsColumn).toContain('10✓');
   });
 
@@ -1390,6 +1391,106 @@ describe('handleListCommand', () => {
     await handleListCommand({ mine: true }, { parent: { opts: () => ({}) } });
 
     expect(mockWarn).toHaveBeenCalled();
+  });
+
+  test('filters plans by single tag', async () => {
+    const plans = [
+      {
+        id: 1,
+        title: 'Frontend Plan',
+        status: 'pending',
+        tags: ['frontend'],
+        tasks: [],
+      },
+      {
+        id: 2,
+        title: 'Backend Plan',
+        status: 'pending',
+        tags: ['backend'],
+        tasks: [],
+      },
+    ];
+
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    await handleListCommand(
+      { all: true, sort: 'id', tag: ['frontend'] },
+      { parent: { opts: () => ({}) } }
+    );
+
+    const tableData = mockTable.mock.calls[0][0];
+    const titles = tableData.slice(1).map((row: string[]) => row[1]);
+    expect(titles).toContain('Frontend Plan');
+    expect(titles).not.toContain('Backend Plan');
+  });
+
+  test('filters plans by multiple tags using OR logic', async () => {
+    const plans = [
+      { id: 1, title: 'Frontend', status: 'pending', tags: ['frontend'], tasks: [] },
+      { id: 2, title: 'Backend', status: 'pending', tags: ['backend'], tasks: [] },
+      { id: 3, title: 'Infra', status: 'pending', tags: ['infra'], tasks: [] },
+    ];
+
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    await handleListCommand(
+      { all: true, sort: 'id', tag: ['backend', 'frontend'] },
+      { parent: { opts: () => ({}) } }
+    );
+
+    const tableData = mockTable.mock.calls[0][0];
+    const titles = tableData.slice(1).map((row: string[]) => row[1]);
+    expect(titles).toEqual(['Frontend', 'Backend']);
+  });
+
+  test('matches tags case-insensitively and excludes plans without tags when filtering', async () => {
+    const planWithMixedCase = {
+      id: 1,
+      title: 'Design Spec',
+      status: 'pending',
+      tags: ['Design'],
+      tasks: [],
+    };
+    const planWithoutTags = {
+      id: 2,
+      title: 'No Tags',
+      status: 'pending',
+      tasks: [],
+    };
+
+    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(planWithMixedCase));
+    await fs.writeFile(path.join(tasksDir, '2.yml'), yaml.stringify(planWithoutTags));
+
+    await handleListCommand({ all: true, tag: ['DESIGN'] }, { parent: { opts: () => ({}) } });
+
+    const tableData = mockTable.mock.calls[0][0];
+    const titles = tableData.slice(1).map((row: string[]) => row[1]);
+    expect(titles).toEqual(['Design Spec']);
+  });
+
+  test('displays tags column with comma-separated values', async () => {
+    const plan = {
+      id: 5,
+      title: 'Tagged Work',
+      status: 'pending',
+      tags: ['frontend', 'urgent'],
+      tasks: [],
+    };
+    await fs.writeFile(path.join(tasksDir, '5.yml'), yaml.stringify(plan));
+
+    await handleListCommand({ all: true }, { parent: { opts: () => ({}) } });
+
+    const tableData = mockTable.mock.calls[0][0];
+    const headers = tableData[0].map(String);
+    expect(headers).toContain('Tags');
+
+    const tagsIndex = headers.indexOf('Tags');
+    const row = tableData[1];
+    expect(row[tagsIndex]).toBe('frontend, urgent');
   });
 });
 

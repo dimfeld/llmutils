@@ -462,6 +462,13 @@ rmplan set 123 --tag backend --no-tag frontend
 
 Configure an allowlist via `tags.allowed` in `rmplan.yml` to restrict tags to a shared vocabulary across the team.
 
+Filter tagged plans in listings:
+
+```bash
+rmplan list --tag frontend --tag urgent
+rmplan ready --tag backend
+```
+
 **Open in editor:**
 
 ```bash
@@ -1612,10 +1619,10 @@ rmplan compact ID [--dry-run] [--yes]
 
 ```bash
 # List all plans
-rmplan list [--all] [--status STATUS] [--sort FIELD]
+rmplan list [--all] [--status STATUS] [--sort FIELD] [--tag TAG...]
 
 # List ready plans
-rmplan ready [--pending-only] [--priority LEVEL] [--format FORMAT]
+rmplan ready [--pending-only] [--priority LEVEL] [--format FORMAT] [--tag TAG...]
 
 # Show next ready
 rmplan show --next
@@ -1625,6 +1632,8 @@ rmplan show --next-ready PARENT_ID
 rmplan agent --next
 rmplan agent --next-ready PARENT_ID
 ```
+
+Use `--tag` (repeatable) with `rmplan list` or `rmplan ready` to filter for plans that include any of the specified tags. Tag filters are case-insensitive and ignore plans without tags.
 
 ### Plan Management
 

@@ -18,7 +18,7 @@ docs: []
 planGeneratedAt: 2025-11-07T18:28:25.095Z
 promptsGeneratedAt: 2025-11-07T18:28:25.095Z
 createdAt: 2025-11-07T18:16:10.651Z
-updatedAt: 2025-11-08T03:04:35.162Z
+updatedAt: 2025-11-08T03:27:19.740Z
 progressNotes:
   - timestamp: 2025-11-08T02:39:46.849Z
     text: Added tags schema/config fields, normalization helpers, and CLI plumbing
@@ -39,6 +39,19 @@ progressNotes:
     text: Ran targeted Bun tests covering config loader/schema, tag utilities, and
       split/promote suites (163 tests) – all green.
     source: "tester: Step3"
+  - timestamp: 2025-11-08T03:15:24.357Z
+    text: Added tag filters to rmplan list/ready along with tag displays in the
+      list, ready, and show outputs. Updated table layouts, CLI flags, and docs
+      while wiring the new formatTagsSummary helper.
+    source: "implementer: tasks 6-10/17-18"
+  - timestamp: 2025-11-08T03:19:33.049Z
+    text: Ran bun test for list/ready/show suites covering tag filtering/display;
+      all 86 tests passed.
+    source: "tester: tasks 6-10,17-18"
+  - timestamp: 2025-11-08T03:25:46.848Z
+    text: Reviewed tag filtering/display changes plus list/ready/show tests; no
+      issues found.
+    source: "reviewer: tasks 6-10,17-18"
 tasks:
   - title: Add tags field to plan schemas
     done: true
@@ -76,33 +89,33 @@ tasks:
       initial tags in the plan object before writing. Handle validation errors
       with clear messages."
   - title: Add tag filtering to list command
-    done: false
+    done: true
     description: In src/rmplan/commands/list.ts, add `--tag` flag (repeatable) to
       filter plans by tags using OR logic. After loading plans, filter to
       include only plans where plan.tags contains at least one of the specified
       tags. Normalize filter tags to lowercase for comparison. No validation
       needed for filtering (allow filtering by any tag).
   - title: Add tag filtering to ready command
-    done: false
+    done: true
     description: "In src/rmplan/commands/ready.ts, add `--tag` flag (repeatable) to
       ReadyOptions. Pass tags filter to getReadyPlans or apply filtering after
       getting ready plans. Use OR logic: include plans that have ANY of the
       specified tags. Normalize filter tags to lowercase. No validation needed
       for filtering."
   - title: Add tags display to show command
-    done: false
+    done: true
     description: "In src/rmplan/commands/show.ts, add tags field to the plan detail
       output. Display tags as a comma-separated list or formatted list. Show
       empty state clearly if no tags present (e.g., 'Tags: none' or omit the
       line)."
   - title: Add tags display to list command output
-    done: false
+    done: true
     description: In src/rmplan/commands/list.ts, add tags to the display output. For
       table format, consider adding a Tags column or showing inline with title.
       Handle display overflow gracefully (truncate with '...' if needed). For
       JSON format, include tags array.
   - title: Add tags display to ready command output
-    done: false
+    done: true
     description: In src/rmplan/commands/ready.ts, add tags to all three output
       formats (list, table, JSON). Follow same display patterns as list command.
       Ensure tags are visible but don't clutter the output.
@@ -143,13 +156,13 @@ tasks:
       default empty tags array, and validation against allowed tags (both
       success and failure cases)."
   - title: Write tests for list command tag filtering
-    done: false
+    done: true
     description: "Add tests to src/rmplan/commands/list.test.ts for: filtering by
       single tag, filtering by multiple tags (OR logic), case-insensitive
       matching, plans with no tags excluded from tag filters, and display of
       tags in output."
   - title: Write tests for ready command tag filtering
-    done: false
+    done: true
     description: "Add tests to src/rmplan/commands/ready.test.ts for: filtering
       ready plans by tags, OR logic with multiple tags, and tags display in all
       output formats (list, table, JSON)."
@@ -173,16 +186,23 @@ changedFiles:
   - src/rmplan/commands/add.test.ts
   - src/rmplan/commands/add.ts
   - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/list.test.ts
+  - src/rmplan/commands/list.ts
   - src/rmplan/commands/promote.test.ts
   - src/rmplan/commands/promote.ts
+  - src/rmplan/commands/ready.test.ts
+  - src/rmplan/commands/ready.ts
   - src/rmplan/commands/set.test.ts
   - src/rmplan/commands/set.ts
+  - src/rmplan/commands/show.test.ts
+  - src/rmplan/commands/show.ts
   - src/rmplan/commands/split.test.ts
   - src/rmplan/commands/split.ts
   - src/rmplan/configLoader.test.ts
   - src/rmplan/configLoader.ts
   - src/rmplan/configSchema.test.ts
   - src/rmplan/configSchema.ts
+  - src/rmplan/display_utils.ts
   - src/rmplan/issue_utils.ts
   - src/rmplan/mcp/generate_mode.ts
   - src/rmplan/planPropertiesUpdater.ts
@@ -618,3 +638,5 @@ Updated updatePlanProperties to understand tag/noTag, merging normalized tags th
 Regression coverage: new planSchema tests assert tag parsing, set.test.ts verifies add/remove/allowlist behaviors, and add.test.ts checks initial tagging + validation. Ran bun test for the touched suites and bun run check for types; both passed. Future work can build on this foundation to implement tag filtering in list/ready and MCP surfaces without revisiting schema plumbing.
 
 Addressed review feedback for tasks 'Add tags field to plan schemas' and 'Add tag normalization utility function'. Regenerated schema/rmplan-config-schema.json via 'bun scripts/update-json-schemas.ts' so the JSON schema now declares the tags.allowed block that matches RmplanConfig, enabling editor validation for tag allowlists. Updated validateTags in src/rmplan/utils/tags.ts to treat any configured tags.allowed array as authoritative (including an empty array) by normalizing the allowlist, checking every proposed tag against it, and emitting a clear 'No tags are currently allowed by configuration.' error when violated. Added a regression in src/rmplan/utils/tags.test.ts that asserts tags.allowed: [] blocks additions to prevent future regressions. Validated the helpers with 'bun test src/rmplan/utils/tags.test.ts'.
+
+Implemented tag-aware filtering and display across rmplan list/ready/show plus regression tests. Added formatTagsSummary utility, extended CLI flags (--tag) for list/ready, and updated the list/ready table renderers to include a Tags column with truncation. Ready/list list formats now normalize filter input and reject unt tagged plans when filtering; ready JSON output also exposes the tags array. The show command prints tags (or 'none') in metadata blocks, and the README documents tag filtering usage. Added dedicated tests covering tag filtering semantics (single, OR, case-insensitive), table/header expectations, and tag visibility in list/table/json outputs.

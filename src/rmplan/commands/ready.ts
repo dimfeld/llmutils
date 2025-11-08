@@ -11,7 +11,11 @@ import { AssignmentsFileParseError, readAssignments } from '../assignments/assig
 import type { AssignmentEntry } from '../assignments/assignments_schema.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
-import { formatWorkspacePath, getCombinedTitleFromSummary } from '../display_utils.js';
+import {
+  formatTagsSummary,
+  formatWorkspacePath,
+  getCombinedTitleFromSummary,
+} from '../display_utils.js';
 import { readAllPlans } from '../plans.js';
 import {
   READY_PLAN_SORT_FIELDS,
@@ -26,6 +30,7 @@ import type {
   GenerateModeRegistrationContext,
   ListReadyPlansArguments,
 } from '../mcp/generate_mode.js';
+import { normalizeTags } from '../utils/tags.js';
 
 type PlanWithFilename = EnrichedReadyPlan;
 
@@ -52,6 +57,7 @@ interface ReadyCommandOptions {
   unassigned?: boolean;
   user?: string;
   hasTasks?: boolean;
+  tag?: string[];
 }
 
 const VALID_FORMATS = ['list', 'table', 'json'] as const;
@@ -159,6 +165,10 @@ function displayListFormat(
       log(`  Priority: ${priorityColor(plan.priority)}`);
     }
 
+    const tagsSummary = formatTagsSummary(plan.tags, { emptyValue: 'none' });
+    const hasTags = Boolean(plan.tags && plan.tags.length > 0);
+    log(`  Tags: ${hasTags ? tagsSummary : chalk.gray(tagsSummary)}`);
+
     // Task count
     const taskCount = plan.tasks?.length || 0;
     const doneTasks = plan.tasks?.filter((t) => t.done).length || 0;
@@ -213,6 +223,7 @@ function displayTableFormat(
   allPlans: Map<number, ReadyPlan>,
   context: ReadyDisplayContext
 ): void {
+  const tagsColumnWidth = 18;
   const tableData: string[][] = [];
 
   // Header row
@@ -221,6 +232,7 @@ function displayTableFormat(
     chalk.bold('Title'),
     chalk.bold('Status'),
     chalk.bold('Priority'),
+    chalk.bold('Tags'),
     chalk.bold('Tasks'),
     chalk.bold('Workspace'),
     chalk.bold('Deps'),
@@ -264,6 +276,7 @@ function displayTableFormat(
       getCombinedTitleFromSummary(plan),
       statusColor(status),
       priority ? priorityColor(priority) : '-',
+      formatTagsSummary(plan.tags, { maxLength: tagsColumnWidth }),
       taskDisplay,
       workspaceDisplay,
       depCount > 0 ? chalk.green(depDisplay) : depDisplay,
@@ -274,16 +287,19 @@ function displayTableFormat(
   const terminalWidth = process.stdout.columns || 120;
   const workspaceColumnWidth = 22;
   const depsColumnWidth = 12;
-  // Columns: ID(6) + Status(12) + Priority(10) + Tasks(8) + Workspace + Deps + borders(7*3=21)
-  const fixedWidth = 6 + 12 + 10 + 8 + workspaceColumnWidth + depsColumnWidth + 21;
+  // Columns: ID(6) + Status(12) + Priority(10) + Tags + Tasks(8) + Workspace + Deps + borders(8*3=24)
+  const borderPadding = 8 * 3;
+  const fixedWidth =
+    6 + 12 + 10 + tagsColumnWidth + 8 + workspaceColumnWidth + depsColumnWidth + borderPadding;
   const titleWidth = Math.max(30, terminalWidth - fixedWidth);
 
   // Configure table
   const tableConfig: TableUserConfig = {
     columns: {
       1: { width: titleWidth, wrapWord: true },
-      5: { width: workspaceColumnWidth, wrapWord: true },
-      6: { width: depsColumnWidth, wrapWord: true },
+      4: { width: tagsColumnWidth, wrapWord: true },
+      6: { width: workspaceColumnWidth, wrapWord: true },
+      7: { width: depsColumnWidth, wrapWord: true },
     },
     border: {
       topBody: '─',
@@ -337,6 +353,7 @@ async function displayJsonFormat(plans: ReadyPlan[], context: ReadyDisplayContex
       assignmentUpdatedAt: plan.assignmentEntry?.updatedAt,
       assignmentAssignedAt: plan.assignmentEntry?.assignedAt,
       currentWorkspace: context.currentWorkspace,
+      tags: plan.tags ?? [],
     })),
   };
 
@@ -493,6 +510,18 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
 
   if (options.hasTasks) {
     readyPlans = readyPlans.filter((plan) => (plan.tasks?.length ?? 0) > 0);
+  }
+
+  const desiredTags = normalizeTags(options.tag);
+  if (desiredTags.length > 0) {
+    const tagFilter = new Set(desiredTags);
+    readyPlans = readyPlans.filter((plan) => {
+      const planTags = normalizeTags(plan.tags);
+      if (planTags.length === 0) {
+        return false;
+      }
+      return planTags.some((tag) => tagFilter.has(tag));
+    });
   }
 
   if (readyPlans.length === 0) {

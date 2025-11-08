@@ -9,6 +9,7 @@ import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
 import {
+  formatTagsSummary,
   formatWorkspacePath,
   getCombinedGoal,
   getCombinedTitle,
@@ -329,6 +330,9 @@ async function displayPlanInfo(
                 ? chalk.gray
                 : chalk.white;
     log(`${chalk.cyan('Priority:')} ${plan.priority ? priorityColor(plan.priority) : ''}`);
+    const tagsSummary = formatTagsSummary(plan.tags, { emptyValue: 'none' });
+    const tagsDisplay = plan.tags && plan.tags.length > 0 ? tagsSummary : chalk.gray(tagsSummary);
+    log(`${chalk.cyan('Tags:')} ${tagsDisplay}`);
     if (assignmentInfo.entry) {
       const workspaceLine =
         assignmentInfo.formattedWorkspaces.length > 0

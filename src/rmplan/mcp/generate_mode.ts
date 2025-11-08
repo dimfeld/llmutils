@@ -30,9 +30,9 @@ export interface GenerateModeRegistrationContext {
 
 const questionText = `Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Avoid repeating information already captured. As you figure things out, update the details in the plan file if necessary.`;
 
-function parseBooleanOption(value: unknown): boolean {
-  if (value === undefined || value === null) {
-    return false;
+function parseBooleanOption(value: unknown, defaultValue = false): boolean {
+  if (!value) {
+    return defaultValue;
   }
 
   if (typeof value === 'boolean') {
@@ -69,7 +69,7 @@ export async function loadResearchPrompt(
   clearPlanCache();
   const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
 
-  const allowMultiplePlans = parseBooleanOption(args.allowMultiplePlans);
+  const allowMultiplePlans = parseBooleanOption(args.allowMultiplePlans, true);
   const parentPlanId = typeof plan.id === 'number' ? plan.id : undefined;
 
   // If plan has simple: true, skip research and use simple generation flow
@@ -191,7 +191,7 @@ export async function loadGeneratePrompt(
     parentPlanId = typeof plan.id === 'number' ? plan.id : undefined;
   }
 
-  const allowMultiplePlans = parseBooleanOption(args.allowMultiplePlans);
+  const allowMultiplePlans = parseBooleanOption(args.allowMultiplePlans, true);
 
   const multiplePlansGuidance = allowMultiplePlans
     ? `
