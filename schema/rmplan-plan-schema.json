@@ -219,21 +219,18 @@
       "type": "string"
     },
     "changedFiles": {
-      "default": [],
       "type": "array",
       "items": {
         "type": "string"
       }
     },
     "rmfilter": {
-      "default": [],
       "type": "array",
       "items": {
         "type": "string"
       }
     },
     "tags": {
-      "default": [],
       "type": "array",
       "items": {
         "type": "string"
