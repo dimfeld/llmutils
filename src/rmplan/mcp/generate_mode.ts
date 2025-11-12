@@ -113,9 +113,12 @@ Only create multiple plans if it genuinely improves the project organization. Fo
 
 ${generateClaudeCodeResearchPrompt(`Once your research is complete`)}
 
-Use the append-plan-research tool to add the output to the plan. It is fine to send a lot of text to this tool at once.
+Add your research directly to the plan file at ${planPath} under a "## Research" heading. You can directly edit this file; don't use the rmplan MCP tools. Be verbose in your findings - the more insights you include from your exploration, the better.
 
 When done, collaborate with your human partner to refine this plan. ${questionText}`;
+
+  // The line above about directly editing the file is because it doesn't seem to output as much research when using MCP
+  // tools compared to directly editing the file
 
   return {
     messages: [
@@ -311,23 +314,6 @@ export const getPlanParameters = z
   .describe('Retrieve the full plan text for a given plan ID or file path');
 
 export type GetPlanArguments = z.infer<typeof getPlanParameters>;
-
-export const appendResearchParameters = z
-  .object({
-    plan: z.string().describe('Plan ID or file path to update'),
-    research: z.string().describe('Extensive research notes to append under the Research section'),
-    heading: z
-      .string()
-      .optional()
-      .describe('Override the section heading (defaults to "## Research")'),
-    timestamp: z
-      .boolean()
-      .optional()
-      .describe('Include an automatic timestamp heading (default: false)'),
-  })
-  .describe('Options for appending research notes to a plan');
-
-export type AppendResearchArguments = z.infer<typeof appendResearchParameters>;
 
 export const updatePlanDetailsParameters = z
   .object({
@@ -704,23 +690,6 @@ function normalizeList(values?: string[]): string[] {
     .filter((value, index, arr) => value.length > 0 && arr.indexOf(value) === index);
 }
 
-export async function mcpAppendResearch(
-  args: AppendResearchArguments,
-  context: GenerateModeRegistrationContext
-): Promise<string> {
-  clearPlanCache();
-  const { plan, planPath } = await resolvePlan(args.plan, context);
-  const updated = appendResearchToPlan(plan, args.research, {
-    heading: args.heading,
-    insertedAt: args.timestamp === true ? new Date() : false,
-  });
-
-  await writePlanFile(planPath, updated);
-
-  const relativePath = path.relative(context.gitRoot, planPath) || planPath;
-  return `Appended research to ${relativePath}`;
-}
-
 export async function mcpUpdatePlanDetails(
   args: UpdatePlanDetailsArguments,
   context: GenerateModeRegistrationContext
@@ -1003,17 +972,6 @@ export function registerGenerateMode(
         throw new UserError(message);
       }
     },
-  });
-
-  server.addTool({
-    name: 'append-plan-research',
-    description: 'Append research findings to the plan details under a Research section.',
-    parameters: appendResearchParameters,
-    annotations: {
-      destructiveHint: true,
-      readOnlyHint: false,
-    },
-    execute: async (args) => mcpAppendResearch(args, context),
   });
 
   server.addTool({
