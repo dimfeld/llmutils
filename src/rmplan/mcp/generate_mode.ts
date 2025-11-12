@@ -16,7 +16,6 @@ import { mcpListReadyPlans } from '../commands/ready.js';
 import { readAllPlans, writePlanFile, clearPlanCache } from '../plans.js';
 import { findTaskByTitle } from '../utils/task_operations.js';
 import { mergeTasksIntoPlan, updateDetailsWithinDelimiters } from '../plan_merge.js';
-import { appendResearchToPlan } from '../research_utils.js';
 import { loadCompactPlanPrompt } from './prompts/compact_plan.js';
 import { filterAndSortReadyPlans, formatReadyPlansAsJson } from '../ready_plans.js';
 import { generateNumericPlanId } from '../id_utils.js';
@@ -32,16 +31,16 @@ export interface GenerateModeRegistrationContext {
 const questionText = `Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Avoid repeating information already captured. As you figure things out, update the details in the plan file if necessary.`;
 
 function parseBooleanOption(value: unknown, defaultValue = false): boolean {
-  if (!value) {
-    return defaultValue;
-  }
-
   if (typeof value === 'boolean') {
     return value;
   }
 
   if (typeof value === 'number') {
     return value !== 0;
+  }
+
+  if (!value) {
+    return defaultValue;
   }
 
   if (typeof value === 'string') {
