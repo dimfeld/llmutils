@@ -741,4 +741,40 @@ describe('rmplan add command', () => {
       clearConfigCache();
     }
   });
+
+  test('creates plan with normalized initial tags', async () => {
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, '.rmfilter', 'rmplan.yml') }),
+      },
+    };
+
+    await handleAddCommand(['Tagged', 'Plan'], { tag: ['Frontend', 'Bug', 'frontend'] }, command);
+
+    const planPath = path.join(tasksDir, '1-tagged-plan.plan.md');
+    const plan = await readPlanFile(planPath);
+    expect(plan.tags).toEqual(['bug', 'frontend']);
+  });
+
+  test('rejects initial tags not in allowlist', async () => {
+    const configPath = path.join(tempDir, '.rmfilter', 'rmplan.yml');
+    await fs.writeFile(
+      configPath,
+      yaml.stringify({
+        paths: { tasks: tasksDir },
+        tags: { allowed: ['frontend'] },
+      })
+    );
+    clearConfigCache();
+
+    const command = {
+      parent: {
+        opts: () => ({ config: configPath }),
+      },
+    };
+
+    await expect(
+      handleAddCommand(['Tagged', 'Plan'], { tag: ['backend'] }, command)
+    ).rejects.toThrow(/Invalid tag/);
+  });
 });

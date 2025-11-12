@@ -111,6 +111,16 @@ export const rmplanConfigSchema = z
           .describe('Number of days after which plan assignments are considered stale'),
       })
       .optional(),
+    tags: z
+      .object({
+        allowed: z
+          .array(z.string())
+          .optional()
+          .describe('List of allowed tags. If set, only these tags can be added to plans.'),
+      })
+      .strict()
+      .optional()
+      .describe('Configuration for plan tags, including allowlists'),
     /** An array of strings or {find, example} pairs to automatically include as examples when they appear in prompts. */
     autoexamples: z
       .array(

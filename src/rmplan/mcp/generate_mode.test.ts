@@ -947,6 +947,51 @@ describe('mcpListReadyPlans', () => {
     expect(parsed.plans).toHaveLength(3);
   });
 
+  test('applies limit after tag filtering', async () => {
+    await createPlan({
+      id: 1,
+      title: 'UI polish',
+      status: 'pending',
+      priority: 'urgent',
+      tags: ['frontend'],
+      tasks: [],
+      dependencies: [],
+    });
+
+    await createPlan({
+      id: 2,
+      title: 'Docs refresh',
+      status: 'pending',
+      priority: 'high',
+      tags: ['docs'],
+      tasks: [],
+      dependencies: [],
+    });
+
+    await createPlan({
+      id: 3,
+      title: 'API hardening',
+      status: 'pending',
+      priority: 'medium',
+      tags: ['backend'],
+      tasks: [],
+      dependencies: [],
+    });
+
+    const args = listReadyPlansParameters.parse({
+      limit: 1,
+      tags: ['backend'],
+    });
+
+    const result = await mcpListReadyPlans(args, context);
+    const parsed = JSON.parse(result);
+
+    expect(parsed.count).toBe(1);
+    expect(parsed.plans).toHaveLength(1);
+    expect(parsed.plans[0].id).toBe(3);
+    expect(parsed.plans[0].tags).toEqual(['backend']);
+  });
+
   // Test 4: Respects pendingOnly flag
   test('respects pendingOnly flag', async () => {
     await createPlan({
@@ -1282,6 +1327,91 @@ describe('mcpListReadyPlans', () => {
     expect(parsed.plans[0].title).toBe('Ready Plan');
     expect(parsed.plans[0].dependencies).toEqual([1, 2]);
   });
+
+  test('filters ready plans by tags using OR logic', async () => {
+    await createPlan({
+      id: 1,
+      title: 'Frontend Work',
+      status: 'pending',
+      tags: ['frontend'],
+      tasks: [],
+      dependencies: [],
+    });
+
+    await createPlan({
+      id: 2,
+      title: 'Backend Work',
+      status: 'pending',
+      tags: ['backend'],
+      tasks: [],
+      dependencies: [],
+    });
+
+    await createPlan({
+      id: 3,
+      title: 'Ops Work',
+      status: 'pending',
+      tags: ['ops'],
+      tasks: [],
+      dependencies: [],
+    });
+
+    const args = listReadyPlansParameters.parse({
+      tags: ['Frontend', 'ops'],
+    });
+
+    const result = await mcpListReadyPlans(args, context);
+    const parsed = JSON.parse(result);
+
+    expect(parsed.count).toBe(2);
+    const ids = parsed.plans.map((plan: { id: number }) => plan.id).sort();
+    expect(ids).toEqual([1, 3]);
+  });
+
+  test('reloads plan data without manual cache clearing', async () => {
+    await createPlan({
+      id: 1,
+      title: 'Tagged Plan',
+      status: 'pending',
+      tags: ['frontend'],
+      tasks: [],
+      dependencies: [],
+    });
+
+    const initialArgs = listReadyPlansParameters.parse({ tags: ['frontend'] });
+    const initialResult = await mcpListReadyPlans(initialArgs, context);
+    const initialParsed = JSON.parse(initialResult);
+    expect(initialParsed.count).toBe(1);
+    expect(initialParsed.plans[0].tags).toEqual(['frontend']);
+
+    const planPath = path.join(tmpDir, '1-test.plan.md');
+    const planData = await readPlanFile(planPath);
+    await writePlanFile(planPath, { ...planData, tags: ['ops'] });
+
+    const updatedArgs = listReadyPlansParameters.parse({ tags: ['ops'] });
+    const updatedResult = await mcpListReadyPlans(updatedArgs, context);
+    const updatedParsed = JSON.parse(updatedResult);
+    expect(updatedParsed.count).toBe(1);
+    expect(updatedParsed.plans[0].tags).toEqual(['ops']);
+  });
+
+  test('includes normalized tags in JSON output', async () => {
+    await createPlan({
+      id: 1,
+      title: 'Tagged Plan',
+      status: 'pending',
+      tags: ['Frontend', 'backend'],
+      tasks: [],
+      dependencies: [],
+    });
+
+    const args = listReadyPlansParameters.parse({});
+    const result = await mcpListReadyPlans(args, context);
+    const parsed = JSON.parse(result);
+
+    expect(parsed.count).toBe(1);
+    expect(parsed.plans[0].tags).toEqual(['backend', 'frontend']);
+  });
 });
 
 describe('Helper Functions', () => {
@@ -1474,6 +1604,34 @@ describe('mcpCreatePlan', () => {
     expect(plan.docs).toEqual(['docs/feature.md']);
     expect(plan.container).toBe(true);
     expect(plan.temp).toBe(false);
+  });
+
+  test('accepts tags parameter and normalizes input', async () => {
+    const { mcpCreatePlan, createPlanParameters } = await import('./generate_mode.js');
+
+    const args = createPlanParameters.parse({
+      title: 'Tagged Plan',
+      tags: ['Frontend', 'backend', ' FRONTEND '],
+    });
+
+    await mcpCreatePlan(args, context);
+
+    const planPath = path.join(tmpDir, '1-tagged-plan.plan.md');
+    const plan = await readPlanFile(planPath);
+    expect(plan.tags).toEqual(['backend', 'frontend']);
+  });
+
+  test('rejects tags that are not in the allowlist', async () => {
+    const { mcpCreatePlan, createPlanParameters } = await import('./generate_mode.js');
+
+    context.config.tags = { allowed: ['frontend'] };
+
+    const args = createPlanParameters.parse({
+      title: 'Invalid Tags',
+      tags: ['backend'],
+    });
+
+    await expect(mcpCreatePlan(args, context)).rejects.toThrow('Invalid tag');
   });
 
   test('updates parent plan when parent specified', async () => {

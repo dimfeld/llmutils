@@ -21,6 +21,7 @@ import { loadCompactPlanPrompt } from './prompts/compact_plan.js';
 import { filterAndSortReadyPlans, formatReadyPlansAsJson } from '../ready_plans.js';
 import { generateNumericPlanId } from '../id_utils.js';
 import { generatePlanFilename } from '../utils/filename.js';
+import { validateTags } from '../utils/tags.js';
 
 export interface GenerateModeRegistrationContext {
   config: RmplanConfig;
@@ -30,9 +31,9 @@ export interface GenerateModeRegistrationContext {
 
 const questionText = `Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Avoid repeating information already captured. As you figure things out, update the details in the plan file if necessary.`;
 
-function parseBooleanOption(value: unknown): boolean {
-  if (value === undefined || value === null) {
-    return false;
+function parseBooleanOption(value: unknown, defaultValue = false): boolean {
+  if (!value) {
+    return defaultValue;
   }
 
   if (typeof value === 'boolean') {
@@ -69,7 +70,7 @@ export async function loadResearchPrompt(
   clearPlanCache();
   const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
 
-  const allowMultiplePlans = parseBooleanOption(args.allowMultiplePlans);
+  const allowMultiplePlans = parseBooleanOption(args.allowMultiplePlans, true);
   const parentPlanId = typeof plan.id === 'number' ? plan.id : undefined;
 
   // If plan has simple: true, skip research and use simple generation flow
@@ -191,7 +192,7 @@ export async function loadGeneratePrompt(
     parentPlanId = typeof plan.id === 'number' ? plan.id : undefined;
   }
 
-  const allowMultiplePlans = parseBooleanOption(args.allowMultiplePlans);
+  const allowMultiplePlans = parseBooleanOption(args.allowMultiplePlans, true);
 
   const multiplePlansGuidance = allowMultiplePlans
     ? `
@@ -405,6 +406,10 @@ export const listReadyPlansParameters = z
       .optional()
       .default('priority')
       .describe('Sort field (default: priority)'),
+    tags: z
+      .array(z.string())
+      .optional()
+      .describe('Filter to plans that include any of the provided tags'),
   })
   .describe('List all ready plans that can be executed');
 
@@ -422,6 +427,7 @@ export const createPlanParameters = z
     assignedTo: z.string().optional().describe('Username to assign plan to'),
     issue: z.array(z.string()).optional().describe('GitHub issue URLs'),
     docs: z.array(z.string()).optional().describe('Documentation file paths'),
+    tags: z.array(z.string()).optional().describe('Tags to assign to the plan'),
     container: z.boolean().optional().describe('Mark as container plan'),
     temp: z.boolean().optional().describe('Mark as temporary plan'),
   })
@@ -780,6 +786,14 @@ export async function mcpCreatePlan(
     throw new UserError('Plan title cannot be empty.');
   }
 
+  let planTags: string[] = [];
+  try {
+    planTags = validateTags(args.tags, context.config);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new UserError(message);
+  }
+
   const tasksDir = await resolveTasksDir(context.config);
   const nextId = await generateNumericPlanId(tasksDir);
 
@@ -795,6 +809,7 @@ export async function mcpCreatePlan(
     assignedTo: args.assignedTo,
     issue: args.issue || [],
     docs: args.docs || [],
+    tags: planTags,
     container: args.container || false,
     temp: args.temp || false,
     status: 'pending',

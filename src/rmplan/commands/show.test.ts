@@ -132,6 +132,41 @@ describe('handleShowCommand', () => {
     expect(stripped).toContain('Test goal');
   });
 
+  test('displays tags when present', async () => {
+    const plan = {
+      id: '50',
+      title: 'Tagged Plan',
+      goal: 'Check tags',
+      status: 'pending',
+      tags: ['frontend', 'urgent'],
+      tasks: [],
+    };
+
+    await fs.writeFile(path.join(tasksDir, '50.yml'), yaml.stringify(plan));
+
+    await handleShowCommand('50', {}, { parent: { opts: () => ({}) } });
+
+    const output = stripAnsi(logSpy.mock.calls.map((call) => call[0]).join('\n'));
+    expect(output).toContain('Tags: frontend, urgent');
+  });
+
+  test('shows placeholder when no tags exist', async () => {
+    const plan = {
+      id: '51',
+      title: 'Untagged Plan',
+      goal: 'Check empty tags',
+      status: 'pending',
+      tasks: [],
+    };
+
+    await fs.writeFile(path.join(tasksDir, '51.yml'), yaml.stringify(plan));
+
+    await handleShowCommand('51', {}, { parent: { opts: () => ({}) } });
+
+    const output = stripAnsi(logSpy.mock.calls.map((call) => call[0]).join('\n'));
+    expect(output).toContain('Tags: none');
+  });
+
   test('shows condensed summary with --short', async () => {
     const plan = {
       id: '2',

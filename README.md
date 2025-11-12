@@ -450,6 +450,25 @@ rmplan add "Integration tests" --depends-on 101,102
 rmplan add "Refactor auth" --discovered-from 99
 ```
 
+**Tag plans:**
+
+```bash
+# Add tags during creation (tags are normalized to lowercase)
+rmplan add "UI refresh" --tag frontend --tag urgent
+
+# Update tags later
+rmplan set 123 --tag backend --no-tag frontend
+```
+
+Configure an allowlist via `tags.allowed` in `rmplan.yml` to restrict tags to a shared vocabulary across the team.
+
+Filter tagged plans in listings:
+
+```bash
+rmplan list --tag frontend --tag urgent
+rmplan ready --tag backend
+```
+
 **Open in editor:**
 
 ```bash
@@ -1575,7 +1594,7 @@ rmfind src/**/*.ts --grep getUserData --whole-word
 
 ```bash
 # Create stub
-rmplan add "Feature name" [--output FILE] [--parent ID] [--priority LEVEL]
+rmplan add "Feature name" [--output FILE] [--parent ID] [--priority LEVEL] [--tag TAG...]
 
 # Generate detailed tasks
 rmplan generate [--issue NUM | --plan FILE | --plan-editor] -- [RMFILTER_ARGS]
@@ -1600,10 +1619,10 @@ rmplan compact ID [--dry-run] [--yes]
 
 ```bash
 # List all plans
-rmplan list [--all] [--status STATUS] [--sort FIELD]
+rmplan list [--all] [--status STATUS] [--sort FIELD] [--tag TAG...]
 
 # List ready plans
-rmplan ready [--pending-only] [--priority LEVEL] [--format FORMAT]
+rmplan ready [--pending-only] [--priority LEVEL] [--format FORMAT] [--tag TAG...]
 
 # Show next ready
 rmplan show --next
@@ -1614,11 +1633,13 @@ rmplan agent --next
 rmplan agent --next-ready PARENT_ID
 ```
 
+Use `--tag` (repeatable) with `rmplan list` or `rmplan ready` to filter for plans that include any of the specified tags. Tag filters are case-insensitive and ignore plans without tags.
+
 ### Plan Management
 
 ```bash
 # Set metadata
-rmplan set ID --parent PARENT --priority LEVEL --status STATUS
+rmplan set ID --parent PARENT --priority LEVEL --status STATUS [--tag TAG...] [--no-tag TAG...]
 
 # Add/remove tasks
 rmplan add-task ID --title "Title" --description "Desc" [--files FILE]

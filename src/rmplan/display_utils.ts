@@ -160,3 +160,42 @@ export function formatWorkspacePath(
 
   return displayPath;
 }
+
+export interface FormatTagsSummaryOptions {
+  /**
+   * Maximum display length before truncating with an ellipsis.
+   * If not provided, no truncation is applied.
+   */
+  maxLength?: number;
+  /**
+   * Value to use when no tags are present.
+   */
+  emptyValue?: string;
+}
+
+/**
+ * Formats a tag array into a comma-separated summary string, optionally truncated.
+ */
+export function formatTagsSummary(
+  tags: string[] | undefined,
+  options: FormatTagsSummaryOptions = {}
+): string {
+  const emptyValue = options.emptyValue ?? '-';
+
+  if (!tags || tags.length === 0) {
+    return emptyValue;
+  }
+
+  const filtered = tags.filter((tag) => tag && tag.trim().length > 0);
+  if (filtered.length === 0) {
+    return emptyValue;
+  }
+
+  const joined = filtered.join(', ');
+  const maxLength = options.maxLength;
+  if (maxLength && maxLength > 3 && joined.length > maxLength) {
+    return `${joined.slice(0, maxLength - 3)}...`;
+  }
+
+  return joined;
+}

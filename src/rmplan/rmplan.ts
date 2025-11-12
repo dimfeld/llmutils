@@ -213,6 +213,7 @@ program
   )
   .option('-i, --issue <urls...>', 'Add GitHub issue URLs to the plan')
   .option('--doc <paths...>', 'Add documentation file paths to the plan')
+  .option('--tag <tags...>', 'Add tags to the plan (repeatable)')
   .option('--assign <username>', 'Assign the plan to a user')
   .option('--discovered-from <planId>', 'Set the plan this was discovered from', (value) => {
     const n = Number(value);
@@ -423,6 +424,7 @@ program
   .option('--mine', 'Show only plans assigned to current user')
   .option('--assigned', 'Show only plans that are claimed in shared assignments')
   .option('--unassigned', 'Show only plans that are not claimed in shared assignments')
+  .option('--tag <tags...>', 'Filter by tag (repeatable)')
   .option('-n, --number <count>', 'Limit the number of results shown', (value: string) => {
     const n = Number(value);
     if (Number.isNaN(n) || n <= 0) {
@@ -449,6 +451,7 @@ program
   .option('--unassigned', 'Show only ready plans that are not currently claimed')
   .option('--user <username>', 'Show ready plans claimed by the specified user')
   .option('--has-tasks', 'Show only ready plans that have tasks defined')
+  .option('--tag <tags...>', 'Filter ready plans by tag (repeatable)')
   .option('-v, --verbose', 'Show additional details like file paths')
   .action(async (options, command) => {
     const { handleReadyCommand } = await import('./commands/ready.js');
@@ -657,6 +660,8 @@ program
   .option('--no-i, --no-issue <urls...>', 'Remove GitHub issue URLs from the plan')
   .option('--doc <paths...>', 'Add documentation file paths to the plan')
   .option('--no-doc <paths...>', 'Remove documentation file paths from the plan')
+  .option('--tag <tags...>', 'Add tags to the plan (repeatable)')
+  .option('--no-tag <tags...>', 'Remove tags from the plan')
   .option('--assign <username>', 'Assign the plan to a user')
   .option('--no-assign', 'Remove the plan assignment')
   .option('--sd, --status-description <description>', 'Set a description for the current status')

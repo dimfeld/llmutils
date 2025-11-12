@@ -137,6 +137,7 @@ export async function manualSplitPlan(
     parent: parent.id,
     status: 'pending',
     tasks: [],
+    tags: parent.tags ? [...parent.tags] : [],
   };
 
   const filename = generatePlanFilename(childId, childTitle || 'split');

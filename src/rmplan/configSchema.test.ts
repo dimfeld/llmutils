@@ -56,6 +56,34 @@ describe('configSchema', () => {
     });
   });
 
+  describe('tags configuration', () => {
+    test('accepts allowed tags array', () => {
+      const config = {
+        tags: {
+          allowed: ['frontend', 'backend', 'urgent'],
+        },
+      };
+
+      const result = rmplanConfigSchema.parse(config);
+      expect(result.tags?.allowed).toEqual(['frontend', 'backend', 'urgent']);
+    });
+
+    test('makes tags field optional', () => {
+      const result = rmplanConfigSchema.parse({});
+      expect(result.tags).toBeUndefined();
+    });
+
+    test('rejects non-string entries in allowed list', () => {
+      const config = {
+        tags: {
+          allowed: ['frontend', 123],
+        },
+      };
+
+      expect(() => rmplanConfigSchema.parse(config)).toThrow();
+    });
+  });
+
   describe('getDefaultConfig', () => {
     test('should include issueTracker with default value "github"', () => {
       const defaultConfig = getDefaultConfig();

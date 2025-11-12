@@ -132,6 +132,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     tasks: [],
+    tags: [],
   };
 
   // Handle cleanup-specific logic: aggregate changedFiles into rmfilter
@@ -167,12 +168,17 @@ export async function handleAddCommand(title: string[], options: any, command: a
   }
 
   // Apply additional properties using the shared function
-  updatePlanProperties(plan, {
-    rmfilter: options.rmfilter,
-    issue: options.issue,
-    doc: options.doc,
-    assign: options.assign,
-  });
+  updatePlanProperties(
+    plan,
+    {
+      rmfilter: options.rmfilter,
+      issue: options.issue,
+      doc: options.doc,
+      assign: options.assign,
+      tag: options.tag,
+    },
+    config
+  );
 
   // Collect details if provided
   if (options.details) {

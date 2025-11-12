@@ -672,8 +672,9 @@ describe('handleReadyCommand', () => {
     const dataRow = tableData[1];
     expect(dataRow[0]).toBe(1); // ID is passed as number to chalk
     expect(dataRow[1]).toBe('Test plan');
-    expect(dataRow[4]).toBe('1/2'); // 1 done out of 2 tasks
-    expect(dataRow[5]).toBe('unassigned');
+    expect(dataRow[4]).toBe('-'); // no tags
+    expect(dataRow[5]).toBe('1/2'); // 1 done out of 2 tasks
+    expect(dataRow[6]).toBe('unassigned');
   });
 
   // Test 13: JSON format works
@@ -1301,5 +1302,146 @@ describe('handleReadyCommand', () => {
     expect(result.plans[0].users).toEqual(['alice']);
     expect(result.plans[0].isAssignedHere).toBe(true);
     expect(result.plans[0].isUnassigned).toBe(false);
+  });
+
+  test('filters ready plans by tag', async () => {
+    await createPlan({
+      id: 10,
+      goal: 'Frontend Ready',
+      status: 'pending',
+      tags: ['frontend'],
+      tasks: [],
+      dependencies: [],
+    });
+    await createPlan({
+      id: 11,
+      goal: 'Backend Ready',
+      status: 'pending',
+      tags: ['backend'],
+      tasks: [],
+      dependencies: [],
+    });
+
+    mockLog.mockClear();
+    await handleReadyCommand({ tag: ['frontend'] }, createCommand());
+
+    const output = mockLog.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('Frontend Ready');
+    expect(output).not.toContain('Backend Ready');
+  });
+
+  test('filters ready plans by multiple tags using OR logic', async () => {
+    await createPlan({
+      id: 12,
+      goal: 'Frontend Ready',
+      status: 'pending',
+      tags: ['frontend'],
+      tasks: [],
+      dependencies: [],
+    });
+    await createPlan({
+      id: 13,
+      goal: 'Backend Ready',
+      status: 'pending',
+      tags: ['backend'],
+      tasks: [],
+      dependencies: [],
+    });
+    await createPlan({
+      id: 14,
+      goal: 'Infra Ready',
+      status: 'pending',
+      tags: ['infra'],
+      tasks: [],
+      dependencies: [],
+    });
+
+    mockLog.mockClear();
+    await handleReadyCommand({ tag: ['backend', 'frontend'] }, createCommand());
+
+    const output = mockLog.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('Frontend Ready');
+    expect(output).toContain('Backend Ready');
+    expect(output).not.toContain('Infra Ready');
+  });
+
+  test('matches tag filters case-insensitively and excludes untagged plans', async () => {
+    await createPlan({
+      id: 15,
+      goal: 'Design Review',
+      status: 'pending',
+      tags: ['Design'],
+      tasks: [],
+      dependencies: [],
+    });
+    await createPlan({
+      id: 16,
+      goal: 'Untagged Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+    });
+
+    mockLog.mockClear();
+    await handleReadyCommand({ tag: ['design'] }, createCommand());
+
+    const output = mockLog.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('Design Review');
+    expect(output).not.toContain('Untagged Plan');
+  });
+
+  test('displays tags in list output', async () => {
+    await createPlan({
+      id: 17,
+      goal: 'Tagged Work',
+      status: 'pending',
+      tags: ['frontend', 'urgent'],
+      tasks: [],
+      dependencies: [],
+    });
+
+    mockLog.mockClear();
+    await handleReadyCommand({}, createCommand());
+
+    const output = mockLog.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toMatch(/Tags:\s+frontend, urgent/);
+  });
+
+  test('displays tags column in table output', async () => {
+    await createPlan({
+      id: 18,
+      goal: 'Table View Plan',
+      status: 'pending',
+      tags: ['frontend', 'urgent'],
+      tasks: [],
+      dependencies: [],
+    });
+
+    mockTable.mockClear();
+    await handleReadyCommand({ format: 'table' }, createCommand());
+
+    const tableData = mockTable.mock.calls[0][0];
+    const headers = tableData[0];
+    expect(headers).toContain('Tags');
+    const tagsIndex = headers.indexOf('Tags');
+    expect(tableData[1][tagsIndex]).toBe('frontend, urgent');
+  });
+
+  test('includes tags array in json output', async () => {
+    await createPlan({
+      id: 19,
+      goal: 'JSON Plan with Tags',
+      status: 'pending',
+      tags: ['frontend', 'urgent'],
+      tasks: [],
+      dependencies: [],
+    });
+
+    mockLog.mockClear();
+    await handleReadyCommand({ format: 'json' }, createCommand());
+
+    const jsonOutput = mockLog.mock.calls.at(-1)?.[0] ?? '';
+    const parsed = JSON.parse(jsonOutput);
+    expect(parsed.plans[0].tags).toEqual(['frontend', 'urgent']);
   });
 });
