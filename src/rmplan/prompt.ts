@@ -734,10 +734,6 @@ Output structured Markdown that can be appended directly under a "## Research" h
 - Record architectural hazards, edge cases, or constraints uncovered during research.
 - Call out any dependencies or prerequisites the implementation must respect.
 
-### Follow-up Questions
-- Capture any remaining unknowns that an engineer or product partner should resolve.
-- If there are no open questions, state "None" so the section is explicit.
-
 Do not wrap the output in code fences and do not repeat previous instructions.
 Be verbose in your findings. The insights you gathered are valuable,
 so the more you include from your exploration, the better.
