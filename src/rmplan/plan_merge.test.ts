@@ -165,6 +165,29 @@ describe('mergeTasksIntoPlan', () => {
     expect(merged.tasks[2].title).toBe('New Task Without ID');
   });
 
+  test('allows pending tasks to be reordered using task IDs', async () => {
+    const reorderPlan: PlanSchema = {
+      ...basePlan,
+      tasks: [
+        { title: 'Task A', description: 'First', done: false },
+        { title: 'Task B', description: 'Second', done: false },
+        { title: 'Task C', description: 'Third', done: false },
+      ],
+    };
+
+    const newPlanData: Partial<PlanSchema> = {
+      tasks: [
+        { title: 'Task C [TASK-3]', description: 'Now first', done: false },
+        { title: 'Task A [TASK-1]', description: 'Now second', done: false },
+        { title: 'Task B [TASK-2]', description: 'Now third', done: false },
+      ],
+    };
+
+    const merged = await mergeTasksIntoPlan(newPlanData, reorderPlan);
+    expect(merged.tasks.map((task) => task.title)).toEqual(['Task C', 'Task A', 'Task B']);
+    expect(merged.tasks[0].description).toBe('Now first');
+  });
+
   test('throws when validation fails', async () => {
     await expect(
       mergeTasksIntoPlan(

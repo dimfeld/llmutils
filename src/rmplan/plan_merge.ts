@@ -114,6 +114,79 @@ export function updateDetailsWithinDelimiters(
 /**
  * Merges a partial plan update into the original plan, preserving metadata and completed tasks.
  */
+export function mergeTaskLists(
+  originalTasks: PlanSchema['tasks'] = [],
+  updatedTasks: PlanSchema['tasks'] = []
+): PlanSchema['tasks'] {
+  const completedTaskIndexes = new Set<number>();
+  originalTasks.forEach((task, index) => {
+    if (isTaskDone(task)) {
+      completedTaskIndexes.add(index);
+    }
+  });
+
+  const titleToIndexes = new Map<string, number[]>();
+  originalTasks.forEach((task, index) => {
+    const queue = titleToIndexes.get(task.title) || [];
+    queue.push(index);
+    titleToIndexes.set(task.title, queue);
+  });
+
+  const taskIdRegex = /\[TASK-(\d+)\]/;
+  type OrderedTask = { task: PlanSchema['tasks'][0]; sourceIndex?: number };
+  const orderedTasks: OrderedTask[] = [];
+  const consumedIndexes = new Set<number>();
+
+  for (const incomingTask of updatedTasks) {
+    const taskCopy: PlanSchema['tasks'][0] = { ...incomingTask };
+    let sourceIndex: number | undefined;
+
+    const match = taskCopy.title.match(taskIdRegex);
+    if (match) {
+      const parsedIndex = Number.parseInt(match[1], 10) - 1;
+      taskCopy.title = taskCopy.title.replace(taskIdRegex, '').trim();
+      if (!Number.isNaN(parsedIndex) && parsedIndex >= 0 && parsedIndex < originalTasks.length) {
+        sourceIndex = parsedIndex;
+      }
+    }
+
+    if (sourceIndex === undefined) {
+      const queue = titleToIndexes.get(taskCopy.title);
+      if (queue && queue.length > 0) {
+        sourceIndex = queue.shift();
+      }
+    }
+
+    if (sourceIndex !== undefined) {
+      consumedIndexes.add(sourceIndex);
+      if (completedTaskIndexes.has(sourceIndex)) {
+        orderedTasks.push({ task: originalTasks[sourceIndex], sourceIndex });
+        continue;
+      }
+    }
+
+    orderedTasks.push({ task: taskCopy, sourceIndex });
+  }
+
+  const remainingCompleted = originalTasks
+    .map((task, index) => ({ task, index }))
+    .filter(({ index }) => completedTaskIndexes.has(index) && !consumedIndexes.has(index));
+
+  for (const { task, index } of remainingCompleted) {
+    const insertIndex = orderedTasks.findIndex(
+      (entry) => entry.sourceIndex !== undefined && entry.sourceIndex > index
+    );
+    const entry = { task, sourceIndex: index };
+    if (insertIndex === -1) {
+      orderedTasks.push(entry);
+    } else {
+      orderedTasks.splice(insertIndex, 0, entry);
+    }
+  }
+
+  return orderedTasks.map((entry) => entry.task);
+}
+
 export async function mergeTasksIntoPlan(
   newPlanData: Partial<PlanSchema>,
   originalPlan: PlanSchema
@@ -160,44 +233,6 @@ export async function mergeTasksIntoPlan(
     details: mergeDetails(newPlanData.details, originalPlan.details),
   };
 
-  const originalTasks = originalPlan.tasks || [];
-  const newTasks = newPlan.tasks || [];
-
-  const completedTasks = new Map<number, PlanSchema['tasks'][0]>();
-  originalTasks.forEach((task, index) => {
-    if (isTaskDone(task)) {
-      completedTasks.set(index, task);
-    }
-  });
-
-  const taskIdRegex = /\[TASK-(\d+)\]/;
-  const mergedTasks: PlanSchema['tasks'] = [];
-
-  for (const [index, task] of completedTasks) {
-    mergedTasks[index] = task;
-  }
-
-  newTasks.forEach((newTask) => {
-    const match = newTask.title.match(taskIdRegex);
-    if (match) {
-      const taskIndex = Number.parseInt(match[1], 10) - 1;
-      newTask.title = newTask.title.replace(taskIdRegex, '').trim();
-
-      if (!completedTasks.has(taskIndex)) {
-        mergedTasks[taskIndex] = newTask;
-      }
-    } else {
-      const matchingTitleTask = originalTasks.findIndex((task) => task.title === newTask.title);
-      if (matchingTitleTask >= 0) {
-        if (!completedTasks.has(matchingTitleTask)) {
-          mergedTasks[matchingTitleTask] = newTask;
-        }
-      } else {
-        mergedTasks.push(newTask);
-      }
-    }
-  });
-
-  updatedPlan.tasks = mergedTasks.filter((task) => task !== undefined);
+  updatedPlan.tasks = mergeTaskLists(originalPlan.tasks, newPlan.tasks);
   return updatedPlan;
 }

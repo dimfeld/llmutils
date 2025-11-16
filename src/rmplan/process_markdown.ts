@@ -10,6 +10,7 @@ import { fixYaml } from './fix_yaml.js';
 import { generateNumericPlanId } from './id_utils.js';
 import type { PlanSchema } from './planSchema.js';
 import { phaseSchema, planSchema } from './planSchema.js';
+import { mergeTaskLists } from './plan_merge.js';
 import { isTaskDone, writePlanFile } from './plans.js';
 import { phaseExampleFormatGeneric, planExampleFormatGeneric } from './prompt.js';
 import { appendResearchToPlan } from './research_utils.ts';
@@ -432,47 +433,7 @@ export async function extractMarkdownToYaml(
 
     // Special handling for plan updates: merge tasks while preserving completed ones
     if (options.updatePlan?.data) {
-      const originalTasks = options.updatePlan.data.tasks;
-      const updatedTasks = validatedPlan.tasks;
-
-      // Build a map of original completed tasks (all steps done)
-      const completedTasks = new Map<number, (typeof originalTasks)[0]>();
-      originalTasks.forEach((task, index) => {
-        if (isTaskDone(task)) {
-          completedTasks.set(index, task);
-        }
-      });
-
-      // Parse task IDs from the updated markdown to match tasks
-      const taskIdRegex = /\[TASK-(\d+)\]/;
-      const mergedTasks: typeof originalTasks = [];
-
-      // First, add all completed tasks in their original positions
-      for (const [index, task] of completedTasks) {
-        mergedTasks[index] = task;
-      }
-
-      // Then process updated tasks
-      updatedTasks.forEach((updatedTask) => {
-        // Try to extract task ID from title
-        const match = updatedTask.title.match(taskIdRegex);
-        if (match) {
-          const taskIndex = parseInt(match[1]) - 1; // Convert to 0-based index
-          // Remove the task ID from the title
-          updatedTask.title = updatedTask.title.replace(taskIdRegex, '').trim();
-
-          // Only update if this was not a completed task
-          if (!completedTasks.has(taskIndex)) {
-            mergedTasks[taskIndex] = updatedTask;
-          }
-        } else {
-          // New task without ID - add to the end
-          mergedTasks.push(updatedTask);
-        }
-      });
-
-      // Filter out any undefined entries and reassign
-      validatedPlan.tasks = mergedTasks.filter((task) => task !== undefined);
+      validatedPlan.tasks = mergeTaskLists(options.updatePlan.data.tasks, validatedPlan.tasks);
     }
   } catch (e) {
     // Save the failed YAML for debugging

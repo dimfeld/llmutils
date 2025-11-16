@@ -1,51 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { PlanSchema } from './planSchema.js';
-import { isTaskDone } from './plans.js';
-
-// Extract the task merging logic for unit testing
-function mergeTasksPreservingCompleted(
-  originalTasks: PlanSchema['tasks'],
-  updatedTasks: PlanSchema['tasks']
-): PlanSchema['tasks'] {
-  // Build a map of original completed tasks (all steps done)
-  const completedTasks = new Map<number, (typeof originalTasks)[0]>();
-  originalTasks.forEach((task, index) => {
-    if (isTaskDone(task)) {
-      completedTasks.set(index, task);
-    }
-  });
-
-  // Parse task IDs from the updated markdown to match tasks
-  const taskIdRegex = /\[TASK-(\d+)\]/;
-  const mergedTasks: typeof originalTasks = [];
-
-  // First, add all completed tasks in their original positions
-  for (const [index, task] of completedTasks) {
-    mergedTasks[index] = task;
-  }
-
-  // Then process updated tasks
-  updatedTasks.forEach((updatedTask) => {
-    // Try to extract task ID from title
-    const match = updatedTask.title.match(taskIdRegex);
-    if (match) {
-      const taskIndex = parseInt(match[1]) - 1; // Convert to 0-based index
-      // Remove the task ID from the title
-      updatedTask.title = updatedTask.title.replace(taskIdRegex, '').trim();
-
-      // Only update if this was not a completed task
-      if (!completedTasks.has(taskIndex)) {
-        mergedTasks[taskIndex] = updatedTask;
-      }
-    } else {
-      // New task without ID - add to the end
-      mergedTasks.push(updatedTask);
-    }
-  });
-
-  // Filter out any undefined entries and reassign
-  return mergedTasks.filter((task) => task !== undefined);
-}
+import { mergeTaskLists } from './plan_merge.js';
 
 describe('task merging logic', () => {
   test('should preserve completed tasks and update pending ones', () => {
@@ -75,18 +30,14 @@ describe('task merging logic', () => {
       },
     ];
 
-    const result = mergeTasksPreservingCompleted(originalTasks, updatedTasks);
+    const result = mergeTaskLists(originalTasks, updatedTasks);
 
     expect(result).toHaveLength(2);
-
-    // Completed task should be preserved
     expect(result[0]).toEqual({
       title: 'Completed Task',
       description: 'This is done',
       done: true,
     });
-
-    // Pending task should be updated
     expect(result[1]).toEqual({
       title: 'Updated Pending Task',
       description: 'Updated description',
@@ -116,7 +67,7 @@ describe('task merging logic', () => {
       },
     ];
 
-    const result = mergeTasksPreservingCompleted(originalTasks, updatedTasks);
+    const result = mergeTaskLists(originalTasks, updatedTasks);
 
     expect(result).toHaveLength(2);
     expect(result[0].title).toBe('Existing Task');
@@ -130,17 +81,17 @@ describe('task merging logic', () => {
       {
         title: 'Task 1',
         description: 'Keep this',
-        done: true, // Completed
+        done: true,
       },
       {
         title: 'Task 2',
         description: 'Remove this',
-        done: false, // Pending
+        done: false,
       },
       {
         title: 'Task 3',
         description: 'Keep this too',
-        done: false, // Pending
+        done: false,
       },
     ];
 
@@ -150,7 +101,6 @@ describe('task merging logic', () => {
         description: 'Should be ignored',
         done: false,
       },
-      // Task 2 is missing - it was removed
       {
         title: 'Task 3 [TASK-3]',
         description: 'Updated task 3',
@@ -158,18 +108,14 @@ describe('task merging logic', () => {
       },
     ];
 
-    const result = mergeTasksPreservingCompleted(originalTasks, updatedTasks);
+    const result = mergeTaskLists(originalTasks, updatedTasks);
 
     expect(result).toHaveLength(2);
-
-    // Completed task 1 preserved
     expect(result[0]).toEqual({
       title: 'Task 1',
       description: 'Keep this',
       done: true,
     });
-
-    // Task 3 updated (now at index 1)
     expect(result[1]).toEqual({
       title: 'Task 3',
       description: 'Updated task 3',
@@ -187,7 +133,7 @@ describe('task merging logic', () => {
       {
         title: 'Task 2',
         description: 'Second',
-        done: true, // Completed
+        done: true,
       },
       {
         title: 'Task 3',
@@ -209,18 +155,89 @@ describe('task merging logic', () => {
       },
     ];
 
-    const result = mergeTasksPreservingCompleted(originalTasks, updatedTasks);
+    const result = mergeTaskLists(originalTasks, updatedTasks);
 
-    // Task 2 (completed) should be preserved
     expect(result[0].title).toBe('Task 2');
     expect(result[0].description).toBe('Second');
-
-    // Task 3 should be updated
     expect(result[1].title).toBe('New Task 3');
     expect(result[1].description).toBe('Replaced third');
-
-    // New task should be added
     expect(result[2].title).toBe('New Task at End');
     expect(result[2].description).toBe('Added to end');
+  });
+
+  test('reorders pending tasks based on updated order', () => {
+    const originalTasks: PlanSchema['tasks'] = [
+      {
+        title: 'Task A',
+        description: 'First',
+        done: false,
+      },
+      {
+        title: 'Task B',
+        description: 'Second',
+        done: false,
+      },
+      {
+        title: 'Task C',
+        description: 'Third',
+        done: false,
+      },
+    ];
+
+    const updatedTasks: PlanSchema['tasks'] = [
+      {
+        title: 'Task C [TASK-3]',
+        description: 'Third but first now',
+        done: false,
+      },
+      {
+        title: 'Task A [TASK-1]',
+        description: 'First but second now',
+        done: false,
+      },
+      {
+        title: 'Task B [TASK-2]',
+        description: 'Second but third now',
+        done: false,
+      },
+    ];
+
+    const result = mergeTaskLists(originalTasks, updatedTasks);
+
+    expect(result.map((task) => task.title)).toEqual(['Task C', 'Task A', 'Task B']);
+    expect(result[0].description).toBe('Third but first now');
+  });
+
+  test('reorders tasks when matching only by title', () => {
+    const originalTasks: PlanSchema['tasks'] = [
+      {
+        title: 'Alpha',
+        description: 'Original alpha',
+        done: false,
+      },
+      {
+        title: 'Beta',
+        description: 'Original beta',
+        done: false,
+      },
+    ];
+
+    const updatedTasks: PlanSchema['tasks'] = [
+      {
+        title: 'Beta',
+        description: 'Beta comes first',
+        done: false,
+      },
+      {
+        title: 'Alpha',
+        description: 'Alpha now second',
+        done: false,
+      },
+    ];
+
+    const result = mergeTaskLists(originalTasks, updatedTasks);
+
+    expect(result.map((task) => task.title)).toEqual(['Beta', 'Alpha']);
+    expect(result[0].description).toBe('Beta comes first');
   });
 });
