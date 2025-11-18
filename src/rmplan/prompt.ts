@@ -793,6 +793,8 @@ The plan should be formatted as follows:
 
 IMPORTANT: Do NOT create tasks for manual verification. This plan will be executed by an AI coding agent and verified separately after implementation. Focus on automated testing and implementation tasks only.
 
+IMPORTANT: Testing should be INTEGRATED into your implementation tasks, not separate tasks. Each task that introduces new functionality should include writing tests as part of that task. Do NOT create standalone "Write tests" or "Add test coverage" tasks. Instead, ensure each implementation task description mentions the testing requirements for that specific feature.
+
 ${formatInstructions}
 
 ${blockingReminder}
@@ -1042,6 +1044,8 @@ IMPORTANT: Do NOT create tasks or steps for manual verification. The plan will b
 1. **Test-Driven Development**:
    - Include test creation/modification as early steps when appropriate
    - Prefer to not use mocks unless you have to, since they often end up just testing the mocks. Prefer dependency injection.
+   - Testing should be INTEGRATED into implementation steps within each task, not separate tasks or separate steps at the end.
+   - When a step introduces new functionality, that same step should include writing tests for that functionality.
 
 2. **Incremental Progress**: Each step should be self-contained, achievable, and verifiable
 
@@ -1062,6 +1066,7 @@ IMPORTANT: Do NOT create tasks or steps for manual verification. The plan will b
    - The agent implementing the code is smart and has access to the entire codebase, so you should be clear on what to do, but not overly prescriptive.
    - No need to supply sample code in your prompts unless it illustrates a specific code pattern.
    - If a task is designed to create documentation, make sure to save the documentation in a file so that the later tasks can reference it.
+   - When a step involves implementing functionality, include testing requirements in that same step prompt.
 
 Everything you said above will not be saved anywhere, so be sure to include relevant details again when generating the output below.
 
