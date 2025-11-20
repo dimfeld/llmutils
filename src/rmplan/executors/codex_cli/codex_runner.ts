@@ -1,6 +1,6 @@
 import type { RmplanConfig } from '../../configSchema';
 import { spawnAndLogOutput } from '../../../common/process';
-import { error } from '../../../logging';
+import { error, warn } from '../../../logging';
 import { createCodexStdoutFormatter } from './format';
 
 /**
@@ -11,12 +11,18 @@ export async function executeCodexStep(
   cwd: string,
   rmplanConfig: RmplanConfig
 ): Promise<string> {
+  const inactivityOverride = Number.parseInt(process.env.CODEX_OUTPUT_TIMEOUT_MS || '', 10);
+  const inactivityTimeoutMs =
+    Number.isFinite(inactivityOverride) && inactivityOverride > 0
+      ? inactivityOverride
+      : 10 * 60 * 1000; // 10 minutes
+
+  const maxAttempts = 3;
   const allowAllTools = ['true', '1'].includes(process.env.ALLOW_ALL_TOOLS || '');
   const sandboxSettings = allowAllTools
     ? ['--dangerously-bypass-approvals-and-sandbox']
     : ['--sandbox', 'workspace-write'];
 
-  const formatter = createCodexStdoutFormatter();
   const args = [
     'codex',
     '--enable',
@@ -38,33 +44,111 @@ export async function executeCodexStep(
     args.push('-c', `sandbox_workspace_write.writable_roots=${writableRoots}`);
   }
 
-  args.push(prompt, '--json');
+  let lastExitCode: number | undefined;
+  let lastSignal: NodeJS.Signals | undefined;
+  let threadId: string | undefined;
 
-  const { exitCode, stdout, stderr } = await spawnAndLogOutput(args, {
-    cwd,
-    env: {
-      ...process.env,
-      AGENT: process.env.AGENT || '1',
-    },
-    formatStdout: (chunk: string) => formatter.formatChunk(chunk),
-    // stderr is not JSON – print as-is
-  });
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const formatter = createCodexStdoutFormatter();
+    const attemptArgs = [...args];
+    if (attempt === 1 || !threadId) {
+      attemptArgs.push('--json', prompt);
+      if (attempt > 1 && !threadId) {
+        warn('Codex retry requested but no thread id was captured; issuing a fresh run.');
+      }
+    } else {
+      attemptArgs.push(
+        '--json',
+        'resume',
+        threadId,
+        // We just prompt "continue" since we're resuming and it should still have the previous context
+        'continue'
+      );
+    }
 
-  if (exitCode !== 0) {
-    throw new Error(`codex exited with code ${exitCode}`);
+    const { exitCode, signal, killedByInactivity } = await spawnAndLogOutput(attemptArgs, {
+      cwd,
+      env: {
+        ...process.env,
+        AGENT: process.env.AGENT || '1',
+      },
+      formatStdout: (chunk: string) => formatter.formatChunk(chunk),
+      inactivityTimeoutMs,
+      onInactivityKill: () => {
+        const minutes = Math.round(inactivityTimeoutMs / 60000);
+        warn(
+          `Codex produced no output for ${minutes} minute${minutes === 1 ? '' : 's'}; terminating attempt ${attempt}/${maxAttempts}.`
+        );
+      },
+      // stderr is not JSON – print as-is
+    });
+
+    threadId ||= formatter.getThreadId?.();
+
+    const inferredSignal = signal ?? inferSignalFromExitCode(exitCode);
+    const shouldRetry =
+      exitCode !== 0 ||
+      killedByInactivity ||
+      inferredSignal === 'SIGTERM' ||
+      inferredSignal === 'SIGKILL';
+
+    if (shouldRetry) {
+      lastExitCode = exitCode;
+      lastSignal = inferredSignal;
+
+      if (attempt < maxAttempts) {
+        const reason = describeTermination(exitCode, inferredSignal, killedByInactivity);
+        warn(`Codex attempt ${attempt}/${maxAttempts} ${reason}; retrying...`);
+        continue;
+      }
+
+      const reason = describeTermination(exitCode, inferredSignal, killedByInactivity);
+      throw new Error(`codex failed after ${maxAttempts} attempts (${reason}).`);
+    }
+
+    // Prefer a FAILED agent message when available to surface failures reliably
+    const failedMsg =
+      typeof (formatter as any).getFailedAgentMessage === 'function'
+        ? (formatter as any).getFailedAgentMessage()
+        : undefined;
+    const final = failedMsg || formatter.getFinalAgentMessage();
+    if (!final) {
+      // Provide helpful context for debugging
+      error('Codex returned no final agent message. Enable debug logs for details.');
+      throw new Error('No final agent message found in Codex output.');
+    }
+
+    return final;
   }
 
-  // Prefer a FAILED agent message when available to surface failures reliably
-  const failedMsg =
-    typeof (formatter as any).getFailedAgentMessage === 'function'
-      ? (formatter as any).getFailedAgentMessage()
-      : undefined;
-  const final = failedMsg || formatter.getFinalAgentMessage();
-  if (!final) {
-    // Provide helpful context for debugging
-    error('Codex returned no final agent message. Enable debug logs for details.');
-    throw new Error('No final agent message found in Codex output.');
+  throw new Error(
+    `codex failed after ${maxAttempts} attempts with code ${lastExitCode ?? 'unknown'}${lastSignal ? ` (signal ${lastSignal})` : ''}.`
+  );
+}
+
+function inferSignalFromExitCode(exitCode: number | null): NodeJS.Signals | undefined {
+  // POSIX convention: 128 + signal number
+  if (exitCode === 137) return 'SIGKILL';
+  if (exitCode === 143) return 'SIGTERM';
+  return undefined;
+}
+
+function describeTermination(
+  exitCode: number,
+  signal: NodeJS.Signals | undefined,
+  killedByInactivity: boolean
+): string {
+  const parts: string[] = [];
+
+  if (killedByInactivity) {
+    parts.push('was terminated after inactivity');
   }
 
-  return final;
+  if (signal) {
+    parts.push(`received ${signal}`);
+  } else if (exitCode !== 0) {
+    parts.push(`exited with code ${exitCode}`);
+  }
+
+  return parts.join(' ') || 'terminated unexpectedly';
 }

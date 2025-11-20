@@ -117,6 +117,13 @@ export async function spawnAndLogOutput(
     stdin?: string;
     formatStdout?: (output: string) => string;
     formatStderr?: (output: string) => string;
+    /**
+     * Kill the process if neither stdout nor stderr produce output for this many milliseconds.
+     * This is primarily used by Codex runs to avoid hanging indefinitely on silent processes.
+     */
+    inactivityTimeoutMs?: number;
+    /** Callback invoked when the process is killed due to inactivity. */
+    onInactivityKill?: (signal: NodeJS.Signals) => void;
   }
 ) {
   debugLog('Running', cmd, options);
@@ -125,6 +132,26 @@ export async function spawnAndLogOutput(
     env: options?.env,
     stdio: [options?.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
   });
+
+  const inactivityTimeoutMs = options?.inactivityTimeoutMs;
+  const inactivitySignal: NodeJS.Signals = 'SIGTERM';
+  let inactivityTimer: ReturnType<typeof setTimeout> | undefined;
+  let killedByInactivity = false;
+
+  const resetInactivityTimer = () => {
+    if (!inactivityTimeoutMs) return;
+    if (inactivityTimer) {
+      clearTimeout(inactivityTimer);
+    }
+    inactivityTimer = setTimeout(() => {
+      killedByInactivity = true;
+      proc.kill(inactivitySignal);
+      options?.onInactivityKill?.(inactivitySignal);
+    }, inactivityTimeoutMs);
+  };
+
+  // Start the inactivity timer immediately in case the child never writes output
+  resetInactivityTimer();
 
   if (options?.stdin) {
     proc.stdin!.write(options.stdin);
@@ -147,6 +174,9 @@ export async function spawnAndLogOutput(
       if (!options?.quiet) {
         writeStdout(output);
       }
+
+      // Activity observed; reset inactivity timer
+      resetInactivityTimer();
     }
   }
 
@@ -163,6 +193,9 @@ export async function spawnAndLogOutput(
       if (!options?.quiet) {
         writeStderr(output);
       }
+
+      // Activity observed; reset inactivity timer
+      resetInactivityTimer();
     }
   }
 
@@ -170,12 +203,20 @@ export async function spawnAndLogOutput(
   debugLog('finished reading output');
 
   const exitCode = await proc.exited;
-  debugLog('exit code', exitCode);
+  const signal = proc.signalCode;
+  debugLog('exit code', exitCode, 'signal', signal);
+
+  if (inactivityTimer) {
+    clearTimeout(inactivityTimer);
+    inactivityTimer = undefined;
+  }
 
   return {
     exitCode,
     stdout: stdout.join(''),
     stderr: stderr.join(''),
+    signal,
+    killedByInactivity,
   };
 }
 

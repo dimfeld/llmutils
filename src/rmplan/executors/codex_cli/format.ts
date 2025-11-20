@@ -246,6 +246,9 @@ export interface FormattedCodexMessage {
   type: string;
   // If this line carries or finalizes the agent message, include it here
   agentMessage?: string;
+  // Codex thread/session identifiers surfaced in the stream
+  threadId?: string;
+  sessionId?: string;
   // The "last token count" from a `token_count` message
   lastTokenCount?: number;
   // Failure detection info for agent messages
@@ -730,6 +733,7 @@ function formatCodexOutMessage(message: CodexOutMessage, ts: string): FormattedC
       const header = chalk.bold.green(`### Start [${ts}]`);
       return {
         type: 'thread.started',
+        threadId: message.thread_id ?? undefined,
         message: details ? `${header}\n\n${details}` : header,
       };
     }
@@ -757,6 +761,7 @@ function formatCodexOutMessage(message: CodexOutMessage, ts: string): FormattedC
       const details = sessionId ? `Session ID: ${sessionId}` : undefined;
       return {
         type: 'session.created',
+        sessionId: sessionId ?? undefined,
         message: details ? `${header}\n\n${details}` : header,
       };
     }
@@ -765,6 +770,8 @@ function formatCodexOutMessage(message: CodexOutMessage, ts: string): FormattedC
         typeof message.type === 'string' && message.type.length > 0 ? message.type : 'unknown';
       return {
         type: typeLabel,
+        threadId: message.thread_id ?? undefined,
+        sessionId: (message as any).session_id ?? (message as any).sessionId ?? undefined,
         message: JSON.stringify(message),
       };
     }
@@ -1059,6 +1066,8 @@ export function createCodexStdoutFormatter() {
   const split = createLineSplitter();
   let finalAgentMessage: string | undefined;
   let lastFailedAgentMessage: string | undefined;
+  let threadId: string | undefined;
+  let sessionId: string | undefined;
 
   let previousTokenCount = -1;
 
@@ -1086,6 +1095,12 @@ export function createCodexStdoutFormatter() {
         finalAgentMessage = fm.agentMessage;
         if (fm.failed) lastFailedAgentMessage = fm.agentMessage;
       }
+      if (fm.threadId && !threadId) {
+        threadId = fm.threadId;
+      }
+      if (fm.sessionId && !sessionId) {
+        sessionId = fm.sessionId;
+      }
       if (fm.message) out.push(fm.message);
     }
     return out.length ? out.join('\n\n') + '\n\n' : '';
@@ -1099,5 +1114,13 @@ export function createCodexStdoutFormatter() {
     return lastFailedAgentMessage;
   }
 
-  return { formatChunk, getFinalAgentMessage, getFailedAgentMessage };
+  function getThreadId(): string | undefined {
+    return threadId;
+  }
+
+  function getSessionId(): string | undefined {
+    return sessionId;
+  }
+
+  return { formatChunk, getFinalAgentMessage, getFailedAgentMessage, getThreadId, getSessionId };
 }

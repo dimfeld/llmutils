@@ -142,6 +142,21 @@ describe('process utilities', () => {
 
       expect(result.exitCode).toBe(1);
     });
+
+    it('terminates long-silent processes after inactivity timeout', async () => {
+      const start = Date.now();
+      const result = await spawnAndLogOutput(['node', '-e', 'setTimeout(() => {}, 5000)'], {
+        inactivityTimeoutMs: 50,
+        quiet: true,
+      });
+
+      const duration = Date.now() - start;
+
+      expect(result.killedByInactivity).toBeTrue();
+      // Either signal or conventional exit code after SIGTERM
+      expect(result.signal === 'SIGTERM' || result.exitCode === 143 || result.exitCode === 137).toBeTrue();
+      expect(duration).toBeLessThan(2000);
+    });
   });
 
   describe('createLineSplitter', () => {
