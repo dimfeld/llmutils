@@ -5,6 +5,7 @@ import type { PrepareNextStepOptions } from '../plans/prepare_step';
 import { CodexCliExecutorName, codexCliOptionsSchema } from './schemas.js';
 import { executeNormalMode } from './codex_cli/normal_mode';
 import { executeSimpleMode } from './codex_cli/simple_mode';
+import { executeReviewMode } from './codex_cli/review_mode';
 import { parseReviewerVerdict } from './codex_cli/verdict_parser';
 
 export type CodexCliExecutorOptions = z.infer<typeof codexCliOptionsSchema>;
@@ -39,6 +40,16 @@ export class CodexCliExecutor implements Executor {
   }
 
   async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | ExecutorOutput> {
+    if (planInfo.executionMode === 'review') {
+      return executeReviewMode(
+        contextContent,
+        planInfo,
+        this.sharedOptions.baseDir,
+        this.sharedOptions.model,
+        this.rmplanConfig
+      );
+    }
+
     if (
       planInfo.executionMode === 'simple' ||
       (planInfo.executionMode === 'normal' &&

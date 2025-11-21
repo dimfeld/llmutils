@@ -939,6 +939,22 @@ describe('CodexCliExecutor simple mode', () => {
   });
 
   test('simple mode flags do not force review or planning executions into simple loop', async () => {
+    const normalSpy = mock(async () => undefined);
+    const reviewSpy = mock(async () => undefined);
+    const simpleSpy = mock(async () => undefined);
+
+    await moduleMocker.mock('./codex_cli/normal_mode.ts', () => ({
+      executeNormalMode: normalSpy,
+    }));
+
+    await moduleMocker.mock('./codex_cli/review_mode.ts', () => ({
+      executeReviewMode: reviewSpy,
+    }));
+
+    await moduleMocker.mock('./codex_cli/simple_mode.ts', () => ({
+      executeSimpleMode: simpleSpy,
+    }));
+
     const { CodexCliExecutor } = await import('./codex_cli.ts');
     const basePlan = {
       planId: 'plan-simple-gating',
@@ -960,17 +976,15 @@ describe('CodexCliExecutor simple mode', () => {
     ];
 
     for (const executor of scenarios) {
-      const simpleSpy = mock(async () => undefined);
-      const normalSpy = mock(async () => undefined);
-      (executor as any).executeSimpleMode = simpleSpy;
-      (executor as any).executeNormalMode = normalSpy;
-
       await executor.execute('CTX CONTENT', { ...basePlan, executionMode: 'review' });
       await executor.execute('CTX CONTENT', { ...basePlan, executionMode: 'planning' });
 
       expect(simpleSpy).not.toHaveBeenCalled();
+      expect(reviewSpy).toHaveBeenCalledTimes(2);
       expect(normalSpy).toHaveBeenCalledTimes(2);
-      expect(normalSpy.mock.calls[0][1].executionMode).toBe('review');
+      expect(reviewSpy.mock.calls[0][1].executionMode).toBe('review');
+      expect(reviewSpy.mock.calls[1][1].executionMode).toBe('review');
+      expect(normalSpy.mock.calls[0][1].executionMode).toBe('planning');
       expect(normalSpy.mock.calls[1][1].executionMode).toBe('planning');
     }
   });
