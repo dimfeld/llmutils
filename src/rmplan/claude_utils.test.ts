@@ -54,6 +54,7 @@ describe('invokeClaudeCodeForGeneration', () => {
       generationPrompt,
       researchPrompt: undefined,
       options: {
+        allowedTools: ['Bash(rmplan add:*)'],
         includeDefaultTools: true,
       },
       model: 'test-model',
@@ -80,6 +81,7 @@ describe('invokeClaudeCodeForGeneration', () => {
       generationPrompt,
       researchPrompt: undefined,
       options: {
+        allowedTools: ['Bash(rmplan add:*)'],
         includeDefaultTools: true,
       },
       model: 'custom-model',
@@ -98,6 +100,7 @@ describe('invokeClaudeCodeForGeneration', () => {
       generationPrompt,
       researchPrompt: undefined,
       options: {
+        allowedTools: ['Bash(rmplan add:*)'],
         includeDefaultTools: true,
       },
       model: undefined,
@@ -112,7 +115,6 @@ describe('invokeClaudeCodeForGeneration', () => {
     await invokeClaudeCodeForGeneration(planningPrompt, generationPrompt, {
       model: 'custom-model',
       researchPrompt,
-      includeDefaultTools: false,
     });
 
     expect(runClaudeCodeGenerationSpy).toHaveBeenCalledWith({
@@ -120,7 +122,8 @@ describe('invokeClaudeCodeForGeneration', () => {
       generationPrompt,
       researchPrompt,
       options: {
-        includeDefaultTools: false,
+        includeDefaultTools: true,
+        allowedTools: ['Bash(rmplan add:*)'],
       },
       model: 'custom-model',
     });

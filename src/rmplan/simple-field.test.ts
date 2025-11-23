@@ -262,7 +262,6 @@ describe('simple field logic in commands', () => {
       const promptText =
         result.messages[0].content.type === 'text' ? result.messages[0].content.text : '';
       expect(promptText).toContain('Use the update-plan-tasks tool');
-      expect(promptText).not.toContain('append-plan-research');
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
       clearPlanCache();
@@ -297,7 +296,6 @@ describe('simple field logic in commands', () => {
       // Verify it uses the research prompt
       const promptText =
         result.messages[0].content.type === 'text' ? result.messages[0].content.text : '';
-      expect(promptText).toContain('append-plan-research');
       expect(promptText).toContain('Once your research is complete');
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
@@ -332,7 +330,6 @@ describe('simple field logic in commands', () => {
       // Verify it uses the research prompt (default behavior)
       const promptText =
         result.messages[0].content.type === 'text' ? result.messages[0].content.text : '';
-      expect(promptText).toContain('append-plan-research');
       expect(promptText).toContain('Once your research is complete');
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });

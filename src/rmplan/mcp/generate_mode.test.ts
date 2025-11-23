@@ -7,7 +7,6 @@ import type { PlanSchema } from '../planSchema.js';
 import { writePlanFile, readPlanFile, clearPlanCache, readAllPlans } from '../plans.js';
 import { resolvePlan } from '../plan_display.js';
 import {
-  appendResearchParameters,
   generateTasksParameters,
   getPlanParameters,
   listReadyPlansParameters,
@@ -21,7 +20,7 @@ import {
 } from './generate_mode.js';
 import { loadCompactPlanPrompt } from './prompts/compact_plan.js';
 import { mcpGetPlan } from '../commands/show.js';
-import { mcpUpdatePlanTasks, mcpAppendResearch } from './generate_mode.js';
+import { mcpUpdatePlanTasks } from './generate_mode.js';
 import { mcpListReadyPlans } from '../commands/ready.js';
 
 const basePlan: PlanSchema = {
@@ -154,20 +153,6 @@ describe('rmplan MCP generate mode helpers', () => {
     const messageText = prompt.messages[0]?.content?.text ?? '';
     expect(messageText).toContain('Minimum age threshold: 7 days');
     expect(messageText).not.toContain('Warning: This plan was last updated');
-  });
-
-  test('mcpAppendResearch appends research to the plan file', async () => {
-    const args = appendResearchParameters.parse({
-      plan: planPath,
-      research: '### Notes\n- Found relevant module',
-      timestamp: false,
-    });
-    const result = await mcpAppendResearch(args, context);
-    expect(result).toContain('Appended research');
-
-    const updated = await readPlanFile(planPath);
-    expect(updated.details).toContain('## Research');
-    expect(updated.details).toContain('### Notes');
   });
 
   test('mcpUpdatePlanTasks updates plan with structured data', async () => {

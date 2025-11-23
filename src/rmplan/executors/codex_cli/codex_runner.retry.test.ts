@@ -54,8 +54,8 @@ describe('executeCodexStep retries', () => {
     const firstArgs = spawnMock.mock.calls[0][0] as string[];
     const secondArgs = spawnMock.mock.calls[1][0] as string[];
 
-    expect(firstArgs.slice(-2)).toEqual(['prompt', '--json']);
-    expect(secondArgs.slice(-4)).toEqual(['resume', 'thread-123', 'continue', '--json']);
+    expect(firstArgs.slice(-2)).toEqual(['--json', 'prompt']);
+    expect(secondArgs.slice(-4)).toEqual(['--json', 'resume', 'thread-123', 'continue']);
   });
 
   test('stops after three failed attempts when codex keeps exiting', async () => {

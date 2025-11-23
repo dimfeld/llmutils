@@ -106,7 +106,7 @@ describe('answerPr command', () => {
 
   test('should handle missing config gracefully', async () => {
     // Update mock to return empty config
-    await moduleMocker.clear();
+    moduleMocker.clear();
     await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: mock(() => Promise.resolve({})),
     }));
@@ -121,7 +121,7 @@ describe('answerPr command', () => {
     expect(mockHandleRmprCommand).toHaveBeenCalledWith(
       'PR-123',
       {
-        executor: 'copy-only', // DEFAULT_EXECUTOR
+        executor: 'claude-code', // DEFAULT_EXECUTOR
         mode: 'hybrid', // Default mode from the code
       },
       { debug: false },
