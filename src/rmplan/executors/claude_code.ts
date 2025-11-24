@@ -16,7 +16,6 @@ import * as net from 'net';
 import { confirm, select, editor } from '@inquirer/prompts';
 import { stringify } from 'yaml';
 import { prefixPrompt } from './claude_code/prefix_prompt.ts';
-import { waitForEnter } from '../../common/terminal.ts';
 import {
   wrapWithOrchestration,
   wrapWithOrchestrationSimple,
@@ -43,6 +42,8 @@ const USER_CHOICE_ALLOW = 'allow';
 const USER_CHOICE_ALWAYS_ALLOW = 'always_allow';
 const USER_CHOICE_SESSION_ALLOW = 'session_allow';
 const USER_CHOICE_DISALLOW = 'disallow';
+
+const DEFAULT_CLAUDE_MODEL = 'opus';
 
 export class ClaudeCodeExecutor implements Executor {
   static name = ClaudeCodeExecutorName;
@@ -1056,12 +1057,18 @@ export class ClaudeCodeExecutor implements Executor {
         log(`Using model: ${modelToUse}\n`);
         args.push('--model', modelToUse);
       } else {
-        log('Using default model: sonnet\n');
-        args.push('--model', 'sonnet');
+        log(`Using default model: ${DEFAULT_CLAUDE_MODEL}\n`);
+        args.push('--model', DEFAULT_CLAUDE_MODEL);
       }
 
       // Add agents argument if agent definitions were created
       if (agentDefinitions && agentDefinitions.length > 0) {
+        for (const def of agentDefinitions) {
+          if (!def.model) {
+            def.model = DEFAULT_CLAUDE_MODEL;
+          }
+        }
+
         args.push('--agents', buildAgentsArgument(agentDefinitions));
       }
 
