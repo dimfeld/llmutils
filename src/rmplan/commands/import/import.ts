@@ -31,6 +31,7 @@ import {
 } from '../../../rmpr/comment_options.js';
 import { singleLineWithPrefix, limitLines } from '../../../common/formatting.js';
 import { needArrayOrUndefined } from '../../../common/cli.js';
+import * as clipboard from '../../../common/clipboard.js';
 
 /**
  * Apply command-line options to a plan
@@ -108,6 +109,77 @@ async function updateParentPlanDependencies(
 }
 
 /**
+ * Select comments from an issue
+ *
+ * @param data - The issue and comments data
+ * @param existingDetails - Optional existing plan details to filter against (only include new comments)
+ * @param message - Custom message for the checkbox prompt
+ * @returns Selected comments
+ */
+async function selectComments(
+  data: IssueWithComments,
+  existingDetails?: string,
+  message: string = 'Select content to copy to clipboard:'
+): Promise<string[]> {
+  const LINE_PADDING = 4;
+  const MAX_HEIGHT = process.stdout.rows - data.comments.length - 10;
+
+  const commentChoices: Array<{
+    name: string;
+    checked: boolean;
+    description: string;
+    value: string;
+  }> = [];
+
+  // Check if the issue body should be included
+  const includeIssueBody = !existingDetails || (data.issue.body && !existingDetails.includes(data.issue.body.trim()));
+  if (data.issue.body && includeIssueBody) {
+    commentChoices.push({
+      name: singleLineWithPrefix(
+        'Issue Body: ',
+        data.issue.body.replaceAll(/\n+/g, '  '),
+        LINE_PADDING
+      ),
+      checked: true,
+      description: limitLines(data.issue.body, MAX_HEIGHT),
+      value: data.issue.body.trim(),
+    });
+  }
+
+  // Add comments (filtering if existingDetails is provided)
+  for (const comment of data.comments) {
+    const includeComment = !existingDetails || (comment.body && !existingDetails.includes(comment.body.trim()));
+    if (comment.body && includeComment) {
+      const name = `${comment.user?.name ?? comment.user?.login}: `;
+      commentChoices.push({
+        name: singleLineWithPrefix(name, comment.body.replaceAll(/\n+/g, '  '), LINE_PADDING),
+        checked: false,
+        description: limitLines(comment.body, MAX_HEIGHT),
+        value: comment.body.trim(),
+      });
+    }
+  }
+
+  if (commentChoices.length === 0) {
+    return [];
+  }
+
+  const withIndex = commentChoices.map((item, i) => ({ ...item, value: i }));
+
+  const chosen = await checkbox({
+    message,
+    required: false,
+    shortcuts: {
+      all: 'a',
+    },
+    pageSize: 10,
+    choices: withIndex,
+  });
+
+  return chosen.sort((a, b) => a - b).map((index) => commentChoices[index].value);
+}
+
+/**
  * Select comments from an issue that aren't already in the existing plan details
  *
  * @param data - The issue and comments data
@@ -118,63 +190,55 @@ async function selectNewComments(
   data: IssueWithComments,
   existingDetails: string
 ): Promise<string[]> {
-  const LINE_PADDING = 4;
-  const MAX_HEIGHT = process.stdout.rows - data.comments.length - 10;
+  const selected = await selectComments(
+    data,
+    existingDetails,
+    'Select new comments to append to the existing plan:'
+  );
 
-  // Filter out comments that already appear verbatim in the existing details
-  const newComments: Array<{
-    name: string;
-    checked: boolean;
-    description: string;
-    value: string;
-  }> = [];
-
-  // Check if the issue body is NOT already in the details
-  if (data.issue.body && !existingDetails.includes(data.issue.body.trim())) {
-    newComments.push({
-      name: singleLineWithPrefix(
-        'Issue Body: ',
-        data.issue.body.replaceAll(/\n+/g, '  '),
-        LINE_PADDING
-      ),
-      checked: true, // Default to checked since it's the main issue body
-      description: limitLines(data.issue.body, MAX_HEIGHT),
-      value: data.issue.body.trim(),
-    });
+  if (selected.length > 0) {
+    log(`Found ${selected.length} new comment(s) not in the existing plan.`);
   }
 
-  // Only include comments that are NOT already in the details
-  for (const comment of data.comments) {
-    if (comment.body && !existingDetails.includes(comment.body.trim())) {
-      const name = `${comment.user?.name ?? comment.user?.login}: `;
-      newComments.push({
-        name: singleLineWithPrefix(name, comment.body.replaceAll(/\n+/g, '  '), LINE_PADDING),
-        checked: false,
-        description: limitLines(comment.body, MAX_HEIGHT),
-        value: comment.body.trim(),
-      });
-    }
+  return selected;
+}
+
+/**
+ * Copy issue content to clipboard without creating a plan
+ *
+ * @param issueSpecifier - The issue number or URL
+ * @param issueTracker - The issue tracker client to use
+ */
+async function copyIssueToClipboard(
+  issueSpecifier: string,
+  issueTracker: IssueTrackerClient
+): Promise<void> {
+  log(`Fetching issue: ${issueSpecifier}`);
+
+  // Fetch issue and comments using the generic interface
+  const data = await issueTracker.fetchIssue(issueSpecifier);
+
+  // Select comments to include (no filtering, so pass undefined for existingDetails)
+  const selectedComments = await selectComments(data, undefined, 'Select content to copy to clipboard:');
+
+  if (selectedComments.length === 0) {
+    log('No content selected. Nothing copied to clipboard.');
+    return;
   }
 
-  if (newComments.length === 0) {
-    return [];
-  }
+  // Format the content for clipboard
+  const content = [
+    `# ${data.issue.title}`,
+    '',
+    ...selectedComments,
+  ].join('\n\n');
 
-  log(`Found ${newComments.length} new comment(s) not in the existing plan.`);
+  // Write to clipboard
+  await clipboard.write(content);
 
-  const withIndex = newComments.map((item, i) => ({ ...item, value: i }));
-
-  const chosen = await checkbox({
-    message: `Select new comments to append to the existing plan:`,
-    required: false,
-    shortcuts: {
-      all: 'a',
-    },
-    pageSize: 10,
-    choices: withIndex,
-  });
-
-  return chosen.sort((a, b) => a - b).map((index) => newComments[index].value);
+  log(chalk.green('Issue content copied to clipboard successfully!'));
+  log(chalk.gray(`Title: ${data.issue.title}`));
+  log(chalk.gray(`Copied ${selectedComments.length} section(s)`));
 }
 
 /**
@@ -644,6 +708,15 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
 
   // Get the issue tracker client
   const issueTracker = await getIssueTracker(config);
+
+  // Handle clipboard mode
+  if (options.clipboard) {
+    if (!issueSpecifier) {
+      throw new Error('--clipboard mode requires an issue specifier');
+    }
+    await copyIssueToClipboard(issueSpecifier, issueTracker);
+    return;
+  }
 
   if (!issueSpecifier) {
     // Interactive mode: fetch all open issues and let user select multiple
