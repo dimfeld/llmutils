@@ -441,6 +441,14 @@ The plan file tasks may not be marked as done in the plan file, because they are
 - Tests with insufficient coverage of critical paths
 - Integration tests missing for complex workflows
 
+## Don't be too Pedantic
+
+Although you should be thorough in your review, you should not be too picky.
+
+- Do not mention code formatting issues--we have autoformatters for that.
+- When a function is wrapped in middleware, you can assume that the middleware is doing its job. For example, if the
+middleware already verifies the presence of an organization and user, the handler function inside the middleware does not need to check its presence again.
+
 ${formattedProgressNotes}
 
 ## Response Format:
