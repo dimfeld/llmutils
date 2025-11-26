@@ -132,7 +132,8 @@ async function selectComments(
   }> = [];
 
   // Check if the issue body should be included
-  const includeIssueBody = !existingDetails || (data.issue.body && !existingDetails.includes(data.issue.body.trim()));
+  const includeIssueBody =
+    !existingDetails || (data.issue.body && !existingDetails.includes(data.issue.body.trim()));
   if (data.issue.body && includeIssueBody) {
     commentChoices.push({
       name: singleLineWithPrefix(
@@ -148,7 +149,8 @@ async function selectComments(
 
   // Add comments (filtering if existingDetails is provided)
   for (const comment of data.comments) {
-    const includeComment = !existingDetails || (comment.body && !existingDetails.includes(comment.body.trim()));
+    const includeComment =
+      !existingDetails || (comment.body && !existingDetails.includes(comment.body.trim()));
     if (comment.body && includeComment) {
       const name = `${comment.user?.name ?? comment.user?.login}: `;
       commentChoices.push({
@@ -219,7 +221,11 @@ async function copyIssueToClipboard(
   const data = await issueTracker.fetchIssue(issueSpecifier);
 
   // Select comments to include (no filtering, so pass undefined for existingDetails)
-  const selectedComments = await selectComments(data, undefined, 'Select content to copy to clipboard:');
+  const selectedComments = await selectComments(
+    data,
+    undefined,
+    'Select content to copy to clipboard:'
+  );
 
   if (selectedComments.length === 0) {
     log('No content selected. Nothing copied to clipboard.');
@@ -227,11 +233,7 @@ async function copyIssueToClipboard(
   }
 
   // Format the content for clipboard
-  const content = [
-    `# ${data.issue.title}`,
-    '',
-    ...selectedComments,
-  ].join('\n\n');
+  const content = [`# ${data.issue.title}`, '', ...selectedComments].join('\n\n');
 
   // Write to clipboard
   await clipboard.write(content);

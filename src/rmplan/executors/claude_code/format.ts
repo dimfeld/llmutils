@@ -187,10 +187,23 @@ export function formatJsonMessage(input: string): {
           // Create a diff between the old and new strings
           const diff = createTwoFilesPatch('old', 'new', old_string, new_string);
 
+          // Colorize diff lines: green for additions (+), red for deletions (-)
+          const colorizedDiff = diff
+            .split('\n')
+            .map((line) => {
+              if (line.startsWith('+') && !line.startsWith('+++')) {
+                return chalk.green(line);
+              } else if (line.startsWith('-') && !line.startsWith('---')) {
+                return chalk.red(line);
+              }
+              return line;
+            })
+            .join('\n');
+
           outputLines.push(
             chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
             `File path: ${file_path}\n`,
-            diff
+            colorizedDiff
           );
         } else if (
           content.name === 'MultiEdit' &&

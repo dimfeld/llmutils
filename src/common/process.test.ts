@@ -154,7 +154,9 @@ describe('process utilities', () => {
 
       expect(result.killedByInactivity).toBeTrue();
       // Either signal or conventional exit code after SIGTERM
-      expect(result.signal === 'SIGTERM' || result.exitCode === 143 || result.exitCode === 137).toBeTrue();
+      expect(
+        result.signal === 'SIGTERM' || result.exitCode === 143 || result.exitCode === 137
+      ).toBeTrue();
       expect(duration).toBeLessThan(2000);
     });
   });

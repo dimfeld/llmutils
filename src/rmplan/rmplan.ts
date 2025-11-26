@@ -248,7 +248,10 @@ program
   .option('-d, --depends-on <ids...>', 'Specify plan IDs that this plan depends on')
   .option('--assign <username>', 'Assign the plan to a user')
   .option('--temp', 'Mark this plan as temporary (can be deleted with cleanup-temp command)')
-  .option('--clipboard', 'Copy issue title, body, and selected comments to clipboard instead of creating a plan')
+  .option(
+    '--clipboard',
+    'Copy issue title, body, and selected comments to clipboard instead of creating a plan'
+  )
   .action(async (issue, options, command) => {
     const { handleImportCommand } = await import('./commands/import/import.js');
     await handleImportCommand(issue, options, command).catch(handleCommandError);
