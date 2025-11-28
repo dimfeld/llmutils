@@ -205,19 +205,23 @@ function analyzeIssueContent(content: string): {
   category: ReviewCategory;
   file?: string;
   line?: number;
+  hasSeverity: boolean;
 } {
   let severity: ReviewSeverity = 'info';
   let category: ReviewCategory = 'other';
+  let hasSeverity = false;
 
   const severityTagMatch = content.match(/^(CRITICAL|MAJOR|MINOR|INFO):/i);
   if (severityTagMatch) {
     severity = severityTagMatch[1].toLowerCase() as ReviewSeverity;
+    hasSeverity = true;
   }
 
   for (const pattern of ISSUE_PATTERNS) {
     if (pattern.pattern.test(content)) {
       if (!severityTagMatch) {
         severity = pattern.severity;
+        hasSeverity = true;
       }
       category = pattern.category;
       break;
@@ -255,7 +259,7 @@ function analyzeIssueContent(content: string): {
     }
   }
 
-  return { severity, category, file, line: lineNumber };
+  return { severity, category, file, line: lineNumber, hasSeverity };
 }
 
 function trimIssueContent(content: string): string {
@@ -373,6 +377,11 @@ export function parseReviewerOutput(rawOutput: string): {
 
       const analysis = analyzeIssueContent(issueContent);
 
+      // Skip issues without explicit severity markers
+      if (!analysis.hasSeverity) {
+        continue;
+      }
+
       let suggestion: string | undefined;
       for (const rawLine of remainingLines) {
         const trimmedLine = rawLine.trim();
@@ -441,7 +450,16 @@ export function parseReviewerOutput(rawOutput: string): {
       for (const marker of ISSUE_MARKERS) {
         const match = line.match(marker);
         if (match) {
-          let content = (match[1] || match[2] || match[0] || '').trim();
+          // For patterns like /^(CRITICAL|MAJOR|MINOR|INFO):\s*(.+)/, we want the full match
+          // For bullet patterns like /^[-*•]\s*(.+)/, we want the captured group
+          let content = '';
+          if (marker.source.includes('CRITICAL|MAJOR|MINOR|INFO')) {
+            // Severity prefix pattern - use full match to preserve "CRITICAL: ..." format
+            content = match[0].trim();
+          } else {
+            // Other patterns - use captured groups to strip bullet markers
+            content = (match[1] || match[2] || match[0] || '').trim();
+          }
           content = trimIssueContent(content);
 
           if (!content) {
@@ -449,6 +467,11 @@ export function parseReviewerOutput(rawOutput: string): {
           }
 
           const analysis = analyzeIssueContent(content);
+
+          // Skip issues without explicit severity markers
+          if (!analysis.hasSeverity) {
+            continue;
+          }
 
           const issue: ReviewIssue = {
             id: `issue-${issueId++}`,

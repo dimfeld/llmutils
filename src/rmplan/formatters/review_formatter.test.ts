@@ -27,7 +27,8 @@ describe('parseReviewerOutput', () => {
 
     const { issues, recommendations, actionItems } = parseReviewerOutput(output);
 
-    expect(issues).toHaveLength(5);
+    // Only 4 issues have explicit severity markers (the last one doesn't match any pattern)
+    expect(issues).toHaveLength(4);
 
     // Check critical security issue
     const sqlIssue = issues.find((i) => i.content.includes('SQL injection'));
@@ -684,8 +685,8 @@ Suggestion: Use parameterized queries or prepared statements
 
     const { issues, recommendations, actionItems } = parseReviewerOutput(complexOutput);
 
-    // Should find all the various issue formats
-    expect(issues.length).toBeGreaterThanOrEqual(8);
+    // Should find all the various issue formats with explicit severity markers
+    expect(issues.length).toBeGreaterThanOrEqual(7);
 
     // Check critical issues are identified
     const criticalIssues = issues.filter((i) => i.severity === 'critical');
@@ -751,13 +752,16 @@ Documentation looks comprehensive and helpful.
 
     const { issues } = parseReviewerOutput(output);
 
-    expect(issues).toHaveLength(6);
-    expect(issues[0].file).toBe('src/components/Button.tsx');
-    expect(issues[1].file).toBe('server/routes/api.js');
-    expect(issues[2].file).toBe('tests/unit/auth.test.ts');
-    expect(issues[3].file).toBe('config/database.py');
-    expect(issues[4].file).toBe('utils/helpers.go');
-    expect(issues[5].file).toBe('models/User.java');
+    // Only issues with keywords matching ISSUE_PATTERNS are included
+    // "Bug", "Error", and "Problem" match the bug pattern
+    expect(issues.length).toBeGreaterThanOrEqual(3);
+
+    // Verify that matched issues have correct file paths
+    const bugIssue = issues.find((i) => i.content.includes('Bug'));
+    expect(bugIssue?.file).toBe('src/components/Button.tsx');
+
+    const errorIssue = issues.find((i) => i.content.includes('Error'));
+    expect(errorIssue?.file).toBe('config/database.py');
   });
 
   test('parseReviewerOutput handles malformed or edge case input', () => {
@@ -972,15 +976,45 @@ INFO: Consider adding more detailed comments
 
     const { issues } = parseReviewerOutput(outputWithPrefixes);
 
+    // All 4 issues have explicit severity prefixes
     expect(issues).toHaveLength(4);
 
     // The parser matches the prefixes but categories are based on content patterns
     // Find the critical issue - it should match both the prefix and content
     const criticalIssue = issues.find((i) => i.content.includes('CRITICAL'));
-    expect(criticalIssue?.severity).toBe('critical'); // Content has "SQL injection vulnerability"
+    expect(criticalIssue?.severity).toBe('critical'); // Has explicit CRITICAL prefix
 
-    // Other issues might not match content patterns so they default to 'info'
     expect(issues.filter((i) => i.severity === 'critical').length).toBe(1);
+  });
+
+  test('parseReviewerOutput filters out preliminary text without severity markers', () => {
+    const output = `
+Review completed. Here are my findings:
+
+- This is some preliminary context about the code
+- CRITICAL: SQL injection vulnerability detected
+- Another piece of general commentary
+- Bug: Null pointer exception found
+- Some concluding remarks
+    `;
+
+    const { issues } = parseReviewerOutput(output);
+
+    // Only the 2 issues with explicit severity markers should be included
+    expect(issues).toHaveLength(2);
+
+    // Verify the correct issues are included
+    const criticalIssue = issues.find((i) => i.severity === 'critical');
+    expect(criticalIssue).toBeDefined();
+    expect(criticalIssue?.content).toContain('SQL injection');
+
+    const bugIssue = issues.find((i) => i.severity === 'major' && i.category === 'bug');
+    expect(bugIssue).toBeDefined();
+    expect(bugIssue?.content).toContain('Null pointer');
+
+    // Verify that preliminary text is not included
+    expect(issues.some((i) => i.content.includes('preliminary context'))).toBe(false);
+    expect(issues.some((i) => i.content.includes('concluding remarks'))).toBe(false);
   });
 
   test('TerminalFormatter severity colors work correctly', () => {
