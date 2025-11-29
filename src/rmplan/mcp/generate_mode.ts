@@ -407,7 +407,7 @@ export const createPlanParameters = z
     details: z.string().optional().describe('Plan details (markdown)'),
     priority: prioritySchema.optional().describe('Priority level'),
     parent: z.number().optional().describe('Parent plan ID'),
-    dependsOn: z.array(z.number()).optional().describe('Plan IDs this depends on'),
+    dependsOn: z.array(z.number()).optional().describe('Plan IDs blocking this plan'),
     discoveredFrom: z.number().optional().describe('Plan ID this was discovered from'),
     assignedTo: z.string().optional().describe('Username to assign plan to'),
     issue: z.array(z.string()).optional().describe('GitHub issue URLs'),

@@ -227,4 +227,96 @@ describe('rmplan init command', () => {
     const stats = await fs.stat(absoluteTasksPath);
     expect(stats.isDirectory()).toBe(true);
   });
+
+  test('creates .gitignore with required entries when file does not exist', async () => {
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleInitCommand({ yes: true }, command);
+
+    // Verify .gitignore was created
+    const gitignorePath = path.join(tempDir, '.gitignore');
+    const gitignoreExists = await fs
+      .access(gitignorePath)
+      .then(() => true)
+      .catch(() => false);
+    expect(gitignoreExists).toBe(true);
+
+    // Verify content includes required entries
+    const content = await fs.readFile(gitignorePath, 'utf-8');
+    expect(content).toContain('.rmfilter/reviews');
+    expect(content).toContain('.rmfilter/config/rmplan.local.yml');
+    expect(content).toContain('# rmplan generated files');
+  });
+
+  test('updates existing .gitignore with missing entries', async () => {
+    const gitignorePath = path.join(tempDir, '.gitignore');
+    const existingContent = '# Existing content\nnode_modules\n.env\n';
+    await fs.writeFile(gitignorePath, existingContent, 'utf-8');
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleInitCommand({ yes: true }, command);
+
+    // Verify .gitignore was updated
+    const content = await fs.readFile(gitignorePath, 'utf-8');
+    expect(content).toContain('# Existing content');
+    expect(content).toContain('node_modules');
+    expect(content).toContain('.rmfilter/reviews');
+    expect(content).toContain('.rmfilter/config/rmplan.local.yml');
+    expect(content).toContain('# rmplan generated files');
+  });
+
+  test('does not duplicate entries in .gitignore if they already exist', async () => {
+    const gitignorePath = path.join(tempDir, '.gitignore');
+    const existingContent =
+      '# Existing content\n.rmfilter/reviews\n.rmfilter/config/rmplan.local.yml\n';
+    await fs.writeFile(gitignorePath, existingContent, 'utf-8');
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleInitCommand({ yes: true }, command);
+
+    // Verify .gitignore was not modified unnecessarily
+    const content = await fs.readFile(gitignorePath, 'utf-8');
+    const reviewsCount = (content.match(/\.rmfilter\/reviews/g) || []).length;
+    const localYmlCount = (content.match(/\.rmfilter\/config\/rmplan\.local\.yml/g) || []).length;
+
+    expect(reviewsCount).toBe(1);
+    expect(localYmlCount).toBe(1);
+  });
+
+  test('adds only missing entries to existing .gitignore', async () => {
+    const gitignorePath = path.join(tempDir, '.gitignore');
+    const existingContent = '# Existing content\n.rmfilter/reviews\n';
+    await fs.writeFile(gitignorePath, existingContent, 'utf-8');
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleInitCommand({ yes: true }, command);
+
+    // Verify only the missing entry was added
+    const content = await fs.readFile(gitignorePath, 'utf-8');
+    expect(content).toContain('.rmfilter/reviews');
+    expect(content).toContain('.rmfilter/config/rmplan.local.yml');
+
+    // Verify only one instance of the existing entry
+    const reviewsCount = (content.match(/\.rmfilter\/reviews/g) || []).length;
+    expect(reviewsCount).toBe(1);
+  });
 });

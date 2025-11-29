@@ -88,6 +88,9 @@ export async function handleInitCommand(options: InitOptions, command: any) {
       log(chalk.green('✓ Created tasks directory:'), resolvedTasksPath);
     }
 
+    // Update .gitignore
+    await updateGitignore(gitRoot);
+
     // Show success message with next steps
     log(chalk.green('\n✓ Initialization complete!'));
     log(chalk.gray('\nNext steps:'));
@@ -100,6 +103,49 @@ export async function handleInitCommand(options: InitOptions, command: any) {
   } catch (err) {
     log(chalk.red('✗ Initialization failed:'), (err as Error).message);
     throw err;
+  }
+}
+
+/**
+ * Updates or creates .gitignore with required rmplan entries
+ */
+async function updateGitignore(gitRoot: string): Promise<void> {
+  const gitignorePath = path.join(gitRoot, '.gitignore');
+  const requiredEntries = ['.rmfilter/reviews', '.rmfilter/config/rmplan.local.yml'];
+
+  let gitignoreContent = '';
+  let exists = false;
+
+  try {
+    gitignoreContent = await fs.readFile(gitignorePath, 'utf-8');
+    exists = true;
+  } catch (err) {
+    // File doesn't exist, will create it
+  }
+
+  const lines = gitignoreContent.split('\n');
+  const existingEntries = new Set(lines.map((line) => line.trim()));
+  const entriesToAdd = requiredEntries.filter((entry) => !existingEntries.has(entry));
+
+  if (entriesToAdd.length === 0 && exists) {
+    log(chalk.green('✓ .gitignore already contains required entries'));
+    return;
+  }
+
+  // Add entries with a comment
+  const newContent = gitignoreContent ? gitignoreContent.trimEnd() + '\n\n' : '';
+  const updatedContent =
+    newContent +
+    '# rmplan generated files\n' +
+    entriesToAdd.join('\n') +
+    (entriesToAdd.length > 0 ? '\n' : '');
+
+  await fs.writeFile(gitignorePath, updatedContent, 'utf-8');
+
+  if (exists) {
+    log(chalk.green('✓ Updated .gitignore with rmplan entries'));
+  } else {
+    log(chalk.green('✓ Created .gitignore with rmplan entries'));
   }
 }
 
