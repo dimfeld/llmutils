@@ -159,6 +159,45 @@ describe('process utilities', () => {
       ).toBeTrue();
       expect(duration).toBeLessThan(2000);
     });
+
+    it('pauses inactivity timer on SIGTSTP and resumes on SIGCONT', async () => {
+      // This test verifies that the inactivity timer is properly paused when the process
+      // is suspended and resumed when it continues
+      const script = `
+        // Write initial output
+        process.stdout.write('start\\n');
+        // Sleep for a bit to let the test send signals
+        setTimeout(() => {
+          process.stdout.write('end\\n');
+        }, 200);
+      `;
+
+      const promise = spawnAndLogOutput(['node', '-e', script], {
+        inactivityTimeoutMs: 500,
+        quiet: true,
+      });
+
+      // Give it a moment to start and produce initial output
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Simulate suspension
+      process.emit('SIGTSTP' as any);
+
+      // Wait longer than the inactivity timeout would normally allow
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      // Resume
+      process.emit('SIGCONT' as any);
+
+      // Wait for the process to complete
+      const result = await promise;
+
+      // The process should have completed successfully, not been killed by inactivity
+      expect(result.killedByInactivity).toBeFalse();
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('start');
+      expect(result.stdout).toContain('end');
+    });
   });
 
   describe('createLineSplitter', () => {

@@ -150,6 +150,29 @@ export async function spawnAndLogOutput(
     }, inactivityTimeoutMs);
   };
 
+  const clearInactivityTimer = () => {
+    if (inactivityTimer) {
+      clearTimeout(inactivityTimer);
+      inactivityTimer = undefined;
+    }
+  };
+
+  // Handle process suspension (Ctrl+Z) and resumption
+  const handleSuspend = () => {
+    debugLog('Process suspended, clearing inactivity timer');
+    clearInactivityTimer();
+  };
+
+  const handleResume = () => {
+    debugLog('Process resumed, restarting inactivity timer');
+    resetInactivityTimer();
+  };
+
+  if (inactivityTimeoutMs) {
+    process.on('SIGTSTP', handleSuspend);
+    process.on('SIGCONT', handleResume);
+  }
+
   // Start the inactivity timer immediately in case the child never writes output
   resetInactivityTimer();
 
@@ -209,6 +232,12 @@ export async function spawnAndLogOutput(
   if (inactivityTimer) {
     clearTimeout(inactivityTimer);
     inactivityTimer = undefined;
+  }
+
+  // Clean up signal listeners
+  if (inactivityTimeoutMs) {
+    process.off('SIGTSTP', handleSuspend);
+    process.off('SIGCONT', handleResume);
   }
 
   return {
