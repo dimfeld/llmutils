@@ -138,15 +138,7 @@ describe('configLoader', () => {
     const loggedMessage = logSpy.mock.calls.at(-1)?.[0];
     expect(typeof loggedMessage).toBe('string');
     const messageText = loggedMessage as string;
-    expect(messageText).toContain(`Base directory: ${expectedRepositoryDir}`);
-    expect(messageText).toContain(
-      `Configuration file: ${path.join(expectedRepositoryDir, '.rmfilter', 'config', 'rmplan.yml')}`
-    );
-    expect(messageText).toContain(`Plan directory: ${path.join(expectedRepositoryDir, 'tasks')}`);
-    expect(messageText).toContain('Remote origin: none detected');
-    expect(messageText).toContain(
-      `Add ${path.join(testDir, '.rmfilter', 'config', 'rmplan.yml')} to store rmplan data inside the repository.`
-    );
+    expect(messageText).toBe(`Using external rmplan storage at ${expectedRepositoryDir}`);
   });
 
   test('loadEffectiveConfig captures repository metadata from remote when using external storage', async () => {
@@ -183,13 +175,7 @@ describe('configLoader', () => {
     const loggedMessage = logSpy.mock.calls.at(-1)?.[0];
     expect(typeof loggedMessage).toBe('string');
     const messageText = loggedMessage as string;
-    const expectedRemoteDetails =
-      parsedRemote?.fullName && parsedRemote.host
-        ? `${parsedRemote.host}/${parsedRemote.fullName}`
-        : remote;
-    expect(messageText).toContain(`Remote origin: ${expectedRemoteDetails}`);
-    expect(messageText).toContain(`Base directory: ${expectedRepositoryDir}`);
-    expect(messageText).toContain('Using external rmplan storage for');
+    expect(messageText).toBe(`Using external rmplan storage at ${expectedRepositoryDir}`);
   });
 
   test('loadEffectiveConfig redacts credentials and tokens from remote logging output', async () => {
@@ -205,7 +191,7 @@ describe('configLoader', () => {
     expect(typeof loggedMessage).toBe('string');
     const messageText = loggedMessage as string;
 
-    expect(messageText).toContain('Remote origin: github.com/Owner/Repo');
+    // The simplified message doesn't include remote URL, so no credentials to leak
     expect(messageText).not.toMatch(/super-secret-token/);
     expect(messageText).not.toMatch(/token=abc/);
     expect(messageText).not.toMatch(/x-oauth-basic/);

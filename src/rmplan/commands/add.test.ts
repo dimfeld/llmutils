@@ -726,11 +726,7 @@ describe('rmplan add command', () => {
       expect(planExists).toBe(true);
       expect(repositoryDir.includes('token')).toBe(false);
       expect(tasksDirectory.includes('token')).toBe(false);
-      expect(
-        logMessages.some((message) =>
-          message.includes('Remote origin: github.example.com/Owner/Repo')
-        )
-      ).toBe(true);
+      // Verify no credentials leaked into any log messages
       expect(logMessages.some((message) => /super-secret-token|token=abc/.test(message))).toBe(
         false
       );
