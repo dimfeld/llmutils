@@ -450,14 +450,15 @@ export async function createWorkspace(
       }
     }
   } else if (cloneMethod === 'cp' || cloneMethod === 'mac-cow') {
-    // For cp and mac-cow methods, source directory is required
+    // For cp and mac-cow methods, default to mainRepoRoot if source directory not specified
     if (!sourceDirectory) {
-      log(`Source directory is required for '${cloneMethod}' clone method`);
-      return null;
-    }
-    // Resolve source directory path
-    if (!path.isAbsolute(sourceDirectory)) {
-      sourceDirectory = path.resolve(mainRepoRoot, sourceDirectory);
+      sourceDirectory = mainRepoRoot;
+      log(`Using main repository root as source directory: ${sourceDirectory}`);
+    } else {
+      // Resolve source directory path if one was explicitly provided
+      if (!path.isAbsolute(sourceDirectory)) {
+        sourceDirectory = path.resolve(mainRepoRoot, sourceDirectory);
+      }
     }
 
     // Check if source directory exists
