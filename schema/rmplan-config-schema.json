@@ -538,6 +538,30 @@
         }
       },
       "additionalProperties": false
+    },
+    "updateDocs": {
+      "description": "Configuration for automatic documentation updates",
+      "type": "object",
+      "properties": {
+        "mode": {
+          "description": "When to automatically update docs during agent execution",
+          "type": "string",
+          "enum": [
+            "never",
+            "after-iteration",
+            "after-completion"
+          ]
+        },
+        "model": {
+          "description": "Model to use for documentation updates",
+          "type": "string"
+        },
+        "executor": {
+          "description": "Executor to use for documentation updates",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
     }
   }
 }
