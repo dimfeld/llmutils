@@ -75,7 +75,12 @@ export async function handleInitCommand(options: InitOptions, command: any) {
       defaultStringType: 'PLAIN',
     });
 
-    await fs.writeFile(configPath, configContent, 'utf-8');
+    // Add YAML language server comment at the top
+    const configWithSchema =
+      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json\n\n' +
+      configContent;
+
+    await fs.writeFile(configPath, configWithSchema, 'utf-8');
     log(chalk.green('✓ Created configuration file:'), configPath);
 
     // Create tasks directory if specified
