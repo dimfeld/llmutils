@@ -871,6 +871,7 @@ export class ClaudeCodeExecutor implements Executor {
             'Bash(cargo test:*)',
             'Bash(rmplan set-task-done:*)',
             'Bash(rmplan add-progress-note:*)',
+            'Bash(rmplan add-implementation-note:*)',
           ]
         : [];
 
