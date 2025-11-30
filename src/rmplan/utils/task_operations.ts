@@ -57,7 +57,7 @@ export async function promptForTaskInfo(initial: Partial<TaskInput> = {}): Promi
   const description = await editor({
     message: 'Task description (opens editor):',
     default: initial.description ?? '',
-    waitForUseInput: false,
+    waitForUserInput: false,
   });
 
   if (!description.trim()) {

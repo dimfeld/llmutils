@@ -730,7 +730,7 @@ export class ClaudeCodeExecutor implements Executor {
                 userFeedback = await editor({
                   message: `Please provide your feedback on the reviewer's analysis:`,
                   default: '',
-                  waitForUseInput: false,
+                  waitForUserInput: false,
                 });
               } catch (err: any) {
                 userFeedback = '';

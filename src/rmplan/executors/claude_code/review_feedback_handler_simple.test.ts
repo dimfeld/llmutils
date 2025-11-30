@@ -167,13 +167,13 @@ describe('Review Feedback Handler Configuration', () => {
       const expectedConfig = {
         message: "Please provide your feedback on the reviewer's analysis:",
         default: '',
-        waitForUseInput: false,
+        waitForUserInput: false,
       };
 
       // Test the configuration values
       expect(expectedConfig.message).toContain("reviewer's analysis");
       expect(expectedConfig.default).toBe('');
-      expect(expectedConfig.waitForUseInput).toBe(false);
+      expect(expectedConfig.waitForUserInput).toBe(false);
     });
 
     test('multi-line input handling', () => {

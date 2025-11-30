@@ -308,6 +308,10 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     : buildExecutorAndLog(executorName, sharedExecutorOptions, config);
   const executionMode: 'normal' | 'simple' = simpleModeEnabled ? 'simple' : 'normal';
 
+  // Determine updateDocs mode: CLI option overrides config
+  const updateDocsMode: 'never' | 'after-iteration' | 'after-completion' | undefined =
+    options.updateDocs || config.updateDocs?.mode;
+
   if (isAutoClaimEnabled()) {
     if (planData.uuid) {
       try {
@@ -536,11 +540,11 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         }
 
         // Update docs if configured for after-iteration mode
-        if (config.updateDocs?.mode === 'after-iteration') {
+        if (updateDocsMode === 'after-iteration') {
           try {
             await runUpdateDocs(currentPlanFile, config, {
-              executor: config.updateDocs.executor,
-              model: config.updateDocs.model,
+              executor: config.updateDocs?.executor,
+              model: config.updateDocs?.model,
               baseDir: currentBaseDir,
             });
           } catch (err) {
@@ -565,11 +569,11 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             log('Plan fully completed!');
 
             // Update docs if configured for after-completion mode
-            if (config.updateDocs?.mode === 'after-completion') {
+            if (updateDocsMode === 'after-completion') {
               try {
                 await runUpdateDocs(currentPlanFile, config, {
-                  executor: config.updateDocs.executor,
-                  model: config.updateDocs.model,
+                  executor: config.updateDocs?.executor,
+                  model: config.updateDocs?.model,
                   baseDir: currentBaseDir,
                 });
               } catch (err) {
@@ -749,11 +753,11 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       }
 
       // Update docs if configured for after-iteration mode
-      if (config.updateDocs?.mode === 'after-iteration') {
+      if (updateDocsMode === 'after-iteration') {
         try {
           await runUpdateDocs(currentPlanFile, config, {
-            executor: config.updateDocs.executor,
-            model: config.updateDocs.model,
+            executor: config.updateDocs?.executor,
+            model: config.updateDocs?.model,
             baseDir: currentBaseDir,
           });
         } catch (err) {
@@ -778,11 +782,11 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           log('Plan fully completed!');
 
           // Update docs if configured for after-completion mode
-          if (config.updateDocs?.mode === 'after-completion') {
+          if (updateDocsMode === 'after-completion') {
             try {
               await runUpdateDocs(currentPlanFile, config, {
-                executor: config.updateDocs.executor,
-                model: config.updateDocs.model,
+                executor: config.updateDocs?.executor,
+                model: config.updateDocs?.model,
                 baseDir: currentBaseDir,
               });
             } catch (err) {

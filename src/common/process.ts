@@ -122,6 +122,13 @@ export async function spawnAndLogOutput(
      * This is primarily used by Codex runs to avoid hanging indefinitely on silent processes.
      */
     inactivityTimeoutMs?: number;
+    /**
+     * Kill the process if neither stdout nor stderr produce output for this many milliseconds
+     * before the first output is seen. If omitted, uses inactivityTimeoutMs for the initial period.
+     * This is useful for processes that may take longer to start up but should produce output
+     * relatively quickly once started.
+     */
+    initialInactivityTimeoutMs?: number;
     /** Callback invoked when the process is killed due to inactivity. */
     onInactivityKill?: (signal: NodeJS.Signals) => void;
   }
@@ -134,20 +141,26 @@ export async function spawnAndLogOutput(
   });
 
   const inactivityTimeoutMs = options?.inactivityTimeoutMs;
+  const initialInactivityTimeoutMs = options?.initialInactivityTimeoutMs ?? inactivityTimeoutMs;
   const inactivitySignal: NodeJS.Signals = 'SIGTERM';
   let inactivityTimer: ReturnType<typeof setTimeout> | undefined;
   let killedByInactivity = false;
+  let hasSeenOutput = false;
 
   const resetInactivityTimer = () => {
     if (!inactivityTimeoutMs) return;
     if (inactivityTimer) {
       clearTimeout(inactivityTimer);
     }
+    // Use the initial timeout if we haven't seen output yet, otherwise use the regular timeout
+    const timeout = hasSeenOutput ? inactivityTimeoutMs : initialInactivityTimeoutMs;
+    if (!timeout) return;
+
     inactivityTimer = setTimeout(() => {
       killedByInactivity = true;
       proc.kill(inactivitySignal);
       options?.onInactivityKill?.(inactivitySignal);
-    }, inactivityTimeoutMs);
+    }, timeout);
   };
 
   const clearInactivityTimer = () => {
@@ -198,7 +211,8 @@ export async function spawnAndLogOutput(
         writeStdout(output);
       }
 
-      // Activity observed; reset inactivity timer
+      // Activity observed; mark output seen and reset inactivity timer
+      hasSeenOutput = true;
       resetInactivityTimer();
     }
   }
@@ -217,7 +231,8 @@ export async function spawnAndLogOutput(
         writeStderr(output);
       }
 
-      // Activity observed; reset inactivity timer
+      // Activity observed; mark output seen and reset inactivity timer
+      hasSeenOutput = true;
       resetInactivityTimer();
     }
   }

@@ -393,6 +393,10 @@ function createAgentCommand(command: Command, description: string) {
       'Disable batch task execution mode and process tasks one at a time (default is batch mode)'
     )
     .option('--simple', 'Use streamlined two-phase execution mode (implement then verify)')
+    .option(
+      '--update-docs <mode>',
+      'Override when to update documentation: never, after-iteration, after-completion'
+    )
     .allowExcessArguments(true)
     .allowUnknownOption(true)
     .action(async (planFile, options, command) => {

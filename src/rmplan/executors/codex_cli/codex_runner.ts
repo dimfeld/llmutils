@@ -74,6 +74,7 @@ export async function executeCodexStep(
       },
       formatStdout: (chunk: string) => formatter.formatChunk(chunk),
       inactivityTimeoutMs,
+      initialInactivityTimeoutMs: 60 * 1000, // 1 minute before first output
       onInactivityKill: () => {
         const minutes = Math.round(inactivityTimeoutMs / 60000);
         warn(
