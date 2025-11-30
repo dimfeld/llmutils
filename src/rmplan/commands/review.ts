@@ -332,7 +332,7 @@ export async function handleReviewCommand(
     const executorOutput = await executor.execute(reviewPrompt, {
       planId: planData.id?.toString() ?? 'unknown',
       planTitle: planData.title ?? 'Untitled Plan',
-      planFilePath: resolvedPlanFile,
+      planFilePath: contextPlanFile,
       captureOutput: 'result', // Capture only the final result block for review
       executionMode: 'review', // Use review mode for review-only operation
     });
@@ -653,7 +653,7 @@ export async function handleReviewCommand(
         const autofixOutput = await executor.execute(autofixPrompt, {
           planId: planData.id?.toString() ?? 'unknown',
           planTitle: `${planData.title ?? 'Untitled Plan'} - Autofix`,
-          planFilePath: resolvedPlanFile,
+          planFilePath: contextPlanFile,
           captureOutput: 'none', // Allow normal execution output for autofix
           executionMode: 'normal', // Use full-featured mode for autofix
         });
