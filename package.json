@@ -75,11 +75,11 @@
     "table": "^6.9.0",
     "tap-parser": "^18.0.0",
     "tree-sitter": "^0.25.0",
-    "tree-sitter-python": "^0.23.6",
+    "tree-sitter-python": "^0.25.0",
     "tree-sitter-rust": "^0.24.0",
     "tree-sitter-svelte": "^0.11.0",
     "tree-sitter-typescript": "^0.23.2",
-    "web-tree-sitter": "^0.25.6",
+    "web-tree-sitter": "^0.25.10",
     "yaml": "^2.8.0",
     "zod": "^3.25.67"
   }

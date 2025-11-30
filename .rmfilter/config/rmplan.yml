@@ -14,3 +14,5 @@ workspaceCreation:
   postCloneCommands:
     - title: Install Dependencies
       command: bun install
+      # Can fail due to tree-sitter not building but that's fine since we're only using the WASM
+      allowFailure: true
