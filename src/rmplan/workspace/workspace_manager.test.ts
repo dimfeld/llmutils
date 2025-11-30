@@ -87,6 +87,7 @@ describe('createWorkspace', () => {
       workspaceCreation: {
         repositoryUrl,
         cloneLocation,
+        createBranch: true,
       },
     };
 
@@ -328,6 +329,7 @@ describe('createWorkspace', () => {
       workspaceCreation: {
         repositoryUrl,
         cloneLocation,
+        createBranch: true,
       },
     };
 
@@ -533,6 +535,7 @@ describe('createWorkspace', () => {
       workspaceCreation: {
         repositoryUrl,
         cloneLocation,
+        createBranch: true,
       },
     };
 
@@ -761,6 +764,7 @@ describe('createWorkspace', () => {
       workspaceCreation: {
         repositoryUrl,
         cloneLocation,
+        createBranch: true,
       },
     };
 
@@ -1025,6 +1029,7 @@ describe('createWorkspace', () => {
         sourceDirectory,
         cloneLocation,
         repositoryUrl: 'https://github.com/example/repo.git',
+        createBranch: false,
       },
     };
 
@@ -1051,11 +1056,6 @@ describe('createWorkspace', () => {
           'origin',
           'https://github.com/example/repo.git',
         ]);
-        expect(options?.cwd).toBe(targetClonePath);
-        return { exitCode: 0, stdout: '', stderr: '' };
-      }
-
-      if (cmd[0] === 'git' && cmd[1] === 'checkout') {
         expect(options?.cwd).toBe(targetClonePath);
         return { exitCode: 0, stdout: '', stderr: '' };
       }
@@ -1312,6 +1312,49 @@ describe('createWorkspace', () => {
     // Verify
     expect(result).toBeNull();
     expect(mockLog).toHaveBeenCalledWith('Source directory does not exist: ' + nonExistentSource);
+  });
+
+  test('createWorkspace with createBranch disabled does not create a branch', async () => {
+    const taskId = 'task-no-branch';
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'repo-task-no-branch');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        repositoryUrl,
+        cloneLocation,
+        createBranch: false,
+      },
+    };
+
+    // Mock the clone operation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => {
+      await fs.mkdir(targetClonePath, { recursive: true });
+      return {
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+      };
+    });
+
+    // Execute
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+
+    // Verify
+    expect(result).not.toBeNull();
+    expect(result!.path).toBe(targetClonePath);
+
+    // Verify that branch creation was not logged
+    expect(mockLog).not.toHaveBeenCalledWith(
+      expect.stringContaining('Creating and checking out branch')
+    );
+
+    // Verify git checkout was never called
+    const checkoutCalls = mockSpawnAndLogOutput.mock.calls.filter(
+      (call) => call[0][0] === 'git' && call[0][1] === 'checkout'
+    );
+    expect(checkoutCalls).toHaveLength(0);
   });
 
   test('createWorkspace with relative source directory path should resolve correctly', async () => {

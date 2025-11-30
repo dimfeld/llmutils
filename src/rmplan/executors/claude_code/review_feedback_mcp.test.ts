@@ -142,9 +142,8 @@ Issue 3: Performance concerns`,
       server = await createMockServer([mockResponse]);
 
       // Import the functions
-      const { requestReviewFeedbackFromParent, setParentSocket } = await import(
-        './permissions_mcp.ts'
-      );
+      const { requestReviewFeedbackFromParent, setParentSocket } =
+        await import('./permissions_mcp.ts');
 
       // We need to simulate the connection setup
       let socket: net.Socket | null = null;
@@ -178,9 +177,8 @@ Issue 3: Performance concerns`,
 
       server = await createMockServer([mockResponse]);
 
-      const { requestReviewFeedbackFromParent, setParentSocket } = await import(
-        './permissions_mcp.ts'
-      );
+      const { requestReviewFeedbackFromParent, setParentSocket } =
+        await import('./permissions_mcp.ts');
 
       let socket: net.Socket | null = null;
       const connectPromise = new Promise<void>((resolve) => {
@@ -208,9 +206,8 @@ Issue 3: Performance concerns`,
 
       server = await createMockServer([mockResponse]);
 
-      const { requestReviewFeedbackFromParent, setParentSocket } = await import(
-        './permissions_mcp.ts'
-      );
+      const { requestReviewFeedbackFromParent, setParentSocket } =
+        await import('./permissions_mcp.ts');
 
       let socket: net.Socket | null = null;
       const connectPromise = new Promise<void>((resolve) => {
@@ -232,9 +229,8 @@ Issue 3: Performance concerns`,
 
     test('requestReviewFeedbackFromParent throws error when not connected', async () => {
       // Don't set up a mock parentSocket, so it should be null
-      const { requestReviewFeedbackFromParent, setParentSocket } = await import(
-        './permissions_mcp.ts'
-      );
+      const { requestReviewFeedbackFromParent, setParentSocket } =
+        await import('./permissions_mcp.ts');
       const { cleanupForTests } = await import('./permissions_mcp.ts');
       cleanupForTests(); // Ensure socket is null
 
@@ -303,9 +299,8 @@ Issue 3: Performance concerns`,
 
   describe('Integration with existing permissions MCP infrastructure', () => {
     test('review feedback tool coexists with approval prompt tool', async () => {
-      const { ReviewFeedbackInputSchema, PermissionInputSchema } = await import(
-        './permissions_mcp.ts'
-      );
+      const { ReviewFeedbackInputSchema, PermissionInputSchema } =
+        await import('./permissions_mcp.ts');
 
       // Both schemas should be defined and distinct
       expect(ReviewFeedbackInputSchema).toBeDefined();

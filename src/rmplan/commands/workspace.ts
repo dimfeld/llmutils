@@ -122,6 +122,7 @@ export async function handleWorkspaceAddCommand(
       ...(options.cloneMethod && { cloneMethod: options.cloneMethod }),
       ...(options.sourceDir && { sourceDirectory: options.sourceDir }),
       ...(options.repoUrl && { repositoryUrl: options.repoUrl }),
+      ...(options.createBranch !== undefined && { createBranch: options.createBranch }),
     },
   };
 

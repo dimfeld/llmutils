@@ -1364,9 +1364,8 @@ describe('rmplan renumber', () => {
     };
     await Bun.write(path.join(tasksDir, '8-child2.yml'), yaml.stringify(child2Plan));
 
-    const { buildParentChildHierarchy, findPlanFamily, topologicalSortFamily } = await import(
-      './renumber.js'
-    );
+    const { buildParentChildHierarchy, findPlanFamily, topologicalSortFamily } =
+      await import('./renumber.js');
 
     const allPlans = new Map();
     const parent = await readPlanFile(path.join(tasksDir, '10-parent.yml'));

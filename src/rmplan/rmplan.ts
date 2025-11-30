@@ -509,9 +509,8 @@ program
     'Add an implementation note to a plan\'s details under "# Implementation Notes" section'
   )
   .action(async (planFile, note, options, command) => {
-    const { handleAddImplementationNoteCommand } = await import(
-      './commands/add-implementation-note.js'
-    );
+    const { handleAddImplementationNoteCommand } =
+      await import('./commands/add-implementation-note.js');
     await handleAddImplementationNoteCommand(planFile, note, command).catch(handleCommandError);
   });
 
@@ -836,6 +835,7 @@ workspaceCommand
   .option('--clone-method <method>', 'Clone method: git, cp, or mac-cow (overrides config)')
   .option('--source-dir <path>', 'Source directory for cp/mac-cow methods (overrides config)')
   .option('--repo-url <url>', 'Repository URL for git method (overrides config)')
+  .option('--create-branch', 'Automatically create a new branch for the workspace (default: false)')
   .action(async (planIdentifier, options, command) => {
     const { handleWorkspaceAddCommand } = await import('./commands/workspace.js');
     await handleWorkspaceAddCommand(planIdentifier, options, command).catch(handleCommandError);

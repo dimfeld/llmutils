@@ -551,27 +551,31 @@ export async function createWorkspace(
     await setupGitRemote(targetClonePath, repositoryUrl);
   }
 
-  // Step 5: Create and checkout a new branch
+  // Step 5: Create and checkout a new branch (if enabled)
   const branchName = `llmutils-ws/${taskId}`;
-  try {
-    log(`Creating and checking out branch ${branchName}`);
-    const { exitCode, stderr } = await spawnAndLogOutput(['git', 'checkout', '-b', branchName], {
-      cwd: targetClonePath,
-    });
+  const shouldCreateBranch = workspaceConfig.createBranch ?? false;
 
-    if (exitCode !== 0) {
-      log(`Failed to create and checkout branch: ${stderr}`);
-      // Consider cleaning up the clone
-      try {
-        await fs.rm(targetClonePath, { recursive: true, force: true });
-      } catch {
-        // Ignore cleanup errors
+  if (shouldCreateBranch) {
+    try {
+      log(`Creating and checking out branch ${branchName}`);
+      const { exitCode, stderr } = await spawnAndLogOutput(['git', 'checkout', '-b', branchName], {
+        cwd: targetClonePath,
+      });
+
+      if (exitCode !== 0) {
+        log(`Failed to create and checkout branch: ${stderr}`);
+        // Consider cleaning up the clone
+        try {
+          await fs.rm(targetClonePath, { recursive: true, force: true });
+        } catch {
+          // Ignore cleanup errors
+        }
+        return null;
       }
+    } catch (error) {
+      log(`Error creating branch: ${String(error)}`);
       return null;
     }
-  } catch (error) {
-    log(`Error creating branch: ${String(error)}`);
-    return null;
   }
 
   // Step 6: Copy plan file if provided
@@ -655,7 +659,7 @@ export async function createWorkspace(
       originalPlanFilePath,
       repositoryUrl: repositoryUrl,
       workspacePath: targetClonePath,
-      branch: branchName,
+      branch: shouldCreateBranch ? branchName : undefined,
       createdAt: new Date().toISOString(),
     },
     trackingFilePath

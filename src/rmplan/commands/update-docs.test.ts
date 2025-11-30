@@ -26,9 +26,9 @@ describe('update-docs command', () => {
       },
     };
 
-    await expect(
-      handleUpdateDocsCommand(undefined, {}, mockCommand)
-    ).rejects.toThrow('Plan file or ID is required');
+    await expect(handleUpdateDocsCommand(undefined, {}, mockCommand)).rejects.toThrow(
+      'Plan file or ID is required'
+    );
   });
 
   test('handleUpdateDocsCommand reads plan file successfully', async () => {

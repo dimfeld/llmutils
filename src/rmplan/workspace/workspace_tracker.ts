@@ -16,8 +16,8 @@ export interface WorkspaceInfo {
   repositoryUrl?: string;
   /** Absolute path to the cloned workspace */
   workspacePath: string;
-  /** Name of the branch that was created */
-  branch: string;
+  /** Name of the branch that was created (optional, may not be set if createBranch was disabled) */
+  branch?: string;
   /** ISO date string when the workspace was created */
   createdAt: string;
   /** Lock information if workspace is currently locked */

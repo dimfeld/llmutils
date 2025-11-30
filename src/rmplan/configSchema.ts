@@ -68,6 +68,11 @@ export const workspaceCreationConfigSchema = z.object({
    * Allows including files that are normally ignored by Git.
    */
   copyAdditionalGlobs: z.array(z.string()).optional(),
+  /**
+   * Whether to automatically create a new branch for the workspace.
+   * Defaults to false.
+   */
+  createBranch: z.boolean().optional(),
 });
 
 export type WorkspaceCreationConfig = z.infer<typeof workspaceCreationConfigSchema>;

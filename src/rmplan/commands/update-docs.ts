@@ -76,10 +76,7 @@ export async function runUpdateDocs(
 
   // Determine executor and model
   const executorName =
-    options.executor ||
-    config.updateDocs?.executor ||
-    config.defaultExecutor ||
-    DEFAULT_EXECUTOR;
+    options.executor || config.updateDocs?.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
 
   const model =
     options.model ||
