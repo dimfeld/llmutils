@@ -89,7 +89,7 @@ IMPORTANT: When you provide a verdict of ACCEPTABLE, you MUST mark the completed
 
 For example:
 \`\`\`bash
-rmplan set-task-done ${planId} "Task Title Here"
+rmplan set-task-done ${planId} --title "Task Title Here"
 \`\`\`
 
 Do this for each task that was successfully implemented and reviewed before providing your ACCEPTABLE verdict.`
