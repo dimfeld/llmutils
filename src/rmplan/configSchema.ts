@@ -359,6 +359,29 @@ export const rmplanConfigSchema = z
       .strict()
       .optional()
       .describe('Progress notes behavior and retention'),
+    /**
+     * Documentation update settings.
+     */
+    updateDocs: z
+      .object({
+        /**
+         * When to automatically update documentation during agent execution.
+         * - 'never': Don't automatically update docs (default)
+         * - 'after-iteration': Update docs after each agent loop iteration
+         * - 'after-completion': Update docs only when the entire plan is complete
+         */
+        mode: z
+          .enum(['never', 'after-iteration', 'after-completion'])
+          .optional()
+          .describe('When to automatically update docs during agent execution'),
+        /** Model to use for documentation updates */
+        model: z.string().optional().describe('Model to use for documentation updates'),
+        /** Executor to use for documentation updates */
+        executor: z.string().optional().describe('Executor to use for documentation updates'),
+      })
+      .strict()
+      .optional()
+      .describe('Configuration for automatic documentation updates'),
   })
   .describe('Repository-level configuration for rmplan');
 

@@ -277,6 +277,16 @@ program
   });
 
 program
+  .command('update-docs [planFile]')
+  .description('Update documentation based on completed plan work. Can be a file path or plan ID.')
+  .option('-x, --executor <name>', 'The executor to use for documentation updates')
+  .option('-m, --model <model>', 'Model to use for the executor')
+  .action(async (planFile, options, command) => {
+    const { handleUpdateDocsCommand } = await import('./commands/update-docs.js');
+    await handleUpdateDocsCommand(planFile, options, command).catch(handleCommandError);
+  });
+
+program
   .command('set-task-done <planFile>')
   .description('Mark a specific task as done by title or index. Can be a file path or plan ID.')
   .option('--title <title>', 'Task title to mark as done')

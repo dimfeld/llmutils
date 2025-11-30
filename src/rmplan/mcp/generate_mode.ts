@@ -1029,7 +1029,8 @@ export function registerGenerateMode(
 
   server.addTool({
     name: 'create-plan',
-    description: 'Create a new plan file with specified properties',
+    description:
+      'Create a new rmplan plan file with specified properties. Do not use this tool as part of your internal "plan mode".',
     parameters: createPlanParameters,
     annotations: {
       destructiveHint: true,

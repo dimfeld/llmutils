@@ -1224,6 +1224,35 @@ postApplyCommands:
 - Testing (jest, pytest, bun test)
 - Custom validation scripts
 
+### Automatic Documentation Updates
+
+Automatically update documentation when completing work using the `update-docs` integration:
+
+```yaml
+updateDocs:
+  mode: never # Options: never (default), after-iteration, after-completion
+  executor: claude-code # Executor to use for doc updates (optional)
+  model: anthropic/claude-3.5-sonnet # Model to use (optional)
+```
+
+**Modes:**
+
+- **`never`** (default): Documentation updates are manual only via `rmplan update-docs ID`
+- **`after-iteration`**: Automatically update docs after each agent loop iteration (before commit)
+- **`after-completion`**: Automatically update docs only when the entire plan is complete
+
+The `update-docs` command reads the plan's metadata and completed tasks, then asks the executor to find and update relevant documentation files (README.md, CLAUDE.md, docs/, etc.). The executor discovers which files need updating - no manual specification required.
+
+**Manual usage:**
+
+```bash
+# Update docs for a completed plan
+rmplan update-docs 123
+
+# Use specific executor/model
+rmplan update-docs 123 --executor claude-code --model anthropic/claude-opus
+```
+
 ### Documentation Search Paths
 
 Configure where rmplan searches for `.md` and `.mdc` documentation files:
@@ -1610,6 +1639,9 @@ rmplan add-progress-note ID --source "SOURCE" "NOTE"
 
 # Mark complete
 rmplan done ID [--commit]
+
+# Update documentation
+rmplan update-docs ID [--executor NAME] [--model MODEL]
 
 # Compact for archival
 rmplan compact ID [--dry-run] [--yes]

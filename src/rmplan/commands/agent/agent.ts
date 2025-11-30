@@ -41,6 +41,7 @@ import { executeStubPlan } from './stub_plan.js';
 import { SummaryCollector } from '../../summary/collector.js';
 import { writeOrDisplaySummary } from '../../summary/display.js';
 import { autoClaimPlan, isAutoClaimEnabled } from '../../assignments/auto_claim.js';
+import { runUpdateDocs } from '../update-docs.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -534,6 +535,20 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           }
         }
 
+        // Update docs if configured for after-iteration mode
+        if (config.updateDocs?.mode === 'after-iteration') {
+          try {
+            await runUpdateDocs(currentPlanFile, config, {
+              executor: config.updateDocs.executor,
+              model: config.updateDocs.model,
+              baseDir: currentBaseDir,
+            });
+          } catch (err) {
+            error('Failed to update documentation:', err);
+            // Don't stop execution for documentation update failures
+          }
+        }
+
         // Mark the task as done
         try {
           log(boldMarkdownHeaders('\n## Marking task done\n'));
@@ -548,6 +563,21 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
           if (markResult.planComplete) {
             log('Plan fully completed!');
+
+            // Update docs if configured for after-completion mode
+            if (config.updateDocs?.mode === 'after-completion') {
+              try {
+                await runUpdateDocs(currentPlanFile, config, {
+                  executor: config.updateDocs.executor,
+                  model: config.updateDocs.model,
+                  baseDir: currentBaseDir,
+                });
+              } catch (err) {
+                error('Failed to update documentation:', err);
+                // Don't stop execution for documentation update failures
+              }
+            }
+
             break;
           }
         } catch (err) {
@@ -718,6 +748,20 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         }
       }
 
+      // Update docs if configured for after-iteration mode
+      if (config.updateDocs?.mode === 'after-iteration') {
+        try {
+          await runUpdateDocs(currentPlanFile, config, {
+            executor: config.updateDocs.executor,
+            model: config.updateDocs.model,
+            baseDir: currentBaseDir,
+          });
+        } catch (err) {
+          error('Failed to update documentation:', err);
+          // Don't stop execution for documentation update failures
+        }
+      }
+
       let markResult;
       try {
         log(boldMarkdownHeaders('\n## Marking done\n'));
@@ -732,6 +776,21 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
         log(`Marked task as done: ${markResult.message.split('\n')[0]}`);
         if (markResult.planComplete) {
           log('Plan fully completed!');
+
+          // Update docs if configured for after-completion mode
+          if (config.updateDocs?.mode === 'after-completion') {
+            try {
+              await runUpdateDocs(currentPlanFile, config, {
+                executor: config.updateDocs.executor,
+                model: config.updateDocs.model,
+                baseDir: currentBaseDir,
+              });
+            } catch (err) {
+              error('Failed to update documentation:', err);
+              // Don't stop execution for documentation update failures
+            }
+          }
+
           break;
         }
       } catch (err) {
