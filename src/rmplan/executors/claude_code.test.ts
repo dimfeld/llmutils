@@ -430,10 +430,10 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
     expect(recordedArgs).toHaveLength(1);
     const args = recordedArgs[0];
 
-    // Check that --output-format json is used (not stream-json)
+    // Check that --output-format stream-json is used
     expect(args).toContain('--output-format');
     const formatIndex = args.indexOf('--output-format');
-    expect(args[formatIndex + 1]).toBe('json');
+    expect(args[formatIndex + 1]).toBe('stream-json');
 
     // Check that --json-schema is passed
     expect(args).toContain('--json-schema');
@@ -454,7 +454,7 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
       getGitRoot: mock(async () => tempDir),
     }));
 
-    const mockJsonResponse = JSON.stringify({
+    const mockStructuredOutput = {
       issues: [
         {
           severity: 'critical',
@@ -464,13 +464,25 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
       ],
       recommendations: ['Use parameterized queries'],
       actionItems: ['Fix SQL injection'],
-    });
+    };
+
+    // Mock formatJsonMessage to return structured output
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock(() => ({
+        type: 'assistant',
+        message: 'Review completed',
+        structuredOutput: mockStructuredOutput,
+      })),
+    }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async () => ({
-        exitCode: 0,
-        stdout: mockJsonResponse,
-      })),
+      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+        // Simulate formatStdout callback processing
+        if (opts && typeof opts.formatStdout === 'function') {
+          opts.formatStdout('{}');
+        }
+        return { exitCode: 0 };
+      }),
       createLineSplitter: () => (s: string) => s.split('\n'),
       debug: false,
     }));
@@ -493,9 +505,8 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
     expect(result).toBeDefined();
     expect(result?.metadata?.jsonOutput).toBe(true);
     expect(result?.metadata?.phase).toBe('review');
-    expect(result?.content).toBe(mockJsonResponse);
-    expect(result?.steps).toHaveLength(1);
-    expect(result?.steps?.[0].title).toBe('Claude Review');
+    expect(result?.content).toBe('');
+    expect(result?.structuredOutput).toEqual(mockStructuredOutput);
   });
 
   test('throws error when Claude exits with non-zero exit code in review mode', async () => {
@@ -608,14 +619,16 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
     expect(recordedArgs).toHaveLength(1);
     const args = recordedArgs[0];
 
-    // Review mode should NOT have agents or orchestration-related args
+    // Review mode should NOT have agents or orchestration-related args when permissions MCP is disabled
     expect(args).not.toContain('--agents');
     expect(args).not.toContain('--permission-prompt-tool');
     expect(args).not.toContain('--mcp-config');
 
-    // Should use --print with the context content directly
+    // Should use --print with the context content and structured output instruction
     expect(args).toContain('--print');
     const printIndex = args.indexOf('--print');
-    expect(args[printIndex + 1]).toBe('REVIEW CONTEXT');
+    expect(args[printIndex + 1]).toBe(
+      'REVIEW CONTEXT\n\nBe sure to provide the structured output with your response'
+    );
   });
 });

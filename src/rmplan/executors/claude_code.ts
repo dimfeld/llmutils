@@ -473,75 +473,217 @@ export class ClaudeCodeExecutor implements Executor {
 
     log('Running Claude in review mode with JSON schema output...');
 
-    // Build args for review mode - simpler than full orchestration
-    const args = ['claude'];
+    // Determine if permissions MCP should be enabled
+    let { allowAllTools, mcpConfigFile, interactive } = this.options;
+    interactive ??= this.sharedOptions.interactive;
+    interactive ??= (process.env.CLAUDE_INTERACTIVE ?? 'false') === 'true';
 
-    // Add model selection
-    let modelToUse = this.sharedOptions.model;
-    if (
-      modelToUse?.includes('haiku') ||
-      modelToUse?.includes('sonnet') ||
-      modelToUse?.includes('opus')
-    ) {
-      log(`Using model: ${modelToUse}\n`);
-      args.push('--model', modelToUse);
-    } else {
-      log(`Using default model: ${DEFAULT_CLAUDE_MODEL}\n`);
-      args.push('--model', DEFAULT_CLAUDE_MODEL);
+    let isPermissionsMcpEnabled = this.options.permissionsMcp?.enabled === true;
+    if (process.env.CLAUDE_CODE_MCP) {
+      isPermissionsMcpEnabled = process.env.CLAUDE_CODE_MCP === 'true';
     }
 
-    // Get the JSON schema for structured output
-    const jsonSchema = getReviewOutputJsonSchemaString();
+    if (allowAllTools == null) {
+      const allowAllToolsValue = process.env.ALLOW_ALL_TOOLS ?? 'false';
+      const envAllowAllTools = ['true', '1'].includes(allowAllToolsValue.toLowerCase());
+      allowAllTools = envAllowAllTools;
+    }
 
-    // Use streaming JSON output format with schema for structured parsing
-    args.push('--verbose', '--output-format', 'stream-json');
-    args.push('--json-schema', jsonSchema);
-    args.push(
-      '--print',
-      contextContent + '\n\nBe sure to provide the structured output with your response'
-    );
+    if (interactive || allowAllTools) {
+      // permissions MCP doesn't make sense in interactive mode, or when we want to allow all tools
+      isPermissionsMcpEnabled = false;
+    }
 
-    let splitter = createLineSplitter();
-    let capturedOutput: object | undefined;
+    // Parse allowedTools for permissions system
+    const jsTaskRunners = ['npm', 'pnpm', 'yarn', 'bun'];
+    const defaultAllowedTools =
+      (this.options.includeDefaultTools ?? true)
+        ? [
+            `Edit`,
+            'MultiEdit',
+            `Write`,
+            'WebFetch',
+            'WebSearch',
+            `Bash(cat:*)`,
+            `Bash(cd:*)`,
+            'Bash(cp:*)',
+            'Bash(find:*)',
+            'Bash(grep:*)',
+            'Bash(ls:*)',
+            'Bash(mkdir:*)',
+            'Bash(mv:*)',
+            'Bash(pwd)',
+            'Bash(rg:*)',
+            'Bash(sed:*)',
+            'Bash(rm test-:*)',
+            'Bash(rm -f test-:*)',
+            'Bash(jj status)',
+            'Bash(jj log:*)',
+            'Bash(jj commit:*)',
+            ...jsTaskRunners.flatMap((name) => [
+              `Bash(${name} test:*)`,
+              `Bash(${name} run build:*)`,
+              `Bash(${name} run check:*)`,
+              `Bash(${name} run typecheck:*)`,
+              `Bash(${name} run lint:*)`,
+              `Bash(${name} install)`,
+              `Bash(${name} add:*)`,
+            ]),
+            'Bash(cargo add:*)',
+            'Bash(cargo build)',
+            'Bash(cargo test:*)',
+            'Bash(rmplan set-task-done:*)',
+            'Bash(rmplan add-progress-note:*)',
+            'Bash(rmplan add-implementation-note:*)',
+          ]
+        : [];
 
-    const result = await spawnAndLogOutput(args, {
-      env: {
-        ...process.env,
-        ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
-        CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
-      },
-      cwd: gitRoot,
-      formatStdout: (output) => {
-        let lines = splitter(output);
-        const formattedResults = lines.map(formatJsonMessage);
+    let allowedTools = [...defaultAllowedTools, ...(this.options.allowedTools ?? [])];
+    if (this.options.disallowedTools) {
+      allowedTools = allowedTools.filter((t) => !this.options.disallowedTools?.includes(t));
+    }
 
-        for (const result of formattedResults) {
-          if (result.structuredOutput) {
-            if (typeof result.structuredOutput === 'string') {
-              capturedOutput = JSON.parse(result.structuredOutput);
-            } else {
-              capturedOutput = result.structuredOutput;
+    // Parse allowedTools into efficient lookup structure for auto-approval
+    this.parseAllowedTools(allowedTools);
+
+    // Setup permissions MCP if enabled
+    let tempMcpConfigDir: string | undefined = undefined;
+    let dynamicMcpConfigFile: string | undefined;
+    let unixSocketServer: net.Server | undefined;
+    let unixSocketPath: string | undefined;
+
+    if (isPermissionsMcpEnabled) {
+      // Create a temporary directory
+      tempMcpConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-code-mcp-'));
+
+      // Create Unix socket path
+      unixSocketPath = path.join(tempMcpConfigDir, 'permissions.sock');
+
+      // Create and start the Unix socket server
+      unixSocketServer = await this.createPermissionSocketServer(unixSocketPath);
+
+      // Resolve the absolute path to the permissions MCP script
+      let permissionsMcpPath = path.resolve(import.meta.dir, './claude_code/permissions_mcp.ts');
+      if (!(await Bun.file(permissionsMcpPath).exists())) {
+        permissionsMcpPath = path.resolve(import.meta.dir, './claude_code/permissions_mcp.js');
+      }
+
+      // Construct the MCP configuration object with stdio transport
+      const permissionsMcpArgs = [permissionsMcpPath, unixSocketPath];
+      if (this.options.enableReviewFeedback === true) {
+        permissionsMcpArgs.push('--enable-review-feedback');
+      }
+
+      const mcpConfig = {
+        mcpServers: {
+          permissions: {
+            type: 'stdio',
+            command: process.execPath,
+            args: permissionsMcpArgs,
+          },
+        },
+      };
+
+      // Write the configuration to a file
+      dynamicMcpConfigFile = path.join(tempMcpConfigDir, 'mcp-config.json');
+      await Bun.file(dynamicMcpConfigFile).write(JSON.stringify(mcpConfig, null, 2));
+    }
+
+    try {
+      // Build args for review mode - simpler than full orchestration
+      const args = ['claude'];
+
+      // Add MCP config if enabled
+      if (isPermissionsMcpEnabled && dynamicMcpConfigFile) {
+        args.push('--mcp-config', dynamicMcpConfigFile);
+        args.push('--permission-prompt-tool', 'mcp__permissions__approval_prompt');
+      } else if (mcpConfigFile) {
+        args.push('--mcp-config', mcpConfigFile);
+      }
+
+      // Add model selection
+      let modelToUse = this.sharedOptions.model;
+      if (
+        modelToUse?.includes('haiku') ||
+        modelToUse?.includes('sonnet') ||
+        modelToUse?.includes('opus')
+      ) {
+        log(`Using model: ${modelToUse}\n`);
+        args.push('--model', modelToUse);
+      } else {
+        log(`Using default model: ${DEFAULT_CLAUDE_MODEL}\n`);
+        args.push('--model', DEFAULT_CLAUDE_MODEL);
+      }
+
+      // Get the JSON schema for structured output
+      const jsonSchema = getReviewOutputJsonSchemaString();
+
+      // Use streaming JSON output format with schema for structured parsing
+      args.push('--verbose', '--output-format', 'stream-json');
+      args.push('--json-schema', jsonSchema);
+      args.push(
+        '--print',
+        contextContent + '\n\nBe sure to provide the structured output with your response'
+      );
+
+      let splitter = createLineSplitter();
+      let capturedOutput: object | undefined;
+
+      log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
+      const result = await spawnAndLogOutput(args, {
+        env: {
+          ...process.env,
+          ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
+          CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
+        },
+        cwd: gitRoot,
+        formatStdout: (output) => {
+          let lines = splitter(output);
+          const formattedResults = lines.map(formatJsonMessage);
+
+          for (const result of formattedResults) {
+            if (result.structuredOutput) {
+              if (typeof result.structuredOutput === 'string') {
+                capturedOutput = JSON.parse(result.structuredOutput);
+              } else {
+                capturedOutput = result.structuredOutput;
+              }
             }
           }
-        }
 
-        const formattedOutput = formattedResults.map((r) => r.message || '').join('\n\n') + '\n\n';
-        return formattedOutput;
-      },
-    });
+          const formattedOutput =
+            formattedResults.map((r) => r.message || '').join('\n\n') + '\n\n';
+          return formattedOutput;
+        },
+      });
 
-    if (result.exitCode !== 0) {
-      throw new Error(`Claude review exited with non-zero exit code: ${result.exitCode}`);
+      if (result.exitCode !== 0) {
+        throw new Error(`Claude review exited with non-zero exit code: ${result.exitCode}`);
+      }
+
+      log('Claude review output captured.');
+
+      // Return the captured final message - parsing will happen in createReviewResult()
+      return {
+        content: '',
+        structuredOutput: capturedOutput,
+        metadata: { phase: 'review', jsonOutput: true },
+      };
+    } finally {
+      // Close the Unix socket server if it exists
+      if (unixSocketServer) {
+        await new Promise<void>((resolve) => {
+          unixSocketServer.close(() => {
+            resolve();
+          });
+        });
+      }
+
+      // Clean up temporary MCP configuration directory if it was created
+      if (tempMcpConfigDir) {
+        await fs.rm(tempMcpConfigDir, { recursive: true, force: true });
+      }
     }
-
-    log('Claude review output captured.');
-
-    // Return the captured final message - parsing will happen in createReviewResult()
-    return {
-      content: '',
-      structuredOutput: capturedOutput,
-      metadata: { phase: 'review', jsonOutput: true },
-    };
   }
 
   /**
