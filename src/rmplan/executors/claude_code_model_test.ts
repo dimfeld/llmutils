@@ -179,7 +179,11 @@ describe('ClaudeCodeExecutor model selection', () => {
     await moduleMocker.mock('../../common/process.ts', () => ({
       spawnAndLogOutput: mock((args: string[]) => {
         capturedArgs = args;
-        return Promise.resolve({ exitCode: 0 });
+        // Return stdout with valid JSON for review mode
+        return Promise.resolve({
+          exitCode: 0,
+          stdout: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+        });
       }),
       createLineSplitter: mock(() => (output: string) => output.split('\n')),
       debug: false,

@@ -3,7 +3,7 @@
 
 import chalk from 'chalk';
 import { table } from 'table';
-import { basename, extname, normalize } from 'node:path';
+import { ReviewOutputSchema, type ReviewOutput } from './review_output_schema.js';
 
 export type ReviewSeverity = 'critical' | 'major' | 'minor' | 'info';
 export type ReviewCategory =
@@ -21,7 +21,7 @@ export interface ReviewIssue {
   category: ReviewCategory;
   content: string;
   file?: string;
-  line?: number;
+  line?: number | string;
   suggestion?: string;
 }
 
@@ -63,470 +63,135 @@ export interface ReviewFormatter {
 }
 
 /**
- * Safely validates and sanitizes a file path to prevent security exploits
+ * Result type for parsed review output functions.
+ * Contains the structured issues, recommendations, and action items extracted from review output.
  */
-function validateAndSanitizeFilePath(filePath: string): string | null {
-  if (!filePath || typeof filePath !== 'string') {
-    return null;
-  }
-
-  // Remove any dangerous characters and patterns
-  // Filter out control characters by checking character codes
-  const removeControlChars = (str: string): string => {
-    return str
-      .split('')
-      .filter((char) => {
-        const code = char.charCodeAt(0);
-        return !(code >= 0 && code <= 31) && !(code >= 127 && code <= 159);
-      })
-      .join('');
-  };
-
-  const sanitized = removeControlChars(filePath)
-    .trim()
-    .replace(/[<>:"|?*]/g, '') // Remove Windows forbidden characters
-    .replace(/\.\./g, '') // Remove path traversal attempts
-    .replace(/^\/+|\/+$/g, ''); // Remove leading/trailing slashes
-
-  // Validate length
-  if (sanitized.length === 0 || sanitized.length > 260) {
-    return null;
-  }
-
-  // Must have a valid file extension
-  const extension = extname(sanitized);
-  const validExtensions = [
-    '.ts',
-    '.tsx',
-    '.js',
-    '.jsx',
-    '.py',
-    '.java',
-    '.cpp',
-    '.c',
-    '.h',
-    '.go',
-    '.rs',
-    '.rb',
-    '.php',
-    '.cs',
-  ];
-  if (!validExtensions.includes(extension.toLowerCase())) {
-    return null;
-  }
-
-  // Normalize path to prevent various encoding exploits
-  try {
-    const normalized = normalize(sanitized);
-    // Final check - path should not go outside project scope
-    if (normalized.includes('../') || normalized.startsWith('/')) {
-      return null;
-    }
-    return normalized;
-  } catch {
-    return null;
-  }
-}
-
-// Pre-compiled regex patterns for better performance
-const ISSUE_PATTERNS = [
-  // Critical/Security issues
-  {
-    pattern: /(?:critical|security|vulnerability|exploit|injection|xss|sql|csrf|rce)/i,
-    severity: 'critical' as const,
-    category: 'security' as const,
-  },
-  // Performance issues
-  {
-    pattern: /(?:performance|slow|bottleneck|memory leak|cpu|inefficient|optimization)/i,
-    severity: 'major' as const,
-    category: 'performance' as const,
-  },
-  // Bugs
-  {
-    pattern: /(?:bug|error|exception|crash|fail|broken|incorrect|wrong)/i,
-    severity: 'major' as const,
-    category: 'bug' as const,
-  },
-  // Testing issues
-  {
-    pattern: /(?:test|testing|coverage|unit test|integration test|mock)/i,
-    severity: 'minor' as const,
-    category: 'testing' as const,
-  },
-  // Style/Code quality
-  {
-    pattern: /(?:style|formatting|naming|convention|readability|maintainability)/i,
-    severity: 'minor' as const,
-    category: 'style' as const,
-  },
-];
-
-// Pre-compiled issue marker patterns
-const ISSUE_MARKERS = [
-  /^[-*•]\s*(.+)/, // Bullet points
-  /^\d+\.\s*(.+)/, // Numbered lists
-  /^⚠️|❌|🔴|🟡|⭐\s*(.+)/, // Emoji markers
-  /^(CRITICAL|MAJOR|MINOR|INFO):\s*(.+)/i, // Severity prefixes
-];
-
-// Pre-compiled pattern to exclude legend entries
-const LEGEND_EXCLUSION_PATTERN =
-  /^[-*•]\s*\*\*(CRITICAL|MAJOR|MINOR|INFO)\*\*\s+(issues?|concerns?)\s*:/i;
-const VERDICT_EXCLUSION_PATTERN = /VERDICT/i;
-
-// Pre-compiled file path patterns
-const FILE_EXT_PATTERN = '(?:tsx?|jsx?|py|java|cpp|c|h|go|rs|rb|php|cs)';
-const PATH_COMPONENT_PATTERN = '[a-zA-Z0-9._/-]{1,100}'; // Limited length to prevent ReDoS
-
-const FILE_LINE_PATTERN = new RegExp(
-  `\\b(?:in|at|line)\\s+(${PATH_COMPONENT_PATTERN}\\.${FILE_EXT_PATTERN}):(\\d{1,6})\\b`,
-  'i'
-);
-const FILE_ONLY_PATTERN = new RegExp(
-  `\\b(?:in|at)\\s+(${PATH_COMPONENT_PATTERN}\\.${FILE_EXT_PATTERN})\\b`,
-  'i'
-);
-const FILE_KEYWORD_PATTERN = new RegExp(
-  `\\bfile\\s+(${PATH_COMPONENT_PATTERN}\\.${FILE_EXT_PATTERN})\\b`,
-  'i'
-);
-
-// Pre-compiled recommendation and action item patterns
-const RECOMMENDATION_PATTERN = /^[-*•]\s*(recommend|suggestion|should|consider|improve)/i;
-const RECOMMENDATION_START_PATTERN = /^(recommend|suggestion|should|consider|improve)/i;
-const SECTION_HEADER_PATTERN = /^\w+:\s*$/;
-const ACTION_ITEM_PATTERN = /^(todo|action|next|fix|address|update)/i;
-const ACTION_ITEM_SECTION_PATTERN = /^\w+\s*(items?)?\s*:\s*$/;
-const ACTION_BULLET_PATTERN = /^[-*•]\s*(todo|action|fix)/i;
-
-function analyzeIssueContent(content: string): {
-  severity: ReviewSeverity;
-  category: ReviewCategory;
-  file?: string;
-  line?: number;
-  hasSeverity: boolean;
-} {
-  let severity: ReviewSeverity = 'info';
-  let category: ReviewCategory = 'other';
-  let hasSeverity = false;
-
-  const severityTagMatch = content.match(/^(CRITICAL|MAJOR|MINOR|INFO):/i);
-  if (severityTagMatch) {
-    severity = severityTagMatch[1].toLowerCase() as ReviewSeverity;
-    hasSeverity = true;
-  }
-
-  for (const pattern of ISSUE_PATTERNS) {
-    if (pattern.pattern.test(content)) {
-      if (!severityTagMatch) {
-        severity = pattern.severity;
-        hasSeverity = true;
-      }
-      category = pattern.category;
-      break;
-    }
-  }
-
-  let file: string | undefined;
-  let lineNumber: number | undefined;
-
-  const fileLineMatch = content.match(FILE_LINE_PATTERN);
-  if (fileLineMatch) {
-    const potentialFile = validateAndSanitizeFilePath(fileLineMatch[1]);
-    if (potentialFile) {
-      file = potentialFile;
-      const parsedLine = parseInt(fileLineMatch[2], 10);
-      if (parsedLine > 0 && parsedLine <= 100000) {
-        lineNumber = parsedLine;
-      }
-    }
-  } else {
-    const fileOnlyMatch = content.match(FILE_ONLY_PATTERN);
-    if (fileOnlyMatch) {
-      const potentialFile = validateAndSanitizeFilePath(fileOnlyMatch[1]);
-      if (potentialFile) {
-        file = potentialFile;
-      }
-    } else {
-      const fileKeywordMatch = content.match(FILE_KEYWORD_PATTERN);
-      if (fileKeywordMatch) {
-        const potentialFile = validateAndSanitizeFilePath(fileKeywordMatch[1]);
-        if (potentialFile) {
-          file = potentialFile;
-        }
-      }
-    }
-  }
-
-  return { severity, category, file, line: lineNumber, hasSeverity };
-}
-
-function trimIssueContent(content: string): string {
-  let trimmedContent = content.trim();
-  if (trimmedContent.startsWith('Found Issues:')) {
-    trimmedContent = trimmedContent.substring(trimmedContent.indexOf(':') + 1).trim();
-  }
-  return trimmedContent;
-}
-
-/**
- * Parses raw reviewer agent output to extract structured review findings
- * Optimized for performance with large outputs
- */
-export function parseReviewerOutput(rawOutput: string): {
+export interface ParsedReviewOutput {
   issues: ReviewIssue[];
   recommendations: string[];
   actionItems: string[];
-} {
-  const issues: ReviewIssue[] = [];
-  const recommendations: string[] = [];
-  const actionItems: string[] = [];
+}
 
-  // Limit processing for very large outputs to prevent performance issues
-  const MAX_OUTPUT_LENGTH = 10000000; // 10MB limit
-  const MAX_ISSUES = 100; // Limit number of issues processed
-  const MAX_LINES = 100000; // Limit number of lines processed
+/**
+ * Error class for JSON review parsing failures.
+ * Contains detailed information about what went wrong during parsing.
+ */
+export class ReviewJsonParseError extends Error {
+  constructor(
+    message: string,
+    public readonly cause?: unknown,
+    public readonly rawInput?: string
+  ) {
+    super(message);
+    this.name = 'ReviewJsonParseError';
+  }
+}
 
-  if (rawOutput.length > MAX_OUTPUT_LENGTH) {
-    rawOutput = rawOutput.substring(0, MAX_OUTPUT_LENGTH);
+/**
+ * Parses structured JSON output from an LLM review executor.
+ * This function validates the JSON against the ReviewOutputSchema and converts
+ * it to the internal ReviewIssue format with auto-generated IDs.
+ *
+ * @param jsonString - The raw JSON string output from an LLM executor
+ * @returns Parsed review output with issues, recommendations, and action items
+ * @throws ReviewJsonParseError if the JSON is invalid or doesn't match the schema
+ *
+ * @example
+ * ```typescript
+ * const output = `{
+ *   "issues": [
+ *     {
+ *       "severity": "critical",
+ *       "category": "security",
+ *       "content": "SQL injection vulnerability in user input handling",
+ *       "file": "src/db/queries.ts",
+ *       "line": 45,
+ *       "suggestion": "Use parameterized queries instead of string concatenation"
+ *     }
+ *   ],
+ *   "recommendations": ["Consider adding input validation middleware"],
+ *   "actionItems": ["Fix SQL injection vulnerability before release"]
+ * }`;
+ *
+ * const result = parseJsonReviewOutput(output);
+ * // result.issues[0].id === "issue-1"
+ * ```
+ */
+export function parseJsonReviewOutput(jsonString: string | object): ParsedReviewOutput {
+  // Parse the JSON string
+  let parsed: unknown;
+
+  if (typeof jsonString === 'string') {
+    // Trim whitespace and handle empty input
+    const trimmed = jsonString.trim();
+    if (!trimmed) {
+      throw new ReviewJsonParseError('Empty JSON input provided', undefined, jsonString);
+    }
+
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (error) {
+      throw new ReviewJsonParseError(
+        `Invalid JSON syntax: ${error instanceof Error ? error.message : String(error)}`,
+        error,
+        jsonString.length > 1000 ? jsonString.substring(0, 1000) + '...[truncated]' : jsonString
+      );
+    }
+  } else {
+    parsed = jsonString;
   }
 
-  // Split output into lines for processing
-  const lines = rawOutput.split('\n');
-  const lineCount = Math.min(lines.length, MAX_LINES);
-  const processedLineIndices = new Set<number>();
-  let issueId = 1;
-  let inVerdictSection = false;
-
-  const hasIssueSeparators = lines.slice(0, lineCount).some((line) => line.trim() === '---');
-
-  if (hasIssueSeparators) {
-    type IssueBlock = { lines: string[]; indices: number[] };
-    const blocks: IssueBlock[] = [];
-    let currentLines: string[] = [];
-    let currentIndices: number[] = [];
-
-    const pushBlock = () => {
-      if (currentLines.some((line) => line.trim())) {
-        blocks.push({ lines: currentLines.slice(), indices: currentIndices.slice() });
-      }
-      currentLines = [];
-      currentIndices = [];
-    };
-
-    for (let i = 0; i < lineCount && issues.length < MAX_ISSUES; i++) {
-      const rawLine = lines[i];
-      if (rawLine.trim() === '---') {
-        processedLineIndices.add(i);
-        pushBlock();
-        continue;
-      }
-      currentLines.push(rawLine);
-      currentIndices.push(i);
-    }
-
-    pushBlock();
-
-    for (const block of blocks) {
-      if (issues.length >= MAX_ISSUES) break;
-
-      const markBlockProcessed = () => {
-        for (const index of block.indices) {
-          processedLineIndices.add(index);
-        }
-      };
-
-      markBlockProcessed();
-
-      if (block.lines.some((line) => VERDICT_EXCLUSION_PATTERN.test(line))) {
-        continue;
-      }
-
-      const nonEmptyLines = block.lines
-        .map((line, idx) => ({ line, idx }))
-        .filter(({ line }) => line.trim().length > 0);
-
-      if (nonEmptyLines.length === 0) {
-        continue;
-      }
-
-      const headerInfo = nonEmptyLines[0];
-      let headerContent = headerInfo.line.trim();
-
-      for (const marker of ISSUE_MARKERS) {
-        const match = headerContent.match(marker);
-        if (match) {
-          headerContent = (match[1] || match[2] || match[0] || '').trim();
-          break;
-        }
-      }
-
-      if (/^#{1,6}\s/.test(headerContent)) {
-        continue;
-      }
-
-      const remainingLines = block.lines.slice(headerInfo.idx + 1);
-      const issueContentLines = [headerContent, ...remainingLines];
-      let issueContent = issueContentLines.join('\n').trim();
-      issueContent = trimIssueContent(issueContent);
-
-      if (!issueContent) {
-        continue;
-      }
-
-      const analysis = analyzeIssueContent(issueContent);
-
-      // Skip issues without explicit severity markers
-      if (!analysis.hasSeverity) {
-        continue;
-      }
-
-      let suggestion: string | undefined;
-      for (const rawLine of remainingLines) {
-        const trimmedLine = rawLine.trim();
-        if (
-          trimmedLine.startsWith('Suggestion:') ||
-          trimmedLine.startsWith('Fix:') ||
-          trimmedLine.startsWith('Consider:')
-        ) {
-          suggestion = trimmedLine.replace(/^(Suggestion|Fix|Consider):\s*/i, '');
-          break;
-        }
-      }
-
-      issues.push({
-        id: `issue-${issueId++}`,
-        severity: analysis.severity,
-        category: analysis.category,
-        content: issueContent,
-        file: analysis.file,
-        line: analysis.line,
-        ...(suggestion ? { suggestion } : {}),
-      });
-    }
+  // Validate against the schema
+  const validation = ReviewOutputSchema.safeParse(parsed);
+  if (!validation.success) {
+    const errorMessages = validation.error.issues
+      .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+      .join('; ');
+    throw new ReviewJsonParseError(
+      `JSON does not match expected schema: ${errorMessages}`,
+      validation.error,
+      typeof jsonString === 'string'
+        ? jsonString.length > 1000
+          ? jsonString.substring(0, 1000) + '...[truncated]'
+          : jsonString
+        : JSON.stringify(jsonString)
+    );
   }
 
-  for (let i = 0; i < lineCount && issues.length < MAX_ISSUES; i++) {
-    if (processedLineIndices.has(i)) {
-      continue;
-    }
+  const reviewOutput: ReviewOutput = validation.data;
 
-    const line = lines[i].trim();
+  // Convert issues to internal format with auto-generated IDs
+  const issues: ReviewIssue[] = reviewOutput.issues.map((issue, index) => ({
+    id: `issue-${index + 1}`,
+    severity: issue.severity,
+    category: issue.category,
+    content: issue.content,
+    ...(issue.file !== undefined ? { file: issue.file } : {}),
+    ...(issue.line !== undefined ? { line: issue.line } : {}),
+    ...(issue.suggestion !== undefined ? { suggestion: issue.suggestion } : {}),
+  }));
 
-    if (line === '---') {
-      inVerdictSection = false;
-      continue;
-    }
+  return {
+    issues,
+    recommendations: reviewOutput.recommendations,
+    actionItems: reviewOutput.actionItems,
+  };
+}
 
-    if (!line) {
-      if (inVerdictSection) {
-        continue;
-      }
-      continue;
-    }
-
-    if (line.length > 500) {
-      continue; // Skip very long lines that are unlikely to be actionable
-    }
-
-    if (VERDICT_EXCLUSION_PATTERN.test(line)) {
-      inVerdictSection = true;
-      continue;
-    }
-
-    if (inVerdictSection) {
-      if (/^#{1,6}\s/.test(line)) {
-        inVerdictSection = false;
-      } else {
-        continue;
-      }
-    }
-
-    // Skip legend entries that match the exclusion pattern
-    if (LEGEND_EXCLUSION_PATTERN.test(line)) continue;
-
-    if (!hasIssueSeparators) {
-      for (const marker of ISSUE_MARKERS) {
-        const match = line.match(marker);
-        if (match) {
-          // For patterns like /^(CRITICAL|MAJOR|MINOR|INFO):\s*(.+)/, we want the full match
-          // For bullet patterns like /^[-*•]\s*(.+)/, we want the captured group
-          let content = '';
-          if (marker.source.includes('CRITICAL|MAJOR|MINOR|INFO')) {
-            // Severity prefix pattern - use full match to preserve "CRITICAL: ..." format
-            content = match[0].trim();
-          } else {
-            // Other patterns - use captured groups to strip bullet markers
-            content = (match[1] || match[2] || match[0] || '').trim();
-          }
-          content = trimIssueContent(content);
-
-          if (!content) {
-            continue;
-          }
-
-          const analysis = analyzeIssueContent(content);
-
-          // Skip issues without explicit severity markers
-          if (!analysis.hasSeverity) {
-            continue;
-          }
-
-          const issue: ReviewIssue = {
-            id: `issue-${issueId++}`,
-            severity: analysis.severity,
-            category: analysis.category,
-            content,
-            file: analysis.file,
-            line: analysis.line,
-          };
-
-          // Look for suggestions in following lines (limit lookahead)
-          if (i + 1 < lineCount) {
-            const nextLine = lines[i + 1].trim();
-            if (
-              nextLine.length < 200 &&
-              (nextLine.startsWith('Suggestion:') ||
-                nextLine.startsWith('Fix:') ||
-                nextLine.startsWith('Consider:'))
-            ) {
-              issue.suggestion = nextLine.replace(/^(Suggestion|Fix|Consider):\s*/i, '');
-            }
-          }
-
-          issues.push(issue);
-          break;
-        }
-      }
-    }
-
-    // Check for recommendations and action items even if we found an issue
-    // since some lines might match multiple patterns
-
-    // Look for recommendations (with limits)
-    if (recommendations.length < 50 && line.length < 200) {
-      if (
-        RECOMMENDATION_PATTERN.test(line) ||
-        (RECOMMENDATION_START_PATTERN.test(line) && !SECTION_HEADER_PATTERN.test(line))
-      ) {
-        recommendations.push(line);
-      }
-    }
-
-    // Look for action items (with limits) - include various bullet point patterns
-    if (actionItems.length < 50 && line.length < 200) {
-      if (
-        (ACTION_ITEM_PATTERN.test(line) && !ACTION_ITEM_SECTION_PATTERN.test(line)) ||
-        ACTION_BULLET_PATTERN.test(line) ||
-        /^[-*•]\s*(action|update|fix|address)/i.test(line)
-      ) {
-        actionItems.push(line);
-      }
-    }
+/**
+ * Attempts to parse review output as JSON, returning null if parsing fails.
+ * This is a non-throwing variant useful when you want to try JSON parsing
+ * before falling back to text parsing.
+ *
+ * @param jsonString - The raw output string that may be JSON
+ * @returns Parsed review output if successful, or null if parsing failed
+ */
+export function tryParseJsonReviewOutput(jsonString: string): ParsedReviewOutput | null {
+  try {
+    return parseJsonReviewOutput(jsonString);
+  } catch {
+    return null;
   }
-
-  return { issues, recommendations, actionItems };
 }
 
 /**
@@ -856,7 +521,7 @@ export class TerminalFormatter implements ReviewFormatter {
 
             if (options.verbosity === 'detailed') {
               if (issue.suggestion && options.showSuggestions !== false) {
-                sections.push(`   ${color('💡 Suggestion:', chalk.yellow)} ${issue.suggestion}`);
+                sections.push(`   ${color('Suggestion:', chalk.yellow)} ${issue.suggestion}`);
               }
             }
             sections.push('');
@@ -953,33 +618,33 @@ export class TerminalFormatter implements ReviewFormatter {
 }
 
 /**
- * Creates a formatted review result from raw executor output with memory safeguards
+ * Creates a formatted review result from raw JSON executor output with memory safeguards
  */
 export function createReviewResult(
   planId: string,
   planTitle: string,
   baseBranch: string,
   changedFiles: string[],
-  rawOutput: string
+  rawOutput: string | object
 ): ReviewResult {
   // Add memory safeguards to prevent excessive memory usage
   const MAX_PLAN_ID_LENGTH = 100;
   const MAX_PLAN_TITLE_LENGTH = 200;
   const MAX_BRANCH_NAME_LENGTH = 100;
   const MAX_CHANGED_FILES = 500;
-  const MAX_RAW_OUTPUT_LENGTH = 500000; // 500KB limit for raw output
 
   // Sanitize and limit input parameters
   const safePlanId = (planId || 'unknown').substring(0, MAX_PLAN_ID_LENGTH);
   const safePlanTitle = (planTitle || 'Untitled Plan').substring(0, MAX_PLAN_TITLE_LENGTH);
   const safeBranch = (baseBranch || 'main').substring(0, MAX_BRANCH_NAME_LENGTH);
   const safeChangedFiles = changedFiles.slice(0, MAX_CHANGED_FILES);
-  const safeRawOutput =
-    rawOutput.length > MAX_RAW_OUTPUT_LENGTH
-      ? rawOutput.substring(0, MAX_RAW_OUTPUT_LENGTH) + '\n[Output truncated due to size limits]'
-      : rawOutput;
 
-  const { issues, recommendations, actionItems } = parseReviewerOutput(safeRawOutput);
+  // Parse output as JSON
+  const jsonResult = parseJsonReviewOutput(rawOutput);
+  const issues = jsonResult.issues;
+  const recommendations = jsonResult.recommendations;
+  const actionItems = jsonResult.actionItems;
+
   const summary = generateReviewSummary(issues, safeChangedFiles.length);
 
   return {
@@ -990,7 +655,7 @@ export function createReviewResult(
     changedFiles: safeChangedFiles,
     summary,
     issues,
-    rawOutput: safeRawOutput,
+    rawOutput: typeof rawOutput === 'object' ? JSON.stringify(rawOutput) : rawOutput,
     recommendations,
     actionItems,
   };

@@ -337,13 +337,15 @@ export async function handleReviewCommand(
       executionMode: 'review', // Use review mode for review-only operation
     });
 
-    // Use the actual executor output for parsing
+    // Use the actual executor output for parsing (must be JSON)
     const rawOutput =
       typeof executorOutput === 'string'
         ? executorOutput
-        : (executorOutput?.content ?? reviewPrompt);
+        : typeof executorOutput?.structuredOutput === 'object'
+          ? JSON.stringify(executorOutput.structuredOutput)
+          : (executorOutput?.content ?? reviewPrompt);
 
-    // Create structured review result
+    // Create structured review result from JSON output
     const reviewResult = createReviewResult(
       planData.id?.toString() ?? 'unknown',
       planData.title ?? 'Untitled Plan',
@@ -354,7 +356,7 @@ export async function handleReviewCommand(
 
     // Determine format and verbosity from options or config
     const outputFormat = options.format || config.review?.outputFormat || 'terminal';
-    const verbosity: VerbosityLevel = options.verbosity || 'normal';
+    const verbosity: VerbosityLevel = options.verbosity || 'detailed';
 
     // Validate format
     if (!['json', 'markdown', 'terminal'].includes(outputFormat)) {

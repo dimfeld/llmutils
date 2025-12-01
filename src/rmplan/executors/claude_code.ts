@@ -33,6 +33,7 @@ import {
   detectFailedLineAnywhere,
   inferFailedAgent,
 } from './failure_detection.ts';
+import { getReviewOutputJsonSchemaString } from '../formatters/review_output_schema.ts';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -460,6 +461,90 @@ export class ClaudeCodeExecutor implements Executor {
   }
 
   /**
+   * Executes a review-mode prompt using structured JSON output.
+   * This bypasses the full orchestration workflow and uses Claude's JSON schema
+   * output format for reliable parsing of review results.
+   */
+  private async executeReviewMode(
+    contextContent: string,
+    planInfo: ExecutePlanInfo
+  ): Promise<import('./types').ExecutorOutput> {
+    const gitRoot = await getGitRoot();
+
+    log('Running Claude in review mode with JSON schema output...');
+
+    // Build args for review mode - simpler than full orchestration
+    const args = ['claude'];
+
+    // Add model selection
+    let modelToUse = this.sharedOptions.model;
+    if (
+      modelToUse?.includes('haiku') ||
+      modelToUse?.includes('sonnet') ||
+      modelToUse?.includes('opus')
+    ) {
+      log(`Using model: ${modelToUse}\n`);
+      args.push('--model', modelToUse);
+    } else {
+      log(`Using default model: ${DEFAULT_CLAUDE_MODEL}\n`);
+      args.push('--model', DEFAULT_CLAUDE_MODEL);
+    }
+
+    // Get the JSON schema for structured output
+    const jsonSchema = getReviewOutputJsonSchemaString();
+
+    // Use streaming JSON output format with schema for structured parsing
+    args.push('--verbose', '--output-format', 'stream-json');
+    args.push('--json-schema', jsonSchema);
+    args.push(
+      '--print',
+      contextContent + '\n\nBe sure to provide the structured output with your response'
+    );
+
+    let splitter = createLineSplitter();
+    let capturedOutput: object | undefined;
+
+    const result = await spawnAndLogOutput(args, {
+      env: {
+        ...process.env,
+        ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
+        CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
+      },
+      cwd: gitRoot,
+      formatStdout: (output) => {
+        let lines = splitter(output);
+        const formattedResults = lines.map(formatJsonMessage);
+
+        for (const result of formattedResults) {
+          if (result.structuredOutput) {
+            if (typeof result.structuredOutput === 'string') {
+              capturedOutput = JSON.parse(result.structuredOutput);
+            } else {
+              capturedOutput = result.structuredOutput;
+            }
+          }
+        }
+
+        const formattedOutput = formattedResults.map((r) => r.message || '').join('\n\n') + '\n\n';
+        return formattedOutput;
+      },
+    });
+
+    if (result.exitCode !== 0) {
+      throw new Error(`Claude review exited with non-zero exit code: ${result.exitCode}`);
+    }
+
+    log('Claude review output captured.');
+
+    // Return the captured final message - parsing will happen in createReviewResult()
+    return {
+      content: '',
+      structuredOutput: capturedOutput,
+      metadata: { phase: 'review', jsonOutput: true },
+    };
+  }
+
+  /**
    * Creates a Unix socket server to handle permission requests from the MCP server
    */
   private async createPermissionSocketServer(socketPath: string): Promise<net.Server> {
@@ -774,6 +859,11 @@ export class ClaudeCodeExecutor implements Executor {
 
     // Store plan information for use in agent file generation
     this.planInfo = planInfo;
+
+    // Handle review mode with dedicated JSON schema execution path
+    if (planInfo.executionMode === 'review') {
+      return this.executeReviewMode(contextContent, planInfo);
+    }
 
     let originalContextContent = contextContent;
     const planId = planInfo.planId;
@@ -1118,7 +1208,7 @@ export class ClaudeCodeExecutor implements Executor {
         const result = await spawnAndLogOutput(args, {
           env: {
             ...process.env,
-            ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.CLAUDE_API_KEY ?? '') : '',
+            ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
             CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
           },
           cwd: gitRoot,

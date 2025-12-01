@@ -33,6 +33,7 @@ export type Message =
       num_turns: number;
       result: string;
       session_id: string;
+      structured_output?: unknown;
     }
 
   // Emitted as the last message, when we've reached the maximum number of turns
@@ -75,6 +76,7 @@ function truncateString(result: string, maxLines = 15): string {
 export function formatJsonMessage(input: string): {
   message?: string;
   rawMessage?: string;
+  structuredOutput?: unknown;
   type: string;
   filePaths?: string[];
   // Failure detection for assistant messages
@@ -112,7 +114,11 @@ export function formatJsonMessage(input: string): {
         `Session ID: ${message.session_id}`,
         result
       );
-      return { message: outputLines.join('\n'), type: message.type };
+      return {
+        message: outputLines.join('\n'),
+        type: message.type,
+        structuredOutput: 'structured_output' in message ? message.structured_output : undefined,
+      };
     }
   } else if (message.type === 'system' && message.subtype === 'init') {
     outputLines.push(
@@ -319,6 +325,7 @@ export function formatJsonMessage(input: string): {
       message: outputLines.join('\n\n'),
       rawMessage: rawCombined,
       type: message.type,
+      structuredOutput: 'structured_output' in message ? message.structured_output : undefined,
       filePaths: filePaths.length > 0 ? filePaths : undefined,
       failed: failure.failed || undefined,
       failedSummary: failure.failed ? failure.summary : undefined,

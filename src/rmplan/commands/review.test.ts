@@ -50,7 +50,12 @@ tasks:
   // Mock the buildExecutorAndLog and other dependencies
   await moduleMocker.mock('../executors/index.js', () => ({
     buildExecutorAndLog: () => ({
-      execute: async () => 'Mock execution result',
+      execute: async () =>
+        JSON.stringify({
+          issues: [],
+          recommendations: [],
+          actionItems: [],
+        }),
     }),
     DEFAULT_EXECUTOR: 'copy-only',
   }));
@@ -118,7 +123,12 @@ tasks:
   // Mock dependencies
   await moduleMocker.mock('../executors/index.js', () => ({
     buildExecutorAndLog: () => ({
-      execute: async () => 'Mock execution result',
+      execute: async () =>
+        JSON.stringify({
+          issues: [],
+          recommendations: [],
+          actionItems: [],
+        }),
     }),
     DEFAULT_EXECUTOR: 'copy-only',
   }));
@@ -586,7 +596,11 @@ tasks:
         // expect(metadata.planId).toBe('123');
         expect(metadata.planTitle).toBe('Integration Test Plan');
         // expect(metadata.planFilePath).toBe(planFile);
-        return 'Mock review result';
+        return JSON.stringify({
+          issues: [],
+          recommendations: [],
+          actionItems: [],
+        });
       }),
     };
 
@@ -673,7 +687,11 @@ tasks:
         expect(planInfo.planTitle).toBe('Test Review Execution');
         expect(planInfo.planFilePath).toBe(planFile);
         expect(planInfo.captureOutput).toBe('result');
-        return 'Mock review result';
+        return JSON.stringify({
+          issues: [],
+          recommendations: [],
+          actionItems: [],
+        });
       }),
     };
 
@@ -988,7 +1006,11 @@ tasks:
         expect(prompt).toContain('# Parent Plan Context');
         expect(prompt).toContain('**Parent Plan ID:** 99');
         expect(prompt).toContain('**Parent Title:** Parent Plan');
-        return 'Mock review result';
+        return JSON.stringify({
+          issues: [],
+          recommendations: [],
+          actionItems: [],
+        });
       }),
     };
 
@@ -1843,16 +1865,29 @@ tasks:
     const mockExecutor = {
       execute: mock(async (prompt: string, metadata: any) => {
         if (metadata.executionMode === 'review') {
-          // First call is the review - return output with issues
-          return `## Code Review Summary
-
-### Critical Issues (2)
-1. **Security Vulnerability** - Unsafe input validation
-2. **Performance Issue** - N+1 query problem
-
-### Recommendations
-- Fix input validation
-- Optimize database queries`;
+          // First call is the review - return JSON output with issues
+          return JSON.stringify({
+            issues: [
+              {
+                severity: 'critical',
+                category: 'security',
+                content: 'Security Vulnerability - Unsafe input validation',
+                file: 'src/input.ts',
+                line: '42',
+                suggestion: 'Add proper input sanitization',
+              },
+              {
+                severity: 'critical',
+                category: 'performance',
+                content: 'Performance Issue - N+1 query problem',
+                file: 'src/queries.ts',
+                line: '100',
+                suggestion: 'Use batch queries',
+              },
+            ],
+            recommendations: ['Fix input validation', 'Optimize database queries'],
+            actionItems: [],
+          });
         } else if (metadata.executionMode === 'normal') {
           // Second call is the autofix
           expect(prompt).toContain('Autofix Request');
@@ -1912,8 +1947,8 @@ tasks:
         customInstructions?: string
       ) => 'test review prompt',
       detectIssuesInReview: (reviewResult: any, rawOutput: string) => {
-        // Simulate issues found to trigger autofix
-        return rawOutput.includes('Critical Issues') || rawOutput.includes('Major Issues');
+        // Check the reviewResult object for issues (since we're using JSON now)
+        return reviewResult.issues && reviewResult.issues.length > 0;
       },
       buildAutofixPrompt: (planData: any, reviewResult: any, diffResult: any) => {
         return `# Autofix Request
@@ -1985,10 +2020,17 @@ tasks:
     const mockExecutor = {
       execute: mock(async (prompt: string, metadata: any) => {
         if (metadata.executionMode === 'review') {
-          return `## Code Review Summary
-
-### Major Issues (1)
-1. **Code Quality** - Missing error handling`;
+          return JSON.stringify({
+            issues: [
+              {
+                severity: 'major',
+                category: 'bug',
+                content: 'Code Quality - Missing error handling',
+              },
+            ],
+            recommendations: [],
+            actionItems: [],
+          });
         } else if (metadata.executionMode === 'normal') {
           return 'Autofix completed';
         }
@@ -2089,10 +2131,20 @@ tasks:
     const mockExecutor = {
       execute: mock(async (prompt: string, metadata: any) => {
         if (metadata.executionMode === 'review') {
-          return `## Code Review Summary
-
-### Minor Issues (1)
-1. **Style** - Missing documentation`;
+          return JSON.stringify({
+            issues: [
+              {
+                severity: 'minor',
+                category: 'style',
+                content: 'Style - Missing documentation',
+                file: 'src/utils.ts',
+                line: '25',
+                suggestion: 'Add JSDoc comments',
+              },
+            ],
+            recommendations: [],
+            actionItems: [],
+          });
         }
         // Should not be called for autofix
         throw new Error('Autofix should not be executed when user declines');
@@ -2188,17 +2240,12 @@ tasks:
     const mockExecutor = {
       execute: mock(async (prompt: string, metadata: any) => {
         if (metadata.executionMode === 'review') {
-          // Return review output with no issues (avoid bullet points or numbered lists)
-          return `## Code Review Summary
-
-The review has been completed successfully.
-No issues were identified in the code changes.
-The implementation appears to follow good coding practices.
-
-Overall assessment: The code looks good and meets quality standards.
-
-Recommendations:
-Continue following current coding standards and best practices.`;
+          // Return review output with no issues
+          return JSON.stringify({
+            issues: [],
+            recommendations: ['Continue following current coding standards and best practices.'],
+            actionItems: [],
+          });
         }
         throw new Error('Autofix should not be executed when no issues found');
       }),
@@ -2294,10 +2341,20 @@ tasks:
     const mockExecutor = {
       execute: mock(async (prompt: string, metadata: any) => {
         if (metadata.executionMode === 'review') {
-          return `## Code Review Summary
-
-### Critical Issues (1)
-1. **Security** - SQL injection vulnerability`;
+          return JSON.stringify({
+            issues: [
+              {
+                severity: 'critical',
+                category: 'security',
+                content: 'Security - SQL injection vulnerability',
+                file: 'src/db.ts',
+                line: '55',
+                suggestion: 'Use parameterized queries',
+              },
+            ],
+            recommendations: [],
+            actionItems: [],
+          });
         }
         throw new Error('Autofix should not be executed with --no-autofix flag');
       }),
@@ -2656,7 +2713,11 @@ tasks:
 
     const mockExecutor = {
       execute: mock(async (prompt: string, metadata: any) => {
-        return 'Mock review result';
+        return JSON.stringify({
+          issues: [],
+          recommendations: [],
+          actionItems: [],
+        });
       }),
     };
 
@@ -2764,7 +2825,13 @@ tasks:
     await writeFile(planFile, planContent);
 
     const mockExecutor = {
-      execute: mock(async () => 'Mock review result'),
+      execute: mock(async () =>
+        JSON.stringify({
+          issues: [],
+          recommendations: [],
+          actionItems: [],
+        })
+      ),
     };
 
     // Mock findBranchSpecificPlan - should NOT be called when planFile is provided
@@ -2835,7 +2902,13 @@ tasks:
     await writeFile(planFile, planContent);
 
     const mockExecutor = {
-      execute: mock(async () => 'Mock review result'),
+      execute: mock(async () =>
+        JSON.stringify({
+          issues: [],
+          recommendations: [],
+          actionItems: [],
+        })
+      ),
     };
 
     // Capture log calls to verify auto-selection messages
@@ -3098,5 +3171,621 @@ describe.skip('Branch-specific plan discovery', () => {
     // Should select plan with lowest ID (plan2 with ID 2)
     expect(result?.id).toBe(2);
     expect(result?.title).toBe('Plan 2');
+  });
+});
+
+describe('JSON output mode integration', () => {
+  test('detects JSON output from executor metadata and parses correctly', async () => {
+    const planContent = `
+id: 200
+title: JSON Output Test Plan
+goal: Test JSON output parsing
+tasks:
+  - title: Test task
+    description: A test task for JSON output
+`;
+    const planFile = join(testDir, 'json-output-test.yml');
+    await writeFile(planFile, planContent);
+
+    // JSON output that the executor would return with structured format
+    const jsonReviewOutput = JSON.stringify({
+      issues: [
+        {
+          severity: 'critical',
+          category: 'security',
+          content: 'SQL injection vulnerability in user input',
+          file: 'src/db.ts',
+          line: '42',
+          suggestion: 'Use parameterized queries',
+        },
+        {
+          severity: 'major',
+          category: 'performance',
+          content: 'N+1 query in user listing',
+          file: 'src/api.ts',
+          line: '15',
+          suggestion: 'Batch database queries',
+        },
+      ],
+      recommendations: ['Add input validation'],
+      actionItems: ['Fix SQL injection before release'],
+    });
+
+    const mockExecutor = {
+      execute: mock(async (prompt: string, metadata: any) => {
+        // Return an ExecutorOutput object with metadata.jsonOutput = true
+        return {
+          content: jsonReviewOutput,
+          success: true,
+          metadata: {
+            jsonOutput: true,
+          },
+        };
+      }),
+    };
+
+    await moduleMocker.mock('../plans.js', () => ({
+      resolvePlanFile: async () => planFile,
+      readPlanFile: async () => ({
+        id: 200,
+        title: 'JSON Output Test Plan',
+        goal: 'Test JSON output parsing',
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A test task for JSON output',
+          },
+        ],
+      }),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'claude-code',
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'copy-only',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+      getCurrentCommitHash: async () => 'abc123',
+    }));
+
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: async () => ({
+        resolvedPlanFile: planFile,
+        planData: {
+          id: 200,
+          title: 'JSON Output Test Plan',
+          goal: 'Test JSON output parsing',
+          tasks: [
+            {
+              title: 'Test task',
+              description: 'A test task for JSON output',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/db.ts', 'src/api.ts'],
+          baseBranch: 'main',
+          diffContent: 'mock diff content',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }),
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Execute the review command
+    await handleReviewCommand(planFile, { noAutofix: true }, mockCommand);
+
+    // Verify the executor was called
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+    expect(mockExecutor.execute).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        executionMode: 'review',
+      })
+    );
+  });
+
+  test('executor string output must be valid JSON', async () => {
+    const planContent = `
+id: 201
+title: JSON Output Test Plan
+goal: Test JSON output parsing
+tasks:
+  - title: Test task
+    description: A test task for JSON output
+`;
+    const planFile = join(testDir, 'json-output-test.yml');
+    await writeFile(planFile, planContent);
+
+    // JSON output that the executor would return in string format
+    const jsonReviewOutput = JSON.stringify({
+      issues: [
+        {
+          severity: 'critical',
+          category: 'security',
+          content: 'SQL injection vulnerability in database queries',
+          file: 'src/database.ts',
+          line: '88',
+          suggestion: 'Use parameterized queries',
+        },
+      ],
+      recommendations: ['Use parameterized queries'],
+      actionItems: [],
+    });
+
+    const mockExecutor = {
+      execute: mock(async (prompt: string, metadata: any) => {
+        // Return a plain JSON string (no ExecutorOutput wrapper)
+        return jsonReviewOutput;
+      }),
+    };
+
+    await moduleMocker.mock('../plans.js', () => ({
+      resolvePlanFile: async () => planFile,
+      readPlanFile: async () => ({
+        id: 201,
+        title: 'Text Output Test Plan',
+        goal: 'Test text output parsing',
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A test task for text output',
+          },
+        ],
+      }),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'claude-code',
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'copy-only',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+      getCurrentCommitHash: async () => 'def456',
+    }));
+
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: async () => ({
+        resolvedPlanFile: planFile,
+        planData: {
+          id: 201,
+          title: 'Text Output Test Plan',
+          goal: 'Test text output parsing',
+          tasks: [
+            {
+              title: 'Test task',
+              description: 'A test task for text output',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/queries.ts'],
+          baseBranch: 'main',
+          diffContent: 'mock diff content',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }),
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Execute the review command - should not throw
+    await handleReviewCommand(planFile, { noAutofix: true }, mockCommand);
+
+    // Verify the executor was called
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+  });
+
+  test('executor output with JSON content is parsed correctly', async () => {
+    const planContent = `
+id: 202
+title: JSON Mode Plan
+goal: Test JSON mode
+tasks:
+  - title: Test task
+    description: A test task
+`;
+    const planFile = join(testDir, 'json-mode-test.yml');
+    await writeFile(planFile, planContent);
+
+    const jsonOutput = JSON.stringify({
+      issues: [
+        {
+          severity: 'major',
+          category: 'performance',
+          content: 'Performance issue detected',
+          file: 'src/perf.ts',
+          line: '33',
+          suggestion: 'Optimize the algorithm',
+        },
+      ],
+      recommendations: [],
+      actionItems: [],
+    });
+
+    const mockExecutor = {
+      execute: mock(async (prompt: string, metadata: any) => {
+        // Return an ExecutorOutput object with JSON content
+        return {
+          content: jsonOutput,
+          success: true,
+          metadata: {
+            jsonOutput: true,
+          },
+        };
+      }),
+    };
+
+    await moduleMocker.mock('../plans.js', () => ({
+      resolvePlanFile: async () => planFile,
+      readPlanFile: async () => ({
+        id: 202,
+        title: 'Explicit Text Mode Plan',
+        goal: 'Test explicit text mode',
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A test task',
+          },
+        ],
+      }),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'claude-code',
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'copy-only',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+      getCurrentCommitHash: async () => 'ghi789',
+    }));
+
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: async () => ({
+        resolvedPlanFile: planFile,
+        planData: {
+          id: 202,
+          title: 'Explicit Text Mode Plan',
+          goal: 'Test explicit text mode',
+          tasks: [
+            {
+              title: 'Test task',
+              description: 'A test task',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/test.ts'],
+          baseBranch: 'main',
+          diffContent: 'mock diff',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }),
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    // Execute the review command
+    await handleReviewCommand(planFile, { noAutofix: true }, mockCommand);
+
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+  });
+
+  test('summary statistics are correctly calculated from JSON-parsed issues', async () => {
+    // This test verifies that when issues are parsed from JSON, the summary
+    // statistics (criticalCount, majorCount, etc.) are correctly computed
+    const { createReviewResult } = await import('../formatters/review_formatter.js');
+
+    const jsonOutput = JSON.stringify({
+      issues: [
+        {
+          severity: 'critical',
+          category: 'security',
+          content: 'Issue 1',
+          file: 'src/test.ts',
+          line: '1',
+          suggestion: 'Fix 1',
+        },
+        {
+          severity: 'critical',
+          category: 'security',
+          content: 'Issue 2',
+          file: 'src/test.ts',
+          line: '2',
+          suggestion: 'Fix 2',
+        },
+        {
+          severity: 'major',
+          category: 'performance',
+          content: 'Issue 3',
+          file: 'src/test.ts',
+          line: '3',
+          suggestion: 'Fix 3',
+        },
+        {
+          severity: 'minor',
+          category: 'style',
+          content: 'Issue 4',
+          file: 'src/test.ts',
+          line: '4',
+          suggestion: 'Fix 4',
+        },
+        {
+          severity: 'info',
+          category: 'other',
+          content: 'Issue 5',
+          file: 'src/test.ts',
+          line: '5',
+          suggestion: 'Fix 5',
+        },
+      ],
+      recommendations: ['Rec 1', 'Rec 2'],
+      actionItems: ['Action 1'],
+    });
+
+    const result = createReviewResult(
+      'test-plan',
+      'Test Plan',
+      'main',
+      ['file1.ts', 'file2.ts', 'file3.ts'],
+      jsonOutput
+    );
+
+    // Verify summary statistics
+    expect(result.summary.totalIssues).toBe(5);
+    expect(result.summary.criticalCount).toBe(2);
+    expect(result.summary.majorCount).toBe(1);
+    expect(result.summary.minorCount).toBe(1);
+    expect(result.summary.infoCount).toBe(1);
+    expect(result.summary.filesReviewed).toBe(3);
+
+    // Verify category counts
+    expect(result.summary.categoryCounts.security).toBe(2);
+    expect(result.summary.categoryCounts.performance).toBe(1);
+    expect(result.summary.categoryCounts.style).toBe(1);
+    expect(result.summary.categoryCounts.other).toBe(1);
+
+    // Verify issues have auto-generated IDs
+    expect(result.issues[0].id).toBe('issue-1');
+    expect(result.issues[4].id).toBe('issue-5');
+
+    // Verify recommendations and action items
+    expect(result.recommendations).toEqual(['Rec 1', 'Rec 2']);
+    expect(result.actionItems).toEqual(['Action 1']);
+  });
+
+  test('JSON parsing correctly extracts all issue fields including file, line, and suggestion', async () => {
+    const { createReviewResult } = await import('../formatters/review_formatter.js');
+
+    const jsonOutput = JSON.stringify({
+      issues: [
+        {
+          severity: 'critical',
+          category: 'security',
+          content: 'SQL injection vulnerability in user input',
+          file: 'src/db.ts',
+          line: '42',
+          suggestion: 'Use parameterized queries',
+        },
+        {
+          severity: 'major',
+          category: 'performance',
+          content: 'N+1 query in user listing',
+          file: 'src/api.ts',
+          line: '15',
+          suggestion: 'Use batch queries',
+        },
+        {
+          severity: 'minor',
+          category: 'style',
+          content: 'Inconsistent naming convention',
+          file: 'src/utils.ts',
+          line: '25-30',
+          suggestion: 'Use consistent naming',
+        },
+      ],
+      recommendations: ['Add input validation', 'Use prepared statements'],
+      actionItems: ['Fix SQL injection before release', 'Add performance tests'],
+    });
+
+    const result = createReviewResult(
+      'test-plan',
+      'Test Plan',
+      'main',
+      ['src/db.ts', 'src/api.ts'],
+      jsonOutput
+    );
+
+    // Verify first issue has all fields
+    expect(result.issues[0]).toMatchObject({
+      id: 'issue-1',
+      severity: 'critical',
+      category: 'security',
+      content: 'SQL injection vulnerability in user input',
+      file: 'src/db.ts',
+      line: '42',
+      suggestion: 'Use parameterized queries',
+    });
+
+    // Verify second issue has all fields
+    expect(result.issues[1]).toMatchObject({
+      id: 'issue-2',
+      severity: 'major',
+      category: 'performance',
+      content: 'N+1 query in user listing',
+      file: 'src/api.ts',
+      line: '15',
+      suggestion: 'Use batch queries',
+    });
+
+    // Verify third issue has all fields
+    expect(result.issues[2]).toMatchObject({
+      id: 'issue-3',
+      severity: 'minor',
+      category: 'style',
+      content: 'Inconsistent naming convention',
+      file: 'src/utils.ts',
+      line: '25-30',
+      suggestion: 'Use consistent naming',
+    });
+
+    // Verify recommendations and action items arrays
+    expect(result.recommendations).toEqual(['Add input validation', 'Use prepared statements']);
+    expect(result.actionItems).toEqual([
+      'Fix SQL injection before release',
+      'Add performance tests',
+    ]);
+  });
+
+  test('JSON parsing handles empty arrays correctly', async () => {
+    const { createReviewResult } = await import('../formatters/review_formatter.js');
+
+    const jsonOutput = JSON.stringify({
+      issues: [],
+      recommendations: [],
+      actionItems: [],
+    });
+
+    const result = createReviewResult('test-plan', 'Test Plan', 'main', ['file.ts'], jsonOutput);
+
+    expect(result.issues).toEqual([]);
+    expect(result.recommendations).toEqual([]);
+    expect(result.actionItems).toEqual([]);
+    expect(result.summary.totalIssues).toBe(0);
+    expect(result.summary.criticalCount).toBe(0);
+    expect(result.summary.majorCount).toBe(0);
+    expect(result.summary.minorCount).toBe(0);
+    expect(result.summary.infoCount).toBe(0);
+  });
+
+  test('JSON parsing extracts all category types correctly', async () => {
+    const { createReviewResult } = await import('../formatters/review_formatter.js');
+
+    const jsonOutput = JSON.stringify({
+      issues: [
+        {
+          severity: 'critical',
+          category: 'security',
+          content: 'Security issue',
+          file: 'src/test.ts',
+          line: '1',
+          suggestion: 'Fix security',
+        },
+        {
+          severity: 'major',
+          category: 'performance',
+          content: 'Performance issue',
+          file: 'src/test.ts',
+          line: '2',
+          suggestion: 'Fix performance',
+        },
+        {
+          severity: 'major',
+          category: 'bug',
+          content: 'Bug issue',
+          file: 'src/test.ts',
+          line: '3',
+          suggestion: 'Fix bug',
+        },
+        {
+          severity: 'minor',
+          category: 'style',
+          content: 'Style issue',
+          file: 'src/test.ts',
+          line: '4',
+          suggestion: 'Fix style',
+        },
+        {
+          severity: 'minor',
+          category: 'compliance',
+          content: 'Compliance issue',
+          file: 'src/test.ts',
+          line: '5',
+          suggestion: 'Fix compliance',
+        },
+        {
+          severity: 'info',
+          category: 'testing',
+          content: 'Testing issue',
+          file: 'src/test.ts',
+          line: '6',
+          suggestion: 'Fix testing',
+        },
+        {
+          severity: 'info',
+          category: 'other',
+          content: 'Other issue',
+          file: 'src/test.ts',
+          line: '7',
+          suggestion: 'Fix other',
+        },
+      ],
+      recommendations: [],
+      actionItems: [],
+    });
+
+    const result = createReviewResult('test-plan', 'Test Plan', 'main', [], jsonOutput);
+
+    // Verify all category counts
+    expect(result.summary.categoryCounts.security).toBe(1);
+    expect(result.summary.categoryCounts.performance).toBe(1);
+    expect(result.summary.categoryCounts.bug).toBe(1);
+    expect(result.summary.categoryCounts.style).toBe(1);
+    expect(result.summary.categoryCounts.compliance).toBe(1);
+    expect(result.summary.categoryCounts.testing).toBe(1);
+    expect(result.summary.categoryCounts.other).toBe(1);
+
+    // Verify severity counts
+    expect(result.summary.criticalCount).toBe(1);
+    expect(result.summary.majorCount).toBe(2);
+    expect(result.summary.minorCount).toBe(2);
+    expect(result.summary.infoCount).toBe(2);
+    expect(result.summary.totalIssues).toBe(7);
   });
 });

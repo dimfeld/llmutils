@@ -13,6 +13,8 @@ import { generateDiffForReview, getIncrementalSummary } from '../incremental_rev
 import type { DiffResult } from '../incremental_review.js';
 import { getGitRoot } from '../../common/git.js';
 import { log } from '../../logging.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { resolveTasksDir } from '../configSchema.js';
 
 /**
  * Result object containing all gathered context for a plan
@@ -104,13 +106,14 @@ export async function gatherPlanContext(
 
   // Load all plans for hierarchy traversal
   const gitRoot = await deps.getGitRoot();
-  const plansConfig = globalOpts.config || gitRoot;
+  const config = await loadEffectiveConfig(globalOpts.config);
+  const plansDir = await resolveTasksDir(config);
 
   let parentChain: PlanWithFilename[] = [];
   let completedChildren: PlanWithFilename[] = [];
 
   try {
-    const { plans: allPlans } = await deps.readAllPlans(plansConfig);
+    const { plans: allPlans } = await deps.readAllPlans(plansDir);
 
     // Add filename to the current plan for hierarchy compatibility
     const planWithFilename: PlanWithFilename = {

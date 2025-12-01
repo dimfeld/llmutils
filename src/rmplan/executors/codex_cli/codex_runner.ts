@@ -9,7 +9,8 @@ import { createCodexStdoutFormatter } from './format';
 export async function executeCodexStep(
   prompt: string,
   cwd: string,
-  rmplanConfig: RmplanConfig
+  rmplanConfig: RmplanConfig,
+  outputSchemaPath?: string
 ): Promise<string> {
   const inactivityOverride = Number.parseInt(process.env.CODEX_OUTPUT_TIMEOUT_MS || '', 10);
   const inactivityTimeoutMs =
@@ -44,6 +45,10 @@ export async function executeCodexStep(
     args.push('-c', `sandbox_workspace_write.writable_roots=${writableRoots}`);
   }
 
+  if (outputSchemaPath) {
+    args.push('--output-schema', outputSchemaPath);
+  }
+
   let lastExitCode: number | undefined;
   let lastSignal: NodeJS.Signals | undefined;
   let threadId: string | undefined;
@@ -66,13 +71,13 @@ export async function executeCodexStep(
       );
     }
 
-    const { exitCode, signal, killedByInactivity } = await spawnAndLogOutput(attemptArgs, {
+    const result = await spawnAndLogOutput(attemptArgs, {
       cwd,
       env: {
         ...process.env,
         AGENT: process.env.AGENT || '1',
       },
-      formatStdout: (chunk: string) => formatter.formatChunk(chunk),
+      formatStdout: formatter ? (chunk: string) => formatter.formatChunk(chunk) : undefined,
       inactivityTimeoutMs,
       initialInactivityTimeoutMs: 60 * 1000, // 1 minute before first output
       onInactivityKill: () => {
@@ -84,7 +89,9 @@ export async function executeCodexStep(
       // stderr is not JSON – print as-is
     });
 
-    threadId ||= formatter.getThreadId?.();
+    const { exitCode, signal, killedByInactivity } = result;
+
+    threadId ||= formatter?.getThreadId?.();
 
     const inferredSignal = signal ?? inferSignalFromExitCode(exitCode);
     const shouldRetry =

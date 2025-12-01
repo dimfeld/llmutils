@@ -2,7 +2,9 @@
 
 import { describe, test, expect } from 'bun:test';
 import {
-  parseReviewerOutput,
+  parseJsonReviewOutput,
+  tryParseJsonReviewOutput,
+  ReviewJsonParseError,
   generateReviewSummary,
   createReviewResult,
   createFormatter,
@@ -12,233 +14,6 @@ import {
   type ReviewIssue,
   type ReviewResult,
 } from './review_formatter.js';
-
-describe('parseReviewerOutput', () => {
-  test('parses critical security issues', () => {
-    const output = `
-## Review Results
-
-- Critical SQL injection vulnerability in user login function
-- Security issue: XSS vulnerability in comment display
-• Performance bottleneck in database queries
-1. Bug: Null pointer exception in file processing
-⚠️ Missing error handling in API endpoint
-    `;
-
-    const { issues, recommendations, actionItems } = parseReviewerOutput(output);
-
-    // Only 4 issues have explicit severity markers (the last one doesn't match any pattern)
-    expect(issues).toHaveLength(4);
-
-    // Check critical security issue
-    const sqlIssue = issues.find((i) => i.content.includes('SQL injection'));
-    expect(sqlIssue).toBeDefined();
-    expect(sqlIssue?.severity).toBe('critical');
-    expect(sqlIssue?.category).toBe('security');
-
-    // Check XSS issue
-    const xssIssue = issues.find((i) => i.content.includes('XSS'));
-    expect(xssIssue).toBeDefined();
-    expect(xssIssue?.severity).toBe('critical');
-    expect(xssIssue?.category).toBe('security');
-
-    // Check performance issue
-    const perfIssue = issues.find((i) => i.content.includes('Performance'));
-    expect(perfIssue).toBeDefined();
-    expect(perfIssue?.severity).toBe('major');
-    expect(perfIssue?.category).toBe('performance');
-
-    // Check bug
-    const bugIssue = issues.find((i) => i.content.includes('Null pointer'));
-    expect(bugIssue).toBeDefined();
-    expect(bugIssue?.severity).toBe('major');
-    expect(bugIssue?.category).toBe('bug');
-  });
-
-  test('extracts file and line number information', () => {
-    const output = `
-- Critical issue in src/auth/login.ts:45
-- Bug at user.service.js:123
-- Style violation in file components/Button.tsx
-    `;
-
-    const { issues } = parseReviewerOutput(output);
-
-    expect(issues).toHaveLength(3);
-
-    const loginIssue = issues[0];
-    expect(loginIssue.file).toBe('src/auth/login.ts');
-    expect(loginIssue.line).toBe(45);
-
-    const serviceIssue = issues[1];
-    expect(serviceIssue.file).toBe('user.service.js');
-    expect(serviceIssue.line).toBe(123);
-
-    const styleIssue = issues[2];
-    expect(styleIssue.file).toBe('components/Button.tsx');
-    expect(styleIssue.line).toBeUndefined();
-  });
-
-  test('extracts suggestions from following lines', () => {
-    const output = `
-- Performance issue in database query
-Suggestion: Add proper indexing to improve query performance
-- Security vulnerability in authentication
-Fix: Use bcrypt for password hashing
-- Style issue with variable naming
-Consider: Use camelCase for variable names
-    `;
-
-    const { issues } = parseReviewerOutput(output);
-
-    expect(issues).toHaveLength(3);
-    expect(issues[0].suggestion).toBe('Add proper indexing to improve query performance');
-    expect(issues[1].suggestion).toBe('Use bcrypt for password hashing');
-    expect(issues[2].suggestion).toBe('Use camelCase for variable names');
-  });
-
-  test('identifies recommendations and action items', () => {
-    const output = `
-Issues found:
-- Critical bug in payment processing
-
-Recommendations:
-- Consider implementing proper error handling
-- Recommend adding unit tests for critical paths
-- Should improve code documentation
-
-Action items:
-- TODO: Fix the authentication bug
-- Action: Update the database schema
-• Fix the memory leak in image processing
-    `;
-
-    const { issues, recommendations, actionItems } = parseReviewerOutput(output);
-
-    // The parser finds more issues than expected because it identifies bullet points
-    // Let's check the actual count and verify the critical bug is found
-    expect(issues.length).toBeGreaterThan(0);
-    const criticalBugIssue = issues.find((i) =>
-      i.content.includes('Critical bug in payment processing')
-    );
-    expect(criticalBugIssue).toBeDefined();
-
-    expect(recommendations).toHaveLength(3);
-    expect(actionItems).toHaveLength(3);
-
-    expect(recommendations[0]).toContain('Consider implementing proper error handling');
-    expect(actionItems[0]).toContain('TODO: Fix the authentication bug');
-  });
-
-  test('handles empty output gracefully', () => {
-    const { issues, recommendations, actionItems } = parseReviewerOutput('');
-
-    expect(issues).toHaveLength(0);
-    expect(recommendations).toHaveLength(0);
-    expect(actionItems).toHaveLength(0);
-  });
-
-  test('handles complex semi-structured review output', () => {
-    const review = `## Found Issues:
-
----
-
-1. CRITICAL: Missing error reporting in settings form action
-
-In file.ts, line 59: The error handler is not called.
-
-} catch (error) {
-  return setError(form, 'Failed to update  email');
-}
-
-While the user gets feedback via setError, the actual error information is lost. 
-
-} catch (error) {
-  locals.reportError?.(error);
-  return setError(form, 'Failed to update purchase order email');
-}
-
----
-
-2. MINOR: Permission pattern inconsistency
-
-The permission array pattern in +layout.svelte at line 244 does not use the constant. Use this instead:
-
-if(user.hasPermissions(billingPermissions)) {
-
-This ensures permission consistency and makes maintenance easier.
-
----
-
-**VERDICT:** NEEDS_FIXES
-
-- Summary: Implementation has critical security issues.
-- Suggested follow-up: Add logging around the failing branch.
-
-Overall, the implementation has critical security issues.
-`;
-
-    const result = parseReviewerOutput(review);
-    expect(result.issues).toHaveLength(2);
-    expect(
-      result.issues.some((issue) =>
-        issue.content.includes('Summary: Implementation has critical security issues.')
-      )
-    ).toBe(false);
-    expect(
-      result.issues.some((issue) =>
-        issue.content.includes('Overall, the implementation has critical security issues.')
-      )
-    ).toBe(false);
-
-    const firstIssue = result.issues[0];
-    expect(firstIssue.severity).toBe('critical');
-    expect(firstIssue.category).toBe('security');
-    expect(firstIssue.content).toContain('Missing error reporting in settings form action');
-    expect(firstIssue.content).toContain('locals.reportError?.(error);');
-    expect(firstIssue.content).toContain(
-      "return setError(form, 'Failed to update purchase order email');"
-    );
-
-    const secondIssue = result.issues[1];
-    expect(secondIssue.severity).toBe('minor');
-    expect(secondIssue.category).toBe('other');
-    expect(secondIssue.content).toContain('Permission pattern inconsistency');
-    expect(secondIssue.content).toContain('if(user.hasPermissions(billingPermissions)) {');
-    expect(secondIssue.content).toContain('This ensures permission consistency');
-
-    expect(result.recommendations).toHaveLength(0);
-    expect(result.actionItems).toHaveLength(0);
-  });
-
-  test('treats triple-dash separators as issue boundaries even with numbered lists', () => {
-    const review = `---
-
-2. MAJOR Data dependency waterfall should convert to concurrent queries
-
-The current fetching logic works sequentially:
-
-1. Fetch locations
-2. Fetch teams
-3. Fetch counts viewable by locations and teams
-
-Update this so the third query uses SQL joins to filter appropriate in just one query
-
----`;
-
-    const result = parseReviewerOutput(review);
-
-    expect(result.issues).toHaveLength(1);
-    const [issue] = result.issues;
-    expect(issue.content).toContain(
-      'MAJOR Data dependency waterfall should convert to concurrent queries'
-    );
-    expect(issue.content).toContain('1. Fetch locations');
-    expect(issue.content).toContain('2. Fetch teams');
-    expect(issue.content).toContain('3. Fetch counts viewable by locations and teams');
-    expect(issue.content).toContain('Update this so the third query uses SQL joins');
-  });
-});
 
 describe('generateReviewSummary', () => {
   test('calculates counts correctly', () => {
@@ -573,50 +348,90 @@ describe('TerminalFormatter', () => {
 });
 
 describe('createReviewResult', () => {
-  test('creates complete review result from raw output', () => {
-    const rawOutput = `
-Review completed successfully.
-
-Issues found:
-- Critical: SQL injection vulnerability in src/auth.ts:45
-- Major: Performance issue in database queries
-- Minor: Style violation in variable naming
-
-Recommendations:
-- Consider using parameterized queries
-- Recommend adding database indexing
-
-Action items:
-- TODO: Fix SQL injection
-- Action: Optimize database queries
-    `;
+  test('creates complete review result from JSON output', () => {
+    const jsonOutput = JSON.stringify({
+      issues: [
+        {
+          severity: 'critical',
+          category: 'security',
+          content: 'SQL injection vulnerability in user input handling',
+          file: 'src/db/queries.ts',
+          line: '45',
+          suggestion: 'Use parameterized queries instead of string concatenation',
+        },
+        {
+          severity: 'major',
+          category: 'performance',
+          content: 'N+1 query problem in user listing endpoint',
+          file: 'src/api/users.ts',
+          line: '78-95',
+          suggestion: 'Batch the database queries',
+        },
+      ],
+      recommendations: ['Consider adding input validation middleware'],
+      actionItems: ['Fix SQL injection vulnerability before release'],
+    });
 
     const result = createReviewResult(
-      'test-plan',
-      'Test Plan Title',
-      'main',
-      ['src/auth.ts', 'src/db.ts'],
-      rawOutput
+      'json-plan',
+      'JSON Test Plan',
+      'develop',
+      ['src/db/queries.ts', 'src/api/users.ts'],
+      jsonOutput
     );
 
-    expect(result.planId).toBe('test-plan');
-    expect(result.planTitle).toBe('Test Plan Title');
-    expect(result.baseBranch).toBe('main');
-    expect(result.changedFiles).toEqual(['src/auth.ts', 'src/db.ts']);
-    expect(result.rawOutput).toBe(rawOutput);
+    expect(result.planId).toBe('json-plan');
+    expect(result.planTitle).toBe('JSON Test Plan');
+    expect(result.baseBranch).toBe('develop');
+    expect(result.issues.length).toBe(2);
 
-    expect(result.issues.length).toBeGreaterThan(0);
-    expect(result.recommendations.length).toBeGreaterThan(0);
-    expect(result.actionItems.length).toBeGreaterThan(0);
+    // Check first issue
+    expect(result.issues[0].id).toBe('issue-1');
+    expect(result.issues[0].severity).toBe('critical');
+    expect(result.issues[0].category).toBe('security');
+    expect(result.issues[0].content).toBe('SQL injection vulnerability in user input handling');
+    expect(result.issues[0].file).toBe('src/db/queries.ts');
+    expect(result.issues[0].line).toBe('45');
+    expect(result.issues[0].suggestion).toBe(
+      'Use parameterized queries instead of string concatenation'
+    );
 
-    expect(result.summary.totalIssues).toBe(result.issues.length);
-    expect(result.summary.filesReviewed).toBe(2);
+    // Check second issue
+    expect(result.issues[1].id).toBe('issue-2');
+    expect(result.issues[1].severity).toBe('major');
+    expect(result.issues[1].category).toBe('performance');
+    expect(result.issues[1].file).toBe('src/api/users.ts');
+    expect(result.issues[1].line).toBe('78-95');
+    expect(result.issues[1].suggestion).toBe('Batch the database queries');
+
+    // Check recommendations and action items
+    expect(result.recommendations).toEqual(['Consider adding input validation middleware']);
+    expect(result.actionItems).toEqual(['Fix SQL injection vulnerability before release']);
+
+    // Check summary
+    expect(result.summary.totalIssues).toBe(2);
+    expect(result.summary.criticalCount).toBe(1);
+    expect(result.summary.majorCount).toBe(1);
+    expect(result.summary.categoryCounts.security).toBe(1);
+    expect(result.summary.categoryCounts.performance).toBe(1);
 
     // Timestamp should be recent
     const timestamp = new Date(result.reviewTimestamp);
     const now = new Date();
     expect(timestamp.getTime()).toBeLessThanOrEqual(now.getTime());
     expect(timestamp.getTime()).toBeGreaterThan(now.getTime() - 10000); // Within 10 seconds
+  });
+
+  test('throws error for invalid JSON input', () => {
+    const invalidJson = `
+This is not valid JSON but contains review information.
+CRITICAL: Security vulnerability detected
+- File: src/auth.ts:10
+    `;
+
+    expect(() =>
+      createReviewResult('fallback-plan', 'Fallback Test', 'main', ['src/auth.ts'], invalidJson)
+    ).toThrow(ReviewJsonParseError);
   });
 });
 
@@ -642,149 +457,6 @@ describe('createFormatter', () => {
 });
 
 describe('Edge cases and integration tests', () => {
-  test('parseReviewerOutput handles complex real-world reviewer output', () => {
-    const complexOutput = `
-# Code Review Results
-
-## Critical Issues Found
-
-🔴 **CRITICAL**: SQL injection vulnerability detected
-- File: src/database/queries.ts line 45
-- The user input is directly concatenated into SQL query
-Suggestion: Use parameterized queries or prepared statements
-
-❌ **CRITICAL**: XSS vulnerability in template rendering
-- Location: templates/user-profile.html:12
-- User data not sanitized before rendering
-
-## Major Issues
-
-⚠️ Performance bottleneck in main API handler
-• Bug: Potential null pointer dereference in authentication module
-- Memory leak detected in image processing pipeline
-
-## Minor Issues
-
-1. Code style: Inconsistent variable naming in user service
-2. Missing JSDoc comments for public API methods
-3. Unused imports in utility functions
-
-## Recommendations
-
-- Consider implementing rate limiting for API endpoints
-- Recommend adding integration tests for auth flows  
-- Should refactor large components into smaller modules
-
-## Action Items
-
-- TODO: Fix SQL injection in queries.ts
-- Action: Add input validation middleware
-• Fix memory leak in image processor
-- Update documentation for new API endpoints
-    `;
-
-    const { issues, recommendations, actionItems } = parseReviewerOutput(complexOutput);
-
-    // Should find all the various issue formats with explicit severity markers
-    expect(issues.length).toBeGreaterThanOrEqual(7);
-
-    // Check critical issues are identified
-    const criticalIssues = issues.filter((i) => i.severity === 'critical');
-    expect(criticalIssues.length).toBeGreaterThanOrEqual(2);
-
-    // Check file extraction
-    const sqlIssue = issues.find(
-      (i) => i.content.includes('SQL injection') || i.content.includes('concatenated')
-    );
-    expect(sqlIssue).toBeDefined();
-    expect(sqlIssue?.severity).toBe('critical');
-
-    // Look for security issues - the parser should find critical security issues
-    const securityIssues = issues.filter(
-      (i) => i.severity === 'critical' && i.category === 'security'
-    );
-    expect(securityIssues.length).toBeGreaterThan(0);
-
-    // Check recommendations and action items
-    expect(recommendations.length).toBeGreaterThanOrEqual(3);
-    expect(actionItems.length).toBeGreaterThanOrEqual(3);
-  });
-
-  test('parseReviewerOutput handles reviewer output with no issues', () => {
-    const cleanOutput = `
-# Code Review Results
-
-## Summary
-All code changes look excellent! No issues found.
-
-## Positive Findings
-Good test coverage is present.
-Clear documentation is available.
-Code follows standards well.
-Proper error handling is implemented.
-
-## General Thoughts
-The code quality appears to be high overall.
-Documentation looks comprehensive and helpful.
-    `;
-
-    const { issues, recommendations, actionItems } = parseReviewerOutput(cleanOutput);
-
-    // The parser identifies bullet points as issues, so let's focus on what we can control
-    // Check that no critical or major issues are found
-    const criticalIssues = issues.filter((i) => i.severity === 'critical');
-    const majorIssues = issues.filter((i) => i.severity === 'major');
-    expect(criticalIssues).toHaveLength(0);
-    expect(majorIssues).toHaveLength(0);
-
-    expect(actionItems).toHaveLength(0);
-  });
-
-  test('parseReviewerOutput extracts file paths with various extensions', () => {
-    const output = `
-- Bug in src/components/Button.tsx:25
-- Issue at server/routes/api.js:100
-- Problem in tests/unit/auth.test.ts:15
-- Error in config/database.py:8
-- Concern in utils/helpers.go:42
-- Warning in models/User.java:67
-    `;
-
-    const { issues } = parseReviewerOutput(output);
-
-    // Only issues with keywords matching ISSUE_PATTERNS are included
-    // "Bug", "Error", and "Problem" match the bug pattern
-    expect(issues.length).toBeGreaterThanOrEqual(3);
-
-    // Verify that matched issues have correct file paths
-    const bugIssue = issues.find((i) => i.content.includes('Bug'));
-    expect(bugIssue?.file).toBe('src/components/Button.tsx');
-
-    const errorIssue = issues.find((i) => i.content.includes('Error'));
-    expect(errorIssue?.file).toBe('config/database.py');
-  });
-
-  test('parseReviewerOutput handles malformed or edge case input', () => {
-    const weirdOutput = `
-- Issue with no file info
--    Empty bullet point
-- File mentioned in the middle of src/test.ts line but not properly formatted
-CRITICAL: Standalone severity without proper formatting
-• Security   issue with extra spaces
-1.
-2. Numbered item without content
-⚠️
-    `;
-
-    const { issues } = parseReviewerOutput(weirdOutput);
-
-    // Should handle gracefully and extract what it can
-    expect(issues.length).toBeGreaterThan(0);
-
-    // Should not crash on malformed input
-    expect(() => parseReviewerOutput(weirdOutput)).not.toThrow();
-  });
-
   test('TerminalFormatter works with empty or minimal data', () => {
     const minimalResult: ReviewResult = {
       planId: 'test',
@@ -966,57 +638,6 @@ CRITICAL: Standalone severity without proper formatting
     expect(summary.categoryCounts.style).toBe(15);
   });
 
-  test('parseReviewerOutput handles severity prefixes correctly', () => {
-    const outputWithPrefixes = `
-CRITICAL: SQL injection vulnerability in database connection
-MAJOR: Performance issue causing bottleneck in function
-MINOR: Variable naming style could be improved
-INFO: Consider adding more detailed comments
-    `;
-
-    const { issues } = parseReviewerOutput(outputWithPrefixes);
-
-    // All 4 issues have explicit severity prefixes
-    expect(issues).toHaveLength(4);
-
-    // The parser matches the prefixes but categories are based on content patterns
-    // Find the critical issue - it should match both the prefix and content
-    const criticalIssue = issues.find((i) => i.content.includes('CRITICAL'));
-    expect(criticalIssue?.severity).toBe('critical'); // Has explicit CRITICAL prefix
-
-    expect(issues.filter((i) => i.severity === 'critical').length).toBe(1);
-  });
-
-  test('parseReviewerOutput filters out preliminary text without severity markers', () => {
-    const output = `
-Review completed. Here are my findings:
-
-- This is some preliminary context about the code
-- CRITICAL: SQL injection vulnerability detected
-- Another piece of general commentary
-- Bug: Null pointer exception found
-- Some concluding remarks
-    `;
-
-    const { issues } = parseReviewerOutput(output);
-
-    // Only the 2 issues with explicit severity markers should be included
-    expect(issues).toHaveLength(2);
-
-    // Verify the correct issues are included
-    const criticalIssue = issues.find((i) => i.severity === 'critical');
-    expect(criticalIssue).toBeDefined();
-    expect(criticalIssue?.content).toContain('SQL injection');
-
-    const bugIssue = issues.find((i) => i.severity === 'major' && i.category === 'bug');
-    expect(bugIssue).toBeDefined();
-    expect(bugIssue?.content).toContain('Null pointer');
-
-    // Verify that preliminary text is not included
-    expect(issues.some((i) => i.content.includes('preliminary context'))).toBe(false);
-    expect(issues.some((i) => i.content.includes('concluding remarks'))).toBe(false);
-  });
-
   test('TerminalFormatter severity colors work correctly', () => {
     const result: ReviewResult = {
       planId: 'test-plan',
@@ -1092,5 +713,476 @@ Review completed. Here are my findings:
     // Should still contain the icons but not escape sequences
     expect(noColorOutput).toContain('🔴 Critical Issues');
     expect(noColorOutput).toContain('🟡 Major Issues');
+  });
+});
+
+describe('parseJsonReviewOutput', () => {
+  test('parses valid JSON with all fields', () => {
+    const jsonOutput = JSON.stringify({
+      issues: [
+        {
+          severity: 'critical',
+          category: 'security',
+          content: 'SQL injection vulnerability in user input handling',
+          file: 'src/db/queries.ts',
+          line: '45',
+          suggestion: 'Use parameterized queries instead of string concatenation',
+        },
+        {
+          severity: 'major',
+          category: 'performance',
+          content: 'Inefficient loop causing O(n^2) complexity',
+          file: 'src/utils/processor.ts',
+          line: '123',
+          suggestion: 'Use a more efficient algorithm',
+        },
+        {
+          severity: 'minor',
+          category: 'style',
+          content: 'Inconsistent variable naming convention',
+          file: 'src/utils/helpers.ts',
+          line: '50-60',
+          suggestion: 'Use consistent camelCase naming',
+        },
+      ],
+      recommendations: [
+        'Consider adding input validation middleware',
+        'Implement caching for frequently accessed data',
+      ],
+      actionItems: [
+        'Fix SQL injection vulnerability before release',
+        'Add unit tests for edge cases',
+      ],
+    });
+
+    const result = parseJsonReviewOutput(jsonOutput);
+
+    expect(result.issues).toHaveLength(3);
+    expect(result.recommendations).toHaveLength(2);
+    expect(result.actionItems).toHaveLength(2);
+
+    // Check first issue with all fields
+    const criticalIssue = result.issues[0];
+    expect(criticalIssue.id).toBe('issue-1');
+    expect(criticalIssue.severity).toBe('critical');
+    expect(criticalIssue.category).toBe('security');
+    expect(criticalIssue.content).toBe('SQL injection vulnerability in user input handling');
+    expect(criticalIssue.file).toBe('src/db/queries.ts');
+    expect(criticalIssue.line).toBe('45');
+    expect(criticalIssue.suggestion).toBe(
+      'Use parameterized queries instead of string concatenation'
+    );
+
+    // Check another issue
+    const minorIssue = result.issues[2];
+    expect(minorIssue.id).toBe('issue-3');
+    expect(minorIssue.severity).toBe('minor');
+    expect(minorIssue.category).toBe('style');
+    expect(minorIssue.file).toBe('src/utils/helpers.ts');
+    expect(minorIssue.line).toBe('50-60');
+    expect(minorIssue.suggestion).toBe('Use consistent camelCase naming');
+  });
+
+  test('parses JSON with empty arrays', () => {
+    const jsonOutput = JSON.stringify({
+      issues: [],
+      recommendations: [],
+      actionItems: [],
+    });
+
+    const result = parseJsonReviewOutput(jsonOutput);
+
+    expect(result.issues).toHaveLength(0);
+    expect(result.recommendations).toHaveLength(0);
+    expect(result.actionItems).toHaveLength(0);
+  });
+
+  test('auto-generates sequential IDs for issues', () => {
+    const jsonOutput = JSON.stringify({
+      issues: [
+        {
+          severity: 'critical',
+          category: 'security',
+          content: 'Issue 1',
+          file: 'src/test1.ts',
+          line: '1',
+          suggestion: 'Fix 1',
+        },
+        {
+          severity: 'major',
+          category: 'bug',
+          content: 'Issue 2',
+          file: 'src/test2.ts',
+          line: '2',
+          suggestion: 'Fix 2',
+        },
+        {
+          severity: 'minor',
+          category: 'style',
+          content: 'Issue 3',
+          file: 'src/test3.ts',
+          line: '3',
+          suggestion: 'Fix 3',
+        },
+        {
+          severity: 'info',
+          category: 'other',
+          content: 'Issue 4',
+          file: 'src/test4.ts',
+          line: '4',
+          suggestion: 'Fix 4',
+        },
+      ],
+      recommendations: [],
+      actionItems: [],
+    });
+
+    const result = parseJsonReviewOutput(jsonOutput);
+
+    expect(result.issues[0].id).toBe('issue-1');
+    expect(result.issues[1].id).toBe('issue-2');
+    expect(result.issues[2].id).toBe('issue-3');
+    expect(result.issues[3].id).toBe('issue-4');
+  });
+
+  test('throws ReviewJsonParseError for empty input', () => {
+    expect(() => parseJsonReviewOutput('')).toThrow(ReviewJsonParseError);
+    expect(() => parseJsonReviewOutput('   ')).toThrow(ReviewJsonParseError);
+    expect(() => parseJsonReviewOutput('\n\t')).toThrow(ReviewJsonParseError);
+  });
+
+  test('throws ReviewJsonParseError for invalid JSON syntax', () => {
+    const invalidJson = '{ "issues": [ { broken }';
+
+    try {
+      parseJsonReviewOutput(invalidJson);
+      expect(true).toBe(false); // Should not reach here
+    } catch (error) {
+      expect(error).toBeInstanceOf(ReviewJsonParseError);
+      expect((error as ReviewJsonParseError).message).toContain('Invalid JSON syntax');
+      expect((error as ReviewJsonParseError).rawInput).toBe(invalidJson);
+    }
+  });
+
+  test('throws ReviewJsonParseError for schema validation failures', () => {
+    // Missing required fields
+    const missingFields = JSON.stringify({
+      issues: [{ severity: 'critical' }], // missing category and content
+      recommendations: [],
+      actionItems: [],
+    });
+
+    try {
+      parseJsonReviewOutput(missingFields);
+      expect(true).toBe(false);
+    } catch (error) {
+      expect(error).toBeInstanceOf(ReviewJsonParseError);
+      expect((error as ReviewJsonParseError).message).toContain(
+        'JSON does not match expected schema'
+      );
+    }
+  });
+
+  test('throws ReviewJsonParseError for invalid severity value', () => {
+    const invalidSeverity = JSON.stringify({
+      issues: [{ severity: 'invalid', category: 'security', content: 'test' }],
+      recommendations: [],
+      actionItems: [],
+    });
+
+    try {
+      parseJsonReviewOutput(invalidSeverity);
+      expect(true).toBe(false);
+    } catch (error) {
+      expect(error).toBeInstanceOf(ReviewJsonParseError);
+      expect((error as ReviewJsonParseError).message).toContain(
+        'JSON does not match expected schema'
+      );
+    }
+  });
+
+  test('throws ReviewJsonParseError for invalid category value', () => {
+    const invalidCategory = JSON.stringify({
+      issues: [{ severity: 'critical', category: 'invalid', content: 'test' }],
+      recommendations: [],
+      actionItems: [],
+    });
+
+    try {
+      parseJsonReviewOutput(invalidCategory);
+      expect(true).toBe(false);
+    } catch (error) {
+      expect(error).toBeInstanceOf(ReviewJsonParseError);
+      expect((error as ReviewJsonParseError).message).toContain(
+        'JSON does not match expected schema'
+      );
+    }
+  });
+
+  test('handles JSON with extra whitespace', () => {
+    const jsonWithWhitespace = `
+      {
+        "issues": [
+          {
+            "severity": "info",
+            "category": "other",
+            "content": "Test issue",
+            "file": "src/test.ts",
+            "line": "10",
+            "suggestion": "Fix test issue"
+          }
+        ],
+        "recommendations": [],
+        "actionItems": []
+      }
+    `;
+
+    const result = parseJsonReviewOutput(jsonWithWhitespace);
+
+    expect(result.issues).toHaveLength(1);
+    expect(result.issues[0].severity).toBe('info');
+  });
+
+  test('throws ReviewJsonParseError for line number of zero', () => {
+    const zeroLine = JSON.stringify({
+      issues: [{ severity: 'critical', category: 'security', content: 'test', line: 0 }],
+      recommendations: [],
+      actionItems: [],
+    });
+
+    try {
+      parseJsonReviewOutput(zeroLine);
+      expect(true).toBe(false);
+    } catch (error) {
+      expect(error).toBeInstanceOf(ReviewJsonParseError);
+      expect((error as ReviewJsonParseError).message).toContain(
+        'JSON does not match expected schema'
+      );
+    }
+  });
+
+  test('truncates very long input in error messages', () => {
+    const longInvalidJson = 'x'.repeat(2000);
+
+    try {
+      parseJsonReviewOutput(longInvalidJson);
+      expect(true).toBe(false);
+    } catch (error) {
+      expect(error).toBeInstanceOf(ReviewJsonParseError);
+      expect((error as ReviewJsonParseError).rawInput).toContain('...[truncated]');
+      expect((error as ReviewJsonParseError).rawInput!.length).toBeLessThan(1100);
+    }
+  });
+
+  test('preserves all severity values correctly', () => {
+    const allSeverities = JSON.stringify({
+      issues: [
+        {
+          severity: 'critical',
+          category: 'security',
+          content: 'Critical',
+          file: 'src/test.ts',
+          line: '1',
+          suggestion: 'Fix critical',
+        },
+        {
+          severity: 'major',
+          category: 'bug',
+          content: 'Major',
+          file: 'src/test.ts',
+          line: '2',
+          suggestion: 'Fix major',
+        },
+        {
+          severity: 'minor',
+          category: 'style',
+          content: 'Minor',
+          file: 'src/test.ts',
+          line: '3',
+          suggestion: 'Fix minor',
+        },
+        {
+          severity: 'info',
+          category: 'other',
+          content: 'Info',
+          file: 'src/test.ts',
+          line: '4',
+          suggestion: 'Fix info',
+        },
+      ],
+      recommendations: [],
+      actionItems: [],
+    });
+
+    const result = parseJsonReviewOutput(allSeverities);
+
+    expect(result.issues[0].severity).toBe('critical');
+    expect(result.issues[1].severity).toBe('major');
+    expect(result.issues[2].severity).toBe('minor');
+    expect(result.issues[3].severity).toBe('info');
+  });
+
+  test('preserves all category values correctly', () => {
+    const allCategories = JSON.stringify({
+      issues: [
+        {
+          severity: 'info',
+          category: 'security',
+          content: 'Security',
+          file: 'src/test.ts',
+          line: '1',
+          suggestion: 'Fix security',
+        },
+        {
+          severity: 'info',
+          category: 'performance',
+          content: 'Performance',
+          file: 'src/test.ts',
+          line: '2',
+          suggestion: 'Fix performance',
+        },
+        {
+          severity: 'info',
+          category: 'bug',
+          content: 'Bug',
+          file: 'src/test.ts',
+          line: '3',
+          suggestion: 'Fix bug',
+        },
+        {
+          severity: 'info',
+          category: 'style',
+          content: 'Style',
+          file: 'src/test.ts',
+          line: '4',
+          suggestion: 'Fix style',
+        },
+        {
+          severity: 'info',
+          category: 'compliance',
+          content: 'Compliance',
+          file: 'src/test.ts',
+          line: '5',
+          suggestion: 'Fix compliance',
+        },
+        {
+          severity: 'info',
+          category: 'testing',
+          content: 'Testing',
+          file: 'src/test.ts',
+          line: '6',
+          suggestion: 'Fix testing',
+        },
+        {
+          severity: 'info',
+          category: 'other',
+          content: 'Other',
+          file: 'src/test.ts',
+          line: '7',
+          suggestion: 'Fix other',
+        },
+      ],
+      recommendations: [],
+      actionItems: [],
+    });
+
+    const result = parseJsonReviewOutput(allCategories);
+
+    expect(result.issues[0].category).toBe('security');
+    expect(result.issues[1].category).toBe('performance');
+    expect(result.issues[2].category).toBe('bug');
+    expect(result.issues[3].category).toBe('style');
+    expect(result.issues[4].category).toBe('compliance');
+    expect(result.issues[5].category).toBe('testing');
+    expect(result.issues[6].category).toBe('other');
+  });
+});
+
+describe('tryParseJsonReviewOutput', () => {
+  test('returns parsed result for valid JSON', () => {
+    const jsonOutput = JSON.stringify({
+      issues: [
+        {
+          severity: 'critical',
+          category: 'security',
+          content: 'Test',
+          file: 'src/test.ts',
+          line: '10',
+          suggestion: 'Fix test',
+        },
+      ],
+      recommendations: ['rec1'],
+      actionItems: ['action1'],
+    });
+
+    const result = tryParseJsonReviewOutput(jsonOutput);
+
+    expect(result).not.toBeNull();
+    expect(result!.issues).toHaveLength(1);
+    expect(result!.recommendations).toHaveLength(1);
+    expect(result!.actionItems).toHaveLength(1);
+  });
+
+  test('returns null for invalid JSON syntax', () => {
+    const invalidJson = '{ broken json }';
+
+    const result = tryParseJsonReviewOutput(invalidJson);
+
+    expect(result).toBeNull();
+  });
+
+  test('returns null for schema validation failure', () => {
+    const invalidSchema = JSON.stringify({
+      issues: [{ invalid: 'structure' }],
+      recommendations: [],
+      actionItems: [],
+    });
+
+    const result = tryParseJsonReviewOutput(invalidSchema);
+
+    expect(result).toBeNull();
+  });
+
+  test('returns null for empty input', () => {
+    expect(tryParseJsonReviewOutput('')).toBeNull();
+    expect(tryParseJsonReviewOutput('   ')).toBeNull();
+  });
+
+  test('returns null for non-JSON text input', () => {
+    const textOutput = `
+## Review Results
+
+- Critical: SQL injection vulnerability
+- Major: Performance issue
+
+Recommendations:
+- Consider adding caching
+    `;
+
+    const result = tryParseJsonReviewOutput(textOutput);
+
+    expect(result).toBeNull();
+  });
+});
+
+describe('ReviewJsonParseError', () => {
+  test('has correct name property', () => {
+    const error = new ReviewJsonParseError('test message');
+    expect(error.name).toBe('ReviewJsonParseError');
+  });
+
+  test('preserves cause and rawInput', () => {
+    const cause = new Error('original error');
+    const rawInput = '{ invalid }';
+    const error = new ReviewJsonParseError('test message', cause, rawInput);
+
+    expect(error.cause).toBe(cause);
+    expect(error.rawInput).toBe(rawInput);
+  });
+
+  test('is instanceof Error', () => {
+    const error = new ReviewJsonParseError('test');
+    expect(error).toBeInstanceOf(Error);
+    expect(error).toBeInstanceOf(ReviewJsonParseError);
   });
 });

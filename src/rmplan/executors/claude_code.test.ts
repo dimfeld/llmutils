@@ -376,3 +376,246 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     expect(recordedArgs[0]).not.toContain('--add-dir');
   });
 });
+
+describe('ClaudeCodeExecutor - review mode execution', () => {
+  const moduleMocker = new ModuleMocker(import.meta);
+  let tempDir = '/tmp/claude-review-mode-test';
+
+  beforeEach(async () => {
+    (await import('node:fs/promises')).mkdir(tempDir, { recursive: true }).catch(() => {});
+  });
+
+  afterEach(() => {
+    moduleMocker.clear();
+  });
+
+  test('uses JSON output format and schema when executionMode is review', async () => {
+    const recordedArgs: string[][] = [];
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (args: string[]) => {
+        recordedArgs.push(args);
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            issues: [],
+            recommendations: [],
+            actionItems: [],
+          }),
+        };
+      }),
+      createLineSplitter: () => (s: string) => s.split('\n'),
+      debug: false,
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir },
+      {} as any
+    );
+
+    await exec.execute('REVIEW CONTEXT', {
+      planId: 'review-plan',
+      planTitle: 'Review Plan',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'review',
+    });
+
+    expect(recordedArgs).toHaveLength(1);
+    const args = recordedArgs[0];
+
+    // Check that --output-format json is used (not stream-json)
+    expect(args).toContain('--output-format');
+    const formatIndex = args.indexOf('--output-format');
+    expect(args[formatIndex + 1]).toBe('json');
+
+    // Check that --json-schema is passed
+    expect(args).toContain('--json-schema');
+    const schemaIndex = args.indexOf('--json-schema');
+    const schemaArg = args[schemaIndex + 1];
+    expect(schemaArg).toBeDefined();
+
+    // Verify the schema argument is valid JSON
+    expect(() => JSON.parse(schemaArg)).not.toThrow();
+    const schema = JSON.parse(schemaArg);
+    expect(schema.type).toBe('object');
+    expect(schema.properties).toBeDefined();
+    expect(schema.properties.issues).toBeDefined();
+  });
+
+  test('returns ExecutorOutput with jsonOutput metadata flag set to true', async () => {
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    const mockJsonResponse = JSON.stringify({
+      issues: [
+        {
+          severity: 'critical',
+          category: 'security',
+          content: 'SQL injection vulnerability',
+        },
+      ],
+      recommendations: ['Use parameterized queries'],
+      actionItems: ['Fix SQL injection'],
+    });
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async () => ({
+        exitCode: 0,
+        stdout: mockJsonResponse,
+      })),
+      createLineSplitter: () => (s: string) => s.split('\n'),
+      debug: false,
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir },
+      {} as any
+    );
+
+    const result = await exec.execute('REVIEW CONTEXT', {
+      planId: 'review-plan',
+      planTitle: 'Review Plan',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'review',
+    });
+
+    expect(result).toBeDefined();
+    expect(result?.metadata?.jsonOutput).toBe(true);
+    expect(result?.metadata?.phase).toBe('review');
+    expect(result?.content).toBe(mockJsonResponse);
+    expect(result?.steps).toHaveLength(1);
+    expect(result?.steps?.[0].title).toBe('Claude Review');
+  });
+
+  test('throws error when Claude exits with non-zero exit code in review mode', async () => {
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async () => ({
+        exitCode: 1,
+        stdout: '',
+      })),
+      createLineSplitter: () => (s: string) => s.split('\n'),
+      debug: false,
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir },
+      {} as any
+    );
+
+    await expect(
+      exec.execute('REVIEW CONTEXT', {
+        planId: 'review-plan',
+        planTitle: 'Review Plan',
+        planFilePath: `${tempDir}/plan.yml`,
+        executionMode: 'review',
+      })
+    ).rejects.toThrow('Claude review exited with non-zero exit code: 1');
+  });
+
+  test('uses specified model in review mode', async () => {
+    const recordedArgs: string[][] = [];
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (args: string[]) => {
+        recordedArgs.push(args);
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+        };
+      }),
+      createLineSplitter: () => (s: string) => s.split('\n'),
+      debug: false,
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir, model: 'sonnet' },
+      {} as any
+    );
+
+    await exec.execute('REVIEW CONTEXT', {
+      planId: 'review-plan',
+      planTitle: 'Review Plan',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'review',
+    });
+
+    expect(recordedArgs).toHaveLength(1);
+    const args = recordedArgs[0];
+    expect(args).toContain('--model');
+    const modelIndex = args.indexOf('--model');
+    expect(args[modelIndex + 1]).toBe('sonnet');
+  });
+
+  test('review mode does not use orchestration wrapper or agents', async () => {
+    const recordedArgs: string[][] = [];
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (args: string[]) => {
+        recordedArgs.push(args);
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+        };
+      }),
+      createLineSplitter: () => (s: string) => s.split('\n'),
+      debug: false,
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir },
+      {} as any
+    );
+
+    await exec.execute('REVIEW CONTEXT', {
+      planId: 'review-plan',
+      planTitle: 'Review Plan',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'review',
+    });
+
+    expect(recordedArgs).toHaveLength(1);
+    const args = recordedArgs[0];
+
+    // Review mode should NOT have agents or orchestration-related args
+    expect(args).not.toContain('--agents');
+    expect(args).not.toContain('--permission-prompt-tool');
+    expect(args).not.toContain('--mcp-config');
+
+    // Should use --print with the context content directly
+    expect(args).toContain('--print');
+    const printIndex = args.indexOf('--print');
+    expect(args[printIndex + 1]).toBe('REVIEW CONTEXT');
+  });
+});
