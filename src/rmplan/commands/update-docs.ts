@@ -50,7 +50,8 @@ function buildUpdateDocsPrompt(planData: PlanSchema): string {
 
   parts.push(
     '\nPlease search for relevant documentation files (README.md, docs/, CLAUDE.md, etc.)',
-    'and update them to reflect these changes. Add new documentation if needed.'
+    'and update them to reflect these changes. Add new documentation if needed. Think first before',
+    `updating the root README or agent instructions like AGENTS.md or CLAUDE.md, since we don't want them to become too cluttered.`
   );
 
   return parts.join('\n');

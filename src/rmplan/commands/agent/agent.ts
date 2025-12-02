@@ -309,8 +309,8 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   const executionMode: 'normal' | 'simple' = simpleModeEnabled ? 'simple' : 'normal';
 
   // Determine updateDocs mode: CLI option overrides config
-  const updateDocsMode: 'never' | 'after-iteration' | 'after-completion' | undefined =
-    options.updateDocs || config.updateDocs?.mode;
+  const updateDocsMode: 'never' | 'after-iteration' | 'after-completion' =
+    options.updateDocs || config.updateDocs?.mode || 'never';
 
   if (isAutoClaimEnabled()) {
     if (planData.uuid) {
@@ -391,6 +391,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           executorName,
           maxSteps,
           executionMode,
+          updateDocsMode,
         },
         summaryEnabled ? summaryCollector : undefined
       );

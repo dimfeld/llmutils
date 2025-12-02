@@ -9,6 +9,7 @@ import { getAllIncompleteTasks } from '../../plans/find_next.js';
 import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
 import { checkAndMarkParentDone, markParentInProgress } from './parent_plans.js';
 import type { SummaryCollector } from '../../summary/collector.js';
+import { runUpdateDocs } from '../update-docs.js';
 
 export async function executeBatchMode(
   {
@@ -20,6 +21,7 @@ export async function executeBatchMode(
     maxSteps = Infinity,
     executorName,
     executionMode = 'normal',
+    updateDocsMode = 'never',
   }: {
     currentPlanFile: string;
     config: RmplanConfig;
@@ -29,6 +31,7 @@ export async function executeBatchMode(
     maxSteps?: number;
     executorName?: string;
     executionMode?: 'normal' | 'simple';
+    updateDocsMode?: 'never' | 'after-iteration' | 'after-completion';
   },
   summaryCollector?: SummaryCollector
 ) {
@@ -185,6 +188,20 @@ export async function executeBatchMode(
         }
       }
 
+      // Update docs if configured for after-iteration mode
+      if (updateDocsMode === 'after-iteration') {
+        try {
+          await runUpdateDocs(currentPlanFile, config, {
+            executor: config.updateDocs?.executor,
+            model: config.updateDocs?.model,
+            baseDir,
+          });
+        } catch (err) {
+          error('Failed to update documentation:', err);
+          // Don't stop execution for documentation update failures
+        }
+      }
+
       // After execution, re-read the plan file to get the updated state
       const updatedPlanData = await readPlanFile(currentPlanFile);
       const remainingIncompleteTasks = getAllIncompleteTasks(updatedPlanData);
@@ -198,6 +215,20 @@ export async function executeBatchMode(
       if (finished) {
         log('Batch mode: All tasks completed, marking plan as done');
         await setPlanStatus(currentPlanFile, 'done');
+
+        // Update docs if configured for after-completion mode
+        if (updateDocsMode === 'after-completion') {
+          try {
+            await runUpdateDocs(currentPlanFile, config, {
+              executor: config.updateDocs?.executor,
+              model: config.updateDocs?.model,
+              baseDir,
+            });
+          } catch (err) {
+            error('Failed to update documentation:', err);
+            // Don't stop execution for documentation update failures
+          }
+        }
 
         // Handle parent plan updates similar to existing logic
         if (updatedPlanData.parent) {
