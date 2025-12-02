@@ -392,7 +392,7 @@ export class MarkdownFormatter implements ReviewFormatter {
     }
 
     // Recommendations
-    if (result.recommendations.length > 0 && options.verbosity === 'detailed') {
+    if (result.recommendations.length > 0 && options.verbosity !== 'minimal') {
       sections.push('## Recommendations');
       result.recommendations.forEach((rec) => {
         sections.push(`- ${rec}`);
@@ -528,6 +528,15 @@ export class TerminalFormatter implements ReviewFormatter {
           });
         }
       });
+    }
+
+    // Recommendations
+    if (result.recommendations.length > 0 && options.verbosity !== 'minimal') {
+      sections.push(color('💡 Recommendations', chalk.bold.blue));
+      result.recommendations.forEach((rec) => {
+        sections.push(`• ${rec}`);
+      });
+      sections.push('');
     }
 
     // Action items
