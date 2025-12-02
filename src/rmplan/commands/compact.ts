@@ -347,7 +347,7 @@ async function runCompactionPrompt(
     planTitle: plan.title ?? 'Untitled Plan',
     planFilePath,
     captureOutput: 'none',
-    executionMode: 'planning',
+    executionMode: 'bare',
   });
 
   const normalized = executionResult as unknown;

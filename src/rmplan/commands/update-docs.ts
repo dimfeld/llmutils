@@ -99,7 +99,7 @@ export async function runUpdateDocs(
     planId: planData.id?.toString() ?? 'unknown',
     planTitle: planData.title ?? 'Documentation Update',
     planFilePath,
-    executionMode: 'normal',
+    executionMode: 'bare',
     captureOutput: 'none',
   });
 }

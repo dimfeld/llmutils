@@ -6,6 +6,7 @@ import { CodexCliExecutorName, codexCliOptionsSchema } from './schemas.js';
 import { executeNormalMode } from './codex_cli/normal_mode';
 import { executeSimpleMode } from './codex_cli/simple_mode';
 import { executeReviewMode } from './codex_cli/review_mode';
+import { executeBareMode } from './codex_cli/bare_mode';
 import { parseReviewerVerdict } from './codex_cli/verdict_parser';
 
 export type CodexCliExecutorOptions = z.infer<typeof codexCliOptionsSchema>;
@@ -42,6 +43,18 @@ export class CodexCliExecutor implements Executor {
   async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | ExecutorOutput> {
     if (planInfo.executionMode === 'review') {
       return executeReviewMode(
+        contextContent,
+        planInfo,
+        this.sharedOptions.baseDir,
+        this.sharedOptions.model,
+        this.rmplanConfig
+      );
+    }
+
+    // Route both 'bare' and 'planning' to bare mode handler
+    // This fixes the bug where 'planning' was falling through to normal mode
+    if (planInfo.executionMode === 'bare' || planInfo.executionMode === 'planning') {
+      return executeBareMode(
         contextContent,
         planInfo,
         this.sharedOptions.baseDir,

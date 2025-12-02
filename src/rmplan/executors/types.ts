@@ -36,12 +36,13 @@ export interface ExecutePlanInfo {
   captureOutput?: 'none' | 'all' | 'result';
   /**
    * Execution mode for the executor.
-   * - 'normal': Uses full multi-agent orchestration workflow
-   * - 'simple': Uses streamlined implement → verify workflow
-   * - 'review': Bypasses orchestration and runs prompts directly for review operations
-   * - 'planning': Bypasses orchestration and runs prompts directly for planning operations
+   * - 'normal': Full multi-agent orchestration (implementer → tester → reviewer)
+   * - 'simple': Streamlined orchestration (implementer → verifier)
+   * - 'review': Review-only with JSON schema output for structured results
+   * - 'planning': Single-shot execution for planning operations (no orchestration)
+   * - 'bare': Single-shot execution for any operation (no orchestration, no workflow)
    */
-  executionMode: 'normal' | 'simple' | 'review' | 'planning';
+  executionMode: 'normal' | 'simple' | 'review' | 'planning' | 'bare';
 }
 
 /**

@@ -1236,6 +1236,7 @@ export class ClaudeCodeExecutor implements Executor {
         ];
         agentCreationMessage = `Configured implementer/verifier agents for plan ${planId}`;
       }
+      // 'bare', 'planning', and 'review' modes: skip agent definitions entirely
     }
 
     try {
