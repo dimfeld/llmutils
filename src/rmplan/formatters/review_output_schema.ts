@@ -48,7 +48,7 @@ export const ReviewIssueOutputSchema = z
     content: z
       .string()
       .describe(
-        'A clear description of the issue found. Include relevant context and why this is a problem.'
+        'A clear description of the issue found. Include relevant context and why this is a problem. If you have already generated an explanation for this issue, include the entire thing here even if it overlaps with other fields.'
       ),
     file: z
       .string()
