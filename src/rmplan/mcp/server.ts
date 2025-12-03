@@ -3,21 +3,13 @@ import { registerGenerateMode, type GenerateModeRegistrationContext } from './ge
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
 
-export type SupportedMcpMode = 'generate';
-
 export interface StartMcpServerOptions {
-  mode?: SupportedMcpMode;
   configPath?: string;
   transport?: 'stdio' | 'http';
   port?: number;
 }
 
 export async function startMcpServer(options: StartMcpServerOptions = {}): Promise<void> {
-  const mode = options.mode ?? 'generate';
-  if (mode !== 'generate') {
-    throw new Error(`Unsupported MCP mode: ${mode as string}`);
-  }
-
   const config = await loadEffectiveConfig(options.configPath);
   const pathContext = await resolvePlanPathContext(config);
 

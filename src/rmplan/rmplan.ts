@@ -82,7 +82,6 @@ program.addHelpText(
 program
   .command('mcp-server')
   .description('Start rmplan as an MCP server for interactive workflows')
-  .option('--mode <mode>', 'MCP server mode to launch (default: generate)', 'generate')
   .option('--transport <transport>', 'Transport to use: stdio or http', 'stdio')
   .option('--port <port>', 'Port to listen on when using HTTP transport', (value) => {
     const parsed = Number(value);
@@ -95,7 +94,6 @@ program
     const globalOpts = command.parent.opts();
     const transport = options.transport === 'http' ? 'http' : 'stdio';
     await startMcpServer({
-      mode: options.mode,
       configPath: globalOpts.config,
       transport,
       port: options.port,
