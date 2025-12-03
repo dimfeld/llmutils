@@ -188,20 +188,6 @@ export async function executeBatchMode(
         }
       }
 
-      // Update docs if configured for after-iteration mode
-      if (updateDocsMode === 'after-iteration') {
-        try {
-          await runUpdateDocs(currentPlanFile, config, {
-            executor: config.updateDocs?.executor,
-            model: config.updateDocs?.model,
-            baseDir,
-          });
-        } catch (err) {
-          error('Failed to update documentation:', err);
-          // Don't stop execution for documentation update failures
-        }
-      }
-
       // After execution, re-read the plan file to get the updated state
       const updatedPlanData = await readPlanFile(currentPlanFile);
       const remainingIncompleteTasks = getAllIncompleteTasks(updatedPlanData);
@@ -209,6 +195,27 @@ export async function executeBatchMode(
       log(
         `Batch iteration complete. Remaining incomplete tasks: ${remainingIncompleteTasks.length}`
       );
+
+      // Update docs if configured for after-iteration mode
+      // Calculate which tasks were just completed by comparing before/after state
+      if (updateDocsMode === 'after-iteration') {
+        const remainingIndices = new Set(remainingIncompleteTasks.map((t) => t.taskIndex));
+        const justCompletedTaskIndices = incompleteTasks
+          .map((t) => t.taskIndex)
+          .filter((index) => !remainingIndices.has(index));
+
+        try {
+          await runUpdateDocs(currentPlanFile, config, {
+            executor: config.updateDocs?.executor,
+            model: config.updateDocs?.model,
+            baseDir,
+            justCompletedTaskIndices,
+          });
+        } catch (err) {
+          error('Failed to update documentation:', err);
+          // Don't stop execution for documentation update failures
+        }
+      }
 
       // If all tasks are now marked done, update the plan status to 'done'
       const finished = remainingIncompleteTasks.length === 0;

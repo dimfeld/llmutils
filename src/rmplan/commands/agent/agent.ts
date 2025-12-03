@@ -547,6 +547,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
               executor: config.updateDocs?.executor,
               model: config.updateDocs?.model,
               baseDir: currentBaseDir,
+              justCompletedTaskIndices: [actionableItem.taskIndex],
             });
           } catch (err) {
             error('Failed to update documentation:', err);
@@ -760,6 +761,7 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             executor: config.updateDocs?.executor,
             model: config.updateDocs?.model,
             baseDir: currentBaseDir,
+            justCompletedTaskIndices: [taskIndex],
           });
         } catch (err) {
           error('Failed to update documentation:', err);
