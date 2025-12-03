@@ -221,6 +221,11 @@ export function formatExecutionSummaryToLines(summary: ExecutionSummary): string
     }
   }
 
+  // Display completion message with plan ID
+  lines.push('');
+  lines.push(chalk.green(`✓ Completed plan ${summary.planId}`));
+  lines.push('');
+
   if (summary.errors.length > 0) {
     lines.push(sectionHeader('Errors', chalk.red));
     lines.push(divider());

@@ -88,6 +88,9 @@ describe('displayExecutionSummary', () => {
     expect(out).toContain('src/a.ts');
     expect(out).toContain('src/b.ts');
 
+    // Completion message with plan ID
+    expect(out).toContain('[green]✓ Completed plan 42[/green]');
+
     // Should not include Errors header since none
     expect(out.includes('Errors')).toBeFalse();
   });
@@ -115,6 +118,7 @@ describe('displayExecutionSummary', () => {
     expect(out).toContain('batch');
     expect(out).toContain('[bold][cyan]File Changes[/cyan][/bold]');
     expect(out).toContain('No changed files detected.');
+    expect(out).toContain('[green]✓ Completed plan 7[/green]');
     expect(out).toContain('[bold][red]Errors[/red][/bold]');
     expect(out).toContain('Failed to track file changes');
     expect(out).toContain('boom');

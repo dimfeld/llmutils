@@ -149,6 +149,7 @@ describe('rmplan agent integration (execution summaries)', () => {
     expect(content).toContain('This is the final orchestrator message.');
     expect(content).toContain('File Changes');
     expect(content).toContain('tasks/123-test-plan.yml');
+    expect(content).toContain('✓ Completed plan 123');
   });
 
   test('serial mode: captures Codex labeled output and records failure on error', async () => {
