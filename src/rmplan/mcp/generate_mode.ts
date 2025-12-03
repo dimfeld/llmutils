@@ -7,7 +7,7 @@ import {
   generateClaudeCodeResearchPrompt,
   generateClaudeCodeGenerationPrompt,
 } from '../prompt.js';
-import { prioritySchema, type PlanSchema } from '../planSchema.js';
+import { prioritySchema, type PlanSchema, type TaskSchema } from '../planSchema.js';
 import type { RmplanConfig } from '../configSchema.js';
 import { resolveTasksDir } from '../configSchema.js';
 import { buildPlanContext, resolvePlan } from '../plan_display.js';
@@ -263,8 +263,6 @@ export const addPlanTaskParameters = z
       .string()
       .min(1, 'Task description cannot be empty.')
       .describe('Detailed description for the new task'),
-    files: z.array(z.string()).optional().describe('Related file paths (add only)'),
-    docs: z.array(z.string()).optional().describe('Documentation paths (add only)'),
   })
   .describe('Add a task to a plan');
 
@@ -349,8 +347,6 @@ export const managePlanTaskParameters = z
       .optional()
       .describe('Task description (required for add, optional for update)'),
     done: z.boolean().optional().describe('Mark task as done or not done (update only)'),
-    files: z.array(z.string()).optional().describe('Related file paths (add only)'),
-    docs: z.array(z.string()).optional().describe('Documentation paths (add only)'),
   })
   .describe('Manage tasks in a plan: add, update, or remove');
 
@@ -407,13 +403,21 @@ export const createPlanParameters = z
     details: z.string().optional().describe('Plan details (markdown)'),
     priority: prioritySchema.optional().describe('Priority level'),
     parent: z.number().optional().describe('Parent plan ID'),
-    dependsOn: z.array(z.number()).optional().describe('Plan IDs blocking this plan'),
+    dependsOn: z
+      .array(z.number())
+      .optional()
+      .describe('Plan IDs blocking this plan, including direct children'),
     discoveredFrom: z.number().optional().describe('Plan ID this was discovered from'),
     assignedTo: z.string().optional().describe('Username to assign plan to'),
-    issue: z.array(z.string()).optional().describe('GitHub issue URLs'),
+    issue: z.array(z.string()).optional().describe('Task tracker issue URLs'),
     docs: z.array(z.string()).optional().describe('Documentation file paths'),
     tags: z.array(z.string()).optional().describe('Tags to assign to the plan'),
-    container: z.boolean().optional().describe('Mark as container plan'),
+    container: z
+      .boolean()
+      .optional()
+      .describe(
+        'Mark plan as a container for children plans with no implementation work in the plan itself'
+      ),
     temp: z.boolean().optional().describe('Mark as temporary plan'),
   })
   .describe('Create a new plan file');
@@ -452,8 +456,6 @@ export async function mcpManagePlanTask(
           plan: args.plan,
           title: args.title,
           description: args.description,
-          files: args.files,
-          docs: args.docs,
         },
         context,
         execContext
@@ -493,8 +495,6 @@ export async function mcpAddPlanTask(
   execContext?: { log: GenerateModeExecutionLogger }
 ): Promise<string> {
   clearPlanCache();
-  type PlanTask = NonNullable<PlanSchema['tasks']>[number];
-  type PlanTaskWithMetadata = PlanTask & { files?: string[]; docs?: string[]; steps?: unknown[] };
 
   const { plan, planPath } = await resolvePlan(args.plan, context);
 
@@ -508,13 +508,10 @@ export async function mcpAddPlanTask(
   }
 
   const tasks = Array.isArray(plan.tasks) ? plan.tasks : [];
-  const newTask: PlanTaskWithMetadata = {
+  const newTask: TaskSchema = {
     title,
     description,
     done: false,
-    files: normalizeList(args.files),
-    docs: normalizeList(args.docs),
-    steps: [],
   };
 
   tasks.push(newTask);

@@ -95,6 +95,7 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
 
   return {
     phaseSchema,
+    taskSchema,
     multiPhasePlanSchema,
   } as const;
 };
@@ -112,6 +113,7 @@ export type PlanSchema = PhaseSchema;
 export type PlanSchemaWithFilename = PlanSchema & {
   filename: string;
 };
+export type TaskSchema = z.output<typeof defaultSchemas.taskSchema>;
 export type PlanSchemaInput = z.input<typeof phaseSchema>;
 export type PlanSchemaInputWithFilename = PlanSchemaInput & {
   filename: string;

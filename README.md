@@ -728,8 +728,6 @@ For plans with status `done`, `cancelled`, or `deferred`:
       title: "Task 1",
       description: "Details...",
       done: false,
-      files: ["src/auth.ts"],
-      docs: ["docs/auth.md"]
     }
   ]
 }
@@ -757,8 +755,6 @@ Add task:
   action: "add",
   title: "Add validation",
   description: "Validate user input...",
-  files: ["src/validators.ts"],
-  docs: ["docs/validation.md"]
 }
 ```
 
