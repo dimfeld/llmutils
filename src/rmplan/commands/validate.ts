@@ -11,7 +11,16 @@ import {
   ensureReferences,
   verifyReferences,
   fixReferenceMismatches,
+  detectMissingUuids,
+  detectReferenceIssues,
   type ReferenceVerificationResult,
+  ensureAllReferences,
+  fixMissingUuids,
+  fixReferenceIssues,
+  type ReferenceFixResult,
+  type ReferenceIssue,
+  type UuidFixResult,
+  type UuidIssue,
 } from '../utils/references.js';
 interface ValidationResult {
   filename: string;
@@ -52,27 +61,6 @@ interface ObsoleteKeyIssue {
 interface ObsoleteKeyFixResult {
   fixedPlans: number;
   totalKeysRemoved: number;
-  errors: string[];
-}
-
-interface UuidIssue {
-  planId: number;
-  filename: string;
-}
-
-interface UuidFixResult {
-  generated: Array<{ planId: number; uuid: string; filename: string }>;
-  errors: string[];
-}
-
-interface ReferenceIssue {
-  planId: number;
-  filename: string;
-  verificationResult: ReferenceVerificationResult;
-}
-
-interface ReferenceFixResult {
-  updated: Array<{ planId: number; filename: string }>;
   errors: string[];
 }
 
@@ -496,136 +484,6 @@ async function fixObsoleteTaskKeys(issues: ObsoleteKeyIssue[]): Promise<Obsolete
   }
 
   return { fixedPlans, totalKeysRemoved, errors };
-}
-
-/**
- * Detects plans without UUIDs
- */
-export function detectMissingUuids(
-  planMap: Map<number, PlanSchema & { filename: string }>
-): UuidIssue[] {
-  const issues: UuidIssue[] = [];
-
-  for (const [planId, plan] of planMap.entries()) {
-    if (!plan.uuid) {
-      issues.push({ planId, filename: plan.filename });
-    }
-  }
-
-  return issues;
-}
-
-/**
- * Generates UUIDs for plans that don't have them
- */
-export async function fixMissingUuids(issues: UuidIssue[]): Promise<UuidFixResult> {
-  const generated: UuidFixResult['generated'] = [];
-  const errors: string[] = [];
-
-  for (const issue of issues) {
-    try {
-      const plan = await readPlanFile(issue.filename);
-      const uuid = crypto.randomUUID();
-      plan.uuid = uuid;
-      await writePlanFile(issue.filename, plan, { skipUpdatedAt: true });
-      generated.push({ planId: issue.planId, uuid, filename: issue.filename });
-    } catch (error) {
-      errors.push(
-        `Failed to generate UUID for plan ${issue.planId}: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-
-  return { generated, errors };
-}
-
-/**
- * Detects plans with incomplete or inconsistent references
- */
-export function detectReferenceIssues(
-  planMap: Map<number, PlanSchema & { filename: string }>,
-  uuidToId: Map<string, number>
-): ReferenceIssue[] {
-  const issues: ReferenceIssue[] = [];
-
-  for (const [planId, plan] of planMap.entries()) {
-    const verificationResult = verifyReferences(plan, planMap, uuidToId);
-    if (!verificationResult.isValid) {
-      issues.push({ planId, filename: plan.filename, verificationResult });
-    }
-  }
-
-  return issues;
-}
-
-/**
- * Fixes reference issues by updating parent/dependencies/discoveredFrom
- * to point to the correct plan IDs based on UUIDs
- */
-export async function fixReferenceIssues(
-  issues: ReferenceIssue[],
-  planMap: Map<number, PlanSchema & { filename: string }>
-): Promise<ReferenceFixResult> {
-  const updated: ReferenceFixResult['updated'] = [];
-  const errors: string[] = [];
-
-  for (const issue of issues) {
-    try {
-      const plan = await readPlanFile(issue.filename);
-      const fixedPlan = fixReferenceMismatches(plan, issue.verificationResult);
-
-      // Update references after fixing mismatches
-      const { updatedPlan } = ensureReferences(fixedPlan, planMap);
-
-      await writePlanFile(issue.filename, updatedPlan, { skipUpdatedAt: true });
-      updated.push({ planId: issue.planId, filename: issue.filename });
-    } catch (error) {
-      errors.push(
-        `Failed to fix references for plan ${issue.planId}: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-
-  return { updated, errors };
-}
-
-/**
- * Ensures all plans have complete reference entries
- */
-export async function ensureAllReferences(
-  planMap: Map<number, PlanSchema & { filename: string }>
-): Promise<{ updated: number; errors: string[] }> {
-  let updated = 0;
-  const errors: string[] = [];
-
-  for (const [_planId, plan] of planMap.entries()) {
-    try {
-      const { updatedPlan, plansWithGeneratedUuids } = ensureReferences(plan, planMap);
-
-      // Only write if something changed
-      const hasNewReferences =
-        JSON.stringify(updatedPlan.references) !== JSON.stringify(plan.references);
-
-      if (hasNewReferences || plansWithGeneratedUuids.length > 0) {
-        await writePlanFile(plan.filename, updatedPlan, { skipUpdatedAt: true });
-        updated++;
-
-        // Write plans that had UUIDs generated
-        for (const { id: genId } of plansWithGeneratedUuids) {
-          const genPlan = planMap.get(genId);
-          if (genPlan) {
-            await writePlanFile(genPlan.filename, genPlan, { skipUpdatedAt: true });
-          }
-        }
-      }
-    } catch (error) {
-      errors.push(
-        `Failed to ensure references for ${plan.filename}: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-
-  return { updated, errors };
 }
 
 export async function handleValidateCommand(

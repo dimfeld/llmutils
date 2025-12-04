@@ -75,11 +75,14 @@ const TRUNK_BRANCHES = ['main', 'master'] as const;
  *
  * @param allPlans Map of all plans
  * @param idMappings Map of old ID (as string or number) -> new ID
+ * @returns Set of file paths that were modified and need to be written
  */
 function updateReferencesAfterRenumbering(
   allPlans: Map<string, Record<string, any>>,
   idMappings: Map<string, number> | Map<number, number>
-): void {
+): Set<string> {
+  const modifiedPaths = new Set<string>();
+
   // Build a map of UUID -> old ID -> new ID for quick lookups
   const uuidToIdChange = new Map<string, { oldId: number; newId: number }>();
 
@@ -87,8 +90,13 @@ function updateReferencesAfterRenumbering(
   const firstKey = idMappings.keys().next().value;
   const isStringKeyed = typeof firstKey === 'string';
 
-  for (const [_filePath, plan] of allPlans) {
-    if (!plan.id || !plan.uuid) continue;
+  debugLog(`Building UUID->ID change map (${isStringKeyed ? 'string' : 'number'}-keyed mappings)`);
+
+  for (const [filePath, plan] of allPlans) {
+    if (!plan.id || !plan.uuid) {
+      debugLog(`Skipping plan without ID or UUID: ${filePath}`);
+      continue;
+    }
 
     const oldId = Number(plan.id);
     // Get the new ID based on the mapping type
@@ -100,12 +108,34 @@ function updateReferencesAfterRenumbering(
     }
     if (newId !== undefined && newId !== oldId) {
       uuidToIdChange.set(plan.uuid, { oldId, newId });
+      debugLog(`  UUID ${plan.uuid}: ID ${oldId} -> ${newId}`);
     }
   }
 
+  if (uuidToIdChange.size === 0) {
+    debugLog('No ID changes found, skipping reference updates');
+    return modifiedPaths;
+  }
+
   // Now update all plans that reference renumbered plans
-  for (const [_filePath, plan] of allPlans) {
-    if (!plan.references) continue;
+  let plansWithMissingReferences = 0;
+  let updatedCount = 0;
+
+  for (const [filePath, plan] of allPlans) {
+    if (!plan.references) {
+      // This shouldn't happen after ensureReferences is called, but log it if it does
+      if (
+        plan.parent !== undefined ||
+        (plan.dependencies && plan.dependencies.length > 0) ||
+        plan.discoveredFrom !== undefined
+      ) {
+        plansWithMissingReferences++;
+        debugLog(
+          `Warning: Plan ${plan.id} at ${filePath} has relationships but no references field`
+        );
+      }
+      continue;
+    }
 
     let planModified = false;
 
@@ -118,6 +148,7 @@ function updateReferencesAfterRenumbering(
         // This reference points to a plan that was renumbered
         // Update parent field if it matches
         if (plan.parent === oldId) {
+          debugLog(`  Plan ${plan.id}: updating parent ${oldId} -> ${idChange.newId}`);
           plan.parent = idChange.newId;
           planModified = true;
         }
@@ -126,6 +157,7 @@ function updateReferencesAfterRenumbering(
         if (Array.isArray(plan.dependencies)) {
           const oldIndex = plan.dependencies.indexOf(oldId);
           if (oldIndex !== -1) {
+            debugLog(`  Plan ${plan.id}: updating dependency ${oldId} -> ${idChange.newId}`);
             plan.dependencies[oldIndex] = idChange.newId;
             planModified = true;
           }
@@ -133,6 +165,7 @@ function updateReferencesAfterRenumbering(
 
         // Update discoveredFrom if it matches
         if (plan.discoveredFrom === oldId) {
+          debugLog(`  Plan ${plan.id}: updating discoveredFrom ${oldId} -> ${idChange.newId}`);
           plan.discoveredFrom = idChange.newId;
           planModified = true;
         }
@@ -140,9 +173,26 @@ function updateReferencesAfterRenumbering(
         // Update the reference itself
         delete plan.references[oldId];
         plan.references[idChange.newId] = uuid;
+        planModified = true;
       }
     }
+
+    if (planModified) {
+      modifiedPaths.add(filePath);
+      updatedCount++;
+    }
   }
+
+  if (plansWithMissingReferences > 0) {
+    log(
+      `  Warning: ${plansWithMissingReferences} plans have relationships but no references field`
+    );
+  }
+  if (updatedCount > 0) {
+    log(`  Updated references in ${updatedCount} plans`);
+  }
+
+  return modifiedPaths;
 }
 
 /**
@@ -769,6 +819,7 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
   let maxNumericId = 0;
   const plansToRenumber: PlanToRenumber[] = [];
   const idToFiles = new Map<number, { plan: PlanSchema; filePath: string }[]>();
+  const plansToWrite = new Set<string>();
 
   // Build maps of IDs to files to detect conflicts
   // We need to re-scan files because readAllPlans overwrites duplicates
@@ -804,6 +855,16 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
       allPlans.set(filePath, plan);
     } catch (e) {
       // Skip invalid plan files
+    }
+  }
+
+  // Generate UUIDs for plans that don't have them (but don't call ensureReferences yet -
+  // we need to wait until after conflict resolution when IDs are unique)
+  for (const [filePath, plan] of allPlans) {
+    if (!plan.uuid) {
+      plan.uuid = crypto.randomUUID();
+      plansToWrite.add(filePath);
+      debugLog(`Generated UUID for plan at ${filePath}`);
     }
   }
 
@@ -952,7 +1013,8 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
   // ========================================
   const idMappings = new Map<string, number>();
   const newFileIds = new Map<string, { id: number; reason: 'missing' | 'conflict' }>();
-  const plansToWrite = new Set<string>();
+  // Track old parent IDs for directory renaming (populated during reference updates)
+  const conflictOldParents = new Map<string, number>();
 
   if (plansToRenumber.length > 0) {
     // Sort plans to renumber by their current ID to maintain relative order
@@ -995,11 +1057,120 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
       );
     }
 
-    // Update references after conflict resolution renumbering
-    log('\nUpdating references after conflict resolution...');
-    updateReferencesAfterRenumbering(allPlans, idMappings);
+    // Update references ONLY for plans being renumbered, and only for references to other renumbered plans.
+    // Plans that keep their IDs should keep pointing to the IDs that were kept.
+    // Plans being renumbered should have their references updated to point to other renumbered plans.
+    log('\nUpdating references for renumbered plans...');
+    const renumberedFilePaths = new Set(plansToRenumber.map((p) => p.filePath));
+    for (const [filePath, plan] of allPlans) {
+      // Only update plans that are being renumbered
+      if (!renumberedFilePaths.has(filePath)) {
+        continue;
+      }
+
+      let planModified = false;
+
+      // Update parent if it was renumbered (track old parent for directory renaming)
+      if (typeof plan.parent === 'number') {
+        const newParent = idMappings.get(String(plan.parent));
+        if (newParent !== undefined) {
+          debugLog(`  Renumbered plan ${plan.id}: updating parent ${plan.parent} -> ${newParent}`);
+          conflictOldParents.set(filePath, plan.parent);
+          plan.parent = newParent;
+          planModified = true;
+        }
+      }
+
+      // Update dependencies if they were renumbered
+      if (Array.isArray(plan.dependencies)) {
+        for (let i = 0; i < plan.dependencies.length; i++) {
+          const dep = plan.dependencies[i];
+          if (typeof dep === 'number') {
+            const newDep = idMappings.get(String(dep));
+            if (newDep !== undefined) {
+              debugLog(`  Renumbered plan ${plan.id}: updating dependency ${dep} -> ${newDep}`);
+              plan.dependencies[i] = newDep;
+              planModified = true;
+            }
+          }
+        }
+      }
+
+      // Update discoveredFrom if it was renumbered
+      if (typeof plan.discoveredFrom === 'number') {
+        const newDiscoveredFrom = idMappings.get(String(plan.discoveredFrom));
+        if (newDiscoveredFrom !== undefined) {
+          debugLog(
+            `  Renumbered plan ${plan.id}: updating discoveredFrom ${plan.discoveredFrom} -> ${newDiscoveredFrom}`
+          );
+          plan.discoveredFrom = newDiscoveredFrom;
+          planModified = true;
+        }
+      }
+
+      if (planModified) {
+        plansToWrite.add(filePath);
+      }
+    }
   } else {
     log('No ID conflicts found.');
+  }
+
+  // ========================================
+  // ENSURE UUID TRACKING (AFTER CONFLICT RESOLUTION)
+  // ========================================
+  // Now that IDs are unique, build the plansByIdMap and call ensureReferences()
+  // This is critical for UUID-based tracking in updateReferencesAfterRenumbering()
+  // which is used in the hierarchical reordering phase
+
+  // First, update the plan.id values for conflict-renumbered plans
+  for (const [filePath, { id }] of newFileIds) {
+    const plan = allPlans.get(filePath);
+    if (plan) {
+      plan.id = id;
+    }
+  }
+
+  log('\nEnsuring UUID tracking for all plans...');
+  const plansByIdMap = new Map<number, PlanSchema>();
+  for (const [_filePath, plan] of allPlans) {
+    if (typeof plan.id === 'number' && !Number.isNaN(plan.id)) {
+      plansByIdMap.set(plan.id, plan as PlanSchema);
+    }
+  }
+
+  let referencesUpdatedCount = 0;
+  for (const [filePath, plan] of allPlans) {
+    // Ensure references field is populated
+    const originalReferences = JSON.stringify(plan.references);
+    const { updatedPlan, plansWithGeneratedUuids } = ensureReferences(
+      plan as PlanSchema,
+      plansByIdMap
+    );
+
+    // Update the plan in allPlans with the new references
+    allPlans.set(filePath, updatedPlan);
+
+    // Track plans that need writing due to reference changes
+    if (JSON.stringify(updatedPlan.references) !== originalReferences) {
+      plansToWrite.add(filePath);
+      referencesUpdatedCount++;
+    }
+
+    // Write plans that had UUIDs generated for them
+    for (const { id, uuid } of plansWithGeneratedUuids) {
+      // Find the file path for this plan ID
+      for (const [fp, p] of allPlans) {
+        if (p.id === id) {
+          plansToWrite.add(fp);
+          debugLog(`Generated UUID ${uuid} for referenced plan ${id}`);
+          break;
+        }
+      }
+    }
+  }
+  if (referencesUpdatedCount > 0) {
+    log(`  Updated references for ${referencesUpdatedCount} plans`);
   }
 
   // ========================================
@@ -1068,61 +1239,26 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
       if (!options.dryRun && hierarchicalChangesCount > 0) {
         log(`\nApplying ${hierarchicalChangesCount} hierarchical ID changes to all plans...`);
 
-        // Apply all hierarchical ID changes to plan objects in memory
-        for (const [filePath, plan] of allPlans) {
-          let planModified = false;
+        // IMPORTANT: Call updateReferencesAfterRenumbering BEFORE updating plan.id values
+        // This ensures the function builds correct mappings based on original IDs
+        // It will update parent/dependencies/discoveredFrom/references for plans that reference renumbered plans
+        log('\nUpdating references after hierarchical renumbering...');
+        const hierarchicalModifiedPaths = updateReferencesAfterRenumbering(
+          allPlans,
+          hierarchicalIdMappings
+        );
+        for (const filePath of hierarchicalModifiedPaths) {
+          plansToWrite.add(filePath);
+        }
 
-          // Update the plan's own ID if it was changed
+        // Now update the plan.id values themselves
+        for (const [filePath, plan] of allPlans) {
           if (typeof plan.id === 'number' && hierarchicalIdMappings.has(plan.id)) {
             const newId = hierarchicalIdMappings.get(plan.id)!;
             plan.id = newId;
-            planModified = true;
-          }
-
-          // Update the plan's parent ID if it was changed
-          if (typeof plan.parent === 'number' && hierarchicalIdMappings.has(plan.parent)) {
-            const newParentId = hierarchicalIdMappings.get(plan.parent)!;
-            plan.parent = newParentId;
-            planModified = true;
-          }
-
-          // Update dependencies if any were changed
-          if (Array.isArray(plan.dependencies) && plan.dependencies.length > 0) {
-            let dependenciesChanged = false;
-            const updatedDependencies = plan.dependencies.map((dep: any) => {
-              const depNum = Number(dep);
-              if (!Number.isNaN(depNum) && hierarchicalIdMappings.has(depNum)) {
-                dependenciesChanged = true;
-                return hierarchicalIdMappings.get(depNum)!;
-              }
-              return dep;
-            });
-
-            if (dependenciesChanged) {
-              plan.dependencies = updatedDependencies;
-              planModified = true;
-            }
-          }
-
-          // Update discoveredFrom if it was changed
-          if (
-            typeof plan.discoveredFrom === 'number' &&
-            hierarchicalIdMappings.has(plan.discoveredFrom)
-          ) {
-            const newDiscoveredFrom = hierarchicalIdMappings.get(plan.discoveredFrom)!;
-            plan.discoveredFrom = newDiscoveredFrom;
-            planModified = true;
-          }
-
-          // If plan was modified, mark it for writing
-          if (planModified) {
             plansToWrite.add(filePath);
           }
         }
-
-        // Update references after hierarchical renumbering
-        log('\nUpdating references after hierarchical renumbering...');
-        updateReferencesAfterRenumbering(allPlans, hierarchicalIdMappings);
       }
     } else {
       log('No hierarchical ordering violations found');
@@ -1138,82 +1274,17 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
   if (!options.dryRun) {
     log('\nRenumbering plans...');
 
-    // Map of the plan ID after numbering to its new parent
-    const newParents = new Map<number, { from: number; to: number }[]>();
-
-    // Update the dependencies in all plans
+    // Update plan.id for plans that need renumbering (due to conflicts or missing IDs)
+    // Note: Dependencies/parent/discoveredFrom were already updated by updateReferencesAfterRenumbering
     for (const [filePath, plan] of allPlans) {
-      let originalId = plan.id;
-      let isRenumbered = newFileIds.has(filePath);
-      if (isRenumbered) {
-        const { id, reason } = newFileIds.get(filePath)!;
+      const fileInfo = newFileIds.get(filePath);
+      if (fileInfo) {
+        const { id, reason } = fileInfo;
         plan.id = id;
         if (reason === 'missing') {
           plan.status = 'done';
         }
-      }
-
-      // Check if this plan has dependencies that need updating
-      if (plan.dependencies && plan.dependencies.length > 0) {
-        let hasUpdates = false;
-        const updatedDependencies = (plan.dependencies as string[]).map((dep) => {
-          if (!Number.isNaN(Number(dep)) && !isRenumbered) {
-            // We assume that plans being renumbered because of a conflict will depend on
-            // other plans that are also being renumbered, and that plans not being
-            // renumbered because of a conflict will not depend on other plans that are
-            // being renumbered.
-            //
-            // So if current plan plan was not renumbered, then nothing changed.
-            return dep;
-          }
-
-          // Old style Dependencies can be strings or numbers, convert to string for lookup
-          const depStr = String(dep);
-
-          // Check if this dependency was renumbered
-          let renumbered = idMappings.get(depStr);
-          if (renumbered != undefined) {
-            hasUpdates = true;
-            // Add this as a potential new parent which we'll compare later.
-            // This is kind of dumb but works fine.
-            newParents.set(renumbered, [
-              ...(newParents.get(renumbered) || []),
-              { from: originalId!, to: plan.id },
-            ]);
-            return renumbered;
-          }
-
-          // Add this as a potential new parent which we'll compare later.
-          // This is kind of dumb but works fine.
-          newParents.set(Number(dep), [
-            ...(newParents.get(Number(dep)) || []),
-            { from: originalId!, to: plan.id },
-          ]);
-
-          // If not renumbered, keep original
-          return dep;
-        });
-
-        plan.dependencies = updatedDependencies;
-
-        // If dependencies were updated, write the plan back
-        if (hasUpdates) {
-          plansToWrite.add(filePath);
-          log(`  ✓ Updated dependencies in ${path.basename(filePath)}`);
-        }
-      }
-    }
-
-    const oldParent = new Map<string, number>();
-    for (const [filePath, plan] of allPlans) {
-      let newParentList = newParents.get(Number(plan.id)) ?? [];
-      for (const newParent of newParentList) {
-        if (newParent && plan.parent === newParent.from) {
-          plan.parent = newParent.to;
-          oldParent.set(filePath, newParent.from);
-          plansToWrite.add(filePath);
-          log(`  ✓ Updated parent in ${path.basename(filePath)}`);
-        }
+        plansToWrite.add(filePath);
       }
     }
 
@@ -1291,7 +1362,7 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
 
         // Check if directory starts with old parent ID and update it
         // This handles both conflict resolution parent changes and hierarchical parent changes
-        const conflictOldParentId = oldParent.get(filePath);
+        const conflictOldParentId = conflictOldParents.get(filePath);
 
         // Also check if the current parent ID was changed due to hierarchical renumbering
         let hierarchicalOldParentId: number | undefined;
