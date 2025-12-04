@@ -501,7 +501,9 @@ async function fixObsoleteTaskKeys(issues: ObsoleteKeyIssue[]): Promise<Obsolete
 /**
  * Detects plans without UUIDs
  */
-function detectMissingUuids(planMap: Map<number, PlanSchema & { filename: string }>): UuidIssue[] {
+export function detectMissingUuids(
+  planMap: Map<number, PlanSchema & { filename: string }>
+): UuidIssue[] {
   const issues: UuidIssue[] = [];
 
   for (const [planId, plan] of planMap.entries()) {
@@ -516,7 +518,7 @@ function detectMissingUuids(planMap: Map<number, PlanSchema & { filename: string
 /**
  * Generates UUIDs for plans that don't have them
  */
-async function fixMissingUuids(issues: UuidIssue[]): Promise<UuidFixResult> {
+export async function fixMissingUuids(issues: UuidIssue[]): Promise<UuidFixResult> {
   const generated: UuidFixResult['generated'] = [];
   const errors: string[] = [];
 
@@ -540,7 +542,7 @@ async function fixMissingUuids(issues: UuidIssue[]): Promise<UuidFixResult> {
 /**
  * Detects plans with incomplete or inconsistent references
  */
-function detectReferenceIssues(
+export function detectReferenceIssues(
   planMap: Map<number, PlanSchema & { filename: string }>,
   uuidToId: Map<string, number>
 ): ReferenceIssue[] {
@@ -560,7 +562,7 @@ function detectReferenceIssues(
  * Fixes reference issues by updating parent/dependencies/discoveredFrom
  * to point to the correct plan IDs based on UUIDs
  */
-async function fixReferenceIssues(
+export async function fixReferenceIssues(
   issues: ReferenceIssue[],
   planMap: Map<number, PlanSchema & { filename: string }>
 ): Promise<ReferenceFixResult> {
@@ -590,7 +592,7 @@ async function fixReferenceIssues(
 /**
  * Ensures all plans have complete reference entries
  */
-async function ensureAllReferences(
+export async function ensureAllReferences(
   planMap: Map<number, PlanSchema & { filename: string }>
 ): Promise<{ updated: number; errors: string[] }> {
   let updated = 0;
