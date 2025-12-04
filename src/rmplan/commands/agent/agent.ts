@@ -42,6 +42,7 @@ import { SummaryCollector } from '../../summary/collector.js';
 import { writeOrDisplaySummary } from '../../summary/display.js';
 import { autoClaimPlan, isAutoClaimEnabled } from '../../assignments/auto_claim.js';
 import { runUpdateDocs } from '../update-docs.js';
+import { ensureUuidsAndReferences } from '../../utils/references.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -118,6 +119,13 @@ export async function handleAgentCommand(
 export async function rmplanAgent(planFile: string, options: any, globalCliOptions: any) {
   let currentPlanFile = await resolvePlanFile(planFile, globalCliOptions.config);
   const config = await loadEffectiveConfig(globalCliOptions.config);
+
+  // Ensure all plans have UUIDs and complete reference entries before starting
+  const tasksDir = await resolveTasksDir(config);
+  const validationResult = await ensureUuidsAndReferences(tasksDir);
+  if (validationResult.errors.length > 0) {
+    validationResult.errors.forEach((err) => warn(`Validation warning: ${err}`));
+  }
 
   if (options.log !== false) {
     const parsed = path.parse(currentPlanFile);
