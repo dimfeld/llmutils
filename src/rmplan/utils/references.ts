@@ -64,6 +64,12 @@ export function ensureReferences(
   const plansWithGeneratedUuids: Array<{ id: number; uuid: string }> = [];
 
   for (const id of referencedIds) {
+    // If we already have a UUID for this ID, keep it - existing UUIDs are the source of truth
+    // This is critical during renumbering: the UUID tracks the actual plan identity
+    if (references[id]) {
+      continue;
+    }
+
     const referencedPlan = allPlans.get(id);
     if (!referencedPlan) {
       // Referenced plan doesn't exist - this is a validation error
@@ -79,7 +85,7 @@ export function ensureReferences(
       plansWithGeneratedUuids.push({ id, uuid });
     }
 
-    // Update or add the reference
+    // Add the reference (only for new references, not overwriting existing ones)
     references[id] = uuid;
   }
 

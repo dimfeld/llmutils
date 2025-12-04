@@ -1112,6 +1112,15 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
         plansToWrite.add(filePath);
       }
     }
+
+    // Now update ALL plans that reference renumbered plans (not just the renumbered plans themselves)
+    // This uses UUID tracking to correctly update dependencies/parent/discoveredFrom
+    // IMPORTANT: Must be called BEFORE plan.id values are updated (line ~1126)
+    log('\nUpdating references in plans that depend on renumbered plans...');
+    const conflictModifiedPaths = updateReferencesAfterRenumbering(allPlans, idMappings);
+    for (const filePath of conflictModifiedPaths) {
+      plansToWrite.add(filePath);
+    }
   } else {
     log('No ID conflicts found.');
   }
