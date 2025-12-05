@@ -10,6 +10,7 @@ import {
   getAssignmentsFilePath,
   readAssignments,
   removeAssignment,
+  reserveNextPlanId,
   writeAssignments,
 } from './assignments_io.js';
 
@@ -214,5 +215,187 @@ describe('assignments_io', () => {
     await expect(readAssignments({ repositoryId: expectedRepositoryId })).rejects.toBeInstanceOf(
       AssignmentsFileParseError
     );
+  });
+
+  describe('reserveNextPlanId', () => {
+    test('returns localMaxId + 1 when no shared state exists', async () => {
+      const repositoryId = 'reserve-test-1';
+      const result = await reserveNextPlanId({
+        repositoryId,
+        localMaxId: 5,
+      });
+
+      expect(result).toEqual({ startId: 6, endId: 6 });
+
+      // Verify the highestPlanId was persisted
+      const assignments = await readAssignments({ repositoryId });
+      expect(assignments.highestPlanId).toBe(6);
+    });
+
+    test('returns max(localMaxId, sharedMaxId) + 1 when shared state has higher ID', async () => {
+      const repositoryId = 'reserve-test-2';
+
+      // Set up initial shared state with higher ID
+      await writeAssignments({
+        repositoryId,
+        repositoryRemoteUrl: null,
+        version: 1,
+        assignments: {},
+        highestPlanId: 10,
+      });
+
+      const result = await reserveNextPlanId({
+        repositoryId,
+        localMaxId: 5,
+      });
+
+      expect(result).toEqual({ startId: 11, endId: 11 });
+
+      // Verify the highestPlanId was updated
+      const assignments = await readAssignments({ repositoryId });
+      expect(assignments.highestPlanId).toBe(11);
+    });
+
+    test('uses localMaxId when it is higher than shared state', async () => {
+      const repositoryId = 'reserve-test-3';
+
+      // Set up initial shared state with lower ID
+      await writeAssignments({
+        repositoryId,
+        repositoryRemoteUrl: null,
+        version: 1,
+        assignments: {},
+        highestPlanId: 3,
+      });
+
+      const result = await reserveNextPlanId({
+        repositoryId,
+        localMaxId: 10,
+      });
+
+      expect(result).toEqual({ startId: 11, endId: 11 });
+
+      // Verify the highestPlanId was updated
+      const assignments = await readAssignments({ repositoryId });
+      expect(assignments.highestPlanId).toBe(11);
+    });
+
+    test('reserves multiple IDs with count > 1', async () => {
+      const repositoryId = 'reserve-test-batch';
+      const result = await reserveNextPlanId({
+        repositoryId,
+        localMaxId: 5,
+        count: 3,
+      });
+
+      expect(result).toEqual({ startId: 6, endId: 8 });
+
+      // Verify the highestPlanId was set to the end of the range
+      const assignments = await readAssignments({ repositoryId });
+      expect(assignments.highestPlanId).toBe(8);
+    });
+
+    test('batch reservation with existing shared state', async () => {
+      const repositoryId = 'reserve-test-batch-existing';
+
+      // Set up initial shared state
+      await writeAssignments({
+        repositoryId,
+        repositoryRemoteUrl: null,
+        version: 1,
+        assignments: {},
+        highestPlanId: 10,
+      });
+
+      const result = await reserveNextPlanId({
+        repositoryId,
+        localMaxId: 5,
+        count: 5,
+      });
+
+      expect(result).toEqual({ startId: 11, endId: 15 });
+
+      // Verify the highestPlanId was updated
+      const assignments = await readAssignments({ repositoryId });
+      expect(assignments.highestPlanId).toBe(15);
+    });
+
+    test('preserves existing assignments when reserving IDs', async () => {
+      const repositoryId = 'reserve-test-preserve';
+      const uuid = '123e4567-e89b-12d3-a456-426614174000';
+      const assignedAt = new Date().toISOString();
+
+      // Set up initial state with an assignment
+      await writeAssignments({
+        repositoryId,
+        repositoryRemoteUrl: 'https://example.com/repo.git',
+        version: 1,
+        assignments: {
+          [uuid]: {
+            planId: 42,
+            workspacePaths: ['/tmp/workspace'],
+            users: ['alice'],
+            status: 'in_progress',
+            assignedAt,
+            updatedAt: assignedAt,
+          },
+        },
+        highestPlanId: 50,
+      });
+
+      await reserveNextPlanId({
+        repositoryId,
+        localMaxId: 10,
+      });
+
+      // Verify assignments were preserved
+      const assignments = await readAssignments({ repositoryId });
+      expect(assignments.assignments[uuid]).toBeDefined();
+      expect(assignments.assignments[uuid].planId).toBe(42);
+      expect(assignments.repositoryRemoteUrl).toBe('https://example.com/repo.git');
+    });
+
+    test('throws error when count is less than 1', async () => {
+      const repositoryId = 'reserve-test-invalid-count';
+
+      await expect(
+        reserveNextPlanId({
+          repositoryId,
+          localMaxId: 5,
+          count: 0,
+        })
+      ).rejects.toThrow('count must be at least 1');
+    });
+
+    test('concurrent reservations get sequential non-overlapping IDs', async () => {
+      const repositoryId = 'reserve-test-concurrent';
+
+      // Fire off multiple concurrent reservations
+      const [result1, result2, result3] = await Promise.all([
+        reserveNextPlanId({ repositoryId, localMaxId: 0, count: 2 }),
+        reserveNextPlanId({ repositoryId, localMaxId: 0, count: 3 }),
+        reserveNextPlanId({ repositoryId, localMaxId: 0, count: 1 }),
+      ]);
+
+      // Collect all reserved IDs
+      const allIds: number[] = [];
+      for (let id = result1.startId; id <= result1.endId; id++) allIds.push(id);
+      for (let id = result2.startId; id <= result2.endId; id++) allIds.push(id);
+      for (let id = result3.startId; id <= result3.endId; id++) allIds.push(id);
+
+      // Verify no overlaps - all IDs should be unique
+      const uniqueIds = new Set(allIds);
+      expect(uniqueIds.size).toBe(allIds.length);
+
+      // Verify all IDs are in expected range
+      const minId = Math.min(...allIds);
+      const maxId = Math.max(...allIds);
+      expect(minId).toBe(1);
+      expect(maxId).toBe(6); // 2 + 3 + 1 = 6 total IDs
+
+      // Verify final state has correct highestPlanId
+      const assignments = await readAssignments({ repositoryId });
+      expect(assignments.highestPlanId).toBe(6);
+    });
   });
 });

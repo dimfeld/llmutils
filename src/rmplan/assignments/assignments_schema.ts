@@ -36,6 +36,12 @@ export const assignmentsFileSchema = z
     repositoryRemoteUrl: z.string().min(1).optional().nullable(),
     version: z.number().int().nonnegative(),
     assignments: z.record(z.guid(), assignmentEntrySchema),
+    highestPlanId: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe('Highest plan ID known across all workspaces for this repository'),
   })
   .passthrough()
   .describe('Shared rmplan assignments file structure');

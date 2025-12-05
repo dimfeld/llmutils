@@ -1,3 +1,5 @@
+import { reserveNextPlanId } from './assignments/assignments_io.js';
+import { getRepositoryIdentity } from './assignments/workspace_identifier.js';
 import { getMaxNumericPlanId } from './plans.js';
 
 const EPOCH = new Date('2025-05-01T00:00:00.000Z').getTime();
@@ -57,9 +59,25 @@ export function generateAlphanumericId(): string {
 /**
  * Generate a sequential numeric plan ID
  * @param tasksDir - The directory containing plan files
- * @returns The next available numeric ID (maxId + 1)
+ * @returns The next available numeric ID
+ *
+ * Uses shared storage to coordinate IDs across multiple workspaces.
+ * Falls back to local-only behavior if shared storage is unavailable.
  */
 export async function generateNumericPlanId(tasksDir: string): Promise<number> {
-  const maxId = await getMaxNumericPlanId(tasksDir);
-  return maxId + 1;
+  const localMaxId = await getMaxNumericPlanId(tasksDir);
+
+  // Try to use shared ID storage for coordination across workspaces
+  try {
+    const repoIdentity = await getRepositoryIdentity();
+    const result = await reserveNextPlanId({
+      repositoryId: repoIdentity.repositoryId,
+      repositoryRemoteUrl: repoIdentity.remoteUrl,
+      localMaxId,
+    });
+    return result.startId;
+  } catch {
+    // Fall back to local-only behavior if shared storage unavailable
+    return localMaxId + 1;
+  }
 }

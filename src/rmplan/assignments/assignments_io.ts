@@ -228,3 +228,70 @@ export async function removeAssignment(options: RemoveAssignmentOptions): Promis
 
   return true;
 }
+
+export interface ReserveNextPlanIdOptions {
+  repositoryId: string;
+  repositoryRemoteUrl?: string | null;
+  /** Current max plan ID from local plan files */
+  localMaxId: number;
+  /** Number of IDs to reserve (default: 1) */
+  count?: number;
+}
+
+export interface ReserveNextPlanIdResult {
+  /** First reserved ID */
+  startId: number;
+  /** Last reserved ID (same as startId if count=1) */
+  endId: number;
+}
+
+/**
+ * Atomically reserves one or more plan IDs.
+ * Returns starting ID = max(localMaxId, sharedHighestPlanId) + 1
+ * Updates shared storage to the highest reserved ID.
+ */
+export async function reserveNextPlanId(
+  options: ReserveNextPlanIdOptions
+): Promise<ReserveNextPlanIdResult> {
+  const count = options.count ?? 1;
+  if (count < 1) {
+    throw new Error('count must be at least 1');
+  }
+
+  const filePath = getAssignmentsFilePath(options.repositoryId);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+
+  const lockPath = `${filePath}.lock`;
+  const releaseLock = await acquireFileLock(lockPath);
+  const tempPath = `${filePath}.${TEMP_FILE_SUFFIX}.${Math.random().toString(36).slice(2)}`;
+
+  try {
+    const current = await readExistingAssignments(filePath);
+    const sharedMaxId = current?.highestPlanId ?? 0;
+    const startId = Math.max(options.localMaxId, sharedMaxId) + 1;
+    const endId = startId + count - 1;
+
+    const updated: AssignmentsFile = {
+      repositoryId: options.repositoryId,
+      repositoryRemoteUrl: current?.repositoryRemoteUrl ?? options.repositoryRemoteUrl ?? null,
+      version: (current?.version ?? 0) + 1,
+      assignments: current?.assignments ?? {},
+      highestPlanId: endId,
+    };
+
+    const serialized = ensureTrailingNewline(JSON.stringify(updated, null, 2));
+    await fs.writeFile(tempPath, serialized, 'utf-8');
+    await fs.rename(tempPath, filePath);
+
+    return { startId, endId };
+  } catch (error) {
+    try {
+      await fs.rm(tempPath, { force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+    throw error;
+  } finally {
+    await releaseLock();
+  }
+}

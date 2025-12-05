@@ -7,6 +7,8 @@ import chalk from 'chalk';
 import { error, log, warn } from '../../../logging.js';
 import { getIssueTracker } from '../../../common/issue_tracker/factory.js';
 import type { IssueWithComments, IssueTrackerClient } from '../../../common/issue_tracker/types.js';
+import { reserveNextPlanId } from '../../assignments/assignments_io.js';
+import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
 import {
   readAllPlans,
   writePlanFile,
@@ -275,11 +277,6 @@ async function importHierarchicalIssue(
   );
   const parentIssueUrl = hierarchicalData.parentIssue.issue.html_url;
 
-  // Get the next available numeric IDs
-  const maxId = await getMaxNumericPlanId(tasksDir);
-  const parentPlanId = maxId + 1;
-  let currentMaxId = maxId;
-
   // Check if parent plan already exists
   let existingParentPlan: (PlanSchema & { filename: string }) | undefined;
 
@@ -289,6 +286,42 @@ async function importHierarchicalIssue(
       break;
     }
   }
+
+  // Count how many new plans we'll create to reserve IDs upfront
+  let newPlansCount = existingParentPlan ? 0 : 1; // Parent if not existing
+  for (const child of hierarchicalData.childIssues) {
+    const childIssueUrl = child.issueData.issue.html_url;
+    const existingChild = [...allPlans.values()].find(
+      (plan) => plan.issue && plan.issue.includes(childIssueUrl)
+    );
+    if (!existingChild) {
+      newPlansCount++;
+    }
+  }
+
+  // Get local max ID and reserve IDs from shared storage
+  const localMaxId = await getMaxNumericPlanId(tasksDir);
+  let startId: number;
+  if (newPlansCount > 0) {
+    try {
+      const repoIdentity = await getRepositoryIdentity();
+      const result = await reserveNextPlanId({
+        repositoryId: repoIdentity.repositoryId,
+        repositoryRemoteUrl: repoIdentity.remoteUrl,
+        localMaxId,
+        count: newPlansCount,
+      });
+      startId = result.startId;
+    } catch {
+      // Fall back to local-only behavior if shared storage unavailable
+      startId = localMaxId + 1;
+    }
+  } else {
+    startId = localMaxId + 1; // No new plans, but set a value in case
+  }
+
+  const parentPlanId = existingParentPlan ? existingParentPlan.id! : startId;
+  let currentMaxId = existingParentPlan ? startId - 1 : startId;
 
   let parentPlan: PlanSchema;
   let parentPlanPath: string;
@@ -625,9 +658,21 @@ async function importSingleIssue(
 
   let issueData = await getInstructionsFromIssue(issueTracker, issueSpecifier, false);
 
-  // Get the next available numeric ID for new plans
-  const maxId = await getMaxNumericPlanId(tasksDir);
-  const newId = maxId + 1;
+  // Get the next available numeric ID for new plans using shared storage
+  const localMaxId = await getMaxNumericPlanId(tasksDir);
+  let newId: number;
+  try {
+    const repoIdentity = await getRepositoryIdentity();
+    const result = await reserveNextPlanId({
+      repositoryId: repoIdentity.repositoryId,
+      repositoryRemoteUrl: repoIdentity.remoteUrl,
+      localMaxId,
+    });
+    newId = result.startId;
+  } catch {
+    // Fall back to local-only behavior if shared storage unavailable
+    newId = localMaxId + 1;
+  }
 
   // Create stub plan using the shared utility function
   const stubPlan = createStubPlanFromIssue(issueData, newId);

@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'yaml';
+import { reserveNextPlanId } from '../assignments/assignments_io.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
@@ -1043,8 +1045,24 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
     });
 
     log(`\nFound ${plansToRenumber.length} plans to renumber:`);
-    // Use the current max numeric ID to avoid conflicts during renumbering
-    let nextId = maxNumericId;
+
+    // Reserve IDs from shared storage to avoid conflicts across workspaces
+    let nextIdStart: number;
+    try {
+      const repoIdentity = await getRepositoryIdentity({ cwd: gitRoot });
+      const result = await reserveNextPlanId({
+        repositoryId: repoIdentity.repositoryId,
+        repositoryRemoteUrl: repoIdentity.remoteUrl,
+        localMaxId: maxNumericId,
+        count: plansToRenumber.length,
+      });
+      nextIdStart = result.startId;
+    } catch {
+      // Fall back to local-only behavior if shared storage unavailable
+      nextIdStart = maxNumericId + 1;
+    }
+
+    let nextId = nextIdStart - 1; // Will be incremented before first use
 
     for (const plan of plansToRenumber) {
       nextId++;
