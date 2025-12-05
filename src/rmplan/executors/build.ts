@@ -3,7 +3,6 @@ import { error, log } from '../../logging.ts';
 import type { RmplanConfig } from '../configSchema.ts';
 import { ClaudeCodeExecutor } from './claude_code.ts';
 import { CopyOnlyExecutor } from './copy_only.ts';
-import { CopyOnlyStateMachineExecutor } from './copy_only_statemachine.ts';
 import { CopyPasteExecutor } from './copy_paste.ts';
 import { OneCallExecutor } from './one-call';
 import { CodexCliExecutor } from './codex_cli';
@@ -18,7 +17,6 @@ export const executors = new Map<string, ExecutorFactory<any, z.ZodType<any, any
   [CopyPasteExecutor.name, CopyPasteExecutor],
   [CopyOnlyExecutor.name, CopyOnlyExecutor],
   [CodexCliExecutor.name, CodexCliExecutor],
-  // [CopyOnlyStateMachineExecutor.name, CopyOnlyStateMachineExecutor],
 ]);
 
 export function createExecutor(
