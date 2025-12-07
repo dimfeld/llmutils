@@ -34,6 +34,8 @@ import {
   inferFailedAgent,
 } from './failure_detection.ts';
 import { getReviewOutputJsonSchemaString } from '../formatters/review_output_schema.ts';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { readSharedPermissions, addSharedPermission } from '../assignments/permissions_io.js';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -448,6 +450,18 @@ export class ClaudeCodeExecutor implements Executor {
         // Write the settings back to file
         await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
       }
+
+      // Also save to shared permissions for cross-worktree sharing
+      try {
+        const identity = await getRepositoryIdentity();
+        await addSharedPermission({
+          repositoryId: identity.repositoryId,
+          permission: newRule,
+          type: 'allow',
+        });
+      } catch (sharedErr) {
+        debugLog('Could not save permission to shared storage:', sharedErr);
+      }
     } catch (err) {
       debugLog('Could not save permission to Claude settings:', err);
     }
@@ -458,6 +472,23 @@ export class ClaudeCodeExecutor implements Executor {
       rmfilter: false,
       model: 'claude',
     };
+  }
+
+  /**
+   * Loads shared permissions from cross-worktree storage.
+   * Returns an array of permission strings to be added to allowedTools.
+   */
+  private async loadSharedPermissions(): Promise<string[]> {
+    try {
+      const identity = await getRepositoryIdentity();
+      const shared = await readSharedPermissions({
+        repositoryId: identity.repositoryId,
+      });
+      return shared.permissions.allow;
+    } catch (err) {
+      debugLog('Could not load shared permissions:', err);
+      return [];
+    }
   }
 
   /**
@@ -546,7 +577,14 @@ export class ClaudeCodeExecutor implements Executor {
           ]
         : [];
 
-    let allowedTools = [...defaultAllowedTools, ...(this.options.allowedTools ?? [])];
+    // Load shared permissions from cross-worktree storage
+    const sharedPermissions = await this.loadSharedPermissions();
+
+    let allowedTools = [
+      ...defaultAllowedTools,
+      ...(this.options.allowedTools ?? []),
+      ...sharedPermissions,
+    ];
     if (this.options.disallowedTools) {
       allowedTools = allowedTools.filter((t) => !this.options.disallowedTools?.includes(t));
     }
@@ -1117,7 +1155,14 @@ export class ClaudeCodeExecutor implements Executor {
           ]
         : [];
 
-    let allowedTools = [...defaultAllowedTools, ...(this.options.allowedTools ?? [])];
+    // Load shared permissions from cross-worktree storage
+    const sharedPermissions = await this.loadSharedPermissions();
+
+    let allowedTools = [
+      ...defaultAllowedTools,
+      ...(this.options.allowedTools ?? []),
+      ...sharedPermissions,
+    ];
     if (disallowedTools) {
       allowedTools = allowedTools.filter((t) => !disallowedTools?.includes(t));
     }
