@@ -1062,8 +1062,10 @@ export class ClaudeCodeExecutor implements Executor {
       allowAllTools = envAllowAllTools;
     }
 
-    if (interactive || allowAllTools) {
-      // permissions MCP doesn't make sense in interactive mode, or when we want to allow all tools
+    if (interactive) {
+      // permissions MCP doesn't make sense in interactive mode
+      // We keep it enabled when allowAllTools is set just because there are some occasional edge cases where Claude
+      // will ask for permission anyway.
       isPermissionsMcpEnabled = false;
     }
 
