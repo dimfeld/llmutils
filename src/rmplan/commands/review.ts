@@ -6,7 +6,7 @@ import { checkbox, select } from '@inquirer/prompts';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname, isAbsolute, resolve, relative } from 'node:path';
 import { getCurrentCommitHash, getGitRoot, getTrunkBranch, getUsingJj } from '../../common/git.js';
-import { findBranchSpecificPlan, writePlanFile } from '../plans.js';
+import { findBranchSpecificPlan, readPlanFile, writePlanFile } from '../plans.js';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
@@ -484,11 +484,7 @@ export async function handleReviewCommand(
         log(chalk.yellow('No review issues available to append as tasks.'));
       } else {
         try {
-          const appendedCount = await appendIssuesToPlanTasks(
-            contextPlanFile,
-            planData,
-            issuesToAppend
-          );
+          const appendedCount = await appendIssuesToPlanTasks(contextPlanFile, issuesToAppend);
 
           if (appendedCount > 0) {
             const plural = appendedCount === 1 ? '' : 's';
@@ -870,9 +866,11 @@ function createTaskFromIssue(issue: ReviewIssue): PlanTask {
 
 async function appendIssuesToPlanTasks(
   planFilePath: string,
-  planData: PlanSchema,
   issues: ReviewIssue[]
 ): Promise<number> {
+  // Re-read the plan to get the latest state (handles parallel reviews)
+  const planData = await readPlanFile(planFilePath);
+
   if (!Array.isArray(planData.tasks)) {
     planData.tasks = [];
   }
