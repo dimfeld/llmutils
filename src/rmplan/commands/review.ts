@@ -821,14 +821,6 @@ function buildTaskTitleFromIssue(issue: ReviewIssue): string {
     .find((line) => line.length > 0);
 
   let normalized = (firstMeaningfulLine || 'Review feedback').replace(/\s+/g, ' ');
-  const MAX_BODY_LENGTH = 100;
-  if (normalized.length > MAX_BODY_LENGTH) {
-    normalized = `${normalized.slice(0, MAX_BODY_LENGTH - 3).trimEnd()}...`;
-  }
-
-  if (!/[.!?]$/.test(normalized)) {
-    normalized += '.';
-  }
 
   return `Address Review Feedback: ${normalized}`;
 }
