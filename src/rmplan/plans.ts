@@ -821,6 +821,65 @@ export async function getNewPlanFilesOnBranch(
 }
 
 /**
+ * Gets plan files that have been modified on the current branch compared to trunk.
+ * Returns only files that exist on both trunk and the current branch but have been changed.
+ *
+ * @param gitRoot - The root directory of the git/jj repository
+ * @param tasksDir - The directory containing plan files
+ * @returns Array of absolute paths to modified plan files
+ */
+export async function getModifiedPlanFilesOnBranch(
+  gitRoot: string,
+  tasksDir: string
+): Promise<string[]> {
+  const trunkBranch = await getTrunkBranch(gitRoot);
+  const isJj = await getUsingJj();
+
+  let modifiedFiles: string[] = [];
+
+  if (isJj) {
+    // Use jj to find modified files
+    const from = `latest(ancestors(${trunkBranch})&ancestors(@))`;
+    const output = await $`jj diff --from ${from} --types`.cwd(gitRoot).nothrow().text();
+
+    // Look for lines like "FF some/file.yml" which means file was modified (exists before and after)
+    const lines = output.split('\n');
+    for (const line of lines) {
+      if (line.startsWith('FF ')) {
+        const filePath = line.slice(3).trim();
+        if (filePath.match(/\.(plan\.md|yml|yaml)$/)) {
+          // Check if file is in tasks directory
+          const fullPath = path.join(gitRoot, filePath);
+          if (fullPath.startsWith(tasksDir)) {
+            modifiedFiles.push(fullPath);
+          }
+        }
+      }
+    }
+  } else {
+    // Use git to find modified files
+    const output = await $`git diff --name-status ${trunkBranch}`.cwd(gitRoot).nothrow().text();
+
+    // Look for lines like "M some/file.yml" which means file was modified
+    const lines = output.split('\n');
+    for (const line of lines) {
+      if (line.startsWith('M\t')) {
+        const filePath = line.slice(2).trim();
+        if (filePath.match(/\.(plan\.md|yml|yaml)$/)) {
+          // Check if file is in tasks directory
+          const fullPath = path.join(gitRoot, filePath);
+          if (fullPath.startsWith(tasksDir)) {
+            modifiedFiles.push(fullPath);
+          }
+        }
+      }
+    }
+  }
+
+  return modifiedFiles;
+}
+
+/**
  * Finds plans that only exist on the current branch and selects the best candidate.
  * Plans are sorted by createdAt timestamp (oldest first), then by ID (lowest first).
  *
@@ -894,4 +953,42 @@ export async function findBranchSpecificPlan(
   });
 
   return planCandidates[0];
+}
+
+/**
+ * Finds a single plan that has been modified on the current branch.
+ * Returns null if zero or more than one plan was modified.
+ *
+ * @param configPath - Optional path to rmplan config file
+ * @returns The modified plan or null if zero or multiple plans were modified
+ */
+export async function findSingleModifiedPlanOnBranch(
+  configPath?: string
+): Promise<(PlanSchema & { filename: string }) | null> {
+  const config = await loadEffectiveConfig(configPath);
+  const { gitRoot, tasksDir } = await resolvePlanPathContext(config);
+
+  // Get plan files that have been modified on this branch
+  const modifiedPlanFiles = await getModifiedPlanFilesOnBranch(gitRoot, tasksDir);
+
+  // Only proceed if exactly one plan was modified
+  if (modifiedPlanFiles.length !== 1) {
+    return null;
+  }
+
+  // Read and parse the single modified plan file
+  try {
+    const planData = await readPlanFile(modifiedPlanFiles[0]);
+    if (planData.id) {
+      return {
+        ...planData,
+        filename: modifiedPlanFiles[0],
+      };
+    }
+  } catch (err) {
+    // Skip file that can't be parsed
+    debugLog(`Skipping unparseable modified plan file: ${modifiedPlanFiles[0]}`, err);
+  }
+
+  return null;
 }

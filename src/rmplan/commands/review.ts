@@ -6,7 +6,12 @@ import { checkbox, select } from '@inquirer/prompts';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname, isAbsolute, resolve, relative } from 'node:path';
 import { getCurrentCommitHash, getGitRoot, getTrunkBranch, getUsingJj } from '../../common/git.js';
-import { findBranchSpecificPlan, readPlanFile, writePlanFile } from '../plans.js';
+import {
+  findBranchSpecificPlan,
+  findSingleModifiedPlanOnBranch,
+  readPlanFile,
+  writePlanFile,
+} from '../plans.js';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
@@ -174,18 +179,33 @@ export async function handleReviewCommand(
   // If no planFile is provided, try to auto-select one from branch-specific plans
   let resolvedPlanFile = planFile;
   if (!resolvedPlanFile) {
-    const autoSelectedPlan = await findBranchSpecificPlan(globalOpts.config);
+    let autoSelectedPlan = await findBranchSpecificPlan(globalOpts.config);
+
+    if (!autoSelectedPlan) {
+      // Fallback: try to find a single modified plan
+      autoSelectedPlan = await findSingleModifiedPlanOnBranch(globalOpts.config);
+
+      if (autoSelectedPlan) {
+        log(
+          chalk.cyan(
+            `No new plans found on branch. Auto-selected modified plan: ${autoSelectedPlan.id} - ${autoSelectedPlan.title}`
+          )
+        );
+        log(chalk.gray(`Plan file: ${autoSelectedPlan.filename}`));
+      }
+    } else {
+      log(chalk.cyan(`Auto-selected plan: ${autoSelectedPlan.id} - ${autoSelectedPlan.title}`));
+      log(chalk.gray(`Plan file: ${autoSelectedPlan.filename}`));
+    }
 
     if (!autoSelectedPlan) {
       throw new Error(
-        'No plan file specified and no plans found that are unique to this branch. ' +
+        'No plan file specified and no suitable plans found. ' +
           'Please specify a plan file explicitly.'
       );
     }
 
     resolvedPlanFile = autoSelectedPlan.filename;
-    log(chalk.cyan(`Auto-selected plan: ${autoSelectedPlan.id} - ${autoSelectedPlan.title}`));
-    log(chalk.gray(`Plan file: ${autoSelectedPlan.filename}`));
   }
 
   // Gather plan context using the shared utility

@@ -3172,6 +3172,183 @@ describe.skip('Branch-specific plan discovery', () => {
     expect(result?.id).toBe(2);
     expect(result?.title).toBe('Plan 2');
   });
+
+  test('findSingleModifiedPlanOnBranch returns plan when exactly one modified', async () => {
+    const { findSingleModifiedPlanOnBranch } = await import('../plans.js');
+
+    const modifiedPlanFile = join(testDir, 'modified-plan.yml');
+
+    await moduleMocker.mock('../plans.js', () => ({
+      findSingleModifiedPlanOnBranch,
+      getModifiedPlanFilesOnBranch: mock(async () => [modifiedPlanFile]),
+      readPlanFile: mock(async (filePath: string) => {
+        if (filePath === modifiedPlanFile) {
+          return {
+            id: 42,
+            title: 'Modified Plan',
+            goal: 'Plan that was modified on this branch',
+          };
+        }
+        return null;
+      }),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: { tasks: testDir },
+      }),
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    const result = await findSingleModifiedPlanOnBranch();
+
+    expect(result).not.toBeNull();
+    expect(result?.id).toBe(42);
+    expect(result?.title).toBe('Modified Plan');
+    expect(result?.filename).toBe(modifiedPlanFile);
+  });
+
+  test('findSingleModifiedPlanOnBranch returns null when multiple plans modified', async () => {
+    const { findSingleModifiedPlanOnBranch } = await import('../plans.js');
+
+    const plan1File = join(testDir, 'modified-plan1.yml');
+    const plan2File = join(testDir, 'modified-plan2.yml');
+
+    await moduleMocker.mock('../plans.js', () => ({
+      findSingleModifiedPlanOnBranch,
+      getModifiedPlanFilesOnBranch: mock(async () => [plan1File, plan2File]),
+      readPlanFile: mock(async () => ({
+        id: 1,
+        title: 'Some Plan',
+        goal: 'Some goal',
+      })),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: { tasks: testDir },
+      }),
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    const result = await findSingleModifiedPlanOnBranch();
+
+    expect(result).toBeNull();
+  });
+
+  test('findSingleModifiedPlanOnBranch returns null when no plans modified', async () => {
+    const { findSingleModifiedPlanOnBranch } = await import('../plans.js');
+
+    await moduleMocker.mock('../plans.js', () => ({
+      findSingleModifiedPlanOnBranch,
+      getModifiedPlanFilesOnBranch: mock(async () => []),
+      readPlanFile: mock(async () => null),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: { tasks: testDir },
+      }),
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    const result = await findSingleModifiedPlanOnBranch();
+
+    expect(result).toBeNull();
+  });
+
+  test('getModifiedPlanFilesOnBranch detects modified files in git', async () => {
+    const { getModifiedPlanFilesOnBranch } = await import('../plans.js');
+
+    await moduleMocker.mock('bun', () => ({
+      $: mock().mockImplementation((template: TemplateStringsArray) => {
+        const command = template.join('');
+        if (command.includes('git diff --name-status')) {
+          return {
+            cwd: mock(() => ({
+              nothrow: () => ({
+                text: () => 'M\ttasks/modified-plan.yml\nM\ttasks/another.plan.md\nA\ttasks/new.yml',
+              }),
+            })),
+            nothrow: mock(() => ({
+              text: () => 'M\ttasks/modified-plan.yml\nM\ttasks/another.plan.md\nA\ttasks/new.yml',
+            })),
+            text: mock(() => 'M\ttasks/modified-plan.yml\nM\ttasks/another.plan.md\nA\ttasks/new.yml'),
+          };
+        }
+        return {
+          cwd: mock(() => ({ nothrow: () => ({ text: () => '' }) })),
+          nothrow: mock(() => ({ text: () => '' })),
+          text: mock(() => ''),
+        };
+      }),
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getTrunkBranch: async () => 'main',
+      getUsingJj: async () => false,
+    }));
+
+    const result = await getModifiedPlanFilesOnBranch('/test/repo', '/test/repo/tasks');
+
+    expect(result).toHaveLength(2);
+    expect(result).toContain('/test/repo/tasks/modified-plan.yml');
+    expect(result).toContain('/test/repo/tasks/another.plan.md');
+    expect(result).not.toContain('/test/repo/tasks/new.yml'); // Added file, not modified
+  });
+
+  test('getModifiedPlanFilesOnBranch detects modified files in jj', async () => {
+    const { getModifiedPlanFilesOnBranch } = await import('../plans.js');
+
+    await moduleMocker.mock('bun', () => ({
+      $: mock().mockImplementation((template: TemplateStringsArray) => {
+        const command = template.join('');
+        if (command.includes('jj diff --from')) {
+          return {
+            cwd: mock(() => ({
+              nothrow: () => ({
+                text: () =>
+                  'FF tasks/modified-plan.yml\nFF tasks/another.plan.md\n-F tasks/new.yml',
+              }),
+            })),
+            nothrow: mock(() => ({
+              text: () =>
+                'FF tasks/modified-plan.yml\nFF tasks/another.plan.md\n-F tasks/new.yml',
+            })),
+            text: mock(
+              () => 'FF tasks/modified-plan.yml\nFF tasks/another.plan.md\n-F tasks/new.yml'
+            ),
+          };
+        }
+        return {
+          cwd: mock(() => ({ nothrow: () => ({ text: () => '' }) })),
+          nothrow: mock(() => ({ text: () => '' })),
+          text: mock(() => ''),
+        };
+      }),
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getTrunkBranch: async () => 'main',
+      getUsingJj: async () => true,
+    }));
+
+    const result = await getModifiedPlanFilesOnBranch('/test/repo', '/test/repo/tasks');
+
+    expect(result).toHaveLength(2);
+    expect(result).toContain('/test/repo/tasks/modified-plan.yml');
+    expect(result).toContain('/test/repo/tasks/another.plan.md');
+    expect(result).not.toContain('/test/repo/tasks/new.yml'); // Added file, not modified
+  });
 });
 
 describe('JSON output mode integration', () => {
