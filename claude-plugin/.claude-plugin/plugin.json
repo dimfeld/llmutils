@@ -1,0 +1,12 @@
+{
+  "name": "rmplan",
+  "version": "1.0.0",
+  "description": "AI-powered project planning and execution with rmplan",
+  "author": {
+    "name": "Daniel Imfeld",
+    "url": "https://github.com/dimfeld"
+  },
+  "repository": "https://github.com/dimfeld/llmutils",
+  "license": "MIT",
+  "keywords": ["planning", "project-management", "mcp", "automation"]
+}

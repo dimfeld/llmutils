@@ -871,6 +871,25 @@ Add to your MCP client settings (e.g., Claude Code):
    - Review with `get-plan`
 3. Execute: `rmplan agent 123`
 
+**Claude Code Plugin:**
+
+This repository includes a Claude Code plugin that automatically configures the rmplan MCP server and provides a usage skill. To use it, add this repository to your Claude Code plugins:
+
+```bash
+# Run Claude Code with the plugin
+claude --plugin-dir /path/to/llmutils
+
+# Or add to ~/.claude/settings.json
+{
+  "plugins": ["/path/to/llmutils"]
+}
+```
+
+The plugin provides:
+- Automatic MCP server configuration (no manual `.mcp.json` needed)
+- A skill that loads when you mention "rmplan" or "generate plan"
+- Documentation for MCP tools and CLI commands
+
 ---
 
 ## Workspace Management
