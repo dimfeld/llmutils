@@ -101,6 +101,19 @@ program
   });
 
 program
+  .command('prompts <prompt> [plan]')
+  .description('Print an MCP prompt to stdout for use in CLI workflows')
+  .option('--plan <plan>', 'Plan ID or file path to use')
+  .option(
+    '--allow-multiple-plans',
+    'Allow the prompt to recommend creating multiple plans when the scope is large'
+  )
+  .action(async (promptName, planArg, options, command) => {
+    const { handlePromptsCommand } = await import('./commands/prompts.js');
+    await handlePromptsCommand(promptName, planArg, options, command).catch(handleCommandError);
+  });
+
+program
   .command('init')
   .description('Initialize a repository with a sample rmplan configuration file')
   .option('--force', 'Overwrite existing configuration file if it exists')

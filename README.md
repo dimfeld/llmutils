@@ -1705,6 +1705,13 @@ rmplan assignments clean-stale
 ```bash
 # Start server
 rmplan mcp-server --mode generate [--transport TRANSPORT] [--port PORT]
+
+# Print MCP prompts from the CLI
+rmplan prompts generate-plan 123
+rmplan prompts generate-plan-simple --plan 123
+rmplan prompts plan-questions 123
+rmplan prompts load-plan 123
+rmplan prompts compact-plan 123
 ```
 
 ### Utilities
