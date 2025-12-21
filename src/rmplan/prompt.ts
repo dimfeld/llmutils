@@ -691,14 +691,14 @@ For now, please:
 - Explore the relevant parts of the codebase
 - Understand the existing patterns and conventions
 - Identify the key files and components that will be involved
-- Think about the best approach to implement this feature
+- ultrathink about the best approach to implement this feature
 
 
 Make sure your plan includes these details:
 
 ${commonGenerateDetails}
 
-IMPORTANT: Do NOT create tasks for manual verification. This plan will be executed by an AI coding agent and verified separately after implementation. Focus on automated testing and implementation tasks only.
+IMPORTANT: Do NOT create tasks for manual verification. Focus on automated testing and implementation tasks only.
 
 Do not perform any implementation or write any files yet.
 
@@ -718,25 +718,25 @@ export function generateClaudeCodeResearchPrompt(
 ): string {
   return `${prefix}, capture every insight you've gathered.
 
-Output structured Markdown that can be appended directly under a "## Research" heading in the plan file. Follow this exact template:
+Generate structured Markdown containing a deep, detailed guide to implement the change, including background and context about the surrounding system and rationale behind why we're doing things a certain way. Be very exhaustive and ultrathink when creating this content.
 
-### Summary
-- Provide a concise overview of the opportunity or problem you investigated.
+Include details such as:
+
+- A concise overview of the opportunity or problem you investigated.
 - Highlight the most critical discoveries that should guide implementation.
-
-### Findings
-- List notable files, modules, or patterns you inspected and what you learned about them.
+- Notable files, modules, or patterns you inspected and what you learned about them.
 - Mention existing utilities, abstractions, or APIs that are relevant.
-- Place each subagent's output under a subsection in here. Prefer to just use each subagent's output verbatim.
-- File paths must be relative to the root of the repository, not absolute.
-
-### Risks & Constraints
 - Record architectural hazards, edge cases, or constraints uncovered during research.
 - Call out any dependencies or prerequisites the implementation must respect.
+- Manual testing steps (this is ok here even though we don't want them in the structured tasks that you will generate later).
+- A detailed step-by-step guide on how to implement the change.
+
+### Constraints
 
 Do not wrap the output in code fences and do not repeat previous instructions.
 Be verbose in your findings. The insights you gathered are valuable,
 so the more you include from your exploration, the better.
+File paths must be relative to the root of the repository, not absolute.
 `;
 }
 

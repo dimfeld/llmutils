@@ -3276,13 +3276,16 @@ describe.skip('Branch-specific plan discovery', () => {
           return {
             cwd: mock(() => ({
               nothrow: () => ({
-                text: () => 'M\ttasks/modified-plan.yml\nM\ttasks/another.plan.md\nA\ttasks/new.yml',
+                text: () =>
+                  'M\ttasks/modified-plan.yml\nM\ttasks/another.plan.md\nA\ttasks/new.yml',
               }),
             })),
             nothrow: mock(() => ({
               text: () => 'M\ttasks/modified-plan.yml\nM\ttasks/another.plan.md\nA\ttasks/new.yml',
             })),
-            text: mock(() => 'M\ttasks/modified-plan.yml\nM\ttasks/another.plan.md\nA\ttasks/new.yml'),
+            text: mock(
+              () => 'M\ttasks/modified-plan.yml\nM\ttasks/another.plan.md\nA\ttasks/new.yml'
+            ),
           };
         }
         return {
@@ -3321,8 +3324,7 @@ describe.skip('Branch-specific plan discovery', () => {
               }),
             })),
             nothrow: mock(() => ({
-              text: () =>
-                'FF tasks/modified-plan.yml\nFF tasks/another.plan.md\n-F tasks/new.yml',
+              text: () => 'FF tasks/modified-plan.yml\nFF tasks/another.plan.md\n-F tasks/new.yml',
             })),
             text: mock(
               () => 'FF tasks/modified-plan.yml\nFF tasks/another.plan.md\n-F tasks/new.yml'

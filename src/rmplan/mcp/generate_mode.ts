@@ -28,7 +28,7 @@ export interface GenerateModeRegistrationContext {
   gitRoot: string;
 }
 
-const questionText = `Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Avoid repeating information already captured. As you figure things out, update the details in the plan file if necessary.`;
+const questionText = `Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. As you figure things out, update the details in the plan file if necessary. Ask as many questions as you need to figure things out, since it improves the implementation quality.`;
 
 function parseBooleanOption(value: unknown, defaultValue = false): boolean {
   if (typeof value === 'boolean') {
@@ -112,7 +112,7 @@ Only create multiple plans if it genuinely improves the project organization. Fo
 
 ${generateClaudeCodeResearchPrompt(`Once your research is complete`)}
 
-Add your research directly to the plan file at ${planPath} under a "## Research" heading. You can directly edit this file; don't use the rmplan MCP tools. Be verbose in your findings - the more insights you include from your exploration, the better.
+Add your guide directly to the plan file at ${planPath} under a "## Implementation Guide" heading. You can directly edit this file; don't use the rmplan MCP tools. Be verbose in your findings - the more insights you include from your exploration, the better.
 
 When done, collaborate with your human partner to refine this plan. ${questionText}`;
 
