@@ -101,7 +101,7 @@ program
   });
 
 program
-  .command('prompts <prompt> [plan]')
+  .command('prompts [prompt] [plan]')
   .description('Print an MCP prompt to stdout for use in CLI workflows')
   .option('--plan <plan>', 'Plan ID or file path to use')
   .option(

@@ -1707,6 +1707,7 @@ rmplan assignments clean-stale
 rmplan mcp-server --mode generate [--transport TRANSPORT] [--port PORT]
 
 # Print MCP prompts from the CLI
+rmplan prompts
 rmplan prompts generate-plan 123
 rmplan prompts generate-plan-simple --plan 123
 rmplan prompts plan-questions 123

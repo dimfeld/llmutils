@@ -77,6 +77,10 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
 
 const PROMPT_LOOKUP = new Map(PROMPT_DEFINITIONS.map((entry) => [entry.name, entry]));
 
+function getAvailablePromptNames(): string[] {
+  return PROMPT_DEFINITIONS.map((entry) => entry.name);
+}
+
 function extractPromptText(result: PromptResult): string {
   if (typeof result === 'string') {
     return result;
@@ -121,7 +125,7 @@ export async function buildPromptText(
 ): Promise<string> {
   const definition = PROMPT_LOOKUP.get(promptName);
   if (!definition) {
-    const available = PROMPT_DEFINITIONS.map((entry) => entry.name).join(', ');
+    const available = getAvailablePromptNames().join(', ');
     throw new Error(`Unknown prompt "${promptName}". Available prompts: ${available}`);
   }
 
@@ -146,11 +150,18 @@ export async function buildPromptText(
 }
 
 export async function handlePromptsCommand(
-  promptName: string,
+  promptName: string | undefined,
   planArg: string | undefined,
   options: PromptCommandOptions,
   command: any
 ): Promise<void> {
+  if (!promptName) {
+    const available = getAvailablePromptNames().join('\n');
+    const output = available.endsWith('\n') ? available : `${available}\n`;
+    writeStdout(output);
+    return;
+  }
+
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const pathContext = await resolvePlanPathContext(config);
