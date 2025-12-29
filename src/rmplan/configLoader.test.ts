@@ -126,7 +126,7 @@ describe('configLoader', () => {
     const expectedRepositoryDir = path.join(
       fakeHomeDir,
       '.config',
-      'rmfilter',
+      'rmplan',
       'repositories',
       repositoryName
     );
@@ -160,7 +160,7 @@ describe('configLoader', () => {
     const expectedRepositoryDir = path.join(
       fakeHomeDir,
       '.config',
-      'rmfilter',
+      'rmplan',
       'repositories',
       expectedName
     );
@@ -224,7 +224,7 @@ describe('configLoader', () => {
     const expectedConfigPath = path.join(
       fakeHomeDir,
       '.config',
-      'rmfilter',
+      'rmplan',
       'repositories',
       repositoryName,
       '.rmfilter',
@@ -234,7 +234,7 @@ describe('configLoader', () => {
     const expectedTasksDir = path.join(
       fakeHomeDir,
       '.config',
-      'rmfilter',
+      'rmplan',
       'repositories',
       repositoryName,
       'tasks'
@@ -482,8 +482,12 @@ executors:
       // claude-code should have merged options from both configs
       expect(config.executors?.['claude-code']).toEqual({
         allowedTools: ['tool1', 'tool2'], // from main
+        enableReviewFeedback: false,
         includeDefaultTools: true, // from local (overrides main)
-        permissionsMcp: { enabled: true }, // from main
+        permissionsMcp: {
+          autoApproveCreatedFileDeletion: false,
+          enabled: true
+        }, // from main
         mcpConfigFile: '/path/to/config', // from local
       });
 

@@ -65,7 +65,7 @@ describe('RepositoryConfigResolver', () => {
     const expectedRepositoryDir = path.join(
       fakeHomeDir,
       '.config',
-      'rmfilter',
+      'rmplan',
       'repositories',
       repositoryName
     );
@@ -106,7 +106,7 @@ describe('RepositoryConfigResolver', () => {
     const expectedRepositoryDir = path.join(
       fakeHomeDir,
       '.config',
-      'rmfilter',
+      'rmplan',
       'repositories',
       expectedRepositoryName
     );
@@ -147,7 +147,7 @@ describe('RepositoryConfigResolver', () => {
       path.join(
         fakeHomeDir,
         '.config',
-        'rmfilter',
+        'rmplan',
         'repositories',
         'github.example.com__Owner__Repo'
       )

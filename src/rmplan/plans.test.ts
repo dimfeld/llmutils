@@ -1390,6 +1390,13 @@ const test = "example";
     const readBackPlan = await readPlanFile(planPath);
     expect(readBackPlan).toEqual({
       ...planToWrite,
+      container: false,
+      docs: [],
+      issue: [],
+      progressNotes: [],
+      pullRequest: [],
+      references: {},
+      temp: false,
       updatedAt: expect.any(String),
       uuid: expect.stringMatching(UUID_REGEX),
     });
@@ -1534,6 +1541,13 @@ const roundTrip = "test";
     // Assert deep equality
     expect(readBackPlan).toEqual({
       ...originalPlan,
+      container: false,
+      docs: [],
+      issue: [],
+      progressNotes: [],
+      pullRequest: [],
+      references: {},
+      temp: false,
       updatedAt: expect.any(String),
       uuid: expect.stringMatching(UUID_REGEX),
     });

@@ -637,12 +637,36 @@ export async function writePlanFile(
   // Separate the details field from the rest of the plan
   const { details, ...planWithoutDetails } = result.data;
 
+  // Remove default values to keep YAML clean
+  const cleanedPlan: Record<string, unknown> = { ...planWithoutDetails };
+
+  // Remove false boolean defaults
+  if (cleanedPlan.container === false) {
+    delete cleanedPlan.container;
+  }
+  if (cleanedPlan.temp === false) {
+    delete cleanedPlan.temp;
+  }
+
+  // Remove empty arrays
+  const arrayFields = ['dependencies', 'issue', 'pullRequest', 'docs', 'progressNotes'] as const;
+  for (const field of arrayFields) {
+    if (Array.isArray(cleanedPlan[field]) && (cleanedPlan[field] as unknown[]).length === 0) {
+      delete cleanedPlan[field];
+    }
+  }
+
+  // Remove empty objects
+  if (cleanedPlan.references && typeof cleanedPlan.references === 'object' && Object.keys(cleanedPlan.references).length === 0) {
+    delete cleanedPlan.references;
+  }
+
   // The yaml-language-server schema line
   const schemaLine =
     '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json';
 
   // Convert the plan (without details) to YAML with proper formatting
-  const yamlContent = yaml.stringify(planWithoutDetails);
+  const yamlContent = yaml.stringify(cleanedPlan);
 
   // Construct the front matter format
   let fullContent = '---\n';

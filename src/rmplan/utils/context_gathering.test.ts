@@ -80,7 +80,7 @@ describe('gatherPlanContext', () => {
 
   test('should gather basic plan context successfully', async () => {
     const options = {};
-    const globalOpts = { config: tempDir };
+    const globalOpts = {};
 
     const result = await gatherPlanContext(planFile, options, globalOpts, mockDeps);
 
@@ -127,7 +127,7 @@ describe('gatherPlanContext', () => {
     mockDeps.getParentChain = () => [parentPlan];
 
     const options = {};
-    const globalOpts = { config: tempDir };
+    const globalOpts = {};
 
     const result = await gatherPlanContext(planFile, options, globalOpts, mockDeps);
 
@@ -154,7 +154,7 @@ describe('gatherPlanContext', () => {
     mockDeps.getCompletedChildren = () => [completedChild];
 
     const options = {};
-    const globalOpts = { config: tempDir };
+    const globalOpts = {};
 
     const result = await gatherPlanContext(planFile, options, globalOpts, mockDeps);
 
@@ -175,7 +175,7 @@ describe('gatherPlanContext', () => {
     mockDeps.getIncrementalSummary = async () => incrementalSummary;
 
     const options = { incremental: true };
-    const globalOpts = { config: tempDir };
+    const globalOpts = {};
 
     const result = await gatherPlanContext(planFile, options, globalOpts, mockDeps);
 
@@ -193,7 +193,7 @@ describe('gatherPlanContext', () => {
     });
 
     const options = {};
-    const globalOpts = { config: tempDir };
+    const globalOpts = {};
 
     const result = await gatherPlanContext(planFile, options, globalOpts, mockDeps);
 
@@ -224,7 +224,7 @@ describe('gatherPlanContext', () => {
     };
 
     const options = {};
-    const globalOpts = { config: tempDir };
+    const globalOpts = {};
 
     await expect(
       gatherPlanContext(planFile, options, globalOpts, validationMockDeps)
@@ -239,7 +239,7 @@ describe('gatherPlanContext', () => {
     };
 
     const options = {};
-    const globalOpts = { config: tempDir };
+    const globalOpts = {};
 
     // Should not throw but continue with empty hierarchy
     const result = await gatherPlanContext(planFile, options, globalOpts, mockDeps);
@@ -260,7 +260,7 @@ describe('gatherPlanContext', () => {
     mockDeps.getIncrementalSummary = async () => incrementalSummary;
 
     const options = { incremental: true };
-    const globalOpts = { config: tempDir };
+    const globalOpts = {};
 
     const result = await gatherPlanContext(planFile, options, globalOpts, mockDeps);
 
@@ -281,7 +281,7 @@ describe('gatherPlanContext', () => {
     };
 
     const options = {};
-    const globalOpts = { config: tempDir };
+    const globalOpts = {};
 
     const result = await gatherPlanContext(planFile, options, globalOpts, customDeps);
 
@@ -307,7 +307,7 @@ describe('gatherPlanContext', () => {
       sinceLastReview: true,
       since: 'abc123',
     };
-    const globalOpts = { config: tempDir };
+    const globalOpts = {};
 
     await gatherPlanContext(planFile, options, globalOpts, mockDeps);
 
