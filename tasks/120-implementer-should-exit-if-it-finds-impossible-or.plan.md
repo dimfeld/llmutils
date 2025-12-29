@@ -10,9 +10,6 @@ uuid: 39ea630c-2f4f-4a24-bde6-2babb750e418
 generatedBy: agent
 status: done
 priority: medium
-dependencies: []
-issue: []
-docs: []
 planGeneratedAt: 2025-09-15T03:12:44.945Z
 promptsGeneratedAt: 2025-09-15T03:52:50.945Z
 createdAt: 2025-09-14T08:19:24.654Z

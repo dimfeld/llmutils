@@ -7,11 +7,6 @@ uuid: 5dddd67a-972c-467e-b74b-3fe6da2dafc0
 generatedBy: agent
 status: done
 priority: medium
-container: false
-dependencies: []
-issue: []
-pullRequest: []
-docs: []
 planGeneratedAt: 2025-09-25T09:16:20.304Z
 createdAt: 2025-09-25T08:58:56.840Z
 updatedAt: 2025-10-27T08:39:04.316Z

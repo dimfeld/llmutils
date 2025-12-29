@@ -9,7 +9,6 @@ id: 70
 uuid: 456cb603-04b5-4da6-8312-b60334d010bd
 status: done
 priority: high
-dependencies: []
 planGeneratedAt: 2025-07-20T00:53:52.277Z
 promptsGeneratedAt: 2025-07-20T00:59:04.282Z
 createdAt: 2025-07-20T00:24:53.615Z

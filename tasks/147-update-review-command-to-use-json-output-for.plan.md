@@ -9,13 +9,6 @@ generatedBy: agent
 simple: false
 status: done
 priority: medium
-container: false
-temp: false
-dependencies: []
-references: {}
-issue: []
-pullRequest: []
-docs: []
 planGeneratedAt: 2025-12-01T05:26:42.186Z
 promptsGeneratedAt: 2025-12-01T05:26:42.186Z
 createdAt: 2025-12-01T05:08:09.553Z

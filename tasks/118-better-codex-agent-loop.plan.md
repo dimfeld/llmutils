@@ -8,11 +8,6 @@ id: 118
 uuid: a26da1fe-26a0-48db-9de2-d0b1591b260b
 status: done
 priority: medium
-container: false
-dependencies: []
-issue: []
-pullRequest: []
-docs: []
 planGeneratedAt: 2025-09-12T19:31:52.587Z
 promptsGeneratedAt: 2025-09-12T19:39:12.582Z
 createdAt: 2025-09-12T18:50:35.986Z

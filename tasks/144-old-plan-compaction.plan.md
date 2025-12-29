@@ -9,13 +9,6 @@ uuid: fa3280d0-1624-4c73-9471-590f641765f5
 generatedBy: agent
 status: done
 priority: low
-container: false
-temp: false
-dependencies: []
-references: {}
-issue: []
-pullRequest: []
-docs: []
 planGeneratedAt: 2025-10-29T22:44:18.265Z
 promptsGeneratedAt: 2025-10-29T22:44:18.265Z
 createdAt: 2025-10-27T19:26:47.021Z
@@ -271,9 +264,6 @@ tasks:
       - Include instructions for user to review compacted output before applying
 
       - Document in MCP section of README
-    files: []
-    docs: []
-    steps: []
 changedFiles:
   - README.md
   - src/rmplan/commands/compact.test.ts

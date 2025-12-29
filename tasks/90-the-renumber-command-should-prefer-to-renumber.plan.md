@@ -9,7 +9,6 @@ id: 90
 uuid: 8ecf1abd-e862-4fdd-b752-1c747d5b9368
 status: done
 priority: high
-dependencies: []
 planGeneratedAt: 2025-08-13T00:54:09.283Z
 promptsGeneratedAt: 2025-08-13T00:58:12.552Z
 createdAt: 2025-08-06T18:48:42.803Z

@@ -8,11 +8,6 @@ id: 114
 uuid: 7398f6fa-abe4-467d-a516-6b47e8a3b259
 status: done
 priority: high
-container: false
-dependencies: []
-issue: []
-pullRequest: []
-docs: []
 planGeneratedAt: 2025-08-24T22:39:10.663Z
 promptsGeneratedAt: 2025-08-24T22:42:07.074Z
 createdAt: 2025-08-24T22:31:39.657Z

@@ -21,7 +21,6 @@ promptsGeneratedAt: 2025-10-28T23:31:23.749Z
 createdAt: 2025-10-26T22:41:12.354Z
 updatedAt: 2025-10-29T03:49:48.072Z
 compactedAt: 2025-10-30T00:00:00.000Z
-compactedBy: claude-code
 progressNotes:
   - timestamp: 2025-10-29T03:03:00.217Z
     text: Implemented new task_operations utilities providing title search,

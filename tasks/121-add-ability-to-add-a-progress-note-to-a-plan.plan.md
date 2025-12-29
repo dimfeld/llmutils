@@ -10,9 +10,6 @@ uuid: 0109ad0b-e71c-4301-9979-666c7fe6d859
 generatedBy: agent
 status: done
 priority: medium
-dependencies: []
-issue: []
-docs: []
 planGeneratedAt: 2025-09-15T08:23:05.434Z
 createdAt: 2025-09-15T03:02:03.721Z
 updatedAt: 2025-10-27T08:39:04.221Z

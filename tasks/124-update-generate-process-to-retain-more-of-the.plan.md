@@ -10,11 +10,6 @@ uuid: f7cf2f1c-749c-4c69-ad3a-2928f41daf66
 generatedBy: agent
 status: done
 priority: medium
-container: false
-dependencies: []
-issue: []
-pullRequest: []
-docs: []
 planGeneratedAt: 2025-09-24T09:57:35.920Z
 createdAt: 2025-09-24T09:46:07.509Z
 updatedAt: 2025-10-27T08:39:04.251Z

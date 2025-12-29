@@ -8,9 +8,6 @@ id: 119
 uuid: 347e6726-5e1d-4907-a4ce-a0d112763e5d
 status: done
 priority: medium
-dependencies: []
-issue: []
-docs: []
 planGeneratedAt: 2025-09-14T09:17:46.197Z
 promptsGeneratedAt: 2025-09-14T09:43:06.976Z
 createdAt: 2025-09-14T07:54:56.352Z

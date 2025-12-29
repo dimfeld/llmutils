@@ -7,16 +7,8 @@ uuid: db330154-2628-4559-8f5f-bcaa4358505b
 simple: false
 status: pending
 priority: medium
-container: false
-temp: false
-dependencies: []
-references: {}
-issue: []
-pullRequest: []
-docs: []
 createdAt: 2025-12-29T01:23:04.821Z
 updatedAt: 2025-12-29T01:23:04.822Z
-progressNotes: []
 tasks: []
 tags: []
 ---
@@ -27,4 +19,3 @@ tags: []
   - see if some of this can be automated using Zod
 - Make it easier to show the epic a task even if it's an indirect parent
 - Add a filter to the list and ready commands that lists based on the epic of a task (although this can really take any parent plan)
-

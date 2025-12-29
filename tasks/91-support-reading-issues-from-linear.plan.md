@@ -8,7 +8,6 @@ id: 91
 uuid: d6114fc2-6855-4e4d-984d-ef0a03fb91cb
 status: done
 priority: medium
-dependencies: []
 docs:
   - https://linear.app/developers/sdk
 planGeneratedAt: 2025-08-09T01:09:41.856Z

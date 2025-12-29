@@ -7,7 +7,6 @@ uuid: 58b83739-f558-4f60-b80b-b9378fd75d78
 generatedBy: agent
 status: done
 priority: high
-temp: false
 planGeneratedAt: 2025-10-27T19:36:54.793Z
 promptsGeneratedAt: 2025-10-27T19:36:54.793Z
 createdAt: 2025-10-27T06:31:21.571Z

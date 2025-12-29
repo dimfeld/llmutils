@@ -7,7 +7,6 @@ goal: Improve the internal structure of the `src/rmplan` module by organizing
 id: 35
 uuid: 1349dbdb-1c69-4977-8d1f-6700402e9603
 status: done
-dependencies: []
 planGeneratedAt: 2025-06-04T08:24:18.885Z
 promptsGeneratedAt: 2025-06-04T19:09:54.354Z
 createdAt: 2025-06-04T08:24:18.885Z

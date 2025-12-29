@@ -6,7 +6,6 @@ id: 93
 uuid: 4db1972d-6a70-4226-baba-016a8d1284e0
 status: done
 priority: medium
-dependencies: []
 planGeneratedAt: 2025-08-09T23:13:19.739Z
 promptsGeneratedAt: 2025-08-09T23:15:52.375Z
 createdAt: 2025-08-09T23:01:00.114Z

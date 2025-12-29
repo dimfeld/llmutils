@@ -7,17 +7,12 @@ uuid: ac0b9e9d-cd95-45f1-8ded-15074bd6c800
 generatedBy: agent
 status: done
 priority: medium
-container: false
-temp: false
 dependencies:
   - 129
 parent: 128
 references:
   "128": f69d418b-aaf1-4c29-88a9-f557baf8f81e
   "129": 1993c51d-3c29-4f8d-9928-6fa7ebea414c
-issue: []
-pullRequest: []
-docs: []
 planGeneratedAt: 2025-11-01T19:45:53.007Z
 promptsGeneratedAt: 2025-11-01T19:45:53.007Z
 createdAt: 2025-10-26T22:41:26.645Z
@@ -106,9 +101,6 @@ tasks:
       invokeClaudeCodeForGeneration(), capture the list of existing plan IDs
       using readAllPlans(). Store this snapshot to compare against after LLM
       execution.
-    files: []
-    docs: []
-    steps: []
   - title: Add rmplan add instructions to prompts
     done: true
     description: "Update the prompt generation functions to include instructions for
@@ -118,9 +110,6 @@ tasks:
       --priority [high|medium|low] --details \\\"Description of why this is
       needed\\\"`. The parent plan's dependencies will be updated
       automatically.'"
-    files: []
-    docs: []
-    steps: []
   - title: Detect and report newly created plans
     done: true
     description: "After LLM execution completes, call readAllPlans() again and
@@ -128,9 +117,6 @@ tasks:
       before. For each new plan, check if it has parent or discoveredFrom
       matching current plan ID. Log a summary: 'Created N blocking plans: #ID
       Title, #ID Title, ...'"
-    files: []
-    docs: []
-    steps: []
 changedFiles:
   - README.md
   - src/rmplan/commands/add.ts

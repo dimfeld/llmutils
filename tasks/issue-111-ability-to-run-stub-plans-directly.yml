@@ -7,7 +7,6 @@ id: 45
 uuid: a7488708-5e2a-446d-8ae8-dff92238b9ed
 status: done
 priority: high
-dependencies: []
 issue:
   - https://github.com/dimfeld/llmutils/issues/111
 planGeneratedAt: 2025-06-06T19:11:15.312Z

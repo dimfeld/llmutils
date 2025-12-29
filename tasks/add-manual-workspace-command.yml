@@ -7,7 +7,6 @@ goal: To deliver a fully functional `rmplan workspace add` command that allows
 id: 27
 uuid: 2ff4a6a0-0c14-4801-9377-f4f07c83cd7e
 status: done
-dependencies: []
 planGeneratedAt: 2025-06-01T09:05:05.132Z
 promptsGeneratedAt: 2025-06-01T09:14:07.116Z
 createdAt: 2025-06-01T09:05:05.132Z

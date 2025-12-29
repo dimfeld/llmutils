@@ -7,7 +7,6 @@ goal: Implement the core functionality for generating, storing, and resolving
 id: 31
 uuid: 1305a58e-1b3f-4924-9961-822554f544dd
 status: done
-dependencies: []
 planGeneratedAt: 2025-06-04T07:59:19.941Z
 promptsGeneratedAt: 2025-06-04T08:07:12.449Z
 createdAt: 2025-06-04T07:59:19.941Z

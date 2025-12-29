@@ -7,7 +7,6 @@ goal: To enable users to create basic plan files using a new `add` command and
 id: 24
 uuid: dd0301f2-a1c9-4fce-9849-9936a75f0de2
 status: done
-dependencies: []
 planGeneratedAt: 2025-05-31T20:32:33.555Z
 promptsGeneratedAt: 2025-06-01T02:19:59.271Z
 createdAt: 2025-05-31T20:32:33.555Z

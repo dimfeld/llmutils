@@ -8,7 +8,6 @@ id: 98
 uuid: a72be50e-33e3-4bcb-8b67-799d4c094776
 status: done
 priority: high
-dependencies: []
 planGeneratedAt: 2025-08-13T19:15:03.540Z
 promptsGeneratedAt: 2025-08-13T19:18:44.562Z
 createdAt: 2025-08-13T19:06:31.948Z

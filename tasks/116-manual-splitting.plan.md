@@ -9,11 +9,6 @@ uuid: 6adf095a-2444-40a8-9bf1-308fef6867ef
 status: done
 statusDescription: Marking tasks as done via automation
 priority: medium
-container: false
-dependencies: []
-issue: []
-pullRequest: []
-docs: []
 planGeneratedAt: 2025-09-10T02:39:46.333Z
 promptsGeneratedAt: 2025-09-10T03:13:45.489Z
 createdAt: 2025-09-10T02:28:16.765Z

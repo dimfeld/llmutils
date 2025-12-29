@@ -8,13 +8,6 @@ generatedBy: agent
 simple: false
 status: done
 priority: medium
-container: false
-temp: false
-dependencies: []
-references: {}
-issue: []
-pullRequest: []
-docs: []
 planGeneratedAt: 2025-11-07T18:28:25.095Z
 promptsGeneratedAt: 2025-11-07T18:28:25.095Z
 createdAt: 2025-11-07T18:16:10.651Z

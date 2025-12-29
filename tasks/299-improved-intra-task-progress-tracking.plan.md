@@ -7,16 +7,8 @@ uuid: ed37390d-a63a-4b0c-a7b8-c656e276f62d
 simple: false
 status: pending
 priority: medium
-container: false
-temp: false
-dependencies: []
-references: {}
-issue: []
-pullRequest: []
-docs: []
 createdAt: 2025-12-29T01:29:59.680Z
 updatedAt: 2025-12-29T01:29:59.680Z
-progressNotes: []
 tasks: []
 tags: []
 ---

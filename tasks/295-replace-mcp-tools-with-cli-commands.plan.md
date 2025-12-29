@@ -7,16 +7,8 @@ uuid: fea18633-aa57-4072-bb94-dae8ee0654dd
 simple: false
 status: pending
 priority: medium
-container: false
-temp: false
-dependencies: []
-references: {}
-issue: []
-pullRequest: []
-docs: []
 createdAt: 2025-12-29T01:16:02.088Z
 updatedAt: 2025-12-29T01:16:02.089Z
-progressNotes: []
 tasks: []
 tags: []
 ---

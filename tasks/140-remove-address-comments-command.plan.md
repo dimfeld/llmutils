@@ -6,13 +6,6 @@ id: 140
 uuid: 1b511d33-7282-4ead-8a7b-74ea4b1c590c
 status: done
 priority: medium
-container: false
-temp: false
-dependencies: []
-references: {}
-issue: []
-pullRequest: []
-docs: []
 createdAt: 2025-10-27T05:59:11.942Z
 updatedAt: 2025-10-29T08:27:56.983Z
 progressNotes:

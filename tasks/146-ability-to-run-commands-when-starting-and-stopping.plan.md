@@ -7,7 +7,6 @@ uuid: e37079a4-2cc9-4161-a9a6-b75de7a45756
 simple: false
 status: pending
 priority: medium
-temp: false
 createdAt: 2025-11-07T21:16:48.398Z
 updatedAt: 2025-11-07T21:16:48.398Z
 tasks: []

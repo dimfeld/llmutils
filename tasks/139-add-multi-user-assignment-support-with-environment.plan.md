@@ -9,12 +9,6 @@ uuid: 8b82a7c6-2182-48b7-af3e-2be853519242
 generatedBy: agent
 status: done
 priority: high
-container: false
-temp: false
-dependencies: []
-issue: []
-pullRequest: []
-docs: []
 planGeneratedAt: 2025-10-27T08:01:47.867Z
 promptsGeneratedAt: 2025-10-27T08:01:47.867Z
 createdAt: 2025-10-27T05:51:22.359Z

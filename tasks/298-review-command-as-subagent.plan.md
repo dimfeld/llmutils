@@ -7,16 +7,8 @@ uuid: 8a417b70-b63c-4a55-9d34-ee64aa04fead
 simple: false
 status: pending
 priority: medium
-container: false
-temp: false
-dependencies: []
-references: {}
-issue: []
-pullRequest: []
-docs: []
 createdAt: 2025-12-29T01:27:15.778Z
 updatedAt: 2025-12-29T01:27:15.779Z
-progressNotes: []
 tasks: []
 tags: []
 ---

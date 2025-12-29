@@ -7,7 +7,6 @@ id: 86
 uuid: 4bfb4674-3e4e-4bf3-b7ad-a9745ddc1ee5
 status: done
 priority: medium
-dependencies: []
 planGeneratedAt: 2025-08-11T08:01:30.287Z
 promptsGeneratedAt: 2025-08-11T08:04:09.303Z
 createdAt: 2025-08-01T19:09:16.510Z

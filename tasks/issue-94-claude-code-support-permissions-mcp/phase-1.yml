@@ -7,7 +7,6 @@ id: 55
 uuid: 7875f7b8-f266-46f3-b0db-c843746899f4
 status: done
 priority: high
-dependencies: []
 issue:
   - https://github.com/dimfeld/llmutils/issues/94
 docs:
