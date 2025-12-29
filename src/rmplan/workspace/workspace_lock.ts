@@ -54,7 +54,7 @@ export class WorkspaceLock {
    * @returns The path to the locks directory
    */
   private static getLockDirectory(): string {
-    return path.join(os.homedir(), '.config', 'rmfilter', 'locks');
+    return path.join(os.homedir(), '.config', 'rmplan', 'locks');
   }
 
   /**

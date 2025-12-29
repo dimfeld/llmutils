@@ -1041,7 +1041,7 @@ rmplan agent 123 --workspace task-123
 
 **Workspace tracking:**
 
-Workspaces are tracked in `~/.config/rmfilter/workspaces.json`:
+Workspaces are tracked in `~/.config/rmplan/workspaces.json`:
 
 ```json
 {
