@@ -54,6 +54,10 @@ export class WorkspaceLock {
    * @returns The path to the locks directory
    */
   private static getLockDirectory(): string {
+    const override = process.env.RMPLAN_LOCK_DIR?.trim();
+    if (override) {
+      return path.resolve(override);
+    }
     return path.join(os.homedir(), '.config', 'rmplan', 'locks');
   }
 

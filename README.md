@@ -996,28 +996,70 @@ rmplan workspace add --id scratch-work
 **List workspaces:**
 
 ```bash
-# All workspaces for current repository
+# All workspaces for current repository (default table format)
 rmplan workspace list
 
 # Specific repository
 rmplan workspace list --repo https://github.com/user/repo.git
+
+# List all workspaces across all repositories
+rmplan workspace list --all
+
+# Different output formats
+rmplan workspace list --format table  # Default, human-readable
+rmplan workspace list --format tsv    # Tab-separated for scripts
+rmplan workspace list --format json   # JSON for programmatic use
+
+# Machine-consumable TSV without header
+rmplan workspace list --format tsv --no-header
 ```
 
-Example output:
+Example table output:
 
 ```
-Workspaces for github.com/user/repo
-
-🔒 /home/user/workspaces/task-123
-   Task: 123 • Branch: task-123
-   Locked by PID 12345 on hostname (2h ago)
-   Created: 2025-01-15 10:00
-
-🔓 /home/user/workspaces/task-124
-   Task: 124 • Branch: task-124
-   Available
-   Created: 2025-01-15 11:30
++---------------------------+------------+---------------------+-------------+-----------+
+| Path                      | Name       | Description         | Branch      | Status    |
++---------------------------+------------+---------------------+-------------+-----------+
+| ~/workspaces/task-123     | Auth Work  | #123 Add OAuth      | task-123    | Locked    |
+| ~/workspaces/task-124     | -          | API refactoring     | task-124    | Available |
++---------------------------+------------+---------------------+-------------+-----------+
 ```
+
+**Update workspace metadata:**
+
+```bash
+# Set name and description
+rmplan workspace update --name "My Workspace" --description "Working on feature X"
+
+# Update by workspace path or task ID
+rmplan workspace update task-123 --description "Updated description"
+
+# Seed description from a plan (extracts issue number and title)
+rmplan workspace update --from-plan 456
+# Sets description to "#456 Plan Title"
+```
+
+**Interactive workspace switching:**
+
+Set up a shell function for fast workspace navigation with `fzf`:
+
+```bash
+# Generate shell integration function (add to your .zshrc or .bashrc)
+rmplan shell-integration --shell zsh >> ~/.zshrc
+# or for bash:
+rmplan shell-integration --shell bash >> ~/.bashrc
+
+# After sourcing, use the rmplan_ws function:
+rmplan_ws          # Interactive selection with fzf
+rmplan_ws auth     # Pre-filter workspaces matching "auth"
+```
+
+The shell function:
+
+- Uses `fzf` for fuzzy selection
+- Shows workspace name, description, and branch
+- Provides a preview window with full path and details
+- Handles cancellation gracefully
 
 **Using workspaces with agent:**
 
@@ -1711,7 +1753,14 @@ rmplan split PLAN --output-dir DIR
 rmplan workspace add [ID] [--id WORKSPACE_ID]
 
 # List workspaces
-rmplan workspace list [--repo URL]
+rmplan workspace list [--repo URL] [--format table|tsv|json] [--all] [--no-header]
+
+# Update workspace metadata
+rmplan workspace update [WORKSPACE] --name NAME --description DESC
+rmplan workspace update --from-plan PLAN_ID
+
+# Shell integration (interactive workspace switching with fzf)
+rmplan shell-integration --shell bash|zsh
 
 # Assignments
 rmplan claim ID

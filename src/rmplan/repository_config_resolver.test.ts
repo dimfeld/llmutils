@@ -144,13 +144,7 @@ describe('RepositoryConfigResolver', () => {
     expect(resolution.repositoryName?.includes('super-secret-token')).toBe(false);
 
     const metadata = await readRepositoryStorageMetadata(
-      path.join(
-        fakeHomeDir,
-        '.config',
-        'rmplan',
-        'repositories',
-        'github.example.com__Owner__Repo'
-      )
+      path.join(fakeHomeDir, '.config', 'rmplan', 'repositories', 'github.example.com__Owner__Repo')
     );
     expect(metadata?.remoteLabel).toBe(describeRemoteForLogging(remote));
   });

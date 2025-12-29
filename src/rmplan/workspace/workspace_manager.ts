@@ -8,6 +8,7 @@ import { executePostApplyCommand } from '../actions.js';
 import type { PostApplyCommand, RmplanConfig } from '../configSchema.js';
 import { WorkspaceLock } from './workspace_lock.js';
 import { getDefaultTrackingFilePath, recordWorkspace } from './workspace_tracker.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 
 /**
  * Interface representing a created workspace
@@ -658,11 +659,18 @@ export async function createWorkspace(
 
   // Record the workspace info for tracking
   const trackingFilePath = config.paths?.trackingFile || getDefaultTrackingFilePath();
+  let repositoryId: string | undefined;
+  try {
+    const identity = await getRepositoryIdentity({ cwd: targetClonePath });
+    repositoryId = identity.repositoryId;
+  } catch (error) {
+    log(`Warning: Failed to resolve repository identity for workspace: ${String(error)}`);
+  }
   await recordWorkspace(
     {
       taskId,
       originalPlanFilePath,
-      repositoryUrl: repositoryUrl,
+      repositoryId,
       workspacePath: targetClonePath,
       branch: shouldCreateBranch ? branchName : undefined,
       createdAt: new Date().toISOString(),

@@ -116,6 +116,23 @@ describe('workspace_identifier', () => {
     expect(identity.repositoryId).toBe(expectedId);
   });
 
+  test('getRepositoryIdentity falls back to workspace name for jj repositories', async () => {
+    const repoDir = path.join(tempDir, 'JjOnlyRepo');
+    await fs.mkdir(path.join(repoDir, '.jj'), { recursive: true });
+
+    const identity = await getRepositoryIdentity({ cwd: repoDir });
+    const workspacePath = realpathSync(repoDir);
+    const fallback = fallbackRepositoryNameFromGitRoot(workspacePath);
+    const expectedId = deriveRepositoryName(null, {
+      fallbackName: fallback,
+      uniqueSalt: workspacePath,
+    });
+
+    expect(identity.remoteUrl).toBeNull();
+    expect(identity.repositoryId).toBe(expectedId);
+    expect(identity.gitRoot).toBe(workspacePath);
+  });
+
   test('getUserIdentity prefers RMPLAN_USER over other environment variables', () => {
     process.env.USER = 'bob';
     process.env.USERNAME = 'charlie';

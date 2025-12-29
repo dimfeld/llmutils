@@ -486,7 +486,7 @@ executors:
         includeDefaultTools: true, // from local (overrides main)
         permissionsMcp: {
           autoApproveCreatedFileDeletion: false,
-          enabled: true
+          enabled: true,
         }, // from main
         mcpConfigFile: '/path/to/config', // from local
       });
