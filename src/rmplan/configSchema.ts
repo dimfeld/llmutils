@@ -55,7 +55,7 @@ export const workspaceCreationConfigSchema = z.object({
   sourceDirectory: z.string().optional(),
   /**
    * Directory where clones should be created.
-   * Defaults to ~/.rmfilter/workspaces/.
+   * Defaults to ~/.rmplan/workspaces/.
    * Can be an absolute path or relative to the main repository root.
    */
   cloneLocation: z.string().optional(),

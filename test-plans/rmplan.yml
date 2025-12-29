@@ -34,7 +34,7 @@ answerPr:
 defaultExecutor: claude-code
 
 workspaceCreation:
-  cloneLocation: ~/.rmfilter/test-workspaces/
+  cloneLocation: ~/.rmplan/test-workspaces/
   postCloneCommands:
     - title: Install dependencies
       command: bun install
