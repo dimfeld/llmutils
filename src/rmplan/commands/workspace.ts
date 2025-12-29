@@ -4,7 +4,7 @@
 import * as path from 'path';
 import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
-import { $ } from 'bun';
+import { table, type TableUserConfig } from 'table';
 import { log, warn } from '../../logging.js';
 import { getGitRoot } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -13,14 +13,19 @@ import { generateAlphanumericId } from '../id_utils.js';
 import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
 import { createWorkspace } from '../workspace/workspace_manager.js';
 import {
-  findWorkspacesByRepoUrl,
+  buildWorkspaceListEntries,
+  findWorkspacesByRepositoryId,
   findWorkspacesByTaskId,
   getWorkspaceMetadata,
+  patchWorkspaceMetadata,
   readTrackingData,
   updateWorkspaceLockStatus,
   writeTrackingData,
   type WorkspaceInfo,
+  type WorkspaceListEntry,
+  type WorkspaceMetadataPatch,
 } from '../workspace/workspace_tracker.js';
+import { formatWorkspacePath, getCombinedTitleFromSummary } from '../display_utils.js';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { RmplanConfig } from '../configSchema.js';
@@ -34,47 +39,239 @@ export async function handleWorkspaceCommand(args: any, options: any) {
   // The actual delegation logic will be handled in rmplan.ts when setting up the command
 }
 
-export async function handleWorkspaceListCommand(options: any, command: Command) {
+export type WorkspaceListFormat = 'table' | 'tsv' | 'json';
+
+export interface WorkspaceListOptions {
+  repo?: string;
+  format?: WorkspaceListFormat;
+  header?: boolean;
+  all?: boolean;
+}
+
+export async function handleWorkspaceListCommand(options: WorkspaceListOptions, command: Command) {
   const globalOpts = command.parent!.parent!.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const trackingFilePath = config.paths?.trackingFile;
 
-  let repoUrl = options.repo;
-  if (!repoUrl) {
-    // Try to get repo URL from current directory
-    try {
-      const gitRoot = await getGitRoot();
-      const result = await $`git remote get-url origin`.cwd(gitRoot).text();
-      repoUrl = result.trim();
-    } catch (err) {
-      throw new Error('Could not determine repository URL. Please specify --repo');
+  const format: WorkspaceListFormat = options.format ?? 'table';
+  const showHeader = options.header ?? true;
+
+  // Determine repository ID (unless --all is specified)
+  let repositoryId: string | undefined;
+  if (!options.all) {
+    repositoryId = options.repo ?? (await determineRepositoryId());
+  }
+
+  // Get workspaces based on whether we're filtering by repo
+  let workspaces: WorkspaceInfo[];
+  if (repositoryId) {
+    const removedWorkspaces = await removeMissingWorkspaceEntries(repositoryId, trackingFilePath);
+    for (const workspacePath of removedWorkspaces) {
+      warn(`Removed deleted workspace directory: ${workspacePath}`);
     }
+    workspaces = await findWorkspacesByRepositoryId(repositoryId, trackingFilePath);
+  } else {
+    // --all: get all workspaces from tracking file, also cleaning up stale entries
+    const removedWorkspaces = await removeAllMissingWorkspaceEntries(trackingFilePath);
+    for (const workspacePath of removedWorkspaces) {
+      warn(`Removed deleted workspace directory: ${workspacePath}`);
+    }
+    const trackingData = await readTrackingData(trackingFilePath);
+    workspaces = Object.values(trackingData);
   }
 
-  const removedWorkspaces = await removeMissingWorkspaceEntries(repoUrl, trackingFilePath);
-  for (const workspacePath of removedWorkspaces) {
-    warn(`Removed deleted workspace directory: ${workspacePath}`);
+  // Update lock status for all workspaces
+  const workspacesWithStatus = await updateWorkspaceLockStatus(workspaces);
+
+  // Build enriched list entries with live branch info
+  const entries = await buildWorkspaceListEntries(workspacesWithStatus);
+
+  if (entries.length === 0) {
+    if (format === 'table') {
+      console.log(repositoryId ? 'No workspaces found for this repository' : 'No workspaces found');
+    } else if (format === 'json') {
+      console.log('[]');
+    } else if (format === 'tsv' && showHeader) {
+      // Output just the header line with no data rows
+      console.log(
+        [
+          'fullPath',
+          'basename',
+          'name',
+          'description',
+          'branch',
+          'taskId',
+          'planTitle',
+          'issueUrls',
+        ].join('\t')
+      );
+    }
+    return;
   }
 
-  await WorkspaceAutoSelector.listWorkspacesWithStatus(repoUrl, trackingFilePath);
+  // Output based on format
+  switch (format) {
+    case 'table':
+      outputWorkspaceTable(entries, showHeader);
+      break;
+    case 'tsv':
+      outputWorkspaceTsv(entries, showHeader);
+      break;
+    case 'json':
+      outputWorkspaceJson(entries);
+      break;
+  }
+}
+
+/**
+ * Output workspaces in table format with abbreviated paths and lock status.
+ */
+function outputWorkspaceTable(entries: WorkspaceListEntry[], showHeader: boolean): void {
+  const tableData: string[][] = [];
+
+  if (showHeader) {
+    tableData.push([
+      chalk.bold('Path'),
+      chalk.bold('Name'),
+      chalk.bold('Description'),
+      chalk.bold('Branch'),
+      chalk.bold('Status'),
+    ]);
+  }
+
+  for (const entry of entries) {
+    const abbreviatedPath = formatWorkspacePath(entry.fullPath);
+    const name = entry.name || '-';
+    const description = entry.description || '-';
+    const branch = entry.branch || '-';
+
+    let status: string;
+    if (entry.lockedBy) {
+      const lockType = entry.lockedBy.type;
+      status = chalk.red(`Locked (${lockType})`);
+    } else {
+      status = chalk.green('Available');
+    }
+
+    tableData.push([abbreviatedPath, name, description, branch, status]);
+  }
+
+  const tableConfig: TableUserConfig = {
+    columns: {
+      0: { width: 30, wrapWord: true },
+      1: { width: 15, wrapWord: true },
+      2: { width: 35, wrapWord: true },
+      3: { width: 20, wrapWord: true },
+      4: { width: 15, wrapWord: true },
+    },
+    border: {
+      topBody: '-',
+      topJoin: '+',
+      topLeft: '+',
+      topRight: '+',
+      bottomBody: '-',
+      bottomJoin: '+',
+      bottomLeft: '+',
+      bottomRight: '+',
+      bodyLeft: '|',
+      bodyRight: '|',
+      bodyJoin: '|',
+      joinBody: '-',
+      joinLeft: '+',
+      joinRight: '+',
+      joinJoin: '+',
+    },
+  };
+
+  console.log(table(tableData, tableConfig));
+  log(`Showing ${entries.length} workspace(s)`);
+}
+
+/**
+ * Output workspaces in TSV format for machine consumption.
+ * Format: fullPath\tbasename\tname\tdescription\tbranch\ttaskId\tplanTitle\tissueUrls
+ * Lock status is omitted from TSV/JSON per requirements.
+ */
+function outputWorkspaceTsv(entries: WorkspaceListEntry[], showHeader: boolean): void {
+  if (showHeader) {
+    console.log(
+      [
+        'fullPath',
+        'basename',
+        'name',
+        'description',
+        'branch',
+        'taskId',
+        'planTitle',
+        'issueUrls',
+      ].join('\t')
+    );
+  }
+
+  for (const entry of entries) {
+    const row = [
+      entry.fullPath,
+      entry.basename,
+      entry.name || '',
+      entry.description || '',
+      entry.branch || '',
+      entry.taskId,
+      entry.planTitle || '',
+      (entry.issueUrls || []).join(','),
+    ];
+    console.log(row.join('\t'));
+  }
+}
+
+/**
+ * Output workspaces in JSON format with full metadata.
+ * Lock status is omitted from TSV/JSON per requirements.
+ */
+function outputWorkspaceJson(entries: WorkspaceListEntry[]): void {
+  // Remove lockedBy from entries for JSON output
+  const sanitizedEntries = entries.map(({ lockedBy, ...rest }) => rest);
+  console.log(JSON.stringify(sanitizedEntries, null, 2));
 }
 
 async function removeMissingWorkspaceEntries(
-  repositoryUrl: string,
+  repositoryId: string,
   trackingFilePath?: string
 ): Promise<string[]> {
   const [trackingData, workspaces] = await Promise.all([
     readTrackingData(trackingFilePath),
-    findWorkspacesByRepoUrl(repositoryUrl, trackingFilePath),
+    findWorkspacesByRepositoryId(repositoryId, trackingFilePath),
   ]);
 
   const removed: string[] = [];
 
   for (const workspace of workspaces) {
-    const exists = await workspaceDirectoryExists(workspace.workspacePath);
-    if (!exists && trackingData[workspace.workspacePath]) {
+    const status = await getWorkspaceDirectoryStatus(workspace.workspacePath);
+    if (status === 'missing' && trackingData[workspace.workspacePath]) {
       delete trackingData[workspace.workspacePath];
       removed.push(workspace.workspacePath);
+    }
+  }
+
+  if (removed.length > 0) {
+    await writeTrackingData(trackingData, trackingFilePath);
+  }
+
+  return removed;
+}
+
+/**
+ * Removes workspace entries whose directories no longer exist across all repositories.
+ * Used by --all flag to ensure stale entries are cleaned up globally.
+ */
+async function removeAllMissingWorkspaceEntries(trackingFilePath?: string): Promise<string[]> {
+  const trackingData = await readTrackingData(trackingFilePath);
+  const removed: string[] = [];
+
+  for (const workspacePath of Object.keys(trackingData)) {
+    const status = await getWorkspaceDirectoryStatus(workspacePath);
+    if (status === 'missing') {
+      delete trackingData[workspacePath];
+      removed.push(workspacePath);
     }
   }
 
@@ -96,6 +293,24 @@ async function workspaceDirectoryExists(directoryPath: string): Promise<boolean>
 
     warn(`Failed to check workspace directory ${directoryPath}: ${error as Error}`);
     return false;
+  }
+}
+
+type WorkspaceDirectoryStatus = 'exists' | 'missing' | 'unknown';
+
+async function getWorkspaceDirectoryStatus(
+  directoryPath: string
+): Promise<WorkspaceDirectoryStatus> {
+  try {
+    const stats = await fs.stat(directoryPath);
+    return stats.isDirectory() ? 'exists' : 'missing';
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return 'missing';
+    }
+
+    warn(`Failed to check workspace directory ${directoryPath}: ${error as Error}`);
+    return 'unknown';
   }
 }
 
@@ -378,10 +593,10 @@ async function lockAvailableWorkspace(
   trackingFilePath: string | undefined,
   options: { create?: boolean }
 ): Promise<void> {
-  const repositoryUrl = await determineRepositoryUrl(config);
-  await removeMissingWorkspaceEntries(repositoryUrl, trackingFilePath);
+  const repositoryId = await determineRepositoryId();
+  await removeMissingWorkspaceEntries(repositoryId, trackingFilePath);
 
-  const workspaces = await findWorkspacesByRepoUrl(repositoryUrl, trackingFilePath);
+  const workspaces = await findWorkspacesByRepositoryId(repositoryId, trackingFilePath);
   const workspacesWithStatus = await updateWorkspaceLockStatus(workspaces);
   const available = workspacesWithStatus.find((workspace) => !workspace.lockedBy);
 
@@ -439,29 +654,146 @@ function buildLockCommandLabel(
   return parts.join(' ');
 }
 
-async function determineRepositoryUrl(config: RmplanConfig): Promise<string> {
-  if (config.workspaceCreation?.repositoryUrl) {
-    return config.workspaceCreation.repositoryUrl;
-  }
-
-  try {
-    const gitRoot = await getGitRoot();
-    if (!gitRoot) {
-      throw new Error('Could not determine repository root');
-    }
-    const result = await $`git remote get-url origin`.cwd(gitRoot).text();
-    const url = result.trim();
-    if (!url) {
-      throw new Error('Origin remote URL is empty');
-    }
-    return url;
-  } catch (error) {
-    throw new Error(
-      `Could not determine repository URL automatically: ${error instanceof Error ? error.message : String(error)}`
-    );
-  }
+async function determineRepositoryId(cwd?: string): Promise<string> {
+  const identity = await getRepositoryIdentity({ cwd });
+  return identity.repositoryId;
 }
 
 function getDefaultLockOwner(): string | undefined {
   return process.env.USER || process.env.LOGNAME || process.env.USERNAME;
+}
+
+/**
+ * Extracts issue number from an issue URL.
+ * For example: "https://github.com/owner/repo/issues/123" -> "#123"
+ */
+export function extractIssueNumber(url: string): string | undefined {
+  // Match common issue URL patterns (GitHub, GitLab, Linear, etc.)
+  const patterns = [
+    /\/issues\/(\d+)/, // GitHub, GitLab
+    /\/issue\/([A-Z]+-\d+)/i, // Linear (e.g., PROJ-123)
+    /\/browse\/([A-Z]+-\d+)/i, // Jira (e.g., PROJ-123)
+  ];
+
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) {
+      // For numeric issue numbers, add #; for alphanumeric (like Linear/Jira), return as-is
+      return match[1].match(/^\d+$/) ? `#${match[1]}` : match[1];
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Builds a workspace description from a plan.
+ * Format: "#issueNumber planTitle" or just "planTitle" if no issue.
+ */
+export function buildDescriptionFromPlan(plan: PlanSchema): string {
+  const title = getCombinedTitleFromSummary(plan);
+
+  // Try to extract issue number from the first issue URL
+  if (plan.issue && plan.issue.length > 0) {
+    const issueRef = extractIssueNumber(plan.issue[0]);
+    if (issueRef) {
+      return `${issueRef} ${title}`;
+    }
+  }
+
+  return title;
+}
+
+export async function handleWorkspaceUpdateCommand(
+  target: string | undefined,
+  options: { name?: string; description?: string; fromPlan?: string },
+  command: Command
+) {
+  const globalOpts = command.parent!.parent!.opts();
+  const config = await loadEffectiveConfig(globalOpts.config);
+  const trackingFilePath = config.paths?.trackingFile;
+
+  // Validate that at least one update option is provided
+  if (options.name === undefined && options.description === undefined && !options.fromPlan) {
+    throw new Error('At least one of --name, --description, or --from-plan must be provided.');
+  }
+
+  // Resolve workspace path - either from identifier or current directory
+  let workspacePath: string;
+
+  if (target) {
+    // Try to resolve as a path first
+    const asPath = path.resolve(process.cwd(), target);
+    if (await workspaceDirectoryExists(asPath)) {
+      workspacePath = asPath;
+    } else {
+      // Try to resolve as task ID
+      const matches = await findWorkspacesByTaskId(target, trackingFilePath);
+      if (matches.length === 0) {
+        throw new Error(`No workspace found for task ID: ${target}`);
+      }
+      if (matches.length > 1) {
+        throw new Error(
+          `Multiple workspaces found for task ID ${target}. Please specify the workspace directory.`
+        );
+      }
+      workspacePath = matches[0].workspacePath;
+    }
+  } else {
+    // Use current directory
+    workspacePath = process.cwd();
+  }
+
+  // Verify directory exists
+  if (!(await workspaceDirectoryExists(workspacePath))) {
+    throw new Error(`Workspace directory does not exist: ${workspacePath}`);
+  }
+
+  // Build the patch object
+  const patch: WorkspaceMetadataPatch = {};
+  const existingMetadata = await getWorkspaceMetadata(workspacePath, trackingFilePath);
+
+  // Handle name
+  if (options.name !== undefined) {
+    patch.name = options.name;
+  }
+
+  // Handle description - from-plan takes precedence if both specified
+  if (options.fromPlan) {
+    try {
+      const planPath = await resolvePlanFile(options.fromPlan, globalOpts.config);
+      const plan = await readPlanFile(planPath);
+      patch.description = buildDescriptionFromPlan(plan);
+
+      // Also populate plan metadata fields
+      patch.planId = plan.id ? String(plan.id) : '';
+      const planTitle = getCombinedTitleFromSummary(plan);
+      patch.planTitle = planTitle || '';
+      patch.issueUrls = plan.issue && plan.issue.length > 0 ? [...plan.issue] : [];
+    } catch (err) {
+      throw new Error(`Failed to read plan for --from-plan: ${err as Error}`);
+    }
+  } else if (options.description !== undefined) {
+    patch.description = options.description;
+  }
+
+  if (!existingMetadata?.repositoryId) {
+    patch.repositoryId = await determineRepositoryId(workspacePath);
+  }
+
+  // Apply the patch
+  const updated = await patchWorkspaceMetadata(workspacePath, patch, trackingFilePath);
+
+  // Display result
+  log(chalk.green('Workspace metadata updated'));
+  log(`  Path: ${workspacePath}`);
+  if (updated.name) {
+    log(`  Name: ${updated.name}`);
+  }
+  if (updated.description) {
+    log(`  Description: ${updated.description}`);
+  }
+  if (updated.planId) {
+    log(`  Plan ID: ${updated.planId}`);
+  }
 }

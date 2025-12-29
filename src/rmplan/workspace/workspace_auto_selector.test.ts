@@ -6,6 +6,7 @@ import { WorkspaceAutoSelector } from './workspace_auto_selector';
 import { createWorkspace } from './workspace_manager';
 import { WorkspaceLock } from './workspace_lock';
 import * as workspaceTracker from './workspace_tracker';
+import * as workspaceIdentifier from '../assignments/workspace_identifier.js';
 import type { RmplanConfig } from '../configSchema';
 import type { WorkspaceInfo } from './workspace_tracker';
 import { ModuleMocker } from '../../testing.js';
@@ -18,11 +19,13 @@ describe('WorkspaceAutoSelector', () => {
   let testDir: string;
   let selector: WorkspaceAutoSelector;
   let config: RmplanConfig;
-  let findWorkspacesByRepoUrlSpy: any;
+  let findWorkspacesByRepositoryIdSpy: any;
   let updateWorkspaceLockStatusSpy: any;
   let findWorkspacesByTaskIdSpy: any;
   let recordWorkspaceSpy: any;
   let getDefaultTrackingFilePathSpy: any;
+  let getRepositoryIdentitySpy: any;
+  let originalLockDir: string | undefined;
 
   beforeEach(async () => {
     testDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'workspace-auto-selector-test-'));
@@ -37,9 +40,9 @@ describe('WorkspaceAutoSelector', () => {
     }));
 
     // Setup spies for workspace tracker functions
-    findWorkspacesByRepoUrlSpy = spyOn(
+    findWorkspacesByRepositoryIdSpy = spyOn(
       workspaceTracker,
-      'findWorkspacesByRepoUrl'
+      'findWorkspacesByRepositoryId'
     ).mockResolvedValue([]);
     updateWorkspaceLockStatusSpy = spyOn(
       workspaceTracker,
@@ -53,6 +56,14 @@ describe('WorkspaceAutoSelector', () => {
       workspaceTracker,
       'getDefaultTrackingFilePath'
     ).mockReturnValue('/default/tracking/path.json');
+    getRepositoryIdentitySpy = spyOn(
+      workspaceIdentifier,
+      'getRepositoryIdentity'
+    ).mockResolvedValue({
+      repositoryId: 'github.com/test/repo',
+      remoteUrl: 'https://github.com/test/repo.git',
+      gitRoot: testDir,
+    });
 
     // Setup test config
     config = {
@@ -61,7 +72,7 @@ describe('WorkspaceAutoSelector', () => {
         maxTokens: 4096,
       },
       workspaceCreation: {
-        repositoryUrl: 'https://github.com/test/repo.git',
+        repositoryId: 'github.com/test/repo',
         cloneLocation: testDir,
       },
     };
@@ -85,7 +96,7 @@ describe('WorkspaceAutoSelector', () => {
       {
         taskId: 'task-1',
         originalPlanFilePath: '/test/plan1.yml',
-        repositoryUrl: 'https://github.com/test/repo.git',
+        repositoryId: 'github.com/test/repo',
         workspacePath: path.join(testDir, 'workspace-1'),
         branch: 'llmutils-task/task-1',
         createdAt: new Date().toISOString(),
@@ -93,7 +104,7 @@ describe('WorkspaceAutoSelector', () => {
       {
         taskId: 'task-2',
         originalPlanFilePath: '/test/plan2.yml',
-        repositoryUrl: 'https://github.com/test/repo.git',
+        repositoryId: 'github.com/test/repo',
         workspacePath: path.join(testDir, 'workspace-2'),
         branch: 'llmutils-task/task-2',
         createdAt: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
@@ -107,7 +118,7 @@ describe('WorkspaceAutoSelector', () => {
       },
     ];
 
-    findWorkspacesByRepoUrlSpy.mockResolvedValue(mockWorkspaces);
+    findWorkspacesByRepositoryIdSpy.mockResolvedValue(mockWorkspaces);
     updateWorkspaceLockStatusSpy.mockResolvedValue(mockWorkspaces);
 
     const result = await selector.selectWorkspace('task-3', '/test/plan3.yml', {
@@ -141,7 +152,7 @@ describe('WorkspaceAutoSelector', () => {
       {
         taskId: 'task-stale',
         originalPlanFilePath: '/test/plan-stale.yml',
-        repositoryUrl: 'https://github.com/test/repo.git',
+        repositoryId: 'github.com/test/repo',
         workspacePath,
         branch: 'llmutils-task/task-stale',
         createdAt: new Date().toISOString(),
@@ -155,7 +166,7 @@ describe('WorkspaceAutoSelector', () => {
       },
     ];
 
-    findWorkspacesByRepoUrlSpy.mockResolvedValue(mockWorkspaces);
+    findWorkspacesByRepositoryIdSpy.mockResolvedValue(mockWorkspaces);
     updateWorkspaceLockStatusSpy.mockResolvedValue(mockWorkspaces);
 
     const result = await selector.selectWorkspace('task-new', '/test/plan-new.yml', {
@@ -180,7 +191,7 @@ describe('WorkspaceAutoSelector', () => {
       {
         taskId: 'task-locked',
         originalPlanFilePath: '/test/plan-locked.yml',
-        repositoryUrl: 'https://github.com/test/repo.git',
+        repositoryId: 'github.com/test/repo',
         workspacePath: path.join(testDir, 'workspace-locked'),
         branch: 'llmutils-task/task-locked',
         createdAt: new Date().toISOString(),
@@ -194,7 +205,7 @@ describe('WorkspaceAutoSelector', () => {
       },
     ];
 
-    findWorkspacesByRepoUrlSpy.mockResolvedValue(mockWorkspaces);
+    findWorkspacesByRepositoryIdSpy.mockResolvedValue(mockWorkspaces);
     updateWorkspaceLockStatusSpy.mockResolvedValue(mockWorkspaces);
 
     // Mock workspace creation
@@ -220,14 +231,14 @@ describe('WorkspaceAutoSelector', () => {
       {
         taskId: 'task-existing',
         originalPlanFilePath: '/test/plan-existing.yml',
-        repositoryUrl: 'https://github.com/test/repo.git',
+        repositoryId: 'github.com/test/repo',
         workspacePath: path.join(testDir, 'workspace-existing'),
         branch: 'llmutils-task/task-existing',
         createdAt: new Date().toISOString(),
       },
     ];
 
-    findWorkspacesByRepoUrlSpy.mockResolvedValue(mockWorkspaces);
+    findWorkspacesByRepositoryIdSpy.mockResolvedValue(mockWorkspaces);
 
     // Mock workspace creation
     const newWorkspace = {
@@ -245,7 +256,7 @@ describe('WorkspaceAutoSelector', () => {
       {
         ...newWorkspace,
         workspacePath: newWorkspace.path,
-        repositoryUrl: 'https://github.com/test/repo.git',
+        repositoryId: 'github.com/test/repo',
         branch: 'llmutils-task/task-new',
         createdAt: new Date().toISOString(),
       },
@@ -259,5 +270,51 @@ describe('WorkspaceAutoSelector', () => {
     expect(createWorkspaceSpy).toHaveBeenCalled();
     expect(result?.isNew).toBe(true);
     expect(result?.workspace.taskId).toBe('task-new');
+  });
+
+  test('selectWorkspace uses repository identity fallback when origin is missing', async () => {
+    const repositoryId = 'local/jj-repo';
+    getRepositoryIdentitySpy.mockResolvedValue({
+      repositoryId,
+      remoteUrl: null,
+      gitRoot: testDir,
+    });
+
+    const localConfig: RmplanConfig = {
+      modelSettings: {
+        temperature: 0.7,
+        maxTokens: 4096,
+      },
+      workspaceCreation: {
+        cloneLocation: testDir,
+      },
+    };
+
+    const localSelector = new WorkspaceAutoSelector(testDir, localConfig);
+
+    const mockWorkspaces: WorkspaceInfo[] = [
+      {
+        taskId: 'task-1',
+        originalPlanFilePath: '/test/plan1.yml',
+        repositoryId: repositoryId,
+        workspacePath: path.join(testDir, 'workspace-1'),
+        branch: 'llmutils-task/task-1',
+        createdAt: new Date().toISOString(),
+      },
+    ];
+
+    findWorkspacesByRepositoryIdSpy.mockResolvedValue(mockWorkspaces);
+    updateWorkspaceLockStatusSpy.mockResolvedValue(mockWorkspaces);
+
+    const result = await localSelector.selectWorkspace('task-2', '/test/plan2.yml', {
+      interactive: false,
+    });
+
+    expect(getRepositoryIdentitySpy).toHaveBeenCalled();
+    expect(findWorkspacesByRepositoryIdSpy).toHaveBeenCalledWith(
+      repositoryId,
+      '/default/tracking/path.json'
+    );
+    expect(result?.workspace.taskId).toBe('task-1');
   });
 });

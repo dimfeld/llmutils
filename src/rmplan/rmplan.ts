@@ -836,7 +836,10 @@ const workspaceCommand = program.command('workspace').description('Manage worksp
 workspaceCommand
   .command('list')
   .description('List all workspaces and their lock status')
-  .option('--repo <url>', 'Filter by repository URL (defaults to current repo)')
+  .option('--repo <id>', 'Filter by repository ID (defaults to current repo)')
+  .option('--format <format>', 'Output format: table (default), tsv, json', 'table')
+  .option('--no-header', 'Omit header row (for tsv/table formats)')
+  .option('--all', 'List workspaces across all repositories')
   .action(async (options, command) => {
     const { handleWorkspaceListCommand } = await import('./commands/workspace.js');
     await handleWorkspaceListCommand(options, command).catch(handleCommandError);
@@ -876,6 +879,34 @@ workspaceCommand
     await handleWorkspaceUnlockCommand(workspaceIdentifier, options, command).catch(
       handleCommandError
     );
+  });
+
+workspaceCommand
+  .command('update [workspaceIdentifier]')
+  .description('Update workspace name and description metadata')
+  .option('--name <name>', 'Set the workspace name (use empty string to clear)')
+  .option(
+    '--description <description>',
+    'Set the workspace description (use empty string to clear)'
+  )
+  .option(
+    '--from-plan <planId>',
+    'Seed description from plan (plan ID or file path). Only sets description, not name.'
+  )
+  .action(async (workspaceIdentifier, options, command) => {
+    const { handleWorkspaceUpdateCommand } = await import('./commands/workspace.js');
+    await handleWorkspaceUpdateCommand(workspaceIdentifier, options, command).catch(
+      handleCommandError
+    );
+  });
+
+program
+  .command('shell-integration')
+  .description('Print a shell function for interactive workspace switching using fzf')
+  .option('--shell <shell>', 'Shell type: bash or zsh (default: zsh)', 'zsh')
+  .action(async (options) => {
+    const { handleShellIntegrationCommand } = await import('./commands/shell-integration.js');
+    handleShellIntegrationCommand(options);
   });
 
 const storageCommand = program

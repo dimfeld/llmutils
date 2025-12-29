@@ -93,12 +93,83 @@ rmplan release docs-uuid --reset-status
 | Claims point to stale workspaces            | The workspace was deleted or renamed.                                             | Run `rmplan assignments clean-stale` or release the plan manually.                                       |
 | Plan still appears claimed after completion | rmplan removes assignments when plan status transitions to `done` or `cancelled`. | Verify the plan reached the correct status; re-run `rmplan release <plan>` if necessary.                 |
 
+## Workspace Switching
+
+When working with multiple workspaces, quickly switching between them can be tedious. rmplan provides an interactive workspace switcher using `fzf`.
+
+### Setup
+
+Generate a shell function for your shell:
+
+```bash
+# For zsh (add to ~/.zshrc)
+rmplan shell-integration --shell zsh >> ~/.zshrc
+
+# For bash (add to ~/.bashrc)
+rmplan shell-integration --shell bash >> ~/.bashrc
+
+# Then reload your shell or source the file
+source ~/.zshrc
+```
+
+### Usage
+
+After setup, use the `rmplan_ws` function:
+
+```bash
+rmplan_ws          # Interactive fuzzy selection
+rmplan_ws auth     # Pre-filter to workspaces matching "auth"
+rmplan_ws 123      # Pre-filter to workspaces with "123" in name/description
+```
+
+The switcher displays:
+
+- Workspace name and description
+- Current branch
+- Full path in the preview window
+
+Use Esc or Ctrl+C to cancel without changing directories.
+
+### Workspace Metadata
+
+Keep your workspace list informative with names and descriptions:
+
+```bash
+# Set name and description for current workspace
+rmplan workspace update --name "Auth Feature" --description "Working on OAuth2"
+
+# Seed description from a plan (uses issue number + plan title)
+rmplan workspace update --from-plan 123
+# Results in: "#123 Implement OAuth2 Authentication"
+```
+
+The `rmplan agent` command automatically updates workspace descriptions when running in a tracked workspace, so your workspace list stays current with what you're working on.
+
+### List Formats
+
+The workspace list command supports multiple output formats:
+
+```bash
+# Default table format (human-readable)
+rmplan workspace list
+
+# All workspaces across repositories
+rmplan workspace list --all
+
+# Machine-readable formats
+rmplan workspace list --format tsv --no-header  # For scripts
+rmplan workspace list --format json              # For programmatic use
+```
+
 ## Related Commands
 
-- `rmplan claim <plan>` – manually claim a plan
-- `rmplan release <plan>` – remove the current workspace/user from a claim
-- `rmplan assignments list` – inspect all assignments for the repository
-- `rmplan assignments clean-stale` – remove claims older than the configured timeout
-- `rmplan assignments show-conflicts` – list plans claimed by multiple workspaces
+- `rmplan claim <plan>` - manually claim a plan
+- `rmplan release <plan>` - remove the current workspace/user from a claim
+- `rmplan workspace list` - list workspaces with status, name, and description
+- `rmplan workspace update` - update workspace name and description
+- `rmplan shell-integration` - generate shell function for workspace switching
+- `rmplan assignments list` - inspect all assignments for the repository
+- `rmplan assignments clean-stale` - remove claims older than the configured timeout
+- `rmplan assignments show-conflicts` - list plans claimed by multiple workspaces
 
 Refer to the main README for detailed CLI usage and configuration examples.

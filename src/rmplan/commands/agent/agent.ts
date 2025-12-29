@@ -25,6 +25,7 @@ import {
   defaultModelForExecutor,
 } from '../../executors/index.js';
 import type { ExecutorCommonOptions } from '../../executors/types.js';
+import type { PlanSchema } from '../../planSchema.js';
 import { findNextPlan, readPlanFile, resolvePlanFile, writePlanFile } from '../../plans.js';
 import { findNextActionableItem } from '../../plans/find_next.js';
 import { markStepDone, markTaskDone } from '../../plans/mark_done.js';
@@ -33,7 +34,12 @@ import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
 import { WorkspaceAutoSelector } from '../../workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from '../../workspace/workspace_lock.js';
 import { createWorkspace } from '../../workspace/workspace_manager.js';
-import { findWorkspacesByTaskId } from '../../workspace/workspace_tracker.js';
+import {
+  findWorkspacesByTaskId,
+  getWorkspaceMetadata,
+  patchWorkspaceMetadata,
+} from '../../workspace/workspace_tracker.js';
+import { buildDescriptionFromPlan } from '../workspace.js';
 import { findNextReadyDependency } from '../find_next_dependency.js';
 import { executeBatchMode } from './batch_mode.js';
 import { markParentInProgress } from './parent_plans.js';
@@ -286,6 +292,9 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
 
   // Check if the plan needs preparation
   const planData = await readPlanFile(currentPlanFile);
+
+  // Update workspace description from plan data (if running in a tracked workspace)
+  await updateWorkspaceDescriptionFromPlan(currentBaseDir, planData, config);
 
   // Check if plan has simple field set and respect it
   // CLI flags take precedence: explicit --simple or --no-simple override plan field
@@ -835,5 +844,46 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
       await writeOrDisplaySummary(summaryCollector.getExecutionSummary(), summaryFilePath);
     }
     await closeLogFile();
+  }
+}
+
+/**
+ * Updates the workspace description from plan data.
+ * Only updates if the current directory is a tracked workspace.
+ * Failures are logged as warnings but do not abort the agent.
+ */
+async function updateWorkspaceDescriptionFromPlan(
+  baseDir: string,
+  planData: PlanSchema,
+  config: { paths?: { trackingFile?: string } }
+): Promise<void> {
+  try {
+    const trackingFilePath = config.paths?.trackingFile;
+
+    // Check if the current directory is a tracked workspace
+    const workspaceMetadata = await getWorkspaceMetadata(baseDir, trackingFilePath);
+    if (!workspaceMetadata) {
+      // Not a tracked workspace, skip silently
+      return;
+    }
+
+    // Build description from plan
+    const description = buildDescriptionFromPlan(planData);
+    const planTitle = getCombinedTitleFromSummary(planData);
+
+    // Update workspace metadata
+    await patchWorkspaceMetadata(
+      baseDir,
+      {
+        description,
+        planId: planData.id ? String(planData.id) : '',
+        planTitle: planTitle || '',
+        issueUrls: planData.issue && planData.issue.length > 0 ? [...planData.issue] : [],
+      },
+      trackingFilePath
+    );
+  } catch (err) {
+    // Warn but do not abort
+    warn(`Failed to update workspace description: ${err as Error}`);
   }
 }

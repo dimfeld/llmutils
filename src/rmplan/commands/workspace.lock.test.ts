@@ -9,6 +9,7 @@ let moduleMocker: ModuleMocker;
 let tempDir: string;
 let trackingFile: string;
 let originalCwd: string;
+let originalHome: string | undefined;
 
 const logSpy = mock(() => {});
 const warnSpy = mock(() => {});
@@ -23,6 +24,8 @@ describe('workspace lock/unlock commands', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-lock-cmd-test-'));
     trackingFile = path.join(tempDir, 'workspaces.json');
     originalCwd = process.cwd();
+    originalHome = process.env.HOME;
+    process.env.HOME = tempDir;
 
     // Set test lock directory to use the temp directory
     const lockDir = path.join(tempDir, 'locks');
@@ -49,10 +52,24 @@ describe('workspace lock/unlock commands', () => {
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => tempDir,
     }));
+
+    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
+      getRepositoryIdentity: async () => ({
+        repositoryId: 'example-repo',
+        remoteUrl: 'https://example.com/repo.git',
+        gitRoot: tempDir,
+      }),
+      getUserIdentity: () => 'tester',
+    }));
   });
 
   afterEach(async () => {
     process.chdir(originalCwd);
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
     moduleMocker.clear();
     WorkspaceLock.setTestLockDirectory(undefined);
     await fs.rm(tempDir, { recursive: true, force: true });
@@ -69,7 +86,7 @@ describe('workspace lock/unlock commands', () => {
       workspacePath: workspaceDir,
       branch: 'llmutils-task/task-current',
       createdAt: new Date().toISOString(),
-      repositoryUrl: 'https://example.com/repo.git',
+      repositoryId: 'example-repo',
     };
 
     await writeTrackingData({
@@ -106,7 +123,7 @@ describe('workspace lock/unlock commands', () => {
       workspacePath: workspaceDir,
       branch: 'llmutils-task/task-unlock',
       createdAt: new Date().toISOString(),
-      repositoryUrl: 'https://example.com/repo.git',
+      repositoryId: 'example-repo',
     };
 
     await writeTrackingData({
@@ -144,7 +161,7 @@ describe('workspace lock/unlock commands', () => {
       workspacePath: lockedWorkspace,
       branch: 'llmutils-task/task-locked',
       createdAt: new Date().toISOString(),
-      repositoryUrl: 'https://example.com/repo.git',
+      repositoryId: 'example-repo',
     };
 
     const availableEntry = {
@@ -152,7 +169,7 @@ describe('workspace lock/unlock commands', () => {
       workspacePath: availableWorkspace,
       branch: 'llmutils-task/task-available',
       createdAt: new Date().toISOString(),
-      repositoryUrl: 'https://example.com/repo.git',
+      repositoryId: 'example-repo',
     };
 
     await writeTrackingData({
@@ -187,6 +204,58 @@ describe('workspace lock/unlock commands', () => {
     expect(availableLockInfo?.command.startsWith('rmplan workspace lock --available')).toBe(true);
 
     await WorkspaceLock.releaseLock(lockedWorkspace, { force: true });
+    await WorkspaceLock.releaseLock(availableWorkspace, { force: true });
+  });
+
+  test('locks an available workspace when origin remote is missing', async () => {
+    const availableWorkspace = path.join(tempDir, 'workspace-no-origin');
+    await fs.mkdir(availableWorkspace, { recursive: true });
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: {
+          trackingFile,
+        },
+        workspaceCreation: {
+          cloneLocation: path.join(tempDir, 'clones'),
+        },
+      }),
+    }));
+
+    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
+      getRepositoryIdentity: async () => ({
+        repositoryId: 'local-repo',
+        remoteUrl: null,
+        gitRoot: tempDir,
+      }),
+      getUserIdentity: () => 'tester',
+    }));
+
+    const availableEntry = {
+      taskId: 'task-local',
+      workspacePath: availableWorkspace,
+      branch: 'llmutils-task/task-local',
+      createdAt: new Date().toISOString(),
+      repositoryId: 'local-repo',
+    };
+
+    await writeTrackingData({
+      [availableWorkspace]: availableEntry,
+    });
+
+    const { handleWorkspaceLockCommand } = await import('./workspace.js');
+
+    await handleWorkspaceLockCommand(undefined, { available: true }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    const availableLockInfo = await WorkspaceLock.getLockInfo(availableWorkspace);
+    expect(availableLockInfo?.type).toBe('persistent');
+
     await WorkspaceLock.releaseLock(availableWorkspace, { force: true });
   });
 });

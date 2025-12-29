@@ -5,15 +5,14 @@ import { log } from '../../logging.js';
 import { WorkspaceLock, type LockInfo } from './workspace_lock.js';
 import { createWorkspace } from './workspace_manager.js';
 import {
-  findWorkspacesByRepoUrl,
+  findWorkspacesByRepositoryId,
   findWorkspacesByTaskId,
   updateWorkspaceLockStatus,
   getDefaultTrackingFilePath,
   type WorkspaceInfo,
 } from './workspace_tracker.js';
 import type { RmplanConfig } from '../configSchema.js';
-import { getGitRoot } from '../../common/git.js';
-import { $ } from 'bun';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 
 export interface AutoSelectOptions {
   /** Whether to run in interactive mode (prompt for stale locks) */
@@ -56,17 +55,14 @@ export class WorkspaceAutoSelector {
   ): Promise<SelectedWorkspace | null> {
     const { interactive = true, preferNewWorkspace = false } = options;
 
-    // Get repository URL from config or infer from current git repo
-    let repositoryUrl = this.config.workspaceCreation?.repositoryUrl;
-    if (!repositoryUrl) {
-      try {
-        const gitRoot = await getGitRoot(process.cwd());
-        const result = await $`git remote get-url origin`.cwd(gitRoot).text();
-        repositoryUrl = result.trim();
-      } catch (error) {
-        log(`Failed to get repository URL: ${String(error)}`);
-        return null;
-      }
+    // Get repository ID from current git repo
+    let repositoryId: string;
+    try {
+      const identity = await getRepositoryIdentity({ cwd: this.mainRepoRoot });
+      repositoryId = identity.repositoryId;
+    } catch (error) {
+      log(`Failed to get repository identity: ${String(error)}`);
+      return null;
     }
 
     if (preferNewWorkspace) {
@@ -79,7 +75,7 @@ export class WorkspaceAutoSelector {
 
     // Find existing workspaces for this repository
     const trackingFilePath = this.config.paths?.trackingFile || getDefaultTrackingFilePath();
-    const workspaces = await findWorkspacesByRepoUrl(repositoryUrl, trackingFilePath);
+    const workspaces = await findWorkspacesByRepositoryId(repositoryId, trackingFilePath);
     const workspacesWithLockStatus = await updateWorkspaceLockStatus(workspaces);
 
     // Sort workspaces: unlocked first, then by creation date (newest first)
@@ -187,10 +183,10 @@ export class WorkspaceAutoSelector {
    * List all workspaces with their lock status
    */
   static async listWorkspacesWithStatus(
-    repositoryUrl: string,
+    repositoryId: string,
     trackingFilePath?: string
   ): Promise<void> {
-    const workspaces = await findWorkspacesByRepoUrl(repositoryUrl, trackingFilePath);
+    const workspaces = await findWorkspacesByRepositoryId(repositoryId, trackingFilePath);
     const workspacesWithStatus = await updateWorkspaceLockStatus(workspaces);
 
     if (workspacesWithStatus.length === 0) {
