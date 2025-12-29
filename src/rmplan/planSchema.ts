@@ -53,7 +53,10 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
     priority: prioritySchema.optional(),
     container: z.boolean().default(false).optional(),
     temp: z.boolean().default(false).optional(),
-    dependencies: z.array(z.coerce.number().int().positive()).default([]).optional(),
+    dependencies: z
+      .array(z.coerce.number().int().positive())
+      .default(() => [])
+      .optional(),
     parent: z.coerce.number().int().positive().optional(),
     discoveredFrom: z.coerce
       .number()
@@ -63,21 +66,21 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
       .describe('Plan ID that led to discovering this issue during research/implementation'),
     references: z
       .record(z.string(), z.guid())
-      .default({})
+      .default(() => ({}))
       .optional()
       .describe(
         'Maps numeric plan IDs to their UUIDs for deterministic tracking across renumbering'
       ),
-    issue: z.array(z.url()).default([]).optional(),
-    pullRequest: z.array(z.url()).default([]).optional(),
-    docs: z.array(z.string()).default([]).optional(),
+    issue: z.array(z.url()).default(() => []).optional(),
+    pullRequest: z.array(z.url()).default(() => []).optional(),
+    docs: z.array(z.string()).default(() => []).optional(),
     assignedTo: z.string().optional(),
     planGeneratedAt: z.string().datetime().optional(),
     promptsGeneratedAt: z.string().datetime().optional(),
     createdAt: z.string().datetime().optional(),
     updatedAt: z.string().datetime().optional(),
     compactedAt: z.string().datetime().optional(),
-    progressNotes: z.array(progressNoteSchema).default([]).optional(),
+    progressNotes: z.array(progressNoteSchema).default(() => []).optional(),
     project: projectSchema.optional(),
     tasks: z.array(taskSchema),
     baseBranch: z.string().optional(),

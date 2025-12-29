@@ -1,5 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach, mock } from 'bun:test';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'path';
 import yaml from 'yaml';
 import { handleDoneCommand } from './done.js';
@@ -13,7 +14,7 @@ describe('handleDoneCommand', () => {
   const moduleMocker = new ModuleMocker(import.meta);
 
   beforeEach(async () => {
-    tempDir = await fs.mkdtemp(path.join(await fs.realpath('/tmp'), 'rmplan-done-test-'));
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-done-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
 

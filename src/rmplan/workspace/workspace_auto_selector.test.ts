@@ -26,6 +26,10 @@ describe('WorkspaceAutoSelector', () => {
 
   beforeEach(async () => {
     testDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'workspace-auto-selector-test-'));
+    // Set test lock directory to use the temp directory
+    const lockDir = path.join(testDir, 'locks');
+    await fs.promises.mkdir(lockDir, { recursive: true });
+    WorkspaceLock.setTestLockDirectory(lockDir);
 
     // Mock @inquirer/prompts for non-interactive tests
     await moduleMocker.mock('@inquirer/prompts', () => ({
@@ -68,6 +72,9 @@ describe('WorkspaceAutoSelector', () => {
   afterEach(async () => {
     // Clean up mocks
     moduleMocker.clear();
+
+    // Reset test lock directory
+    WorkspaceLock.setTestLockDirectory(undefined);
 
     await fs.promises.rm(testDir, { recursive: true, force: true });
     mock.restore();

@@ -4,10 +4,9 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
-import { readPlanFile, clearPlanCache } from '../plans.js';
-import { ModuleMocker } from '../../testing.js';
+import { readPlanFile, getMaxNumericPlanId } from '../plans.js';
+import { ModuleMocker, clearAllRmplanCaches } from '../../testing.js';
 import { getDefaultConfig } from '../configSchema.js';
-import { clearConfigCache } from '../configLoader.js';
 import { handleAddCommand } from './add.js';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -18,9 +17,16 @@ describe('rmplan add command', () => {
   const moduleMocker = new ModuleMocker(import.meta);
 
   beforeEach(async () => {
-    // Clear caches before starting each test
-    clearPlanCache();
-    clearConfigCache();
+    // Clear all caches before starting each test
+    clearAllRmplanCaches();
+
+    // Mock generateNumericPlanId to use local-only ID generation (avoids shared storage)
+    await moduleMocker.mock('../id_utils.js', () => ({
+      generateNumericPlanId: mock(async (dir: string) => {
+        const maxId = await getMaxNumericPlanId(dir);
+        return maxId + 1;
+      }),
+    }));
 
     // Create temporary directory structure
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-add-test-'));
@@ -38,14 +44,11 @@ describe('rmplan add command', () => {
         },
       })
     );
-
-    // console.log('Created new tempDir:', tempDir);
   });
 
   afterEach(async () => {
     moduleMocker.clear();
-    clearPlanCache();
-    clearConfigCache();
+    clearAllRmplanCaches();
 
     // Clean up the temporary directory
     if (tempDir) {
@@ -394,11 +397,6 @@ describe('rmplan add command', () => {
   });
 
   describe('--cleanup option', () => {
-    beforeEach(() => {
-      // Ensure cache is cleared before each cleanup test
-      clearPlanCache();
-    });
-
     test('creates cleanup plan with default title generation', async () => {
       // Create a parent plan
       const schemaLine =
@@ -444,7 +442,6 @@ describe('rmplan add command', () => {
       expect(cleanupPlan.status).toBe('pending');
 
       // Read and verify parent plan was updated with dependency
-      clearPlanCache(); // Clear cache before reading to ensure we get fresh data from disk
       const parentPlanPath = path.join(tasksDir, '10-parent-plan.yml');
       const parentPlan = await readPlanFile(parentPlanPath);
       expect(parentPlan.dependencies).toEqual([11]);
@@ -692,7 +689,7 @@ describe('rmplan add command', () => {
   });
 
   test('creates sanitized external plan when remote contains credentials and query tokens', async () => {
-    clearConfigCache();
+    clearAllRmplanCaches();
 
     const fakeHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-add-home-'));
     const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-add-repo-'));
@@ -734,7 +731,7 @@ describe('rmplan add command', () => {
       const repositoryDir = path.join(
         fakeHomeDir,
         '.config',
-        'rmfilter',
+        'rmplan',
         'repositories',
         'github.example.com__Owner__Repo'
       );
@@ -757,7 +754,7 @@ describe('rmplan add command', () => {
       process.chdir(originalCwd);
       await fs.rm(repoDir, { recursive: true, force: true });
       await fs.rm(fakeHomeDir, { recursive: true, force: true });
-      clearConfigCache();
+      clearAllRmplanCaches();
     }
   });
 
@@ -784,7 +781,7 @@ describe('rmplan add command', () => {
         tags: { allowed: ['frontend'] },
       })
     );
-    clearConfigCache();
+    clearAllRmplanCaches();
 
     const command = {
       parent: {

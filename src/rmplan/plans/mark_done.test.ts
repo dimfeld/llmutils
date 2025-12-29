@@ -1,5 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import yaml from 'yaml';
 import { markStepDone, markTaskDone, setTaskDone } from './mark_done.js';
@@ -11,7 +12,7 @@ describe('markStepDone', () => {
   let tasksDir: string;
 
   beforeEach(async () => {
-    tempDir = await fs.mkdtemp(path.join(await fs.realpath('/tmp'), 'rmplan-test-'));
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
   });
@@ -114,7 +115,7 @@ describe('markTaskDone', () => {
   let tasksDir: string;
 
   beforeEach(async () => {
-    tempDir = await fs.mkdtemp(path.join(await fs.realpath('/tmp'), 'rmplan-test-'));
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
   });
@@ -186,7 +187,7 @@ describe('setTaskDone', () => {
   let tasksDir: string;
 
   beforeEach(async () => {
-    tempDir = await fs.mkdtemp(path.join(await fs.realpath('/tmp'), 'rmplan-test-'));
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
   });

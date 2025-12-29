@@ -3,12 +3,11 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import yaml from 'yaml';
-import { readPlanFile, clearPlanCache } from '../plans.js';
+import { readPlanFile } from '../plans.js';
 import { handleSetCommand } from './set.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { RmplanConfig } from '../configSchema.js';
-import { ModuleMocker } from '../../testing.js';
-import { clearConfigCache } from '../configLoader.js';
+import { ModuleMocker, clearAllRmplanCaches } from '../../testing.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 const logSpy = mock(() => {});
@@ -29,8 +28,7 @@ describe('rmplan set command', () => {
 
   beforeEach(async () => {
     moduleMocker.clear();
-    clearConfigCache();
-    clearPlanCache();
+    clearAllRmplanCaches();
     logSpy.mockClear();
     warnSpy.mockClear();
     errorSpy.mockClear();
@@ -74,8 +72,7 @@ describe('rmplan set command', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
-    clearConfigCache();
-    clearPlanCache();
+    clearAllRmplanCaches();
     if (tempDir) {
       await rm(tempDir, { recursive: true, force: true });
     }
@@ -437,7 +434,7 @@ describe('rmplan set command', () => {
     );
 
     const updatedPlan = await readPlanFile(planPath);
-    expect(updatedPlan.dependencies).toBeUndefined();
+    expect(updatedPlan.dependencies).toEqual([]);
   });
 
   test('should handle plans without existing issue URLs', async () => {
@@ -454,7 +451,7 @@ describe('rmplan set command', () => {
     );
 
     const updatedPlan = await readPlanFile(planPath);
-    expect(updatedPlan.issue).toBeUndefined();
+    expect(updatedPlan.issue).toEqual([]);
   });
 
   test('should add documentation paths', async () => {
@@ -541,7 +538,7 @@ describe('rmplan set command', () => {
     );
 
     const updatedPlan = await readPlanFile(planPath);
-    expect(updatedPlan.docs).toBeUndefined();
+    expect(updatedPlan.docs).toEqual([]);
   });
 
   test('should handle adding and removing documentation paths in same command', async () => {
@@ -1017,7 +1014,7 @@ describe('rmplan set command', () => {
         tags: { allowed: ['frontend', 'backend'] },
       })
     );
-    clearConfigCache();
+    clearAllRmplanCaches();
 
     const planPath = await createTestPlan(203);
 

@@ -39,12 +39,23 @@ export class WorkspaceLock {
   // Allow overriding process.pid for testing
   public static pid = process.pid;
 
+  // Allow overriding lock directory for testing
+  private static testLockDirectory: string | undefined;
+
   /**
    * Set a custom PID for testing purposes
    * @param pid The PID to use (pass undefined to reset to process.pid)
    */
   public static setTestPid(pid: number | undefined): void {
     this.pid = pid ?? process.pid;
+  }
+
+  /**
+   * Set a custom lock directory for testing purposes
+   * @param dir The directory to use for locks (pass undefined to reset to default)
+   */
+  public static setTestLockDirectory(dir: string | undefined): void {
+    this.testLockDirectory = dir;
   }
 
   private static readonly registeredCleanupHandlers = new Set<string>();
@@ -54,6 +65,9 @@ export class WorkspaceLock {
    * @returns The path to the locks directory
    */
   private static getLockDirectory(): string {
+    if (this.testLockDirectory) {
+      return this.testLockDirectory;
+    }
     return path.join(os.homedir(), '.config', 'rmplan', 'locks');
   }
 

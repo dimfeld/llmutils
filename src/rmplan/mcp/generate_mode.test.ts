@@ -1,10 +1,17 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, mock } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { getDefaultConfig } from '../configSchema.js';
 import type { PlanSchema } from '../planSchema.js';
-import { writePlanFile, readPlanFile, clearPlanCache, readAllPlans } from '../plans.js';
+import {
+  writePlanFile,
+  readPlanFile,
+  clearPlanCache,
+  readAllPlans,
+  getMaxNumericPlanId,
+} from '../plans.js';
+import { ModuleMocker, clearAllRmplanCaches } from '../../testing.js';
 import { resolvePlan } from '../plan_display.js';
 import {
   generateTasksParameters,
@@ -387,7 +394,7 @@ describe('rmplan MCP generate mode helpers', () => {
     expect(task?.title).toBe('Investigate issue');
     expect(task?.description).toContain('Reproduce the bug');
     expect(task?.done).toBeFalse();
-    expect(Array.isArray(task?.steps)).toBeTrue();
+    // Note: steps, files, docs, and examples fields were removed from the task schema
   });
 
   test('mcpManagePlanTask with action=remove deletes by title and reports shifts', async () => {
@@ -1499,9 +1506,19 @@ describe('Helper Functions', () => {
 describe('mcpCreatePlan', () => {
   let tmpDir: string;
   let context: GenerateModeRegistrationContext;
+  const moduleMocker = new ModuleMocker(import.meta);
 
   beforeEach(async () => {
-    clearPlanCache();
+    clearAllRmplanCaches();
+
+    // Mock generateNumericPlanId to use local-only ID generation (avoids shared storage)
+    await moduleMocker.mock('../id_utils.js', () => ({
+      generateNumericPlanId: mock(async (dir: string) => {
+        const maxId = await getMaxNumericPlanId(dir);
+        return maxId + 1;
+      }),
+    }));
+
     tmpDir = await mkdtemp(path.join(os.tmpdir(), 'rmplan-create-'));
 
     const config = getDefaultConfig();
@@ -1515,8 +1532,9 @@ describe('mcpCreatePlan', () => {
   });
 
   afterEach(async () => {
+    moduleMocker.clear();
     await rm(tmpDir, { recursive: true, force: true });
-    clearPlanCache();
+    clearAllRmplanCaches();
   });
 
   async function createPlan(plan: PlanSchema) {

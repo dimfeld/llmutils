@@ -1,12 +1,11 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { findNextReadyDependency } from './find_next_dependency.js';
-import { clearPlanCache } from '../plans.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import type { PlanSchema } from '../planSchema.js';
 import yaml from 'yaml';
-import { ModuleMocker } from '../../testing.js';
+import { ModuleMocker, clearAllRmplanCaches } from '../../testing.js';
 
 describe('findNextReadyDependency', () => {
   let testDir: string;
@@ -21,8 +20,8 @@ describe('findNextReadyDependency', () => {
     if (testDir) {
       await fs.rm(testDir, { recursive: true, force: true });
     }
-    // Clear the plan cache to prevent state pollution between tests
-    clearPlanCache();
+    // Clear all caches to prevent state pollution between tests
+    clearAllRmplanCaches();
   });
 
   async function createPlanFile(plan: PlanSchema & { filename: string }) {
@@ -1297,7 +1296,7 @@ describe('findNextReadyDependency', () => {
 
     afterEach(() => {
       moduleMocker.clear();
-      clearPlanCache();
+      clearAllRmplanCaches();
     });
 
     test('logs BFS traversal with plan examination and dependency discovery', async () => {

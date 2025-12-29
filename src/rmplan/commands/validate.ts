@@ -548,6 +548,10 @@ export async function handleValidateCommand(
               `✓ Fixed ${obsoleteKeyFixResult.fixedPlans} plan${obsoleteKeyFixResult.fixedPlans === 1 ? '' : 's'}, removed ${obsoleteKeyFixResult.totalKeysRemoved} obsolete key${obsoleteKeyFixResult.totalKeysRemoved === 1 ? '' : 's'}\n`
             )
           );
+
+          // Reload plans to get the fixed data (prevents later operations from overwriting the fix)
+          const reloadedPlans = await readAllPlans(tasksDir, false);
+          planMap = reloadedPlans.plans;
         }
 
         if (obsoleteKeyFixResult.errors.length > 0) {

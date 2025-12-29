@@ -1,4 +1,17 @@
 import { mock } from 'bun:test';
+import { clearPlanCache } from './rmplan/plans.js';
+import { clearConfigCache } from './rmplan/configLoader.js';
+import { clearAllGitCaches } from './common/git.js';
+
+/**
+ * Clears all rmplan-related caches. Call this in beforeEach and afterEach
+ * to ensure tests don't pollute each other's state.
+ */
+export function clearAllRmplanCaches(): void {
+  clearPlanCache();
+  clearConfigCache();
+  clearAllGitCaches();
+}
 
 export type MockResult = {
   clear: () => void;

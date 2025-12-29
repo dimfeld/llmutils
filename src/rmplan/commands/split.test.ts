@@ -246,7 +246,7 @@ describe('rmplan split - manual', () => {
     const updatedParent = await readPlanFile(parentFile);
     // Nothing changed
     expect(updatedParent.tasks?.length).toBe(2);
-    expect(updatedParent.dependencies).toBeUndefined();
+    expect(updatedParent.dependencies).toEqual([]);
   });
 
   test('interactive selection canceled gracefully', async () => {
@@ -274,7 +274,7 @@ describe('rmplan split - manual', () => {
 
     const updatedParent = await readPlanFile(parentFile);
     expect(updatedParent.tasks?.length).toBe(2);
-    expect(updatedParent.dependencies).toBeUndefined();
+    expect(updatedParent.dependencies).toEqual([]);
   });
 
   test('splitting all tasks sets container flag and removes all tasks', async () => {

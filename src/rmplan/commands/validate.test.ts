@@ -4,17 +4,20 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { handleValidateCommand } from './validate.js';
 import type { RmplanConfig } from '../configSchema.js';
+import { clearAllRmplanCaches } from '../../testing.js';
 import { readPlanFile } from '../plans.js';
 
 describe('validate command', () => {
   let tempDir: string;
 
   beforeEach(async () => {
+    clearAllRmplanCaches();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'validate-test-'));
   });
 
   afterEach(async () => {
     await fs.rm(tempDir, { recursive: true, force: true });
+    clearAllRmplanCaches();
   });
 
   describe('valid plan files', () => {

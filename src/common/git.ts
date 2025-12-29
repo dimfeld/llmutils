@@ -465,6 +465,29 @@ export function resetGitRepositoryCache(): void {
   cachedGitRepository.clear();
 }
 
+/**
+ * Resets the cached git root paths. Intended for use in tests.
+ */
+export function clearGitRootCache(): void {
+  cachedGitRoot.clear();
+}
+
+/**
+ * Resets the cached jj detection. Intended for use in tests.
+ */
+export function clearUsingJjCache(): void {
+  cachedUsingJj = undefined;
+}
+
+/**
+ * Clears all git-related caches. Intended for use in tests.
+ */
+export function clearAllGitCaches(): void {
+  cachedGitRoot.clear();
+  cachedGitRepository.clear();
+  cachedUsingJj = undefined;
+}
+
 export interface GetChangedFilesOptions {
   baseBranch?: string;
   excludePaths?: string[];

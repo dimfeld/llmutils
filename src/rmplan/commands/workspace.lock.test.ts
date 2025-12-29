@@ -24,6 +24,11 @@ describe('workspace lock/unlock commands', () => {
     trackingFile = path.join(tempDir, 'workspaces.json');
     originalCwd = process.cwd();
 
+    // Set test lock directory to use the temp directory
+    const lockDir = path.join(tempDir, 'locks');
+    await fs.mkdir(lockDir, { recursive: true });
+    WorkspaceLock.setTestLockDirectory(lockDir);
+
     await moduleMocker.mock('../../logging.js', () => ({
       log: logSpy,
       warn: warnSpy,
@@ -49,6 +54,7 @@ describe('workspace lock/unlock commands', () => {
   afterEach(async () => {
     process.chdir(originalCwd);
     moduleMocker.clear();
+    WorkspaceLock.setTestLockDirectory(undefined);
     await fs.rm(tempDir, { recursive: true, force: true });
     logSpy.mockClear();
     warnSpy.mockClear();

@@ -10,11 +10,16 @@ describe('WorkspaceLock', () => {
   beforeEach(async () => {
     // Create a unique test directory with timestamp and random suffix to avoid conflicts
     testDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), `workspace-lock-test-`));
+    // Set test lock directory to use the temp directory
+    const lockDir = path.join(testDir, 'locks');
+    await fs.promises.mkdir(lockDir, { recursive: true });
+    WorkspaceLock.setTestLockDirectory(lockDir);
   });
 
   afterEach(async () => {
-    // Reset test PID
+    // Reset test PID and lock directory
     WorkspaceLock.setTestPid(undefined);
+    WorkspaceLock.setTestLockDirectory(undefined);
 
     try {
       await fs.promises.rm(testDir, { recursive: true, force: true });
