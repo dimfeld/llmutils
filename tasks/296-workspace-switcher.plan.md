@@ -5,7 +5,7 @@ goal: ""
 id: 296
 uuid: 4a39959d-e9fb-4fa6-b4ed-774a5b4dfd4d
 simple: false
-status: pending
+status: in_progress
 priority: medium
 container: false
 temp: false
@@ -15,7 +15,7 @@ issue: []
 pullRequest: []
 docs: []
 createdAt: 2025-12-29T01:17:52.736Z
-updatedAt: 2025-12-29T01:17:52.736Z
+updatedAt: 2025-12-29T05:50:42.152Z
 progressNotes: []
 tasks: []
 tags: []
@@ -29,5 +29,3 @@ tags: []
   - use fzf to allow the user to select a workspace
   - run the `cd` command on the result 
 - Then a `shell-integration` command that outputs a bash or zsh function for the above that can be put into a file and sourced
-
-

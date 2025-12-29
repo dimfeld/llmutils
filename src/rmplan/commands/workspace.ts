@@ -25,6 +25,9 @@ import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { RmplanConfig } from '../configSchema.js';
 import type { Command } from 'commander';
+import { claimPlan } from '../assignments/claim_plan.js';
+import { logClaimOutcome } from '../assignments/claim_logging.js';
+import { getRepositoryIdentity, getUserIdentity } from '../assignments/workspace_identifier.js';
 
 export async function handleWorkspaceCommand(args: any, options: any) {
   // This is the main workspace command handler that delegates to subcommands
@@ -198,6 +201,32 @@ export async function handleWorkspaceAddCommand(
       log('Plan status updated to in_progress in workspace');
     } catch (err) {
       warn(`Failed to update plan status in workspace: ${err as Error}`);
+    }
+  }
+
+  // Claim the plan in the new workspace
+  if (planData?.uuid) {
+    try {
+      const repository = await getRepositoryIdentity({ cwd: workspace.path });
+      const user = getUserIdentity();
+      const planId = typeof planData.id === 'number' && !Number.isNaN(planData.id) ? planData.id : undefined;
+      const planLabel = planId !== undefined ? String(planId) : planData.uuid;
+
+      const claimResult = await claimPlan(planId, {
+        uuid: planData.uuid,
+        repositoryId: repository.repositoryId,
+        repositoryRemoteUrl: repository.remoteUrl,
+        workspacePath: repository.gitRoot,
+        user,
+      });
+
+      logClaimOutcome(claimResult, {
+        planLabel,
+        workspacePath: repository.gitRoot,
+        user,
+      });
+    } catch (err) {
+      warn(`Failed to claim plan in workspace: ${err as Error}`);
     }
   }
 
