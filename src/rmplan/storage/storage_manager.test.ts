@@ -12,7 +12,7 @@ import {
 } from './storage_manager.js';
 import { writeRepositoryStorageMetadata } from '../external_storage_utils.js';
 
-const STORAGE_BASE_SUBPATH = path.join('.config', 'rmfilter', 'repositories');
+const STORAGE_BASE_SUBPATH = path.join('.config', 'rmplan', 'repositories');
 
 async function createStorageRepository(
   homeDir: string,

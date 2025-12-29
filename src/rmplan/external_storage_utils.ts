@@ -25,7 +25,7 @@ export interface RepositoryStorageMetadataInput {
 }
 
 export function getExternalStorageBaseDir(): string {
-  return path.join(os.homedir(), '.config', 'rmfilter', 'repositories');
+  return path.join(os.homedir(), '.config', 'rmplan', 'repositories');
 }
 
 export function trimQueryAndFragment(value: string): string {

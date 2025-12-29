@@ -11,7 +11,7 @@ const moduleMocker = new ModuleMocker(import.meta);
 const mockLog = mock(() => {});
 const mockWarn = mock(() => {});
 
-const STORAGE_BASE_SUBPATH = path.join('.config', 'rmfilter', 'repositories');
+const STORAGE_BASE_SUBPATH = path.join('.config', 'rmplan', 'repositories');
 
 async function createStorageRepository(
   homeDir: string,
