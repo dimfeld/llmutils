@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import yaml from 'yaml';
-import { readPlanFile } from '../plans.js';
+import { readPlanFile, clearPlanCache } from '../plans.js';
 import { handleSetCommand } from './set.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { RmplanConfig } from '../configSchema.js';
@@ -30,6 +30,7 @@ describe('rmplan set command', () => {
   beforeEach(async () => {
     moduleMocker.clear();
     clearConfigCache();
+    clearPlanCache();
     logSpy.mockClear();
     warnSpy.mockClear();
     errorSpy.mockClear();
@@ -74,7 +75,10 @@ describe('rmplan set command', () => {
   afterEach(async () => {
     moduleMocker.clear();
     clearConfigCache();
-    await rm(tempDir, { recursive: true });
+    clearPlanCache();
+    if (tempDir) {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   const createTestPlan = async (id: number, overrides?: Partial<PlanSchema>) => {

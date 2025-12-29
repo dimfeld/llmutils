@@ -657,7 +657,11 @@ export async function writePlanFile(
   }
 
   // Remove empty objects
-  if (cleanedPlan.references && typeof cleanedPlan.references === 'object' && Object.keys(cleanedPlan.references).length === 0) {
+  if (
+    cleanedPlan.references &&
+    typeof cleanedPlan.references === 'object' &&
+    Object.keys(cleanedPlan.references).length === 0
+  ) {
     delete cleanedPlan.references;
   }
 

@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
-import { readPlanFile } from '../plans.js';
+import { readPlanFile, clearPlanCache } from '../plans.js';
 import { ModuleMocker } from '../../testing.js';
 import { getDefaultConfig } from '../configSchema.js';
 import { clearConfigCache } from '../configLoader.js';
@@ -18,6 +18,10 @@ describe('rmplan add command', () => {
   const moduleMocker = new ModuleMocker(import.meta);
 
   beforeEach(async () => {
+    // Clear caches before starting each test
+    clearPlanCache();
+    clearConfigCache();
+
     // Create temporary directory structure
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-add-test-'));
     tasksDir = path.join(tempDir, 'tasks');
@@ -34,10 +38,23 @@ describe('rmplan add command', () => {
         },
       })
     );
+
+    // console.log('Created new tempDir:', tempDir);
   });
 
   afterEach(async () => {
     moduleMocker.clear();
+    clearPlanCache();
+    clearConfigCache();
+
+    // Clean up the temporary directory
+    if (tempDir) {
+      try {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      } catch (err) {
+        console.error('Failed to clean up temp directory:', tempDir, err);
+      }
+    }
   });
 
   test('creates plan with numeric ID when no plans exist', async () => {
@@ -377,6 +394,11 @@ describe('rmplan add command', () => {
   });
 
   describe('--cleanup option', () => {
+    beforeEach(() => {
+      // Ensure cache is cleared before each cleanup test
+      clearPlanCache();
+    });
+
     test('creates cleanup plan with default title generation', async () => {
       // Create a parent plan
       const schemaLine =
@@ -422,6 +444,7 @@ describe('rmplan add command', () => {
       expect(cleanupPlan.status).toBe('pending');
 
       // Read and verify parent plan was updated with dependency
+      clearPlanCache(); // Clear cache before reading to ensure we get fresh data from disk
       const parentPlanPath = path.join(tasksDir, '10-parent-plan.yml');
       const parentPlan = await readPlanFile(parentPlanPath);
       expect(parentPlan.dependencies).toEqual([11]);
