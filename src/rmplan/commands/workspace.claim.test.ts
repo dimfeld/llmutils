@@ -184,7 +184,6 @@ describe('handleWorkspaceAddCommand - plan claiming', () => {
       status: 'pending',
       tasks: [],
     });
-
   });
 
   afterEach(async () => {
@@ -271,7 +270,11 @@ describe('handleWorkspaceAddCommand - plan claiming', () => {
     // Should not throw - should just warn
     await mockedCommand('1', {}, command);
 
-    expect(mockWarn).toHaveBeenCalledWith(expect.stringContaining('Failed to claim plan in workspace'));
-    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('✓ Workspace created successfully!'));
+    expect(mockWarn).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to claim plan in workspace')
+    );
+    expect(mockLog).toHaveBeenCalledWith(
+      expect.stringContaining('✓ Workspace created successfully!')
+    );
   });
 });

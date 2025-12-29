@@ -209,7 +209,8 @@ export async function handleWorkspaceAddCommand(
     try {
       const repository = await getRepositoryIdentity({ cwd: workspace.path });
       const user = getUserIdentity();
-      const planId = typeof planData.id === 'number' && !Number.isNaN(planData.id) ? planData.id : undefined;
+      const planId =
+        typeof planData.id === 'number' && !Number.isNaN(planData.id) ? planData.id : undefined;
       const planLabel = planId !== undefined ? String(planId) : planData.uuid;
 
       const claimResult = await claimPlan(planId, {

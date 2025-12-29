@@ -9,10 +9,12 @@ Complete reference for rmplan MCP server tools and prompts.
 Full planning workflow with research phase.
 
 **Arguments:**
+
 - `plan` (required): Plan ID or file path
 - `allowMultiplePlans` (optional): Allow creating child plans for large scope
 
 **Workflow:**
+
 1. Load plan context
 2. Research codebase relevant to goal
 3. Write findings to `## Implementation Guide` section in the plan file
@@ -27,10 +29,12 @@ Full planning workflow with research phase.
 Skip research, generate tasks directly.
 
 **Arguments:**
+
 - `plan` (optional): Plan ID or file path
 - `allowMultiplePlans` (optional): Allow creating child plans
 
 **When to use:**
+
 - Simple changes
 - Research already exists in plan
 - Time-critical situations
@@ -40,6 +44,7 @@ Skip research, generate tasks directly.
 Collaborate with user to refine plan.
 
 **Arguments:**
+
 - `plan` (optional): Plan ID for context
 
 **Behavior:** Ask focused, high-impact questions one at a time.
@@ -49,6 +54,7 @@ Collaborate with user to refine plan.
 Display plan and wait for instructions.
 
 **Arguments:**
+
 - `plan` (required): Plan ID or file path
 
 **Behavior:** Shows plan details, waits for user before acting.
@@ -58,6 +64,7 @@ Display plan and wait for instructions.
 Summarize completed plan for archival.
 
 **Arguments:**
+
 - `plan` (required): Plan ID or file path
 
 **Requirements:** Plan status must be `done`, `cancelled`, or `deferred`.
@@ -69,9 +76,10 @@ Summarize completed plan for archival.
 Retrieve full plan details.
 
 **Parameters:**
+
 ```typescript
 {
-  plan: string  // Plan ID or file path
+  plan: string; // Plan ID or file path
 }
 ```
 
@@ -82,6 +90,7 @@ Retrieve full plan details.
 Create a new plan file.
 
 **Parameters:**
+
 ```typescript
 {
   title: string           // Required
@@ -101,6 +110,7 @@ Create a new plan file.
 ```
 
 **Behavior:**
+
 - Generates numeric ID automatically
 - Creates file in configured tasks directory
 - Updates parent's dependencies if `parent` specified
@@ -111,6 +121,7 @@ Create a new plan file.
 Update plan with generated tasks and details.
 
 **Parameters:**
+
 ```typescript
 {
   plan: string            // Plan ID or file path (required)
@@ -127,6 +138,7 @@ Update plan with generated tasks and details.
 ```
 
 **Behavior:**
+
 - Merges new tasks with existing (preserves completed tasks)
 - Updates generated section content
 - Preserves manual content outside delimiters
@@ -136,6 +148,7 @@ Update plan with generated tasks and details.
 Update the generated section content.
 
 **Parameters:**
+
 ```typescript
 {
   plan: string      // Plan ID or file path (required)
@@ -145,6 +158,7 @@ Update the generated section content.
 ```
 
 **Behavior:**
+
 - Modifies content between `<!-- rmplan-generated-start -->` and `<!-- rmplan-generated-end -->`
 - Preserves content outside delimiters
 
@@ -153,6 +167,7 @@ Update the generated section content.
 Add, update, or remove individual tasks.
 
 **Parameters:**
+
 ```typescript
 {
   plan: string                           // Required
@@ -172,6 +187,7 @@ Add, update, or remove individual tasks.
 **Examples:**
 
 Add task:
+
 ```json
 {
   "plan": "123",
@@ -182,6 +198,7 @@ Add task:
 ```
 
 Update task by title:
+
 ```json
 {
   "plan": "123",
@@ -192,6 +209,7 @@ Update task by title:
 ```
 
 Remove task:
+
 ```json
 {
   "plan": "123",
@@ -205,6 +223,7 @@ Remove task:
 Find plans ready to execute.
 
 **Parameters:**
+
 ```typescript
 {
   priority?: "low" | "medium" | "high" | "urgent" | "maybe"
@@ -216,11 +235,13 @@ Find plans ready to execute.
 ```
 
 **Returns:** JSON with plan summaries including:
+
 - id, title, priority, status
 - taskCount, completedTasks
 - dependencies, filePath
 
 **Readiness criteria:**
+
 - Status is `pending` or `in_progress`
 - All dependencies have status `done`
 - Priority is not `maybe`
@@ -260,6 +281,7 @@ List ready plans.
 ### Create Child Plans
 
 When scope is large:
+
 ```
 1. Use create-plan with parent field set
 2. Set dependencies between children as needed

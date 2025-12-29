@@ -581,11 +581,16 @@ export async function createWorkspace(
   // Step 6: Copy plan file if provided
   let planFilePathInWorkspace: string | undefined;
   if (originalPlanFilePath) {
-    const planFileName = path.basename(originalPlanFilePath);
-    planFilePathInWorkspace = path.join(targetClonePath, planFileName);
+    // Preserve the relative path structure from the original repository
+    const relativePlanPath = path.relative(mainRepoRoot, originalPlanFilePath);
+    planFilePathInWorkspace = path.join(targetClonePath, relativePlanPath);
+    const planFileDir = path.dirname(planFilePathInWorkspace);
 
     try {
-      log(`Copying plan file to workspace: ${planFileName}`);
+      // Ensure the directory structure exists in the workspace
+      await fs.mkdir(planFileDir, { recursive: true });
+
+      log(`Copying plan file to workspace: ${relativePlanPath}`);
       await fs.copyFile(originalPlanFilePath, planFilePathInWorkspace);
     } catch (error) {
       log(`Error copying plan file: ${String(error)}`);

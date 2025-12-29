@@ -886,6 +886,7 @@ claude --plugin-dir /path/to/llmutils
 ```
 
 The plugin provides:
+
 - Automatic MCP server configuration (no manual `.mcp.json` needed)
 - A skill that loads when you mention "rmplan" or "generate plan"
 - Documentation for MCP tools and CLI commands

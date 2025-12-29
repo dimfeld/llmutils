@@ -11,6 +11,7 @@ rmplan is an AI-powered project planning and execution system. It generates deta
 ## Core Concepts
 
 **Plans** are YAML files with:
+
 - Metadata (title, goal, priority, status, dependencies)
 - Tasks with descriptions
 - Research findings and implementation notes
@@ -26,15 +27,16 @@ The rmplan MCP server provides tools and prompts for plan management. When the M
 
 Use prompts to initiate plan workflows:
 
-| Prompt | Purpose |
-|--------|---------|
-| `generate-plan` | Full workflow: research → collaborate → generate tasks |
-| `generate-plan-simple` | Skip research, go directly to task generation |
-| `plan-questions` | Collaborate with user to refine a plan |
-| `load-plan` | Display plan and wait for user instructions |
-| `compact-plan` | Summarize completed plan for archival |
+| Prompt                 | Purpose                                                |
+| ---------------------- | ------------------------------------------------------ |
+| `generate-plan`        | Full workflow: research → collaborate → generate tasks |
+| `generate-plan-simple` | Skip research, go directly to task generation          |
+| `plan-questions`       | Collaborate with user to refine a plan                 |
+| `load-plan`            | Display plan and wait for user instructions            |
+| `compact-plan`         | Summarize completed plan for archival                  |
 
 **Using generate-plan prompt:**
+
 1. Load the prompt with a plan ID
 2. Research the codebase relevant to the plan goal
 3. Add findings to the plan's `## Implementation Guide` section
@@ -43,18 +45,19 @@ Use prompts to initiate plan workflows:
 
 ### MCP Tools
 
-| Tool | Purpose |
-|------|---------|
-| `get-plan` | Retrieve plan details by ID or path |
-| `create-plan` | Create a new plan file |
-| `update-plan-tasks` | Update plan with generated tasks and details |
-| `update-plan-details` | Update the generated section content |
-| `manage-plan-task` | Add, update, or remove individual tasks |
-| `list-ready-plans` | Find plans ready to execute |
+| Tool                  | Purpose                                      |
+| --------------------- | -------------------------------------------- |
+| `get-plan`            | Retrieve plan details by ID or path          |
+| `create-plan`         | Create a new plan file                       |
+| `update-plan-tasks`   | Update plan with generated tasks and details |
+| `update-plan-details` | Update the generated section content         |
+| `manage-plan-task`    | Add, update, or remove individual tasks      |
+| `list-ready-plans`    | Find plans ready to execute                  |
 
 ### MCP Resources
 
 Browse plan data via resources:
+
 - `rmplan://plans/list` - All plans
 - `rmplan://plans/{planId}` - Specific plan details
 - `rmplan://plans/ready` - Ready-to-execute plans
@@ -171,6 +174,7 @@ Research findings and implementation notes...
 ### Breaking Down Large Plans
 
 When a plan is too large, create child plans:
+
 - Use `create-plan` with `parent` field set
 - Split by feature areas, not architectural layers
 - Each child plan should deliver complete, testable functionality
@@ -193,6 +197,7 @@ rmplan prompts  # List all available prompts
 ## Additional Resources
 
 For detailed information, consult:
+
 - **`references/mcp-tools.md`** - Complete MCP tool parameters and examples
 - **`references/cli-commands.md`** - Full CLI command reference
 
