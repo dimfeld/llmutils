@@ -38,6 +38,7 @@ task.yml
 **/.claude/settings.local.json
 /rmplan
 rmplan-*
+!rmplan-usage
 .rmfilter/config/*.local.yml
 .rmfilter/reviews
 .*.bun-build
