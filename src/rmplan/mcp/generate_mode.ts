@@ -112,7 +112,7 @@ Only create multiple plans if it genuinely improves the project organization. Fo
 
 ${generateClaudeCodeResearchPrompt(`Once your research is complete`)}
 
-Add your guide directly to the plan file at ${planPath} under a "## Implementation Guide" heading. You can directly edit this file; don't use the rmplan MCP tools. Be verbose in your findings - the more insights you include from your exploration, the better.
+Add your guide directly to the plan file at ${planPath} under a "## Implementation Guide" heading. You can directly edit this file; don't use the rmplan MCP tools for adding this guide. Be verbose in your findings - the more insights you include from your exploration, the better.
 
 When done, collaborate with your human partner to refine this plan. ${questionText}`;
 
