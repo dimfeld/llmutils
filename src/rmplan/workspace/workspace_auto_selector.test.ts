@@ -126,10 +126,9 @@ describe('WorkspaceAutoSelector', () => {
       hostname: os.hostname(),
       version: 1,
     };
-    await fs.promises.writeFile(
-      path.join(workspacePath, '.rmplan.lock'),
-      JSON.stringify(staleLock)
-    );
+    const lockFilePath = WorkspaceLock.getLockFilePath(workspacePath);
+    await fs.promises.mkdir(path.dirname(lockFilePath), { recursive: true });
+    await fs.promises.writeFile(lockFilePath, JSON.stringify(staleLock));
 
     const mockWorkspaces: WorkspaceInfo[] = [
       {
@@ -163,7 +162,7 @@ describe('WorkspaceAutoSelector', () => {
 
     // Verify lock was cleared
     const lockExists = await fs.promises
-      .access(path.join(workspacePath, '.rmplan.lock'))
+      .access(WorkspaceLock.getLockFilePath(workspacePath))
       .then(() => true)
       .catch(() => false);
     expect(lockExists).toBe(false);

@@ -162,10 +162,9 @@ describe('workspace lock/unlock commands', () => {
       hostname: os.hostname(),
       version: 2,
     };
-    await fs.writeFile(
-      path.join(lockedWorkspace, '.rmplan.lock'),
-      JSON.stringify(staleLock, null, 2)
-    );
+    const lockFilePath = WorkspaceLock.getLockFilePath(lockedWorkspace);
+    await fs.mkdir(path.dirname(lockFilePath), { recursive: true });
+    await fs.writeFile(lockFilePath, JSON.stringify(staleLock, null, 2));
 
     const { handleWorkspaceLockCommand } = await import('./workspace.js');
 

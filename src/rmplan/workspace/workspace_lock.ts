@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import * as crypto from 'node:crypto';
 import { promisify } from 'node:util';
 import { exec } from 'node:child_process';
 import { debugLog } from '../../logging.ts';
@@ -48,8 +49,30 @@ export class WorkspaceLock {
 
   private static readonly registeredCleanupHandlers = new Set<string>();
 
+  /**
+   * Gets the directory where lock files are stored
+   * @returns The path to the locks directory
+   */
+  private static getLockDirectory(): string {
+    return path.join(os.homedir(), '.config', 'rmfilter', 'locks');
+  }
+
+  /**
+   * Generates a unique lock filename from a workspace path using a hash
+   * @param workspacePath The workspace path to hash
+   * @returns The lock filename (without directory)
+   */
+  private static getLockFileName(workspacePath: string): string {
+    // Normalize the path to ensure consistent hashing
+    const normalizedPath = path.resolve(workspacePath);
+    // Create a hash of the workspace path
+    const hash = crypto.createHash('sha256').update(normalizedPath).digest('hex');
+    // Use first 16 chars of hash to keep filename reasonable while avoiding collisions
+    return `${hash.substring(0, 16)}.lock`;
+  }
+
   static getLockFilePath(workspacePath: string): string {
-    return path.join(workspacePath, this.LOCK_FILE_NAME);
+    return path.join(this.getLockDirectory(), this.getLockFileName(workspacePath));
   }
 
   static async acquireLock(
@@ -58,6 +81,9 @@ export class WorkspaceLock {
     options: AcquireLockOptions = {}
   ): Promise<LockInfo> {
     const lockFilePath = this.getLockFilePath(workspacePath);
+
+    // Ensure the lock directory exists
+    await fs.promises.mkdir(this.getLockDirectory(), { recursive: true });
 
     const lockType: LockType = options.type ?? 'persistent';
     const existingLock = await this.getLockInfo(workspacePath);
