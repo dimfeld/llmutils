@@ -482,7 +482,6 @@ executors:
       // claude-code should have merged options from both configs
       expect(config.executors?.['claude-code']).toEqual({
         allowedTools: ['tool1', 'tool2'], // from main
-        enableReviewFeedback: false,
         includeDefaultTools: true, // from local (overrides main)
         permissionsMcp: {
           autoApproveCreatedFileDeletion: false,

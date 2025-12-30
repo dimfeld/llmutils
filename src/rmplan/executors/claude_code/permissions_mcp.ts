@@ -15,13 +15,6 @@ export const PermissionInputSchema = z.object({
   input: z.object({}).passthrough().describe('The input for the tool'),
 });
 
-// Define the schema for the review feedback input
-export const ReviewFeedbackInputSchema = z.object({
-  reviewerFeedback: z
-    .string()
-    .describe('The output from the reviewer subagent that needs user feedback'),
-});
-
 // Create the FastMCP server
 const server = new FastMCP({
   name: 'permissions-server',
@@ -193,8 +186,6 @@ function handleParentResponse(message: any) {
 
   if (message.type === 'permission_response') {
     resolver(message.approved);
-  } else if (message.type === 'review_feedback_response') {
-    resolver(message.userFeedback || '');
   } else {
     console.error('Unknown response type:', message.type);
     resolver(null);
@@ -224,47 +215,6 @@ async function requestPermissionFromParent(tool_name: string, input: any): Promi
       pendingRequests.delete(requestId);
       reject(new Error('Permission request timed out'));
     }, 600000); // 10 minute timeout
-
-    // Override the resolver to also clear the timeout
-    const originalResolver = pendingRequests.get(requestId)!;
-    pendingRequests.set(requestId, (value) => {
-      clearTimeout(timeout);
-      originalResolver(value);
-    });
-
-    try {
-      // Send the request
-      parentSocket!.write(JSON.stringify(request) + '\n');
-    } catch (err) {
-      clearTimeout(timeout);
-      pendingRequests.delete(requestId);
-      reject(err as Error);
-    }
-  });
-}
-
-// Send a review feedback request to the parent process and wait for response
-export async function requestReviewFeedbackFromParent(reviewerFeedback: string): Promise<string> {
-  if (!parentSocket) {
-    throw new Error('Not connected to parent process');
-  }
-
-  return new Promise((resolve, reject) => {
-    const requestId = generateRequestId();
-    const request = {
-      type: 'review_feedback_request',
-      requestId,
-      reviewerFeedback,
-    };
-
-    // Store the resolver for this request
-    pendingRequests.set(requestId, resolve);
-
-    // Set up a timeout to clean up pending requests
-    const timeout = setTimeout(() => {
-      pendingRequests.delete(requestId);
-      reject(new Error('Review feedback request timed out'));
-    }, 30000); // 30 second timeout
 
     // Override the resolver to also clear the timeout
     const originalResolver = pendingRequests.get(requestId)!;
@@ -329,41 +279,6 @@ server.addTool({
     }
   },
 });
-
-// Conditionally define the review feedback prompt tool based on command line argument
-if (process.argv.includes('--enable-review-feedback')) {
-  server.addTool({
-    name: 'review_feedback_prompt',
-    description: 'Prompts the user for feedback on reviewer output',
-    parameters: ReviewFeedbackInputSchema,
-    execute: async ({ reviewerFeedback }) => {
-      try {
-        // Request review feedback from the parent process
-        const userFeedback = await requestReviewFeedbackFromParent(reviewerFeedback);
-
-        // Return the user's feedback as text
-        return {
-          content: [
-            {
-              type: 'text',
-              text: userFeedback,
-            },
-          ],
-        };
-      } catch (err) {
-        // If communication fails, return an empty string
-        return {
-          content: [
-            {
-              type: 'text',
-              text: '', // Return empty string on error, not error message
-            },
-          ],
-        };
-      }
-    },
-  });
-}
 
 // Start the server if this file is run directly
 if (import.meta.main) {

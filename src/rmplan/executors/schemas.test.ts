@@ -160,8 +160,7 @@ describe('claudeCodeOptionsSchema', () => {
 
       expect(result.success).toBe(true);
       if (result.success) {
-        // Schema adds enableReviewFeedback: false default
-        expect(result.data).toEqual({ ...completeOptions, enableReviewFeedback: false });
+        expect(result.data).toEqual(completeOptions);
       }
     });
 
@@ -170,9 +169,8 @@ describe('claudeCodeOptionsSchema', () => {
 
       expect(result.success).toBe(true);
       if (result.success) {
-        // Schema has defaults for includeDefaultTools (true) and enableReviewFeedback (false)
+        // Schema has default for includeDefaultTools (true)
         expect(result.data.includeDefaultTools).toBe(true);
-        expect(result.data.enableReviewFeedback).toBe(false);
         expect(result.data.allowedTools).toBeUndefined();
         expect(result.data.allowAllTools).toBeUndefined();
         expect(result.data.disallowedTools).toBeUndefined();

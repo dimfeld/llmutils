@@ -1,24 +1,10 @@
 import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test';
-import type { ExecutorCommonOptions, ExecutePlanInfo } from './types.ts';
+import type { ExecutePlanInfo } from './types.ts';
 import type { RmplanConfig } from '../configSchema.ts';
 import { ModuleMocker } from '../../testing.js';
 
-function codexAgentMessage(text: string) {
-  return JSON.stringify({ id: '0', msg: { type: 'agent_message', message: text } }) + '\n';
-}
-
-function codexTaskStarted() {
-  return JSON.stringify({ id: '0', msg: { type: 'task_started' } }) + '\n';
-}
-
 describe('CodexCliExecutor captureOutput', () => {
   let moduleMocker: ModuleMocker;
-
-  const mockSharedOptions: ExecutorCommonOptions = {
-    baseDir: '/tmp/repo',
-    model: 'test-model',
-    interactive: false,
-  };
 
   const mockConfig: RmplanConfig = {};
 
@@ -30,12 +16,8 @@ describe('CodexCliExecutor captureOutput', () => {
     captureOutput: 'result',
   };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     moduleMocker = new ModuleMocker(import.meta);
-    // Ensure the executor's auto-marking step never hits network
-    await moduleMocker.mock('ai', () => ({
-      generateObject: mock(async () => ({ object: { completed_titles: [] } })),
-    }));
   });
 
   afterEach(() => {
@@ -43,71 +25,99 @@ describe('CodexCliExecutor captureOutput', () => {
   });
 
   test('returns labeled combined output when verdict ACCEPTABLE', async () => {
+    await moduleMocker.mock('../../logging.ts', () => ({
+      log: mock(() => {}),
+      warn: mock(() => {}),
+    }));
+
     await moduleMocker.mock('../../common/git.ts', () => ({
       getGitRoot: mock(async () => '/tmp/repo'),
+      captureRepositoryState: mock(async () => ({ currentCommit: 'abc123', hasChanges: true })),
     }));
 
     await moduleMocker.mock('../plans.ts', () => ({
       readPlanFile: mock(async () => ({ tasks: [{ title: 'T1', done: false }] })),
+      writePlanFile: mock(async () => {}),
+    }));
+
+    await moduleMocker.mock('./failure_detection.ts', () => ({
+      parseFailedReport: mock(() => ({ failed: false })),
+      detectPlanningWithoutImplementation: mock(() => ({ detected: false })),
+    }));
+
+    await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: mock(async (prompt: string) => {
+        if (prompt.includes('IMPLEMENTER')) {
+          return 'I did work';
+        }
+        if (prompt.includes('TESTER')) {
+          return 'Tests are great';
+        }
+        if (prompt.includes('REVIEWER')) {
+          return 'All good.\n\nVERDICT: ACCEPTABLE';
+        }
+        return 'Unknown';
+      }),
+    }));
+
+    await moduleMocker.mock('./codex_cli/task_management.ts', () => ({
+      categorizeTasks: mock((plan: any) => ({
+        completed: plan.tasks.filter((t: any) => t.done),
+        pending: plan.tasks.filter((t: any) => !t.done),
+      })),
+      logTaskStatus: mock(() => {}),
+      parseCompletedTasksFromImplementer: mock(async () => []),
+      markTasksAsDone: mock(async () => {}),
+    }));
+
+    await moduleMocker.mock('./codex_cli/context_composition.ts', () => ({
+      composeTesterContext: mock(() => `TESTER context`),
+      composeReviewerContext: mock(() => `REVIEWER context`),
+      composeFixReviewContext: mock(() => `REVIEWER fix context`),
+      getFixerPrompt: mock(() => 'Fixer agent prompt'),
+    }));
+
+    await moduleMocker.mock('./codex_cli/agent_helpers.ts', () => ({
+      loadAgentInstructionsFor: mock(async () => ''),
+      loadRepositoryReviewDoc: mock(async () => ''),
     }));
 
     await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
-      getImplementerPrompt: mock((ctx: string) => ({
+      getImplementerPrompt: mock(() => ({
         name: 'impl',
         description: '',
-        prompt: 'IMPLEMENTER\n' + ctx,
+        prompt: 'IMPLEMENTER prompt',
       })),
-      getTesterPrompt: mock((ctx: string) => ({
+      getTesterPrompt: mock(() => ({
         name: 'tester',
         description: '',
-        prompt: 'TESTER\n' + ctx,
+        prompt: 'TESTER prompt',
       })),
-      getReviewerPrompt: mock((ctx: string) => ({
+      getReviewerPrompt: mock(() => ({
         name: 'reviewer',
         description: '',
-        prompt: 'REVIEWER\n' + ctx,
+        prompt: 'REVIEWER prompt',
       })),
-      issueAndVerdictFormat: 'VERDICT: X',
     }));
 
-    await moduleMocker.mock('./codex_cli/format.ts', () => ({
-      createCodexStdoutFormatter: mock(() => {
-        let finalMsg = '';
-        return {
-          formatChunk: mock((chunk: string) => {
-            for (const line of chunk.split('\n').filter(Boolean)) {
-              try {
-                const parsed = JSON.parse(line);
-                if (parsed.msg?.type === 'agent_message') finalMsg = parsed.msg.message;
-              } catch {}
-            }
-            return chunk;
-          }),
-          getFinalAgentMessage: mock(() => finalMsg),
-        };
+    await moduleMocker.mock('./codex_cli/verdict_parser.ts', () => ({
+      parseReviewerVerdict: mock((output: string) => {
+        if (output.includes('VERDICT: ACCEPTABLE')) return 'ACCEPTABLE';
+        if (output.includes('VERDICT: NEEDS_FIXES')) return 'NEEDS_FIXES';
+        return undefined;
       }),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (args: string[], opts: any) => {
-        const jsonFlagIndex = args.lastIndexOf('--json');
-        const promptIndex = jsonFlagIndex > 0 ? jsonFlagIndex - 1 : args.length - 2;
-        const prompt = args[promptIndex] as string;
-        const outs: string[] = [codexTaskStarted()];
-        if (prompt.startsWith('IMPLEMENTER')) outs.push(codexAgentMessage('I did work'));
-        else if (prompt.startsWith('TESTER')) outs.push(codexAgentMessage('Tests are great'));
-        else if (prompt.startsWith('REVIEWER'))
-          outs.push(codexAgentMessage('All good.\n\nVERDICT: ACCEPTABLE'));
-        for (const line of outs) opts.formatStdout(line);
-        return { exitCode: 0, stdout: '', stderr: '' };
-      }),
-      createLineSplitter: mock(() => (chunk: string) => chunk.split('\n').filter(Boolean)),
-      debug: false,
-    }));
+    const { executeNormalMode } = await import('./codex_cli/normal_mode.ts');
 
-    const { CodexCliExecutor } = await import('./codex_cli.ts');
-    const exec = new CodexCliExecutor({} as any, mockSharedOptions, mockConfig);
-    const res = await exec.execute('CTX', planInfoWithCapture);
+    const res = await executeNormalMode(
+      'CTX',
+      planInfoWithCapture,
+      '/tmp/repo',
+      'test-model',
+      mockConfig
+    );
+
     expect(res && typeof res === 'object').toBeTrue();
     const sections = (res as any).steps ?? [];
     expect(Array.isArray(sections)).toBeTrue();
@@ -121,83 +131,109 @@ describe('CodexCliExecutor captureOutput', () => {
   }, 20000);
 
   test('returns latest reviewer when max fix iterations reached', async () => {
+    await moduleMocker.mock('../../logging.ts', () => ({
+      log: mock(() => {}),
+      warn: mock(() => {}),
+    }));
+
     await moduleMocker.mock('../../common/git.ts', () => ({
       getGitRoot: mock(async () => '/tmp/repo'),
+      captureRepositoryState: mock(async () => ({ currentCommit: 'abc123', hasChanges: true })),
     }));
 
     await moduleMocker.mock('../plans.ts', () => ({
       readPlanFile: mock(async () => ({ tasks: [{ title: 'T1', done: false }] })),
+      writePlanFile: mock(async () => {}),
+    }));
+
+    await moduleMocker.mock('./failure_detection.ts', () => ({
+      parseFailedReport: mock(() => ({ failed: false })),
+      detectPlanningWithoutImplementation: mock(() => ({ detected: false })),
+    }));
+
+    await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: mock(async (prompt: string) => {
+        if (prompt.includes('IMPLEMENTER')) {
+          return 'impl out';
+        }
+        if (prompt.includes('TESTER')) {
+          return 'tester out';
+        }
+        if (prompt.includes('REVIEWER')) {
+          return 'still issues\n\nVERDICT: NEEDS_FIXES';
+        }
+        if (prompt.includes('Fixer')) {
+          return 'fixed a bit';
+        }
+        return 'fallback';
+      }),
+    }));
+
+    await moduleMocker.mock('./codex_cli/task_management.ts', () => ({
+      categorizeTasks: mock((plan: any) => ({
+        completed: plan.tasks.filter((t: any) => t.done),
+        pending: plan.tasks.filter((t: any) => !t.done),
+      })),
+      logTaskStatus: mock(() => {}),
+      parseCompletedTasksFromImplementer: mock(async () => []),
+      markTasksAsDone: mock(async () => {}),
+    }));
+
+    await moduleMocker.mock('./codex_cli/context_composition.ts', () => ({
+      composeTesterContext: mock(() => `TESTER context`),
+      composeReviewerContext: mock(() => `REVIEWER context`),
+      composeFixReviewContext: mock(() => 'REVIEWER fix context'),
+      getFixerPrompt: mock(() => 'Fixer agent prompt'),
+    }));
+
+    await moduleMocker.mock('./codex_cli/agent_helpers.ts', () => ({
+      loadAgentInstructionsFor: mock(async () => ''),
+      loadRepositoryReviewDoc: mock(async () => ''),
     }));
 
     await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
-      getImplementerPrompt: mock((ctx: string) => ({
+      getImplementerPrompt: mock(() => ({
         name: 'impl',
         description: '',
-        prompt: 'IMPLEMENTER\n' + ctx,
+        prompt: 'IMPLEMENTER prompt',
       })),
-      getTesterPrompt: mock((ctx: string) => ({
+      getTesterPrompt: mock(() => ({
         name: 'tester',
         description: '',
-        prompt: 'TESTER\n' + ctx,
+        prompt: 'TESTER prompt',
       })),
-      getReviewerPrompt: mock((ctx: string) => ({
+      getReviewerPrompt: mock(() => ({
         name: 'reviewer',
         description: '',
-        prompt: 'REVIEWER\n' + ctx,
+        prompt: 'REVIEWER prompt',
       })),
-      issueAndVerdictFormat: 'VERDICT: X',
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (args: string[], opts: any) => {
-        const jsonFlagIndex = args.lastIndexOf('--json');
-        const promptIndex = jsonFlagIndex > 0 ? jsonFlagIndex - 1 : args.length - 2;
-        const prompt = args[promptIndex] as string;
-        const outs: string[] = [codexTaskStarted()];
-        if (prompt.startsWith('IMPLEMENTER')) outs.push(codexAgentMessage('impl out'));
-        else if (prompt.startsWith('TESTER')) outs.push(codexAgentMessage('tester out'));
-        else if (prompt.startsWith('REVIEWER'))
-          outs.push(codexAgentMessage('still issues\n\nVERDICT: NEEDS_FIXES'));
-        else if (prompt.includes('You are a fixer agent'))
-          outs.push(codexAgentMessage('fixed a bit'));
-        else outs.push(codexAgentMessage('fallback agent message'));
-        for (const line of outs) opts.formatStdout(line);
-        return { exitCode: 0, stdout: '', stderr: '' };
-      }),
-      createLineSplitter: mock(() => (chunk: string) => chunk.split('\n').filter(Boolean)),
-      debug: false,
-    }));
-
-    await moduleMocker.mock('./codex_cli/format.ts', () => ({
-      createCodexStdoutFormatter: mock(() => {
-        let finalMsg = '';
-        return {
-          formatChunk: mock((chunk: string) => {
-            for (const line of chunk.split('\n').filter(Boolean)) {
-              try {
-                const parsed = JSON.parse(line);
-                if (parsed.msg?.type === 'agent_message') finalMsg = parsed.msg.message;
-              } catch {}
-            }
-            return chunk;
-          }),
-          getFinalAgentMessage: mock(() => finalMsg),
-        };
+    await moduleMocker.mock('./codex_cli/verdict_parser.ts', () => ({
+      parseReviewerVerdict: mock((output: string) => {
+        if (output.includes('VERDICT: ACCEPTABLE')) return 'ACCEPTABLE';
+        if (output.includes('VERDICT: NEEDS_FIXES')) return 'NEEDS_FIXES';
+        return undefined;
       }),
     }));
 
-    await moduleMocker.mock('./codex_cli/review_analysis.ts', () => ({
-      analyzeReviewFeedback: mock(async () => ({ needs_fixes: true, fix_instructions: 'do it' })),
-    }));
+    const { executeNormalMode } = await import('./codex_cli/normal_mode.ts');
 
-    const { CodexCliExecutor } = await import('./codex_cli.ts');
-    const exec = new CodexCliExecutor({} as any, mockSharedOptions, mockConfig);
-    const res = await exec.execute('CTX', planInfoWithCapture);
+    const res = await executeNormalMode(
+      'CTX',
+      planInfoWithCapture,
+      '/tmp/repo',
+      'test-model',
+      mockConfig
+    );
+
     expect(res && typeof res === 'object').toBeTrue();
     const sections = (res as any).steps ?? [];
     const titles = sections.map((s: any) => s.title).join(' | ');
     expect(titles).toContain('Codex Implementer');
     expect(titles).toContain('Codex Tester');
     expect(titles).toContain('Codex Reviewer');
+    // Should also have fixer steps since it runs through fix iterations
+    expect(titles).toContain('Codex Fixer');
   }, 60000);
 });

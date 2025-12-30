@@ -616,9 +616,6 @@ export class ClaudeCodeExecutor implements Executor {
 
       // Construct the MCP configuration object with stdio transport
       const permissionsMcpArgs = [permissionsMcpPath, unixSocketPath];
-      if (this.options.enableReviewFeedback === true) {
-        permissionsMcpArgs.push('--enable-review-feedback');
-      }
 
       const mcpConfig = {
         mcpServers: {
@@ -940,87 +937,6 @@ export class ClaudeCodeExecutor implements Executor {
             };
 
             socket.write(JSON.stringify(response) + '\n');
-          } else if (message.type === 'review_feedback_request') {
-            const { requestId, reviewerFeedback } = message;
-
-            // Display the reviewer feedback to the user
-            console.log(chalk.blue('\n📝 Reviewer Feedback:'));
-            console.log(chalk.white(reviewerFeedback));
-            console.log();
-
-            // Determine the timeout to use
-            const reviewFeedbackTimeout =
-              this.options.permissionsMcp?.reviewFeedbackTimeout ??
-              this.options.permissionsMcp?.timeout;
-
-            const noFeedbackMessage = 'No feedback provided. Use the review analysis as-is.';
-
-            // First, ask if user wants to provide feedback with a simple confirm prompt
-            let wantsToProvideFeedback = false;
-            if (reviewFeedbackTimeout) {
-              // Create a timeout promise for the confirm prompt
-              const confirmTimeoutPromise = new Promise<boolean>((resolve) => {
-                setTimeout(() => {
-                  log('\nReview feedback confirm prompt timed out, using review as-is');
-                  resolve(false); // Default to not providing feedback
-                }, reviewFeedbackTimeout);
-              });
-
-              // Create the confirm prompt
-              const confirmPromise = confirm({
-                message: 'Do you want to provide feedback on the reviewer analysis?',
-                default: false,
-              });
-
-              try {
-                wantsToProvideFeedback = await Promise.race([
-                  confirmPromise,
-                  confirmTimeoutPromise,
-                ]);
-              } catch (err: any) {
-                wantsToProvideFeedback = false;
-                debugLog('Error in review feedback confirm prompt:', err);
-              }
-            } else {
-              // No timeout, just ask for confirmation
-              try {
-                wantsToProvideFeedback = await confirm({
-                  message: 'Do you want to provide feedback on the reviewer analysis?',
-                  default: false,
-                });
-              } catch (err: any) {
-                wantsToProvideFeedback = false;
-                debugLog('Error in review feedback confirm prompt:', err);
-              }
-            }
-
-            let userFeedback = '';
-
-            // Only show editor if user wants to provide feedback
-            if (wantsToProvideFeedback) {
-              try {
-                // Editor prompt has no timeout - user can take their time to write feedback
-                userFeedback = await editor({
-                  message: `Please provide your feedback on the reviewer's analysis:`,
-                  default: '',
-                  waitForUserInput: false,
-                });
-              } catch (err: any) {
-                userFeedback = '';
-                debugLog('Error in review feedback editor prompt:', err);
-              }
-            }
-
-            userFeedback = userFeedback.trim();
-
-            // Send response back to MCP server
-            const response = {
-              type: 'review_feedback_response',
-              requestId,
-              userFeedback: userFeedback || noFeedbackMessage,
-            };
-
-            socket.write(JSON.stringify(response) + '\n');
           }
         } catch (err) {
           debugLog('Error handling socket message:', err);
@@ -1070,7 +986,6 @@ export class ClaudeCodeExecutor implements Executor {
         contextContent = wrapWithOrchestration(contextContent, planId, {
           batchMode: planInfo.batchMode,
           planFilePath,
-          enableReviewFeedback: this.options.enableReviewFeedback === true,
         });
       } else if (planInfo.executionMode === 'simple') {
         contextContent = wrapWithOrchestrationSimple(contextContent, planId, {
@@ -1192,9 +1107,6 @@ export class ClaudeCodeExecutor implements Executor {
 
       // Construct the MCP configuration object with stdio transport
       const permissionsMcpArgs = [permissionsMcpPath, unixSocketPath];
-      if (this.options.enableReviewFeedback === true) {
-        permissionsMcpArgs.push('--enable-review-feedback');
-      }
 
       const mcpConfig = {
         mcpServers: {

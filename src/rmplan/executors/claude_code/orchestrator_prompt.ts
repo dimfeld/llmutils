@@ -1,7 +1,6 @@
 interface OrchestrationOptions {
   batchMode?: boolean;
   planFilePath?: string;
-  enableReviewFeedback?: boolean;
 }
 
 // Progress notes guidance should be present in both batch and non-batch modes
@@ -146,20 +145,11 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
    - Emphasize that tests must test actual implementation code. Testing a reproduction or simulation of the code is useless.
    - Have the tester run the tests and work on fixing any failures`;
 
-  const reviewFeedbackInstructions =
-    options.enableReviewFeedback === true
-      ? `
-   - **After receiving the reviewer's output**, use the mcp__permissions__review_feedback_prompt tool to get user feedback:
-     - Pass the reviewer's complete output as the reviewerFeedback parameter
-     - Wait for the user's response before proceeding to determine next steps
-     - The user's feedback will help determine whether to proceed to the next phase or return to implementation for revisions`
-      : '';
-
   const reviewPhase = `${options.batchMode ? '4' : '3'}. **Review Phase**
    - Use the Task tool to invoke the reviewer agent with subagent_type="rmplan-reviewer"
    - Tell the reviewer which tasks were just implemented and what project requirements those changes fulfill.
    - Ask the reviewer to analyze the codebase and ensures its quality and adherence to the task requirements
-   - The reviewer is instructed to only focus on problems; don't expect positive feedback even if the code is perfect.${reviewFeedbackInstructions}`;
+   - The reviewer is instructed to only focus on problems; don't expect positive feedback even if the code is perfect.`;
 
   const finalPhases = `${options.batchMode ? '5' : '4'}. **Notes Phase**
    ${implementationNotesGuidance(options.planFilePath, planId)}
@@ -208,14 +198,7 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 - You are responsible only for coordination and ensuring the workflow is followed correctly.
 - The agents have access to the same task instructions below that you do, so you don't need to repeat them. You should reference which specific tasks titles are being worked on so the agents can focus on the right tasks.
 - When invoking agents, provide clear, specific instructions about what needs to be done in addition to referencing the task titles.
-- Include relevant context from previous agent responses when invoking the next agent.
-
-## User Feedback Priority
-
-- **User feedback from the review feedback tool is the ultimate source of truth** and MUST take precedence over all reviewer agent suggestions, regardless of the priority assigned by the reviewer.
-- **User feedback can override any reviewer recommendation**, even if the reviewer agent marks an issue as high priority or critical.
-- **If the user indicates certain reviewer feedback is incorrect or not important**, you MUST respect the user's judgment and proceed accordingly rather than insisting on addressing reviewer concerns that the user has dismissed.
-- **The user maintains ultimate control** over the development process and their decisions should be followed without question, even when they contradict the reviewer agent's analysis.`;
+- Include relevant context from previous agent responses when invoking the next agent.`;
 
   const failureProtocol = `
 \n## Failure Protocol (Conflicting/Impossible Requirements)

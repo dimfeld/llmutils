@@ -206,25 +206,27 @@ describe('CodexCliExecutor - failure detection across agents', () => {
   });
 
   test('retries implementer when output only contains planning text', async () => {
-    const logMock = mock(() => {});
-    const warnMock = mock(() => {});
-    await moduleMocker.mock('../../logging', () => ({
-      log: logMock,
-      warn: warnMock,
-      error: mock(() => {}),
+    const logMessages: string[] = [];
+    const warnMessages: string[] = [];
+
+    await moduleMocker.mock('../../logging.ts', () => ({
+      log: mock((...args: any[]) => logMessages.push(args.map(String).join(' '))),
+      warn: mock((...args: any[]) => warnMessages.push(args.map(String).join(' '))),
     }));
 
-    const repoStates = [
-      { commitHash: 'sha1', hasChanges: false, statusOutput: undefined },
-      { commitHash: 'sha1', hasChanges: false, statusOutput: undefined },
-      { commitHash: 'sha2', hasChanges: false, statusOutput: undefined },
-    ];
-
+    // First two calls: no repo changes (sha1 -> sha1), then third call shows changes (sha1 -> sha2)
+    let repoStateCallCount = 0;
     await moduleMocker.mock('../../common/git.ts', () => ({
       getGitRoot: mock(async () => tempDir),
-      captureRepositoryState: mock(
-        async () => repoStates.shift() ?? repoStates[repoStates.length - 1]
-      ),
+      captureRepositoryState: mock(async () => {
+        repoStateCallCount++;
+        // First two calls show same commit (no changes from implementer attempt 1)
+        // Third call shows different commit (changes from implementer attempt 2)
+        if (repoStateCallCount <= 2) {
+          return { currentCommit: 'sha1', hasChanges: false };
+        }
+        return { currentCommit: 'sha2', hasChanges: false };
+      }),
     }));
 
     await moduleMocker.mock('../plans.ts', () => ({
@@ -234,13 +236,85 @@ describe('CodexCliExecutor - failure detection across agents', () => {
           { title: 'Task B', done: true },
         ],
       })),
+      writePlanFile: mock(async () => {}),
     }));
 
+    await moduleMocker.mock('./failure_detection.ts', () => ({
+      parseFailedReport: mock(() => ({ failed: false })),
+      detectPlanningWithoutImplementation: mock(
+        (output: string, before: any, after: any) => {
+          // Detect planning-only if commit didn't change and output contains plan keywords
+          const commitChanged = before?.currentCommit !== after?.currentCommit;
+          const hasPlanning = output.includes('Plan:') || output.includes('Outline');
+          return {
+            detected: !commitChanged && hasPlanning,
+            commitChanged,
+            workingTreeChanged: false,
+            planningIndicators: hasPlanning ? ['Plan:', 'Outline approach'] : [],
+          };
+        }
+      ),
+    }));
+
+    // Track prompts passed to executeCodexStep
+    const prompts: string[] = [];
+    let implementerCallCount = 0;
+
+    await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: mock(async (prompt: string) => {
+        prompts.push(prompt);
+
+        if (prompt.includes('IMPLEMENTER')) {
+          implementerCallCount++;
+          if (implementerCallCount === 1) {
+            // First implementer attempt: planning-only output
+            return 'Plan:\n- Investigate files\n- Outline approach';
+          } else {
+            // Second implementer attempt: actual implementation
+            return 'Implementation completed successfully';
+          }
+        }
+        if (prompt.includes('TESTER')) {
+          return 'Tests pass';
+        }
+        if (prompt.includes('REVIEWER')) {
+          return 'All good\nVERDICT: ACCEPTABLE';
+        }
+        return 'Unknown';
+      }),
+    }));
+
+    // Mock task management
+    await moduleMocker.mock('./codex_cli/task_management.ts', () => ({
+      categorizeTasks: mock((plan: any) => ({
+        completed: plan.tasks.filter((t: any) => t.done),
+        pending: plan.tasks.filter((t: any) => !t.done),
+      })),
+      logTaskStatus: mock(() => {}),
+      parseCompletedTasksFromImplementer: mock(async () => []),
+      markTasksAsDone: mock(async () => {}),
+    }));
+
+    // Mock context composition
+    await moduleMocker.mock('./codex_cli/context_composition.ts', () => ({
+      composeTesterContext: mock(() => `TESTER context`),
+      composeReviewerContext: mock(() => `REVIEWER context`),
+      composeFixReviewContext: mock(() => `REVIEWER fix context`),
+      getFixerPrompt: mock(() => 'Fixer agent prompt'),
+    }));
+
+    // Mock agent helpers
+    await moduleMocker.mock('./codex_cli/agent_helpers.ts', () => ({
+      loadAgentInstructionsFor: mock(async () => ''),
+      loadRepositoryReviewDoc: mock(async () => ''),
+    }));
+
+    // Track instruction history
     const implementerInstructionHistory: string[] = [];
     await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
       getImplementerPrompt: mock(
         (ctx: string, _planId: string | undefined, instructions: string) => {
-          implementerInstructionHistory.push(instructions);
+          implementerInstructionHistory.push(instructions || '');
           return { name: 'impl', description: '', prompt: `IMPLEMENTER\n${ctx}\n${instructions}` };
         }
       ),
@@ -256,73 +330,47 @@ describe('CodexCliExecutor - failure detection across agents', () => {
       })),
     }));
 
-    const finalMessages = [
-      'Plan:\n- Investigate files\n- Outline approach',
-      'Implementation completed successfully',
-      'Tests pass',
-      'All good\nVERDICT: ACCEPTABLE',
-    ];
-
-    const spawnMock = mock(async (_args: string[], opts: any) => {
-      const message = finalMessages.shift();
-      if (!message) throw new Error('Unexpected extra Codex invocation');
-      if (opts && typeof opts.formatStdout === 'function') {
-        opts.formatStdout(message);
-      }
-      return { exitCode: 0, stdout: '', stderr: '' };
-    });
-
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: spawnMock,
+    // Mock verdict parser
+    await moduleMocker.mock('./codex_cli/verdict_parser.ts', () => ({
+      parseReviewerVerdict: mock((output: string) => {
+        if (output.includes('VERDICT: ACCEPTABLE')) return 'ACCEPTABLE';
+        if (output.includes('VERDICT: NEEDS_FIXES')) return 'NEEDS_FIXES';
+        return undefined;
+      }),
     }));
 
-    await moduleMocker.mock('./codex_cli/format.ts', () => ({
-      createCodexStdoutFormatter: () => {
-        let final: string | undefined;
-        return {
-          formatChunk: (chunk: string) => {
-            final = chunk;
-            return chunk;
-          },
-          getFinalAgentMessage: () => final,
-        };
-      },
-    }));
-
-    await moduleMocker.mock('ai', () => ({
-      generateObject: mock(async () => ({ object: { completed_titles: [] } })),
-    }));
-
-    const { CodexCliExecutor } = await import('./codex_cli.ts');
-    const exec = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
+    const { executeNormalMode } = await import('./codex_cli/normal_mode.ts');
 
     await expect(
-      exec.execute('CTX', {
-        planId: '1',
-        planTitle: 'Plan',
-        planFilePath: `${tempDir}/plan.yml`,
-        executionMode: 'normal',
-      })
+      executeNormalMode(
+        'CTX',
+        {
+          planId: '1',
+          planTitle: 'Plan',
+          planFilePath: `${tempDir}/plan.yml`,
+          executionMode: 'normal',
+        },
+        tempDir,
+        'test-model',
+        {} as any
+      )
     ).resolves.toBeUndefined();
 
-    const implementerPromptsRun = spawnMock.mock.calls.filter((call) => {
-      const args = call[0] as string[];
-      const jsonIndex = args.lastIndexOf('--json');
-      const promptIdx = jsonIndex > 0 ? jsonIndex - 1 : args.length - 2;
-      const prompt = args[promptIdx];
-      return typeof prompt === 'string' && prompt.startsWith('IMPLEMENTER');
-    });
+    // Should have 2 implementer calls (first planning-only, second successful)
+    const implementerPrompts = prompts.filter((p) => p.includes('IMPLEMENTER'));
+    expect(implementerPrompts.length).toBe(2);
 
-    expect(implementerPromptsRun.length).toBe(2);
+    // First instruction shouldn't have retry text
     expect(implementerInstructionHistory[0]).not.toContain('Please implement the changes now');
+    // Second instruction should have retry text
     expect(implementerInstructionHistory[1]).toContain(
       'Please implement the changes now, not just plan them.'
     );
+
+    // Should have logged retry message
     expect(
-      logMock.mock.calls.some((args) =>
-        String(args[0]).includes(
-          'Retrying implementer with more explicit instructions (attempt 2/4)'
-        )
+      logMessages.some((msg) =>
+        msg.includes('Retrying implementer with more explicit instructions (attempt 2/4)')
       )
     ).toBeTrue();
   });
