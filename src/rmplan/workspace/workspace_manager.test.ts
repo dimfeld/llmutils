@@ -1494,4 +1494,148 @@ describe('createWorkspace', () => {
       expect.stringContaining('Copying plan file to workspace: tasks/plan-123.yml')
     );
   });
+
+  test('createWorkspace sets workspace name to taskId', async () => {
+    // Import the getWorkspaceMetadata function to read the tracking data
+    const { getWorkspaceMetadata } = await import('./workspace_tracker.js');
+
+    const taskId = 'task-name-test';
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, `repo-${taskId}`);
+    const trackingFilePath = path.join(testTempDir, 'workspaces-tracking.json');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        repositoryUrl,
+        cloneLocation,
+      },
+      paths: {
+        trackingFile: trackingFilePath,
+      },
+    };
+
+    // Mock the clone operation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => {
+      await fs.mkdir(targetClonePath, { recursive: true });
+      return {
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+      };
+    });
+
+    // Mock the branch creation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+    }));
+
+    // Execute
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+
+    // Verify the workspace was created
+    expect(result).not.toBeNull();
+    expect(result!.taskId).toBe(taskId);
+
+    // Read the tracking data to verify the name field
+    const workspaceInfo = await getWorkspaceMetadata(targetClonePath, trackingFilePath);
+    expect(workspaceInfo).not.toBeNull();
+    expect(workspaceInfo!.name).toBe(taskId);
+    expect(workspaceInfo!.taskId).toBe(taskId);
+  });
+
+  test('createWorkspace sets name correctly for different taskId formats', async () => {
+    const { getWorkspaceMetadata } = await import('./workspace_tracker.js');
+
+    const testCases = [
+      { taskId: 'task-123', description: 'plan-based taskId' },
+      { taskId: 'abc123def', description: 'random alphanumeric taskId' },
+      { taskId: 'mydir-1234567890', description: 'timestamp-based taskId' },
+    ];
+
+    for (const { taskId, description } of testCases) {
+      const repositoryUrl = 'https://github.com/example/repo.git';
+      const cloneLocation = path.join(testTempDir, 'clones', description.replace(/\s+/g, '-'));
+      const targetClonePath = path.join(cloneLocation, `repo-${taskId}`);
+      const trackingFilePath = path.join(testTempDir, `tracking-${taskId}.json`);
+
+      const config: RmplanConfig = {
+        workspaceCreation: {
+          repositoryUrl,
+          cloneLocation,
+        },
+        paths: {
+          trackingFile: trackingFilePath,
+        },
+      };
+
+      // Mock the clone operation
+      mockSpawnAndLogOutput.mockImplementationOnce(async () => {
+        await fs.mkdir(targetClonePath, { recursive: true });
+        return {
+          exitCode: 0,
+          stdout: '',
+          stderr: '',
+        };
+      });
+
+      // Mock the branch creation
+      mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+      }));
+
+      // Execute
+      const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+
+      // Verify
+      expect(result).not.toBeNull();
+      const workspaceInfo = await getWorkspaceMetadata(targetClonePath, trackingFilePath);
+      expect(workspaceInfo).not.toBeNull();
+      expect(workspaceInfo!.name).toBe(taskId);
+    }
+  });
+
+  test('createWorkspace sets name with git clone method', async () => {
+    const { getWorkspaceMetadata } = await import('./workspace_tracker.js');
+
+    const taskId = 'task-git-name-test';
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const cloneLocation = path.join(testTempDir, 'clones-git-name');
+    const targetClonePath = path.join(cloneLocation, `repo-${taskId}`);
+    const trackingFilePath = path.join(testTempDir, 'tracking-git.json');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        repositoryUrl,
+        cloneLocation,
+        createBranch: false,
+      },
+      paths: {
+        trackingFile: trackingFilePath,
+      },
+    };
+
+    // Mock the clone operation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => {
+      await fs.mkdir(targetClonePath, { recursive: true });
+      return {
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+      };
+    });
+
+    // Execute
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+
+    // Verify
+    expect(result).not.toBeNull();
+    const workspaceInfo = await getWorkspaceMetadata(targetClonePath, trackingFilePath);
+    expect(workspaceInfo).not.toBeNull();
+    expect(workspaceInfo!.name).toBe(taskId);
+  });
 });

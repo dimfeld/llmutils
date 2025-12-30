@@ -686,6 +686,7 @@ export async function createWorkspace(
       originalPlanFilePath,
       repositoryId,
       workspacePath: targetClonePath,
+      name: taskId,
       branch: shouldCreateBranch ? branchName : undefined,
       createdAt: new Date().toISOString(),
     },
