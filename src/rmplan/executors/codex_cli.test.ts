@@ -241,19 +241,17 @@ describe('CodexCliExecutor - failure detection across agents', () => {
 
     await moduleMocker.mock('./failure_detection.ts', () => ({
       parseFailedReport: mock(() => ({ failed: false })),
-      detectPlanningWithoutImplementation: mock(
-        (output: string, before: any, after: any) => {
-          // Detect planning-only if commit didn't change and output contains plan keywords
-          const commitChanged = before?.currentCommit !== after?.currentCommit;
-          const hasPlanning = output.includes('Plan:') || output.includes('Outline');
-          return {
-            detected: !commitChanged && hasPlanning,
-            commitChanged,
-            workingTreeChanged: false,
-            planningIndicators: hasPlanning ? ['Plan:', 'Outline approach'] : [],
-          };
-        }
-      ),
+      detectPlanningWithoutImplementation: mock((output: string, before: any, after: any) => {
+        // Detect planning-only if commit didn't change and output contains plan keywords
+        const commitChanged = before?.currentCommit !== after?.currentCommit;
+        const hasPlanning = output.includes('Plan:') || output.includes('Outline');
+        return {
+          detected: !commitChanged && hasPlanning,
+          commitChanged,
+          workingTreeChanged: false,
+          planningIndicators: hasPlanning ? ['Plan:', 'Outline approach'] : [],
+        };
+      }),
     }));
 
     // Track prompts passed to executeCodexStep

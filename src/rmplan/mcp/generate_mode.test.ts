@@ -1406,10 +1406,32 @@ describe('mcpListReadyPlans', () => {
 describe('Helper Functions', () => {
   let tmpDir: string;
   let context: GenerateModeRegistrationContext;
+  const moduleMocker = new ModuleMocker(import.meta);
+  const originalEnv: Partial<Record<string, string>> = {};
 
   beforeEach(async () => {
     clearPlanCache();
     tmpDir = await mkdtemp(path.join(os.tmpdir(), 'rmplan-helpers-'));
+
+    // Isolate config directory to avoid updating real shared storage
+    const fakeConfigDir = path.join(tmpDir, 'config');
+    await import('node:fs/promises').then((fs) => fs.mkdir(fakeConfigDir, { recursive: true }));
+
+    originalEnv.XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME;
+    originalEnv.APPDATA = process.env.APPDATA;
+    process.env.XDG_CONFIG_HOME = fakeConfigDir;
+    delete process.env.APPDATA;
+
+    const realOs = await import('node:os');
+    await moduleMocker.mock('node:os', () => ({
+      ...realOs,
+      homedir: () => path.join(tmpDir, 'home'),
+    }));
+
+    // Mock getGitRoot so getRepositoryIdentity uses the temp directory instead of real repo
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => tmpDir,
+    }));
 
     const config = getDefaultConfig();
     config.paths = { tasks: tmpDir };
@@ -1422,6 +1444,20 @@ describe('Helper Functions', () => {
   });
 
   afterEach(async () => {
+    moduleMocker.clear();
+
+    if (originalEnv.XDG_CONFIG_HOME === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalEnv.XDG_CONFIG_HOME;
+    }
+
+    if (originalEnv.APPDATA === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalEnv.APPDATA;
+    }
+
     await rm(tmpDir, { recursive: true, force: true });
     clearPlanCache();
   });
