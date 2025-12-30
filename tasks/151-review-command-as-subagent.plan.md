@@ -2,7 +2,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: review command as subagent
 goal: ""
-id: 298
+id: 151
 uuid: 8a417b70-b63c-4a55-9d34-ee64aa04fead
 simple: false
 status: pending

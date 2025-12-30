@@ -3,7 +3,7 @@
 title: better epic support
 goal: Rename 'container' to 'epic', add epic display in show/list commands, and
   add epic filtering to list/ready commands
-id: 297
+id: 150
 uuid: db330154-2628-4559-8f5f-bcaa4358505b
 generatedBy: agent
 simple: false

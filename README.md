@@ -651,6 +651,66 @@ rmplan agent 123
 
 ---
 
+### renumber - Manage Plan IDs
+
+Automatically resolve ID conflicts and fix hierarchical ordering, or swap/renumber individual plans.
+
+**Basic usage:**
+
+```bash
+# Auto-resolve conflicts and fix hierarchy
+rmplan renumber
+
+# Preview changes without applying
+rmplan renumber --dry-run
+
+# Only fix ID conflicts, skip hierarchy fixes
+rmplan renumber --conflicts-only
+
+# Preserve specific plans during conflict resolution
+rmplan renumber --keep tasks/5-important.yml
+```
+
+**Swap or renumber individual plans:**
+
+```bash
+# Renumber plan 5 to ID 7 (if 7 doesn't exist)
+rmplan renumber --from 5 --to 7
+
+# Swap two plans (5 becomes 10, 10 becomes 5)
+rmplan renumber --from 5 --to 10
+
+# Preview swap operation
+rmplan renumber --from 5 --to 10 --dry-run
+```
+
+**How it works:**
+
+1. **Conflict resolution**: Identifies plans with duplicate or missing IDs and assigns new unique IDs
+2. **Hierarchy ordering**: Ensures parent plans always have lower IDs than their children
+3. **Reference updates**: Automatically updates all parent, dependency, and discoveredFrom references using UUID tracking
+4. **File renaming**: Renames files matching `{id}-{name}.yml` pattern to reflect new IDs
+
+**When to use:**
+
+- After manually editing plan files and creating ID conflicts
+- When parent plans have higher IDs than children (violates hierarchy convention)
+- To organize plan IDs numerically
+- To swap plan IDs for better organization
+
+**UUID tracking:**
+
+The `references` field maintains UUID-to-ID mappings for referential integrity:
+
+```yaml
+id: 123
+parent: 100
+references:
+  100: "uuid-of-plan-100"  # Survives renumbering
+```
+
+---
+
 ## MCP Server
 
 The MCP (Model Context Protocol) server exposes rmplan functionality for AI agents like Claude Code, enabling interactive research, planning, and task management.
@@ -1747,6 +1807,10 @@ rmplan import  # interactive multi-select
 
 # Validate
 rmplan validate [PLANS...] [--no-fix] [--verbose]
+
+# Renumber plans
+rmplan renumber [--dry-run] [--conflicts-only] [--keep FILES...]
+rmplan renumber --from ID --to ID [--dry-run]  # Swap or renumber single plan
 
 # Split into phases
 rmplan split PLAN --output-dir DIR

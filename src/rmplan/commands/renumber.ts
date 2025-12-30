@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'yaml';
@@ -56,6 +57,8 @@ interface RenumberOptions {
   dryRun?: boolean;
   keep?: string[];
   conflictsOnly?: boolean;
+  from?: number;
+  to?: number;
 }
 
 interface RenumberCommand {
@@ -770,11 +773,274 @@ export function reassignFamilyIds(
   return idMapping;
 }
 
+/**
+ * Handles swapping or renumbering a single plan from one ID to another.
+ * If a plan exists at the target ID, performs a swap. Otherwise, performs a simple renumber.
+ *
+ * @param options - Contains from, to, and dryRun options
+ * @param tasksDirectory - Directory containing plan files
+ * @param gitRoot - Git repository root
+ */
+async function handleSwapOrRenumber(
+  options: RenumberOptions,
+  tasksDirectory: string,
+  gitRoot: string
+): Promise<void> {
+  const fromId = options.from!;
+  const toId = options.to!;
+
+  log(`Checking plans for swap/renumber operation: ${fromId} → ${toId}`);
+
+  // Read all plans to build UUID maps
+  const allPlans = new Map<string, Record<string, any>>();
+  const filesInDir = await fs.promises.readdir(tasksDirectory, { recursive: true });
+  const planFiles = filesInDir.filter(
+    (f) =>
+      typeof f === 'string' && (f.endsWith('.plan.md') || f.endsWith('.yml') || f.endsWith('.yaml'))
+  );
+
+  for (const file of planFiles) {
+    const filePath = path.join(tasksDirectory, file);
+    try {
+      const plan = await readPlanFile(filePath);
+      allPlans.set(filePath, plan);
+    } catch (e) {
+      // Skip invalid files
+      debugLog(`Skipping invalid plan file: ${filePath}`);
+    }
+  }
+
+  // Find plans by ID
+  let fromPlan: { filePath: string; plan: Record<string, any> } | undefined;
+  let toPlan: { filePath: string; plan: Record<string, any> } | undefined;
+
+  for (const [filePath, plan] of allPlans) {
+    if (plan.id === fromId) {
+      fromPlan = { filePath, plan };
+    }
+    if (plan.id === toId) {
+      toPlan = { filePath, plan };
+    }
+  }
+
+  // Validate that fromId exists
+  if (!fromPlan) {
+    throw new Error(`Plan with ID ${fromId} not found`);
+  }
+
+  // Track which plans actually need to be written
+  const plansToWrite = new Set<string>();
+
+  // Ensure all plans have UUIDs
+  for (const [filePath, plan] of allPlans) {
+    if (!plan.uuid) {
+      plan.uuid = crypto.randomUUID();
+      plansToWrite.add(filePath);
+      debugLog(`Generated UUID for plan at ${filePath}`);
+    }
+  }
+
+  // Build plansByIdMap for ensureReferences
+  const plansByIdMap = new Map<number, PlanSchema>();
+  for (const [_filePath, plan] of allPlans) {
+    if (typeof plan.id === 'number' && !Number.isNaN(plan.id)) {
+      plansByIdMap.set(plan.id, plan as PlanSchema);
+    }
+  }
+
+  // Normalize empty references to undefined for comparison
+  const normalizeRefs = (refs: Record<number, string> | undefined) =>
+    refs && Object.keys(refs).length > 0 ? refs : undefined;
+
+  // Ensure references are tracked before renumbering
+  for (const [filePath, plan] of allPlans) {
+    const originalRefs = normalizeRefs(plan.references);
+    const { updatedPlan, plansWithGeneratedUuids } = ensureReferences(
+      plan as PlanSchema,
+      plansByIdMap
+    );
+    allPlans.set(filePath, updatedPlan);
+
+    const updatedRefs = normalizeRefs(updatedPlan.references);
+    if (!Bun.deepEquals(originalRefs, updatedRefs)) {
+      plansToWrite.add(filePath);
+    }
+
+    // Track plans that had UUIDs generated for them
+    for (const { id } of plansWithGeneratedUuids) {
+      for (const [fp, p] of allPlans) {
+        if (p.id === id) {
+          plansToWrite.add(fp);
+          break;
+        }
+      }
+    }
+  }
+
+  // Re-fetch fromPlan and toPlan after ensureReferences modified the objects in allPlans
+  fromPlan = undefined;
+  toPlan = undefined;
+  for (const [filePath, plan] of allPlans) {
+    if (plan.id === fromId) {
+      fromPlan = { filePath, plan };
+    }
+    if (plan.id === toId) {
+      toPlan = { filePath, plan };
+    }
+  }
+
+  if (!fromPlan) {
+    throw new Error(`Plan with ID ${fromId} not found after ensureReferences`);
+  }
+
+  // Determine operation type
+  const isSwap = toPlan !== undefined;
+
+  if (isSwap) {
+    log(`Plan ${toId} exists - will swap IDs ${fromId} ↔ ${toId}`);
+  } else {
+    log(`Plan ${toId} does not exist - will renumber ${fromId} → ${toId}`);
+  }
+
+  if (options.dryRun) {
+    log('\n(Dry run - no changes will be made)');
+    return;
+  }
+
+  // Create ID mappings
+  const idMappings = new Map<number, number>();
+
+  if (isSwap) {
+    if (!toPlan) {
+      throw new Error(`Plan with ID ${toId} not found (unexpected error)`);
+    }
+
+    // Swap: For references, use the final mappings (fromId -> toId, toId -> fromId)
+    // We use a temporary ID when updating plan.id to avoid conflicts
+    idMappings.set(fromId, toId);
+    idMappings.set(toId, fromId);
+
+    // Update references using UUID tracking BEFORE changing plan.id
+    log('\nUpdating references in all plans...');
+    const modifiedPaths = updateReferencesAfterRenumbering(allPlans, idMappings);
+    for (const filePath of modifiedPaths) {
+      plansToWrite.add(filePath);
+    }
+
+    // Update plan IDs using a temporary ID to avoid conflicts
+    const tempId = Math.max(fromId, toId) + 10000;
+    fromPlan.plan.id = tempId;
+    toPlan.plan.id = fromId;
+    fromPlan.plan.id = toId; // Final assignment
+
+    plansToWrite.add(fromPlan.filePath);
+    plansToWrite.add(toPlan.filePath);
+  } else {
+    // Simple renumber
+    idMappings.set(fromId, toId);
+
+    // Update references using UUID tracking BEFORE changing plan.id
+    log('\nUpdating references in all plans...');
+    const modifiedPaths = updateReferencesAfterRenumbering(allPlans, idMappings);
+    for (const filePath of modifiedPaths) {
+      plansToWrite.add(filePath);
+    }
+
+    // Update plan ID
+    fromPlan.plan.id = toId;
+    plansToWrite.add(fromPlan.filePath);
+  }
+
+  // Write all modified files
+  log('\nWriting updated plan files...');
+
+  const fileOperations: Array<{
+    originalPath: string;
+    newPath: string;
+    plan: PlanSchema;
+    needsRename: boolean;
+  }> = [];
+
+  // Prepare file operations
+  for (const filePath of plansToWrite) {
+    const plan = allPlans.get(filePath);
+    if (!plan) {
+      throw new Error(`Plan not found for file path: ${filePath}`);
+    }
+
+    let writeFilePath = filePath;
+
+    // Determine if file needs renaming based on ID change
+    if (filePath === fromPlan.filePath || (isSwap && filePath === toPlan?.filePath)) {
+      const parsed = path.parse(filePath);
+      const oldId = filePath === fromPlan.filePath ? fromId : toId;
+      const newId = plan.id;
+
+      // Check if filename starts with old ID
+      if (parsed.name.startsWith(`${oldId}-`)) {
+        const suffix = parsed.base.slice(`${oldId}-`.length);
+        writeFilePath = path.join(parsed.dir, `${newId}-${suffix}`);
+      }
+    }
+
+    // Validate target path
+    const safeTargetPath = validateSafePath(writeFilePath, gitRoot);
+    if (!safeTargetPath) {
+      throw new Error(`Unsafe target path detected: ${writeFilePath}`);
+    }
+
+    fileOperations.push({
+      originalPath: filePath,
+      newPath: safeTargetPath,
+      plan: plan as PlanSchema,
+      needsRename: writeFilePath !== filePath,
+    });
+  }
+
+  // Execute file operations with proper error handling
+  for (const operation of fileOperations) {
+    try {
+      const targetDir = path.dirname(operation.newPath);
+      await fs.promises.mkdir(targetDir, { recursive: true });
+
+      // Write the file
+      await writePlanFile(operation.newPath, operation.plan, { skipUpdatedAt: true });
+
+      // Remove old file if renamed
+      if (operation.needsRename && operation.originalPath !== operation.newPath) {
+        await fs.promises.unlink(operation.originalPath);
+      }
+
+      log(`  ✓ Updated ${path.relative(tasksDirectory, operation.newPath)}`);
+    } catch (error) {
+      throw new Error(
+        `Failed to write ${operation.newPath}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  log('\nSwap/renumber operation complete!');
+}
+
 export async function handleRenumber(options: RenumberOptions, command: RenumberCommand) {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const pathContext = await resolvePlanPathContext(config);
   const { gitRoot, tasksDir: tasksDirectory } = pathContext;
+
+  // Validate --from/--to options
+  if (options.from !== undefined || options.to !== undefined) {
+    if (options.from === undefined || options.to === undefined) {
+      throw new Error('Both --from and --to must be specified together');
+    }
+    if (options.from === options.to) {
+      throw new Error('--from and --to cannot be the same ID');
+    }
+
+    // Execute swap operation and exit early
+    await handleSwapOrRenumber(options, tasksDirectory, gitRoot);
+    return;
+  }
 
   // Detect current branch and determine if we should use branch-based preference
   const currentBranch = await getCurrentBranchName(gitRoot);

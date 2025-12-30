@@ -2,7 +2,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: workspace switcher
 goal: ""
-id: 296
+id: 149
 uuid: 4a39959d-e9fb-4fa6-b4ed-774a5b4dfd4d
 generatedBy: agent
 simple: false

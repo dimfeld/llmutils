@@ -2,7 +2,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: replace MCP tools with CLI commands
 goal: ""
-id: 295
+id: 148
 uuid: fea18633-aa57-4072-bb94-dae8ee0654dd
 simple: false
 status: pending

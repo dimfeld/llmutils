@@ -2,7 +2,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
 title: improved intra-task progress tracking
 goal: ""
-id: 299
+id: 152
 uuid: ed37390d-a63a-4b0c-a7b8-c656e276f62d
 simple: false
 status: pending

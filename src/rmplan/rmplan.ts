@@ -615,6 +615,20 @@ program
     `Do not change IDs for these plan file paths when resolving conflicts`
   )
   .option('--conflicts-only', 'Only resolve ID conflicts, skip hierarchical ordering violations')
+  .option('--from <id>', 'Plan ID to renumber (use with --to)', (value) => {
+    const n = Number(value);
+    if (Number.isNaN(n) || !Number.isInteger(n) || n <= 0) {
+      throw new Error('--from must be a positive integer');
+    }
+    return n;
+  })
+  .option('--to <id>', 'Target ID to renumber to (use with --from)', (value) => {
+    const n = Number(value);
+    if (Number.isNaN(n) || !Number.isInteger(n) || n <= 0) {
+      throw new Error('--to must be a positive integer');
+    }
+    return n;
+  })
   .action(async (options, command) => {
     const { handleRenumber } = await import('./commands/renumber.js');
     await handleRenumber(options, command).catch(handleCommandError);

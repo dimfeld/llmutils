@@ -27,12 +27,15 @@ describe('rmplan renumber', () => {
     // Mock getGitRoot to return the temp directory
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => tempDir,
+      getCurrentBranchName: async () => null,
+      getChangedFilesOnBranch: async () => [],
     }));
 
     await moduleMocker.mock('../../logging.js', () => ({
       log: mock(() => {}),
       error: mock(() => {}),
       warn: mock(() => {}),
+      debugLog: mock(() => {}),
     }));
 
     // Create a config file
@@ -2058,5 +2061,137 @@ describe('rmplan renumber', () => {
     // to the plan that KEPT its ID (parent1 with ID 1)
     const childAfter = await readPlanFile(path.join(tasksDir, '5-child.yml'));
     expect(childAfter.parent).toBe(1);
+  });
+
+  describe('--from/--to options', () => {
+    test('validates that both --from and --to must be specified together', async () => {
+      await expect(handleRenumber({ from: 5 }, createMockCommand())).rejects.toThrow(
+        'Both --from and --to must be specified together'
+      );
+
+      await expect(handleRenumber({ to: 10 }, createMockCommand())).rejects.toThrow(
+        'Both --from and --to must be specified together'
+      );
+    });
+
+    test('validates that --from and --to cannot be the same', async () => {
+      await expect(handleRenumber({ from: 5, to: 5 }, createMockCommand())).rejects.toThrow(
+        '--from and --to cannot be the same ID'
+      );
+    });
+
+    test('simple renumber when target ID does not exist', async () => {
+      await createPlan(5, 'Task to renumber', '5-task.yml');
+      await createPlan(10, 'Another task', '10-another.yml');
+
+      await handleRenumber({ from: 5, to: 7 }, createMockCommand());
+
+      // Plan 5 should now be 7
+      expect(fs.existsSync(path.join(tasksDir, '7-task.yml'))).toBe(true);
+      const renamedPlan = await readPlanFile(path.join(tasksDir, '7-task.yml'));
+      expect(renamedPlan.id).toBe(7);
+
+      // Original file should be gone
+      expect(fs.existsSync(path.join(tasksDir, '5-task.yml'))).toBe(false);
+    });
+
+    test('swaps two plans when both IDs exist', async () => {
+      await createPlan(5, 'Task A', '5-task-a.yml');
+      await createPlan(10, 'Task B', '10-task-b.yml');
+
+      await handleRenumber({ from: 5, to: 10 }, createMockCommand());
+
+      // Plan 5 should now be at 10
+      const planA = await readPlanFile(path.join(tasksDir, '10-task-a.yml'));
+      expect(planA.id).toBe(10);
+      expect(planA.title).toBe('Task A');
+
+      // Plan 10 should now be at 5
+      const planB = await readPlanFile(path.join(tasksDir, '5-task-b.yml'));
+      expect(planB.id).toBe(5);
+      expect(planB.title).toBe('Task B');
+
+      // Original files should be gone
+      expect(fs.existsSync(path.join(tasksDir, '5-task-a.yml'))).toBe(false);
+      expect(fs.existsSync(path.join(tasksDir, '10-task-b.yml'))).toBe(false);
+    });
+
+    test('updates references when swapping plans', async () => {
+      await createPlan(5, 'Parent', '5-parent.yml');
+      await createPlan(10, 'Child of 5', '10-child.yml');
+
+      // Manually set parent relationship
+      const childPath = path.join(tasksDir, '10-child.yml');
+      const childPlan = await readPlanFile(childPath);
+      childPlan.parent = 5;
+      await writePlanFile(childPath, childPlan);
+
+      // Swap 5 ↔ 10
+      await handleRenumber({ from: 5, to: 10 }, createMockCommand());
+
+      // The plan that was 10 (now 5) should still reference its parent
+      // which is now at ID 10 (was 5)
+      const updatedChild = await readPlanFile(path.join(tasksDir, '5-child.yml'));
+      expect(updatedChild.id).toBe(5);
+      expect(updatedChild.parent).toBe(10);
+
+      // Verify UUID references are maintained
+      expect(updatedChild.references).toBeDefined();
+      expect(updatedChild.references![10]).toBeDefined();
+    });
+
+    test('--dry-run with swap operation', async () => {
+      await createPlan(5, 'Task A', '5-task-a.yml');
+      await createPlan(10, 'Task B', '10-task-b.yml');
+
+      await handleRenumber({ from: 5, to: 10, dryRun: true }, createMockCommand());
+
+      // Files should remain unchanged
+      const planA = await readPlanFile(path.join(tasksDir, '5-task-a.yml'));
+      expect(planA.id).toBe(5);
+
+      const planB = await readPlanFile(path.join(tasksDir, '10-task-b.yml'));
+      expect(planB.id).toBe(10);
+    });
+
+    test('throws error when --from plan does not exist', async () => {
+      await createPlan(10, 'Task B', '10-task-b.yml');
+
+      await expect(handleRenumber({ from: 999, to: 10 }, createMockCommand())).rejects.toThrow(
+        'Plan with ID 999 not found'
+      );
+    });
+
+    test('updates dependencies when swapping', async () => {
+      await createPlan(3, 'Dependency', '3-dep.yml');
+      await createPlan(5, 'Task with dep', '5-task.yml');
+
+      // Set dependency
+      const taskPath = path.join(tasksDir, '5-task.yml');
+      const taskPlan = await readPlanFile(taskPath);
+      taskPlan.dependencies = [3];
+      await writePlanFile(taskPath, taskPlan);
+
+      // Swap 3 ↔ 5
+      await handleRenumber({ from: 3, to: 5 }, createMockCommand());
+
+      // The plan that was 5 (now 3) should have updated dependency
+      const updatedTask = await readPlanFile(path.join(tasksDir, '3-task.yml'));
+      expect(updatedTask.id).toBe(3);
+      expect(updatedTask.dependencies).toContain(5); // Dependency is now at 5
+    });
+
+    test('--dry-run with simple renumber', async () => {
+      await createPlan(5, 'Task A', '5-task-a.yml');
+
+      await handleRenumber({ from: 5, to: 10, dryRun: true }, createMockCommand());
+
+      // File should remain unchanged
+      const planA = await readPlanFile(path.join(tasksDir, '5-task-a.yml'));
+      expect(planA.id).toBe(5);
+
+      // New file should not exist
+      expect(fs.existsSync(path.join(tasksDir, '10-task-a.yml'))).toBe(false);
+    });
   });
 });
