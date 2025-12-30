@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { handlePromoteCommand } from './promote.js';
-import { clearPlanCache, readPlanFile } from '../plans.js';
+import { clearPlanCache, getMaxNumericPlanId, readPlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
 import { getDefaultConfig } from '../configSchema.js';
@@ -48,6 +48,14 @@ describe('handlePromoteCommand', () => {
 
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: mock(async () => tempDir),
+    }));
+
+    // Mock generateNumericPlanId to use local-only ID generation (avoids shared storage)
+    await moduleMocker.mock('../id_utils.js', () => ({
+      generateNumericPlanId: mock(async (dir: string) => {
+        const maxId = await getMaxNumericPlanId(dir);
+        return maxId + 1;
+      }),
     }));
   });
 

@@ -5,10 +5,10 @@ goal: ""
 id: 297
 uuid: db330154-2628-4559-8f5f-bcaa4358505b
 simple: false
-status: pending
+status: in_progress
 priority: medium
 createdAt: 2025-12-29T01:23:04.821Z
-updatedAt: 2025-12-29T01:23:04.822Z
+updatedAt: 2025-12-30T08:13:11.253Z
 tasks: []
 tags: []
 ---

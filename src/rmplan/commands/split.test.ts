@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import yaml from 'yaml';
-import { clearPlanCache, readPlanFile, writePlanFile } from '../plans.js';
+import { clearPlanCache, getMaxNumericPlanId, readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
 import { handleSplitCommand, parseTaskSpecifier } from './split.js';
@@ -33,6 +33,14 @@ describe('rmplan split - manual', () => {
       log: mock(() => {}),
       warn: mock(() => {}),
       error: mock(() => {}),
+    }));
+
+    // Mock generateNumericPlanId to use local-only ID generation (avoids shared storage)
+    await moduleMocker.mock('../id_utils.js', () => ({
+      generateNumericPlanId: mock(async (dir: string) => {
+        const maxId = await getMaxNumericPlanId(dir);
+        return maxId + 1;
+      }),
     }));
   });
 

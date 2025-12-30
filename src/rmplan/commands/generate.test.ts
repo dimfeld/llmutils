@@ -8,7 +8,13 @@ import {
   generateClaudeCodePlanningPrompt,
   generateClaudeCodeSimplePlanningPrompt,
 } from '../prompt.js';
-import { clearPlanCache, readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
+import {
+  clearPlanCache,
+  getMaxNumericPlanId,
+  readAllPlans,
+  readPlanFile,
+  writePlanFile,
+} from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
 
@@ -132,6 +138,14 @@ describe('handleGenerateCommand', () => {
       getModel: () => 'test-model',
       createModel: () => ({
         // Mock model for generateText
+      }),
+    }));
+
+    // Mock generateNumericPlanId to use local-only ID generation (avoids shared storage)
+    await moduleMocker.mock('../id_utils.js', () => ({
+      generateNumericPlanId: mock(async (dir: string) => {
+        const maxId = await getMaxNumericPlanId(dir);
+        return maxId + 1;
       }),
     }));
   });
