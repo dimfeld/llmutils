@@ -238,7 +238,9 @@ Use the update-plan-tasks tool to save the generated plan with the following str
 - priority: The priority level (low|medium|high|urgent)
 - tasks: An array of tasks, where each task has:
   - title: A concise task title
-  - description: Detailed task description`;
+  - description: Detailed task description
+
+The list of tasks should correspond to the steps in your step-by-step guide.`;
 
   return {
     messages: [

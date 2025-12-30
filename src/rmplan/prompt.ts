@@ -725,11 +725,13 @@ Include details such as:
 - A concise overview of the opportunity or problem you investigated.
 - Highlight the most critical discoveries that should guide implementation.
 - Notable files, modules, or patterns you inspected and what you learned about them.
-- Mention existing utilities, abstractions, or APIs that are relevant.
+- Mention existing utilities, abstractions, or APIs that are relevant, with guides on how to use them or references to
+existing documentation.
 - Record architectural hazards, edge cases, or constraints uncovered during research.
 - Call out any dependencies or prerequisites the implementation must respect.
 - Manual testing steps (this is ok here even though we don't want them in the structured tasks that you will generate later).
-- A detailed step-by-step guide on how to implement the change.
+- A detailed step-by-step guide on how to implement the change. Reference existing patterns, abstractions, or APIs, and
+documentation files that are relevant to the step.
 
 ### Constraints
 
