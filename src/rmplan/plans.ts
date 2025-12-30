@@ -579,7 +579,8 @@ export async function readPlanFile(filePath: string): Promise<PlanSchema> {
     parsed.details ??= '';
   }
 
-  const result = phaseSchema.safeParse(parsed);
+  const normalizedParsed = normalizeContainerToEpic(parsed);
+  const result = phaseSchema.safeParse(normalizedParsed);
   if (!result.success) {
     const errors = result.error.issues
       .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)

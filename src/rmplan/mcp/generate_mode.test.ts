@@ -23,6 +23,7 @@ import {
   removePlanTaskParameters,
   updatePlanDetailsParameters,
   createPlanParameters,
+  registerGenerateMode,
   mcpManagePlanTask,
   loadGeneratePrompt,
   loadPlanPrompt,
@@ -69,6 +70,35 @@ describe('rmplan MCP generate mode helpers', () => {
   afterEach(async () => {
     await rm(tmpDir, { recursive: true, force: true });
     clearPlanCache();
+  });
+
+  test('registerGenerateMode skips tools when disabled', () => {
+    const prompts: unknown[] = [];
+    const tools: unknown[] = [];
+    const resources: unknown[] = [];
+    const resourceTemplates: unknown[] = [];
+
+    const server = {
+      addPrompt: (prompt: unknown) => {
+        prompts.push(prompt);
+      },
+      addTool: (tool: unknown) => {
+        tools.push(tool);
+      },
+      addResource: (resource: unknown) => {
+        resources.push(resource);
+      },
+      addResourceTemplate: (template: unknown) => {
+        resourceTemplates.push(template);
+      },
+    } as any;
+
+    registerGenerateMode(server, context, { registerTools: false });
+
+    expect(tools).toHaveLength(0);
+    expect(prompts.length).toBeGreaterThan(0);
+    expect(resources.length).toBeGreaterThan(0);
+    expect(resourceTemplates.length).toBeGreaterThan(0);
   });
 
   test('loadResearchPrompt returns plan context with research template', async () => {

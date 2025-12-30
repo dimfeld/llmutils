@@ -34,6 +34,7 @@ import { MAX_NOTE_CHARS } from '../truncation.js';
 import { buildPlanContext, resolvePlan } from '../plan_display.js';
 import type { GenerateModeRegistrationContext, GetPlanArguments } from '../mcp/generate_mode.js';
 import { getParentChain } from '../utils/hierarchy.js';
+import { getPlanTool } from '../tools/index.js';
 
 type PlanWithFilename = PlanSchema & { filename: string };
 
@@ -888,6 +889,6 @@ export async function mcpGetPlan(
   args: GetPlanArguments,
   context: GenerateModeRegistrationContext
 ): Promise<string> {
-  const { plan, planPath } = await resolvePlan(args.plan, context);
-  return buildPlanContext(plan, planPath, context);
+  const result = await getPlanTool(args, context);
+  return result.text;
 }

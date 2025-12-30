@@ -1,6 +1,6 @@
 ---
 name: rmplan Usage
-description: This skill should be used when the user asks to "generate plan 123" (or any number), "work on plan 123", "run rmplan", mentions "rmplan" explicitly, asks about "rmplan commands", "rmplan MCP tools", "rmplan prompts", or wants to create, manage, or execute project plans.
+description: This skill should be used when the user asks to "generate plan 123" (or any number), "work on plan 123", "run rmplan", mentions "rmplan" explicitly, asks about "rmplan commands", "rmplan tools", "rmplan prompts", or wants to create, manage, or execute project plans.
 version: 1.0.0
 ---
 
@@ -61,6 +61,29 @@ Browse plan data via resources:
 - `rmplan://plans/list` - All plans
 - `rmplan://plans/{planId}` - Specific plan details
 - `rmplan://plans/ready` - Ready-to-execute plans
+
+### CLI Tool Equivalents (no MCP tools)
+
+When MCP tools are not available, use `rmplan tools <tool-name>` with JSON on stdin.
+These subcommands share the same schemas and behavior as the MCP tools and can return
+structured JSON with `--json`.
+
+```bash
+# Text output (matches MCP tool output)
+echo '{"plan": "123"}' | rmplan tools get-plan
+
+# Structured JSON output
+echo '{"plan": "123"}' | rmplan tools get-plan --json
+
+# Create a plan
+echo '{"title": "New Plan", "priority": "high"}' | rmplan tools create-plan --json
+```
+
+If you still want the MCP server for prompts/resources only, run:
+
+```bash
+rmplan mcp-server --no-tools
+```
 
 ## CLI Commands
 

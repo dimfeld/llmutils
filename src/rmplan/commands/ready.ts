@@ -32,6 +32,7 @@ import type {
 } from '../mcp/generate_mode.js';
 import { isUnderEpic } from '../utils/hierarchy.js';
 import { normalizeTags } from '../utils/tags.js';
+import { listReadyPlansTool } from '../tools/index.js';
 
 type PlanWithFilename = EnrichedReadyPlan;
 
@@ -605,37 +606,6 @@ export async function mcpListReadyPlans(
   args: ListReadyPlansArguments,
   context: GenerateModeRegistrationContext
 ): Promise<string> {
-  try {
-    const tasksDir = await resolveTasksDir(context.config);
-    // Bypass the in-memory cache so MCP clients always see the latest edits.
-    const { plans } = await readAllPlans(tasksDir, false);
-
-    let readyPlans = filterAndSortReadyPlans(plans, {
-      pendingOnly: args.pendingOnly ?? false,
-      priority: args.priority,
-      sortBy: args.sortBy ?? 'priority',
-      epicId: args.epic,
-    });
-
-    const desiredTags = normalizeTags(args.tags);
-    if (desiredTags.length > 0) {
-      const tagFilter = new Set(desiredTags);
-      readyPlans = readyPlans.filter((plan) => {
-        const planTags = normalizeTags(plan.tags);
-        if (planTags.length === 0) {
-          return false;
-        }
-        return planTags.some((tag) => tagFilter.has(tag));
-      });
-    }
-
-    if (args.limit && args.limit > 0) {
-      readyPlans = readyPlans.slice(0, args.limit);
-    }
-
-    return formatReadyPlansAsJson(readyPlans, { gitRoot: context.gitRoot });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to list ready plans: ${message}`);
-  }
+  const result = await listReadyPlansTool(args, context);
+  return result.text;
 }

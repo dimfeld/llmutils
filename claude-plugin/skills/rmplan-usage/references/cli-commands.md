@@ -146,6 +146,19 @@ rmplan ready --sort title
 rmplan ready --reverse
 ```
 
+## MCP Tool Equivalents
+
+Use `rmplan tools <tool-name>` when you need MCP tool behavior via CLI (JSON stdin/stdout).
+
+```bash
+echo '{"plan": "123"}' | rmplan tools get-plan
+echo '{"title": "New plan"}' | rmplan tools create-plan --json
+echo '{"plan": "123", "details": "New details"}' | rmplan tools update-plan-details
+echo '{"plan": "123", "tasks": [{"title": "Task", "description": "Details"}]}' | rmplan tools update-plan-tasks --json
+echo '{"plan": "123", "action": "add", "title": "Task", "description": "Details"}' | rmplan tools manage-plan-task
+echo '{}' | rmplan tools list-ready-plans --json
+```
+
 ## Task Management Commands
 
 ### rmplan add-task

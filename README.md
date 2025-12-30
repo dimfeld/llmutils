@@ -706,7 +706,7 @@ The `references` field maintains UUID-to-ID mappings for referential integrity:
 id: 123
 parent: 100
 references:
-  100: "uuid-of-plan-100"  # Survives renumbering
+  100: 'uuid-of-plan-100' # Survives renumbering
 ```
 
 ---
@@ -907,6 +907,12 @@ rmplan mcp-server --mode generate --transport http --port 3000
 rmplan mcp-server --mode generate --config path/to/rmplan.yml
 ```
 
+**Prompts/resources only (no tools):**
+
+```bash
+rmplan mcp-server --no-tools
+```
+
 **MCP Client Configuration:**
 
 Add to your MCP client settings (e.g., Claude Code):
@@ -932,6 +938,8 @@ Add to your MCP client settings (e.g., Claude Code):
    - Use `manage-plan-task` tool to add
    - Review with `get-plan`
 3. Execute: `rmplan agent 123`
+
+If MCP tools are unavailable, you can call the equivalent CLI commands via `rmplan tools <tool-name>` and pipe JSON input on stdin (use `--json` for structured output).
 
 **Claude Code Plugin:**
 

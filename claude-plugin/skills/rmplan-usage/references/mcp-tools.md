@@ -71,6 +71,21 @@ Summarize completed plan for archival.
 
 ## Tools
 
+Each MCP tool has a CLI equivalent under `rmplan tools <tool-name>`. The CLI subcommands
+accept JSON on stdin (same schema) and print the same text output by default. Add `--json`
+for structured output.
+
+All tools subcommands support the `--print-schema` option to display the input JSON schema
+and exit without requiring stdin input. This is useful for discovering what parameters each
+tool accepts.
+
+**Example:**
+
+```bash
+rmplan tools get-plan --print-schema
+rmplan tools create-plan --print-schema
+```
+
 ### get-plan
 
 Retrieve full plan details.
@@ -84,6 +99,13 @@ Retrieve full plan details.
 ```
 
 **Returns:** Complete plan with metadata, tasks, details, and relationships.
+
+**CLI equivalent:**
+
+```bash
+echo '{"plan": "123"}' | rmplan tools get-plan
+echo '{"plan": "123"}' | rmplan tools get-plan --json
+```
 
 ### create-plan
 
@@ -116,6 +138,13 @@ Create a new plan file.
 - Updates parent's dependencies if `parent` specified
 - Reopens parent if it was marked done
 
+**CLI equivalent:**
+
+```bash
+echo '{"title": "New plan", "priority": "high"}' | rmplan tools create-plan
+echo '{"title": "New plan", "priority": "high"}' | rmplan tools create-plan --json
+```
+
 ### update-plan-tasks
 
 Update plan with generated tasks and details.
@@ -143,6 +172,13 @@ Update plan with generated tasks and details.
 - Updates generated section content
 - Preserves manual content outside delimiters
 
+**CLI equivalent:**
+
+```bash
+echo '{"plan": "123", "tasks": [{"title": "Task", "description": "Details"}]}' | rmplan tools update-plan-tasks
+echo '{"plan": "123", "tasks": [{"title": "Task", "description": "Details"}]}' | rmplan tools update-plan-tasks --json
+```
+
 ### update-plan-details
 
 Update the generated section content.
@@ -161,6 +197,13 @@ Update the generated section content.
 
 - Modifies content between `<!-- rmplan-generated-start -->` and `<!-- rmplan-generated-end -->`
 - Preserves content outside delimiters
+
+**CLI equivalent:**
+
+```bash
+echo '{"plan": "123", "details": "New details"}' | rmplan tools update-plan-details
+echo '{"plan": "123", "details": "New details"}' | rmplan tools update-plan-details --json
+```
 
 ### manage-plan-task
 
@@ -218,6 +261,13 @@ Remove task:
 }
 ```
 
+**CLI equivalent:**
+
+```bash
+echo '{"plan": "123", "action": "add", "title": "Add validation", "description": "Validate input"}' | rmplan tools manage-plan-task
+echo '{"plan": "123", "action": "add", "title": "Add validation", "description": "Validate input"}' | rmplan tools manage-plan-task --json
+```
+
 ### list-ready-plans
 
 Find plans ready to execute.
@@ -238,6 +288,14 @@ Find plans ready to execute.
 
 - id, title, priority, status
 - taskCount, completedTasks
+
+**CLI equivalent:**
+
+```bash
+echo '{}' | rmplan tools list-ready-plans
+echo '{"priority": "high", "limit": 5}' | rmplan tools list-ready-plans --json
+```
+
 - dependencies, filePath
 
 **Readiness criteria:**

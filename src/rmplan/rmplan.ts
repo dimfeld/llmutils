@@ -90,6 +90,7 @@ program
     }
     return parsed;
   })
+  .option('--no-tools', 'Run server without tools (prompts and resources only)')
   .action(async (options, command) => {
     const globalOpts = command.parent.opts();
     const transport = options.transport === 'http' ? 'http' : 'stdio';
@@ -97,6 +98,7 @@ program
       configPath: globalOpts.config,
       transport,
       port: options.port,
+      noTools: options.tools === false,
     }).catch(handleCommandError);
   });
 
@@ -111,6 +113,70 @@ program
   .action(async (promptName, planArg, options, command) => {
     const { handlePromptsCommand } = await import('./commands/prompts.js');
     await handlePromptsCommand(promptName, planArg, options, command).catch(handleCommandError);
+  });
+
+const toolsCommand = program
+  .command('tools')
+  .description('Run MCP tool equivalents via CLI using JSON over stdin');
+
+toolsCommand
+  .command('get-plan')
+  .description('Retrieve plan details (reads JSON from stdin)')
+  .option('--json', 'Output as structured JSON')
+  .option('--print-schema', 'Print the input JSON schema and exit')
+  .action(async (options, command) => {
+    const { handleToolCommand } = await import('./commands/tools.js');
+    await handleToolCommand('get-plan', options, command).catch(handleCommandError);
+  });
+
+toolsCommand
+  .command('create-plan')
+  .description('Create a new plan (reads JSON from stdin)')
+  .option('--json', 'Output as structured JSON')
+  .option('--print-schema', 'Print the input JSON schema and exit')
+  .action(async (options, command) => {
+    const { handleToolCommand } = await import('./commands/tools.js');
+    await handleToolCommand('create-plan', options, command).catch(handleCommandError);
+  });
+
+toolsCommand
+  .command('update-plan-tasks')
+  .description('Update plan tasks and details (reads JSON from stdin)')
+  .option('--json', 'Output as structured JSON')
+  .option('--print-schema', 'Print the input JSON schema and exit')
+  .action(async (options, command) => {
+    const { handleToolCommand } = await import('./commands/tools.js');
+    await handleToolCommand('update-plan-tasks', options, command).catch(handleCommandError);
+  });
+
+toolsCommand
+  .command('update-plan-details')
+  .description('Update plan details within generated section (reads JSON from stdin)')
+  .option('--json', 'Output as structured JSON')
+  .option('--print-schema', 'Print the input JSON schema and exit')
+  .action(async (options, command) => {
+    const { handleToolCommand } = await import('./commands/tools.js');
+    await handleToolCommand('update-plan-details', options, command).catch(handleCommandError);
+  });
+
+toolsCommand
+  .command('manage-plan-task')
+  .description('Add, update, or remove a plan task (reads JSON from stdin)')
+  .option('--json', 'Output as structured JSON')
+  .option('--print-schema', 'Print the input JSON schema and exit')
+  .action(async (options, command) => {
+    const { handleToolCommand } = await import('./commands/tools.js');
+    await handleToolCommand('manage-plan-task', options, command).catch(handleCommandError);
+  });
+
+toolsCommand
+  .command('list-ready-plans')
+  .description('List ready plans (reads JSON from stdin)')
+  .option('--json', 'Output as structured JSON')
+  .option('--print-schema', 'Print the input JSON schema and exit')
+  .action(async (options, command) => {
+    const { handleToolCommand } = await import('./commands/tools.js');
+    await handleToolCommand('list-ready-plans', options, command).catch(handleCommandError);
   });
 
 program

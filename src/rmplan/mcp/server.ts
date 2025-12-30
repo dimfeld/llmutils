@@ -7,6 +7,7 @@ export interface StartMcpServerOptions {
   configPath?: string;
   transport?: 'stdio' | 'http';
   port?: number;
+  noTools?: boolean;
 }
 
 export async function startMcpServer(options: StartMcpServerOptions = {}): Promise<void> {
@@ -26,7 +27,9 @@ export async function startMcpServer(options: StartMcpServerOptions = {}): Promi
     gitRoot: pathContext.gitRoot,
   };
 
-  registerGenerateMode(server, registrationContext);
+  registerGenerateMode(server, registrationContext, {
+    registerTools: !options.noTools,
+  });
 
   if (options.transport === 'http') {
     const port = options.port ?? 0;
