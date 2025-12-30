@@ -434,7 +434,6 @@ export const createPlanParameters = z
       ),
     temp: z.boolean().optional().describe('Mark as temporary plan'),
   })
-  .transform((value) => normalizeContainerToEpic(value))
   .describe('Create a new plan file');
 
 export type CreatePlanArguments = z.infer<typeof createPlanParameters>;
@@ -761,14 +760,18 @@ export async function mcpCreatePlan(
   execContext?: { log: GenerateModeExecutionLogger }
 ): Promise<string> {
   clearPlanCache();
-  const title = args.title.trim();
+
+  // Normalize container to epic for backwards compatibility
+  const normalizedArgs = normalizeContainerToEpic(args);
+
+  const title = normalizedArgs.title.trim();
   if (!title) {
     throw new UserError('Plan title cannot be empty.');
   }
 
   let planTags: string[] = [];
   try {
-    planTags = validateTags(args.tags, context.config);
+    planTags = validateTags(normalizedArgs.tags, context.config);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new UserError(message);
@@ -780,18 +783,18 @@ export async function mcpCreatePlan(
   const plan: PlanSchema = {
     id: nextId,
     title,
-    goal: args.goal,
-    details: args.details,
-    priority: args.priority,
-    parent: args.parent,
-    dependencies: args.dependsOn || [],
-    discoveredFrom: args.discoveredFrom,
-    assignedTo: args.assignedTo,
-    issue: args.issue || [],
-    docs: args.docs || [],
+    goal: normalizedArgs.goal,
+    details: normalizedArgs.details,
+    priority: normalizedArgs.priority,
+    parent: normalizedArgs.parent,
+    dependencies: normalizedArgs.dependsOn || [],
+    discoveredFrom: normalizedArgs.discoveredFrom,
+    assignedTo: normalizedArgs.assignedTo,
+    issue: normalizedArgs.issue || [],
+    docs: normalizedArgs.docs || [],
     tags: planTags,
-    epic: args.epic ?? false,
-    temp: args.temp || false,
+    epic: normalizedArgs.epic ?? false,
+    temp: normalizedArgs.temp || false,
     status: 'pending',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -804,11 +807,11 @@ export async function mcpCreatePlan(
   await writePlanFile(planPath, plan);
 
   // Update parent plan dependencies to maintain bidirectional relationship
-  if (args.parent !== undefined) {
+  if (normalizedArgs.parent !== undefined) {
     const { plans } = await readAllPlans(tasksDir);
-    const parentPlan = plans.get(args.parent);
+    const parentPlan = plans.get(normalizedArgs.parent);
     if (!parentPlan) {
-      throw new UserError(`Parent plan ${args.parent} not found`);
+      throw new UserError(`Parent plan ${normalizedArgs.parent} not found`);
     }
 
     // Add this plan's ID to the parent's dependencies

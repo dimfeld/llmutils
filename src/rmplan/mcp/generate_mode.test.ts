@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, mock } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { z } from 'zod/v4';
 import { getDefaultConfig } from '../configSchema.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
@@ -18,6 +19,10 @@ import {
   getPlanParameters,
   listReadyPlansParameters,
   managePlanTaskParameters,
+  addPlanTaskParameters,
+  removePlanTaskParameters,
+  updatePlanDetailsParameters,
+  createPlanParameters,
   mcpManagePlanTask,
   loadGeneratePrompt,
   loadPlanPrompt,
@@ -2431,5 +2436,79 @@ describe('MCP Resources', () => {
       expect(readyPlans[1]?.id).toBe(3); // high
       expect(readyPlans[2]?.id).toBe(1); // low
     });
+  });
+});
+
+describe('MCP tool schema JSON Schema compatibility', () => {
+  test('all tool parameter schemas can be converted to JSON Schema', () => {
+    const schemas = {
+      addPlanTaskParameters,
+      removePlanTaskParameters,
+      generateTasksParameters,
+      getPlanParameters,
+      updatePlanDetailsParameters,
+      managePlanTaskParameters,
+      listReadyPlansParameters,
+      createPlanParameters,
+    };
+
+    for (const [name, schema] of Object.entries(schemas)) {
+      expect(() => {
+        const jsonSchema = z.toJSONSchema(schema, {
+          target: 'draft-7',
+          io: 'input',
+        });
+        // Ensure the conversion actually produced a schema object
+        expect(jsonSchema).toBeDefined();
+        expect(typeof jsonSchema).toBe('object');
+        expect(jsonSchema).toHaveProperty('type');
+      }).not.toThrow();
+    }
+  });
+
+  test('each tool schema converts to valid JSON Schema structure', () => {
+    const schemas = [
+      { name: 'addPlanTaskParameters', schema: addPlanTaskParameters },
+      { name: 'removePlanTaskParameters', schema: removePlanTaskParameters },
+      { name: 'generateTasksParameters', schema: generateTasksParameters },
+      { name: 'getPlanParameters', schema: getPlanParameters },
+      { name: 'updatePlanDetailsParameters', schema: updatePlanDetailsParameters },
+      { name: 'managePlanTaskParameters', schema: managePlanTaskParameters },
+      { name: 'listReadyPlansParameters', schema: listReadyPlansParameters },
+      { name: 'createPlanParameters', schema: createPlanParameters },
+    ];
+
+    for (const { name, schema } of schemas) {
+      const jsonSchema = z.toJSONSchema(schema, {
+        target: 'draft-7',
+        io: 'input',
+      });
+
+      // All parameter schemas should be objects
+      expect(jsonSchema.type).toBe('object');
+
+      // Should have properties defined
+      expect(jsonSchema).toHaveProperty('properties');
+      expect(typeof jsonSchema.properties).toBe('object');
+
+      // Should have a description
+      expect(jsonSchema).toHaveProperty('description');
+      expect(typeof jsonSchema.description).toBe('string');
+    }
+  });
+
+  test('createPlanParameters properly handles container/epic fields without transform', () => {
+    const jsonSchema = z.toJSONSchema(createPlanParameters, {
+      target: 'draft-7',
+      io: 'input',
+    });
+
+    // Both container and epic should be present in the schema
+    expect(jsonSchema.properties).toHaveProperty('container');
+    expect(jsonSchema.properties).toHaveProperty('epic');
+
+    // Both should be optional booleans
+    expect(jsonSchema.properties.container.type).toBe('boolean');
+    expect(jsonSchema.properties.epic.type).toBe('boolean');
   });
 });
