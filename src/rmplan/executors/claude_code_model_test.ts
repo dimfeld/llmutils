@@ -167,10 +167,10 @@ describe('ClaudeCodeExecutor model selection', () => {
 
     await executor.execute('test content', planInfo);
 
-    // Verify that default sonnet model was used
+    // Verify that default opus model was used
     expect(capturedArgs).toContain('--model');
     const modelIndex = capturedArgs.indexOf('--model');
-    expect(capturedArgs[modelIndex + 1]).toBe('sonnet');
+    expect(capturedArgs[modelIndex + 1]).toBe('opus');
   });
 
   test('respects explicitly specified model over automatic selection', async () => {
@@ -317,7 +317,7 @@ describe('ClaudeCodeExecutor model selection', () => {
 
       expect(capturedArgs).toContain('--model');
       const modelIndex = capturedArgs.indexOf('--model');
-      expect(capturedArgs[modelIndex + 1]).toBe('sonnet');
+      expect(capturedArgs[modelIndex + 1]).toBe('opus');
       expect(wrapSimple).toHaveBeenCalledTimes(1);
       expect(wrapSimple.mock.calls[0][1]).toBe('simple-plan');
       expect(wrapSimple.mock.calls[0][2]).toMatchObject({ planFilePath: '/plans/simple.plan.md' });

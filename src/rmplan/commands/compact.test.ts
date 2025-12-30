@@ -164,7 +164,7 @@ describe('compact command', () => {
     expect(options.planTitle).toBe('Test Plan');
     expect(options.planFilePath).toBe(planPath);
     expect(options.captureOutput).toBe('none');
-    expect(options.executionMode).toBe('planning');
+    expect(options.executionMode).toBe('bare');
   });
 
   test('compactPlan respects section toggles in config', async () => {

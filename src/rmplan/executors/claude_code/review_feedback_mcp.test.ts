@@ -3,6 +3,7 @@ import { z } from 'zod';
 import * as net from 'net';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import * as os from 'os';
 import { ModuleMocker } from '../../../testing.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
@@ -81,7 +82,7 @@ Issue 3: Performance concerns`,
     let serverResponses: { type: string; userFeedback?: string; error?: string }[] = [];
 
     beforeEach(async () => {
-      tempDir = await fs.mkdtemp(path.join(process.cwd(), 'tmp-test-'));
+      tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'review-feedback-mcp-test-'));
       socketPath = path.join(tempDir, 'test-socket');
       serverResponses = [];
     });

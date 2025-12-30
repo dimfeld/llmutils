@@ -2792,9 +2792,10 @@ tasks:
   });
 
   test('throws error when no planFile provided and no branch-specific plans exist', async () => {
-    // Mock findBranchSpecificPlan to return null (no plans found)
+    // Mock both branch-specific and modified plan finders to return null
     await moduleMocker.mock('../plans.js', () => ({
       findBranchSpecificPlan: mock(async () => null),
+      findSingleModifiedPlanOnBranch: mock(async () => null),
     }));
 
     await moduleMocker.mock('../configLoader.js', () => ({
@@ -2808,7 +2809,7 @@ tasks:
     };
 
     await expect(handleReviewCommand(undefined, {}, mockCommand)).rejects.toThrow(
-      'No plan file specified and no plans found that are unique to this branch'
+      'No plan file specified and no suitable plans found'
     );
   });
 

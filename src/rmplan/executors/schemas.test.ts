@@ -51,7 +51,7 @@ describe('claudeCodeOptionsSchema', () => {
       }
     });
 
-    test('is undefined when explicitly undefined (handled by consumer)', () => {
+    test('defaults to false when explicitly undefined (handled by consumer)', () => {
       const result = claudeCodeOptionsSchema.safeParse({
         permissionsMcp: {
           enabled: true,
@@ -61,7 +61,8 @@ describe('claudeCodeOptionsSchema', () => {
 
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.permissionsMcp?.autoApproveCreatedFileDeletion).toBeUndefined();
+        // Schema has .default(false), so undefined becomes false
+        expect(result.data.permissionsMcp?.autoApproveCreatedFileDeletion).toBe(false);
       }
     });
 
@@ -96,7 +97,8 @@ describe('claudeCodeOptionsSchema', () => {
 
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.permissionsMcp?.autoApproveCreatedFileDeletion).toBeUndefined();
+        // Schema has .default(false), so omitting the property results in false
+        expect(result.data.permissionsMcp?.autoApproveCreatedFileDeletion).toBe(false);
         expect(result.data.allowedTools).toEqual(['Write', 'Edit']);
         expect(result.data.permissionsMcp?.enabled).toBe(true);
       }
@@ -158,7 +160,8 @@ describe('claudeCodeOptionsSchema', () => {
 
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data).toEqual(completeOptions);
+        // Schema adds enableReviewFeedback: false default
+        expect(result.data).toEqual({ ...completeOptions, enableReviewFeedback: false });
       }
     });
 
@@ -167,7 +170,9 @@ describe('claudeCodeOptionsSchema', () => {
 
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.includeDefaultTools).toBeUndefined();
+        // Schema has defaults for includeDefaultTools (true) and enableReviewFeedback (false)
+        expect(result.data.includeDefaultTools).toBe(true);
+        expect(result.data.enableReviewFeedback).toBe(false);
         expect(result.data.allowedTools).toBeUndefined();
         expect(result.data.allowAllTools).toBeUndefined();
         expect(result.data.disallowedTools).toBeUndefined();
