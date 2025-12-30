@@ -7,6 +7,7 @@ import {
   getPendingChildren,
   hasCycleInParentChain,
   getRootPlans,
+  isUnderEpic,
   type PlanWithFilename,
 } from './hierarchy.js';
 
@@ -396,6 +397,37 @@ describe('Hierarchy Utilities', () => {
       expect(getDirectChildren(1, emptyPlans)).toEqual([]);
       expect(getCompletedChildren(1, emptyPlans)).toEqual([]);
       expect(getRootPlans(emptyPlans)).toEqual([]);
+    });
+  });
+
+  describe('isUnderEpic', () => {
+    it('returns true when epic is in the parent chain', () => {
+      const epic = createPlan(1, 'Epic');
+      epic.epic = true;
+      const parent = createPlan(2, 'Parent', 'pending', 1);
+      const child = createPlan(3, 'Child', 'pending', 2);
+      const allPlans = new Map([
+        [1, epic],
+        [2, parent],
+        [3, child],
+      ]);
+
+      expect(isUnderEpic(child, 1, allPlans)).toBe(true);
+      expect(isUnderEpic(parent, 1, allPlans)).toBe(true);
+    });
+
+    it('returns false when epic is not in the parent chain', () => {
+      const epic = createPlan(1, 'Epic');
+      epic.epic = true;
+      const unrelated = createPlan(2, 'Unrelated');
+      const child = createPlan(3, 'Child', 'pending', 2);
+      const allPlans = new Map([
+        [1, epic],
+        [2, unrelated],
+        [3, child],
+      ]);
+
+      expect(isUnderEpic(child, 1, allPlans)).toBe(false);
     });
   });
 });

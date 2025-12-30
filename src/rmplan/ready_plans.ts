@@ -1,6 +1,7 @@
 import * as path from 'path';
 
 import type { PlanSchema } from './planSchema.js';
+import { isUnderEpic } from './utils/hierarchy.js';
 import { normalizeTags } from './utils/tags.js';
 
 const PRIORITY_ORDER: Record<string, number> = {
@@ -21,6 +22,7 @@ export interface ReadyPlanFilterOptions {
   limit?: number;
   sortBy?: ReadyPlanSortField;
   reverse?: boolean;
+  epicId?: number;
 }
 
 export type EnrichedReadyPlan<T extends PlanSchema = PlanSchema> = T & {
@@ -54,7 +56,7 @@ function getDependency<T>(plans: Map<number, T>, dependency: number | string): T
  *
  * Plans without tasks ARE considered ready here because:
  * - They may be stub plans awaiting task generation
- * - They may be container/organizational plans
+ * - They may be epic/organizational plans
  * - The user should see them as available to work on (generate tasks, add details, etc.)
  *
  * This is intentionally different from findNextReadyDependency which focuses on
@@ -190,6 +192,13 @@ export function filterAndSortReadyPlans<T extends PlanSchema>(
 
   if (options.priority) {
     candidates = candidates.filter((plan) => plan.priority === options.priority);
+  }
+
+  if (options.epicId !== undefined) {
+    const epicId = options.epicId;
+    candidates = candidates.filter(
+      (plan) => plan.id === epicId || isUnderEpic(plan, epicId, allPlans)
+    );
   }
 
   const sortBy = options.sortBy ?? 'priority';

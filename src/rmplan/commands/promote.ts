@@ -148,7 +148,7 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
       ...originalPlan,
       tasks: updatedTasks,
       dependencies: updatedDependencies,
-      container: !updatedTasks.length,
+      epic: !updatedTasks.length,
       updatedAt: new Date().toISOString(),
     };
 

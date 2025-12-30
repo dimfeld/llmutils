@@ -58,10 +58,16 @@
       ]
     },
     "container": {
+      "description": "Deprecated. Use epic instead.",
+      "type": "boolean"
+    },
+    "epic": {
+      "description": "Mark plan as an epic for organizing children plans",
       "default": false,
       "type": "boolean"
     },
     "temp": {
+      "description": "A temporary plan that should be deleted after completion",
       "default": false,
       "type": "boolean"
     },

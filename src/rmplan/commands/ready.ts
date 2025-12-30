@@ -30,6 +30,7 @@ import type {
   GenerateModeRegistrationContext,
   ListReadyPlansArguments,
 } from '../mcp/generate_mode.js';
+import { isUnderEpic } from '../utils/hierarchy.js';
 import { normalizeTags } from '../utils/tags.js';
 
 type PlanWithFilename = EnrichedReadyPlan;
@@ -58,6 +59,7 @@ interface ReadyCommandOptions {
   user?: string;
   hasTasks?: boolean;
   tag?: string[];
+  epic?: number | string;
 }
 
 const VALID_FORMATS = ['list', 'table', 'json'] as const;
@@ -524,6 +526,23 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
     });
   }
 
+  if (options.epic !== undefined) {
+    const epicId =
+      typeof options.epic === 'number' ? options.epic : Number.parseInt(options.epic, 10);
+
+    if (Number.isNaN(epicId) || !Number.isInteger(epicId) || epicId <= 0) {
+      throw new Error(`Invalid epic ID: ${options.epic}`);
+    }
+
+    if (!enrichedPlans.has(epicId)) {
+      throw new Error(`Epic plan ${epicId} not found`);
+    }
+
+    readyPlans = readyPlans.filter(
+      (plan) => plan.id === epicId || isUnderEpic(plan, epicId, enrichedPlans)
+    );
+  }
+
   if (readyPlans.length === 0) {
     log('No plans are currently ready to execute.');
 
@@ -595,6 +614,7 @@ export async function mcpListReadyPlans(
       pendingOnly: args.pendingOnly ?? false,
       priority: args.priority,
       sortBy: args.sortBy ?? 'priority',
+      epicId: args.epic,
     });
 
     const desiredTags = normalizeTags(args.tags);

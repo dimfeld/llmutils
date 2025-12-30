@@ -36,7 +36,7 @@ function createPlan(overrides: Partial<PlanSchema> & { id: number }): PlanSchema
     uuid: overrides.uuid,
     generatedBy: overrides.generatedBy,
     statusDescription: overrides.statusDescription,
-    container: overrides.container,
+    epic: overrides.epic,
     temp: overrides.temp,
     simple: overrides.simple,
     discoveredFrom: overrides.discoveredFrom,
@@ -174,6 +174,21 @@ describe('filterAndSortReadyPlans', () => {
     });
     expect(result).toHaveLength(1);
     expect(result[0].id).toEqual(1);
+  });
+
+  it('filters by epicId across the parent chain', () => {
+    const plans = new Map<number, PlanSchema>();
+    plans.set(1, createPlan({ id: 1, status: 'pending', epic: true }));
+    plans.set(2, createPlan({ id: 2, status: 'pending', parent: 1 }));
+    plans.set(3, createPlan({ id: 3, status: 'pending', parent: 2 }));
+    plans.set(4, createPlan({ id: 4, status: 'pending' }));
+
+    const result = filterAndSortReadyPlans(plans, {
+      epicId: 1,
+      pendingOnly: false,
+    });
+
+    expect(result.map((plan) => plan.id)).toEqual([1, 2, 3]);
   });
 });
 

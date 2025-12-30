@@ -89,7 +89,7 @@ async function buildChildTitleAndDetails(
 
 /**
  * Perform the core manual split: create a child plan with selected tasks' descriptions as details,
- * update parent by removing those tasks, add dependency, set container if applicable, and write both files.
+ * update parent by removing those tasks, add dependency, set epic if applicable, and write both files.
  * Returns the paths of the written files.
  */
 export async function manualSplitPlan(
@@ -149,7 +149,7 @@ export async function manualSplitPlan(
   parent.dependencies = Array.from(new Set([...(parent.dependencies || []), childId])).sort(
     (a, b) => a - b
   );
-  if (parent.tasks.length === 0) parent.container = true;
+  if (parent.tasks.length === 0) parent.epic = true;
 
   // Write both files
   await writePlanFile(parent.filename, parent);

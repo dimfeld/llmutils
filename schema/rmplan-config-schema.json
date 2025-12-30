@@ -64,7 +64,7 @@
           }
         },
         "trackingFile": {
-          "description": "Path to workspace tracking file (default: ~/.config/rmfilter/workspaces.json)",
+          "description": "Path to workspace tracking file (default: ~/.config/rmplan/workspaces.json)",
           "type": "string"
         }
       }
@@ -493,11 +493,6 @@
                   }
                 }
               }
-            },
-            "enableReviewFeedback": {
-              "description": "Enable the review feedback MCP tool for interactive review feedback",
-              "default": false,
-              "type": "boolean"
             },
             "simpleMode": {
               "description": "Run executor in streamlined implement/verify mode instead of full review loop",

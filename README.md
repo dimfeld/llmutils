@@ -466,7 +466,9 @@ Filter tagged plans in listings:
 
 ```bash
 rmplan list --tag frontend --tag urgent
+rmplan list --epic 100
 rmplan ready --tag backend
+rmplan ready --epic 100
 ```
 
 **Open in editor:**
@@ -1415,6 +1417,9 @@ rmplan ready --unassigned
 
 # Specific user
 rmplan ready --user alice
+
+# Filter by epic
+rmplan ready --epic 100
 ```
 
 **Use cases:**
@@ -1709,10 +1714,10 @@ rmplan compact ID [--dry-run] [--yes]
 
 ```bash
 # List all plans
-rmplan list [--all] [--status STATUS] [--sort FIELD] [--tag TAG...]
+rmplan list [--all] [--status STATUS] [--sort FIELD] [--tag TAG...] [--epic ID]
 
 # List ready plans
-rmplan ready [--pending-only] [--priority LEVEL] [--format FORMAT] [--tag TAG...]
+rmplan ready [--pending-only] [--priority LEVEL] [--format FORMAT] [--tag TAG...] [--epic ID]
 
 # Show next ready
 rmplan show --next
@@ -1724,6 +1729,7 @@ rmplan agent --next-ready PARENT_ID
 ```
 
 Use `--tag` (repeatable) with `rmplan list` or `rmplan ready` to filter for plans that include any of the specified tags. Tag filters are case-insensitive and ignore plans without tags.
+Use `--epic ID` with `rmplan list` or `rmplan ready` to show plans that live under a specific epic (or any parent plan in that hierarchy).
 
 ### Plan Management
 

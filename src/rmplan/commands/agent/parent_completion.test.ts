@@ -69,7 +69,7 @@ describe('Parent Plan Completion', () => {
       details: 'Parent details',
       status: 'in_progress',
       tasks: [],
-      container: true,
+      epic: true,
       updatedAt: new Date().toISOString(),
     };
     const parentPath = path.join(tasksDir, '1.yaml');
@@ -138,7 +138,7 @@ describe('Parent Plan Completion', () => {
     expect(parent.changedFiles).toContain('file3.ts');
   });
 
-  test('removes parent assignment when agent check completes container plan', async () => {
+  test('removes parent assignment when agent check completes epic plan', async () => {
     const parentPlan: PlanSchema = {
       id: 1,
       title: 'Parent Plan',
@@ -146,7 +146,7 @@ describe('Parent Plan Completion', () => {
       details: 'Parent details',
       status: 'in_progress',
       tasks: [],
-      container: true,
+      epic: true,
       updatedAt: new Date().toISOString(),
     };
     const parentPath = path.join(tasksDir, 'parent.yaml');
@@ -182,7 +182,7 @@ describe('Parent Plan Completion', () => {
     expect(removalUuids).toContain(parent.uuid);
   });
 
-  test('does not mark non-container parent as done even when children complete', async () => {
+  test('does not mark non-epic parent as done even when children complete', async () => {
     const parentPlan: PlanSchema = {
       id: 1,
       title: 'Parent Plan',
@@ -190,7 +190,7 @@ describe('Parent Plan Completion', () => {
       details: 'Parent details',
       status: 'in_progress',
       tasks: [],
-      container: false,
+      epic: false,
       updatedAt: new Date().toISOString(),
     };
     const parentPath = path.join(tasksDir, '1.yaml');
@@ -230,7 +230,7 @@ describe('Parent Plan Completion', () => {
       details: 'Grandparent details',
       status: 'in_progress',
       tasks: [],
-      container: true,
+      epic: true,
       updatedAt: new Date().toISOString(),
     };
     const grandparentPath = path.join(tasksDir, '1.yaml');
@@ -245,7 +245,7 @@ describe('Parent Plan Completion', () => {
       status: 'in_progress',
       parent: 1,
       tasks: [],
-      container: true,
+      epic: true,
       updatedAt: new Date().toISOString(),
     };
     const parentPath = path.join(tasksDir, '2.yaml');
@@ -293,7 +293,7 @@ describe('Parent Plan Completion', () => {
       details: 'Parent details',
       status: 'in_progress',
       tasks: [],
-      container: true,
+      epic: true,
       updatedAt: new Date().toISOString(),
     };
     const parentPath = path.join(tasksDir, '1.yaml');

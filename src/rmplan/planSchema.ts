@@ -51,8 +51,17 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
     }, statusSchema.default('pending')),
     statusDescription: z.string().optional(),
     priority: prioritySchema.optional(),
-    container: z.boolean().default(false).optional(),
-    temp: z.boolean().default(false).optional(),
+    container: z.boolean().optional().describe('Deprecated. Use epic instead.'),
+    epic: z
+      .boolean()
+      .default(false)
+      .optional()
+      .describe('Mark plan as an epic for organizing children plans'),
+    temp: z
+      .boolean()
+      .default(false)
+      .optional()
+      .describe('A temporary plan that should be deleted after completion'),
     dependencies: z
       .array(z.coerce.number().int().positive())
       .default(() => [])
@@ -121,6 +130,23 @@ export const phaseSchema = defaultSchemas.phaseSchema;
 export const multiPhasePlanSchema = defaultSchemas.multiPhasePlanSchema;
 
 export type PhaseSchema = z.output<typeof phaseSchema>;
+
+export function normalizeContainerToEpic<T extends { container?: boolean; epic?: boolean | null }>(
+  plan: T
+): Omit<T, 'container'> & { epic?: boolean } {
+  if (!plan || typeof plan !== 'object') {
+    return plan as Omit<T, 'container'> & { epic?: boolean };
+  }
+
+  const { container, epic, ...rest } = plan;
+  const normalizedEpic = container === true && epic == null ? true : epic;
+
+  if (normalizedEpic == null) {
+    return rest as Omit<T, 'container'> & { epic?: boolean };
+  }
+
+  return { ...(rest as Omit<T, 'container'>), epic: normalizedEpic };
+}
 
 // Backward compatibility - export phaseSchema as planSchema
 export const planSchema = phaseSchema;

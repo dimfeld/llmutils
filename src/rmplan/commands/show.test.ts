@@ -167,6 +167,39 @@ describe('handleShowCommand', () => {
     expect(output).toContain('Tags: none');
   });
 
+  test('shows epic chain when epic is an indirect parent', async () => {
+    const epic = {
+      id: '1',
+      title: 'Epic Plan',
+      status: 'pending',
+      epic: true,
+      tasks: [],
+    };
+    const phase = {
+      id: '2',
+      title: 'Phase Plan',
+      status: 'pending',
+      parent: 1,
+      tasks: [],
+    };
+    const child = {
+      id: '3',
+      title: 'Child Plan',
+      status: 'pending',
+      parent: 2,
+      tasks: [],
+    };
+
+    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(epic));
+    await fs.writeFile(path.join(tasksDir, '2.yml'), yaml.stringify(phase));
+    await fs.writeFile(path.join(tasksDir, '3.yml'), yaml.stringify(child));
+
+    await handleShowCommand('3', {}, { parent: { opts: () => ({}) } });
+
+    const output = stripAnsi(logSpy.mock.calls.map((call) => call[0]).join('\n'));
+    expect(output).toContain('Epic: 1 - Epic Plan');
+  });
+
   test('shows condensed summary with --short', async () => {
     const plan = {
       id: '2',

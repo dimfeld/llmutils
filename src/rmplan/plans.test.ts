@@ -1306,6 +1306,36 @@ And more content here.`;
     expect(plan.tasks![0].steps).toHaveLength(2);
   });
 
+  it('should migrate legacy container flag to epic and persist epic on write', async () => {
+    const legacyPath = join(tempDir, 'legacy-container.yml');
+    const migratedPath = join(tempDir, 'migrated-epic.md');
+    const legacyPlan = {
+      id: 108,
+      title: 'Legacy Container Plan',
+      goal: 'Verify container migration',
+      details: 'Legacy container should be read as epic.',
+      container: true,
+      tasks: [],
+    };
+
+    await writeFile(legacyPath, yaml.stringify(legacyPlan));
+
+    const plan = await readPlanFile(legacyPath);
+
+    expect(plan.epic).toBe(true);
+    expect((plan as { container?: boolean }).container).toBeUndefined();
+
+    await writePlanFile(migratedPath, plan);
+
+    const migratedContent = await readFile(migratedPath, 'utf-8');
+    const frontMatterEndIndex = migratedContent.indexOf('\n---\n', 4);
+    const frontMatterSection = migratedContent.substring(4, frontMatterEndIndex);
+    const frontMatterData = yaml.parse(frontMatterSection);
+
+    expect(frontMatterData.container).toBeUndefined();
+    expect(frontMatterData.epic).toBe(true);
+  });
+
   it('should write plan file with front matter format when details field is present', async () => {
     const planPath = join(tempDir, 'write-front-matter-plan.md');
     const planToWrite: PlanSchema = {
@@ -1390,7 +1420,7 @@ const test = "example";
     const readBackPlan = await readPlanFile(planPath);
     expect(readBackPlan).toEqual({
       ...planToWrite,
-      container: false,
+      epic: false,
       docs: [],
       issue: [],
       progressNotes: [],
@@ -1541,7 +1571,7 @@ const roundTrip = "test";
     // Assert deep equality
     expect(readBackPlan).toEqual({
       ...originalPlan,
-      container: false,
+      epic: false,
       docs: [],
       issue: [],
       progressNotes: [],

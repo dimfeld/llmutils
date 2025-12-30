@@ -14,11 +14,8 @@ export type PlanWithFilename = PlanSchema & { filename: string };
  * @param allPlans - Map of all plans keyed by ID
  * @returns Array of parent plans from immediate parent to root
  */
-export function getParentChain(
-  plan: PlanWithFilename,
-  allPlans: Map<number, PlanWithFilename>
-): PlanWithFilename[] {
-  const parents: PlanWithFilename[] = [];
+export function getParentChain<T extends PlanSchema>(plan: T, allPlans: Map<number, T>): T[] {
+  const parents: T[] = [];
   const visited = new Set<number>();
 
   let currentPlan = plan;
@@ -42,6 +39,34 @@ export function getParentChain(
   }
 
   return parents;
+}
+
+/**
+ * Checks whether a plan belongs under a given epic (directly or indirectly).
+ * This only inspects the parent chain, so callers should compare plan.id
+ * separately if they want to include the epic plan itself.
+ */
+export function isUnderEpic<T extends PlanSchema>(
+  plan: T,
+  epicId: number,
+  allPlans: Map<number, T>
+): boolean {
+  if (!plan.parent) {
+    return false;
+  }
+
+  const parentChain = getParentChain(plan, allPlans);
+  return parentChain.some((parent) => {
+    if (typeof parent.id === 'number') {
+      return parent.id === epicId;
+    }
+
+    if (typeof parent.id === 'string' && /^\d+$/.test(parent.id)) {
+      return Number.parseInt(parent.id, 10) === epicId;
+    }
+
+    return false;
+  });
 }
 
 /**

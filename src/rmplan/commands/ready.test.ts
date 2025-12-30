@@ -1390,6 +1390,49 @@ describe('handleReadyCommand', () => {
     expect(output).not.toContain('Untagged Plan');
   });
 
+  test('filters ready plans by epic id', async () => {
+    await createPlan({
+      id: 20,
+      goal: 'Epic Plan',
+      status: 'pending',
+      epic: true,
+      tasks: [],
+      dependencies: [],
+    });
+    await createPlan({
+      id: 21,
+      goal: 'Child Plan',
+      status: 'pending',
+      parent: 20,
+      tasks: [],
+      dependencies: [],
+    });
+    await createPlan({
+      id: 22,
+      goal: 'Grandchild Plan',
+      status: 'pending',
+      parent: 21,
+      tasks: [],
+      dependencies: [],
+    });
+    await createPlan({
+      id: 23,
+      goal: 'Unrelated Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+    });
+
+    mockLog.mockClear();
+    await handleReadyCommand({ epic: 20 }, createCommand());
+
+    const output = mockLog.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('Epic Plan');
+    expect(output).toContain('Child Plan');
+    expect(output).toContain('Grandchild Plan');
+    expect(output).not.toContain('Unrelated Plan');
+  });
+
   test('displays tags in list output', async () => {
     await createPlan({
       id: 17,

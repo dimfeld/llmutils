@@ -33,6 +33,7 @@ import { findNextReadyDependency } from './find_next_dependency.js';
 import { MAX_NOTE_CHARS } from '../truncation.js';
 import { buildPlanContext, resolvePlan } from '../plan_display.js';
 import type { GenerateModeRegistrationContext, GetPlanArguments } from '../mcp/generate_mode.js';
+import { getParentChain } from '../utils/hierarchy.js';
 
 type PlanWithFilename = PlanSchema & { filename: string };
 
@@ -203,6 +204,21 @@ async function displayPlanInfo(
             ? chalk.yellow
             : chalk.white;
 
+  const planForChain =
+    (plan.id !== undefined ? allPlans.get(plan.id) : undefined) ??
+    ({ ...plan, filename: resolvedPlanFile } as PlanSchema & { filename: string });
+  const parentChain = planForChain.parent ? getParentChain(planForChain, allPlans) : [];
+  const epicChain = parentChain.filter((parent) => parent.epic);
+  const epicSummary =
+    epicChain.length > 0
+      ? epicChain
+          .map((parent) => {
+            const label = parent.id ?? 'unknown';
+            return `${chalk.cyan(label)} - ${getCombinedTitleFromSummary(parent)}`;
+          })
+          .join(chalk.gray(' > '))
+      : null;
+
   let outputLines = 0;
 
   if (!options.watch && assignmentInfo.conflicts) {
@@ -218,6 +234,9 @@ async function displayPlanInfo(
     output.push(`${chalk.cyan('ID:')} ${plan.id || 'Not set'}`);
     output.push(`${chalk.cyan('Title:')} ${getCombinedTitle(plan)}`);
     output.push(`${chalk.cyan('Status:')} ${statusColor(statusDisplay)}`);
+    if (epicSummary) {
+      output.push(`${chalk.cyan('Epic:')} ${epicSummary}`);
+    }
     if (assignmentInfo.entry) {
       const workspaceLine =
         assignmentInfo.formattedWorkspaces.length > 0
@@ -278,12 +297,10 @@ async function displayPlanInfo(
       }
     }
 
-    if (plan.container) {
+    if (plan.epic) {
       output.push('\n' + chalk.bold('Tasks:'));
       output.push('─'.repeat(60));
-      output.push(
-        chalk.gray('This is a parent-only plan that serves as a container for other plans.')
-      );
+      output.push(chalk.gray('This is a parent-only plan that serves as an epic for other plans.'));
     } else if (plan.tasks && plan.tasks.length > 0) {
       output.push('\n' + chalk.bold('Tasks:'));
       output.push('─'.repeat(60));
@@ -370,6 +387,9 @@ async function displayPlanInfo(
       } else {
         log(`${chalk.cyan('Parent:')} ${chalk.cyan(plan.parent)} ${chalk.red('[Not found]')}`);
       }
+    }
+    if (epicSummary) {
+      log(`${chalk.cyan('Epic:')} ${epicSummary}`);
     }
     log(`${chalk.cyan('Goal:')} ${getCombinedGoal(plan)}`);
     log(`${chalk.cyan('File:')} ${resolvedPlanFile}`);
@@ -547,10 +567,10 @@ async function displayPlanInfo(
     }
 
     // Display tasks with completion status
-    if (plan.container) {
+    if (plan.epic) {
       log('\n' + chalk.bold('Tasks:'));
       log('─'.repeat(60));
-      log(chalk.gray('This is a parent-only plan that serves as a container for other plans.'));
+      log(chalk.gray('This is a parent-only plan that serves as an epic for other plans.'));
     } else if (plan.tasks && plan.tasks.length > 0) {
       log('\n' + chalk.bold('Tasks:'));
       log('─'.repeat(60));

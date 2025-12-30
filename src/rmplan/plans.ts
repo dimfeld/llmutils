@@ -8,7 +8,12 @@ import { getGitRoot, getTrunkBranch, getUsingJj } from '../common/git.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { resolveTasksDir } from './configSchema.js';
 import { resolvePlanPathContext } from './path_resolver.js';
-import { phaseSchema, type PlanSchema, type PlanSchemaInput } from './planSchema.js';
+import {
+  normalizeContainerToEpic,
+  phaseSchema,
+  type PlanSchema,
+  type PlanSchemaInput,
+} from './planSchema.js';
 import { createModel } from '../common/model_factory.js';
 import { generateText } from 'ai';
 import { $ } from 'bun';
@@ -584,7 +589,7 @@ export async function readPlanFile(filePath: string): Promise<PlanSchema> {
     throw e;
   }
 
-  const plan = result.data;
+  let plan: PlanSchema = normalizeContainerToEpic(result.data);
 
   if (!plan.uuid) {
     plan.uuid = crypto.randomUUID();
@@ -622,7 +627,8 @@ export async function writePlanFile(
   const { filename: _, ...plan } = input;
 
   // Validate the plan before writing
-  const result = phaseSchema.safeParse(plan);
+  const normalizedPlan = normalizeContainerToEpic(plan);
+  const result = phaseSchema.safeParse(normalizedPlan);
   if (!result.success) {
     const errors = result.error.issues
       .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)
@@ -640,9 +646,11 @@ export async function writePlanFile(
   // Remove default values to keep YAML clean
   const cleanedPlan: Record<string, unknown> = { ...planWithoutDetails };
 
+  // Remove deprecated 'container' field - always use 'epic' instead
+  delete cleanedPlan.container;
   // Remove false boolean defaults
-  if (cleanedPlan.container === false) {
-    delete cleanedPlan.container;
+  if (cleanedPlan.epic === false) {
+    delete cleanedPlan.epic;
   }
   if (cleanedPlan.temp === false) {
     delete cleanedPlan.temp;

@@ -35,7 +35,7 @@ function createPlan(overrides: Partial<PlanSchema> & { id: PlanSchema['id'] }): 
     uuid: overrides.uuid,
     generatedBy: overrides.generatedBy,
     statusDescription: overrides.statusDescription,
-    container: overrides.container,
+    epic: overrides.epic,
     temp: overrides.temp,
     discoveredFrom: overrides.discoveredFrom,
     issue: overrides.issue,

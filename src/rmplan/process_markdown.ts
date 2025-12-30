@@ -9,7 +9,7 @@ import { resolveTasksDir, rmplanConfigSchema, type RmplanConfig } from './config
 import { fixYaml } from './fix_yaml.js';
 import { generateNumericPlanId } from './id_utils.js';
 import type { PlanSchema } from './planSchema.js';
-import { phaseSchema, planSchema } from './planSchema.js';
+import { normalizeContainerToEpic, phaseSchema, planSchema } from './planSchema.js';
 import { mergeTaskLists } from './plan_merge.js';
 import { isTaskDone, writePlanFile } from './plans.js';
 import { phaseExampleFormatGeneric, planExampleFormatGeneric } from './prompt.js';
@@ -295,7 +295,8 @@ export async function extractMarkdownToYaml(
 
   // Parse and validate the YAML
   try {
-    const result = planSchema.safeParse(parsedYaml);
+    const normalizedYaml = normalizeContainerToEpic(parsedYaml);
+    const result = planSchema.safeParse(normalizedYaml);
     if (!result.success) {
       error('Validation errors after LLM conversion:', result.error);
       // Save the failed YAML for debugging
@@ -306,10 +307,10 @@ export async function extractMarkdownToYaml(
     validatedPlan = result.data;
 
     // Preserve all fields from the original plan that aren't in the updated plan
-    // This includes fields like parent, container, baseBranch, changedFiles, etc.
+    // This includes fields like parent, epic, baseBranch, changedFiles, etc.
     const fieldsToPreserve = [
       'parent',
-      'container',
+      'epic',
       'baseBranch',
       'changedFiles',
       'pullRequest',
@@ -550,7 +551,7 @@ export async function saveMultiPhaseYaml(
   // Preserve or set metadata similar to the single-phase path
   const fieldsToPreserve = [
     'parent',
-    'container',
+    'epic',
     'baseBranch',
     'pullRequest',
     'assignedTo',

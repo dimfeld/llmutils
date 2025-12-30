@@ -7,7 +7,12 @@ import {
   generateClaudeCodeResearchPrompt,
   generateClaudeCodeGenerationPrompt,
 } from '../prompt.js';
-import { prioritySchema, type PlanSchema, type TaskSchema } from '../planSchema.js';
+import {
+  normalizeContainerToEpic,
+  prioritySchema,
+  type PlanSchema,
+  type TaskSchema,
+} from '../planSchema.js';
 import type { RmplanConfig } from '../configSchema.js';
 import { resolveTasksDir } from '../configSchema.js';
 import { buildPlanContext, resolvePlan } from '../plan_display.js';
@@ -391,6 +396,12 @@ export const listReadyPlansParameters = z
       .array(z.string())
       .optional()
       .describe('Filter to plans that include any of the provided tags'),
+    epic: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Filter to plans belonging to this epic (directly or indirectly)'),
   })
   .describe('List all ready plans that can be executed');
 
@@ -412,14 +423,16 @@ export const createPlanParameters = z
     issue: z.array(z.string()).optional().describe('Task tracker issue URLs'),
     docs: z.array(z.string()).optional().describe('Documentation file paths'),
     tags: z.array(z.string()).optional().describe('Tags to assign to the plan'),
-    container: z
+    container: z.boolean().optional().describe('Deprecated legacy flag. Use epic instead.'),
+    epic: z
       .boolean()
       .optional()
       .describe(
-        'Mark plan as a container for children plans with no implementation work in the plan itself'
+        'Mark plan as an epic for organizing children plans with no implementation work in the plan itself'
       ),
     temp: z.boolean().optional().describe('Mark as temporary plan'),
   })
+  .transform((value) => normalizeContainerToEpic(value))
   .describe('Create a new plan file');
 
 export type CreatePlanArguments = z.infer<typeof createPlanParameters>;
@@ -775,7 +788,7 @@ export async function mcpCreatePlan(
     issue: args.issue || [],
     docs: args.docs || [],
     tags: planTags,
-    container: args.container || false,
+    epic: args.epic ?? false,
     temp: args.temp || false,
     status: 'pending',
     createdAt: new Date().toISOString(),

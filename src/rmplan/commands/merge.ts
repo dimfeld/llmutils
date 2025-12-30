@@ -143,9 +143,9 @@ export async function handleMergeCommand(planFile: string, options: MergeOptions
     });
     mainPlan.progressNotes = mergedProgressNotes;
   }
-  // If the main plan was marked as a container, clear it after merging
-  if (mainPlan.container) {
-    mainPlan.container = false;
+  // If the main plan was marked as an epic, clear it after merging
+  if (mainPlan.epic) {
+    mainPlan.epic = false;
   }
 
   // Prepare ID sets for pruning dependencies and grandchildren updates

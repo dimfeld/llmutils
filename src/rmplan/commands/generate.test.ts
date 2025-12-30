@@ -2278,7 +2278,7 @@ describe('handleGenerateCommand research preservation integration', () => {
       goal: 'Initial goal',
       details: 'Initial plan details',
       status: 'pending',
-      container: false,
+      epic: false,
       baseBranch: 'main',
       changedFiles: [],
       pullRequest: [],

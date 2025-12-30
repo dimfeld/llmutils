@@ -469,7 +469,7 @@ describe('Plan File Validation Tests', () => {
         details: issueData.plan, // string type
         status: 'in_progress', // enum type
         priority: 'urgent', // enum type
-        container: false, // boolean type
+        epic: false, // boolean type
         dependencies: [1, 2, 3], // array of numbers
         issue: [issueData.issue.html_url], // array of strings (URLs)
         docs: ['doc1.md', 'doc2.md'], // array of strings
@@ -507,7 +507,7 @@ describe('Plan File Validation Tests', () => {
     expect(typeof planData.details).toBe('string');
     expect(typeof planData.status).toBe('string');
     expect(typeof planData.priority).toBe('string');
-    expect(typeof planData.container).toBe('boolean');
+    expect(typeof planData.epic).toBe('boolean');
     expect(typeof planData.assignedTo).toBe('string');
     expect(typeof planData.createdAt).toBe('string');
     expect(typeof planData.updatedAt).toBe('string');
@@ -554,8 +554,8 @@ describe('Plan File Validation Tests', () => {
     expect(parsedYaml.id).toBe(42);
 
     // Booleans should remain booleans
-    expect(typeof parsedYaml.container).toBe('boolean');
-    expect(parsedYaml.container).toBe(false);
+    expect(typeof parsedYaml.epic).toBe('boolean');
+    expect(parsedYaml.epic).toBe(false);
 
     expect(typeof parsedYaml.tasks[0].done).toBe('boolean');
     expect(parsedYaml.tasks[0].done).toBe(false);

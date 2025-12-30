@@ -265,19 +265,20 @@ describe('handleListCommand', () => {
     // Find the row for plan id 3
     const row = tableData2.find((r: any[]) => r[0] === 3);
     expect(row).toBeTruthy();
-    // Columns should be: ID, Title, Status, Workspace, Priority, Tags, Tasks, Steps, Notes, Depends On
+    // Columns should be: ID, Epic, Title, Status, Workspace, Priority, Tags, Tasks, Steps, Notes, Depends On
     expect(headers2[0]).toBe('ID');
-    expect(headers2[1]).toBe('Title');
-    expect(headers2[2]).toBe('Status');
-    expect(headers2[3]).toBe('Workspace');
-    expect(headers2[4]).toBe('Priority');
-    expect(headers2[5]).toBe('Tags');
-    expect(headers2[6]).toBe('Tasks');
-    expect(headers2[7]).toBe('Steps');
-    expect(headers2[8]).toBe('Notes');
-    expect(headers2[9]).toBe('Depends On');
+    expect(headers2[1]).toBe('Epic');
+    expect(headers2[2]).toBe('Title');
+    expect(headers2[3]).toBe('Status');
+    expect(headers2[4]).toBe('Workspace');
+    expect(headers2[5]).toBe('Priority');
+    expect(headers2[6]).toBe('Tags');
+    expect(headers2[7]).toBe('Tasks');
+    expect(headers2[8]).toBe('Steps');
+    expect(headers2[9]).toBe('Notes');
+    expect(headers2[10]).toBe('Depends On');
     // Notes count shows 2 for the plan with notes
-    expect(row[8]).toBe('2');
+    expect(row[9]).toBe('2');
   });
 
   test('filters plans by status when --status flag is used', async () => {
@@ -545,8 +546,8 @@ describe('handleListCommand', () => {
     const tableData = mockTable.mock.calls[0][0];
 
     // The combined title should include the project
-    expect(tableData[1][1]).toContain('project-123');
-    expect(tableData[1][1]).toContain('Plan Title');
+    expect(tableData[1][2]).toContain('project-123');
+    expect(tableData[1][2]).toContain('Plan Title');
   });
 
   test('displays dependency status indicators', async () => {
@@ -716,9 +717,9 @@ describe('handleListCommand', () => {
     expect(mockTable).toHaveBeenCalled();
     const tableData = mockTable.mock.calls[0][0];
     expect(tableData).toHaveLength(4); // Header + 3 plans with 'auth'
-    expect(tableData[1][1]).toBe('Implement user authentication');
-    expect(tableData[2][1]).toBe('Add OAuth integration');
-    expect(tableData[3][1]).toBe('Fix authentication bug');
+    expect(tableData[1][2]).toBe('Implement user authentication');
+    expect(tableData[2][2]).toBe('Add OAuth integration');
+    expect(tableData[3][2]).toBe('Fix authentication bug');
   });
 
   test('search is case insensitive', async () => {
@@ -824,8 +825,8 @@ describe('handleListCommand', () => {
     expect(mockTable).toHaveBeenCalled();
     const tableData = mockTable.mock.calls[0][0];
     expect(tableData).toHaveLength(3); // Header + 2 plans
-    expect(tableData[1][1]).toBe('Implement database migration');
-    expect(tableData[2][1]).toBe('Add user authentication');
+    expect(tableData[1][2]).toBe('Implement database migration');
+    expect(tableData[2][2]).toBe('Add user authentication');
   });
 
   test('handles numeric string dependencies', async () => {
@@ -1198,7 +1199,7 @@ describe('handleListCommand', () => {
     const tableData = mockTable.mock.calls[0][0];
     const dataRow = tableData[1];
 
-    expect(dataRow[3]).toBe('this workspace (+1)');
+    expect(dataRow[4]).toBe('this workspace (+1)');
   });
 
   test('--assigned filters to plans with assignment entries', async () => {
@@ -1242,7 +1243,7 @@ describe('handleListCommand', () => {
 
     const tableData = mockTable.mock.calls[0][0];
     expect(tableData).toHaveLength(2);
-    const titles = tableData.slice(1).map((row: any[]) => row[1]);
+    const titles = tableData.slice(1).map((row: any[]) => row[2]);
     expect(titles).toEqual(['Assigned Plan']);
   });
 
@@ -1287,7 +1288,7 @@ describe('handleListCommand', () => {
 
     const tableData = mockTable.mock.calls[0][0];
     expect(tableData).toHaveLength(2);
-    const titles = tableData.slice(1).map((row: any[]) => row[1]);
+    const titles = tableData.slice(1).map((row: any[]) => row[2]);
     expect(titles).toEqual(['Free Plan']);
   });
 
@@ -1339,7 +1340,7 @@ describe('handleListCommand', () => {
     await handleListCommand({ user: 'alice' }, { parent: { opts: () => ({}) } });
 
     const tableData = mockTable.mock.calls[0][0];
-    const titles = tableData.slice(1).map((row: any[]) => row[1]);
+    const titles = tableData.slice(1).map((row: any[]) => row[2]);
     expect(titles).toEqual(['Alice Plan']);
   });
 
@@ -1421,7 +1422,7 @@ describe('handleListCommand', () => {
     );
 
     const tableData = mockTable.mock.calls[0][0];
-    const titles = tableData.slice(1).map((row: string[]) => row[1]);
+    const titles = tableData.slice(1).map((row: string[]) => row[2]);
     expect(titles).toContain('Frontend Plan');
     expect(titles).not.toContain('Backend Plan');
   });
@@ -1443,7 +1444,7 @@ describe('handleListCommand', () => {
     );
 
     const tableData = mockTable.mock.calls[0][0];
-    const titles = tableData.slice(1).map((row: string[]) => row[1]);
+    const titles = tableData.slice(1).map((row: string[]) => row[2]);
     expect(titles).toEqual(['Frontend', 'Backend']);
   });
 
@@ -1468,8 +1469,50 @@ describe('handleListCommand', () => {
     await handleListCommand({ all: true, tag: ['DESIGN'] }, { parent: { opts: () => ({}) } });
 
     const tableData = mockTable.mock.calls[0][0];
-    const titles = tableData.slice(1).map((row: string[]) => row[1]);
+    const titles = tableData.slice(1).map((row: string[]) => row[2]);
     expect(titles).toEqual(['Design Spec']);
+  });
+
+  test('shows epic column for plans under an epic', async () => {
+    const plans = [
+      { id: 1, title: 'Epic Plan', status: 'pending', epic: true, tasks: [] },
+      { id: 2, title: 'Child Plan', status: 'pending', parent: 1, tasks: [] },
+      { id: 3, title: 'Solo Plan', status: 'pending', tasks: [] },
+    ];
+
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    await handleListCommand({ all: true, sort: 'id' }, { parent: { opts: () => ({}) } });
+
+    const tableData = mockTable.mock.calls[0][0];
+    const epicRow = tableData.find((row: any[]) => row[0] === 1);
+    const childRow = tableData.find((row: any[]) => row[0] === 2);
+    const soloRow = tableData.find((row: any[]) => row[0] === 3);
+
+    expect(epicRow?.[1]).toBe('1');
+    expect(childRow?.[1]).toBe('1');
+    expect(soloRow?.[1]).toBe('-');
+  });
+
+  test('filters plans by epic id', async () => {
+    const plans = [
+      { id: 1, title: 'Epic Plan', status: 'pending', epic: true, tasks: [] },
+      { id: 2, title: 'Child Plan', status: 'pending', parent: 1, tasks: [] },
+      { id: 3, title: 'Grandchild Plan', status: 'pending', parent: 2, tasks: [] },
+      { id: 4, title: 'Other Plan', status: 'pending', tasks: [] },
+    ];
+
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    await handleListCommand({ all: true, sort: 'id', epic: 1 }, { parent: { opts: () => ({}) } });
+
+    const tableData = mockTable.mock.calls[0][0];
+    const shownIds = tableData.slice(1).map((row: any[]) => row[0]);
+    expect(shownIds).toEqual([1, 2, 3]);
   });
 
   test('displays tags column with comma-separated values', async () => {

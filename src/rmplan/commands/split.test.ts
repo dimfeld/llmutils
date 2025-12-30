@@ -85,7 +85,7 @@ describe('rmplan split - manual', () => {
     const updatedParent = await readPlanFile(parentFile);
     expect(updatedParent.tasks.map((t) => t.title)).toEqual(['Task 1', 'Task 3']);
     expect(updatedParent.dependencies).toEqual([2]);
-    expect(updatedParent.container).toBeFalsy();
+    expect(updatedParent.epic).toBeFalsy();
 
     // Child created with id 2
     const childFile = join(testDir, '2-task-2.plan.md');
@@ -285,7 +285,7 @@ describe('rmplan split - manual', () => {
     expect(updatedParent.dependencies).toEqual([]);
   });
 
-  test('splitting all tasks sets container flag and removes all tasks', async () => {
+  test('splitting all tasks sets epic flag and removes all tasks', async () => {
     // Mock ai.generateText to avoid network for multi-task split
     await moduleMocker.mock('ai', () => ({
       generateText: mock(async () => ({ text: 'All Tasks Child' })),
@@ -308,7 +308,7 @@ describe('rmplan split - manual', () => {
 
     const updatedParent = await readPlanFile(parentFile);
     expect(updatedParent.tasks?.length).toBe(0);
-    expect(updatedParent.container).toBe(true);
+    expect(updatedParent.epic).toBe(true);
     expect(updatedParent.dependencies).toEqual([2]);
 
     const childFile = join(testDir, '2-all-tasks-child.plan.md');

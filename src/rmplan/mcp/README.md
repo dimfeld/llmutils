@@ -31,7 +31,8 @@ Create a new plan file with specified properties. Automatically updates parent p
 - `assignedTo` (optional): Username to assign plan to
 - `issue` (optional): Array of GitHub issue URLs
 - `docs` (optional): Array of documentation file paths
-- `container` (optional): Mark as container plan (boolean)
+- `epic` (optional): Mark as epic plan (boolean)
+- `container` (optional): Deprecated, use `epic` instead
 - `temp` (optional): Mark as temporary plan (boolean)
 
 **Example:**

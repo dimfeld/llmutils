@@ -18,6 +18,7 @@ import {
 } from '../display_utils.js';
 import type { PlanSchema } from '../planSchema.js';
 import { isPlanReady, isTaskDone, readAllPlans } from '../plans.js';
+import { getParentChain, isUnderEpic } from '../utils/hierarchy.js';
 import { normalizeTags } from '../utils/tags.js';
 
 type PlanWithFilename = PlanSchema & { filename: string };
@@ -161,6 +162,24 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     });
   }
 
+  if (options.epic !== undefined) {
+    const epicId =
+      typeof options.epic === 'number' ? options.epic : Number.parseInt(options.epic, 10);
+
+    if (Number.isNaN(epicId) || !Number.isInteger(epicId) || epicId <= 0) {
+      throw new Error(`Invalid epic ID: ${options.epic}`);
+    }
+
+    const epicPlan = enrichedPlans.get(epicId);
+    if (!epicPlan) {
+      throw new Error(`Epic plan ${epicId} not found`);
+    }
+
+    planArray = planArray.filter(
+      (plan) => plan.id === epicId || isUnderEpic(plan, epicId, enrichedPlans)
+    );
+  }
+
   if (!options.all) {
     // Determine which statuses to show
     let statusesToShow: Set<string>;
@@ -279,6 +298,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
   }
 
   const workspaceColumnWidth = 22;
+  const epicColumnWidth = 6;
   const dependsWidth = 15;
   const fileWidth = 20;
   const tagsColumnWidth = 18;
@@ -289,6 +309,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
   // Header row
   const headers = [
     chalk.bold('ID'),
+    chalk.bold('Epic'),
     chalk.bold('Title'),
     chalk.bold('Status'),
     chalk.bold('Workspace'),
@@ -413,8 +434,13 @@ export async function handleListCommand(options: any, command: any, searchTerms?
       return chalk.gray('unassigned');
     })();
 
+    const parentChain = getParentChain(plan, enrichedPlans);
+    const epicParent = plan.epic ? plan : parentChain.find((parent) => parent.epic);
+    const epicDisplay = epicParent?.id ? chalk.cyan(String(epicParent.id)) : '-';
+
     const row = [
       chalk.cyan(plan.id || 'no-id'),
+      epicDisplay,
       getCombinedTitleFromSummary(plan) + (plan.temp ? chalk.gray(' (temp)') : ''),
       statusColor(statusDisplay),
       workspaceDisplay,
@@ -430,7 +456,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
           return taskCount.toString();
         }
-        return plan.container ? 'CTR' : '-';
+        return plan.epic ? 'EPIC' : '-';
       })(),
       '-',
       dependenciesDisplay,
@@ -460,6 +486,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
   const fixedColumnsWidth =
     5 + // ID
+    epicColumnWidth +
     12 + // Status
     workspaceColumnWidth +
     10 + // Priority
@@ -470,7 +497,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     dependsWidth;
 
   const fileColumnWidth = options.files ? fileWidth : 0;
-  const columnCount = options.files ? (showNotesColumn ? 11 : 10) : showNotesColumn ? 10 : 9;
+  const columnCount = options.files ? (showNotesColumn ? 12 : 11) : showNotesColumn ? 11 : 10;
   const borderPadding = columnCount * 3 + 1; // 3 chars per column separator + 1 for end
 
   const usedWidth = fixedColumnsWidth + fileColumnWidth + borderPadding;
@@ -478,13 +505,13 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
   const titleWidth = Math.min(Math.max(20, availableWidth), maxTitleLength + 2);
 
-  const dependsColumnIndex = 8 + (showNotesColumn ? 1 : 0);
+  const dependsColumnIndex = showNotesColumn ? 10 : 9;
 
   const tableConfig: any = {
     columns: {
-      1: { width: titleWidth, wrapWord: true },
-      3: { width: workspaceColumnWidth, wrapWord: true },
-      5: { width: tagsColumnWidth, wrapWord: true },
+      2: { width: titleWidth, wrapWord: true },
+      4: { width: workspaceColumnWidth, wrapWord: true },
+      6: { width: tagsColumnWidth, wrapWord: true },
       [dependsColumnIndex]: { width: dependsWidth, wrapWord: true },
     },
     border: {
@@ -508,7 +535,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
   // Add file column configuration if showing files
   if (options.files) {
-    tableConfig.columns[showNotesColumn ? 10 : 9] = { width: fileWidth, wrapWord: true };
+    tableConfig.columns[showNotesColumn ? 11 : 10] = { width: fileWidth, wrapWord: true };
   }
 
   const output = table(tableData, tableConfig);

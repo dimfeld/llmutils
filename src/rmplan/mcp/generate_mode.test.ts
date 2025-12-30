@@ -1357,6 +1357,50 @@ describe('mcpListReadyPlans', () => {
     expect(ids).toEqual([1, 3]);
   });
 
+  test('filters ready plans by epic id', async () => {
+    await createPlan({
+      id: 10,
+      title: 'Epic Plan',
+      status: 'pending',
+      epic: true,
+      tasks: [],
+      dependencies: [],
+    });
+    await createPlan({
+      id: 11,
+      title: 'Child Plan',
+      status: 'pending',
+      parent: 10,
+      tasks: [],
+      dependencies: [],
+    });
+    await createPlan({
+      id: 12,
+      title: 'Grandchild Plan',
+      status: 'pending',
+      parent: 11,
+      tasks: [],
+      dependencies: [],
+    });
+    await createPlan({
+      id: 13,
+      title: 'Unrelated Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+    });
+
+    const args = listReadyPlansParameters.parse({
+      epic: 10,
+    });
+
+    const result = await mcpListReadyPlans(args, context);
+    const parsed = JSON.parse(result);
+
+    const ids = parsed.plans.map((plan: { id: number }) => plan.id).sort();
+    expect(ids).toEqual([10, 11, 12]);
+  });
+
   test('reloads plan data without manual cache clearing', async () => {
     await createPlan({
       id: 1,
@@ -1604,7 +1648,7 @@ describe('mcpCreatePlan', () => {
     expect(plan.status).toBe('pending');
     expect(plan.tasks).toEqual([]);
     expect(plan.dependencies).toEqual([]);
-    expect(plan.container).toBe(false);
+    expect(plan.epic).toBe(false);
     expect(plan.temp).toBe(false);
     expect(plan.createdAt).toBeDefined();
     expect(plan.updatedAt).toBeDefined();
@@ -1623,7 +1667,7 @@ describe('mcpCreatePlan', () => {
       assignedTo: 'alice',
       issue: ['https://github.com/org/repo/issues/123'],
       docs: ['docs/feature.md'],
-      container: true,
+      epic: true,
       temp: false,
     });
 
@@ -1651,8 +1695,66 @@ describe('mcpCreatePlan', () => {
     expect(plan.assignedTo).toBe('alice');
     expect(plan.issue).toEqual(['https://github.com/org/repo/issues/123']);
     expect(plan.docs).toEqual(['docs/feature.md']);
-    expect(plan.container).toBe(true);
+    expect(plan.epic).toBe(true);
     expect(plan.temp).toBe(false);
+  });
+
+  test('maps deprecated container flag to epic', async () => {
+    const { mcpCreatePlan, createPlanParameters } = await import('./generate_mode.js');
+
+    const args = createPlanParameters.parse({
+      title: 'Legacy Container Plan',
+      container: true,
+    });
+
+    const result = await mcpCreatePlan(args, context);
+
+    expect(result).toContain('Created plan');
+
+    const match = result.match(/Created plan (\d+) at (\d+-legacy-container-plan\.plan\.md)/);
+    expect(match).toBeDefined();
+    const filename = match![2];
+
+    const planPath = path.join(tmpDir, filename);
+    const plan = await readPlanFile(planPath);
+
+    expect(plan.title).toBe('Legacy Container Plan');
+    expect(plan.epic).toBe(true);
+  });
+
+  test('does not override explicit epic when container is true', async () => {
+    const { mcpCreatePlan, createPlanParameters } = await import('./generate_mode.js');
+
+    const args = createPlanParameters.parse({
+      title: 'Explicit Epic Plan',
+      epic: false,
+      container: true,
+    });
+
+    const result = await mcpCreatePlan(args, context);
+
+    expect(result).toContain('Created plan');
+
+    const match = result.match(/Created plan (\d+) at (\d+-explicit-epic-plan\.plan\.md)/);
+    expect(match).toBeDefined();
+    const filename = match![2];
+
+    const planPath = path.join(tmpDir, filename);
+    const plan = await readPlanFile(planPath);
+
+    expect(plan.title).toBe('Explicit Epic Plan');
+    expect(plan.epic).toBe(false);
+  });
+
+  test('rejects non-boolean container values', async () => {
+    const { createPlanParameters } = await import('./generate_mode.js');
+
+    expect(() =>
+      createPlanParameters.parse({
+        title: 'Invalid Container Plan',
+        container: 'false',
+      })
+    ).toThrow();
   });
 
   test('accepts tags parameter and normalizes input', async () => {
@@ -1798,7 +1900,7 @@ describe('mcpCreatePlan', () => {
     expect(plan.issue).toEqual([]);
     expect(plan.docs).toEqual([]);
     expect(plan.dependencies).toEqual([]);
-    expect(plan.container).toBe(false);
+    expect(plan.epic).toBe(false);
     expect(plan.temp).toBe(false);
   });
 
@@ -2129,7 +2231,7 @@ describe('MCP Resources', () => {
         assignedTo: 'charlie',
         issue: ['https://github.com/org/repo/issues/1'],
         docs: ['docs/plan.md'],
-        container: false,
+        epic: false,
         temp: true,
         createdAt: '2025-01-15T10:00:00Z',
         updatedAt: '2025-01-20T10:00:00Z',
@@ -2151,7 +2253,7 @@ describe('MCP Resources', () => {
       expect(plan.assignedTo).toBe('charlie');
       expect(plan.issue).toEqual(['https://github.com/org/repo/issues/1']);
       expect(plan.docs).toEqual(['docs/plan.md']);
-      expect(plan.container).toBe(false);
+      expect(plan.epic).toBe(false);
       expect(plan.temp).toBe(true);
     });
   });
