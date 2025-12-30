@@ -2,6 +2,7 @@ import * as fs from 'node:fs/promises';
 import { constants as fsConstants, type Dirent, type Stats } from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import PQueue from 'p-queue';
 import { debugLog, log } from '../../logging.js';
 import { spawnAndLogOutput } from '../../common/process.js';
 import { executePostApplyCommand } from '../actions.js';
@@ -140,39 +141,52 @@ async function copyFilesToTarget(
     return false;
   }
 
+  const queue = new PQueue({ concurrency: 64 });
+  const errors: string[] = [];
+
   for (const relativePath of files) {
-    const sourcePath = path.join(sourceDir, relativePath);
-    const destinationPath = path.join(targetPath, relativePath);
-    const destinationDir = path.dirname(destinationPath);
+    queue.add(async () => {
+      const sourcePath = path.join(sourceDir, relativePath);
+      const destinationPath = path.join(targetPath, relativePath);
+      const destinationDir = path.dirname(destinationPath);
 
-    try {
-      await fs.mkdir(destinationDir, { recursive: true });
-    } catch (error) {
-      log(`Failed to create directory ${destinationDir}: ${String(error)}`);
-      return false;
-    }
-
-    let stats;
-    try {
-      stats = await fs.lstat(sourcePath);
-    } catch (error) {
-      log(`Failed to stat source file ${relativePath}: ${String(error)}`);
-      return false;
-    }
-
-    try {
-      if (stats.isSymbolicLink()) {
-        const linkTarget = await fs.readlink(sourcePath);
-        await fs.symlink(linkTarget, destinationPath);
-      } else if (stats.isDirectory()) {
-        await fs.mkdir(destinationPath, { recursive: true });
-      } else {
-        await copyFilePreservingMode(sourcePath, destinationPath, stats.mode, useCloneFlag);
+      try {
+        await fs.mkdir(destinationDir, { recursive: true });
+      } catch (error) {
+        errors.push(`Failed to create directory ${destinationDir}: ${String(error)}`);
+        return;
       }
-    } catch (error) {
-      log(`Failed to copy ${relativePath}: ${String(error)}`);
-      return false;
+
+      let stats;
+      try {
+        stats = await fs.lstat(sourcePath);
+      } catch (error) {
+        errors.push(`Failed to stat source file ${relativePath}: ${String(error)}`);
+        return;
+      }
+
+      try {
+        if (stats.isSymbolicLink()) {
+          const linkTarget = await fs.readlink(sourcePath);
+          await fs.symlink(linkTarget, destinationPath);
+        } else if (stats.isDirectory()) {
+          await fs.mkdir(destinationPath, { recursive: true });
+        } else {
+          await copyFilePreservingMode(sourcePath, destinationPath, stats.mode, useCloneFlag);
+        }
+      } catch (error) {
+        errors.push(`Failed to copy ${relativePath}: ${String(error)}`);
+      }
+    });
+  }
+
+  await queue.onIdle();
+
+  if (errors.length > 0) {
+    for (const error of errors) {
+      log(error);
     }
+    return false;
   }
 
   return true;
