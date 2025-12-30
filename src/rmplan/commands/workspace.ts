@@ -387,16 +387,6 @@ export async function handleWorkspaceAddCommand(
 
   log(`Creating workspace with ID: ${workspaceId}`);
 
-  // Update plan status BEFORE creating workspace if a plan was provided
-  if (resolvedPlanFilePath && planData) {
-    try {
-      await setPlanStatus(resolvedPlanFilePath, 'in_progress');
-      log('Plan status updated to in_progress in original location');
-    } catch (err) {
-      warn(`Failed to update plan status: ${err as Error}`);
-    }
-  }
-
   // Create the workspace
   const workspace = await createWorkspace(
     gitRoot,
