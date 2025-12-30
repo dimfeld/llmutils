@@ -83,5 +83,16 @@
     "web-tree-sitter": "^0.25.10",
     "yaml": "^2.8.0",
     "zod": "^3.25.67"
+  },
+  "trustedDependencies": [],
+  "pnpm": {
+    "neverBuiltDependencies": [
+      "tree-sitter",
+      "tree-sitter-python",
+      "tree-sitter-rust",
+      "tree-sitter-svelte",
+      "tree-sitter-typescript",
+      "web-tree-sitter"
+    ]
   }
 }
