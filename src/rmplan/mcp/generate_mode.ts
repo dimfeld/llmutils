@@ -154,7 +154,9 @@ ${generateClaudeCodeResearchPrompt(`Once your research is complete`)}
 
 Add your guide directly to the plan file at ${planPath} under a "## Implementation Guide" heading. You can directly edit this file; don't use the rmplan MCP tools for adding this guide. Be verbose in your findings - the more insights you include from your exploration, the better.
 
-When done, collaborate with your human partner to refine this plan. ${questionText}`;
+When done, collaborate with your human partner to refine this plan. ${questionText}
+
+Once the plan is refined, use the rmplan update-plan-tasks tool to add the tasks to the plan file. The list of tasks should correspond to the steps in your implementation guide.`;
 
   // The line above about directly editing the file is because it doesn't seem to output as much research when using MCP
   // tools compared to directly editing the file
