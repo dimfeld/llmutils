@@ -261,7 +261,7 @@ describe('simple field logic in commands', () => {
       // The simple prompt has the generation instructions, not research instructions
       const promptText =
         result.messages[0].content.type === 'text' ? result.messages[0].content.text : '';
-      expect(promptText).toContain('Use the update-plan-tasks tool');
+      expect(promptText).toContain('Use the rmplan update-plan-tasks tool');
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
       clearPlanCache();

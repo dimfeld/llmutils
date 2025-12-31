@@ -950,12 +950,14 @@ workspaceCommand
 // Add the 'add' subcommand to workspace
 workspaceCommand
   .command('add [planIdentifier]')
-  .description('Create a new workspace, optionally linked to a plan')
+  .description('Create a new workspace, optionally linked to a plan or issue')
   .option('--id <workspaceId>', 'Specify a custom workspace ID')
+  .option('--issue <issueId>', 'Import a GitHub/Linear issue as a new plan in the workspace')
   .option('--clone-method <method>', 'Clone method: git, cp, or mac-cow (overrides config)')
   .option('--source-dir <path>', 'Source directory for cp/mac-cow methods (overrides config)')
   .option('--repo-url <url>', 'Repository URL for git method (overrides config)')
-  .option('--create-branch', 'Automatically create a new branch for the workspace (default: false)')
+  .option('--create-branch', 'Automatically create a new branch for the workspace (default: true)')
+  .option('--no-create-branch', 'Disable automatic branch creation')
   .action(async (planIdentifier, options, command) => {
     const { handleWorkspaceAddCommand } = await import('./commands/workspace.js');
     await handleWorkspaceAddCommand(planIdentifier, options, command).catch(handleCommandError);

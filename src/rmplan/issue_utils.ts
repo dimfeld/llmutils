@@ -16,6 +16,100 @@ import {
 } from '../rmpr/comment_options.js';
 
 /**
+ * Result of parsing an issue identifier
+ */
+export interface ParsedIssueInput {
+  /** The extracted issue identifier (e.g., 'DF-1245' or '123') */
+  identifier: string;
+  /** Whether the original input was a branch name (vs a plain identifier) */
+  isBranchName: boolean;
+  /** The original input value (used as branch name if isBranchName is true) */
+  originalInput: string;
+}
+
+/**
+ * Parse an issue identifier or branch name to extract the issue ID.
+ * Determines if the input is a plain issue identifier or a branch name containing an issue ID.
+ *
+ * Plain identifier patterns:
+ * - Linear key: DF-1245
+ * - Linear URL: https://linear.app/workspace/issue/DF-1245
+ * - GitHub number: 123
+ * - GitHub URL: https://github.com/owner/repo/issues/123
+ *
+ * Branch name patterns (identifier embedded in branch):
+ * - Linear-style: feature-df-1245 → extracts DF-1245
+ * - GitHub-style: fix-bug-123 → extracts 123
+ */
+export function parseIssueInput(input: string): ParsedIssueInput | null {
+  const trimmedInput = input.trim();
+
+  // Check for plain Linear key: TEAM-123 (case-insensitive)
+  const linearKeyMatch = trimmedInput.match(/^([A-Za-z][A-Za-z0-9]*-\d+)$/);
+  if (linearKeyMatch) {
+    return {
+      identifier: linearKeyMatch[1].toUpperCase(),
+      isBranchName: false,
+      originalInput: trimmedInput,
+    };
+  }
+
+  // Check for plain GitHub issue number
+  const githubNumberMatch = trimmedInput.match(/^(\d+)$/);
+  if (githubNumberMatch) {
+    return {
+      identifier: githubNumberMatch[1],
+      isBranchName: false,
+      originalInput: trimmedInput,
+    };
+  }
+
+  // Check for Linear URL: https://linear.app/workspace/issue/TEAM-123[/optional-slug]
+  const linearUrlMatch = trimmedInput.match(
+    /^https:\/\/linear\.app\/[^/]+\/issue\/([A-Za-z][A-Za-z0-9]*-\d+)(?:\/[^/]*)?$/i
+  );
+  if (linearUrlMatch) {
+    return {
+      identifier: linearUrlMatch[1].toUpperCase(),
+      isBranchName: false,
+      originalInput: trimmedInput,
+    };
+  }
+
+  // Check for GitHub URL: https://github.com/owner/repo/issues/123
+  const githubUrlMatch = trimmedInput.match(/^https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/(\d+)/);
+  if (githubUrlMatch) {
+    return {
+      identifier: githubUrlMatch[1],
+      isBranchName: false,
+      originalInput: trimmedInput,
+    };
+  }
+
+  // Check for branch name with Linear-style issue ID suffix: feature-df-1245
+  const branchLinearMatch = trimmedInput.match(/-([A-Za-z][A-Za-z0-9]*-\d+)$/i);
+  if (branchLinearMatch) {
+    return {
+      identifier: branchLinearMatch[1].toUpperCase(),
+      isBranchName: true,
+      originalInput: trimmedInput,
+    };
+  }
+
+  // Check for branch name with GitHub-style issue number suffix: fix-bug-123
+  const branchGithubMatch = trimmedInput.match(/-(\d+)$/);
+  if (branchGithubMatch) {
+    return {
+      identifier: branchGithubMatch[1],
+      isBranchName: true,
+      originalInput: trimmedInput,
+    };
+  }
+
+  return null;
+}
+
+/**
  * Data structure returned by getInstructionsFromIssue (works with any issue tracker)
  */
 export interface IssueInstructionData {

@@ -569,9 +569,9 @@ describe('createWorkspace', () => {
       taskId,
     });
 
-    // Verify branch name uses new convention
+    // Verify branch name uses taskId directly
     expect(mockLog).toHaveBeenCalledWith(
-      expect.stringContaining('Creating and checking out branch llmutils-ws/task-456')
+      expect.stringContaining('Creating and checking out branch task-456')
     );
   });
 
@@ -797,9 +797,9 @@ describe('createWorkspace', () => {
     // Execute
     await createWorkspace(mainRepoRoot, taskId, undefined, config);
 
-    // Verify the branch name uses the new convention
+    // Verify the branch name uses taskId directly
     expect(checkoutArgs).toBeDefined();
-    expect(checkoutArgs).toContain('llmutils-ws/branch-test');
+    expect(checkoutArgs).toContain('branch-test');
   });
 
   test('createWorkspace with rmplan method - no postCloneCommands provided', async () => {

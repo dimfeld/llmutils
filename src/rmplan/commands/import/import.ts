@@ -505,7 +505,7 @@ async function importHierarchicalIssue(
  * @param withSubissues - Whether to import subissues hierarchically
  * @returns True if import was successful, false if already imported
  */
-async function importSingleIssue(
+export async function importSingleIssue(
   issueSpecifier: string,
   tasksDir: string,
   issueTracker: IssueTrackerClient,

@@ -421,13 +421,15 @@ async function setupGitRemote(targetPath: string, repositoryUrl?: string): Promi
  * @param taskId Unique identifier for the task
  * @param originalPlanFilePath Absolute path to the original plan file (optional)
  * @param config Configuration for rmplan
+ * @param options Additional options for workspace creation
  * @returns A Workspace object if successful, null otherwise
  */
 export async function createWorkspace(
   mainRepoRoot: string,
   taskId: string,
   originalPlanFilePath: string | undefined,
-  config: RmplanConfig
+  config: RmplanConfig,
+  options?: { branchName?: string }
 ): Promise<Workspace | null> {
   // Check if workspace creation is enabled in the config
   if (!config.workspaceCreation) {
@@ -569,8 +571,8 @@ export async function createWorkspace(
   }
 
   // Step 5: Create and checkout a new branch (if enabled)
-  const branchName = `llmutils-ws/${taskId}`;
-  const shouldCreateBranch = workspaceConfig.createBranch ?? false;
+  const branchName = options?.branchName ?? taskId;
+  const shouldCreateBranch = workspaceConfig.createBranch ?? true;
 
   if (shouldCreateBranch) {
     try {

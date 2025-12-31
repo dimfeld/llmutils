@@ -33,11 +33,10 @@ import type { Command } from 'commander';
 import { claimPlan } from '../assignments/claim_plan.js';
 import { logClaimOutcome } from '../assignments/claim_logging.js';
 import { getRepositoryIdentity, getUserIdentity } from '../assignments/workspace_identifier.js';
-
-export async function handleWorkspaceCommand(args: any, options: any) {
-  // This is the main workspace command handler that delegates to subcommands
-  // The actual delegation logic will be handled in rmplan.ts when setting up the command
-}
+import { getIssueTracker } from '../../common/issue_tracker/factory.js';
+import { importSingleIssue } from './import/import.js';
+import { readAllPlans } from '../plans.js';
+import { parseIssueInput, type ParsedIssueInput } from '../issue_utils.js';
 
 export type WorkspaceListFormat = 'table' | 'tsv' | 'json';
 
@@ -351,10 +350,33 @@ export async function handleWorkspaceAddCommand(
     );
   }
 
+  // Handle --issue option: parse issue identifier and determine branch naming
+  let issueInfo: ParsedIssueInput | null = null;
+  let customBranchName: string | undefined;
+
+  if (options.issue) {
+    issueInfo = parseIssueInput(options.issue);
+    if (!issueInfo) {
+      throw new Error(
+        `Invalid issue identifier: ${options.issue}. ` +
+          'Expected a Linear key (e.g., DF-1245), GitHub issue number (e.g., 123), ' +
+          'issue URL, or branch name containing an issue ID (e.g., feature-df-1245).'
+      );
+    }
+
+    // If input was a branch name, use it as the custom branch name
+    if (issueInfo.isBranchName) {
+      customBranchName = issueInfo.originalInput;
+    }
+  }
+
   // Determine workspace ID
   let workspaceId: string;
   if (options.id) {
     workspaceId = options.id;
+  } else if (issueInfo) {
+    // Use issue identifier for workspace ID
+    workspaceId = `issue-${issueInfo.identifier}`;
   } else if (planIdentifier) {
     // Generate ID based on plan
     workspaceId = `task-${planIdentifier}`;
@@ -392,11 +414,53 @@ export async function handleWorkspaceAddCommand(
     gitRoot,
     workspaceId,
     resolvedPlanFilePath,
-    effectiveConfig
+    effectiveConfig,
+    customBranchName ? { branchName: customBranchName } : undefined
   );
 
   if (!workspace) {
     throw new Error('Failed to create workspace');
+  }
+
+  // Import issue into workspace if --issue was provided
+  let importedPlanFile: string | undefined;
+  if (issueInfo) {
+    try {
+      log(`Importing issue ${issueInfo.identifier} into workspace...`);
+
+      // Get issue tracker and import the issue
+      const issueTracker = await getIssueTracker(effectiveConfig);
+      const tasksDir = path.join(workspace.path, effectiveConfig.paths?.tasks || 'tasks');
+
+      // Read existing plans from workspace to pass to importSingleIssue
+      const { plans: allPlans } = await readAllPlans(tasksDir);
+
+      // Import the issue
+      const success = await importSingleIssue(
+        issueInfo.originalInput,
+        tasksDir,
+        issueTracker,
+        {}, // No additional options for import
+        allPlans,
+        false // withSubissues
+      );
+
+      if (success) {
+        log(chalk.green(`✓ Issue ${issueInfo.identifier} imported successfully`));
+        // Find the imported plan file to show in success message
+        const { plans: updatedPlans } = await readAllPlans(tasksDir);
+        for (const [_, plan] of updatedPlans) {
+          if (plan.issue?.some((url: string) => url.includes(issueInfo!.identifier))) {
+            importedPlanFile = plan.filename;
+            break;
+          }
+        }
+      } else {
+        warn(`Issue ${issueInfo.identifier} was already imported or import failed`);
+      }
+    } catch (err) {
+      warn(`Failed to import issue: ${err as Error}`);
+    }
   }
 
   // Update plan status in the new workspace if plan was copied
@@ -443,6 +507,9 @@ export async function handleWorkspaceAddCommand(
   if (workspace.planFilePathInWorkspace) {
     log(`  Plan file: ${path.relative(workspace.path, workspace.planFilePathInWorkspace)}`);
   }
+  if (importedPlanFile) {
+    log(`  Imported plan: ${path.relative(workspace.path, importedPlanFile)}`);
+  }
   log('');
   log('Next steps:');
   log(`  1. cd ${workspace.path}`);
@@ -453,6 +520,9 @@ export async function handleWorkspaceAddCommand(
     log(
       `     or rmplan show ${path.basename(workspace.planFilePathInWorkspace || resolvedPlanFilePath)} to view the plan`
     );
+  } else if (importedPlanFile) {
+    log(`  2. rmplan agent ${path.basename(importedPlanFile)}`);
+    log(`     or rmplan show ${path.basename(importedPlanFile)} to view the plan`);
   } else {
     log('  2. Start working on your task');
   }
