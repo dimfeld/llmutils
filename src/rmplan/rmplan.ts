@@ -595,29 +595,6 @@ program
   });
 
 program
-  .command('add-progress-note <plan> <note>')
-  .description('Add a progress note to a plan (file path or plan ID)')
-  .option(
-    '--source <source>',
-    'Optional origin metadata (specify the agent and the task being worked on)'
-  )
-  .action(async (planFile, note, _options, command) => {
-    const { handleAddProgressNoteCommand } = await import('./commands/add-progress-note.js');
-    await handleAddProgressNoteCommand(planFile, note, command).catch(handleCommandError);
-  });
-
-program
-  .command('add-implementation-note <plan> <note>')
-  .description(
-    'Add an implementation note to a plan\'s details under "# Implementation Notes" section'
-  )
-  .action(async (planFile, note, options, command) => {
-    const { handleAddImplementationNoteCommand } =
-      await import('./commands/add-implementation-note.js');
-    await handleAddImplementationNoteCommand(planFile, note, command).catch(handleCommandError);
-  });
-
-program
   .command('edit <planArg>')
   .description('Open a plan file in your editor. Can be a file path or plan ID.')
   .option('--editor <editor>', 'Editor to use (defaults to $EDITOR or nano)')

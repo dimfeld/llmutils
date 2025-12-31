@@ -101,7 +101,7 @@ rmplan show tasks/feature.yml
 
 # Output modes
 rmplan show 123 --short                   # Brief summary
-rmplan show 123 --full                    # All progress notes
+rmplan show 123 --full                    # Full details
 
 # Discovery
 rmplan show --next                        # Next ready plan
@@ -190,14 +190,6 @@ rmplan set 123 --priority high
 rmplan set 123 --parent 100
 rmplan set 123 --tag backend
 rmplan set 123 --no-tag frontend          # Remove tag
-```
-
-### rmplan add-progress-note
-
-Record progress on a plan.
-
-```bash
-rmplan add-progress-note 123 --source "human: review" "Note text"
 ```
 
 ## Prompt Commands

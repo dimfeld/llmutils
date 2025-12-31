@@ -649,6 +649,8 @@ export async function writePlanFile(
 
   // Remove deprecated 'container' field - always use 'epic' instead
   delete cleanedPlan.container;
+  // Strip legacy progress notes field if present
+  delete cleanedPlan.progressNotes;
   // Remove false boolean defaults for rarely used fields
   if (cleanedPlan.epic === false) {
     delete cleanedPlan.epic;
@@ -661,7 +663,7 @@ export async function writePlanFile(
   }
 
   // Remove empty arrays
-  const arrayFields = ['dependencies', 'issue', 'pullRequest', 'docs', 'progressNotes'] as const;
+  const arrayFields = ['dependencies', 'issue', 'pullRequest', 'docs'] as const;
   for (const field of arrayFields) {
     if (Array.isArray(cleanedPlan[field]) && (cleanedPlan[field] as unknown[]).length === 0) {
       delete cleanedPlan[field];

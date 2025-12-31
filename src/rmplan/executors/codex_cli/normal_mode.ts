@@ -9,7 +9,6 @@ import {
 } from '../claude_code/agent_prompts';
 import { readPlanFile } from '../../plans';
 import { detectPlanningWithoutImplementation, parseFailedReport } from '../failure_detection';
-import { implementationNotesGuidance } from '../claude_code/orchestrator_prompt';
 import { loadAgentInstructionsFor, loadRepositoryReviewDoc } from './agent_helpers';
 import { executeCodexStep } from './codex_runner';
 import {
@@ -96,8 +95,7 @@ export async function executeNormalMode(
   );
   implementerInstructions =
     (implementerInstructions || '') +
-    `\n\nOnce you decide how to go about implementing the tasks, do so immediately. No need to wait for approval.\n\n` +
-    implementationNotesGuidance(planInfo.planFilePath, planInfo.planId) +
+    `\n\nOnce you decide how to go about implementing the tasks, do so immediately. No need to wait for approval.` +
     `\n\nIn your final message, be sure to include the titles of the tasks that you completed.`;
 
   const retryInstructionSuffixes = [
@@ -123,7 +121,12 @@ export async function executeNormalMode(
       contextContent,
       planContextAvailable ? planInfo.planId : undefined,
       implementerInstructions + extraInstructions,
-      model
+      model,
+      {
+        mode: 'update',
+        planFilePath: planContextAvailable ? planInfo.planFilePath : undefined,
+        useAtPrefix: false,
+      }
     );
 
     log(`Running implementer step${attempt > 0 ? ` (attempt ${attemptNumber})` : ''}...`);
@@ -237,7 +240,12 @@ export async function executeNormalMode(
       testerContext,
       planContextAvailable ? planInfo.planId : undefined,
       testerInstructions,
-      model
+      model,
+      {
+        mode: 'update',
+        planFilePath: planContextAvailable ? planInfo.planFilePath : undefined,
+        useAtPrefix: false,
+      }
     );
 
     // Execute tester step
@@ -278,7 +286,12 @@ export async function executeNormalMode(
       reviewerInstructions,
       model,
       false, // useSubagents
-      true // includeTaskCompletionInstructions
+      true, // includeTaskCompletionInstructions
+      {
+        mode: 'update',
+        planFilePath: planContextAvailable ? planInfo.planFilePath : undefined,
+        useAtPrefix: false,
+      }
     );
 
     // Execute reviewer step
@@ -400,7 +413,8 @@ export async function executeNormalMode(
           fixInstructions,
           fixerOutput,
           reviewerInstructions,
-          planContextAvailable ? planInfo.planId : undefined
+          planContextAvailable ? planInfo.planId : undefined,
+          planContextAvailable ? planInfo.planFilePath : undefined
         );
 
         const rerunReviewerOutput = await executeCodexStep(

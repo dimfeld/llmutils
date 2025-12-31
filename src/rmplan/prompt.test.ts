@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'bun:test';
-import { generatePhaseStepsPrompt, type PhaseGenerationContext } from './prompt';
+import {
+  generatePhaseStepsPrompt,
+  planPrompt,
+  simplePlanPrompt,
+  type PhaseGenerationContext,
+} from './prompt';
 
 describe('generatePhaseStepsPrompt', () => {
   it('should generate prompt with no previous phases', () => {
@@ -170,5 +175,29 @@ describe('generatePhaseStepsPrompt', () => {
     expect(prompt).toContain('Ensure all fields are properly populated');
     expect(prompt).toContain('Use proper YAML syntax with correct indentation');
     expect(prompt).toContain('Multi-line prompts should use the pipe (|) character');
+  });
+});
+
+describe('planPrompt discovered issues guidance', () => {
+  it('includes discovered issues instructions with parent plan id', () => {
+    const prompt = planPrompt('Some plan', { parentPlanId: 42, withBlockingSubissues: false });
+
+    expect(prompt).toContain('# Discovered Issues');
+    expect(prompt).toContain('rmplan add "Discovered Issue Title" --discovered-from 42');
+    expect(prompt).toContain('--parent 42');
+    expect(prompt).toContain('## Discovered Issue: [Title]');
+    expect(prompt).toContain('Suggested Next Steps');
+    expect(prompt).toContain("plan's Details section");
+    expect(prompt).not.toContain('before the main output');
+  });
+
+  it('includes discovered issues instructions for simple plans', () => {
+    const prompt = simplePlanPrompt('Simple plan', { parentPlanId: 7 });
+
+    expect(prompt).toContain('# Discovered Issues');
+    expect(prompt).toContain('rmplan add "Discovered Issue Title" --discovered-from 7');
+    expect(prompt).toContain('--parent 7');
+    expect(prompt).toContain("plan's Details section");
+    expect(prompt).not.toContain('before the main output');
   });
 });

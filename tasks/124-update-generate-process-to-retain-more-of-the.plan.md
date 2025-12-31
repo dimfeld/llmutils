@@ -13,49 +13,6 @@ priority: medium
 planGeneratedAt: 2025-09-24T09:57:35.920Z
 createdAt: 2025-09-24T09:46:07.509Z
 updatedAt: 2025-10-27T08:39:04.251Z
-progressNotes:
-  - timestamp: 2025-09-24T10:12:24.648Z
-    text: Implemented three-step Claude orchestration with optional research
-      capture, added research prompt/append utilities, and integrated
-      generate/prepare flows to pass captured research into plan extraction.
-    source: "implementer: Task1-6"
-  - timestamp: 2025-09-24T10:13:57.957Z
-    text: Added unit tests for the updated Claude orchestrator and supporting
-      utilities; verified generate/prepare command flows with Bun test.
-    source: "implementer: Task7"
-  - timestamp: 2025-09-24T10:32:17.095Z
-    text: Added integration coverage for rmplan generate/prepare research capture,
-      including single- and multi-phase flows plus fallback cases for
-      non-oneshot and empty research output; all tests passing.
-    source: "tester: Task8-9"
-  - timestamp: 2025-09-24T10:52:10.862Z
-    text: Extended generate/prepare integration coverage for research persistence
-      and added orchestrator session interruption fallback test; new cases
-      confirm headings stay single and failures degrade to two-step.
-    source: "implementer: Task8-9"
-  - timestamp: 2025-09-24T10:55:18.482Z
-    text: Re-ran targeted generate/prepare/orchestrator tests to validate research
-      preservation and fallback paths; bun test
-      src/rmplan/commands/generate.test.ts
-      src/rmplan/plans/prepare_phase.test.ts
-      src/rmplan/executors/claude_code_orchestrator.test.ts completed without
-      failures.
-    source: "tester: Task8-9"
-  - timestamp: 2025-09-24T11:10:30.436Z
-    text: "Updated CLAUDE.md and README to document the Claude Code three-step flow,
-      conditional research capture, and the new ## Research storage details."
-    source: "implementer: Task10"
-  - timestamp: 2025-09-24T11:12:29.931Z
-    text: Executed full bun test suite to verify research-preservation workflow and
-      doc updates; all 1981 tests passed.
-    source: "tester: Task10"
-  - timestamp: 2025-09-24T11:16:12.997Z
-    text: Docs claim the interactive rmplan research command appends results under a
-      '## Research' heading with timestamped entries, but
-      src/rmplan/commands/research.ts still writes '# Research ...' without
-      creating that section. Documentation needs to reflect actual behavior or
-      the command must be updated.
-    source: "reviewer: Task10"
 tasks:
   - title: Modify Claude Code orchestrator for three-step flow
     done: true

@@ -154,7 +154,7 @@ describe('simple field file I/O', () => {
     await writePlanFile(filename, plan);
 
     const readPlan = await readPlanFile(filename);
-    expect(readPlan.simple).toBe(false);
+    expect(readPlan.simple).toBeUndefined();
   });
 
   test('reads existing plan without simple field', async () => {

@@ -15,7 +15,7 @@ rmplan is an AI-powered project planning and execution system. It generates deta
 - Metadata (title, goal, priority, status, dependencies)
 - Tasks with descriptions
 - Research findings and implementation notes
-- Progress tracking
+- Progress tracking in a `## Progress` section within the plan body (living summary, no timestamps)
 
 **Plan lifecycle**: `pending` → `in_progress` → `done` (or `cancelled`/`deferred`)
 
@@ -95,7 +95,7 @@ When MCP is not available, use the CLI:
 # Show plan details
 rmplan show 123
 rmplan show 123 --short      # Brief summary
-rmplan show 123 --full       # All progress notes
+rmplan show 123 --full       # Full details
 
 # List ready plans (dependencies satisfied)
 rmplan ready
@@ -182,6 +182,20 @@ tasks:
 
 Research findings and implementation notes...
 <!-- rmplan-generated-end -->
+
+## Progress
+### Current State
+- Initial stub created; implementation not started yet.
+### Completed (So Far)
+- None
+### Remaining
+- Generate tasks and implement feature X
+### Next Iteration Guidance
+- Start with src/feature.ts and associated tests
+### Decisions / Changes
+- None
+### Risks / Blockers
+- None
 ```
 
 ## Workflow Patterns
@@ -201,6 +215,16 @@ When a plan is too large, create child plans:
 - Use `create-plan` with `parent` field set
 - Split by feature areas, not architectural layers
 - Each child plan should deliver complete, testable functionality
+
+### Capturing Discovered Issues
+
+When you uncover new, actionable work outside the current plan scope, create a new plan immediately:
+
+```bash
+rmplan add "Discovered issue title" --discovered-from 123 --priority medium --details "Why it matters and what to do next"
+```
+
+If the issue should live under an epic/parent, add `--parent <parent-plan-id>`. If it blocks current work, add `--depends-on`.
 
 ### CLI Prompts for External Tools
 

@@ -819,6 +819,9 @@ describe('blocking subissue prompts', () => {
     expect(prompt).toContain('rmplan add "Blocking Title" --parent 42 --discovered-from 42');
     expect(prompt).toContain('## Blocking Subissue: [Title]');
     expect(prompt).toContain('- Tasks: [High-level task list]');
+    expect(prompt).toContain('# Discovered Issues');
+    expect(prompt).toContain('rmplan add "Discovered Issue Title" --discovered-from 42');
+    expect(prompt).toContain('## Discovered Issue: [Title]');
   });
 
   test('generateClaudeCodeSimplePlanningPrompt includes blocking instructions when enabled', () => {
@@ -831,6 +834,9 @@ describe('blocking subissue prompts', () => {
     expect(prompt).toContain('rmplan add "Blocking Title" --parent 7 --discovered-from 7');
     expect(prompt).toContain('## Blocking Subissue: [Title]');
     expect(prompt).toContain('- Tasks: [High-level task list]');
+    expect(prompt).toContain('# Discovered Issues');
+    expect(prompt).toContain('rmplan add "Discovered Issue Title" --discovered-from 7');
+    expect(prompt).toContain('## Discovered Issue: [Title]');
   });
 });
 

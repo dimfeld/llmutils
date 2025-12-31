@@ -4,7 +4,6 @@ title: review command as subagent
 goal: ""
 id: 151
 uuid: 8a417b70-b63c-4a55-9d34-ee64aa04fead
-simple: false
 status: pending
 priority: medium
 createdAt: 2025-12-29T01:27:15.778Z

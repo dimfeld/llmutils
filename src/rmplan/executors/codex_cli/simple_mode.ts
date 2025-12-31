@@ -5,7 +5,6 @@ import { log, warn } from '../../../logging';
 import { getImplementerPrompt, getVerifierAgentPrompt } from '../claude_code/agent_prompts';
 import { readPlanFile } from '../../plans';
 import { detectPlanningWithoutImplementation, parseFailedReport } from '../failure_detection';
-import { implementationNotesGuidance } from '../claude_code/orchestrator_prompt';
 import { loadAgentInstructionsFor } from './agent_helpers';
 import { executeCodexStep } from './codex_runner';
 import {
@@ -75,8 +74,7 @@ export async function executeSimpleMode(
   );
   implementerInstructions =
     (implementerInstructions || '') +
-    `\n\nCreate a plan for the tasks, and then implement that plan. Once you decide on the plan, implement it immediately. No need to ask for approval.\n\n` +
-    implementationNotesGuidance(planInfo.planFilePath, planInfo.planId) +
+    `\n\nCreate a plan for the tasks, and then implement that plan. Once you decide on the plan, implement it immediately. No need to ask for approval.` +
     `\n\nIn your final message, be sure to include the titles of the tasks that you completed.`;
 
   const retryInstructionSuffixes = [
@@ -102,7 +100,12 @@ export async function executeSimpleMode(
       contextContent,
       planContextAvailable ? planInfo.planId : undefined,
       implementerInstructions + extraInstructions,
-      model
+      model,
+      {
+        mode: 'update',
+        planFilePath: planContextAvailable ? planInfo.planFilePath : undefined,
+        useAtPrefix: false,
+      }
     );
 
     log(`Running implementer step${attempt > 0 ? ` (attempt ${attemptNumber})` : ''}...`);
@@ -224,7 +227,12 @@ export async function executeSimpleMode(
       verifierInstructions,
       model,
       false, // includeTaskCompletionInstructions - we mark tasks ourselves
-      true // includeVerdictInstructions - request a verdict from verifier
+      true, // includeVerdictInstructions - request a verdict from verifier
+      {
+        mode: 'update',
+        planFilePath: planContextAvailable ? planInfo.planFilePath : undefined,
+        useAtPrefix: false,
+      }
     );
 
     log('Running verifier step...');
@@ -317,7 +325,12 @@ export async function executeSimpleMode(
           verifierInstructions,
           model,
           false, // includeTaskCompletionInstructions - we mark tasks ourselves
-          true // includeVerdictInstructions - request a verdict from verifier
+          true, // includeVerdictInstructions - request a verdict from verifier
+          {
+            mode: 'update',
+            planFilePath: planContextAvailable ? planInfo.planFilePath : undefined,
+            useAtPrefix: false,
+          }
         );
 
         const rerunVerifierOutput = await executeCodexStep(

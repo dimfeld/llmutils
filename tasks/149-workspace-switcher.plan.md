@@ -5,94 +5,10 @@ goal: ""
 id: 149
 uuid: 4a39959d-e9fb-4fa6-b4ed-774a5b4dfd4d
 generatedBy: agent
-simple: false
 status: done
 priority: medium
 createdAt: 2025-12-29T01:17:52.736Z
 updatedAt: 2025-12-29T17:28:36.033Z
-progressNotes:
-  - timestamp: 2025-12-29T07:00:49.233Z
-    text: >-
-      Added comprehensive test coverage for workspace switcher features:
-
-      - patchWorkspaceMetadata: 10 tests covering update, create, clear,
-      timestamps, and plan metadata
-
-      - buildWorkspaceListEntries: 6 tests covering filtering, list structure,
-      optional fields, and locks
-
-      - workspace update command: 16 tests covering name/description updates,
-      task ID resolution, from-plan loading, error cases, and issue URL
-      extraction (GitHub, GitLab, Linear, Jira)
-
-      All 44 new/updated workspace tests pass. TypeScript type check passes.
-    source: "tester: Tasks 1,2,4"
-  - timestamp: 2025-12-29T07:17:33.165Z
-    text: Implemented workspace list output formats (table/TSV/JSON) with --format,
-      --no-header, --all options. Added shell-integration command that generates
-      bash/zsh function for workspace switching with fzf. Created comprehensive
-      tests (18 tests) covering all output formats and shell integration.
-      Updated README and docs/multi-workspace-workflow.md with documentation.
-    source: "implementer: Task 3 + Task 6"
-  - timestamp: 2025-12-29T07:21:44.143Z
-    text: "All workspace tests pass (38 tests). Added additional tests for: 1) JSON
-      output with all WorkspaceListEntry fields (createdAt, updatedAt,
-      repositoryUrl, branch), 2) Table format displaying workspace
-      name/description with path. Type checking passes. Test coverage verified
-      for: output formats (table/TSV/JSON), header options, repo filtering,
-      --all flag, shell integration for bash/zsh, fzf check, query argument, and
-      cancellation handling."
-    source: "tester: Tasks 3 & 6"
-  - timestamp: 2025-12-29T07:37:40.672Z
-    text: "Implemented agent auto-description updates. After plan is read, workspace
-      description is updated using buildDescriptionFromPlan and
-      patchWorkspaceMetadata. Updates are applied on every run for tracked
-      workspaces, with failures logged as warnings but not aborting the agent.
-      Added 5 tests covering: description update with issue URL, without issue
-      URL, untracked workspace (silent skip), update failure (warn but
-      continue), and project title handling."
-    source: "implementer: Task 5"
-  - timestamp: 2025-12-29T07:42:52.189Z
-    text: Reviewed agent auto-description updates. Implementation is correct and
-      tests pass. Found no critical or major issues. Minor suggestion about test
-      isolation.
-    source: "reviewer: Task 5"
-  - timestamp: 2025-12-29T07:43:54.972Z
-    text: "Completed Task 5 (Agent auto-description updates). Added
-      updateWorkspaceDescriptionFromPlan() function to agent.ts that updates
-      workspace description with format #issueNumber title on every agent run.
-      Function silently skips untracked workspaces and warns but doesn't abort
-      on failures. Created 5 tests covering all scenarios. All tests pass, type
-      checking passes. Implementation reuses existing helpers
-      (buildDescriptionFromPlan, patchWorkspaceMetadata, etc.) for consistency."
-    source: "orchestrator: Task 5"
-  - timestamp: 2025-12-29T16:38:00.783Z
-    text: Reviewed workspace switcher changes; found issues around repo URL
-      detection (git-only), missing repositoryUrl when creating entries via
-      update, stale issueUrls/planId not cleared, and deletion of entries on
-      stat errors.
-    source: "reviewer: workspace switcher review"
-  - timestamp: 2025-12-29T17:05:58.559Z
-    text: Updated workspace list/update/agent flows to use repository identity
-      fallback, avoid deleting entries on stat errors, clear stale plan
-      metadata, and adjusted tests (list/update/lock/workspace tracker/agent)
-      with new coverage for no-origin and error cases.
-    source: "implementer: workspace switcher fixes"
-  - timestamp: 2025-12-29T17:12:36.117Z
-    text: Added jj repository fallback coverage in workspace_identifier.test to
-      ensure getRepositoryIdentity works without git remotes.
-    source: "tester: add jj identity test"
-  - timestamp: 2025-12-29T17:14:46.021Z
-    text: Adjusted WorkspaceLock to honor RMPLAN_LOCK_DIR and updated workspace
-      list/lock tests to set it, avoiding EPERM on ~/.config/rmplan/locks during
-      tests.
-    source: "tester: fix lock dir tests"
-  - timestamp: 2025-12-29T17:21:46.995Z
-    text: Found remaining git-remote dependency in WorkspaceAutoSelector
-      (src/rmplan/workspace/workspace_auto_selector.ts) that still fails in
-      jj/no-origin repos; auto workspace selection returns null instead of using
-      repository identity fallback.
-    source: "reviewer: workspace switcher review"
 tasks:
   - title: Extend workspace metadata storage + patch helper
     done: true

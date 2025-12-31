@@ -64,7 +64,14 @@ interface ObsoleteKeyFixResult {
   errors: string[];
 }
 
-const { phaseSchema: strictPhaseSchema } = createPlanSchemas((shape) => z.object(shape).strict());
+const { phaseSchema: strictPhaseSchema } = createPlanSchemas((shape) =>
+  z
+    .object({
+      ...shape,
+      progressNotes: z.unknown().optional(),
+    })
+    .strict()
+);
 
 async function validatePlanFile(filePath: string): Promise<ValidationResult> {
   const filename = path.basename(filePath);

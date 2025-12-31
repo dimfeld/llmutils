@@ -38,7 +38,7 @@ test('wrapWithOrchestration integrates batch mode properly', () => {
   });
 
   expect(explicitNonBatchResult).not.toContain('# Batch Task Processing Mode');
-  expect(explicitNonBatchResult).not.toContain('@/path/to/test/plan.yml');
+  expect(explicitNonBatchResult).toContain('@/path/to/test/plan.yml');
   expect(explicitNonBatchResult).toContain(`rmplan-implementer`);
 });
 

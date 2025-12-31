@@ -1,5 +1,5 @@
 import { FAILED_PROTOCOL_INSTRUCTIONS } from '../claude_code/agent_prompts';
-import { implementationNotesGuidance } from '../claude_code/orchestrator_prompt';
+import { progressSectionGuidance } from '../claude_code/orchestrator_prompt';
 
 export function composeTesterContext(
   originalContext: string,
@@ -68,7 +68,8 @@ export function composeFixReviewContext(
   previousReview: string,
   fixerOutput: string,
   customInstructions?: string,
-  planId?: string | number
+  planId?: string | number,
+  planFilePath?: string
 ) {
   const baseContext = composeReviewerContext(
     originalContext,
@@ -94,12 +95,14 @@ rmplan set-task-done ${planId} --title "Task Title Here"
 
 Do this for each task that was successfully implemented and reviewed before providing your ACCEPTABLE verdict.`
     : '';
+  const progressGuidance = progressSectionGuidance(planFilePath, { useAtPrefix: false });
 
   return `You are a fix verification assistant focused on determining whether previously identified issues have been adequately addressed by the implementer's fixes.
 
 Your job is to verify that specific issues flagged in the previous review have been resolved, NOT to conduct a full new code review. Focus exclusively on whether the fixes address the concerns that were raised.
 
 ${baseContext}${customInstructionsSection}${taskCompletionInstructions}
+${progressGuidance}
 
 ## Previous Review Issues
 
@@ -199,6 +202,7 @@ export function getFixerPrompt(input: {
   const tasks = input.completedTaskTitles.length
     ? `- ${input.completedTaskTitles.join('\n- ')}`
     : '(none)';
+  const progressGuidance = progressSectionGuidance(input.planPath, { useAtPrefix: false });
   return `You are a fixer agent focused on addressing reviewer-identified issues precisely and minimally.
 
 Context:
@@ -220,9 +224,9 @@ Your job:
 3. Prefer small, safe changes; avoid broad refactors
 4. Run relevant tests and commands as needed
 
-${implementationNotesGuidance(input.planPath, input.planId)}
+${progressGuidance}
 
-When complete, summarize what you changed and update the implementation documentation if necessary. If you could not address an issue, clearly explain why.
+When complete, summarize what you changed. If you could not address an issue, clearly explain why.
 
 ${FAILED_PROTOCOL_INSTRUCTIONS}`;
 }

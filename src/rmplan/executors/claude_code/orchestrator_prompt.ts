@@ -3,51 +3,41 @@ interface OrchestrationOptions {
   planFilePath?: string;
 }
 
-// Progress notes guidance should be present in both batch and non-batch modes
-export function progressNotesGuidance(planId?: string | number) {
-  if (!planId) return '';
+export function progressSectionGuidance(
+  planFilePath?: string,
+  options?: { useAtPrefix?: boolean }
+) {
+  const useAtPrefix = options?.useAtPrefix ?? true;
+  const planLocation = planFilePath
+    ? `Update the plan file at: ${useAtPrefix ? '@' : ''}${planFilePath}`
+    : 'Update the plan file referenced in the task context.';
 
   return `
-## Progress Notes
+## Progress Updates (Plan File)
 
-While executing, add progress notes whenever you:
-- Complete a significant chunk of work
-- Encounter unexpected behavior or deviate from the original plan
-- Discover important details future runs should know
+${planLocation}
 
-Use the Bash command 'rmplan add-progress-note ${planId} --source "<agent>: <task>" "<note text>"'. The source value must clearly identify which agent is reporting (implementer, verifier, tester, reviewer, or human - use whichever applies) and which task it was working on so future runs understand the context. Notes should be self-contained and understandable without extra context.
-`;
-}
+After each successful iteration (and again at the end of the run), update the plan file's \`## Current Progress\` section:
+- Create the section at the end of the file if it does not exist (keep it outside any generated delimiters).
+- Update in place: edit or replace outdated text so the section reflects current reality while preserving meaningful history.
+- No timestamps anywhere in the section.
+- Focus on what changed, why it changed, and what's next. These updates do NOT need to be about testing or review specifically.
 
-export function implementationNotesGuidance(
-  planPath: string | undefined,
-  planId?: string | number
-) {
-  if (!planPath) {
-    return '';
-  }
+Use this structured template (fill every heading; use "None" when empty):
 
-  const planIdentifier = planId || planPath;
-
-  return `## Implementation Documentation
-
-After finishing your work, you MUST document what you did using the command:
-'rmplan add-implementation-note ${planIdentifier} "<your detailed notes>"'
-
-Your notes must contain:
-1. Comprehensive description of what you implemented and how it works.
-2. The names of the tasks you were working on.
-3. Technical details such as:
-   - Specific files modified
-   - Key functions, classes, or components created
-   - Important design decisions and their rationale
-   - Integration points with existing code
-   - Any deviations from the original plan and why
-4. Document for future maintenance - write notes that would help someone else understand the implementation months later
-
-Be verbose and detailed. Prefer to write a paragraph instead of a single line.
-
-These notes are crucial for project continuity and help future developers understand the implementation choices made. They will be stored in the "# Implementation Notes" section of the plan file.
+## Current Progress
+### Current State
+- ...
+### Completed (So Far)
+- ...
+### Remaining
+- ...
+### Next Iteration Guidance
+- ...
+### Decisions / Changes
+- ...
+### Risks / Blockers
+- None
 `;
 }
 
@@ -152,7 +142,7 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
    - The reviewer is instructed to only focus on problems; don't expect positive feedback even if the code is perfect.`;
 
   const finalPhases = `${options.batchMode ? '5' : '4'}. **Notes Phase**
-   ${implementationNotesGuidance(options.planFilePath, planId)}
+   ${progressSectionGuidance(options.planFilePath)}
 
 ${options.batchMode ? '6' : '5'}. **Iteration**
 
@@ -222,7 +212,9 @@ ${markTasksDoneGuidance(planId)}
 `
     : '';
 
-  return baseGuidelines + failureProtocol + batchModeOnly + progressNotesGuidance(planId);
+  return (
+    baseGuidelines + failureProtocol + batchModeOnly + progressSectionGuidance(options.planFilePath)
+  );
 }
 
 /**
@@ -270,8 +262,7 @@ export function wrapWithOrchestrationSimple(
   options: OrchestrationOptions = {}
 ): string {
   const batchModeInstructions = buildBatchModeInstructions(options);
-  const progressNotesSection = progressNotesGuidance(planId);
-  const implementationDocs = implementationNotesGuidance(options.planFilePath, planId);
+  const progressSection = progressSectionGuidance(options.planFilePath);
 
   const header = `# Two-Phase Orchestration Instructions
 
@@ -313,7 +304,7 @@ ${options.batchMode ? '3' : '2'}. **Verification Phase**
    - If verification fails, return to the implementer with the issues found
 
 ${options.batchMode ? '4' : '3'}. **Notes Phase**
-${implementationDocs}
+${progressSection}
 
 ${options.batchMode ? '5' : '4'}. **Iteration**
 - Repeat the implement → verify loop until verification succeeds without failures.`;
@@ -344,7 +335,7 @@ ${options.batchMode ? '5' : '4'}. **Iteration**
 
 ${markTasksDoneGuidance(planId)}
 
-${progressNotesSection}`;
+${progressSection}`;
 
   const footer = `## Task Context
 

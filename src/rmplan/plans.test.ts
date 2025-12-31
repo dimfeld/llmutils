@@ -16,7 +16,7 @@ import {
   getDiscoveredPlans,
 } from './plans.js';
 import * as plansModule from './plans.js';
-import { planSchema, type PlanSchema } from './planSchema.js';
+import { planSchema, type PlanSchema, type PlanSchemaInput } from './planSchema.js';
 import { ModuleMocker } from '../testing.js';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -1423,13 +1423,37 @@ const test = "example";
       epic: false,
       docs: [],
       issue: [],
-      progressNotes: [],
       pullRequest: [],
       references: {},
       temp: false,
       updatedAt: expect.any(String),
       uuid: expect.stringMatching(UUID_REGEX),
     });
+  });
+
+  it('should strip legacy progressNotes when writing a plan file', async () => {
+    const planPath = join(tempDir, 'legacy-progress-notes.plan.md');
+    const planToWrite: PlanSchemaInput & { progressNotes: string[] } = {
+      id: 103,
+      title: 'Legacy Progress Notes Plan',
+      goal: 'Ensure progressNotes are stripped on write',
+      details: 'Legacy details',
+      status: 'pending',
+      tasks: [],
+      progressNotes: ['Legacy note 1', 'Legacy note 2'],
+    };
+
+    await writePlanFile(planPath, planToWrite);
+
+    const fileContent = await readFile(planPath, 'utf-8');
+    const frontMatterEndIndex = fileContent.indexOf('\n---\n', 4);
+    const frontMatterSection = fileContent.substring(4, frontMatterEndIndex);
+    const frontMatterData = yaml.parse(frontMatterSection);
+
+    expect(frontMatterData.progressNotes).toBeUndefined();
+
+    const readBackPlan = await readPlanFile(planPath);
+    expect((readBackPlan as { progressNotes?: string[] }).progressNotes).toBeUndefined();
   });
 
   it('should load legacy plans without discoveredFrom without errors', async () => {
@@ -1574,7 +1598,6 @@ const roundTrip = "test";
       epic: false,
       docs: [],
       issue: [],
-      progressNotes: [],
       pullRequest: [],
       references: {},
       temp: false,
@@ -1810,7 +1833,6 @@ ${markdownBody}`;
     expect(rewrittenFmData.priority).toBe('low');
     expect(rewrittenFmData.dependencies).toEqual([100]);
     expect(rewrittenFmData.tasks).toHaveLength(1);
-    expect(rewrittenFmData.tasks[0].files).toEqual(['merge.ts', 'test.ts']);
 
     // Final verification: read the rewritten file and check data integrity
     const finalPlan = await readPlanFile(rewrittenPath);

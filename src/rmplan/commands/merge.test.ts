@@ -156,59 +156,6 @@ describe('rmplan merge', () => {
     expect(child2Exists).toBe(false);
   });
 
-  test('merges progress notes from children into parent in chronological order', async () => {
-    // Parent with one existing note
-    const parentPlan: PlanSchema = {
-      id: 1,
-      goal: 'Parent goal',
-      title: 'Parent Plan',
-      tasks: [],
-      progressNotes: [
-        { timestamp: new Date('2024-01-01T10:00:00Z').toISOString(), text: 'Parent note' },
-      ],
-    };
-    const parentFile = join(testDir, '1-parent.plan.md');
-    await writePlanFile(parentFile, parentPlan);
-
-    // Children with notes
-    const child1: PlanSchema = {
-      id: 2,
-      title: 'Child 1',
-      parent: 1,
-      tasks: [],
-      progressNotes: [
-        { timestamp: new Date('2024-01-01T12:00:00Z').toISOString(), text: 'Child1 later note' },
-        { timestamp: new Date('2023-12-31T23:59:00Z').toISOString(), text: 'Child1 earlier note' },
-      ],
-    };
-    await writePlanFile(join(testDir, '2-child1.plan.md'), child1);
-
-    const child2: PlanSchema = {
-      id: 3,
-      title: 'Child 2',
-      parent: 1,
-      tasks: [],
-      progressNotes: [
-        { timestamp: new Date('2024-01-02T00:00:00Z').toISOString(), text: 'Child2 newest' },
-      ],
-    };
-    await writePlanFile(join(testDir, '3-child2.plan.md'), child2);
-
-    const command = { parent: { opts: () => ({}) } } as any;
-    await handleMergeCommand(parentFile, {}, command);
-
-    const updatedParent = await readPlanFile(parentFile);
-    expect(updatedParent.progressNotes?.length).toBe(4);
-    // Should be sorted ascending by timestamp
-    const texts = updatedParent.progressNotes!.map((n) => n.text);
-    expect(texts).toEqual([
-      'Child1 earlier note',
-      'Parent note',
-      'Child1 later note',
-      'Child2 newest',
-    ]);
-  });
-
   test('merges specific children when provided', async () => {
     // Create parent plan
     const parentPlan: PlanSchema = {
@@ -270,6 +217,212 @@ describe('rmplan merge', () => {
     const child2Exists = await Bun.file(child2File).exists();
     expect(child1Exists).toBe(false);
     expect(child2Exists).toBe(true);
+  });
+
+  test('merges child progress sections when parent has progress', async () => {
+    const parentPlan: PlanSchema = {
+      id: 1,
+      goal: 'Parent goal',
+      title: 'Parent Plan',
+      details: 'Parent details\n\n## Current Progress\n### Current State\n- Parent progress',
+      tasks: [],
+    };
+    const parentFile = join(testDir, '1-parent.plan.md');
+    await writePlanFile(parentFile, parentPlan);
+
+    const childPlan: PlanSchema = {
+      id: 2,
+      goal: 'Child goal',
+      title: 'Child Plan',
+      parent: 1,
+      details: 'Child details\n\n## Current Progress\n### Current State\n- Child progress',
+      tasks: [],
+    };
+    await writePlanFile(join(testDir, '2-child.plan.md'), childPlan);
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleMergeCommand(parentFile, {}, command);
+
+    const updatedParent = await readPlanFile(parentFile);
+    expect(updatedParent.details).toContain('Parent details');
+    expect(updatedParent.details).toContain('Child details');
+    expect(updatedParent.details).toContain('Parent progress');
+    expect(updatedParent.details).toContain('Child progress');
+    expect(updatedParent.details).toContain('### From Child Plan');
+
+    const progressMatches = updatedParent.details?.match(/## Current Progress/g) ?? [];
+    expect(progressMatches.length).toBe(1);
+
+    const progressIndex = updatedParent.details?.lastIndexOf('## Current Progress') ?? -1;
+    const childDetailsIndex = updatedParent.details?.lastIndexOf('Child details') ?? -1;
+    expect(progressIndex).toBeGreaterThan(childDetailsIndex);
+  });
+
+  test('preserves child progress when parent has none', async () => {
+    const parentPlan: PlanSchema = {
+      id: 1,
+      goal: 'Parent goal',
+      title: 'Parent Plan',
+      details: 'Parent details',
+      tasks: [],
+    };
+    const parentFile = join(testDir, '1-parent.plan.md');
+    await writePlanFile(parentFile, parentPlan);
+
+    const childPlan: PlanSchema = {
+      id: 2,
+      goal: 'Child goal',
+      title: 'Child Plan',
+      parent: 1,
+      details: 'Child details\n\n## Current Progress\n### Current State\n- Child progress',
+      tasks: [],
+    };
+    await writePlanFile(join(testDir, '2-child.plan.md'), childPlan);
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleMergeCommand(parentFile, {}, command);
+
+    const updatedParent = await readPlanFile(parentFile);
+    expect(updatedParent.details).toContain('Parent details');
+    expect(updatedParent.details).toContain('Child details');
+    expect(updatedParent.details).toContain('Child progress');
+
+    const progressMatches = updatedParent.details?.match(/## Current Progress/g) ?? [];
+    expect(progressMatches.length).toBe(1);
+  });
+
+  test('merges multiple child progress sections when parent has none', async () => {
+    const parentPlan: PlanSchema = {
+      id: 1,
+      goal: 'Parent goal',
+      title: 'Parent Plan',
+      details: 'Parent details',
+      tasks: [],
+    };
+    const parentFile = join(testDir, '1-parent.plan.md');
+    await writePlanFile(parentFile, parentPlan);
+
+    const childPlanA: PlanSchema = {
+      id: 2,
+      goal: 'Child A goal',
+      title: 'Child A',
+      parent: 1,
+      details: 'Child A details\n\n## Current Progress\n### Current State\n- Child A progress',
+      tasks: [],
+    };
+    await writePlanFile(join(testDir, '2-child-a.plan.md'), childPlanA);
+
+    const childPlanB: PlanSchema = {
+      id: 3,
+      goal: 'Child B goal',
+      title: 'Child B',
+      parent: 1,
+      details: 'Child B details\n\n## Current Progress\n### Current State\n- Child B progress',
+      tasks: [],
+    };
+    await writePlanFile(join(testDir, '3-child-b.plan.md'), childPlanB);
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleMergeCommand(parentFile, {}, command);
+
+    const updatedParent = await readPlanFile(parentFile);
+    expect(updatedParent.details).toContain('Child A details');
+    expect(updatedParent.details).toContain('Child B details');
+    expect(updatedParent.details).toContain('## Current Progress');
+    expect(updatedParent.details).toContain('### From Child A');
+    expect(updatedParent.details).toContain('### From Child B');
+    expect(updatedParent.details).toContain('Child A progress');
+    expect(updatedParent.details).toContain('Child B progress');
+
+    const progressMatches = updatedParent.details?.match(/## Current Progress/g) ?? [];
+    expect(progressMatches.length).toBe(1);
+  });
+
+  test('does not strip non-matching progress-like headings or code fences', async () => {
+    const parentPlan: PlanSchema = {
+      id: 1,
+      goal: 'Parent goal',
+      title: 'Parent Plan',
+      details: 'Parent details',
+      tasks: [],
+    };
+    const parentFile = join(testDir, '1-parent.plan.md');
+    await writePlanFile(parentFile, parentPlan);
+
+    const childPlan: PlanSchema = {
+      id: 2,
+      goal: 'Child goal',
+      title: 'Child Plan',
+      parent: 1,
+      details:
+        'Child details\n\n## Progress Tracking\n- Should stay\n\n```md\n## Progress\n- Code block should stay\n```\n',
+      tasks: [],
+    };
+    await writePlanFile(join(testDir, '2-child.plan.md'), childPlan);
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleMergeCommand(parentFile, {}, command);
+
+    const updatedParent = await readPlanFile(parentFile);
+    expect(updatedParent.details).toContain('## Progress Tracking');
+    expect(updatedParent.details).toContain('Code block should stay');
+    expect(updatedParent.details).not.toContain('## Current Progress\n### Current State');
+  });
+
+  test('does not strip indented code blocks containing progress headings', async () => {
+    const parentPlan: PlanSchema = {
+      id: 1,
+      goal: 'Parent goal',
+      title: 'Parent Plan',
+      details: 'Parent details',
+      tasks: [],
+    };
+    const parentFile = join(testDir, '1-parent.plan.md');
+    await writePlanFile(parentFile, parentPlan);
+
+    const childPlan: PlanSchema = {
+      id: 2,
+      goal: 'Child goal',
+      title: 'Child Plan',
+      parent: 1,
+      details:
+        'Child details\n\n    ## Progress\n    - Indented code block should stay\n\nRegular line\n',
+      tasks: [],
+    };
+    await writePlanFile(join(testDir, '2-child.plan.md'), childPlan);
+
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleMergeCommand(parentFile, {}, command);
+
+    const updatedParent = await readPlanFile(parentFile);
+    expect(updatedParent.details).toContain('Child details');
+    expect(updatedParent.details).toContain('    ## Progress');
+    expect(updatedParent.details).toContain('Indented code block should stay');
   });
 
   test('handles plan with no children gracefully', async () => {

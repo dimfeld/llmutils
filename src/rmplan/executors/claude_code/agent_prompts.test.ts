@@ -31,15 +31,32 @@ describe('agent_prompts failure protocol integration', () => {
     expect(def.prompt).toContain('Failure Protocol');
   });
 
-  it('omits progress note instructions when no plan id is provided', () => {
-    const def = getImplementerPrompt(context);
-    expect(def.prompt).not.toContain('rmplan add-progress-note');
+  it('directs implementer to report progress to orchestrator', () => {
+    const def = getImplementerPrompt(context, '42');
+    expect(def.prompt).toContain('Progress Reporting');
+    expect(def.prompt).toContain('Do NOT update the plan file directly');
+    expect(def.prompt).not.toContain('Progress Updates (Plan File)');
   });
 
-  it('includes progress note instructions when plan id is provided', () => {
-    const def = getImplementerPrompt(context, '42');
-    expect(def.prompt).toContain('rmplan add-progress-note 42');
-    expect(def.prompt).toContain('--source');
+  it('uses progress section update guidance when requested', () => {
+    const def = getTesterPrompt(context, '152', undefined, undefined, {
+      mode: 'update',
+      planFilePath: '/plans/152.plan.md',
+    });
+    expect(def.prompt).toContain('Progress Updates (Plan File)');
+    expect(def.prompt).toContain('@/plans/152.plan.md');
+    expect(def.prompt).not.toContain('Progress Reporting');
+  });
+
+  it('supports progress update guidance without @ prefix', () => {
+    const def = getTesterPrompt(context, '152', undefined, undefined, {
+      mode: 'update',
+      planFilePath: '/plans/152.plan.md',
+      useAtPrefix: false,
+    });
+    expect(def.prompt).toContain('Progress Updates (Plan File)');
+    expect(def.prompt).toContain('Update the plan file at: /plans/152.plan.md');
+    expect(def.prompt).not.toContain('@/plans/152.plan.md');
   });
 
   it('adds subagent directive to reviewer prompt when enabled', () => {
@@ -60,10 +77,11 @@ describe('agent_prompts failure protocol integration', () => {
     expect(verifier.prompt).toContain('FAILED:');
   });
 
-  it('includes progress note guidance for verifier when plan id provided', () => {
+  it('directs verifier to report progress to orchestrator', () => {
     const verifier = getVerifierAgentPrompt(context, '77');
-    expect(verifier.prompt).toContain('rmplan add-progress-note 77');
-    expect(verifier.prompt).toContain('--source "<agent>: <task>"');
+    expect(verifier.prompt).toContain('Progress Reporting');
+    expect(verifier.prompt).toContain('Do NOT update the plan file directly');
+    expect(verifier.prompt).not.toContain('Progress Updates (Plan File)');
   });
 
   it('appends custom instructions section to verifier prompt when provided', () => {
@@ -74,6 +92,6 @@ describe('agent_prompts failure protocol integration', () => {
     );
     expect(verifier.prompt).toContain('## Custom Instructions');
     expect(verifier.prompt).toContain('Follow project-specific QA checklist.');
-    expect(verifier.prompt).toContain('rmplan add-progress-note 55');
+    expect(verifier.prompt).toContain('Progress Reporting');
   });
 });

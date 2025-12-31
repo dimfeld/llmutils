@@ -4,7 +4,6 @@ title: Ability to run commands when starting and stopping agent command
 goal: ""
 id: 146
 uuid: e37079a4-2cc9-4161-a9a6-b75de7a45756
-simple: false
 status: pending
 priority: medium
 createdAt: 2025-11-07T21:16:48.398Z

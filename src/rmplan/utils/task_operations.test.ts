@@ -105,8 +105,6 @@ describe('task_operations utilities', () => {
       const result = await promptForTaskInfo();
       expect(result.title).toBe('New Feature');
       expect(result.description).toBe('Implement feature');
-      expect(result.files).toEqual(['src/index.ts', 'src/utils.ts']);
-      expect(result.docs).toEqual(['docs/feature.md']);
     });
 
     test('throws when editor returns empty description', async () => {

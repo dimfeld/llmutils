@@ -276,7 +276,6 @@ describe('Plan File Validation Tests', () => {
 
     // Verify GitHub-specific structure
     expect(planData.issue[0]).toMatch(/^https:\/\/github\.com\/[^\/]+\/[^\/]+\/issues\/\d+$/);
-    expect(planData.tasks[0].files).toEqual(['src/validation.js']);
 
     // Verify file structure is valid
     const fileContent = await fs.readFile(filePath, 'utf-8');
@@ -394,7 +393,6 @@ describe('Plan File Validation Tests', () => {
     // Verify tasks with special characters
     expect(planData.tasks[0].title).toBe('Task with "quotes"');
     expect(planData.tasks[0].description).toContain('@#$%^&*()');
-    expect(planData.tasks[0].files).toEqual(['src/special-chars.ts', 'test/edge-case.test.ts']);
 
     // Verify the file can be parsed correctly despite special characters
     const fileContent = await fs.readFile(filePath, 'utf-8');

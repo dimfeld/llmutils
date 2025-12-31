@@ -175,7 +175,6 @@ describe('rmplan CLI integration tests (internal handlers)', () => {
       {
         title: 'Integration Task',
         description: 'Created via add-task integration test',
-        files: ['src/service.ts'],
       },
       command
     );
@@ -185,9 +184,6 @@ describe('rmplan CLI integration tests (internal handlers)', () => {
     const [task] = updatedPlan.tasks;
     expect(task?.title).toBe('Integration Task');
     expect(task?.description).toBe('Created via add-task integration test');
-    expect(task?.files).toEqual(['src/service.ts']);
-    expect(task?.docs).toEqual([]);
-    expect(task?.steps).toEqual([]);
     expect(task?.done).toBeFalse();
     expect(typeof updatedPlan.updatedAt).toBe('string');
 

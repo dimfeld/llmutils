@@ -1,7 +1,30 @@
 import type { AgentDefinition } from './agent_generator.ts';
-import { progressNotesGuidance } from './orchestrator_prompt.ts';
+import { progressSectionGuidance } from './orchestrator_prompt.ts';
 
 const contextTaskFocus = `The "Context and Task" section may contain more tasks than are being worked on right now. Pay attention to your instructions on which tasks are actually in play and focus on those, but keep in mind that the instructions may not have all the details from the active tasks. The instructions should reference which tasks are being worked on.`;
+
+type ProgressGuidanceMode = 'report' | 'update';
+
+interface ProgressGuidanceOptions {
+  mode?: ProgressGuidanceMode;
+  planFilePath?: string;
+  useAtPrefix?: boolean;
+}
+
+const progressReportingGuidance = `
+## Progress Reporting
+
+Report progress, decisions, and blockers to the orchestrator. Do NOT update the plan file directly.
+`;
+
+function buildProgressGuidance(options?: ProgressGuidanceOptions): string {
+  if (options?.mode === 'update') {
+    return progressSectionGuidance(options.planFilePath, {
+      useAtPrefix: options.useAtPrefix,
+    });
+  }
+  return progressReportingGuidance;
+}
 
 export const FAILED_PROTOCOL_INSTRUCTIONS = `
 ## Failure Protocol (Conflicting/Impossible Requirements)
@@ -32,13 +55,13 @@ export function getImplementerPrompt(
   contextContent: string,
   planId?: string | number,
   customInstructions?: string,
-  model?: string
+  model?: string,
+  progressGuidanceOptions?: ProgressGuidanceOptions
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
     : '';
-  const progressNotesSection = progressNotesGuidance(planId);
-  const formattedProgressNotes = progressNotesSection ? `\n${progressNotesSection}\n` : '\n';
+  const progressGuidance = buildProgressGuidance(progressGuidanceOptions);
 
   return {
     name: 'implementer',
@@ -87,7 +110,7 @@ You may receive a single task or multiple related tasks to implement together. W
 - Add proper null/undefined checks where needed
 
 ${FAILED_PROTOCOL_INSTRUCTIONS}
-${formattedProgressNotes}
+${progressGuidance}
 
 ### Implementation Approach
 1. First understand the existing code structure and patterns. If you have a plan file to reference and existing work has been done on the plan, you can find it described in the "# Implementation Notes" section of the plan file's details field.
@@ -106,13 +129,13 @@ export function getTesterPrompt(
   contextContent: string,
   planId?: string | number,
   customInstructions?: string,
-  model?: string
+  model?: string,
+  progressGuidanceOptions?: ProgressGuidanceOptions
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
     : '';
-  const progressNotesSection = progressNotesGuidance(planId);
-  const formattedProgressNotes = progressNotesSection ? `\n${progressNotesSection}\n` : '\n';
+  const progressGuidance = buildProgressGuidance(progressGuidanceOptions);
 
   return {
     name: 'tester',
@@ -131,7 +154,7 @@ ${contextContent}${customInstructionsSection}
 5. Verify all tests work correctly with the implementation
 6. Take your time to ensure test coverage is complete and passing. Run testing commands even if they may take a while or use system resources.
 
-${formattedProgressNotes}
+${progressGuidance}
 
 ## Handling Multiple Tasks:
 You may receive a single task or multiple related tasks to test. When testing multiple tasks:
@@ -203,13 +226,12 @@ export function getVerifierAgentPrompt(
   customInstructions?: string,
   model?: string,
   includeTaskCompletionInstructions: boolean = false,
-  includeVerdictInstructions: boolean = false
+  includeVerdictInstructions: boolean = false,
+  progressGuidanceOptions?: ProgressGuidanceOptions
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
     : '';
-  const progressNotesSection = progressNotesGuidance(planId);
-  const formattedProgressNotes = progressNotesSection ? `\n${progressNotesSection}\n` : '\n';
   const taskCompletionInstructions =
     planId && includeTaskCompletionInstructions
       ? `\n## Marking Tasks as Done
@@ -278,6 +300,8 @@ If NEEDS_FIXES: Summarize the critical issues that must be addressed.
     );
   }
 
+  const progressGuidance = buildProgressGuidance(progressGuidanceOptions);
+
   return {
     name: 'verifier',
     description:
@@ -290,7 +314,7 @@ ${contextContent}${customInstructionsSection}
 ## Your Primary Responsibilities:
 ${primaryResponsibilities.join('\n')}
 
-${formattedProgressNotes}${taskCompletionInstructions}
+${progressGuidance}${taskCompletionInstructions}
 
 ## Handling Multiple Tasks:
 - ${contextTaskFocus}
@@ -323,13 +347,12 @@ export function getReviewerPrompt(
   customInstructions?: string,
   model?: string,
   useSubagents: boolean = false,
-  includeTaskCompletionInstructions: boolean = false
+  includeTaskCompletionInstructions: boolean = false,
+  progressGuidanceOptions?: ProgressGuidanceOptions
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
     : '';
-  const progressNotesSection = progressNotesGuidance(planId);
-  const formattedProgressNotes = progressNotesSection ? `\n${progressNotesSection}\n` : '\n';
   const subagentDirective = useSubagents
     ? 'CRITICAL: Use the available sub-agents to delegate in-depth analysis, run tests, and create findings before delivering your final verdict.\n\n'
     : '';
@@ -362,6 +385,8 @@ Do this for each task that was successfully implemented and reviewed before prov
     );
   }
 
+  const progressGuidance = buildProgressGuidance(progressGuidanceOptions);
+
   return {
     name: 'reviewer',
     description:
@@ -382,6 +407,7 @@ ${contextContent}${customInstructionsSection}
 ${reviewerPrimaryResponsibilities.join('\n')}
 
 ${taskCompletionInstructions}
+${progressGuidance}
 
 ## Reviewing Multiple Tasks:
 
@@ -448,8 +474,6 @@ Although you should be thorough in your review, you should not be too picky.
 - Do not mention code formatting issues--we have autoformatters for that.
 - When a function is wrapped in middleware, you can assume that the middleware is doing its job. For example, if the
 middleware already verifies the presence of an organization and user, the handler function inside the middleware does not need to check its presence again.
-
-${formattedProgressNotes}
 
 ## Response Format:
 

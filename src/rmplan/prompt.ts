@@ -181,13 +181,43 @@ Before producing the main implementation plan, determine whether any prerequisit
 1. Create a new plan immediately with \
    \`${commandExample}\`. Include \`--depends-on\` if a blocking plan should wait on another blocker. The parent plan's dependencies will be updated automatically.
 2. Capture clear details in the blocking plan so future agents know why it is required and how to execute it.
-3. Document the blockers you created under a "## Blocking Subissues" heading before the primary plan output using this exact format:
+3. Document the blockers you created in the plan's Details section under a "## Blocking Subissues" heading using this exact format:
    ## Blocking Subissue: [Title]
    - Priority: [high|medium|low|urgent]
    - Reason: [Why this must be done first]
    - Tasks: [High-level task list]
 
 Only create blocking plans for work that must land before the main implementation can begin.
+`;
+}
+
+type DiscoveredIssueInstructionOptions = {
+  parentPlanId?: number;
+};
+
+function getDiscoveredIssueInstructions(options: DiscoveredIssueInstructionOptions): string {
+  const planIdLabel =
+    options.parentPlanId !== undefined ? String(options.parentPlanId) : '<current-plan-id>';
+  const commandExample = `rmplan add "Discovered Issue Title" --discovered-from ${planIdLabel} --priority <high|medium|low|urgent> --details "Why this issue exists and what needs to be done"`;
+  const parentHint =
+    options.parentPlanId !== undefined
+      ? `If the issue should live under the same parent/epic, add \`--parent ${planIdLabel}\`.`
+      : 'If the issue should live under a parent/epic, add `--parent <parent-plan-id>`.';
+
+  return `
+# Discovered Issues
+
+If you uncover new, actionable work that is OUTSIDE the current plan scope, create a new plan immediately so it can be tracked:
+1. Use \`${commandExample}\`.
+2. ${parentHint}
+3. If the new issue blocks the current work, treat it as a blocking subissue and add \`--depends-on\` accordingly.
+4. Summarize any newly created plans in the plan's Details section under a "## Discovered Issues" heading using this format:
+   ## Discovered Issue: [Title]
+   - Priority: [high|medium|low|urgent]
+   - Reason: [Why it was discovered / why it matters]
+   - Suggested Next Steps: [Short actionable list]
+
+Only create discovered-issue plans for concrete work that should be tracked separately.
 `;
 }
 
@@ -227,6 +257,9 @@ export function planPrompt(
     withBlockingSubissues: options.withBlockingSubissues,
     parentPlanId: options.parentPlanId,
   });
+  const discoveredIssueSection = getDiscoveredIssueInstructions({
+    parentPlanId: options.parentPlanId,
+  });
 
   return `This is a description for an upcoming feature, and you will be tasked with creating a plan for it.
 
@@ -257,6 +290,7 @@ When testing, prefer to use real tests and not mock functions or modules. Prefer
 The goal is to output a high-level phase-based plan. Focus on the overall structure and organization of the project, breaking it into phases and tasks.
 
 ${blockingSection}
+${discoveredIssueSection}
 
 When generating the final output, create a phase-based plan with:
 - A title: A concise single-sentence title that captures the essence of the project
@@ -314,6 +348,9 @@ export function simplePlanPrompt(
     withBlockingSubissues: options.withBlockingSubissues,
     parentPlanId: options.parentPlanId,
   });
+  const discoveredIssueSection = getDiscoveredIssueInstructions({
+    parentPlanId: options.parentPlanId,
+  });
 
   return `This is a description for a task in the repository that needs exploration and planning.
 
@@ -335,6 +372,7 @@ This plan will be executed by an AI coding agent, so do NOT create tasks for man
 When testing, prefer to use real tests and not mock functions or modules. Prefer dependency injection instead of mocks. Tests that need IO can create files in a temporary directory.
 
 ${blockingSection}
+${discoveredIssueSection}
 
 The goal is to output prompts, but context, etc is important as well. Include plenty of information about which files to edit, what to do and how to do it, but you do not need to output code samples.
 
@@ -668,6 +706,9 @@ export function generateClaudeCodePlanningPrompt(
     withBlockingSubissues,
     parentPlanId,
   });
+  const discoveredIssueSection = getDiscoveredIssueInstructions({
+    parentPlanId,
+  });
 
   let prompt = `This is a description for an upcoming feature that I want you to analyze and prepare a plan for.
 
@@ -703,6 +744,7 @@ IMPORTANT: Do NOT create tasks for manual verification. Focus on automated testi
 Do not perform any implementation or write any files yet.
 
 ${blockingSection}
+${discoveredIssueSection}
 
 Use parallel subagents to analyze the requirements against different parts of the codebase, and generate detailed reports.
 Then prepare to synthesize these reports into the final plan.`;
@@ -774,7 +816,7 @@ ${planText}
 
   const blockingReminder = withBlockingSubissues
     ? `
-Before presenting the main plan output, summarize any blocking plans you created under a "## Blocking Subissues" heading using this structure:
+In the plan's Details section, summarize any blocking plans you created under a "## Blocking Subissues" heading using this structure:
 ## Blocking Subissue: [Title]
 - Priority: [high|medium|low|urgent]
 - Reason: [Why this must be done first]
@@ -822,6 +864,9 @@ export function generateClaudeCodeSimplePlanningPrompt(
     withBlockingSubissues,
     parentPlanId,
   });
+  const discoveredIssueSection = getDiscoveredIssueInstructions({
+    parentPlanId,
+  });
 
   let prompt = `This is a description for a task in the repository that needs exploration and planning.
 
@@ -852,6 +897,7 @@ IMPORTANT: Do NOT create tasks for manual verification. This plan will be execut
 Do not perform any implementation or write any files yet.
 
 ${blockingSection}
+${discoveredIssueSection}
 
 Use parallel subagents to analyze the requirements against different parts of the codebase, and generate detailed reports.
 Then prepare to synthesize these reports into the final plan.`;

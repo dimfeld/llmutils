@@ -123,35 +123,6 @@ describe('rmplan split - manual', () => {
     expect(child.tags).toEqual(['frontend', 'urgent']);
   });
 
-  test('split preserves parent progress notes and does not copy to child', async () => {
-    const parentPlan: PlanSchema = {
-      id: 1,
-      goal: 'Parent goal',
-      title: 'Parent Plan',
-      details: 'Parent details',
-      tasks: [
-        { title: 'Task 1', description: 'Description 1' },
-        { title: 'Task 2', description: 'Description 2' },
-      ],
-      progressNotes: [
-        { timestamp: new Date('2024-01-01T00:00:00Z').toISOString(), text: 'Parent note' },
-      ],
-    };
-    const parentFile = join(testDir, '1-parent.plan.md');
-    await writePlanFile(parentFile, parentPlan);
-
-    const command = { parent: { opts: () => ({}) } } as any;
-    await handleSplitCommand(parentFile, { tasks: '2' }, command);
-
-    const updatedParent = await readPlanFile(parentFile);
-    expect(updatedParent.progressNotes?.length).toBe(1);
-    expect(updatedParent.progressNotes?.[0].text).toBe('Parent note');
-
-    const childFile = join(testDir, '2-task-2.plan.md');
-    const child = await readPlanFile(childFile);
-    expect(child.progressNotes === undefined || child.progressNotes.length === 0).toBe(true);
-  });
-
   test('manual split of multiple tasks combines details and generates title via LLM', async () => {
     // Mock ai.generateText to avoid real network
     await moduleMocker.mock('ai', () => ({

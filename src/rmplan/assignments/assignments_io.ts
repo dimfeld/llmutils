@@ -42,6 +42,29 @@ export class AssignmentsVersionConflictError extends Error {
   }
 }
 
+export class TestIsolationViolationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TestIsolationViolationError';
+  }
+}
+
+/**
+ * Throws an error if running in a test and the file path matches the real llmutils assignments path.
+ * This helps ensure proper test isolation.
+ */
+function assertTestIsolation(filePath: string): void {
+  if (process.env.NODE_ENV === 'test') {
+    // Match paths like ~/.config/rmplan/shared/...llmutils/assignments.json
+    const pattern = /\.config\/rmplan\/shared\/.*llmutils\//;
+    if (pattern.test(filePath)) {
+      throw new TestIsolationViolationError(
+        `Test attempted to write to real assignments file: ${filePath}. Tests must use isolated test directories.`
+      );
+    }
+  }
+}
+
 function ensureTrailingNewline(content: string): string {
   return content.endsWith('\n') ? content : `${content}\n`;
 }
@@ -167,6 +190,7 @@ export async function writeAssignments(
 ): Promise<void> {
   const validated = assignmentsFileSchema.parse(assignments);
   const filePath = getAssignmentsFilePath(validated.repositoryId);
+  assertTestIsolation(filePath);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
 
   const expectedVersion = options.expectedVersion ?? Math.max(0, validated.version - 1);
@@ -259,6 +283,7 @@ export async function reserveNextPlanId(
   }
 
   const filePath = getAssignmentsFilePath(options.repositoryId);
+  assertTestIsolation(filePath);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
 
   const lockPath = `${filePath}.lock`;

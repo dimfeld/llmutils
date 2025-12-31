@@ -6,63 +6,12 @@ goal: Rename 'container' to 'epic', add epic display in show/list commands, and
 id: 150
 uuid: db330154-2628-4559-8f5f-bcaa4358505b
 generatedBy: agent
-simple: false
 status: done
 priority: medium
 planGeneratedAt: 2025-12-30T08:22:02.941Z
 promptsGeneratedAt: 2025-12-30T08:22:02.941Z
 createdAt: 2025-12-29T01:23:04.821Z
 updatedAt: 2025-12-30T09:36:53.992Z
-progressNotes:
-  - timestamp: 2025-12-30T08:24:46.545Z
-    text: Updated plan schema to add epic field alongside deprecated container,
-      normalized container->epic in readPlanFile, and ensured writePlanFile
-      drops container and only writes epic when true.
-    source: "implementer: schema migration"
-  - timestamp: 2025-12-30T08:36:30.479Z
-    text: Added regression coverage for legacy container->epic migration in plan
-      read/write path (readPlanFile normalizes container, writePlanFile emits
-      epic and strips container).
-    source: "tester: Phase 1 tests"
-  - timestamp: 2025-12-30T08:42:12.613Z
-    text: "Reviewed Phase 1 epic rename changes. Found a migration gap: container
-      values parsed outside readPlanFile (e.g., process_markdown / LLM updates
-      or any direct writePlanFile callers) are deleted without mapping to epic,
-      so legacy container flags can be lost."
-    source: "reviewer: Phase 1 review"
-  - timestamp: 2025-12-30T09:05:18.843Z
-    text: Implemented epic chain display for rmplan show, added epic column and epic
-      filtering to list/ready (including helper isUnderEpic and ready_plans/MCP
-      support), and updated tests/docs to cover epic display/filter behavior.
-    source: "implementer: tasks 6-11"
-  - timestamp: 2025-12-30T09:10:05.978Z
-    text: Ran bun test and bun run check; all tests passed. bun run lint still fails
-      with pre-existing lint issues in git_url_parser.ts, add-progress-note.ts,
-      claim.ts, configLoader.ts, workspace_manager.ts, and several JS files not
-      in tsconfig (same as previous).
-    source: "tester: test pass"
-  - timestamp: 2025-12-30T09:20:23.609Z
-    text: Reviewed epic display/filter changes (show/list/ready, hierarchy helper,
-      ready_plans/MCP) and related tests/docs; no correctness issues found.
-    source: "reviewer: tasks 6-11"
-  - timestamp: 2025-12-30T09:24:55.814Z
-    text: Updated MCP create-plan schema to normalize deprecated container inputs
-      via normalizeContainerToEpic and removed container from the published
-      parameter list. mcpCreatePlan now relies solely on epic, and added a
-      regression test covering container->epic mapping in generate_mode.test.ts.
-    source: "implementer: Task 12"
-  - timestamp: 2025-12-30T09:26:45.785Z
-    text: Ran MCP create-plan test coverage; bun test
-      src/rmplan/mcp/generate_mode.test.ts passed with container->epic mapping
-      regression check, no additional gaps found.
-    source: "tester: task 12"
-  - timestamp: 2025-12-30T09:29:30.554Z
-    text: "Found potential normalization bug: normalizeContainerToEpic treats any
-      truthy container as epic=true and can override explicit epic=false;
-      because createPlanParameters removed container from schema, container
-      values are no longer validated, so invalid types (e.g. string) can
-      silently flip epic."
-    source: "reviewer: Task 12"
 tasks:
   - title: "Phase 1: Schema Migration - Add epic field to planSchema.ts"
     done: true

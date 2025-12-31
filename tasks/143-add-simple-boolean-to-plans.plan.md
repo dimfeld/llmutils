@@ -13,36 +13,6 @@ planGeneratedAt: 2025-10-28T08:04:41.835Z
 promptsGeneratedAt: 2025-10-28T08:04:41.835Z
 createdAt: 2025-10-27T19:14:44.287Z
 updatedAt: 2025-10-28T08:29:48.309Z
-progressNotes:
-  - timestamp: 2025-10-28T08:13:35.981Z
-    text: "Successfully implemented all 5 tasks: (1) Added simple boolean field to
-      plan schema, (2) Added --simple flag to rmplan add command, (3) Updated
-      MCP generate prompt to check plan.simple field and redirect to simple
-      flow, (4) Updated generate command to respect plan.simple field with CLI
-      precedence, (5) Created comprehensive tests. Fixed accidental deletion of
-      task validation in ready_plans.ts. All tests passing."
-    source: "implementer: all tasks"
-  - timestamp: 2025-10-28T08:19:51.553Z
-    text: "Verified implementation and test coverage. Fixed regression where
-      zero-task filter was accidentally removed from ready_plans.ts. Added 5
-      additional edge case tests including: undefined simple field handling, CLI
-      flag precedence scenarios, full plan object validation, and
-      parse-serialize cycle preservation. All 2267 tests now pass including 19
-      simple-field specific tests."
-    source: "tester: all tasks"
-  - timestamp: 2025-10-28T08:25:40.826Z
-    text: Fixed agent/run command to read plan's simple field automatically (like
-      generate command does). Improved MCP tests to call actual
-      loadResearchPrompt function instead of just testing boolean logic. All
-      tests pass.
-    source: "implementer: reviewer fixes"
-  - timestamp: 2025-10-28T08:28:08.315Z
-    text: "All tests verified passing. Added 4 new tests for agent command
-      plan.simple field handling with proper CLI flag precedence. Full test
-      suite passes (2271 tests), type checking clean. Critical fix confirmed
-      working: agent/run command now reads plan's simple field and applies it
-      with proper precedence."
-    source: "tester: Task 5"
 tasks:
   - title: Add simple field to plan schema
     done: true

@@ -13,17 +13,6 @@ planGeneratedAt: 2025-10-18T18:28:15.722Z
 promptsGeneratedAt: 2025-10-18T18:28:15.722Z
 createdAt: 2025-10-18T07:39:11.437Z
 updatedAt: 2025-10-27T08:39:04.249Z
-progressNotes:
-  - timestamp: 2025-10-18T18:35:09.009Z
-    text: Implemented initial address-comments command handlers, supporting helper
-      functions, and CLI wiring; next step is to add automated tests and
-      documentation.
-    source: "implementer: Task 1"
-  - timestamp: 2025-10-18T18:45:54.094Z
-    text: Added new address-comments tests covering cleanup prompts, commit
-      auto-commit flow, and path validation; suite formatted and bun test
-      passing.
-    source: "tester: Task 7-8"
 tasks:
   - title: Create addressComments.ts command file
     done: true

@@ -6,113 +6,12 @@ goal: Replace semi-structured text parsing with JSON schema-based output from
 id: 147
 uuid: 301a2eb9-3f83-41c3-bd80-6c2a5f738fcb
 generatedBy: agent
-simple: false
 status: done
 priority: medium
 planGeneratedAt: 2025-12-01T05:26:42.186Z
 promptsGeneratedAt: 2025-12-01T05:26:42.186Z
 createdAt: 2025-12-01T05:08:09.553Z
 updatedAt: 2025-12-01T08:43:25.511Z
-progressNotes:
-  - timestamp: 2025-12-01T05:48:56.675Z
-    text: Completed Tasks 1 and 4. Created review_output_schema.ts with Zod schemas
-      (ReviewSeveritySchema, ReviewCategorySchema, ReviewIssueOutputSchema,
-      ReviewOutputSchema) and JSON schema generation functions. Added
-      parseJsonReviewOutput() and tryParseJsonReviewOutput() to
-      review_formatter.ts for structured JSON parsing. All 82 tests pass
-      including new test suites for schema validation and JSON parsing.
-    source: "implementer: Tasks 1 and 4"
-  - timestamp: 2025-12-01T06:01:30.475Z
-    text: >-
-      Completed Tasks 2 and 3. Updated both executors to use JSON schema output
-      for review mode:
-
-
-      **Task 2 - Claude executor (src/rmplan/executors/claude_code.ts):**
-
-      - Added import for getReviewOutputJsonSchemaString from
-      review_output_schema.ts
-
-      - Created new private method executeReviewMode() that:
-        - Uses simpler execution path than full orchestration
-        - Passes --output-format json and --json-schema <schema> to claude CLI
-        - Returns raw JSON output in ExecutorOutput.content for later parsing
-        - Sets metadata.jsonOutput = true to indicate JSON format
-      - Modified execute() to call executeReviewMode() when
-      planInfo.executionMode === 'review'
-
-
-      **Task 3 - Codex executor
-      (src/rmplan/executors/codex_cli/review_mode.ts):**
-
-      - Added imports for fs, os, path, getReviewOutputJsonSchema,
-      spawnAndLogOutput, warn
-
-      - Created ExecuteReviewModeOptions interface with reviewExecutor for
-      testability
-
-      - Added optional options parameter to executeReviewMode() for dependency
-      injection
-
-      - Created new function executeCodexReviewWithSchema() that:
-        - Creates temp directory with fs.mkdtemp()
-        - Writes JSON schema to temp file
-        - Passes --output-schema <temp-file-path> to codex CLI
-        - Cleans up temp directory in finally block
-        - Returns raw JSON output for later parsing
-      - Updated executeReviewMode() to use new JSON schema executor by default
-
-
-      **Test updates:**
-
-      - Updated codex_cli.review_mode.test.ts to use new reviewExecutor option
-
-      - Updated claude_code_model_test.ts to return proper stdout in mock for
-      review mode
-
-      - All tests related to changes pass (86 tests across 3 files)
-
-      - Type checking passes
-    source: "implementer: Tasks 2 and 3"
-  - timestamp: 2025-12-01T06:05:52.202Z
-    text: "Added comprehensive test coverage for Tasks 2 and 3. Added 5 tests for
-      Claude executor review mode in claude_code.test.ts verifying: JSON output
-      format and schema args, jsonOutput metadata flag, error handling for
-      non-zero exit, model selection, and no orchestration/agents in review
-      mode. Added 7 tests for Codex executor JSON schema handling in
-      codex_cli.review_mode.test.ts verifying: temp file creation with valid
-      schema, cleanup after success, cleanup after failure, sandbox settings,
-      external storage writable_roots, empty output error, and codex exec
-      command structure. All 44 new and existing tests pass (12 in
-      claude_code.test.ts, 9 in codex_cli.review_mode.test.ts, 23 in
-      review_output_schema.test.ts)."
-    source: "tester: Tasks 2 and 3"
-  - timestamp: 2025-12-01T06:18:51.432Z
-    text: "Completed Task 5: Updated createReviewResult to use JSON parsing. Added
-      CreateReviewResultOptions interface with isJsonOutput field. When
-      isJsonOutput is true, uses tryParseJsonReviewOutput() first and falls back
-      to text parsing on failure. Updated review.ts call site to detect
-      metadata.jsonOutput from executor output. Added 4 tests: JSON parsing,
-      fallback on invalid JSON, text parsing when isJsonOutput false, and
-      backward compatibility when options omitted. All 65 formatter tests pass,
-      all 65 review command tests pass."
-    source: "implementer: Task 5"
-  - timestamp: 2025-12-01T06:22:42.697Z
-    text: "Added comprehensive test coverage for JSON output mode integration in
-      review command. Added 4 new tests to review.test.ts: (1) JSON output
-      detection from executor metadata, (2) text output parsing for non-JSON
-      mode, (3) explicit text mode with jsonOutput=false, (4) summary statistics
-      calculation from JSON-parsed issues. All 157 tests in review-related files
-      pass (review.test.ts: 69 tests, review_formatter.test.ts: 65 tests,
-      review_output_schema.test.ts: 23 tests). Type checking and linting pass
-      for modified files."
-    source: "tester: Task 6"
-  - timestamp: 2025-12-01T08:43:25.507Z
-    text: JSON schema now strict (file/line/suggestion required, line string) but
-      tests and executors still send numeric/optional fields, so parsing will
-      fail. executeCodexStep ignores outputSchemaPath and still uses
-      --json/formatter, likely breaking review-mode output-schema flow.
-    source: "reviewer: code-review"
 tasks:
   - title: Create Zod schema for review output
     done: true

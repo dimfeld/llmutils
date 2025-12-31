@@ -12,6 +12,147 @@ interface MergeOptions {
   all?: boolean;
 }
 
+const progressHeadingRegex = /^( {0,3})##\s+Current Progress\s*$/;
+const fenceRegex = /^\s*(```|~~~)/;
+
+interface ProgressSection {
+  raw: string;
+  content: string;
+}
+
+function getHeadingLevel(line: string): number | undefined {
+  const match = line.match(/^( {0,3})(#{1,6})\s+\S/);
+  if (!match) {
+    return undefined;
+  }
+  return match[2].length;
+}
+
+function findProgressSectionRanges(lines: string[]): Array<{ start: number; end: number }> {
+  const ranges: Array<{ start: number; end: number }> = [];
+  let inFence = false;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (fenceRegex.test(line)) {
+      inFence = !inFence;
+    }
+
+    if (inFence) {
+      continue;
+    }
+
+    if (progressHeadingRegex.test(line)) {
+      let j = i + 1;
+      let sectionFence: boolean = inFence;
+
+      for (; j < lines.length; j += 1) {
+        const nextLine = lines[j];
+        if (fenceRegex.test(nextLine)) {
+          sectionFence = !sectionFence;
+        }
+        const headingLevel = sectionFence ? undefined : getHeadingLevel(nextLine);
+        if (headingLevel !== undefined && headingLevel <= 2) {
+          break;
+        }
+      }
+
+      ranges.push({ start: i, end: j - 1 });
+      i = j - 1;
+    }
+  }
+
+  return ranges;
+}
+
+function extractProgressSections(details?: string): { body: string; sections: ProgressSection[] } {
+  if (!details) {
+    return { body: '', sections: [] };
+  }
+
+  const lines = details.split('\n');
+  const ranges = findProgressSectionRanges(lines);
+
+  if (ranges.length === 0) {
+    return { body: details.trim(), sections: [] };
+  }
+
+  const skipLines = new Array(lines.length).fill(false);
+  const sections: ProgressSection[] = [];
+
+  for (const range of ranges) {
+    for (let index = range.start; index <= range.end; index += 1) {
+      skipLines[index] = true;
+    }
+
+    const rawLines = lines.slice(range.start, range.end + 1);
+    const contentLines = rawLines.slice(1);
+
+    sections.push({
+      raw: rawLines.join('\n').trim(),
+      content: contentLines.join('\n').trim(),
+    });
+  }
+
+  const body = lines
+    .filter((_, index) => !skipLines[index])
+    .join('\n')
+    .trim();
+
+  return { body, sections };
+}
+
+function formatProgressSectionLabel(child: PlanSchema & { filename: string }): string {
+  if (child.title) {
+    return child.title;
+  }
+  if (child.goal) {
+    return child.goal;
+  }
+  return child.id ? `Plan ${child.id}` : child.filename;
+}
+
+function buildMergedProgressSection(
+  mainSection: ProgressSection | undefined,
+  sections: Array<{ label: string; section: ProgressSection }>
+): string | undefined {
+  if (!mainSection && sections.length === 0) {
+    return undefined;
+  }
+
+  if (mainSection && sections.length === 0) {
+    return mainSection.raw;
+  }
+
+  if (!mainSection && sections.length === 1) {
+    return sections[0].section.raw;
+  }
+
+  const blocks: string[] = [];
+
+  if (mainSection?.content) {
+    blocks.push(mainSection.content);
+  }
+
+  const childBlocks = sections
+    .map(({ label, section }) => {
+      const parts = [`### From ${label}`];
+      if (section.content) {
+        parts.push(section.content);
+      }
+      return parts.join('\n');
+    })
+    .filter((block) => block.trim());
+
+  blocks.push(...childBlocks);
+
+  if (blocks.length === 0) {
+    return undefined;
+  }
+
+  return `## Current Progress\n${blocks.join('\n\n')}`.trim();
+}
+
 export async function handleMergeCommand(planFile: string, options: MergeOptions, command: any) {
   const globalOpts = command.parent.opts();
   const gitRoot = (await getGitRoot()) || process.cwd();
@@ -98,14 +239,19 @@ export async function handleMergeCommand(planFile: string, options: MergeOptions
   // Merge tasks from children into main plan
   const mergedTasks = [...(mainPlan.tasks || [])];
   const mergedDetails: string[] = [];
-  // Progress notes: combine parent + children notes, preserving chronological order
-  const mergedProgressNotes: { timestamp: string; text: string; source?: string }[] = [
-    ...(mainPlan.progressNotes ?? []),
-  ];
 
-  if (mainPlan.details) {
-    mergedDetails.push(mainPlan.details);
+  const { body: mainDetailsBody, sections: mainProgressSections } = extractProgressSections(
+    mainPlan.details
+  );
+  const mainProgressSection =
+    mainProgressSections.length > 0
+      ? mainProgressSections[mainProgressSections.length - 1]
+      : undefined;
+  if (mainDetailsBody) {
+    mergedDetails.push(mainDetailsBody);
   }
+
+  const childProgressSections: Array<{ label: string; section: ProgressSection }> = [];
 
   for (const child of childrenToMerge) {
     // Add child's title as a section header in details
@@ -115,33 +261,37 @@ export async function handleMergeCommand(planFile: string, options: MergeOptions
 
     // Add child's details
     if (child.details) {
-      mergedDetails.push(child.details);
+      const { body, sections } = extractProgressSections(child.details);
+      if (body?.trim()) {
+        mergedDetails.push(body);
+      }
+      if (sections.length > 0) {
+        const label = formatProgressSectionLabel(child);
+        for (const section of sections) {
+          childProgressSections.push({ label, section });
+        }
+      }
     }
 
     // Merge tasks
     if (child.tasks) {
       mergedTasks.push(...child.tasks);
     }
+  }
 
-    // Merge progress notes
-    if (child.progressNotes && child.progressNotes.length > 0) {
-      mergedProgressNotes.push(...child.progressNotes);
-    }
+  const mergedProgressSection = buildMergedProgressSection(
+    mainProgressSection,
+    childProgressSections
+  );
+
+  if (mergedProgressSection) {
+    mergedDetails.push(mergedProgressSection);
   }
 
   // Update the main plan
   mainPlan.tasks = mergedTasks;
   if (mergedDetails.length > 0) {
     mainPlan.details = mergedDetails.join('\n\n');
-  }
-  // Attach merged progress notes (sorted by timestamp ascending)
-  if (mergedProgressNotes.length > 0) {
-    mergedProgressNotes.sort((a, b) => {
-      const at = Date.parse(a.timestamp);
-      const bt = Date.parse(b.timestamp);
-      return at - bt;
-    });
-    mainPlan.progressNotes = mergedProgressNotes;
   }
   // If the main plan was marked as an epic, clear it after merging
   if (mainPlan.epic) {

@@ -5,67 +5,12 @@ goal: ""
 id: 145
 uuid: 3206a9ea-0d0a-4aaf-8733-fe1c69203f7b
 generatedBy: agent
-simple: false
 status: done
 priority: medium
 planGeneratedAt: 2025-11-07T18:28:25.095Z
 promptsGeneratedAt: 2025-11-07T18:28:25.095Z
 createdAt: 2025-11-07T18:16:10.651Z
 updatedAt: 2025-11-08T03:57:11.531Z
-progressNotes:
-  - timestamp: 2025-11-08T02:39:46.849Z
-    text: Added tags schema/config fields, normalization helpers, and CLI plumbing
-      for add/set with validation; updating tests next.
-    source: "implementer: tasks 1-5"
-  - timestamp: 2025-11-08T02:41:04.731Z
-    text: Finished CLI, docs, and tests for tag creation/removal; added
-      normalization + allowlist validation.
-    source: "implementer: tasks 1-5"
-  - timestamp: 2025-11-08T02:45:10.972Z
-    text: Ran bun test for planSchema/add/set suites; all passing (64 tests).
-    source: "tester: initial"
-  - timestamp: 2025-11-08T02:48:51.949Z
-    text: Added new tests covering normalizeTags/validateTags plus config
-      schema/loader allowlist handling.
-    source: "tester: Step1"
-  - timestamp: 2025-11-08T02:49:30.512Z
-    text: Ran targeted Bun tests covering config loader/schema, tag utilities, and
-      split/promote suites (163 tests) – all green.
-    source: "tester: Step3"
-  - timestamp: 2025-11-08T03:15:24.357Z
-    text: Added tag filters to rmplan list/ready along with tag displays in the
-      list, ready, and show outputs. Updated table layouts, CLI flags, and docs
-      while wiring the new formatTagsSummary helper.
-    source: "implementer: tasks 6-10/17-18"
-  - timestamp: 2025-11-08T03:19:33.049Z
-    text: Ran bun test for list/ready/show suites covering tag filtering/display;
-      all 86 tests passed.
-    source: "tester: tasks 6-10,17-18"
-  - timestamp: 2025-11-08T03:25:46.848Z
-    text: Reviewed tag filtering/display changes plus list/ready/show tests; no
-      issues found.
-    source: "reviewer: tasks 6-10,17-18"
-  - timestamp: 2025-11-08T03:32:44.360Z
-    text: Extended the MCP schemas to support tags (create-plan args + list-ready
-      filters), validated/normalized tags during plan creation, and added
-      tag-aware filtering plus JSON output in the MCP ready tool along with
-      ready_plans formatter.
-    source: "implementer: tasks 11-13"
-  - timestamp: 2025-11-08T03:33:01.948Z
-    text: Added MCP coverage for tags (create-plan accepts/validates tags,
-      list-ready filters by tags, and JSON output exposes normalized tags) plus
-      ran bun test on generate_mode and ready_plans suites and bun run check.
-    source: "tester: task 19"
-  - timestamp: 2025-11-08T03:38:06.433Z
-    text: Added CLI↔MCP tag integration tests covering CLI creation with MCP
-      filtering, MCP creation updated via CLI set, and shared allowlist
-      enforcement.
-    source: "tester: task 20"
-  - timestamp: 2025-11-08T03:47:58.189Z
-    text: "Identified issues in the new MCP tag support: limit is applied before tag
-      filtering in list-ready, and the function never invalidates the plan cache
-      so CLI tag updates are invisible without a manual clear."
-    source: "reviewer: tasks 11-13,19-20"
 tasks:
   - title: Add tags field to plan schemas
     done: true

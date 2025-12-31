@@ -9,20 +9,20 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain('Monitor all subagent outputs');
   });
 
-  it('mentions progress notes capability and example command', () => {
+  it('mentions progress section update guidance for plan file', () => {
     const out = wrapWithOrchestration('Context', '123', { batchMode: true });
-    // Should include a Progress Notes section and the add-progress-note command with plan id
-    expect(out).toContain('Progress Notes');
-    expect(out).toContain('rmplan add-progress-note 123');
-    expect(out).toContain('--source "<agent>: <task>"');
-    expect(out).toContain('implementer, verifier, tester, reviewer, or human');
+    expect(out).toContain('Progress Updates (Plan File)');
+    expect(out).toContain('Update in place');
+    expect(out).toContain('No timestamps');
+    expect(out).toContain('## Current Progress');
+    expect(out).toContain('### Current State');
   });
 
-  it('includes progress notes guidance in non-batch mode as well', () => {
+  it('includes progress section guidance in non-batch mode as well', () => {
     const out = wrapWithOrchestration('Context', '999', { batchMode: false });
-    expect(out).toContain('Progress Notes');
-    expect(out).toContain('rmplan add-progress-note 999');
-    expect(out).toContain('--source "<agent>: <task>"');
+    expect(out).toContain('Progress Updates (Plan File)');
+    expect(out).toContain('Update in place');
+    expect(out).toContain('No timestamps');
   });
 
   it('wraps content with two-phase instructions in simple mode', () => {
@@ -45,9 +45,10 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain('@/plans/test.plan.md');
   });
 
-  it('includes progress notes instructions in simple mode prompts', () => {
+  it('includes progress section instructions in simple mode prompts', () => {
     const out = wrapWithOrchestrationSimple('Context', '007', { batchMode: false });
-    expect(out).toContain("Use the Bash command 'rmplan add-progress-note 007");
-    expect(out).toContain('implementer, verifier, tester, reviewer, or human');
+    expect(out).toContain('Progress Updates (Plan File)');
+    expect(out).toContain('## Current Progress');
+    expect(out).toContain('### Remaining');
   });
 });

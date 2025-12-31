@@ -308,10 +308,6 @@
             "research": {
               "description": "Whether the research section should be compacted",
               "type": "boolean"
-            },
-            "progressNotes": {
-              "description": "Whether progress notes should be condensed into a summary",
-              "type": "boolean"
             }
           }
         }
@@ -523,19 +519,6 @@
           }
         }
       }
-    },
-    "progressNotes": {
-      "description": "Progress notes behavior and retention",
-      "type": "object",
-      "properties": {
-        "maxStored": {
-          "description": "Maximum number of progress notes to keep in a plan file",
-          "type": "integer",
-          "exclusiveMinimum": 0,
-          "maximum": 9007199254740991
-        }
-      },
-      "additionalProperties": false
     },
     "updateDocs": {
       "description": "Configuration for automatic documentation updates",

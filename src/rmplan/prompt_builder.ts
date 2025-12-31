@@ -1,6 +1,5 @@
 import * as path from 'path';
 import type { PlanSchema } from './planSchema.js';
-import { formatHiddenNotesSummary, MAX_PROMPT_NOTES, MAX_NOTE_CHARS } from './truncation.js';
 import type { RmplanConfig } from './configSchema.js';
 import { buildPlanContextPrompt, isURL } from './context_helpers.js';
 import { getGitRoot } from '../common/git.js';
@@ -179,12 +178,6 @@ export async function buildExecutionPromptWithoutSteps(
     promptParts.push(planContext);
   }
 
-  // Add progress notes (if any)
-  const notesSection = buildProgressNotesSection(planData);
-  if (notesSection) {
-    promptParts.push(notesSection);
-  }
-
   // Add task details if provided
   if (task) {
     if (batchMode) {
@@ -302,40 +295,4 @@ Before marking the task as done, verify:
 - [ ] Changes are focused and don't include modifications to unrelated parts of the code
 
 Remember: Quality is more important than speed. Take time to understand the codebase and verify your changes work correctly within the existing system.`;
-}
-
-/**
- * Build a progress notes section for agent prompts.
- * Notes are included without timestamps to reduce noise in prompts.
- */
-export function buildProgressNotesSection(planData: PlanSchema): string {
-  const notes = planData.progressNotes || [];
-  if (!notes.length) return '';
-
-  const startIndex = Math.max(0, notes.length - MAX_PROMPT_NOTES);
-  const latest = notes.slice(startIndex);
-
-  const lines: string[] = ['## Progress Notes', ''];
-  for (const n of latest) {
-    // Exclude timestamps per acceptance criteria; include text only
-    const text = (n.text || '').trim();
-    const sourcePrefix = (n.source || '').trim();
-    if (text.length || sourcePrefix.length) {
-      const withSource = sourcePrefix.length ? `[${sourcePrefix}] ${text}`.trim() : text;
-      // Preserve single-line bullets; collapse newlines to spaces to keep prompt compact
-      const singleLine = withSource.replace(/\s+/g, ' ').trim();
-      let truncated = singleLine;
-      if (truncated.length > MAX_NOTE_CHARS) {
-        truncated = truncated.slice(0, Math.max(0, MAX_NOTE_CHARS - 3)) + '...';
-      }
-      lines.push(`- ${truncated}`);
-    }
-  }
-  const hiddenCount = notes.length - latest.length;
-  if (hiddenCount > 0) {
-    // Standardized ASCII summary
-    lines.push(`\n${formatHiddenNotesSummary(hiddenCount)}`);
-  }
-
-  return lines.join('\n');
 }

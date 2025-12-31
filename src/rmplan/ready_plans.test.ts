@@ -25,7 +25,6 @@ function createPlan(overrides: Partial<PlanSchema> & { id: number }): PlanSchema
         done: overrides.status === 'done' ?? false,
       },
     ],
-    progressNotes: overrides.progressNotes,
     parent: overrides.parent,
     assignedTo: overrides.assignedTo,
     createdAt: overrides.createdAt,

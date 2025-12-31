@@ -196,12 +196,6 @@ describe('CodexCliExecutor simple mode', () => {
       })),
     }));
 
-    await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
-      implementationNotesGuidance: mock((_planPath?: string, planId?: string | number) => {
-        return `## Implementation Documentation\n\nUse 'rmplan add-implementation-note ${planId} "<notes>"' to document.`;
-      }),
-    }));
-
     const { CodexCliExecutor } = await import('./codex_cli.ts');
     const executor = new CodexCliExecutor(
       {},
@@ -223,7 +217,6 @@ describe('CodexCliExecutor simple mode', () => {
     expect(implementerPromptCalls).toHaveLength(1);
     expect(implementerPromptCalls[0].context).toBe('CTX CONTENT');
     expect(implementerPromptCalls[0].instructions).toContain('Implementer custom notes');
-    expect(implementerPromptCalls[0].instructions).toContain('## Implementation Documentation');
     expect(capturedVerifierContext).toBeDefined();
     expect(capturedVerifierContext).toContain('### Implementer Output Summary');
     expect(capturedVerifierContext).toContain('Implementation complete. ✅');

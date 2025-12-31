@@ -4,66 +4,10 @@ title: replace MCP tools with CLI commands
 goal: ""
 id: 148
 uuid: fea18633-aa57-4072-bb94-dae8ee0654dd
-simple: false
 status: done
 priority: medium
 createdAt: 2025-12-29T01:16:02.088Z
 updatedAt: 2025-12-30T20:10:13.829Z
-progressNotes:
-  - timestamp: 2025-12-30T19:04:45.360Z
-    text: Created shared tool modules under src/rmplan/tools with schemas, context,
-      and implementations for get/create/update/manage/list plan operations.
-      Added ToolContext/ToolResult, moved parameter schemas to tools/schemas.ts,
-      and added index exports.
-    source: "implementer: tools"
-  - timestamp: 2025-12-30T19:04:49.777Z
-    text: Refactored MCP generate_mode to call shared tool functions, added
-      registerTools option, and wired --no-tools flag through server/CLI. Added
-      rmplan tools command group plus commands/tools.ts for stdin JSON execution
-      with --json output.
-    source: "implementer: mcp/cli"
-  - timestamp: 2025-12-30T19:19:04.882Z
-    text: Added CLI tool handler tests covering JSON output, parity with shared tool
-      output, and error formatting. Also adjusted readPlanFile normalization to
-      apply container→epic before schema defaults so legacy container migration
-      persists.
-    source: "tester: task 6"
-  - timestamp: 2025-12-30T19:29:08.771Z
-    text: "Reviewed recent changes. Found: --no-tools CLI flag likely ignored due to
-      Commander negated option handling; manage-plan-task tool JSON data
-      overwrites per-action details (index/shift) with action only; MCP
-      create-plan now throws generic Error without UserError wrapping, changing
-      error surfacing."
-    source: "reviewer: tools/mcp CLI review"
-  - timestamp: 2025-12-30T19:41:55.669Z
-    text: Updated rmplan usage docs to cover new CLI tool equivalents, added CLI
-      examples alongside MCP tools, and extended the CLI command reference with
-      rmplan tools usage. Chose to extend existing cli-commands.md instead of
-      adding a new cli-tools.md file.
-    source: "implementer: task 7"
-  - timestamp: 2025-12-30T19:43:46.031Z
-    text: Ran bun test; all tests passed (2382 pass, 85 skip). No failures observed;
-      existing rmfix warnings still printed.
-    source: "tester: task 8"
-  - timestamp: 2025-12-30T19:54:06.831Z
-    text: "Found a test quality issue in tools parity coverage: update-plan-details
-      and update-plan-tasks tests call MCP after CLI without resetting the plan
-      file, so they don't compare outputs against the same initial state. This
-      can mask differences if behavior depends on existing tasks/details
-      (especially append/merge semantics). Recommend resetting the plan file
-      before each tool/CLI/MCP run or using separate fixtures."
-    source: "reviewer: tool parity tests"
-  - timestamp: 2025-12-30T19:58:04.526Z
-    text: "Ran bun test (2382 pass, 85 skip). Manually exercised CLI tools: get-plan
-      and list-ready-plans via stdin with --json output. Started rmplan
-      mcp-server --no-tools briefly to confirm flag wiring (terminated after
-      1s); saw expected startup banner plus a harmless nice(5) warning."
-    source: "tester: task 8"
-  - timestamp: 2025-12-30T20:02:11.373Z
-    text: Added tests for --no-tools registration (registerGenerateMode skips tool
-      registration) and CLI tools TTY stdin error handling; ran bun test for
-      updated test files (tools.test.ts, generate_mode.test.ts).
-    source: "tester: task 8"
 tasks:
   - title: Create src/rmplan/tools/ directory and files
     done: true

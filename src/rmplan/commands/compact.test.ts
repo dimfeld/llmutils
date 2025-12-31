@@ -81,16 +81,6 @@ describe('compact command', () => {
         { title: 'Task A', description: 'Initial implementation', done: true },
         { title: 'Task B', description: 'Write tests', done: true },
       ],
-      progressNotes: [
-        {
-          timestamp: new Date('2024-01-01T00:00:00.000Z').toISOString(),
-          text: 'Initial work logged.',
-        },
-        {
-          timestamp: new Date('2024-01-02T00:00:00.000Z').toISOString(),
-          text: 'Follow-up exploration.',
-        },
-      ],
     };
 
     await writePlanFile(planPath, plan);
@@ -157,7 +147,6 @@ describe('compact command', () => {
     expect(prompt).toContain('Read and Edit tools');
     expect(prompt).toContain('generated details (content between delimiters)');
     expect(prompt).toContain('research section');
-    expect(prompt).toContain('progress notes');
 
     // Verify options
     expect(options.planId).toBe('101');
@@ -177,7 +166,6 @@ describe('compact command', () => {
         sections: {
           details: true,
           research: false,
-          progressNotes: true,
         },
       },
       executors: {},
@@ -200,7 +188,6 @@ describe('compact command', () => {
     const prompt = callArgs[0];
 
     expect(prompt).toContain('generated details (content between delimiters)');
-    expect(prompt).toContain('progress notes');
     expect(prompt).toContain('Research section: Do NOT modify (disabled by configuration)');
   });
 

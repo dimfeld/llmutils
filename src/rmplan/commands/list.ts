@@ -320,11 +320,6 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     chalk.bold('Depends On'),
   ];
 
-  const showNotesColumn = planArray.some((p) => (p.progressNotes?.length || 0) > 0);
-  if (showNotesColumn) {
-    headers.splice(headers.length - 1, 0, chalk.bold('Notes'));
-  }
-
   if (options.files) {
     headers.push(chalk.bold('File'));
   }
@@ -462,11 +457,6 @@ export async function handleListCommand(options: any, command: any, searchTerms?
       dependenciesDisplay,
     ];
 
-    if (showNotesColumn) {
-      const n = plan.progressNotes?.length || 0;
-      row.splice(row.length - 1, 0, n > 0 ? String(n) : '-');
-    }
-
     if (options.files) {
       row.push(chalk.gray(path.relative(searchDir, plan.filename)));
     }
@@ -493,11 +483,10 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     tagsColumnWidth +
     7 + // Tasks
     7 + // Steps
-    (showNotesColumn ? 7 : 0) +
     dependsWidth;
 
   const fileColumnWidth = options.files ? fileWidth : 0;
-  const columnCount = options.files ? (showNotesColumn ? 12 : 11) : showNotesColumn ? 11 : 10;
+  const columnCount = options.files ? 11 : 10;
   const borderPadding = columnCount * 3 + 1; // 3 chars per column separator + 1 for end
 
   const usedWidth = fixedColumnsWidth + fileColumnWidth + borderPadding;
@@ -505,7 +494,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
   const titleWidth = Math.min(Math.max(20, availableWidth), maxTitleLength + 2);
 
-  const dependsColumnIndex = showNotesColumn ? 10 : 9;
+  const dependsColumnIndex = 9;
 
   const tableConfig: any = {
     columns: {
@@ -535,7 +524,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
   // Add file column configuration if showing files
   if (options.files) {
-    tableConfig.columns[showNotesColumn ? 11 : 10] = { width: fileWidth, wrapWord: true };
+    tableConfig.columns[10] = { width: fileWidth, wrapWord: true };
   }
 
   const output = table(tableData, tableConfig);

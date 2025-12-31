@@ -30,7 +30,6 @@ import {
 } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { findNextReadyDependency } from './find_next_dependency.js';
-import { MAX_NOTE_CHARS } from '../truncation.js';
 import { buildPlanContext, resolvePlan } from '../plan_display.js';
 import type { GenerateModeRegistrationContext, GetPlanArguments } from '../mcp/generate_mode.js';
 import { getParentChain } from '../utils/hierarchy.js';
@@ -265,39 +264,6 @@ async function displayPlanInfo(
       output.push(`${chalk.cyan('Temp:')} ${chalk.yellow('true')}`);
     }
 
-    const notes = plan.progressNotes ?? [];
-    if (notes.length > 0) {
-      const latestNotes = notes.slice(-10).map((latestNote) => {
-        const timestamp = latestNote.timestamp
-          ? new Date(latestNote.timestamp).toLocaleString()
-          : undefined;
-        const sourceLabel = (latestNote.source || '').trim();
-        const combined = sourceLabel.length
-          ? `[${sourceLabel}] ${latestNote.text ?? ''}`
-          : (latestNote.text ?? '');
-        const singleLine = combined.replace(/\s+/g, ' ').trim();
-        const truncated =
-          singleLine.length > MAX_NOTE_CHARS
-            ? singleLine.slice(0, Math.max(0, MAX_NOTE_CHARS - 3)) + '...'
-            : singleLine;
-        if (timestamp) {
-          return `  ${chalk.gray(timestamp)}  ${truncated}`;
-        } else if (truncated) {
-          return `  ${truncated}`;
-        } else {
-          return '';
-        }
-      });
-
-      output.push('\n' + chalk.bold('Latest Progress Notes:'));
-      output.push('─'.repeat(60));
-      for (const note of latestNotes) {
-        if (note) {
-          output.push(note);
-        }
-      }
-    }
-
     if (plan.epic) {
       output.push('\n' + chalk.bold('Tasks:'));
       output.push('─'.repeat(60));
@@ -394,10 +360,6 @@ async function displayPlanInfo(
     }
     log(`${chalk.cyan('Goal:')} ${getCombinedGoal(plan)}`);
     log(`${chalk.cyan('File:')} ${resolvedPlanFile}`);
-    if (plan.progressNotes && plan.progressNotes.length > 0) {
-      log(`${chalk.cyan('Progress Notes:')} ${plan.progressNotes.length}`);
-    }
-
     if (plan.baseBranch) {
       log(`${chalk.cyan('Base Branch:')} ${plan.baseBranch}`);
     }
@@ -525,45 +487,6 @@ async function displayPlanInfo(
         }
       } else {
         log(plan.details);
-      }
-    }
-
-    // Display progress notes (if any)
-    if (plan.progressNotes && plan.progressNotes.length > 0) {
-      log('\n' + chalk.bold('Progress Notes:'));
-      log('─'.repeat(60));
-      const { MAX_SHOW_NOTES, MAX_NOTE_CHARS } = await import('../truncation.js');
-      const notes = plan.progressNotes;
-      const startIndex = options.full ? 0 : Math.max(0, notes.length - MAX_SHOW_NOTES);
-      const visible = notes.slice(startIndex);
-      for (const n of visible) {
-        const ts = new Date(n.timestamp).toLocaleString();
-        const text = n.text || '';
-        const sourceLabel = (n.source || '').trim();
-        if (options.full) {
-          // Show full text, preserving line breaks with indentation
-          const lines = text.split('\n');
-          const header = `  • ${chalk.gray(ts)}${sourceLabel.length ? `  [${sourceLabel}]` : ''}`;
-          log(header);
-          if (text.trim().length > 0) {
-            log(`    ${lines.join('\n    ')}`);
-          }
-        } else {
-          // Truncate to a single line for compact display
-          const combined = sourceLabel.length ? `[${sourceLabel}] ${text}` : text;
-          const singleLine = combined.replace(/\s+/g, ' ').trim();
-          const truncated =
-            singleLine.length > MAX_NOTE_CHARS
-              ? singleLine.slice(0, Math.max(0, MAX_NOTE_CHARS - 3)) + '...'
-              : singleLine;
-          const body = truncated.length ? truncated : sourceLabel.length ? `[${sourceLabel}]` : '';
-          log(`  • ${chalk.gray(ts)}${body ? `  ${body}` : ''}`);
-        }
-      }
-      const hidden = notes.length - visible.length;
-      if (hidden > 0) {
-        const { formatHiddenNotesSummary } = await import('../truncation.js');
-        log(chalk.gray(formatHiddenNotesSummary(hidden)));
       }
     }
 

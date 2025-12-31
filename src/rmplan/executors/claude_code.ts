@@ -572,8 +572,7 @@ export class ClaudeCodeExecutor implements Executor {
             'Bash(cargo build)',
             'Bash(cargo test:*)',
             'Bash(rmplan set-task-done:*)',
-            'Bash(rmplan add-progress-note:*)',
-            'Bash(rmplan add-implementation-note:*)',
+            'Bash(rmplan add:*)',
           ]
         : [];
 
@@ -1065,8 +1064,7 @@ export class ClaudeCodeExecutor implements Executor {
             'Bash(cargo build)',
             'Bash(cargo test:*)',
             'Bash(rmplan set-task-done:*)',
-            'Bash(rmplan add-progress-note:*)',
-            'Bash(rmplan add-implementation-note:*)',
+            'Bash(rmplan add:*)',
           ]
         : [];
 
@@ -1150,19 +1148,24 @@ export class ClaudeCodeExecutor implements Executor {
             originalContextContent,
             planId,
             implementerInstructions,
-            this.options.agents?.implementer?.model
+            this.options.agents?.implementer?.model,
+            { mode: 'report' }
           ),
           getTesterPrompt(
             originalContextContent,
             planId,
             testerInstructions,
-            this.options.agents?.tester?.model
+            this.options.agents?.tester?.model,
+            { mode: 'report' }
           ),
           getReviewerPrompt(
             originalContextContent,
             planId,
             reviewerInstructions,
-            this.options.agents?.reviewer?.model
+            this.options.agents?.reviewer?.model,
+            false,
+            false,
+            { mode: 'report' }
           ),
         ];
         agentCreationMessage = `Configured implementer/tester/reviewer agents for plan ${planId}`;
@@ -1192,13 +1195,17 @@ export class ClaudeCodeExecutor implements Executor {
             originalContextContent,
             planId,
             implementerInstructions,
-            this.options.agents?.implementer?.model
+            this.options.agents?.implementer?.model,
+            { mode: 'report' }
           ),
           getVerifierAgentPrompt(
             originalContextContent,
             planId,
             verifierInstructions,
-            this.options.agents?.tester?.model
+            this.options.agents?.tester?.model,
+            false,
+            false,
+            { mode: 'report' }
           ),
         ];
         agentCreationMessage = `Configured implementer/verifier agents for plan ${planId}`;

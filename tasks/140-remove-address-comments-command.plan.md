@@ -8,42 +8,6 @@ status: done
 priority: medium
 createdAt: 2025-10-27T05:59:11.942Z
 updatedAt: 2025-10-29T08:27:56.983Z
-progressNotes:
-  - timestamp: 2025-10-29T08:14:47.068Z
-    text: Successfully removed all four deprecated commands (address-comments,
-      cleanup-comments, next, update, research). Moved MCP helper functions from
-      deleted files into generate_mode.ts to preserve MCP server functionality.
-      Updated README to remove documentation for address-comments and
-      cleanup-comments. All tests pass except for one pre-existing timeout in
-      review.test.ts that is unrelated to these changes.
-    source: "implementer: task completion"
-  - timestamp: 2025-10-29T08:17:41.923Z
-    text: Found extensive references to removed commands (next, update, research) in
-      README.md (19 references), docs/linear-integration.md,
-      docs/import_command.md, CHANGELOG.md, and
-      src/rmplan/commands/workspace.ts. These need to be updated to reference
-      rmplan agent or rmplan generate commands instead, or the sections need to
-      be removed entirely.
-    source: "verifier: documentation audit"
-  - timestamp: 2025-10-29T08:21:07.116Z
-    text: Fixed all documentation references to removed commands (rmplan next,
-      rmplan update, rmplan research). Updated README.md,
-      docs/linear-integration.md, docs/import_command.md, and
-      src/rmplan/commands/workspace.ts help text. All tests pass, type checking
-      passes, no new linting errors introduced.
-    source: "implementer: documentation cleanup"
-  - timestamp: 2025-10-29T08:23:53.357Z
-    text: Fixed all remaining documentation references to removed commands
-      (research, update, next) in README.md and rmplan.ts code comments
-    source: "implementer: documentation cleanup"
-  - timestamp: 2025-10-29T08:26:24.423Z
-    text: Completed comprehensive verification. Type checking passed, tests passed
-      (2229 pass, 80 skip). Lint errors are pre-existing and unrelated to this
-      work. MCP functions properly moved to generate_mode.ts with all tests
-      passing. No broken imports or references to deprecated commands found in
-      user-facing documentation. Only historical CHANGELOG.md reference remains
-      (appropriate for historical record).
-    source: "verifier: final verification"
 tasks: []
 changedFiles: []
 rmfilter: []

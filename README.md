@@ -49,7 +49,7 @@ These tools are deprecated as coding agents have largely replaced them, but sill
 - [Advanced Features](#advanced-features)
   - [Multi-Workspace Assignments](#multi-workspace-assignments)
   - [Plan Validation](#plan-validation)
-  - [Progress Notes](#progress-notes)
+  - [Progress Tracking](#progress-tracking)
   - [Plan Compaction](#plan-compaction)
 - [Supporting Tools](#supporting-tools)
   - [rmfilter](#rmfilter)
@@ -101,7 +101,7 @@ rmplan generate --issue 123 -- src/api/**/*.ts
 
 # 2. Review the generated plan
 rmplan show 123
-# Shows: title, goal, status, tasks, latest progress notes
+# Shows: title, goal, status, tasks, and a progress summary
 
 # 3. Execute the plan automatically
 rmplan agent 123 --executor claude-code
@@ -109,7 +109,7 @@ rmplan agent 123 --executor claude-code
 # Executes each task with LLM
 # Runs tests and formatting
 # Commits changes
-# Tracks progress notes
+# Updates the plan's Progress section
 
 # 4. Track progress
 rmplan show 123 --short
@@ -181,11 +181,6 @@ createdAt: 2025-01-15T10:00:00Z
 updatedAt: 2025-01-15T14:30:00Z
 planGeneratedAt: 2025-01-15T10:15:00Z
 
-# Progress Tracking
-progressNotes:
-  - timestamp: 2025-01-15T12:00:00Z
-    source: "implementer: Set up auth middleware"
-    text: "Completed middleware implementation, added tests"
 ---
 
 <!-- Optional manual content -->
@@ -202,13 +197,27 @@ This plan implements user authentication using JWT tokens...
 - Need to integrate with existing user model
 
 <!-- rmplan-generated-end -->
+
+## Progress
+### Current State
+- Implementation in progress; auth middleware scaffolded and tests started.
+### Completed (So Far)
+- Drafted auth middleware wiring
+### Remaining
+- Finish login endpoint and integrate token refresh
+### Next Iteration Guidance
+- Start with src/auth/middleware.ts and related tests
+### Decisions / Changes
+- None
+### Risks / Blockers
+- None
 ```
 
 **Key Concepts:**
 
 - **Delimiters**: `<!-- rmplan-generated-start/end -->` preserve AI-generated content while allowing manual edits outside
 - **UUID References**: Plans can reference each other by UUID for stable cross-references
-- **Progress Notes**: Timestamped notes from agents or manual updates, shown in CLI and included in prompts
+- **Progress Tracking**: A structured `## Progress` section in the plan body, updated in place with a living summary (no timestamps)
 - **Status Flow**: `pending` → `in_progress` → `done` (or `cancelled`/`deferred`)
 
 ---
@@ -504,7 +513,7 @@ rmplan show 123
 # Show by file path
 rmplan show tasks/feature.yml
 
-# Short summary (status + latest note + task titles only)
+# Short summary (status + task titles)
 rmplan show 123 --short
 ```
 
@@ -521,7 +530,7 @@ rmplan show --next-ready 100
 **Full details:**
 
 ```bash
-# Show all progress notes (not just latest 10)
+# Show full details
 rmplan show 123 --full
 ```
 
@@ -538,9 +547,6 @@ Dependencies: #101 (Database schema) ✓ done
 
 Goal:
 Add secure user login and session management
-
-Latest Progress Note (2025-01-15 12:00):
-[implementer: Set up auth middleware] Completed middleware implementation, added tests
 
 Tasks (2/3 done):
 ✓ 1. Set up authentication middleware
@@ -1543,50 +1549,53 @@ Validation runs automatically during:
 - `rmplan set` with relationship changes
 - Plan file writes
 
-### Progress Notes
+### Progress Tracking
 
-Record milestones, deviations, and discoveries during execution.
+Track milestones, deviations, and discoveries in the plan file's `## Progress` section (outside the generated delimiters). This section is a living summary that is updated in place.
 
-**Add notes:**
+**Update the Progress section:**
 
-```bash
-# Manual note
-rmplan add-progress-note 123 --source "human: review" "Identified edge case in validation"
+- Create `## Progress` at the end of the file if it doesn't exist
+- Edit or replace outdated text so it reflects the current reality while preserving meaningful history
+- Do not include timestamps anywhere in the section
+- Describe what progress was made, how, and why (not just testing/review status)
 
-# Agents add automatically
-# [implementer: Task 1] Completed refactor, updated tests
+**Recommended template:**
+
+```markdown
+## Progress
+
+### Current State
+
+- ...
+
+### Completed (So Far)
+
+- ...
+
+### Remaining
+
+- ...
+
+### Next Iteration Guidance
+
+- ...
+
+### Decisions / Changes
+
+- ...
+
+### Risks / Blockers
+
+- None
 ```
 
-**View notes:**
+**View progress in CLI:**
 
 ```bash
-# Show latest 10 notes (default)
 rmplan show 123
-
-# Show all notes
-rmplan show 123 --full
-
-# Short view (latest note only)
 rmplan show 123 --short
-```
-
-**Notes in prompts:**
-
-Agent prompts include up to 50 latest notes (timestamps omitted for clarity):
-
-```
-Progress Notes:
-[implementer: Set up auth] Completed middleware implementation
-[tester: Set up auth] All tests passing
-[implementer: Add login] Endpoint functional, needs rate limiting
-... and 12 more earlier note(s)
-```
-
-**Notes in lists:**
-
-```bash
-rmplan list
-# Shows Notes column when plans have notes
+rmplan show 123 --full
 ```
 
 ### Plan Compaction
@@ -1613,8 +1622,7 @@ rmplan compact 144 --executor direct-call --age 14
 
 1. Condenses generated details (between delimiters)
 2. Summarizes research section
-3. Replaces progress notes with archival summary
-4. Preserves manual content outside delimiters
+3. Preserves manual content outside delimiters
 
 **Requirements:**
 
@@ -1766,7 +1774,6 @@ rmplan run ID  # alias for agent
 
 # Track progress
 rmplan show ID [--short | --full]
-rmplan add-progress-note ID --source "SOURCE" "NOTE"
 
 # Mark complete
 rmplan done ID [--commit]

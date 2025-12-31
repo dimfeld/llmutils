@@ -241,10 +241,6 @@ export const rmplanConfigSchema = z
               .boolean()
               .optional()
               .describe('Whether the research section should be compacted'),
-            progressNotes: z
-              .boolean()
-              .optional()
-              .describe('Whether progress notes should be condensed into a summary'),
           })
           .optional(),
       })
@@ -342,26 +338,6 @@ export const rmplanConfigSchema = z
       .partial()
       .optional()
       .describe('Options for each executor'),
-    /**
-     * Progress notes behavior and retention settings.
-     */
-    progressNotes: z
-      .object({
-        /**
-         * Maximum number of progress notes to persist in a plan file.
-         * When exceeded, the oldest notes are discarded on the next write.
-         * If unset, no rotation is performed.
-         */
-        maxStored: z
-          .number()
-          .int()
-          .positive()
-          .optional()
-          .describe('Maximum number of progress notes to keep in a plan file'),
-      })
-      .strict()
-      .optional()
-      .describe('Progress notes behavior and retention'),
     /**
      * Documentation update settings.
      */

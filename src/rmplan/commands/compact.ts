@@ -26,7 +26,6 @@ interface CompactCommandOptions {
 interface CompactionSectionToggles {
   details?: boolean;
   research?: boolean;
-  progressNotes?: boolean;
 }
 
 interface CompactPlanArgs {
@@ -230,12 +229,10 @@ export function generateCompactionPrompt(
 
   const applyDetails = sectionToggles?.details ?? true;
   const applyResearch = sectionToggles?.research ?? true;
-  const applyProgressNotes = sectionToggles?.progressNotes ?? false;
 
   const sectionsToCompact = [];
   if (applyDetails) sectionsToCompact.push('generated details (content between delimiters)');
   if (applyResearch) sectionsToCompact.push('research section');
-  if (applyProgressNotes) sectionsToCompact.push('progress notes');
 
   return [
     'You are an expert technical editor assisting with archiving completed engineering plans by compacting them for long-term storage.',
@@ -276,9 +273,6 @@ export function generateCompactionPrompt(
     applyResearch
       ? '- Research section: Find and replace the "## Research" section that appears OUTSIDE the generated delimiters. If no Research section exists, that is ok.'
       : '- Research section: Do NOT modify (disabled by configuration)',
-    applyProgressNotes
-      ? '- Progress notes: Replace the entire progressNotes array in the YAML frontmatter with a single entry containing a compaction summary. Use timestamp: current ISO timestamp, source: "rmplan compact", text: "Compaction summary:\\n<your summary>"'
-      : '- Progress notes: Do NOT modify (disabled by configuration)',
     '',
     'Structure of a well-compacted generated details section (if enabled):',
     '```markdown',
@@ -307,17 +301,6 @@ export function generateCompactionPrompt(
     '- Only include findings that directly influenced the implementation, decisions, or outcome',
     '- Omit exploratory research, alternative approaches not taken, and background information',
     '- Each bullet should clearly connect to what was actually done in the plan',
-    '',
-    'Example of a compacted progress notes entry (if enabled):',
-    '```yaml',
-    'progressNotes:',
-    '  - timestamp: 2024-03-20T10:30:00.000Z',
-    '    source: rmplan compact',
-    '    text: |',
-    '      Compaction summary:',
-    '      - Validated new pipeline with staging data set 2024-03-18.',
-    '      - Deployed to production and monitored 48h with no regressions.',
-    '```',
     '',
     'IMPORTANT: You MUST NOT modify any of the following fields in the YAML frontmatter:',
     '- id, uuid, title, goal, status',

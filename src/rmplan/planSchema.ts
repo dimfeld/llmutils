@@ -10,12 +10,6 @@ type ObjectFactory = <T extends z.ZodRawShape>(shape: T) => z.ZodObject<T>;
 const createLooseObject: ObjectFactory = (shape) => z.object(shape).passthrough();
 
 export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObject) => {
-  const progressNoteSchema = objectFactory({
-    timestamp: z.string().datetime(),
-    text: z.string(),
-    source: z.string().optional(),
-  });
-
   const taskSchema = objectFactory({
     title: z.string(),
     done: z.boolean().default(false),
@@ -98,10 +92,6 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
     createdAt: z.string().datetime().optional(),
     updatedAt: z.string().datetime().optional(),
     compactedAt: z.string().datetime().optional(),
-    progressNotes: z
-      .array(progressNoteSchema)
-      .default(() => [])
-      .optional(),
     project: projectSchema.optional(),
     tasks: z.array(taskSchema),
     baseBranch: z.string().optional(),
