@@ -166,7 +166,6 @@ export const createPlanParameters = z
       ),
     temp: z.boolean().optional().describe('Mark as temporary plan'),
   })
-  .transform((value) => normalizeContainerToEpic(value))
   .describe('Create a new plan file');
 
 export type CreatePlanArguments = z.infer<typeof createPlanParameters>;
