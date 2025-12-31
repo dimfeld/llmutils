@@ -1200,6 +1200,119 @@ describe('createWorkspace', () => {
     expect(copiedJjRepo).toBe('jj store');
   });
 
+  test('createWorkspace copies local config files when present', async () => {
+    const taskId = 'task-cp-local-config';
+    const sourceDirectory = path.join(testTempDir, 'source');
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'source-task-cp-local-config');
+
+    // Create source directory with local config files
+    await fs.mkdir(path.join(sourceDirectory, '.rmfilter', 'config'), { recursive: true });
+    await fs.mkdir(path.join(sourceDirectory, '.claude'), { recursive: true });
+    await fs.writeFile(
+      path.join(sourceDirectory, '.rmfilter', 'config', 'rmplan.local.yml'),
+      'local: true'
+    );
+    await fs.writeFile(
+      path.join(sourceDirectory, '.claude', 'settings.local.json'),
+      '{"key": "value"}'
+    );
+    await fs.writeFile(path.join(sourceDirectory, 'tracked.txt'), 'tracked');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        cloneMethod: 'cp',
+        sourceDirectory,
+        cloneLocation,
+      },
+    };
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[], options?: { cwd?: string }) => {
+      if (cmd[0] === 'git' && cmd[1] === 'ls-files') {
+        expect(options?.cwd).toBe(sourceDirectory);
+        return { exitCode: 0, stdout: 'tracked.txt\u0000', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'init') {
+        expect(options?.cwd).toBe(targetClonePath);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'checkout') {
+        expect(options?.cwd).toBe(targetClonePath);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+
+    expect(result).not.toBeNull();
+
+    // Verify local config files were copied
+    const copiedRmplanLocal = await fs.readFile(
+      path.join(targetClonePath, '.rmfilter', 'config', 'rmplan.local.yml'),
+      'utf-8'
+    );
+    expect(copiedRmplanLocal).toBe('local: true');
+
+    const copiedClaudeSettings = await fs.readFile(
+      path.join(targetClonePath, '.claude', 'settings.local.json'),
+      'utf-8'
+    );
+    expect(copiedClaudeSettings).toBe('{"key": "value"}');
+  });
+
+  test('createWorkspace handles missing local config files gracefully', async () => {
+    const taskId = 'task-cp-no-local-config';
+    const sourceDirectory = path.join(testTempDir, 'source');
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'source-task-cp-no-local-config');
+
+    // Create source directory without local config files
+    await fs.mkdir(sourceDirectory, { recursive: true });
+    await fs.writeFile(path.join(sourceDirectory, 'tracked.txt'), 'tracked');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        cloneMethod: 'cp',
+        sourceDirectory,
+        cloneLocation,
+      },
+    };
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[], options?: { cwd?: string }) => {
+      if (cmd[0] === 'git' && cmd[1] === 'ls-files') {
+        return { exitCode: 0, stdout: 'tracked.txt\u0000', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'init') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+
+    // Should succeed even without local config files
+    expect(result).not.toBeNull();
+    expect(result?.path).toBe(targetClonePath);
+
+    // Verify the tracked file was copied
+    const copiedTracked = await fs.readFile(path.join(targetClonePath, 'tracked.txt'), 'utf-8');
+    expect(copiedTracked).toBe('tracked');
+
+    // Verify local config files don't exist (since they weren't in source)
+    await expect(
+      fs.stat(path.join(targetClonePath, '.rmfilter', 'config', 'rmplan.local.yml'))
+    ).rejects.toThrow();
+    await expect(
+      fs.stat(path.join(targetClonePath, '.claude', 'settings.local.json'))
+    ).rejects.toThrow();
+  });
+
   test('createWorkspace copies gitdir pointer when .git is a file', async () => {
     const taskId = 'task-cp-git-pointer';
     const sourceDirectory = path.join(testTempDir, 'source');

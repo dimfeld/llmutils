@@ -124,6 +124,8 @@ async function collectFilesToCopy(
 
   await includeDirectoryTreeIfExists(files, sourceDir, '.git');
   await includeDirectoryTreeIfExists(files, sourceDir, '.jj');
+  await includeDirectoryTreeIfExists(files, sourceDir, '.rmfilter/config/rmplan.local.yml');
+  await includeDirectoryTreeIfExists(files, sourceDir, '.claude/settings.local.json');
 
   return Array.from(files).sort();
 }
