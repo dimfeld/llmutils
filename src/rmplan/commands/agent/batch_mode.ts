@@ -89,7 +89,11 @@ export async function executeBatchMode(
         config,
         task: {
           title: `${incompleteTasks.length} Tasks`,
-          description: `Please select and complete a logical subset of the following incomplete tasks that makes sense to work on together:\n\n${taskDescriptions}`,
+          description: `Please select and complete a logical subset of the following incomplete tasks that makes sense to work on together.
+
+IMPORTANT: Err on the side of choosing fewer tasks rather than more. It's better to complete a small number of tasks thoroughly than to take on too many at once. Focus on what can be completed well in a single iteration.
+
+Available tasks:\n\n${taskDescriptions}`,
           files: [], // Files will be included via plan context
         },
         filePathPrefix: executor.filePathPrefix,

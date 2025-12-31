@@ -1,5 +1,5 @@
 import { z } from 'zod/v4';
-import { normalizeContainerToEpic, prioritySchema } from '../planSchema.js';
+import { prioritySchema } from '../planSchema.js';
 
 // Simplified task schema for tool parameters
 const taskSchema = z.object({
