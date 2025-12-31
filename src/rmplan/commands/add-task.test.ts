@@ -29,9 +29,6 @@ describe('handleAddTaskCommand', () => {
           title: 'Initial task',
           description: 'Existing work item',
           done: false,
-          files: [],
-          docs: [],
-          steps: [],
         },
       ],
     };
@@ -64,8 +61,6 @@ describe('handleAddTaskCommand', () => {
       {
         title: 'Add logging',
         description: 'Introduce structured logging across modules',
-        files: ['src/server.ts'],
-        docs: ['docs/logging.md'],
       },
       { parent: { opts: () => ({}) } }
     );
@@ -75,10 +70,7 @@ describe('handleAddTaskCommand', () => {
     const newTask = updated.tasks[1];
     expect(newTask?.title).toBe('Add logging');
     expect(newTask?.description).toBe('Introduce structured logging across modules');
-    expect(newTask?.files).toEqual(['src/server.ts']);
-    expect(newTask?.docs).toEqual(['docs/logging.md']);
     expect(newTask?.done).toBeFalse();
-    expect(newTask?.steps).toEqual([]);
     expect(logSpy).toHaveBeenCalled();
   });
 
@@ -107,8 +99,6 @@ describe('handleAddTaskCommand', () => {
     const newTask = updated.tasks[1];
     expect(newTask?.title).toBe('Interactive Task');
     expect(newTask?.description).toBe('Captured via prompts');
-    expect(newTask?.files).toEqual(['src/app.ts']);
-    expect(newTask?.docs).toEqual([]);
     expect(promptSpy).toHaveBeenCalledTimes(1);
   });
 

@@ -124,9 +124,6 @@ describe('uuid_lookup utilities', () => {
           title: 'Task',
           description: 'Legacy work',
           done: false,
-          files: [],
-          docs: [],
-          steps: [],
         },
       ],
     });

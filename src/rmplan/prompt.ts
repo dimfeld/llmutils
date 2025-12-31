@@ -1080,22 +1080,8 @@ Generate a YAML snippet containing ONLY the tasks array with fully populated imp
 tasks:
   - title: [Task 1 Title]
     description: [Task 1 Description]
-    files:
-      - path/to/file1.ts
-      - path/to/file2.ts
-    steps:
-      - prompt: |
-          [Detailed, multi-line prompt for step 1]
-          [Include specific requirements and context]
-      - prompt: |
-          [Detailed prompt for step 2]
   - title: [Task 2 Title]
     description: [Task 2 Description]
-    files:
-      - path/to/file3.ts
-    steps:
-      - prompt: |
-          [Detailed prompt for this task]
 \`\`\`
 
 IMPORTANT:

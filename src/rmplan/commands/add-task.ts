@@ -10,17 +10,10 @@ export interface AddTaskOptions {
   title?: string;
   description?: string;
   editor?: boolean;
-  files?: string[];
-  docs?: string[];
   interactive?: boolean;
 }
 
 type PlanTask = NonNullable<PlanSchema['tasks']>[number];
-type PlanTaskWithMetadata = PlanTask & {
-  files?: string[];
-  docs?: string[];
-  steps?: unknown[];
-};
 
 export async function handleAddTaskCommand(
   plan: string,
@@ -37,13 +30,10 @@ export async function handleAddTaskCommand(
   const taskInfo = await collectTaskInput(options);
 
   const tasks = Array.isArray(planData.tasks) ? planData.tasks : [];
-  const newTask: PlanTaskWithMetadata = {
+  const newTask: PlanTask = {
     title: taskInfo.title,
     description: taskInfo.description,
     done: false,
-    files: taskInfo.files ?? [],
-    docs: taskInfo.docs ?? [],
-    steps: [],
   };
 
   tasks.push(newTask);
@@ -68,8 +58,6 @@ async function collectTaskInput(options: AddTaskOptions): Promise<TaskInput> {
       return await promptForTaskInfo({
         title: options.title,
         description: options.description,
-        files: options.files,
-        docs: options.docs,
       });
     } catch (err: any) {
       if (err instanceof Error && err.name === 'ExitPromptError') {
@@ -109,17 +97,5 @@ async function collectTaskInput(options: AddTaskOptions): Promise<TaskInput> {
   return {
     title: title.trim(),
     description: description.trim(),
-    files: normalizeStringList(options.files),
-    docs: normalizeStringList(options.docs),
   };
-}
-
-function normalizeStringList(values?: string[]): string[] {
-  if (!Array.isArray(values)) {
-    return [];
-  }
-
-  return values
-    .map((value) => value.trim())
-    .filter((value, index, arr) => value.length > 0 && arr.indexOf(value) === index);
 }

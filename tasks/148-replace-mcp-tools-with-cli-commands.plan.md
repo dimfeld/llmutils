@@ -78,9 +78,6 @@ tasks:
         - manage_plan_task.ts
         - list_ready_plans.ts
       - Create index.ts to re-export all
-    files: []
-    docs: []
-    steps: []
   - title: Update generate_mode.ts to use shared tools
     done: true
     description: |-
@@ -88,9 +85,6 @@ tasks:
       - Replace inline mcp* functions with calls to tool functions
       - Keep MCP-specific wrapper logic (logging, error handling)
       - Use toMcpResult() helper to extract text from ToolResult
-    files: []
-    docs: []
-    steps: []
   - title: Add tools command to rmplan.ts
     done: true
     description: >-
@@ -102,9 +96,6 @@ tasks:
       - Each subcommand should have --json option for structured output
 
       - Each subcommand calls handleToolCommand()
-    files: []
-    docs: []
-    steps: []
   - title: Create commands/tools.ts
     done: true
     description: |-
@@ -112,9 +103,6 @@ tasks:
       - Implement formatOutput() and formatError() for both text and JSON modes
       - Create toolHandlers mapping tool names to schemas and functions
       - Implement handleToolCommand() that orchestrates the flow
-    files: []
-    docs: []
-    steps: []
   - title: Add --no-tools option to MCP server
     done: true
     description: |-
@@ -122,9 +110,6 @@ tasks:
       - Update registerGenerateMode() signature to accept RegisterOptions
       - Conditionally register tools based on registerTools option
       - Update CLI command registration in rmplan.ts
-    files: []
-    docs: []
-    steps: []
   - title: Write tests
     done: true
     description: |-
@@ -132,9 +117,6 @@ tasks:
       - Integration tests comparing CLI and MCP outputs
       - Tests for error handling (invalid JSON, missing fields, etc.)
       - Follow existing patterns in task-management.integration.test.ts
-    files: []
-    docs: []
-    steps: []
   - title: Update documentation
     done: true
     description: >-
@@ -144,9 +126,6 @@ tasks:
       CLI alternatives
 
       - Consider creating cli-tools.md dedicated reference
-    files: []
-    docs: []
-    steps: []
   - title: Run full test suite and manual verification
     done: true
     description: |-
@@ -154,9 +133,6 @@ tasks:
       - Manual testing of CLI tools with various inputs
       - Verify MCP server --no-tools mode works correctly
       - Compare CLI and MCP outputs for consistency
-    files: []
-    docs: []
-    steps: []
 changedFiles:
   - README.md
   - claude-plugin/skills/rmplan-usage/SKILL.md

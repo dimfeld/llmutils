@@ -5,8 +5,6 @@ import type { PlanSchema } from '../planSchema.js';
 export interface TaskInput {
   title: string;
   description: string;
-  files: string[];
-  docs: string[];
 }
 
 export type Task = NonNullable<PlanSchema['tasks']>[number];
@@ -64,34 +62,10 @@ export async function promptForTaskInfo(initial: Partial<TaskInput> = {}): Promi
     throw new Error('Task description cannot be empty.');
   }
 
-  const filesInput = await input({
-    message: 'Related files (comma separated, optional):',
-    default: Array.isArray(initial.files) ? initial.files.join(', ') : '',
-  });
-
-  const docsInput = await input({
-    message: 'Related docs (comma separated, optional):',
-    default: Array.isArray(initial.docs) ? initial.docs.join(', ') : '',
-  });
-
   return {
     title: title.trim(),
     description: description.trim(),
-    files: parseListInput(filesInput, initial.files),
-    docs: parseListInput(docsInput, initial.docs),
   };
-}
-
-function parseListInput(value: string, fallback?: string[]): string[] {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return fallback ?? [];
-  }
-
-  return trimmed
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean);
 }
 
 function formatTaskChoice(task: Task, index: number): string {
