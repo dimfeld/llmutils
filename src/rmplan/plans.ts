@@ -649,12 +649,15 @@ export async function writePlanFile(
 
   // Remove deprecated 'container' field - always use 'epic' instead
   delete cleanedPlan.container;
-  // Remove false boolean defaults
+  // Remove false boolean defaults for rarely used fields
   if (cleanedPlan.epic === false) {
     delete cleanedPlan.epic;
   }
   if (cleanedPlan.temp === false) {
     delete cleanedPlan.temp;
+  }
+  if (cleanedPlan.simple === false) {
+    delete cleanedPlan.simple;
   }
 
   // Remove empty arrays
