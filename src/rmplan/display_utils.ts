@@ -199,3 +199,44 @@ export function formatTagsSummary(
 
   return joined;
 }
+
+/**
+ * Extracts issue number from an issue URL.
+ * For example: "https://github.com/owner/repo/issues/123" -> "#123"
+ */
+export function extractIssueNumber(url: string): string | undefined {
+  // Match common issue URL patterns (GitHub, GitLab, Linear, etc.)
+  const patterns = [
+    /\/issues\/(\d+)/, // GitHub, GitLab
+    /\/issue\/([A-Z]+-\d+)/i, // Linear (e.g., PROJ-123)
+    /\/browse\/([A-Z]+-\d+)/i, // Jira (e.g., PROJ-123)
+  ];
+
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) {
+      // For numeric issue numbers, add #; for alphanumeric (like Linear/Jira), return as-is
+      return match[1].match(/^\d+$/) ? `#${match[1]}` : match[1];
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Builds a workspace description from a plan.
+ * Format: "#issueNumber planTitle" or just "planTitle" if no issue.
+ */
+export function buildDescriptionFromPlan(plan: PlanSchema): string {
+  const title = getCombinedTitleFromSummary(plan);
+
+  // Try to extract issue number from the first issue URL
+  if (plan.issue && plan.issue.length > 0) {
+    const issueRef = extractIssueNumber(plan.issue[0]);
+    if (issueRef) {
+      return `${issueRef} ${title}`;
+    }
+  }
+
+  return title;
+}

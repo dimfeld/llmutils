@@ -10,6 +10,8 @@ import type { PostApplyCommand, RmplanConfig } from '../configSchema.js';
 import { WorkspaceLock } from './workspace_lock.js';
 import { getDefaultTrackingFilePath, recordWorkspace } from './workspace_tracker.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { buildDescriptionFromPlan } from '../display_utils.js';
+import type { PlanSchema } from '../planSchema.js';
 
 /**
  * Interface representing a created workspace
@@ -429,7 +431,7 @@ export async function createWorkspace(
   taskId: string,
   originalPlanFilePath: string | undefined,
   config: RmplanConfig,
-  options?: { branchName?: string }
+  options?: { branchName?: string; planData?: PlanSchema }
 ): Promise<Workspace | null> {
   // Check if workspace creation is enabled in the config
   if (!config.workspaceCreation) {
@@ -684,6 +686,10 @@ export async function createWorkspace(
   } catch (error) {
     log(`Warning: Failed to resolve repository identity for workspace: ${String(error)}`);
   }
+
+  // Build description from plan data if available
+  const description = options?.planData ? buildDescriptionFromPlan(options.planData) : undefined;
+
   await recordWorkspace(
     {
       taskId,
@@ -691,6 +697,7 @@ export async function createWorkspace(
       repositoryId,
       workspacePath: targetClonePath,
       name: taskId,
+      description,
       branch: shouldCreateBranch ? branchName : undefined,
       createdAt: new Date().toISOString(),
     },

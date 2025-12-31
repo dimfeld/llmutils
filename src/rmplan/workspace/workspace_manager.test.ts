@@ -1751,4 +1751,54 @@ describe('createWorkspace', () => {
     expect(workspaceInfo).not.toBeNull();
     expect(workspaceInfo!.name).toBe(taskId);
   });
+
+  test('createWorkspace sets description from plan data', async () => {
+    const { getWorkspaceMetadata } = await import('./workspace_tracker.js');
+    const { PlanSchema } = await import('../planSchema.js');
+
+    const taskId = 'task-with-description';
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const cloneLocation = path.join(testTempDir, 'clones-description');
+    const targetClonePath = path.join(cloneLocation, `repo-${taskId}`);
+    const trackingFilePath = path.join(testTempDir, 'tracking-description.json');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        repositoryUrl,
+        cloneLocation,
+        createBranch: false,
+      },
+      paths: {
+        trackingFile: trackingFilePath,
+      },
+    };
+
+    const planData: any = {
+      id: 'plan-123',
+      title: 'Implement New Feature',
+      goal: 'Add new feature to the application',
+      issue: ['https://github.com/example/repo/issues/456'],
+    };
+
+    // Mock the clone operation
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => {
+      await fs.mkdir(targetClonePath, { recursive: true });
+      return {
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+      };
+    });
+
+    // Execute
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config, {
+      planData,
+    });
+
+    // Verify
+    expect(result).not.toBeNull();
+    const workspaceInfo = await getWorkspaceMetadata(targetClonePath, trackingFilePath);
+    expect(workspaceInfo).not.toBeNull();
+    expect(workspaceInfo!.description).toBe('#456 Implement New Feature');
+  });
 });

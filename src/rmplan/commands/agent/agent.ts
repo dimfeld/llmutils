@@ -39,7 +39,7 @@ import {
   getWorkspaceMetadata,
   patchWorkspaceMetadata,
 } from '../../workspace/workspace_tracker.js';
-import { buildDescriptionFromPlan } from '../workspace.js';
+import { buildDescriptionFromPlan } from '../../display_utils.js';
 import { findNextReadyDependency } from '../find_next_dependency.js';
 import { executeBatchMode } from './batch_mode.js';
 import { markParentInProgress } from './parent_plans.js';

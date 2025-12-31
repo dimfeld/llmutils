@@ -7,6 +7,8 @@ import {
   getCombinedGoal,
   getCombinedTitleFromSummary,
   formatWorkspacePath,
+  extractIssueNumber,
+  buildDescriptionFromPlan,
 } from './display_utils.js';
 import type { PlanSchema, PlanSummary } from './planSchema.js';
 
@@ -253,5 +255,118 @@ describe('getCombinedTitleFromSummary', () => {
 
     const result = getCombinedTitleFromSummary(summary);
     expect(result).toBe('full-project - Full Summary');
+  });
+});
+
+describe('extractIssueNumber', () => {
+  test('extracts GitHub issue number from URL', () => {
+    const url = 'https://github.com/owner/repo/issues/123';
+    expect(extractIssueNumber(url)).toBe('#123');
+  });
+
+  test('extracts GitLab issue number from URL', () => {
+    const url = 'https://gitlab.com/owner/repo/issues/456';
+    expect(extractIssueNumber(url)).toBe('#456');
+  });
+
+  test('extracts Linear issue ID from URL', () => {
+    const url = 'https://linear.app/team/issue/PROJ-789';
+    expect(extractIssueNumber(url)).toBe('PROJ-789');
+  });
+
+  test('extracts Jira issue ID from URL', () => {
+    const url = 'https://company.atlassian.net/browse/TEAM-123';
+    expect(extractIssueNumber(url)).toBe('TEAM-123');
+  });
+
+  test('returns undefined for URL without issue pattern', () => {
+    const url = 'https://github.com/owner/repo';
+    expect(extractIssueNumber(url)).toBeUndefined();
+  });
+});
+
+describe('buildDescriptionFromPlan', () => {
+  test('builds description from plan title only', () => {
+    const plan: PlanSchema = {
+      id: '1',
+      title: 'Add New Feature',
+      goal: 'Implement feature',
+      details: 'Details',
+      tasks: [],
+    };
+
+    expect(buildDescriptionFromPlan(plan)).toBe('Add New Feature');
+  });
+
+  test('builds description with issue number from GitHub URL', () => {
+    const plan: PlanSchema = {
+      id: '1',
+      title: 'Fix Bug',
+      goal: 'Fix the bug',
+      details: 'Details',
+      issue: ['https://github.com/owner/repo/issues/789'],
+      tasks: [],
+    };
+
+    expect(buildDescriptionFromPlan(plan)).toBe('#789 Fix Bug');
+  });
+
+  test('builds description with Linear issue ID', () => {
+    const plan: PlanSchema = {
+      id: '1',
+      title: 'New Feature',
+      goal: 'Add feature',
+      details: 'Details',
+      issue: ['https://linear.app/team/issue/DF-456'],
+      tasks: [],
+    };
+
+    expect(buildDescriptionFromPlan(plan)).toBe('DF-456 New Feature');
+  });
+
+  test('uses first issue when multiple are present', () => {
+    const plan: PlanSchema = {
+      id: '1',
+      title: 'Multiple Issues',
+      goal: 'Handle issues',
+      details: 'Details',
+      issue: [
+        'https://github.com/owner/repo/issues/111',
+        'https://github.com/owner/repo/issues/222',
+      ],
+      tasks: [],
+    };
+
+    expect(buildDescriptionFromPlan(plan)).toBe('#111 Multiple Issues');
+  });
+
+  test('combines project and phase title with issue', () => {
+    const plan: PlanSchema = {
+      id: '1',
+      title: 'Phase One',
+      goal: 'Complete phase',
+      details: 'Details',
+      project: {
+        title: 'Big Project',
+        goal: 'Complete project',
+        details: 'Project details',
+      },
+      issue: ['https://github.com/owner/repo/issues/999'],
+      tasks: [],
+    };
+
+    expect(buildDescriptionFromPlan(plan)).toBe('#999 Big Project - Phase One');
+  });
+
+  test('falls back to goal when no title', () => {
+    const plan: PlanSchema = {
+      id: '1',
+      title: '',
+      goal: 'Main Goal',
+      details: 'Details',
+      tasks: [],
+    };
+
+    expect(buildDescriptionFromPlan(plan)).toBe('Main Goal');
   });
 });
