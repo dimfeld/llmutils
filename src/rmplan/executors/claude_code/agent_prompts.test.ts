@@ -31,6 +31,12 @@ describe('agent_prompts failure protocol integration', () => {
     expect(def.prompt).toContain('Failure Protocol');
   });
 
+  it('emphasizes critical requirements mismatches in reviewer prompt', () => {
+    const def = getReviewerPrompt(context);
+    expect(def.prompt).toContain('ultrathink');
+    expect(def.prompt).toContain('implemented but does not meet requirements is a CRITICAL issue');
+  });
+
   it('directs implementer to report progress to orchestrator', () => {
     const def = getImplementerPrompt(context, '42');
     expect(def.prompt).toContain('Progress Reporting');

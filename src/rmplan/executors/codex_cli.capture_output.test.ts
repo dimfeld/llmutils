@@ -82,6 +82,18 @@ describe('CodexCliExecutor captureOutput', () => {
       loadRepositoryReviewDoc: mock(async () => ''),
     }));
 
+    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: mock(async () => ({
+        verdict: 'ACCEPTABLE',
+        formattedOutput: 'All good.\n\nVERDICT: ACCEPTABLE',
+        fixInstructions: 'No issues',
+        reviewResult: { issues: [] },
+        rawOutput: '{}',
+        warnings: [],
+      })),
+    }));
+
     await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
       getImplementerPrompt: mock(() => ({
         name: 'impl',
@@ -189,6 +201,18 @@ describe('CodexCliExecutor captureOutput', () => {
     await moduleMocker.mock('./codex_cli/agent_helpers.ts', () => ({
       loadAgentInstructionsFor: mock(async () => ''),
       loadRepositoryReviewDoc: mock(async () => ''),
+    }));
+
+    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: mock(async () => ({
+        verdict: 'NEEDS_FIXES',
+        formattedOutput: 'Still issues.\n\nVERDICT: NEEDS_FIXES',
+        fixInstructions: 'Fix issues',
+        reviewResult: { issues: [] },
+        rawOutput: '{}',
+        warnings: [],
+      })),
     }));
 
     await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({

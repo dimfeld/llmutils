@@ -22,6 +22,8 @@ export interface CleanupPlanOptions {
   issue?: string[];
   doc?: string[];
   tag?: string[];
+  scopeNote?: string;
+  scopedPlan?: PlanSchema;
 }
 
 export interface CleanupPlanResult {
@@ -52,9 +54,15 @@ export async function createCleanupPlan(
   if (!referencedPlan) {
     throw new Error(`Plan with ID ${referencedPlanId} not found`);
   }
+  if (options.scopedPlan?.id && options.scopedPlan.id !== referencedPlanId) {
+    throw new Error(
+      `Scoped plan ID ${options.scopedPlan.id} does not match referenced plan ID ${referencedPlanId}`
+    );
+  }
+  const planContext = options.scopedPlan ?? referencedPlan;
 
   // Generate plan title
-  const planTitle = options.title || `${referencedPlan.title} - Cleanup`;
+  const planTitle = options.title || `${planContext.title} - Cleanup`;
 
   // Generate a unique numeric plan ID
   const planId = await generateNumericPlanId(targetDir);
@@ -96,8 +104,13 @@ export async function createCleanupPlan(
   const plan: PlanSchema = {
     id: planId,
     title: planTitle,
-    goal: buildCleanupGoal(referencedPlan, reviewIssues),
-    details: buildCleanupDetails(referencedPlan, reviewIssues),
+    goal: buildCleanupGoal(planContext, reviewIssues),
+    details: buildCleanupDetails(
+      planContext,
+      reviewIssues,
+      options.scopeNote,
+      options.scopedPlan?.tasks
+    ),
     status: options.status || 'pending',
     priority: options.priority || 'medium',
     dependencies: undefined,
@@ -176,13 +189,30 @@ function buildCleanupGoal(referencedPlan: PlanSchema, reviewIssues: ReviewIssue[
 /**
  * Builds detailed description for the cleanup plan based on the issues
  */
-function buildCleanupDetails(referencedPlan: PlanSchema, reviewIssues: ReviewIssue[]): string {
+function buildCleanupDetails(
+  referencedPlan: PlanSchema,
+  reviewIssues: ReviewIssue[],
+  scopeNote?: string,
+  scopedTasks?: PlanSchema['tasks']
+): string {
   const details = [
     `This cleanup plan addresses issues identified during code review of plan ${referencedPlan.id}: "${referencedPlan.title}"`,
     '',
-    'Issues to address:',
-    '',
   ];
+
+  if (scopeNote) {
+    details.push(scopeNote, '');
+    if (scopedTasks && scopedTasks.length > 0) {
+      details.push('Scoped tasks:', '');
+      scopedTasks.forEach((task, index) => {
+        const description = task.description ? ` - ${task.description}` : '';
+        details.push(`${index + 1}. ${task.title}${description}`);
+      });
+      details.push('');
+    }
+  }
+
+  details.push('Issues to address:', '');
 
   // Group issues by severity for better organization
   const groupedIssues = reviewIssues.reduce(

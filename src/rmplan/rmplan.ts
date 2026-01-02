@@ -826,6 +826,15 @@ program
     'Specify the LLM model to use for the review. Overrides model from rmplan config.'
   )
   .option('--dry-run', 'Generate and print the review prompt but do not execute it', false)
+  .option('-p, --print', 'Output JSON review results without interactive prompts')
+  .option(
+    '--task-index <indexes...>',
+    'Review only specific task indexes (0-based). Repeatable or comma-separated.'
+  )
+  .option(
+    '--task-title <titles...>',
+    'Review only specific task titles (exact match, case-insensitive). Repeatable or comma-separated.'
+  )
   .option(
     '--instructions <text>',
     'Inline custom instructions for the review. Overrides config file instructions.'

@@ -105,10 +105,11 @@ You don't need to mark the entire plan file as complete. We will handle that for
 function buildAvailableAgents(planId: string): string {
   return `## Available Agents
 
-You have access to three specialized agents that you MUST use for this task:
+You have access to two specialized agents that you MUST use for this task:
 - **rmplan-implementer**: Use this agent to implement new features and write code
 - **rmplan-tester**: Use this agent to write and run tests for the implementation
-- **rmplan-reviewer**: Use this agent to review code quality and suggest improvements`;
+
+Code reviews are performed by running \`rmplan review\` (not a subagent).`;
 }
 
 /**
@@ -136,18 +137,18 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
    - Have the tester run the tests and work on fixing any failures`;
 
   const reviewPhase = `${options.batchMode ? '4' : '3'}. **Review Phase**
-   - Use the Task tool to invoke the reviewer agent with subagent_type="rmplan-reviewer"
-   - Tell the reviewer which tasks were just implemented and what project requirements those changes fulfill.
-   - Ask the reviewer to analyze the codebase and ensures its quality and adherence to the task requirements
-   - The reviewer is instructed to only focus on problems; don't expect positive feedback even if the code is perfect.`;
+   - Run \`rmplan review ${planId} --print\` using the Bash tool.
+   - If needed, pass \`--executor <claude-code|codex-cli|both>\` to select the review executor.
+   - The review command may take up to 15 minutes; use a long timeout.
+   - The review output focuses on problems; don't expect positive feedback even if the code is perfect.`;
 
   const finalPhases = `${options.batchMode ? '5' : '4'}. **Notes Phase**
    ${progressSectionGuidance(options.planFilePath)}
 
 ${options.batchMode ? '6' : '5'}. **Iteration**
 
-- If the reviewer identifies issues or tests fail:
-- Return to step ${options.batchMode ? '2' : '1'} with the reviewer's feedback
+- If the review output identifies issues or tests fail:
+- Return to step ${options.batchMode ? '2' : '1'} with the review feedback
 - Continue this loop until all tests pass and the implementation is satisfactory`;
 
   return `## Workflow Instructions
@@ -184,7 +185,7 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 
 - **DO NOT implement code directly**. Always delegate implementation tasks to the appropriate agents.
 - **DO NOT write tests directly**. Always use the tester agent for test execution and updates.
-- **DO NOT review code directly**. Always use the reviewer agent for code quality assessment.
+- **DO NOT review code directly**. Always run \`rmplan review ${planId} --print\` for code quality assessment.
 - You are responsible only for coordination and ensuring the workflow is followed correctly.
 - The agents have access to the same task instructions below that you do, so you don't need to repeat them. You should reference which specific tasks titles are being worked on so the agents can focus on the right tasks.
 - When invoking agents, provide clear, specific instructions about what needs to be done in addition to referencing the task titles.
@@ -193,11 +194,11 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
   const failureProtocol = `
 \n## Failure Protocol (Conflicting/Impossible Requirements)
 
-- Monitor all subagent outputs (implementer, tester, reviewer) for a line starting with "FAILED:".
-- If any subagent emits a FAILED line, you MUST stop orchestration immediately.
+- Monitor all subagent outputs (implementer, tester) and the \`rmplan review\` output for a line starting with "FAILED:".
+- If any subagent or \`rmplan review\` emits a FAILED line, you MUST stop orchestration immediately.
 - Output a concise failure message and propagate details:
   - First line: FAILED: <agent> reported a failure — <1-sentence summary>
-    - Where <agent> is one of: implementer | tester | reviewer | fixer
+    - Where <agent> is one of: implementer | tester | fixer | review
   - Then include the subagent's detailed report verbatim (requirements, problems, possible solutions).
 - Do NOT proceed to further phases or mark tasks done after a failure.
 - You may add brief additional context if necessary (e.g., which tasks were being processed).`;

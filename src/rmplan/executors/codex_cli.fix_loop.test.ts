@@ -51,21 +51,10 @@ describe('CodexCliExecutor - Fix Loop', () => {
 
     // Track calls to executeCodexStep
     const calls: string[] = [];
-    let reviewerCallCount = 0;
 
     await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
       executeCodexStep: mock(async (prompt: string) => {
         calls.push(prompt.slice(0, 100));
-
-        // Reviewer (first call needs fixes, second call acceptable)
-        if (prompt.includes('REVIEWER') || prompt.includes('reviewer')) {
-          reviewerCallCount++;
-          if (reviewerCallCount === 1) {
-            return 'Issues found that need to be fixed.\n\nVERDICT: NEEDS_FIXES';
-          } else {
-            return 'Looks good now. Everything is acceptable.\n\nVERDICT: ACCEPTABLE';
-          }
-        }
 
         // Implementer
         if (prompt.includes('IMPLEMENTER') || prompt.includes('implementer')) {
@@ -111,6 +100,32 @@ describe('CodexCliExecutor - Fix Loop', () => {
       loadRepositoryReviewDoc: mock(async () => ''),
     }));
 
+    let reviewCallCount = 0;
+    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: mock(async () => {
+        reviewCallCount++;
+        if (reviewCallCount === 1) {
+          return {
+            verdict: 'NEEDS_FIXES',
+            formattedOutput: 'Review needs fixes.\n\nVERDICT: NEEDS_FIXES',
+            fixInstructions: 'Fix issues',
+            reviewResult: { issues: [] },
+            rawOutput: '{}',
+            warnings: [],
+          };
+        }
+        return {
+          verdict: 'ACCEPTABLE',
+          formattedOutput: 'All good now.\n\nVERDICT: ACCEPTABLE',
+          fixInstructions: 'No issues',
+          reviewResult: { issues: [] },
+          rawOutput: '{}',
+          warnings: [],
+        };
+      }),
+    }));
+
     // Mock agent prompts
     await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
       getImplementerPrompt: mock(() => ({
@@ -145,18 +160,14 @@ describe('CodexCliExecutor - Fix Loop', () => {
       executeNormalMode('context', mockPlanInfo, '/tmp/repo', 'test-model', mockConfig)
     ).resolves.toBeUndefined();
 
-    // Expect: implementer + tester + reviewer + fixer + reviewer = 5 calls
-    expect(calls.length).toBe(5);
+    // Expect: implementer + tester + fixer = 3 calls
+    expect(calls.length).toBe(3);
     // First call should be implementer
     expect(calls[0]).toContain('IMPLEMENTER');
     // Second call should be tester
     expect(calls[1]).toContain('TESTER');
-    // Third call should be reviewer (NEEDS_FIXES)
-    expect(calls[2]).toContain('REVIEWER');
-    // Fourth call should be fixer
-    expect(calls[3]).toContain('Fixer');
-    // Fifth call should be reviewer (ACCEPTABLE)
-    expect(calls[4]).toContain('REVIEWER');
+    // Third call should be fixer
+    expect(calls[2]).toContain('Fixer');
   }, 15000);
 
   test('stops after max 5 fix iterations when still NEEDS_FIXES', async () => {
@@ -185,17 +196,24 @@ describe('CodexCliExecutor - Fix Loop', () => {
       detectPlanningWithoutImplementation: mock(() => ({ detected: false })),
     }));
 
+    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: mock(async () => ({
+        verdict: 'NEEDS_FIXES',
+        formattedOutput: 'Still issues.\n\nVERDICT: NEEDS_FIXES',
+        fixInstructions: 'Fix issues',
+        reviewResult: { issues: [] },
+        rawOutput: '{}',
+        warnings: [],
+      })),
+    }));
+
     // Track calls
     const calls: string[] = [];
 
     await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
       executeCodexStep: mock(async (prompt: string) => {
         calls.push(prompt.slice(0, 50));
-
-        // Reviewer - always returns NEEDS_FIXES
-        if (prompt.includes('REVIEWER') || prompt.includes('reviewer')) {
-          return 'Still has issues that need fixes.\n\nVERDICT: NEEDS_FIXES';
-        }
 
         // Implementer
         if (prompt.includes('IMPLEMENTER') || prompt.includes('implementer')) {
@@ -275,8 +293,8 @@ describe('CodexCliExecutor - Fix Loop', () => {
       executeNormalMode('context', mockPlanInfo, '/tmp/repo', 'test-model', mockConfig)
     ).resolves.toBeUndefined();
 
-    // Expect: 1 implementer + 1 tester + 1 reviewer + (5 fixer + 5 reviewer) = 13 calls
-    expect(calls.length).toBe(13);
+    // Expect: 1 implementer + 1 tester + 5 fixer = 7 calls
+    expect(calls.length).toBe(7);
 
     // Ensure at least one fixer prompt was used
     expect(calls.some((p) => p.includes('Fixer'))).toBeTrue();

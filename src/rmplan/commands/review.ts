@@ -12,9 +12,9 @@ import {
   readPlanFile,
   writePlanFile,
 } from '../plans.js';
-import { log } from '../../logging.js';
+import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
+import { buildExecutorAndLog } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { getReviewerPrompt } from '../executors/claude_code/agent_prompts.js';
 import type { PlanSchema } from '../planSchema.js';
@@ -44,6 +44,7 @@ import { access, constants } from 'node:fs/promises';
 import { statSync } from 'node:fs';
 import { validateInstructionsFilePath } from '../utils/file_validation.js';
 import { createCleanupPlan, type CleanupPlanOptions } from '../utils/cleanup_plan_creator.js';
+import { prepareReviewExecutors, runReview, type ReviewPromptBuilder } from '../review_runner.js';
 
 /**
  * Comprehensive error handling for saving review results
@@ -172,7 +173,8 @@ export async function handleReviewCommand(
   options: any,
   command: any
 ) {
-  const isInteractiveEnv = process.env.RMPLAN_INTERACTIVE !== '0';
+  const isPrintMode = options.print === true;
+  const isInteractiveEnv = !isPrintMode && process.env.RMPLAN_INTERACTIVE !== '0';
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
 
@@ -311,36 +313,49 @@ export async function handleReviewCommand(
       : focusInstruction;
   }
 
-  // Set up executor
-  const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
   const sharedExecutorOptions: ExecutorCommonOptions = {
     baseDir: gitRoot,
     model: options.model,
     interactive: false, // Review mode doesn't need interactivity
   };
 
-  const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
+  const {
+    planData: scopedPlanData,
+    taskScopeNote,
+    isScoped,
+  } = resolveReviewTaskScope(planData, {
+    taskIndex: options.taskIndex,
+    taskTitle: options.taskTitle,
+  });
 
-  // If the executor wants rmfilter output, that means that we need to send it the diff.
-  // TODO rename that flag to something more generic
-  const includeDiff = executor.prepareStepOptions?.()?.rmfilter ?? true;
-  const useSubagents = executor.supportsSubagents === true;
-
-  // Build the review prompt
-  const reviewPrompt = buildReviewPrompt(
-    planData,
-    diffResult,
-    includeDiff,
-    useSubagents,
-    parentChain,
-    completedChildren,
-    customInstructions
-  );
+  const buildPrompt: ReviewPromptBuilder = ({ includeDiff, useSubagents }) =>
+    buildReviewPrompt(
+      scopedPlanData,
+      diffResult,
+      includeDiff,
+      useSubagents,
+      parentChain,
+      completedChildren,
+      customInstructions,
+      taskScopeNote
+    );
 
   // Execute the review
   if (options.dryRun) {
+    const prepared = await prepareReviewExecutors({
+      executorSelection: options.executor,
+      config,
+      sharedExecutorOptions,
+      buildPrompt,
+    });
+
     log(chalk.cyan('\n## Dry Run - Generated Review Prompt\n'));
-    log(reviewPrompt);
+    for (const preparedExecutor of prepared) {
+      if (prepared.length > 1) {
+        log(chalk.cyan(`\n### Executor: ${preparedExecutor.name}\n`));
+      }
+      log(preparedExecutor.prompt);
+    }
     log('\n--dry-run mode: Would execute the above prompt');
     return;
   }
@@ -349,34 +364,40 @@ export async function handleReviewCommand(
 
   // Execute the review with output capture enabled
   try {
-    const executorOutput = await executor.execute(reviewPrompt, {
+    const planInfo = {
       planId: planData.id?.toString() ?? 'unknown',
       planTitle: planData.title ?? 'Untitled Plan',
       planFilePath: contextPlanFile,
-      captureOutput: 'result', // Capture only the final result block for review
-      executionMode: 'review', // Use review mode for review-only operation
+      baseBranch: diffResult.baseBranch,
+      changedFiles: diffResult.changedFiles,
+    };
+
+    const reviewOutput = await runReview({
+      executorSelection: options.executor,
+      config,
+      sharedExecutorOptions,
+      buildPrompt,
+      planInfo,
     });
 
-    // Use the actual executor output for parsing (must be JSON)
-    const rawOutput =
-      typeof executorOutput === 'string'
-        ? executorOutput
-        : typeof executorOutput?.structuredOutput === 'object'
-          ? JSON.stringify(executorOutput.structuredOutput)
-          : (executorOutput?.content ?? reviewPrompt);
+    if (reviewOutput.warnings.length > 0) {
+      for (const warning of reviewOutput.warnings) {
+        warn(chalk.yellow(warning));
+      }
+    }
 
-    // Create structured review result from JSON output
-    const reviewResult = createReviewResult(
-      planData.id?.toString() ?? 'unknown',
-      planData.title ?? 'Untitled Plan',
-      diffResult.baseBranch,
-      diffResult.changedFiles,
-      rawOutput
-    );
+    const reviewResult = reviewOutput.reviewResult;
+    const rawOutput = reviewOutput.rawOutput;
+    const reviewExecutorName = reviewOutput.usedExecutors[0];
+    if (!reviewExecutorName) {
+      throw new Error('Review completed without a usable executor result.');
+    }
 
     // Determine format and verbosity from options or config
-    const outputFormat = options.format || config.review?.outputFormat || 'terminal';
-    const verbosity: VerbosityLevel = options.verbosity || 'detailed';
+    const outputFormat = isPrintMode
+      ? 'json'
+      : options.format || config.review?.outputFormat || 'terminal';
+    const verbosity: VerbosityLevel = isPrintMode ? 'detailed' : options.verbosity || 'detailed';
 
     // Validate format
     if (!['json', 'markdown', 'terminal'].includes(outputFormat)) {
@@ -386,8 +407,8 @@ export async function handleReviewCommand(
     // Create formatter options
     const formatterOptions: FormatterOptions = {
       verbosity,
-      showFiles: options.showFiles !== false && verbosity !== 'minimal',
-      showSuggestions: !options.noSuggestions,
+      showFiles: isPrintMode ? true : options.showFiles !== false && verbosity !== 'minimal',
+      showSuggestions: isPrintMode ? true : !options.noSuggestions,
       colorEnabled: !options.noColor && outputFormat === 'terminal',
     };
 
@@ -409,7 +430,7 @@ export async function handleReviewCommand(
     let shouldAppendTasksToPlan = false;
     let selectedIssues: ReviewIssue[] | null = null;
 
-    if (hasIssues) {
+    if (hasIssues && !isPrintMode) {
       if (options.autofix || options.autofixAll) {
         shouldAutofix = true;
         if (!options.autofixAll && reviewResult.issues && reviewResult.issues.length > 0) {
@@ -496,7 +517,7 @@ export async function handleReviewCommand(
 
     const performAutofix = shouldAutofix && !options.noAutofix;
 
-    if (shouldAppendTasksToPlan && hasIssues) {
+    if (shouldAppendTasksToPlan && hasIssues && !isPrintMode) {
       const issuesToAppend =
         (selectedIssues && selectedIssues.length > 0 ? selectedIssues : reviewResult.issues) || [];
 
@@ -620,13 +641,17 @@ export async function handleReviewCommand(
     }
 
     // Create cleanup plan if requested
-    if (shouldCreateCleanupPlan && hasIssues && planData.id) {
+    if (shouldCreateCleanupPlan && hasIssues && planData.id && !isPrintMode) {
       log(chalk.cyan('\n## Creating Cleanup Plan\n'));
 
       try {
+        const cleanupScopeNote =
+          isScoped && taskScopeNote ? taskScopeNote.replace('review', 'cleanup plan') : undefined;
         const cleanupOptions: CleanupPlanOptions = {
           priority: options.cleanupPriority || 'medium',
           assign: options.cleanupAssign,
+          scopeNote: cleanupScopeNote,
+          scopedPlan: isScoped ? scopedPlanData : undefined,
         };
 
         const cleanupResult = await createCleanupPlan(
@@ -655,20 +680,26 @@ export async function handleReviewCommand(
     }
 
     // Execute autofix if requested or confirmed and issues were detected
-    if (performAutofix && hasIssues) {
+    if (performAutofix && hasIssues && !isPrintMode) {
       log(chalk.cyan('\n## Executing Autofix\n'));
 
       try {
         // Build the autofix prompt with validation
         const autofixPrompt = buildAutofixPrompt(
-          planData,
+          scopedPlanData,
           reviewResult,
           diffResult,
           selectedIssues
         );
 
         // Execute autofix using the executor in normal mode
-        const autofixOutput = await executor.execute(autofixPrompt, {
+        const autofixExecutor = buildExecutorAndLog(
+          reviewExecutorName,
+          sharedExecutorOptions,
+          config
+        );
+
+        const autofixOutput = await autofixExecutor.execute(autofixPrompt, {
           planId: planData.id?.toString() ?? 'unknown',
           planTitle: `${planData.title ?? 'Untitled Plan'} - Autofix`,
           planFilePath: contextPlanFile,
@@ -771,6 +802,134 @@ export function validateFocusAreas(focusAreas: string[]): string[] {
     });
 
   return sanitizedAreas;
+}
+
+type ReviewTaskFilterOptions = {
+  taskIndex?: string | string[];
+  taskTitle?: string | string[];
+};
+
+type ReviewTaskScope = {
+  planData: PlanSchema;
+  taskScopeNote?: string;
+  isScoped: boolean;
+};
+
+function normalizeTaskFilterInput(value: string | string[] | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+
+  const values = Array.isArray(value) ? value : [value];
+  return values
+    .flatMap((entry) => entry.split(','))
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function parseTaskIndexes(value: string | string[] | undefined): {
+  indexes: number[];
+  invalidTokens: string[];
+} {
+  const tokens = normalizeTaskFilterInput(value);
+  const indexes: number[] = [];
+  const invalidTokens: string[] = [];
+
+  for (const token of tokens) {
+    const parsed = Number(token);
+    if (!Number.isInteger(parsed)) {
+      invalidTokens.push(token);
+      continue;
+    }
+    indexes.push(parsed);
+  }
+
+  return { indexes, invalidTokens };
+}
+
+export function resolveReviewTaskScope(
+  planData: PlanSchema,
+  options: ReviewTaskFilterOptions
+): ReviewTaskScope {
+  const { indexes: taskIndexes, invalidTokens } = parseTaskIndexes(options.taskIndex);
+  const taskTitles = normalizeTaskFilterInput(options.taskTitle);
+
+  if (taskIndexes.length === 0 && taskTitles.length === 0 && invalidTokens.length === 0) {
+    return { planData, isScoped: false };
+  }
+
+  const tasks = planData.tasks ?? [];
+  const matchedIndexes = new Set<number>();
+  const unknownIndexes: number[] = [];
+  const unknownTitles: string[] = [];
+
+  for (const index of taskIndexes) {
+    if (index < 0 || index >= tasks.length) {
+      unknownIndexes.push(index);
+    } else {
+      matchedIndexes.add(index);
+    }
+  }
+
+  const taskTitleMap = tasks.map((task, index) => ({
+    index,
+    title: task.title.trim().toLowerCase(),
+  }));
+
+  for (const title of taskTitles) {
+    const normalizedTitle = title.trim().toLowerCase();
+    if (!normalizedTitle) {
+      continue;
+    }
+
+    const matches = taskTitleMap
+      .filter((task) => task.title === normalizedTitle)
+      .map((task) => task.index);
+
+    if (matches.length === 0) {
+      unknownTitles.push(title);
+      continue;
+    }
+
+    for (const matchIndex of matches) {
+      matchedIndexes.add(matchIndex);
+    }
+  }
+
+  const uniqueUnknownIndexes = Array.from(new Set(unknownIndexes));
+  const uniqueInvalidTokens = Array.from(new Set(invalidTokens));
+  const uniqueUnknownTitles = Array.from(new Set(unknownTitles));
+
+  if (
+    uniqueInvalidTokens.length > 0 ||
+    uniqueUnknownIndexes.length > 0 ||
+    uniqueUnknownTitles.length > 0
+  ) {
+    const parts: string[] = [];
+    if (uniqueInvalidTokens.length > 0) {
+      parts.push(`Invalid task indexes: ${uniqueInvalidTokens.join(', ')}`);
+    }
+    if (uniqueUnknownIndexes.length > 0) {
+      parts.push(`Unknown task indexes: ${uniqueUnknownIndexes.join(', ')}`);
+    }
+    if (uniqueUnknownTitles.length > 0) {
+      parts.push(`Unknown task titles: ${uniqueUnknownTitles.join(', ')}`);
+    }
+    throw new Error(parts.join('; '));
+  }
+
+  const filteredTasks = tasks.filter((_, index) => matchedIndexes.has(index));
+  const totalTasks = tasks.length;
+  const taskScopeNote = `This review is limited to the tasks listed below (${filteredTasks.length} of ${totalTasks}). Other plan tasks are out of scope.`;
+
+  return {
+    planData: {
+      ...planData,
+      tasks: filteredTasks,
+    },
+    taskScopeNote,
+    isScoped: true,
+  };
 }
 
 /**
@@ -918,7 +1077,9 @@ export function buildReviewPrompt(
   useSubagents: boolean = false,
   parentChain: PlanWithFilename[] = [],
   completedChildren: PlanWithFilename[] = [],
-  customInstructions?: string
+  customInstructions?: string,
+  taskScopeNote?: string,
+  additionalContext?: string
 ): string {
   // Build parent plan context section if available
   const parentContext: string[] = [];
@@ -995,6 +1156,10 @@ export function buildReviewPrompt(
     planContext.push(`**Details:**`, planData.details, ``);
   }
 
+  if (taskScopeNote) {
+    planContext.push(`**Review Scope:** ${taskScopeNote}`, ``);
+  }
+
   if (planData.tasks && planData.tasks.length > 0) {
     planContext.push(`**Tasks:**`);
     planData.tasks.forEach((task, index) => {
@@ -1031,6 +1196,7 @@ export function buildReviewPrompt(
     ``,
     ...changedFilesSection,
     ``,
+    ...(additionalContext?.trim() ? [additionalContext.trim(), ``] : []),
     `# Review Instructions`,
     ``,
     `Please review the code changes above in the context of the plan requirements. Focus on:`,

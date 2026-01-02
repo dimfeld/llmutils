@@ -1,5 +1,5 @@
 import { vi, expect, test, beforeEach, afterEach, describe, mock } from 'bun:test';
-import { mkdtemp, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, writeFile, mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ModuleMocker } from '../../testing.js';
@@ -10,6 +10,7 @@ import {
   buildAutofixPrompt,
   sanitizeBranchName,
   validateFocusAreas,
+  resolveReviewTaskScope,
 } from './review.js';
 import { validateInstructionsFilePath } from '../utils/file_validation.js';
 import { generateDiffForReview } from '../incremental_review.js';
@@ -57,12 +58,12 @@ tasks:
           actionItems: [],
         }),
     }),
-    DEFAULT_EXECUTOR: 'copy-only',
+    DEFAULT_EXECUTOR: 'codex-cli',
   }));
 
   await moduleMocker.mock('../configLoader.js', () => ({
     loadEffectiveConfig: async () => ({
-      defaultExecutor: 'copy-only',
+      defaultExecutor: 'codex-cli',
     }),
   }));
 
@@ -130,12 +131,12 @@ tasks:
           actionItems: [],
         }),
     }),
-    DEFAULT_EXECUTOR: 'copy-only',
+    DEFAULT_EXECUTOR: 'codex-cli',
   }));
 
   await moduleMocker.mock('../configLoader.js', () => ({
     loadEffectiveConfig: async () => ({
-      defaultExecutor: 'copy-only',
+      defaultExecutor: 'codex-cli',
     }),
   }));
 
@@ -193,6 +194,83 @@ tasks:
   };
 
   await handleReviewCommand('42', {}, mockCommand);
+});
+
+test('uses review default executor from config when no executor option passed', async () => {
+  const mockExecutor = {
+    execute: mock(async () =>
+      JSON.stringify({
+        issues: [],
+        recommendations: [],
+        actionItems: [],
+      })
+    ),
+  };
+
+  await moduleMocker.mock('../utils/context_gathering.js', () => ({
+    gatherPlanContext: async () => ({
+      resolvedPlanFile: 'plan.yml',
+      planData: {
+        id: 1,
+        title: 'Review Executor Test',
+        goal: 'Use review default executor',
+        tasks: [
+          {
+            title: 'Task',
+            description: 'Review task',
+          },
+        ],
+      },
+      parentChain: [],
+      completedChildren: [],
+      diffResult: {
+        hasChanges: true,
+        changedFiles: ['src/test.ts'],
+        baseBranch: 'main',
+        diffContent: 'diff',
+      },
+    }),
+  }));
+
+  await moduleMocker.mock('../configLoader.js', () => ({
+    loadEffectiveConfig: async () => ({
+      defaultExecutor: 'codex-cli',
+      review: {
+        defaultExecutor: 'codex-cli',
+      },
+    }),
+  }));
+
+  await moduleMocker.mock('../executors/index.js', () => ({
+    buildExecutorAndLog: (executorName: string) => {
+      expect(executorName).toBe('codex-cli');
+      return mockExecutor;
+    },
+    DEFAULT_EXECUTOR: 'codex-cli',
+  }));
+
+  await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+    getReviewerPrompt: () => ({
+      prompt: 'mock review prompt',
+    }),
+  }));
+
+  await moduleMocker.mock('../../common/git.js', () => ({
+    getGitRoot: async () => testDir,
+    getCurrentCommitHash: async () => 'hash',
+    getTrunkBranch: async () => 'main',
+    getUsingJj: async () => false,
+  }));
+
+  const mockCommand = {
+    parent: {
+      opts: () => ({}),
+    },
+  };
+
+  await handleReviewCommand('plan.yml', { noSave: true }, mockCommand);
+
+  expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
 });
 
 describe('generateDiffForReview', () => {
@@ -313,6 +391,41 @@ index 1234567..abcdefg 100644
     expect(prompt).toContain('Compliance with Plan Requirements');
     expect(prompt).toContain('Code Quality');
     expect(prompt).toContain('REVIEWER AGENT');
+  });
+
+  test('includes review scope note when provided', async () => {
+    const planData: PlanSchema = {
+      id: 7,
+      title: 'Scoped Review Plan',
+      goal: 'Check scope note',
+      tasks: [{ title: 'Task One', description: 'Only task', done: false }],
+    };
+
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['src/file.ts'],
+      baseBranch: 'main',
+      diffContent: 'diff --git',
+    };
+
+    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+      getReviewerPrompt: (contextContent: string) => ({
+        prompt: contextContent,
+      }),
+    }));
+
+    const prompt = buildReviewPrompt(
+      planData,
+      diffResult,
+      false,
+      false,
+      [],
+      [],
+      undefined,
+      'Scoped to selected tasks.'
+    );
+
+    expect(prompt).toContain('**Review Scope:** Scoped to selected tasks.');
   });
 
   test('passes useSubagents flag to reviewer prompt', async () => {
@@ -523,13 +636,13 @@ describe('handleReviewCommand error handling', () => {
 
     await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
-        defaultExecutor: 'copy-only',
+        defaultExecutor: 'codex-cli',
       }),
     }));
 
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'copy-only',
+      DEFAULT_EXECUTOR: 'codex-cli',
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -632,7 +745,7 @@ tasks:
         expect(options.interactive).toBe(false);
         return mockExecutor;
       },
-      DEFAULT_EXECUTOR: 'copy-only',
+      DEFAULT_EXECUTOR: 'codex-cli',
     }));
 
     await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
@@ -718,7 +831,7 @@ tasks:
 
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'copy-only',
+      DEFAULT_EXECUTOR: 'codex-cli',
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -796,7 +909,7 @@ tasks:
 
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'copy-only',
+      DEFAULT_EXECUTOR: 'codex-cli',
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -832,6 +945,105 @@ tasks:
 
     // Executor should not be called in dry-run mode
     expect(mockExecutor.execute).not.toHaveBeenCalled();
+  });
+
+  test('print mode forces json output without prompting', async () => {
+    const planFile = join(testDir, 'print-mode.yml');
+    const outputFile = join(testDir, 'review-output.json');
+
+    const mockExecutor = {
+      execute: mock(async () =>
+        JSON.stringify({
+          issues: [
+            {
+              severity: 'minor',
+              category: 'style',
+              content: 'Use consistent formatting.',
+              file: 'src/test.ts',
+              line: '10',
+              suggestion: 'Run the formatter.',
+            },
+          ],
+          recommendations: [],
+          actionItems: [],
+        })
+      ),
+    };
+
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: async () => ({
+        resolvedPlanFile: planFile,
+        planData: {
+          id: 1,
+          title: 'Print Mode Plan',
+          goal: 'Test print mode',
+          tasks: [
+            {
+              title: 'Task One',
+              description: 'First task',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/test.ts'],
+          baseBranch: 'main',
+          diffContent: 'mock diff content',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'codex-cli',
+        review: {
+          autoSave: false,
+        },
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'codex-cli',
+    }));
+
+    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+      getReviewerPrompt: (contextContent: string) => ({
+        prompt: contextContent,
+      }),
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+      getCurrentCommitHash: async () => null,
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleReviewCommand(
+      planFile,
+      {
+        print: true,
+        format: 'terminal',
+        outputFile,
+        verbosity: 'normal',
+        noSave: true,
+      },
+      mockCommand
+    );
+
+    const output = await readFile(outputFile, 'utf-8');
+    const parsed = JSON.parse(output);
+    expect(parsed.planId).toBe('1');
+    expect(parsed.issues).toHaveLength(1);
   });
 });
 
@@ -1056,13 +1268,13 @@ tasks:
 
     await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
-        defaultExecutor: 'copy-only',
+        defaultExecutor: 'codex-cli',
       }),
     }));
 
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'copy-only',
+      DEFAULT_EXECUTOR: 'codex-cli',
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -1659,7 +1871,7 @@ tasks:
 
       await moduleMocker.mock('../executors/index.js', () => ({
         buildExecutorAndLog: () => mockExecutor,
-        DEFAULT_EXECUTOR: 'copy-only',
+        DEFAULT_EXECUTOR: 'codex-cli',
       }));
 
       await moduleMocker.mock('../../common/git.js', () => ({
@@ -1756,6 +1968,123 @@ tasks:
       expect(() => validateFocusAreas(null as any)).toThrow('Focus areas must be an array');
       expect(() => validateFocusAreas('not-array' as any)).toThrow('Focus areas must be an array');
       expect(() => validateFocusAreas(42 as any)).toThrow('Focus areas must be an array');
+    });
+  });
+
+  describe('Review task scoping', () => {
+    test('returns original plan when no filters are provided', () => {
+      const planData: PlanSchema = {
+        id: 1,
+        title: 'Scoped Plan',
+        goal: 'Test scoping',
+        tasks: [
+          { title: 'Task One', description: 'First task', done: false },
+          { title: 'Task Two', description: 'Second task', done: false },
+        ],
+      };
+
+      const result = resolveReviewTaskScope(planData, {});
+
+      expect(result.planData).toBe(planData);
+      expect(result.taskScopeNote).toBeUndefined();
+      expect(result.isScoped).toBe(false);
+    });
+
+    test('filters tasks by index and preserves order', () => {
+      const planData: PlanSchema = {
+        id: 2,
+        title: 'Index Filter Plan',
+        goal: 'Test index filters',
+        tasks: [
+          { title: 'Task One', description: 'First task', done: false },
+          { title: 'Task Two', description: 'Second task', done: false },
+          { title: 'Task Three', description: 'Third task', done: false },
+        ],
+      };
+
+      const result = resolveReviewTaskScope(planData, { taskIndex: ['0', '2'] });
+
+      expect(result.planData.tasks?.map((task) => task.title)).toEqual(['Task One', 'Task Three']);
+      expect(result.taskScopeNote).toContain('(2 of 3)');
+      expect(result.isScoped).toBe(true);
+    });
+
+    test('filters tasks by title case-insensitively and includes duplicates', () => {
+      const planData: PlanSchema = {
+        id: 3,
+        title: 'Title Filter Plan',
+        goal: 'Test title filters',
+        tasks: [
+          { title: 'Build', description: 'First', done: false },
+          { title: 'Test', description: 'Second', done: false },
+          { title: 'build', description: 'Third', done: false },
+        ],
+      };
+
+      const result = resolveReviewTaskScope(planData, { taskTitle: ['BUILD'] });
+
+      expect(result.planData.tasks?.map((task) => task.title)).toEqual(['Build', 'build']);
+      expect(result.isScoped).toBe(true);
+    });
+
+    test('supports comma-separated task filters and unions matches', () => {
+      const planData: PlanSchema = {
+        id: 5,
+        title: 'Comma Filter Plan',
+        goal: 'Test comma filters',
+        tasks: [
+          { title: 'Alpha', description: 'First', done: false },
+          { title: 'Beta', description: 'Second', done: false },
+          { title: 'Gamma', description: 'Third', done: false },
+        ],
+      };
+
+      const result = resolveReviewTaskScope(planData, {
+        taskIndex: ['0,2'],
+        taskTitle: ['Beta'],
+      });
+
+      expect(result.planData.tasks?.map((task) => task.title)).toEqual(['Alpha', 'Beta', 'Gamma']);
+      expect(result.isScoped).toBe(true);
+    });
+
+    test('rejects non-integer task index filters', () => {
+      const planData: PlanSchema = {
+        id: 6,
+        title: 'Invalid Index Plan',
+        goal: 'Test invalid indexes',
+        tasks: [{ title: 'Task One', description: 'Only task', done: false }],
+      };
+
+      expect(() => resolveReviewTaskScope(planData, { taskIndex: ['1.5'] })).toThrow(
+        'Invalid task indexes: 1.5'
+      );
+    });
+
+    test('reports unknown task indexes and titles', () => {
+      const planData: PlanSchema = {
+        id: 4,
+        title: 'Error Plan',
+        goal: 'Test unknown filters',
+        tasks: [{ title: 'Task One', description: 'Only task', done: false }],
+      };
+
+      expect(() =>
+        resolveReviewTaskScope(planData, { taskIndex: ['5'], taskTitle: ['Missing Task'] })
+      ).toThrow('Unknown task indexes: 5; Unknown task titles: Missing Task');
+    });
+
+    test('reports negative indexes alongside missing titles', () => {
+      const planData: PlanSchema = {
+        id: 7,
+        title: 'Negative Index Plan',
+        goal: 'Test negative indexes',
+        tasks: [{ title: 'Task One', description: 'Only task', done: false }],
+      };
+
+      expect(() =>
+        resolveReviewTaskScope(planData, { taskIndex: ['-1'], taskTitle: ['Missing Task'] })
+      ).toThrow('Unknown task indexes: -1; Unknown task titles: Missing Task');
     });
   });
 });
@@ -1922,7 +2251,7 @@ tasks:
 
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'copy-only',
+      DEFAULT_EXECUTOR: 'codex-cli',
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -2079,7 +2408,7 @@ tasks:
 
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'copy-only',
+      DEFAULT_EXECUTOR: 'codex-cli',
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -2183,7 +2512,7 @@ tasks:
 
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'copy-only',
+      DEFAULT_EXECUTOR: 'codex-cli',
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -2285,7 +2614,7 @@ tasks:
 
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'copy-only',
+      DEFAULT_EXECUTOR: 'codex-cli',
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -2422,7 +2751,7 @@ tasks:
 
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'copy-only',
+      DEFAULT_EXECUTOR: 'codex-cli',
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -2760,7 +3089,7 @@ tasks:
 
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'copy-only',
+      DEFAULT_EXECUTOR: 'codex-cli',
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -2860,7 +3189,7 @@ tasks:
 
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'copy-only',
+      DEFAULT_EXECUTOR: 'codex-cli',
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -2951,7 +3280,7 @@ tasks:
 
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'copy-only',
+      DEFAULT_EXECUTOR: 'codex-cli',
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -3427,7 +3756,7 @@ tasks:
 
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'copy-only',
+      DEFAULT_EXECUTOR: 'codex-cli',
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -3539,7 +3868,7 @@ tasks:
 
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'copy-only',
+      DEFAULT_EXECUTOR: 'codex-cli',
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -3650,7 +3979,7 @@ tasks:
 
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'copy-only',
+      DEFAULT_EXECUTOR: 'codex-cli',
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({

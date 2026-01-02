@@ -351,6 +351,15 @@
       "description": "Configuration options for the review command",
       "type": "object",
       "properties": {
+        "defaultExecutor": {
+          "description": "Default executor to use for review execution",
+          "type": "string",
+          "enum": [
+            "claude-code",
+            "codex-cli",
+            "both"
+          ]
+        },
         "focusAreas": {
           "description": "Default focus areas for reviews such as security, performance, testing",
           "type": "array",

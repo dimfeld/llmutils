@@ -279,6 +279,11 @@ export const rmplanConfigSchema = z
     /** Review-specific configuration options */
     review: z
       .object({
+        /** Default executor for reviews */
+        defaultExecutor: z
+          .enum(['claude-code', 'codex-cli', 'both'])
+          .optional()
+          .describe('Default executor to use for review execution'),
         /** Default focus areas for reviews (security, performance, testing, etc.) */
         focusAreas: z
           .array(z.string())

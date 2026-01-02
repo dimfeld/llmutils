@@ -1236,6 +1236,10 @@ paths:
 # Default executor for agent command
 defaultExecutor: claude-code # or codex-cli, direct-call, copy-paste
 
+# Default executor for review command
+review:
+  defaultExecutor: claude-code # or codex-cli, both
+
 # Workspace auto-creation (see Workspace Management section)
 workspaceCreation:
   cloneMethod: cp

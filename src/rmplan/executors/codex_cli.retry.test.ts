@@ -96,6 +96,18 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       })),
     }));
 
+    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: mock(async () => ({
+        verdict: 'ACCEPTABLE',
+        formattedOutput: 'Review ok.\n\nVERDICT: ACCEPTABLE',
+        fixInstructions: 'No issues',
+        reviewResult: { issues: [] },
+        rawOutput: '{}',
+        warnings: [],
+      })),
+    }));
+
     const { CodexCliExecutor } = await import('./codex_cli.ts');
     const executor = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
 
@@ -107,7 +119,7 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       captureOutput: 'none',
     });
 
-    expect(spawnMock).toHaveBeenCalledTimes(4);
+    expect(spawnMock).toHaveBeenCalledTimes(3);
     expect(captureMock).toHaveBeenCalledTimes(3);
     expect(
       warnMessages.some((msg) =>
@@ -203,6 +215,18 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       })),
     }));
 
+    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: mock(async () => ({
+        verdict: 'ACCEPTABLE',
+        formattedOutput: 'Review ok.\n\nVERDICT: ACCEPTABLE',
+        fixInstructions: 'No issues',
+        reviewResult: { issues: [] },
+        rawOutput: '{}',
+        warnings: [],
+      })),
+    }));
+
     const { CodexCliExecutor } = await import('./codex_cli.ts');
     const executor = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
 
@@ -214,7 +238,7 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       captureOutput: 'none',
     });
 
-    expect(spawnMock).toHaveBeenCalledTimes(6);
+    expect(spawnMock).toHaveBeenCalledTimes(5);
     expect(captureMock).toHaveBeenCalledTimes(5);
     const detectionWarnings = warnMessages.filter((msg) =>
       msg.includes('produced planning output without repository changes')
@@ -303,6 +327,18 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       })),
     }));
 
+    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: mock(async () => ({
+        verdict: 'ACCEPTABLE',
+        formattedOutput: 'Review ok.\n\nVERDICT: ACCEPTABLE',
+        fixInstructions: 'No issues',
+        reviewResult: { issues: [] },
+        rawOutput: '{}',
+        warnings: [],
+      })),
+    }));
+
     const { CodexCliExecutor } = await import('./codex_cli.ts');
     const executor = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
 
@@ -314,7 +350,7 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       captureOutput: 'none',
     });
 
-    expect(spawnMock).toHaveBeenCalledTimes(3);
+    expect(spawnMock).toHaveBeenCalledTimes(2);
     expect(captureMock).toHaveBeenCalledTimes(2);
     expect(
       warnMessages.some(
@@ -406,6 +442,18 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       })),
     }));
 
+    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: mock(async () => ({
+        verdict: 'ACCEPTABLE',
+        formattedOutput: 'Review ok.\n\nVERDICT: ACCEPTABLE',
+        fixInstructions: 'No issues',
+        reviewResult: { issues: [] },
+        rawOutput: '{}',
+        warnings: [],
+      })),
+    }));
+
     const { CodexCliExecutor } = await import('./codex_cli.ts');
     const executor = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
 
@@ -417,7 +465,7 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       captureOutput: 'none',
     });
 
-    expect(spawnMock).toHaveBeenCalledTimes(3);
+    expect(spawnMock).toHaveBeenCalledTimes(2);
     expect(captureMock).toHaveBeenCalledTimes(2);
     expect(
       warnMessages.some((msg) =>
@@ -507,6 +555,18 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       })),
     }));
 
+    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: mock(async () => ({
+        verdict: 'ACCEPTABLE',
+        formattedOutput: 'Review ok.\n\nVERDICT: ACCEPTABLE',
+        fixInstructions: 'No issues',
+        reviewResult: { issues: [] },
+        rawOutput: '{}',
+        warnings: [],
+      })),
+    }));
+
     const { CodexCliExecutor } = await import('./codex_cli.ts');
     const executor = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
 
@@ -518,7 +578,7 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       captureOutput: 'none',
     });
 
-    expect(spawnMock).toHaveBeenCalledTimes(3);
+    expect(spawnMock).toHaveBeenCalledTimes(2);
     expect(captureMock).toHaveBeenCalledTimes(2);
     expect(
       warnMessages.some((msg) =>
@@ -603,6 +663,18 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       })),
     }));
 
+    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: mock(async () => ({
+        verdict: 'ACCEPTABLE',
+        formattedOutput: 'Review ok.\n\nVERDICT: ACCEPTABLE',
+        fixInstructions: 'No issues',
+        reviewResult: { issues: [] },
+        rawOutput: '{}',
+        warnings: [],
+      })),
+    }));
+
     const { CodexCliExecutor } = await import('./codex_cli.ts');
     const executor = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
 
@@ -614,7 +686,7 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       captureOutput: 'none',
     });
 
-    expect(spawnMock).toHaveBeenCalledTimes(3);
+    expect(spawnMock).toHaveBeenCalledTimes(2);
     expect(captureMock).toHaveBeenCalledTimes(2);
     expect(warnMessages.some((msg) => msg.includes('produced planning output'))).toBeFalse();
     expect(
