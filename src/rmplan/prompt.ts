@@ -760,26 +760,41 @@ export function generateClaudeCodeResearchPrompt(
 ): string {
   return `${prefix}, capture every insight you've gathered.
 
-Generate structured Markdown containing a deep, detailed guide to implement the change, including background and context about the surrounding system and rationale behind why we're doing things a certain way. Be very exhaustive and ultrathink when creating this content.
+Generate structured Markdown that preserves your research findings and provides a detailed implementation guide.
+Be very exhaustive and ultrathink when creating this content.
 
-Include details such as:
+Your output should have two distinct sections:
 
+## Research
+
+This section preserves all the knowledge you gathered during exploration. The goal is to document your findings
+so that anyone reading this later can understand what you learned without needing to re-explore the codebase.
+
+Include:
 - A concise overview of the opportunity or problem you investigated.
-- Highlight the most critical discoveries that should guide implementation.
+- The most critical discoveries that should guide implementation.
 - Notable files, modules, or patterns you inspected and what you learned about them.
-- Mention existing utilities, abstractions, or APIs that are relevant, with guides on how to use them or references to
-existing documentation.
-- Record architectural hazards, edge cases, or constraints uncovered during research.
-- Call out any dependencies or prerequisites the implementation must respect.
-- Manual testing steps (this is ok here even though we don't want them in the structured tasks that you will generate later).
-- A detailed step-by-step guide on how to implement the change. Reference existing patterns, abstractions, or APIs, and
-documentation files that are relevant to the step.
+- Existing utilities, abstractions, or APIs that are relevant, with details on how to use them or references to existing documentation.
+- Architectural hazards, edge cases, or constraints uncovered during research.
+- Dependencies or prerequisites the implementation must respect.
+- Any surprising findings or important context about the surrounding system.
+
+Be verbose here. The insights you gathered are valuable, so include as much detail as possible from your exploration.
+This section should serve as a standalone reference document for the research phase.
+
+## Implementation Guide
+
+This section provides actionable guidance for implementing the change.
+
+Include:
+- A detailed step-by-step guide on how to implement the change.
+- Reference specific patterns, abstractions, APIs, and documentation files that are relevant to each step.
+- Manual testing steps (these are appropriate here even though we don't want them in the structured tasks that you will generate later).
+- Rationale behind why certain approaches are recommended over alternatives.
 
 ### Constraints
 
 Do not wrap the output in code fences and do not repeat previous instructions.
-Be verbose in your findings. The insights you gathered are valuable,
-so the more you include from your exploration, the better.
 File paths must be relative to the root of the repository, not absolute.
 `;
 }
