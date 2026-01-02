@@ -4,9 +4,8 @@ title: Enhanced autonomous agent support for rmplan
 goal: ""
 id: 128
 uuid: f69d418b-aaf1-4c29-88a9-f557baf8f81e
-status: in_progress
+status: done
 priority: high
-temp: false
 dependencies:
   - 129
   - 130
@@ -30,6 +29,6 @@ references:
   "137": ece4b9f5-eb81-40ed-85b5-217b93f947e7
   "138": 98cea9f6-de8d-4fa0-ade3-aee3e5d4e3f1
 createdAt: 2025-10-26T22:40:54.114Z
-updatedAt: 2025-10-27T08:39:04.199Z
+updatedAt: 2026-01-02T03:52:21.331Z
 tasks: []
 ---

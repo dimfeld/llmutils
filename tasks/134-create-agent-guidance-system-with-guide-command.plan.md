@@ -4,14 +4,13 @@ title: Create agent guidance system with guide command and help reorganization
 goal: ""
 id: 134
 uuid: b03a07b6-27d4-44e0-9a3b-b798f50bfed2
-status: pending
+status: done
 priority: medium
-temp: false
 parent: 128
 references:
   "128": f69d418b-aaf1-4c29-88a9-f557baf8f81e
 createdAt: 2025-10-26T22:41:21.717Z
-updatedAt: 2025-10-27T08:39:04.253Z
+updatedAt: 2026-01-02T03:49:13.918Z
 tasks: []
 ---
 

@@ -13,9 +13,12 @@ tags: []
 ---
 
 Automated mode that does:
-- new workspace
-- "Generate" without the question part of the prompt so that it one-shots
-- Check if tasks are filled in. If not run another prompt specifically just to add the tasks
+- new workspace or lock existing available one
+- "Generate" without the question part of the prompt so that it one-shots. The existing "generate" command probably
+works for this but we need to check that it's up to date with the prompt used by the generate MCP tool.
+- Check if tasks are filled in. If not run another prompt specifically to read the implementation guide from the plan
+and add a task for each step
 - Run the plan
 - Run review command and autofix until ACCEPTABLE or up to 5 times.
 - Push branch and create draft PR
+- If we ran 5 times without ACCEPTABLE then make sure that the PR description includes the last round of review messages

@@ -4,9 +4,8 @@ title: Update documentation for autonomous agent features
 goal: ""
 id: 136
 uuid: 95417c3d-94db-4555-b529-0debb66f9301
-status: pending
+status: done
 priority: low
-temp: false
 dependencies:
   - 129
   - 130
@@ -26,7 +25,7 @@ references:
   "134": b03a07b6-27d4-44e0-9a3b-b798f50bfed2
   "135": ac0b9e9d-cd95-45f1-8ded-15074bd6c800
 createdAt: 2025-10-26T22:41:37.508Z
-updatedAt: 2025-10-27T08:39:04.201Z
+updatedAt: 2026-01-02T03:50:29.922Z
 tasks: []
 ---
 
