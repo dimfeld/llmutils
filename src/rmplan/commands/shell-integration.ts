@@ -40,7 +40,7 @@ rmplan_ws() {
     return 1
   fi
 
-  # Get the list of workspaces in TSV format
+  # Get the list of workspaces in TSV format (2 columns: path, formatted description)
   local workspace_list
   workspace_list=$(rmplan workspace list --format tsv --no-header 2>/dev/null)
 
@@ -50,11 +50,13 @@ rmplan_ws() {
   fi
 
   # Build fzf command with optional query
+  # TSV format: fullPath<tab>formattedDescription
+  # Display only the formatted description (field 2), use field 1 for selection
   local fzf_args=(
     --delimiter $'\\t'
-    --with-nth '2..'
-    --preview 'echo "Path: {1}"; echo "Name: {3}"; echo "Description: {4}"; echo "Branch: {5}"'
-    --preview-window 'up:4:wrap'
+    --with-nth '2'
+    --preview 'echo "Path: {1}"'
+    --preview-window 'up:1:wrap'
     --header 'Select a workspace (Esc to cancel)'
   )
 

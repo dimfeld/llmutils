@@ -95,21 +95,8 @@ export async function handleWorkspaceListCommand(options: WorkspaceListOptions, 
       console.log(repositoryId ? 'No workspaces found for this repository' : 'No workspaces found');
     } else if (format === 'json') {
       console.log('[]');
-    } else if (format === 'tsv' && showHeader) {
-      // Output just the header line with no data rows
-      console.log(
-        [
-          'fullPath',
-          'basename',
-          'name',
-          'description',
-          'branch',
-          'taskId',
-          'planTitle',
-          'issueUrls',
-        ].join('\t')
-      );
     }
+    // For TSV with no entries, output nothing (no header needed for 2-column format)
     return;
   }
 
@@ -192,38 +179,79 @@ function outputWorkspaceTable(entries: WorkspaceListEntry[], showHeader: boolean
 }
 
 /**
- * Output workspaces in TSV format for machine consumption.
- * Format: fullPath\tbasename\tname\tdescription\tbranch\ttaskId\tplanTitle\tissueUrls
- * Lock status is omitted from TSV/JSON per requirements.
+ * Formats a workspace entry into a human-readable description string.
+ * Deduplicates identical values (e.g., if name equals planTitle, only show once).
+ * Exported for testing.
  */
-function outputWorkspaceTsv(entries: WorkspaceListEntry[], showHeader: boolean): void {
-  if (showHeader) {
-    console.log(
-      [
-        'fullPath',
-        'basename',
-        'name',
-        'description',
-        'branch',
-        'taskId',
-        'planTitle',
-        'issueUrls',
-      ].join('\t')
-    );
+export function formatWorkspaceDescription(entry: WorkspaceListEntry): string {
+  const parts: string[] = [];
+
+  // Start with the directory basename for identification
+  parts.push(entry.basename);
+
+  // Collect unique descriptive elements (deduplicate identical values)
+  const seenValues = new Set<string>();
+
+  // Add name if distinct
+  if (entry.name && !seenValues.has(entry.name.toLowerCase())) {
+    seenValues.add(entry.name.toLowerCase());
+    parts.push(entry.name);
   }
 
+  // Add planTitle if distinct from name
+  if (entry.planTitle && !seenValues.has(entry.planTitle.toLowerCase())) {
+    seenValues.add(entry.planTitle.toLowerCase());
+    parts.push(entry.planTitle);
+  }
+
+  // Add description if distinct and meaningful
+  if (entry.description && !seenValues.has(entry.description.toLowerCase())) {
+    // Skip if description is just a subset of already-included text
+    const descLower = entry.description.toLowerCase();
+    const alreadyCovered = Array.from(seenValues).some(
+      (v) => v.includes(descLower) || descLower.includes(v)
+    );
+    if (!alreadyCovered) {
+      seenValues.add(descLower);
+      parts.push(entry.description);
+    }
+  }
+
+  // Add branch if present
+  if (entry.branch) {
+    parts.push(`[${entry.branch}]`);
+  }
+
+  // Add issue reference if present (extract short form from URLs)
+  if (entry.issueUrls && entry.issueUrls.length > 0) {
+    const issueRefs = entry.issueUrls
+      .map((url) => extractIssueNumber(url))
+      .filter((ref): ref is string => !!ref);
+    if (issueRefs.length > 0) {
+      // Only add if not already mentioned in description/name
+      const refsStr = issueRefs.join(', ');
+      const alreadyMentioned = Array.from(seenValues).some((v) =>
+        issueRefs.some((ref) => v.includes(ref.toLowerCase()))
+      );
+      if (!alreadyMentioned) {
+        parts.push(refsStr);
+      }
+    }
+  }
+
+  return parts.join(' | ');
+}
+
+/**
+ * Output workspaces in TSV format for machine consumption.
+ * Format: fullPath\tformattedDescription
+ * The first column is the full path (for machine use), the second is a human-readable description.
+ * Lock status is omitted from TSV/JSON per requirements.
+ */
+function outputWorkspaceTsv(entries: WorkspaceListEntry[], _showHeader: boolean): void {
   for (const entry of entries) {
-    const row = [
-      entry.fullPath,
-      entry.basename,
-      entry.name || '',
-      entry.description || '',
-      entry.branch || '',
-      entry.taskId,
-      entry.planTitle || '',
-      (entry.issueUrls || []).join(','),
-    ];
-    console.log(row.join('\t'));
+    const description = formatWorkspaceDescription(entry);
+    console.log(`${entry.fullPath}\t${description}`);
   }
 }
 

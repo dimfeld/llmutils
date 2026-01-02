@@ -11,23 +11,6 @@ planGeneratedAt: 2025-12-31T07:51:51.951Z
 promptsGeneratedAt: 2025-12-31T07:51:51.951Z
 createdAt: 2025-12-29T01:29:59.680Z
 updatedAt: 2026-01-02T00:41:00.484Z
-progressNotes:
-  - timestamp: 2026-01-02T00:29:33.129Z
-    text: Fixed merge progress section extraction to avoid stripping subheadings or
-      headings inside code fences, and added fallback logic to preserve child
-      progress when parent lacks one. Added merge tests to cover the fallback
-      and to ensure non-matching progress-like headings and fenced progress
-      markers are preserved.
-    source: "implementer: merge progress section fixes"
-  - timestamp: 2026-01-02T00:32:42.467Z
-    text: Added merge test covering multiple child progress sections merged into a
-      single Progress block when the parent lacks one; verified with bun test.
-    source: "tester: merge progress coverage"
-  - timestamp: 2026-01-02T00:37:34.923Z
-    text: Reviewed merge progress changes; found issues with child progress loss
-      when parent has progress and progress heading detection stripping indented
-      code blocks.
-    source: "reviewer: merge progress review"
 tasks:
   - title: Remove progressNotes data model and CLI surfaces
     done: true

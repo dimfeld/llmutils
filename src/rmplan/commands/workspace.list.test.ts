@@ -102,7 +102,7 @@ describe('workspace list command', () => {
     expect(consoleOutput.join('\n')).toBe('[]');
   });
 
-  test('outputs TSV header when no workspaces exist and showHeader is true', async () => {
+  test('outputs nothing for TSV when no workspaces exist (no header in new format)', async () => {
     await writeTrackingData({});
 
     const { handleWorkspaceListCommand } = await import('./workspace.js');
@@ -115,10 +115,8 @@ describe('workspace list command', () => {
       },
     } as any);
 
-    expect(consoleOutput).toHaveLength(1);
-    expect(consoleOutput[0]).toBe(
-      'fullPath\tbasename\tname\tdescription\tbranch\ttaskId\tplanTitle\tissueUrls'
-    );
+    // New 2-column TSV format has no header, so empty output for no workspaces
+    expect(consoleOutput).toHaveLength(0);
   });
 
   test('outputs nothing for TSV when no workspaces exist and --no-header', async () => {
@@ -187,7 +185,7 @@ describe('workspace list command', () => {
     expect(output[0].lockedBy).toBeUndefined();
   });
 
-  test('outputs workspaces in TSV format with header', async () => {
+  test('outputs workspaces in TSV format with 2 columns (path and formatted description)', async () => {
     const workspaceDir = path.join(tempDir, 'workspace-1');
     await fs.mkdir(workspaceDir, { recursive: true });
 
@@ -213,24 +211,24 @@ describe('workspace list command', () => {
     } as any);
 
     const lines = consoleOutput;
-    expect(lines.length).toBe(2);
+    // New format: no header, just data rows
+    expect(lines.length).toBe(1);
 
-    // Check header
-    expect(lines[0]).toBe(
-      'fullPath\tbasename\tname\tdescription\tbranch\ttaskId\tplanTitle\tissueUrls'
-    );
-
-    // Check data row
-    const fields = lines[1].split('\t');
+    // Check data row has 2 fields: fullPath and formatted description
+    const fields = lines[0].split('\t');
+    expect(fields).toHaveLength(2);
     expect(fields[0]).toBe(workspaceDir); // fullPath
-    expect(fields[1]).toBe('workspace-1'); // basename
-    expect(fields[2]).toBe('My Workspace'); // name
-    expect(fields[3]).toBe('Working on feature'); // description
-    // branch is computed live, but in tests it may be empty since we mock getCurrentBranchName
-    expect(fields[5]).toBe('task-1'); // taskId
+
+    // Check formatted description contains expected parts
+    const formattedDesc = fields[1];
+    expect(formattedDesc).toContain('workspace-1'); // basename
+    expect(formattedDesc).toContain('My Workspace'); // name
+    expect(formattedDesc).toContain('Working on feature'); // description
+    // branch is computed live (mocked to 'main')
+    expect(formattedDesc).toContain('[main]'); // branch in brackets
   });
 
-  test('outputs workspaces in TSV format without header when --no-header', async () => {
+  test('outputs workspaces in TSV format (--no-header has no effect in new format)', async () => {
     const workspaceDir = path.join(tempDir, 'workspace-1');
     await fs.mkdir(workspaceDir, { recursive: true });
 
@@ -256,10 +254,11 @@ describe('workspace list command', () => {
     const lines = consoleOutput;
     expect(lines.length).toBe(1);
 
-    // First line should be data, not header
+    // Check 2-column format: fullPath and formatted description
     const fields = lines[0].split('\t');
+    expect(fields).toHaveLength(2);
     expect(fields[0]).toBe(workspaceDir);
-    expect(fields[1]).toBe('workspace-1');
+    expect(fields[1]).toContain('workspace-1'); // basename in description
   });
 
   test('table format includes lock status', async () => {
@@ -450,7 +449,7 @@ describe('workspace list command', () => {
     expect(output).toHaveLength(2);
   });
 
-  test('TSV includes issue URLs joined by comma', async () => {
+  test('TSV includes issue references extracted from URLs', async () => {
     const workspaceDir = path.join(tempDir, 'workspace-1');
     await fs.mkdir(workspaceDir, { recursive: true });
 
@@ -477,11 +476,14 @@ describe('workspace list command', () => {
     const lines = consoleOutput;
     expect(lines.length).toBe(1);
 
+    // Check 2-column format
     const fields = lines[0].split('\t');
-    // issueUrls is the last field
-    expect(fields[7]).toBe(
-      'https://github.com/test/repo/issues/1,https://github.com/test/repo/issues/2'
-    );
+    expect(fields).toHaveLength(2);
+
+    // Formatted description should include extracted issue references
+    const formattedDesc = fields[1];
+    expect(formattedDesc).toContain('#1');
+    expect(formattedDesc).toContain('#2');
   });
 
   test('handles missing optional fields gracefully in TSV', async () => {
@@ -510,15 +512,16 @@ describe('workspace list command', () => {
     const lines = consoleOutput;
     expect(lines.length).toBe(1);
 
+    // Check 2-column format
     const fields = lines[0].split('\t');
+    expect(fields).toHaveLength(2);
     expect(fields[0]).toBe(workspaceDir);
-    expect(fields[1]).toBe('workspace-minimal');
-    expect(fields[2]).toBe(''); // name
-    expect(fields[3]).toBe(''); // description
-    // branch may be empty or have a value depending on mock
-    expect(fields[5]).toBe('task-minimal'); // taskId
-    expect(fields[6]).toBe(''); // planTitle
-    expect(fields[7]).toBe(''); // issueUrls
+
+    // With minimal fields, formatted description should at least have the basename and branch
+    const formattedDesc = fields[1];
+    expect(formattedDesc).toContain('workspace-minimal'); // basename
+    // branch is mocked to 'main'
+    expect(formattedDesc).toContain('[main]');
   });
 
   test('filters out non-existent workspace directories', async () => {
@@ -648,5 +651,130 @@ describe('workspace list command', () => {
     expect(warnSpy).toHaveBeenCalled();
     const warnCalls = warnSpy.mock.calls.map((call) => call[0]);
     expect(warnCalls.some((msg: string) => msg.includes(deletedDir))).toBe(true);
+  });
+});
+
+describe('formatWorkspaceDescription', () => {
+  test('includes basename, name, description, branch, and issue refs', () => {
+    const { formatWorkspaceDescription } = require('./workspace.js');
+
+    const entry = {
+      fullPath: '/home/user/workspaces/my-workspace',
+      basename: 'my-workspace',
+      name: 'Feature Project',
+      description: 'Building new login flow',
+      branch: 'feature/login',
+      taskId: 'task-1',
+      issueUrls: ['https://github.com/org/repo/issues/42'],
+      createdAt: '2024-01-01T00:00:00.000Z',
+    };
+
+    const result = formatWorkspaceDescription(entry);
+    expect(result).toContain('my-workspace');
+    expect(result).toContain('Feature Project');
+    expect(result).toContain('Building new login flow');
+    expect(result).toContain('[feature/login]');
+    expect(result).toContain('#42');
+  });
+
+  test('deduplicates identical name and planTitle', () => {
+    const { formatWorkspaceDescription } = require('./workspace.js');
+
+    const entry = {
+      fullPath: '/home/user/workspaces/task-123',
+      basename: 'task-123',
+      name: 'Implement Login',
+      planTitle: 'Implement Login', // Same as name
+      taskId: 'task-123',
+      createdAt: '2024-01-01T00:00:00.000Z',
+    };
+
+    const result = formatWorkspaceDescription(entry);
+    // 'Implement Login' should appear only once
+    const matches = result.match(/Implement Login/g);
+    expect(matches).toHaveLength(1);
+  });
+
+  test('deduplicates case-insensitively', () => {
+    const { formatWorkspaceDescription } = require('./workspace.js');
+
+    const entry = {
+      fullPath: '/home/user/workspaces/task-456',
+      basename: 'task-456',
+      name: 'Fix Bug',
+      planTitle: 'FIX BUG', // Same content, different case
+      taskId: 'task-456',
+      createdAt: '2024-01-01T00:00:00.000Z',
+    };
+
+    const result = formatWorkspaceDescription(entry);
+    // Should only have one version of 'fix bug'
+    expect(result).toContain('Fix Bug');
+    expect(result).not.toContain('FIX BUG');
+  });
+
+  test('deduplicates description that is substring of name', () => {
+    const { formatWorkspaceDescription } = require('./workspace.js');
+
+    const entry = {
+      fullPath: '/home/user/workspaces/task-789',
+      basename: 'task-789',
+      name: 'Implement User Authentication Feature',
+      description: 'User Authentication', // Subset of name
+      taskId: 'task-789',
+      createdAt: '2024-01-01T00:00:00.000Z',
+    };
+
+    const result = formatWorkspaceDescription(entry);
+    // Description should be omitted since it's covered by name
+    expect(result).toContain('Implement User Authentication Feature');
+    expect(result).not.toMatch(/\| User Authentication\s*(\||$)/);
+  });
+
+  test('skips issue refs already mentioned in description', () => {
+    const { formatWorkspaceDescription } = require('./workspace.js');
+
+    const entry = {
+      fullPath: '/home/user/workspaces/task-100',
+      basename: 'task-100',
+      description: '#55 Fix the login bug',
+      taskId: 'task-100',
+      issueUrls: ['https://github.com/org/repo/issues/55'],
+      createdAt: '2024-01-01T00:00:00.000Z',
+    };
+
+    const result = formatWorkspaceDescription(entry);
+    // #55 appears in description, should not be duplicated at the end
+    const matches = result.match(/#55/g);
+    expect(matches).toHaveLength(1);
+  });
+
+  test('handles minimal entry with only required fields', () => {
+    const { formatWorkspaceDescription } = require('./workspace.js');
+
+    const entry = {
+      fullPath: '/home/user/workspaces/minimal',
+      basename: 'minimal',
+      taskId: 'task-min',
+      createdAt: '2024-01-01T00:00:00.000Z',
+    };
+
+    const result = formatWorkspaceDescription(entry);
+    expect(result).toBe('minimal');
+  });
+
+  test('handles entry with only basename and branch', () => {
+    const { formatWorkspaceDescription } = require('./workspace.js');
+
+    const entry = {
+      fullPath: '/home/user/workspaces/basic',
+      basename: 'basic',
+      branch: 'main',
+      taskId: 'task-basic',
+      createdAt: '2024-01-01T00:00:00.000Z',
+    };
+
+    const result = formatWorkspaceDescription(entry);
+    expect(result).toBe('basic | [main]');
   });
 });

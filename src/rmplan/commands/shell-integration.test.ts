@@ -56,15 +56,15 @@ describe('shell-integration command', () => {
     expect(output).toContain('return 0');
   });
 
-  test('includes preview with workspace info', async () => {
+  test('includes preview with path info', async () => {
     const { generateShellFunction } = await import('./shell-integration.js');
 
     const output = generateShellFunction('zsh');
 
+    // New 2-column format: preview shows just the path since formatted description is already visible
     expect(output).toContain("--preview 'echo");
     expect(output).toContain('Path:');
-    expect(output).toContain('Description:');
-    expect(output).toContain('Branch:');
+    expect(output).toContain('--preview-window');
   });
 
   test('handleShellIntegrationCommand outputs function code', async () => {
