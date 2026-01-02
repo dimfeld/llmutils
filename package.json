@@ -75,7 +75,6 @@
     "strip-ansi": "^7.1.0",
     "table": "^6.9.0",
     "tap-parser": "^18.0.0",
-    "tree-sitter": "^0.25.0",
     "tree-sitter-python": "^0.25.0",
     "tree-sitter-rust": "^0.24.0",
     "tree-sitter-svelte": "^0.11.0",

@@ -66,7 +66,9 @@ export interface GenerateModeRegistrationContext {
   gitRoot: string;
 }
 
-const questionText = `Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. As you figure things out, update the details in the plan file if necessary. Ask as many questions as you need to figure things out, since it improves the implementation quality.`;
+const questionText = `Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. As you figure things out, update the details in the plan file if necessary. Ask as many questions as you need to figure things out, since it improves the implementation quality.
+
+Every time you think you are done asking questions, review the plan file again to see if there are any more questions you might need to ask. If anything is underspecified, make sure you ask about it instead of assuming the answer.`;
 
 function parseBooleanOption(value: unknown, defaultValue = false): boolean {
   if (typeof value === 'boolean') {
