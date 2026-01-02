@@ -787,7 +787,8 @@ This section should serve as a standalone reference document for the research ph
 This section provides actionable guidance for implementing the change.
 
 Include:
-- A detailed step-by-step guide on how to implement the change.
+- A detailed step-by-step guide on how to implement the change. This does not need to be actual code--the agent that
+implements the code will be smart too--but each step should be very clear on what to do and why.
 - Reference specific patterns, abstractions, APIs, and documentation files that are relevant to each step.
 - Manual testing steps (these are appropriate here even though we don't want them in the structured tasks that you will generate later).
 - Rationale behind why certain approaches are recommended over alternatives.
@@ -1150,4 +1151,203 @@ IMPORTANT:
 - Ensure all fields are properly populated
 - Use proper YAML syntax with correct indentation
 - Multi-line prompts should use the pipe (|) character`;
+}
+
+export interface SinglePromptForCLIOptions {
+  simple?: boolean;
+  withBlockingSubissues?: boolean;
+  parentPlanId?: number;
+  allowMultiplePlans?: boolean;
+}
+
+/**
+ * Generates a single prompt for CLI-based plan generation.
+ * This is used by the `rmplan generate` command when using any executor.
+ * Unlike the MCP prompts, this is non-interactive (no user questions).
+ *
+ * The prompt instructs the agent to:
+ * 1. Explore the codebase
+ * 2. Write research/implementation guide directly to the plan file
+ * 3. Use `rmplan tools update-plan-tasks` CLI command to add tasks
+ */
+export function generateSinglePromptForCLI(
+  planText: string,
+  planPath: string,
+  planId: number | string | undefined,
+  options: SinglePromptForCLIOptions = {}
+): string {
+  const {
+    simple = false,
+    withBlockingSubissues = false,
+    parentPlanId,
+    allowMultiplePlans = true,
+  } = options;
+
+  const blockingSection = getBlockingSubissueInstructions({
+    withBlockingSubissues,
+    parentPlanId,
+  });
+  const discoveredIssueSection = getDiscoveredIssueInstructions({
+    parentPlanId,
+  });
+
+  const multiplePlansGuidance = allowMultiplePlans
+    ? `
+# Multiple Plan Creation
+
+If you determine that the scope of this plan is large enough that it would benefit from being broken down into multiple independent plans, you should create additional plans. Consider creating multiple plans when:
+
+1. The work can be naturally divided into separate phases or parts that can be merged independently
+2. Different aspects of the work could be worked on in parallel by different agents
+3. The plan has distinct areas of functionality that have minimal interdependencies
+4. Breaking it down would reduce cognitive load and make each plan more focused
+
+When creating multiple plans:
+- Use the \`rmplan add "Plan Title" --parent ${parentPlanId !== undefined ? parentPlanId : '<parent-plan-id>'} --priority <priority> --details "..."\` command
+- Use --depends-on to specify which plans should be completed before others
+- Document the relationship between plans in each plan's details section
+- Each plan should be independently implementable and testable
+- Each plan should deliver real, demonstrable functionality that works end-to-end
+
+IMPORTANT: Do NOT split plans by architectural layers (frontend/backend, UI/API, client/server). Each plan should deliver a complete, working feature that spans all necessary layers. Split by feature areas or functional domains instead, ensuring each plan produces real, testable value.
+
+Only create multiple plans if it genuinely improves the project organization. For smaller or tightly coupled features, a single plan is preferred.`
+    : '';
+
+  // Research section - only include if not in simple mode
+  const researchSection = simple
+    ? ''
+    : `
+# Research and Implementation Guide
+
+Once your research is complete, generate structured Markdown that preserves your research findings and provides a detailed implementation guide.
+
+Your output should have two distinct sections:
+
+## Research
+
+This section preserves all the knowledge you gathered during exploration. The goal is to document your findings
+so that anyone reading this later can understand what you learned without needing to re-explore the codebase.
+
+Include:
+- A concise overview of the opportunity or problem you investigated.
+- The most critical discoveries that should guide implementation.
+- Notable files, modules, or patterns you inspected and what you learned about them.
+- Existing utilities, abstractions, or APIs that are relevant, with details on how to use them or references to existing documentation.
+- Architectural hazards, edge cases, or constraints uncovered during research.
+- Dependencies or prerequisites the implementation must respect.
+- Any surprising findings or important context about the surrounding system.
+
+## Implementation Guide
+
+This section provides actionable guidance for implementing the change.
+
+Include:
+- A detailed step-by-step guide on how to implement the change.
+- Reference specific patterns, abstractions, APIs, and documentation files that are relevant to each step.
+- Manual testing steps if applicable.
+- Rationale behind why certain approaches are recommended over alternatives.
+
+**Add your research and implementation guide directly to the plan file at \`${planPath}\`.**
+Use the Edit tool to write to this file. The output should include both "## Research" and "## Implementation Guide" sections.
+`;
+
+  const planIdStr = planId !== undefined ? String(planId) : path.basename(planPath);
+
+  const taskInstructions = `
+# Task Generation
+
+After ${simple ? 'analyzing the codebase' : 'writing the research and implementation guide'}, add tasks to the plan file using the CLI command:
+
+\`\`\`bash
+echo '${JSON.stringify({
+    plan: planIdStr,
+    tasks: [
+      { title: 'Task 1 Title', description: 'Task 1 description...' },
+      { title: 'Task 2 Title', description: 'Task 2 description...' },
+    ],
+  })}' | rmplan tools update-plan-tasks
+\`\`\`
+
+Each task should have:
+- **title**: A concise task title (one sentence)
+- **description**: Detailed task description explaining what needs to be done
+
+The list of tasks should correspond to ${simple ? 'the logical steps needed to implement the feature' : 'the steps in your implementation guide'}.
+
+IMPORTANT:
+- Do NOT create tasks for manual verification. This plan will be executed by an AI coding agent and verified separately after implementation.
+- Testing should be INTEGRATED into your implementation tasks, not separate tasks.
+`;
+
+  return `This is a description for an upcoming feature that I want you to analyze and create a plan for.
+
+# Project Description
+
+${planText}
+
+# Instructions
+
+Please analyze this project description and the codebase. Your task is to:
+
+1. Use your tools to explore the codebase and understand the existing code structure
+2. Identify which files would need to be created or modified to implement this feature
+3. Think about how to break this down into logical tasks
+4. Consider dependencies between different parts of the implementation
+5. Identify any potential challenges or considerations
+
+For your analysis, please:
+- Explore the relevant parts of the codebase
+- Understand the existing patterns and conventions
+- Identify the key files and components that will be involved
+- Think deeply about the best approach to implement this feature
+
+Make sure your plan includes these details:
+
+${commonGenerateDetails}
+
+${blockingSection}
+${discoveredIssueSection}
+${multiplePlansGuidance}
+${researchSection}
+${taskInstructions}
+
+Start by exploring the codebase, then ${simple ? 'add the tasks' : 'write the research/implementation guide to the plan file, and finally add the tasks'}.`;
+}
+
+/**
+ * Generates a follow-up prompt to ask the agent to create tasks if they weren't created
+ * in the initial run. This is used for the single resume attempt.
+ */
+export function generateTaskCreationFollowUpPrompt(
+  planPath: string,
+  planId: number | string | undefined
+): string {
+  const planIdStr = planId !== undefined ? String(planId) : path.basename(planPath);
+
+  return `You explored the codebase and wrote research/implementation guide, but did not create tasks for the plan.
+
+Please review the implementation guide you wrote in the plan file at \`${planPath}\` and add tasks using the CLI command:
+
+\`\`\`bash
+echo '${JSON.stringify({
+    plan: planIdStr,
+    tasks: [
+      { title: 'Task 1 Title', description: 'Task 1 description...' },
+      { title: 'Task 2 Title', description: 'Task 2 description...' },
+    ],
+  })}' | rmplan tools update-plan-tasks
+\`\`\`
+
+Each task should have:
+- **title**: A concise task title (one sentence)
+- **description**: Detailed task description explaining what needs to be done
+
+The list of tasks should correspond to the steps in your implementation guide.
+
+IMPORTANT:
+- Do NOT create tasks for manual verification. This plan will be executed by an AI coding agent.
+- Testing should be INTEGRATED into implementation tasks, not separate tasks.
+
+Please add the tasks now.`;
 }

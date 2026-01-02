@@ -851,12 +851,16 @@ describe('handleGenerateCommand with --claude flag', () => {
   const clipboardWriteSpy = mock(async () => {});
   const clipboardReadSpy = mock(async () => 'clipboard content');
   const waitForEnterSpy = mock(async () => 'enter pressed');
-  const invokeClaudeCodeForGenerationSpy = mock(async () => ({
-    generationOutput: 'Generated YAML content',
-    researchOutput: undefined,
-  }));
   const extractMarkdownToYamlSpy = mock(async () => {});
   const warnSpy = mock(() => {});
+
+  // Mock executor that simulates task creation
+  const mockExecutorExecute = mock(async () => {});
+  const mockExecutor = {
+    execute: mockExecutorExecute,
+    filePathPrefix: '',
+  };
+  const buildExecutorAndLogSpy = mock(() => mockExecutor);
 
   beforeEach(async () => {
     // Clear mocks
@@ -866,9 +870,10 @@ describe('handleGenerateCommand with --claude flag', () => {
     clipboardWriteSpy.mockClear();
     clipboardReadSpy.mockClear();
     waitForEnterSpy.mockClear();
-    invokeClaudeCodeForGenerationSpy.mockClear();
     extractMarkdownToYamlSpy.mockClear();
     warnSpy.mockClear();
+    mockExecutorExecute.mockClear();
+    buildExecutorAndLogSpy.mockClear();
 
     // Clear plan cache
     clearPlanCache();
@@ -894,8 +899,9 @@ describe('handleGenerateCommand with --claude flag', () => {
       waitForEnter: waitForEnterSpy,
     }));
 
-    await moduleMocker.mock('../claude_utils.js', () => ({
-      invokeClaudeCodeForGeneration: invokeClaudeCodeForGenerationSpy,
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: buildExecutorAndLogSpy,
+      DEFAULT_EXECUTOR: 'claude_code',
     }));
 
     await moduleMocker.mock('../process_markdown.ts', () => ({
@@ -1000,33 +1006,28 @@ describe('handleGenerateCommand with --claude flag', () => {
     });
   });
 
-  test('pipes Claude output to extractMarkdownToYaml when extract is true', async () => {
-    const planPath = path.join(tempDir, 'test-plan.md');
-    await fs.writeFile(planPath, '# Test Plan\n\nThis is a test plan for extraction.');
+  test('uses executor to generate plan and add tasks directly to plan file', async () => {
+    // Create a stub plan file
+    const planPath = path.join(tasksDir, '101-test-plan.plan.md');
+    await writePlanFile(planPath, {
+      id: 101,
+      title: 'Test Plan',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: new Date().toISOString(),
+      details: 'This is a test plan for extraction.',
+      tasks: [],
+    });
 
-    // Mock invokeClaudeCodeForGeneration to return valid YAML
-    const yamlContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-id: test-plan-001
-title: Test Plan from Claude
-goal: Test goal from Claude
-details: Test details from Claude
-status: pending
-createdAt: 2024-01-01T00:00:00Z
-updatedAt: 2024-01-01T00:00:00Z
-phases:
-  - id: phase-1
-    title: Test Phase
-    goal: Phase goal
-    status: pending
-    tasks:
-      - id: task-1
-        title: Test Task
-        description: Task description
-        status: pending`;
-
-    invokeClaudeCodeForGenerationSpy.mockResolvedValueOnce({
-      generationOutput: yamlContent,
-      researchOutput: 'Research findings from Claude',
+    // Mock executor to simulate task creation by updating the plan file
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      // Simulate what the executor/agent does: add tasks to the plan file
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [
+        { title: 'Test Task 1', description: 'Task 1 description', done: false },
+        { title: 'Test Task 2', description: 'Task 2 description', done: false },
+      ];
+      await writePlanFile(planPath, plan);
     });
 
     const options = {
@@ -1047,19 +1048,25 @@ phases:
 
     await handleGenerateCommand(undefined, options, command);
 
-    // Verify invokeClaudeCodeForGeneration was called
-    expect(invokeClaudeCodeForGenerationSpy).toHaveBeenCalledTimes(1);
+    // Verify buildExecutorAndLog was called to get the executor
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
 
-    // Verify extractMarkdownToYaml was called with the YAML string
-    expect(extractMarkdownToYamlSpy).toHaveBeenCalledTimes(1);
-    expect(extractMarkdownToYamlSpy).toHaveBeenCalledWith(
-      yamlContent,
-      expect.any(Object),
-      false,
-      expect.objectContaining({
-        researchContent: 'Research findings from Claude',
-      })
-    );
+    // Verify executor.execute was called with the prompt
+    expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
+    const executeArgs = mockExecutorExecute.mock.calls[0];
+    expect(executeArgs[0]).toContain('Project Description'); // Single prompt contains project description
+    expect(executeArgs[1]).toMatchObject({
+      planId: '101',
+      planFilePath: planPath,
+      executionMode: 'planning',
+    });
+
+    // Verify extractMarkdownToYaml was NOT called (agent writes directly)
+    expect(extractMarkdownToYamlSpy).not.toHaveBeenCalled();
+
+    // Verify plan file was updated with tasks
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.tasks).toHaveLength(2);
   });
 
   test('reports newly created blocking plans linked to the current plan', async () => {
@@ -1092,7 +1099,8 @@ phases:
       },
     };
 
-    invokeClaudeCodeForGenerationSpy.mockImplementationOnce(async () => {
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      // Simulate executor creating a blocking plan
       const blockerPath = path.join(tasksDir, '102-blocker.plan.md');
       await writePlanFile(blockerPath, {
         id: 102,
@@ -1107,11 +1115,10 @@ phases:
         dependencies: [],
       });
 
-      return {
-        generationOutput:
-          '# yaml-language-server: $schema=https://example.com\nid: 101\ntitle: Parent Plan',
-        researchOutput: undefined,
-      };
+      // Also add tasks to the parent plan to avoid follow-up prompt
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [{ title: 'Task 1', description: 'Description', done: false }];
+      await writePlanFile(planPath, plan);
     });
 
     await handleGenerateCommand(undefined, options, command);
@@ -1157,7 +1164,7 @@ phases:
       },
     };
 
-    invokeClaudeCodeForGenerationSpy.mockImplementationOnce(async () => {
+    mockExecutorExecute.mockImplementationOnce(async () => {
       const { handleAddCommand } = await import('./add.js');
 
       await handleAddCommand(
@@ -1187,10 +1194,10 @@ phases:
 
       expect(blockingPlan.discoveredFrom).toBe(parentPlanId);
 
-      return {
-        generationOutput: `# yaml-language-server: $schema=https://example.com\nid: ${parentPlanId}\ntitle: Parent Plan`,
-        researchOutput: undefined,
-      };
+      // Also add tasks to the parent plan to avoid follow-up prompt
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [{ title: 'Task 1', description: 'Description', done: false }];
+      await writePlanFile(planPath, plan);
     });
 
     await handleGenerateCommand(undefined, options, command);
@@ -1213,7 +1220,8 @@ phases:
     expect(updatedParentPlan).toBeDefined();
     expect(updatedParentPlan!.dependencies).toContain(blockingPlan!.id);
 
-    expect(extractMarkdownToYamlSpy).toHaveBeenCalledTimes(1);
+    // extractMarkdownToYaml is no longer used in Claude mode - agent writes directly
+    expect(extractMarkdownToYamlSpy).not.toHaveBeenCalled();
     expect(warnSpy.mock.calls.length).toBe(0);
   });
 
@@ -1247,7 +1255,13 @@ phases:
       },
     };
 
-    invokeClaudeCodeForGenerationSpy.mockImplementationOnce(async () => {
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      // Simulate executor adding tasks to the plan file
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [{ title: 'Test Task', description: 'Test task', done: false }];
+      await writePlanFile(planPath, plan);
+
+      // Create an unrelated plan (not linked to the parent plan 201)
       const blockerPath = path.join(tasksDir, '202-unrelated.plan.md');
       await writePlanFile(blockerPath, {
         id: 202,
@@ -1261,12 +1275,6 @@ phases:
         tasks: [],
         dependencies: [],
       });
-
-      return {
-        generationOutput:
-          '# yaml-language-server: $schema=https://example.com\nid: 201\ntitle: Parent Plan',
-        researchOutput: undefined,
-      };
     });
 
     await handleGenerateCommand(undefined, options, command);
@@ -2107,17 +2115,18 @@ describe('handleGenerateCommand claude_mode configuration logic', () => {
   let tempDir: string;
   let tasksDir: string;
 
-  // Mock functions
-  const invokeClaudeCodeForGenerationSpy = mock(async () => ({
-    generationOutput: 'Generated YAML content',
-    researchOutput: undefined,
-  }));
-  const extractMarkdownToYamlSpy = mock(async () => {});
+  // Mock executor that simulates task creation
+  const mockExecutorExecute = mock(async () => {});
+  const mockExecutor = {
+    execute: mockExecutorExecute,
+    filePathPrefix: '',
+  };
+  const buildExecutorAndLogSpy = mock(() => mockExecutor);
 
   beforeEach(async () => {
     // Clear mocks
-    invokeClaudeCodeForGenerationSpy.mockClear();
-    extractMarkdownToYamlSpy.mockClear();
+    mockExecutorExecute.mockClear();
+    buildExecutorAndLogSpy.mockClear();
 
     // Clear plan cache
     clearPlanCache();
@@ -2128,12 +2137,19 @@ describe('handleGenerateCommand claude_mode configuration logic', () => {
     await fs.mkdir(tasksDir, { recursive: true });
 
     // Mock modules
-    await moduleMocker.mock('../claude_utils.js', () => ({
-      invokeClaudeCodeForGeneration: invokeClaudeCodeForGenerationSpy,
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: buildExecutorAndLogSpy,
+      DEFAULT_EXECUTOR: 'claude_code',
     }));
 
-    await moduleMocker.mock('../process_markdown.js', () => ({
-      extractMarkdownToYaml: extractMarkdownToYamlSpy,
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => tempDir,
+    }));
+
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: mock(() => {}),
+      error: mock(() => {}),
+      warn: mock(() => {}),
     }));
   });
 
@@ -2156,8 +2172,24 @@ describe('handleGenerateCommand claude_mode configuration logic', () => {
       }),
     }));
 
-    const planPath = path.join(tempDir, 'test-plan.md');
-    await fs.writeFile(planPath, '# Test Plan\n\nThis is a test plan.');
+    // Create a stub plan file with tasks
+    const planPath = path.join(tasksDir, '101-test-plan.plan.md');
+    await writePlanFile(planPath, {
+      id: 101,
+      title: 'Test Plan',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: new Date().toISOString(),
+      details: 'This is a test plan.',
+      tasks: [],
+    });
+
+    // Simulate executor adding tasks to the plan file
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [{ title: 'Test Task', description: 'A test task', done: false }];
+      await writePlanFile(planPath, plan);
+    });
 
     const options = {
       plan: planPath,
@@ -2177,15 +2209,15 @@ describe('handleGenerateCommand claude_mode configuration logic', () => {
 
     await handleGenerateCommand(undefined, options, command);
 
-    // Should use Claude mode (default) and call invokeClaudeCodeForGeneration
-    expect(invokeClaudeCodeForGenerationSpy).toHaveBeenCalledTimes(1);
-    expect(extractMarkdownToYamlSpy).toHaveBeenCalledWith(
-      'Generated YAML content',
-      expect.any(Object),
-      false,
+    // Should use Claude mode (default) and call executor
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
+
+    // Verify executor was called with planning execution mode
+    const executeArgs = mockExecutorExecute.mock.calls[0];
+    expect(executeArgs[1]).toEqual(
       expect.objectContaining({
-        generatedBy: 'agent', // This indicates Claude mode was used
-        researchContent: undefined,
+        executionMode: 'planning',
       })
     );
   });
@@ -2206,8 +2238,24 @@ describe('handleGenerateCommand claude_mode configuration logic', () => {
       }),
     }));
 
-    const planPath = path.join(tempDir, 'test-plan.md');
-    await fs.writeFile(planPath, '# Test Plan\n\nThis is a test plan.');
+    // Create a stub plan file with tasks
+    const planPath = path.join(tasksDir, '102-test-plan.plan.md');
+    await writePlanFile(planPath, {
+      id: 102,
+      title: 'Test Plan',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: new Date().toISOString(),
+      details: 'This is a test plan.',
+      tasks: [],
+    });
+
+    // Simulate executor adding tasks to the plan file
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [{ title: 'Test Task', description: 'A test task', done: false }];
+      await writePlanFile(planPath, plan);
+    });
 
     const options = {
       plan: planPath,
@@ -2228,48 +2276,35 @@ describe('handleGenerateCommand claude_mode configuration logic', () => {
     await handleGenerateCommand(undefined, options, command);
 
     // Should use Claude mode due to --claude flag
-    expect(invokeClaudeCodeForGenerationSpy).toHaveBeenCalledTimes(1);
-    expect(extractMarkdownToYamlSpy).toHaveBeenCalledWith(
-      'Generated YAML content',
-      expect.any(Object),
-      false,
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
+
+    // Verify executor was called with planning execution mode
+    const executeArgs = mockExecutorExecute.mock.calls[0];
+    expect(executeArgs[1]).toEqual(
       expect.objectContaining({
-        generatedBy: 'agent', // This indicates Claude mode was used
-        researchContent: undefined,
+        executionMode: 'planning',
       })
     );
   });
 });
 
-describe('handleGenerateCommand research preservation integration', () => {
+describe('handleGenerateCommand research and task prompt behavior', () => {
   let tempDir: string;
   let tasksDir: string;
   let planPath: string;
-  let config: any;
 
-  const logSpyLocal = mock(() => {});
-  const warnSpyLocal = mock(() => {});
-  const errorSpyLocal = mock(() => {});
-  const clipboardWriteMock = mock(async () => {});
-  const clipboardReadMock = mock(async () => '');
-  const waitForEnterMock = mock(async () => '');
-  const getGitRootMock = mock(async () => tempDir);
-  const invokeClaudeCodeForGenerationSpy = mock(async () => ({
-    generationOutput: '',
-    researchOutput: undefined,
-  }));
-  const createModelSpy = mock(async () => ({ id: 'unused' }));
+  // Mock executor that captures the prompt
+  const mockExecutorExecute = mock(async () => {});
+  const mockExecutor = {
+    execute: mockExecutorExecute,
+    filePathPrefix: '',
+  };
+  const buildExecutorAndLogSpy = mock(() => mockExecutor);
 
   beforeEach(async () => {
-    logSpyLocal.mockClear();
-    warnSpyLocal.mockClear();
-    errorSpyLocal.mockClear();
-    clipboardWriteMock.mockClear();
-    clipboardReadMock.mockClear();
-    waitForEnterMock.mockClear();
-    getGitRootMock.mockClear();
-    invokeClaudeCodeForGenerationSpy.mockClear();
-    createModelSpy.mockClear();
+    mockExecutorExecute.mockClear();
+    buildExecutorAndLogSpy.mockClear();
 
     clearPlanCache();
 
@@ -2304,45 +2339,31 @@ describe('handleGenerateCommand research preservation integration', () => {
     };
     await fs.writeFile(planPath, yaml.stringify(stubPlan), 'utf-8');
 
-    config = {
-      paths: {
-        tasks: tasksDir,
-      },
-      models: {
-        planning: 'test-model',
-        stepGeneration: 'test-model',
-      },
-    };
-
     await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpyLocal,
-      warn: warnSpyLocal,
-      error: errorSpyLocal,
-    }));
-
-    await moduleMocker.mock('../../common/clipboard.ts', () => ({
-      write: clipboardWriteMock,
-      read: clipboardReadMock,
-    }));
-
-    await moduleMocker.mock('../../common/terminal.js', () => ({
-      waitForEnter: waitForEnterMock,
+      log: mock(() => {}),
+      warn: mock(() => {}),
+      error: mock(() => {}),
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: getGitRootMock,
+      getGitRoot: async () => tempDir,
     }));
 
     await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => config,
+      loadEffectiveConfig: async () => ({
+        paths: {
+          tasks: tasksDir,
+        },
+        models: {
+          planning: 'test-model',
+          stepGeneration: 'test-model',
+        },
+      }),
     }));
 
-    await moduleMocker.mock('../../common/model_factory.js', () => ({
-      createModel: createModelSpy,
-    }));
-
-    await moduleMocker.mock('../claude_utils.js', () => ({
-      invokeClaudeCodeForGeneration: invokeClaudeCodeForGenerationSpy,
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: buildExecutorAndLogSpy,
+      DEFAULT_EXECUTOR: 'claude_code',
     }));
   });
 
@@ -2351,7 +2372,7 @@ describe('handleGenerateCommand research preservation integration', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  function buildOptions() {
+  function buildOptions(overrides: Record<string, unknown> = {}) {
     return {
       plan: planPath,
       claude: true,
@@ -2359,6 +2380,7 @@ describe('handleGenerateCommand research preservation integration', () => {
       parent: {
         opts: () => ({}),
       },
+      ...overrides,
     };
   }
 
@@ -2371,158 +2393,87 @@ describe('handleGenerateCommand research preservation integration', () => {
     };
   }
 
-  test('persists research output into single-phase plan files', async () => {
-    const generationOutput = [
-      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json',
-      'id: 123',
-      'title: Stub Plan',
-      'goal: Updated goal',
-      'details: |',
-      '  Claude-provided summary of the work to do.',
-      'status: pending',
-      'createdAt: 2024-01-01T00:00:00Z',
-      'updatedAt: 2024-01-01T00:00:00Z',
-      'tasks:',
-      '  - title: Task 1',
-      '    description: Implement the thing',
-      '    steps:',
-      '      - prompt: |',
-      '          Step details go here',
-      '        done: false',
-    ].join('\n');
-
-    invokeClaudeCodeForGenerationSpy.mockResolvedValueOnce({
-      generationOutput,
-      researchOutput: 'Research findings from Claude',
+  test('prompt includes research writing instructions in normal mode', async () => {
+    // Simulate executor adding tasks to the plan file
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [{ title: 'Test Task', description: 'A test task', done: false }];
+      await writePlanFile(planPath, plan);
     });
 
     await handleGenerateCommand(undefined, buildOptions(), buildCommand());
 
+    // Check that executor was called and prompt includes research instructions
+    expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
+    const prompt = mockExecutorExecute.mock.calls[0][0] as string;
+
+    // Should include research section instructions
+    expect(prompt).toContain('## Research');
+    expect(prompt).toContain('## Implementation Guide');
+  });
+
+  test('prompt skips research section when simple mode is used', async () => {
+    // Simulate executor adding tasks to the plan file
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [{ title: 'Test Task', description: 'A test task', done: false }];
+      await writePlanFile(planPath, plan);
+    });
+
+    await handleGenerateCommand(undefined, buildOptions({ simple: true }), buildCommand());
+
+    // Check that executor was called
+    expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
+    const prompt = mockExecutorExecute.mock.calls[0][0] as string;
+
+    // Should NOT include research section instructions in simple mode
+    expect(prompt).not.toContain('## Research');
+    expect(prompt).not.toContain('## Implementation Guide');
+  });
+
+  test('prompt includes task generation instructions using rmplan CLI', async () => {
+    // Simulate executor adding tasks to the plan file
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [{ title: 'Test Task', description: 'A test task', done: false }];
+      await writePlanFile(planPath, plan);
+    });
+
+    await handleGenerateCommand(undefined, buildOptions(), buildCommand());
+
+    // Check that executor was called and prompt includes task generation instructions
+    expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
+    const prompt = mockExecutorExecute.mock.calls[0][0] as string;
+
+    // Should include rmplan tools update-plan-tasks CLI instruction
+    expect(prompt).toContain('rmplan tools update-plan-tasks');
+  });
+
+  test('executor writes research and tasks directly to plan file', async () => {
+    // Simulate executor writing research and tasks to the plan file
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      const plan = await readPlanFile(planPath);
+      plan.details =
+        'Implementation summary\n\n## Research\n\nKey findings from analysis\n\n## Implementation Guide\n\nStep by step approach';
+      plan.tasks = [
+        { title: 'Task A', description: 'Task A description', done: false },
+        { title: 'Task B', description: 'Task B description', done: false },
+      ];
+      await writePlanFile(planPath, plan);
+    });
+
+    await handleGenerateCommand(undefined, buildOptions(), buildCommand());
+
+    // Verify executor was called
+    expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
+
+    // Read the plan file and verify content
     clearPlanCache();
     const savedPlan = await readPlanFile(planPath);
-    expect(savedPlan.uuid).toMatch(UUID_REGEX);
 
-    expect(savedPlan.details).toContain('Claude-provided summary');
     expect(savedPlan.details).toContain('## Research');
-    expect(savedPlan.details).toContain('Research findings from Claude');
-    expect(savedPlan.generatedBy).toBe('agent');
-
-    const researchHeadingCount = (savedPlan.details.match(/## Research/g) || []).length;
-    expect(researchHeadingCount).toBe(1);
-
-    const invokeArgs = invokeClaudeCodeForGenerationSpy.mock.calls[0];
-    expect(invokeArgs[2].researchPrompt).toContain('structured Markdown');
-  });
-
-  test('skips research section when research output is empty', async () => {
-    const generationOutput = [
-      'id: 123',
-      'title: Stub Plan',
-      'goal: Updated goal',
-      'details: Basic details',
-      'status: pending',
-      'createdAt: 2024-01-01T00:00:00Z',
-      'updatedAt: 2024-01-01T00:00:00Z',
-      'tasks:',
-      '  - title: Task 1',
-      '    description: Implement the thing',
-      '    steps: []',
-    ].join('\n');
-
-    invokeClaudeCodeForGenerationSpy.mockResolvedValueOnce({
-      generationOutput,
-      researchOutput: '    ',
-    });
-
-    await handleGenerateCommand(undefined, buildOptions(), buildCommand());
-
-    clearPlanCache();
-    const savedPlan = await readPlanFile(planPath);
-    expect(savedPlan.uuid).toMatch(UUID_REGEX);
-    expect(savedPlan.details).toContain('# Original Plan Details');
-    expect(savedPlan.details).not.toMatch(/## Research/);
-    expect(savedPlan.details).toContain('Basic details');
-  });
-
-  test('appends new research entry without duplicating heading', async () => {
-    const existingPlan = yaml.parse(await fs.readFile(planPath, 'utf-8')) as PlanSchema;
-    existingPlan.details = [
-      '# Original Plan Details',
-      '',
-      'Initial summary block',
-      '',
-      '## Research',
-      '',
-      '### 2024-03-01 12:00 UTC',
-      '',
-      'Prior research insights',
-    ].join('\n');
-
-    await fs.writeFile(planPath, yaml.stringify(existingPlan), 'utf-8');
-
-    const generationOutput = [
-      'id: 123',
-      'title: Stub Plan',
-      'goal: Updated goal',
-      'details: |',
-      '  Refined implementation overview.',
-      'status: pending',
-      'createdAt: 2024-01-01T00:00:00Z',
-      'updatedAt: 2024-01-01T00:00:00Z',
-      'tasks: []',
-    ].join('\n');
-
-    invokeClaudeCodeForGenerationSpy.mockResolvedValueOnce({
-      generationOutput,
-      researchOutput: 'New research summary from Claude',
-    });
-
-    await handleGenerateCommand(undefined, buildOptions(), buildCommand());
-
-    clearPlanCache();
-    const savedPlan = await readPlanFile(planPath);
-    expect(savedPlan.details).toContain('Refined implementation overview.');
-    expect(savedPlan.details).toContain('Prior research insights');
-    expect(savedPlan.details).toContain('New research summary from Claude');
-
-    const researchHeadingCount = (savedPlan.details.match(/## Research/g) || []).length;
-    expect(researchHeadingCount).toBe(1);
-
-    const entryCount = (savedPlan.details.match(/### /g) || []).length;
-    expect(entryCount).toBeGreaterThanOrEqual(2);
-  });
-
-  test('combines multi-phase plans and preserves research findings', async () => {
-    const multiPhaseOutput = [
-      'goal: Build multi-phase project',
-      'details: Overview of project',
-      'phases:',
-      '  - title: Phase 1',
-      '    goal: Do first part',
-      '    status: pending',
-      '    tasks:',
-      '      - title: Task A',
-      '        description: Task A description',
-      '        steps: []',
-      '  - title: Phase 2',
-      '    goal: Do second part',
-      '    status: pending',
-      '    tasks:',
-      '      - title: Task B',
-      '        description: Task B description',
-      '        steps: []',
-    ].join('\n');
-
-    invokeClaudeCodeForGenerationSpy.mockResolvedValueOnce({
-      generationOutput: multiPhaseOutput,
-      researchOutput: 'Key multi-phase research',
-    });
-
-    await handleGenerateCommand(undefined, buildOptions(), buildCommand());
-
-    const savedPlan = await readPlanFile(planPath);
-    expect(savedPlan.details).toContain('## Research');
-    expect(savedPlan.details).toContain('Key multi-phase research');
+    expect(savedPlan.details).toContain('Key findings from analysis');
+    expect(savedPlan.details).toContain('## Implementation Guide');
     expect(savedPlan.tasks.map((task) => task.title)).toEqual(['Task A', 'Task B']);
   });
 });

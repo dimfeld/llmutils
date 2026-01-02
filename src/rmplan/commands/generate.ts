@@ -39,14 +39,14 @@ import {
 import {
   planPrompt,
   simplePlanPrompt,
-  generateClaudeCodePlanningPrompt,
-  generateClaudeCodeGenerationPrompt,
-  generateClaudeCodeResearchPrompt,
-  generateClaudeCodeSimplePlanningPrompt,
+  generateSinglePromptForCLI,
+  generateTaskCreationFollowUpPrompt,
 } from '../prompt.js';
 import { getInstructionsFromIssue, type IssueInstructionData } from '../issue_utils.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
-import { invokeClaudeCodeForGeneration } from '../claude_utils.js';
+import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
+import type { ExecutorCommonOptions } from '../executors/types.js';
+import { buildPlanContext } from '../plan_display.js';
 import { findNextReadyDependency } from './find_next_dependency.js';
 import { isURL } from '../context_helpers.ts';
 import { autoClaimPlan, isAutoClaimEnabled } from '../assignments/auto_claim.js';
@@ -718,35 +718,79 @@ export async function handleGenerateCommand(
       let input: string;
 
       if (effectiveClaudeMode) {
-        // Generate the prompts for Claude Code
-        // For simple mode: skip research and don't pass planText to generation
-        const planningPrompt = options.simple
-          ? generateClaudeCodeSimplePlanningPrompt(fullPlanText, {
-              withBlockingSubissues: blockingSubissuesEnabled,
-              parentPlanId: currentPlanId,
-            })
-          : generateClaudeCodePlanningPrompt(fullPlanText, {
-              withBlockingSubissues: blockingSubissuesEnabled,
-              parentPlanId: currentPlanId,
-            });
+        // Use executor-based single-prompt approach
+        // The agent will explore the codebase, write research to the plan file,
+        // and add tasks using `rmplan tools update-plan-tasks`
 
-        const generationPrompt = options.simple
-          ? generateClaudeCodeGenerationPrompt('', {
-              withBlockingSubissues: blockingSubissuesEnabled,
-            })
-          : generateClaudeCodeGenerationPrompt(fullPlanText, {
-              withBlockingSubissues: blockingSubissuesEnabled,
-            });
+        if (!planFile) {
+          throw new Error('Plan file is required for executor-based generation');
+        }
 
-        // Only include research prompt for non-simple mode
-        const researchPrompt = options.simple ? undefined : generateClaudeCodeResearchPrompt();
+        // Build plan context for the prompt
+        const planContext = stubPlan?.data
+          ? buildPlanContext(stubPlan.data, planFile, { gitRoot, configPath: globalOpts.config })
+          : fullPlanText;
 
-        // Use the shared Claude Code invocation helper
-        const claudeResult = await invokeClaudeCodeForGeneration(planningPrompt, generationPrompt, {
-          model: config.models?.stepGeneration,
-          researchPrompt,
+        // Generate the single prompt
+        const singlePrompt = generateSinglePromptForCLI(planContext, planFile, currentPlanId, {
+          simple: options.simple,
+          withBlockingSubissues: blockingSubissuesEnabled,
+          parentPlanId: currentPlanId,
+          allowMultiplePlans: true,
         });
 
+        // Get executor using standard infrastructure
+        const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
+        const sharedExecutorOptions: ExecutorCommonOptions = {
+          baseDir: gitRoot,
+          interactive: false,
+          model: config.models?.stepGeneration,
+        };
+        const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
+
+        log(chalk.blue('🤖 Running plan generation with executor...'));
+
+        // Execute the single prompt
+        await executor.execute(singlePrompt, {
+          planId: String(currentPlanId ?? 'generate'),
+          planTitle: stubPlan?.data?.title || 'Generate Plan',
+          planFilePath: planFile,
+          executionMode: 'planning',
+        });
+
+        // Check if tasks were created
+        const updatedPlan = await readPlanFile(planFile);
+        const hasTasks = updatedPlan.tasks && updatedPlan.tasks.length > 0;
+
+        if (!hasTasks) {
+          log(chalk.yellow('⚠️  No tasks were created. Attempting follow-up prompt...'));
+
+          // Generate follow-up prompt to ask agent to create tasks
+          const followUpPrompt = generateTaskCreationFollowUpPrompt(planFile, currentPlanId);
+
+          await executor.execute(followUpPrompt, {
+            planId: String(currentPlanId ?? 'generate'),
+            planTitle: stubPlan?.data?.title || 'Generate Plan',
+            planFilePath: planFile,
+            executionMode: 'planning',
+          });
+
+          // Check again
+          const finalPlan = await readPlanFile(planFile);
+          if (!finalPlan.tasks || finalPlan.tasks.length === 0) {
+            warn(
+              chalk.yellow(
+                '⚠️  Tasks were still not created after follow-up. Please add tasks manually using `rmplan tools update-plan-tasks`.'
+              )
+            );
+          } else {
+            log(chalk.green(`✓ Created ${finalPlan.tasks.length} tasks after follow-up prompt`));
+          }
+        } else {
+          log(chalk.green(`✓ Plan generated with ${updatedPlan.tasks.length} tasks`));
+        }
+
+        // Check for blocking subissues if enabled
         if (blockingSubissuesEnabled && blockingPlanBaseline && currentPlanId !== undefined) {
           const { plans: updatedPlans } = await readAllPlans(tasksDirectory, false);
           const newlyObservedPlans = Array.from(updatedPlans.entries())
@@ -807,19 +851,20 @@ export async function handleGenerateCommand(
           }
         }
 
-        if (claudeResult.researchOutput?.trim()) {
-          if (planFile) {
-            researchToPersist = {
-              content: claudeResult.researchOutput,
-              insertedAt: new Date(),
-            };
-            log(chalk.green('✓ Captured research findings for plan details'));
-          } else {
-            warn('Generated research findings but no plan file was available to update.');
+        // Auto-claim the plan if enabled
+        if (isAutoClaimEnabled()) {
+          try {
+            const { plan, uuid } = await resolvePlanWithUuid(planFile, {
+              configPath: globalOpts.config,
+            });
+            await autoClaimPlan({ plan, uuid }, { cwdForIdentity: gitRoot });
+          } catch (err) {
+            warn(`Failed to auto-claim plan ${planFile}: ${err as Error}`);
           }
         }
 
-        input = claudeResult.generationOutput;
+        // Skip extractMarkdownToYaml - agent writes directly to plan file
+        return;
       } else if (effectiveDirectMode) {
         // Direct LLM call
         const modelId = config.models?.stepGeneration || DEFAULT_RUN_MODEL;

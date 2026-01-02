@@ -245,6 +245,7 @@ program
   .option('--no-direct', 'Use clipboard mode even if direct mode is configured')
   .option('--claude', 'Use Claude Code for two-step planning and generation')
   .option('--no-claude', 'Use traditional copy/paste mode instead of Claude Code')
+  .option('-x, --executor <name>', 'The executor to use for generation (e.g., claude_code, codex)')
   .option(
     '--with-blocking-subissues',
     'Prompt LLM to identify and create blocking prerequisite plans'
