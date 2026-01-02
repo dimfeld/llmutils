@@ -34,6 +34,7 @@
  */
 
 import { Command } from 'commander';
+import { z } from 'zod/v4';
 import { loadEnv } from '../common/env.js';
 import { setDebug } from '../common/process.js';
 import { executors } from './executors/index.js';
@@ -42,6 +43,14 @@ import { prioritySchema, statusSchema } from './planSchema.js';
 import { CleanupRegistry } from '../common/cleanup_registry.js';
 import { startMcpServer } from './mcp/server.js';
 import { enableAutoClaim } from './assignments/auto_claim.js';
+import {
+  getPlanParameters,
+  createPlanParameters,
+  generateTasksParameters,
+  updatePlanDetailsParameters,
+  managePlanTaskParameters,
+  listReadyPlansParameters,
+} from './tools/schemas.js';
 
 function intArg(value: string | undefined): number | undefined;
 function intArg(value: string[] | undefined): number[] | undefined;
@@ -62,6 +71,14 @@ function intArg<T extends string | string[] | undefined>(
     throw new Error(`Argument must be an integer, saw ${value.toString()}`);
   }
   return n;
+}
+
+function formatSchemaHelp(schema: z.ZodTypeAny): string {
+  const jsonSchema = z.toJSONSchema(schema, {
+    target: 'draft-7',
+    io: 'input',
+  });
+  return `\nInput JSON Schema:\n${JSON.stringify(jsonSchema, null, 2)}\n`;
 }
 
 const program = new Command();
@@ -117,13 +134,23 @@ program
 
 const toolsCommand = program
   .command('tools')
-  .description('Run MCP tool equivalents via CLI using JSON over stdin');
+  .description('Run MCP tool equivalents via CLI using JSON over stdin')
+  .addHelpText(
+    'after',
+    `
+Each subcommand accepts JSON input on stdin and supports:
+  --json          Output structured JSON instead of text
+  --help          Show help including the input JSON schema
+  --print-schema  Print only the input JSON schema
+`
+  );
 
 toolsCommand
   .command('get-plan')
   .description('Retrieve plan details (reads JSON from stdin)')
   .option('--json', 'Output as structured JSON')
   .option('--print-schema', 'Print the input JSON schema and exit')
+  .addHelpText('after', formatSchemaHelp(getPlanParameters))
   .action(async (options, command) => {
     const { handleToolCommand } = await import('./commands/tools.js');
     await handleToolCommand('get-plan', options, command).catch(handleCommandError);
@@ -134,6 +161,7 @@ toolsCommand
   .description('Create a new plan (reads JSON from stdin)')
   .option('--json', 'Output as structured JSON')
   .option('--print-schema', 'Print the input JSON schema and exit')
+  .addHelpText('after', formatSchemaHelp(createPlanParameters))
   .action(async (options, command) => {
     const { handleToolCommand } = await import('./commands/tools.js');
     await handleToolCommand('create-plan', options, command).catch(handleCommandError);
@@ -144,6 +172,7 @@ toolsCommand
   .description('Update plan tasks and details (reads JSON from stdin)')
   .option('--json', 'Output as structured JSON')
   .option('--print-schema', 'Print the input JSON schema and exit')
+  .addHelpText('after', formatSchemaHelp(generateTasksParameters))
   .action(async (options, command) => {
     const { handleToolCommand } = await import('./commands/tools.js');
     await handleToolCommand('update-plan-tasks', options, command).catch(handleCommandError);
@@ -154,6 +183,7 @@ toolsCommand
   .description('Update plan details within generated section (reads JSON from stdin)')
   .option('--json', 'Output as structured JSON')
   .option('--print-schema', 'Print the input JSON schema and exit')
+  .addHelpText('after', formatSchemaHelp(updatePlanDetailsParameters))
   .action(async (options, command) => {
     const { handleToolCommand } = await import('./commands/tools.js');
     await handleToolCommand('update-plan-details', options, command).catch(handleCommandError);
@@ -164,6 +194,7 @@ toolsCommand
   .description('Add, update, or remove a plan task (reads JSON from stdin)')
   .option('--json', 'Output as structured JSON')
   .option('--print-schema', 'Print the input JSON schema and exit')
+  .addHelpText('after', formatSchemaHelp(managePlanTaskParameters))
   .action(async (options, command) => {
     const { handleToolCommand } = await import('./commands/tools.js');
     await handleToolCommand('manage-plan-task', options, command).catch(handleCommandError);
@@ -174,6 +205,7 @@ toolsCommand
   .description('List ready plans (reads JSON from stdin)')
   .option('--json', 'Output as structured JSON')
   .option('--print-schema', 'Print the input JSON schema and exit')
+  .addHelpText('after', formatSchemaHelp(listReadyPlansParameters))
   .action(async (options, command) => {
     const { handleToolCommand } = await import('./commands/tools.js');
     await handleToolCommand('list-ready-plans', options, command).catch(handleCommandError);

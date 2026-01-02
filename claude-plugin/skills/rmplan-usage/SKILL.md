@@ -69,6 +69,10 @@ These subcommands share the same schemas and behavior as the MCP tools and can r
 structured JSON with `--json`.
 
 ```bash
+# View the input JSON schema for any tool
+rmplan tools get-plan --help           # Shows help and schema
+rmplan tools get-plan --print-schema   # Shows only the schema
+
 # Text output (matches MCP tool output)
 echo '{"plan": "123"}' | rmplan tools get-plan
 
@@ -79,11 +83,7 @@ echo '{"plan": "123"}' | rmplan tools get-plan --json
 echo '{"title": "New Plan", "priority": "high"}' | rmplan tools create-plan --json
 ```
 
-If you still want the MCP server for prompts/resources only, run:
-
-```bash
-rmplan mcp-server --no-tools
-```
+**Tip for agents**: Use `--help` or `--print-schema` to see the JSON schema for any tool's input parameters.
 
 ## CLI Commands
 
