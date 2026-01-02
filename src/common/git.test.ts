@@ -13,6 +13,8 @@ import {
   getCurrentJujutsuBranch,
   getGitRepository,
   resetGitRepositoryCache,
+  isInGitRepository,
+  clearGitRootCache,
 } from './git';
 import { detectPlanningWithoutImplementation } from '../rmplan/executors/failure_detection.ts';
 
@@ -70,6 +72,73 @@ describe('Git Utilities', () => {
     it('should return current working directory as fallback', async () => {
       const gitRoot = await getGitRoot(tempDir);
       expect(gitRoot).toBe(tempDir);
+    });
+  });
+
+  describe('isInGitRepository', () => {
+    beforeEach(() => {
+      clearGitRootCache();
+    });
+
+    afterEach(() => {
+      clearGitRootCache();
+    });
+
+    it('should return true when .git directory exists', async () => {
+      // Initialize a git repo
+      const proc = Bun.spawn(['git', 'init'], {
+        cwd: tempDir,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      await proc.exited;
+
+      const result = await isInGitRepository(tempDir);
+      expect(result).toBe(true);
+    });
+
+    it('should return true when .jj directory exists', async () => {
+      // Create a .jj directory (simulating a Jujutsu repository)
+      const jjDir = path.join(tempDir, '.jj');
+      await fs.mkdir(jjDir);
+
+      const result = await isInGitRepository(tempDir);
+      expect(result).toBe(true);
+    });
+
+    it('should return false when neither .git nor .jj exists', async () => {
+      // tempDir is an empty directory with no repository
+      const result = await isInGitRepository(tempDir);
+      expect(result).toBe(false);
+    });
+
+    it('should work with different cwd values', async () => {
+      // Create a subdirectory in a git repo
+      await initGitRepository(tempDir);
+      const subDir = path.join(tempDir, 'subdir', 'nested');
+      await fs.mkdir(subDir, { recursive: true });
+
+      // Check from the subdirectory - should still detect the repo
+      const result = await isInGitRepository(subDir);
+      expect(result).toBe(true);
+
+      // Create an entirely separate non-repo directory
+      const nonRepoDir = await fs.mkdtemp(path.join(os.tmpdir(), 'non-repo-'));
+      try {
+        const nonRepoResult = await isInGitRepository(nonRepoDir);
+        expect(nonRepoResult).toBe(false);
+      } finally {
+        await fs.rm(nonRepoDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should handle .git as a file (git worktree)', async () => {
+      // In git worktrees, .git is a file pointing to the main repo
+      const gitFile = path.join(tempDir, '.git');
+      await fs.writeFile(gitFile, 'gitdir: /path/to/main/repo/.git/worktrees/myworktree');
+
+      const result = await isInGitRepository(tempDir);
+      expect(result).toBe(true);
     });
   });
 

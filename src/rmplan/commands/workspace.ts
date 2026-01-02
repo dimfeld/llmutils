@@ -6,7 +6,7 @@ import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
 import { table, type TableUserConfig } from 'table';
 import { log, warn } from '../../logging.js';
-import { getGitRoot } from '../../common/git.js';
+import { getGitRoot, isInGitRepository } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanFile, readPlanFile, setPlanStatus } from '../plans.js';
 import { generateAlphanumericId } from '../id_utils.js';
@@ -54,15 +54,20 @@ export interface WorkspaceListOptions {
 
 export async function handleWorkspaceListCommand(options: WorkspaceListOptions, command: Command) {
   const globalOpts = command.parent!.parent!.opts();
-  const config = await loadEffectiveConfig(globalOpts.config);
+
+  // Check if we're in a git repository
+  const inGitRepo = await isInGitRepository();
+
+  // If not in a git repo, suppress the external storage message
+  const config = await loadEffectiveConfig(globalOpts.config, { quiet: !inGitRepo });
   const trackingFilePath = config.paths?.trackingFile;
 
   const format: WorkspaceListFormat = options.format ?? 'table';
   const showHeader = options.header ?? true;
 
-  // Determine repository ID (unless --all is specified)
+  // Determine repository ID (unless --all is specified OR we're outside a git repo)
   let repositoryId: string | undefined;
-  if (!options.all) {
+  if (!options.all && inGitRepo) {
     repositoryId = options.repo ?? (await determineRepositoryId());
   }
 

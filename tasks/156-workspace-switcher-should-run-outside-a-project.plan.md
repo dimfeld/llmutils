@@ -4,40 +4,81 @@ title: workspace switcher should run outside a project
 goal: ""
 id: 156
 uuid: 6dc6b938-bac2-460e-8d69-58eb913b8acb
-status: pending
+status: done
 priority: medium
 createdAt: 2026-01-02T01:08:14.981Z
-updatedAt: 2026-01-02T01:08:14.981Z
+updatedAt: 2026-01-02T01:56:19.247Z
 tasks:
   - title: Add isInGitRepository utility function
-    description: |
-      Add a new `isInGitRepository(cwd?: string): Promise<boolean>` function to `src/common/git.ts`.
-      This function should check if the given directory (or cwd) is inside a Git or Jujutsu repository
-      by verifying that a `.git` directory/file or `.jj` directory exists at the git root returned by
+    done: true
+    description: >
+      Add a new `isInGitRepository(cwd?: string): Promise<boolean>` function to
+      `src/common/git.ts`.
+
+      This function should check if the given directory (or cwd) is inside a Git
+      or Jujutsu repository
+
+      by verifying that a `.git` directory/file or `.jj` directory exists at the
+      git root returned by
+
       `getGitRoot()`. Follow the existing pattern used by `getUsingJj()`.
   - title: Add quiet option to loadEffectiveConfig
-    description: |
-      Modify `loadEffectiveConfig()` in `src/rmplan/configLoader.ts` to accept an optional second
-      parameter `options: { quiet?: boolean }`. When `quiet: true`, suppress the 'Using external
+    done: true
+    description: >
+      Modify `loadEffectiveConfig()` in `src/rmplan/configLoader.ts` to accept
+      an optional second
+
+      parameter `options: { quiet?: boolean }`. When `quiet: true`, suppress the
+      'Using external
+
       rmplan storage at ...' log message on line 264.
   - title: Modify handleWorkspaceListCommand for outside-repo behavior
-    description: |
-      Update `handleWorkspaceListCommand()` in `src/rmplan/commands/workspace.ts` to:
+    done: true
+    description: >
+      Update `handleWorkspaceListCommand()` in
+      `src/rmplan/commands/workspace.ts` to:
+
       1) Import `isInGitRepository` from `../../common/git.js`
+
       2) Check if in a git repo before loading config
+
       3) Pass `{ quiet: true }` to `loadEffectiveConfig` when outside a git repo
-      4) Skip `determineRepositoryId()` and set `repositoryId = undefined` when outside a git repo
+
+      4) Skip `determineRepositoryId()` and set `repositoryId = undefined` when
+      outside a git repo
          (equivalent to --all behavior)
   - title: Add tests for isInGitRepository function
-    description: |
-      Add unit tests for the new `isInGitRepository()` function in `src/common/git.ts`.
-      Test cases: returns true when `.git` directory exists, returns true when `.jj` directory exists,
+    done: true
+    description: >
+      Add unit tests for the new `isInGitRepository()` function in
+      `src/common/git.ts`.
+
+      Test cases: returns true when `.git` directory exists, returns true when
+      `.jj` directory exists,
+
       returns false when neither exists, works with different `cwd` values.
   - title: Add integration tests for workspace list outside git repo
-    description: |
-      Add integration tests for `handleWorkspaceListCommand` when run outside a git repository.
-      Test that: all workspaces are returned (not filtered by repository), no 'Using external rmplan
-      storage' message is logged, existing behavior inside a git repo is preserved.
+    done: true
+    description: >
+      Add integration tests for `handleWorkspaceListCommand` when run outside a
+      git repository.
+
+      Test that: all workspaces are returned (not filtered by repository), no
+      'Using external rmplan
+
+      storage' message is logged, existing behavior inside a git repo is
+      preserved.
+changedFiles:
+  - claude-plugin/skills/rmplan-usage/SKILL.md
+  - src/common/git.test.ts
+  - src/common/git.ts
+  - src/rmplan/commands/shell-integration.test.ts
+  - src/rmplan/commands/shell-integration.ts
+  - src/rmplan/commands/workspace.list.test.ts
+  - src/rmplan/commands/workspace.ts
+  - src/rmplan/configLoader.ts
+  - src/rmplan/mcp/generate_mode.ts
+  - src/rmplan/rmplan.ts
 tags: []
 ---
 
@@ -263,3 +304,29 @@ export async function loadEffectiveConfig(
 7. Verify that only workspaces for that repository are shown
 8. Run `rmplan workspace list --all`
 9. Verify that all workspaces are shown
+
+## Current Progress
+### Current State
+- All tasks completed and plan marked as done
+
+### Completed (So Far)
+- Added `isInGitRepository(cwd?: string)` utility function to `src/common/git.ts`
+- Added `LoadEffectiveConfigOptions` interface with `quiet` option to `src/rmplan/configLoader.ts`
+- Modified `handleWorkspaceListCommand()` in `src/rmplan/commands/workspace.ts` to auto-enable `--all` behavior and suppress storage message when outside a git repo
+- Added 5 unit tests for `isInGitRepository` in `src/common/git.test.ts` (covering .git dir, .jj dir, worktrees, subdirectories, non-repo directories)
+- Added 4 integration tests for workspace list outside git repo in `src/rmplan/commands/workspace.list.test.ts`
+- All 51 workspace tests and 26 git tests pass
+
+### Remaining
+- None
+
+### Next Iteration Guidance
+- None - all tasks complete
+
+### Decisions / Changes
+- Followed existing pattern from `getUsingJj()` for the `isInGitRepository` implementation
+- Used `.git` file check (not just directory) to support git worktrees
+- Reviewer approved the implementation as acceptable
+
+### Risks / Blockers
+- None

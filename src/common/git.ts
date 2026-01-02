@@ -67,6 +67,37 @@ export async function getGitRoot(cwd = process.cwd()): Promise<string> {
 let cachedUsingJj: boolean | undefined;
 
 /**
+ * Checks if the given directory (or cwd) is inside a Git or Jujutsu repository.
+ * Returns true if a .git directory/file or .jj directory exists at the git root.
+ *
+ * Unlike getUsingJj(), this function does not cache results since it accepts
+ * an arbitrary directory parameter.
+ *
+ * @param cwd - Working directory to check. Defaults to process.cwd()
+ * @returns Promise resolving to true if inside a repository, false otherwise
+ */
+export async function isInGitRepository(cwd = process.cwd()): Promise<boolean> {
+  const gitRoot = await getGitRoot(cwd);
+
+  // Check if .git directory or file exists at the root
+  // Note: .git can be a file for worktrees
+  const hasGit = await Bun.file(path.join(gitRoot, '.git'))
+    .stat()
+    .then((s) => s.isDirectory() || s.isFile())
+    .catch(() => false);
+
+  if (hasGit) return true;
+
+  // Check if .jj directory exists at the root
+  const hasJj = await Bun.file(path.join(gitRoot, '.jj'))
+    .stat()
+    .then((s) => s.isDirectory())
+    .catch(() => false);
+
+  return hasJj;
+}
+
+/**
  * Determines if the current repository is using Jujutsu (jj) version control.
  * This function checks for the presence of a .jj directory in the repository root
  * and caches the result for subsequent calls.

@@ -59,6 +59,7 @@ describe('workspace list command', () => {
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => tempDir,
       getCurrentBranchName: async () => 'main',
+      isInGitRepository: async () => true,
     }));
 
     await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
@@ -776,5 +777,321 @@ describe('formatWorkspaceDescription', () => {
 
     const result = formatWorkspaceDescription(entry);
     expect(result).toBe('basic | [main]');
+  });
+});
+
+describe('workspace list outside git repository', () => {
+  let moduleMockerOutsideRepo: ModuleMocker;
+  let tempDirOutsideRepo: string;
+  let trackingFileOutsideRepo: string;
+  let consoleOutputOutsideRepo: string[] = [];
+  let logSpyOutsideRepo = mock(() => {});
+  let warnSpyOutsideRepo = mock(() => {});
+
+  beforeEach(async () => {
+    moduleMockerOutsideRepo = new ModuleMocker(import.meta);
+    tempDirOutsideRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-outside-repo-test-'));
+    trackingFileOutsideRepo = path.join(tempDirOutsideRepo, 'workspaces.json');
+    consoleOutputOutsideRepo = [];
+
+    // Set test lock directory
+    const lockDir = path.join(tempDirOutsideRepo, 'locks');
+    await fs.mkdir(lockDir, { recursive: true });
+    WorkspaceLock.setTestLockDirectory(lockDir);
+
+    // Capture console.log output
+    console.log = (...args: any[]) => {
+      consoleOutputOutsideRepo.push(args.map(String).join(' '));
+    };
+
+    await moduleMockerOutsideRepo.mock('../../logging.js', () => ({
+      log: logSpyOutsideRepo,
+      warn: warnSpyOutsideRepo,
+    }));
+  });
+
+  afterEach(async () => {
+    console.log = originalConsoleLog;
+    moduleMockerOutsideRepo.clear();
+    WorkspaceLock.setTestLockDirectory(undefined);
+    await fs.rm(tempDirOutsideRepo, { recursive: true, force: true });
+    logSpyOutsideRepo.mockClear();
+    warnSpyOutsideRepo.mockClear();
+  });
+
+  test('automatically shows all workspaces when outside a git repository', async () => {
+    // Create workspaces for two different repositories
+    const workspaceDir1 = path.join(tempDirOutsideRepo, 'workspace-1');
+    const workspaceDir2 = path.join(tempDirOutsideRepo, 'workspace-2');
+    await fs.mkdir(workspaceDir1, { recursive: true });
+    await fs.mkdir(workspaceDir2, { recursive: true });
+
+    const workspaceEntry1: WorkspaceInfo = {
+      taskId: 'task-1',
+      workspacePath: workspaceDir1,
+      createdAt: '2024-01-01T00:00:00.000Z',
+      repositoryId: 'github.com/test/repo1',
+    };
+
+    const workspaceEntry2: WorkspaceInfo = {
+      taskId: 'task-2',
+      workspacePath: workspaceDir2,
+      createdAt: '2024-01-01T00:00:00.000Z',
+      repositoryId: 'github.com/other/repo2',
+    };
+
+    await fs.writeFile(
+      trackingFileOutsideRepo,
+      JSON.stringify(
+        {
+          [workspaceDir1]: workspaceEntry1,
+          [workspaceDir2]: workspaceEntry2,
+        },
+        null,
+        2
+      )
+    );
+
+    // Mock isInGitRepository to return false (simulating being outside a git repo)
+    await moduleMockerOutsideRepo.mock('../../common/git.js', () => ({
+      getGitRoot: async () => tempDirOutsideRepo,
+      getCurrentBranchName: async () => null,
+      isInGitRepository: async () => false,
+    }));
+
+    await moduleMockerOutsideRepo.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async (_path: string, options?: { quiet?: boolean }) => {
+        // Verify that quiet mode is enabled when outside git repo
+        if (options?.quiet !== true) {
+          throw new Error('Expected quiet: true when outside git repository');
+        }
+        return {
+          paths: {
+            trackingFile: trackingFileOutsideRepo,
+          },
+        };
+      },
+    }));
+
+    const { handleWorkspaceListCommand } = await import('./workspace.js');
+
+    // Run without --all flag - should still show all workspaces since we're outside a repo
+    await handleWorkspaceListCommand({ format: 'json' }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    const output = JSON.parse(consoleOutputOutsideRepo.join('\n'));
+    // Should show both workspaces even without --all flag
+    expect(output).toHaveLength(2);
+    expect(output.map((w: any) => w.fullPath).sort()).toEqual(
+      [workspaceDir1, workspaceDir2].sort()
+    );
+  });
+
+  test('does not show "Using external rmplan storage" message when outside git repo', async () => {
+    // Create a workspace
+    const workspaceDir = path.join(tempDirOutsideRepo, 'workspace-1');
+    await fs.mkdir(workspaceDir, { recursive: true });
+
+    await fs.writeFile(
+      trackingFileOutsideRepo,
+      JSON.stringify(
+        {
+          [workspaceDir]: {
+            taskId: 'task-1',
+            workspacePath: workspaceDir,
+            createdAt: '2024-01-01T00:00:00.000Z',
+            repositoryId: 'github.com/test/repo',
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    let loadEffectiveConfigCalled = false;
+
+    await moduleMockerOutsideRepo.mock('../../common/git.js', () => ({
+      getGitRoot: async () => tempDirOutsideRepo,
+      getCurrentBranchName: async () => null,
+      isInGitRepository: async () => false,
+    }));
+
+    await moduleMockerOutsideRepo.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async (_path: string, options?: { quiet?: boolean }) => {
+        loadEffectiveConfigCalled = true;
+        // The quiet option should be true when outside git repo
+        expect(options?.quiet).toBe(true);
+        return {
+          paths: {
+            trackingFile: trackingFileOutsideRepo,
+          },
+        };
+      },
+    }));
+
+    const { handleWorkspaceListCommand } = await import('./workspace.js');
+
+    await handleWorkspaceListCommand({ format: 'json' }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    expect(loadEffectiveConfigCalled).toBe(true);
+    // Verify that log was not called with the external storage message
+    const logCalls = logSpyOutsideRepo.mock.calls.map((call) => call[0]);
+    const hasExternalStorageMessage = logCalls.some(
+      (msg: string) => typeof msg === 'string' && msg.includes('Using external rmplan storage')
+    );
+    expect(hasExternalStorageMessage).toBe(false);
+  });
+
+  test('still filters by repository when inside a git repo', async () => {
+    // Create workspaces for two different repositories
+    const workspaceDir1 = path.join(tempDirOutsideRepo, 'workspace-1');
+    const workspaceDir2 = path.join(tempDirOutsideRepo, 'workspace-2');
+    await fs.mkdir(workspaceDir1, { recursive: true });
+    await fs.mkdir(workspaceDir2, { recursive: true });
+
+    const workspaceEntry1: WorkspaceInfo = {
+      taskId: 'task-1',
+      workspacePath: workspaceDir1,
+      createdAt: '2024-01-01T00:00:00.000Z',
+      repositoryId: 'github.com/test/repo1',
+    };
+
+    const workspaceEntry2: WorkspaceInfo = {
+      taskId: 'task-2',
+      workspacePath: workspaceDir2,
+      createdAt: '2024-01-01T00:00:00.000Z',
+      repositoryId: 'github.com/other/repo2',
+    };
+
+    await fs.writeFile(
+      trackingFileOutsideRepo,
+      JSON.stringify(
+        {
+          [workspaceDir1]: workspaceEntry1,
+          [workspaceDir2]: workspaceEntry2,
+        },
+        null,
+        2
+      )
+    );
+
+    // Mock isInGitRepository to return true (inside a git repo)
+    await moduleMockerOutsideRepo.mock('../../common/git.js', () => ({
+      getGitRoot: async () => tempDirOutsideRepo,
+      getCurrentBranchName: async () => 'main',
+      isInGitRepository: async () => true,
+    }));
+
+    await moduleMockerOutsideRepo.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async (_path: string, options?: { quiet?: boolean }) => {
+        // When inside git repo, quiet should be false (or undefined)
+        expect(options?.quiet).toBeFalsy();
+        return {
+          paths: {
+            trackingFile: trackingFileOutsideRepo,
+          },
+        };
+      },
+    }));
+
+    await moduleMockerOutsideRepo.mock('../assignments/workspace_identifier.js', () => ({
+      getRepositoryIdentity: async () => ({
+        repositoryId: 'github.com/test/repo1',
+        remoteUrl: 'https://github.com/test/repo1.git',
+        gitRoot: tempDirOutsideRepo,
+      }),
+      getUserIdentity: () => 'tester',
+    }));
+
+    const { handleWorkspaceListCommand } = await import('./workspace.js');
+
+    // Run without --all flag - should filter by current repository
+    await handleWorkspaceListCommand({ format: 'json' }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    const output = JSON.parse(consoleOutputOutsideRepo.join('\n'));
+    // Should only show workspace from the current repository
+    expect(output).toHaveLength(1);
+    expect(output[0].fullPath).toBe(workspaceDir1);
+  });
+
+  test('--all flag still works when inside a git repo', async () => {
+    // Create workspaces for two different repositories
+    const workspaceDir1 = path.join(tempDirOutsideRepo, 'workspace-1');
+    const workspaceDir2 = path.join(tempDirOutsideRepo, 'workspace-2');
+    await fs.mkdir(workspaceDir1, { recursive: true });
+    await fs.mkdir(workspaceDir2, { recursive: true });
+
+    const workspaceEntry1: WorkspaceInfo = {
+      taskId: 'task-1',
+      workspacePath: workspaceDir1,
+      createdAt: '2024-01-01T00:00:00.000Z',
+      repositoryId: 'github.com/test/repo1',
+    };
+
+    const workspaceEntry2: WorkspaceInfo = {
+      taskId: 'task-2',
+      workspacePath: workspaceDir2,
+      createdAt: '2024-01-01T00:00:00.000Z',
+      repositoryId: 'github.com/other/repo2',
+    };
+
+    await fs.writeFile(
+      trackingFileOutsideRepo,
+      JSON.stringify(
+        {
+          [workspaceDir1]: workspaceEntry1,
+          [workspaceDir2]: workspaceEntry2,
+        },
+        null,
+        2
+      )
+    );
+
+    // Mock isInGitRepository to return true (inside a git repo)
+    await moduleMockerOutsideRepo.mock('../../common/git.js', () => ({
+      getGitRoot: async () => tempDirOutsideRepo,
+      getCurrentBranchName: async () => 'main',
+      isInGitRepository: async () => true,
+    }));
+
+    await moduleMockerOutsideRepo.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        paths: {
+          trackingFile: trackingFileOutsideRepo,
+        },
+      }),
+    }));
+
+    const { handleWorkspaceListCommand } = await import('./workspace.js');
+
+    // Run with --all flag - should show all workspaces
+    await handleWorkspaceListCommand({ format: 'json', all: true }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    const output = JSON.parse(consoleOutputOutsideRepo.join('\n'));
+    // Should show both workspaces with --all flag
+    expect(output).toHaveLength(2);
   });
 });

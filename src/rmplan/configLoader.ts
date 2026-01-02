@@ -193,6 +193,11 @@ export function clearConfigCache(): void {
   foundConfigs.clear();
 }
 
+export interface LoadEffectiveConfigOptions {
+  /** When true, suppress informational messages like "Using external rmplan storage at ..." */
+  quiet?: boolean;
+}
+
 /**
  * Orchestrates finding, loading, parsing, and validating the rmplan configuration.
  * Handles errors gracefully and logs user-friendly messages.
@@ -200,10 +205,14 @@ export function clearConfigCache(): void {
  * its settings will override the main config.
  *
  * @param overridePath - An optional path explicitly provided by the user (e.g., via CLI flag).
+ * @param options - Optional configuration options (e.g., quiet mode)
  * @returns The effective RmplanConfig object (either loaded or default).
  * @throws {Error} If configuration loading fails due to file not found (for override) or validation errors.
  */
-export async function loadEffectiveConfig(overridePath?: string): Promise<RmplanConfig> {
+export async function loadEffectiveConfig(
+  overridePath?: string,
+  options: LoadEffectiveConfigOptions = {}
+): Promise<RmplanConfig> {
   let resolution: RepositoryConfigResolution;
   try {
     const resolver = await RepositoryConfigResolver.create({ overridePath });
@@ -260,7 +269,7 @@ export async function loadEffectiveConfig(overridePath?: string): Promise<Rmplan
       repositoryRemoteUrl: resolution.remoteUrl ?? null,
     };
 
-    if (resolution.usingExternalStorage && resolution.repositoryConfigDir) {
+    if (resolution.usingExternalStorage && resolution.repositoryConfigDir && !options.quiet) {
       log(`Using external rmplan storage at ${resolution.repositoryConfigDir}`);
     }
 
