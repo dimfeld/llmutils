@@ -178,9 +178,6 @@ export async function askForModelId(options?: {
 
   let newModel = await search({
     message: 'Select a model:',
-    theme: {
-      helpMode: 'always',
-    },
     source: (input) => {
       return availableModels.filter(({ name }) =>
         input ? name.toLowerCase().includes(input.toLowerCase()) : true
