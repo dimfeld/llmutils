@@ -8,6 +8,7 @@ async function buildOne(options: BuildConfig) {
   try {
     return await Bun.build({
       ...options,
+      sourcemap: 'linked',
       external: ['effect', '@valibot/to-json-schema', 'sury'],
     });
   } catch (e) {
