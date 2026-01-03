@@ -146,11 +146,19 @@ Only create multiple plans if it genuinely improves the project organization. Fo
 
   const text = `You are generating an rmplan implementation plan. rmplan is a tool for managing step-by-step project plans.
 
+# Progress Tracking
+
+Use your Todo tools to track progress through these steps:
+- [ ] Perform research - explore the codebase and understand patterns
+- [ ] Generate implementation guide - write Research and Implementation Guide sections to the plan file
+- [ ] Ask questions - collaborate with your human partner to refine the plan
+- [ ] Add tasks - use the 'rmplan tools update-plan-tasks' CLI command to add the structured task data
+
 ${generateClaudeCodePlanningPrompt(contextBlock, {
-    includeNextInstructionSentence: false,
-    withBlockingSubissues: false,
-    parentPlanId,
-  })}${multiplePlansGuidance}
+  includeNextInstructionSentence: false,
+  withBlockingSubissues: false,
+  parentPlanId,
+})}${multiplePlansGuidance}
 
 # Output
 
@@ -272,21 +280,18 @@ Only create multiple plans if it genuinely improves the project organization. Fo
 
   const text = `You are generating an rmplan implementation plan. rmplan is a tool for managing step-by-step project plans.
 
+# Progress Tracking
+
+Use your Todo tools to track progress through these steps:
+- [ ] Analyze the codebase - understand existing patterns and identify files to modify
+- [ ] Add tasks - use the 'rmplan tools update-plan-tasks' CLI command to add tasks
+
 ${generateClaudeCodeGenerationPrompt(contextBlock, {
-    includeMarkdownFormat: false,
-    withBlockingSubissues: false,
-  })}${multiplePlansGuidance}
+  includeMarkdownFormat: false,
+  withBlockingSubissues: false,
+})}${multiplePlansGuidance}
 
-Use the rmplan update-plan-tasks tool to save the generated plan with the following structure:
-- title: The overall project title
-- goal: The overall project goal
-- details: Comprehensive project details including acceptance criteria, technical considerations, and any research findings
-- priority: The priority level (low|medium|high|urgent)
-- tasks: An array of tasks, where each task has:
-  - title: A concise task title
-  - description: Detailed task description
-
-The list of tasks should correspond to the steps in your step-by-step guide.`;
+Use the 'rmplan tools update-plan-tasks' CLI command to add the structured task data to the plan. The list of tasks should correspond to the steps in your step-by-step guide.`;
 
   return {
     messages: [

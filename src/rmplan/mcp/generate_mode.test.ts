@@ -120,7 +120,7 @@ describe('rmplan MCP generate mode helpers', () => {
     const message = prompt.messages[0]?.content;
     expect(message?.text).toContain('Test Plan');
     expect(message?.text).toContain('generate a detailed implementation plan');
-    expect(message?.text).toContain('update-plan-tasks tool');
+    expect(message?.text).toContain("'rmplan tools update-plan-tasks' CLI command");
     expect(message?.text).toContain('Break the project into phases');
   });
 

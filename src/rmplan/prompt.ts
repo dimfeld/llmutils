@@ -1280,8 +1280,24 @@ IMPORTANT:
 - Testing should be INTEGRATED into your implementation tasks, not separate tasks.
 `;
 
+  const progressChecklist = simple
+    ? `# Progress Tracking
+
+Use your Todo tools to track progress through these steps:
+- [ ] Analyze the codebase - understand existing patterns and identify files to modify
+- [ ] Add tasks - use the 'rmplan tools update-plan-tasks' CLI command to add tasks
+`
+    : `# Progress Tracking
+
+Use your Todo tools to track progress through these steps:
+- [ ] Perform research - explore the codebase and understand patterns
+- [ ] Generate implementation guide - write Research and Implementation Guide sections to the plan file
+- [ ] Add tasks - use the 'rmplan tools update-plan-tasks' CLI command to add tasks
+`;
+
   return `You are generating an rmplan implementation plan. rmplan is a tool for managing step-by-step project plans.
 
+${progressChecklist}
 This is a description for an upcoming feature that I want you to analyze and create a plan for.
 
 # Project Description
