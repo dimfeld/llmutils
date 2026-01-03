@@ -2,6 +2,17 @@
 
 Complete reference for rmplan command-line interface.
 
+## Contents
+
+- [Plan Lifecycle Commands](#plan-lifecycle-commands)
+- [Viewing Commands](#viewing-commands)
+- [Task Management Commands](#task-management-commands)
+- [Prompt Commands](#prompt-commands)
+- [Workspace Commands](#workspace-commands)
+- [Assignment Commands](#assignment-commands)
+- [Utility Commands](#utility-commands)
+- [Common Workflows](#common-workflows)
+
 ## Plan Lifecycle Commands
 
 ### rmplan add
@@ -146,9 +157,11 @@ rmplan ready --sort title
 rmplan ready --reverse
 ```
 
-## MCP Tool Equivalents
+## Task Management Commands
 
-Use `rmplan tools <tool-name>` when you need MCP tool behavior via CLI (JSON stdin/stdout).
+### rmplan tools
+
+Use `rmplan tools <tool-name>` for programmatic plan management with JSON stdin/stdout.
 
 ```bash
 echo '{"plan": "123"}' | rmplan tools get-plan
@@ -158,8 +171,6 @@ echo '{"plan": "123", "tasks": [{"title": "Task", "description": "Details"}]}' |
 echo '{"plan": "123", "action": "add", "title": "Task", "description": "Details"}' | rmplan tools manage-plan-task
 echo '{}' | rmplan tools list-ready-plans --json
 ```
-
-## Task Management Commands
 
 ### rmplan add-task
 
@@ -196,7 +207,7 @@ rmplan set 123 --no-tag frontend          # Remove tag
 
 ### rmplan prompts
 
-Print MCP prompt content to stdout.
+Print prompt content to stdout.
 
 ```bash
 # List available prompts
@@ -209,8 +220,6 @@ rmplan prompts plan-questions 123
 rmplan prompts load-plan 123
 rmplan prompts compact-plan 123
 ```
-
-Use this when you want to run a prompt outside of the MCP context.
 
 ## Workspace Commands
 
