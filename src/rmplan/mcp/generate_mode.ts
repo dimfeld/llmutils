@@ -144,7 +144,9 @@ IMPORTANT: Do NOT split plans by architectural layers (frontend/backend, UI/API,
 Only create multiple plans if it genuinely improves the project organization. For smaller or tightly coupled features, a single plan is preferred.`
     : '';
 
-  const text = `${generateClaudeCodePlanningPrompt(contextBlock, {
+  const text = `You are generating an rmplan implementation plan. rmplan is a tool for managing step-by-step project plans.
+
+${generateClaudeCodePlanningPrompt(contextBlock, {
     includeNextInstructionSentence: false,
     withBlockingSubissues: false,
     parentPlanId,
@@ -184,7 +186,9 @@ export async function loadQuestionsPrompt(
     contextBlock = buildPlanContext(plan, planPath, context) + '\n\n';
   }
 
-  const text = `${contextBlock}You are collaborating with a human partner to refine this plan. ${questionText}`;
+  const text = `You are working with an rmplan implementation plan. rmplan is a tool for managing step-by-step project plans.
+
+${contextBlock}You are collaborating with a human partner to refine this plan. ${questionText}`;
 
   return {
     messages: [
@@ -207,7 +211,11 @@ export async function loadPlanPrompt(
   const { plan, planPath } = await resolvePlan(args.plan, context);
   const contextBlock = buildPlanContext(plan, planPath, context);
 
-  const text = `${contextBlock}\n\nWait for your human collaborator to review the plan and provide further instructions before taking any additional action.`;
+  const text = `You are working with an rmplan implementation plan. rmplan is a tool for managing step-by-step project plans.
+
+${contextBlock}
+
+Wait for your human collaborator to review the plan and provide further instructions before taking any additional action.`;
 
   return {
     messages: [
@@ -262,7 +270,9 @@ IMPORTANT: Do NOT split plans by architectural layers (frontend/backend, UI/API,
 Only create multiple plans if it genuinely improves the project organization. For smaller or tightly coupled features, a single plan is preferred.`
     : '';
 
-  const text = `${generateClaudeCodeGenerationPrompt(contextBlock, {
+  const text = `You are generating an rmplan implementation plan. rmplan is a tool for managing step-by-step project plans.
+
+${generateClaudeCodeGenerationPrompt(contextBlock, {
     includeMarkdownFormat: false,
     withBlockingSubissues: false,
   })}${multiplePlansGuidance}
@@ -412,7 +422,7 @@ export function registerGenerateMode(
   server.addPrompt({
     name: 'generate-plan',
     description:
-      'Generate a detailed implementation plan with research. Performs research, collects findings, and generates tasks after collaborating with the user.',
+      'Generate a detailed rmplan implementation plan with research. Performs research, collects findings, and generates tasks after collaborating with the user.',
     arguments: [
       {
         name: 'plan',

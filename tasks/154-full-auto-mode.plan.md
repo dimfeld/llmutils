@@ -22,7 +22,13 @@ the plan file.
 - Check if tasks are filled in. If not run another prompt specifically to read the implementation guide from the plan
 and add a task for each step
 - Run the plan
-- Run review command and autofix until ACCEPTABLE or up to 5 times.
+- Run review command and add found issues as tasks to the plan. Then run `agent` command again to implement them. Do this until the review is ACCEPTABLE or up to 5 times.
 - Push branch and create draft PR -- use claude code to create the PR description
-- If we ran 5 times without ACCEPTABLE then make sure that the PR description notes that and includes the last round of review messages that we did not try to address
+- If we ran 5 times without ACCEPTABLE then make sure that the PR description notes that
 - Unlock workspace if we got through to the end and pushed the branch
+
+
+
+This command should be able to start from any step and skip steps that don't need to be done, eg if plan has tasks then don't generate 
+- in the final review step, should add the review issues as tasks and execute them that way so it's easier to see what was done there 
+

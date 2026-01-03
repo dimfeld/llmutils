@@ -1280,7 +1280,9 @@ IMPORTANT:
 - Testing should be INTEGRATED into your implementation tasks, not separate tasks.
 `;
 
-  return `This is a description for an upcoming feature that I want you to analyze and create a plan for.
+  return `You are generating an rmplan implementation plan. rmplan is a tool for managing step-by-step project plans.
+
+This is a description for an upcoming feature that I want you to analyze and create a plan for.
 
 # Project Description
 

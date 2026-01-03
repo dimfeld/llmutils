@@ -232,7 +232,7 @@ export function wrapWithOrchestration(
 
   const header = `# Multi-Agent Orchestration Instructions
 
-You are the orchestrator for a multi-agent development workflow. Your role is to coordinate between specialized agents to complete the coding task${options.batchMode ? 's' : ''} described below.
+You are the orchestrator for an rmplan multi-agent development workflow. rmplan is a tool for managing step-by-step project plans. Your role is to coordinate between specialized agents to complete the coding task${options.batchMode ? 's' : ''} described below.
 
 ${batchModeInstructions}`;
 
@@ -266,7 +266,7 @@ export function wrapWithOrchestrationSimple(
 
   const header = `# Two-Phase Orchestration Instructions
 
-You are coordinating a streamlined two-phase workflow (implement → verify) for the tasks below.`;
+You are coordinating an rmplan streamlined two-phase workflow (implement → verify) for the tasks below. rmplan is a tool for managing step-by-step project plans.`;
 
   const availableAgents = `## Available Agents
 
