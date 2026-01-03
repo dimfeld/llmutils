@@ -187,7 +187,8 @@ Remove a task from a plan.
 
 ```bash
 rmplan remove-task 123 --title "Task title"
-rmplan remove-task 123 --yes              # Skip confirmation
+rmplan remove-task 123 --index 2          # By index (1-based)
+rmplan remove-task 123 --interactive      # Select interactively
 ```
 
 ### rmplan set

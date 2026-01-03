@@ -93,12 +93,8 @@ describe('CodexCliExecutor - failure detection across agents', () => {
       })),
     }));
 
-    // Provide a queue of final messages: implementer OK, tester OK, reviewer FAILED
-    const finals = [
-      'Implementer OK',
-      'Tester OK',
-      'FAILED: Reviewer identified irreconcilable requirements\nProblems:\n- conflict',
-    ];
+    // Provide a queue of final messages: implementer OK, tester OK
+    const finals = ['Implementer OK', 'Tester OK'];
 
     await moduleMocker.mock('../../common/process.ts', () => ({
       spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
@@ -119,6 +115,13 @@ describe('CodexCliExecutor - failure detection across agents', () => {
           getFailedAgentMessage: () => (final && final.startsWith('FAILED:') ? final : undefined),
         };
       },
+    }));
+
+    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: mock(async () => {
+        throw new Error('Reviewer identified irreconcilable requirements\nProblems:\n- conflict');
+      }),
     }));
 
     const { CodexCliExecutor } = await import('./codex_cli.ts');
@@ -151,14 +154,6 @@ describe('CodexCliExecutor - failure detection across agents', () => {
       })),
     }));
 
-    // Reviewer will return NEEDS_FIXES; analyzer says fixes needed
-    await moduleMocker.mock('./codex_cli/review_analysis.ts', () => ({
-      analyzeReviewFeedback: mock(async () => ({
-        needs_fixes: true,
-        fix_instructions: 'Please fix X',
-      })),
-    }));
-
     await moduleMocker.mock('../../common/process.ts', () => ({
       spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') opts.formatStdout('ignored');
@@ -166,11 +161,10 @@ describe('CodexCliExecutor - failure detection across agents', () => {
       }),
     }));
 
-    // Sequence: implementer OK, tester OK, reviewer NEEDS_FIXES, fixer FAILED
+    // Sequence: implementer OK, tester OK, fixer FAILED
     const finals = [
       'Implementer OK',
       'Tester OK',
-      'Some review text\nVERDICT: NEEDS_FIXES',
       'FAILED: Fixer unable to proceed\nProblems:\n- conflict',
     ];
 
@@ -186,6 +180,18 @@ describe('CodexCliExecutor - failure detection across agents', () => {
           getFailedAgentMessage: () => (final && final.startsWith('FAILED:') ? final : undefined),
         };
       },
+    }));
+
+    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: mock(async () => ({
+        verdict: 'NEEDS_FIXES',
+        formattedOutput: 'Review needs fixes.\n\nVERDICT: NEEDS_FIXES',
+        fixInstructions: 'Please fix X',
+        reviewResult: { issues: [] },
+        rawOutput: '{}',
+        warnings: [],
+      })),
     }));
 
     const { CodexCliExecutor } = await import('./codex_cli.ts');
@@ -307,6 +313,18 @@ describe('CodexCliExecutor - failure detection across agents', () => {
       loadRepositoryReviewDoc: mock(async () => ''),
     }));
 
+    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: mock(async () => ({
+        verdict: 'ACCEPTABLE',
+        formattedOutput: 'All good.\n\nVERDICT: ACCEPTABLE',
+        fixInstructions: 'No issues',
+        reviewResult: { issues: [] },
+        rawOutput: '{}',
+        warnings: [],
+      })),
+    }));
+
     // Track instruction history
     const implementerInstructionHistory: string[] = [];
     await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
@@ -396,6 +414,18 @@ describe('CodexCliExecutor - failure detection across agents', () => {
           { title: 'Task A', done: false },
           { title: 'Task B', done: true },
         ],
+      })),
+    }));
+
+    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: mock(async () => ({
+        verdict: 'ACCEPTABLE',
+        formattedOutput: 'All good.\n\nVERDICT: ACCEPTABLE',
+        fixInstructions: 'No issues',
+        reviewResult: { issues: [] },
+        rawOutput: '{}',
+        warnings: [],
       })),
     }));
 

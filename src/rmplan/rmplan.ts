@@ -168,13 +168,41 @@ toolsCommand
   });
 
 toolsCommand
-  .command('update-plan-tasks')
-  .description('Update plan tasks and details (reads JSON from stdin)')
+  .command('update-plan-tasks [planId]')
+  .description('Update plan tasks and details (reads JSON from stdin unless --tasks is provided)')
   .option('--json', 'Output as structured JSON')
   .option('--print-schema', 'Print the input JSON schema and exit')
+  .option('--tasks <json>', 'JSON array of tasks (alternative to stdin)')
   .addHelpText('after', formatSchemaHelp(generateTasksParameters))
-  .action(async (options, command) => {
+  .action(async (planId, options, command) => {
     const { handleToolCommand } = await import('./commands/tools.js');
+
+    // If planId and --tasks are provided, construct the input data
+    if (planId && options.tasks) {
+      let tasksArray;
+      try {
+        tasksArray = JSON.parse(options.tasks);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Error: Invalid JSON in --tasks option: ${message}`);
+        process.exit(1);
+      }
+
+      if (!Array.isArray(tasksArray)) {
+        console.error('Error: --tasks must be a JSON array');
+        process.exit(1);
+      }
+
+      options.inputData = {
+        plan: planId,
+        tasks: tasksArray,
+      };
+    } else if (planId || options.tasks) {
+      // If only one is provided, show an error
+      console.error('Error: Both planId and --tasks must be provided together, or use stdin');
+      process.exit(1);
+    }
+
     await handleToolCommand('update-plan-tasks', options, command).catch(handleCommandError);
   });
 
@@ -400,12 +428,12 @@ program
   .command('set-task-done <planFile>')
   .description('Mark a specific task as done by title or index. Can be a file path or plan ID.')
   .option('--title <title>', 'Task title to mark as done')
-  .option('--index <index>', 'Task index to mark as done (0-based)', (value: string) => {
+  .option('--index <index>', 'Task index to mark as done (1-based)', (value: string) => {
     const n = Number(value);
-    if (Number.isNaN(n) || n < 0) {
-      throw new Error(`Task index must be a non-negative integer, saw ${value}`);
+    if (Number.isNaN(n) || !Number.isInteger(n) || n < 1) {
+      throw new Error(`Task index must be a positive integer (1-based), saw ${value}`);
     }
-    return n;
+    return n - 1; // Convert to 0-based for internal use
   })
   .option('--commit', 'Commit changes to jj/git')
   .action(async (planFile, options, command) => {
@@ -466,7 +494,10 @@ function createAgentCommand(command: Command, description: string) {
     .description(description)
     .option('-m, --model <model>', 'Model to use for LLM')
     .option(`-x, --executor <name>`, 'The executor to use for plan execution')
-    .option('--ix, --interactive-executor', 'Use Claude Code executor in interactive mode')
+    .option(
+      '--review-executor <name>',
+      'Executor to use for review steps: claude-code, codex-cli, or both'
+    )
     .addHelpText('after', `Available executors: ${executorNames}`)
     .option('--steps <steps>', 'Number of steps to execute')
     .option('--no-log', 'Do not log to file')
@@ -754,10 +785,15 @@ program
 program
   .command('remove-task <plan>')
   .description('Remove a task from a plan (file path or plan ID)')
-  .option('--index <index>', 'Task index (0-based)', (val: string) => parseInt(val, 10))
+  .option('--index <index>', 'Task index (1-based)', (val: string) => {
+    const n = parseInt(val, 10);
+    if (Number.isNaN(n) || n < 1) {
+      throw new Error(`Task index must be a positive integer (1-based), saw ${val}`);
+    }
+    return n - 1; // Convert to 0-based for internal use
+  })
   .option('--title <title>', 'Find task by title (partial match)')
   .option('--interactive', 'Select task interactively')
-  .option('--yes', 'Skip confirmation prompt')
   .action(async (plan, options, command) => {
     const { handleRemoveTaskCommand } = await import('./commands/remove-task.js');
     await handleRemoveTaskCommand(plan, options, command).catch(handleCommandError);
@@ -826,6 +862,15 @@ program
     'Specify the LLM model to use for the review. Overrides model from rmplan config.'
   )
   .option('--dry-run', 'Generate and print the review prompt but do not execute it', false)
+  .option('-p, --print', 'Output JSON review results without interactive prompts')
+  .option(
+    '--task-index <indexes...>',
+    'Review only specific task indexes (1-based). Repeatable or comma-separated.'
+  )
+  .option(
+    '--task-title <titles...>',
+    'Review only specific task titles (exact match, case-insensitive). Repeatable or comma-separated.'
+  )
   .option(
     '--instructions <text>',
     'Inline custom instructions for the review. Overrides config file instructions.'
@@ -876,6 +921,10 @@ program
     'medium'
   )
   .option('--cleanup-assign <username>', 'Assign the cleanup plan to a user')
+  .option(
+    '-v, --verbose',
+    'When used with --print, show progress output to stderr. Otherwise only JSON output is shown.'
+  )
   .action(async (planFile, options, command) => {
     const { handleReviewCommand } = await import('./commands/review.js');
     await handleReviewCommand(planFile, options, command).catch(handleCommandError);

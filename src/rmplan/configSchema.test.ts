@@ -458,6 +458,7 @@ describe('configSchema', () => {
     test('should accept valid review configuration with all fields', () => {
       const config = {
         review: {
+          defaultExecutor: 'claude-code' as const,
           focusAreas: ['security', 'performance', 'testing'],
           outputFormat: 'markdown' as const,
           saveLocation: './reviews',
@@ -468,6 +469,7 @@ describe('configSchema', () => {
       };
 
       const result = rmplanConfigSchema.parse(config);
+      expect(result.review?.defaultExecutor).toBe('claude-code');
       expect(result.review?.focusAreas).toEqual(['security', 'performance', 'testing']);
       expect(result.review?.outputFormat).toBe('markdown');
       expect(result.review?.saveLocation).toBe('./reviews');
@@ -531,6 +533,30 @@ describe('configSchema', () => {
       const invalidConfig = {
         review: {
           outputFormat: 'invalid',
+        },
+      };
+
+      expect(() => rmplanConfigSchema.parse(invalidConfig)).toThrow();
+    });
+
+    test('should validate review defaultExecutor enum values', () => {
+      const validExecutors = ['claude-code', 'codex-cli', 'both'];
+
+      for (const executor of validExecutors) {
+        const config = {
+          review: {
+            defaultExecutor: executor,
+          },
+        };
+
+        expect(() => rmplanConfigSchema.parse(config)).not.toThrow();
+        const result = rmplanConfigSchema.parse(config);
+        expect(result.review?.defaultExecutor).toBe(executor);
+      }
+
+      const invalidConfig = {
+        review: {
+          defaultExecutor: 'invalid-executor',
         },
       };
 

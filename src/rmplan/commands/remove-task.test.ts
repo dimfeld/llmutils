@@ -55,12 +55,11 @@ describe('handleRemoveTaskCommand', () => {
     warnSpy.mockReset();
   });
 
-  test('removes task by index with confirmation skipped', async () => {
+  test('removes task by index', async () => {
     await handleRemoveTaskCommand(
       planFile,
       {
         index: 1,
-        yes: true,
       },
       { parent: { opts: () => ({}) } }
     );
@@ -71,12 +70,7 @@ describe('handleRemoveTaskCommand', () => {
     expect(warnSpy).toHaveBeenCalled(); // removal from middle shifts indices
   });
 
-  test('removes task by title with confirmation prompt', async () => {
-    const confirmSpy = mock(async () => true);
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      confirm: confirmSpy,
-    }));
-
+  test('removes task by title', async () => {
     await handleRemoveTaskCommand(
       planFile,
       {
@@ -88,23 +82,17 @@ describe('handleRemoveTaskCommand', () => {
     const updated = await readPlanFile(planFile);
     expect(updated.tasks).toHaveLength(2);
     expect(updated.tasks.map((t) => t.title)).toEqual(['Task One', 'Task Two']);
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
     expect(warnSpy).not.toHaveBeenCalled(); // removed last task
   });
 
   test('removes task via interactive selection', async () => {
     const selectSpy = mock(async () => 0);
-    const confirmSpy = mock(async () => true);
 
     const taskOperations = await import('../utils/task_operations.js');
 
     await moduleMocker.mock('../utils/task_operations.js', () => ({
       selectTaskInteractive: selectSpy,
       findTaskByTitle: taskOperations.findTaskByTitle,
-    }));
-
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      confirm: confirmSpy,
     }));
 
     await handleRemoveTaskCommand(
@@ -119,7 +107,6 @@ describe('handleRemoveTaskCommand', () => {
     expect(updated.tasks).toHaveLength(2);
     expect(updated.tasks.map((t) => t.title)).toEqual(['Task Two', 'Task Three']);
     expect(selectSpy).toHaveBeenCalledTimes(1);
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
   });
 
   test('throws when index is invalid', async () => {
@@ -127,12 +114,11 @@ describe('handleRemoveTaskCommand', () => {
       handleRemoveTaskCommand(
         planFile,
         {
-          index: 99,
-          yes: true,
+          index: 99, // 0-based internal index (would be 100 in 1-based user input)
         },
         { parent: { opts: () => ({}) } }
       )
-    ).rejects.toThrow('Task index 99 is out of bounds');
+    ).rejects.toThrow('Task index 100 is out of bounds'); // Error shows 1-based index
   });
 
   test('throws when no selection mode is provided', async () => {
@@ -154,23 +140,5 @@ describe('handleRemoveTaskCommand', () => {
     ).rejects.toThrow(
       'Please use only one of --title, --index, or --interactive when removing a task.'
     );
-  });
-
-  test('does not remove when confirmation is declined', async () => {
-    const confirmSpy = mock(async () => false);
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      confirm: confirmSpy,
-    }));
-
-    await handleRemoveTaskCommand(
-      planFile,
-      { title: 'Task Two' },
-      { parent: { opts: () => ({}) } }
-    );
-
-    const updated = await readPlanFile(planFile);
-    expect(updated.tasks).toHaveLength(3);
-    expect(updated.tasks.map((t) => t.title)).toEqual(['Task One', 'Task Two', 'Task Three']);
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
   });
 });

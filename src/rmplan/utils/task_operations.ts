@@ -71,5 +71,5 @@ export async function promptForTaskInfo(initial: Partial<TaskInput> = {}): Promi
 function formatTaskChoice(task: Task, index: number): string {
   const status = task.done ? chalk.green('✓') : chalk.gray('•');
   const title = task.title.trim() || '(untitled task)';
-  return `${status} [${index}] ${title}`;
+  return `${status} [${index + 1}] ${title}`; // Display 1-based index to user
 }

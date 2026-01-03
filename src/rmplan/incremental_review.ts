@@ -8,6 +8,7 @@ import { $ } from 'bun';
 import { readFile, writeFile, mkdir, stat, access, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getUsingJj, getTrunkBranch } from '../common/git.js';
+import { warn } from '../logging.js';
 
 /**
  * Result of a diff operation
@@ -500,7 +501,7 @@ export async function generateDiffForReview(
     const lastReviewMetadata = await getLastReviewMetadata(gitRoot, options.planId);
     if (!lastReviewMetadata) {
       // No previous review found, fall back to regular diff
-      console.log('No previous review found for incremental mode, generating full diff...');
+      warn('No previous review found for incremental mode, generating full diff...');
       return generateRegularDiffForReview(gitRoot);
     }
 

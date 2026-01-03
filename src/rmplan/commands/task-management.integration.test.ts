@@ -164,7 +164,6 @@ describe('task management integration workflows', () => {
       planFile,
       {
         index: 1,
-        yes: true,
       },
       command
     );

@@ -316,8 +316,8 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
   const sharedExecutorOptions: ExecutorCommonOptions = {
     baseDir: currentBaseDir,
     model: agentExecutionModel,
-    interactive: options.interactiveExecutor,
     simpleMode: simpleModeEnabled ? true : undefined,
+    reviewExecutor: options.reviewExecutor,
   };
 
   const executor = options.simple

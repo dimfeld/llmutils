@@ -314,9 +314,9 @@ describe('setTaskDone', () => {
     await fs.writeFile(planPath, yaml.stringify(plan));
 
     // "Task" matches both tasks
-    await expect(
-      setTaskDone(planPath, { taskIdentifier: 'Task' }, tempDir, {})
-    ).rejects.toThrow(/Multiple tasks match prefix/);
+    await expect(setTaskDone(planPath, { taskIdentifier: 'Task' }, tempDir, {})).rejects.toThrow(
+      /Multiple tasks match prefix/
+    );
   });
 
   test('prefers exact match over prefix match', async () => {

@@ -130,7 +130,6 @@ export async function runUpdateDocs(
   const sharedExecutorOptions: ExecutorCommonOptions = {
     baseDir,
     model,
-    interactive: false,
   };
 
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);

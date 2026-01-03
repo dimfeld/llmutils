@@ -16,7 +16,6 @@ export const claudeCodeOptionsSchema = z.object({
   includeDefaultTools: z.boolean().default(true).optional(),
   disallowedTools: z.array(z.string()).optional(),
   mcpConfigFile: z.string().optional(),
-  interactive: z.boolean().optional(),
   permissionsMcp: z
     .object({
       enabled: z.boolean(),

@@ -72,14 +72,17 @@ Parameters: `plan` (required), `details` (required), `append` (default: false)
 
 ### manage-plan-task
 
-Add, update, or remove individual tasks.
+Add, update, or remove individual tasks. Tasks can be identified by `taskTitle` (partial match) or `taskIndex` (1-based).
 
 ```bash
 # Add a task
 echo '{"plan": "123", "action": "add", "title": "New task", "description": "Details"}' | rmplan tools manage-plan-task
 
-# Mark task complete
+# Mark task complete by title
 echo '{"plan": "123", "action": "update", "taskTitle": "New task", "done": true}' | rmplan tools manage-plan-task
+
+# Mark task complete by index (1-based)
+echo '{"plan": "123", "action": "update", "taskIndex": 2, "done": true}' | rmplan tools manage-plan-task
 
 # Remove a task
 echo '{"plan": "123", "action": "remove", "taskTitle": "New task"}' | rmplan tools manage-plan-task
@@ -93,4 +96,3 @@ Find plans ready to execute (dependencies satisfied). You can also use `rmp read
 echo '{}' | rmplan tools list-ready-plans
 echo '{"priority": "high", "limit": 5}' | rmplan tools list-ready-plans
 ```
-

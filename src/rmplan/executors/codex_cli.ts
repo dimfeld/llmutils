@@ -73,7 +73,8 @@ export class CodexCliExecutor implements Executor {
         planInfo,
         this.sharedOptions.baseDir,
         this.sharedOptions.model,
-        this.rmplanConfig
+        this.rmplanConfig,
+        this.sharedOptions.reviewExecutor
       );
     }
     return executeNormalMode(
@@ -81,7 +82,8 @@ export class CodexCliExecutor implements Executor {
       planInfo,
       this.sharedOptions.baseDir,
       this.sharedOptions.model,
-      this.rmplanConfig
+      this.rmplanConfig,
+      this.sharedOptions.reviewExecutor
     );
   }
 }

@@ -53,6 +53,7 @@ Use `rmplan set-task-done` to mark individual tasks as complete:
 
 ```bash
 rmplan set-task-done 123 --title "Implement feature"
+rmplan set-task-done 123 --index 2              # By index (1-based)
 ```
 
 ## Marking Plans Done

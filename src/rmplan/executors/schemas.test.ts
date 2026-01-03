@@ -111,7 +111,6 @@ describe('claudeCodeOptionsSchema', () => {
         includeDefaultTools: true,
         disallowedTools: ['WebSearch'],
         mcpConfigFile: '/path/to/config.json',
-        interactive: true,
         permissionsMcp: {
           enabled: true,
           defaultResponse: 'no' as const,
@@ -130,7 +129,6 @@ describe('claudeCodeOptionsSchema', () => {
         expect(result.data.includeDefaultTools).toBe(true);
         expect(result.data.disallowedTools).toEqual(['WebSearch']);
         expect(result.data.mcpConfigFile).toBe('/path/to/config.json');
-        expect(result.data.interactive).toBe(true);
         expect(result.data.permissionsMcp?.enabled).toBe(true);
         expect(result.data.permissionsMcp?.defaultResponse).toBe('no');
         expect(result.data.permissionsMcp?.timeout).toBe(5000);
@@ -146,7 +144,6 @@ describe('claudeCodeOptionsSchema', () => {
         includeDefaultTools: false,
         disallowedTools: ['WebSearch', 'Task'],
         mcpConfigFile: '/custom/mcp/config.json',
-        interactive: false,
         permissionsMcp: {
           enabled: true,
           defaultResponse: 'yes' as const,
@@ -175,7 +172,6 @@ describe('claudeCodeOptionsSchema', () => {
         expect(result.data.allowAllTools).toBeUndefined();
         expect(result.data.disallowedTools).toBeUndefined();
         expect(result.data.mcpConfigFile).toBeUndefined();
-        expect(result.data.interactive).toBeUndefined();
         expect(result.data.permissionsMcp).toBeUndefined();
         expect(result.data.simpleMode).toBeUndefined();
       }

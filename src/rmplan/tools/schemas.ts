@@ -26,12 +26,7 @@ export const removePlanTaskParameters = z
       .string()
       .optional()
       .describe('Task title to search for (partial match, case-insensitive).'),
-    taskIndex: z
-      .number()
-      .int()
-      .nonnegative()
-      .optional()
-      .describe('Task index (0-based) to remove.'),
+    taskIndex: z.number().int().positive().optional().describe('Task index (1-based) to remove.'),
   })
   .superRefine((value, ctx) => {
     if (value.taskTitle === undefined && value.taskIndex === undefined) {
@@ -92,7 +87,12 @@ export const managePlanTaskParameters = z
       .describe(
         'Task title to search for (partial match, case-insensitive). Preferred over taskIndex.'
       ),
-    taskIndex: z.number().int().optional().describe('Task index (0-based). Prefer using taskTitle'),
+    taskIndex: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Task index (1-based). Prefer using taskTitle'),
     // Task creation/update fields
     title: z.string().optional().describe('Task title (required for add, optional for update)'),
     description: z

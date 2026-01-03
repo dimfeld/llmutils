@@ -346,7 +346,6 @@ describe('handleDescriptionCommand', () => {
       'claude-code', // executor name from options
       expect.objectContaining({
         model: 'gpt-4',
-        interactive: false,
       }),
       expect.any(Object) // config
     );

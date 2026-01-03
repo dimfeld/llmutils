@@ -472,7 +472,6 @@ export async function handleDescriptionCommand(
   const sharedExecutorOptions: ExecutorCommonOptions = {
     baseDir: gitRoot,
     model: options.model,
-    interactive: false, // Description generation doesn't need interactivity
   };
 
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);

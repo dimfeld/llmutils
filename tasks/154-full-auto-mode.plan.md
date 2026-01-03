@@ -23,6 +23,8 @@ the plan file.
 and add a task for each step
 - Run the plan
 - Run review command and add found issues as tasks to the plan. Then run `agent` command again to implement them. Do this until the review is ACCEPTABLE or up to 5 times.
+- Make a commit every time we add review tasks so that it's clear where a review fix step started, and list which tasks
+were added
 - Push branch and create draft PR -- use claude code to create the PR description
 - If we ran 5 times without ACCEPTABLE then make sure that the PR description notes that
 - Unlock workspace if we got through to the end and pushed the branch

@@ -563,7 +563,7 @@ describe('rmplan MCP generate mode helpers', () => {
       managePlanTaskParameters.parse({
         plan: planPath,
         action: 'update',
-        taskIndex: 0,
+        taskIndex: 1, // 1-based index
         description: 'Updated description with more details',
       }),
       context,
@@ -640,7 +640,7 @@ describe('rmplan MCP generate mode helpers', () => {
       managePlanTaskParameters.parse({
         plan: planPath,
         action: 'update',
-        taskIndex: 0,
+        taskIndex: 1, // 1-based index
         title: 'Updated Title',
         description: 'Updated description',
         done: true,
@@ -677,7 +677,7 @@ describe('rmplan MCP generate mode helpers', () => {
         managePlanTaskParameters.parse({
           plan: planPath,
           action: 'update',
-          taskIndex: 0,
+          taskIndex: 1, // 1-based index
         }),
         context
       )
@@ -750,7 +750,7 @@ describe('rmplan MCP generate mode helpers', () => {
         managePlanTaskParameters.parse({
           plan: planPath,
           action: 'update',
-          taskIndex: 0,
+          taskIndex: 1, // 1-based index
           title: '   ',
         }),
         context
@@ -774,7 +774,7 @@ describe('rmplan MCP generate mode helpers', () => {
         managePlanTaskParameters.parse({
           plan: planPath,
           action: 'update',
-          taskIndex: 0,
+          taskIndex: 1, // 1-based index
           description: '   ',
         }),
         context

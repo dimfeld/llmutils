@@ -267,7 +267,6 @@ describe('rmplan CLI integration tests (internal handlers)', () => {
       planFilePath,
       {
         index: 0,
-        yes: true,
       },
       command
     );

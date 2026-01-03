@@ -400,6 +400,8 @@ Use git commands to see the recent related commits and which files were changed,
 
 Make sure that your feedback is congruent with the requirements of the project. For example, flagging increased number of rows from a database query is not useful feedback if the feature being implemented requires it.
 
+ultrathink before providing your review output.
+
 
 ## Context and Task
 ${contextContent}${customInstructionsSection}
@@ -425,6 +427,8 @@ the later tasks will be implemented in a future batch of work.
 The plan file tasks may not be marked as done in the plan file, because they are waiting for a passing review from you. You do not need to flag this as an issue.
 
 ## Critical Issues to Flag:
+
+Any functionality that is implemented but does not meet requirements is a CRITICAL issue, even if it appears to work.
 
 ### Code Correctness (HIGH PRIORITY)
 - Logic errors or incorrect algorithms

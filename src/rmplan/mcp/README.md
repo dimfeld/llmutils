@@ -80,7 +80,7 @@ Remove a task from a plan by title (preferred) or index.
 
 - `plan` (required): Plan ID or file path
 - `taskTitle` (optional): Task title to search for (partial match, case-insensitive)
-- `taskIndex` (optional): Task index (0-based)
+- `taskIndex` (optional): Task index (1-based)
 
 **Note:** Either `taskTitle` or `taskIndex` must be provided. `taskTitle` is preferred as indices shift when tasks are removed.
 
@@ -101,7 +101,7 @@ Update a single existing task in a plan by title or index.
 
 - `plan` (required): Plan ID or file path
 - `taskTitle` (optional): Task title to search for (partial match, case-insensitive)
-- `taskIndex` (optional): Task index (0-based)
+- `taskIndex` (optional): Task index (1-based)
 - `newTitle` (optional): New task title
 - `newDescription` (optional): New task description
 - `done` (optional): Mark task as done or not done (boolean)

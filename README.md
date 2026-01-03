@@ -1236,6 +1236,10 @@ paths:
 # Default executor for agent command
 defaultExecutor: claude-code # or codex-cli, direct-call, copy-paste
 
+# Default executor for review command
+review:
+  defaultExecutor: claude-code # or codex-cli, both
+
 # Workspace auto-creation (see Workspace Management section)
 workspaceCreation:
   cloneMethod: cp
@@ -1814,7 +1818,7 @@ rmplan set ID --parent PARENT --priority LEVEL --status STATUS [--tag TAG...] [-
 
 # Add/remove tasks
 rmplan add-task ID --title "Title" --description "Desc" [--files FILE]
-rmplan remove-task ID --title "Title" [--yes]
+rmplan remove-task ID --title "Title"
 
 # Import from issues
 rmplan import [--issue NUM] [--output FILE]

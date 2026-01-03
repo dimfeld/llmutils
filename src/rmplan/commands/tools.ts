@@ -22,6 +22,7 @@ import {
 type ToolCommandOptions = {
   json?: boolean;
   printSchema?: boolean;
+  inputData?: unknown;
 };
 
 type ToolHandler = {
@@ -145,7 +146,8 @@ export async function handleToolCommand(
       gitRoot: pathContext.gitRoot,
     };
 
-    const rawInput = await readJsonFromStdin();
+    // Use inputData if provided, otherwise read from stdin
+    const rawInput = options.inputData ?? (await readJsonFromStdin());
     const parsedArgs = handler.schema.parse(rawInput);
     const result = await handler.fn(parsedArgs, context);
 

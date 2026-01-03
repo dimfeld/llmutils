@@ -60,9 +60,6 @@ describe('CodexCliExecutor simple mode', () => {
     }));
 
     const implementerPromptCalls: Array<{ context: string; instructions?: string }> = [];
-    let capturedVerifierContext: string | undefined;
-    let capturedVerifierInstructions: string | undefined;
-
     await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
       getImplementerPrompt: mock(
         (context: string, _planId?: string | number, instructions?: string) => {
@@ -74,24 +71,11 @@ describe('CodexCliExecutor simple mode', () => {
           };
         }
       ),
-      getVerifierAgentPrompt: mock(
-        (context: string, _planId?: string | number, instructions?: string) => {
-          capturedVerifierContext = context;
-          capturedVerifierInstructions = instructions;
-          return {
-            name: 'verifier',
-            description: '',
-            prompt: 'VERIFIER PROMPT',
-          };
-        }
-      ),
       FAILED_PROTOCOL_INSTRUCTIONS: 'FAILED section',
     }));
 
     const loadInstructionsMock = mock(async (agent: string) => {
       if (agent === 'implementer') return 'Implementer custom notes';
-      if (agent === 'tester') return 'Tester custom checks';
-      if (agent === 'reviewer') return 'Reviewer escalation guidance';
       return undefined;
     });
 
@@ -124,35 +108,6 @@ describe('CodexCliExecutor simple mode', () => {
         (ctx: string, implOut: string, _tasks: string[]) =>
           ctx + '\n\n### Implementer Output\n' + implOut
       ),
-      composeReviewerContext: mock(
-        (
-          _ctx: string,
-          _implOut: string,
-          _testOut: string,
-          _completed: string[],
-          _pending: string[]
-        ) => _ctx
-      ),
-      composeVerifierContext: mock(
-        (
-          ctx: string,
-          implOut: string,
-          newTasks: string[],
-          prevCompleted: string[],
-          pending: string[]
-        ) => {
-          let result = ctx;
-          if (prevCompleted.length)
-            result += `\n\n### Completed Tasks Before This Run\n- ${prevCompleted.join('\n- ')}`;
-          if (pending.length)
-            result += `\n\n### Pending Tasks Prior to Verification\n- ${pending.join('\n- ')}`;
-          if (newTasks.length)
-            result += `\n\n### Newly Completed Tasks From Implementer\n- ${newTasks.join('\n- ')}`;
-          result += `\n\n### Implementer Output Summary\n${implOut}`;
-          return result;
-        }
-      ),
-      composeFixReviewContext: mock(() => ''),
       getFixerPrompt: mock(() => 'FIXER PROMPT'),
     }));
 
@@ -160,8 +115,6 @@ describe('CodexCliExecutor simple mode', () => {
     const executeCodexStepMock = mock(async (prompt: string) => {
       if (prompt === 'IMPLEMENTER PROMPT') {
         return 'Implementation complete. ✅';
-      } else if (prompt === 'VERIFIER PROMPT' || prompt.includes('VERIFIER PROMPT')) {
-        return 'Verification succeeded. All checks pass.\n\nVERDICT: ACCEPTABLE';
       }
       return 'Unknown prompt output';
     });
@@ -170,12 +123,16 @@ describe('CodexCliExecutor simple mode', () => {
       executeCodexStep: executeCodexStepMock,
     }));
 
-    await moduleMocker.mock('./codex_cli/verdict_parser.ts', () => ({
-      parseReviewerVerdict: mock((output: string) => {
-        if (output.includes('VERDICT: ACCEPTABLE')) return 'ACCEPTABLE';
-        if (output.includes('VERDICT: NEEDS_FIXES')) return 'NEEDS_FIXES';
-        return 'UNKNOWN';
-      }),
+    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: mock(async () => ({
+        verdict: 'ACCEPTABLE',
+        formattedOutput: 'Verification succeeded. All checks pass.\n\nVERDICT: ACCEPTABLE',
+        fixInstructions: 'No issues',
+        reviewResult: { issues: [] },
+        rawOutput: '{}',
+        warnings: [],
+      })),
     }));
 
     await moduleMocker.mock('./failure_detection.ts', () => ({
@@ -211,24 +168,13 @@ describe('CodexCliExecutor simple mode', () => {
       captureOutput: 'result',
     })) as any;
 
-    // Verify executeCodexStep was called twice (implementer and verifier)
-    expect(executeCodexStepMock).toHaveBeenCalledTimes(2);
+    // Verify executeCodexStep was called once (implementer only)
+    expect(executeCodexStepMock).toHaveBeenCalledTimes(1);
 
     expect(implementerPromptCalls).toHaveLength(1);
     expect(implementerPromptCalls[0].context).toBe('CTX CONTENT');
     expect(implementerPromptCalls[0].instructions).toContain('Implementer custom notes');
-    expect(capturedVerifierContext).toBeDefined();
-    expect(capturedVerifierContext).toContain('### Implementer Output Summary');
-    expect(capturedVerifierContext).toContain('Implementation complete. ✅');
-    expect(capturedVerifierContext).toContain('### Completed Tasks Before This Run');
-    expect(capturedVerifierContext).toContain('Refactor helpers');
-    expect(capturedVerifierContext).toContain('### Newly Completed Tasks From Implementer');
-    expect(capturedVerifierContext).toContain('Add feature');
-    expect(capturedVerifierInstructions).toBe(
-      'Tester custom checks\n\nReviewer escalation guidance'
-    );
-
-    expect(loadInstructionsMock).toHaveBeenCalledTimes(3);
+    expect(loadInstructionsMock).toHaveBeenCalledTimes(1);
     expect(parseCompletedTasksMock).toHaveBeenCalledTimes(1);
     expect(markTasksDoneSpy).toHaveBeenCalledTimes(1);
     expect(markTasksDoneSpy.mock.calls[0][0]).toBe('/tmp/plan.md');
@@ -287,11 +233,6 @@ describe('CodexCliExecutor simple mode', () => {
         description: '',
         prompt: 'IMPLEMENTER PROMPT',
       })),
-      getVerifierAgentPrompt: mock(() => ({
-        name: 'verifier',
-        description: '',
-        prompt: 'VERIFIER PROMPT',
-      })),
       FAILED_PROTOCOL_INSTRUCTIONS: 'FAILED section',
     }));
 
@@ -300,6 +241,18 @@ describe('CodexCliExecutor simple mode', () => {
     await moduleMocker.mock('./codex_cli/agent_helpers.ts', () => ({
       loadAgentInstructionsFor: loadInstructionsMock,
       loadRepositoryReviewDoc: mock(async () => undefined),
+    }));
+
+    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: mock(async () => ({
+        verdict: 'ACCEPTABLE',
+        formattedOutput: 'Verification succeeded.\n\nVERDICT: ACCEPTABLE',
+        fixInstructions: 'No issues',
+        reviewResult: { issues: [] },
+        rawOutput: '{}',
+        warnings: [],
+      })),
     }));
 
     await moduleMocker.mock('./codex_cli/task_management.ts', () => ({
@@ -313,8 +266,6 @@ describe('CodexCliExecutor simple mode', () => {
     }));
 
     await moduleMocker.mock('./codex_cli/context_composition.ts', () => ({
-      composeVerifierContext: mock((ctx: string) => ctx),
-      composeFixReviewContext: mock(() => ''),
       getFixerPrompt: mock(() => 'FIXER PROMPT'),
     }));
 
@@ -327,22 +278,12 @@ describe('CodexCliExecutor simple mode', () => {
           return 'Plan: I will implement the changes step-by-step';
         }
         return 'Implementation complete after retry.';
-      } else if (prompt.includes('VERIFIER')) {
-        return 'Verification succeeded.\n\nVERDICT: ACCEPTABLE';
       }
       return 'Unknown output';
     });
 
     await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
       executeCodexStep: executeCodexStepMock,
-    }));
-
-    await moduleMocker.mock('./codex_cli/verdict_parser.ts', () => ({
-      parseReviewerVerdict: mock((output: string) => {
-        if (output.includes('VERDICT: ACCEPTABLE')) return 'ACCEPTABLE';
-        if (output.includes('VERDICT: NEEDS_FIXES')) return 'NEEDS_FIXES';
-        return 'UNKNOWN';
-      }),
     }));
 
     // First call detects planning-only, subsequent calls don't
@@ -389,9 +330,9 @@ describe('CodexCliExecutor simple mode', () => {
       captureOutput: 'none',
     });
 
-    // executeCodexStep should be called 3 times: implementer (planning), implementer (retry), verifier
-    expect(executeCodexStepMock).toHaveBeenCalledTimes(3);
-    expect(loadInstructionsMock).toHaveBeenCalledTimes(3);
+    // executeCodexStep should be called twice: implementer (planning), implementer (retry)
+    expect(executeCodexStepMock).toHaveBeenCalledTimes(2);
+    expect(loadInstructionsMock).toHaveBeenCalledTimes(1);
     expect(
       warnMessages.some((msg) =>
         msg.includes('produced planning output without repository changes')
@@ -440,11 +381,6 @@ describe('CodexCliExecutor simple mode', () => {
         description: '',
         prompt: 'IMPLEMENTER PROMPT',
       })),
-      getVerifierAgentPrompt: mock(() => ({
-        name: 'verifier',
-        description: '',
-        prompt: 'VERIFIER PROMPT',
-      })),
       FAILED_PROTOCOL_INSTRUCTIONS: 'FAILED section',
     }));
 
@@ -455,6 +391,18 @@ describe('CodexCliExecutor simple mode', () => {
       loadRepositoryReviewDoc: mock(async () => undefined),
     }));
 
+    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: mock(async () => ({
+        verdict: 'ACCEPTABLE',
+        formattedOutput: 'Verification succeeded.\n\nVERDICT: ACCEPTABLE',
+        fixInstructions: 'No issues',
+        reviewResult: { issues: [] },
+        rawOutput: '{}',
+        warnings: [],
+      })),
+    }));
+
     await moduleMocker.mock('./codex_cli/task_management.ts', () => ({
       categorizeTasks: mock(() => ({ completed: [], pending: [{ title: 'Task' }] })),
       logTaskStatus: mock(() => {}),
@@ -463,26 +411,16 @@ describe('CodexCliExecutor simple mode', () => {
     }));
 
     await moduleMocker.mock('./codex_cli/context_composition.ts', () => ({
-      composeVerifierContext: mock((ctx: string) => ctx),
-      composeFixReviewContext: mock(() => ''),
       getFixerPrompt: mock(() => 'FIXER PROMPT'),
     }));
 
     const executeCodexStepMock = mock(async (prompt: string) => {
       if (prompt.includes('IMPLEMENTER')) return 'Implementation done';
-      if (prompt.includes('VERIFIER')) return 'VERDICT: ACCEPTABLE';
       return 'Unknown';
     });
 
     await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
       executeCodexStep: executeCodexStepMock,
-    }));
-
-    await moduleMocker.mock('./codex_cli/verdict_parser.ts', () => ({
-      parseReviewerVerdict: mock((output: string) => {
-        if (output.includes('ACCEPTABLE')) return 'ACCEPTABLE';
-        return 'UNKNOWN';
-      }),
     }));
 
     await moduleMocker.mock('./failure_detection.ts', () => ({
@@ -517,9 +455,9 @@ describe('CodexCliExecutor simple mode', () => {
     })) as any;
 
     // Should use simple mode because simpleMode flag is true
-    // Simple mode uses implementer + verifier (2 steps), not implementer + tester + reviewer (3 steps)
-    expect(executeCodexStepMock).toHaveBeenCalledTimes(2);
-    expect(loadInstructionsMock).toHaveBeenCalledTimes(3);
+    // Simple mode uses implementer only from executeCodexStep (review runs externally)
+    expect(executeCodexStepMock).toHaveBeenCalledTimes(1);
+    expect(loadInstructionsMock).toHaveBeenCalledTimes(1);
   });
 
   test('options.simpleMode triggers simple execution loop with aggregated output', async () => {
@@ -553,11 +491,6 @@ describe('CodexCliExecutor simple mode', () => {
         description: '',
         prompt: 'IMPLEMENTER PROMPT',
       })),
-      getVerifierAgentPrompt: mock(() => ({
-        name: 'verifier',
-        description: '',
-        prompt: 'VERIFIER PROMPT',
-      })),
       FAILED_PROTOCOL_INSTRUCTIONS: 'FAILED section',
     }));
 
@@ -568,6 +501,18 @@ describe('CodexCliExecutor simple mode', () => {
       loadRepositoryReviewDoc: mock(async () => undefined),
     }));
 
+    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: mock(async () => ({
+        verdict: 'ACCEPTABLE',
+        formattedOutput: 'Verification succeeded.\n\nVERDICT: ACCEPTABLE',
+        fixInstructions: 'No issues',
+        reviewResult: { issues: [] },
+        rawOutput: '{}',
+        warnings: [],
+      })),
+    }));
+
     await moduleMocker.mock('./codex_cli/task_management.ts', () => ({
       categorizeTasks: mock(() => ({ completed: [], pending: [{ title: 'Task' }] })),
       logTaskStatus: mock(() => {}),
@@ -576,26 +521,16 @@ describe('CodexCliExecutor simple mode', () => {
     }));
 
     await moduleMocker.mock('./codex_cli/context_composition.ts', () => ({
-      composeVerifierContext: mock((ctx: string) => ctx),
-      composeFixReviewContext: mock(() => ''),
       getFixerPrompt: mock(() => 'FIXER PROMPT'),
     }));
 
     const executeCodexStepMock = mock(async (prompt: string) => {
       if (prompt.includes('IMPLEMENTER')) return 'Implementation done';
-      if (prompt.includes('VERIFIER')) return 'VERDICT: ACCEPTABLE';
       return 'Unknown';
     });
 
     await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
       executeCodexStep: executeCodexStepMock,
-    }));
-
-    await moduleMocker.mock('./codex_cli/verdict_parser.ts', () => ({
-      parseReviewerVerdict: mock((output: string) => {
-        if (output.includes('ACCEPTABLE')) return 'ACCEPTABLE';
-        return 'UNKNOWN';
-      }),
     }));
 
     await moduleMocker.mock('./failure_detection.ts', () => ({
@@ -630,7 +565,7 @@ describe('CodexCliExecutor simple mode', () => {
     })) as any;
 
     // Should use simple mode
-    expect(executeCodexStepMock).toHaveBeenCalledTimes(2);
+    expect(executeCodexStepMock).toHaveBeenCalledTimes(1);
     expect(result.steps).toHaveLength(2);
   });
 
@@ -665,17 +600,38 @@ describe('CodexCliExecutor simple mode', () => {
         description: '',
         prompt: 'IMPLEMENTER PROMPT',
       })),
-      getVerifierAgentPrompt: mock(() => ({
-        name: 'verifier',
-        description: '',
-        prompt: 'VERIFIER PROMPT',
-      })),
       FAILED_PROTOCOL_INSTRUCTIONS: 'FAILED section',
     }));
 
     await moduleMocker.mock('./codex_cli/agent_helpers.ts', () => ({
       loadAgentInstructionsFor: mock(async () => undefined),
       loadRepositoryReviewDoc: mock(async () => undefined),
+    }));
+
+    let reviewCallCount = 0;
+    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: mock(async () => {
+        reviewCallCount++;
+        if (reviewCallCount === 1) {
+          return {
+            verdict: 'NEEDS_FIXES',
+            formattedOutput: 'Issues found.\n\nVERDICT: NEEDS_FIXES',
+            fixInstructions: 'Fix issues',
+            reviewResult: { issues: [] },
+            rawOutput: '{}',
+            warnings: [],
+          };
+        }
+        return {
+          verdict: 'ACCEPTABLE',
+          formattedOutput: 'All good now.\n\nVERDICT: ACCEPTABLE',
+          fixInstructions: 'No issues',
+          reviewResult: { issues: [] },
+          rawOutput: '{}',
+          warnings: [],
+        };
+      }),
     }));
 
     await moduleMocker.mock('./codex_cli/task_management.ts', () => ({
@@ -686,24 +642,11 @@ describe('CodexCliExecutor simple mode', () => {
     }));
 
     await moduleMocker.mock('./codex_cli/context_composition.ts', () => ({
-      composeVerifierContext: mock((ctx: string) => ctx),
-      composeFixReviewContext: mock(
-        (_ctx: string, fixInstructions: string) => 'FIX CONTEXT: ' + fixInstructions
-      ),
       getFixerPrompt: mock((ctx: string) => 'FIXER PROMPT: ' + ctx),
     }));
 
-    // First verifier returns NEEDS_FIXES, second returns ACCEPTABLE
-    let verifierCallCount = 0;
     const executeCodexStepMock = mock(async (prompt: string) => {
       if (prompt.includes('IMPLEMENTER')) return 'Implementation done';
-      if (prompt.includes('VERIFIER')) {
-        verifierCallCount++;
-        if (verifierCallCount === 1) {
-          return 'Issues found.\n\nVERDICT: NEEDS_FIXES';
-        }
-        return 'All good now.\n\nVERDICT: ACCEPTABLE';
-      }
       if (prompt.includes('FIXER')) {
         return 'Applied fixes.';
       }
@@ -712,16 +655,6 @@ describe('CodexCliExecutor simple mode', () => {
 
     await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
       executeCodexStep: executeCodexStepMock,
-    }));
-
-    let verdictCallCount = 0;
-    await moduleMocker.mock('./codex_cli/verdict_parser.ts', () => ({
-      parseReviewerVerdict: mock((output: string) => {
-        verdictCallCount++;
-        if (output.includes('VERDICT: NEEDS_FIXES')) return 'NEEDS_FIXES';
-        if (output.includes('VERDICT: ACCEPTABLE')) return 'ACCEPTABLE';
-        return 'UNKNOWN';
-      }),
     }));
 
     await moduleMocker.mock('./failure_detection.ts', () => ({
@@ -754,8 +687,7 @@ describe('CodexCliExecutor simple mode', () => {
       captureOutput: 'none',
     });
 
-    // Should be: implementer, verifier (NEEDS_FIXES), fixer, verifier (ACCEPTABLE) = 4 calls
-    expect(executeCodexStepMock).toHaveBeenCalledTimes(4);
-    expect(verifierCallCount).toBe(2);
+    // Should be: implementer, fixer = 2 calls
+    expect(executeCodexStepMock).toHaveBeenCalledTimes(2);
   });
 });

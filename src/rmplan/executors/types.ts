@@ -7,12 +7,17 @@ import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
  */
 export interface ExecutorCommonOptions {
   baseDir: string;
-  interactive?: boolean;
   model?: string;
+  /** When true, executor should avoid any user prompts (e.g., permissions MCP) */
+  noninteractive?: boolean;
   /**
    * When true, executors should run in the streamlined implement → verify flow.
    */
   simpleMode?: boolean;
+  /**
+   * Optional override for which executor to use during external review phases.
+   */
+  reviewExecutor?: string;
 }
 
 /**

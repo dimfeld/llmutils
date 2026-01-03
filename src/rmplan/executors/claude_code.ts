@@ -505,9 +505,7 @@ export class ClaudeCodeExecutor implements Executor {
     log('Running Claude in review mode with JSON schema output...');
 
     // Determine if permissions MCP should be enabled
-    let { allowAllTools, mcpConfigFile, interactive } = this.options;
-    interactive ??= this.sharedOptions.interactive;
-    interactive ??= (process.env.CLAUDE_INTERACTIVE ?? 'false') === 'true';
+    let { allowAllTools, mcpConfigFile } = this.options;
 
     let isPermissionsMcpEnabled = this.options.permissionsMcp?.enabled === true;
     if (process.env.CLAUDE_CODE_MCP) {
@@ -520,8 +518,8 @@ export class ClaudeCodeExecutor implements Executor {
       allowAllTools = envAllowAllTools;
     }
 
-    if (interactive || allowAllTools) {
-      // permissions MCP doesn't make sense in interactive mode, or when we want to allow all tools
+    if (allowAllTools || this.sharedOptions.noninteractive) {
+      // permissions MCP doesn't make sense in noninteractive mode, or when we want to allow all tools
       isPermissionsMcpEnabled = false;
     }
 
@@ -571,8 +569,9 @@ export class ClaudeCodeExecutor implements Executor {
             'Bash(cargo add:*)',
             'Bash(cargo build)',
             'Bash(cargo test:*)',
-            'Bash(rmplan set-task-done:*)',
             'Bash(rmplan add:*)',
+            'Bash(rmplan review:*)',
+            'Bash(rmplan set-task-done:*)',
           ]
         : [];
 
@@ -985,6 +984,7 @@ export class ClaudeCodeExecutor implements Executor {
         contextContent = wrapWithOrchestration(contextContent, planId, {
           batchMode: planInfo.batchMode,
           planFilePath,
+          reviewExecutor: this.sharedOptions.reviewExecutor,
         });
       } else if (planInfo.executionMode === 'simple') {
         contextContent = wrapWithOrchestrationSimple(contextContent, planId, {
@@ -994,14 +994,10 @@ export class ClaudeCodeExecutor implements Executor {
       }
     }
 
-    let { disallowedTools, allowAllTools, mcpConfigFile, interactive } = this.options;
+    let { disallowedTools, allowAllTools, mcpConfigFile } = this.options;
 
     // Get git root for agent instructions and other operations
     const gitRoot = await getGitRoot();
-
-    // TODO Interactive mode isn't integrated with the logging
-    interactive ??= this.sharedOptions.interactive;
-    interactive ??= (process.env.CLAUDE_INTERACTIVE ?? 'false') === 'true';
 
     let isPermissionsMcpEnabled = this.options.permissionsMcp?.enabled === true;
     if (process.env.CLAUDE_CODE_MCP) {
@@ -1014,10 +1010,8 @@ export class ClaudeCodeExecutor implements Executor {
       allowAllTools = envAllowAllTools;
     }
 
-    if (interactive) {
-      // permissions MCP doesn't make sense in interactive mode
-      // We keep it enabled when allowAllTools is set just because there are some occasional edge cases where Claude
-      // will ask for permission anyway.
+    if (this.sharedOptions.noninteractive) {
+      // permissions MCP doesn't make sense in noninteractive mode
       isPermissionsMcpEnabled = false;
     }
 
@@ -1280,144 +1274,113 @@ export class ClaudeCodeExecutor implements Executor {
         args.push('--agents', buildAgentsArgument(agentDefinitions));
       }
 
-      if (interactive) {
-        await clipboard.writeClipboardAndWait(
-          chalk.green('Copied prompt to clipboard.') +
-            '\nPlease start `claude` in a separate terminal window and paste the prompt into it, then press Enter here when you are done.',
+      if (debug) {
+        args.push('--debug');
+      }
 
-          contextContent
-        );
+      args.push('--verbose', '--output-format', 'stream-json', '--print', contextContent);
+      let splitter = createLineSplitter();
+      let capturedOutputLines: string[] = [];
+      let lastAssistantRaw: string | undefined;
+      let failureSummary: string | undefined;
+      let failureRaw: string | undefined;
 
-        // This is broken right now due to issues with Bun apparently not closing readline appropriately
-        // Probably related: https://github.com/oven-sh/bun/issues/13978 and https://github.com/oven-sh/bun/issues/10694
-        /*
-        // In interactive mode, use Bun.spawn directly with inherited stdio
-        debugLog(args);
-        const proc = Bun.spawn(args, {
-          env: {
-            ...process.env,
-            ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
-            CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
-          },
-          cwd: gitRoot,
-          stdio: ['inherit', 'inherit', 'inherit'],
-        });
+      log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
+      const result = await spawnAndLogOutput(args, {
+        env: {
+          ...process.env,
+          ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
+          CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
+        },
+        cwd: gitRoot,
+        formatStdout: (output) => {
+          let lines = splitter(output);
+          const formattedResults = lines.map(formatJsonMessage);
+          // Capture output based on the specified mode
+          const captureMode = planInfo?.captureOutput;
 
-        const exitCode = await proc.exited;
-
-        if (exitCode !== 0) {
-          throw new Error(`Claude exited with non-zero exit code: ${exitCode}`);
-        }
-        */
-      } else {
-        if (debug) {
-          args.push('--debug');
-        }
-
-        args.push('--verbose', '--output-format', 'stream-json', '--print', contextContent);
-        let splitter = createLineSplitter();
-        let capturedOutputLines: string[] = [];
-        let lastAssistantRaw: string | undefined;
-        let failureSummary: string | undefined;
-        let failureRaw: string | undefined;
-
-        log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
-        const result = await spawnAndLogOutput(args, {
-          env: {
-            ...process.env,
-            ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
-            CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
-          },
-          cwd: gitRoot,
-          formatStdout: (output) => {
-            let lines = splitter(output);
-            const formattedResults = lines.map(formatJsonMessage);
-            // Capture output based on the specified mode
-            const captureMode = planInfo?.captureOutput;
-
-            // Extract file paths and add them to trackedFiles set
-            for (const result of formattedResults) {
-              if (result.filePaths) {
-                for (const filePath of result.filePaths) {
-                  // Resolve to absolute path
-                  const absolutePath = path.isAbsolute(filePath)
-                    ? filePath
-                    : path.resolve(gitRoot, filePath);
-                  this.trackedFiles.add(absolutePath);
-                }
-              }
-
-              if (result.message) {
-                if (captureMode === 'all') {
-                  capturedOutputLines.push(result.message);
-                } else if (
-                  captureMode === 'result' &&
-                  result.type === 'assistant' &&
-                  result.rawMessage
-                ) {
-                  // Only save the final message
-                  capturedOutputLines = [result.rawMessage];
-                }
-              }
-              if (result.type === 'assistant' && result.rawMessage) {
-                lastAssistantRaw = result.rawMessage;
-              }
-              if (result.failed && result.rawMessage) {
-                failureSummary = result.failedSummary || 'Agent reported FAILED';
-                failureRaw = result.rawMessage;
+          // Extract file paths and add them to trackedFiles set
+          for (const result of formattedResults) {
+            if (result.filePaths) {
+              for (const filePath of result.filePaths) {
+                // Resolve to absolute path
+                const absolutePath = path.isAbsolute(filePath)
+                  ? filePath
+                  : path.resolve(gitRoot, filePath);
+                this.trackedFiles.add(absolutePath);
               }
             }
 
-            const formattedOutput =
-              formattedResults.map((r) => r.message || '').join('\n\n') + '\n\n';
-            return formattedOutput;
-          },
-        });
-
-        if (result.exitCode !== 0) {
-          throw new Error(`Claude exited with non-zero exit code: ${result.exitCode}`);
-        }
-
-        // Determine failure from stream if not already captured
-        if (!failureRaw && lastAssistantRaw) {
-          const parsed = parseFailedReportAnywhere(lastAssistantRaw);
-          if (parsed.failed) {
-            failureRaw = lastAssistantRaw;
-            failureSummary = parsed.summary || 'Agent reported FAILED';
+            if (result.message) {
+              if (captureMode === 'all') {
+                capturedOutputLines.push(result.message);
+              } else if (
+                captureMode === 'result' &&
+                result.type === 'assistant' &&
+                result.rawMessage
+              ) {
+                // Only save the final message
+                capturedOutputLines = [result.rawMessage];
+              }
+            }
+            if (result.type === 'assistant' && result.rawMessage) {
+              lastAssistantRaw = result.rawMessage;
+            }
+            if (result.failed && result.rawMessage) {
+              failureSummary = result.failedSummary || 'Agent reported FAILED';
+              failureRaw = result.rawMessage;
+            }
           }
-        }
 
-        // If a failure was detected at any point, return structured failure regardless of capture mode
-        if (failureRaw) {
-          const parsedAny = parseFailedReportAnywhere(failureRaw);
-          const failedLine = detectFailedLineAnywhere(failureRaw);
-          const sourceAgent = inferFailedAgent(
-            failedLine.failed ? failedLine.summary : undefined,
-            failureRaw
-          );
+          const formattedOutput =
+            formattedResults.map((r) => r.message || '').join('\n\n') + '\n\n';
+          return formattedOutput;
+        },
+      });
 
-          return {
-            content: failureRaw,
-            metadata: { phase: 'orchestrator' },
-            success: false,
-            failureDetails:
-              parsedAny.failed && parsedAny.details
-                ? { ...parsedAny.details, sourceAgent }
-                : { requirements: '', problems: failureSummary || 'FAILED', sourceAgent },
-          };
-        }
-
-        // Return captured output if any capture mode was enabled, otherwise return void explicitly
-        const captureMode = planInfo?.captureOutput;
-        if (captureMode === 'all' || captureMode === 'result') {
-          return {
-            content: capturedOutputLines.join('\n\n'),
-            metadata: { phase: 'orchestrator' },
-          };
-        }
-
-        return; // Explicitly return void for 'none' or undefined captureOutput
+      if (result.exitCode !== 0) {
+        throw new Error(`Claude exited with non-zero exit code: ${result.exitCode}`);
       }
+
+      // Determine failure from stream if not already captured
+      if (!failureRaw && lastAssistantRaw) {
+        const parsed = parseFailedReportAnywhere(lastAssistantRaw);
+        if (parsed.failed) {
+          failureRaw = lastAssistantRaw;
+          failureSummary = parsed.summary || 'Agent reported FAILED';
+        }
+      }
+
+      // If a failure was detected at any point, return structured failure regardless of capture mode
+      if (failureRaw) {
+        const parsedAny = parseFailedReportAnywhere(failureRaw);
+        const failedLine = detectFailedLineAnywhere(failureRaw);
+        const sourceAgent = inferFailedAgent(
+          failedLine.failed ? failedLine.summary : undefined,
+          failureRaw
+        );
+
+        return {
+          content: failureRaw,
+          metadata: { phase: 'orchestrator' },
+          success: false,
+          failureDetails:
+            parsedAny.failed && parsedAny.details
+              ? { ...parsedAny.details, sourceAgent }
+              : { requirements: '', problems: failureSummary || 'FAILED', sourceAgent },
+        };
+      }
+
+      // Return captured output if any capture mode was enabled, otherwise return void explicitly
+      const captureMode = planInfo?.captureOutput;
+      if (captureMode === 'all' || captureMode === 'result') {
+        return {
+          content: capturedOutputLines.join('\n\n'),
+          metadata: { phase: 'orchestrator' },
+        };
+      }
+
+      return; // Explicitly return void for 'none' or undefined captureOutput
     } finally {
       // Close the Unix socket server if it exists
       if (unixSocketServer) {

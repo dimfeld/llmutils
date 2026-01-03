@@ -282,6 +282,48 @@ describe('rmplan tools CLI handlers', () => {
     expect(mcpOutput).toBe(toolOutput.text);
   });
 
+  test('update-plan-tasks with --tasks option bypasses stdin', async () => {
+    const { handleToolCommand } = await import('./tools.js');
+
+    const planFile = path.join(tasksDir, '14-tasks-option.plan.md');
+    const plan: PlanSchema = {
+      id: 14,
+      title: 'Tasks Option Plan',
+      goal: 'Update tasks via --tasks',
+      details: 'Initial details',
+      status: 'pending',
+      tasks: [],
+    };
+
+    await writePlanFile(planFile, plan, { skipUpdatedAt: true });
+
+    const tasksJson = JSON.stringify([
+      {
+        title: 'Task from --tasks',
+        description: 'This task was passed via CLI option',
+      },
+    ]);
+
+    // Use inputData instead of stdin
+    const options = {
+      inputData: {
+        plan: planFile,
+        tasks: JSON.parse(tasksJson),
+      },
+    };
+
+    await handleToolCommand('update-plan-tasks', options, command);
+
+    const output = readStdout();
+    expect(output).toContain('Successfully updated plan');
+    expect(output).toContain('1 task');
+
+    // Verify the task was actually written to the file
+    const updatedPlan = await fs.readFile(planFile, 'utf-8');
+    expect(updatedPlan).toContain('Task from --tasks');
+    expect(updatedPlan).toContain('This task was passed via CLI option');
+  });
+
   test('manage-plan-task CLI output matches shared tool output and JSON preserves action data', async () => {
     const { handleToolCommand } = await import('./tools.js');
 

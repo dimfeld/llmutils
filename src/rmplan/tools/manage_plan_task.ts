@@ -114,11 +114,11 @@ export async function addPlanTaskTool(
   });
 
   const planIdentifier = plan.id ? `plan ${plan.id}` : relativePath;
-  const text = `Added task "${title}" to ${planIdentifier} at index ${index}.`;
+  const text = `Added task "${title}" to ${planIdentifier} at index ${index + 1}.`;
 
   return {
     text,
-    data: { index },
+    data: { index: index + 1 }, // Return 1-based index
     message: text,
   };
 }
@@ -137,14 +137,14 @@ export async function removePlanTaskTool(
   const index = resolveTaskIndex(plan.tasks, args, 'remove');
   if (index < 0 || index >= plan.tasks.length) {
     throw new Error(
-      `Task index ${index} is out of bounds for plan with ${plan.tasks.length} task(s).`
+      `Task index ${index + 1} is out of bounds for plan with ${plan.tasks.length} task(s) (valid range: 1-${plan.tasks.length}).`
     );
   }
 
   const previousLength = plan.tasks.length;
   const [removedTask] = plan.tasks.splice(index, 1);
   if (!removedTask) {
-    throw new Error(`Failed to remove task at index ${index}.`);
+    throw new Error(`Failed to remove task at index ${index + 1}.`);
   }
 
   plan.updatedAt = new Date().toISOString();
@@ -162,11 +162,11 @@ export async function removePlanTaskTool(
     shiftedCount > 0 ? ` Indices of ${shiftedCount} subsequent task(s) have shifted.` : '';
   const planIdentifier = plan.id ? `plan ${plan.id}` : relativePath;
 
-  const text = `Removed task "${removedTask.title}" from ${planIdentifier} (index ${index}).${shiftWarning}`;
+  const text = `Removed task "${removedTask.title}" from ${planIdentifier} (index ${index + 1}).${shiftWarning}`;
 
   return {
     text,
-    data: { index, shifted: shiftedCount },
+    data: { index: index + 1, shifted: shiftedCount }, // Return 1-based index
     message: text,
   };
 }
@@ -191,13 +191,13 @@ export async function updatePlanTaskTool(
   const index = resolveTaskIndex(plan.tasks, args, 'update');
   if (index < 0 || index >= plan.tasks.length) {
     throw new Error(
-      `Task index ${index} is out of bounds for plan with ${plan.tasks.length} task(s).`
+      `Task index ${index + 1} is out of bounds for plan with ${plan.tasks.length} task(s) (valid range: 1-${plan.tasks.length}).`
     );
   }
 
   const task = plan.tasks[index];
   if (!task) {
-    throw new Error(`Task at index ${index} not found.`);
+    throw new Error(`Task at index ${index + 1} not found.`);
   }
 
   const oldTitle = task.title;
@@ -239,11 +239,11 @@ export async function updatePlanTaskTool(
 
   const planIdentifier = plan.id ? `plan ${plan.id}` : relativePath;
   const updatesText = updates.length > 0 ? ` Updated: ${updates.join(', ')}.` : '';
-  const text = `Updated task "${oldTitle}" in ${planIdentifier} (index ${index}).${updatesText}`;
+  const text = `Updated task "${oldTitle}" in ${planIdentifier} (index ${index + 1}).${updatesText}`;
 
   return {
     text,
-    data: { index },
+    data: { index: index + 1 }, // Return 1-based index
     message: text,
   };
 }
@@ -262,10 +262,10 @@ function resolveTaskIndex(
   }
 
   if (args.taskIndex !== undefined) {
-    if (!Number.isInteger(args.taskIndex) || args.taskIndex < 0) {
-      throw new Error('taskIndex must be a non-negative integer.');
+    if (!Number.isInteger(args.taskIndex) || args.taskIndex < 1) {
+      throw new Error('taskIndex must be a positive integer (1-based).');
     }
-    return args.taskIndex;
+    return args.taskIndex - 1; // Convert 1-based input to 0-based internal index
   }
 
   throw new Error(`Provide either taskTitle or taskIndex to ${operation} a task.`);

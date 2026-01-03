@@ -1,5 +1,4 @@
 import chalk from 'chalk';
-import { confirm } from '@inquirer/prompts';
 import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
@@ -10,7 +9,6 @@ export interface RemoveTaskOptions {
   title?: string;
   index?: number;
   interactive?: boolean;
-  yes?: boolean;
 }
 
 type PlanTask = NonNullable<PlanSchema['tasks']>[number];
@@ -50,23 +48,15 @@ export async function handleRemoveTaskCommand(
 
   if (index < 0 || index >= planData.tasks.length) {
     throw new Error(
-      `Task index ${index} is out of bounds for plan with ${planData.tasks.length} tasks.`
+      `Task index ${index + 1} is out of bounds for plan with ${planData.tasks.length} tasks (valid range: 1-${planData.tasks.length}).`
     );
-  }
-
-  const targetTask = planData.tasks[index];
-
-  const proceed = await confirmTaskRemoval(targetTask, index, Boolean(options.yes));
-  if (!proceed) {
-    log(chalk.yellow('Task removal cancelled.'));
-    return;
   }
 
   const previousLength = planData.tasks.length;
   const [removedTask] = planData.tasks.splice(index, 1);
 
   if (!removedTask) {
-    throw new Error(`Failed to remove task at index ${index}.`);
+    throw new Error(`Failed to remove task at index ${index + 1}.`);
   }
 
   planData.updatedAt = new Date().toISOString();
@@ -75,7 +65,7 @@ export async function handleRemoveTaskCommand(
   const planIdentifier = planData.id ? `plan ${planData.id}` : 'plan';
   log(
     chalk.green(
-      `✓ Removed task "${removedTask.title}" from ${planIdentifier} (${planPath}); it was previously at index ${index}.`
+      `✓ Removed task "${removedTask.title}" from ${planIdentifier} (${planPath}); it was previously at index ${index + 1}.`
     )
   );
 
@@ -116,26 +106,4 @@ async function resolveTaskIndex(tasks: PlanTask[], options: RemoveTaskOptions): 
   }
 
   throw new Error('Unable to resolve task index.');
-}
-
-async function confirmTaskRemoval(
-  task: PlanTask,
-  index: number,
-  skipPrompt: boolean
-): Promise<boolean> {
-  if (skipPrompt) {
-    return true;
-  }
-
-  try {
-    return await confirm({
-      message: `Remove task "${task.title}" (index ${index})?`,
-      default: false,
-    });
-  } catch (err: any) {
-    if (err instanceof Error && err.name === 'ExitPromptError') {
-      throw new Error('Task removal confirmation cancelled.');
-    }
-    throw err;
-  }
 }

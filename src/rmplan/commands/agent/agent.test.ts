@@ -730,6 +730,14 @@ describe('rmplanAgent - simple mode flag plumbing', () => {
     expect(batchOptions).toMatchObject({ executor: testExecutor, executionMode: 'normal' });
   });
 
+  test('passes review executor override through to executor builder', async () => {
+    await rmplanAgent(simplePlanFile, { log: false, reviewExecutor: 'claude-code' } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(sharedOptions).toMatchObject({ reviewExecutor: 'claude-code' });
+  });
+
   test('passes simpleMode flag through to executor builder', async () => {
     await rmplanAgent(simplePlanFile, { log: false, simple: true } as any, {});
 

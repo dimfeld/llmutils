@@ -743,7 +743,6 @@ export async function handleGenerateCommand(
         const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
         const sharedExecutorOptions: ExecutorCommonOptions = {
           baseDir: gitRoot,
-          interactive: false,
           model: config.models?.stepGeneration,
         };
         const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);

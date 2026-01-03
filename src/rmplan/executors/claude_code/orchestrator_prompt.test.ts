@@ -7,6 +7,7 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain('Failure Protocol');
     expect(out).toContain('FAILED:');
     expect(out).toContain('Monitor all subagent outputs');
+    expect(out).toContain('rmplan review');
   });
 
   it('mentions progress section update guidance for plan file', () => {
@@ -16,6 +17,21 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain('No timestamps');
     expect(out).toContain('## Current Progress');
     expect(out).toContain('### Current State');
+  });
+
+  it('instructs review via rmplan review instead of reviewer agent', () => {
+    const out = wrapWithOrchestration('Context', '123', { batchMode: false });
+    expect(out).toContain('rmplan review 123 --print');
+    expect(out).toContain('15 minutes');
+    expect(out).not.toContain('rmplan-reviewer');
+  });
+
+  it('includes review executor override when provided', () => {
+    const out = wrapWithOrchestration('Context', '123', {
+      batchMode: false,
+      reviewExecutor: 'codex-cli',
+    });
+    expect(out).toContain('rmplan review 123 --print --executor codex-cli');
   });
 
   it('includes progress section guidance in non-batch mode as well', () => {

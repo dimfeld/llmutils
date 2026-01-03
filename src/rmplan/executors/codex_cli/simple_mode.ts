@@ -1,8 +1,9 @@
 import type { ExecutePlanInfo, ExecutorOutput } from '../types';
 import type { RmplanConfig } from '../../configSchema';
+import type { PlanSchema } from '../../planSchema';
 import { captureRepositoryState, getGitRoot } from '../../../common/git';
 import { log, warn } from '../../../logging';
-import { getImplementerPrompt, getVerifierAgentPrompt } from '../claude_code/agent_prompts';
+import { getImplementerPrompt } from '../claude_code/agent_prompts';
 import { readPlanFile } from '../../plans';
 import { detectPlanningWithoutImplementation, parseFailedReport } from '../failure_detection';
 import { loadAgentInstructionsFor } from './agent_helpers';
@@ -13,8 +14,13 @@ import {
   parseCompletedTasksFromImplementer,
   markTasksAsDone,
 } from './task_management';
-import { composeVerifierContext, getFixerPrompt } from './context_composition';
-import { parseReviewerVerdict } from './verdict_parser';
+import { getFixerPrompt } from './context_composition';
+import {
+  loadReviewHierarchy,
+  runExternalReviewForCodex,
+  type ReviewHierarchy,
+  type ReviewVerdict,
+} from './external_review';
 
 type AgentType = 'implementer' | 'verifier';
 
@@ -23,7 +29,8 @@ export async function executeSimpleMode(
   planInfo: ExecutePlanInfo,
   baseDir: string,
   model: string | undefined,
-  rmplanConfig: RmplanConfig
+  rmplanConfig: RmplanConfig,
+  reviewExecutor?: string
 ): Promise<void | ExecutorOutput> {
   const events: Array<{ type: AgentType; message: string }> = [];
 
@@ -53,8 +60,10 @@ export async function executeSimpleMode(
 
   let initiallyCompleted: Array<{ title: string }> = [];
   let initiallyPending: Array<{ title: string }> = [];
+  let planData: PlanSchema | undefined;
+  let reviewHierarchy: ReviewHierarchy = { parentChain: [], completedChildren: [] };
   if (planContextAvailable) {
-    const planData = await readPlanFile(planInfo.planFilePath);
+    planData = await readPlanFile(planInfo.planFilePath);
     ({ completed: initiallyCompleted, pending: initiallyPending } = categorizeTasks(planData));
 
     logTaskStatus(
@@ -63,9 +72,17 @@ export async function executeSimpleMode(
       initiallyPending,
       gitRoot
     );
+
+    try {
+      reviewHierarchy = await loadReviewHierarchy(planData, planInfo.planFilePath, rmplanConfig);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      warn(`Warning: Could not load review hierarchy context: ${message}`);
+    }
   }
 
   let hadFailure = false;
+  let finalReviewVerdict: ReviewVerdict | undefined;
 
   let implementerInstructions = await loadAgentInstructionsFor(
     'implementer',
@@ -207,175 +224,164 @@ export async function executeSimpleMode(
       }
     }
 
-    const testerInstructions = await loadAgentInstructionsFor('tester', gitRoot, rmplanConfig);
-    const reviewerInstructions = await loadAgentInstructionsFor('reviewer', gitRoot, rmplanConfig);
-    const verifierInstructions =
-      [testerInstructions, reviewerInstructions]
-        .map((section) => section?.trim())
-        .filter((section): section is string => Boolean(section && section.length > 0))
-        .join('\n\n') || undefined;
+    if (!planContextAvailable || !planData) {
+      warn('Skipping external review because plan context is unavailable.');
+      const aggregated = buildAggregatedOutput();
+      if (aggregated != null) return aggregated;
+      return;
+    }
 
-    const verifierPrompt = getVerifierAgentPrompt(
-      composeVerifierContext(
-        contextContent,
-        finalImplementerOutput,
+    const initiallyCompletedTitles = initiallyCompleted.map((t) => t.title);
+    const initiallyPendingTitles = initiallyPending.map((t) => t.title);
+
+    let reviewOutcome;
+    try {
+      log('Running external review step...');
+      reviewOutcome = await runExternalReviewForCodex({
+        planInfo,
+        gitRoot,
+        rmplanConfig,
+        model,
+        planData,
+        parentChain: reviewHierarchy.parentChain,
+        completedChildren: reviewHierarchy.completedChildren,
         newlyCompletedTitles,
-        initiallyCompleted.map((t) => t.title),
-        initiallyPending.map((t) => t.title)
-      ),
-      planContextAvailable ? planInfo.planId : undefined,
-      verifierInstructions,
-      model,
-      false, // includeTaskCompletionInstructions - we mark tasks ourselves
-      true, // includeVerdictInstructions - request a verdict from verifier
-      {
-        mode: 'update',
-        planFilePath: planContextAvailable ? planInfo.planFilePath : undefined,
-        useAtPrefix: false,
-      }
-    );
-
-    log('Running verifier step...');
-    const verifierOutput = await executeCodexStep(verifierPrompt.prompt, gitRoot, rmplanConfig);
-    events.push({ type: 'verifier', message: verifierOutput });
-    log('Verifier output captured.');
-
-    const parsed = parseFailedReport(verifierOutput);
-    if (parsed.failed) {
+        initiallyCompletedTitles,
+        initiallyPendingTitles,
+        implementerOutput: finalImplementerOutput,
+        executorSelection: reviewExecutor,
+      });
+    } catch (error) {
       hadFailure = true;
+      const message = error instanceof Error ? error.message : String(error);
       const aggregated = buildAggregatedOutput();
       return {
-        ...(aggregated ?? { content: verifierOutput }),
+        ...(aggregated ?? { content: message }),
         success: false,
-        failureDetails: parsed.details
-          ? { ...parsed.details, sourceAgent: 'verifier' }
-          : { requirements: '', problems: parsed.summary || 'FAILED', sourceAgent: 'verifier' },
+        failureDetails: {
+          requirements: '',
+          problems: message,
+          sourceAgent: 'verifier',
+        },
       };
     }
 
-    // Parse and log the verifier verdict
-    const verdict = parseReviewerVerdict(verifierOutput);
-    if (verdict === 'ACCEPTABLE') {
+    events.push({ type: 'verifier', message: reviewOutcome.formattedOutput });
+    log('Verifier output captured.');
+
+    if (reviewOutcome.verdict === 'ACCEPTABLE') {
+      finalReviewVerdict = 'ACCEPTABLE';
       log('Verification verdict: ACCEPTABLE');
       const aggregated = buildAggregatedOutput();
       if (aggregated != null) return aggregated;
       return;
-    } else {
-      if (verdict === 'NEEDS_FIXES') {
-        log('Verification verdict: NEEDS_FIXES');
-      } else {
-        log(`Failed to parse verification verdict, treating as 'NEEDS_FIXES'`);
-      }
-
-      let fixInstructions = verifierOutput;
-
-      // Implement fix-and-review loop (up to 5 iterations)
-      const maxFixIterations = 5;
-      let lastFixerOutput = '';
-      let finalVerifierOutput = verifierOutput;
-      for (let iter = 1; iter <= maxFixIterations; iter++) {
-        log(`Starting fix iteration ${iter}/${maxFixIterations}...`);
-
-        const fixerPrompt = getFixerPrompt({
-          planPath: planInfo.planFilePath,
-          planId: planInfo.planId,
-          implementerOutput: finalImplementerOutput,
-          testerOutput: '', // Simple mode has no separate tester output
-          completedTaskTitles: initiallyCompleted.map((t) => t.title),
-          fixInstructions,
-        });
-
-        const fixerOutput = await executeCodexStep(fixerPrompt, gitRoot, rmplanConfig);
-        lastFixerOutput = fixerOutput;
-        events.push({ type: 'verifier', message: fixerOutput });
-        log('Fixer output captured. Re-running verifier...');
-
-        // Failure detection: fixer
-        {
-          const parsed = parseFailedReport(fixerOutput);
-          if (parsed.failed) {
-            hadFailure = true;
-            const aggregated = buildAggregatedOutput();
-            return {
-              ...(aggregated ?? { content: fixerOutput }),
-              success: false,
-              failureDetails: parsed.details
-                ? { ...parsed.details, sourceAgent: 'fixer' }
-                : {
-                    requirements: '',
-                    problems: parsed.summary || 'FAILED',
-                    sourceAgent: 'fixer',
-                  },
-            };
-          }
-        }
-
-        // Re-run verifier with updated context including fixer output
-        const rerunVerifierContext = composeVerifierContext(
-          contextContent,
-          finalImplementerOutput,
-          newlyCompletedTitles,
-          initiallyCompleted.map((t) => t.title),
-          initiallyPending.map((t) => t.title)
-        );
-
-        const rerunVerifierPrompt = getVerifierAgentPrompt(
-          `${rerunVerifierContext}\n\n### Previous Review Issues\n\nThe following issues were identified in the initial verification:\n\n${fixInstructions}\n\n### Implementer's Response to Review\n\nThe implementer attempted to address these issues with the following changes:\n\n${fixerOutput}`,
-          planContextAvailable ? planInfo.planId : undefined,
-          verifierInstructions,
-          model,
-          false, // includeTaskCompletionInstructions - we mark tasks ourselves
-          true, // includeVerdictInstructions - request a verdict from verifier
-          {
-            mode: 'update',
-            planFilePath: planContextAvailable ? planInfo.planFilePath : undefined,
-            useAtPrefix: false,
-          }
-        );
-
-        const rerunVerifierOutput = await executeCodexStep(
-          rerunVerifierPrompt.prompt,
-          gitRoot,
-          rmplanConfig
-        );
-        finalVerifierOutput = rerunVerifierOutput;
-        events.push({ type: 'verifier', message: rerunVerifierOutput });
-
-        // Parse verdict from the latest verifier output
-        const newVerdict = parseReviewerVerdict(rerunVerifierOutput);
-
-        const newAnalysis = {
-          needs_fixes: newVerdict !== 'ACCEPTABLE',
-          fix_instructions: rerunVerifierOutput,
-        };
-
-        if (!newAnalysis.needs_fixes) {
-          log(`Verification verdict after fixes (iteration ${iter}): ACCEPTABLE`);
-          const aggregated = buildAggregatedOutput();
-          if (aggregated != null) return aggregated;
-          return;
-        }
-
-        log(`Verification verdict after fixes (iteration ${iter}): NEEDS_FIXES`);
-        if (newAnalysis.fix_instructions) {
-          log(`Fix instructions: ${newAnalysis.fix_instructions}`);
-        }
-
-        // Give it the new fix instructions and continue
-        fixInstructions = newAnalysis.fix_instructions || rerunVerifierOutput;
-        continue;
-      }
-
-      warn(
-        'Maximum fix iterations reached (5) and verifier still reports issues. Exiting with warnings.'
-      );
-      // Even if still needs fixes, provide the latest verifier output when capturing
-      const aggregated = buildAggregatedOutput();
-      if (aggregated != null) return aggregated;
     }
+
+    finalReviewVerdict = 'NEEDS_FIXES';
+    log('Verification verdict: NEEDS_FIXES');
+    let fixInstructions = reviewOutcome.fixInstructions;
+
+    // Implement fix-and-review loop (up to 5 iterations)
+    const maxFixIterations = 5;
+    for (let iter = 1; iter <= maxFixIterations; iter++) {
+      log(`Starting fix iteration ${iter}/${maxFixIterations}...`);
+
+      const fixerPrompt = getFixerPrompt({
+        planPath: planInfo.planFilePath,
+        planId: planInfo.planId,
+        implementerOutput: finalImplementerOutput,
+        testerOutput: '', // Simple mode has no separate tester output
+        completedTaskTitles: initiallyCompletedTitles,
+        fixInstructions,
+      });
+
+      const fixerOutput = await executeCodexStep(fixerPrompt, gitRoot, rmplanConfig);
+      events.push({ type: 'verifier', message: fixerOutput });
+      log('Fixer output captured. Re-running verifier...');
+
+      // Failure detection: fixer
+      {
+        const parsed = parseFailedReport(fixerOutput);
+        if (parsed.failed) {
+          hadFailure = true;
+          const aggregated = buildAggregatedOutput();
+          return {
+            ...(aggregated ?? { content: fixerOutput }),
+            success: false,
+            failureDetails: parsed.details
+              ? { ...parsed.details, sourceAgent: 'fixer' }
+              : {
+                  requirements: '',
+                  problems: parsed.summary || 'FAILED',
+                  sourceAgent: 'fixer',
+                },
+          };
+        }
+      }
+
+      try {
+        reviewOutcome = await runExternalReviewForCodex({
+          planInfo,
+          gitRoot,
+          rmplanConfig,
+          model,
+          planData,
+          parentChain: reviewHierarchy.parentChain,
+          completedChildren: reviewHierarchy.completedChildren,
+          newlyCompletedTitles,
+          initiallyCompletedTitles,
+          initiallyPendingTitles,
+          implementerOutput: finalImplementerOutput,
+          executorSelection: reviewExecutor,
+        });
+      } catch (error) {
+        hadFailure = true;
+        const message = error instanceof Error ? error.message : String(error);
+        const aggregated = buildAggregatedOutput();
+        return {
+          ...(aggregated ?? { content: message }),
+          success: false,
+          failureDetails: {
+            requirements: '',
+            problems: message,
+            sourceAgent: 'verifier',
+          },
+        };
+      }
+
+      events.push({ type: 'verifier', message: reviewOutcome.formattedOutput });
+
+      if (reviewOutcome.verdict === 'ACCEPTABLE') {
+        finalReviewVerdict = 'ACCEPTABLE';
+        log(`Verification verdict after fixes (iteration ${iter}): ACCEPTABLE`);
+        const aggregated = buildAggregatedOutput();
+        if (aggregated != null) return aggregated;
+        return;
+      }
+
+      finalReviewVerdict = 'NEEDS_FIXES';
+      log(`Verification verdict after fixes (iteration ${iter}): NEEDS_FIXES`);
+      fixInstructions = reviewOutcome.fixInstructions;
+      continue;
+    }
+
+    warn(
+      'Maximum fix iterations reached (5) and verifier still reports issues. Exiting with warnings.'
+    );
+    finalReviewVerdict = 'NEEDS_FIXES';
+    // Even if still needs fixes, provide the latest verifier output when capturing
+    const aggregated = buildAggregatedOutput();
+    if (aggregated != null) return aggregated;
   } finally {
-    if (!hadFailure && planContextAvailable && newlyCompletedTitles.length > 0) {
+    if (
+      !hadFailure &&
+      planContextAvailable &&
+      newlyCompletedTitles.length > 0 &&
+      finalReviewVerdict === 'ACCEPTABLE'
+    ) {
       await markTasksAsDone(planInfo.planFilePath, newlyCompletedTitles, gitRoot, rmplanConfig);
+    } else if (!hadFailure && finalReviewVerdict === 'NEEDS_FIXES') {
+      warn('Skipping automatic task completion marking due to unresolved review issues.');
     } else if (hadFailure) {
       warn('Skipping automatic task completion marking due to executor failure.');
     }

@@ -71,7 +71,6 @@ export async function handleCompactCommand(
       config.compaction?.defaultModel ??
       (config as any)?.compaction?.defaultModel ??
       undefined,
-    interactive: false,
   };
 
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);

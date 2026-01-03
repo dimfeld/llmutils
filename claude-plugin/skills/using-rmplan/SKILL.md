@@ -14,4 +14,3 @@ Plans are markdown files with metadata (title, goal, priority, status, dependenc
 - If you need to view plans and mark tasks done, see `references/viewing-and-completing.md`
 - For docs on `rmplan tools` commands, or when you are generating details for a plan and need to add/edit tasks: `references/generating-plans.md`
 - Full CLI Reference to answer user questions about rmplan: `references/cli-commands.md`
-
