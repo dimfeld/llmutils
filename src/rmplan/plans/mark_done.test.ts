@@ -254,4 +254,102 @@ describe('setTaskDone', () => {
       setTaskDone(planPath, { taskIdentifier: 'Nonexistent Task' }, tempDir, {})
     ).rejects.toThrow();
   });
+
+  test('marks task as done by unique prefix', async () => {
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Implement feature A',
+          description: 'First task',
+          done: false,
+        },
+        {
+          title: 'Write tests for feature A',
+          description: 'Second task',
+          done: false,
+        },
+      ],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan));
+
+    // "Implement" only matches one task
+    const result = await setTaskDone(planPath, { taskIdentifier: 'Implement' }, tempDir, {});
+
+    expect(result.planComplete).toBe(false);
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.tasks[0].done).toBe(true);
+    expect(updatedPlan.tasks[1].done).toBe(false);
+  });
+
+  test('returns error when prefix matches multiple tasks', async () => {
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Task: implement feature',
+          description: 'First task',
+          done: false,
+        },
+        {
+          title: 'Task: write tests',
+          description: 'Second task',
+          done: false,
+        },
+      ],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan));
+
+    // "Task" matches both tasks
+    await expect(
+      setTaskDone(planPath, { taskIdentifier: 'Task' }, tempDir, {})
+    ).rejects.toThrow(/Multiple tasks match prefix/);
+  });
+
+  test('prefers exact match over prefix match', async () => {
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Task',
+          description: 'First task',
+          done: false,
+        },
+        {
+          title: 'Task extended',
+          description: 'Second task',
+          done: false,
+        },
+      ],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan));
+
+    // "Task" exactly matches the first task
+    const result = await setTaskDone(planPath, { taskIdentifier: 'Task' }, tempDir, {});
+
+    expect(result.planComplete).toBe(false);
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.tasks[0].done).toBe(true);
+    expect(updatedPlan.tasks[1].done).toBe(false);
+  });
 });

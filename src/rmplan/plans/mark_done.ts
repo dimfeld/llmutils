@@ -338,10 +338,31 @@ export async function setTaskDone(
   let task: PlanSchema['tasks'][0] | undefined;
 
   if (typeof options.taskIdentifier === 'string') {
-    // Find by title (exact match)
+    // Find by title (exact match first)
     taskIndex = planData.tasks.findIndex((t) => t.title === options.taskIdentifier);
+
+    // If no exact match, try prefix matching
     if (taskIndex === -1) {
-      throw new Error(`Task with title "${options.taskIdentifier}" not found in plan`);
+      const prefixMatches: { index: number; title: string }[] = [];
+      for (let i = 0; i < planData.tasks.length; i++) {
+        if (planData.tasks[i].title.startsWith(options.taskIdentifier)) {
+          prefixMatches.push({ index: i, title: planData.tasks[i].title });
+        }
+      }
+
+      if (prefixMatches.length === 1) {
+        // Exactly one prefix match, use it
+        taskIndex = prefixMatches[0].index;
+      } else if (prefixMatches.length > 1) {
+        // Multiple prefix matches, error with list
+        const matchList = prefixMatches.map((m) => `  - "${m.title}"`).join('\n');
+        throw new Error(
+          `Multiple tasks match prefix "${options.taskIdentifier}":\n${matchList}\nPlease provide a more specific title.`
+        );
+      } else {
+        // No matches at all
+        throw new Error(`Task with title "${options.taskIdentifier}" not found in plan`);
+      }
     }
     task = planData.tasks[taskIndex];
   } else {
