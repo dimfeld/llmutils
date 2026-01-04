@@ -967,6 +967,10 @@ The plugin provides:
 - A skill that loads when you mention "rmplan" or "generate plan"
 - Documentation for MCP tools and CLI commands
 
+**Sandbox mode note:**
+
+If using Claude Code with sandbox mode enabled, you should add `rmplan:*`, or at least `rmplan review:*` to the sandbox `excludedCommands` list in your settings to allow the review command to run without permission prompts.
+
 ---
 
 ## Workspace Management
