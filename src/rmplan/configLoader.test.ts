@@ -355,6 +355,90 @@ defaultExecutor: ${DEFAULT_EXECUTOR}
       expect(config.postApplyCommands?.[0].title).toBe('Main Command');
     });
 
+    test('loadEffectiveConfig merges global config before repository config', async () => {
+      const globalConfigPath = path.join(fakeHomeDir, '.config', 'rmplan', 'config.yml');
+      await fs.mkdir(path.dirname(globalConfigPath), { recursive: true });
+      await fs.writeFile(
+        globalConfigPath,
+        yaml.stringify({
+          defaultExecutor: 'copy-only',
+          models: { execution: 'global-exec' },
+          postApplyCommands: [
+            {
+              title: 'Global Command',
+              command: 'echo "global"',
+            },
+          ],
+        }),
+        'utf-8'
+      );
+
+      const mainConfigPath = path.join(configDir, 'rmplan.yml');
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          defaultExecutor: 'direct-call',
+          models: { convert_yaml: 'repo-convert' },
+          postApplyCommands: [
+            {
+              title: 'Repo Command',
+              command: 'echo "repo"',
+            },
+          ],
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.defaultExecutor).toBe('direct-call');
+      expect(config.models?.execution).toBe('global-exec');
+      expect(config.models?.convert_yaml).toBe('repo-convert');
+      expect(config.postApplyCommands?.map((command) => command.title)).toEqual([
+        'Global Command',
+        'Repo Command',
+      ]);
+    });
+
+    test('loadEffectiveConfig applies local overrides over global and repository configs', async () => {
+      const globalConfigPath = path.join(fakeHomeDir, '.config', 'rmplan', 'config.yml');
+      await fs.mkdir(path.dirname(globalConfigPath), { recursive: true });
+      await fs.writeFile(
+        globalConfigPath,
+        yaml.stringify({
+          defaultExecutor: 'copy-only',
+          models: { execution: 'global-exec' },
+        }),
+        'utf-8'
+      );
+
+      const mainConfigPath = path.join(configDir, 'rmplan.yml');
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          defaultExecutor: 'direct-call',
+          models: { convert_yaml: 'repo-convert' },
+        }),
+        'utf-8'
+      );
+
+      const localConfigPath = path.join(configDir, 'rmplan.local.yml');
+      await fs.writeFile(
+        localConfigPath,
+        yaml.stringify({
+          defaultExecutor: 'copy-paste',
+          models: { execution: 'local-exec' },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.defaultExecutor).toBe('copy-paste');
+      expect(config.models?.execution).toBe('local-exec');
+      expect(config.models?.convert_yaml).toBe('repo-convert');
+    });
+
     test('loadEffectiveConfig uses main config when local config has validation errors', async () => {
       const mainConfigPath = path.join(configDir, 'rmplan.yml');
       const localConfigPath = path.join(configDir, 'rmplan.local.yml');
@@ -665,8 +749,63 @@ paths:
 
       const config = await loadEffectiveConfig();
 
-      // Undefined so that local and global configs can properly override
-      expect(config.issueTracker).toBeUndefined();
+      expect(config.issueTracker).toBe('github');
+    });
+
+    test('loadEffectiveConfig keeps defaults when repository config is partial', async () => {
+      const mainConfigPath = path.join(configDir, 'rmplan.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        `
+paths:
+  tasks: "./tasks"
+`
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.issueTracker).toBe('github');
+      expect(config.defaultExecutor).toBe(DEFAULT_EXECUTOR);
+      expect(config.prCreation?.draft).toBe(true);
+      expect(config.assignments?.staleTimeout).toBe(7);
+    });
+
+    test('loadEffectiveConfig keeps defaults with global config and local overrides', async () => {
+      const globalConfigPath = path.join(fakeHomeDir, '.config', 'rmplan', 'config.yml');
+      await fs.mkdir(path.dirname(globalConfigPath), { recursive: true });
+      await fs.writeFile(
+        globalConfigPath,
+        yaml.stringify({
+          issueTracker: 'linear',
+        }),
+        'utf-8'
+      );
+
+      const mainConfigPath = path.join(configDir, 'rmplan.yml');
+      await fs.writeFile(
+        mainConfigPath,
+        `
+paths:
+  tasks: "./tasks"
+`
+      );
+
+      const localConfigPath = path.join(configDir, 'rmplan.local.yml');
+      await fs.writeFile(
+        localConfigPath,
+        yaml.stringify({
+          prCreation: { draft: false },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.issueTracker).toBe('linear');
+      expect(config.defaultExecutor).toBe(DEFAULT_EXECUTOR);
+      expect(config.prCreation?.draft).toBe(false);
+      expect(config.assignments?.staleTimeout).toBe(7);
     });
   });
 });

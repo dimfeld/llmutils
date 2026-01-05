@@ -33,6 +33,22 @@ export const postApplyCommandSchema = z.object({
 });
 
 /**
+ * Schema for notification command configuration.
+ */
+export const notificationCommandSchema = z
+  .object({
+    /** The command string to execute. */
+    command: z.string(),
+    /** Optional working directory for the command. Defaults to the repository root. */
+    workingDirectory: z.string().optional(),
+    /** Optional environment variables for the command. */
+    env: z.record(z.string(), z.string()).optional(),
+    /** Whether notifications are enabled. */
+    enabled: z.boolean().optional(),
+  })
+  .strict();
+
+/**
  * Schema for workspace creation configuration.
  */
 export const workspaceCreationConfigSchema = z.object({
@@ -89,6 +105,10 @@ export const rmplanConfigSchema = z
       .describe('Issue tracking service to use for import commands and issue-related operations'),
     /** An array of commands to run after changes are successfully applied by the agent. */
     postApplyCommands: z.array(postApplyCommandSchema).optional(),
+    /** Notification hook configuration for agent/review completion. */
+    notifications: notificationCommandSchema
+      .optional()
+      .describe('Configuration for notification hooks when agent/review commands finish'),
     paths: z
       .object({
         tasks: z.string().optional().describe('Path to directory containing task definitions'),

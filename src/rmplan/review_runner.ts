@@ -12,6 +12,7 @@ import {
   type ReviewOutput,
   type ReviewIssueOutput,
 } from './formatters/review_output_schema.js';
+import { log } from '../logging.js';
 
 export const REVIEW_EXECUTOR_NAMES = ['claude-code', 'codex-cli'] as const;
 export type ReviewExecutorName = (typeof REVIEW_EXECUTOR_NAMES)[number];
@@ -119,6 +120,8 @@ export async function runReview(options: ReviewRunOptions): Promise<ReviewRunRes
           captureOutput: 'result',
           executionMode: 'review',
         });
+
+        log(`${prepared.name} review finished`);
 
         const rawOutput = normalizeReviewOutput(executorOutput);
         executorOutputs[prepared.name] = rawOutput;

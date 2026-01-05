@@ -304,7 +304,10 @@ describe('rmplan tools CLI handlers', () => {
       ],
     };
     await writePlanFile(planFile, plan, { skipUpdatedAt: true });
-    const toolOutput = await updatePlanTasksTool(args as Parameters<typeof updatePlanTasksTool>[0], context);
+    const toolOutput = await updatePlanTasksTool(
+      args as Parameters<typeof updatePlanTasksTool>[0],
+      context
+    );
 
     expect(toolOutput.text).toContain('Successfully updated plan');
     expect(toolOutput.text).toContain('1 task');

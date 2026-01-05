@@ -1,3 +1,4 @@
+import * as os from 'node:os';
 import * as path from 'node:path';
 import * as yaml from 'js-yaml';
 import { quiet } from '../common/process.js';
@@ -48,6 +49,7 @@ function mergeConfigs(mainConfig: RmplanConfig, localConfig: RmplanConfig): Rmpl
   mergeConfigKey('autoexamples');
   mergeConfigKey('modelApiKeys');
   mergeConfigKey('models');
+  mergeConfigKey('notifications');
   mergeConfigKey('paths');
   mergeConfigKey('postApplyCommands');
   mergeConfigKey('planning');
@@ -106,6 +108,21 @@ export async function findConfigPath(overridePath?: string): Promise<string | nu
     // Maintain legacy behavior when override path is missing.
     throw error;
   }
+}
+
+/**
+ * Finds the path to the global rmplan configuration file in ~/.config/rmplan/config.yml.
+ */
+export async function findGlobalConfigPath(): Promise<string | null> {
+  const configPath = path.join(os.homedir(), '.config', 'rmplan', 'config.yml');
+  const fileExists = await Bun.file(configPath).exists();
+
+  if (fileExists) {
+    debugLog(`Found global configuration at: ${configPath}`);
+    return configPath;
+  }
+
+  return null;
 }
 
 /**
@@ -231,33 +248,52 @@ export async function loadEffectiveConfig(
   const configPath = resolution.configPath;
 
   try {
-    const config = await loadConfig(configPath);
+    const globalConfigPath = await findGlobalConfigPath();
+    const globalConfig = globalConfigPath ? await loadConfig(globalConfigPath) : undefined;
+    const configExists = configPath ? await Bun.file(configPath).exists() : false;
+    const baseConfig = getDefaultConfig();
+    const config = configExists ? await loadConfig(configPath) : undefined;
     const localConfigPath = await findLocalConfigPath(configPath);
     let effectiveConfig: RmplanConfig;
+
+    if (globalConfig) {
+      effectiveConfig = mergeConfigs(baseConfig, globalConfig);
+    } else {
+      effectiveConfig = baseConfig;
+    }
+
+    if (config) {
+      effectiveConfig = mergeConfigs(effectiveConfig, config);
+    }
 
     if (localConfigPath) {
       try {
         const localConfig = await loadConfig(localConfigPath);
-        effectiveConfig = mergeConfigs(config, localConfig);
+        effectiveConfig = mergeConfigs(effectiveConfig, localConfig);
 
-        debugLog(
-          'Loaded configuration files',
-          configPath ? `Main: ${configPath}` : 'Default config',
-          `\nLocal override: ${localConfigPath}`
-        );
+        const configSources = [
+          configPath && config ? `Main: ${configPath}` : 'Default config',
+          globalConfigPath ? `\nGlobal: ${globalConfigPath}` : null,
+          `\nLocal override: ${localConfigPath}`,
+        ].filter((entry): entry is string => entry !== null);
+
+        debugLog('Loaded configuration files', ...configSources);
       } catch (localErr: any) {
         warn(`Error loading local override configuration: ${localErr.message}`);
         warn('Continuing with main configuration only');
 
-        if (!quiet && configPath) {
+        if (!quiet && configPath && config) {
           log('Loaded configuration file', configPath);
+        } else if (!quiet && globalConfigPath) {
+          log('Loaded configuration file', globalConfigPath);
         }
-
-        effectiveConfig = config;
       }
     } else {
-      debugLog('Loaded configuration file', configPath);
-      effectiveConfig = config;
+      if (configPath && config) {
+        debugLog('Loaded configuration file', configPath);
+      } else if (globalConfigPath) {
+        debugLog('Loaded configuration file', globalConfigPath);
+      }
     }
 
     const configWithMetadata: RmplanConfig = {

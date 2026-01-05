@@ -49,6 +49,34 @@
         ]
       }
     },
+    "notifications": {
+      "description": "Configuration for notification hooks when agent/review commands finish",
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "workingDirectory": {
+          "type": "string"
+        },
+        "env": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "additionalProperties": false
+    },
     "paths": {
       "type": "object",
       "properties": {
