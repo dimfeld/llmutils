@@ -39,6 +39,10 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     throw new Error('Cannot use --assigned and --unassigned together.');
   }
 
+  if (options.here && (options.assigned || options.unassigned)) {
+    throw new Error('Cannot use --here with --assigned or --unassigned.');
+  }
+
   // Determine directory to search
   let searchDir = options.dir || (await resolveTasksDir(config));
 
@@ -148,6 +152,8 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     planArray = planArray.filter((plan) => plan.isAssigned);
   } else if (options.unassigned) {
     planArray = planArray.filter((plan) => !plan.isAssigned);
+  } else if (options.here) {
+    planArray = planArray.filter((plan) => plan.isAssignedHere);
   }
 
   const desiredTags = normalizeTags(options.tag);

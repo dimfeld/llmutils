@@ -58,6 +58,7 @@ interface ReadyCommandOptions {
   all?: boolean;
   unassigned?: boolean;
   user?: string;
+  here?: boolean;
   hasTasks?: boolean;
   tag?: string[];
   epic?: number | string;
@@ -424,6 +425,10 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
     throw new Error('Cannot combine --unassigned with --user filter.');
   }
 
+  if (options.here && (options.all || options.unassigned || normalizedUserFilter)) {
+    throw new Error('Cannot combine --here with --all, --unassigned, or --user.');
+  }
+
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const tasksDir = await resolveTasksDir(config);
@@ -505,7 +510,9 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
     });
   }
 
-  if (options.unassigned) {
+  if (options.here) {
+    readyPlans = readyPlans.filter((plan) => plan.isAssignedHere);
+  } else if (options.unassigned) {
     readyPlans = readyPlans.filter((plan) => plan.isUnassigned);
   } else if (!options.all && !normalizedUserFilter) {
     readyPlans = readyPlans.filter((plan) => plan.isUnassigned || plan.isAssignedHere);

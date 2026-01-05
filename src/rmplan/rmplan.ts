@@ -583,6 +583,7 @@ program
   .option('--mine', 'Show only plans assigned to current user')
   .option('--assigned', 'Show only plans that are claimed in shared assignments')
   .option('--unassigned', 'Show only plans that are not claimed in shared assignments')
+  .option('--here', 'Show only plans assigned to the current workspace')
   .option('--tag <tags...>', 'Filter by tag (repeatable)')
   .option(
     '--epic <id>',
@@ -620,6 +621,7 @@ program
   .option('--all', 'Show ready plans regardless of assignment ownership')
   .option('--unassigned', 'Show only ready plans that are not currently claimed')
   .option('--user <username>', 'Show ready plans claimed by the specified user')
+  .option('--here', 'Show only ready plans assigned to the current workspace')
   .option('--has-tasks', 'Show only ready plans that have tasks defined')
   .option('--tag <tags...>', 'Filter ready plans by tag (repeatable)')
   .option(
