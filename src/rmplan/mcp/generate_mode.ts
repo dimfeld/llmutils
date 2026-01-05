@@ -496,27 +496,6 @@ export function registerGenerateMode(
     },
   });
 
-  server.addPrompt({
-    name: 'generate-plan-simple',
-    description:
-      'Generate tasks for a plan without research phase. Goes directly to task generation using the Claude Code generation prompt and update-plan-tasks tool.',
-    arguments: [
-      {
-        name: 'plan',
-        description: 'Plan ID or file path to generate tasks for',
-        required: false,
-      },
-      {
-        name: 'allowMultiplePlans',
-        description:
-          'Set to true to allow the agent to create multiple independent plans if the scope is large enough to benefit from breaking it down into phases or parts that can be merged independently.',
-        required: false,
-      },
-    ],
-    load: async (args) =>
-      loadGeneratePrompt({ plan: args.plan, allowMultiplePlans: args.allowMultiplePlans }, context),
-  });
-
   if (registerTools) {
     server.addTool({
       name: 'update-plan-tasks',

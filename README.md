@@ -735,23 +735,17 @@ Loads a plan and guides through:
 
 Research findings are automatically appended to the plan's `## Research` section.
 
-**2. `generate-plan-simple`** - Skip research, generate tasks directly
+For a plan with "simple: true", the research phase is skipped. Agents will still do some research on their own.
 
-Use when:
-
-- Making simple changes
-- Research already exists
-- Time is critical
-
-**3. `plan-questions`** - Collaborative refinement
+**4. `plan-questions`** - Collaborative refinement
 
 Ask focused questions to improve plan quality before generation.
 
-**4. `load-plan`** - Display plan and wait for guidance
+**5. `load-plan`** - Display plan and wait for guidance
 
 Shows plan details and waits for human instructions.
 
-**5. `compact-plan`** - Summarize completed plans
+**6. `compact-plan`** - Summarize completed plans
 
 For plans with status `done`, `cancelled`, or `deferred`:
 
