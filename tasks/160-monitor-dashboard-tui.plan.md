@@ -32,3 +32,5 @@ We should also have some way to show when a session is waiting for input. I don'
 We can potentially do that with a named socket where the TUI can send a message on the named socket for a particular session and get back the last timestamp of the output. This allows us to do it without needing to continually track when the last output actually was or write it out to the database or file all the time. 
 
 Can we use wezterm commands to start a new tab in a directory for a workspace?
+
+Allow spawning tasks in the background, probably using tmux.
