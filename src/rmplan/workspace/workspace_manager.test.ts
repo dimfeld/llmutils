@@ -1200,7 +1200,7 @@ describe('createWorkspace', () => {
     expect(copiedJjRepo).toBe('jj store');
   });
 
-  test('createWorkspace copies local config files when present', async () => {
+  test('createWorkspace symlinks local config files when present', async () => {
     const taskId = 'task-cp-local-config';
     const sourceDirectory = path.join(testTempDir, 'source');
     const cloneLocation = path.join(testTempDir, 'clones');
@@ -1250,18 +1250,32 @@ describe('createWorkspace', () => {
 
     expect(result).not.toBeNull();
 
-    // Verify local config files were copied
-    const copiedRmplanLocal = await fs.readFile(
-      path.join(targetClonePath, '.rmfilter', 'config', 'rmplan.local.yml'),
-      'utf-8'
-    );
-    expect(copiedRmplanLocal).toBe('local: true');
+    // Verify local config files are symlinks pointing to the source files
+    const rmplanLocalPath = path.join(targetClonePath, '.rmfilter', 'config', 'rmplan.local.yml');
+    const claudeSettingsPath = path.join(targetClonePath, '.claude', 'settings.local.json');
 
-    const copiedClaudeSettings = await fs.readFile(
-      path.join(targetClonePath, '.claude', 'settings.local.json'),
-      'utf-8'
+    // Check that they are symlinks
+    const rmplanLocalStats = await fs.lstat(rmplanLocalPath);
+    expect(rmplanLocalStats.isSymbolicLink()).toBe(true);
+
+    const claudeSettingsStats = await fs.lstat(claudeSettingsPath);
+    expect(claudeSettingsStats.isSymbolicLink()).toBe(true);
+
+    // Verify symlinks point to correct source paths
+    const rmplanLocalTarget = await fs.readlink(rmplanLocalPath);
+    expect(rmplanLocalTarget).toBe(
+      path.join(sourceDirectory, '.rmfilter', 'config', 'rmplan.local.yml')
     );
-    expect(copiedClaudeSettings).toBe('{"key": "value"}');
+
+    const claudeSettingsTarget = await fs.readlink(claudeSettingsPath);
+    expect(claudeSettingsTarget).toBe(path.join(sourceDirectory, '.claude', 'settings.local.json'));
+
+    // Verify reading through symlinks returns correct content
+    const rmplanLocalContent = await fs.readFile(rmplanLocalPath, 'utf-8');
+    expect(rmplanLocalContent).toBe('local: true');
+
+    const claudeSettingsContent = await fs.readFile(claudeSettingsPath, 'utf-8');
+    expect(claudeSettingsContent).toBe('{"key": "value"}');
   });
 
   test('createWorkspace handles missing local config files gracefully', async () => {

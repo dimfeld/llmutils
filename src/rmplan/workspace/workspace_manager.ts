@@ -127,8 +127,6 @@ async function collectFilesToCopy(
 
   await includeDirectoryTreeIfExists(files, sourceDir, '.git');
   await includeDirectoryTreeIfExists(files, sourceDir, '.jj');
-  await includeDirectoryTreeIfExists(files, sourceDir, '.rmfilter/config/rmplan.local.yml');
-  await includeDirectoryTreeIfExists(files, sourceDir, '.claude/settings.local.json');
 
   return Array.from(files).sort();
 }
@@ -150,7 +148,7 @@ async function copyFilesToTarget(
   const errors: string[] = [];
 
   for (const relativePath of files) {
-    queue.add(async () => {
+    void queue.add(async () => {
       const sourcePath = path.join(sourceDir, relativePath);
       const destinationPath = path.join(targetPath, relativePath);
       const destinationDir = path.dirname(destinationPath);
@@ -195,6 +193,46 @@ async function copyFilesToTarget(
   }
 
   return true;
+}
+
+/**
+ * Local config files that should be symlinked instead of copied
+ */
+const LOCAL_CONFIG_FILES = ['.rmfilter/config/rmplan.local.yml', '.claude/settings.local.json'];
+
+/**
+ * Create symlinks for local config files from source to target directory.
+ * Only creates symlinks for files that exist in the source directory.
+ */
+async function symlinkLocalConfigs(sourceDir: string, targetDir: string): Promise<void> {
+  for (const relativePath of LOCAL_CONFIG_FILES) {
+    const sourcePath = path.join(sourceDir, relativePath);
+    const targetPath = path.join(targetDir, relativePath);
+
+    // Check if source file exists
+    try {
+      await fs.lstat(sourcePath);
+    } catch {
+      // Source file doesn't exist, skip silently
+      continue;
+    }
+
+    // Ensure parent directory exists in target
+    const targetParentDir = path.dirname(targetPath);
+    try {
+      await fs.mkdir(targetParentDir, { recursive: true });
+    } catch (error) {
+      log(`Failed to create directory for symlink ${relativePath}: ${String(error)}`);
+      continue;
+    }
+
+    // Create symlink pointing to absolute source path
+    try {
+      await fs.symlink(sourcePath, targetPath);
+    } catch (error) {
+      log(`Failed to create symlink for ${relativePath}: ${String(error)}`);
+    }
+  }
 }
 
 async function cloneUsingFileList(
@@ -278,6 +316,10 @@ async function cloneWithGit(
       log(`Failed to clone repository: ${stderr}`);
       return false;
     }
+
+    // Create symlinks for local config files from the main repo
+    await symlinkLocalConfigs(mainRepoRoot, targetPath);
+
     return true;
   } catch (error) {
     log(`Error cloning repository: ${String(error)}`);
@@ -308,6 +350,9 @@ async function cloneWithCp(
     log(`Error copying directory: ${String(error)}`);
     return false;
   }
+
+  // Create symlinks for local config files
+  await symlinkLocalConfigs(sourceDir, targetPath);
 
   const { exitCode: gitInitCode, stderr: gitInitStderr } = await spawnAndLogOutput(
     ['git', 'init'],
@@ -355,6 +400,9 @@ async function cloneWithMacCow(
     log('Falling back to regular copy method');
     return await cloneWithCp(sourceDir, targetPath, extraGlobs);
   }
+
+  // Create symlinks for local config files
+  await symlinkLocalConfigs(sourceDir, targetPath);
 
   const { exitCode: gitInitCode, stderr: gitInitStderr } = await spawnAndLogOutput(
     ['git', 'init'],
@@ -513,7 +561,7 @@ export async function createWorkspace(
       }
     }
   } else {
-    log(`Unknown clone method: ${cloneMethod}`);
+    log(`Unknown clone method: ${cloneMethod as string}`);
     return null;
   }
 
