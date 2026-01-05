@@ -2,11 +2,19 @@ import { z } from 'zod/v4';
 import { prioritySchema } from '../planSchema.js';
 
 // Simplified task schema for tool parameters
-const taskSchema = z.object({
-  title: z.string().describe('Short title for the task'),
-  description: z.string().describe('Detailed description of what needs to be done'),
-  done: z.boolean().optional().describe('Whether this task is completed (default: false)'),
-});
+// Accepts either 'description' or 'detail' for backwards compatibility
+const taskSchema = z
+  .object({
+    title: z.string().describe('Short title for the task'),
+    description: z.string().optional().describe('Detailed description of what needs to be done'),
+    // Coding agents often try to use detail instead of description. Eventually I might switch over but
+    // for now we just allow it to pass either one here.
+    detail: z.string().optional().describe('Alias for description'),
+    done: z.boolean().optional().describe('Whether this task is completed (default: false)'),
+  })
+  .refine((task) => task.description !== undefined || task.detail !== undefined, {
+    message: 'Either description or detail must be provided',
+  });
 
 export const addPlanTaskParameters = z
   .object({

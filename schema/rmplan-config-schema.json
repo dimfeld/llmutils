@@ -431,9 +431,6 @@
             "mcpConfigFile": {
               "type": "string"
             },
-            "interactive": {
-              "type": "boolean"
-            },
             "permissionsMcp": {
               "description": "Configuration for the permissions MCP server",
               "type": "object",
