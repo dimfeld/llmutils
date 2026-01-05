@@ -181,6 +181,8 @@ If any agent emitted a line beginning with 'FAILED:', do not run any of the foll
 When updating tasks after successful implementation, testing, and review, use the Bash command 'rmplan set-task-done ${planId} --title "<taskTitle>"'.
 To set Task 2 done for plan 165, use 'rmplan set-task-done 165 --title "do it"'. To set multiple tasks done, run the command multiple times for each task.
 
+After marking tasks done, commit your changes with a descriptive message about what tasks were completed. Do not include attribution comments in the commit message.
+
 `;
 }
 
