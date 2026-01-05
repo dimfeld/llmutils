@@ -816,7 +816,7 @@ export async function getNewPlanFilesOnBranch(
   tasksDir: string
 ): Promise<string[]> {
   const trunkBranch = await getTrunkBranch(gitRoot);
-  const isJj = await getUsingJj();
+  const isJj = await getUsingJj(gitRoot);
 
   let newFiles: string[] = [];
 
@@ -875,7 +875,7 @@ export async function getModifiedPlanFilesOnBranch(
   tasksDir: string
 ): Promise<string[]> {
   const trunkBranch = await getTrunkBranch(gitRoot);
-  const isJj = await getUsingJj();
+  const isJj = await getUsingJj(gitRoot);
 
   let modifiedFiles: string[] = [];
 

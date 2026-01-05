@@ -304,7 +304,7 @@ export async function commitAll(message: string, cwd?: string): Promise<number> 
     return 0;
   }
 
-  const usingJj = await getUsingJj();
+  const usingJj = await getUsingJj(cwd);
 
   if (usingJj) {
     return await logSpawn(['jj', 'commit', '-m', message], {

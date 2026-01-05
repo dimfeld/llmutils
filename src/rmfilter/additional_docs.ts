@@ -452,7 +452,7 @@ export async function getDiffTag(
 
   let diff = '';
   let changedFiles: string[] = [];
-  if (await getUsingJj()) {
+  if (await getUsingJj(gitRoot)) {
     const exclude = [...excludeFiles.map((f) => `~file:${f}`), '~glob:**/*_snapshot.json'].join(
       '&'
     );

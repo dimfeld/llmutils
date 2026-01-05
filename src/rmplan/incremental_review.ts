@@ -536,7 +536,7 @@ async function generateRegularDiffForReview(gitRoot: string): Promise<DiffResult
 
   // Sanitize branch name to prevent command injection
   const safeBranch = sanitizeBranchName(baseBranch);
-  const usingJj = await getUsingJj();
+  const usingJj = await getUsingJj(gitRoot);
 
   let changedFiles: string[] = [];
   let diffContent = '';

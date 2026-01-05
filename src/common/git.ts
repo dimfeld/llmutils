@@ -64,14 +64,11 @@ export async function getGitRoot(cwd = process.cwd()): Promise<string> {
   return result;
 }
 
-let cachedUsingJj: boolean | undefined;
+const cachedUsingJj = new Map<string, boolean>();
 
 /**
  * Checks if the given directory (or cwd) is inside a Git or Jujutsu repository.
  * Returns true if a .git directory/file or .jj directory exists at the git root.
- *
- * Unlike getUsingJj(), this function does not cache results since it accepts
- * an arbitrary directory parameter.
  *
  * @param cwd - Working directory to check. Defaults to process.cwd()
  * @returns Promise resolving to true if inside a repository, false otherwise
@@ -102,19 +99,22 @@ export async function isInGitRepository(cwd = process.cwd()): Promise<boolean> {
  * This function checks for the presence of a .jj directory in the repository root
  * and caches the result for subsequent calls.
  *
+ * @param cwd - Working directory to start the search from. Defaults to process.cwd()
  * @returns Promise resolving to true if using Jujutsu, false if using Git
  */
-export async function getUsingJj(): Promise<boolean> {
-  if (typeof cachedUsingJj === 'boolean') {
-    return cachedUsingJj;
+export async function getUsingJj(cwd = process.cwd()): Promise<boolean> {
+  const cached = cachedUsingJj.get(cwd);
+  if (typeof cached === 'boolean') {
+    return cached;
   }
 
-  const gitRoot = await getGitRoot();
-  cachedUsingJj = await Bun.file(path.join(gitRoot, '.jj'))
+  const gitRoot = await getGitRoot(cwd);
+  const result = await Bun.file(path.join(gitRoot, '.jj'))
     .stat()
     .then((s) => s.isDirectory())
     .catch(() => false);
-  return cachedUsingJj;
+  cachedUsingJj.set(cwd, result);
+  return result;
 }
 
 /**
@@ -507,7 +507,7 @@ export function clearGitRootCache(): void {
  * Resets the cached jj detection. Intended for use in tests.
  */
 export function clearUsingJjCache(): void {
-  cachedUsingJj = undefined;
+  cachedUsingJj.clear();
 }
 
 /**
@@ -516,7 +516,7 @@ export function clearUsingJjCache(): void {
 export function clearAllGitCaches(): void {
   cachedGitRoot.clear();
   cachedGitRepository.clear();
-  cachedUsingJj = undefined;
+  cachedUsingJj.clear();
 }
 
 export interface GetChangedFilesOptions {
@@ -527,7 +527,7 @@ export interface GetChangedFilesOptions {
 export async function getTrunkBranch(gitRoot: string): Promise<string> {
   // Prefer a sensible bookmark when using jj repositories
   try {
-    if (await getUsingJj()) {
+    if (await getUsingJj(gitRoot)) {
       const out = await $`jj bookmark list`.cwd(gitRoot).nothrow().text();
       const lines = out
         .split('\n')
@@ -597,7 +597,7 @@ export async function getChangedFilesOnBranch(
   ];
 
   let changedFiles: string[] = [];
-  if (await getUsingJj()) {
+  if (await getUsingJj(gitRoot)) {
     if (baseBranch === CURRENT_DIFF) {
       // convert from
       baseBranch = '@-';
@@ -695,7 +695,7 @@ export async function getChangedFilesBetween(
   ];
 
   let changedFiles: string[] = [];
-  if (await getUsingJj()) {
+  if (await getUsingJj(gitRoot)) {
     const exclude = [...excludeFiles.map((f) => `~file:${f}`), '~glob:**/*_snapshot.json'].join(
       '&'
     );
