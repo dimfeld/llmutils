@@ -539,7 +539,7 @@ export async function handleReviewCommand(
               { name: 'Create a cleanup plan (for later execution)', value: 'cleanup' },
               { name: 'Exit (do nothing)', value: 'exit' },
             ],
-            default: 'exit',
+            default: 'append',
           });
         } else {
           log(chalk.gray('Non-interactive environment detected; skipping fix/cleanup prompts.'));
