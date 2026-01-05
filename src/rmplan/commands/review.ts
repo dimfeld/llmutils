@@ -597,7 +597,7 @@ export async function handleReviewCommand(
             const plural = appendedCount === 1 ? '' : 's';
             log(
               chalk.green(
-                `✓ Added ${appendedCount} review issue${plural} as task${plural} to the plan.`
+                `✓ Added ${appendedCount} review issue${plural} as task${plural} to plan ${planData.id}.`
               )
             );
           } else {
