@@ -671,6 +671,8 @@ export class ClaudeCodeExecutor implements Executor {
       let capturedOutput: object | undefined;
 
       log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
+      const reviewTimeoutMs = 30 * 60 * 1000; // 30 minutes
+      let killedByTimeout = false;
       const result = await spawnAndLogOutput(args, {
         env: {
           ...process.env,
@@ -678,6 +680,12 @@ export class ClaudeCodeExecutor implements Executor {
           CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
         },
         cwd: gitRoot,
+        inactivityTimeoutMs: reviewTimeoutMs,
+        initialInactivityTimeoutMs: 2 * 60 * 1000, // 2 minutes to start
+        onInactivityKill: () => {
+          killedByTimeout = true;
+          log(`Claude review timed out after ${Math.round(reviewTimeoutMs / 60000)} minutes; terminating.`);
+        },
         formatStdout: (output) => {
           let lines = splitter(output);
           const formattedResults = lines.map(formatJsonMessage);
@@ -697,6 +705,10 @@ export class ClaudeCodeExecutor implements Executor {
           return formattedOutput;
         },
       });
+
+      if (killedByTimeout || result.killedByInactivity) {
+        throw new Error(`Claude review timed out after ${Math.round(reviewTimeoutMs / 60000)} minutes`);
+      }
 
       if (result.exitCode !== 0) {
         throw new Error(`Claude review exited with non-zero exit code: ${result.exitCode}`);

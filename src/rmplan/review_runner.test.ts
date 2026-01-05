@@ -296,4 +296,168 @@ describe('review_runner', () => {
       } as any)
     ).toThrow(/Unsupported review executor/);
   });
+
+  test('runReview retries once on timeout and succeeds on second attempt', async () => {
+    let attempts = 0;
+    const goodOutput = {
+      issues: [],
+      recommendations: ['success after retry'],
+      actionItems: [],
+    };
+
+    const executor: Executor = {
+      execute: mock(async () => {
+        attempts++;
+        if (attempts === 1) {
+          throw new Error('Claude review timed out after 30 minutes');
+        }
+        return JSON.stringify(goodOutput);
+      }),
+    };
+
+    await moduleMocker.mock('./executors/index.js', () => ({
+      buildExecutorAndLog: mock(() => executor),
+      DEFAULT_EXECUTOR: 'codex-cli',
+    }));
+
+    const { runReview } = await import('./review_runner.js');
+
+    const result = await runReview({
+      executorSelection: 'codex-cli',
+      config: { defaultExecutor: 'codex-cli' } as any,
+      sharedExecutorOptions: { baseDir: '/tmp' },
+      buildPrompt: mock(() => 'prompt'),
+      planInfo: {
+        planId: '5',
+        planTitle: 'Retry Plan',
+        planFilePath: '/tmp/plan.yml',
+        baseBranch: 'main',
+        changedFiles: [],
+      },
+    });
+
+    expect(attempts).toBe(2);
+    expect(result.usedExecutors).toEqual(['codex-cli']);
+    expect(result.reviewResult.recommendations).toEqual(['success after retry']);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  test('runReview gives up after max retries on persistent timeout', async () => {
+    let attempts = 0;
+
+    const executor: Executor = {
+      execute: mock(async () => {
+        attempts++;
+        throw new Error('Claude review timed out after 30 minutes');
+      }),
+    };
+
+    await moduleMocker.mock('./executors/index.js', () => ({
+      buildExecutorAndLog: mock(() => executor),
+      DEFAULT_EXECUTOR: 'codex-cli',
+    }));
+
+    const { runReview } = await import('./review_runner.js');
+
+    await expect(
+      runReview({
+        executorSelection: 'codex-cli',
+        config: { defaultExecutor: 'codex-cli' } as any,
+        sharedExecutorOptions: { baseDir: '/tmp' },
+        buildPrompt: mock(() => 'prompt'),
+        planInfo: {
+          planId: '6',
+          planTitle: 'Max Retry Plan',
+          planFilePath: '/tmp/plan.yml',
+          baseBranch: 'main',
+          changedFiles: [],
+        },
+      })
+    ).rejects.toThrow(/timed out/);
+
+    // Should have tried 2 times (initial + 1 retry)
+    expect(attempts).toBe(2);
+  });
+
+  test('runReview does not retry on non-timeout errors', async () => {
+    let attempts = 0;
+
+    const executor: Executor = {
+      execute: mock(async () => {
+        attempts++;
+        throw new Error('Some other error');
+      }),
+    };
+
+    await moduleMocker.mock('./executors/index.js', () => ({
+      buildExecutorAndLog: mock(() => executor),
+      DEFAULT_EXECUTOR: 'codex-cli',
+    }));
+
+    const { runReview } = await import('./review_runner.js');
+
+    await expect(
+      runReview({
+        executorSelection: 'codex-cli',
+        config: { defaultExecutor: 'codex-cli' } as any,
+        sharedExecutorOptions: { baseDir: '/tmp' },
+        buildPrompt: mock(() => 'prompt'),
+        planInfo: {
+          planId: '7',
+          planTitle: 'No Retry Plan',
+          planFilePath: '/tmp/plan.yml',
+          baseBranch: 'main',
+          changedFiles: [],
+        },
+      })
+    ).rejects.toThrow(/Some other error/);
+
+    // Should have only tried once (no retry for non-timeout errors)
+    expect(attempts).toBe(1);
+  });
+
+  test('runReview retries on Codex inactivity termination message', async () => {
+    let attempts = 0;
+    const goodOutput = {
+      issues: [],
+      recommendations: ['codex retry success'],
+      actionItems: [],
+    };
+
+    const executor: Executor = {
+      execute: mock(async () => {
+        attempts++;
+        if (attempts === 1) {
+          // Codex uses "terminated after inactivity" in its error message
+          throw new Error('codex failed after 3 attempts (was terminated after inactivity).');
+        }
+        return JSON.stringify(goodOutput);
+      }),
+    };
+
+    await moduleMocker.mock('./executors/index.js', () => ({
+      buildExecutorAndLog: mock(() => executor),
+      DEFAULT_EXECUTOR: 'codex-cli',
+    }));
+
+    const { runReview } = await import('./review_runner.js');
+
+    const result = await runReview({
+      executorSelection: 'codex-cli',
+      config: { defaultExecutor: 'codex-cli' } as any,
+      sharedExecutorOptions: { baseDir: '/tmp' },
+      buildPrompt: mock(() => 'prompt'),
+      planInfo: {
+        planId: '8',
+        planTitle: 'Codex Retry Plan',
+        planFilePath: '/tmp/plan.yml',
+        baseBranch: 'main',
+        changedFiles: [],
+      },
+    });
+
+    expect(attempts).toBe(2);
+    expect(result.usedExecutors).toEqual(['codex-cli']);
+    expect(result.reviewResult.recommendations).toEqual(['codex retry success']);
+  });
 });

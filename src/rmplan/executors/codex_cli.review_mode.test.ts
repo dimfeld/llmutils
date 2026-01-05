@@ -135,11 +135,16 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
     // Mock executeCodexStep to capture the schema path
     await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
       executeCodexStep: mock(
-        async (prompt: string, _cwd: string, _config: any, schemaPath?: string) => {
-          capturedSchemaPath = schemaPath;
+        async (
+          prompt: string,
+          _cwd: string,
+          _config: any,
+          options?: { outputSchemaPath?: string }
+        ) => {
+          capturedSchemaPath = options?.outputSchemaPath;
           // Verify the schema file exists and contains valid JSON
-          if (schemaPath) {
-            const schemaContent = await fs.readFile(schemaPath, 'utf-8');
+          if (capturedSchemaPath) {
+            const schemaContent = await fs.readFile(capturedSchemaPath, 'utf-8');
             const schema = JSON.parse(schemaContent);
             // Verify it's the expected schema structure
             expect(schema.type).toBe('object');
@@ -193,8 +198,13 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
 
     await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
       executeCodexStep: mock(
-        async (_prompt: string, _cwd: string, _config: any, schemaPath?: string) => {
-          capturedSchemaPath = schemaPath;
+        async (
+          _prompt: string,
+          _cwd: string,
+          _config: any,
+          options?: { outputSchemaPath?: string }
+        ) => {
+          capturedSchemaPath = options?.outputSchemaPath;
           return JSON.stringify({ issues: [], recommendations: [], actionItems: [] });
         }
       ),
@@ -244,8 +254,13 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
 
     await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
       executeCodexStep: mock(
-        async (_prompt: string, _cwd: string, _config: any, schemaPath?: string) => {
-          capturedSchemaPath = schemaPath;
+        async (
+          _prompt: string,
+          _cwd: string,
+          _config: any,
+          options?: { outputSchemaPath?: string }
+        ) => {
+          capturedSchemaPath = options?.outputSchemaPath;
           throw new Error('codex failed');
         }
       ),

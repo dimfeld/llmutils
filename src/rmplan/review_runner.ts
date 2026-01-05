@@ -105,41 +105,77 @@ export async function prepareReviewExecutors(
   });
 }
 
+// Maximum retry attempts on timeout (1 = retry once, so 2 total attempts)
+const MAX_TIMEOUT_RETRIES = 1;
+
+function isTimeoutError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  // Claude Code uses "timed out", Codex uses "terminated after inactivity"
+  return (
+    error.message.includes('timed out') || error.message.includes('terminated after inactivity')
+  );
+}
+
+async function executeWithRetry(
+  prepared: PreparedReviewExecutor,
+  planInfo: ReviewPlanInfo
+): Promise<
+  | { name: ReviewExecutorName; rawOutput: string }
+  | { name: ReviewExecutorName; error: unknown }
+> {
+  const maxAttempts = MAX_TIMEOUT_RETRIES + 1;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const executorOutput = await prepared.executor.execute(prepared.prompt, {
+        planId: planInfo.planId,
+        planTitle: planInfo.planTitle,
+        planFilePath: planInfo.planFilePath,
+        captureOutput: 'result',
+        executionMode: 'review',
+      });
+
+      log(`${prepared.name} review finished`);
+      const rawOutput = normalizeReviewOutput(executorOutput);
+      return { name: prepared.name, rawOutput };
+    } catch (error) {
+      if (isTimeoutError(error) && attempt < maxAttempts) {
+        log(`${prepared.name} review timed out, retrying (attempt ${attempt + 1}/${maxAttempts})...`);
+        continue;
+      }
+      return { name: prepared.name, error };
+    }
+  }
+
+  // Should not reach here, but satisfy TypeScript
+  return { name: prepared.name, error: new Error('Max retry attempts exceeded') };
+}
+
 export async function runReview(options: ReviewRunOptions): Promise<ReviewRunResult> {
   const preparedExecutors = await prepareReviewExecutors(options);
   const warnings: string[] = [];
   const executorOutputs: Partial<Record<ReviewExecutorName, string>> = {};
 
-  const results = await Promise.all(
-    preparedExecutors.map(async (prepared) => {
-      try {
-        const executorOutput = await prepared.executor.execute(prepared.prompt, {
-          planId: options.planInfo.planId,
-          planTitle: options.planInfo.planTitle,
-          planFilePath: options.planInfo.planFilePath,
-          captureOutput: 'result',
-          executionMode: 'review',
-        });
-
-        log(`${prepared.name} review finished`);
-
-        const rawOutput = normalizeReviewOutput(executorOutput);
-        executorOutputs[prepared.name] = rawOutput;
-
-        const parsed = parseJsonReviewOutput(rawOutput);
-        return {
-          name: prepared.name,
-          parsed,
-          rawOutput,
-        };
-      } catch (error) {
-        return {
-          name: prepared.name,
-          error,
-        } as const;
-      }
-    })
+  const executionResults = await Promise.all(
+    preparedExecutors.map((prepared) => executeWithRetry(prepared, options.planInfo))
   );
+
+  // Process results and parse outputs
+  const results = executionResults.map((result) => {
+    if ('error' in result) {
+      return result;
+    }
+
+    executorOutputs[result.name] = result.rawOutput;
+    const parsed = parseJsonReviewOutput(result.rawOutput);
+    return {
+      name: result.name,
+      parsed,
+      rawOutput: result.rawOutput,
+    };
+  });
 
   const successfulResults = results.filter(
     (

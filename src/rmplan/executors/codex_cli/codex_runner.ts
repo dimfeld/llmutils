@@ -3,6 +3,13 @@ import { spawnAndLogOutput } from '../../../common/process';
 import { error, warn } from '../../../logging';
 import { createCodexStdoutFormatter } from './format';
 
+export interface CodexStepOptions {
+  /** Path to JSON schema file for structured output */
+  outputSchemaPath?: string;
+  /** Inactivity timeout in milliseconds. Defaults to 10 minutes (or CODEX_OUTPUT_TIMEOUT_MS env var). */
+  inactivityTimeoutMs?: number;
+}
+
 /**
  * Runs a single-step Codex execution with JSON streaming enabled and returns the final agent message.
  */
@@ -10,13 +17,20 @@ export async function executeCodexStep(
   prompt: string,
   cwd: string,
   rmplanConfig: RmplanConfig,
-  outputSchemaPath?: string
+  outputSchemaPathOrOptions?: string | CodexStepOptions
 ): Promise<string> {
+  // Handle both old (string) and new (object) signatures for backward compatibility
+  const options: CodexStepOptions =
+    typeof outputSchemaPathOrOptions === 'string'
+      ? { outputSchemaPath: outputSchemaPathOrOptions }
+      : (outputSchemaPathOrOptions ?? {});
+
   const inactivityOverride = Number.parseInt(process.env.CODEX_OUTPUT_TIMEOUT_MS || '', 10);
   const inactivityTimeoutMs =
-    Number.isFinite(inactivityOverride) && inactivityOverride > 0
+    options.inactivityTimeoutMs ??
+    (Number.isFinite(inactivityOverride) && inactivityOverride > 0
       ? inactivityOverride
-      : 10 * 60 * 1000; // 10 minutes
+      : 10 * 60 * 1000); // 10 minutes default
 
   const maxAttempts = 3;
   const allowAllTools = ['true', '1'].includes(process.env.ALLOW_ALL_TOOLS || '');
@@ -45,8 +59,8 @@ export async function executeCodexStep(
     args.push('-c', `sandbox_workspace_write.writable_roots=${writableRoots}`);
   }
 
-  if (outputSchemaPath) {
-    args.push('--output-schema', outputSchemaPath);
+  if (options.outputSchemaPath) {
+    args.push('--output-schema', options.outputSchemaPath);
   }
 
   let lastExitCode: number | undefined;

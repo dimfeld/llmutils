@@ -57,6 +57,9 @@ export async function executeReviewMode(
   return aggregated;
 }
 
+// 30-minute timeout for review mode
+const REVIEW_TIMEOUT_MS = 30 * 60 * 1000;
+
 /**
  * Executes a Codex review step with JSON schema for structured output.
  * Writes the schema to a temporary file and passes it via --output-schema flag.
@@ -77,8 +80,11 @@ async function executeCodexReviewWithSchema(
     jsonSchema.additionalProperties = false;
     await fs.writeFile(schemaFilePath, JSON.stringify(jsonSchema, null, 2));
 
-    // Use executeCodexStep with the schema file path
-    return await executeCodexStep(prompt, cwd, rmplanConfig, schemaFilePath);
+    // Use executeCodexStep with the schema file path and 30-minute timeout for reviews
+    return await executeCodexStep(prompt, cwd, rmplanConfig, {
+      outputSchemaPath: schemaFilePath,
+      inactivityTimeoutMs: REVIEW_TIMEOUT_MS,
+    });
   } finally {
     // Clean up the temporary directory and schema file
     try {
