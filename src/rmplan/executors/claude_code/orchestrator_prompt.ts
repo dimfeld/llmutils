@@ -140,7 +140,7 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
   const reviewCommand = buildReviewCommand(planId, options);
   const reviewExecutorGuidance = options.reviewExecutor
     ? `   - Use the review executor override provided: \`--executor ${options.reviewExecutor}\`.`
-    : '   - If needed, pass `--executor <claude-code|codex-cli|both>` to select the review executor.';
+    : '';
 
   const reviewPhase = `${options.batchMode ? '4' : '3'}. **Review Phase**
    - Run \`${reviewCommand}\` using the Bash tool.

@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import PQueue from 'p-queue';
 import { debugLog, log } from '../../logging.js';
 import { spawnAndLogOutput } from '../../common/process.js';
+import { getTrunkBranch } from '../../common/git.js';
 import { executePostApplyCommand } from '../actions.js';
 import type { PostApplyCommand, RmplanConfig } from '../configSchema.js';
 import { WorkspaceLock } from './workspace_lock.js';
@@ -431,7 +432,7 @@ export async function createWorkspace(
   taskId: string,
   originalPlanFilePath: string | undefined,
   config: RmplanConfig,
-  options?: { branchName?: string; planData?: PlanSchema }
+  options?: { branchName?: string; planData?: PlanSchema; fromBranch?: string }
 ): Promise<Workspace | null> {
   // Check if workspace creation is enabled in the config
   if (!config.workspaceCreation) {
@@ -572,19 +573,80 @@ export async function createWorkspace(
     await setupGitRemote(targetClonePath, repositoryUrl);
   }
 
-  // Step 5: Create and checkout a new branch (if enabled)
+  // Detect VCS type by checking for .jj directory
+  const jjPath = path.join(targetClonePath, '.jj');
+  let isJj = false;
+  try {
+    const stats = await fs.stat(jjPath);
+    isJj = stats.isDirectory();
+  } catch {
+    // Not a jj repository
+  }
+
   const branchName = options?.branchName ?? taskId;
   const shouldCreateBranch = workspaceConfig.createBranch ?? true;
+  let jjNewCreated = false;
 
+  // Step 5: Checkout base branch if provided
+  if (options?.fromBranch) {
+    log(`Checking out base branch "${options.fromBranch}"`);
+    const { exitCode, stderr } = isJj
+      ? await spawnAndLogOutput(
+          shouldCreateBranch
+            ? ['jj', 'new', options.fromBranch]
+            : ['jj', 'edit', options.fromBranch],
+          {
+            cwd: targetClonePath,
+          }
+        )
+      : await spawnAndLogOutput(['git', 'checkout', options.fromBranch], {
+          cwd: targetClonePath,
+        });
+
+    if (isJj && shouldCreateBranch) {
+      jjNewCreated = exitCode === 0;
+    }
+
+    if (exitCode !== 0) {
+      log(`Failed to checkout base branch "${options.fromBranch}": ${stderr}`);
+      try {
+        await fs.rm(targetClonePath, { recursive: true, force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+      return null;
+    }
+  }
+
+  // Step 6: Create and checkout a new branch (if enabled)
   if (shouldCreateBranch) {
     try {
       log(`Creating and checking out branch ${branchName}`);
-      const { exitCode, stderr } = await spawnAndLogOutput(['git', 'checkout', '-b', branchName], {
-        cwd: targetClonePath,
-      });
+      let createResult;
+      if (isJj) {
+        if (!jjNewCreated) {
+          createResult = await spawnAndLogOutput(['jj', 'new'], { cwd: targetClonePath });
+          if (createResult.exitCode !== 0) {
+            log(`Failed to create new change: ${createResult.stderr}`);
+            try {
+              await fs.rm(targetClonePath, { recursive: true, force: true });
+            } catch {
+              // Ignore cleanup errors
+            }
+            return null;
+          }
+        }
+        createResult = await spawnAndLogOutput(['jj', 'bookmark', 'set', branchName], {
+          cwd: targetClonePath,
+        });
+      } else {
+        createResult = await spawnAndLogOutput(['git', 'checkout', '-b', branchName], {
+          cwd: targetClonePath,
+        });
+      }
 
-      if (exitCode !== 0) {
-        log(`Failed to create and checkout branch: ${stderr}`);
+      if (createResult.exitCode !== 0) {
+        log(`Failed to create and checkout branch: ${createResult.stderr}`);
         // Consider cleaning up the clone
         try {
           await fs.rm(targetClonePath, { recursive: true, force: true });
@@ -599,7 +661,7 @@ export async function createWorkspace(
     }
   }
 
-  // Step 6: Copy plan file if provided
+  // Step 7: Copy plan file if provided
   let planFilePathInWorkspace: string | undefined;
   if (originalPlanFilePath) {
     // Preserve the relative path structure from the original repository
@@ -625,7 +687,7 @@ export async function createWorkspace(
     }
   }
 
-  // Step 7: Run post-clone commands if specified
+  // Step 8: Run post-clone commands if specified
   if (workspaceConfig.postCloneCommands?.length) {
     log('Running post-clone commands');
 
@@ -718,4 +780,253 @@ export async function createWorkspace(
 
   // Return the workspace information
   return workspace;
+}
+
+/**
+ * Checks if a branch/bookmark exists in the repository.
+ * Supports both Git and Jujutsu repositories.
+ *
+ * @param workspacePath - Path to the workspace
+ * @param branchName - Name of the branch to check
+ * @param isJj - Whether the workspace uses Jujutsu
+ * @returns true if the branch exists, false otherwise
+ */
+async function branchExists(
+  workspacePath: string,
+  branchName: string,
+  isJj: boolean
+): Promise<boolean> {
+  if (isJj) {
+    // For jj, check if the bookmark exists
+    const result = await spawnAndLogOutput(['jj', 'bookmark', 'list'], {
+      cwd: workspacePath,
+      quiet: true,
+    });
+    if (result.exitCode !== 0) {
+      return false;
+    }
+    // Each line starts with the bookmark name followed by space or colon
+    const lines = result.stdout.split('\n');
+    for (const line of lines) {
+      const name = line.split(/[\s:]/)[0];
+      if (name === branchName) {
+        return true;
+      }
+    }
+    return false;
+  } else {
+    // For git, use rev-parse --verify
+    const result = await spawnAndLogOutput(['git', 'rev-parse', '--verify', branchName], {
+      cwd: workspacePath,
+      quiet: true,
+    });
+    return result.exitCode === 0;
+  }
+}
+
+/**
+ * Finds a unique branch name by appending suffixes (-2, -3, etc.) if the name already exists.
+ * Supports both Git and Jujutsu repositories.
+ *
+ * @param workspacePath - Path to the workspace
+ * @param baseName - Base name for the branch
+ * @param isJj - Whether the workspace uses Jujutsu
+ * @returns A unique branch name (may include suffix)
+ */
+export async function findUniqueBranchName(
+  workspacePath: string,
+  baseName: string,
+  isJj: boolean
+): Promise<string> {
+  let candidate = baseName;
+  let suffix = 2;
+
+  while (await branchExists(workspacePath, candidate, isJj)) {
+    candidate = `${baseName}-${suffix}`;
+    suffix++;
+    // Safety limit to prevent infinite loops
+    if (suffix > 100) {
+      throw new Error(`Could not find unique branch name after 100 attempts, base: ${baseName}`);
+    }
+  }
+
+  if (candidate !== baseName) {
+    log(`Branch "${baseName}" already exists, using "${candidate}" instead`);
+  }
+
+  return candidate;
+}
+
+/**
+ * Options for preparing an existing workspace for reuse.
+ */
+export interface PrepareWorkspaceOptions {
+  /** Branch to checkout before creating new branch (default: auto-detect trunk) */
+  baseBranch?: string;
+  /** Name of new branch to create */
+  branchName: string;
+  /** Whether to create a new branch (default: true) */
+  createBranch?: boolean;
+}
+
+/**
+ * Result from preparing an existing workspace.
+ */
+export interface PrepareWorkspaceResult {
+  /** Whether the operation succeeded */
+  success: boolean;
+  /** Error message if operation failed */
+  error?: string;
+  /** The actual branch name used (may include auto-suffix) */
+  actualBranchName?: string;
+}
+
+/**
+ * Prepares an existing workspace for reuse by fetching, checking out base branch,
+ * and creating a new working branch.
+ *
+ * This function:
+ * 1. Detects VCS type (git vs jj)
+ * 2. Fetches latest from remote
+ * 3. Checks out the base branch
+ * 4. Finds a unique branch name (auto-suffixing if needed)
+ * 5. Creates and checks out the new branch (if enabled)
+ *
+ * @param workspacePath - Absolute path to the workspace
+ * @param options - Options including base branch and new branch name
+ * @returns Result indicating success/failure and actual branch name used
+ */
+export async function prepareExistingWorkspace(
+  workspacePath: string,
+  options: PrepareWorkspaceOptions
+): Promise<PrepareWorkspaceResult> {
+  // Detect VCS type by checking for .jj directory
+  const jjPath = path.join(workspacePath, '.jj');
+  let isJj = false;
+  try {
+    const stats = await fs.stat(jjPath);
+    isJj = stats.isDirectory();
+  } catch {
+    // Not a jj repository
+  }
+
+  const allowOffline = process.env.ALLOW_OFFLINE === 'true' || process.env.ALLOW_OFFLINE === '1';
+
+  const logMissingRemote = () => {
+    log('Warning: No remote configured; skipping fetch.');
+  };
+
+  const isMissingRemoteError = (message: string) => {
+    return /no such remote|no remotes configured|unknown remote/i.test(message);
+  };
+
+  // Step 1: Fetch latest from remote
+  let hasRemote: boolean | null = null;
+  if (isJj) {
+    const remoteList = await spawnAndLogOutput(['jj', 'git', 'remote', 'list'], {
+      cwd: workspacePath,
+    });
+    if (remoteList.exitCode === 0) {
+      hasRemote = remoteList.stdout.trim().length > 0;
+    }
+  } else {
+    const remoteCheck = await spawnAndLogOutput(['git', 'remote', 'get-url', 'origin'], {
+      cwd: workspacePath,
+    });
+    hasRemote = remoteCheck.exitCode === 0;
+  }
+
+  if (hasRemote === false) {
+    logMissingRemote();
+  } else {
+    log('Fetching latest changes from remote...');
+    const fetchResult = isJj
+      ? await spawnAndLogOutput(['jj', 'git', 'fetch'], { cwd: workspacePath })
+      : await spawnAndLogOutput(['git', 'fetch', 'origin'], { cwd: workspacePath });
+
+    if (fetchResult.exitCode !== 0) {
+      const fetchOutput = `${fetchResult.stderr}\n${fetchResult.stdout}`.trim();
+      if (hasRemote === null && isMissingRemoteError(fetchOutput)) {
+        logMissingRemote();
+      } else if (allowOffline) {
+        log(
+          `Warning: Failed to fetch from remote (continuing in offline mode): ${fetchResult.stderr}`
+        );
+      } else {
+        return {
+          success: false,
+          error: `Failed to fetch from remote: ${fetchResult.stderr}`,
+        };
+      }
+    }
+  }
+
+  // Step 2: Determine base branch
+  const baseBranch = options.baseBranch || (await getTrunkBranch(workspacePath));
+  log(`Using base branch: ${baseBranch}`);
+
+  const shouldCreateBranch = options.createBranch ?? true;
+
+  // Step 3: Checkout base branch or create a new change
+  log(`Checking out base branch "${baseBranch}"...`);
+  if (isJj && !shouldCreateBranch) {
+    const checkoutResult = await spawnAndLogOutput(['jj', 'edit', baseBranch], {
+      cwd: workspacePath,
+    });
+    if (checkoutResult.exitCode !== 0) {
+      return {
+        success: false,
+        error: `Failed to checkout base branch "${baseBranch}": ${checkoutResult.stderr}`,
+      };
+    }
+
+    log('Skipping branch creation (createBranch=false)');
+    return {
+      success: true,
+      actualBranchName: baseBranch,
+    };
+  }
+
+  const checkoutResult = isJj
+    ? await spawnAndLogOutput(['jj', 'new', baseBranch], { cwd: workspacePath })
+    : await spawnAndLogOutput(['git', 'checkout', baseBranch], { cwd: workspacePath });
+
+  if (checkoutResult.exitCode !== 0) {
+    return {
+      success: false,
+      error: `Failed to checkout base branch "${baseBranch}": ${checkoutResult.stderr}`,
+    };
+  }
+
+  if (!shouldCreateBranch) {
+    log('Skipping branch creation (createBranch=false)');
+    return {
+      success: true,
+      actualBranchName: baseBranch,
+    };
+  }
+
+  // Step 4: Find unique branch name
+  const actualBranchName = await findUniqueBranchName(workspacePath, options.branchName, isJj);
+
+  // Step 5: Create new branch
+  log(`Creating new branch "${actualBranchName}"...`);
+  // For jj, we already created a new change with "jj new", now set the bookmark
+  // For git, create and checkout a new branch
+  const createBranchResult = isJj
+    ? await spawnAndLogOutput(['jj', 'bookmark', 'set', actualBranchName], { cwd: workspacePath })
+    : await spawnAndLogOutput(['git', 'checkout', '-b', actualBranchName], { cwd: workspacePath });
+
+  if (createBranchResult.exitCode !== 0) {
+    return {
+      success: false,
+      error: `Failed to create branch "${actualBranchName}": ${createBranchResult.stderr}`,
+    };
+  }
+
+  log(`Successfully prepared workspace with branch "${actualBranchName}"`);
+  return {
+    success: true,
+    actualBranchName,
+  };
 }

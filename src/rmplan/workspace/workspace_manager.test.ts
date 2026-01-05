@@ -1475,6 +1475,66 @@ describe('createWorkspace', () => {
     expect(checkoutCalls).toHaveLength(0);
   });
 
+  test('createWorkspace uses Jujutsu commands when fromBranch is provided', async () => {
+    const taskId = 'task-jj-from-branch';
+    const sourceDirectory = path.join(testTempDir, 'jj-source');
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'jj-source-task-jj-from-branch');
+
+    await fs.mkdir(path.join(sourceDirectory, '.jj'), { recursive: true });
+    await fs.writeFile(path.join(sourceDirectory, 'README.md'), 'jj content');
+
+    const config: RmplanConfig = {
+      workspaceCreation: {
+        cloneMethod: 'cp',
+        sourceDirectory,
+        cloneLocation,
+        createBranch: true,
+      },
+    };
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[], options?: { cwd?: string }) => {
+      if (cmd[0] === 'git' && cmd[1] === 'ls-files') {
+        expect(options?.cwd).toBe(sourceDirectory);
+        return { exitCode: 0, stdout: 'README.md\u0000', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'init') {
+        expect(options?.cwd).toBe(targetClonePath);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config, {
+      fromBranch: 'main',
+      branchName: 'jj-feature',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.path).toBe(targetClonePath);
+
+    const jjNewCall = mockSpawnAndLogOutput.mock.calls.find(
+      (call) => call[0][0] === 'jj' && call[0][1] === 'new' && call[0][2] === 'main'
+    );
+    expect(jjNewCall).toBeDefined();
+
+    const jjBookmarkCall = mockSpawnAndLogOutput.mock.calls.find(
+      (call) =>
+        call[0][0] === 'jj' &&
+        call[0][1] === 'bookmark' &&
+        call[0][2] === 'set' &&
+        call[0][3] === 'jj-feature'
+    );
+    expect(jjBookmarkCall).toBeDefined();
+
+    const gitCheckoutCalls = mockSpawnAndLogOutput.mock.calls.filter(
+      (call) => call[0][0] === 'git' && call[0][1] === 'checkout'
+    );
+    expect(gitCheckoutCalls).toHaveLength(0);
+  });
+
   test('createWorkspace with relative source directory path should resolve correctly', async () => {
     const taskId = 'task-relative-source';
     const sourceSubdir = 'source';

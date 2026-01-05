@@ -6,12 +6,19 @@ import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
 import { table, type TableUserConfig } from 'table';
 import { log, warn } from '../../logging.js';
-import { getGitRoot, isInGitRepository } from '../../common/git.js';
+import {
+  getCurrentBranchName,
+  getCurrentCommitHash,
+  getCurrentJujutsuBranch,
+  getGitRoot,
+  hasUncommittedChanges,
+  isInGitRepository,
+} from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanFile, readPlanFile, setPlanStatus } from '../plans.js';
 import { generateAlphanumericId } from '../id_utils.js';
 import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
-import { createWorkspace } from '../workspace/workspace_manager.js';
+import { createWorkspace, prepareExistingWorkspace } from '../workspace/workspace_manager.js';
 import {
   buildWorkspaceListEntries,
   findWorkspacesByRepositoryId,
@@ -42,6 +49,7 @@ import { getIssueTracker } from '../../common/issue_tracker/factory.js';
 import { importSingleIssue } from './import/import.js';
 import { readAllPlans } from '../plans.js';
 import { parseIssueInput, type ParsedIssueInput } from '../issue_utils.js';
+import { spawnAndLogOutput } from '../../common/process.js';
 
 export type WorkspaceListFormat = 'table' | 'tsv' | 'json';
 
@@ -351,12 +359,341 @@ async function getWorkspaceDirectoryStatus(
   }
 }
 
+/**
+ * Result of attempting to reuse an existing workspace.
+ */
+interface TryReuseResult {
+  /** Whether an existing workspace was successfully reused */
+  success: boolean;
+  /** Error message describing the last reuse failure */
+  error?: string;
+  /** Path to the reused workspace (only set if success is true) */
+  workspacePath?: string;
+  /** Existing task ID for the reused workspace */
+  taskId?: string;
+  /** The actual branch name created (may include auto-suffix) */
+  actualBranchName?: string;
+  /** Path to the plan file copied to the workspace (only set if a plan was provided) */
+  planFilePathInWorkspace?: string;
+}
+
+interface WorkspaceRestoreState {
+  branch: string | null;
+  commit: string | null;
+  isJj: boolean;
+}
+
+async function captureWorkspaceRestoreState(
+  workspacePath: string
+): Promise<WorkspaceRestoreState | null> {
+  try {
+    const gitRoot = await getGitRoot(workspacePath);
+    const isJj = await fs
+      .stat(path.join(gitRoot, '.jj'))
+      .then((stats) => stats.isDirectory())
+      .catch(() => false);
+    const [branch, commit] = await Promise.all([
+      isJj ? getCurrentJujutsuBranch(workspacePath) : getCurrentBranchName(workspacePath),
+      getCurrentCommitHash(gitRoot),
+    ]);
+
+    return { branch, commit, isJj };
+  } catch (error) {
+    warn(`Failed to capture workspace state before reuse: ${error as Error}`);
+    return null;
+  }
+}
+
+async function restoreWorkspaceState(
+  workspacePath: string,
+  state: WorkspaceRestoreState,
+  createdBranch: string | undefined,
+  shouldCreateBranch: boolean
+): Promise<void> {
+  const restoreTargets = [state.branch, state.commit].filter(
+    (target, index, items): target is string => Boolean(target) && items.indexOf(target) === index
+  );
+  if (restoreTargets.length === 0) {
+    warn('Unable to restore workspace state: no branch or commit recorded.');
+    return;
+  }
+
+  let restored = false;
+  let lastRestoreError: string | undefined;
+  for (const restoreTarget of restoreTargets) {
+    const restoreArgs = state.isJj
+      ? ['jj', 'edit', restoreTarget]
+      : ['git', 'checkout', restoreTarget];
+    const restoreResult = await spawnAndLogOutput(restoreArgs, { cwd: workspacePath });
+    if (restoreResult.exitCode === 0) {
+      restored = true;
+      break;
+    }
+    lastRestoreError = restoreResult.stderr;
+  }
+
+  if (!restored) {
+    const errorMessage = `Failed to restore workspace to ${restoreTargets[0]}: ${
+      lastRestoreError ?? ''
+    }`.trim();
+    warn(errorMessage);
+    return;
+  }
+
+  if (!shouldCreateBranch || !createdBranch || createdBranch === state.branch) {
+    return;
+  }
+
+  const deleteArgs = state.isJj
+    ? ['jj', 'bookmark', 'delete', createdBranch]
+    : ['git', 'branch', '-D', createdBranch];
+  const deleteResult = await spawnAndLogOutput(deleteArgs, { cwd: workspacePath });
+  if (deleteResult.exitCode !== 0) {
+    warn(`Failed to delete branch "${createdBranch}": ${deleteResult.stderr}`);
+  }
+}
+
+async function cleanupCopiedPlanPath(
+  workspacePath: string,
+  planFilePathInWorkspace: string | undefined,
+  planFileExisted: boolean
+): Promise<void> {
+  if (!planFilePathInWorkspace || planFileExisted) {
+    return;
+  }
+
+  const relativePath = path.relative(workspacePath, planFilePathInWorkspace);
+  if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+    warn(`Skipping plan cleanup for unexpected path: ${planFilePathInWorkspace}`);
+    return;
+  }
+
+  try {
+    await fs.rm(planFilePathInWorkspace, { force: true, recursive: true });
+  } catch (error) {
+    warn(`Failed to remove copied plan file: ${error as Error}`);
+    return;
+  }
+
+  let currentDir = path.dirname(planFilePathInWorkspace);
+  while (currentDir !== workspacePath) {
+    try {
+      const entries = await fs.readdir(currentDir);
+      if (entries.length > 0) {
+        break;
+      }
+      await fs.rmdir(currentDir);
+    } catch {
+      break;
+    }
+    currentDir = path.dirname(currentDir);
+  }
+}
+
+/**
+ * Attempts to find and reuse an existing unlocked, clean workspace.
+ *
+ * This function:
+ * 1. Finds available workspaces for the same repository
+ * 2. Filters out locked workspaces and those with uncommitted changes
+ * 3. Acquires a lock on the workspace
+ * 4. Prepares the selected workspace (fetch, checkout base, create new branch)
+ * 5. Updates workspace metadata
+ *
+ * @returns TryReuseResult indicating success and workspace details, or failure
+ */
+async function tryReuseExistingWorkspace(
+  config: RmplanConfig,
+  trackingFilePath: string | undefined,
+  options: {
+    fromBranch?: string;
+    createBranch?: boolean;
+    branchName: string;
+    planData?: PlanSchema;
+    resolvedPlanFilePath?: string;
+    mainRepoRoot: string;
+    name?: string;
+    issueUrls?: string[];
+  }
+): Promise<TryReuseResult> {
+  // Find repository ID
+  const repositoryId = await determineRepositoryId();
+
+  // Clean up missing workspace entries
+  await removeMissingWorkspaceEntries(repositoryId, trackingFilePath);
+
+  // Find all workspaces for this repository
+  const workspaces = await findWorkspacesByRepositoryId(repositoryId, trackingFilePath);
+  const workspacesWithStatus = await updateWorkspaceLockStatus(workspaces);
+
+  // Filter to only unlocked workspaces
+  const unlockedWorkspaces = workspacesWithStatus.filter((workspace) => !workspace.lockedBy);
+
+  if (unlockedWorkspaces.length === 0) {
+    log('No unlocked workspaces found for reuse');
+    return { success: false };
+  }
+
+  // Check each unlocked workspace for uncommitted changes, attempt to lock, and prepare
+  let foundCleanWorkspace = false;
+  let lastFailureReason: string | undefined;
+
+  for (const workspace of unlockedWorkspaces) {
+    const dirStatus = await getWorkspaceDirectoryStatus(workspace.workspacePath);
+    if (dirStatus !== 'exists') {
+      continue;
+    }
+
+    const hasChanges = await hasUncommittedChanges(workspace.workspacePath);
+    if (hasChanges) {
+      log(`Skipping workspace ${workspace.workspacePath}: has uncommitted changes`);
+      continue;
+    }
+
+    foundCleanWorkspace = true;
+
+    // Acquire lock on the workspace before making any changes
+    let lockInfo: Awaited<ReturnType<typeof WorkspaceLock.acquireLock>> | null = null;
+    const shouldCreateBranch = options.createBranch ?? true;
+    try {
+      lockInfo = await WorkspaceLock.acquireLock(
+        workspace.workspacePath,
+        `rmplan workspace add --reuse`,
+        {
+          owner: getDefaultLockOwner(),
+        }
+      );
+      WorkspaceLock.setupCleanupHandlers(workspace.workspacePath, lockInfo.type);
+    } catch (error) {
+      warn(`Failed to acquire workspace lock: ${error as Error}`);
+      continue;
+    }
+
+    const restoreState = await captureWorkspaceRestoreState(workspace.workspacePath);
+    const restoreWorkspace = async (createdBranch: string | undefined) => {
+      if (!restoreState) {
+        return;
+      }
+      await restoreWorkspaceState(
+        workspace.workspacePath,
+        restoreState,
+        createdBranch,
+        shouldCreateBranch
+      );
+    };
+
+    let prepareResult: Awaited<ReturnType<typeof prepareExistingWorkspace>> | null = null;
+    try {
+      log(`Reusing existing workspace: ${workspace.workspacePath}`);
+
+      // Prepare the workspace (fetch, checkout base branch, create new branch)
+      prepareResult = await prepareExistingWorkspace(workspace.workspacePath, {
+        baseBranch: options.fromBranch,
+        branchName: options.branchName,
+        createBranch: options.createBranch,
+      });
+
+      if (!prepareResult.success) {
+        const failureReason = `Failed to prepare workspace for reuse: ${prepareResult.error}`;
+        warn(failureReason);
+        lastFailureReason = failureReason;
+        await restoreWorkspace(undefined);
+        await WorkspaceLock.releaseLock(workspace.workspacePath, { force: true });
+        continue;
+      }
+
+      // Copy plan file to workspace if provided
+      let planFilePathInWorkspace: string | undefined;
+      let planFileExisted = false;
+      if (options.resolvedPlanFilePath) {
+        const relativePlanPath = path.relative(options.mainRepoRoot, options.resolvedPlanFilePath);
+        planFilePathInWorkspace = path.join(workspace.workspacePath, relativePlanPath);
+        const planFileDir = path.dirname(planFilePathInWorkspace);
+
+        try {
+          planFileExisted = await fs
+            .access(planFilePathInWorkspace)
+            .then(() => true)
+            .catch(() => false);
+          await fs.mkdir(planFileDir, { recursive: true });
+          log(`Copying plan file to workspace: ${relativePlanPath}`);
+          await fs.copyFile(options.resolvedPlanFilePath, planFilePathInWorkspace);
+        } catch (error) {
+          const failureReason = `Failed to copy plan file: ${error as Error}`;
+          warn(failureReason);
+          lastFailureReason = failureReason;
+          await cleanupCopiedPlanPath(
+            workspace.workspacePath,
+            planFilePathInWorkspace,
+            planFileExisted
+          );
+          await restoreWorkspace(prepareResult.actualBranchName);
+          await WorkspaceLock.releaseLock(workspace.workspacePath, { force: true });
+          continue;
+        }
+      }
+
+      // Update workspace metadata
+      const metadataPatch: WorkspaceMetadataPatch = {
+        name: options.name,
+        branch: prepareResult.actualBranchName,
+      };
+
+      if (options.planData) {
+        metadataPatch.description = buildDescriptionFromPlan(options.planData);
+        metadataPatch.planId = options.planData.id ? String(options.planData.id) : '';
+        metadataPatch.planTitle = options.planData.title || options.planData.goal || '';
+        if (options.planData.issue?.length) {
+          metadataPatch.issueUrls = [...options.planData.issue];
+        } else {
+          metadataPatch.issueUrls = [];
+        }
+      } else {
+        metadataPatch.description = '';
+        metadataPatch.planId = '';
+        metadataPatch.planTitle = '';
+        metadataPatch.issueUrls = [];
+      }
+
+      if (options.issueUrls?.length) {
+        metadataPatch.issueUrls = options.issueUrls;
+      }
+
+      await patchWorkspaceMetadata(workspace.workspacePath, metadataPatch, trackingFilePath);
+
+      return {
+        success: true,
+        workspacePath: workspace.workspacePath,
+        taskId: workspace.taskId,
+        actualBranchName: prepareResult.actualBranchName,
+        planFilePathInWorkspace,
+      };
+    } catch (error) {
+      await restoreWorkspace(prepareResult?.actualBranchName);
+      await WorkspaceLock.releaseLock(workspace.workspacePath, { force: true });
+      throw error;
+    }
+  }
+
+  if (!foundCleanWorkspace) {
+    log('No clean, unlocked workspaces found for reuse');
+  } else {
+    log('No available workspace could be prepared for reuse');
+  }
+
+  return { success: false, ...(lastFailureReason ? { error: lastFailureReason } : {}) };
+}
+
 export async function handleWorkspaceAddCommand(
   planIdentifier: string | undefined,
   options: any,
   command: Command
 ) {
   const globalOpts = command.parent!.parent!.opts();
+
+  if (options.reuse && options.tryReuse) {
+    throw new Error('Cannot use both --reuse and --try-reuse');
+  }
 
   // Load configuration
   const config = await loadEffectiveConfig(globalOpts.config);
@@ -445,26 +782,80 @@ export async function handleWorkspaceAddCommand(
     }
   }
 
-  log(`Creating workspace with ID: ${workspaceId}`);
+  // Determine the branch name to use
+  const branchName = customBranchName || workspaceId;
 
-  // Create the workspace
-  const workspace = await createWorkspace(
-    gitRoot,
-    workspaceId,
-    resolvedPlanFilePath,
-    effectiveConfig,
-    {
-      ...(customBranchName && { branchName: customBranchName }),
-      ...(planData && { planData }),
+  // Try to reuse an existing workspace if --reuse or --try-reuse is specified
+  const shouldTryReuse = options.reuse || options.tryReuse;
+
+  // Workspace-like object to hold the path and plan file path
+  let workspace: { path: string; planFilePathInWorkspace?: string; taskId: string } | null = null;
+  let wasReused = false;
+
+  if (shouldTryReuse) {
+    const trackingFilePath = effectiveConfig.paths?.trackingFile;
+    const issueUrls = planData?.issue?.length
+      ? planData.issue
+      : issueInfo
+        ? [issueInfo.originalInput]
+        : undefined;
+    const reuseResult = await tryReuseExistingWorkspace(effectiveConfig, trackingFilePath, {
+      fromBranch: options.fromBranch,
+      createBranch: effectiveConfig.workspaceCreation?.createBranch,
+      branchName,
+      planData,
+      resolvedPlanFilePath,
+      mainRepoRoot: gitRoot,
+      name: planData?.title || planData?.goal || issueInfo?.identifier || workspaceId,
+      issueUrls,
+    });
+
+    if (reuseResult.success) {
+      log(chalk.green(`Reusing existing workspace at: ${reuseResult.workspacePath}`));
+      workspace = {
+        path: reuseResult.workspacePath!,
+        planFilePathInWorkspace: reuseResult.planFilePathInWorkspace,
+        taskId: reuseResult.taskId ?? workspaceId,
+      };
+      wasReused = true;
+    } else {
+      if (options.reuse) {
+        const reuseFailureReason = reuseResult.error
+          ? `Last reuse attempt failed: ${reuseResult.error}`
+          : 'All workspaces are either locked or have uncommitted changes.';
+        throw new Error(`No available workspace found for reuse. ${reuseFailureReason}`);
+      }
+      // --try-reuse: fall through to normal workspace creation
+      log('No available workspace found for reuse, creating new workspace...');
     }
-  );
+  }
 
+  // Create a new workspace if we didn't reuse one
   if (!workspace) {
-    throw new Error('Failed to create workspace');
+    log(`Creating workspace with ID: ${workspaceId}`);
+
+    const createdWorkspace = await createWorkspace(
+      gitRoot,
+      workspaceId,
+      resolvedPlanFilePath,
+      effectiveConfig,
+      {
+        ...(customBranchName && { branchName: customBranchName }),
+        ...(options.fromBranch && { fromBranch: options.fromBranch }),
+        ...(planData && { planData }),
+      }
+    );
+
+    if (!createdWorkspace) {
+      throw new Error('Failed to create workspace');
+    }
+
+    workspace = createdWorkspace;
   }
 
   // Import issue into workspace if --issue was provided
   let importedPlanFile: string | undefined;
+  let importedPlan: (PlanSchema & { filename: string }) | undefined;
   if (issueInfo) {
     try {
       log(`Importing issue ${issueInfo.identifier} into workspace...`);
@@ -489,10 +880,11 @@ export async function handleWorkspaceAddCommand(
       if (success) {
         log(chalk.green(`✓ Issue ${issueInfo.identifier} imported successfully`));
         // Find the imported plan file to show in success message
-        const { plans: updatedPlans } = await readAllPlans(tasksDir);
+        const { plans: updatedPlans } = await readAllPlans(tasksDir, false);
         for (const [_, plan] of updatedPlans) {
           if (plan.issue?.some((url: string) => url.includes(issueInfo!.identifier))) {
             importedPlanFile = plan.filename;
+            importedPlan = plan;
             break;
           }
         }
@@ -502,6 +894,21 @@ export async function handleWorkspaceAddCommand(
     } catch (err) {
       warn(`Failed to import issue: ${err as Error}`);
     }
+  }
+
+  if (wasReused && importedPlan) {
+    const metadataPatch: WorkspaceMetadataPatch = {
+      planId: importedPlan.id ? String(importedPlan.id) : '',
+      planTitle: importedPlan.title || importedPlan.goal || '',
+      description: buildDescriptionFromPlan(importedPlan),
+      issueUrls: importedPlan.issue?.length ? [...importedPlan.issue] : [],
+    };
+
+    await patchWorkspaceMetadata(
+      workspace.path,
+      metadataPatch,
+      effectiveConfig.paths?.trackingFile
+    );
   }
 
   // Update plan status in the new workspace if plan was copied
@@ -542,9 +949,13 @@ export async function handleWorkspaceAddCommand(
   }
 
   // Success message
-  log(chalk.green('✓ Workspace created successfully!'));
+  const actionVerb = wasReused ? 'reused' : 'created';
+  log(chalk.green(`✓ Workspace ${actionVerb} successfully!`));
   log(`  Path: ${workspace.path}`);
   log(`  ID: ${workspace.taskId}`);
+  if (wasReused && workspace.taskId !== workspaceId) {
+    log(`  Requested ID: ${workspaceId}`);
+  }
   if (workspace.planFilePathInWorkspace) {
     log(`  Plan file: ${path.relative(workspace.path, workspace.planFilePathInWorkspace)}`);
   }

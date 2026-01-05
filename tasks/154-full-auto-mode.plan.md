@@ -28,9 +28,9 @@ were added
 - Push branch and create draft PR -- use claude code to create the PR description
 - If we ran 5 times without ACCEPTABLE then make sure that the PR description notes that
 - Unlock workspace if we got through to the end and pushed the branch
+- At the end, print the name and path of the workspace used.
 
 
 
 This command should be able to start from any step and skip steps that don't need to be done, eg if plan has tasks then don't generate 
-- in the final review step, should add the review issues as tasks and execute them that way so it's easier to see what was done there 
-
+- in the final review step, should add the review issues as tasks and execute them that way so it's easier to see what was done there

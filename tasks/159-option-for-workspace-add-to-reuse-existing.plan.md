@@ -5,31 +5,31 @@ goal: ""
 id: 159
 uuid: 2e7fd645-2945-4e49-a485-3cf5a4ba81ff
 generatedBy: agent
-status: pending
+status: done
 priority: medium
 planGeneratedAt: 2026-01-04T01:53:28.667Z
 promptsGeneratedAt: 2026-01-04T01:53:28.667Z
 createdAt: 2026-01-02T19:34:21.192Z
-updatedAt: 2026-01-04T01:53:28.667Z
+updatedAt: 2026-01-05T02:07:46.953Z
 tasks:
   - title: Add CLI options to workspace add command
-    done: false
+    done: true
     description: Add `--reuse`, `--try-reuse`, and `--from-branch` options to the
       workspace add command in `src/rmplan/rmplan.ts`. Include validation that
       `--reuse` and `--try-reuse` are mutually exclusive.
   - title: Add branch field to WorkspaceMetadataPatch interface
-    done: false
+    done: true
     description: Update `WorkspaceMetadataPatch` interface in
       `src/rmplan/workspace/workspace_tracker.ts` to include an optional
       `branch` field so it can be updated when reusing workspaces.
   - title: Implement findUniqueBranchName utility function
-    done: false
+    done: true
     description: Create a function in `workspace_manager.ts` that checks if a branch
       name exists and auto-suffixes it (`-2`, `-3`, etc.) until finding a unique
       name. Support both Git (`git rev-parse --verify`) and Jujutsu (`jj
       bookmark list`) for branch existence checks.
   - title: Implement prepareExistingWorkspace function
-    done: false
+    done: true
     description: >-
       Create `prepareExistingWorkspace()` in
       `src/rmplan/workspace/workspace_manager.ts` that:
@@ -51,7 +51,7 @@ tasks:
 
       Return the actual branch name used (may include suffix).
   - title: Implement tryReuseExistingWorkspace helper function
-    done: false
+    done: true
     description: >-
       Create helper function in `src/rmplan/commands/workspace.ts` that:
 
@@ -68,7 +68,7 @@ tasks:
 
       5. Return success/failure boolean
   - title: Modify handleWorkspaceAddCommand to support reuse flags
-    done: false
+    done: true
     description: >-
       Update `handleWorkspaceAddCommand()` in `src/rmplan/commands/workspace.ts`
       to:
@@ -85,7 +85,7 @@ tasks:
       5. If reuse fails with `--try-reuse`, fall through to normal workspace
       creation
   - title: Write tests for prepareExistingWorkspace function
-    done: false
+    done: true
     description: |-
       Add tests in `src/rmplan/workspace/workspace_manager.test.ts` covering:
       - Successfully fetches, checks out base, creates branch (Git)
@@ -97,7 +97,7 @@ tasks:
       - Uses specified `--from-branch` instead of auto-detected trunk
       - Auto-suffixes branch name when it already exists
   - title: Write tests for workspace reuse in handleWorkspaceAddCommand
-    done: false
+    done: true
     description: |-
       Add tests in `src/rmplan/commands/workspace.test.ts` covering:
       - Finds and reuses available workspace
@@ -110,6 +110,210 @@ tasks:
       - Locks the reused workspace
       - Works with `--issue` option
       - Works with `--from-branch` option
+  - title: "Address Review Feedback: Lock acquisition happens after
+      `prepareExistingWorkspace`, file copy, and metadata updates. That leaves a
+      race where two concurrent `rmplan workspace add --reuse` calls can select
+      the same workspace, both mutate it (checkout/branch) and only then attempt
+      to lock. This can corrupt workspace state and violates the reuse
+      requirements and the plan’s explicit risk note about locking before
+      changes."
+    done: true
+    description: >-
+      Lock acquisition happens after `prepareExistingWorkspace`, file copy, and
+      metadata updates. That leaves a race where two concurrent `rmplan
+      workspace add --reuse` calls can select the same workspace, both mutate it
+      (checkout/branch) and only then attempt to lock. This can corrupt
+      workspace state and violates the reuse requirements and the plan’s
+      explicit risk note about locking before changes.
+
+
+      Suggestion: Acquire the workspace lock immediately after selecting a
+      candidate (and before any fetch/checkout/branch or file copy). If lock
+      acquisition fails, try the next candidate; if preparation fails, release
+      the lock and continue.
+
+
+      Related file: src/rmplan/commands/workspace.ts:436
+  - title: "Address Review Feedback: `--from-branch` is ignored for non-reuse
+      workspace creation. The flag is only passed into the reuse path;
+      `createWorkspace` always creates the new branch from the clone’s current
+      HEAD. `rmplan workspace add <plan> --from-branch develop` will still
+      branch from the default branch unless `--reuse/--try-reuse` is used, which
+      violates the requirement for `workspace add`."
+    done: true
+    description: >-
+      `--from-branch` is ignored for non-reuse workspace creation. The flag is
+      only passed into the reuse path; `createWorkspace` always creates the new
+      branch from the clone’s current HEAD. `rmplan workspace add <plan>
+      --from-branch develop` will still branch from the default branch unless
+      `--reuse/--try-reuse` is used, which violates the requirement for
+      `workspace add`.
+
+
+      Suggestion: Plumb `fromBranch` into `createWorkspace` (and/or pre-checkout
+      the base branch) so the new branch is created from the specified base for
+      both new and reused workspaces. Add tests that cover `--from-branch`
+      without reuse.
+
+
+      Related file: src/rmplan/commands/workspace.ts:615
+  - title: "Address Review Feedback: Mutual exclusivity for `--reuse` and
+      `--try-reuse` is enforced only at the CLI entrypoint;
+      `handleWorkspaceAddCommand` accepts both and tests codify that behavior.
+      This contradicts the stated requirement that the flags are mutually
+      exclusive and should be rejected when both are present, especially for
+      non-CLI invocations (MCP/tests)."
+    done: true
+    description: >-
+      Mutual exclusivity for `--reuse` and `--try-reuse` is enforced only at the
+      CLI entrypoint; `handleWorkspaceAddCommand` accepts both and tests codify
+      that behavior. This contradicts the stated requirement that the flags are
+      mutually exclusive and should be rejected when both are present,
+      especially for non-CLI invocations (MCP/tests).
+
+
+      Suggestion: Validate exclusivity inside `handleWorkspaceAddCommand` and
+      update the test to expect an error when both flags are provided.
+
+
+      Related file: src/rmplan/commands/workspace.reuse.test.ts:548
+  - title: "Address Review Feedback: If `prepareExistingWorkspace` fails for the
+      first clean/unlocked workspace, reuse immediately fails without trying
+      other available workspaces. A single broken workspace can block `--reuse`
+      even when other clean unlocked workspaces exist."
+    done: true
+    description: >-
+      If `prepareExistingWorkspace` fails for the first clean/unlocked
+      workspace, reuse immediately fails without trying other available
+      workspaces. A single broken workspace can block `--reuse` even when other
+      clean unlocked workspaces exist.
+
+
+      Suggestion: Continue iterating through candidate workspaces when
+      preparation fails; only return failure after exhausting all clean,
+      unlocked options.
+
+
+      Related file: src/rmplan/commands/workspace.ts:411
+  - title: "Address Review Feedback: Metadata is not properly updated when reusing
+      without `planData` (e.g., `--issue` or no plan). The patch only updates
+      `name`/`branch`, leaving stale
+      `planId`/`planTitle`/`description`/`issueUrls` from the previous task, and
+      no follow-up update happens after issue import."
+    done: true
+    description: >-
+      Metadata is not properly updated when reusing without `planData` (e.g.,
+      `--issue` or no plan). The patch only updates `name`/`branch`, leaving
+      stale `planId`/`planTitle`/`description`/`issueUrls` from the previous
+      task, and no follow-up update happens after issue import.
+
+
+      Suggestion: When no plan data is available, clear plan-related metadata
+      fields explicitly, and/or update metadata after `importSingleIssue` when
+      the new plan is created. Also pass issue URLs/identifier into the metadata
+      patch for issue-based reuse.
+
+
+      Related file: src/rmplan/commands/workspace.ts:465
+  - title: "Address Review Feedback: Reused workspace reports the new `workspaceId`
+      as the ID even though the tracked workspace’s `taskId` is unchanged. This
+      creates inconsistent IDs: the success output says `ID: task-<new>` while
+      the tracker still contains the old `taskId`, so later id-based commands
+      won’t find it."
+    done: true
+    description: >-
+      Reused workspace reports the new `workspaceId` as the ID even though the
+      tracked workspace’s `taskId` is unchanged. This creates inconsistent IDs:
+      the success output says `ID: task-<new>` while the tracker still contains
+      the old `taskId`, so later id-based commands won’t find it.
+
+
+      Suggestion: Return the actual existing workspace `taskId` from
+      `tryReuseExistingWorkspace` and use that in the success output, or
+      explicitly update the tracked `taskId` if changing it is intended (the
+      plan notes it should stay unchanged).
+
+
+      Related file: src/rmplan/commands/workspace.ts:627
+  - title: "Address Review Feedback: Reuse path ignores `createBranch` config and
+      `--no-create-branch`. `prepareExistingWorkspace` always creates a new
+      branch, so `rmplan workspace add --reuse --no-create-branch` (or config
+      `createBranch: false`) still creates a branch, diverging from normal
+      workspace add behavior."
+    done: true
+    description: >-
+      Reuse path ignores `createBranch` config and `--no-create-branch`.
+      `prepareExistingWorkspace` always creates a new branch, so `rmplan
+      workspace add --reuse --no-create-branch` (or config `createBranch:
+      false`) still creates a branch, diverging from normal workspace add
+      behavior.
+
+
+      Suggestion: Pass an explicit `createBranch` flag into reuse preparation
+      and conditionally skip branch creation when disabled; ensure metadata
+      updates and downstream logic still behave correctly.
+
+
+      Related file: src/rmplan/workspace/workspace_manager.ts:836
+changedFiles:
+  - README.md
+  - claude-plugin/skills/using-rmplan/SKILL.md
+  - claude-plugin/skills/using-rmplan/references/cli-commands.md
+  - claude-plugin/skills/using-rmplan/references/generating-plans.md
+  - claude-plugin/skills/using-rmplan/references/viewing-and-completing.md
+  - schema/rmplan-config-schema.json
+  - src/rmplan/commands/agent/agent.test.ts
+  - src/rmplan/commands/agent/agent.ts
+  - src/rmplan/commands/compact.ts
+  - src/rmplan/commands/description.test.ts
+  - src/rmplan/commands/description.ts
+  - src/rmplan/commands/generate.ts
+  - src/rmplan/commands/remove-task.test.ts
+  - src/rmplan/commands/remove-task.ts
+  - src/rmplan/commands/review.test.ts
+  - src/rmplan/commands/review.ts
+  - src/rmplan/commands/task-management.integration.test.ts
+  - src/rmplan/commands/tools.test.ts
+  - src/rmplan/commands/tools.ts
+  - src/rmplan/commands/update-docs.ts
+  - src/rmplan/commands/workspace.reuse.test.ts
+  - src/rmplan/commands/workspace.ts
+  - src/rmplan/configSchema.test.ts
+  - src/rmplan/configSchema.ts
+  - src/rmplan/executors/claude_code/agent_prompts.test.ts
+  - src/rmplan/executors/claude_code/agent_prompts.ts
+  - src/rmplan/executors/claude_code/orchestrator_prompt.test.ts
+  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
+  - src/rmplan/executors/claude_code.ts
+  - src/rmplan/executors/codex_cli/external_review.test.ts
+  - src/rmplan/executors/codex_cli/external_review.ts
+  - src/rmplan/executors/codex_cli/normal_mode.ts
+  - src/rmplan/executors/codex_cli/simple_mode.ts
+  - src/rmplan/executors/codex_cli.capture_output.test.ts
+  - src/rmplan/executors/codex_cli.fix_loop.test.ts
+  - src/rmplan/executors/codex_cli.retry.test.ts
+  - src/rmplan/executors/codex_cli.simple_mode.test.ts
+  - src/rmplan/executors/codex_cli.test.ts
+  - src/rmplan/executors/codex_cli.ts
+  - src/rmplan/executors/schemas.test.ts
+  - src/rmplan/executors/schemas.ts
+  - src/rmplan/executors/types.ts
+  - src/rmplan/incremental_review.ts
+  - src/rmplan/mcp/README.md
+  - src/rmplan/mcp/generate_mode.test.ts
+  - src/rmplan/plans/mark_done.test.ts
+  - src/rmplan/review_runner.test.ts
+  - src/rmplan/review_runner.ts
+  - src/rmplan/rmplan.integration.test.ts
+  - src/rmplan/rmplan.ts
+  - src/rmplan/simple-field.test.ts
+  - src/rmplan/tools/manage_plan_task.ts
+  - src/rmplan/tools/schemas.ts
+  - src/rmplan/utils/cleanup_plan_creator.ts
+  - src/rmplan/utils/task_operations.ts
+  - src/rmplan/workspace/workspace_manager.ts
+  - src/rmplan/workspace/workspace_prepare.test.ts
+  - src/rmplan/workspace/workspace_tracker.ts
 tags: []
 ---
 
@@ -143,6 +347,22 @@ Tries to reuse an existing workspace. If none available, **falls back to creatin
 5. **Lock the workspace**: Acquire a lock on the reused workspace
 
 The `--from-branch` option allows specifying a different base branch instead of the detected trunk branch (main/master).
+
+## Current Progress
+### Current State
+- Workspace reuse now restores original state on post-prepare failures and reports the last reuse failure in strict mode, with clearer reused ID output.
+### Completed (So Far)
+- Restored workspace state (and attempted branch cleanup) when reuse fails after preparation, preventing unlocked mutation.
+- Surfaced last reuse failure detail for strict reuse errors and clarified requested ID in reuse output.
+- Tightened reuse test git status mock and set up a failing git remote to exercise fallback logic.
+### Remaining
+- None
+### Next Iteration Guidance
+- None
+### Decisions / Changes
+- Keep reuse failures per-workspace and restore state before releasing locks.
+### Risks / Blockers
+- None
 
 ## Key Findings
 
@@ -658,3 +878,67 @@ Tests should cover:
 5. **Remote branch fetch**: If the base branch doesn't exist locally, `git checkout` will fail. May need `git fetch origin <branch>:<branch>` or similar.
 
 6. **Jj colocated repos**: Some jj repos are "colocated" with git (have both `.jj` and `.git`). The detection logic using `getUsingJj()` should handle this, but test thoroughly.
+
+## Current Progress
+### Current State
+- Workspace reuse now captures jj bookmarks (not git branches) and restores via branch/commit fallback
+- Plan copy rollback removes newly copied plan files/empty dirs and keeps reused workspaces clean
+- Added rollback tests covering prepare failure and plan copy failure paths
+
+### Completed (So Far)
+- Task 1: Added `--reuse`, `--try-reuse`, and `--from-branch` CLI options to workspace add command in rmplan.ts with mutual exclusivity validation
+- Task 2: Added `branch` field to `WorkspaceMetadataPatch` interface in workspace_tracker.ts
+- Task 3: Implemented `findUniqueBranchName()` function supporting both Git and Jujutsu with auto-suffix capability
+- Task 4: Implemented `prepareExistingWorkspace()` function with Git/Jujutsu support, fetch handling, ALLOW_OFFLINE env var support, and branch creation
+- Task 5: Implemented `tryReuseExistingWorkspace()` helper function that finds available workspaces, prepares them, copies plan files, updates metadata, and acquires locks
+- Task 6: Integrated reuse flags into `handleWorkspaceAddCommand()` with proper error handling and fallback behavior
+- Task 7: Completed test coverage for prepareExistingWorkspace with 17 tests in workspace_prepare.test.ts
+- Task 8: Completed test coverage for workspace reuse with 14 tests in workspace.reuse.test.ts
+- Review feedback: moved reuse locking ahead of prepare/copy/metadata with lock release on failures
+- Review feedback: enforced `--reuse`/`--try-reuse` exclusivity inside the handler with updated tests
+- Review feedback: added fallback coverage when preparation fails on the first reusable workspace
+- Review feedback: `--from-branch` now applies to new workspace creation (including JJ)
+- Review feedback: cleared stale issueUrls when reusing without plan issues
+- Review feedback: `createBranch=false` honored for JJ reuse prep and JJ `--from-branch` uses proper commands
+- Review feedback: plan copy failures during reuse are fatal and release the lock
+- Review feedback: tryReuseExistingWorkspace doc comment matches lock-before-prepare flow
+- Review feedback: `prepareExistingWorkspace` now skips fetch when no remote exists and tests cover missing-remote and fetch-failure cases
+- Review feedback: reuse metadata now clears `planId`/`planTitle` when plan data is missing those fields
+- Review feedback: README documents new workspace add flags and reuse semantics
+- Testing: added JJ tests for `createBranch=false` reuse prep and JJ `--from-branch` creation
+- Review feedback: added commit-hash support to git mock for restore-state coverage
+- Review feedback: added reuse rollback tests for prepare failure and plan copy failure
+- Review feedback: jj restore state uses jj bookmark capture with commit fallback
+- Review feedback: plan copy rollback cleans up copied files/directories before releasing lock
+
+### Remaining
+- Task 14: Address Review Feedback: Reused workspace reports the new `workspaceId` even though tracked `taskId` is unchanged
+
+### Next Iteration Guidance
+- Investigate Task 14 workspaceId reporting mismatch, add coverage if needed, then rerun the full test suite
+
+### Decisions / Changes
+- Created separate test file `workspace_prepare.test.ts` rather than adding to existing workspace_manager.test.ts for cleaner organization
+- Created separate test file `workspace.reuse.test.ts` for integration-level tests of the reuse workflow
+- Tests use real Git repositories in temp directories rather than heavy mocking
+- Jujutsu tests are conditional on `jj` being installed (they exist in workspace_prepare.test.ts)
+- Added Jujutsu user.name/email config to prevent test flakiness on machines without global jj config
+- Fixed misleading mutual exclusivity test comment and renamed to accurately describe behavior
+- Added test for `--issue` option with workspace reuse to satisfy Task 8 requirements
+- Added real branch-creation failure test using invalid branch name (starting with `-`)
+- Lock acquisition now happens before workspace preparation to avoid reuse races
+- Preparation failures now release the lock and continue to other candidates
+- Added fallback test coverage for reuse when preparation fails
+- Adjusted review print-mode test to mock logging output instead of stdout interception
+- Standardized reuse test issue-tracker mock to match the IssueTracker return shape
+- Switched JJ base selection without branch creation to `jj edit`
+- Made reuse plan copy errors fatal to match createWorkspace behavior
+- Added JJ-specific tests for `createBranch=false` reuse prep and `--from-branch` new workspace creation
+- Treat missing remotes as a warning and skip fetch rather than requiring ALLOW_OFFLINE
+- Updated fetch-failure tests to use an invalid origin URL so missing-remotes stay non-fatal
+- Ran `bun run format`, `bun run check`, and `bun test`
+- Added explicit rollback cleanup for plan copy failures and jj restore fallback behavior
+- Ran `bun test src/rmplan/commands/workspace.reuse.test.ts` after rollback coverage updates
+
+### Risks / Blockers
+- None

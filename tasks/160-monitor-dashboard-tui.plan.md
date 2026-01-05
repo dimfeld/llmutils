@@ -6,6 +6,7 @@ id: 160
 uuid: 514cedb9-6431-400a-a997-12d139376146
 status: pending
 priority: medium
+epic: true
 dependencies:
   - 158
 references:

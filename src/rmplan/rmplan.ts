@@ -1017,7 +1017,14 @@ workspaceCommand
   .option('--repo-url <url>', 'Repository URL for git method (overrides config)')
   .option('--create-branch', 'Automatically create a new branch for the workspace (default: true)')
   .option('--no-create-branch', 'Disable automatic branch creation')
+  .option('--reuse', 'Reuse an existing unlocked workspace (fails if none available)')
+  .option('--try-reuse', 'Try to reuse an existing workspace, create new if unavailable')
+  .option('--from-branch <branch>', 'Create new branch from this base instead of main/master')
   .action(async (planIdentifier, options, command) => {
+    if (options.reuse && options.tryReuse) {
+      console.error('Error: Cannot use both --reuse and --try-reuse');
+      process.exit(1);
+    }
     const { handleWorkspaceAddCommand } = await import('./commands/workspace.js');
     await handleWorkspaceAddCommand(planIdentifier, options, command).catch(handleCommandError);
   });

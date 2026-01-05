@@ -217,6 +217,8 @@ export interface WorkspaceMetadataPatch {
   issueUrls?: string[];
   /** Setting to empty string clears the field */
   repositoryId?: string;
+  /** Branch name associated with the workspace (for reused workspaces) */
+  branch?: string;
 }
 
 /**
@@ -297,6 +299,14 @@ export async function patchWorkspaceMetadata(
       delete workspace.repositoryId;
     } else {
       workspace.repositoryId = patch.repositoryId;
+    }
+  }
+
+  if (patch.branch !== undefined) {
+    if (patch.branch === '') {
+      delete workspace.branch;
+    } else {
+      workspace.branch = patch.branch;
     }
   }
 

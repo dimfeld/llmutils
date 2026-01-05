@@ -1081,29 +1081,24 @@ tasks:
     };
 
     const stdoutWrites: string[] = [];
-    const originalStdoutWrite = process.stdout.write.bind(process.stdout);
-    (process.stdout as any).write = ((chunk: any, encoding?: any, cb?: any) => {
-      stdoutWrites.push(String(chunk));
-      if (typeof cb === 'function') {
-        cb();
-      }
-      return true;
-    }) as any;
 
-    try {
-      await handleReviewCommand(
-        planFile,
-        {
-          print: true,
-          format: 'terminal',
-          verbosity: 'normal',
-          noSave: true,
-        },
-        mockCommand
-      );
-    } finally {
-      process.stdout.write = originalStdoutWrite;
-    }
+    // Assumption: print mode outputs via log() (not direct stdout writes).
+    await moduleMocker.mock('../../logging.js', () => ({
+      log: (value: string) => {
+        stdoutWrites.push(String(value));
+      },
+    }));
+
+    await handleReviewCommand(
+      planFile,
+      {
+        print: true,
+        format: 'terminal',
+        verbosity: 'normal',
+        noSave: true,
+      },
+      mockCommand
+    );
 
     const output = stdoutWrites.join('').trim();
     const parsed = JSON.parse(output);

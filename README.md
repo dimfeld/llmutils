@@ -1071,7 +1071,23 @@ rmplan workspace add 123 --id feature-oauth
 
 # Create without plan (manual workspace)
 rmplan workspace add --id scratch-work
+
+# Reuse an existing clean, unlocked workspace (fails if none available)
+rmplan workspace add 123 --reuse
+
+# Try reuse first, otherwise create a new workspace
+rmplan workspace add 123 --try-reuse
+
+# Create (or reuse) using a specific base branch
+rmplan workspace add 123 --from-branch develop
 ```
+
+**Reuse flags:**
+
+- `--reuse`: Reuse an existing clean, unlocked workspace for the current repo. Fails if no reusable workspace is found.
+- `--try-reuse`: Attempt reuse first; if none are available, create a new workspace instead.
+- `--from-branch`: Base branch to check out before creating or reusing a workspace branch.
+- `--reuse` and `--try-reuse` are mutually exclusive.
 
 **List workspaces:**
 
