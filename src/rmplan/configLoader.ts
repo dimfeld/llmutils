@@ -215,6 +215,19 @@ export interface LoadEffectiveConfigOptions {
   quiet?: boolean;
 }
 
+function assertNotificationCommandConfigured(config: RmplanConfig): void {
+  const notificationConfig = config.notifications;
+  if (!notificationConfig) {
+    return;
+  }
+  if (notificationConfig.enabled === false) {
+    return;
+  }
+  if (!notificationConfig.command) {
+    throw new Error('Notification command is required unless notifications are disabled.');
+  }
+}
+
 /**
  * Orchestrates finding, loading, parsing, and validating the rmplan configuration.
  * Handles errors gracefully and logs user-friendly messages.
@@ -249,7 +262,13 @@ export async function loadEffectiveConfig(
 
   try {
     const globalConfigPath = await findGlobalConfigPath();
-    const globalConfig = globalConfigPath ? await loadConfig(globalConfigPath) : undefined;
+    const resolvedConfigPath = configPath ? path.resolve(configPath) : null;
+    const resolvedGlobalConfigPath = globalConfigPath ? path.resolve(globalConfigPath) : null;
+    const shouldLoadGlobal = Boolean(
+      globalConfigPath && (!resolvedConfigPath || resolvedGlobalConfigPath !== resolvedConfigPath)
+    );
+    const globalConfig =
+      shouldLoadGlobal && globalConfigPath ? await loadConfig(globalConfigPath) : undefined;
     const configExists = configPath ? await Bun.file(configPath).exists() : false;
     const baseConfig = getDefaultConfig();
     const config = configExists ? await loadConfig(configPath) : undefined;
@@ -273,7 +292,7 @@ export async function loadEffectiveConfig(
 
         const configSources = [
           configPath && config ? `Main: ${configPath}` : 'Default config',
-          globalConfigPath ? `\nGlobal: ${globalConfigPath}` : null,
+          shouldLoadGlobal && globalConfigPath ? `\nGlobal: ${globalConfigPath}` : null,
           `\nLocal override: ${localConfigPath}`,
         ].filter((entry): entry is string => entry !== null);
 
@@ -291,10 +310,12 @@ export async function loadEffectiveConfig(
     } else {
       if (configPath && config) {
         debugLog('Loaded configuration file', configPath);
-      } else if (globalConfigPath) {
+      } else if (shouldLoadGlobal && globalConfigPath) {
         debugLog('Loaded configuration file', globalConfigPath);
       }
     }
+
+    assertNotificationCommandConfigured(effectiveConfig);
 
     const configWithMetadata: RmplanConfig = {
       ...effectiveConfig,
@@ -314,5 +335,32 @@ export async function loadEffectiveConfig(
   } catch (err: any) {
     error(`Error loading or validating configuration: ${err.message}`);
     throw err;
+  }
+}
+
+/**
+ * Best-effort loader for global configuration, intended for notification fallbacks.
+ * Returns the default config when the global config is missing or invalid.
+ */
+export async function loadGlobalConfigForNotifications(
+  overridePath?: string
+): Promise<RmplanConfig> {
+  const baseConfig = getDefaultConfig();
+  try {
+    const globalConfigPath = await findGlobalConfigPath();
+    if (!globalConfigPath) {
+      return baseConfig;
+    }
+
+    const resolvedGlobalPath = path.resolve(globalConfigPath);
+    if (overridePath && path.resolve(overridePath) === resolvedGlobalPath) {
+      return baseConfig;
+    }
+
+    const globalConfig = await loadConfig(globalConfigPath);
+    return mergeConfigs(baseConfig, globalConfig);
+  } catch (err) {
+    debugLog('Failed to load global configuration for notification fallback:', err);
+    return baseConfig;
   }
 }

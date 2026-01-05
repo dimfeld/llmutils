@@ -676,6 +676,7 @@ export class ClaudeCodeExecutor implements Executor {
       const result = await spawnAndLogOutput(args, {
         env: {
           ...process.env,
+          RMPLAN_NOTIFY_SUPPRESS: '1',
           ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
           CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
         },
@@ -684,7 +685,9 @@ export class ClaudeCodeExecutor implements Executor {
         initialInactivityTimeoutMs: 2 * 60 * 1000, // 2 minutes to start
         onInactivityKill: () => {
           killedByTimeout = true;
-          log(`Claude review timed out after ${Math.round(reviewTimeoutMs / 60000)} minutes; terminating.`);
+          log(
+            `Claude review timed out after ${Math.round(reviewTimeoutMs / 60000)} minutes; terminating.`
+          );
         },
         formatStdout: (output) => {
           let lines = splitter(output);
@@ -707,7 +710,9 @@ export class ClaudeCodeExecutor implements Executor {
       });
 
       if (killedByTimeout || result.killedByInactivity) {
-        throw new Error(`Claude review timed out after ${Math.round(reviewTimeoutMs / 60000)} minutes`);
+        throw new Error(
+          `Claude review timed out after ${Math.round(reviewTimeoutMs / 60000)} minutes`
+        );
       }
 
       if (result.exitCode !== 0) {
@@ -1302,6 +1307,7 @@ export class ClaudeCodeExecutor implements Executor {
       const result = await spawnAndLogOutput(args, {
         env: {
           ...process.env,
+          RMPLAN_NOTIFY_SUPPRESS: '1',
           ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
           CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
         },

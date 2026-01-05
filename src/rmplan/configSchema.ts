@@ -38,7 +38,7 @@ export const postApplyCommandSchema = z.object({
 export const notificationCommandSchema = z
   .object({
     /** The command string to execute. */
-    command: z.string(),
+    command: z.string().optional(),
     /** Optional working directory for the command. Defaults to the repository root. */
     workingDirectory: z.string().optional(),
     /** Optional environment variables for the command. */
@@ -400,6 +400,7 @@ export interface RmplanRuntimeConfigMetadata {
 export type RmplanConfig = z.output<typeof rmplanConfigSchema> & RmplanRuntimeConfigMetadata;
 export type RmplanConfigInput = z.input<typeof rmplanConfigSchema>;
 export type PostApplyCommand = z.output<typeof postApplyCommandSchema>;
+export type NotificationCommand = z.output<typeof notificationCommandSchema>;
 
 /**
  * Resolves the tasks directory path, handling both absolute and relative paths.

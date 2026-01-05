@@ -134,6 +134,34 @@ describe('runClaudeCodeGeneration', () => {
     );
   });
 
+  test('sets notification suppression env for orchestration subprocesses', async () => {
+    let capturedEnv: Record<string, string> | undefined;
+    let callIndex = 0;
+
+    spawnMock.mockImplementation(async (_cmd, options) => {
+      callIndex += 1;
+      if (callIndex === 1) {
+        capturedEnv = options?.env;
+        options?.formatStdout?.('{"session_id":"session-env"}\n');
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      options?.formatStdout?.(
+        '{"type":"result","subtype":"success","result":"Plan output","total_cost_usd":0.01,"duration_ms":1000,"num_turns":2}\n'
+      );
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const { runClaudeCodeGeneration } = await import('./claude_code_orchestrator.js');
+
+    await runClaudeCodeGeneration({
+      planningPrompt: 'plan',
+      generationPrompt: 'generate',
+      options: { includeDefaultTools: true },
+    });
+
+    expect(capturedEnv?.RMPLAN_NOTIFY_SUPPRESS).toBe('1');
+  });
+
   test('continues when research step exits with error', async () => {
     const responses = [
       {

@@ -120,6 +120,7 @@ export async function runClaudeCodeGeneration(
   const planningResult = await spawnAndLogOutput(planningArgs, {
     env: {
       ...process.env,
+      RMPLAN_NOTIFY_SUPPRESS: '1',
       ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
     },
     cwd: gitRoot,
@@ -168,6 +169,7 @@ export async function runClaudeCodeGeneration(
       const researchResult = await spawnAndLogOutput(researchArgs, {
         env: {
           ...process.env,
+          RMPLAN_NOTIFY_SUPPRESS: '1',
           ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
         },
         cwd: gitRoot,
@@ -222,6 +224,7 @@ export async function runClaudeCodeGeneration(
   const generationResult = await spawnAndLogOutput(generationArgs, {
     env: {
       ...process.env,
+      RMPLAN_NOTIFY_SUPPRESS: '1',
       ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
     },
     cwd: gitRoot,

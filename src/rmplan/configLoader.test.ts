@@ -400,6 +400,77 @@ defaultExecutor: ${DEFAULT_EXECUTOR}
       ]);
     });
 
+    test('loadEffectiveConfig skips global merge when override path matches global config', async () => {
+      const globalConfigPath = path.join(fakeHomeDir, '.config', 'rmplan', 'config.yml');
+      await fs.mkdir(path.dirname(globalConfigPath), { recursive: true });
+      await fs.writeFile(
+        globalConfigPath,
+        yaml.stringify({
+          postApplyCommands: [
+            {
+              title: 'Global Command',
+              command: 'echo "global"',
+            },
+          ],
+          autoexamples: ['global-example'],
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig(globalConfigPath);
+
+      expect(config.postApplyCommands).toHaveLength(1);
+      expect(config.postApplyCommands?.[0].title).toBe('Global Command');
+      expect(config.autoexamples).toEqual(['global-example']);
+    });
+
+    test('loadEffectiveConfig allows repository notification disable without command', async () => {
+      const globalConfigPath = path.join(fakeHomeDir, '.config', 'rmplan', 'config.yml');
+      await fs.mkdir(path.dirname(globalConfigPath), { recursive: true });
+      await fs.writeFile(
+        globalConfigPath,
+        yaml.stringify({
+          notifications: {
+            command: 'notify',
+          },
+        }),
+        'utf-8'
+      );
+
+      const mainConfigPath = path.join(configDir, 'rmplan.yml');
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          notifications: {
+            enabled: false,
+          },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.notifications?.enabled).toBe(false);
+      expect(config.notifications?.command).toBe('notify');
+    });
+
+    test('loadEffectiveConfig throws when notifications lack a command and are enabled', async () => {
+      const mainConfigPath = path.join(configDir, 'rmplan.yml');
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          notifications: {
+            env: { NOTIFY_TOKEN: 'token' },
+          },
+        }),
+        'utf-8'
+      );
+
+      await expect(loadEffectiveConfig()).rejects.toThrow(
+        'Notification command is required unless notifications are disabled.'
+      );
+    });
+
     test('loadEffectiveConfig applies local overrides over global and repository configs', async () => {
       const globalConfigPath = path.join(fakeHomeDir, '.config', 'rmplan', 'config.yml');
       await fs.mkdir(path.dirname(globalConfigPath), { recursive: true });

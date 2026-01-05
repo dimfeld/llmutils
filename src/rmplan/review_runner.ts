@@ -122,8 +122,7 @@ async function executeWithRetry(
   prepared: PreparedReviewExecutor,
   planInfo: ReviewPlanInfo
 ): Promise<
-  | { name: ReviewExecutorName; rawOutput: string }
-  | { name: ReviewExecutorName; error: unknown }
+  { name: ReviewExecutorName; rawOutput: string } | { name: ReviewExecutorName; error: unknown }
 > {
   const maxAttempts = MAX_TIMEOUT_RETRIES + 1;
 
@@ -142,7 +141,9 @@ async function executeWithRetry(
       return { name: prepared.name, rawOutput };
     } catch (error) {
       if (isTimeoutError(error) && attempt < maxAttempts) {
-        log(`${prepared.name} review timed out, retrying (attempt ${attempt + 1}/${maxAttempts})...`);
+        log(
+          `${prepared.name} review timed out, retrying (attempt ${attempt + 1}/${maxAttempts})...`
+        );
         continue;
       }
       return { name: prepared.name, error };

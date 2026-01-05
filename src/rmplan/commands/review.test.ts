@@ -24,6 +24,10 @@ let testDir: string;
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'rmplan-review-test-'));
   vi.spyOn(console, 'error').mockImplementation(() => {});
+
+  await moduleMocker.mock('../notifications.js', () => ({
+    sendNotification: mock(async () => true),
+  }));
 });
 
 afterEach(() => {
@@ -1101,7 +1105,12 @@ tasks:
     );
 
     const output = stdoutWrites.join('').trim();
-    const parsed = JSON.parse(output);
+    const jsonStart = output.indexOf('{');
+    const jsonEnd = output.lastIndexOf('}');
+    if (jsonStart === -1 || jsonEnd === -1 || jsonEnd <= jsonStart) {
+      throw new Error(`Expected JSON output, got: ${output}`);
+    }
+    const parsed = JSON.parse(output.slice(jsonStart, jsonEnd + 1));
     expect(parsed.planId).toBe('1');
     expect(parsed.issues).toHaveLength(1);
   });

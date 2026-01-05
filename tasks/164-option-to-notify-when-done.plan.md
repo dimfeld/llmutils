@@ -13,46 +13,46 @@ createdAt: 2026-01-05T06:42:25.241Z
 updatedAt: 2026-01-05T07:31:29.358Z
 tasks:
   - title: Add notifications config to schema
-    done: false
+    done: true
     description: Update src/rmplan/configSchema.ts with an optional notifications
       block (command, workingDirectory, env, enabled). Avoid zod defaults.
       Regenerate schema/rmplan-config-schema.json via
       scripts/update-json-schemas.ts and add/update any schema tests as needed.
   - title: Load global config with precedence and tests
-    done: false
+    done: true
     description: Extend src/rmplan/configLoader.ts to load
       ~/.config/rmplan/config.yml when present and merge with existing repo
       config (default -> global -> repo/external -> local). Add configLoader
       tests covering presence/absence and precedence of global config.
   - title: Implement notification helper with suppression env
-    done: false
+    done: true
     description: Create src/rmplan/notifications.ts to build and send Notification
       payloads (event + message required). Execute configured command with JSON
       on stdin and warn-only failures. Suppress notifications when
       RMPLAN_NOTIFY_SUPPRESS=1. Add unit tests for payload construction and
       suppression.
   - title: Integrate notifications into rmplan agent
-    done: false
+    done: true
     description: Wire notification helper into src/rmplan/commands/agent/agent.ts so
       a single notification fires on exit for all paths (stub, batch, serial,
       error). Include correct cwd, plan info, event=agent_done, and message
       reflecting success/failure. Add tests covering success, error, and
       suppression env.
   - title: Integrate notifications into rmplan review
-    done: false
+    done: true
     description: Wire notification helper into src/rmplan/commands/review.ts to emit
       review_input before interactive prompts and review_done after full review
       completion (including error exits but excluding early no-changes return).
       Ensure suppression env is honored. Add tests for prompt timing, error
       notification, and no-changes skip.
   - title: Propagate suppression env from Claude executor
-    done: false
+    done: true
     description: Add RMPLAN_NOTIFY_SUPPRESS=1 to environment passed in
       src/rmplan/executors/claude_code.ts (and claude_code_orchestrator.ts if
       used for spawning) so nested rmplan runs do not notify. Add tests
       verifying env propagation.
   - title: Document notifications and global config
-    done: false
+    done: true
     description: Update README.md to document notifications config and global config
       path/precedence. Ensure any new behavior is reflected in docs as required
       by project guidance.
@@ -218,8 +218,6 @@ Step-by-step Implementation Guide
    - agent: mock notifications helper to assert payload for success/failure; test stub and batch paths.
    - review: mock notifications helper and prompt functions to assert “ready for input” notification timing.
 7) Update schema and README.
-   - Run scripts/update-json-schemas.ts.
-   - Document new notifications config and global config file path and merge order.
 
 Manual Testing (for implementer later)
 - Create a simple notify script that writes stdin JSON to a temp file, configure it in `~/.config/rmplan/config.yml`, and run `rmplan agent <plan>` to verify payload and timing.
@@ -233,16 +231,17 @@ Rationale
 
 ## Current Progress
 ### Current State
-- Added notifications config schema entries and merged global config loading with precedence-aware tests; regenerated JSON schema.
+- Regenerated rmplan JSON schemas after notification updates and validated formatting/tests.
 ### Completed (So Far)
-- Added notifications config schema and regenerated schema artifacts.
-- Added global config merge logic plus tests for global/repo/local precedence.
+- Notifications config, global config merge logic, helper, and command integrations are implemented with tests.
+- Notification fallback uses global config when `loadEffectiveConfig` fails; regression tests cover error paths.
+- Claude executor propagation for `RMPLAN_NOTIFY_SUPPRESS=1` is in place with coverage.
 ### Remaining
-- Implement notification helper and integrate with agent/review/executor flows.
-- Update README and remaining tests for notification behavior.
+- Reconcile plan task completion statuses (Tasks 1–6) with the implemented code.
 ### Next Iteration Guidance
-- Build notification helper and wire it into agent/review with suppression env handling and targeted tests.
+- If any tasks remain incomplete, update schema/docs/tests as needed and re-run `bun test`.
 ### Decisions / Changes
-- Global config path is `~/.config/rmplan/config.yml` with merge order base → global → repo/external → local, without injecting defaults when a repo config exists.
+- Ran `scripts/update-json-schemas.ts`; schema output now reflects generated defaults.
+- Full `bun test` run completed without timeouts.
 ### Risks / Blockers
 - None

@@ -1288,6 +1288,58 @@ autoexamples:
 issueTracker: github # or 'linear'
 ```
 
+### Configuration Files and Precedence
+
+rmplan merges configuration from multiple sources. Later entries override earlier ones:
+
+1. Default configuration (built-in)
+2. Global config: `~/.config/rmplan/config.yml`
+3. Repository config: `.rmfilter/config/rmplan.yml` (or the path provided with `--config`)
+4. Local override: `rmplan.local.yml` (in the same directory as the main config)
+
+Use the global config for machine-wide defaults, and the local override for per-repo tweaks that
+should not be committed. The global config uses the same schema and fields as the repository
+config, so you can copy settings between them.
+
+### Notifications
+
+Configure an optional notification hook to run a command when agent/review completes or when review
+needs input:
+
+```yaml
+notifications:
+  command: /path/to/notify-script
+  workingDirectory: . # Optional, defaults to repo root
+  env:
+    NOTIFY_LEVEL: info
+  enabled: true
+```
+
+Fields:
+
+- `command`: Shell command to execute. The notification payload is sent as JSON on stdin.
+- `workingDirectory`: Optional working directory for the command (defaults to repository root).
+- `env`: Optional environment variables to set for the command.
+- `enabled`: Set to `false` to disable notifications.
+
+Notification payload (JSON on stdin):
+
+- `source`: Always `"rmplan"`.
+- `command`: `"agent"` or `"review"`.
+- `event`: `"agent_done"`, `"review_done"`, or `"review_input"`.
+- `status`: `"success"`, `"error"`, or `"input"` to indicate outcome or prompt state.
+- `cwd`: Working directory.
+- `planId`: Plan ID (string).
+- `planFile`: Path to the plan file.
+- `planSummary`: Brief plan summary.
+- `planDescription`: Plan description.
+- `message`: Human-readable message describing the event.
+- `errorMessage`: Error detail for `"error"` statuses (when available).
+
+To suppress notifications for a single run, set `RMPLAN_NOTIFY_SUPPRESS=1` in the environment.
+`rmplan review --dry-run` prints the prompt and skips notifications, while `rmplan agent --dry-run`
+still sends the completion notification.
+
 ### Workspace Auto-Creation
 
 See [Workspace Management](#workspace-management) section for details.

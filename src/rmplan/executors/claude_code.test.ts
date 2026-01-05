@@ -631,4 +631,47 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
       'REVIEW CONTEXT\n\nBe sure to provide the structured output with your response'
     );
   });
+
+  test('sets notification suppression env on Claude subprocess', async () => {
+    let capturedEnv: Record<string, string> | undefined;
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+        capturedEnv = opts?.env;
+        return { exitCode: 0, stdout: '', stderr: '', signal: null, killedByInactivity: false };
+      }),
+      createLineSplitter: () => (s: string) => s.split('\n'),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock(() => ({
+        type: 'assistant',
+        message: '',
+        rawMessage: '',
+        failed: false,
+      })),
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir },
+      {} as any
+    );
+
+    await exec.execute('CTX', {
+      planId: 'p1',
+      planTitle: 'Plan',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'normal',
+    });
+
+    expect(capturedEnv?.RMPLAN_NOTIFY_SUPPRESS).toBe('1');
+  });
 });
