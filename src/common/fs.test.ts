@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
-import { validatePath, secureWrite, secureRm } from './fs';
+import { validatePath, secureWrite, secureRm, expandTilde } from './fs';
 
 describe('validatePath', () => {
   const baseDir = '/home/user/project';
@@ -223,5 +223,42 @@ describe('secureRm', () => {
         .then(() => true)
         .catch(() => false)
     ).toBe(false);
+  });
+});
+
+describe('expandTilde', () => {
+  const homeDir = os.homedir();
+
+  it('should expand ~ to home directory', () => {
+    const result = expandTilde('~');
+    expect(result).toBe(homeDir);
+  });
+
+  it('should expand ~/path to home directory with path', () => {
+    const result = expandTilde('~/Documents/file.txt');
+    expect(result).toBe(path.join(homeDir, 'Documents/file.txt'));
+  });
+
+  it('should not modify absolute paths', () => {
+    const absolutePath = '/usr/local/bin/test';
+    const result = expandTilde(absolutePath);
+    expect(result).toBe(absolutePath);
+  });
+
+  it('should not modify relative paths without tilde', () => {
+    const relativePath = 'some/relative/path';
+    const result = expandTilde(relativePath);
+    expect(result).toBe(relativePath);
+  });
+
+  it('should not expand tilde in the middle of path', () => {
+    const pathWithMiddleTilde = '/path/to/~/file';
+    const result = expandTilde(pathWithMiddleTilde);
+    expect(result).toBe(pathWithMiddleTilde);
+  });
+
+  it('should handle paths with spaces after tilde expansion', () => {
+    const result = expandTilde('~/Documents/My Files/file.txt');
+    expect(result).toBe(path.join(homeDir, 'Documents/My Files/file.txt'));
   });
 });

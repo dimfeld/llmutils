@@ -16,6 +16,7 @@
  */
 
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { debugLog } from '../logging.js';
@@ -88,4 +89,24 @@ export async function secureRm(baseDir: string, relativePath: string): Promise<v
   // Use force: true to mimic `rm -f`, avoiding errors if the file doesn't exist.
   // Keep recursive: false as we typically expect to remove files, not directories here.
   await fs.rm(absoluteTargetPath, { force: true, recursive: false });
+}
+
+/**
+ * Expands the tilde (~) character at the start of a path to the user's home directory.
+ * This function handles both "~" (home directory) and "~/path" (path within home directory).
+ *
+ * @param filePath - The path that may contain a leading tilde
+ * @returns The path with tilde expanded to the home directory, or the original path if no tilde is present
+ *
+ * @example
+ * expandTilde('~/Documents/file.txt') // Returns '/Users/username/Documents/file.txt'
+ * expandTilde('~') // Returns '/Users/username'
+ * expandTilde('/absolute/path') // Returns '/absolute/path' (unchanged)
+ */
+export function expandTilde(filePath: string): string {
+  if (filePath.startsWith('~/') || filePath === '~') {
+    const homeDir = os.homedir();
+    return filePath === '~' ? homeDir : path.join(homeDir, filePath.slice(2));
+  }
+  return filePath;
 }

@@ -5,12 +5,12 @@ goal: ""
 id: 164
 uuid: 08281202-6508-47da-b589-951b6f5fd3de
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 planGeneratedAt: 2026-01-05T07:30:29.485Z
 promptsGeneratedAt: 2026-01-05T07:30:29.485Z
 createdAt: 2026-01-05T06:42:25.241Z
-updatedAt: 2026-01-05T07:31:29.358Z
+updatedAt: 2026-01-06T02:23:46.096Z
 tasks:
   - title: Add notifications config to schema
     done: true

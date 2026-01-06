@@ -1,4 +1,5 @@
 import * as path from 'node:path';
+import { expandTilde } from '../common/fs.js';
 import { getGitRoot } from '../common/git.js';
 import { spawnAndLogOutput } from '../common/process.js';
 import { debugLog, warn } from '../logging.js';
@@ -113,8 +114,13 @@ export async function sendNotification(
   const shellCommand = isWindows ? 'cmd' : 'sh';
   const shellFlag = isWindows ? '/c' : '-c';
 
+  // Expand tilde in command path for Unix-like systems
+  const expandedCommand = isWindows
+    ? notificationConfig.command
+    : expandTilde(notificationConfig.command);
+
   try {
-    const result = await spawnAndLogOutput([shellCommand, shellFlag, notificationConfig.command], {
+    const result = await spawnAndLogOutput([shellCommand, shellFlag, expandedCommand], {
       cwd: commandCwd,
       env,
       stdin: payloadJson,

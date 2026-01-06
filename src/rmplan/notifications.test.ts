@@ -203,4 +203,29 @@ describe('notifications', () => {
     const payload = JSON.parse(options.stdin.trim());
     expect(payload.cwd).toBe('/repo');
   });
+
+  test('expands tilde in command path', async () => {
+    const config = {
+      notifications: {
+        command: '~/scripts/notify.sh',
+      },
+    } as RmplanConfig;
+
+    const ok = await sendNotification(config, {
+      command: 'agent',
+      event: 'agent_done',
+      status: 'success',
+      message: 'done',
+      cwd: '/repo',
+      planId: '1',
+      planFile: '/repo/tasks/1.plan.md',
+    });
+
+    expect(ok).toBe(true);
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [args] = spawnSpy.mock.calls[0];
+    // The command should have tilde expanded
+    const homeDir = process.env.HOME || '';
+    expect(args[2]).toBe(`${homeDir}/scripts/notify.sh`);
+  });
 });

@@ -101,13 +101,8 @@ function mergeConfigs(mainConfig: RmplanConfig, localConfig: RmplanConfig): Rmpl
  */
 export async function findConfigPath(overridePath?: string): Promise<string | null> {
   const resolver = await RepositoryConfigResolver.create({ overridePath });
-  try {
-    const resolution = await resolver.resolve();
-    return resolution.configPath;
-  } catch (error) {
-    // Maintain legacy behavior when override path is missing.
-    throw error;
-  }
+  const resolution = await resolver.resolve();
+  return resolution.configPath;
 }
 
 /**
