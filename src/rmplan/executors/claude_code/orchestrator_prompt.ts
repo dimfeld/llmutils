@@ -22,7 +22,8 @@ After each successful iteration (and again at the end of the run), update the pl
 - Create the section at the end of the file if it does not exist (keep it outside any generated delimiters).
 - Update in place: edit or replace outdated text so the section reflects current reality while preserving meaningful history.
 - No timestamps anywhere in the section.
-- Focus on what changed, why it changed, and what's next. These updates do NOT need to be about testing or review specifically.
+- Focus on what changed, why it changed, and what's next. Omit testing/review info, focus on what's useful to remember when starting the next task.
+- Only remove information if it no longer applies. For example, decisions from previous tasks should remain unless they have been changed. 
 
 Use this structured template (fill every heading; use "None" when empty):
 

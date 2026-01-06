@@ -1,3 +1,5 @@
+import { progressSectionGuidance } from '../claude_code/orchestrator_prompt.ts';
+
 interface BuildPromptOptions {
   planId: string;
   planTitle: string;
@@ -34,31 +36,7 @@ After successfully completing selected tasks, update the plan file conservativel
 `
     : '';
 
-  const progressUpdate = `
-## Progress Updates (Plan File)
-Plan file: ${options.planFilePath}
-After each prompt cycle, update the plan file's \`## Current Progress\` section in-place:
-- Create the section at the end of the plan file if it does not exist.
-- Edit or replace outdated text so the section reflects the current reality while preserving meaningful history.
-- No timestamps anywhere in the section.
-- Explain what progress was made, how, and why (this does NOT have to be about testing/review).
-
-Use this structured template (fill every heading; use "None" when empty):
-
-## Current Progress
-### Current State
-- ...
-### Completed (So Far)
-- ...
-### Remaining
-- ...
-### Next Iteration Guidance
-- ...
-### Decisions / Changes
-- ...
-### Risks / Blockers
-- None
-`;
+  const progressUpdate = progressSectionGuidance(options.planFilePath, { useAtPrefix: false });
 
   const header = `You are an autonomous senior developer using the Codex CLI.
 You will implement features iteratively with an implement → test → review loop until the work meets standards.
