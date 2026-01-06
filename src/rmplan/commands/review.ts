@@ -45,7 +45,26 @@ import { access, constants } from 'node:fs/promises';
 import { statSync } from 'node:fs';
 import { validateInstructionsFilePath } from '../utils/file_validation.js';
 import { createCleanupPlan, type CleanupPlanOptions } from '../utils/cleanup_plan_creator.js';
-import { prepareReviewExecutors, runReview, type ReviewPromptBuilder } from '../review_runner.js';
+import {
+  prepareReviewExecutors,
+  runReview,
+  type ReviewExecutorName,
+  type ReviewPromptBuilder,
+} from '../review_runner.js';
+import which from 'which';
+const FIX_EXECUTOR_COMMANDS = {
+  'claude-code': 'claude',
+  'codex-cli': 'codex',
+} as const satisfies Record<ReviewExecutorName, string>;
+type FixAction = 'fix-claude' | 'fix-codex';
+const FIX_ACTION_EXECUTOR_MAP: Record<FixAction, ReviewExecutorName> = {
+  'fix-claude': 'claude-code',
+  'fix-codex': 'codex-cli',
+};
+const FIX_ACTION_LABELS: Record<FixAction, string> = {
+  'fix-claude': 'Fix now with Claude (apply fixes immediately)',
+  'fix-codex': 'Fix now with Codex (apply fixes immediately)',
+};
 
 /**
  * Comprehensive error handling for saving review results
@@ -200,6 +219,35 @@ const reviewPrintQuietLogger: LoggerAdapter = {
   writeStderr: () => {},
   debugLog: () => {},
 };
+
+async function isCommandAvailable(command: string): Promise<boolean> {
+  const result = await which(command, { nothrow: true });
+  return Boolean(result);
+}
+
+async function getAvailableFixActions(): Promise<
+  Array<{ action: FixAction; executor: ReviewExecutorName; label: string }>
+> {
+  const results = await Promise.all(
+    (Object.entries(FIX_ACTION_EXECUTOR_MAP) as Array<[FixAction, ReviewExecutorName]>).map(
+      async ([action, executor]) => {
+        const command = FIX_EXECUTOR_COMMANDS[executor];
+        const available = await isCommandAvailable(command);
+
+        if (!available) {
+          return null;
+        }
+
+        return { action, executor, label: FIX_ACTION_LABELS[action] };
+      }
+    )
+  );
+
+  return results.filter(
+    (result): result is { action: FixAction; executor: ReviewExecutorName; label: string } =>
+      result !== null
+  );
+}
 
 export async function handleReviewCommand(
   planFile: string | undefined,
@@ -453,6 +501,7 @@ export async function handleReviewCommand(
     if (!reviewExecutorName) {
       throw new Error('Review completed without a usable executor result.');
     }
+    let autofixExecutorName: ReviewExecutorName | null = reviewExecutorName;
 
     // Determine format and verbosity from options or config
     const outputFormat = isPrintMode
@@ -529,13 +578,18 @@ export async function handleReviewCommand(
         }
       } else if (!options.noAutofix) {
         // Prompt user for action when interactive; otherwise skip prompting
-        let action: 'fix' | 'cleanup' | 'append' | 'exit' = 'exit';
+        const availableFixActions = await getAvailableFixActions();
+        type ReviewIssueAction = FixAction | 'cleanup' | 'append' | 'exit';
+        let action: ReviewIssueAction = 'exit';
         if (isInteractiveEnv) {
           action = await select({
             message: 'Issues were found during review. What would you like to do?',
             choices: [
               { name: 'Append issues to the current plan as tasks', value: 'append' },
-              { name: 'Fix now (apply fixes immediately)', value: 'fix' },
+              ...availableFixActions.map((option) => ({
+                name: option.label,
+                value: option.action,
+              })),
               { name: 'Create a cleanup plan (for later execution)', value: 'cleanup' },
               { name: 'Exit (do nothing)', value: 'exit' },
             ],
@@ -545,8 +599,9 @@ export async function handleReviewCommand(
           log(chalk.gray('Non-interactive environment detected; skipping fix/cleanup prompts.'));
         }
 
-        if (action === 'fix') {
+        if (action === 'fix-claude' || action === 'fix-codex') {
           shouldAutofix = true;
+          autofixExecutorName = FIX_ACTION_EXECUTOR_MAP[action];
           if (reviewResult.issues && reviewResult.issues.length > 0) {
             selectedIssues = await selectIssuesToFix(reviewResult.issues, 'fix');
             shouldAutofix = selectedIssues.length > 0;
@@ -763,11 +818,8 @@ export async function handleReviewCommand(
         );
 
         // Execute autofix using the executor in normal mode
-        const autofixExecutor = buildExecutorAndLog(
-          reviewExecutorName,
-          sharedExecutorOptions,
-          config
-        );
+        const executorName = autofixExecutorName ?? reviewExecutorName;
+        const autofixExecutor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
 
         const autofixOutput = await autofixExecutor.execute(autofixPrompt, {
           planId: planData.id?.toString() ?? 'unknown',

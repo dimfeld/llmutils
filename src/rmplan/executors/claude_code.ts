@@ -684,7 +684,9 @@ export class ClaudeCodeExecutor implements Executor {
         initialInactivityTimeoutMs: 2 * 60 * 1000, // 2 minutes to start
         onInactivityKill: () => {
           killedByTimeout = true;
-          log(`Claude review timed out after ${Math.round(reviewTimeoutMs / 60000)} minutes; terminating.`);
+          log(
+            `Claude review timed out after ${Math.round(reviewTimeoutMs / 60000)} minutes; terminating.`
+          );
         },
         formatStdout: (output) => {
           let lines = splitter(output);
@@ -707,7 +709,9 @@ export class ClaudeCodeExecutor implements Executor {
       });
 
       if (killedByTimeout || result.killedByInactivity) {
-        throw new Error(`Claude review timed out after ${Math.round(reviewTimeoutMs / 60000)} minutes`);
+        throw new Error(
+          `Claude review timed out after ${Math.round(reviewTimeoutMs / 60000)} minutes`
+        );
       }
 
       if (result.exitCode !== 0) {
