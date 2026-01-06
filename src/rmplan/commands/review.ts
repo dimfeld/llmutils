@@ -682,6 +682,8 @@ export async function handleReviewCommand(
               }
             }
           } else if (action === 'cleanup') {
+            // Don't notify at the end because we're just existing right after the user selects the issues
+            skipNotification = true;
             shouldCreateCleanupPlan = true;
             if (reviewResult.issues && reviewResult.issues.length > 0) {
               selectedIssues = await selectIssuesToFix(
@@ -695,6 +697,8 @@ export async function handleReviewCommand(
               }
             }
           } else if (action === 'append') {
+            // Don't notify at the end because we're just existing right after the user selects the issues
+            skipNotification = true;
             shouldAppendTasksToPlan = true;
             if (reviewResult.issues && reviewResult.issues.length > 0) {
               selectedIssues = await selectIssuesToFix(
