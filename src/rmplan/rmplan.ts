@@ -910,6 +910,10 @@ program
     'Alias for --incremental. Only review changes since the last review.'
   )
   .option('--since <commit>', 'Review changes since the specified commit hash.')
+  .option(
+    '--base <branch>',
+    'Base branch to compare against (defaults to auto-detected main/master/trunk)'
+  )
   .option('--autofix', 'Automatically fix issues found during review without prompting.')
   .option('--autofix-all', 'Automatically fix all issues without prompting for selection.')
   .option('--no-autofix', 'Disable automatic fixing of issues, even if configured elsewhere.')
@@ -951,6 +955,10 @@ program
   .option(
     '--instructions-file <path>',
     'Path to file containing custom description instructions. Overrides config file instructions.'
+  )
+  .option(
+    '--base <branch>',
+    'Base branch to compare against (defaults to auto-detected main/master/trunk)'
   )
   .option('--output-file <path>', 'Save the generated description to the specified file')
   .option('--copy', 'Copy the generated description to the clipboard')

@@ -490,6 +490,7 @@ export async function generateDiffForReview(
     sinceLastReview?: boolean;
     sinceCommit?: string;
     planId?: string;
+    baseBranch?: string;
   }
 ): Promise<DiffResult> {
   // Handle incremental review options
@@ -514,7 +515,7 @@ export async function generateDiffForReview(
 
   // Handle explicit since commit
   if (options?.sinceCommit) {
-    const baseBranch = await getTrunkBranch(gitRoot);
+    const baseBranch = options.baseBranch ?? (await getTrunkBranch(gitRoot));
     if (!baseBranch) {
       throw new Error('Could not determine trunk branch for comparison');
     }
@@ -522,14 +523,17 @@ export async function generateDiffForReview(
   }
 
   // Regular diff generation
-  return generateRegularDiffForReview(gitRoot);
+  return generateRegularDiffForReview(gitRoot, options?.baseBranch);
 }
 
 /**
  * Generates a regular diff against the trunk branch
  */
-async function generateRegularDiffForReview(gitRoot: string): Promise<DiffResult> {
-  const baseBranch = await getTrunkBranch(gitRoot);
+async function generateRegularDiffForReview(
+  gitRoot: string,
+  providedBaseBranch?: string
+): Promise<DiffResult> {
+  const baseBranch = providedBaseBranch ?? (await getTrunkBranch(gitRoot));
   if (!baseBranch) {
     throw new Error('Could not determine trunk branch for comparison');
   }

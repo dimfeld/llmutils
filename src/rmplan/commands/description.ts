@@ -32,6 +32,7 @@ interface DescriptionOptions {
   dryRun?: boolean;
   instructions?: string;
   instructionsFile?: string;
+  base?: string;
   outputFile?: string;
   copy?: boolean;
   createPr?: boolean;
@@ -410,7 +411,7 @@ export async function handleDescriptionCommand(
 
   // Gather plan context using the shared utility
   // Description command doesn't use incremental features, so pass empty review options
-  const context = await gatherPlanContext(planFile, {}, globalOpts);
+  const context = await gatherPlanContext(planFile, { base: options.base }, globalOpts);
 
   // Check if no changes were detected and early return
   if (context.noChangesDetected) {

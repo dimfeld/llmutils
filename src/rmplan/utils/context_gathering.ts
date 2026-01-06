@@ -85,6 +85,7 @@ export async function gatherPlanContext(
     incremental?: boolean;
     sinceLastReview?: boolean;
     since?: string;
+    base?: string;
   },
   globalOpts: {
     config?: string;
@@ -168,6 +169,7 @@ export async function gatherPlanContext(
     sinceLastReview: options.sinceLastReview,
     sinceCommit: options.since,
     planId: planData.id?.toString(),
+    baseBranch: options.base,
   };
 
   // Generate incremental summary if applicable
