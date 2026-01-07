@@ -69,6 +69,14 @@ const FIX_ACTION_LABELS: Record<FixAction, string> = {
 import { createCleanupPlan, type CleanupPlanOptions } from '../utils/cleanup_plan_creator.js';
 
 /**
+ * Result returned from handleReviewCommand indicating what actions were taken
+ */
+export interface ReviewCommandResult {
+  /** Number of tasks appended to the plan from review issues */
+  tasksAppended: number;
+}
+
+/**
  * Comprehensive error handling for saving review results
  */
 async function saveReviewResultWithErrorHandling(
@@ -255,7 +263,7 @@ export async function handleReviewCommand(
   planFile: string | undefined,
   options: any,
   command: any
-) {
+): Promise<ReviewCommandResult> {
   const isPrintMode = options.print === true;
   const withReviewLogger = <T>(cb: () => T) => {
     if (isPrintMode) {
@@ -276,6 +284,7 @@ export async function handleReviewCommand(
   let notifyPlanFile: string | undefined;
   let notifyCwd = '';
   let skipNotification = false;
+  let appendedTaskCount = 0;
   const notifyReviewDone = async (
     message: string,
     status: 'success' | 'error',
@@ -367,7 +376,7 @@ export async function handleReviewCommand(
           : 'No changes detected compared to trunk branch. Nothing to review.';
       reviewLog(chalk.yellow(nothingMessage));
       skipNotification = true;
-      return;
+      return { tasksAppended: 0 };
     }
 
     // Extract context for use in the rest of the function
@@ -527,7 +536,7 @@ export async function handleReviewCommand(
       }
       log('\n--dry-run mode: Would execute the above prompt');
       skipNotification = true;
-      return;
+      return { tasksAppended: 0 };
     }
 
     reviewLog(chalk.cyan('\n## Executing Code Review\n'));
@@ -729,6 +738,7 @@ export async function handleReviewCommand(
         } else {
           try {
             const appendedCount = await appendIssuesToPlanTasks(contextPlanFile, issuesToAppend);
+            appendedTaskCount = appendedCount;
 
             if (appendedCount > 0) {
               const plural = appendedCount === 1 ? '' : 's';
@@ -980,6 +990,8 @@ export async function handleReviewCommand(
       await notifyReviewDone(completionMessage, completionStatus, completionErrorMessage);
     }
   }
+
+  return { tasksAppended: appendedTaskCount };
 }
 
 export function sanitizeBranchName(branch: string): string {

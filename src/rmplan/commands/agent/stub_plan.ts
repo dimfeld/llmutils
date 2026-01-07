@@ -98,9 +98,13 @@ export async function executeStubPlan({
   if (finalReview !== false) {
     log(boldMarkdownHeaders('\n## Running Final Review\n'));
     try {
-      await handleReviewCommand(planFilePath, {}, {
-        parent: { opts: () => ({ config: configPath }) },
-      });
+      await handleReviewCommand(
+        planFilePath,
+        {},
+        {
+          parent: { opts: () => ({ config: configPath }) },
+        }
+      );
     } catch (err) {
       warn(`Final review failed: ${err as Error}`);
       // Don't fail the agent - plan execution succeeded

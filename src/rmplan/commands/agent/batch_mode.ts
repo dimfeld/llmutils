@@ -1,3 +1,4 @@
+import { confirm } from '@inquirer/prompts';
 import { commitAll } from '../../../common/process.js';
 import { boldMarkdownHeaders, error, log, warn } from '../../../logging.js';
 import chalk from 'chalk';
@@ -250,9 +251,25 @@ Available tasks:\n\n${taskDescriptions}`,
         if (finalReview !== false) {
           log(boldMarkdownHeaders('\n## Running Final Review\n'));
           try {
-            await handleReviewCommand(currentPlanFile, {}, {
-              parent: { opts: () => ({ config: configPath }) },
-            });
+            const reviewResult = await handleReviewCommand(
+              currentPlanFile,
+              {},
+              {
+                parent: { opts: () => ({ config: configPath }) },
+              }
+            );
+
+            // If tasks were appended, ask if user wants to continue
+            if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
+              const shouldContinue = await confirm({
+                message: `${reviewResult.tasksAppended} new task(s) added from review. Continue running?`,
+                default: true,
+              });
+
+              if (shouldContinue) {
+                continue; // Continue the loop to process new tasks
+              }
+            }
           } catch (err) {
             warn(`Final review failed: ${err as Error}`);
             // Don't fail the agent - plan execution succeeded

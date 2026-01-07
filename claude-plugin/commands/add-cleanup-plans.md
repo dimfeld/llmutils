@@ -21,6 +21,7 @@ rmplan add "<task title>" --details "<description of what needs to be done>" [op
 ```
 
 Key options:
+
 - `--details "<text>"` - Markdown description of the task
 - `--priority <level>` - low, medium, high, or urgent
 - `--tag <tags...>` - Add tags like "refactor", "testing", "cleanup"
@@ -28,6 +29,7 @@ Key options:
 - `--simple` - Mark simple tasks that don't need much research to be done properly
 
 Example:
+
 ```
 rmplan add "Refactor duplicate validation logic" --details "The validateUser and validateAdmin functions in src/auth/ share nearly identical code. Extract common validation into a shared helper." --tag refactor --priority medium --rmfilter src/auth/validate.ts
 ```
