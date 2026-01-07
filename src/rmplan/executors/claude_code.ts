@@ -713,10 +713,14 @@ export class ClaudeCodeExecutor implements Executor {
         },
       });
 
-      if (killedByTimeout || result.killedByInactivity) {
+      if ((killedByTimeout || result.killedByInactivity) && !seenResultMessage) {
         throw new Error(
           `Claude review timed out after ${Math.round(reviewTimeoutMs / 60000)} minutes`
         );
+      }
+
+      if ((killedByTimeout || result.killedByInactivity) && seenResultMessage) {
+        log(`Claude review was killed by inactivity timeout, but completed successfully (result message seen)`);
       }
 
       if (result.exitCode !== 0 && !seenResultMessage) {
@@ -1313,6 +1317,8 @@ export class ClaudeCodeExecutor implements Executor {
       let seenResultMessage = false;
 
       log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
+      const executionTimeoutMs = 60 * 60 * 1000; // 60 minutes
+      let killedByTimeout = false;
       const result = await spawnAndLogOutput(args, {
         env: {
           ...process.env,
@@ -1321,6 +1327,14 @@ export class ClaudeCodeExecutor implements Executor {
           CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
         },
         cwd: gitRoot,
+        inactivityTimeoutMs: executionTimeoutMs,
+        initialInactivityTimeoutMs: 2 * 60 * 1000, // 2 minutes to start
+        onInactivityKill: () => {
+          killedByTimeout = true;
+          log(
+            `Claude execution timed out after ${Math.round(executionTimeoutMs / 60000)} minutes of inactivity; terminating.`
+          );
+        },
         formatStdout: (output) => {
           let lines = splitter(output);
           const formattedResults = lines.map(formatJsonMessage);
@@ -1368,6 +1382,16 @@ export class ClaudeCodeExecutor implements Executor {
           return formattedOutput;
         },
       });
+
+      if ((killedByTimeout || result.killedByInactivity) && !seenResultMessage) {
+        throw new Error(
+          `Claude execution timed out after ${Math.round(executionTimeoutMs / 60000)} minutes of inactivity`
+        );
+      }
+
+      if ((killedByTimeout || result.killedByInactivity) && seenResultMessage) {
+        log(`Claude execution was killed by inactivity timeout, but completed successfully (result message seen)`);
+      }
 
       if (result.exitCode !== 0 && !seenResultMessage) {
         throw new Error(`Claude exited with non-zero exit code: ${result.exitCode}`);
