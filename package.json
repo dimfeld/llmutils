@@ -15,7 +15,7 @@
     "check": "tsc --noEmit -p tsconfig.build.json",
     "build": "./build.ts",
     "lint": "eslint .",
-    "dev-install": "pnpm add -g file://$(pwd)",
+    "dev-install": "bun run build && pnpm add -g file://$(pwd)",
     "format": "prettier --write .",
     "update-schemas": "scripts/update-json-schemas.ts",
     "rmfilter": "src/rmfilter/rmfilter.ts",
