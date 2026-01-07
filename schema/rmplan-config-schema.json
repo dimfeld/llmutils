@@ -548,6 +548,41 @@
               "type": "string"
             }
           }
+        },
+        "codex-cli": {
+          "type": "object",
+          "properties": {
+            "simpleMode": {
+              "description": "Run executor in streamlined implement/verify mode instead of full review loop",
+              "type": "boolean"
+            },
+            "reasoning": {
+              "description": "Configuration for reasoning effort levels",
+              "type": "object",
+              "properties": {
+                "scopedReview": {
+                  "description": "Reasoning level for task-scoped reviews (default: medium)",
+                  "type": "string",
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh"
+                  ]
+                },
+                "fullReview": {
+                  "description": "Reasoning level for full plan reviews (default: high)",
+                  "type": "string",
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh"
+                  ]
+                }
+              }
+            }
+          }
         }
       }
     },

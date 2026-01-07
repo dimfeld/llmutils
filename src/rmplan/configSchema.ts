@@ -8,10 +8,12 @@ import {
   CopyOnlyExecutorName,
   CopyPasteExecutorName,
   OneCallExecutorName,
+  CodexCliExecutorName,
   claudeCodeOptionsSchema,
   copyOnlyOptionsSchema,
   copyPasteOptionsSchema,
   directCallOptionsSchema,
+  codexCliOptionsSchema,
 } from './executors/schemas.js';
 
 /**
@@ -352,6 +354,7 @@ export const rmplanConfigSchema = z
      * - copy-only: copyOnlyOptionsSchema (no options)
      * - copy-paste: copyPasteOptionsSchema (executionModel)
      * - direct-call: directCallOptionsSchema (executionModel)
+     * - codex-cli: codexCliOptionsSchema (simpleMode, reasoning levels)
      */
     executors: z
       .object({
@@ -359,6 +362,7 @@ export const rmplanConfigSchema = z
         [CopyOnlyExecutorName]: copyOnlyOptionsSchema.optional(),
         [CopyPasteExecutorName]: copyPasteOptionsSchema.optional(),
         [OneCallExecutorName]: directCallOptionsSchema.optional(),
+        [CodexCliExecutorName]: codexCliOptionsSchema.optional(),
       })
       .partial()
       .optional()

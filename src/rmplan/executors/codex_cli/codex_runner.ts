@@ -9,7 +9,7 @@ export interface CodexStepOptions {
   /** Inactivity timeout in milliseconds. Defaults to 10 minutes (or CODEX_OUTPUT_TIMEOUT_MS env var). */
   inactivityTimeoutMs?: number;
   /** Reasoning effort level for the model. Defaults to 'high'. */
-  reasoningLevel?: 'high' | 'medium' | 'low';
+  reasoningLevel?: 'low' | 'medium' | 'high' | 'xhigh';
 }
 
 /**

@@ -1,5 +1,6 @@
 import type { ExecutePlanInfo, ExecutorOutput } from '../types';
 import type { RmplanConfig } from '../../configSchema';
+import { CodexCliExecutorName, type CodexReasoningLevel } from '../schemas';
 import { getGitRoot } from '../../../common/git';
 import { log } from '../../../logging';
 import { parseFailedReport } from '../failure_detection';
@@ -91,12 +92,17 @@ async function executeCodexReviewWithSchema(
     jsonSchema.additionalProperties = false;
     await fs.writeFile(schemaFilePath, JSON.stringify(jsonSchema, null, 2));
 
+    // Get reasoning level from config, with defaults: medium for scoped, high for full
+    const codexOptions = rmplanConfig.executors?.[CodexCliExecutorName];
+    const reasoningLevel: CodexReasoningLevel = isTaskScoped
+      ? (codexOptions?.reasoning?.scopedReview ?? 'medium')
+      : (codexOptions?.reasoning?.fullReview ?? 'high');
+
     // Use executeCodexStep with the schema file path and 30-minute timeout for reviews
-    // Use medium reasoning when reviewing specific tasks, high for full plan reviews
     return await executeCodexStep(prompt, cwd, rmplanConfig, {
       outputSchemaPath: schemaFilePath,
       inactivityTimeoutMs: REVIEW_TIMEOUT_MS,
-      reasoningLevel: isTaskScoped ? 'medium' : undefined,
+      reasoningLevel,
     });
   } finally {
     // Clean up the temporary directory and schema file

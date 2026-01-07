@@ -86,6 +86,10 @@ export const directCallOptionsSchema = z.object({
     .optional(),
 });
 
+/** Valid reasoning effort levels for Codex */
+export const codexReasoningLevelSchema = z.enum(['low', 'medium', 'high', 'xhigh']);
+export type CodexReasoningLevel = z.infer<typeof codexReasoningLevelSchema>;
+
 /**
  * Schema for the 'codex-cli' executor's options.
  */
@@ -94,4 +98,15 @@ export const codexCliOptionsSchema = z.object({
     .boolean()
     .optional()
     .describe('Run executor in streamlined implement/verify mode instead of full review loop'),
+  reasoning: z
+    .object({
+      scopedReview: codexReasoningLevelSchema
+        .optional()
+        .describe('Reasoning level for task-scoped reviews (default: medium)'),
+      fullReview: codexReasoningLevelSchema
+        .optional()
+        .describe('Reasoning level for full plan reviews (default: high)'),
+    })
+    .optional()
+    .describe('Configuration for reasoning effort levels'),
 });
