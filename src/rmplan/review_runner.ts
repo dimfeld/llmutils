@@ -1,6 +1,7 @@
 import type { RmplanConfig } from './configSchema.js';
 import type { ExecutorCommonOptions, Executor } from './executors/types.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from './executors/index.js';
+import { getParentExecutor, type RmplanExecutorType } from '../common/process.js';
 import {
   createReviewResult,
   parseJsonReviewOutput,
@@ -60,15 +61,30 @@ export interface ReviewRunResult {
   warnings: string[];
 }
 
+/** Maps the parent executor type to the corresponding review executor name */
+const PARENT_EXECUTOR_TO_REVIEW_EXECUTOR: Record<RmplanExecutorType, ReviewExecutorName> = {
+  claude: 'claude-code',
+  codex: 'codex-cli',
+};
+
 export function resolveReviewExecutorSelection(
   executorSelection: string | undefined,
   config: RmplanConfig
 ): ReviewExecutorSelection {
-  const resolved =
-    executorSelection ||
-    config.review?.defaultExecutor ||
-    config.defaultExecutor ||
-    DEFAULT_EXECUTOR;
+  // Check CLI option and config settings first
+  let resolved =
+    executorSelection || config.review?.defaultExecutor || config.defaultExecutor || undefined;
+
+  // If no explicit config, check if we're running under an executor and use that
+  if (!resolved) {
+    const parentExecutor = getParentExecutor();
+    if (parentExecutor) {
+      resolved = PARENT_EXECUTOR_TO_REVIEW_EXECUTOR[parentExecutor];
+    }
+  }
+
+  // Fall back to default executor
+  resolved = resolved || DEFAULT_EXECUTOR;
 
   if (resolved === 'both') {
     return 'both';
