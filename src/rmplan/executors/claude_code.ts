@@ -720,7 +720,9 @@ export class ClaudeCodeExecutor implements Executor {
       }
 
       if ((killedByTimeout || result.killedByInactivity) && seenResultMessage) {
-        log(`Claude review was killed by inactivity timeout, but completed successfully (result message seen)`);
+        log(
+          `Claude review was killed by inactivity timeout, but completed successfully (result message seen)`
+        );
       }
 
       if (result.exitCode !== 0 && !seenResultMessage) {
@@ -728,7 +730,9 @@ export class ClaudeCodeExecutor implements Executor {
       }
 
       if (result.exitCode !== 0 && seenResultMessage) {
-        log(`Claude review exited with code ${result.exitCode}, but completed successfully (result message seen)`);
+        log(
+          `Claude review exited with code ${result.exitCode}, but completed successfully (result message seen)`
+        );
       } else {
         log('Claude review output captured.');
       }
@@ -1390,7 +1394,9 @@ export class ClaudeCodeExecutor implements Executor {
       }
 
       if ((killedByTimeout || result.killedByInactivity) && seenResultMessage) {
-        log(`Claude execution was killed by inactivity timeout, but completed successfully (result message seen)`);
+        log(
+          `Claude execution was killed by inactivity timeout, but completed successfully (result message seen)`
+        );
       }
 
       if (result.exitCode !== 0 && !seenResultMessage) {
@@ -1398,7 +1404,9 @@ export class ClaudeCodeExecutor implements Executor {
       }
 
       if (result.exitCode !== 0 && seenResultMessage) {
-        log(`Claude exited with code ${result.exitCode}, but completed successfully (result message seen)`);
+        log(
+          `Claude exited with code ${result.exitCode}, but completed successfully (result message seen)`
+        );
       }
 
       // Determine failure from stream if not already captured

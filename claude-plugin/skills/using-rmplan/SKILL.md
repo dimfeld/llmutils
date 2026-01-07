@@ -1,6 +1,6 @@
 ---
 name: using-rmplan
-description: Manages project plans with rmplan. Use when the user asks to "generate plan 123" (or any number), "work on plan 123", mentions "rmplan" explicitly, or when you are working on an rmplan task and need to edit plans or add a new plan.
+description: Manages project plans with rmplan. Use when the prompt mentions "rmplan" in any context, asks to "generate plan 123" (or any number), "work on plan 123", or when you are working on an rmplan task and need to edit plans or add a new plan.
 version: 1.0.0
 ---
 

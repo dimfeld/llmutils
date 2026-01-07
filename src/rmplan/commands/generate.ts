@@ -779,7 +779,7 @@ export async function handleGenerateCommand(
           if (!finalPlan.tasks || finalPlan.tasks.length === 0) {
             warn(
               chalk.yellow(
-                '⚠️  Tasks were still not created after follow-up. Please add tasks manually using `rmplan tools update-plan-tasks`.'
+                '⚠️  Tasks were still not created after follow-up. Please add tasks manually using `rmplan tools update-plan-tasks` as described in the using-rmplan skill'
               )
             );
           } else {

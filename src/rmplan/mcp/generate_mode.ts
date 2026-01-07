@@ -168,7 +168,7 @@ Add your research and implementation guide directly to the plan file at ${planPa
 
 When done, collaborate with your human partner to refine this plan. ${questionText}
 
-Once the plan is refined, use the rmplan update-plan-tasks tool (or 'rmplan tools update-plan-tasks' on the CLI) to add the tasks to the plan file. The list of tasks should correspond to the steps in your implementation guide.`;
+Once the plan is refined, use the rmplan update-plan-tasks tool (or 'rmplan tools update-plan-tasks' on the CLI as described in the using-rmplan skill) to add the tasks to the plan file. The list of tasks should correspond to the steps in your implementation guide.`;
 
   return {
     messages: [
@@ -291,7 +291,7 @@ ${generateClaudeCodeGenerationPrompt(contextBlock, {
   withBlockingSubissues: false,
 })}${multiplePlansGuidance}
 
-Use the 'rmplan tools update-plan-tasks' CLI command to add the structured task data to the plan. The list of tasks should correspond to the steps in your step-by-step guide.`;
+Use the 'rmplan tools update-plan-tasks' CLI command, as described in the using-rmplan skill, to add the structured task data to the plan. The list of tasks should correspond to the steps in your step-by-step guide.`;
 
   return {
     messages: [
@@ -446,7 +446,10 @@ export function registerGenerateMode(
         },
       ],
       load: async (args) =>
-        loadResearchPrompt({ plan: args.plan, allowMultiplePlans: args.allowMultiplePlans }, context),
+        loadResearchPrompt(
+          { plan: args.plan, allowMultiplePlans: args.allowMultiplePlans },
+          context
+        ),
     });
   }
 
