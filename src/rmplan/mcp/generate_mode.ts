@@ -416,6 +416,7 @@ export async function mcpCreatePlan(
 
 interface RegisterOptions {
   registerTools?: boolean;
+  hasClaudePlugin?: boolean;
 }
 
 export function registerGenerateMode(
@@ -423,27 +424,31 @@ export function registerGenerateMode(
   context: GenerateModeRegistrationContext,
   options: RegisterOptions = {}
 ): void {
-  const { registerTools = true } = options;
-  server.addPrompt({
-    name: 'generate-plan',
-    description:
-      'Generate a detailed rmplan implementation plan with research. Performs research, collects findings, and generates tasks after collaborating with the user.',
-    arguments: [
-      {
-        name: 'plan',
-        description: 'Plan ID or file path to generate',
-        required: true,
-      },
-      {
-        name: 'allowMultiplePlans',
-        description:
-          'Set to true to allow the agent to create multiple independent plans if the scope is large enough to benefit from breaking it down into phases or parts that can be merged independently.',
-        required: false,
-      },
-    ],
-    load: async (args) =>
-      loadResearchPrompt({ plan: args.plan, allowMultiplePlans: args.allowMultiplePlans }, context),
-  });
+  const { registerTools = true, hasClaudePlugin = false } = options;
+
+  // Skip generate-plan prompt when Claude Code plugin is present
+  if (!hasClaudePlugin) {
+    server.addPrompt({
+      name: 'generate-plan',
+      description:
+        'Generate a detailed rmplan implementation plan with research. Performs research, collects findings, and generates tasks after collaborating with the user.',
+      arguments: [
+        {
+          name: 'plan',
+          description: 'Plan ID or file path to generate',
+          required: true,
+        },
+        {
+          name: 'allowMultiplePlans',
+          description:
+            'Set to true to allow the agent to create multiple independent plans if the scope is large enough to benefit from breaking it down into phases or parts that can be merged independently.',
+          required: false,
+        },
+      ],
+      load: async (args) =>
+        loadResearchPrompt({ plan: args.plan, allowMultiplePlans: args.allowMultiplePlans }, context),
+    });
+  }
 
   server.addPrompt({
     name: 'plan-questions',
@@ -496,7 +501,8 @@ export function registerGenerateMode(
     },
   });
 
-  if (registerTools) {
+  // Skip tools when Claude Code plugin is present (it provides them)
+  if (registerTools && !hasClaudePlugin) {
     server.addTool({
       name: 'update-plan-tasks',
       description:

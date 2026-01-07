@@ -108,6 +108,10 @@ program
     return parsed;
   })
   .option('--no-tools', 'Run server without tools (prompts and resources only)')
+  .option(
+    '--has-claude-plugin',
+    'Omit generate-plan prompt and tools (assumes Claude Code plugin provides them)'
+  )
   .action(async (options, command) => {
     const globalOpts = command.parent.opts();
     const transport = options.transport === 'http' ? 'http' : 'stdio';
@@ -116,6 +120,7 @@ program
       transport,
       port: options.port,
       noTools: options.tools === false,
+      hasClaudePlugin: options.hasClaudePlugin,
     }).catch(handleCommandError);
   });
 

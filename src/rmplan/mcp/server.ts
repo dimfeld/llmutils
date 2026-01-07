@@ -8,6 +8,7 @@ export interface StartMcpServerOptions {
   transport?: 'stdio' | 'http';
   port?: number;
   noTools?: boolean;
+  hasClaudePlugin?: boolean;
 }
 
 export async function startMcpServer(options: StartMcpServerOptions = {}): Promise<void> {
@@ -29,6 +30,7 @@ export async function startMcpServer(options: StartMcpServerOptions = {}): Promi
 
   registerGenerateMode(server, registrationContext, {
     registerTools: !options.noTools,
+    hasClaudePlugin: options.hasClaudePlugin,
   });
 
   if (options.transport === 'http') {
