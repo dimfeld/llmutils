@@ -107,8 +107,15 @@ export async function findConfigPath(overridePath?: string): Promise<string | nu
 
 /**
  * Finds the path to the global rmplan configuration file in ~/.config/rmplan/config.yml.
+ * Skips loading if RMPLAN_LOAD_GLOBAL_CONFIG env var is '0' or 'false'.
  */
 export async function findGlobalConfigPath(): Promise<string | null> {
+  const loadGlobalConfig = process.env.RMPLAN_LOAD_GLOBAL_CONFIG;
+  if (loadGlobalConfig === '0' || loadGlobalConfig === 'false') {
+    debugLog('Skipping global configuration (RMPLAN_LOAD_GLOBAL_CONFIG is disabled)');
+    return null;
+  }
+
   const configPath = path.join(os.homedir(), '.config', 'rmplan', 'config.yml');
   const fileExists = await Bun.file(configPath).exists();
 
