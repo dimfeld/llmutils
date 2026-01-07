@@ -669,6 +669,7 @@ export class ClaudeCodeExecutor implements Executor {
 
       let splitter = createLineSplitter();
       let capturedOutput: object | undefined;
+      let seenResultMessage = false;
 
       log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
       const reviewTimeoutMs = 30 * 60 * 1000; // 30 minutes
@@ -694,6 +695,9 @@ export class ClaudeCodeExecutor implements Executor {
           const formattedResults = lines.map(formatJsonMessage);
 
           for (const result of formattedResults) {
+            if (result.type === 'result') {
+              seenResultMessage = true;
+            }
             if (result.structuredOutput) {
               if (typeof result.structuredOutput === 'string') {
                 capturedOutput = JSON.parse(result.structuredOutput);
@@ -715,11 +719,15 @@ export class ClaudeCodeExecutor implements Executor {
         );
       }
 
-      if (result.exitCode !== 0) {
+      if (result.exitCode !== 0 && !seenResultMessage) {
         throw new Error(`Claude review exited with non-zero exit code: ${result.exitCode}`);
       }
 
-      log('Claude review output captured.');
+      if (result.exitCode !== 0 && seenResultMessage) {
+        log(`Claude review exited with code ${result.exitCode}, but completed successfully (result message seen)`);
+      } else {
+        log('Claude review output captured.');
+      }
 
       // Return the captured final message - parsing will happen in createReviewResult()
       return {
@@ -1302,6 +1310,7 @@ export class ClaudeCodeExecutor implements Executor {
       let lastAssistantRaw: string | undefined;
       let failureSummary: string | undefined;
       let failureRaw: string | undefined;
+      let seenResultMessage = false;
 
       log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
       const result = await spawnAndLogOutput(args, {
@@ -1320,6 +1329,9 @@ export class ClaudeCodeExecutor implements Executor {
 
           // Extract file paths and add them to trackedFiles set
           for (const result of formattedResults) {
+            if (result.type === 'result') {
+              seenResultMessage = true;
+            }
             if (result.filePaths) {
               for (const filePath of result.filePaths) {
                 // Resolve to absolute path
@@ -1357,8 +1369,12 @@ export class ClaudeCodeExecutor implements Executor {
         },
       });
 
-      if (result.exitCode !== 0) {
+      if (result.exitCode !== 0 && !seenResultMessage) {
         throw new Error(`Claude exited with non-zero exit code: ${result.exitCode}`);
+      }
+
+      if (result.exitCode !== 0 && seenResultMessage) {
+        log(`Claude exited with code ${result.exitCode}, but completed successfully (result message seen)`);
       }
 
       // Determine failure from stream if not already captured
