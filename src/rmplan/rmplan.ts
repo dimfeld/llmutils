@@ -507,6 +507,7 @@ function createAgentCommand(command: Command, description: string) {
     .option('--steps <steps>', 'Number of steps to execute')
     .option('--no-log', 'Do not log to file')
     .option('--no-summary', 'Disable execution summary display at the end')
+    .option('--no-final-review', 'Disable automatic final review after plan completion')
     .option(
       '--summary-file <path>',
       'Write execution summary to the specified file instead of stdout (creates parent directories)'

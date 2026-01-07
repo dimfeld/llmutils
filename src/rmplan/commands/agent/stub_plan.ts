@@ -1,5 +1,5 @@
 import { commitAll } from '../../../common/process.js';
-import { boldMarkdownHeaders, log } from '../../../logging.js';
+import { boldMarkdownHeaders, log, warn } from '../../../logging.js';
 import { executePostApplyCommand } from '../../actions.js';
 import { type RmplanConfig } from '../../configSchema.js';
 import type { Executor } from '../../executors/types.js';
@@ -7,6 +7,7 @@ import { setPlanStatus, writePlanFile } from '../../plans.js';
 import type { PlanSchema } from '../../planSchema.js';
 import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
 import { checkAndMarkParentDone, markParentInProgress } from './parent_plans.js';
+import { handleReviewCommand } from '../review.js';
 
 export async function executeStubPlan({
   config,
@@ -17,6 +18,8 @@ export async function executeStubPlan({
   commit,
   dryRun = false,
   executionMode = 'normal',
+  finalReview,
+  configPath,
 }: {
   config: RmplanConfig;
   baseDir: string;
@@ -26,6 +29,8 @@ export async function executeStubPlan({
   commit: boolean;
   dryRun?: boolean;
   executionMode?: 'normal' | 'simple';
+  finalReview?: boolean;
+  configPath?: string;
 }) {
   // Update plan status to in_progress
   planData.status = 'in_progress';
@@ -87,6 +92,19 @@ export async function executeStubPlan({
   // Check if parent plan should be marked done
   if (planData.parent) {
     await checkAndMarkParentDone(planData.parent, config, baseDir);
+  }
+
+  // Run final review if enabled
+  if (finalReview !== false) {
+    log(boldMarkdownHeaders('\n## Running Final Review\n'));
+    try {
+      await handleReviewCommand(planFilePath, {}, {
+        parent: { opts: () => ({ config: configPath }) },
+      });
+    } catch (err) {
+      warn(`Final review failed: ${err as Error}`);
+      // Don't fail the agent - plan execution succeeded
+    }
   }
 
   // Check if commit was requested

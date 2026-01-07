@@ -1,5 +1,5 @@
 import { commitAll } from '../../../common/process.js';
-import { boldMarkdownHeaders, error, log } from '../../../logging.js';
+import { boldMarkdownHeaders, error, log, warn } from '../../../logging.js';
 import chalk from 'chalk';
 import { executePostApplyCommand } from '../../actions.js';
 import { type RmplanConfig } from '../../configSchema.js';
@@ -10,6 +10,7 @@ import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
 import { checkAndMarkParentDone, markParentInProgress } from './parent_plans.js';
 import type { SummaryCollector } from '../../summary/collector.js';
 import { runUpdateDocs } from '../update-docs.js';
+import { handleReviewCommand } from '../review.js';
 
 export async function executeBatchMode(
   {
@@ -22,6 +23,8 @@ export async function executeBatchMode(
     executorName,
     executionMode = 'normal',
     updateDocsMode = 'never',
+    finalReview,
+    configPath,
   }: {
     currentPlanFile: string;
     config: RmplanConfig;
@@ -32,6 +35,8 @@ export async function executeBatchMode(
     executorName?: string;
     executionMode?: 'normal' | 'simple';
     updateDocsMode?: 'never' | 'after-iteration' | 'after-completion';
+    finalReview?: boolean;
+    configPath?: string;
   },
   summaryCollector?: SummaryCollector
 ) {
@@ -238,6 +243,19 @@ Available tasks:\n\n${taskDescriptions}`,
           } catch (err) {
             error('Failed to update documentation:', err);
             // Don't stop execution for documentation update failures
+          }
+        }
+
+        // Run final review if enabled
+        if (finalReview !== false) {
+          log(boldMarkdownHeaders('\n## Running Final Review\n'));
+          try {
+            await handleReviewCommand(currentPlanFile, {}, {
+              parent: { opts: () => ({ config: configPath }) },
+            });
+          } catch (err) {
+            warn(`Final review failed: ${err as Error}`);
+            // Don't fail the agent - plan execution succeeded
           }
         }
 

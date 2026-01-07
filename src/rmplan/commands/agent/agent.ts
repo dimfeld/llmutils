@@ -48,6 +48,7 @@ import { SummaryCollector } from '../../summary/collector.js';
 import { writeOrDisplaySummary } from '../../summary/display.js';
 import { autoClaimPlan, isAutoClaimEnabled } from '../../assignments/auto_claim.js';
 import { runUpdateDocs } from '../update-docs.js';
+import { handleReviewCommand } from '../review.js';
 import { ensureUuidsAndReferences } from '../../utils/references.js';
 import { sendNotification } from '../../notifications.js';
 
@@ -458,6 +459,8 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
           commit: true,
           dryRun: options.dryRun,
           executionMode,
+          finalReview: options.finalReview,
+          configPath: globalCliOptions.config,
         });
       } catch (err) {
         error('Direct execution failed:', err);
@@ -490,6 +493,8 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
             maxSteps,
             executionMode,
             updateDocsMode,
+            finalReview: options.finalReview,
+            configPath: globalCliOptions.config,
           },
           summaryEnabled ? summaryCollector : undefined
         );
@@ -685,6 +690,19 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
                 } catch (err) {
                   error('Failed to update documentation:', err);
                   // Don't stop execution for documentation update failures
+                }
+              }
+
+              // Run final review if enabled
+              if (options.finalReview !== false) {
+                log(boldMarkdownHeaders('\n## Running Final Review\n'));
+                try {
+                  await handleReviewCommand(currentPlanFile, {}, {
+                    parent: { opts: () => ({ config: globalCliOptions.config }) },
+                  });
+                } catch (err) {
+                  warn(`Final review failed: ${err as Error}`);
+                  // Don't fail the agent - plan execution succeeded
                 }
               }
 
