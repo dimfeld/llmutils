@@ -16,4 +16,6 @@ for (const key of KEYS_TO_UNSET) {
   }
 }
 
+process.env.RMPLAN_NOTIFY_SUPPRESS = '1';
+
 // If you need to extend this later, add more keys here (e.g. OPENAI_API_KEY, ANTHROPIC_API_KEY).
