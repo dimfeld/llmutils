@@ -67,6 +67,7 @@ export function getImplementerPrompt(
     name: 'implementer',
     description: 'Implements the requested functionality following project standards and patterns',
     model,
+    skills: ['using-rmplan'],
     prompt: `You are an rmplan implementer agent focused on writing high-quality code. rmplan is a tool for managing step-by-step project plans.
 
 ## Context and Task
@@ -142,6 +143,7 @@ export function getTesterPrompt(
     description:
       'Analyzes existing tests and ensures comprehensive test coverage for the implemented code',
     model,
+    skills: ['using-rmplan'],
     prompt: `You are an rmplan testing agent focused on ensuring comprehensive test coverage. rmplan is a tool for managing step-by-step project plans.
 
 ## Context and Task
@@ -307,6 +309,7 @@ If NEEDS_FIXES: Summarize the critical issues that must be addressed.
     description:
       'Validates the implementation by running required checks, adding missing tests, and confirming readiness',
     model,
+    skills: ['using-rmplan'],
     prompt: `You are an rmplan verification agent responsible for ensuring that tasks were implemented properly. rmplan is a tool for managing step-by-step project plans.
 
 ## Context and Task
@@ -392,6 +395,7 @@ Do this for each task that was successfully implemented and reviewed before prov
     description:
       'Reviews implementation and tests for quality, security, and adherence to project standards',
     model,
+    skills: ['using-rmplan'],
     prompt: `You are an rmplan critical code reviewer whose job is to find problems and issues with implementations. rmplan is a tool for managing step-by-step project plans. Your output will be used by other agents to determine if they need to go back and fix things, so you must be thorough in identifying actual problems.
 
 ${subagentDirective}CRITICAL: Do not be polite or encouraging. Your job is to find issues, not to praise good code. If code is acceptable, simply state that briefly. Focus your energy on identifying real problems that need fixing.
@@ -562,6 +566,7 @@ export function getPrDescriptionPrompt(
     name: 'pr-description',
     description:
       'Generates comprehensive pull request descriptions from plan context and code changes',
+    skills: ['using-rmplan'],
     prompt: `You are a pull request description generator that creates comprehensive, professional descriptions for code changes.
 
 ## Context and Plan Details

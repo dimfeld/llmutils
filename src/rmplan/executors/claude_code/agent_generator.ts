@@ -4,6 +4,7 @@ export interface AgentDefinition {
   prompt: string;
   model?: string;
   tools?: string[];
+  skills?: string[];
 }
 
 /**
@@ -26,6 +27,10 @@ export function buildAgentsArgument(agents: AgentDefinition[]): string {
 
     if (agent.tools && agent.tools.length > 0) {
       agentsObj[name].tools = agent.tools;
+    }
+
+    if (agent.skills && agent.skills.length > 0) {
+      agentsObj[name].skills = agent.skills;
     }
   }
 
