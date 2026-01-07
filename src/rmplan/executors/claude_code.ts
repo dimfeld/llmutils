@@ -677,6 +677,7 @@ export class ClaudeCodeExecutor implements Executor {
       const result = await spawnAndLogOutput(args, {
         env: {
           ...process.env,
+          RMPLAN_EXECUTOR: 'claude',
           RMPLAN_NOTIFY_SUPPRESS: '1',
           ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
           CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
@@ -1326,6 +1327,7 @@ export class ClaudeCodeExecutor implements Executor {
       const result = await spawnAndLogOutput(args, {
         env: {
           ...process.env,
+          RMPLAN_EXECUTOR: 'claude',
           RMPLAN_NOTIFY_SUPPRESS: '1',
           ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
           CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',

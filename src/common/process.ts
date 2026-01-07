@@ -45,6 +45,32 @@ export function setDebug(value: boolean | undefined) {
   debug = value ?? false;
 }
 
+/** The type of executor that may have spawned this process */
+export type RmplanExecutorType = 'claude' | 'codex';
+
+/**
+ * Detects if the current process was spawned by an rmplan executor.
+ * This checks for the RMPLAN_EXECUTOR environment variable set by the parent process.
+ *
+ * @returns The executor type ('claude' or 'codex') if running under an executor, or null otherwise
+ */
+export function getParentExecutor(): RmplanExecutorType | null {
+  const executor = process.env.RMPLAN_EXECUTOR;
+  if (executor === 'claude' || executor === 'codex') {
+    return executor;
+  }
+  return null;
+}
+
+/**
+ * Checks if the current process is running under any rmplan executor.
+ *
+ * @returns true if running under an executor, false otherwise
+ */
+export function isRunningUnderExecutor(): boolean {
+  return getParentExecutor() !== null;
+}
+
 /**
  * Spawns a process with integrated logging and output control based on global flags.
  * This function automatically applies debug logging and quiet mode settings to the

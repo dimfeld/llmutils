@@ -90,6 +90,7 @@ export async function executeCodexStep(
       cwd,
       env: {
         ...process.env,
+        RMPLAN_EXECUTOR: 'codex',
         AGENT: process.env.AGENT || '1',
         RMPLAN_NOTIFY_SUPPRESS: '1',
       },
