@@ -90,6 +90,7 @@ export async function executeCodexStep(
       env: {
         ...process.env,
         AGENT: process.env.AGENT || '1',
+        RMPLAN_NOTIFY_SUPPRESS: '1',
       },
       formatStdout: formatter ? (chunk: string) => formatter.formatChunk(chunk) : undefined,
       inactivityTimeoutMs,
