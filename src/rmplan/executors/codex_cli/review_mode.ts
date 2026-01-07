@@ -14,7 +14,12 @@ import * as path from 'path';
  */
 export interface ExecuteReviewModeOptions {
   /** Override the review execution function for testing */
-  reviewExecutor?: (prompt: string, cwd: string, config: RmplanConfig) => Promise<string>;
+  reviewExecutor?: (
+    prompt: string,
+    cwd: string,
+    config: RmplanConfig,
+    isTaskScoped?: boolean
+  ) => Promise<string>;
 }
 
 export async function executeReviewMode(
@@ -31,7 +36,12 @@ export async function executeReviewMode(
 
   // Use the injected executor for testing, or the default JSON schema executor
   const executor = options?.reviewExecutor ?? executeCodexReviewWithSchema;
-  const reviewerOutput = await executor(contextContent, gitRoot, rmplanConfig);
+  const reviewerOutput = await executor(
+    contextContent,
+    gitRoot,
+    rmplanConfig,
+    planInfo.isTaskScoped
+  );
 
   log('Reviewer output captured.');
 
@@ -67,7 +77,8 @@ const REVIEW_TIMEOUT_MS = 30 * 60 * 1000;
 async function executeCodexReviewWithSchema(
   prompt: string,
   cwd: string,
-  rmplanConfig: RmplanConfig
+  rmplanConfig: RmplanConfig,
+  isTaskScoped?: boolean
 ): Promise<string> {
   // Create a temporary file for the JSON schema
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-review-schema-'));
@@ -81,9 +92,11 @@ async function executeCodexReviewWithSchema(
     await fs.writeFile(schemaFilePath, JSON.stringify(jsonSchema, null, 2));
 
     // Use executeCodexStep with the schema file path and 30-minute timeout for reviews
+    // Use medium reasoning when reviewing specific tasks, high for full plan reviews
     return await executeCodexStep(prompt, cwd, rmplanConfig, {
       outputSchemaPath: schemaFilePath,
       inactivityTimeoutMs: REVIEW_TIMEOUT_MS,
+      reasoningLevel: isTaskScoped ? 'medium' : undefined,
     });
   } finally {
     // Clean up the temporary directory and schema file

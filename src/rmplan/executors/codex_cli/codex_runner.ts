@@ -8,6 +8,8 @@ export interface CodexStepOptions {
   outputSchemaPath?: string;
   /** Inactivity timeout in milliseconds. Defaults to 10 minutes (or CODEX_OUTPUT_TIMEOUT_MS env var). */
   inactivityTimeoutMs?: number;
+  /** Reasoning effort level for the model. Defaults to 'high'. */
+  reasoningLevel?: 'high' | 'medium' | 'low';
 }
 
 /**
@@ -38,15 +40,14 @@ export async function executeCodexStep(
     ? ['--dangerously-bypass-approvals-and-sandbox']
     : ['--sandbox', 'workspace-write'];
 
+  const reasoningLevel = options.reasoningLevel ?? 'high';
   const args = [
     'codex',
     '--enable',
     'web_search_request',
     'exec',
-    // For the types of tasks we're doing we already want high.
-    // Make this configurable in the future
     '-c',
-    'model_reasoning_effort=high',
+    `model_reasoning_effort=${reasoningLevel}`,
     ...sandboxSettings,
   ];
 

@@ -52,7 +52,12 @@ describe('Codex CLI review mode', () => {
       { reviewExecutor }
     );
 
-    expect(reviewExecutor).toHaveBeenCalledWith('REVIEW PROMPT CONTENT', '/tmp/repo-review', {});
+    expect(reviewExecutor).toHaveBeenCalledWith(
+      'REVIEW PROMPT CONTENT',
+      '/tmp/repo-review',
+      {},
+      undefined
+    );
     expect(result?.content).toBe('REVIEW OUTPUT');
     expect(result?.steps?.[0].title).toBe('Codex Reviewer');
     expect(result?.steps?.[0].body).toBe('REVIEW OUTPUT');

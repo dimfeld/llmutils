@@ -549,6 +549,7 @@ export async function handleReviewCommand(
         planFilePath: contextPlanFile,
         baseBranch: diffResult.baseBranch,
         changedFiles: diffResult.changedFiles,
+        isTaskScoped: isScoped,
       };
 
       const runReviewCall = () =>

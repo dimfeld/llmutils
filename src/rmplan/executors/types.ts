@@ -48,6 +48,8 @@ export interface ExecutePlanInfo {
    * - 'bare': Single-shot execution for any operation (no orchestration, no workflow)
    */
   executionMode: 'normal' | 'simple' | 'review' | 'planning' | 'bare';
+  /** When true, this review is scoped to specific tasks (not the full plan) */
+  isTaskScoped?: boolean;
 }
 
 /**

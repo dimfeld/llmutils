@@ -131,7 +131,12 @@ export async function runExternalReviewForCodex(
       executionContext
     );
 
-  const planInfo = buildPlanInfoForReview(options.planInfo, scopedPlanData, diffResult);
+  const planInfo = buildPlanInfoForReview(
+    options.planInfo,
+    scopedPlanData,
+    diffResult,
+    taskScopeNote
+  );
 
   const reviewOutput = await runReview({
     executorSelection: options.executorSelection,
@@ -313,7 +318,8 @@ function normalizeTitle(title: string): string {
 function buildPlanInfoForReview(
   planInfo: ExecutePlanInfo,
   planData: PlanSchema,
-  diffResult: DiffResult
+  diffResult: DiffResult,
+  taskScopeNote?: string
 ) {
   const planId = planData.id?.toString() ?? planInfo.planId ?? 'unknown';
   const planTitle = planData.title ?? planInfo.planTitle ?? 'Untitled Plan';
@@ -324,5 +330,6 @@ function buildPlanInfoForReview(
     planFilePath: planInfo.planFilePath,
     baseBranch: diffResult.baseBranch,
     changedFiles: diffResult.changedFiles,
+    isTaskScoped: !!taskScopeNote,
   };
 }

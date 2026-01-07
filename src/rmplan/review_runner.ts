@@ -30,6 +30,8 @@ export interface ReviewPlanInfo {
   planFilePath: string;
   baseBranch: string;
   changedFiles: string[];
+  /** When true, this review is scoped to specific tasks (not the full plan) */
+  isTaskScoped?: boolean;
 }
 
 export interface PreparedReviewExecutor {
@@ -134,6 +136,7 @@ async function executeWithRetry(
         planFilePath: planInfo.planFilePath,
         captureOutput: 'result',
         executionMode: 'review',
+        isTaskScoped: planInfo.isTaskScoped,
       });
 
       log(`${prepared.name} review finished`);
