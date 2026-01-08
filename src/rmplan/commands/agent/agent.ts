@@ -516,6 +516,10 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
     try {
       let hasError = false;
 
+      // Track initial state to determine whether to skip final review
+      // We skip final review if we started with no tasks completed and finished in a single iteration
+      const initialCompletedTaskCount = planData.tasks.filter((t) => t.done).length;
+
       let stepCount = 0;
       while (stepCount < maxSteps) {
         stepCount++;
@@ -694,7 +698,11 @@ export async function rmplanAgent(planFile: string, options: any, globalCliOptio
               }
 
               // Run final review if enabled
-              if (options.finalReview !== false) {
+              // Skip if we started with no completed tasks and finished in a single iteration
+              const shouldSkipFinalReview =
+                options.finalReview === false ||
+                (initialCompletedTaskCount === 0 && stepCount === 1);
+              if (!shouldSkipFinalReview) {
                 log(boldMarkdownHeaders('\n## Running Final Review\n'));
                 try {
                   const reviewResult = await handleReviewCommand(

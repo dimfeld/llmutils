@@ -46,6 +46,11 @@ export async function executeBatchMode(
     let hasError = false;
     let iteration = 0;
 
+    // Track initial state to determine whether to skip final review
+    // We skip final review if we started with no tasks completed and finished in a single iteration
+    const initialPlanData = await readPlanFile(currentPlanFile);
+    const initialCompletedTaskCount = initialPlanData.tasks.filter((t) => t.done).length;
+
     // Batch mode: continue until no incomplete tasks remain
     while (iteration < maxSteps) {
       // Read the current plan file to get updated state
@@ -248,7 +253,10 @@ Available tasks:\n\n${taskDescriptions}`,
         }
 
         // Run final review if enabled
-        if (finalReview !== false) {
+        // Skip if we started with no completed tasks and finished in a single iteration
+        const shouldSkipFinalReview =
+          finalReview === false || (initialCompletedTaskCount === 0 && iteration === 1);
+        if (!shouldSkipFinalReview) {
           log(boldMarkdownHeaders('\n## Running Final Review\n'));
           try {
             const reviewResult = await handleReviewCommand(
