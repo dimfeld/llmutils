@@ -386,6 +386,20 @@ export const rmplanConfigSchema = z
         model: z.string().optional().describe('Model to use for documentation updates'),
         /** Executor to use for documentation updates */
         executor: z.string().optional().describe('Executor to use for documentation updates'),
+        /** Files or patterns to include - only these files should be edited */
+        include: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Descriptions of files or patterns to include - only these files should be edited during doc updates'
+          ),
+        /** Files or patterns to exclude - these files should never be edited */
+        exclude: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Descriptions of files or patterns to exclude - these files should never be edited during doc updates'
+          ),
       })
       .strict()
       .optional()

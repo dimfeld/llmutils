@@ -1,10 +1,12 @@
 // Command handler for 'rmplan update-docs'
 // Updates documentation based on completed plan work
 
+import * as path from 'path';
 import { getGitRoot } from '../../common/git.js';
 import { boldMarkdownHeaders, log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import type { RmplanConfig } from '../configSchema.js';
+import { resolveTasksDir } from '../configSchema.js';
 import {
   buildExecutorAndLog,
   DEFAULT_EXECUTOR,
@@ -14,14 +16,24 @@ import type { ExecutorCommonOptions } from '../executors/types.js';
 import { readPlanFile, resolvePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 
+interface UpdateDocsPromptOptions {
+  justCompletedTaskIndices?: number[];
+  include?: string[];
+  exclude?: string[];
+}
+
 /**
  * Build the documentation update prompt based on plan metadata and completed tasks
  * @param planData - The plan data
- * @param justCompletedTaskIndices - Indices of tasks that were just completed in this iteration (optional)
+ * @param options - Options including justCompletedTaskIndices and include/exclude patterns
  */
-function buildUpdateDocsPrompt(planData: PlanSchema, justCompletedTaskIndices?: number[]): string {
+function buildUpdateDocsPrompt(
+  planData: PlanSchema,
+  options: UpdateDocsPromptOptions = {}
+): string {
   const parts: string[] = [];
 
+  const { justCompletedTaskIndices, include, exclude } = options;
   const hasJustCompleted = justCompletedTaskIndices && justCompletedTaskIndices.length > 0;
   const justCompletedSet = new Set(justCompletedTaskIndices ?? []);
 
@@ -94,6 +106,23 @@ function buildUpdateDocsPrompt(planData: PlanSchema, justCompletedTaskIndices?: 
     `updating the root README or agent instructions like AGENTS.md or CLAUDE.md, since we don't want them to become too cluttered.`
   );
 
+  // Add include/exclude guidance
+  if (include && include.length > 0) {
+    parts.push('\n## Files to Include');
+    parts.push('Only edit documentation files matching these descriptions:');
+    for (const pattern of include) {
+      parts.push(`- ${pattern}`);
+    }
+  }
+
+  if (exclude && exclude.length > 0) {
+    parts.push('\n## Files to Exclude');
+    parts.push('Never edit documentation files matching these descriptions:');
+    for (const pattern of exclude) {
+      parts.push(`- ${pattern}`);
+    }
+  }
+
   return parts.join('\n');
 }
 
@@ -113,8 +142,23 @@ export async function runUpdateDocs(
   const planData = await readPlanFile(planFilePath);
   const baseDir = options.baseDir || (await getGitRoot()) || process.cwd();
 
+  // Build exclude list from config and automatically exclude tasks directory
+  const excludePatterns = [...(config.updateDocs?.exclude ?? [])];
+
+  // Add tasks directory to exclude list if not using external storage
+  if (!config.isUsingExternalStorage) {
+    const tasksDir = await resolveTasksDir(config);
+    // Make the path relative to baseDir for clearer messaging
+    const relativeTasksDir = path.relative(baseDir, tasksDir);
+    excludePatterns.push(`Plan files in ${relativeTasksDir || tasksDir}`);
+  }
+
   // Build the prompt
-  const prompt = buildUpdateDocsPrompt(planData, options.justCompletedTaskIndices);
+  const prompt = buildUpdateDocsPrompt(planData, {
+    justCompletedTaskIndices: options.justCompletedTaskIndices,
+    include: config.updateDocs?.include,
+    exclude: excludePatterns.length > 0 ? excludePatterns : undefined,
+  });
 
   // Determine executor and model
   const executorName =

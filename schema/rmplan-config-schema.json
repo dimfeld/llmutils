@@ -606,6 +606,20 @@
         "executor": {
           "description": "Executor to use for documentation updates",
           "type": "string"
+        },
+        "include": {
+          "description": "Descriptions of files or patterns to include - only these files should be edited during doc updates",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exclude": {
+          "description": "Descriptions of files or patterns to exclude - these files should never be edited during doc updates",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "additionalProperties": false
