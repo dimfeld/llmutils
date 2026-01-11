@@ -1,5 +1,5 @@
 ---
-description: Generate an rmplan plan
+description: Research and fill in details for an rmplan plan
 argument-hint: <plan id>
 allowed-tools: Bash(rmplan prompts generate-plan:*)
 ---
