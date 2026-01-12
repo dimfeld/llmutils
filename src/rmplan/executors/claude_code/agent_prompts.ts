@@ -404,7 +404,7 @@ Use git commands to see the recent related commits and which files were changed,
 
 Make sure that your feedback is congruent with the requirements of the project. For example, flagging increased number of rows from a database query is not useful feedback if the feature being implemented requires it.
 
-ultrathink before providing your review output.
+Think deeply before providing your review output.
 
 
 ## Context and Task

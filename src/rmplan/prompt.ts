@@ -732,7 +732,7 @@ For now, please:
 - Explore the relevant parts of the codebase
 - Understand the existing patterns and conventions
 - Identify the key files and components that will be involved
-- ultrathink about the best approach to implement this feature
+- think deeply about the best approach to implement this feature
 
 
 Make sure your plan includes these details:
@@ -761,7 +761,7 @@ export function generateClaudeCodeResearchPrompt(
   return `${prefix}, capture every insight you've gathered.
 
 Generate structured Markdown that preserves your research findings and provides a detailed implementation guide.
-Be very exhaustive and ultrathink when creating this content.
+Be very exhaustive and think deeply when creating this content.
 
 Your output should have two distinct sections:
 
