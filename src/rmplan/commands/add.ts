@@ -229,7 +229,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
 
   // Log success message
   log(chalk.green('\u2713 Created plan stub:'), filePath, 'for ID', chalk.green(planId));
-  log(chalk.gray(`  Next step: Use "rmplan generate --plan ${planId}" or "rmplan run ${planId}"`));
+  log(`  Next step: Add plan detail and run the generate process.`);
 
   // Open in editor if requested
   if (options.edit) {

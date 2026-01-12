@@ -9,17 +9,20 @@ priority: medium
 epic: true
 dependencies:
   - 158
+  - 166
+  - 167
 references:
   "158": e17331a4-1827-49ea-88e6-82de91f993df
 createdAt: 2026-01-04T01:04:44.082Z
-updatedAt: 2026-01-04T01:04:44.082Z
+updatedAt: 2026-01-12T06:45:11.425Z
 tasks: []
 tags: []
 ---
 
 rmplan TUI for tracking open sessions and running new ones 
 
-Make it in rust, use ratatui for the terminal and access through SQLite
+Make it in rust, use ratatui for the terminal and access through SQLite (also consider Swift with SwiftTUI for easier
+coexistence of iOS/max GUI application)
 
 Add a sessions table where we can track active sessions when an RM plan instant starts it will add an entry to the sessions table, noting the command that is being run and the workspace it is in and the PID.
 
