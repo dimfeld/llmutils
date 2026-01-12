@@ -14,6 +14,10 @@ Use `rmplan add` to create a new plan stub for later task generation.
 rmplan add "Plan title"
 ```
 
+After adding a plan, you may fill in the details of the plan in the Markdown section below the front matter. 
+
+In most cases, you do not want to fill in the structured tasks as those should be left to the generate process, which will do more research and generate the expected format for the plan document. But if the users asks you to, then use the `rmplan tools update-plan-tasks` command or make sure each entry in the `tasks` array should have a title and description field, and nothing else.
+
 ## Common Options
 
 ```bash
