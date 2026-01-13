@@ -43,14 +43,12 @@ const output = await Promise.all([
     entrypoints: ['./src/rmplan/rmplan.ts'],
     target: 'bun',
     minify: true,
-    // bytecode: true,
   }),
   buildOne({
     outdir: 'dist/claude_code',
     entrypoints: ['./src/rmplan/executors/claude_code/permissions_mcp.ts'],
     target: 'bun',
     minify: true,
-    // bytecode: true,
   }),
 ]);
 

@@ -269,8 +269,9 @@ Available tasks:\n\n${taskDescriptions}`,
 
             // If tasks were appended, ask if user wants to continue
             if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
+              const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';
               const shouldContinue = await confirm({
-                message: `${reviewResult.tasksAppended} new task(s) added from review. Continue running?`,
+                message: `${reviewResult.tasksAppended} new task(s) added from review to plan${planIdStr}. You can edit the plan first if needed. Continue running?`,
                 default: true,
               });
 
