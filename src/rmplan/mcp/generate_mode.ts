@@ -132,8 +132,9 @@ If you determine that the scope of this plan is large enough that it would benef
 4. Breaking it down would reduce cognitive load and make each plan more focused
 
 When creating multiple plans:
-- Use the create-plan tool to create each new plan with appropriate title, goal, details, and priority
+- Use 'rmplan add' to create each new plan with appropriate title, goal, details, and priority
 - Set the parent field to ${parentPlanId !== undefined ? parentPlanId : 'the current plan ID'} for all child plans
+- Set the parent plan as an epic using 'rmplan set <planId> --epic'
 - Use the dependencies field to specify which plans should be completed before others
 - Document the relationship between plans in each plan's details section
 - Each plan should be independently implementable and testable
@@ -266,8 +267,9 @@ If you determine that the scope of this plan is large enough that it would benef
 4. Breaking it down would reduce cognitive load and make each plan more focused
 
 When creating multiple plans:
-- Use the create-plan tool to create each new plan with appropriate title, goal, details, and priority
+- Use 'rmplan add' to create each new plan with appropriate title, goal, details, and priority
 - Set the parent field to ${parentPlanId !== undefined ? parentPlanId : 'the current plan ID'} for all child plans
+- Set the parent plan as an epic using 'rmplan set <planId> --epic'
 - Use the dependencies field to specify which plans should be completed before others
 - Document the relationship between plans in each plan's details section
 - Each plan should be independently implementable and testable

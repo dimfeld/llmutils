@@ -35,6 +35,8 @@ export interface SetOptions {
   noAssign?: boolean;
   tag?: string[];
   noTag?: string[];
+  epic?: boolean;
+  noEpic?: boolean;
 }
 
 export async function handleSetCommand(
@@ -286,6 +288,24 @@ export async function handleSetCommand(
       log('Removed assignedTo');
     } else {
       log('No assignedTo to remove');
+    }
+  }
+
+  // Set epic
+  if (options.epic !== undefined) {
+    plan.epic = options.epic;
+    modified = true;
+    log(`Set epic to ${options.epic}`);
+  }
+
+  // Remove epic (set to false)
+  if (options.noEpic) {
+    if (plan.epic !== false) {
+      plan.epic = false;
+      modified = true;
+      log('Set epic to false');
+    } else {
+      log('Epic is already false');
     }
   }
 

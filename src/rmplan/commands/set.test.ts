@@ -1029,4 +1029,83 @@ describe('rmplan set command', () => {
       )
     ).rejects.toThrow(/Invalid tag/);
   });
+
+  test('should set epic to true', async () => {
+    const planPath = await createTestPlan(300);
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        epic: true,
+      },
+      globalOpts
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.epic).toBe(true);
+    expect(updatedPlan.updatedAt).toBeDefined();
+  });
+
+  test('should set epic to false using --no-epic', async () => {
+    const planPath = await createTestPlan(301, { epic: true });
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        noEpic: true,
+      },
+      globalOpts
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.epic).toBe(false);
+  });
+
+  test('should handle noEpic when epic is already false', async () => {
+    const planPath = await createTestPlan(302, { epic: false });
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        noEpic: true,
+      },
+      globalOpts
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.epic).toBe(false);
+  });
+
+  test('should change epic value', async () => {
+    const planPath = await createTestPlan(303, { epic: false });
+
+    // First set to true
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        epic: true,
+      },
+      globalOpts
+    );
+
+    let updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.epic).toBe(true);
+
+    // Then set back to false explicitly
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        epic: false,
+      },
+      globalOpts
+    );
+
+    updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.epic).toBe(false);
+  });
 });
