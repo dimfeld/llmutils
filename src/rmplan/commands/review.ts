@@ -1472,7 +1472,7 @@ export function buildReviewPrompt(
 }
 
 /**
- * Robust issue detection that combines multiple methods to determine if issues exist
+ * Determine if issues exist in the review result
  */
 export function detectIssuesInReview(
   reviewResult: ReturnType<typeof createReviewResult>,
@@ -1493,31 +1493,10 @@ export function detectIssuesInReview(
   }
 
   // Fallback method: semantic analysis of review output
-  if (rawOutput) {
-    // Check for explicit verdict from reviewer
-    if (rawOutput.includes('NEEDS_FIXES')) {
-      return true;
-    }
-
-    // Check for common issue indicators
-    const issueIndicators = [
-      'issues were found',
-      'issues need to be addressed',
-      'problems identified',
-      'bugs found',
-      'vulnerabilities detected',
-      'security issue',
-      'critical',
-      'error handling',
-      'memory leak',
-      'performance bottleneck',
-      'missing error handling',
-      'needs to be fixed',
-      'requires attention',
-    ];
-
-    const lowerOutput = rawOutput.toLowerCase();
-    return issueIndicators.some((indicator) => lowerOutput.includes(indicator));
+  // This is almost never needed now that we are using real structured output
+  // in the review commands.
+  if (rawOutput && rawOutput.includes('NEEDS_FIXES')) {
+    return true;
   }
 
   return false;
