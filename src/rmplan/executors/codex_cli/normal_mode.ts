@@ -1,6 +1,7 @@
 import type { ExecutePlanInfo, ExecutorOutput } from '../types';
 import type { RmplanConfig } from '../../configSchema';
 import type { PlanSchema } from '../../planSchema';
+import { CodexCliExecutorName, type CodexReasoningLevel } from '../schemas';
 import { captureRepositoryState, getGitRoot } from '../../../common/git';
 import { log, warn } from '../../../logging';
 import { getImplementerPrompt, getTesterPrompt } from '../claude_code/agent_prompts';
@@ -67,6 +68,11 @@ export async function executeNormalMode(
   };
   // Analyze plan file to understand completed vs pending tasks
   const gitRoot = await getGitRoot(baseDir);
+
+  // Get default reasoning level from config
+  const codexOptions = rmplanConfig.executors?.[CodexCliExecutorName];
+  const defaultReasoningLevel: CodexReasoningLevel = codexOptions?.reasoning?.default ?? 'medium';
+
   const hasPlanFilePath = planInfo.planFilePath.trim().length > 0;
   const hasPlanId = planInfo.planId.trim().length > 0;
   const planContextAvailable = hasPlanFilePath && hasPlanId;
@@ -138,7 +144,9 @@ export async function executeNormalMode(
     );
 
     log(`Running implementer step${attempt > 0 ? ` (attempt ${attemptNumber})` : ''}...`);
-    const attemptOutput = await executeCodexStep(implementerPrompt.prompt, gitRoot, rmplanConfig);
+    const attemptOutput = await executeCodexStep(implementerPrompt.prompt, gitRoot, rmplanConfig, {
+      reasoningLevel: defaultReasoningLevel,
+    });
     events.push({ type: 'implementer', message: attemptOutput });
     log('Implementer output captured.');
 
@@ -258,7 +266,9 @@ export async function executeNormalMode(
 
     // Execute tester step
     log('Running tester step...');
-    const testerOutput = await executeCodexStep(tester.prompt, gitRoot, rmplanConfig);
+    const testerOutput = await executeCodexStep(tester.prompt, gitRoot, rmplanConfig, {
+      reasoningLevel: defaultReasoningLevel,
+    });
     events.push({ type: 'tester', message: testerOutput });
     log('Tester output captured.');
 
@@ -353,7 +363,9 @@ export async function executeNormalMode(
         fixInstructions,
       });
 
-      const fixerOutput = await executeCodexStep(fixerPrompt, gitRoot, rmplanConfig);
+      const fixerOutput = await executeCodexStep(fixerPrompt, gitRoot, rmplanConfig, {
+        reasoningLevel: defaultReasoningLevel,
+      });
       events.push({ type: 'fixer', message: fixerOutput });
       log('Fixer output captured. Re-running reviewer...');
 

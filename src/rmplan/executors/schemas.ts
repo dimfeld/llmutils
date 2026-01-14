@@ -100,6 +100,9 @@ export const codexCliOptionsSchema = z.object({
     .describe('Run executor in streamlined implement/verify mode instead of full review loop'),
   reasoning: z
     .object({
+      default: codexReasoningLevelSchema
+        .optional()
+        .describe('Default reasoning level for implementation steps (default: medium)'),
       scopedReview: codexReasoningLevelSchema
         .optional()
         .describe('Reasoning level for task-scoped reviews (default: medium)'),

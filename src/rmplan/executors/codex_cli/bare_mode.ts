@@ -1,5 +1,6 @@
 import type { ExecutePlanInfo, ExecutorOutput } from '../types.js';
 import type { RmplanConfig } from '../../configSchema.js';
+import { CodexCliExecutorName, type CodexReasoningLevel } from '../schemas.js';
 import { getGitRoot } from '../../../common/git.js';
 import { log } from '../../../logging.js';
 import { parseFailedReport } from '../failure_detection.js';
@@ -19,8 +20,14 @@ export async function executeBareMode(
 ): Promise<void | ExecutorOutput> {
   const gitRoot = await getGitRoot(baseDir);
 
+  // Get default reasoning level from config
+  const codexOptions = rmplanConfig.executors?.[CodexCliExecutorName];
+  const defaultReasoningLevel: CodexReasoningLevel = codexOptions?.reasoning?.default ?? 'medium';
+
   log('Running bare mode (single prompt, no orchestration)...');
-  const output = await executeCodexStep(contextContent, gitRoot, rmplanConfig);
+  const output = await executeCodexStep(contextContent, gitRoot, rmplanConfig, {
+    reasoningLevel: defaultReasoningLevel,
+  });
 
   log('Bare mode execution complete.');
 

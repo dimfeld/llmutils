@@ -263,7 +263,14 @@ describe('Codex CLI bare mode', () => {
     );
 
     expect(getGitRootSpy).toHaveBeenCalledWith('/tmp/base-dir');
-    expect(executeCodexStepSpy).toHaveBeenCalledWith('PROMPT', '/custom/git/root', {});
+    expect(executeCodexStepSpy).toHaveBeenCalledWith(
+      'PROMPT',
+      '/custom/git/root',
+      {},
+      {
+        reasoningLevel: 'medium',
+      }
+    );
   });
 
   test('passes config to executeCodexStep', async () => {
@@ -304,6 +311,8 @@ describe('Codex CLI bare mode', () => {
       testConfig as any
     );
 
-    expect(executeCodexStepSpy).toHaveBeenCalledWith('PROMPT', '/tmp/repo', testConfig);
+    expect(executeCodexStepSpy).toHaveBeenCalledWith('PROMPT', '/tmp/repo', testConfig, {
+      reasoningLevel: 'medium',
+    });
   });
 });
