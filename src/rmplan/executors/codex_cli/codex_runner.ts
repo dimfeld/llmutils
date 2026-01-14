@@ -40,7 +40,7 @@ export async function executeCodexStep(
     ? ['--dangerously-bypass-approvals-and-sandbox']
     : ['--sandbox', 'workspace-write'];
 
-  const reasoningLevel = options.reasoningLevel ?? 'high';
+  const reasoningLevel = options.reasoningLevel ?? 'medium';
   const args = [
     'codex',
     '--enable',
