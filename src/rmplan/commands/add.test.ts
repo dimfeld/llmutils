@@ -688,6 +688,31 @@ describe('rmplan add command', () => {
     expect(plan.temp).toBe(true);
   });
 
+  test('creates plan with epic flag set to true', async () => {
+    // Run handler directly with --epic option
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, '.rmfilter', 'rmplan.yml') }),
+      },
+    };
+    await handleAddCommand(['Epic', 'Plan'], { epic: true }, command);
+
+    // The file should be named 1-epic-plan.plan.md
+    const planPath = path.join(tasksDir, '1-epic-plan.plan.md');
+    expect(
+      await fs.access(planPath).then(
+        () => true,
+        () => false
+      )
+    ).toBe(true);
+
+    // Read and verify plan content
+    const plan = await readPlanFile(planPath);
+    expect(plan.id).toBe(1);
+    expect(plan.title).toBe('Epic Plan');
+    expect(plan.epic).toBe(true);
+  });
+
   test('creates sanitized external plan when remote contains credentials and query tokens', async () => {
     clearAllRmplanCaches();
 

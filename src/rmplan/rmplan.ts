@@ -368,6 +368,7 @@ program
   .option('--cleanup <planId>', 'Create a cleanup plan for the specified plan ID')
   .option('--temp', 'Mark this plan as temporary (can be deleted with cleanup-temp command)')
   .option('--simple', 'Mark this plan as simple (skips research phase in generation)')
+  .option('--epic', 'Mark this plan as an epic')
   .action(async (title, options, command) => {
     const { handleAddCommand } = await import('./commands/add.js');
     options.dependsOn = intArg(options.dependsOn);

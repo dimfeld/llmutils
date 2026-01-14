@@ -121,6 +121,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
     priority: (options.priority as 'low' | 'medium' | 'high' | 'urgent') || 'medium',
     temp: options.temp || false,
     simple: options.simple || false,
+    epic: options.epic || false,
     dependencies: needArrayOrUndefined(options.dependsOn),
     parent: referencedPlan
       ? referencedPlan.id
