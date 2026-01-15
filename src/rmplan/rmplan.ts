@@ -128,9 +128,14 @@ program
   .command('prompts [prompt] [plan]')
   .description('Print an MCP prompt to stdout for use in CLI workflows')
   .option('--plan <plan>', 'Plan ID or file path to use')
+  .option('--latest', 'Use the most recently updated plan')
   .option(
-    '--allow-multiple-plans',
-    'Allow the prompt to recommend creating multiple plans when the scope is large'
+    '--next-ready <planIdOrPath>',
+    'Find and use the next ready dependency of the specified parent plan (accepts plan ID or file path)'
+  )
+  .option(
+    '--no-allow-multiple-plans',
+    'Disable allowing the prompt to recommend creating multiple plans (default is enabled)'
   )
   .option(
     '--task-index <indexes...>',

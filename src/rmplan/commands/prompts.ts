@@ -1,3 +1,5 @@
+import chalk from 'chalk';
+import { log } from '../../logging.js';
 import { writeStdout } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
@@ -9,9 +11,16 @@ import {
   type GenerateModeRegistrationContext,
 } from '../mcp/generate_mode.js';
 import { loadCompactPlanPrompt } from '../mcp/prompts/compact_plan.js';
+import { readAllPlans, readPlanFile, resolvePlanFile } from '../plans.js';
+import { getCombinedTitle } from '../display_utils.js';
+import { findNextReadyDependency } from './find_next_dependency.js';
+import type { PlanSchema } from '../planSchema.js';
+import * as fs from 'node:fs/promises';
 
 type PromptCommandOptions = {
   plan?: string;
+  nextReady?: string;
+  latest?: boolean;
   allowMultiplePlans?: boolean;
   // Review-specific options
   taskIndex?: string | string[];
@@ -155,6 +164,55 @@ function normalizePlanIdentifier(plan: string | undefined): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+type PlanWithFilename = PlanSchema & { filename: string };
+
+const MIN_TIMESTAMP = Number.NEGATIVE_INFINITY;
+
+function parseIsoTimestamp(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+async function getPlanTimestamp(plan: PlanWithFilename): Promise<number> {
+  const updatedAt = parseIsoTimestamp(plan.updatedAt);
+  if (updatedAt !== undefined) {
+    return updatedAt;
+  }
+
+  const createdAt = parseIsoTimestamp(plan.createdAt);
+  if (createdAt !== undefined) {
+    return createdAt;
+  }
+
+  try {
+    const fileStats = await fs.stat(plan.filename);
+    return fileStats.mtimeMs;
+  } catch {
+    return MIN_TIMESTAMP;
+  }
+}
+
+async function findMostRecentlyUpdatedPlan<T extends PlanWithFilename>(
+  plans: Map<number, T>
+): Promise<T | null> {
+  let latestPlan: T | null = null;
+  let latestTimestamp = MIN_TIMESTAMP;
+
+  for (const candidate of plans.values()) {
+    const timestamp = await getPlanTimestamp(candidate);
+    if (timestamp > latestTimestamp) {
+      latestTimestamp = timestamp;
+      latestPlan = candidate;
+    }
+  }
+
+  return latestPlan;
+}
+
 export async function buildPromptText(
   promptName: string,
   args: {
@@ -225,12 +283,81 @@ export async function handlePromptsCommand(
     gitRoot: pathContext.gitRoot,
   };
 
-  const plan = normalizePlanIdentifier(options.plan) ?? normalizePlanIdentifier(planArg);
+  // Validate input options first
+  let planOptionsSet = [planArg, options.plan, options.nextReady, options.latest].reduce(
+    (acc, val) => acc + (val ? 1 : 0),
+    0
+  );
+
+  // Manual conflict check for --plan, --next-ready, and --latest
+  if (planOptionsSet > 1) {
+    throw new Error(
+      'You must provide at most one of [plan], --plan <plan>, --next-ready <planIdOrPath>, or --latest'
+    );
+  }
+
+  let plan = normalizePlanIdentifier(options.plan) ?? normalizePlanIdentifier(planArg);
+
+  // Handle --next-ready option - find and operate on next ready dependency
+  if (options.nextReady) {
+    const tasksDir = pathContext.tasksDir;
+    // Convert string ID to number or resolve plan file to get numeric ID
+    let parentPlanId: number;
+    const planIdNumber = parseInt(options.nextReady, 10);
+    if (!isNaN(planIdNumber)) {
+      parentPlanId = planIdNumber;
+    } else {
+      // Try to resolve as a file path and get the plan ID
+      const planFile = await resolvePlanFile(options.nextReady, globalOpts.config);
+      const parentPlan = await readPlanFile(planFile);
+      if (!parentPlan.id) {
+        throw new Error(`Plan file ${planFile} does not have a valid ID`);
+      }
+      parentPlanId = parentPlan.id;
+    }
+
+    const result = await findNextReadyDependency(parentPlanId, tasksDir, true);
+
+    if (!result.plan) {
+      log(result.message);
+      return;
+    }
+
+    log(chalk.green(`Found ready plan: ${result.plan.id} - ${result.plan.title}`));
+
+    // Set the resolved plan as the target
+    plan = result.plan.filename;
+  } else if (options.latest) {
+    const { plans } = await readAllPlans(pathContext.tasksDir);
+
+    if (plans.size === 0) {
+      log('No plans found in tasks directory.');
+      return;
+    }
+
+    const latestPlan = await findMostRecentlyUpdatedPlan(plans);
+
+    if (!latestPlan) {
+      log('No plans found in tasks directory.');
+      return;
+    }
+
+    const title = getCombinedTitle(latestPlan);
+    const label =
+      latestPlan.id !== undefined && latestPlan.id !== null
+        ? `${latestPlan.id} - ${title}`
+        : title || latestPlan.filename;
+
+    log(chalk.green(`Found latest plan: ${label}`));
+
+    plan = latestPlan.filename;
+  }
+
   const promptText = await buildPromptText(
     promptName,
     {
       plan,
-      allowMultiplePlans: options.allowMultiplePlans,
+      allowMultiplePlans: options.allowMultiplePlans ?? true,
       taskIndex: options.taskIndex,
       taskTitle: options.taskTitle,
       instructions: options.instructions,
