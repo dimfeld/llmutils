@@ -616,9 +616,10 @@ export async function readPlanFile(filePath: string): Promise<PlanSchema> {
  * This prevents YAML parsing errors when formatters incorrectly convert quotes.
  *
  * @param value - The value to normalize (can be any type)
- * @returns The value with all fancy quotes converted to regular quotes
+ * @param skipFields - Set of field names to skip normalization for
+ * @returns The value with all fancy quotes converted to regular quotes (except in skipped fields)
  */
-function normalizeFancyQuotes(value: unknown): unknown {
+function normalizeFancyQuotes(value: unknown, skipFields: Set<string> = new Set()): unknown {
   if (typeof value === 'string') {
     return value
       .replace(/[\u201C\u201D]/g, '"') // " " → "
@@ -628,13 +629,18 @@ function normalizeFancyQuotes(value: unknown): unknown {
   }
 
   if (Array.isArray(value)) {
-    return value.map(normalizeFancyQuotes);
+    return value.map((item) => normalizeFancyQuotes(item, skipFields));
   }
 
   if (value && typeof value === 'object') {
     const normalized: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(value)) {
-      normalized[key] = normalizeFancyQuotes(val);
+      // Skip normalization for specified fields
+      if (skipFields.has(key)) {
+        normalized[key] = val;
+      } else {
+        normalized[key] = normalizeFancyQuotes(val, skipFields);
+      }
     }
     return normalized;
   }
@@ -659,7 +665,8 @@ export async function writePlanFile(
   const { filename: _, ...plan } = input;
 
   // Normalize fancy quotes to regular quotes to prevent YAML parsing errors
-  const quotesNormalized = normalizeFancyQuotes(plan) as PlanSchemaInput;
+  // Skip the details field since it's user-written markdown content
+  const quotesNormalized = normalizeFancyQuotes(plan, new Set(['details'])) as PlanSchemaInput;
 
   // Validate the plan before writing
   const normalizedPlan = normalizeContainerToEpic(quotesNormalized);
