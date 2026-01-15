@@ -612,6 +612,37 @@ export async function readPlanFile(filePath: string): Promise<PlanSchema> {
 }
 
 /**
+ * Recursively converts fancy quotes (curly quotes) to regular ASCII quotes in all string fields.
+ * This prevents YAML parsing errors when formatters incorrectly convert quotes.
+ *
+ * @param value - The value to normalize (can be any type)
+ * @returns The value with all fancy quotes converted to regular quotes
+ */
+function normalizeFancyQuotes(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return value
+      .replace(/[\u201C\u201D]/g, '"') // " " → "
+      .replace(/[\u2018\u2019]/g, "'") // ' ' → '
+      .replace(/\u2033/g, '"') // ″ → "
+      .replace(/\u2032/g, "'"); // ′ → '
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(normalizeFancyQuotes);
+  }
+
+  if (value && typeof value === 'object') {
+    const normalized: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value)) {
+      normalized[key] = normalizeFancyQuotes(val);
+    }
+    return normalized;
+  }
+
+  return value;
+}
+
+/**
  * Writes a plan to a YAML file with the yaml-language-server schema line.
  * @param filePath - The path where to write the YAML file
  * @param plan - The plan data to write
@@ -627,8 +658,11 @@ export async function writePlanFile(
   // Plans from readAllPlans will have a filename which we want to strip out
   const { filename: _, ...plan } = input;
 
+  // Normalize fancy quotes to regular quotes to prevent YAML parsing errors
+  const quotesNormalized = normalizeFancyQuotes(plan) as PlanSchemaInput;
+
   // Validate the plan before writing
-  const normalizedPlan = normalizeContainerToEpic(plan);
+  const normalizedPlan = normalizeContainerToEpic(quotesNormalized);
   const result = phaseSchema.safeParse(normalizedPlan);
   if (!result.success) {
     const errors = result.error.issues

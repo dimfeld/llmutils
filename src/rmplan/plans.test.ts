@@ -1840,6 +1840,136 @@ ${markdownBody}`;
   });
 });
 
+describe('fancy quotes normalization', () => {
+  let tempDir: string;
+
+  beforeAll(async () => {
+    tempDir = await realpath(await mkdtemp(join(tmpdir(), 'rmplan-quotes-test-')));
+  });
+
+  afterAll(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('should convert fancy quotes to regular quotes in all string fields', async () => {
+    const planPath = join(tempDir, 'fancy-quotes-plan.md');
+    const planWithFancyQuotes: PlanSchema = {
+      id: 200,
+      title: 'Plan with \u201Cfancy\u201D quotes',
+      goal: 'Test that \u201Ccurly quotes\u201D are normalized',
+      details: `# Details with \u2018fancy\u2019 quotes
+
+This is a plan that contains \u201Ccurly double quotes\u201D and \u2018curly single quotes\u2019.
+It also has other fancy characters like \u2033 and \u2032.
+
+All of these should be converted to regular quotes.`,
+      status: 'pending',
+      priority: 'medium',
+      tasks: [
+        {
+          title: 'Task with \u201Cfancy quotes\u201D',
+          description: 'This description has \u2018curly quotes\u2019 too',
+          files: ['file-with-\u201Cquotes\u201D.ts'],
+          done: false,
+          steps: [
+            { prompt: 'Step with \u201Cfancy\u201D quotes', done: false },
+            { prompt: 'Another step with \u2018quotes\u2019', done: false },
+          ],
+        },
+      ],
+    };
+
+    // Write the plan - this should normalize the quotes
+    await writePlanFile(planPath, planWithFancyQuotes);
+
+    // Read the raw file content
+    const fileContent = await readFile(planPath, 'utf-8');
+
+    // Verify NO fancy quotes remain in the file
+    expect(fileContent).not.toContain('\u201C'); // Left double quote
+    expect(fileContent).not.toContain('\u201D'); // Right double quote
+    expect(fileContent).not.toContain('\u2018'); // Left single quote
+    expect(fileContent).not.toContain('\u2019'); // Right single quote
+    expect(fileContent).not.toContain('\u2033'); // Double prime
+    expect(fileContent).not.toContain('\u2032'); // Single prime
+
+    // Verify regular quotes are present instead
+    expect(fileContent).toContain('"fancy"');
+    expect(fileContent).toContain("'fancy'");
+    expect(fileContent).toContain('"curly quotes"');
+    expect(fileContent).toContain("'curly quotes'");
+
+    // Read back and verify the content is preserved (just with normalized quotes)
+    const readBackPlan = await readPlanFile(planPath);
+    expect(readBackPlan.title).toBe('Plan with "fancy" quotes');
+    expect(readBackPlan.goal).toBe('Test that "curly quotes" are normalized');
+    expect(readBackPlan.details).toContain('"curly double quotes"');
+    expect(readBackPlan.details).toContain("'curly single quotes'");
+    expect(readBackPlan.tasks![0].title).toBe('Task with "fancy quotes"');
+    expect(readBackPlan.tasks![0].description).toBe("This description has 'curly quotes' too");
+    expect(readBackPlan.tasks![0].steps![0].prompt).toBe('Step with "fancy" quotes');
+  });
+
+  it('should handle plan files with fancy quotes from external sources', async () => {
+    const planPath = join(tempDir, 'external-fancy-quotes.md');
+
+    // Simulate a plan that might come from copying text from a word processor
+    const externalContent = `---
+id: 201
+title: "Plan from Word Processor"
+goal: This came from a document with \u201Cfancy quotes\u201D
+status: pending
+tasks: []
+---
+
+# Details
+
+This plan was copied from a word processor that uses \u201Csmart quotes\u201D automatically.
+The system should handle this gracefully and convert them to regular quotes.`;
+
+    await writeFile(planPath, externalContent);
+
+    // Read the plan (which has fancy quotes)
+    const plan = await readPlanFile(planPath);
+
+    // Write it back - this should normalize the quotes
+    const normalizedPath = join(tempDir, 'normalized.md');
+    await writePlanFile(normalizedPath, plan);
+
+    // Verify the normalized file has no fancy quotes
+    const normalizedContent = await readFile(normalizedPath, 'utf-8');
+    expect(normalizedContent).not.toContain('\u201C');
+    expect(normalizedContent).not.toContain('\u201D');
+    expect(normalizedContent).toContain('"smart quotes"');
+  });
+
+  it('should preserve regular quotes and not affect other characters', async () => {
+    const planPath = join(tempDir, 'regular-quotes.md');
+    const planWithRegularQuotes: PlanSchema = {
+      id: 202,
+      title: 'Plan with "regular" quotes',
+      goal: 'Test that regular quotes are not affected',
+      details: `# Normal Content
+
+This has regular "double quotes" and 'single quotes'.
+It also has other characters like: @ # $ % ^ & * ( ) - + = { } [ ] | \\ : ; < > , . ? /
+
+All of these should remain unchanged.`,
+      status: 'pending',
+      tasks: [],
+    };
+
+    await writePlanFile(planPath, planWithRegularQuotes);
+
+    const fileContent = await readFile(planPath, 'utf-8');
+    const readBack = await readPlanFile(planPath);
+
+    // All special characters should be preserved
+    expect(readBack.details).toContain('@ # $ % ^ & * ( ) - + = { } [ ] | \\ : ; < > , . ? /');
+    expect(readBack.title).toBe('Plan with "regular" quotes');
+  });
+});
+
 describe('schema validation and YAML serialization', () => {
   it('should serialize numeric IDs as numbers in YAML', () => {
     const planWithNumericId: PlanSchema = {
