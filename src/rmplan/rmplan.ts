@@ -132,6 +132,21 @@ program
     '--allow-multiple-plans',
     'Allow the prompt to recommend creating multiple plans when the scope is large'
   )
+  .option(
+    '--task-index <indexes...>',
+    'Review specific task indexes (1-based). For review prompt only.'
+  )
+  .option(
+    '--task-title <titles...>',
+    'Review specific task titles (exact match). For review prompt only.'
+  )
+  .option('--instructions <text>', 'Inline custom instructions. For review prompt only.')
+  .option(
+    '--instructions-file <path>',
+    'File with custom instructions. For review prompt only.'
+  )
+  .option('--focus <areas>', 'Comma-separated focus areas. For review prompt only.')
+  .option('--base <branch>', 'Base branch for diff comparison. For review prompt only.')
   .action(async (promptName, planArg, options, command) => {
     const { handlePromptsCommand } = await import('./commands/prompts.js');
     await handlePromptsCommand(promptName, planArg, options, command).catch(handleCommandError);

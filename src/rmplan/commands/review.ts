@@ -1319,6 +1319,129 @@ async function appendIssuesToPlanTasks(
   return appendedCount;
 }
 
+/**
+ * Builds a review prompt from command-line options, similar to handleReviewCommand
+ * but without executing the review. This is used by the prompts command to show
+ * what prompt would be generated.
+ *
+ * @param planFile - Plan file path or ID
+ * @param options - Review command options including task filters, instructions, etc.
+ * @param globalOpts - Global CLI options including config path
+ * @returns Promise<string> containing the generated prompt
+ */
+export async function buildReviewPromptFromOptions(
+  planFile: string,
+  options: {
+    taskIndex?: string | string[];
+    taskTitle?: string | string[];
+    instructions?: string;
+    instructionsFile?: string;
+    focus?: string;
+    incremental?: boolean;
+    sinceLastReview?: boolean;
+    since?: string;
+    base?: string;
+  },
+  globalOpts: {
+    config?: string;
+  }
+): Promise<string> {
+  // Load config
+  const config = await loadEffectiveConfig(globalOpts.config);
+
+  // Gather plan context using the shared utility
+  const context = await gatherPlanContext(planFile, options, globalOpts);
+
+  // Extract context
+  const { planData, parentChain, completedChildren, diffResult } = context;
+
+  // Get git root for file operations
+  const gitRoot = await getGitRoot();
+
+  // Load custom instructions
+  let customInstructions = '';
+
+  // First try CLI options (CLI takes precedence)
+  if (options.instructions) {
+    customInstructions = options.instructions;
+  } else if (options.instructionsFile) {
+    try {
+      const instructionsPath = validateInstructionsFilePath(options.instructionsFile, gitRoot);
+      customInstructions = await readFile(instructionsPath, 'utf-8');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      warn(
+        `Warning: Could not read instructions file from CLI: ${options.instructionsFile}. ${errorMessage}`
+      );
+    }
+  } else if (config.review?.customInstructionsPath) {
+    // Fall back to config file instructions
+    try {
+      const instructionsPath = validateInstructionsFilePath(
+        config.review.customInstructionsPath,
+        gitRoot
+      );
+      customInstructions = await readFile(instructionsPath, 'utf-8');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      warn(
+        `Warning: Could not read instructions file from config: ${config.review.customInstructionsPath}. ${errorMessage}`
+      );
+    }
+  }
+
+  // Handle focus areas
+  let focusAreas: string[] = [];
+  if (options.focus) {
+    // CLI focus areas override config
+    const rawFocusAreas = options.focus
+      .split(',')
+      .map((area: string) => area.trim())
+      .filter(Boolean);
+    try {
+      focusAreas = validateFocusAreas(rawFocusAreas);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      warn(`Warning: Invalid focus areas from CLI: ${errorMessage}`);
+      focusAreas = [];
+    }
+  } else if (config.review?.focusAreas && config.review.focusAreas.length > 0) {
+    try {
+      focusAreas = validateFocusAreas(config.review.focusAreas);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      warn(`Warning: Invalid focus areas from config: ${errorMessage}`);
+      focusAreas = [];
+    }
+  }
+
+  // Add focus areas to custom instructions if provided
+  if (focusAreas.length > 0) {
+    const focusInstruction = `Focus on: ${focusAreas.join(', ')}`;
+    customInstructions = customInstructions
+      ? `${customInstructions}\n\n${focusInstruction}`
+      : focusInstruction;
+  }
+
+  // Resolve task scope
+  const { planData: scopedPlanData, taskScopeNote } = resolveReviewTaskScope(planData, {
+    taskIndex: options.taskIndex,
+    taskTitle: options.taskTitle,
+  });
+
+  // Build and return the prompt
+  return buildReviewPrompt(
+    scopedPlanData,
+    diffResult,
+    false, // includeDiff - not needed for prompt viewing
+    false, // useSubagents - not needed for prompt viewing
+    parentChain,
+    completedChildren,
+    customInstructions,
+    taskScopeNote
+  );
+}
+
 export function buildReviewPrompt(
   planData: PlanSchema,
   diffResult: DiffResult,

@@ -13,6 +13,13 @@ import { loadCompactPlanPrompt } from '../mcp/prompts/compact_plan.js';
 type PromptCommandOptions = {
   plan?: string;
   allowMultiplePlans?: boolean;
+  // Review-specific options
+  taskIndex?: string | string[];
+  taskTitle?: string | string[];
+  instructions?: string;
+  instructionsFile?: string;
+  focus?: string;
+  base?: string;
 };
 
 type PromptMessage = {
@@ -35,7 +42,17 @@ type PromptDefinition = {
   requiresPlan: boolean;
   supportsAllowMultiplePlans: boolean;
   load: (
-    args: { plan?: string; allowMultiplePlans?: unknown },
+    args: {
+      plan?: string;
+      allowMultiplePlans?: unknown;
+      // Review-specific options
+      taskIndex?: string | string[];
+      taskTitle?: string | string[];
+      instructions?: string;
+      instructionsFile?: string;
+      focus?: string;
+      base?: string;
+    },
     context: GenerateModeRegistrationContext
   ) => PromptResult | Promise<PromptResult>;
 };
@@ -72,6 +89,26 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     requiresPlan: true,
     supportsAllowMultiplePlans: false,
     load: (args, context) => loadCompactPlanPrompt({ plan: args.plan ?? '' }, context),
+  },
+  {
+    name: 'review',
+    requiresPlan: true,
+    supportsAllowMultiplePlans: false,
+    load: async (args, context) => {
+      const { buildReviewPromptFromOptions } = await import('./review.js');
+      return await buildReviewPromptFromOptions(
+        args.plan ?? '',
+        {
+          taskIndex: args.taskIndex,
+          taskTitle: args.taskTitle,
+          instructions: args.instructions,
+          instructionsFile: args.instructionsFile,
+          focus: args.focus,
+          base: args.base,
+        },
+        { config: context.configPath }
+      );
+    },
   },
 ];
 
@@ -120,7 +157,17 @@ function normalizePlanIdentifier(plan: string | undefined): string | undefined {
 
 export async function buildPromptText(
   promptName: string,
-  args: { plan?: string; allowMultiplePlans?: boolean },
+  args: {
+    plan?: string;
+    allowMultiplePlans?: boolean;
+    // Review-specific options
+    taskIndex?: string | string[];
+    taskTitle?: string | string[];
+    instructions?: string;
+    instructionsFile?: string;
+    focus?: string;
+    base?: string;
+  },
   context: GenerateModeRegistrationContext
 ): Promise<string> {
   const definition = PROMPT_LOOKUP.get(promptName);
@@ -142,6 +189,12 @@ export async function buildPromptText(
     {
       plan,
       allowMultiplePlans,
+      taskIndex: args.taskIndex,
+      taskTitle: args.taskTitle,
+      instructions: args.instructions,
+      instructionsFile: args.instructionsFile,
+      focus: args.focus,
+      base: args.base,
     },
     context
   );
@@ -178,6 +231,12 @@ export async function handlePromptsCommand(
     {
       plan,
       allowMultiplePlans: options.allowMultiplePlans,
+      taskIndex: options.taskIndex,
+      taskTitle: options.taskTitle,
+      instructions: options.instructions,
+      instructionsFile: options.instructionsFile,
+      focus: options.focus,
+      base: options.base,
     },
     context
   );
