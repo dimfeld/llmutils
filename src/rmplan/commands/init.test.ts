@@ -200,6 +200,34 @@ describe('rmplan init command', () => {
     expect(config.prCreation).toHaveProperty('draft');
   });
 
+  test('includes updateDocs and executors settings in default config', async () => {
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleInitCommand({ yes: true }, command);
+
+    const configPath = path.join(tempDir, '.rmfilter', 'config', 'rmplan.yml');
+    const configContent = await fs.readFile(configPath, 'utf-8');
+    const config = yaml.parse(configContent);
+
+    // Check updateDocs settings
+    expect(config).toHaveProperty('updateDocs');
+    expect(config.updateDocs).toHaveProperty('mode', 'after-iteration');
+
+    // Check executors.claude-code.permissionsMcp settings
+    expect(config).toHaveProperty('executors');
+    expect(config.executors).toHaveProperty('claude-code');
+    expect(config.executors['claude-code']).toHaveProperty('permissionsMcp');
+    expect(config.executors['claude-code'].permissionsMcp).toHaveProperty('enabled', true);
+    expect(config.executors['claude-code'].permissionsMcp).toHaveProperty(
+      'autoApproveCreatedFileDeletion',
+      true
+    );
+  });
+
   test('handles absolute paths for tasks directory', async () => {
     const absoluteTasksPath = path.join(tempDir, 'custom', 'tasks', 'location');
 

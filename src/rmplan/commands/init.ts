@@ -174,6 +174,17 @@ function createDefaultConfig(): RmplanConfigInput {
     prCreation: {
       draft: true,
     },
+    updateDocs: {
+      mode: 'after-iteration',
+    },
+    executors: {
+      'claude-code': {
+        permissionsMcp: {
+          enabled: true,
+          autoApproveCreatedFileDeletion: true,
+        },
+      },
+    },
   };
 }
 
