@@ -19,21 +19,52 @@ tasks: []
 tags: []
 ---
 
-rmplan TUI for tracking open sessions and running new ones 
+## Manager UI
 
-Make it in rust, use ratatui for the terminal and access through SQLite (also consider Swift with SwiftTUI for easier
-coexistence of iOS/max GUI application)
+- Each "tab" (not necessarily actual tabs but the concept) corresponds to an active in_progress plan and its workspace.
+- Make rmplan able to run headless. The current terminal IO is just a client to the headless server.
+- Manager can run rmplan and forward input/output using the headless server protocol
+- Manager can run Claude Code and forward input/output as a regular terminal
+- Thinking about using Swift for the UI, can actually do both TUI, macOS, and iOS versions then.
+- We should also have some way to show when a session is waiting for input. I don't know if we can do this reliably on the Claude/Codex running modes, but we can show how long it has been since the last message was printed, and if it's longer than a certain threshold, say 30 seconds or a minute, then we highlight that line. So then we just need the logging infrastructure to also update that.  It's possible that running in JSON mode we can show requests for input.
 
-Add a sessions table where we can track active sessions when an RM plan instant starts it will add an entry to the sessions table, noting the command that is being run and the workspace it is in and the PID.
+## Headless Mode
 
-When a session exits, whether from an error or successfully, or a SIGINT, it should mark itself as exited with an accompanying status in the table. 
+- 
+- Communicate over websocket or maybe just regular TCP socket (simpler? probably is if we don't need to connect directly from browser).
+- Protocol needs to support things like select or text prompts. Basically everywhere we use `inquirer` now needs to be
+  supported in the protocol, where the terminal adapter will use inquirer and the other clients will do something similar
+  but appropriate for their presentation.
+- 
 
-The TUI can clean up the Sessions table as Sessions exit or become stale. 
+### Terminal Client
 
-We should also have some way to show when a session is waiting for input. I don't think we can do this reliably, but we can show how long it has been since the last message was printed, and if it's longer than a certain threshold, say 30 seconds or a minute, then we highlight that line. So then we just need the logging infrastructure to also update that. 
+- Make the terminal mode either: only run for agent/review/similar long-running commands, or make a Rust shell that can
+  start fast and spawn rmplan if needed.
+- Use ratatui so that we can have an input box at the bottom and the terminal output on top.
 
-We can potentially do that with a named socket where the TUI can send a message on the named socket for a particular session and get back the last timestamp of the output. This allows us to do it without needing to continually track when the last output actually was or write it out to the database or file all the time. 
+## Server Coordinator Agents
 
-Can we use wezterm commands to start a new tab in a directory for a workspace?
+- Each machine running rmplan (my laptop, a linux server) should have a central server that allows discovery of active sessions and starting new sessions or claude/codex instances.
+- When rmplan starts it should start a "session" (see below) that indicates that it is running, which workspace, etc., and the port it is listening on.
+- The server can then scan these as needed, and rmplan can also notify the server that it has started or stopped for realtime updates.
+- rmplan should see if this process is running when it starts, and if not, start it in daemonized mode.
 
-Allow spawning tasks in the background, probably using tmux.
+### Session Tracking
+
+- server coordinator can track sessions in SQLite
+- Add a sessions table where we can track active sessions when an rmpplan instance starts it will add an entry to the sessions table, noting the command that is being run and the workspace it is in and the PID.
+- When a session exits, whether from an error or successfully, or a SIGINT, it should mark itself as exited with an accompanying status in the table. Server coordinator should also do some heartbeat monitoring.
+- Server coordinator can clean up the Sessions table as Sessions exit or become stale. 
+
+
+## General Capabilities
+
+We want to be able to do these things:
+
+- Create and tear down workspaces
+- `rmplan run <plan>`
+- `rmplan review <plan>`
+- run claude or codex interactively with the prompt from `rmplan prompts generate <planId>`
+- quick add new plans (how does this work when the plans are all in git? Where do we add them? Maybe in primary
+workspace or something. Maybe just don't worry about this for now)

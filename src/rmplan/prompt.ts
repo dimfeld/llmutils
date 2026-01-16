@@ -179,7 +179,7 @@ function getBlockingSubissueInstructions(options: BlockingSubissueInstructionOpt
 
 Before producing the main implementation plan, determine whether any prerequisite work must be completed first. For every prerequisite that truly blocks the main plan:
 1. Create a new plan immediately with \
-   \`${commandExample}\`. Include \`--depends-on\` if a blocking plan should wait on another blocker. The parent plan's dependencies will be updated automatically.
+   \`${commandExample}\` (see the using-rmplan skill). Include \`--depends-on\` if a blocking plan should wait on another blocker. The parent plan's dependencies will be updated automatically.
 2. Capture clear details in the blocking plan so future agents know why it is required and how to execute it.
 3. Document the blockers you created in the plan's Details section under a "## Blocking Subissues" heading using this exact format:
    ## Blocking Subissue: [Title]
@@ -208,7 +208,7 @@ function getDiscoveredIssueInstructions(options: DiscoveredIssueInstructionOptio
 # Discovered Issues
 
 If you uncover new, actionable work that is OUTSIDE the current plan scope, create a new plan immediately so it can be tracked:
-1. Use \`${commandExample}\`.
+1. Use \`${commandExample}\` (see the using-rmplan skill).
 2. ${parentHint}
 3. If the new issue blocks the current work, treat it as a blocking subissue and add \`--depends-on\` accordingly.
 4. Summarize any newly created plans in the plan's Details section under a "## Discovered Issues" heading using this format:
@@ -1203,7 +1203,7 @@ If you determine that the scope of this plan is large enough that it would benef
 4. Breaking it down would reduce cognitive load and make each plan more focused
 
 When creating multiple plans:
-- Use the \`rmplan add "Plan Title" --parent ${parentPlanId !== undefined ? parentPlanId : '<parent-plan-id>'} --priority <priority> --details "..."\` command
+- Use the \`rmplan add "Plan Title" --parent ${parentPlanId !== undefined ? parentPlanId : '<parent-plan-id>'} --priority <priority> --details "..."\` command (see the using-rmplan skill)
 - Use --depends-on to specify which plans should be completed before others
 - Document the relationship between plans in each plan's details section
 - Each plan should be independently implementable and testable
