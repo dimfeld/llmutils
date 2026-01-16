@@ -547,6 +547,7 @@ function createAgentCommand(command: Command, description: string) {
       '--next-ready <planIdOrPath>',
       'Find and operate on the next ready dependency of the specified parent plan (accepts plan ID or file path)'
     )
+    .option('--latest', 'Execute the most recently updated plan')
     .option('--with-dependencies', 'Also execute all dependencies first in the correct order')
     .option(
       '--direct',

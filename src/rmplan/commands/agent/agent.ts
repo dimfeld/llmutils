@@ -26,7 +26,8 @@ import {
 } from '../../executors/index.js';
 import type { ExecutorCommonOptions } from '../../executors/types.js';
 import type { PlanSchema } from '../../planSchema.js';
-import { findNextPlan, readPlanFile, resolvePlanFile, writePlanFile } from '../../plans.js';
+import { findNextPlan, readAllPlans, readPlanFile, resolvePlanFile, writePlanFile } from '../../plans.js';
+import { findMostRecentlyUpdatedPlan } from '../prompts.js';
 import { findNextActionableItem } from '../../plans/find_next.js';
 import { markStepDone, markTaskDone } from '../../plans/mark_done.js';
 import { prepareNextStep } from '../../plans/prepare_step.js';
@@ -136,6 +137,29 @@ export async function handleAgentCommand(
 
       log(chalk.green(`Found ready plan: ${result.plan.id} - ${result.plan.title}`));
       resolvedPlanFile = result.plan.filename;
+    } else if (options.latest) {
+      // Find the most recently updated plan
+      const tasksDir = await resolveTasksDir(config);
+      const { plans } = await readAllPlans(tasksDir);
+
+      if (plans.size === 0) {
+        const noPlanMessage = 'No plans found in tasks directory.';
+        log(noPlanMessage);
+        await notifyNoPlanFound(`rmplan agent completed: ${noPlanMessage} (no work executed)`);
+        return;
+      }
+
+      const latestPlan = await findMostRecentlyUpdatedPlan(plans);
+
+      if (!latestPlan) {
+        const noPlanMessage = 'No plans found in tasks directory.';
+        log(noPlanMessage);
+        await notifyNoPlanFound(`rmplan agent completed: ${noPlanMessage} (no work executed)`);
+        return;
+      }
+
+      log(chalk.green(`Found latest plan: ${latestPlan.id} - ${getCombinedTitleFromSummary(latestPlan)}`));
+      resolvedPlanFile = latestPlan.filename;
     } else if (options.next || options.current) {
       // Find the next ready plan or current plan
       const tasksDir = await resolveTasksDir(config);
@@ -161,7 +185,7 @@ export async function handleAgentCommand(
     } else {
       if (!planFile) {
         throw new Error(
-          'Plan file is required, or use --next/--current/--next-ready to find a plan'
+          'Plan file is required, or use --next/--current/--next-ready/--latest to find a plan'
         );
       }
       resolvedPlanFile = planFile;

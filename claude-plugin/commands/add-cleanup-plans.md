@@ -64,6 +64,8 @@ Example:
 rmplan add "Refactor duplicate validation logic" --details "The validateUser and validateAdmin functions in src/auth/ share nearly identical code. Extract common validation into a shared helper." --tag refactor --priority medium --rmfilter src/auth/validate.ts
 ```
 
+Load the `using-rmplan` skill for more details.
+
 You can also directly edit the plan file after creation to add additional details if you have a lot to add.
 
 Focus on changes that provide meaningful improvements. Prioritize issues that:

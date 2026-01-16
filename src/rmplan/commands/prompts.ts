@@ -164,11 +164,11 @@ function normalizePlanIdentifier(plan: string | undefined): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-type PlanWithFilename = PlanSchema & { filename: string };
+export type PlanWithFilename = PlanSchema & { filename: string };
 
 const MIN_TIMESTAMP = Number.NEGATIVE_INFINITY;
 
-function parseIsoTimestamp(value: string | undefined): number | undefined {
+export function parseIsoTimestamp(value: string | undefined): number | undefined {
   if (!value) {
     return undefined;
   }
@@ -177,7 +177,7 @@ function parseIsoTimestamp(value: string | undefined): number | undefined {
   return Number.isNaN(parsed) ? undefined : parsed;
 }
 
-async function getPlanTimestamp(plan: PlanWithFilename): Promise<number> {
+export async function getPlanTimestamp(plan: PlanWithFilename): Promise<number> {
   const updatedAt = parseIsoTimestamp(plan.updatedAt);
   if (updatedAt !== undefined) {
     return updatedAt;
@@ -196,7 +196,7 @@ async function getPlanTimestamp(plan: PlanWithFilename): Promise<number> {
   }
 }
 
-async function findMostRecentlyUpdatedPlan<T extends PlanWithFilename>(
+export async function findMostRecentlyUpdatedPlan<T extends PlanWithFilename>(
   plans: Map<number, T>
 ): Promise<T | null> {
   let latestPlan: T | null = null;
