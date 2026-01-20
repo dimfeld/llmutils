@@ -1278,6 +1278,8 @@ The list of tasks should correspond to ${simple ? 'the logical steps needed to i
 IMPORTANT:
 - Do NOT create tasks for manual verification. This plan will be executed by an AI coding agent and verified separately after implementation.
 - Testing should be INTEGRATED into your implementation tasks, not separate tasks.
+
+After adding the structured tasks, re-read the entire plan file and look for any conflicting requirements between different sections. During the analysis and planning phase, some parts of the document may have been updated while others were not, which can lead to inconsistencies between the goal, details, implementation guide, and tasks. If you find any conflicts, reconcile them by updating the relevant sections to ensure consistency.
 `;
 
   const progressChecklist = simple

@@ -26,7 +26,13 @@ import {
 } from '../../executors/index.js';
 import type { ExecutorCommonOptions } from '../../executors/types.js';
 import type { PlanSchema } from '../../planSchema.js';
-import { findNextPlan, readAllPlans, readPlanFile, resolvePlanFile, writePlanFile } from '../../plans.js';
+import {
+  findNextPlan,
+  readAllPlans,
+  readPlanFile,
+  resolvePlanFile,
+  writePlanFile,
+} from '../../plans.js';
 import { findMostRecentlyUpdatedPlan } from '../prompts.js';
 import { findNextActionableItem } from '../../plans/find_next.js';
 import { markStepDone, markTaskDone } from '../../plans/mark_done.js';
@@ -158,7 +164,11 @@ export async function handleAgentCommand(
         return;
       }
 
-      log(chalk.green(`Found latest plan: ${latestPlan.id} - ${getCombinedTitleFromSummary(latestPlan)}`));
+      log(
+        chalk.green(
+          `Found latest plan: ${latestPlan.id} - ${getCombinedTitleFromSummary(latestPlan)}`
+        )
+      );
       resolvedPlanFile = latestPlan.filename;
     } else if (options.next || options.current) {
       // Find the next ready plan or current plan
