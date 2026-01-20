@@ -253,7 +253,7 @@ async function copyIssueToClipboard(
  * @param issueTracker - The issue tracker client to use
  * @param options - Command-line options to apply to the imported plans
  * @param allPlans - Map of all existing plans
- * @returns Object with success count and parent plan ID
+ * @returns Object with success count, parent plan ID, and parent plan path
  */
 async function importHierarchicalIssue(
   issueSpecifier: string,
@@ -261,7 +261,7 @@ async function importHierarchicalIssue(
   issueTracker: IssueTrackerClient,
   options: any,
   allPlans: Map<number, PlanSchema & { filename: string }>
-): Promise<{ successCount: number; parentPlanId?: number }> {
+): Promise<{ successCount: number; parentPlanId?: number; parentPlanPath?: string }> {
   log(`Importing issue hierarchically: ${issueSpecifier}`);
 
   // Check if the issue tracker supports hierarchical fetching
@@ -491,6 +491,7 @@ async function importHierarchicalIssue(
   return {
     successCount,
     parentPlanId: existingParentPlan?.id ?? parentPlanId,
+    parentPlanPath,
   };
 }
 
@@ -503,7 +504,7 @@ async function importHierarchicalIssue(
  * @param options - Command-line options to apply to the imported plans
  * @param allPlans - Map of all existing plans
  * @param withSubissues - Whether to import subissues hierarchically
- * @returns True if import was successful, false if already imported
+ * @returns Object with success status and plan file path
  */
 export async function importSingleIssue(
   issueSpecifier: string,
@@ -512,7 +513,7 @@ export async function importSingleIssue(
   options: any,
   allPlans: Map<number, PlanSchema & { filename: string }>,
   withSubissues = false
-): Promise<boolean> {
+): Promise<{ success: boolean; planPath?: string }> {
   if (withSubissues && issueTracker.fetchIssueWithChildren) {
     const result = await importHierarchicalIssue(
       issueSpecifier,
@@ -521,7 +522,7 @@ export async function importSingleIssue(
       options,
       allPlans
     );
-    return result.successCount > 0;
+    return { success: result.successCount > 0, planPath: result.parentPlanPath };
   }
   log(`Importing issue: ${issueSpecifier}`);
 
@@ -587,7 +588,7 @@ export async function importSingleIssue(
 
     if (!titleChanged && !rmfilterChanged && !projectChanged && !hasNewComments) {
       log(`No updates needed for plan ${currentPlan.id} - all content is already up to date.`);
-      return true;
+      return { success: true, planPath: fullPath };
     }
 
     // Build updated details
@@ -653,7 +654,7 @@ export async function importSingleIssue(
       log(`Added ${newComments.length} new comment(s) to the plan.`);
     }
 
-    return true;
+    return { success: true, planPath: fullPath };
   }
 
   let issueData = await getInstructionsFromIssue(issueTracker, issueSpecifier, false);
@@ -701,7 +702,7 @@ export async function importSingleIssue(
     await updateParentPlanDependencies(Number(options.parent), newId, allPlans, tasksDir);
   }
 
-  return true;
+  return { success: true, planPath: fullPath };
 }
 
 /**
@@ -818,7 +819,7 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
       const issueUrl = allIssues.find((i) => i.number === issueNumber)?.htmlUrl;
       const wasAlreadyImported = issueUrl ? importedUrls.has(issueUrl) : false;
 
-      const success = await importSingleIssue(
+      const result = await importSingleIssue(
         issueNumber.toString(),
         tasksDir,
         issueTracker,
@@ -826,7 +827,7 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
         allPlans,
         options.withSubissues
       );
-      if (success) {
+      if (result.success) {
         successCount++;
         if (wasAlreadyImported) {
           updateCount++;
@@ -859,7 +860,7 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
     );
   }
 
-  const success = await importSingleIssue(
+  const result = await importSingleIssue(
     issueSpecifier,
     tasksDir,
     issueTracker,
@@ -867,13 +868,24 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
     allPlans,
     options.withSubissues
   );
-  if (success) {
+  if (result.success) {
     if (options.withSubissues) {
       log(
         'Use "rmplan generate" to add tasks to these plans, or use "rmplan agent --next-ready <parent-plan>" for hierarchical workflow.'
       );
     } else {
       log('Use "rmplan generate" to add tasks to this plan.');
+    }
+
+    // Launch editor if --edit flag is provided
+    if (options.edit && result.planPath) {
+      const { logSpawn } = await import('../../../common/process.js');
+      const editor = process.env.EDITOR || 'nano';
+      log(`Opening ${result.planPath} in ${editor}...`);
+      const editorProcess = logSpawn([editor, result.planPath], {
+        stdio: ['inherit', 'inherit', 'inherit'],
+      });
+      await editorProcess.exited;
     }
   }
 }

@@ -413,6 +413,7 @@ program
     '--clipboard',
     'Copy issue title, body, and selected comments to clipboard instead of creating a plan'
   )
+  .option('--edit', 'Open the plan file in your editor after import')
   .action(async (issue, options, command) => {
     const { handleImportCommand } = await import('./commands/import/import.js');
     await handleImportCommand(issue, options, command).catch(handleCommandError);
