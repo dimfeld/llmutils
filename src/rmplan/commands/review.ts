@@ -627,9 +627,7 @@ export async function handleReviewCommand(
           if (!options.autofixAll && reviewResult.issues && reviewResult.issues.length > 0) {
             // Allow selection unless --autofix-all is used
             if (isInteractiveEnv) {
-              selectedIssues = await selectIssuesToFix(reviewResult.issues, 'fix', () =>
-                notifyReviewInput('Review needs input: select issues to fix.')
-              );
+              selectedIssues = await selectIssuesToFix(reviewResult.issues, 'fix');
             } else {
               selectedIssues = reviewResult.issues;
             }
@@ -683,9 +681,7 @@ export async function handleReviewCommand(
             shouldAutofix = true;
             autofixExecutorName = FIX_ACTION_EXECUTOR_MAP[action];
             if (reviewResult.issues && reviewResult.issues.length > 0) {
-              selectedIssues = await selectIssuesToFix(reviewResult.issues, 'fix', () =>
-                notifyReviewInput('Review needs input: select issues to fix.')
-              );
+              selectedIssues = await selectIssuesToFix(reviewResult.issues, 'fix');
               shouldAutofix = selectedIssues.length > 0;
               if (!shouldAutofix) {
                 log(chalk.yellow('No issues selected for autofix.'));
