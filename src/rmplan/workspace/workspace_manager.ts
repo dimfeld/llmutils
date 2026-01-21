@@ -639,7 +639,7 @@ export async function createWorkspace(
   }
 
   const branchName = options?.branchName ?? taskId;
-  const shouldCreateBranch = workspaceConfig.createBranch ?? true;
+  const shouldCreateBranch = workspaceConfig.createBranch ?? false;
   let jjNewCreated = false;
 
   // Step 5: Checkout base branch if provided
@@ -1020,7 +1020,7 @@ export async function prepareExistingWorkspace(
   const baseBranch = options.baseBranch || (await getTrunkBranch(workspacePath));
   log(`Using base branch: ${baseBranch}`);
 
-  const shouldCreateBranch = options.createBranch ?? true;
+  const shouldCreateBranch = options.createBranch ?? false;
 
   // Step 3: Checkout base branch or create a new change
   log(`Checking out base branch "${baseBranch}"...`);

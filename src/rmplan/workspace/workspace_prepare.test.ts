@@ -232,6 +232,7 @@ describe('prepareExistingWorkspace', () => {
   test('successfully fetches, checks out base, creates branch (Git)', async () => {
     const result = await prepareExistingWorkspace(tempDir, {
       branchName: 'new-task-branch',
+      createBranch: true,
     });
 
     expect(result.success).toBe(true);
@@ -255,6 +256,7 @@ describe('prepareExistingWorkspace', () => {
     const result = await prepareExistingWorkspace(tempDir, {
       baseBranch: 'develop',
       branchName: 'feature-from-develop',
+      createBranch: true,
     });
 
     expect(result.success).toBe(true);
@@ -279,6 +281,7 @@ describe('prepareExistingWorkspace', () => {
 
     const result = await prepareExistingWorkspace(tempDir, {
       branchName: 'task-456',
+      createBranch: true,
     });
 
     expect(result.success).toBe(true);
@@ -293,6 +296,7 @@ describe('prepareExistingWorkspace', () => {
 
     const result = await prepareExistingWorkspace(tempDir, {
       branchName: 'new-branch',
+      createBranch: true,
     });
 
     expect(result.success).toBe(true);
@@ -322,6 +326,7 @@ describe('prepareExistingWorkspace', () => {
 
       const result = await prepareExistingWorkspace(tempDir, {
         branchName: 'offline-branch',
+        createBranch: true,
       });
 
       expect(result.success).toBe(true);
@@ -357,6 +362,7 @@ describe('prepareExistingWorkspace', () => {
     // The function should succeed with a suffixed name
     const result = await prepareExistingWorkspace(tempDir, {
       branchName: 'test-branch-999',
+      createBranch: true,
     });
 
     expect(result.success).toBe(true);
@@ -367,6 +373,7 @@ describe('prepareExistingWorkspace', () => {
     // Git rejects branch names starting with '-' (looks like an option)
     const result = await prepareExistingWorkspace(tempDir, {
       branchName: '-invalid-branch',
+      createBranch: true,
     });
 
     expect(result.success).toBe(false);
@@ -378,6 +385,7 @@ describe('prepareExistingWorkspace', () => {
     // Just use the default - should detect 'main'
     const result = await prepareExistingWorkspace(tempDir, {
       branchName: 'auto-trunk-branch',
+      createBranch: true,
     });
 
     expect(result.success).toBe(true);
@@ -472,6 +480,7 @@ describe('prepareExistingWorkspace with Jujutsu', () => {
       const result = await prepareExistingWorkspace(tempDir, {
         baseBranch: 'main',
         branchName: 'jj-feature',
+        createBranch: true,
       });
 
       expect(result.success).toBe(true);
@@ -522,6 +531,7 @@ describe('prepareExistingWorkspace with Jujutsu', () => {
       const result = await prepareExistingWorkspace(tempDir, {
         baseBranch: 'main',
         branchName: 'task-789',
+        createBranch: true,
       });
 
       expect(result.success).toBe(true);
