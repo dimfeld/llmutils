@@ -480,7 +480,7 @@ export async function createWorkspace(
   taskId: string,
   originalPlanFilePath: string | undefined,
   config: RmplanConfig,
-  options?: { branchName?: string; planData?: PlanSchema; fromBranch?: string }
+  options?: { branchName?: string; planData?: PlanSchema; fromBranch?: string; targetDir?: string }
 ): Promise<Workspace | null> {
   // Check if workspace creation is enabled in the config
   if (!config.workspaceCreation) {
@@ -585,22 +585,29 @@ export async function createWorkspace(
     return null;
   }
 
-  // Step 3: Construct the target directory name
-  // Extract repo name from URL or source directory
-  let repoName: string;
-  if (cloneMethod === 'git' && repositoryUrl) {
-    repoName =
-      repositoryUrl
-        .split('/')
-        .pop()
-        ?.replace(/\.git$/, '') || 'repo';
-  } else if (sourceDirectory) {
-    repoName = path.basename(sourceDirectory);
+  // Step 3: Construct the target directory path
+  let targetClonePath: string;
+  if (options?.targetDir) {
+    // If targetDir is provided, use it (absolute or relative to cloneLocationBase)
+    targetClonePath = path.isAbsolute(options.targetDir)
+      ? options.targetDir
+      : path.join(cloneLocationBase, options.targetDir);
   } else {
-    repoName = 'workspace';
+    // Default: Extract repo name from URL or source directory
+    let repoName: string;
+    if (cloneMethod === 'git' && repositoryUrl) {
+      repoName =
+        repositoryUrl
+          .split('/')
+          .pop()
+          ?.replace(/\.git$/, '') || 'repo';
+    } else if (sourceDirectory) {
+      repoName = path.basename(sourceDirectory);
+    } else {
+      repoName = 'workspace';
+    }
+    targetClonePath = path.join(cloneLocationBase, `${repoName}-${taskId}`);
   }
-
-  const targetClonePath = path.join(cloneLocationBase, `${repoName}-${taskId}`);
 
   // Step 4: Clone/copy the repository using the selected method
   let cloneSuccess = false;

@@ -843,6 +843,7 @@ export async function handleWorkspaceAddCommand(
         ...(customBranchName && { branchName: customBranchName }),
         ...(options.fromBranch && { fromBranch: options.fromBranch }),
         ...(planData && { planData }),
+        ...(options.targetDir && { targetDir: options.targetDir }),
       }
     );
 

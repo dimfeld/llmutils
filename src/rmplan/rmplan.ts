@@ -1058,6 +1058,10 @@ workspaceCommand
   .option('--reuse', 'Reuse an existing unlocked workspace (fails if none available)')
   .option('--try-reuse', 'Try to reuse an existing workspace, create new if unavailable')
   .option('--from-branch <branch>', 'Create new branch from this base instead of main/master')
+  .option(
+    '--target-dir <path>',
+    'Target directory name or path (relative to cloneLocation or absolute)'
+  )
   .action(async (planIdentifier, options, command) => {
     if (options.reuse && options.tryReuse) {
       console.error('Error: Cannot use both --reuse and --try-reuse');
