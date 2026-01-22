@@ -103,6 +103,18 @@ export async function handleWorkspaceListCommand(options: WorkspaceListOptions, 
   // Build enriched list entries with live branch info
   const entries = await buildWorkspaceListEntries(workspacesWithStatus);
 
+  // Sort entries by name (case-insensitive), with unnamed entries sorted by path
+  entries.sort((a, b) => {
+    const nameA = (a.name || '').toLowerCase();
+    const nameB = (b.name || '').toLowerCase();
+    if (nameA && nameB) {
+      return nameA.localeCompare(nameB);
+    }
+    if (nameA) return -1;
+    if (nameB) return 1;
+    return a.fullPath.localeCompare(b.fullPath);
+  });
+
   if (entries.length === 0) {
     if (format === 'table') {
       console.log(repositoryId ? 'No workspaces found for this repository' : 'No workspaces found');
