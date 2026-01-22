@@ -200,10 +200,16 @@ export async function spawnAndLogOutput(
   const handleSuspend = () => {
     debugLog('Process suspended, clearing inactivity timer');
     clearInactivityTimer();
+
+    // Remove handler to avoid recursion, then re-send SIGTSTP to actually suspend
+    process.off('SIGTSTP', handleSuspend);
+    process.kill(process.pid, 'SIGTSTP');
   };
 
   const handleResume = () => {
     debugLog('Process resumed, restarting inactivity timer');
+    // Re-add the SIGTSTP handler for next suspension
+    process.on('SIGTSTP', handleSuspend);
     resetInactivityTimer();
   };
 
