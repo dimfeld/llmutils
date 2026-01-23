@@ -407,6 +407,80 @@ describe('handleShowCommand', () => {
     expect(stripped).toContain('Newest goal');
   });
 
+  test('ignores plans without updatedAt field when using --latest flag', async () => {
+    const newerTime = new Date('2024-03-05T10:00:00Z').toISOString();
+
+    const plans = [
+      {
+        id: '12',
+        title: 'Plan Without UpdatedAt',
+        goal: 'No update timestamp',
+        details: 'Should be ignored',
+        status: 'pending',
+        createdAt: new Date('2024-06-01T00:00:00Z').toISOString(),
+        tasks: [],
+      },
+      {
+        id: '13',
+        title: 'Plan With UpdatedAt',
+        goal: 'Has update timestamp',
+        details: 'Should be selected',
+        status: 'pending',
+        updatedAt: newerTime,
+        tasks: [],
+      },
+    ];
+
+    for (const plan of plans) {
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    }
+
+    const options = {
+      latest: true,
+    };
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleShowCommand(undefined, options, command);
+
+    const logs = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    const stripped = stripAnsi(logs);
+
+    expect(stripped).toContain('Found latest plan: 13 - Plan With UpdatedAt');
+    expect(stripped).toContain('Has update timestamp');
+    expect(stripped).not.toContain('Plan Without UpdatedAt');
+  });
+
+  test('shows message when no plans with updatedAt field found', async () => {
+    const plan = {
+      id: '14',
+      title: 'Plan Without UpdatedAt',
+      goal: 'No update timestamp',
+      details: 'Only has createdAt',
+      status: 'pending',
+      createdAt: new Date('2024-06-01T00:00:00Z').toISOString(),
+      tasks: [],
+    };
+
+    await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+
+    const options = {
+      latest: true,
+    };
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleShowCommand(undefined, options, command);
+
+    expect(logSpy).toHaveBeenCalledWith('No plans with updatedAt field found in tasks directory.');
+  });
+
   test('shows message when no ready plans found', async () => {
     // Create only blocked plans
     const plan = {

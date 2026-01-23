@@ -486,6 +486,96 @@ Task description`);
     expect(clipboardWriteSpy).toHaveBeenCalled();
   });
 
+  test('ignores plans without updatedAt field when using --latest flag', async () => {
+    const newerTime = '2024-03-01T00:00:00Z';
+
+    const planWithoutUpdatedAt = {
+      id: 103,
+      title: 'Plan Without UpdatedAt',
+      goal: 'No update timestamp',
+      details: 'Should be ignored',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: '2024-06-01T00:00:00Z',
+      tasks: [],
+    } satisfies PlanSchema;
+
+    const planWithUpdatedAt = {
+      id: 104,
+      title: 'Plan With UpdatedAt',
+      goal: 'Has update timestamp',
+      details: 'Should be selected',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: '2024-02-01T00:00:00Z',
+      updatedAt: newerTime,
+      tasks: [],
+    } satisfies PlanSchema;
+
+    const planWithoutUpdatedAtPath = path.join(tasksDir, '103-without-updated.plan.yml');
+    const planWithUpdatedAtPath = path.join(tasksDir, '104-with-updated.plan.yml');
+
+    await fs.writeFile(planWithoutUpdatedAtPath, yaml.stringify(planWithoutUpdatedAt));
+    await fs.writeFile(planWithUpdatedAtPath, yaml.stringify(planWithUpdatedAt));
+
+    const options = {
+      latest: true,
+      extract: false,
+      claude: false,
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    const command = {
+      args: [],
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleGenerateCommand(undefined, options, command);
+
+    expect(options.plan).toBe(planWithUpdatedAtPath);
+    expect(clipboardWriteSpy).toHaveBeenCalled();
+  });
+
+  test('shows message when no plans with updatedAt field found', async () => {
+    const plan = {
+      id: 105,
+      title: 'Plan Without UpdatedAt',
+      goal: 'No update timestamp',
+      details: 'Only has createdAt',
+      status: 'pending',
+      priority: 'medium',
+      createdAt: '2024-06-01T00:00:00Z',
+      tasks: [],
+    } satisfies PlanSchema;
+
+    const planPath = path.join(tasksDir, '105-no-updated.plan.yml');
+    await fs.writeFile(planPath, yaml.stringify(plan));
+
+    const options = {
+      latest: true,
+      extract: false,
+      claude: false,
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    const command = {
+      args: [],
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleGenerateCommand(undefined, options, command);
+
+    expect(logSpy).toHaveBeenCalledWith('No plans found in tasks directory.');
+  });
+
   test('uses quiet mode when --quiet flag is set', async () => {
     const planPath = path.join(tempDir, 'quiet-plan.md');
     await fs.writeFile(planPath, '# Quiet Plan\n\nPlan content.');

@@ -588,8 +588,16 @@ export async function handleShowCommand(planFile: string | undefined, options: a
       return;
     }
 
+    // Only consider plans with an updatedAt field
+    const plansWithUpdatedAt = Array.from(plans.values()).filter((plan) => plan.updatedAt);
+
+    if (plansWithUpdatedAt.length === 0) {
+      log('No plans with updatedAt field found in tasks directory.');
+      return;
+    }
+
     const candidates = await Promise.all(
-      Array.from(plans.values()).map(async (candidate) => ({
+      plansWithUpdatedAt.map(async (candidate) => ({
         plan: candidate,
         timestamp: await getPlanTimestamp(candidate),
       }))

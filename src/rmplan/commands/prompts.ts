@@ -203,6 +203,11 @@ export async function findMostRecentlyUpdatedPlan<T extends PlanWithFilename>(
   let latestTimestamp = MIN_TIMESTAMP;
 
   for (const candidate of plans.values()) {
+    // Only consider plans with an updatedAt field
+    if (!candidate.updatedAt) {
+      continue;
+    }
+
     const timestamp = await getPlanTimestamp(candidate);
     if (timestamp > latestTimestamp) {
       latestTimestamp = timestamp;
