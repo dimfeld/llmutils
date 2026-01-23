@@ -707,11 +707,7 @@ export async function handleReviewCommand(
             skipNotification = true;
             shouldAppendTasksToPlan = true;
             if (reviewResult.issues && reviewResult.issues.length > 0) {
-              selectedIssues = await selectIssuesToFix(
-                reviewResult.issues,
-                'append as plan tasks',
-                () => notifyReviewInput('Review needs input: select issues to append as tasks.')
-              );
+              selectedIssues = await selectIssuesToFix(reviewResult.issues, 'append as plan tasks');
               shouldAppendTasksToPlan = selectedIssues.length > 0;
               if (!shouldAppendTasksToPlan) {
                 log(chalk.yellow('No issues selected to append as tasks.'));
