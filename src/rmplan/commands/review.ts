@@ -1235,14 +1235,18 @@ type PlanTask = PlanSchema['tasks'][number];
 type PlanTaskWithIndex = PlanTask & { originalIndex?: number };
 
 function buildTaskTitleFromIssue(issue: ReviewIssue): string {
-  const firstMeaningfulLine = issue.content
-    .split('\n')
-    .map((line) => line.trim())
-    .find((line) => line.length > 0);
+  // Normalize whitespace and get content as a single string
+  const normalized = issue.content.replace(/\s+/g, ' ').trim();
 
-  let normalized = (firstMeaningfulLine || 'Review feedback').replace(/\s+/g, ' ');
+  if (!normalized) {
+    return 'Address Review Feedback: Review feedback';
+  }
 
-  return `Address Review Feedback: ${normalized}`;
+  // Extract the first sentence (ends with . ! or ? followed by space or end of string)
+  const sentenceMatch = normalized.match(/^(.+?[.!?])(?:\s|$)/);
+  const firstSentence = sentenceMatch ? sentenceMatch[1] : normalized;
+
+  return `Address Review Feedback: ${firstSentence}`;
 }
 
 function createTaskFromIssue(issue: ReviewIssue): PlanTask {
