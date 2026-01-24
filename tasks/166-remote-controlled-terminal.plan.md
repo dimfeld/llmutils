@@ -1,6 +1,6 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-title: remote-controlled terminal
+title: headless mode
 goal: ""
 id: 166
 uuid: 783bf184-9ec5-4919-bf30-8ae618785f0c

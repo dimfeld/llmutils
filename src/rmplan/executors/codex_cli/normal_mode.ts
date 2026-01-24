@@ -346,6 +346,7 @@ export async function executeNormalMode(
 
     finalReviewVerdict = 'NEEDS_FIXES';
     log('Review verdict: NEEDS_FIXES');
+    log(`Issues: ${reviewOutcome.fixInstructions}`);
 
     let fixInstructions = reviewOutcome.fixInstructions;
 
@@ -434,6 +435,7 @@ export async function executeNormalMode(
 
       finalReviewVerdict = 'NEEDS_FIXES';
       log(`Review verdict after fixes (iteration ${iter}): NEEDS_FIXES`);
+      log(`Issues: ${reviewOutcome.fixInstructions}`);
       fixInstructions = reviewOutcome.fixInstructions;
       continue;
     }
