@@ -632,7 +632,7 @@ export class ClaudeCodeExecutor implements Executor {
 
     try {
       // Build args for review mode - simpler than full orchestration
-      const args = ['claude'];
+      const args = ['claude', '--no-session-persistence'];
 
       // Add MCP config if enabled
       if (isPermissionsMcpEnabled && dynamicMcpConfigFile) {
