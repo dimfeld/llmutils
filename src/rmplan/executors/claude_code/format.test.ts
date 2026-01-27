@@ -419,4 +419,69 @@ describe('formatJsonMessage', () => {
       expect(result).toEqual({ type: '' });
     });
   });
+
+  describe('system message handling', () => {
+    test('handles task_notification messages', () => {
+      const taskNotificationMessage = JSON.stringify({
+        type: 'system',
+        subtype: 'task_notification',
+        task_id: 'bff49b0',
+        status: 'completed',
+        output_file: '/private/tmp/claude/tasks/bff49b0.output',
+        summary: 'Background command "Final review for Tasks 22 and 27" completed (exit code 0)',
+        session_id: 'test-session',
+      });
+
+      const result = formatJsonMessage(taskNotificationMessage);
+      expect(result.message).toContain('Task Notification');
+      expect(result.message).toContain('bff49b0');
+      expect(result.message).toContain('completed');
+      expect(result.message).toContain('Background command');
+      expect(result.type).toBe('system');
+    });
+
+    test('handles status messages with compacting status', () => {
+      const statusMessage = JSON.stringify({
+        type: 'system',
+        subtype: 'status',
+        status: 'compacting',
+        session_id: 'test-session',
+      });
+
+      const result = formatJsonMessage(statusMessage);
+      expect(result.message).toContain('Status: compacting');
+      expect(result.type).toBe('system');
+    });
+
+    test('ignores status messages with null status', () => {
+      const nullStatusMessage = JSON.stringify({
+        type: 'system',
+        subtype: 'status',
+        status: null,
+        session_id: 'test-session',
+      });
+
+      const result = formatJsonMessage(nullStatusMessage);
+      expect(result.type).toBe('');
+      expect(result.message).toBeUndefined();
+    });
+
+    test('handles compact_boundary messages', () => {
+      const compactBoundaryMessage = JSON.stringify({
+        type: 'system',
+        subtype: 'compact_boundary',
+        session_id: 'test-session',
+        compact_metadata: {
+          trigger: 'auto',
+          pre_tokens: 156423,
+        },
+      });
+
+      const result = formatJsonMessage(compactBoundaryMessage);
+      expect(result.message).toContain('Compacting');
+      expect(result.message).toContain('auto');
+      expect(result.message).toContain('156423 tokens');
+      expect(result.type).toBe('system');
+    });
+  });
 });

@@ -3,7 +3,7 @@ import chalk from 'chalk';
 import yaml from 'yaml';
 import { formatTodoLikeLines } from '../shared/todo_format.ts';
 import { debugLog } from '../../../logging.ts';
-import { createTwoFilesPatch, diffLines } from 'diff';
+import { createTwoFilesPatch } from 'diff';
 import { detectFailedLineAnywhere } from '../failure_detection.ts';
 
 // Represents the top-level message object
@@ -58,6 +58,36 @@ export type Message =
         name: string;
         status: string;
       }[];
+    }
+
+  // Notification about a background task completing
+  | {
+      type: 'system';
+      subtype: 'task_notification';
+      task_id: string;
+      status: string;
+      output_file: string;
+      summary: string;
+      session_id: string;
+    }
+
+  // Status update (e.g., compacting)
+  | {
+      type: 'system';
+      subtype: 'status';
+      status: string | null;
+      session_id: string;
+    }
+
+  // Compact boundary marker
+  | {
+      type: 'system';
+      subtype: 'compact_boundary';
+      session_id: string;
+      compact_metadata: {
+        trigger: string;
+        pre_tokens: number;
+      };
     };
 
 // Cache for tool use IDs mapped to their names
@@ -133,6 +163,27 @@ export function formatJsonMessage(input: string): {
       );
     }
 
+    return { message: outputLines.join('\n'), type: message.type };
+  } else if (message.type === 'system' && message.subtype === 'task_notification') {
+    outputLines.push(
+      chalk.bold.yellow(`### Task Notification [${timestamp}]`),
+      `Task ${message.task_id}: ${message.status}`,
+      message.summary
+    );
+    return { message: outputLines.join('\n'), type: message.type };
+  } else if (message.type === 'system' && message.subtype === 'status') {
+    // Ignore status messages with null status
+    if (message.status === null) {
+      return { type: '' };
+    }
+    outputLines.push(chalk.dim(`### Status: ${message.status} [${timestamp}]`));
+    return { message: outputLines.join('\n'), type: message.type };
+  } else if (message.type === 'system' && message.subtype === 'compact_boundary') {
+    outputLines.push(
+      chalk.dim(
+        `### Compacting (${message.compact_metadata.trigger}, ${message.compact_metadata.pre_tokens} tokens) [${timestamp}]`
+      )
+    );
     return { message: outputLines.join('\n'), type: message.type };
   } else if (message.type === 'assistant' || message.type === 'user') {
     const m = message.message;
