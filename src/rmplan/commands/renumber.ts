@@ -803,6 +803,10 @@ async function handleSwapOrRenumber(
     const filePath = path.join(tasksDirectory, file);
     try {
       const plan = await readPlanFile(filePath);
+      if (plan.not_rmplan) {
+        debugLog(`Skipping plan marked with not_rmplan: ${filePath}`);
+        continue;
+      }
       allPlans.set(filePath, plan);
     } catch (e) {
       // Skip invalid files
@@ -1102,6 +1106,10 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
     const filePath = path.join(tasksDirectory, file);
     try {
       const plan = await readPlanFile(filePath);
+      if (plan.not_rmplan) {
+        debugLog(`Skipping plan marked with not_rmplan: ${filePath}`);
+        continue;
+      }
       if (plan.id) {
         let numId = Number(plan.id);
         if (!Number.isNaN(numId)) {
