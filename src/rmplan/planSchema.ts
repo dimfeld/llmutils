@@ -98,6 +98,10 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
     changedFiles: z.array(z.string()).optional(),
     rmfilter: z.array(z.string()).optional(),
     tags: z.array(z.string()).optional(),
+    not_rmplan: z
+      .boolean()
+      .optional()
+      .describe('Mark file as not an rmplan plan, to be ignored when listing and reading plans'),
   }).describe('rmplan phase file schema');
 
   const multiPhasePlanSchema = objectFactory({
