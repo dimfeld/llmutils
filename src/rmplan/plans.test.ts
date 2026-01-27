@@ -712,6 +712,41 @@ describe('readAllPlans', () => {
       await rm(mixedIdDir, { recursive: true, force: true });
     }
   });
+
+  it('should exclude plans with not_rmplan: true', async () => {
+    const notRmplanDir = await mkdtemp(join(tmpdir(), 'not-rmplan-test-'));
+    try {
+      // Create a normal plan
+      await writeFile(
+        join(notRmplanDir, 'normal.yml'),
+        yaml.stringify({ id: 400, title: 'Normal Plan', goal: 'Test', details: 'Test', tasks: [] })
+      );
+
+      // Create a plan marked as not_rmplan
+      await writeFile(
+        join(notRmplanDir, 'not-rmplan.yml'),
+        yaml.stringify({
+          id: 401,
+          title: 'Not an rmplan',
+          goal: 'Test',
+          details: 'Test',
+          tasks: [],
+          not_rmplan: true,
+        })
+      );
+
+      const { plans, maxNumericId } = await readAllPlans(notRmplanDir);
+
+      // Only the normal plan should be included
+      expect(plans.size).toBe(1);
+      expect(plans.get(400)).toBeDefined();
+      expect(plans.get(401)).toBeUndefined();
+      // maxNumericId should only count included plans
+      expect(maxNumericId).toBe(400);
+    } finally {
+      await rm(notRmplanDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('findNextReadyPlan', () => {

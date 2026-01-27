@@ -91,6 +91,12 @@ export async function readAllPlans(
         return;
       }
 
+      // Skip plans marked as not_rmplan
+      if (plan.not_rmplan) {
+        debugLog(`Skipping plan marked with not_rmplan: ${fullPath}`);
+        return;
+      }
+
       debugLog(`Successfully parsed plan with ID: ${plan.id} from ${fullPath}`);
 
       // Determine if the ID is numeric

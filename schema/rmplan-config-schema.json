@@ -560,6 +560,16 @@
               "description": "Configuration for reasoning effort levels",
               "type": "object",
               "properties": {
+                "default": {
+                  "description": "Default reasoning level for implementation steps (default: medium)",
+                  "type": "string",
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh"
+                  ]
+                },
                 "scopedReview": {
                   "description": "Reasoning level for task-scoped reviews (default: medium)",
                   "type": "string",
