@@ -25,6 +25,7 @@ import {
 interface ValidationResult {
   filename: string;
   isValid: boolean;
+  skipped?: boolean;
   errors?: string[];
   unknownKeys?: string[];
 }
@@ -111,6 +112,11 @@ async function validatePlanFile(filePath: string): Promise<ValidationResult> {
       } else {
         parsed.details = markdownBody;
       }
+    }
+
+    // Skip files marked as not_rmplan
+    if (parsed.not_rmplan) {
+      return { filename, isValid: true, skipped: true };
     }
 
     // Validate with the strict schema
@@ -706,8 +712,9 @@ export async function handleValidateCommand(
     planFiles.map((file) => validatePlanFile(path.join(tasksDir, file)))
   );
 
-  // Separate valid and invalid files
-  const validFiles = results.filter((r) => r.isValid);
+  // Separate valid, invalid, and skipped files
+  const skippedFiles = results.filter((r) => r.skipped);
+  const validFiles = results.filter((r) => r.isValid && !r.skipped);
   const invalidFiles = results.filter((r) => !r.isValid);
 
   // Parent-child validation (only for schema-valid files)
@@ -844,6 +851,14 @@ export async function handleValidateCommand(
   }
 
   // Display schema validation results
+  if (skippedFiles.length > 0 && options.verbose) {
+    console.log(chalk.gray.bold('⊘ Skipped files (not_rmplan: true):'));
+    skippedFiles.forEach((result) => {
+      console.log(chalk.gray(`  • ${result.filename}`));
+    });
+    console.log();
+  }
+
   if (validFiles.length > 0 && options.verbose) {
     console.log(chalk.green.bold('✓ Valid files:'));
     validFiles.forEach((result) => {
@@ -920,6 +935,9 @@ export async function handleValidateCommand(
   console.log(`  ${chalk.green(`✓ ${validFiles.length} valid`)}`);
   if (invalidFiles.length > 0) {
     console.log(`  ${chalk.red(`✗ ${invalidFiles.length} invalid`)}`);
+  }
+  if (skippedFiles.length > 0) {
+    console.log(`  ${chalk.gray(`⊘ ${skippedFiles.length} skipped (not_rmplan)`)}`);
   }
   if (fixResult && fixResult.fixedRelationships > 0) {
     console.log(
