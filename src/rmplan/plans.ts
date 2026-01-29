@@ -18,6 +18,13 @@ import { createModel } from '../common/model_factory.js';
 import { generateText } from 'ai';
 import { $ } from 'bun';
 
+export class NoFrontmatterError extends Error {
+  constructor(filePath: string) {
+    super(`File lacks frontmatter: ${filePath}`);
+    this.name = 'NoFrontmatterError';
+  }
+}
+
 export type PlanSummary = {
   id: number;
   uuid?: string;
@@ -141,6 +148,10 @@ export async function readAllPlans(
         idToUuid.set(idKey, plan.uuid);
       }
     } catch (error) {
+      if (error instanceof NoFrontmatterError) {
+        debugLog(`Skipping file without frontmatter: ${fullPath}`);
+        return;
+      }
       if ((error as Error).name !== 'PlanFileError') {
         // Log detailed error information
         console.error(`Failed to read plan from ${fullPath}:`, error);
@@ -548,25 +559,23 @@ export async function readPlanFile(filePath: string): Promise<PlanSchema> {
   }
 
   // Check if the file uses front matter format
-  if (content.startsWith('---\n')) {
-    // Find the closing delimiter for front matter
-    const endDelimiterIndex = content.indexOf('\n---\n', 4);
-
-    if (endDelimiterIndex !== -1) {
-      // Extract front matter and body
-      const frontMatter = content.substring(4, endDelimiterIndex);
-      markdownBody = content.substring(endDelimiterIndex + 5).trim();
-
-      // Parse the front matter as YAML
-      parsed = parseYaml(frontMatter);
-    } else {
-      // No closing delimiter found, treat entire file as YAML
-      parsed = parseYaml(content);
-    }
-  } else {
-    // No front matter, parse entire content as YAML
-    parsed = parseYaml(content);
+  if (!content.startsWith('---\n')) {
+    throw new NoFrontmatterError(filePath);
   }
+
+  // Find the closing delimiter for front matter
+  const endDelimiterIndex = content.indexOf('\n---\n', 4);
+
+  if (endDelimiterIndex === -1) {
+    throw new NoFrontmatterError(filePath);
+  }
+
+  // Extract front matter and body
+  const frontMatter = content.substring(4, endDelimiterIndex);
+  markdownBody = content.substring(endDelimiterIndex + 5).trim();
+
+  // Parse the front matter as YAML
+  parsed = parseYaml(frontMatter);
 
   // Ensure parsed is a valid object
   if (!parsed || typeof parsed !== 'object') {

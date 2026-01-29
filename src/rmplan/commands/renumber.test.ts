@@ -6,12 +6,12 @@ import yaml from 'yaml';
 import { handleRenumber } from './renumber.js';
 import { type PlanSchema } from '../planSchema.js';
 import { readPlanFile, writePlanFile } from '../plans.js';
-import { ModuleMocker } from '../../testing.js';
+import { ModuleMocker, stringifyPlanWithFrontmatter } from '../../testing.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
-function writeTestPlan(path: string, plan: any) {
-  return Bun.write(path, yaml.stringify(plan));
+function writeTestPlan(planPath: string, plan: any) {
+  return Bun.write(planPath, stringifyPlanWithFrontmatter(plan));
 }
 
 describe('rmplan renumber', () => {
@@ -82,8 +82,7 @@ describe('rmplan renumber', () => {
 
     // Use provided filename or default to id-based filename
     const file = filename || `${id}.yml`;
-    const data = yaml.stringify(plan);
-    await Bun.write(path.join(tasksDir, file), data);
+    await writeTestPlan(path.join(tasksDir, file), plan);
   };
 
   test('resolves ID conflicts based on createdAt timestamp', async () => {
@@ -157,7 +156,7 @@ describe('rmplan renumber', () => {
       priority: 'medium',
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '999.yml'), yaml.stringify(plan));
+    await writeTestPlan(path.join(tasksDir, '999.yml'), plan);
 
     await handleRenumber({}, createMockCommand());
 
@@ -884,7 +883,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '5-child.yml'), yaml.stringify(childPlan));
+    await writeTestPlan(path.join(tasksDir, '5-child.yml'), childPlan);
 
     // Create a grandchild (ID 3) -> depends on child (ID 5)
     const grandchildPlan: PlanSchema = {
@@ -900,7 +899,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '3-grandchild.yml'), yaml.stringify(grandchildPlan));
+    await writeTestPlan(path.join(tasksDir, '3-grandchild.yml'), grandchildPlan);
 
     // Mock the imported functions to test them independently
     const {
@@ -1004,7 +1003,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '15-grandparent.yml'), yaml.stringify(grandparentPlan));
+    await writeTestPlan(path.join(tasksDir, '15-grandparent.yml'), grandparentPlan);
 
     const parentPlan: PlanSchema = {
       id: 10,
@@ -1018,7 +1017,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '10-parent.yml'), yaml.stringify(parentPlan));
+    await writeTestPlan(path.join(tasksDir, '10-parent.yml'), parentPlan);
 
     const childPlan: PlanSchema = {
       id: 5,
@@ -1032,7 +1031,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '5-child.yml'), yaml.stringify(childPlan));
+    await writeTestPlan(path.join(tasksDir, '5-child.yml'), childPlan);
 
     const {
       buildParentChildHierarchy,
@@ -1105,7 +1104,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '10-orphan.yml'), yaml.stringify(orphanPlan));
+    await writeTestPlan(path.join(tasksDir, '10-orphan.yml'), orphanPlan);
 
     const { buildParentChildHierarchy, findRootParent, findPlanFamily, findDisorderedFamilies } =
       await import('./renumber.js');
@@ -1146,7 +1145,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '10-parent.yml'), yaml.stringify(parentPlan));
+    await writeTestPlan(path.join(tasksDir, '10-parent.yml'), parentPlan);
 
     const childPlan: PlanSchema = {
       id: 5,
@@ -1161,7 +1160,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '5-child.yml'), yaml.stringify(childPlan));
+    await writeTestPlan(path.join(tasksDir, '5-child.yml'), childPlan);
 
     const {
       buildParentChildHierarchy,
@@ -1212,7 +1211,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '5-child1.yml'), yaml.stringify(child1Plan));
+    await writeTestPlan(path.join(tasksDir, '5-child1.yml'), child1Plan);
 
     const child2Plan: PlanSchema = {
       id: 8,
@@ -1227,7 +1226,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '8-child2.yml'), yaml.stringify(child2Plan));
+    await writeTestPlan(path.join(tasksDir, '8-child2.yml'), child2Plan);
 
     const child3Plan: PlanSchema = {
       id: 12,
@@ -1242,7 +1241,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '12-child3.yml'), yaml.stringify(child3Plan));
+    await writeTestPlan(path.join(tasksDir, '12-child3.yml'), child3Plan);
 
     const {
       buildParentChildHierarchy,
@@ -1358,7 +1357,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '5-child1.yml'), yaml.stringify(child1Plan));
+    await writeTestPlan(path.join(tasksDir, '5-child1.yml'), child1Plan);
 
     const child2Plan: PlanSchema = {
       id: 8,
@@ -1373,7 +1372,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '8-child2.yml'), yaml.stringify(child2Plan));
+    await writeTestPlan(path.join(tasksDir, '8-child2.yml'), child2Plan);
 
     const { buildParentChildHierarchy, findPlanFamily, topologicalSortFamily } =
       await import('./renumber.js');
@@ -1415,7 +1414,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '3-parent.yml'), yaml.stringify(parentPlan));
+    await writeTestPlan(path.join(tasksDir, '3-parent.yml'), parentPlan);
 
     const child1Plan: PlanSchema = {
       id: 1,
@@ -1429,7 +1428,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '1-child1.yml'), yaml.stringify(child1Plan));
+    await writeTestPlan(path.join(tasksDir, '1-child1.yml'), child1Plan);
 
     const child2Plan: PlanSchema = {
       id: 2,
@@ -1444,7 +1443,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '2-child2.yml'), yaml.stringify(child2Plan));
+    await writeTestPlan(path.join(tasksDir, '2-child2.yml'), child2Plan);
 
     const { buildParentChildHierarchy, findPlanFamily, topologicalSortFamily, reassignFamilyIds } =
       await import('./renumber.js');
@@ -1502,7 +1501,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '5-child.yml'), yaml.stringify(childPlan));
+    await writeTestPlan(path.join(tasksDir, '5-child.yml'), childPlan);
 
     // Import the hierarchical helper functions
     const {
@@ -1559,7 +1558,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '5-child.yml'), yaml.stringify(childPlan));
+    await writeTestPlan(path.join(tasksDir, '5-child.yml'), childPlan);
 
     // Run hierarchical renumbering
     await handleRenumber({}, createMockCommand());
@@ -1604,7 +1603,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '5-child1.yml'), yaml.stringify(child1Plan));
+    await writeTestPlan(path.join(tasksDir, '5-child1.yml'), child1Plan);
 
     const child2Plan: PlanSchema = {
       id: 8,
@@ -1619,7 +1618,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '8-child2.yml'), yaml.stringify(child2Plan));
+    await writeTestPlan(path.join(tasksDir, '8-child2.yml'), child2Plan);
 
     // Run hierarchical renumbering
     await handleRenumber({}, createMockCommand());
@@ -1667,7 +1666,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '5-disordered-child.yml'), yaml.stringify(disorderedChild));
+    await writeTestPlan(path.join(tasksDir, '5-disordered-child.yml'), disorderedChild);
 
     // Properly ordered family: parent (20) -> child (30)
     await createPlan(20, 'Ordered Parent', '20-ordered-parent.yml');
@@ -1683,7 +1682,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '30-ordered-child.yml'), yaml.stringify(orderedChild));
+    await writeTestPlan(path.join(tasksDir, '30-ordered-child.yml'), orderedChild);
 
     // Run hierarchical renumbering
     await handleRenumber({}, createMockCommand());
@@ -1725,7 +1724,7 @@ describe('rmplan renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await Bun.write(path.join(tasksDir, '5-child.yml'), yaml.stringify(childPlan));
+    await writeTestPlan(path.join(tasksDir, '5-child.yml'), childPlan);
 
     // Run in dry-run mode
     await handleRenumber({ dryRun: true }, createMockCommand());

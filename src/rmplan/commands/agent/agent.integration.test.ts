@@ -92,7 +92,12 @@ describe('rmplan agent integration (execution summaries)', () => {
 
   async function writePlan(fileName: string, plan: any) {
     const fp = path.join(tasksDir, fileName);
-    await fs.writeFile(fp, yaml.stringify(plan));
+    const { details, ...planWithoutDetails } = plan;
+    let content = `---\n${yaml.stringify(planWithoutDetails)}---\n`;
+    if (details) {
+      content += `\n${details}\n`;
+    }
+    await fs.writeFile(fp, content);
     return fp;
   }
 

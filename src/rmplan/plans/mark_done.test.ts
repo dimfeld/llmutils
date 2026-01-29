@@ -2,10 +2,10 @@ import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import yaml from 'yaml';
 import { markStepDone, markTaskDone, setTaskDone } from './mark_done.js';
 import { readPlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
+import { stringifyPlanWithFrontmatter } from '../../testing.js';
 
 describe('markStepDone', () => {
   let tempDir: string;
@@ -45,7 +45,7 @@ describe('markStepDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
+    await fs.writeFile(planPath, stringifyPlanWithFrontmatter(plan));
 
     const result = await markStepDone(planPath, {}, undefined, tempDir, {});
 
@@ -73,7 +73,7 @@ describe('markStepDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
+    await fs.writeFile(planPath, stringifyPlanWithFrontmatter(plan));
 
     const result = await markStepDone(planPath, {}, undefined, tempDir, {});
 
@@ -101,7 +101,7 @@ describe('markStepDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
+    await fs.writeFile(planPath, stringifyPlanWithFrontmatter(plan));
 
     const result = await markStepDone(planPath, {}, undefined, tempDir, {});
 
@@ -148,7 +148,7 @@ describe('markTaskDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
+    await fs.writeFile(planPath, stringifyPlanWithFrontmatter(plan));
 
     const result = await markTaskDone(planPath, 1, {}, tempDir, {});
 
@@ -176,7 +176,7 @@ describe('markTaskDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
+    await fs.writeFile(planPath, stringifyPlanWithFrontmatter(plan));
 
     await expect(markTaskDone(planPath, 5, {}, tempDir, {})).rejects.toThrow();
   });
@@ -220,7 +220,7 @@ describe('setTaskDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
+    await fs.writeFile(planPath, stringifyPlanWithFrontmatter(plan));
 
     const result = await setTaskDone(planPath, { taskIdentifier: 'Task 2' }, tempDir, {});
 
@@ -248,7 +248,7 @@ describe('setTaskDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
+    await fs.writeFile(planPath, stringifyPlanWithFrontmatter(plan));
 
     await expect(
       setTaskDone(planPath, { taskIdentifier: 'Nonexistent Task' }, tempDir, {})
@@ -277,7 +277,7 @@ describe('setTaskDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
+    await fs.writeFile(planPath, stringifyPlanWithFrontmatter(plan));
 
     // "Implement" only matches one task
     const result = await setTaskDone(planPath, { taskIdentifier: 'Implement' }, tempDir, {});
@@ -311,7 +311,7 @@ describe('setTaskDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
+    await fs.writeFile(planPath, stringifyPlanWithFrontmatter(plan));
 
     // "Task" matches both tasks
     await expect(setTaskDone(planPath, { taskIdentifier: 'Task' }, tempDir, {})).rejects.toThrow(
@@ -341,7 +341,7 @@ describe('setTaskDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
+    await fs.writeFile(planPath, stringifyPlanWithFrontmatter(plan));
 
     // "Task" exactly matches the first task
     const result = await setTaskDone(planPath, { taskIdentifier: 'Task' }, tempDir, {});

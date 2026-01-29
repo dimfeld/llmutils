@@ -2,9 +2,8 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import yaml from 'yaml';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
-import { ModuleMocker } from '../../testing.js';
+import { ModuleMocker, stringifyPlanWithFrontmatter } from '../../testing.js';
 import type { WorkspaceInfo } from '../workspace/workspace_tracker.js';
 import type { PlanSchema } from '../planSchema.js';
 import { readAllPlans } from '../plans.js';
@@ -116,7 +115,7 @@ async function createPlanFile(
 
   await fs.mkdir(tasksDir, { recursive: true });
   const planPath = path.join(tasksDir, `${planId}.plan.md`);
-  const planContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yaml.stringify(plan)}`;
+  const planContent = stringifyPlanWithFrontmatter(plan);
   await fs.writeFile(planPath, planContent);
   return planPath;
 }
@@ -1024,7 +1023,7 @@ describe('workspace add --reuse and --try-reuse', () => {
 
         await fs.mkdir(tasksDir, { recursive: true });
         const planPath = path.join(tasksDir, '101-imported.plan.md');
-        const planContent = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n${yaml.stringify(plan)}`;
+        const planContent = stringifyPlanWithFrontmatter(plan);
         await fs.writeFile(planPath, planContent);
         return true;
       },

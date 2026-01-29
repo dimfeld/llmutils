@@ -9,7 +9,7 @@ import { handleAddCommand } from './commands/add.js';
 import { handleAddTaskCommand } from './commands/add-task.js';
 import { handleDoneCommand } from './commands/done.js';
 import { handleRemoveTaskCommand } from './commands/remove-task.js';
-import { ModuleMocker } from '../testing.js';
+import { ModuleMocker, stringifyPlanWithFrontmatter } from '../testing.js';
 
 // Handlers that rely on mocked modules are imported dynamically in beforeEach
 let handleListCommand: any;
@@ -91,7 +91,7 @@ describe('rmplan CLI integration tests (internal handlers)', () => {
       status: 'pending',
       tasks: [],
     };
-    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
+    await fs.writeFile(path.join(tasksDir, '1.yml'), stringifyPlanWithFrontmatter(plan));
 
     const command = { parent: { opts: () => ({ config: configPath }) } } as any;
     await handleListCommand({ sort: 'created' }, command);
@@ -116,7 +116,7 @@ describe('rmplan CLI integration tests (internal handlers)', () => {
         },
       ],
     };
-    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
+    await fs.writeFile(path.join(tasksDir, '1.yml'), stringifyPlanWithFrontmatter(plan));
 
     const command = { parent: { opts: () => ({ config: configPath }) } } as any;
     await handleShowCommand('1', {}, command);
@@ -141,7 +141,7 @@ describe('rmplan CLI integration tests (internal handlers)', () => {
         },
       ],
     };
-    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
+    await fs.writeFile(path.join(tasksDir, '1.yml'), stringifyPlanWithFrontmatter(plan));
 
     const command = { parent: { opts: () => ({ config: configPath }) } } as any;
     await handleDoneCommand('1', {}, command);
@@ -221,7 +221,7 @@ describe('rmplan CLI integration tests (internal handlers)', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), stringifyPlanWithFrontmatter(plan));
     }
 
     // Test filtering by done status using internal handler and mocked logger
@@ -316,7 +316,7 @@ describe('rmplan CLI integration tests (internal handlers)', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), stringifyPlanWithFrontmatter(plan));
     }
 
     const command = { parent: { opts: () => ({ config: configPath }) } } as any;

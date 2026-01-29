@@ -69,12 +69,14 @@ Additional plan details in markdown format.
     });
 
     test('should pass validation for a valid YAML-only plan file', async () => {
-      const validPlan = `goal: Implement feature X
+      const validPlan = `---
+goal: Implement feature X
 details: This is a test plan
 tasks:
   - title: Task 1
     description: First task
     done: false
+---
 `;
 
       await fs.writeFile(path.join(tempDir, 'valid.yml'), validPlan);
@@ -110,10 +112,12 @@ tasks:
 
   describe('invalid plan files with unknown keys', () => {
     test('should detect unknown keys at root level', async () => {
-      const invalidPlan = `goal: Test plan
+      const invalidPlan = `---
+goal: Test plan
 details: Test details
 unknownRootKey: invalid
 tasks: []
+---
 `;
 
       await fs.writeFile(path.join(tempDir, 'invalid-root.yml'), invalidPlan);
@@ -148,14 +152,14 @@ tasks: []
     });
 
     test('should detect unknown keys in tasks array', async () => {
-      const invalidPlan = `goal: Test plan
+      const invalidPlan = `---
+goal: Test plan
 details: Test details
 tasks:
   - title: Task 1
     description: First task
     unknownTaskKey: invalid
-
-
+---
 `;
 
       await fs.writeFile(path.join(tempDir, 'invalid-task.yml'), invalidPlan);
@@ -190,7 +194,8 @@ tasks:
     });
 
     test('should detect removed fields (steps, files) as invalid', async () => {
-      const invalidPlan = `goal: Test plan
+      const invalidPlan = `---
+goal: Test plan
 details: Test details
 tasks:
   - title: Task 1
@@ -199,6 +204,7 @@ tasks:
     steps:
       - prompt: Step 1
         done: false
+---
 `;
 
       await fs.writeFile(path.join(tempDir, 'invalid-step.yml'), invalidPlan);
@@ -233,7 +239,8 @@ tasks:
     });
 
     test('should detect unknown keys in project section', async () => {
-      const invalidPlan = `goal: Phase goal
+      const invalidPlan = `---
+goal: Phase goal
 details: Phase details
 project:
   title: Project title
@@ -241,6 +248,7 @@ project:
   details: Project details
   unknownProjectKey: invalid
 tasks: []
+---
 `;
 
       await fs.writeFile(path.join(tempDir, 'invalid-project.yml'), invalidPlan);
@@ -275,7 +283,8 @@ tasks: []
     });
 
     test('should detect multiple unknown keys at different levels', async () => {
-      const invalidPlan = `goal: Test plan
+      const invalidPlan = `---
+goal: Test plan
 details: Test details
 unknownRoot1: invalid
 unknownRoot2: also invalid
@@ -291,6 +300,7 @@ project:
   title: Project title
   goal: Project goal
   unknownProject: invalid
+---
 `;
 
       await fs.writeFile(path.join(tempDir, 'invalid-multiple.yml'), invalidPlan);
@@ -422,9 +432,11 @@ tasks: []
 
   describe('verbose mode', () => {
     test('should show valid files in verbose mode', async () => {
-      const validPlan = `goal: Test plan
+      const validPlan = `---
+goal: Test plan
 details: Test details
 tasks: []
+---
 `;
 
       await fs.writeFile(path.join(tempDir, 'valid.yml'), validPlan);
@@ -466,17 +478,21 @@ tasks: []
   describe('mixed valid and invalid files', () => {
     test('should correctly report both valid and invalid files', async () => {
       // Create a valid file
-      const validPlan = `goal: Valid plan
+      const validPlan = `---
+goal: Valid plan
 details: Valid details
 tasks: []
+---
 `;
       await fs.writeFile(path.join(tempDir, 'valid.yml'), validPlan);
 
       // Create an invalid file
-      const invalidPlan = `goal: Invalid plan
+      const invalidPlan = `---
+goal: Invalid plan
 details: Invalid details
 unknownKey: invalid
 tasks: []
+---
 `;
       await fs.writeFile(path.join(tempDir, 'invalid.yml'), invalidPlan);
 

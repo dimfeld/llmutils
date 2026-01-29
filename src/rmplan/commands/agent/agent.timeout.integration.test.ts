@@ -87,7 +87,12 @@ describe('rmplan agent integration (timeout simulation)', () => {
       ],
     };
     const planPath = path.join(tasksDir, '707.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan), 'utf8');
+    const { details, ...planWithoutDetails } = plan;
+    let planContent = `---\n${yaml.stringify(planWithoutDetails)}---\n`;
+    if (details) {
+      planContent += `\n${details}\n`;
+    }
+    await fs.writeFile(planPath, planContent, 'utf8');
 
     // Register a stub executor that throws a timeout-like error
     {

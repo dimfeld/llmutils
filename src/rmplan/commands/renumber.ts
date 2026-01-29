@@ -5,7 +5,7 @@ import yaml from 'yaml';
 import { reserveNextPlanId } from '../assignments/assignments_io.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
+import { NoFrontmatterError, readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { getCurrentBranchName, getChangedFilesOnBranch } from '../../common/git.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
@@ -809,6 +809,10 @@ async function handleSwapOrRenumber(
       }
       allPlans.set(filePath, plan);
     } catch (e) {
+      if (e instanceof NoFrontmatterError) {
+        debugLog(`Skipping file without frontmatter: ${filePath}`);
+        continue;
+      }
       // Skip invalid files
       debugLog(`Skipping invalid plan file: ${filePath}`);
     }
@@ -1130,6 +1134,10 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
       }
       allPlans.set(filePath, plan);
     } catch (e) {
+      if (e instanceof NoFrontmatterError) {
+        debugLog(`Skipping file without frontmatter: ${filePath}`);
+        continue;
+      }
       // Skip invalid plan files
     }
   }

@@ -7,7 +7,7 @@ import { readPlanFile } from '../plans.js';
 import { handleSetCommand } from './set.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { RmplanConfig } from '../configSchema.js';
-import { ModuleMocker, clearAllRmplanCaches } from '../../testing.js';
+import { ModuleMocker, clearAllRmplanCaches, stringifyPlanWithFrontmatter } from '../../testing.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 const logSpy = mock(() => {});
@@ -94,10 +94,7 @@ describe('rmplan set command', () => {
     if (overrides) {
       Object.assign(plan, overrides);
     }
-    const yamlContent = yaml.stringify(plan);
-    const schemaLine =
-      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
-    await writeFile(planPath, schemaLine + yamlContent);
+    await writeFile(planPath, stringifyPlanWithFrontmatter(plan));
     return planPath;
   };
 

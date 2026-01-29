@@ -80,29 +80,23 @@ async function validatePlanFile(filePath: string): Promise<ValidationResult> {
   try {
     const content = await Bun.file(filePath).text();
 
+    // Check for frontmatter - skip files without it
+    if (!content.startsWith('---\n') || content.indexOf('\n---\n', 4) === -1) {
+      return { filename, isValid: true, skipped: true };
+    }
+
     let parsed: any;
     let markdownBody: string | undefined;
 
-    // Check if the file uses front matter format
-    if (content.startsWith('---\n')) {
-      // Find the closing delimiter for front matter
-      const endDelimiterIndex = content.indexOf('\n---\n', 4);
+    // Find the closing delimiter for front matter
+    const endDelimiterIndex = content.indexOf('\n---\n', 4);
 
-      if (endDelimiterIndex !== -1) {
-        // Extract front matter and body
-        const frontMatter = content.substring(4, endDelimiterIndex);
-        markdownBody = content.substring(endDelimiterIndex + 5).trim();
+    // Extract front matter and body
+    const frontMatter = content.substring(4, endDelimiterIndex);
+    markdownBody = content.substring(endDelimiterIndex + 5).trim();
 
-        // Parse the front matter as YAML
-        parsed = yaml.parse(frontMatter);
-      } else {
-        // No closing delimiter found, treat entire file as YAML
-        parsed = yaml.parse(content);
-      }
-    } else {
-      // No front matter, parse entire content as YAML
-      parsed = yaml.parse(content);
-    }
+    // Parse the front matter as YAML
+    parsed = yaml.parse(frontMatter);
 
     // If we have a markdown body, add it to the details field
     if (markdownBody) {

@@ -2,10 +2,10 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import yaml from 'yaml';
 import { planSchema } from './planSchema.js';
 import { readPlanFile, writePlanFile, clearPlanCache } from './plans.js';
 import type { PlanSchema } from './planSchema.js';
+import { stringifyPlanWithFrontmatter } from '../testing.js';
 
 describe('simple field schema validation', () => {
   test('accepts plan with simple: true', () => {
@@ -167,7 +167,7 @@ describe('simple field file I/O', () => {
       tasks: [],
     };
 
-    await fs.writeFile(filename, yaml.stringify(legacyPlan), 'utf-8');
+    await fs.writeFile(filename, stringifyPlanWithFrontmatter(legacyPlan), 'utf-8');
 
     const readPlan = await readPlanFile(filename);
     // Check that simple is falsy (either false or undefined, both evaluate to false in conditions)

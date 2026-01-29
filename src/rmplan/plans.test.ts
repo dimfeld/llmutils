@@ -23,6 +23,20 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-
 
 const moduleMocker = new ModuleMocker(import.meta);
 
+/**
+ * Helper function to write a plan as a frontmatter-style file.
+ * This wraps the YAML content in frontmatter delimiters.
+ */
+function stringifyWithFrontmatter(plan: Record<string, unknown>): string {
+  const { details, ...planWithoutDetails } = plan;
+  const yamlContent = yaml.stringify(planWithoutDetails);
+  let content = `---\n${yamlContent}---\n`;
+  if (details) {
+    content += `\n${details}\n`;
+  }
+  return content;
+}
+
 describe('resolvePlanFile', () => {
   let tempDir: string;
   let tasksDir: string;
@@ -78,12 +92,12 @@ describe('resolvePlanFile', () => {
       tasks: [],
     };
 
-    await writeFile(join(tasksDir, '1.yml'), yaml.stringify(plan1));
-    await writeFile(join(tasksDir, '2.yml'), yaml.stringify(plan2));
-    await writeFile(join(tasksDir, 'no-id.yml'), yaml.stringify(planWithoutId));
+    await writeFile(join(tasksDir, '1.yml'), stringifyWithFrontmatter(plan1));
+    await writeFile(join(tasksDir, '2.yml'), stringifyWithFrontmatter(plan2));
+    await writeFile(join(tasksDir, 'no-id.yml'), stringifyWithFrontmatter(planWithoutId));
 
     // Create a plan outside the tasks dir
-    await writeFile(join(tempDir, 'outside-plan.yml'), yaml.stringify(plan1));
+    await writeFile(join(tempDir, 'outside-plan.yml'), stringifyWithFrontmatter(plan1));
   });
 
   afterAll(async () => {
@@ -147,7 +161,7 @@ describe('resolvePlanFile', () => {
       tasks: [],
     };
 
-    await writeFile(join(nestedDir, 'nested-plan.yml'), yaml.stringify(nestedPlan));
+    await writeFile(join(nestedDir, 'nested-plan.yml'), stringifyWithFrontmatter(nestedPlan));
 
     // Clear cache to ensure the new file is found
     clearPlanCache();
@@ -167,7 +181,7 @@ describe('resolvePlanFile', () => {
       tasks: [],
     };
 
-    await writeFile(join(tasksDir, '101.yml'), yaml.stringify(numericPlan));
+    await writeFile(join(tasksDir, '101.yml'), stringifyWithFrontmatter(numericPlan));
 
     // Clear cache to ensure the new file is found
     clearPlanCache();
@@ -187,7 +201,7 @@ describe('resolvePlanFile', () => {
       tasks: [],
     };
 
-    await writeFile(join(tasksDir, 'my-plan.yml'), yaml.stringify(numericPlan));
+    await writeFile(join(tasksDir, 'my-plan.yml'), stringifyWithFrontmatter(numericPlan));
 
     // Clear cache to ensure the new file is found
     clearPlanCache();
@@ -207,7 +221,7 @@ describe('resolvePlanFile', () => {
       tasks: [],
     };
 
-    await writeFile(join(tasksDir, '103.yml'), yaml.stringify(numericPlan));
+    await writeFile(join(tasksDir, '103.yml'), stringifyWithFrontmatter(numericPlan));
 
     // Clear cache to ensure the new file is found
     clearPlanCache();
@@ -427,7 +441,7 @@ describe('plan UUID handling', () => {
       const planPath = join(tempDir, 'legacy.yml');
       await writeFile(
         planPath,
-        yaml.stringify({
+        stringifyWithFrontmatter({
           id: 123,
           title: 'Legacy Plan',
           goal: 'Add UUID support',
@@ -468,7 +482,7 @@ describe('plan UUID handling', () => {
       const planPath = join(tempDir, 'legacy.yml');
       await writeFile(
         planPath,
-        yaml.stringify({
+        stringifyWithFrontmatter({
           id: 456,
           title: 'Legacy Plan',
           goal: 'Handle UUID persistence failures',
@@ -573,7 +587,7 @@ describe('readAllPlans', () => {
       if (typeof content === 'string') {
         await writeFile(fullPath, content);
       } else {
-        await writeFile(fullPath, yaml.stringify(content));
+        await writeFile(fullPath, stringifyWithFrontmatter(content));
       }
     }
   });
@@ -639,7 +653,7 @@ describe('readAllPlans', () => {
       ];
 
       for (const plan of plans) {
-        await writeFile(join(numericIdDir, `${plan.id}.yml`), yaml.stringify(plan));
+        await writeFile(join(numericIdDir, `${plan.id}.yml`), stringifyWithFrontmatter(plan));
       }
 
       const { plans: readPlans, maxNumericId } = await readAllPlans(numericIdDir);
@@ -668,7 +682,13 @@ describe('readAllPlans', () => {
       // Create some valid plans
       await writeFile(
         join(errorTestDir, 'valid.yml'),
-        yaml.stringify({ id: 200, title: 'Valid', goal: 'Test', details: 'Test', tasks: [] })
+        stringifyWithFrontmatter({
+          id: 200,
+          title: 'Valid',
+          goal: 'Test',
+          details: 'Test',
+          tasks: [],
+        })
       );
 
       // Create invalid YAML
@@ -694,12 +714,18 @@ describe('readAllPlans', () => {
       // Create plans with and without IDs
       await writeFile(
         join(mixedIdDir, 'with-id.yml'),
-        yaml.stringify({ id: 300, title: 'With ID', goal: 'Test', details: 'Test', tasks: [] })
+        stringifyWithFrontmatter({
+          id: 300,
+          title: 'With ID',
+          goal: 'Test',
+          details: 'Test',
+          tasks: [],
+        })
       );
 
       await writeFile(
         join(mixedIdDir, 'no-id.yml'),
-        yaml.stringify({ title: 'No ID', goal: 'Test', details: 'Test', tasks: [] })
+        stringifyWithFrontmatter({ title: 'No ID', goal: 'Test', details: 'Test', tasks: [] })
       );
 
       const { plans, maxNumericId } = await readAllPlans(mixedIdDir);
@@ -719,13 +745,19 @@ describe('readAllPlans', () => {
       // Create a normal plan
       await writeFile(
         join(notRmplanDir, 'normal.yml'),
-        yaml.stringify({ id: 400, title: 'Normal Plan', goal: 'Test', details: 'Test', tasks: [] })
+        stringifyWithFrontmatter({
+          id: 400,
+          title: 'Normal Plan',
+          goal: 'Test',
+          details: 'Test',
+          tasks: [],
+        })
       );
 
       // Create a plan marked as not_rmplan
       await writeFile(
         join(notRmplanDir, 'not-rmplan.yml'),
-        yaml.stringify({
+        stringifyWithFrontmatter({
           id: 401,
           title: 'Not an rmplan',
           goal: 'Test',
@@ -872,7 +904,7 @@ describe('findNextReadyPlan', () => {
     ];
 
     for (const { filename, content } of plans) {
-      await writeFile(join(tempDir, filename), yaml.stringify(content));
+      await writeFile(join(tempDir, filename), stringifyWithFrontmatter(content));
     }
   });
 
@@ -922,7 +954,7 @@ describe('findNextReadyPlan', () => {
     try {
       await writeFile(
         join(depTestDir, 'done-dep.yml'),
-        yaml.stringify({
+        stringifyWithFrontmatter({
           id: 10,
           title: 'Done Dependency',
           goal: 'Already done',
@@ -934,7 +966,7 @@ describe('findNextReadyPlan', () => {
 
       await writeFile(
         join(depTestDir, 'ready-with-deps.yml'),
-        yaml.stringify({
+        stringifyWithFrontmatter({
           id: 11,
           title: 'Ready with Dependencies',
           goal: 'Has dependencies but they are done',
@@ -960,7 +992,7 @@ describe('findNextReadyPlan', () => {
     try {
       await writeFile(
         join(doneDir, 'done.yml'),
-        yaml.stringify({
+        stringifyWithFrontmatter({
           id: 12,
           title: 'Done',
           goal: 'Already done',
@@ -983,7 +1015,7 @@ describe('findNextReadyPlan', () => {
     try {
       await writeFile(
         join(priorityTestDir, 'no-priority.yml'),
-        yaml.stringify({
+        stringifyWithFrontmatter({
           id: 13,
           title: 'No Priority',
           goal: 'No priority goal',
@@ -995,7 +1027,7 @@ describe('findNextReadyPlan', () => {
 
       await writeFile(
         join(priorityTestDir, 'low-priority.yml'),
-        yaml.stringify({
+        stringifyWithFrontmatter({
           id: 14,
           title: 'Low Priority',
           goal: 'Low priority goal',
@@ -1043,7 +1075,7 @@ describe('setPlanStatus', () => {
       tasks: [],
     };
 
-    await writeFile(planPath, yaml.stringify(originalPlan));
+    await writeFile(planPath, stringifyWithFrontmatter(originalPlan));
 
     const beforeTime = new Date();
     await setPlanStatus(planPath, 'in_progress');
@@ -1091,7 +1123,7 @@ describe('setPlanStatus', () => {
       tasks: [],
     };
 
-    await writeFile(planPath, yaml.stringify(originalPlan));
+    await writeFile(planPath, stringifyWithFrontmatter(originalPlan));
 
     // Wait a bit to ensure time difference
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1116,7 +1148,7 @@ describe('setPlanStatus', () => {
       tasks: [],
     };
 
-    await writeFile(planPath, yaml.stringify(originalPlan));
+    await writeFile(planPath, stringifyWithFrontmatter(originalPlan));
 
     const beforeTime = new Date();
     await setPlanStatus(planPath, 'in_progress');
@@ -1139,7 +1171,7 @@ describe('setPlanStatus', () => {
       tasks: 'not-an-array', // Invalid type
     };
 
-    await writeFile(invalidPlanPath, yaml.stringify(invalidPlan));
+    await writeFile(invalidPlanPath, stringifyWithFrontmatter(invalidPlan));
 
     await expect(setPlanStatus(invalidPlanPath, 'done')).rejects.toThrow();
   });
@@ -1184,7 +1216,7 @@ describe('setPlanStatus', () => {
       ],
     };
 
-    await writeFile(planPath, yaml.stringify(originalPlan));
+    await writeFile(planPath, stringifyWithFrontmatter(originalPlan));
 
     await setPlanStatus(planPath, 'in_progress');
 
@@ -1216,7 +1248,7 @@ describe('setPlanStatus', () => {
       tasks: [],
     };
 
-    await writeFile(planPath, yaml.stringify(originalPlan));
+    await writeFile(planPath, stringifyWithFrontmatter(originalPlan));
 
     // Attempt concurrent updates
     const promises = [
@@ -1300,7 +1332,7 @@ And more content here.`;
     expect(plan.details).toContain('const example = "code block";');
   });
 
-  it('should maintain backward compatibility with pure YAML files', async () => {
+  it('should read plans with frontmatter format correctly', async () => {
     const planPath = join(tempDir, 'legacy-plan.yml');
     const legacyPlan = {
       id: 101,
@@ -1314,17 +1346,13 @@ And more content here.`;
         {
           title: 'Legacy Task',
           description: 'A task in the old format',
-          files: ['src/legacy.ts'],
-          steps: [
-            { prompt: 'Legacy step 1', done: true },
-            { prompt: 'Legacy step 2', done: false },
-          ],
+          done: false,
         },
       ],
     };
 
-    // Write as pure YAML (old format)
-    await writeFile(planPath, yaml.stringify(legacyPlan));
+    // Write with frontmatter format
+    await writeFile(planPath, stringifyWithFrontmatter(legacyPlan));
 
     const plan = await readPlanFile(planPath);
 
@@ -1338,7 +1366,6 @@ And more content here.`;
     expect(plan.dependencies).toEqual([3]);
     expect(plan.tasks).toHaveLength(1);
     expect(plan.tasks![0].title).toBe('Legacy Task');
-    expect(plan.tasks![0].steps).toHaveLength(2);
   });
 
   it('should migrate legacy container flag to epic and persist epic on write', async () => {
@@ -1353,7 +1380,7 @@ And more content here.`;
       tasks: [],
     };
 
-    await writeFile(legacyPath, yaml.stringify(legacyPlan));
+    await writeFile(legacyPath, stringifyWithFrontmatter(legacyPlan));
 
     const plan = await readPlanFile(legacyPath);
 
@@ -1491,8 +1518,8 @@ const test = "example";
     expect((readBackPlan as { progressNotes?: string[] }).progressNotes).toBeUndefined();
   });
 
-  it('should load legacy plans without discoveredFrom without errors', async () => {
-    const planPath = join(tempDir, 'legacy-plan.yml');
+  it('should load plans without discoveredFrom without errors', async () => {
+    const planPath = join(tempDir, 'no-discovered-from.yml');
     const legacyPlan = {
       id: 105,
       title: 'Legacy Plan',
@@ -1501,7 +1528,7 @@ const test = "example";
       tasks: [],
     };
 
-    await writeFile(planPath, yaml.stringify(legacyPlan));
+    await writeFile(planPath, stringifyWithFrontmatter(legacyPlan));
 
     const plan = await readPlanFile(planPath);
     expect(plan.discoveredFrom).toBeUndefined();
@@ -1648,22 +1675,22 @@ const roundTrip = "test";
     expect(readBackPlan.details).toContain('const roundTrip = "test";');
   });
 
-  it('should verify the migration path for old-format files', async () => {
-    const oldFormatPath = join(tempDir, 'old-format-plan.yml');
-    const newFormatPath = join(tempDir, 'migrated-plan.md');
+  it('should verify reading and rewriting frontmatter files', async () => {
+    const originalPath = join(tempDir, 'original-frontmatter-plan.md');
+    const newFormatPath = join(tempDir, 'rewritten-plan.md');
 
-    // Create a pure YAML plan file (old format)
-    const oldFormatPlan = {
+    // Create a frontmatter plan file
+    const originalPlan = {
       id: 105,
-      title: 'Old Format Plan for Migration',
-      goal: 'Test migration from old to new format',
-      details: `This is the old format where details are stored in YAML.
+      title: 'Original Frontmatter Plan',
+      goal: 'Test reading and rewriting frontmatter',
+      details: `This is a plan with frontmatter format.
 
-It should be migrated to the new format with:
+It should be preserved when reading and rewriting:
 - YAML front matter for metadata
 - Markdown body for details content
 
-The migration should preserve all data.`,
+The format should be preserved.`,
       status: 'pending',
       priority: 'high',
       dependencies: [80, 90],
@@ -1671,24 +1698,20 @@ The migration should preserve all data.`,
       updatedAt: '2024-01-20T08:00:00.000Z',
       tasks: [
         {
-          title: 'Migration Task',
-          description: 'Task to test migration',
-          files: ['migrate.ts'],
-          steps: [
-            { prompt: 'Read old format', done: false },
-            { prompt: 'Write new format', done: false },
-          ],
+          title: 'Test Task',
+          description: 'Task to test format',
+          done: false,
         },
       ],
     };
 
-    // Write the old format file
-    await writeFile(oldFormatPath, yaml.stringify(oldFormatPlan));
+    // Write the file with frontmatter format
+    await writeFile(originalPath, stringifyWithFrontmatter(originalPlan));
 
-    // Read the old format file
-    const readPlan = await readPlanFile(oldFormatPath);
+    // Read the file
+    const readPlan = await readPlanFile(originalPath);
 
-    // Write it back in the new format
+    // Write it back
     await writePlanFile(newFormatPath, readPlan);
 
     // Read the raw content of the new file to verify format
@@ -1712,19 +1735,19 @@ The migration should preserve all data.`,
 
     // Verify all other fields are in front matter
     expect(frontMatterData.id).toBe(105);
-    expect(frontMatterData.title).toBe('Old Format Plan for Migration');
-    expect(frontMatterData.goal).toBe('Test migration from old to new format');
+    expect(frontMatterData.title).toBe('Original Frontmatter Plan');
+    expect(frontMatterData.goal).toBe('Test reading and rewriting frontmatter');
     expect(frontMatterData.status).toBe('pending');
     expect(frontMatterData.priority).toBe('high');
     expect(frontMatterData.dependencies).toEqual([80, 90]);
     expect(frontMatterData.tasks).toHaveLength(1);
 
     // Verify the body contains the original details
-    expect(bodySection).toBe(oldFormatPlan.details);
+    expect(bodySection).toBe(originalPlan.details);
 
     // Finally, read the new file and ensure data integrity
-    const migratedPlan = await readPlanFile(newFormatPath);
-    expect(migratedPlan).toMatchObject({ ...readPlan, updatedAt: expect.any(String) });
+    const rewrittenPlan = await readPlanFile(newFormatPath);
+    expect(rewrittenPlan).toMatchObject({ ...readPlan, updatedAt: expect.any(String) });
   });
 
   it('should preserve task done flag when writing and reading plans', async () => {

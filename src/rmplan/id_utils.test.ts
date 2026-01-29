@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { slugify, timestamp } from './id_utils.js';
-import { ModuleMocker } from '../testing.js';
+import { ModuleMocker, stringifyPlanWithFrontmatter } from '../testing.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -55,15 +55,30 @@ describe('generateNumericPlanId with shared storage', () => {
     // Create mock plan files
     await Bun.write(
       `${planDir}/1.yml`,
-      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\nid: 1\ngoal: Test plan 1\ndetails: Details for test plan 1\ntasks: []\n'
+      stringifyPlanWithFrontmatter({
+        id: 1,
+        goal: 'Test plan 1',
+        details: 'Details for test plan 1',
+        tasks: [],
+      })
     );
     await Bun.write(
       `${planDir}/100.yml`,
-      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\nid: 100\ngoal: Test plan 100\ndetails: Details for test plan 100\ntasks: []\n'
+      stringifyPlanWithFrontmatter({
+        id: 100,
+        goal: 'Test plan 100',
+        details: 'Details for test plan 100',
+        tasks: [],
+      })
     );
     await Bun.write(
       `${planDir}/old.yml`,
-      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\nid: "abc"\ngoal: Old alphanumeric plan\ndetails: Details for old plan\ntasks: []\n'
+      stringifyPlanWithFrontmatter({
+        id: 'abc',
+        goal: 'Old alphanumeric plan',
+        details: 'Details for old plan',
+        tasks: [],
+      })
     );
 
     const { generateNumericPlanId } = await import('./id_utils.js');
@@ -89,11 +104,21 @@ describe('generateNumericPlanId with shared storage', () => {
     // Create plan files with only non-numeric IDs
     await Bun.write(
       `${planDir}/alpha.yml`,
-      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\nid: "alpha123"\ngoal: Alpha plan\ndetails: Details for alpha plan\ntasks: []\n'
+      stringifyPlanWithFrontmatter({
+        id: 'alpha123',
+        goal: 'Alpha plan',
+        details: 'Details for alpha plan',
+        tasks: [],
+      })
     );
     await Bun.write(
       `${planDir}/beta.yml`,
-      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\nid: "beta456"\ngoal: Beta plan\ndetails: Details for beta plan\ntasks: []\n'
+      stringifyPlanWithFrontmatter({
+        id: 'beta456',
+        goal: 'Beta plan',
+        details: 'Details for beta plan',
+        tasks: [],
+      })
     );
 
     const { generateNumericPlanId } = await import('./id_utils.js');
@@ -109,19 +134,38 @@ describe('generateNumericPlanId with shared storage', () => {
     // Create plan files with mixed ID types
     await Bun.write(
       `${planDir}/5.yml`,
-      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\nid: 5\ngoal: Numeric plan 5\ndetails: Details for plan 5\ntasks: []\n'
+      stringifyPlanWithFrontmatter({
+        id: 5,
+        goal: 'Numeric plan 5',
+        details: 'Details for plan 5',
+        tasks: [],
+      })
     );
     await Bun.write(
       `${planDir}/string-id.yml`,
-      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\nid: "string-id"\ngoal: String ID plan\ndetails: Details for string ID plan\ntasks: []\n'
+      stringifyPlanWithFrontmatter({
+        id: 'string-id',
+        goal: 'String ID plan',
+        details: 'Details for string ID plan',
+        tasks: [],
+      })
     );
     await Bun.write(
       `${planDir}/no-id.yml`,
-      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\ngoal: Plan without ID\ndetails: This plan has no ID field\ntasks: []\n'
+      stringifyPlanWithFrontmatter({
+        goal: 'Plan without ID',
+        details: 'This plan has no ID field',
+        tasks: [],
+      })
     );
     await Bun.write(
       `${planDir}/20.yml`,
-      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\nid: 20\ngoal: Numeric plan 20\ndetails: Details for plan 20\ntasks: []\n'
+      stringifyPlanWithFrontmatter({
+        id: 20,
+        goal: 'Numeric plan 20',
+        details: 'Details for plan 20',
+        tasks: [],
+      })
     );
 
     const { generateNumericPlanId } = await import('./id_utils.js');

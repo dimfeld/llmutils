@@ -1,7 +1,23 @@
 import { mock } from 'bun:test';
+import yaml from 'yaml';
 import { clearPlanCache } from './rmplan/plans.js';
 import { clearConfigCache } from './rmplan/configLoader.js';
 import { clearAllGitCaches } from './common/git.js';
+
+/**
+ * Converts a plan object to a string with YAML frontmatter format.
+ * This is useful for writing plan files in tests since rmplan now requires
+ * files to have frontmatter delimiters.
+ */
+export function stringifyPlanWithFrontmatter(plan: Record<string, unknown>): string {
+  const { details, ...planWithoutDetails } = plan;
+  const yamlContent = yaml.stringify(planWithoutDetails);
+  let content = `---\n${yamlContent}---\n`;
+  if (details) {
+    content += `\n${details}\n`;
+  }
+  return content;
+}
 
 /**
  * Clears all rmplan-related caches. Call this in beforeEach and afterEach

@@ -16,7 +16,7 @@ import {
   writePlanFile,
 } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
-import { ModuleMocker } from '../../testing.js';
+import { ModuleMocker, stringifyPlanWithFrontmatter } from '../../testing.js';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -461,8 +461,8 @@ Task description`);
     const olderPlanPath = path.join(tasksDir, '101-older.plan.yml');
     const newerPlanPath = path.join(tasksDir, '102-newer.plan.yml');
 
-    await fs.writeFile(olderPlanPath, yaml.stringify(olderPlan));
-    await fs.writeFile(newerPlanPath, yaml.stringify(newerPlan));
+    await fs.writeFile(olderPlanPath, stringifyPlanWithFrontmatter(olderPlan));
+    await fs.writeFile(newerPlanPath, stringifyPlanWithFrontmatter(newerPlan));
 
     const options = {
       latest: true,
@@ -515,8 +515,11 @@ Task description`);
     const planWithoutUpdatedAtPath = path.join(tasksDir, '103-without-updated.plan.yml');
     const planWithUpdatedAtPath = path.join(tasksDir, '104-with-updated.plan.yml');
 
-    await fs.writeFile(planWithoutUpdatedAtPath, yaml.stringify(planWithoutUpdatedAt));
-    await fs.writeFile(planWithUpdatedAtPath, yaml.stringify(planWithUpdatedAt));
+    await fs.writeFile(
+      planWithoutUpdatedAtPath,
+      stringifyPlanWithFrontmatter(planWithoutUpdatedAt)
+    );
+    await fs.writeFile(planWithUpdatedAtPath, stringifyPlanWithFrontmatter(planWithUpdatedAt));
 
     const options = {
       latest: true,
@@ -553,7 +556,7 @@ Task description`);
     } satisfies PlanSchema;
 
     const planPath = path.join(tasksDir, '105-no-updated.plan.yml');
-    await fs.writeFile(planPath, yaml.stringify(plan));
+    await fs.writeFile(planPath, stringifyPlanWithFrontmatter(plan));
 
     const options = {
       latest: true,
@@ -2427,7 +2430,7 @@ describe('handleGenerateCommand research and task prompt behavior', () => {
       parent: 42,
       tasks: [],
     };
-    await fs.writeFile(planPath, yaml.stringify(stubPlan), 'utf-8');
+    await fs.writeFile(planPath, stringifyPlanWithFrontmatter(stubPlan), 'utf-8');
 
     await moduleMocker.mock('../../logging.js', () => ({
       log: mock(() => {}),

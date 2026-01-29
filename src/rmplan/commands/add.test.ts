@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
 import { readPlanFile, getMaxNumericPlanId } from '../plans.js';
-import { ModuleMocker, clearAllRmplanCaches } from '../../testing.js';
+import { ModuleMocker, clearAllRmplanCaches, stringifyPlanWithFrontmatter } from '../../testing.js';
 import { getDefaultConfig } from '../configSchema.js';
 import { handleAddCommand } from './add.js';
 
@@ -96,31 +96,29 @@ describe('rmplan add command', () => {
 
     await fs.writeFile(
       path.join(tasksDir, '50.yml'),
-      schemaLine +
-        yaml.stringify({
-          id: 50,
-          title: 'Existing Plan 50',
-          goal: 'Test goal',
-          details: 'Test details',
-          status: 'pending',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          tasks: [],
-        })
+      stringifyPlanWithFrontmatter({
+        id: 50,
+        title: 'Existing Plan 50',
+        goal: 'Test goal',
+        details: 'Test details',
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tasks: [],
+      })
     );
     await fs.writeFile(
       path.join(tasksDir, '100.yml'),
-      schemaLine +
-        yaml.stringify({
-          id: 100,
-          title: 'Existing Plan 100',
-          goal: 'Test goal',
-          details: 'Test details',
-          status: 'pending',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          tasks: [],
-        })
+      stringifyPlanWithFrontmatter({
+        id: 100,
+        title: 'Existing Plan 100',
+        goal: 'Test goal',
+        details: 'Test details',
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tasks: [],
+      })
     );
 
     // Run handler directly
@@ -153,31 +151,29 @@ describe('rmplan add command', () => {
 
     await fs.writeFile(
       path.join(tasksDir, 'old-plan.yml'),
-      schemaLine +
-        yaml.stringify({
-          id: 'abc123',
-          title: 'Old Alphanumeric Plan',
-          goal: 'Test goal',
-          details: 'Test details',
-          status: 'pending',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          tasks: [],
-        })
+      stringifyPlanWithFrontmatter({
+        id: 'abc123',
+        title: 'Old Alphanumeric Plan',
+        goal: 'Test goal',
+        details: 'Test details',
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tasks: [],
+      })
     );
     await fs.writeFile(
       path.join(tasksDir, '5.yml'),
-      schemaLine +
-        yaml.stringify({
-          id: 5,
-          title: 'Numeric Plan 5',
-          goal: 'Test goal',
-          details: 'Test details',
-          status: 'pending',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          tasks: [],
-        })
+      stringifyPlanWithFrontmatter({
+        id: 5,
+        title: 'Numeric Plan 5',
+        goal: 'Test goal',
+        details: 'Test details',
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tasks: [],
+      })
     );
 
     // Run handler directly
@@ -272,31 +268,29 @@ describe('rmplan add command', () => {
 
     await fs.writeFile(
       path.join(tasksDir, '1.yml'),
-      schemaLine +
-        yaml.stringify({
-          id: 1,
-          title: 'Dependency 1',
-          goal: 'Test goal',
-          details: 'Test details',
-          status: 'pending',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          tasks: [],
-        })
+      stringifyPlanWithFrontmatter({
+        id: 1,
+        title: 'Dependency 1',
+        goal: 'Test goal',
+        details: 'Test details',
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tasks: [],
+      })
     );
     await fs.writeFile(
       path.join(tasksDir, '2.yml'),
-      schemaLine +
-        yaml.stringify({
-          id: 2,
-          title: 'Dependency 2',
-          goal: 'Test goal',
-          details: 'Test details',
-          status: 'pending',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          tasks: [],
-        })
+      stringifyPlanWithFrontmatter({
+        id: 2,
+        title: 'Dependency 2',
+        goal: 'Test goal',
+        details: 'Test details',
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tasks: [],
+      })
     );
 
     // Run handler directly with dependencies and priority
@@ -337,17 +331,16 @@ describe('rmplan add command', () => {
     const parentCreatedAt = new Date().toISOString();
     await fs.writeFile(
       path.join(tasksDir, '1-parent-plan.yml'),
-      schemaLine +
-        yaml.stringify({
-          id: 1,
-          title: 'Parent Plan',
-          goal: 'Test parent goal',
-          details: 'Test parent details',
-          status: 'pending',
-          createdAt: parentCreatedAt,
-          updatedAt: parentCreatedAt,
-          tasks: [],
-        })
+      stringifyPlanWithFrontmatter({
+        id: 1,
+        title: 'Parent Plan',
+        goal: 'Test parent goal',
+        details: 'Test parent details',
+        status: 'pending',
+        createdAt: parentCreatedAt,
+        updatedAt: parentCreatedAt,
+        tasks: [],
+      })
     );
 
     // Add a small delay to ensure timestamps are different
@@ -404,17 +397,16 @@ describe('rmplan add command', () => {
 
       await fs.writeFile(
         path.join(tasksDir, '10-parent-plan.yml'),
-        schemaLine +
-          yaml.stringify({
-            id: 10,
-            title: 'Parent Plan',
-            goal: 'Test parent goal',
-            details: 'Test parent details',
-            status: 'pending',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            tasks: [],
-          })
+        stringifyPlanWithFrontmatter({
+          id: 10,
+          title: 'Parent Plan',
+          goal: 'Test parent goal',
+          details: 'Test parent details',
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          tasks: [],
+        })
       );
 
       // Run handler directly with --cleanup option (no custom title)
@@ -454,17 +446,16 @@ describe('rmplan add command', () => {
 
       await fs.writeFile(
         path.join(tasksDir, '20-original-plan.yml'),
-        schemaLine +
-          yaml.stringify({
-            id: 20,
-            title: 'Original Plan',
-            goal: 'Test original goal',
-            details: 'Test original details',
-            status: 'pending',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            tasks: [],
-          })
+        stringifyPlanWithFrontmatter({
+          id: 20,
+          title: 'Original Plan',
+          goal: 'Test original goal',
+          details: 'Test original details',
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          tasks: [],
+        })
       );
 
       // Run handler directly with --cleanup option and custom title
@@ -504,54 +495,51 @@ describe('rmplan add command', () => {
 
       await fs.writeFile(
         path.join(tasksDir, '30-parent-with-files.yml'),
-        schemaLine +
-          yaml.stringify({
-            id: 30,
-            title: 'Parent With Files',
-            goal: 'Test parent goal',
-            details: 'Test parent details',
-            status: 'pending',
-            changedFiles: ['src/file1.ts', 'src/file2.ts', 'shared.ts'],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            tasks: [],
-          })
+        stringifyPlanWithFrontmatter({
+          id: 30,
+          title: 'Parent With Files',
+          goal: 'Test parent goal',
+          details: 'Test parent details',
+          status: 'pending',
+          changedFiles: ['src/file1.ts', 'src/file2.ts', 'shared.ts'],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          tasks: [],
+        })
       );
 
       // Create a child plan of the parent with status "done" and its own changedFiles
       await fs.writeFile(
         path.join(tasksDir, '31-done-child.yml'),
-        schemaLine +
-          yaml.stringify({
-            id: 31,
-            title: 'Done Child Plan',
-            goal: 'Test child goal',
-            details: 'Test child details',
-            status: 'done',
-            parent: 30,
-            changedFiles: ['src/file3.ts', 'shared.ts', 'test/file.test.ts'], // shared.ts is duplicate
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            tasks: [],
-          })
+        stringifyPlanWithFrontmatter({
+          id: 31,
+          title: 'Done Child Plan',
+          goal: 'Test child goal',
+          details: 'Test child details',
+          status: 'done',
+          parent: 30,
+          changedFiles: ['src/file3.ts', 'shared.ts', 'test/file.test.ts'], // shared.ts is duplicate
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          tasks: [],
+        })
       );
 
       // Create another child plan with status "pending" (should be ignored)
       await fs.writeFile(
         path.join(tasksDir, '32-pending-child.yml'),
-        schemaLine +
-          yaml.stringify({
-            id: 32,
-            title: 'Pending Child Plan',
-            goal: 'Test pending child goal',
-            details: 'Test pending child details',
-            status: 'pending',
-            parent: 30,
-            changedFiles: ['src/ignored.ts'], // Should not be included
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            tasks: [],
-          })
+        stringifyPlanWithFrontmatter({
+          id: 32,
+          title: 'Pending Child Plan',
+          goal: 'Test pending child goal',
+          details: 'Test pending child details',
+          status: 'pending',
+          parent: 30,
+          changedFiles: ['src/ignored.ts'], // Should not be included
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          tasks: [],
+        })
       );
 
       // Run handler directly with --cleanup option
@@ -612,17 +600,16 @@ describe('rmplan add command', () => {
       const parentCreatedAt = new Date().toISOString();
       await fs.writeFile(
         path.join(tasksDir, '40-done-plan.yml'),
-        schemaLine +
-          yaml.stringify({
-            id: 40,
-            title: 'Done Plan',
-            goal: 'Test done plan goal',
-            details: 'Test done plan details',
-            status: 'done',
-            createdAt: parentCreatedAt,
-            updatedAt: parentCreatedAt,
-            tasks: [],
-          })
+        stringifyPlanWithFrontmatter({
+          id: 40,
+          title: 'Done Plan',
+          goal: 'Test done plan goal',
+          details: 'Test done plan details',
+          status: 'done',
+          createdAt: parentCreatedAt,
+          updatedAt: parentCreatedAt,
+          tasks: [],
+        })
       );
 
       // Add a small delay to ensure timestamps are different
