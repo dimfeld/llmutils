@@ -1589,7 +1589,9 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
       const fileInfo = newFileIds.get(filePath);
       if (fileInfo) {
         const { id, reason } = fileInfo;
-        plan.id = id;
+        const hierarchicalId = hierarchicalIdMappings.get(id);
+        const finalId = hierarchicalId ?? id;
+        plan.id = finalId;
         if (reason === 'missing') {
           plan.status = 'done';
         }

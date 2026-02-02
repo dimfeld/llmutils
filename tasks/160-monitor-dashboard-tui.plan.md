@@ -1,6 +1,6 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-title: monitor/dashboard TUI
+title: monitor/dashboard GUI
 goal: ""
 id: 160
 uuid: 514cedb9-6431-400a-a997-12d139376146
