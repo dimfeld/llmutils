@@ -157,6 +157,9 @@ export async function spawnAndLogOutput(
     initialInactivityTimeoutMs?: number;
     /** Callback invoked when the process is killed due to inactivity. */
     onInactivityKill?: (signal: NodeJS.Signals) => void;
+    /** When true, the SIGTSTP handler will not re-send SIGTSTP to actually suspend the process.
+     * Used in tests to avoid suspending the test runner. */
+    _skipSelfSuspend?: boolean;
   }
 ) {
   debugLog('Running', cmd, options);
@@ -201,15 +204,19 @@ export async function spawnAndLogOutput(
     debugLog('Process suspended, clearing inactivity timer');
     clearInactivityTimer();
 
-    // Remove handler to avoid recursion, then re-send SIGTSTP to actually suspend
-    process.off('SIGTSTP', handleSuspend);
-    process.kill(process.pid, 'SIGTSTP');
+    if (!options?._skipSelfSuspend) {
+      // Remove handler to avoid recursion, then re-send SIGTSTP to actually suspend
+      process.off('SIGTSTP', handleSuspend);
+      process.kill(process.pid, 'SIGTSTP');
+    }
   };
 
   const handleResume = () => {
     debugLog('Process resumed, restarting inactivity timer');
-    // Re-add the SIGTSTP handler for next suspension
-    process.on('SIGTSTP', handleSuspend);
+    if (!options?._skipSelfSuspend) {
+      // Re-add the SIGTSTP handler for next suspension
+      process.on('SIGTSTP', handleSuspend);
+    }
     resetInactivityTimer();
   };
 

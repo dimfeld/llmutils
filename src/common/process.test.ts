@@ -175,6 +175,7 @@ describe('process utilities', () => {
       const promise = spawnAndLogOutput(['node', '-e', script], {
         inactivityTimeoutMs: 500,
         quiet: true,
+        _skipSelfSuspend: true,
       });
 
       // Give it a moment to start and produce initial output
