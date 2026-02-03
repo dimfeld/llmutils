@@ -54,7 +54,7 @@ describe('findNextReadyDependency', () => {
     }
 
     // Write as YAML
-    const yamlContent = yaml.stringify(planData);
+    const yamlContent = `---\n${yaml.stringify(planData)}---\n`;
     await fs.writeFile(filePath, yamlContent, 'utf-8');
   }
 

@@ -133,7 +133,7 @@ describe('handleReadyCommand', () => {
   // Helper function to create a plan
   async function createPlan(plan: PlanSchema) {
     const filename = path.join(tasksDir, `${plan.id}-test.yml`);
-    await fs.writeFile(filename, yaml.stringify(plan));
+    await fs.writeFile(filename, `---\n${yaml.stringify(plan)}---\n`);
   }
 
   // Test 1: Shows all ready pending plans
