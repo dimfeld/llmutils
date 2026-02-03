@@ -616,7 +616,7 @@ describe('rmplanAgent - simple mode flag plumbing', () => {
     await fs.mkdir(tasksDir, { recursive: true });
 
     simplePlanFile = path.join(tasksDir, '123-simple-plan.yml');
-    const planContent = yaml.stringify({
+    const planContent = `---\n${yaml.stringify({
       id: 123,
       title: 'Simple Flag Plan',
       goal: 'Exercise executor plumbing',
@@ -630,7 +630,7 @@ describe('rmplanAgent - simple mode flag plumbing', () => {
           steps: [{ prompt: 'Do the work', done: false }],
         },
       ],
-    });
+    })}---\n`;
     await fs.writeFile(simplePlanFile, planContent, 'utf-8');
 
     buildExecutorAndLogSpy.mockReset();

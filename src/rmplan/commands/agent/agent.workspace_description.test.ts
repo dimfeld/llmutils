@@ -66,7 +66,7 @@ describe('Agent workspace description auto-update', () => {
         },
       ],
     };
-    await fs.writeFile(planFile, yaml.stringify(planContent));
+    await fs.writeFile(planFile, `---\n${yaml.stringify(planContent)}---\n`);
 
     // Create workspace entry in tracking file
     const workspaceEntry: WorkspaceInfo = {
@@ -203,7 +203,7 @@ describe('Agent workspace description auto-update', () => {
         },
       ],
     };
-    await fs.writeFile(planFile, yaml.stringify(planContent));
+    await fs.writeFile(planFile, `---\n${yaml.stringify(planContent)}---\n`);
     clearPlanCache();
 
     const { rmplanAgent } = await import('./agent.js');
@@ -236,7 +236,7 @@ describe('Agent workspace description auto-update', () => {
         },
       ],
     };
-    await fs.writeFile(planFile, yaml.stringify(planContent));
+    await fs.writeFile(planFile, `---\n${yaml.stringify(planContent)}---\n`);
     clearPlanCache();
 
     const trackingData = await readTrackingData(trackingFile);
@@ -324,7 +324,7 @@ describe('Agent workspace description auto-update', () => {
         },
       ],
     };
-    await fs.writeFile(planFile, yaml.stringify(planContent));
+    await fs.writeFile(planFile, `---\n${yaml.stringify(planContent)}---\n`);
 
     const { rmplanAgent } = await import('./agent.js');
 

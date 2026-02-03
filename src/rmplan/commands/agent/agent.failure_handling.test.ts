@@ -13,7 +13,7 @@ describe('rmplanAgent - serial mode failure handling', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-failure-serial-'));
     await fs.mkdir(path.join(tempDir, 'tasks'), { recursive: true });
     planFile = path.join(tempDir, 'tasks', 'p.yml');
-    const content = `id: 1\ntitle: P\ngoal: G\ndetails: D\ntasks:\n  - title: T1\n    description: Desc\n    steps:\n      - prompt: do it\n`;
+    const content = `---\nid: 1\ntitle: P\ngoal: G\ndetails: D\ntasks:\n  - title: T1\n    description: Desc\n    steps:\n      - prompt: do it\n---\n`;
     await fs.writeFile(planFile, content);
   });
 

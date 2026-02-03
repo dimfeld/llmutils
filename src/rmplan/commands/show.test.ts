@@ -109,7 +109,7 @@ describe('handleShowCommand', () => {
       ],
     };
 
-    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
+    await fs.writeFile(path.join(tasksDir, '1.yml'), `---\n${yaml.stringify(plan)}---\n`);
 
     const options = {};
     const command = {
@@ -142,7 +142,7 @@ describe('handleShowCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '50.yml'), yaml.stringify(plan));
+    await fs.writeFile(path.join(tasksDir, '50.yml'), `---\n${yaml.stringify(plan)}---\n`);
 
     await handleShowCommand('50', {}, { parent: { opts: () => ({}) } });
 
@@ -159,7 +159,7 @@ describe('handleShowCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '51.yml'), yaml.stringify(plan));
+    await fs.writeFile(path.join(tasksDir, '51.yml'), `---\n${yaml.stringify(plan)}---\n`);
 
     await handleShowCommand('51', {}, { parent: { opts: () => ({}) } });
 
@@ -190,9 +190,9 @@ describe('handleShowCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(epic));
-    await fs.writeFile(path.join(tasksDir, '2.yml'), yaml.stringify(phase));
-    await fs.writeFile(path.join(tasksDir, '3.yml'), yaml.stringify(child));
+    await fs.writeFile(path.join(tasksDir, '1.yml'), `---\n${yaml.stringify(epic)}---\n`);
+    await fs.writeFile(path.join(tasksDir, '2.yml'), `---\n${yaml.stringify(phase)}---\n`);
+    await fs.writeFile(path.join(tasksDir, '3.yml'), `---\n${yaml.stringify(child)}---\n`);
 
     await handleShowCommand('3', {}, { parent: { opts: () => ({}) } });
 
@@ -221,7 +221,7 @@ describe('handleShowCommand', () => {
       ],
     } as any;
 
-    await fs.writeFile(path.join(tasksDir, '2.yml'), yaml.stringify(plan));
+    await fs.writeFile(path.join(tasksDir, '2.yml'), `---\n${yaml.stringify(plan)}---\n`);
 
     const options = { short: true } as any;
     const command = { parent: { opts: () => ({}) } } as any;
@@ -279,7 +279,7 @@ describe('handleShowCommand', () => {
       ],
     };
 
-    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
+    await fs.writeFile(path.join(tasksDir, '1.yml'), `---\n${yaml.stringify(plan)}---\n`);
 
     const options = {
       next: true,
@@ -336,7 +336,10 @@ describe('handleShowCommand', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+      await fs.writeFile(
+        path.join(tasksDir, `${plan.id}.yml`),
+        `---\n${yaml.stringify(plan)}---\n`
+      );
     }
 
     const options = {
@@ -385,7 +388,10 @@ describe('handleShowCommand', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+      await fs.writeFile(
+        path.join(tasksDir, `${plan.id}.yml`),
+        `---\n${yaml.stringify(plan)}---\n`
+      );
     }
 
     const options = {
@@ -432,7 +438,10 @@ describe('handleShowCommand', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+      await fs.writeFile(
+        path.join(tasksDir, `${plan.id}.yml`),
+        `---\n${yaml.stringify(plan)}---\n`
+      );
     }
 
     const options = {
@@ -465,7 +474,7 @@ describe('handleShowCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+    await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), `---\n${yaml.stringify(plan)}---\n`);
 
     const options = {
       latest: true,
@@ -499,7 +508,7 @@ describe('handleShowCommand', () => {
       ],
     };
 
-    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
+    await fs.writeFile(path.join(tasksDir, '1.yml'), `---\n${yaml.stringify(plan)}---\n`);
 
     const options = {
       next: true,
@@ -541,7 +550,7 @@ describe('handleShowCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '8.yml'), yaml.stringify(plan));
+    await fs.writeFile(path.join(tasksDir, '8.yml'), `---\n${yaml.stringify(plan)}---\n`);
 
     assignmentsData = {
       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': {
@@ -579,7 +588,7 @@ describe('handleShowCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '9.yml'), yaml.stringify(plan));
+    await fs.writeFile(path.join(tasksDir, '9.yml'), `---\n${yaml.stringify(plan)}---\n`);
 
     assignmentsData = {
       'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb': {
@@ -614,7 +623,7 @@ describe('handleShowCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '10.yml'), yaml.stringify(plan));
+    await fs.writeFile(path.join(tasksDir, '10.yml'), `---\n${yaml.stringify(plan)}---\n`);
 
     const options = {};
     const command = {
@@ -655,7 +664,7 @@ describe('mcpGetPlan', () => {
           },
         ],
       };
-      await fs.writeFile(planPath, yaml.stringify(planData), 'utf8');
+      await fs.writeFile(planPath, `---\n${yaml.stringify(planData)}---\n`, 'utf8');
 
       const context: GenerateModeRegistrationContext = {
         config: {} as any,
@@ -759,7 +768,10 @@ describe('inverse relationships', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+      await fs.writeFile(
+        path.join(tasksDir, `${plan.id}.yml`),
+        `---\n${yaml.stringify(plan)}---\n`
+      );
     }
 
     await handleShowCommand('100', {}, { parent: { opts: () => ({}) } } as any);
@@ -800,7 +812,10 @@ describe('inverse relationships', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+      await fs.writeFile(
+        path.join(tasksDir, `${plan.id}.yml`),
+        `---\n${yaml.stringify(plan)}---\n`
+      );
     }
 
     await handleShowCommand('200', {}, { parent: { opts: () => ({}) } } as any);
@@ -841,7 +856,10 @@ describe('inverse relationships', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+      await fs.writeFile(
+        path.join(tasksDir, `${plan.id}.yml`),
+        `---\n${yaml.stringify(plan)}---\n`
+      );
     }
 
     await handleShowCommand('300', {}, { parent: { opts: () => ({}) } } as any);
@@ -894,7 +912,10 @@ describe('inverse relationships', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+      await fs.writeFile(
+        path.join(tasksDir, `${plan.id}.yml`),
+        `---\n${yaml.stringify(plan)}---\n`
+      );
     }
 
     await handleShowCommand('350', {}, { parent: { opts: () => ({}) } } as any);
@@ -928,7 +949,10 @@ describe('inverse relationships', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+      await fs.writeFile(
+        path.join(tasksDir, `${plan.id}.yml`),
+        `---\n${yaml.stringify(plan)}---\n`
+      );
     }
 
     await handleShowCommand('401', {}, { parent: { opts: () => ({}) } } as any);
@@ -950,7 +974,7 @@ describe('inverse relationships', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '500.yml'), yaml.stringify(plan));
+    await fs.writeFile(path.join(tasksDir, '500.yml'), `---\n${yaml.stringify(plan)}---\n`);
 
     await handleShowCommand('500', {}, { parent: { opts: () => ({}) } } as any);
 
@@ -982,7 +1006,10 @@ describe('inverse relationships', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), yaml.stringify(plan));
+      await fs.writeFile(
+        path.join(tasksDir, `${plan.id}.yml`),
+        `---\n${yaml.stringify(plan)}---\n`
+      );
     }
 
     await handleShowCommand('600', { short: true }, { parent: { opts: () => ({}) } } as any);
@@ -1007,7 +1034,7 @@ describe('inverse relationships', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '700.yml'), yaml.stringify(plan));
+    await fs.writeFile(path.join(tasksDir, '700.yml'), `---\n${yaml.stringify(plan)}---\n`);
 
     // Test without --full flag (should truncate)
     await handleShowCommand('700', {}, { parent: { opts: () => ({}) } } as any);

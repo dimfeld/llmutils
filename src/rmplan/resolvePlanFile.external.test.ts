@@ -101,13 +101,13 @@ describe('resolvePlanFile external storage integration', () => {
     );
     await writeFile(
       planPath,
-      yaml.stringify({
+      `---\n${yaml.stringify({
         id: 9001,
         title: 'External Plan',
         goal: 'Verify external storage ID resolution',
         details: 'Plan stored in external tasks directory',
         tasks: [],
-      })
+      })}---\n`
     );
 
     clearPlanCache();
@@ -136,13 +136,13 @@ describe('resolvePlanFile external storage integration', () => {
     );
     await writeFile(
       relativePlanPath,
-      yaml.stringify({
+      `---\n${yaml.stringify({
         id: 42,
         title: 'Relative Plan',
         goal: 'Verify relative path resolution',
         details: 'Plan stored under custom relative directory',
         tasks: [],
-      })
+      })}---\n`
     );
 
     if (externalConfigPath) {

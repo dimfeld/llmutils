@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdtemp, writeFile, mkdir, rm, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import yaml from 'yaml';
 import { gatherPlanContext } from './context_gathering.js';
 import type { DiffResult } from '../incremental_review.js';
 import type { PlanWithFilename } from './hierarchy.js';
@@ -214,7 +215,8 @@ describe('gatherPlanContext', () => {
         },
       ],
     };
-    await writeFile(planFile, JSON.stringify(planWithInvalidTask));
+    const content = `---\n${yaml.stringify(planWithInvalidTask)}---\n`;
+    await writeFile(planFile, content);
 
     // Use real readPlanFile function for validation in this test
     const { readPlanFile } = await import('../plans.js');

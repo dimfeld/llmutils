@@ -50,7 +50,7 @@ tasks:
 `;
 
   const planFile = join(testDir, 'test-plan.yml');
-  await writeFile(planFile, planContent);
+  await writeFile(planFile, `---\n${planContent}---\n`);
 
   // Mock the buildExecutorAndLog and other dependencies
   await moduleMocker.mock('../executors/index.js', () => ({
@@ -123,7 +123,7 @@ tasks:
 `;
 
   const planFile = join(testDir, 'test-plan-42.yml');
-  await writeFile(planFile, planContent);
+  await writeFile(planFile, `---\n${planContent}---\n`);
 
   // Mock dependencies
   await moduleMocker.mock('../executors/index.js', () => ({
@@ -761,7 +761,7 @@ tasks:
     description: Integration test task
 `;
     const planFile = join(testDir, 'integration.yml');
-    await writeFile(planFile, planContent);
+    await writeFile(planFile, `---\n${planContent}---\n`);
 
     const mockExecutor = {
       execute: mock(async (prompt: string, metadata: any) => {
@@ -849,7 +849,7 @@ tasks:
     description: A test task for review execution mode
 `;
     const planFile = join(testDir, 'review-execution.yml');
-    await writeFile(planFile, planContent);
+    await writeFile(planFile, `---\n${planContent}---\n`);
 
     const mockExecutor = {
       execute: mock(async (prompt: string, planInfo: any) => {
@@ -941,7 +941,7 @@ tasks:
     description: Dry run test task
 `;
     const planFile = join(testDir, 'dry-run.yml');
-    await writeFile(planFile, planContent);
+    await writeFile(planFile, `---\n${planContent}---\n`);
 
     const mockExecutor = {
       execute: mock(async () => 'Should not be called'),
@@ -1268,7 +1268,7 @@ tasks:
     description: A parent task
 `;
     const parentPlanFile = join(testDir, 'parent-99.yml');
-    await writeFile(parentPlanFile, parentPlanContent);
+    await writeFile(parentPlanFile, `---\n${parentPlanContent}---\n`);
 
     // Create child plan file
     const childPlanContent = `
@@ -1281,7 +1281,7 @@ tasks:
     description: A child task
 `;
     const childPlanFile = join(testDir, 'child-101.yml');
-    await writeFile(childPlanFile, childPlanContent);
+    await writeFile(childPlanFile, `---\n${childPlanContent}---\n`);
 
     const mockExecutor = {
       execute: mock(async (prompt: string) => {
@@ -1913,7 +1913,7 @@ tasks:
     description: A test task
 `;
       const planFile = join(testDir, 'error-test.yml');
-      await writeFile(planFile, planContent);
+      await writeFile(planFile, `---\n${planContent}---\n`);
 
       const mockExecutor = {
         execute: async () => {
@@ -2273,7 +2273,7 @@ tasks:
     description: A test task that has issues
 `;
     const planFile = join(testDir, 'autofix-test.yml');
-    await writeFile(planFile, planContent);
+    await writeFile(planFile, `---\n${planContent}---\n`);
 
     // Mock checkbox to return all issues when autofix flag is used
     await moduleMocker.mock('@inquirer/prompts', () => ({
@@ -2439,7 +2439,7 @@ tasks:
     description: A test task with issues
 `;
     const planFile = join(testDir, 'interactive-test.yml');
-    await writeFile(planFile, planContent);
+    await writeFile(planFile, `---\n${planContent}---\n`);
 
     const mockExecutor = {
       execute: mock(async (prompt: string, metadata: any) => {
@@ -2550,7 +2550,7 @@ tasks:
     description: A test task with issues
 `;
     const planFile = join(testDir, 'decline-test.yml');
-    await writeFile(planFile, planContent);
+    await writeFile(planFile, `---\n${planContent}---\n`);
 
     const mockExecutor = {
       execute: mock(async (prompt: string, metadata: any) => {
@@ -2659,7 +2659,7 @@ tasks:
     description: A clean test task
 `;
     const planFile = join(testDir, 'no-issues-test.yml');
-    await writeFile(planFile, planContent);
+    await writeFile(planFile, `---\n${planContent}---\n`);
 
     const mockExecutor = {
       execute: mock(async (prompt: string, metadata: any) => {
@@ -2760,7 +2760,7 @@ tasks:
     description: A test task with issues
 `;
     const planFile = join(testDir, 'no-autofix-test.yml');
-    await writeFile(planFile, planContent);
+    await writeFile(planFile, `---\n${planContent}---\n`);
 
     const mockExecutor = {
       execute: mock(async (prompt: string, metadata: any) => {
@@ -3133,7 +3133,7 @@ tasks:
 `;
 
     const planFile = join(testDir, 'branch-plan.yml');
-    await writeFile(planFile, planContent);
+    await writeFile(planFile, `---\n${planContent}---\n`);
 
     const mockExecutor = {
       execute: mock(async (prompt: string, metadata: any) => {
@@ -3247,7 +3247,7 @@ tasks:
     description: A test task
 `;
     const planFile = join(testDir, 'explicit-plan.yml');
-    await writeFile(planFile, planContent);
+    await writeFile(planFile, `---\n${planContent}---\n`);
 
     const mockExecutor = {
       execute: mock(async () =>
@@ -3324,7 +3324,7 @@ tasks:
     description: A test task for logging
 `;
     const planFile = join(testDir, 'auto-selected-plan.yml');
-    await writeFile(planFile, planContent);
+    await writeFile(planFile, `---\n${planContent}---\n`);
 
     const mockExecutor = {
       execute: mock(async () =>
@@ -3789,7 +3789,7 @@ tasks:
     description: A test task for JSON output
 `;
     const planFile = join(testDir, 'json-output-test.yml');
-    await writeFile(planFile, planContent);
+    await writeFile(planFile, `---\n${planContent}---\n`);
 
     // JSON output that the executor would return with structured format
     const jsonReviewOutput = JSON.stringify({
@@ -3915,7 +3915,7 @@ tasks:
     description: A test task for JSON output
 `;
     const planFile = join(testDir, 'json-output-test.yml');
-    await writeFile(planFile, planContent);
+    await writeFile(planFile, `---\n${planContent}---\n`);
 
     // JSON output that the executor would return in string format
     const jsonReviewOutput = JSON.stringify({
@@ -4021,7 +4021,7 @@ tasks:
     description: A test task
 `;
     const planFile = join(testDir, 'json-mode-test.yml');
-    await writeFile(planFile, planContent);
+    await writeFile(planFile, `---\n${planContent}---\n`);
 
     const jsonOutput = JSON.stringify({
       issues: [

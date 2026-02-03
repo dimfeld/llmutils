@@ -149,18 +149,19 @@ describe('resolvePlan', () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'plan-display-test-'));
     temporaryDirectories.push(tempDir);
     const planPath = join(tempDir, '0001.plan.yml');
-    const contents = [
-      '---',
-      'id: 1',
-      'title: Sample plan',
-      'status: pending',
-      'priority: medium',
-      'tasks:',
-      '  - title: Prepare environment',
-      '    description: Set up tooling',
-      '    done: false',
-      '---',
-    ].join('\n');
+    const contents =
+      [
+        '---',
+        'id: 1',
+        'title: Sample plan',
+        'status: pending',
+        'priority: medium',
+        'tasks:',
+        '  - title: Prepare environment',
+        '    description: Set up tooling',
+        '    done: false',
+        '---',
+      ].join('\n') + '\n';
     await writeFile(planPath, contents, 'utf8');
 
     const { plan, planPath: resolvedPath } = await resolvePlan(planPath, {
@@ -179,18 +180,19 @@ describe('resolvePlan', () => {
     const tasksDir = join(tempDir, 'tasks');
     await mkdir(tasksDir, { recursive: true });
     const planPath = join(tasksDir, '0300.plan.md');
-    const planContents = [
-      '---',
-      'id: 300',
-      'title: Configured plan',
-      'status: pending',
-      'priority: medium',
-      'tasks:',
-      '  - title: Verify config loading',
-      '    description: Ensure resolvePlan finds plans by ID',
-      '    done: false',
-      '---',
-    ].join('\n');
+    const planContents =
+      [
+        '---',
+        'id: 300',
+        'title: Configured plan',
+        'status: pending',
+        'priority: medium',
+        'tasks:',
+        '  - title: Verify config loading',
+        '    description: Ensure resolvePlan finds plans by ID',
+        '    done: false',
+        '---',
+      ].join('\n') + '\n';
     await writeFile(planPath, planContents, 'utf8');
 
     const configPath = join(tempDir, 'rmplan.yml');

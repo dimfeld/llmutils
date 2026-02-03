@@ -69,9 +69,7 @@ describe('handlePromoteCommand', () => {
   async function createPlanFile(id: string, plan: PlanSchema): Promise<string> {
     const planPath = path.join(tasksDir, `${id}.yml`);
     const yamlContent = yaml.stringify(plan);
-    const schemaLine =
-      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json\n';
-    await fs.writeFile(planPath, schemaLine + yamlContent);
+    await fs.writeFile(planPath, `---\n${yamlContent}---\n`);
     return planPath;
   }
 
