@@ -51,6 +51,8 @@ export interface PrepareReviewExecutorsOptions {
 export interface ReviewRunOptions extends PrepareReviewExecutorsOptions {
   planInfo: ReviewPlanInfo;
   allowPartialFailures?: boolean;
+  /** When true and both executors are selected, run Claude first then conditionally Codex. */
+  serialBoth?: boolean;
 }
 
 export interface ReviewRunResult {
@@ -178,9 +180,13 @@ export async function runReview(options: ReviewRunOptions): Promise<ReviewRunRes
   const warnings: string[] = [];
   const executorOutputs: Partial<Record<ReviewExecutorName, string>> = {};
 
-  const executionResults = await Promise.all(
-    preparedExecutors.map((prepared) => executeWithRetry(prepared, options.planInfo))
-  );
+  const shouldRunSerial = options.serialBoth === true && preparedExecutors.length > 1;
+
+  const executionResults = shouldRunSerial
+    ? await runExecutorsSerially(preparedExecutors, options.planInfo)
+    : await Promise.all(
+        preparedExecutors.map((prepared) => executeWithRetry(prepared, options.planInfo))
+      );
 
   // Process results and parse outputs
   const results = executionResults.map((result) => {
@@ -250,6 +256,40 @@ export async function runReview(options: ReviewRunOptions): Promise<ReviewRunRes
     usedExecutors: successfulResults.map((result) => result.name),
     warnings,
   };
+}
+
+async function runExecutorsSerially(
+  preparedExecutors: PreparedReviewExecutor[],
+  planInfo: ReviewPlanInfo
+): Promise<
+  Array<
+    | { name: ReviewExecutorName; rawOutput: string }
+    | { name: ReviewExecutorName; error: unknown }
+  >
+> {
+  const results: Array<
+    | { name: ReviewExecutorName; rawOutput: string }
+    | { name: ReviewExecutorName; error: unknown }
+  > = [];
+
+  const primary = preparedExecutors.find((executor) => executor.name === 'claude-code');
+  const fallbackPrimary = primary ?? preparedExecutors[0];
+  const secondary = preparedExecutors.find(
+    (executor) => executor !== fallbackPrimary && executor.name === 'codex-cli'
+  );
+
+  const firstResult = await executeWithRetry(fallbackPrimary, planInfo);
+  results.push(firstResult);
+
+  if ('rawOutput' in firstResult && secondary) {
+    const parsed = parseJsonReviewOutput(firstResult.rawOutput);
+    const hasBlockingIssues = parsed.issues.some((issue) => issue.severity !== 'info');
+    if (!hasBlockingIssues) {
+      results.push(await executeWithRetry(secondary, planInfo));
+    }
+  }
+
+  return results;
 }
 
 function normalizeReviewOutput(executorOutput: unknown): string {

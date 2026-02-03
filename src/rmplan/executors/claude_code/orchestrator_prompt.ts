@@ -230,7 +230,7 @@ ${markTasksDoneGuidance(planId)}
 }
 
 function buildReviewCommand(planId: string, options: OrchestrationOptions): string {
-  const baseCommand = `rmplan review ${planId} --print`;
+  const baseCommand = `rmplan review ${planId} --print --serial-both`;
   if (options.reviewExecutor) {
     return `${baseCommand} --executor ${options.reviewExecutor}`;
   }

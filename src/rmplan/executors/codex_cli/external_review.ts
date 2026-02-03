@@ -138,8 +138,14 @@ export async function runExternalReviewForCodex(
     taskScopeNote
   );
 
+  const shouldSerialBoth =
+    options.executorSelection === 'both' ||
+    (options.executorSelection == null &&
+      options.rmplanConfig.review?.defaultExecutor === 'both');
+
   const reviewOutput = await runReview({
     executorSelection: options.executorSelection,
+    serialBoth: shouldSerialBoth,
     config: options.rmplanConfig,
     sharedExecutorOptions: {
       baseDir: options.gitRoot,

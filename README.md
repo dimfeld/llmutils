@@ -1945,6 +1945,9 @@ rmplan prompts compact-plan 123
 # Cleanup comments
 rmplan cleanup [FILES...] [--diff-from BRANCH]
 
+# Review plan changes
+rmplan review [PLAN] [--executor NAME] [--serial-both] [--task-index N...]
+
 # Answer PR comments
 rmplan answer-pr [PR] [--mode MODE] [--commit] [--comment]
 

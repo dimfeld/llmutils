@@ -918,6 +918,10 @@ program
     'Output format for review results: json, markdown, or terminal. Overrides config setting.',
     'terminal'
   )
+  .option(
+    '--serial-both',
+    'When using --executor both, run Claude first and only run Codex if Claude reports no blocking issues.'
+  )
   .option('--verbosity <level>', 'Output verbosity level: minimal, normal, or detailed.', 'normal')
   .option(
     '--output-file <path>',

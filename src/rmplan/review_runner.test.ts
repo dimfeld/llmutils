@@ -137,6 +137,112 @@ describe('review_runner', () => {
     expect(result.reviewResult.actionItems).toEqual(['Claude action', 'Codex action']);
   });
 
+  test('runReview serializes both executors and skips codex on blocking Claude issues', async () => {
+    const claudeOutput = {
+      issues: [
+        {
+          severity: 'major',
+          category: 'bug',
+          content: 'Blocking issue',
+          file: 'a.ts',
+          line: '1',
+          suggestion: 'Fix it',
+        },
+      ],
+      recommendations: [],
+      actionItems: [],
+    };
+
+    const claudeExecute = mock(async () => JSON.stringify(claudeOutput));
+    const codexExecute = mock(async () =>
+      JSON.stringify({ issues: [], recommendations: ['unused'], actionItems: [] })
+    );
+
+    const claudeExecutor: Executor = { execute: claudeExecute };
+    const codexExecutor: Executor = { execute: codexExecute };
+
+    await moduleMocker.mock('./executors/index.js', () => ({
+      buildExecutorAndLog: mock((name: string) =>
+        name === 'claude-code' ? claudeExecutor : codexExecutor
+      ),
+      DEFAULT_EXECUTOR: 'codex-cli',
+    }));
+
+    const { runReview } = await import('./review_runner.js');
+
+    const result = await runReview({
+      executorSelection: 'both',
+      serialBoth: true,
+      config: { defaultExecutor: 'codex-cli' } as any,
+      sharedExecutorOptions: { baseDir: '/tmp' },
+      buildPrompt: mock(() => 'prompt'),
+      planInfo: {
+        planId: '9',
+        planTitle: 'Serial Plan',
+        planFilePath: '/tmp/plan.yml',
+        baseBranch: 'main',
+        changedFiles: [],
+      },
+    });
+
+    expect(result.usedExecutors).toEqual(['claude-code']);
+    expect(claudeExecute).toHaveBeenCalledTimes(1);
+    expect(codexExecute).toHaveBeenCalledTimes(0);
+  });
+
+  test('runReview serializes both executors and runs codex on info-only Claude issues', async () => {
+    const claudeOutput = {
+      issues: [
+        {
+          severity: 'info',
+          category: 'other',
+          content: 'Info only',
+          file: 'a.ts',
+          line: '1',
+          suggestion: 'Optional',
+        },
+      ],
+      recommendations: [],
+      actionItems: [],
+    };
+
+    const claudeExecute = mock(async () => JSON.stringify(claudeOutput));
+    const codexExecute = mock(async () =>
+      JSON.stringify({ issues: [], recommendations: ['ok'], actionItems: [] })
+    );
+
+    const claudeExecutor: Executor = { execute: claudeExecute };
+    const codexExecutor: Executor = { execute: codexExecute };
+
+    await moduleMocker.mock('./executors/index.js', () => ({
+      buildExecutorAndLog: mock((name: string) =>
+        name === 'claude-code' ? claudeExecutor : codexExecutor
+      ),
+      DEFAULT_EXECUTOR: 'codex-cli',
+    }));
+
+    const { runReview } = await import('./review_runner.js');
+
+    const result = await runReview({
+      executorSelection: 'both',
+      serialBoth: true,
+      config: { defaultExecutor: 'codex-cli' } as any,
+      sharedExecutorOptions: { baseDir: '/tmp' },
+      buildPrompt: mock(() => 'prompt'),
+      planInfo: {
+        planId: '10',
+        planTitle: 'Serial Plan Info',
+        planFilePath: '/tmp/plan.yml',
+        baseBranch: 'main',
+        changedFiles: [],
+      },
+    });
+
+    expect(result.usedExecutors).toEqual(['claude-code', 'codex-cli']);
+    expect(claudeExecute).toHaveBeenCalledTimes(1);
+    expect(codexExecute).toHaveBeenCalledTimes(1);
+  });
+
   test('runReview preserves structured output from executor', async () => {
     const structuredOutput = {
       issues: [
