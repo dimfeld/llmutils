@@ -5,7 +5,7 @@ import { generateObject } from 'ai';
 
 /**
  * Generates grep terms from a natural language query using a language model.
- * @param modelName The model identifier (e.g., "google/gemini-2.0-flash").
+ * @param modelName The model identifier (e.g., "google/gemini-2.5-flash").
  * @param query The natural language query to convert into grep terms.
  * @returns A promise that resolves to an array of grep patterns.
  */

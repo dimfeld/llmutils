@@ -71,7 +71,7 @@ async function buildChildTitleAndDetails(
 
   let title = '';
   try {
-    const model = await createModel('google/gemini-2.0-flash', config);
+    const model = await createModel('google/gemini-2.5-flash', config);
     const prompt = `Create a concise, one-line plan title capturing the common theme of these tasks.\nParent: ${
       parentTitle || 'Untitled'
     }\n\nTasks:\n${selectedTasks
@@ -213,7 +213,7 @@ export async function handleSplitCommand(planArg: string, options: any, command:
 
     // Call the LLM to reorganize the plan
     log(chalk.blue('\n🤖 Analyzing plan structure and identifying logical phases...'));
-    const modelSpec = splitConfig.models?.stepGeneration || 'google/gemini-2.0-flash';
+    const modelSpec = splitConfig.models?.stepGeneration || 'google/gemini-2.5-flash';
     const model = await createModel(modelSpec, splitConfig);
 
     let llmResponse: string;

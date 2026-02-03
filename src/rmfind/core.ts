@@ -31,7 +31,7 @@ export interface RmfindResult {
   // TODO: Potentially add relevance scores or other metadata later
 }
 
-const DEFAULT_MODEL = 'google/gemini-2.0-flash';
+const DEFAULT_MODEL = 'google/gemini-2.5-flash';
 
 /**
  * Finds files based on the provided options.

@@ -86,7 +86,7 @@ export async function parseCompletedTasksFromImplementer(
     const pending = tasks.filter((t) => !t.done);
     if (pending.length === 0) return [];
 
-    const model = await createModel('google/gemini-2.0-flash');
+    const model = await createModel('google/gemini-2.5-flash');
 
     const prompt = `You are given:
 - A software project plan consisting of tasks (with titles, optional descriptions, and steps)

@@ -8,7 +8,7 @@ import { setDebug, setQuiet } from '../common/process.ts';
 import { getGitRoot } from '../common/git.ts';
 import { findFilesCore, type RmfindOptions, type RmfindResult } from './core.ts';
 
-const DEFAULT_MODEL = 'google/gemini-2.0-flash';
+const DEFAULT_MODEL = 'google/gemini-2.5-flash';
 
 const { values, positionals } = parseArgs({
   options: {

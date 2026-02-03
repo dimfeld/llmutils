@@ -134,7 +134,7 @@ export async function askForModelId(options?: {
   let availableModels = [
     'google/gemini-2.5-pro',
     'google/gemini-2.5-flash',
-    'google/gemini-2.0-flash',
+    'google/gemini-2.5-flash',
     'openai/o4-mini',
     'openai/gpt-4.1',
     'openai/gpt-4.1-mini',
