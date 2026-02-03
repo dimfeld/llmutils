@@ -200,6 +200,45 @@ function updateReferencesAfterRenumbering(
   return modifiedPaths;
 }
 
+function ensureReferencesForAllPlans(
+  allPlans: Map<string, Record<string, any>>,
+  plansToWrite: Set<string>
+): number {
+  const plansByIdMap = new Map<number, PlanSchema>();
+  for (const [, plan] of allPlans) {
+    if (typeof plan.id === 'number' && !Number.isNaN(plan.id)) {
+      plansByIdMap.set(plan.id, plan as PlanSchema);
+    }
+  }
+
+  let updatedCount = 0;
+  for (const [filePath, plan] of allPlans) {
+    const originalReferences = plan.references;
+    const { updatedPlan, plansWithGeneratedUuids } = ensureReferences(
+      plan as PlanSchema,
+      plansByIdMap
+    );
+
+    allPlans.set(filePath, updatedPlan);
+
+    if (!Bun.deepEquals(originalReferences, updatedPlan.references)) {
+      plansToWrite.add(filePath);
+      updatedCount++;
+    }
+
+    for (const { id } of plansWithGeneratedUuids) {
+      for (const [fp, p] of allPlans) {
+        if (p.id === id) {
+          plansToWrite.add(fp);
+          break;
+        }
+      }
+    }
+  }
+
+  return updatedCount;
+}
+
 /**
  * Builds a map of parent plan IDs to their direct children.
  * @param allPlans Map of all plans keyed by file path
@@ -959,6 +998,9 @@ async function handleSwapOrRenumber(
     plansToWrite.add(fromPlan.filePath);
   }
 
+  log('\nEnsuring references for final plan state...');
+  ensureReferencesForAllPlans(allPlans, plansToWrite);
+
   // Write all modified files
   log('\nWriting updated plan files...');
 
@@ -1598,6 +1640,9 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
         plansToWrite.add(filePath);
       }
     }
+
+    log('\nEnsuring references for final plan state...');
+    ensureReferencesForAllPlans(allPlans, plansToWrite);
 
     const renumberedByPath = new Map(plansToRenumber.map((plan) => [plan.filePath, plan]));
 
