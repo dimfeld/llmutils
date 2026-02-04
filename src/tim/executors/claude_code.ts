@@ -1166,10 +1166,7 @@ export class ClaudeCodeExecutor implements Executor {
           ? await this.loadAgentInstructions(this.timConfig.agents.tester.instructions, gitRoot)
           : undefined;
         const reviewerInstructions = this.timConfig.agents?.reviewer?.instructions
-          ? await this.loadAgentInstructions(
-              this.timConfig.agents.reviewer.instructions,
-              gitRoot
-            )
+          ? await this.loadAgentInstructions(this.timConfig.agents.reviewer.instructions, gitRoot)
           : undefined;
 
         agentDefinitions = [
@@ -1209,10 +1206,7 @@ export class ClaudeCodeExecutor implements Executor {
           ? await this.loadAgentInstructions(this.timConfig.agents.tester.instructions, gitRoot)
           : undefined;
         const reviewerInstructions = this.timConfig.agents?.reviewer?.instructions
-          ? await this.loadAgentInstructions(
-              this.timConfig.agents.reviewer.instructions,
-              gitRoot
-            )
+          ? await this.loadAgentInstructions(this.timConfig.agents.reviewer.instructions, gitRoot)
           : undefined;
         const verifierInstructions =
           [testerInstructions, reviewerInstructions]
@@ -1246,10 +1240,7 @@ export class ClaudeCodeExecutor implements Executor {
       const args = ['claude'];
 
       const extraAccessDirs = new Set<string>();
-      if (
-        this.timConfig.isUsingExternalStorage &&
-        this.timConfig.externalRepositoryConfigDir
-      ) {
+      if (this.timConfig.isUsingExternalStorage && this.timConfig.externalRepositoryConfigDir) {
         extraAccessDirs.add(this.timConfig.externalRepositoryConfigDir);
       }
 

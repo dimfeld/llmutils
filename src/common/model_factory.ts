@@ -67,10 +67,7 @@ function getCustomApiKey(modelString: string, config?: TimConfig): string | unde
  * @returns A LanguageModel instance for the specified provider and model.
  * @throws Error if the provider or model is not supported.
  */
-export async function createModel(
-  modelString: string,
-  config?: TimConfig
-): Promise<LanguageModel> {
+export async function createModel(modelString: string, config?: TimConfig): Promise<LanguageModel> {
   const parts = modelString.split('/');
   if (parts.length < 2) {
     throw new Error('Model string must be in the format "provider/model-name"');

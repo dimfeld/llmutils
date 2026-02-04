@@ -91,11 +91,7 @@ export async function executeSimpleMode(
   let hadFailure = false;
   let finalReviewVerdict: ReviewVerdict | undefined;
 
-  let implementerInstructions = await loadAgentInstructionsFor(
-    'implementer',
-    gitRoot,
-    timConfig
-  );
+  let implementerInstructions = await loadAgentInstructionsFor('implementer', gitRoot, timConfig);
   implementerInstructions =
     (implementerInstructions || '') +
     `\n\nCreate a plan for the tasks, and then implement that plan. Once you decide on the plan, implement it immediately. No need to ask for approval.` +

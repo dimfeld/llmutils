@@ -37,12 +37,7 @@ export async function executeReviewMode(
 
   // Use the injected executor for testing, or the default JSON schema executor
   const executor = options?.reviewExecutor ?? executeCodexReviewWithSchema;
-  const reviewerOutput = await executor(
-    contextContent,
-    gitRoot,
-    timConfig,
-    planInfo.isTaskScoped
-  );
+  const reviewerOutput = await executor(contextContent, gitRoot, timConfig, planInfo.isTaskScoped);
 
   log('Reviewer output captured.');
 

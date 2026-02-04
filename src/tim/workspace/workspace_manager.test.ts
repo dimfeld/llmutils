@@ -1263,9 +1263,7 @@ describe('createWorkspace', () => {
 
     // Verify symlinks point to correct source paths
     const timLocalTarget = await fs.readlink(timLocalPath);
-    expect(timLocalTarget).toBe(
-      path.join(sourceDirectory, '.rmfilter', 'config', 'tim.local.yml')
-    );
+    expect(timLocalTarget).toBe(path.join(sourceDirectory, '.rmfilter', 'config', 'tim.local.yml'));
 
     const claudeSettingsTarget = await fs.readlink(claudeSettingsPath);
     expect(claudeSettingsTarget).toBe(path.join(sourceDirectory, '.claude', 'settings.local.json'));

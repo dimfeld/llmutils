@@ -1016,10 +1016,7 @@ program
     'Automatically proceed without interactive prompts (e.g., for reviewing AI comments in files).',
     false
   )
-  .option(
-    '-m, --model <model>',
-    'Specify the LLM model to use. Overrides model from tim config.'
-  )
+  .option('-m, --model <model>', 'Specify the LLM model to use. Overrides model from tim config.')
   .option(
     '--dry-run',
     'Prepare and print the LLM prompt, but do not call the LLM or apply edits.',

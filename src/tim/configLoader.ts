@@ -347,9 +347,7 @@ export async function loadEffectiveConfig(
  * Best-effort loader for global configuration, intended for notification fallbacks.
  * Returns the default config when the global config is missing or invalid.
  */
-export async function loadGlobalConfigForNotifications(
-  overridePath?: string
-): Promise<TimConfig> {
+export async function loadGlobalConfigForNotifications(overridePath?: string): Promise<TimConfig> {
   const baseConfig = getDefaultConfig();
   try {
     const globalConfigPath = await findGlobalConfigPath();

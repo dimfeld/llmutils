@@ -183,12 +183,7 @@ export async function markTasksAsDone(
 ): Promise<void> {
   for (const title of taskTitles) {
     try {
-      await setTaskDone(
-        planFilePath,
-        { taskIdentifier: title, commit: false },
-        gitRoot,
-        timConfig
-      );
+      await setTaskDone(planFilePath, { taskIdentifier: title, commit: false }, gitRoot, timConfig);
       log(`Marked task done (from implementer analysis): ${title}`);
     } catch (e) {
       warn(

@@ -103,11 +103,7 @@ export async function executeNormalMode(
   let finalReviewVerdict: ReviewVerdict | undefined;
 
   // Build implementer prompt using the Claude Code agent prompt for consistency
-  let implementerInstructions = await loadAgentInstructionsFor(
-    'implementer',
-    gitRoot,
-    timConfig
-  );
+  let implementerInstructions = await loadAgentInstructionsFor('implementer', gitRoot, timConfig);
   implementerInstructions =
     (implementerInstructions || '') +
     `\n\nOnce you decide how to go about implementing the tasks, do so immediately. No need to wait for approval.` +
