@@ -66,16 +66,20 @@ export class RepositoryConfigResolver {
     }
 
     const gitRoot = this.gitRoot ?? (await getGitRoot(this.cwd));
-    const localConfigPath = path.join(gitRoot, '.rmfilter', 'config', 'tim.yml');
-    const hasLocalConfig = await Bun.file(localConfigPath).exists();
+    const configDir = path.join(gitRoot, '.rmfilter', 'config');
+    // Check for tim.yml first, then fall back to the old rmplan.yml name
+    for (const configName of ['tim.yml', 'rmplan.yml']) {
+      const localConfigPath = path.join(configDir, configName);
+      const hasLocalConfig = await Bun.file(localConfigPath).exists();
 
-    if (hasLocalConfig) {
-      debugLog(`Found repository configuration at ${localConfigPath}`);
-      return {
-        configPath: localConfigPath,
-        usingExternalStorage: false,
-        gitRoot,
-      };
+      if (hasLocalConfig) {
+        debugLog(`Found repository configuration at ${localConfigPath}`);
+        return {
+          configPath: localConfigPath,
+          usingExternalStorage: false,
+          gitRoot,
+        };
+      }
     }
 
     return await this.resolveExternalConfig(gitRoot);

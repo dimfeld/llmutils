@@ -115,9 +115,16 @@ export async function collectExternalStorageDirectories(
   for (const directory of directories) {
     const repositoryPath = path.join(baseDir, directory.name);
     const metadata = await readRepositoryStorageMetadata(repositoryPath);
-    const configPath = metadata?.externalConfigPath
-      ? path.resolve(repositoryPath, metadata.externalConfigPath)
-      : path.join(repositoryPath, '.rmfilter', 'config', 'tim.yml');
+    let configPath: string;
+    if (metadata?.externalConfigPath) {
+      configPath = path.resolve(repositoryPath, metadata.externalConfigPath);
+    } else {
+      // Check for tim.yml first, then fall back to the old rmplan.yml name
+      const configDir = path.join(repositoryPath, '.rmfilter', 'config');
+      const timPath = path.join(configDir, 'tim.yml');
+      const rmplanPath = path.join(configDir, 'rmplan.yml');
+      configPath = (await Bun.file(timPath).exists()) ? timPath : rmplanPath;
+    }
     const tasksPath = metadata?.externalTasksDir
       ? path.resolve(repositoryPath, metadata.externalTasksDir)
       : path.join(repositoryPath, 'tasks');

@@ -192,12 +192,15 @@ export async function findLocalConfigPath(mainConfigPath: string | null): Promis
   }
 
   const dir = path.dirname(mainConfigPath);
-  const localConfigPath = path.join(dir, 'tim.local.yml');
-  const fileExists = await Bun.file(localConfigPath).exists();
+  // Check for tim.local.yml first, then fall back to the old rmplan.local.yml name
+  for (const localName of ['tim.local.yml', 'rmplan.local.yml']) {
+    const localConfigPath = path.join(dir, localName);
+    const fileExists = await Bun.file(localConfigPath).exists();
 
-  if (fileExists) {
-    debugLog(`Found local override configuration at: ${localConfigPath}`);
-    return localConfigPath;
+    if (fileExists) {
+      debugLog(`Found local override configuration at: ${localConfigPath}`);
+      return localConfigPath;
+    }
   }
 
   return null;
