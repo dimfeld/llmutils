@@ -1,11 +1,11 @@
 {
-  "name": "rmplan",
+  "name": "tim",
   "owner": {
     "name": "dimfeld"
   },
   "plugins": [
     {
-      "name": "rmplan",
+      "name": "tim",
       "source": "./claude-plugin"
     }
   ]

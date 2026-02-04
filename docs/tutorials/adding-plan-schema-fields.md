@@ -1,6 +1,6 @@
 # Tutorial: Adding New Fields to the Plan Schema
 
-This tutorial walks through the process of adding a new field to the rmplan plan schema, using the `assignedTo` field as an example. This demonstrates all the places that need to be updated when extending the plan schema with new fields.
+This tutorial walks through the process of adding a new field to the tim plan schema, using the `assignedTo` field as an example. This demonstrates all the places that need to be updated when extending the plan schema with new fields.
 
 ## Overview
 
@@ -14,10 +14,10 @@ When adding a new field to the plan schema, you'll typically need to update:
 
 ## Step 1: Update the Plan Schema
 
-First, add the new field to the plan schema definition in `src/rmplan/planSchema.ts`:
+First, add the new field to the plan schema definition in `src/tim/planSchema.ts`:
 
 ```typescript
-// src/rmplan/planSchema.ts
+// src/tim/planSchema.ts
 export const phaseSchema = z
   .object({
     // ... existing fields ...
@@ -25,14 +25,14 @@ export const phaseSchema = z
     assignedTo: z.string().optional(), // Add your new field here
     // ... more fields ...
   })
-  .describe('rmplan phase file schema');
+  .describe('tim phase file schema');
 ```
 
 The field should be marked as `.optional()` unless it's required for all plans.
 
 ## Step 2: Update Plan Processing Logic
 
-When plans are generated from markdown or processed through various transformations, you need to ensure the new field is preserved. Update `src/rmplan/process_markdown.ts`:
+When plans are generated from markdown or processed through various transformations, you need to ensure the new field is preserved. Update `src/tim/process_markdown.ts`:
 
 ### For Single-Phase Plans
 
@@ -65,7 +65,7 @@ if (options.stubPlan?.data) {
 
 ### Show Command
 
-Update `src/rmplan/commands/show.ts` to display the new field:
+Update `src/tim/commands/show.ts` to display the new field:
 
 ```typescript
 // After displaying priority, around line 118
@@ -78,7 +78,7 @@ Only display the field if it has a value to keep the output clean.
 
 ### List Command
 
-If the field should be filterable in the list command, update `src/rmplan/commands/list.ts`:
+If the field should be filterable in the list command, update `src/tim/commands/list.ts`:
 
 ```typescript
 // Add filtering logic after line 29
@@ -92,7 +92,7 @@ if (options.user || options.mine) {
 }
 ```
 
-Then add the corresponding CLI options in `src/rmplan/rmplan.ts`:
+Then add the corresponding CLI options in `src/tim/tim.ts`:
 
 ```typescript
 // In the list command definition
@@ -106,7 +106,7 @@ To allow users to modify the field, update the set command:
 
 ### Add to SetOptions Interface
 
-In `src/rmplan/commands/set.ts`:
+In `src/tim/commands/set.ts`:
 
 ```typescript
 export interface SetOptions {
@@ -142,7 +142,7 @@ if (options.noAssign) {
 
 ### Add CLI Options
 
-In `src/rmplan/rmplan.ts`, add the options to the set command:
+In `src/tim/tim.ts`, add the options to the set command:
 
 ```typescript
 .option('--assign <username>', 'Assign the plan to a user')

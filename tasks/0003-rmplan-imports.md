@@ -1,6 +1,6 @@
-Goal: Add options to rmplan which work like the --with-imports and --with-all-imports options for rmfilter.
+Goal: Add options to tim which work like the --with-imports and --with-all-imports options for rmfilter.
 
-When running rmplan with these options, the list of candidate files for import analysis should be the filenames in the prompt itself.
+When running tim with these options, the list of candidate files for import analysis should be the filenames in the prompt itself.
 Use the `extractFileReferencesFromInstructions` function to find these files. If no files are found, then use the task's
 list of files instead.
 

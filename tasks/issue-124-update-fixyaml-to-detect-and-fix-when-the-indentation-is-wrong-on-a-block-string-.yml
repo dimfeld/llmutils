@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Update fixYaml to detect and fix when the indentation is wrong on a block
   string.
 goal: "Implement: Update fixYaml to detect and fix when the indentation is wrong

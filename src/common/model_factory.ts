@@ -9,21 +9,21 @@ import { search } from '@inquirer/prompts';
 import { createOpenRouter, openrouter } from '@openrouter/ai-sdk-provider';
 import type { LanguageModel } from 'ai';
 import { debugLog } from '../logging.ts';
-import { loadEffectiveConfig } from '../rmplan/configLoader.ts';
-import type { RmplanConfig } from '../rmplan/configSchema.ts';
-import { OneCallExecutorName } from '../rmplan/executors/index.js';
+import { loadEffectiveConfig } from '../tim/configLoader.ts';
+import type { TimConfig } from '../tim/configSchema.ts';
+import { OneCallExecutorName } from '../tim/executors/index.js';
 import {
   ClaudeCodeExecutor,
   CopyOnlyExecutor,
   CopyPasteExecutor,
   OneCallExecutor,
-} from '../rmplan/executors/index.ts';
+} from '../tim/executors/index.ts';
 
 /**
  * Gets the custom API key for a model based on the configuration.
  * Checks for exact matches first, then prefix matches.
  */
-function getCustomApiKey(modelString: string, config?: RmplanConfig): string | undefined {
+function getCustomApiKey(modelString: string, config?: TimConfig): string | undefined {
   if (!config?.modelApiKeys) {
     return undefined;
   }
@@ -69,7 +69,7 @@ function getCustomApiKey(modelString: string, config?: RmplanConfig): string | u
  */
 export async function createModel(
   modelString: string,
-  config?: RmplanConfig
+  config?: TimConfig
 ): Promise<LanguageModel> {
   const parts = modelString.split('/');
   if (parts.length < 2) {

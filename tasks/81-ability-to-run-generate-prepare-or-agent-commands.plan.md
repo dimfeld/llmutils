@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Ability to run, generate, prepare, or agent commands on the next ready
   dependency of a plan.
 goal: The project aims to introduce a new command-line flag that allows users to
@@ -24,49 +24,49 @@ createdAt: 2025-07-29T19:19:03.441Z
 updatedAt: 2025-10-27T08:39:04.257Z
 tasks: []
 changedFiles:
-  - src/rmplan/commands/agent.test.ts
-  - src/rmplan/commands/agent.ts
-  - src/rmplan/commands/cli_integration.test.ts
-  - src/rmplan/commands/cli_parsing.test.ts
-  - src/rmplan/commands/find_next_dependency.test.ts
-  - src/rmplan/commands/find_next_dependency.ts
-  - src/rmplan/commands/generate.test.ts
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/commands/integration.test.ts
-  - src/rmplan/commands/next_ready_integration.test.ts
-  - src/rmplan/commands/prepare.test.ts
-  - src/rmplan/commands/prepare.ts
-  - src/rmplan/commands/show.ts
-  - src/rmplan/dependency_traversal.test.ts
-  - src/rmplan/dependency_traversal.ts
-  - src/rmplan/executors/claude_code/agent_generator.test.ts
-  - src/rmplan/plans/plan_state_utils.test.ts
-  - src/rmplan/plans/plan_state_utils.ts
-  - src/rmplan/rmplan.ts
+  - src/tim/commands/agent.test.ts
+  - src/tim/commands/agent.ts
+  - src/tim/commands/cli_integration.test.ts
+  - src/tim/commands/cli_parsing.test.ts
+  - src/tim/commands/find_next_dependency.test.ts
+  - src/tim/commands/find_next_dependency.ts
+  - src/tim/commands/generate.test.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/integration.test.ts
+  - src/tim/commands/next_ready_integration.test.ts
+  - src/tim/commands/prepare.test.ts
+  - src/tim/commands/prepare.ts
+  - src/tim/commands/show.ts
+  - src/tim/dependency_traversal.test.ts
+  - src/tim/dependency_traversal.ts
+  - src/tim/executors/claude_code/agent_generator.test.ts
+  - src/tim/plans/plan_state_utils.test.ts
+  - src/tim/plans/plan_state_utils.ts
+  - src/tim/tim.ts
   - src/common/cleanup_registry.test.ts
   - src/common/cleanup_registry.ts
-  - src/rmplan/agent_runner.test.ts
-  - src/rmplan/agent_runner.ts
-  - src/rmplan/executors/claude_code/agent_generator.ts
-  - src/rmplan/executors/claude_code/agent_prompts.ts
-  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
-  - src/rmplan/executors/claude_code.test.ts
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/executors/copy_only.ts
-  - src/rmplan/executors/copy_paste.ts
-  - src/rmplan/executors/one-call.ts
-  - src/rmplan/executors/types.ts
-  - src/rmplan/prompt_builder.test.ts
+  - src/tim/agent_runner.test.ts
+  - src/tim/agent_runner.ts
+  - src/tim/executors/claude_code/agent_generator.ts
+  - src/tim/executors/claude_code/agent_prompts.ts
+  - src/tim/executors/claude_code/orchestrator_prompt.ts
+  - src/tim/executors/claude_code.test.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/copy_only.ts
+  - src/tim/executors/copy_paste.ts
+  - src/tim/executors/one-call.ts
+  - src/tim/executors/types.ts
+  - src/tim/prompt_builder.test.ts
   - src/rmpr/main.ts
   - README.md
   - docs/next-ready-feature.md
   - src/rmfilter/additional_docs.test.ts
-  - src/rmplan/cleanup.test.ts
-  - src/rmplan/parent_completion.test.ts
-  - src/rmplan/plans.ts
+  - src/tim/cleanup.test.ts
+  - src/tim/parent_completion.test.ts
+  - src/tim/plans.ts
   - src/rmpr/modes/hybrid_context.test.ts
 rmfilter:
-  - src/rmplan
+  - src/tim
 ---
 
 # Original Plan Details

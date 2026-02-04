@@ -1,6 +1,6 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-goal: Implement new metadata fields for `rmplan` YAML files, including `id`,
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
+goal: Implement new metadata fields for `tim` YAML files, including `id`,
   `status`, `priority`, timestamps, and fields for tracking issues, pull
   requests, and changed files. This involves updating the plan schema,
   initializing these fields when a plan is created from Markdown, and managing
@@ -16,13 +16,13 @@ tasks:
       utility function for generating unique, base36-encoded, time-based IDs.
   - title: 2. Metadata Initialization
     done: true
-    description: Modify `extractMarkdownToYaml` in `src/rmplan/actions.ts` to
-      populate the new metadata fields. This also involves updating the `rmplan
-      generate` command in `src/rmplan/rmplan.ts` to parse `rmfilter:` comments
+    description: Modify `extractMarkdownToYaml` in `src/tim/actions.ts` to
+      populate the new metadata fields. This also involves updating the `tim
+      generate` command in `src/tim/tim.ts` to parse `rmfilter:` comments
       from issues and pass necessary information.
   - title: 3. Runtime Status and Timestamp Updates
     done: true
-    description: Update `rmplan agent` and `markStepDone` to manage `status`,
+    description: Update `tim agent` and `markStepDone` to manage `status`,
       `updatedAt`, and `changedFiles` fields during plan execution.
   - title: 4. Update `parseCommandOptionsFromComment` for `rmfilter` prefix
     done: true
@@ -31,11 +31,11 @@ tasks:
       collecting all subsequent arguments.
 ---
 
-The project aims to enhance `rmplan`'s capabilities by adding structured metadata to its YAML plan files. This will enable better tracking, organization, and automation of tasks.
+The project aims to enhance `tim`'s capabilities by adding structured metadata to its YAML plan files. This will enable better tracking, organization, and automation of tasks.
 
 **Key changes include:**
 
-1.  **Schema Update:** The `PlanSchema` (in `src/rmplan/planSchema.ts`) will be extended to include the new fields:
+1.  **Schema Update:** The `PlanSchema` (in `src/tim/planSchema.ts`) will be extended to include the new fields:
     *   `id`: A unique base36 timestamp (epoch 2025-05-01) for the plan file.
     *   `status`: Tracks the plan's lifecycle (`pending`, `in progress`, `done`).
     *   `priority`: Optional field for task prioritization (`unknown`, `low`, `medium`, `high`, `urgent`).
@@ -48,22 +48,22 @@ The project aims to enhance `rmplan`'s capabilities by adding structured metadat
     *   `planGeneratedAt`, `promptsGeneratedAt`, `createdAt`, `updatedAt`: Timestamp fields.
 
 2.  **Metadata Initialization:**
-    *   When a plan is generated from Markdown (via `rmplan extract` or `rmplan generate` without `--no-extract`), the `extractMarkdownToYaml` function in `src/rmplan/actions.ts` will initialize these new fields.
+    *   When a plan is generated from Markdown (via `tim extract` or `tim generate` without `--no-extract`), the `extractMarkdownToYaml` function in `src/tim/actions.ts` will initialize these new fields.
     *   `id` will be generated using a custom base36 timestamp function.
     *   Timestamps (`createdAt`, `updatedAt`, `planGeneratedAt`, `promptsGeneratedAt`) will be set to the current time.
     *   `status` will default to `pending`.
     *   `priority` will default to `unknown`.
-    *   `issue` will be populated if the `--issue` flag was used during `rmplan generate`.
-    *   `rmfilter` will be populated from `rmfilter:` comments in the issue text and any passthrough `rmfilter` arguments to `rmplan generate`.
+    *   `issue` will be populated if the `--issue` flag was used during `tim generate`.
+    *   `rmfilter` will be populated from `rmfilter:` comments in the issue text and any passthrough `rmfilter` arguments to `tim generate`.
 
-3.  **Runtime Updates by `rmplan agent`:**
+3.  **Runtime Updates by `tim agent`:**
     *   `status`: Will transition from `pending` to `in progress` when the agent starts executing the first step of a plan.
     *   `updatedAt`: Will be updated whenever the plan file is modified by the agent (e.g., status change, step completion).
     *   `changedFiles`: After each step is marked done (in `markStepDone`), this field will be updated by comparing the current state of files against the `baseBranch` (or `main`/`master` if `baseBranch` is not set).
     *   `status`: Will transition to `done` in `markStepDone` if all tasks and their steps in the plan are completed.
 
 **Constraints:**
-*   The existing LLM prompt for plan generation (`src/rmplan/prompt.ts`) and the initial Markdown-to-YAML conversion logic performed by the LLM (within `convertMarkdownToYaml` in `src/rmplan/cleanup.ts`) **should not** be changed to handle these new fields. These fields are metadata to be added *after* the LLM produces the core plan structure.
+*   The existing LLM prompt for plan generation (`src/tim/prompt.ts`) and the initial Markdown-to-YAML conversion logic performed by the LLM (within `convertMarkdownToYaml` in `src/tim/cleanup.ts`) **should not** be changed to handle these new fields. These fields are metadata to be added *after* the LLM produces the core plan structure.
 *   Fields like `dependencies`, `baseBranch`, and `pullRequest` can be left empty for now and will be utilized more in future work.
 *   Existing functionality for parsing `rmpr:` comments (in `src/rmpr/comment_options.ts`) should be adapted for parsing `rmfilter:` comments.
 *   Existing functionality for finding changed files (e.g., `getChangedFiles` in `src/rmfilter/additional_docs.ts`) should be reused.

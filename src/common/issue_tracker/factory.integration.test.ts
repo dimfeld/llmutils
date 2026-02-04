@@ -26,7 +26,7 @@ describe('Issue Tracker Factory Integration', () => {
       process.env.GITHUB_TOKEN = 'ghp_test_token';
 
       // Mock the config loader to return default config
-      await moduleMocker.mock('../../rmplan/configLoader.js', () => ({
+      await moduleMocker.mock('../../tim/configLoader.js', () => ({
         loadEffectiveConfig: async () => ({
           issueTracker: 'github',
         }),
@@ -267,7 +267,7 @@ describe('Issue Tracker Factory Integration', () => {
       process.env.GITHUB_TOKEN = 'github_token';
 
       // Mock config loader with specific configuration
-      await moduleMocker.mock('../../rmplan/configLoader.js', () => ({
+      await moduleMocker.mock('../../tim/configLoader.js', () => ({
         loadEffectiveConfig: async () => ({
           issueTracker: 'github',
           otherConfigProperty: 'value',
@@ -284,7 +284,7 @@ describe('Issue Tracker Factory Integration', () => {
       process.env.LINEAR_API_KEY = 'linear_token';
 
       // Mock config loader - this should NOT be called
-      await moduleMocker.mock('../../rmplan/configLoader.js', () => ({
+      await moduleMocker.mock('../../tim/configLoader.js', () => ({
         loadEffectiveConfig: async () => {
           throw new Error('Config loader should not be called');
         },

@@ -8,7 +8,7 @@
     "rmfilter": "./src/rmfilter/rmfilter.ts",
     "rmfind": "./src/rmfind/rmfind.ts",
     "rmfix": "./src/rmfix/cli.ts",
-    "rmplan": "./src/rmplan/rmplan.ts",
+    "tim": "./src/tim/tim.ts",
     "rmrun": "./src/rmrun.ts"
   },
   "scripts": {
@@ -20,7 +20,7 @@
     "update-schemas": "scripts/update-json-schemas.ts",
     "rmfilter": "src/rmfilter/rmfilter.ts",
     "rmfind": "src/rmfind/rmfind.ts",
-    "rmplan": "src/rmplan/rmplan.ts",
+    "tim": "src/tim/tim.ts",
     "rmrun": "src/rmrun.ts"
   },
   "devDependencies": {

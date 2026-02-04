@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: The renumber command should prefer to renumber files that were creaated
   or modified on the current branch.
 goal: To implement and test the full functionality of the branch-aware
@@ -77,7 +77,7 @@ tasks:
 
       - Test both feature branch and trunk branch behavior
 rmfilter:
-  - src/rmplan/commands/renumber*
+  - src/tim/commands/renumber*
   - --with-imports
 ---
 
@@ -98,14 +98,14 @@ The implementation will involve two main parts:
 2.  **Command Logic Update:** The `renumber` command's logic will be updated to use this new information. It will first check the current branch. If it's a feature branch, it will use the list of changed files to resolve ID conflicts. If it's a trunk branch, it will fall back to the existing behavior.
 
 ### Acceptance Criteria
-- When `rmplan renumber` is run on a feature branch, if a plan file has a conflicting ID, the version of the file that was created or modified on the current branch will keep its ID.
-- When `rmplan renumber` is run on a trunk branch (defined as `main` or `master`), the conflict resolution logic will remain unchanged, using the `createdAt` timestamp.
+- When `tim renumber` is run on a feature branch, if a plan file has a conflicting ID, the version of the file that was created or modified on the current branch will keep its ID.
+- When `tim renumber` is run on a trunk branch (defined as `main` or `master`), the conflict resolution logic will remain unchanged, using the `createdAt` timestamp.
 - The `--prefer` command-line option will continue to take highest precedence, overriding both the new branch-based logic and the timestamp logic.
 - The new functionality is thoroughly tested, including tests that simulate Git repository states.
 
 ### Technical Considerations
 - The new Git utility will be placed in `src/common/git.ts`.
-- The core logic change will be in `src/rmplan/commands/renumber.ts`.
+- The core logic change will be in `src/tim/commands/renumber.ts`.
 - Tests will require creating and manipulating temporary Git repositories to simulate different branch and commit scenarios.
 
 ### Assumptions

@@ -1,6 +1,6 @@
-# rmplan
+# Task-Implementation-Machine (tim)
 
-AI-powered project planning and execution system for software development. Generate detailed plans from GitHub/Linear issues, execute them with automated agents, and track progress through complex multi-phase projects.
+Tim is an AI-powered project planning and execution system for software development. Generate detailed plans from GitHub/Linear issues, execute them with automated agents, and track progress through complex multi-phase projects.
 
 **Core capabilities:**
 
@@ -87,24 +87,24 @@ pnpm add -g file://$(pwd)
 Here's a complete workflow from issue to implementation:
 
 ```bash
-# 0. Initialize rmplan in your repository (first time only)
-rmplan init
-# Interactive setup: creates .rmfilter/config/rmplan.yml
+# 0. Initialize tim in your repository (first time only)
+tim init
+# Interactive setup: creates .rmfilter/config/tim.yml
 # Choose tasks directory, executor, and other preferences
 # Use --yes for defaults or --minimal for minimal config
 
 # 1. Generate a plan from a GitHub issue
-rmplan generate --issue 123 -- src/api/**/*.ts
+tim generate --issue 123 -- src/api/**/*.ts
 # Claude Code analyzes the issue, researches the codebase, and creates a detailed plan
 # Research findings are saved to the plan's ## Research section
 # Plan saved to tasks/123-feature-name.yml
 
 # 2. Review the generated plan
-rmplan show 123
+tim show 123
 # Shows: title, goal, status, tasks, and a progress summary
 
 # 3. Execute the plan automatically
-rmplan agent 123 --executor claude-code
+tim agent 123 --executor claude-code
 # Creates isolated workspace
 # Executes each task with LLM
 # Runs tests and formatting
@@ -112,11 +112,11 @@ rmplan agent 123 --executor claude-code
 # Updates the plan's Progress section
 
 # 4. Track progress
-rmplan show 123 --short
+tim show 123 --short
 # Quick view of status and latest activity
 
 # 5. List all ready plans
-rmplan ready
+tim ready
 # Shows plans with all dependencies satisfied
 ```
 
@@ -126,7 +126,7 @@ If you're using Claude Code or another MCP-compatible client:
 
 ```bash
 # Start the MCP server
-rmplan mcp-server --mode generate
+tim mcp-server --mode generate
 
 # In your MCP client (e.g., Claude Code):
 # 1. Use "generate-plan" prompt with plan ID 123
@@ -185,7 +185,7 @@ planGeneratedAt: 2025-01-15T10:15:00Z
 
 <!-- Optional manual content -->
 
-<!-- rmplan-generated-start -->
+<!-- tim-generated-start -->
 # Implementation Plan
 
 ## Overview
@@ -196,7 +196,7 @@ This plan implements user authentication using JWT tokens...
 - Found passport.js already configured
 - Need to integrate with existing user model
 
-<!-- rmplan-generated-end -->
+<!-- tim-generated-end -->
 
 ## Progress
 ### Current State
@@ -215,7 +215,7 @@ This plan implements user authentication using JWT tokens...
 
 **Key Concepts:**
 
-- **Delimiters**: `<!-- rmplan-generated-start/end -->` preserve AI-generated content while allowing manual edits outside
+- **Delimiters**: `<!-- tim-generated-start/end -->` preserve AI-generated content while allowing manual edits outside
 - **UUID References**: Plans can reference each other by UUID for stable cross-references
 - **Progress Tracking**: A structured `## Progress` section in the plan body, updated in place with a living summary (no timestamps)
 - **Status Flow**: `pending` → `in_progress` → `done` (or `cancelled`/`deferred`)
@@ -232,54 +232,54 @@ Generate detailed implementation plans from various sources.
 
 ```bash
 # From a GitHub issue (automatically fetches issue details)
-rmplan generate --issue 123 -- src/**/*.ts
+tim generate --issue 123 -- src/**/*.ts
 
 # From a text file describing the feature
-rmplan generate --plan tasks/feature-description.md -- src/api/**/*.ts
+tim generate --plan tasks/feature-description.md -- src/api/**/*.ts
 
 # Using your editor to write the description
-rmplan generate --plan-editor -- src/**/*.ts
+tim generate --plan-editor -- src/**/*.ts
 
 # From a Linear issue (requires issueTracker: 'linear' in config)
-rmplan generate --issue TEAM-456 -- src/**/*.ts
+tim generate --issue TEAM-456 -- src/**/*.ts
 
 # Generate for existing stub plan
-rmplan generate 123 -- src/**/*.ts
+tim generate 123 -- src/**/*.ts
 ```
 
 **Generation modes:**
 
 ```bash
 # Claude Code mode (default - best results)
-rmplan generate --issue 123 --claude -- src/**/*.ts
+tim generate --issue 123 --claude -- src/**/*.ts
 # Three-phase process:
 # 1. Planning: Claude analyzes and drafts approach
 # 2. Research: Captures findings to ## Research section
 # 3. Generation: Produces structured tasks
 
 # Simple mode (skip research for quick fixes)
-rmplan generate --issue 123 --simple -- src/**/*.ts
+tim generate --issue 123 --simple -- src/**/*.ts
 
 # Direct API mode (uses configured LLM directly)
-rmplan generate --issue 123 --direct -- src/**/*.ts
+tim generate --issue 123 --direct -- src/**/*.ts
 ```
 
 **Advanced features:**
 
 ```bash
 # Discover and create blocking subissues first
-rmplan generate 42 --claude --with-blocking-subissues
+tim generate 42 --claude --with-blocking-subissues
 # Creates prerequisite plans automatically
 # Sets up proper parent/dependency relationships
 # Example output:
 # ✓ Created 2 blocking plans: #143 Auth infrastructure, #144 Rate limiting
 
 # Generate for next ready dependency
-rmplan generate --next-ready 100 -- src/**/*.ts
+tim generate --next-ready 100 -- src/**/*.ts
 # Finds next actionable child plan of plan 100
 
 # Auto-commit the generated plan
-rmplan generate --issue 123 --commit -- src/**/*.ts
+tim generate --issue 123 --commit -- src/**/*.ts
 ```
 
 **How it works:**
@@ -317,44 +317,44 @@ Automated execution of plans with LLM integration.
 
 ```bash
 # Execute a specific plan
-rmplan agent 123
+tim agent 123
 
 # Execute using 'run' alias
-rmplan run 123
+tim run 123
 
 # Execute next ready plan (all dependencies done)
-rmplan agent --next
+tim agent --next
 
 # Execute with specific executor
-rmplan agent 123 --executor claude-code
+tim agent 123 --executor claude-code
 ```
 
 **Execution modes:**
 
 ```bash
 # Batch mode (default) - all tasks in parallel
-rmplan agent 123
+tim agent 123
 
 # Serial mode - one task at a time
-rmplan agent 123 --serial-tasks
+tim agent 123 --serial-tasks
 
 # Simple mode - skip full review cycle
-rmplan agent 123 --simple
+tim agent 123 --simple
 # Flow: implement → verify (type check, lint, test)
 # Instead of: implement → test → review
 
 # Limit execution to N steps
-rmplan agent 123 --steps 3
+tim agent 123 --steps 3
 ```
 
 **Workspace integration:**
 
 ```bash
 # Auto workspace (finds or creates)
-rmplan agent 123 --auto-workspace
+tim agent 123 --auto-workspace
 
 # Manual workspace selection
-rmplan agent 123 --workspace feature-xyz
+tim agent 123 --workspace feature-xyz
 
 # Agent command handles:
 # - Creating isolated git clone
@@ -392,10 +392,10 @@ Enabled by default, shows:
 
 ```bash
 # Disable summary
-rmplan agent 123 --no-summary
+tim agent 123 --no-summary
 
 # Write summary to file
-rmplan agent 123 --summary-file report.txt
+tim agent 123 --summary-file report.txt
 ```
 
 **Example output:**
@@ -433,58 +433,58 @@ Quickly create plan stub files for future work.
 
 ```bash
 # Create basic stub
-rmplan add "Implement OAuth authentication"
+tim add "Implement OAuth authentication"
 # Creates tasks/<id>-implement-oauth-authentication.yml
 
 # Specify output location
-rmplan add "Add logging system" --output tasks/logging.yml
+tim add "Add logging system" --output tasks/logging.yml
 
 # With priority
-rmplan add "Fix security issue" --priority high
+tim add "Fix security issue" --priority high
 
 # Simple plan (skip research phase)
-rmplan add "Quick refactor" --simple
+tim add "Quick refactor" --simple
 ```
 
 **With relationships:**
 
 ```bash
 # Set parent plan
-rmplan add "Add user roles" --parent 100
+tim add "Add user roles" --parent 100
 
 # Set dependencies
-rmplan add "Integration tests" --depends-on 101,102
+tim add "Integration tests" --depends-on 101,102
 
 # Mark as discovered from another plan
-rmplan add "Refactor auth" --discovered-from 99
+tim add "Refactor auth" --discovered-from 99
 ```
 
 **Tag plans:**
 
 ```bash
 # Add tags during creation (tags are normalized to lowercase)
-rmplan add "UI refresh" --tag frontend --tag urgent
+tim add "UI refresh" --tag frontend --tag urgent
 
 # Update tags later
-rmplan set 123 --tag backend --no-tag frontend
+tim set 123 --tag backend --no-tag frontend
 ```
 
-Configure an allowlist via `tags.allowed` in `rmplan.yml` to restrict tags to a shared vocabulary across the team.
+Configure an allowlist via `tags.allowed` in `tim.yml` to restrict tags to a shared vocabulary across the team.
 
 Filter tagged plans in listings:
 
 ```bash
-rmplan list --tag frontend --tag urgent
-rmplan list --epic 100
-rmplan ready --tag backend
-rmplan ready --epic 100
+tim list --tag frontend --tag urgent
+tim list --epic 100
+tim ready --tag backend
+tim ready --epic 100
 ```
 
 **Open in editor:**
 
 ```bash
 # Create and immediately edit
-rmplan add "Complex feature" --edit
+tim add "Complex feature" --edit
 ```
 
 **Use cases:**
@@ -496,7 +496,7 @@ rmplan add "Complex feature" --edit
 
 **Next step:**
 
-After creating stubs, use `rmplan generate <id>` to add detailed tasks.
+After creating stubs, use `tim generate <id>` to add detailed tasks.
 
 ---
 
@@ -508,30 +508,30 @@ Display plan information, status, and tasks.
 
 ```bash
 # Show specific plan
-rmplan show 123
+tim show 123
 
 # Show by file path
-rmplan show tasks/feature.yml
+tim show tasks/feature.yml
 
 # Short summary (status + task titles)
-rmplan show 123 --short
+tim show 123 --short
 ```
 
 **Plan discovery:**
 
 ```bash
 # Show next ready plan (status pending, all deps done)
-rmplan show --next
+tim show --next
 
 # Show next ready dependency of parent plan
-rmplan show --next-ready 100
+tim show --next-ready 100
 ```
 
 **Full details:**
 
 ```bash
 # Show full details
-rmplan show 123 --full
+tim show 123 --full
 ```
 
 **Example output:**
@@ -570,43 +570,43 @@ Show all plans ready to execute (dependencies satisfied).
 
 ```bash
 # List all ready plans
-rmplan ready
+tim ready
 
 # Pending only (exclude in_progress)
-rmplan ready --pending-only
+tim ready --pending-only
 
 # Filter by priority
-rmplan ready --priority high
-rmplan ready --priority urgent
+tim ready --priority high
+tim ready --priority urgent
 ```
 
 **Output formats:**
 
 ```bash
 # List format (default, colorful and detailed)
-rmplan ready
+tim ready
 
 # Table format (compact)
-rmplan ready --format table
+tim ready --format table
 
 # JSON (for scripting)
-rmplan ready --format json
+tim ready --format json
 ```
 
 **Sorting:**
 
 ```bash
 # Sort by priority (default)
-rmplan ready
+tim ready
 
 # Sort by ID
-rmplan ready --sort id
+tim ready --sort id
 
 # Sort by title
-rmplan ready --sort title
+tim ready --sort title
 
 # Reverse order
-rmplan ready --reverse
+tim ready --reverse
 ```
 
 **Readiness criteria:**
@@ -617,7 +617,7 @@ A plan is ready when:
 2. All dependencies have status `done`
 3. Priority is not `maybe`
 
-Note: Includes stub plans without tasks (ready for `rmplan generate`)
+Note: Includes stub plans without tasks (ready for `tim generate`)
 
 **Example output:**
 
@@ -646,13 +646,13 @@ Ready Plans (4)
 
 ```bash
 # See what's ready
-rmplan ready
+tim ready
 
 # Execute next ready plan
-rmplan agent --next
+tim agent --next
 
 # Or execute specific ready plan
-rmplan agent 123
+tim agent 123
 ```
 
 ---
@@ -665,29 +665,29 @@ Automatically resolve ID conflicts and fix hierarchical ordering, or swap/renumb
 
 ```bash
 # Auto-resolve conflicts and fix hierarchy
-rmplan renumber
+tim renumber
 
 # Preview changes without applying
-rmplan renumber --dry-run
+tim renumber --dry-run
 
 # Only fix ID conflicts, skip hierarchy fixes
-rmplan renumber --conflicts-only
+tim renumber --conflicts-only
 
 # Preserve specific plans during conflict resolution
-rmplan renumber --keep tasks/5-important.yml
+tim renumber --keep tasks/5-important.yml
 ```
 
 **Swap or renumber individual plans:**
 
 ```bash
 # Renumber plan 5 to ID 7 (if 7 doesn't exist)
-rmplan renumber --from 5 --to 7
+tim renumber --from 5 --to 7
 
 # Swap two plans (5 becomes 10, 10 becomes 5)
-rmplan renumber --from 5 --to 10
+tim renumber --from 5 --to 10
 
 # Preview swap operation
-rmplan renumber --from 5 --to 10 --dry-run
+tim renumber --from 5 --to 10 --dry-run
 ```
 
 **How it works:**
@@ -719,11 +719,11 @@ references:
 
 ## MCP Server
 
-The MCP (Model Context Protocol) server exposes rmplan functionality for AI agents like Claude Code, enabling interactive research, planning, and task management.
+The MCP (Model Context Protocol) server exposes tim functionality for AI agents like Claude Code, enabling interactive research, planning, and task management.
 
 ### Prompts
 
-The server provides structured prompts that guide AI agents through rmplan workflows:
+The server provides structured prompts that guide AI agents through tim workflows:
 
 **1. `generate-plan`** - Full planning workflow with research
 
@@ -892,25 +892,25 @@ Returns:
 **stdio transport (default):**
 
 ```bash
-rmplan mcp-server --mode generate
+tim mcp-server --mode generate
 ```
 
 **HTTP transport:**
 
 ```bash
-rmplan mcp-server --mode generate --transport http --port 3000
+tim mcp-server --mode generate --transport http --port 3000
 ```
 
 **With custom config:**
 
 ```bash
-rmplan mcp-server --mode generate --config path/to/rmplan.yml
+tim mcp-server --mode generate --config path/to/tim.yml
 ```
 
 **Prompts/resources only (no tools):**
 
 ```bash
-rmplan mcp-server --no-tools
+tim mcp-server --no-tools
 ```
 
 **MCP Client Configuration:**
@@ -920,8 +920,8 @@ Add to your MCP client settings (e.g., Claude Code):
 ```json
 {
   "mcpServers": {
-    "rmplan": {
-      "command": "rmplan",
+    "tim": {
+      "command": "tim",
       "args": ["mcp-server", "--mode", "generate"]
     }
   }
@@ -930,20 +930,20 @@ Add to your MCP client settings (e.g., Claude Code):
 
 **Example Workflow:**
 
-1. Start server: `rmplan mcp-server --mode generate`
+1. Start server: `tim mcp-server --mode generate`
 2. In Claude Code or other MCP client:
    - "Use the generate-plan prompt for plan 123"
    - Claude researches codebase
    - "Can you add a task for input validation?"
    - Use `manage-plan-task` tool to add
    - Review with `get-plan`
-3. Execute: `rmplan agent 123`
+3. Execute: `tim agent 123`
 
-If MCP tools are unavailable, you can call the equivalent CLI commands via `rmplan tools <tool-name>` and pipe JSON input on stdin (use `--json` for structured output).
+If MCP tools are unavailable, you can call the equivalent CLI commands via `tim tools <tool-name>` and pipe JSON input on stdin (use `--json` for structured output).
 
 **Claude Code Plugin:**
 
-This repository includes a Claude Code plugin that automatically configures the rmplan MCP server and provides a usage skill. To use it, add this repository to your Claude Code plugins:
+This repository includes a Claude Code plugin that automatically configures the tim MCP server and provides a usage skill. To use it, add this repository to your Claude Code plugins:
 
 ```bash
 # Run Claude Code with the plugin
@@ -958,12 +958,12 @@ claude --plugin-dir /path/to/llmutils
 The plugin provides:
 
 - Automatic MCP server configuration (no manual `.mcp.json` needed)
-- A skill that loads when you mention "rmplan" or "generate plan"
+- A skill that loads when you mention "tim" or "generate plan"
 - Documentation for MCP tools and CLI commands
 
 **Sandbox mode note:**
 
-If using Claude Code with sandbox mode enabled, you should add `rmplan:*`, or at least `rmplan review:*` to the sandbox `excludedCommands` list in your settings to allow the review command to run without permission prompts.
+If using Claude Code with sandbox mode enabled, you should add `tim:*`, or at least `tim review:*` to the sandbox `excludedCommands` list in your settings to allow the review command to run without permission prompts.
 
 ---
 
@@ -1007,10 +1007,10 @@ workspaces/
 
 ### Workspace Configuration
 
-Configure in `.rmfilter/config/rmplan.yml`:
+Configure in `.rmfilter/config/tim.yml`:
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-config-schema.json
 
 workspaceCreation:
   # How to create workspace copies
@@ -1058,22 +1058,22 @@ workspaceCreation:
 
 ```bash
 # Create with plan association
-rmplan workspace add 123
+tim workspace add 123
 
 # Create with custom ID
-rmplan workspace add 123 --id feature-oauth
+tim workspace add 123 --id feature-oauth
 
 # Create without plan (manual workspace)
-rmplan workspace add --id scratch-work
+tim workspace add --id scratch-work
 
 # Reuse an existing clean, unlocked workspace (fails if none available)
-rmplan workspace add 123 --reuse
+tim workspace add 123 --reuse
 
 # Try reuse first, otherwise create a new workspace
-rmplan workspace add 123 --try-reuse
+tim workspace add 123 --try-reuse
 
 # Create (or reuse) using a specific base branch
-rmplan workspace add 123 --from-branch develop
+tim workspace add 123 --from-branch develop
 ```
 
 **Reuse flags:**
@@ -1087,21 +1087,21 @@ rmplan workspace add 123 --from-branch develop
 
 ```bash
 # All workspaces for current repository (default table format)
-rmplan workspace list
+tim workspace list
 
 # Specific repository
-rmplan workspace list --repo https://github.com/user/repo.git
+tim workspace list --repo https://github.com/user/repo.git
 
 # List all workspaces across all repositories
-rmplan workspace list --all
+tim workspace list --all
 
 # Different output formats
-rmplan workspace list --format table  # Default, human-readable
-rmplan workspace list --format tsv    # Tab-separated for scripts
-rmplan workspace list --format json   # JSON for programmatic use
+tim workspace list --format table  # Default, human-readable
+tim workspace list --format tsv    # Tab-separated for scripts
+tim workspace list --format json   # JSON for programmatic use
 
 # Machine-consumable TSV without header
-rmplan workspace list --format tsv --no-header
+tim workspace list --format tsv --no-header
 ```
 
 Example table output:
@@ -1119,13 +1119,13 @@ Example table output:
 
 ```bash
 # Set name and description
-rmplan workspace update --name "My Workspace" --description "Working on feature X"
+tim workspace update --name "My Workspace" --description "Working on feature X"
 
 # Update by workspace path or task ID
-rmplan workspace update task-123 --description "Updated description"
+tim workspace update task-123 --description "Updated description"
 
 # Seed description from a plan (extracts issue number and title)
-rmplan workspace update --from-plan 456
+tim workspace update --from-plan 456
 # Sets description to "#456 Plan Title"
 ```
 
@@ -1135,13 +1135,13 @@ Set up a shell function for fast workspace navigation with `fzf`:
 
 ```bash
 # Generate shell integration function (add to your .zshrc or .bashrc)
-rmplan shell-integration --shell zsh >> ~/.zshrc
+tim shell-integration --shell zsh >> ~/.zshrc
 # or for bash:
-rmplan shell-integration --shell bash >> ~/.bashrc
+tim shell-integration --shell bash >> ~/.bashrc
 
-# After sourcing, use the rmplan_ws function:
-rmplan_ws          # Interactive selection with fzf
-rmplan_ws auth     # Pre-filter workspaces matching "auth"
+# After sourcing, use the tim_ws function:
+tim_ws          # Interactive selection with fzf
+tim_ws auth     # Pre-filter workspaces matching "auth"
 ```
 
 The shell function:
@@ -1155,10 +1155,10 @@ The shell function:
 
 ```bash
 # Auto workspace (finds unlocked or creates new)
-rmplan agent 123 --auto-workspace
+tim agent 123 --auto-workspace
 
 # Manual workspace
-rmplan agent 123 --workspace task-123
+tim agent 123 --workspace task-123
 
 # Auto workspace handles:
 # 1. Search for existing workspaces
@@ -1173,7 +1173,7 @@ rmplan agent 123 --workspace task-123
 
 **Workspace tracking:**
 
-Workspaces are tracked in `~/.config/rmplan/workspaces.json`:
+Workspaces are tracked in `~/.config/tim/workspaces.json`:
 
 ```json
 {
@@ -1210,35 +1210,35 @@ Locks prevent concurrent execution in the same workspace:
 
 ### Initializing Configuration
 
-The easiest way to set up rmplan is with the `init` command:
+The easiest way to set up tim is with the `init` command:
 
 ```bash
 # Interactive setup (recommended for first-time users)
-rmplan init
+tim init
 
 # Use defaults without prompting
-rmplan init --yes
+tim init --yes
 
 # Create minimal configuration
-rmplan init --minimal
+tim init --minimal
 
 # Overwrite existing configuration
-rmplan init --force
+tim init --force
 ```
 
 The `init` command will:
 
-- Create `.rmfilter/config/rmplan.yml` with sample configuration
+- Create `.rmfilter/config/tim.yml` with sample configuration
 - Set up the tasks directory (default: `tasks/`)
 - Guide you through choosing an executor and other preferences
 - Configure common settings like code formatting commands
 
 ### Manual Configuration
 
-You can also manually configure rmplan via `.rmfilter/config/rmplan.yml`:
+You can also manually configure tim via `.rmfilter/config/tim.yml`:
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-config-schema.json
 
 # Paths
 paths:
@@ -1290,12 +1290,12 @@ issueTracker: github # or 'linear'
 
 ### Configuration Files and Precedence
 
-rmplan merges configuration from multiple sources. Later entries override earlier ones:
+tim merges configuration from multiple sources. Later entries override earlier ones:
 
 1. Default configuration (built-in)
-2. Global config: `~/.config/rmplan/config.yml`
-3. Repository config: `.rmfilter/config/rmplan.yml` (or the path provided with `--config`)
-4. Local override: `rmplan.local.yml` (in the same directory as the main config)
+2. Global config: `~/.config/tim/config.yml`
+3. Repository config: `.rmfilter/config/tim.yml` (or the path provided with `--config`)
+4. Local override: `tim.local.yml` (in the same directory as the main config)
 
 Use the global config for machine-wide defaults, and the local override for per-repo tweaks that
 should not be committed. The global config uses the same schema and fields as the repository
@@ -1324,7 +1324,7 @@ Fields:
 
 Notification payload (JSON on stdin):
 
-- `source`: Always `"rmplan"`.
+- `source`: Always `"tim"`.
 - `command`: `"agent"` or `"review"`.
 - `event`: `"agent_done"`, `"review_done"`, or `"review_input"`.
 - `status`: `"success"`, `"error"`, or `"input"` to indicate outcome or prompt state.
@@ -1336,8 +1336,8 @@ Notification payload (JSON on stdin):
 - `message`: Human-readable message describing the event.
 - `errorMessage`: Error detail for `"error"` statuses (when available).
 
-To suppress notifications for a single run, set `RMPLAN_NOTIFY_SUPPRESS=1` in the environment.
-`rmplan review --dry-run` prints the prompt and skips notifications, while `rmplan agent --dry-run`
+To suppress notifications for a single run, set `TIM_NOTIFY_SUPPRESS=1` in the environment.
+`tim review --dry-run` prints the prompt and skips notifications, while `tim agent --dry-run`
 still sends the completion notification.
 
 ### Workspace Auto-Creation
@@ -1372,7 +1372,7 @@ Executors handle LLM interaction and code application:
 **Configure executor:**
 
 ```yaml
-# In rmplan.yml
+# In tim.yml
 defaultExecutor: claude-code
 
 executors:
@@ -1394,7 +1394,7 @@ executors:
 **Override via CLI:**
 
 ```bash
-rmplan agent 123 --executor claude-code --model anthropic/claude-opus
+tim agent 123 --executor claude-code --model anthropic/claude-opus
 ```
 
 ### Post-Apply Commands
@@ -1441,7 +1441,7 @@ updateDocs:
 
 **Modes:**
 
-- **`never`** (default): Documentation updates are manual only via `rmplan update-docs ID`
+- **`never`** (default): Documentation updates are manual only via `tim update-docs ID`
 - **`after-iteration`**: Automatically update docs after each agent loop iteration (before commit)
 - **`after-completion`**: Automatically update docs only when the entire plan is complete
 
@@ -1451,15 +1451,15 @@ The `update-docs` command reads the plan's metadata and completed tasks, then as
 
 ```bash
 # Update docs for a completed plan
-rmplan update-docs 123
+tim update-docs 123
 
 # Use specific executor/model
-rmplan update-docs 123 --executor claude-code --model anthropic/claude-opus
+tim update-docs 123 --executor claude-code --model anthropic/claude-opus
 ```
 
 ### Documentation Search Paths
 
-Configure where rmplan searches for `.md` and `.mdc` documentation files:
+Configure where tim searches for `.md` and `.mdc` documentation files:
 
 ```yaml
 paths:
@@ -1519,28 +1519,28 @@ Track plan ownership across multiple repository checkouts.
 
 **Configuration:**
 
-Assignments stored in: `~/.config/rmplan/shared/<repo-id>/assignments.json`
+Assignments stored in: `~/.config/tim/shared/<repo-id>/assignments.json`
 
 **Commands:**
 
 ```bash
 # Claim a plan for current workspace
-rmplan claim 123
+tim claim 123
 
 # Release plan (free it for others)
-rmplan release 123
+tim release 123
 
 # Release and reset status to pending
-rmplan release 123 --reset-status
+tim release 123 --reset-status
 
 # List assignments
-rmplan assignments list
+tim assignments list
 
 # Show conflicts (same plan claimed multiple times)
-rmplan assignments show-conflicts
+tim assignments show-conflicts
 
 # Clean stale assignments (deleted workspaces, old claims)
-rmplan assignments clean-stale
+tim assignments clean-stale
 ```
 
 **Auto-claiming:**
@@ -1551,19 +1551,19 @@ The `agent`, `generate`, and `run` commands automatically claim plans for the cu
 
 ```bash
 # Current workspace + unassigned (default)
-rmplan ready
+tim ready
 
 # All assignments
-rmplan ready --all
+tim ready --all
 
 # Unassigned only
-rmplan ready --unassigned
+tim ready --unassigned
 
 # Specific user
-rmplan ready --user alice
+tim ready --user alice
 
 # Filter by epic
-rmplan ready --epic 100
+tim ready --epic 100
 ```
 
 **Use cases:**
@@ -1582,16 +1582,16 @@ Ensure plan file integrity and relationship consistency.
 
 ```bash
 # Validate all plans in tasks directory
-rmplan validate
+tim validate
 
 # Validate specific plans
-rmplan validate 123 124
+tim validate 123 124
 
 # Report only (no auto-fix)
-rmplan validate --no-fix
+tim validate --no-fix
 
 # Verbose output
-rmplan validate --verbose
+tim validate --verbose
 ```
 
 **What it checks:**
@@ -1615,8 +1615,8 @@ Fixing: Adding #123 to plan #100 dependencies
 
 Validation runs automatically during:
 
-- `rmplan add` with `--parent`
-- `rmplan set` with relationship changes
+- `tim add` with `--parent`
+- `tim set` with relationship changes
 - Plan file writes
 
 ### Progress Tracking
@@ -1663,9 +1663,9 @@ Track milestones, deviations, and discoveries in the plan file's `## Progress` s
 **View progress in CLI:**
 
 ```bash
-rmplan show 123
-rmplan show 123 --short
-rmplan show 123 --full
+tim show 123
+tim show 123 --short
+tim show 123 --full
 ```
 
 ### Plan Compaction
@@ -1676,16 +1676,16 @@ Reduce completed plan footprint while preserving key decisions.
 
 ```bash
 # Compact a completed plan
-rmplan compact 144
+tim compact 144
 
 # Preview without writing
-rmplan compact 144 --dry-run
+tim compact 144 --dry-run
 
 # Skip confirmation
-rmplan compact 144 --yes
+tim compact 144 --yes
 
 # Custom executor and age threshold
-rmplan compact 144 --executor direct-call --age 14
+tim compact 144 --executor direct-call --age 14
 ```
 
 **What it does:**
@@ -1832,127 +1832,127 @@ rmfind src/**/*.ts --grep getUserData --whole-word
 
 ```bash
 # Create stub
-rmplan add "Feature name" [--output FILE] [--parent ID] [--priority LEVEL] [--tag TAG...]
+tim add "Feature name" [--output FILE] [--parent ID] [--priority LEVEL] [--tag TAG...]
 
 # Generate detailed tasks
-rmplan generate [--issue NUM | --plan FILE | --plan-editor] -- [RMFILTER_ARGS]
-rmplan generate ID -- [RMFILTER_ARGS]
+tim generate [--issue NUM | --plan FILE | --plan-editor] -- [RMFILTER_ARGS]
+tim generate ID -- [RMFILTER_ARGS]
 
 # Execute plan
-rmplan agent ID [--executor NAME] [--workspace ID] [--steps N]
-rmplan run ID  # alias for agent
+tim agent ID [--executor NAME] [--workspace ID] [--steps N]
+tim run ID  # alias for agent
 
 # Track progress
-rmplan show ID [--short | --full]
+tim show ID [--short | --full]
 
 # Mark complete
-rmplan done ID [--commit]
+tim done ID [--commit]
 
 # Update documentation
-rmplan update-docs ID [--executor NAME] [--model MODEL]
+tim update-docs ID [--executor NAME] [--model MODEL]
 
 # Compact for archival
-rmplan compact ID [--dry-run] [--yes]
+tim compact ID [--dry-run] [--yes]
 ```
 
 ### Plan Discovery
 
 ```bash
 # List all plans
-rmplan list [--all] [--status STATUS] [--sort FIELD] [--tag TAG...] [--epic ID]
+tim list [--all] [--status STATUS] [--sort FIELD] [--tag TAG...] [--epic ID]
 
 # List ready plans
-rmplan ready [--pending-only] [--priority LEVEL] [--format FORMAT] [--tag TAG...] [--epic ID]
+tim ready [--pending-only] [--priority LEVEL] [--format FORMAT] [--tag TAG...] [--epic ID]
 
 # Show next ready
-rmplan show --next
-rmplan show --next-ready PARENT_ID
+tim show --next
+tim show --next-ready PARENT_ID
 
 # Execute next ready
-rmplan agent --next
-rmplan agent --next-ready PARENT_ID
+tim agent --next
+tim agent --next-ready PARENT_ID
 ```
 
-Use `--tag` (repeatable) with `rmplan list` or `rmplan ready` to filter for plans that include any of the specified tags. Tag filters are case-insensitive and ignore plans without tags.
-Use `--epic ID` with `rmplan list` or `rmplan ready` to show plans that live under a specific epic (or any parent plan in that hierarchy).
+Use `--tag` (repeatable) with `tim list` or `tim ready` to filter for plans that include any of the specified tags. Tag filters are case-insensitive and ignore plans without tags.
+Use `--epic ID` with `tim list` or `tim ready` to show plans that live under a specific epic (or any parent plan in that hierarchy).
 
 ### Plan Management
 
 ```bash
 # Set metadata
-rmplan set ID --parent PARENT --priority LEVEL --status STATUS [--tag TAG...] [--no-tag TAG...]
+tim set ID --parent PARENT --priority LEVEL --status STATUS [--tag TAG...] [--no-tag TAG...]
 
 # Add/remove tasks
-rmplan add-task ID --title "Title" --description "Desc" [--files FILE]
-rmplan remove-task ID --title "Title"
+tim add-task ID --title "Title" --description "Desc" [--files FILE]
+tim remove-task ID --title "Title"
 
 # Import from issues
-rmplan import [--issue NUM] [--output FILE]
-rmplan import  # interactive multi-select
+tim import [--issue NUM] [--output FILE]
+tim import  # interactive multi-select
 
 # Validate
-rmplan validate [PLANS...] [--no-fix] [--verbose]
+tim validate [PLANS...] [--no-fix] [--verbose]
 
 # Renumber plans
-rmplan renumber [--dry-run] [--conflicts-only] [--keep FILES...]
-rmplan renumber --from ID --to ID [--dry-run]  # Swap or renumber single plan
+tim renumber [--dry-run] [--conflicts-only] [--keep FILES...]
+tim renumber --from ID --to ID [--dry-run]  # Swap or renumber single plan
 
 # Split into phases
-rmplan split PLAN --output-dir DIR
+tim split PLAN --output-dir DIR
 ```
 
 ### Workspace Management
 
 ```bash
 # Create workspace
-rmplan workspace add [ID] [--id WORKSPACE_ID]
+tim workspace add [ID] [--id WORKSPACE_ID]
 
 # List workspaces
-rmplan workspace list [--repo URL] [--format table|tsv|json] [--all] [--no-header]
+tim workspace list [--repo URL] [--format table|tsv|json] [--all] [--no-header]
 
 # Update workspace metadata
-rmplan workspace update [WORKSPACE] --name NAME --description DESC
-rmplan workspace update --from-plan PLAN_ID
+tim workspace update [WORKSPACE] --name NAME --description DESC
+tim workspace update --from-plan PLAN_ID
 
 # Shell integration (interactive workspace switching with fzf)
-rmplan shell-integration --shell bash|zsh
+tim shell-integration --shell bash|zsh
 
 # Assignments
-rmplan claim ID
-rmplan release ID [--reset-status]
-rmplan assignments list
-rmplan assignments clean-stale
+tim claim ID
+tim release ID [--reset-status]
+tim assignments list
+tim assignments clean-stale
 ```
 
 ### MCP Server
 
 ```bash
 # Start server
-rmplan mcp-server --mode generate [--transport TRANSPORT] [--port PORT]
+tim mcp-server --mode generate [--transport TRANSPORT] [--port PORT]
 
 # Print MCP prompts from the CLI
-rmplan prompts
-rmplan prompts generate-plan 123
-rmplan prompts generate-plan-simple --plan 123
-rmplan prompts plan-questions 123
-rmplan prompts load-plan 123
-rmplan prompts compact-plan 123
+tim prompts
+tim prompts generate-plan 123
+tim prompts generate-plan-simple --plan 123
+tim prompts plan-questions 123
+tim prompts load-plan 123
+tim prompts compact-plan 123
 ```
 
 ### Utilities
 
 ```bash
 # Cleanup comments
-rmplan cleanup [FILES...] [--diff-from BRANCH]
+tim cleanup [FILES...] [--diff-from BRANCH]
 
 # Review plan changes
-rmplan review [PLAN] [--executor NAME] [--serial-both] [--task-index N...]
+tim review [PLAN] [--executor NAME] [--serial-both] [--task-index N...]
 
 # Answer PR comments
-rmplan answer-pr [PR] [--mode MODE] [--commit] [--comment]
+tim answer-pr [PR] [--mode MODE] [--commit] [--comment]
 
 # Extract plan from text
-rmplan extract [--input FILE] [--output FILE]
+tim extract [--input FILE] [--output FILE]
 ```
 
 ---

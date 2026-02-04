@@ -1,7 +1,7 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 goal: Implement a new rmpr command-line tool (as a subcommand within the
-  existing rmplan structure) to help developers address Pull Request review
+  existing tim structure) to help developers address Pull Request review
   comments using an LLM. The tool will fetch PR review comments, allow the user
   to select which ones to address, prepare a context for an LLM based on one of
   two modes ("AI Comments" or "Separate Context"), and then invoke the LLM to
@@ -14,7 +14,7 @@ tasks:
   - title: 1. Basic CLI Structure and PR Identifier Parsing
     done: true
     description: >
-      Set up the `rmpr` subcommand within `src/rmplan/rmplan.ts`. Create the
+      Set up the `rmpr` subcommand within `src/tim/tim.ts`. Create the
       main file for `rmpr` logic (`src/rmpr/main.ts`) and implement parsing for
       the PR identifier (URL or `owner/repo#number` or
       `owner/repo/pull/number`).
@@ -89,4 +89,4 @@ The `rmpr` command will integrate with the GitHub API to retrieve PR information
 8.  LLM's suggested changes are applied using existing mechanisms (`applyLlmEdits`).
 9.  If in "AI Comments" mode, AI comment markers are cleaned from the files.
 
-The implementation will involve creating new modules under `src/rmpr/` and modifying `src/common/github/pull_requests.ts` and `src/rmplan/rmplan.ts`.
+The implementation will involve creating new modules under `src/rmpr/` and modifying `src/common/github/pull_requests.ts` and `src/tim/tim.ts`.

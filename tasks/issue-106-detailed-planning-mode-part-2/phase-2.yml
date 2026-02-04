@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Implement `split` Command for Plan Decomposition
 goal: To provide users with a `split` command that can take a large, detailed
   plan file and, using an LLM, break it down into multiple, smaller,
@@ -16,16 +16,16 @@ promptsGeneratedAt: 2025-06-01T02:43:49.796Z
 createdAt: 2025-05-31T20:32:33.555Z
 updatedAt: 2025-10-27T08:39:04.326Z
 project:
-  title: Enhance rmplan with `add` and `split` commands for improved plan creation
+  title: Enhance tim with `add` and `split` commands for improved plan creation
     and organization.
   goal: The overall goal of this project is to introduce two new commands, `add`
-    and `split`, to the `rmplan` CLI tool. The `add` command will facilitate the
+    and `split`, to the `tim` CLI tool. The `add` command will facilitate the
     quick creation of new, empty plan files. The `generate` command will be
     enhanced to populate these empty plans. The `split` command will enable
     users to break down large, existing plans into multiple, smaller phase-based
     plan files using an LLM.
   details: This project aims to improve the workflow of creating and managing
-    complex project plans with `rmplan`. The `add` command will allow users to
+    complex project plans with `tim`. The `add` command will allow users to
     initialize a plan with a title and optional metadata like dependencies and
     priority. The `generate` command will then be able to take this stub plan
     and use an LLM to fill in the detailed tasks and steps, updating the
@@ -37,11 +37,11 @@ project:
     in how they create and structure their plans, catering to both starting new
     plans from scratch and reorganizing existing ones.
 tasks:
-  - title: Define `split` command in `rmplan.ts` and implement input plan loading.
+  - title: Define `split` command in `tim.ts` and implement input plan loading.
     done: true
     description: >
       This task involves adding the new `split` command to the
-      `src/rmplan/rmplan.ts` CLI.
+      `src/tim/tim.ts` CLI.
 
       The command will accept a file path to an existing, fully planned-out YAML
       file (i.e., a file compliant with `PlanSchema` and containing tasks and
@@ -56,7 +56,7 @@ tasks:
     done: true
     description: >
       This task requires creating a new, specialized prompt, likely in
-      `src/rmplan/prompt.ts`. The prompt will instruct an LLM to process the
+      `src/tim/prompt.ts`. The prompt will instruct an LLM to process the
       `title`, `goal`, `details`, and the entire `tasks` array (including
       sub-tasks like `description`, `files`, and `steps`) from the input plan.
       The LLM's objective will be to:
@@ -86,7 +86,7 @@ tasks:
       logic. It will use the prompt designed in the previous task, sending the
       content of the input plan to the LLM. The command will then need to parse
       the LLM's response. This parsing logic will likely leverage or adapt
-      existing functions from `src/rmplan/process_markdown.ts`, such as
+      existing functions from `src/tim/process_markdown.ts`, such as
       `convertMarkdownToYaml` and `findYamlStart`, to transform the LLM's
       (potentially Markdown-formatted) output into a structured JavaScript
       object representing the multi-phase plan.
@@ -95,7 +95,7 @@ tasks:
     done: true
     description: >
       This task focuses on utilizing the existing `saveMultiPhaseYaml` function
-      found in `src/rmplan/process_markdown.ts`. The structured multi-phase plan
+      found in `src/tim/process_markdown.ts`. The structured multi-phase plan
       object obtained from the LLM (in Task 3) will be passed to this function.
       `saveMultiPhaseYaml` will then be responsible for creating individual YAML
       files for each phase. These files will be stored in a new subdirectory,
@@ -122,15 +122,15 @@ tasks:
       including task distribution, phase metadata, and inferred dependencies.
 changedFiles:
   - CLAUDE.md
-  - src/rmplan/actions.ts
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/planSchema.ts
-  - src/rmplan/process_markdown.ts
-  - src/rmplan/prompt.ts
-  - src/rmplan/rmplan.test.ts
-  - src/rmplan/rmplan.ts
+  - src/tim/actions.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/planSchema.ts
+  - src/tim/process_markdown.ts
+  - src/tim/prompt.ts
+  - src/tim/tim.test.ts
+  - src/tim/tim.ts
 rmfilter:
-  - src/rmplan
+  - src/tim
 ---
 
 This phase introduces the `split` command. This command is designed for situations where a single plan file has become too large or complex and needs to be divided into more manageable phases. The core of this command will involve prompting an LLM to reorganize the existing tasks into a multi-phase structure and then saving these phases as individual plan files.

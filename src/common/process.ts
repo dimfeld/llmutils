@@ -46,16 +46,16 @@ export function setDebug(value: boolean | undefined) {
 }
 
 /** The type of executor that may have spawned this process */
-export type RmplanExecutorType = 'claude' | 'codex';
+export type TimExecutorType = 'claude' | 'codex';
 
 /**
- * Detects if the current process was spawned by an rmplan executor.
- * This checks for the RMPLAN_EXECUTOR environment variable set by the parent process.
+ * Detects if the current process was spawned by an tim executor.
+ * This checks for the TIM_EXECUTOR environment variable set by the parent process.
  *
  * @returns The executor type ('claude' or 'codex') if running under an executor, or null otherwise
  */
-export function getParentExecutor(): RmplanExecutorType | null {
-  const executor = process.env.RMPLAN_EXECUTOR;
+export function getParentExecutor(): TimExecutorType | null {
+  const executor = process.env.TIM_EXECUTOR;
   if (executor === 'claude' || executor === 'codex') {
     return executor;
   }
@@ -63,7 +63,7 @@ export function getParentExecutor(): RmplanExecutorType | null {
 }
 
 /**
- * Checks if the current process is running under any rmplan executor.
+ * Checks if the current process is running under any tim executor.
  *
  * @returns true if running under an executor, false otherwise
  */

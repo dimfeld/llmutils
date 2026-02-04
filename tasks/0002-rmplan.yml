@@ -1,6 +1,6 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-goal: Create a new command-line utility `rmplan` for generating and executing
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
+goal: Create a new command-line utility `tim` for generating and executing
   task plans using an LLM.
 id: 20
 uuid: 68f73fc0-7cec-4b96-859c-562e6672adba
@@ -9,7 +9,7 @@ updatedAt: 2025-10-27T08:39:04.235Z
 tasks:
   - title: Setup Basic CLI Structure and Update Schema
     done: true
-    description: Initialize the `rmplan` command structure using `commander`, define
+    description: Initialize the `tim` command structure using `commander`, define
       subcommands, add dependencies, and update the `planSchema` with the `done`
       field.
   - title: Implement `generate` Subcommand
@@ -36,7 +36,7 @@ tasks:
       generation and call to `rmfilter`.
 ---
 
-The `rmplan` tool will integrate with the existing `rmfilter` utility. It provides subcommands to:
+The `tim` tool will integrate with the existing `rmfilter` utility. It provides subcommands to:
 1.  `generate`: Create an initial planning prompt and context for a task description using `rmfilter`.
 2.  `extract`: Parse a structured plan (YAML) from LLM output.
 3.  `done`: Mark steps or entire tasks in a plan YAML file as completed.

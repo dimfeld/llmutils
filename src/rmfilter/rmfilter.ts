@@ -19,7 +19,7 @@
  * - Common clipboard utilities in src/common/clipboard.ts for output handling
  * - Dependency graph analysis in src/dependency_graph/ for import resolution
  * - Editor-specific prompt generation in src/editor/ for different LLM formats
- * - Integration with rmplan executors for automated execution workflows
+ * - Integration with tim executors for automated execution workflows
  *
  * @example
  * ```bash
@@ -74,11 +74,11 @@ import {
   extractFileReferencesFromInstructions,
   getInstructionsFromEditor,
 } from './instructions.ts';
-import { runPlanContextWithExecutor } from '../rmplan/agent_runner.js';
-import { DEFAULT_EXECUTOR } from '../rmplan/constants.ts';
-import type { RmplanConfig } from '../rmplan/configSchema.ts';
-import type { ExecutorCommonOptions } from '../rmplan/executors/types';
-import { loadEffectiveConfig } from '../rmplan/configLoader.ts';
+import { runPlanContextWithExecutor } from '../tim/agent_runner.js';
+import { DEFAULT_EXECUTOR } from '../tim/constants.ts';
+import type { TimConfig } from '../tim/configSchema.ts';
+import type { ExecutorCommonOptions } from '../tim/executors/types';
+import { loadEffectiveConfig } from '../tim/configLoader.ts';
 
 async function handleInitialCliCommands(globalValues: GlobalValues) {
   // Handle creation of new YAML config
@@ -707,13 +707,13 @@ export async function generateRmfilterOutput(
   const editFormat =
     globalValues['edit-format'] || modelSettings.defaultEditFormat || 'udiff-simple';
 
-  // Load rmplan config to get docs paths
-  let rmplanConfig: RmplanConfig | null = null;
+  // Load tim config to get docs paths
+  let timConfig: TimConfig | null = null;
   try {
-    rmplanConfig = await loadEffectiveConfig();
+    timConfig = await loadEffectiveConfig();
   } catch (err) {
-    // If rmplan config loading fails, just continue without it
-    debugLog(`Failed to load rmplan config: ${err as Error}`);
+    // If tim config loading fails, just continue without it
+    debugLog(`Failed to load tim config: ${err as Error}`);
   }
 
   // Fetch additional docs, diff tag, and examples tag
@@ -721,7 +721,7 @@ export async function generateRmfilterOutput(
     ...globalValues,
     // Combine instructions from config and potentially editor
     instructions: (globalValues.instructions || []).concat(editorInstructions),
-    docsPaths: rmplanConfig?.paths?.docs,
+    docsPaths: timConfig?.paths?.docs,
   };
 
   // Pass paths relative to gitRoot to getAdditionalDocs, but baseDir context is still needed
@@ -856,7 +856,7 @@ function reconstructCliArgs(globalValues: GlobalValues, commandsParsed: CommandP
 
 /**
  * Programmatic interface for running rmfilter with string arguments. This function
- * is used by other tools (like rmplan and rmpr) that need to invoke rmfilter
+ * is used by other tools (like tim and rmpr) that need to invoke rmfilter
  * functionality without going through the CLI interface.
  *
  * This function parses the provided arguments, builds the configuration, and
@@ -1003,8 +1003,8 @@ export async function fullRmfilterRun(options?: {
       model: globalValues.model,
     };
 
-    // Create a minimal RmplanConfig
-    const rmplanConfig: RmplanConfig = {
+    // Create a minimal TimConfig
+    const timConfig: TimConfig = {
       issueTracker: 'github',
       models: globalValues.model ? { execution: globalValues.model } : undefined,
       defaultExecutor: DEFAULT_EXECUTOR,
@@ -1015,7 +1015,7 @@ export async function fullRmfilterRun(options?: {
         globalValues.executor,
         finalOutput,
         executorCommonOptions,
-        rmplanConfig
+        timConfig
       );
     } catch (err) {
       error(`Failed to execute with executor ${globalValues.executor}: ${(err as Error).message}`);

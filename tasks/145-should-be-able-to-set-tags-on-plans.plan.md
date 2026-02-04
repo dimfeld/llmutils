@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Should be able to set tags on plans
 goal: ""
 id: 145
@@ -15,19 +15,19 @@ tasks:
   - title: Add tags field to plan schemas
     done: true
     description: "Add `tags: z.array(z.string()).default([]).optional()` to
-      PlanSchema in src/rmplan/planSchema.ts and add corresponding field to
-      schema/rmplan-plan-schema.json with type array of strings. This
+      PlanSchema in src/tim/planSchema.ts and add corresponding field to
+      schema/tim-plan-schema.json with type array of strings. This
       establishes the foundation for tag support across the codebase."
   - title: Add tag normalization utility function
     done: true
     description: "Create a `normalizeTags(tags: string[]): string[]` utility
       function that converts tags to lowercase, removes empty strings, removes
-      duplicates, and sorts them. Place in src/rmplan/planSchema.ts or a shared
+      duplicates, and sorts them. Place in src/tim/planSchema.ts or a shared
       utility file. This ensures consistent tag handling across all entry
       points."
   - title: Update planPropertiesUpdater for tag operations
     done: true
-    description: "In src/rmplan/planPropertiesUpdater.ts, add handling for `tag` and
+    description: "In src/tim/planPropertiesUpdater.ts, add handling for `tag` and
       `noTag` options. For additions: validate tags using validateTags,
       deduplicate with existing tags using Set, and sort. For removals: filter
       out specified tags and track if modifications were made. Pass config
@@ -35,156 +35,156 @@ tasks:
       fields."
   - title: Add tag options to set command
     done: true
-    description: "In src/rmplan/commands/set.ts, add `tag?: string[]` and `noTag?:
+    description: "In src/tim/commands/set.ts, add `tag?: string[]` and `noTag?:
       string[]` to SetOptions interface. Add corresponding CLI flags `--tag`
       (repeatable) and `--no-tag` (repeatable). Load config and pass to
       updatePlanProperties for validation. Handle validation errors gracefully
       with helpful error messages."
   - title: Add tag option to add command
     done: true
-    description: "In src/rmplan/commands/add.ts, add `tag?: string[]` to AddOptions
+    description: "In src/tim/commands/add.ts, add `tag?: string[]` to AddOptions
       interface and add CLI flag `--tag` (repeatable). When creating new plans,
       validate and normalize tags using validateTags with loaded config. Set
       initial tags in the plan object before writing. Handle validation errors
       with clear messages."
   - title: Add tag filtering to list command
     done: true
-    description: In src/rmplan/commands/list.ts, add `--tag` flag (repeatable) to
+    description: In src/tim/commands/list.ts, add `--tag` flag (repeatable) to
       filter plans by tags using OR logic. After loading plans, filter to
       include only plans where plan.tags contains at least one of the specified
       tags. Normalize filter tags to lowercase for comparison. No validation
       needed for filtering (allow filtering by any tag).
   - title: Add tag filtering to ready command
     done: true
-    description: "In src/rmplan/commands/ready.ts, add `--tag` flag (repeatable) to
+    description: "In src/tim/commands/ready.ts, add `--tag` flag (repeatable) to
       ReadyOptions. Pass tags filter to getReadyPlans or apply filtering after
       getting ready plans. Use OR logic: include plans that have ANY of the
       specified tags. Normalize filter tags to lowercase. No validation needed
       for filtering."
   - title: Add tags display to show command
     done: true
-    description: "In src/rmplan/commands/show.ts, add tags field to the plan detail
+    description: "In src/tim/commands/show.ts, add tags field to the plan detail
       output. Display tags as a comma-separated list or formatted list. Show
       empty state clearly if no tags present (e.g., 'Tags: none' or omit the
       line)."
   - title: Add tags display to list command output
     done: true
-    description: In src/rmplan/commands/list.ts, add tags to the display output. For
+    description: In src/tim/commands/list.ts, add tags to the display output. For
       table format, consider adding a Tags column or showing inline with title.
       Handle display overflow gracefully (truncate with '...' if needed). For
       JSON format, include tags array.
   - title: Add tags display to ready command output
     done: true
-    description: In src/rmplan/commands/ready.ts, add tags to all three output
+    description: In src/tim/commands/ready.ts, add tags to all three output
       formats (list, table, JSON). Follow same display patterns as list command.
       Ensure tags are visible but don't clutter the output.
   - title: Add tags parameter to MCP create-plan tool
     done: true
-    description: "In src/rmplan/mcp/generate_mode.ts, add `tags:
+    description: "In src/tim/mcp/generate_mode.ts, add `tags:
       z.array(z.string()).optional()` to createPlanParameters schema (lines
       ~413-428). In mcpCreatePlan implementation (lines ~786-804), load config
       and validate tags using validateTags before setting plan.tags. Handle
       validation errors appropriately for MCP response."
   - title: Add tags filtering to MCP list-ready-plans tool
     done: true
-    description: "In src/rmplan/mcp/generate_mode.ts, add `tags:
+    description: "In src/tim/mcp/generate_mode.ts, add `tags:
       z.array(z.string()).optional()` to listReadyPlansParameters schema (lines
       ~387-409). In mcpListReadyPlans implementation (lines ~556-576), apply tag
       filtering with OR logic after getting ready plans. Normalize filter tags
       to lowercase. No validation needed."
   - title: Add tags to MCP list-ready-plans output
     done: true
-    description: In src/rmplan/mcp/generate_mode.ts, add tags field to the plan
+    description: In src/tim/mcp/generate_mode.ts, add tags field to the plan
       object in list-ready-plans output JSON (lines ~209-233). Include the full
       tags array in the response for each plan.
   - title: Write tests for tag schema validation
     done: true
-    description: "Add tests to src/rmplan/planSchema.test.ts (or create if needed)
+    description: "Add tests to src/tim/planSchema.test.ts (or create if needed)
       to verify: tags field accepts string arrays, defaults to empty array,
       rejects non-string values, and handles optional/missing tags field."
   - title: Write tests for set command tag operations
     done: true
-    description: "Add tests to src/rmplan/commands/set.test.ts for: adding tags,
+    description: "Add tests to src/tim/commands/set.test.ts for: adding tags,
       removing tags, tag normalization (uppercase → lowercase), duplicate
       handling, adding and removing in same command, empty tag filtering, and
       validation against allowed tags (both success and failure cases)."
   - title: Write tests for add command tag option
     done: true
-    description: "Add tests to src/rmplan/commands/add.test.ts (or create if needed)
+    description: "Add tests to src/tim/commands/add.test.ts (or create if needed)
       for: creating plans with initial tags, tag normalization during creation,
       default empty tags array, and validation against allowed tags (both
       success and failure cases)."
   - title: Write tests for list command tag filtering
     done: true
-    description: "Add tests to src/rmplan/commands/list.test.ts for: filtering by
+    description: "Add tests to src/tim/commands/list.test.ts for: filtering by
       single tag, filtering by multiple tags (OR logic), case-insensitive
       matching, plans with no tags excluded from tag filters, and display of
       tags in output."
   - title: Write tests for ready command tag filtering
     done: true
-    description: "Add tests to src/rmplan/commands/ready.test.ts for: filtering
+    description: "Add tests to src/tim/commands/ready.test.ts for: filtering
       ready plans by tags, OR logic with multiple tags, and tags display in all
       output formats (list, table, JSON)."
   - title: Write tests for MCP tag operations
     done: true
-    description: "Add tests to src/rmplan/mcp/generate_mode.test.ts for: create-plan
+    description: "Add tests to src/tim/mcp/generate_mode.test.ts for: create-plan
       with tags parameter, list-ready-plans with tags filter, tag normalization
       in MCP tools, tag validation against allowed tags in MCP tools, and tags
       in output JSON."
   - title: Write integration tests for cross-interface tag consistency
     done: true
     description: "Following the pattern in
-      src/rmplan/commands/task-management.integration.test.ts, create tests that
+      src/tim/commands/task-management.integration.test.ts, create tests that
       verify tag operations work consistently across CLI and MCP interfaces.
       Test: create via CLI/filter via MCP, create via MCP/modify via CLI,
       validation works consistently across both interfaces, etc."
 changedFiles:
   - README.md
-  - schema/rmplan-config-schema.json
-  - schema/rmplan-plan-schema.json
-  - src/rmplan/commands/add.test.ts
-  - src/rmplan/commands/add.ts
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/commands/list.test.ts
-  - src/rmplan/commands/list.ts
-  - src/rmplan/commands/promote.test.ts
-  - src/rmplan/commands/promote.ts
-  - src/rmplan/commands/ready.test.ts
-  - src/rmplan/commands/ready.ts
-  - src/rmplan/commands/set.test.ts
-  - src/rmplan/commands/set.ts
-  - src/rmplan/commands/show.test.ts
-  - src/rmplan/commands/show.ts
-  - src/rmplan/commands/split.test.ts
-  - src/rmplan/commands/split.ts
-  - src/rmplan/configLoader.test.ts
-  - src/rmplan/configLoader.ts
-  - src/rmplan/configSchema.test.ts
-  - src/rmplan/configSchema.ts
-  - src/rmplan/display_utils.ts
-  - src/rmplan/issue_utils.ts
-  - src/rmplan/mcp/generate_mode.ts
-  - src/rmplan/planPropertiesUpdater.ts
-  - src/rmplan/planSchema.test.ts
-  - src/rmplan/planSchema.ts
-  - src/rmplan/rmplan.ts
-  - src/rmplan/utils/cleanup_plan_creator.ts
-  - src/rmplan/utils/tags.test.ts
-  - src/rmplan/utils/tags.ts
+  - schema/tim-config-schema.json
+  - schema/tim-plan-schema.json
+  - src/tim/commands/add.test.ts
+  - src/tim/commands/add.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/list.test.ts
+  - src/tim/commands/list.ts
+  - src/tim/commands/promote.test.ts
+  - src/tim/commands/promote.ts
+  - src/tim/commands/ready.test.ts
+  - src/tim/commands/ready.ts
+  - src/tim/commands/set.test.ts
+  - src/tim/commands/set.ts
+  - src/tim/commands/show.test.ts
+  - src/tim/commands/show.ts
+  - src/tim/commands/split.test.ts
+  - src/tim/commands/split.ts
+  - src/tim/configLoader.test.ts
+  - src/tim/configLoader.ts
+  - src/tim/configSchema.test.ts
+  - src/tim/configSchema.ts
+  - src/tim/display_utils.ts
+  - src/tim/issue_utils.ts
+  - src/tim/mcp/generate_mode.ts
+  - src/tim/planPropertiesUpdater.ts
+  - src/tim/planSchema.test.ts
+  - src/tim/planSchema.ts
+  - src/tim/tim.ts
+  - src/tim/utils/cleanup_plan_creator.ts
+  - src/tim/utils/tags.test.ts
+  - src/tim/utils/tags.ts
 rmfilter: []
 tags: []
 ---
 
-<!-- rmplan-generated-start -->
+<!-- tim-generated-start -->
 ## Expected Behavior/Outcome
 
 Users can add tags to plans for better organization and filtering. Tags are:
 - Stored as an array of lowercase strings in plan metadata
-- Added/removed via `rmplan set` command
-- Set during plan creation via `rmplan add` and MCP `create-plan` tool
-- Filterable in `rmplan list` and `rmplan ready` commands
+- Added/removed via `tim set` command
+- Set during plan creation via `tim add` and MCP `create-plan` tool
+- Filterable in `tim list` and `tim ready` commands
 - Displayed in plan listings and detail views
-- Optionally validated against a configured allowlist in rmplan config
+- Optionally validated against a configured allowlist in tim config
 
 **States:**
 - Plan has no tags: `tags: []` (default for new/existing plans)
@@ -196,7 +196,7 @@ Users can add tags to plans for better organization and filtering. Tags are:
 ## Key Findings
 
 **Product & User Story:**
-As a developer using rmplan, I want to tag plans with labels like "frontend", "backend", "urgent", "bug" so that I can quickly filter and find related plans across my project without relying solely on status, priority, or search terms. I want the option to enforce a specific set of allowed tags across my team to maintain consistency.
+As a developer using tim, I want to tag plans with labels like "frontend", "backend", "urgent", "bug" so that I can quickly filter and find related plans across my project without relying solely on status, priority, or search terms. I want the option to enforce a specific set of allowed tags across my team to maintain consistency.
 
 **Design & UX Approach:**
 - Tags follow the pattern of existing array fields (issue, docs, dependencies)
@@ -210,7 +210,7 @@ As a developer using rmplan, I want to tag plans with labels like "frontend", "b
 
 **Technical Plan & Risks:**
 - Add `tags` field to plan schema (TypeScript + JSON Schema)
-- Add `tags.allowed` config option to rmplanConfigSchema
+- Add `tags.allowed` config option to timConfigSchema
 - Extend CLI commands: `add` (initial tags), `set` (modify tags), `list`/`ready` (filter by tags)
 - Update MCP tools: `create-plan` parameter, `list-ready-plans` filtering
 - Display tags in show/list/ready command outputs
@@ -229,18 +229,18 @@ As a developer using rmplan, I want to tag plans with labels like "frontend", "b
 
 ## Acceptance Criteria
 
-- [ ] Functional: Users can add tags via `rmplan set --tag frontend --tag bug <plan>`
-- [ ] Functional: Users can remove tags via `rmplan set --no-tag frontend <plan>`
-- [ ] Functional: Users can set initial tags via `rmplan add --tag <tag> ...`
-- [ ] Functional: Users can filter plans by tags via `rmplan list --tag frontend --tag urgent` (OR logic)
-- [ ] Functional: Users can filter ready plans by tags via `rmplan ready --tag backend`
+- [ ] Functional: Users can add tags via `tim set --tag frontend --tag bug <plan>`
+- [ ] Functional: Users can remove tags via `tim set --no-tag frontend <plan>`
+- [ ] Functional: Users can set initial tags via `tim add --tag <tag> ...`
+- [ ] Functional: Users can filter plans by tags via `tim list --tag frontend --tag urgent` (OR logic)
+- [ ] Functional: Users can filter ready plans by tags via `tim ready --tag backend`
 - [ ] Functional: MCP `create-plan` tool accepts `tags` parameter
 - [ ] Functional: MCP `list-ready-plans` tool accepts `tags` filter parameter
 - [ ] Functional: Config can specify allowed tags via `tags.allowed` array
 - [ ] Functional: When allowed tags configured, only those tags can be added to plans
 - [ ] Functional: When no allowed tags configured, any tag can be added
 - [ ] UX: All tags are normalized to lowercase on input
-- [ ] UX: Tags are displayed in `rmplan show`, `rmplan list`, and `rmplan ready` outputs
+- [ ] UX: Tags are displayed in `tim show`, `tim list`, and `tim ready` outputs
 - [ ] UX: Empty tag strings are silently filtered out
 - [ ] UX: Attempting to add invalid tags shows helpful error with list of allowed tags
 - [ ] Technical: `tags` field added to PlanSchema with `z.array(z.string())`
@@ -317,13 +317,13 @@ tags: z.object({
 - List view: Show tags inline, possibly truncated with "..."
 - Ready view: Include in all three formats (list, table, JSON)
 - Show view: Display full tag list without truncation
-<!-- rmplan-generated-end -->
+<!-- tim-generated-end -->
 
 ## Research
 
 ### Summary
 
-This task involves adding a `tags` field to rmplan plans to enable better organization and filtering. Tags should work like existing array fields (issue, docs, dependencies) with commands to add/remove tags and filter plans by tag. The implementation requires changes across multiple layers: schema definition, CLI commands, MCP tools, and display/filtering logic.
+This task involves adding a `tags` field to tim plans to enable better organization and filtering. Tags should work like existing array fields (issue, docs, dependencies) with commands to add/remove tags and filter plans by tag. The implementation requires changes across multiple layers: schema definition, CLI commands, MCP tools, and display/filtering logic.
 
 **Critical discoveries:**
 - Tags field does not currently exist anywhere in the codebase
@@ -336,7 +336,7 @@ This task involves adding a `tags` field to rmplan plans to enable better organi
 
 #### Plan Metadata Architecture
 
-**Schema Definition** (`src/rmplan/planSchema.ts`):
+**Schema Definition** (`src/tim/planSchema.ts`):
 The plan schema uses Zod validation with ~30 metadata fields organized into categories:
 - Identification: `id`, `uuid`
 - Content: `title`, `goal`, `details`
@@ -358,10 +358,10 @@ dependencies: z.array(z.coerce.number().int().positive()).default([]).optional()
 
 Tags would follow: `tags: z.array(z.string()).default([]).optional()`
 
-**JSON Schema** (`schema/rmplan-plan-schema.json`):
+**JSON Schema** (`schema/tim-plan-schema.json`):
 Dual validation using JSON Schema Draft 7 with yaml-language-server directive in plan files. Tags need to be added here as well.
 
-**File Format** (`src/rmplan/plans.ts` lines 539-574):
+**File Format** (`src/tim/plans.ts` lines 539-574):
 Plans use YAML frontmatter + optional markdown details:
 ```yaml
 ---
@@ -373,7 +373,7 @@ Plans use YAML frontmatter + optional markdown details:
 
 #### CLI Command Patterns for Array Fields
 
-**Set Command** (`src/rmplan/commands/set.ts`):
+**Set Command** (`src/tim/commands/set.ts`):
 
 The `SetOptions` interface shows the standard pattern for array field manipulation:
 ```typescript
@@ -429,12 +429,12 @@ if (options.noIssue && options.noIssue.length > 0) {
 plan.rmfilter = Array.from(new Set([...(plan.rmfilter || []), ...options.rmfilter])).sort();
 ```
 
-**Add Command** (`src/rmplan/commands/add.ts`):
+**Add Command** (`src/tim/commands/add.ts`):
 Initial plan creation at lines 169-218 shows how metadata is initialized. Tags would be initialized as empty array or with provided values.
 
 #### MCP Server Integration
 
-**Location:** `src/rmplan/mcp/generate_mode.ts`
+**Location:** `src/tim/mcp/generate_mode.ts`
 
 **Current MCP tools (7 total):**
 1. `create-plan` (lines 1058-1070) - Creates new plans with metadata
@@ -463,7 +463,7 @@ Would need new parameter: `tags?: string[]` to filter by tags
 
 #### Filtering and Display Architecture
 
-**List Command** (`src/rmplan/commands/list.ts` lines 28-520):
+**List Command** (`src/tim/commands/list.ts` lines 28-520):
 
 **Current filtering options:**
 - Status: `--status [pending|in_progress|done|cancelled|deferred|ready|blocked]`
@@ -476,7 +476,7 @@ ID, Title, Status, Workspace, Priority, Tasks, Steps, Dependencies, Notes (condi
 
 Tags would fit naturally as an additional column or inline display element.
 
-**Ready Command** (`src/rmplan/commands/ready.ts` lines 374-576):
+**Ready Command** (`src/tim/commands/ready.ts` lines 374-576):
 
 **Current filtering options:**
 - Priority: `--priority [low|medium|high|urgent|maybe]`
@@ -492,7 +492,7 @@ Tags would fit naturally as an additional column or inline display element.
 
 Tags filtering would need new CLI flag: `--tag <tag>` (repeatable)
 
-**Ready Plans Logic** (`src/rmplan/ready_plans.ts`):
+**Ready Plans Logic** (`src/tim/ready_plans.ts`):
 
 Core filtering function `isReadyPlan` (lines 42-61) checks:
 - Status matches filter (pending or in_progress)
@@ -500,34 +500,34 @@ Core filtering function `isReadyPlan` (lines 42-61) checks:
 
 Would need to add tag filtering to `filterReadyPlans` or higher-level filtering in ready.ts
 
-**Display Utilities** (`src/rmplan/display_utils.ts`):
+**Display Utilities** (`src/tim/display_utils.ts`):
 Provides formatting helpers for workspace paths, combined titles/goals. Could add tag formatting helper here.
 
 #### Related Code Areas
 
-**Plan I/O** (`src/rmplan/plans.ts`):
+**Plan I/O** (`src/tim/plans.ts`):
 - `readAllPlans` (lines 55-161) - Scans and parses all plan files
 - `writePlan` (lines 539-612) - Writes YAML frontmatter + details
 - Caching mechanism to avoid re-scanning
 
-**Validation** (`src/rmplan/commands/validate.ts`):
+**Validation** (`src/tim/commands/validate.ts`):
 Validates plan files against schema. Tags would be automatically validated by Zod schema.
 
-**Show Command** (`src/rmplan/commands/show.ts`):
+**Show Command** (`src/tim/commands/show.ts`):
 Displays full plan details. Would need to include tags in the output.
 
-**Plan Display** (`src/rmplan/plan_display.ts`):
+**Plan Display** (`src/tim/plan_display.ts`):
 Utility functions for assembling plan context summaries. Should include tags in context.
 
 #### Test Files to Update
 
 Key test files that would need updates:
-- `src/rmplan/commands/set.test.ts` - Test tag setting/removal
-- `src/rmplan/commands/list.test.ts` - Test tag filtering in list
-- `src/rmplan/commands/ready.test.ts` - Test tag filtering in ready
-- `src/rmplan/mcp/generate_mode.test.ts` - Test MCP tool tag support
-- `src/rmplan/plans.test.ts` - Test plan I/O with tags
-- `src/rmplan/planSchema.test.ts` - Test schema validation with tags
+- `src/tim/commands/set.test.ts` - Test tag setting/removal
+- `src/tim/commands/list.test.ts` - Test tag filtering in list
+- `src/tim/commands/ready.test.ts` - Test tag filtering in ready
+- `src/tim/mcp/generate_mode.test.ts` - Test MCP tool tag support
+- `src/tim/plans.test.ts` - Test plan I/O with tags
+- `src/tim/planSchema.test.ts` - Test schema validation with tags
 
 #### Implementation Strategy from Recent Similar Change
 
@@ -566,12 +566,12 @@ Tags would follow similar pattern but with array handling instead of boolean.
 
 **Dependencies:**
 - No external dependencies needed
-- Changes isolated to rmplan module
+- Changes isolated to tim module
 - No database migration needed (file-based storage)
 
 **Backward compatibility:**
 - Existing plans without tags field will work fine (optional field with default empty array)
-- New tag field will be ignored by older versions of rmplan
+- New tag field will be ignored by older versions of tim
 - JSON schema versioning not needed
 
 ### Follow-up Questions
@@ -590,18 +590,18 @@ Tags would follow similar pattern but with array handling instead of boolean.
 
 Completed Tasks: 1 (Add tags field to plan schemas), 2 (Add tag normalization utility function), 3 (Update planPropertiesUpdater for tag operations), 4 (Add tag options to set command), 5 (Add tag option to add command), 14 (Write tests for tag schema validation), 15 (Write tests for set command tag operations), 16 (Write tests for add command tag option).
 
-Extended PlanSchema/Zod definitions plus the JSON schema to include a normalized \"tags\" array and introduced the corresponding tags.allowed subsection in rmplan.yml via configSchema/configLoader. Added src/rmplan/utils/tags.ts which centralizes normalizeTags/validateTags so every entry point lowercases, trims, deduplicates, and sorts tags while enforcing an optional allowlist.
+Extended PlanSchema/Zod definitions plus the JSON schema to include a normalized \"tags\" array and introduced the corresponding tags.allowed subsection in tim.yml via configSchema/configLoader. Added src/tim/utils/tags.ts which centralizes normalizeTags/validateTags so every entry point lowercases, trims, deduplicates, and sorts tags while enforcing an optional allowlist.
 
 Updated updatePlanProperties to understand tag/noTag, merging normalized tags through Sets, logging changes, and reusing the shared validator. Set and add commands (plus cleanup/mcp plan creation) now call this updated helper with the loaded config, and the CLI exposes new --tag/--no-tag flags. All plan creation paths seed tags: [] to keep metadata consistent, and README now documents tagging and the allowlist knob.
 
 Regression coverage: new planSchema tests assert tag parsing, set.test.ts verifies add/remove/allowlist behaviors, and add.test.ts checks initial tagging + validation. Ran bun test for the touched suites and bun run check for types; both passed. Future work can build on this foundation to implement tag filtering in list/ready and MCP surfaces without revisiting schema plumbing.
 
-Addressed review feedback for tasks 'Add tags field to plan schemas' and 'Add tag normalization utility function'. Regenerated schema/rmplan-config-schema.json via 'bun scripts/update-json-schemas.ts' so the JSON schema now declares the tags.allowed block that matches RmplanConfig, enabling editor validation for tag allowlists. Updated validateTags in src/rmplan/utils/tags.ts to treat any configured tags.allowed array as authoritative (including an empty array) by normalizing the allowlist, checking every proposed tag against it, and emitting a clear 'No tags are currently allowed by configuration.' error when violated. Added a regression in src/rmplan/utils/tags.test.ts that asserts tags.allowed: [] blocks additions to prevent future regressions. Validated the helpers with 'bun test src/rmplan/utils/tags.test.ts'.
+Addressed review feedback for tasks 'Add tags field to plan schemas' and 'Add tag normalization utility function'. Regenerated schema/tim-config-schema.json via 'bun scripts/update-json-schemas.ts' so the JSON schema now declares the tags.allowed block that matches RmplanConfig, enabling editor validation for tag allowlists. Updated validateTags in src/tim/utils/tags.ts to treat any configured tags.allowed array as authoritative (including an empty array) by normalizing the allowlist, checking every proposed tag against it, and emitting a clear 'No tags are currently allowed by configuration.' error when violated. Added a regression in src/tim/utils/tags.test.ts that asserts tags.allowed: [] blocks additions to prevent future regressions. Validated the helpers with 'bun test src/tim/utils/tags.test.ts'.
 
-Implemented tag-aware filtering and display across rmplan list/ready/show plus regression tests. Added formatTagsSummary utility, extended CLI flags (--tag) for list/ready, and updated the list/ready table renderers to include a Tags column with truncation. Ready/list list formats now normalize filter input and reject unt tagged plans when filtering; ready JSON output also exposes the tags array. The show command prints tags (or 'none') in metadata blocks, and the README documents tag filtering usage. Added dedicated tests covering tag filtering semantics (single, OR, case-insensitive), table/header expectations, and tag visibility in list/table/json outputs.
+Implemented tag-aware filtering and display across tim list/ready/show plus regression tests. Added formatTagsSummary utility, extended CLI flags (--tag) for list/ready, and updated the list/ready table renderers to include a Tags column with truncation. Ready/list list formats now normalize filter input and reject unt tagged plans when filtering; ready JSON output also exposes the tags array. The show command prints tags (or 'none') in metadata blocks, and the README documents tag filtering usage. Added dedicated tests covering tag filtering semantics (single, OR, case-insensitive), table/header expectations, and tag visibility in list/table/json outputs.
 
 Implemented MCP tag support for tasks 11, 12, 13, and 19. Added tag inputs to createPlanParameters/listReadyPlansParameters and wired validateTags into mcpCreatePlan so new plans store normalized tags while honoring config allowlists. Extended mcpListReadyPlans to normalize incoming tag filters, apply OR logic against plan metadata, and feed the enriched tag arrays into formatReadyPlansAsJson which now emits tags via normalizeTags. Updated ready_plans.ts plus ready.ts to ensure both CLI and MCP share the same filtering/display logic and expanded ready_plans.test.ts to assert JSON output includes normalized tags. Added new coverage in mcp/generate_mode.test.ts for create-plan tag acceptance/validation, list-ready tag filtering, and tags in MCP JSON responses. Verified changes with bun test (generate_mode + ready_plans suites) and bun run check.
 
-Worked on Task 12 'Add tags filtering to MCP list-ready-plans tool' and Task 19 'Write tests for MCP tag operations'. The MCP entry point now bypasses the shared plan cache by calling readAllPlans(tasksDir, false) and reapplies the limit after any tag filtering so the --limit/limit parameter no longer drops valid plans that sit outside the first N unfiltered entries. This change lives in src/rmplan/commands/ready.ts within mcpListReadyPlans and keeps the existing sorting/priority filtering intact while guaranteeing that subsequent MCP invocations observe edits performed via rmplan add/set in other processes.
+Worked on Task 12 'Add tags filtering to MCP list-ready-plans tool' and Task 19 'Write tests for MCP tag operations'. The MCP entry point now bypasses the shared plan cache by calling readAllPlans(tasksDir, false) and reapplies the limit after any tag filtering so the --limit/limit parameter no longer drops valid plans that sit outside the first N unfiltered entries. This change lives in src/tim/commands/ready.ts within mcpListReadyPlans and keeps the existing sorting/priority filtering intact while guaranteeing that subsequent MCP invocations observe edits performed via tim add/set in other processes.
 
-Extended the automated coverage to lock in this behavior. In src/rmplan/mcp/generate_mode.test.ts I added 'applies limit after tag filtering' plus 'reloads plan data without manual cache clearing' to prove the new ordering and cache-busting semantics, asserting that tagged plans are returned even when their priority would have excluded them before filtering and that editing a plan file is reflected on the very next MCP call. In src/rmplan/tags.integration.test.ts I removed the extra clearPlanCache() calls inside each test body so the integration suite exercises the same production code path and relies on the MCP layer's new invalidation instead of test-only helpers. This keeps the CLI↔MCP flow honest while still clearing the cache in beforeEach/afterEach to isolate test fixtures.
+Extended the automated coverage to lock in this behavior. In src/tim/mcp/generate_mode.test.ts I added 'applies limit after tag filtering' plus 'reloads plan data without manual cache clearing' to prove the new ordering and cache-busting semantics, asserting that tagged plans are returned even when their priority would have excluded them before filtering and that editing a plan file is reflected on the very next MCP call. In src/tim/tags.integration.test.ts I removed the extra clearPlanCache() calls inside each test body so the integration suite exercises the same production code path and relies on the MCP layer's new invalidation instead of test-only helpers. This keeps the CLI↔MCP flow honest while still clearing the cache in beforeEach/afterEach to isolate test fixtures.

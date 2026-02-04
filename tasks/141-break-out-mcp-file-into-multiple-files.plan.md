@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: break out MCP file into multiple files
 goal: ""
 id: 141
@@ -20,7 +20,7 @@ tasks:
       duplication.
 
 
-      **Create src/rmplan/ready_plans.ts with:**
+      **Create src/tim/ready_plans.ts with:**
 
       - `isReadyPlan()` function - canonical ready plan detection
       (pending/in_progress + all deps done + has tasks)
@@ -37,15 +37,15 @@ tasks:
 
       **Update imports in:**
 
-      - src/rmplan/commands/ready.ts - use new isReadyPlan and sortReadyPlans
+      - src/tim/commands/ready.ts - use new isReadyPlan and sortReadyPlans
 
-      - src/rmplan/mcp/generate_mode.ts - use new functions in
+      - src/tim/mcp/generate_mode.ts - use new functions in
       handleListReadyPlansTool
 
 
       **Testing:**
 
-      - Create src/rmplan/ready_plans.test.ts with comprehensive test coverage
+      - Create src/tim/ready_plans.test.ts with comprehensive test coverage
 
       - Test ready plan detection with various dependency states
 
@@ -60,7 +60,7 @@ tasks:
       Extract plan context building and formatting utilities.
 
 
-      **Create src/rmplan/plan_display.ts with:**
+      **Create src/tim/plan_display.ts with:**
 
       - `buildPlanContext()` function - formats plan metadata for AI context
       (from generate_mode.ts:45-81)
@@ -76,16 +76,16 @@ tasks:
 
       **Update imports in:**
 
-      - src/rmplan/mcp/generate_mode.ts - import all three functions
+      - src/tim/mcp/generate_mode.ts - import all three functions
 
-      - src/rmplan/commands/generate.ts - import buildPlanContext if needed
+      - src/tim/commands/generate.ts - import buildPlanContext if needed
 
-      - src/rmplan/commands/show.ts - consider using buildPlanContext
+      - src/tim/commands/show.ts - consider using buildPlanContext
 
 
       **Testing:**
 
-      - Create src/rmplan/plan_display.test.ts
+      - Create src/tim/plan_display.test.ts
 
       - Test buildPlanContext with various plan fields (with/without goal,
       issues, docs, tasks)
@@ -101,7 +101,7 @@ tasks:
       Extract plan merging logic and delimiter-based content management.
 
 
-      **Create src/rmplan/plan_merge.ts with:**
+      **Create src/tim/plan_merge.ts with:**
 
       - Export delimiter constants: `GENERATED_START_DELIMITER`,
       `GENERATED_END_DELIMITER`
@@ -123,14 +123,14 @@ tasks:
 
       **Update imports in:**
 
-      - src/rmplan/mcp/generate_mode.ts - import all merge functions
+      - src/tim/mcp/generate_mode.ts - import all merge functions
 
-      - src/rmplan/commands/update.ts - consider using merge functions
+      - src/tim/commands/update.ts - consider using merge functions
 
 
       **Testing:**
 
-      - Create src/rmplan/plan_merge.test.ts
+      - Create src/tim/plan_merge.test.ts
 
       - Test delimiter insertion before Research section
 
@@ -149,7 +149,7 @@ tasks:
       Move the get-plan MCP tool handler to the show command.
 
 
-      **In src/rmplan/commands/show.ts:**
+      **In src/tim/commands/show.ts:**
 
       - Add import for GenerateModeRegistrationContext from generate_mode.ts
 
@@ -161,7 +161,7 @@ tasks:
       (generate_mode.ts:425-431)
 
 
-      **In src/rmplan/mcp/generate_mode.ts:**
+      **In src/tim/mcp/generate_mode.ts:**
 
       - Import `mcpGetPlan` from commands/show.ts
 
@@ -185,7 +185,7 @@ tasks:
       Move the append-plan-research MCP tool handler to the research command.
 
 
-      **In src/rmplan/commands/research.ts:**
+      **In src/tim/commands/research.ts:**
 
       - Add import for GenerateModeRegistrationContext from generate_mode.ts
 
@@ -197,7 +197,7 @@ tasks:
       - Reuse existing appendResearchToPlan import
 
 
-      **In src/rmplan/mcp/generate_mode.ts:**
+      **In src/tim/mcp/generate_mode.ts:**
 
       - Import `mcpAppendResearch` from commands/research.ts
 
@@ -224,7 +224,7 @@ tasks:
       ready_plans.ts utilities.
 
 
-      **In src/rmplan/commands/ready.ts:**
+      **In src/tim/commands/ready.ts:**
 
       - Add import for GenerateModeRegistrationContext from generate_mode.ts
 
@@ -241,7 +241,7 @@ tasks:
       - Use formatReadyPlansAsJson for output
 
 
-      **In src/rmplan/mcp/generate_mode.ts:**
+      **In src/tim/mcp/generate_mode.ts:**
 
       - Import `mcpListReadyPlans` from commands/ready.ts
 
@@ -268,7 +268,7 @@ tasks:
     description: |-
       Move the update-plan-details MCP tool handler to the update command.
 
-      **In src/rmplan/commands/update.ts:**
+      **In src/tim/commands/update.ts:**
       - Add import for GenerateModeRegistrationContext from generate_mode.ts
       - Add import for plan_merge utilities (updateDetailsWithinDelimiters)
       - Add import for plan_display utilities (resolvePlan)
@@ -276,7 +276,7 @@ tasks:
       - Implement using updateDetailsWithinDelimiters from plan_merge.ts
       - Same logic as handleUpdatePlanDetailsTool (generate_mode.ts:559-577)
 
-      **In src/rmplan/mcp/generate_mode.ts:**
+      **In src/tim/mcp/generate_mode.ts:**
       - Import `mcpUpdatePlanDetails` from commands/update.ts
       - Update addTool('update-plan-details') to use imported function
       - Remove handleUpdatePlanDetailsTool function
@@ -293,7 +293,7 @@ tasks:
     description: |-
       Move the update-plan-tasks MCP tool handler to the update command.
 
-      **In src/rmplan/commands/update.ts:**
+      **In src/tim/commands/update.ts:**
       - Add import for GenerateModeRegistrationContext from generate_mode.ts
       - Add import for plan_merge utilities (mergeTasksIntoPlan)
       - Add import for plan_display utilities (resolvePlan)
@@ -302,7 +302,7 @@ tasks:
       - Same logic as handleGenerateTasksTool (generate_mode.ts:381-415)
       - Handle the execContext.log parameter properly
 
-      **In src/rmplan/mcp/generate_mode.ts:**
+      **In src/tim/mcp/generate_mode.ts:**
       - Import `mcpUpdatePlanTasks` from commands/update.ts
       - Update addTool('update-plan-tasks') to use imported function
       - Remove handleGenerateTasksTool function
@@ -323,7 +323,7 @@ tasks:
       handlers are extracted.
 
 
-      **In src/rmplan/mcp/generate_mode.ts:**
+      **In src/tim/mcp/generate_mode.ts:**
 
       - Verify all tool handlers are now imported from command files
 
@@ -382,15 +382,15 @@ tasks:
 
       **Run all test suites:**
 
-      - `bun test src/rmplan/ready_plans.test.ts` - new module tests
+      - `bun test src/tim/ready_plans.test.ts` - new module tests
 
-      - `bun test src/rmplan/plan_display.test.ts` - new module tests  
+      - `bun test src/tim/plan_display.test.ts` - new module tests  
 
-      - `bun test src/rmplan/plan_merge.test.ts` - new module tests
+      - `bun test src/tim/plan_merge.test.ts` - new module tests
 
-      - `bun test src/rmplan/commands/` - all command tests
+      - `bun test src/tim/commands/` - all command tests
 
-      - `bun test src/rmplan/mcp/` - MCP server tests
+      - `bun test src/tim/mcp/` - MCP server tests
 
       - `bun run check` - type checking
 
@@ -421,27 +421,27 @@ tasks:
       - Update any inline comments referencing old structure
 changedFiles:
   - CLAUDE.md
-  - src/rmplan/commands/ready.test.ts
-  - src/rmplan/commands/ready.ts
-  - src/rmplan/commands/research.test.ts
-  - src/rmplan/commands/research.ts
-  - src/rmplan/commands/show.test.ts
-  - src/rmplan/commands/show.ts
-  - src/rmplan/commands/update.test.ts
-  - src/rmplan/commands/update.ts
-  - src/rmplan/mcp/generate_mode.test.ts
-  - src/rmplan/mcp/generate_mode.ts
-  - src/rmplan/plan_display.test.ts
-  - src/rmplan/plan_display.ts
-  - src/rmplan/plan_merge.test.ts
-  - src/rmplan/plan_merge.ts
-  - src/rmplan/ready_plans.test.ts
-  - src/rmplan/ready_plans.ts
+  - src/tim/commands/ready.test.ts
+  - src/tim/commands/ready.ts
+  - src/tim/commands/research.test.ts
+  - src/tim/commands/research.ts
+  - src/tim/commands/show.test.ts
+  - src/tim/commands/show.ts
+  - src/tim/commands/update.test.ts
+  - src/tim/commands/update.ts
+  - src/tim/mcp/generate_mode.test.ts
+  - src/tim/mcp/generate_mode.ts
+  - src/tim/plan_display.test.ts
+  - src/tim/plan_display.ts
+  - src/tim/plan_merge.test.ts
+  - src/tim/plan_merge.ts
+  - src/tim/ready_plans.test.ts
+  - src/tim/ready_plans.ts
 ---
 
 ## Summary
 
-Refactored the monolithic MCP server file (src/rmplan/mcp/generate_mode.ts, originally 864 lines) into a thin registration layer (~200 lines) that imports tool handlers from their corresponding CLI command modules. Eliminated code duplication by extracting shared utilities for plan display, merging, and ready plan detection used by both CLI and MCP workflows.
+Refactored the monolithic MCP server file (src/tim/mcp/generate_mode.ts, originally 864 lines) into a thin registration layer (~200 lines) that imports tool handlers from their corresponding CLI command modules. Eliminated code duplication by extracting shared utilities for plan display, merging, and ready plan detection used by both CLI and MCP workflows.
 
 ## Decisions
 
@@ -459,7 +459,7 @@ Refactored the monolithic MCP server file (src/rmplan/mcp/generate_mode.ts, orig
 
 - All new shared modules have comprehensive test coverage (ready_plans.test.ts, plan_display.test.ts, plan_merge.test.ts)
 - Extended command test suites (ready.test.ts, show.test.ts, research.test.ts, update.test.ts) with MCP handler coverage
-- All existing tests pass after refactoring (bun test src/rmplan/ready_plans.test.ts, commands/, mcp/)
+- All existing tests pass after refactoring (bun test src/tim/ready_plans.test.ts, commands/, mcp/)
 - Type checking passes (bun run check)
 - Manual validation: CLI commands work unchanged, MCP server starts without errors in HTTP mode
 - No circular dependencies introduced between modules

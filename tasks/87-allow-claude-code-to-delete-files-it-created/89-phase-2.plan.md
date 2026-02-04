@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Allow Claude Code to delete files it created - Introduce Configuration,
   Logging, and Documentation
 goal: To make the auto-approval feature configurable, add informative logging,
@@ -63,15 +63,15 @@ tasks:
       documentation pattern for other executor configuration options.
 changedFiles:
   - README.md
-  - src/rmplan/executors/build.test.ts
-  - src/rmplan/executors/claude_code/format.test.ts
-  - src/rmplan/executors/claude_code/format.ts
-  - src/rmplan/executors/claude_code.test.ts
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/executors/schemas.test.ts
-  - src/rmplan/executors/schemas.ts
+  - src/tim/executors/build.test.ts
+  - src/tim/executors/claude_code/format.test.ts
+  - src/tim/executors/claude_code/format.ts
+  - src/tim/executors/claude_code.test.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/schemas.test.ts
+  - src/tim/executors/schemas.ts
 rmfilter:
-  - src/rmplan/executors/
+  - src/tim/executors/
 ---
 
 Building on the core logic from Phase 1, this phase will introduce a formal configuration flag, `autoApproveCreatedFileDeletion`, to enable or disable the feature. The auto-approval logic will be made conditional on this flag. We will also add a log message that is printed whenever a deletion is auto-approved, ensuring the user is aware of the action. Finally, we will update the project's documentation to inform users about the new feature.

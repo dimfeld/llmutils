@@ -40,13 +40,13 @@ async function copyWasmFiles() {
 const output = await Promise.all([
   buildOne({
     outdir: 'dist',
-    entrypoints: ['./src/rmplan/rmplan.ts'],
+    entrypoints: ['./src/tim/tim.ts'],
     target: 'bun',
     minify: true,
   }),
   buildOne({
     outdir: 'dist/claude_code',
-    entrypoints: ['./src/rmplan/executors/claude_code/permissions_mcp.ts'],
+    entrypoints: ['./src/tim/executors/claude_code/permissions_mcp.ts'],
     target: 'bun',
     minify: true,
   }),

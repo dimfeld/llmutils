@@ -1,0 +1,638 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Repository-level configuration for tim",
+  "type": "object",
+  "properties": {
+    "issueTracker": {
+      "description": "Issue tracking service to use for import commands and issue-related operations",
+      "type": "string",
+      "enum": [
+        "github",
+        "linear"
+      ]
+    },
+    "postApplyCommands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "workingDirectory": {
+            "type": "string"
+          },
+          "env": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "allowFailure": {
+            "default": false,
+            "type": "boolean"
+          },
+          "hideOutputOnSuccess": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "title",
+          "command"
+        ]
+      }
+    },
+    "notifications": {
+      "description": "Configuration for notification hooks when agent/review commands finish",
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "workingDirectory": {
+          "type": "string"
+        },
+        "env": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "paths": {
+      "type": "object",
+      "properties": {
+        "tasks": {
+          "description": "Path to directory containing task definitions",
+          "type": "string"
+        },
+        "docs": {
+          "description": "Paths to directories to search for .md and .mdc documentation files to auto-include",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "trackingFile": {
+          "description": "Path to workspace tracking file (default: ~/.config/tim/workspaces.json)",
+          "type": "string"
+        }
+      }
+    },
+    "assignments": {
+      "type": "object",
+      "properties": {
+        "staleTimeout": {
+          "description": "Number of days after which plan assignments are considered stale",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "tags": {
+      "description": "Configuration for plan tags, including allowlists",
+      "type": "object",
+      "properties": {
+        "allowed": {
+          "description": "List of allowed tags. If set, only these tags can be added to plans.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "autoexamples": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "find": {
+                "description": "String to search for in the prompt to trigger this example.",
+                "type": "string"
+              },
+              "example": {
+                "description": "Example string to pass as --example argument when find matches.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "find",
+              "example"
+            ]
+          }
+        ]
+      }
+    },
+    "models": {
+      "type": "object",
+      "properties": {
+        "execution": {
+          "description": "Model spec for tim run model",
+          "type": "string"
+        },
+        "answerPr": {
+          "description": "Model spec for tim answer-pr model",
+          "type": "string"
+        },
+        "convert_yaml": {
+          "description": "Model spec for tim markdown-to-yaml extraction",
+          "type": "string"
+        },
+        "stepGeneration": {
+          "description": "Model spec for tim prepare phase generation",
+          "type": "string"
+        }
+      }
+    },
+    "answerPr": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "description": "Default mode for answer-pr command",
+          "type": "string",
+          "enum": [
+            "hybrid",
+            "inline",
+            "separate"
+          ]
+        },
+        "comment": {
+          "description": "Default value for whether to add comments after processing",
+          "type": "boolean"
+        },
+        "commit": {
+          "description": "Default value for whether to commit changes after processing",
+          "type": "boolean"
+        }
+      }
+    },
+    "prCreation": {
+      "description": "Configuration for PR creation behavior",
+      "type": "object",
+      "properties": {
+        "draft": {
+          "description": "Whether PRs should be created as drafts by default",
+          "default": true,
+          "type": "boolean"
+        },
+        "titlePrefix": {
+          "description": "Prefix to add to PR titles when creating PRs",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "modelApiKeys": {
+      "description": "Map of model ID or prefix to environment variable name for API key. Example: {\"openai/\": \"MY_OPENAI_KEY\", \"anthropic/claude-3.5-sonnet\": \"CLAUDE_SONNET_KEY\"}",
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "description": "Environment variable name to use for API key",
+        "type": "string"
+      }
+    },
+    "defaultExecutor": {
+      "description": "Default executor to use for plan execution",
+      "type": "string"
+    },
+    "workspaceCreation": {
+      "type": "object",
+      "properties": {
+        "cloneMethod": {
+          "type": "string",
+          "enum": [
+            "git",
+            "cp",
+            "mac-cow"
+          ]
+        },
+        "repositoryUrl": {
+          "type": "string"
+        },
+        "sourceDirectory": {
+          "type": "string"
+        },
+        "cloneLocation": {
+          "type": "string"
+        },
+        "postCloneCommands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              },
+              "workingDirectory": {
+                "type": "string"
+              },
+              "env": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "allowFailure": {
+                "default": false,
+                "type": "boolean"
+              },
+              "hideOutputOnSuccess": {
+                "default": false,
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "title",
+              "command"
+            ]
+          }
+        },
+        "copyAdditionalGlobs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "createBranch": {
+          "type": "boolean"
+        }
+      }
+    },
+    "planning": {
+      "type": "object",
+      "properties": {
+        "direct_mode": {
+          "description": "Default behavior for direct mode in generate and prepare commands",
+          "type": "boolean"
+        },
+        "claude_mode": {
+          "description": "Default behavior for Claude mode in generate and prepare commands",
+          "type": "boolean"
+        },
+        "instructions": {
+          "description": "Path to a planning document file to include in all planning prompts",
+          "type": "string"
+        }
+      }
+    },
+    "compaction": {
+      "type": "object",
+      "properties": {
+        "defaultExecutor": {
+          "description": "Default executor to use when compacting plans",
+          "type": "string"
+        },
+        "defaultModel": {
+          "description": "Default model identifier to use for compaction prompts",
+          "type": "string"
+        },
+        "minimumAgeDays": {
+          "description": "Minimum age in days before a plan becomes eligible for compaction",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sections": {
+          "type": "object",
+          "properties": {
+            "details": {
+              "description": "Whether the details section should be compacted",
+              "type": "boolean"
+            },
+            "research": {
+              "description": "Whether the research section should be compacted",
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "agents": {
+      "description": "Custom instructions for implementer, tester, and reviewer agents",
+      "type": "object",
+      "properties": {
+        "implementer": {
+          "type": "object",
+          "properties": {
+            "instructions": {
+              "description": "Path to custom instructions file for the implementer agent",
+              "type": "string"
+            }
+          }
+        },
+        "tester": {
+          "type": "object",
+          "properties": {
+            "instructions": {
+              "description": "Path to custom instructions file for the tester agent",
+              "type": "string"
+            }
+          }
+        },
+        "reviewer": {
+          "type": "object",
+          "properties": {
+            "instructions": {
+              "description": "Path to custom instructions file for the reviewer agent",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "review": {
+      "description": "Configuration options for the review command",
+      "type": "object",
+      "properties": {
+        "defaultExecutor": {
+          "description": "Default executor to use for review execution",
+          "type": "string",
+          "enum": [
+            "claude-code",
+            "codex-cli",
+            "both"
+          ]
+        },
+        "focusAreas": {
+          "description": "Default focus areas for reviews such as security, performance, testing",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "outputFormat": {
+          "description": "Format for review output: json, markdown, or terminal",
+          "type": "string",
+          "enum": [
+            "json",
+            "markdown",
+            "terminal"
+          ]
+        },
+        "saveLocation": {
+          "description": "Directory path where review results should be saved",
+          "type": "string"
+        },
+        "autoSave": {
+          "description": "Automatically save review results with metadata to .rmfilter/reviews/ directory",
+          "type": "boolean"
+        },
+        "customInstructionsPath": {
+          "description": "Path to file containing custom review instructions",
+          "type": "string"
+        },
+        "incrementalReview": {
+          "description": "Enable incremental reviews that only analyze changes since last review",
+          "type": "boolean"
+        },
+        "excludePatterns": {
+          "description": "Glob patterns for files/directories to exclude from review",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "executors": {
+      "description": "Options for each executor",
+      "type": "object",
+      "properties": {
+        "claude-code": {
+          "type": "object",
+          "properties": {
+            "allowedTools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "allowAllTools": {
+              "type": "boolean"
+            },
+            "includeDefaultTools": {
+              "default": true,
+              "type": "boolean"
+            },
+            "disallowedTools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "mcpConfigFile": {
+              "type": "string"
+            },
+            "permissionsMcp": {
+              "description": "Configuration for the permissions MCP server",
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "defaultResponse": {
+                  "type": "string",
+                  "enum": [
+                    "yes",
+                    "no"
+                  ]
+                },
+                "timeout": {
+                  "description": "Timeout in milliseconds for permission prompts",
+                  "type": "number"
+                },
+                "reviewFeedbackTimeout": {
+                  "description": "Timeout in milliseconds for review feedback prompts",
+                  "type": "number"
+                },
+                "autoApproveCreatedFileDeletion": {
+                  "description": "When enabled, automatically approve deletion of files created or modified by the agent in the current session",
+                  "default": false,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "enabled"
+              ]
+            },
+            "agents": {
+              "description": "Configuration for specialized agents",
+              "type": "object",
+              "properties": {
+                "implementer": {
+                  "type": "object",
+                  "properties": {
+                    "model": {
+                      "description": "Model to use for the implementer agent",
+                      "type": "string"
+                    }
+                  }
+                },
+                "tester": {
+                  "type": "object",
+                  "properties": {
+                    "model": {
+                      "description": "Model to use for the tester agent",
+                      "type": "string"
+                    }
+                  }
+                },
+                "reviewer": {
+                  "type": "object",
+                  "properties": {
+                    "model": {
+                      "description": "Model to use for the reviewer agent",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "simpleMode": {
+              "description": "Run executor in streamlined implement/verify mode instead of full review loop",
+              "type": "boolean"
+            }
+          }
+        },
+        "copy-only": {
+          "type": "object",
+          "properties": {}
+        },
+        "copy-paste": {
+          "type": "object",
+          "properties": {
+            "executionModel": {
+              "description": "The model string for LLM execution, e.g., 'google/gemini-2.5-pro'.",
+              "type": "string"
+            }
+          }
+        },
+        "direct-call": {
+          "type": "object",
+          "properties": {
+            "executionModel": {
+              "description": "The model string for LLM execution, e.g., 'google/gemini-2.5-pro'.",
+              "type": "string"
+            }
+          }
+        },
+        "codex-cli": {
+          "type": "object",
+          "properties": {
+            "simpleMode": {
+              "description": "Run executor in streamlined implement/verify mode instead of full review loop",
+              "type": "boolean"
+            },
+            "reasoning": {
+              "description": "Configuration for reasoning effort levels",
+              "type": "object",
+              "properties": {
+                "default": {
+                  "description": "Default reasoning level for implementation steps (default: medium)",
+                  "type": "string",
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh"
+                  ]
+                },
+                "scopedReview": {
+                  "description": "Reasoning level for task-scoped reviews (default: medium)",
+                  "type": "string",
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh"
+                  ]
+                },
+                "fullReview": {
+                  "description": "Reasoning level for full plan reviews (default: high)",
+                  "type": "string",
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "updateDocs": {
+      "description": "Configuration for automatic documentation updates",
+      "type": "object",
+      "properties": {
+        "mode": {
+          "description": "When to automatically update docs during agent execution",
+          "type": "string",
+          "enum": [
+            "never",
+            "after-iteration",
+            "after-completion"
+          ]
+        },
+        "model": {
+          "description": "Model to use for documentation updates",
+          "type": "string"
+        },
+        "executor": {
+          "description": "Executor to use for documentation updates",
+          "type": "string"
+        },
+        "include": {
+          "description": "Descriptions of files or patterns to include - only these files should be edited during doc updates",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exclude": {
+          "description": "Descriptions of files or patterns to exclude - these files should never be edited during doc updates",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

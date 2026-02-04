@@ -1,8 +1,8 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Documentation and Refinement
 goal: To ensure the new `add` and `split` commands are well-documented,
-  user-friendly, and seamlessly integrated into the `rmplan` tool.
+  user-friendly, and seamlessly integrated into the `tim` tool.
 id: 26
 uuid: c3f58928-c50e-4ec5-8763-7bcd4efd9a21
 status: done
@@ -15,16 +15,16 @@ promptsGeneratedAt: 2025-06-01T08:09:33.849Z
 createdAt: 2025-05-31T20:32:33.556Z
 updatedAt: 2025-10-27T08:39:04.248Z
 project:
-  title: Enhance rmplan with `add` and `split` commands for improved plan creation
+  title: Enhance tim with `add` and `split` commands for improved plan creation
     and organization.
   goal: The overall goal of this project is to introduce two new commands, `add`
-    and `split`, to the `rmplan` CLI tool. The `add` command will facilitate the
+    and `split`, to the `tim` CLI tool. The `add` command will facilitate the
     quick creation of new, empty plan files. The `generate` command will be
     enhanced to populate these empty plans. The `split` command will enable
     users to break down large, existing plans into multiple, smaller phase-based
     plan files using an LLM.
   details: This project aims to improve the workflow of creating and managing
-    complex project plans with `rmplan`. The `add` command will allow users to
+    complex project plans with `tim`. The `add` command will allow users to
     initialize a plan with a title and optional metadata like dependencies and
     priority. The `generate` command will then be able to take this stub plan
     and use an LLM to fill in the detailed tasks and steps, updating the
@@ -41,7 +41,7 @@ tasks:
     description: >
       Add comprehensive documentation for the new `add` and `split` commands to
       the README.md file. The documentation should be added to the appropriate
-      section of the README (likely under the rmplan commands section) and
+      section of the README (likely under the tim commands section) and
       should include:
 
       - Clear descriptions of what each command does
@@ -59,7 +59,7 @@ tasks:
       Review and improve the user-facing text for both the `add` and `split`
       commands. This includes:
 
-      - Command descriptions shown in `rmplan --help`
+      - Command descriptions shown in `tim --help`
 
       - Option descriptions and help text
 
@@ -69,16 +69,16 @@ tasks:
 
       The goal is to ensure all text is clear, concise, and helpful for users.
 changedFiles:
-  - .rmfilter/config/rmplan.yml
+  - .rmfilter/config/tim.yml
   - CLAUDE.md
   - README.md
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/id_utils.test.ts
-  - src/rmplan/id_utils.ts
-  - src/rmplan/plans.ts
-  - src/rmplan/rmplan.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/id_utils.test.ts
+  - src/tim/id_utils.ts
+  - src/tim/plans.ts
+  - src/tim/tim.ts
 rmfilter:
-  - src/rmplan
+  - src/tim
   - src/common
 ---
 

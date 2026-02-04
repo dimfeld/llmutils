@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Add blocking subissues feature to generate command
 goal: ""
 id: 135
@@ -20,7 +20,7 @@ updatedAt: 2025-11-01T20:46:33.760Z
 progressNotes:
   - timestamp: 2025-11-01T19:59:48.737Z
     text: Added CLI flag, prompt instructions, and blocking plan detection snapshot
-      logic. Updated Claude/simple prompts to include rmplan add guidance and
+      logic. Updated Claude/simple prompts to include tim add guidance and
       blocking summary section, and wired withBlockingSubissues option through
       CLI and MCP pathways.
     source: "implementer: tasks 1-3"
@@ -33,14 +33,14 @@ progressNotes:
   - timestamp: 2025-11-01T20:11:51.866Z
     text: Added CLI blocking-plan detection tests covering successful creation,
       unrelated plan warning, and missing numeric ID guard. bun test
-      src/rmplan/commands/generate.test.ts passes. Full bun test currently fails
+      src/tim/commands/generate.test.ts passes. Full bun test currently fails
       due to task-management integration test importing addPlanTaskParameters
       from generate_mode.ts, which no longer exports that symbol (pre-existing
       issue).
     source: "tester: tasks 9-11"
   - timestamp: 2025-11-01T20:33:18.813Z
-    text: Implemented the blocking subissue end-to-end test that calls rmplan add
-      and rmplan set inside the Claude executor mock, then updated README with
+    text: Implemented the blocking subissue end-to-end test that calls tim add
+      and tim set inside the Claude executor mock, then updated README with
       the new --with-blocking-subissues guidance and example output.
     source: "implementer: Task 7 & 8"
   - timestamp: 2025-11-01T20:35:27.934Z
@@ -51,12 +51,12 @@ tasks:
   - title: Add --with-blocking-subissues CLI flag
     done: true
     description: Add the new boolean flag to the generate command definition in
-      src/rmplan/rmplan.ts. Follow existing patterns for boolean flags
+      src/tim/tim.ts. Follow existing patterns for boolean flags
       (--autofind, --commit, etc.). No default value needed - flag presence
       enables the feature.
   - title: Update multi-phase prompt generation
     done: true
-    description: Modify generateClaudeCodePlanningPrompt() in src/rmplan/prompt.ts
+    description: Modify generateClaudeCodePlanningPrompt() in src/tim/prompt.ts
       to accept an optional withBlockingSubissues parameter. When true, append
       the blocking subissues section to the prompt. This section should instruct
       the LLM to identify prerequisite work and format it with title, priority,
@@ -64,29 +64,29 @@ tasks:
   - title: Update simple mode prompt generation
     done: true
     description: Modify generateClaudeCodeSimplePlanningPrompt() in
-      src/rmplan/prompt.ts to also support the withBlockingSubissues parameter.
+      src/tim/prompt.ts to also support the withBlockingSubissues parameter.
       Use similar but more concise wording appropriate for simple mode.
   - title: Update MCP generate-plan prompt
     done: true
-    description: Modify loadResearchPrompt() in src/rmplan/mcp/generate_mode.ts to
+    description: Modify loadResearchPrompt() in src/tim/mcp/generate_mode.ts to
       check for a withBlockingSubissues option and pass it to the prompt
       generation functions. The MCP prompt should support the same blocking
       subissues detection as CLI.
   - title: Update MCP generate-plan-simple prompt
     done: true
-    description: Modify loadGeneratePrompt() in src/rmplan/mcp/generate_mode.ts to
+    description: Modify loadGeneratePrompt() in src/tim/mcp/generate_mode.ts to
       support withBlockingSubissues option, ensuring simple mode via MCP also
       has this capability.
   - title: Add tests for prompt generation
     done: true
-    description: Add tests in src/rmplan/commands/generate.test.ts (or create if
+    description: Add tests in src/tim/commands/generate.test.ts (or create if
       needed) to verify that when withBlockingSubissues is true, the generated
       prompts include the blocking subissues section. Test both multi-phase and
       simple mode variants.
   - title: Add integration test for end-to-end flow
     done: true
     description: "Create an integration test that mocks an LLM agent which calls
-      `rmplan add` commands during execution. Verify: new plans are created,
+      `tim add` commands during execution. Verify: new plans are created,
       parent/discoveredFrom relationships are set correctly, main plan
       dependencies are updated automatically, detection logic correctly
       identifies the new plans and reports them."
@@ -101,11 +101,11 @@ tasks:
       invokeClaudeCodeForGeneration(), capture the list of existing plan IDs
       using readAllPlans(). Store this snapshot to compare against after LLM
       execution.
-  - title: Add rmplan add instructions to prompts
+  - title: Add tim add instructions to prompts
     done: true
     description: "Update the prompt generation functions to include instructions for
       creating blocking plans. Tell the LLM: 'If you identify prerequisite work
-      that should be done first, create those as separate plans using `rmplan
+      that should be done first, create those as separate plans using `tim
       add \\\"Plan Title\\\" --parent CURRENT_ID --discovered-from CURRENT_ID
       --priority [high|medium|low] --details \\\"Description of why this is
       needed\\\"`. The parent plan's dependencies will be updated
@@ -119,24 +119,24 @@ tasks:
       Title, #ID Title, ...'"
 changedFiles:
   - README.md
-  - src/rmplan/commands/add.ts
-  - src/rmplan/commands/generate.test.ts
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/mcp/generate_mode.ts
-  - src/rmplan/prompt.ts
-  - src/rmplan/rmplan.ts
+  - src/tim/commands/add.ts
+  - src/tim/commands/generate.test.ts
+  - src/tim/commands/generate.ts
+  - src/tim/mcp/generate_mode.ts
+  - src/tim/prompt.ts
+  - src/tim/tim.ts
 rmfilter: []
 ---
 
 ## Overview
 
-Enhance `rmplan generate` to help agents identify prerequisite work that should be done first. This adds a `--with-blocking-subissues` flag that prompts the LLM to identify blocking work, then offers to create those as separate plans with proper dependencies.
+Enhance `tim generate` to help agents identify prerequisite work that should be done first. This adds a `--with-blocking-subissues` flag that prompts the LLM to identify blocking work, then offers to create those as separate plans with proper dependencies.
 
 ## Changes Required
 
 ### 1. Add CLI Flag
 
-File: `src/rmplan/rmplan.ts` (in the generate command definition)
+File: `src/tim/tim.ts` (in the generate command definition)
 
 ```typescript
 .option('--with-blocking-subissues', 'Prompt LLM to identify and create blocking prerequisite plans')
@@ -144,7 +144,7 @@ File: `src/rmplan/rmplan.ts` (in the generate command definition)
 
 ### 2. Update Prompt Generation
 
-File: `src/rmplan/commands/generate.ts`
+File: `src/tim/commands/generate.ts`
 
 When `options.withBlockingSubissues` is true, add this section to the LLM prompt:
 
@@ -199,7 +199,7 @@ if (subissues.length > 0) {
   if (shouldCreate) {
     const createdIds = [];
     for (const subissue of subissues) {
-      // Create plan using rmplan add command programmatically
+      // Create plan using tim add command programmatically
       const newPlanId = await createPlan({
         title: subissue.title,
         priority: subissue.priority,
@@ -221,7 +221,7 @@ if (subissues.length > 0) {
 
 ```bash
 # Generate plan with blocking subissue detection
-rmplan generate 42 --with-blocking-subissues
+tim generate 42 --with-blocking-subissues
 ```
 
 LLM might respond:
@@ -267,7 +267,7 @@ This helps agents:
 
 Depends on plan 129 for `discoveredFrom` field (subissues should be marked with `--discovered-from <parent-plan-id>`).
 
-<!-- rmplan-generated-start -->
+<!-- tim-generated-start -->
 ## Implementation Decisions
 
 Based on research and discussion:
@@ -302,7 +302,7 @@ Based on research and discussion:
 
 ## Revised Approach: Agent-Driven Plan Creation
 
-**Key Change:** Instead of parsing LLM output for a specific format, the LLM agent will directly use `rmplan add` commands to create blocking subissues.
+**Key Change:** Instead of parsing LLM output for a specific format, the LLM agent will directly use `tim add` commands to create blocking subissues.
 
 **Benefits:**
 - No fragile regex parsing needed
@@ -312,21 +312,21 @@ Based on research and discussion:
 
 **Implementation Flow:**
 1. Before invoking LLM, snapshot existing plan IDs
-2. Add instruction to prompt: "If you identify blocking work, create those plans using `rmplan add` with appropriate `--parent`, `--discovered-from`, and `--depends-on` flags"
+2. Add instruction to prompt: "If you identify blocking work, create those plans using `tim add` with appropriate `--parent`, `--discovered-from`, and `--depends-on` flags"
 3. After LLM execution, compare plan directory to find newly created plans
 4. Report the new blocking plans to user with IDs and titles
 
 **Agent Tool Access:**
-- The agent already has access to bash commands including `rmplan add`
+- The agent already has access to bash commands including `tim add`
 - Can set all needed relationships via CLI flags: `--parent ID --discovered-from ID --depends-on ID`
 - The bidirectional parent/dependency updates happen automatically via existing code
-<!-- rmplan-generated-end -->
+<!-- tim-generated-end -->
 
 ## Research
 
 ### Summary
 
-The feature to add blocking subissues detection to the `rmplan generate` command is well-positioned within the existing architecture. The codebase already has strong patterns for:
+The feature to add blocking subissues detection to the `tim generate` command is well-positioned within the existing architecture. The codebase already has strong patterns for:
 - Programmatic plan creation (both CLI and MCP)
 - Parent-child relationship management with automatic bidirectional updates
 - The `discoveredFrom` field (mentioned as dependency plan 129)
@@ -341,7 +341,7 @@ The most critical discoveries:
 
 ### Findings
 
-#### 1. Generate Command Structure (src/rmplan/commands/generate.ts)
+#### 1. Generate Command Structure (src/tim/commands/generate.ts)
 
 **Key Discoveries:**
 
@@ -399,10 +399,10 @@ if (planningDocContent) {
 - Preserves completed tasks when updating plans
 
 **Key Files for Prompt Construction:**
-- `src/rmplan/prompt.ts` - Contains all prompt generation functions
+- `src/tim/prompt.ts` - Contains all prompt generation functions
 - Planning document integration via `config.planning?.instructions`
 
-#### 2. MCP Server Integration (src/rmplan/mcp/generate_mode.ts)
+#### 2. MCP Server Integration (src/tim/mcp/generate_mode.ts)
 
 **MCP Prompts Registered (lines 717-794):**
 
@@ -440,17 +440,17 @@ if (planningDocContent) {
 - `list-ready-plans` - List ready-to-execute plans
 - `create-plan` - Create new plan files
 
-**Underlying Prompt Functions (src/rmplan/prompt.ts):**
+**Underlying Prompt Functions (src/tim/prompt.ts):**
 - `generateClaudeCodePlanningPrompt()` - Lines 602-646
 - `generateClaudeCodeResearchPrompt()` - Lines 648-677
 - `generateClaudeCodeGenerationPrompt()` - Lines 679-719
 - `generateClaudeCodeSimplePlanningPrompt()` - Lines 721-760
 
 **Context Building:**
-- Uses `buildPlanContext()` from `src/rmplan/plan_display.ts` to assemble plan information
+- Uses `buildPlanContext()` from `src/tim/plan_display.ts` to assemble plan information
 - Includes ID, title, goal, details, status, priority, assignments, task summary, relationships, dependencies
 
-#### 3. Plan Creation Utilities (src/rmplan/commands/add.ts and src/rmplan/mcp/generate_mode.ts)
+#### 3. Plan Creation Utilities (src/tim/commands/add.ts and src/tim/mcp/generate_mode.ts)
 
 **Two Main Creation Pathways:**
 
@@ -471,33 +471,33 @@ if (planningDocContent) {
 
 **Core Utilities:**
 
-- **ID Generation** (`src/rmplan/id_utils.ts`):
+- **ID Generation** (`src/tim/id_utils.ts`):
   ```typescript
   generateNumericPlanId(tasksDir: string): Promise<number>
   // Returns maxId + 1, sequential
   ```
 
-- **Filename Generation** (`src/rmplan/utils/filename.ts`):
+- **Filename Generation** (`src/tim/utils/filename.ts`):
   ```typescript
   generatePlanFilename(planId: number, title: string): string
   // Format: 001-plan-title.plan.md (zero-padded to 3 digits)
   ```
 
-- **Reading Plans** (`src/rmplan/plans.ts`, lines 526-606):
+- **Reading Plans** (`src/tim/plans.ts`, lines 526-606):
   ```typescript
   readPlanFile(filePath: string): Promise<PlanSchema>
   // Supports YAML front matter + markdown body
   // Auto-generates UUID if missing
   ```
 
-- **Writing Plans** (`src/rmplan/plans.ts`, lines 615-662):
+- **Writing Plans** (`src/tim/plans.ts`, lines 615-662):
   ```typescript
   writePlanFile(filePath: string, input: PlanSchemaInput, options?: { skipUpdatedAt?: boolean })
   // Updates updatedAt timestamp
   // Separates details field into markdown body
   ```
 
-- **Reading All Plans** (`src/rmplan/plans.ts`, lines 55-161):
+- **Reading All Plans** (`src/tim/plans.ts`, lines 55-161):
   ```typescript
   readAllPlans(directory: string, readCache = true)
   // Returns Map of ID → plan with filename
@@ -517,25 +517,25 @@ Both `add.ts` (lines 177-202) and `mcpCreatePlan` (lines 671-702) automatically:
 **discoveredFrom Field:**
 - Type: Optional `number` (plan ID)
 - Purpose: Tracks which plan led to discovering a sub-plan during research/implementation
-- Validated by `validateDiscoveredFromReferences()` in `src/rmplan/commands/validate.ts`
-- Can be cleared with `rmplan set --no-discovered-from`
+- Validated by `validateDiscoveredFromReferences()` in `src/tim/commands/validate.ts`
+- Can be cleared with `tim set --no-discovered-from`
 
 **Dependency Management:**
 
-- **Circular Dependency Detection** (`src/rmplan/commands/validate.ts`, lines 256-310):
+- **Circular Dependency Detection** (`src/tim/commands/validate.ts`, lines 256-310):
   ```typescript
   wouldCreateCircularDependency(plans, parentId, childId): boolean
   // Uses depth-first search to prevent cycles
   ```
 
-- **Dependency Traversal** (`src/rmplan/plans.ts`, lines 464-517):
+- **Dependency Traversal** (`src/tim/plans.ts`, lines 464-517):
   ```typescript
   collectDependenciesInOrder(planId, allPlans, visited)
   // Topological sort: dependencies before dependents
   // Detects circular dependencies and throws error
   ```
 
-- **Readiness Checks** (`src/rmplan/plans.ts`, lines 434-462):
+- **Readiness Checks** (`src/tim/plans.ts`, lines 434-462):
   ```typescript
   isPlanReady(plan, allPlans): boolean
   // Status is 'pending'
@@ -547,16 +547,16 @@ Both `add.ts` (lines 177-202) and `mcpCreatePlan` (lines 671-702) automatically:
 - `getChildPlans()` - Returns plans with parent === planId
 - `getDiscoveredPlans()` - Returns plans with discoveredFrom === planId
 
-**Set Command for Updates** (`src/rmplan/commands/set.ts`):
+**Set Command for Updates** (`src/tim/commands/set.ts`):
 - Changing parent automatically removes from old parent's dependencies
 - Setting parent checks for circular dependencies
 - Marks parent as `in_progress` if it was `done` (and new child added)
 
-**Validation and Consistency** (`src/rmplan/commands/validate.ts`):
+**Validation and Consistency** (`src/tim/commands/validate.ts`):
 - `validateParentChildRelationships()` (lines 162-230) - Checks bidirectional consistency
 - `fixParentChildRelationships()` - Auto-repair for inconsistencies
 
-#### 4. CLI Flag Patterns (src/rmplan/rmplan.ts)
+#### 4. CLI Flag Patterns (src/tim/tim.ts)
 
 **Framework: Commander.js**
 - Options defined via `.option()` method
@@ -655,17 +655,17 @@ Core infrastructure:
 - `src/testing.ts` - ModuleMocker class
 
 Best examples:
-- `src/rmplan/commands/set-task-done.test.ts` - Module mocking patterns
-- `src/rmplan/commands/find_next_dependency.test.ts` - Filesystem operations, complex scenarios
-- `src/rmplan/executors/codex_cli.test.ts` - LLM/executor mocking
-- `src/rmplan/commands/task-management.integration.test.ts` - CLI/MCP integration
-- `src/rmplan/commands/agent/agent.failure_handling.test.ts` - Agent workflows
+- `src/tim/commands/set-task-done.test.ts` - Module mocking patterns
+- `src/tim/commands/find_next_dependency.test.ts` - Filesystem operations, complex scenarios
+- `src/tim/executors/codex_cli.test.ts` - LLM/executor mocking
+- `src/tim/commands/task-management.integration.test.ts` - CLI/MCP integration
+- `src/tim/commands/agent/agent.failure_handling.test.ts` - Agent workflows
 
 **Key Testing Patterns:**
 
 1. **Real Filesystem Operations:**
    ```typescript
-   const tmpDir = await fs.mkdtemp(path.join(tmpdir(), 'rmplan-test-'));
+   const tmpDir = await fs.mkdtemp(path.join(tmpdir(), 'tim-test-'));
    // Use real temp directories, not mocked filesystem
    ```
 
@@ -732,9 +732,9 @@ Best examples:
    ```
 
 **Test Utilities:**
-- `src/rmplan/utils/task_operations.ts` - findTaskByTitle(), selectTaskInteractive(), promptForTaskInfo()
-- `src/rmplan/plans.ts` - readPlanFile(), writePlanFile(), clearPlanCache()
-- `src/rmplan/configSchema.ts` - getDefaultConfig() for test setup
+- `src/tim/utils/task_operations.ts` - findTaskByTitle(), selectTaskInteractive(), promptForTaskInfo()
+- `src/tim/plans.ts` - readPlanFile(), writePlanFile(), clearPlanCache()
+- `src/tim/configSchema.ts` - getDefaultConfig() for test setup
 
 **Critical Testing Note:**
 From CLAUDE.md: "Tests should be useful; if a test needs to mock almost all of the functionality, then it should probably not be written."
@@ -763,8 +763,8 @@ From CLAUDE.md: "Tests should be useful; if a test needs to mock almost all of t
 
 5. **Prompt Synchronization:**
    - Need to update prompts in THREE places:
-     1. CLI generate command prompts (`src/rmplan/prompt.ts`)
-     2. MCP generate-plan prompt loading (`src/rmplan/mcp/generate_mode.ts`)
+     1. CLI generate command prompts (`src/tim/prompt.ts`)
+     2. MCP generate-plan prompt loading (`src/tim/mcp/generate_mode.ts`)
      3. Simple mode variants
    - Risk of inconsistency if one is updated but not others
 
@@ -841,10 +841,10 @@ From CLAUDE.md: "Tests should be useful; if a test needs to mock almost all of t
 
 # Implementation Notes
 
-Implemented tasks 1, 2, 3, 6, 9, 10, and 11: Add --with-blocking-subissues CLI flag; Update multi-phase prompt generation; Update simple mode prompt generation; Add tests for prompt generation; Snapshot plan IDs before LLM invocation; Add rmplan add instructions to prompts; Detect and report newly created plans. Introduced the new flag in src/rmplan/rmplan.ts and enforced Claude-mode-only execution inside src/rmplan/commands/generate.ts. Updated prompt builders in src/rmplan/prompt.ts to accept option objects, inject the Blocking Subissues guidance, and remind the agent to summarize blockers. Wired the withBlockingSubissues option through the CLI flow by snapshotting plan IDs, propagating prompt options, and logging newly created blocking plans after invokeClaudeCodeForGeneration, including warnings for unrelated plans. Extended MCP entry points in src/rmplan/mcp/generate_mode.ts to forward the new flag, register prompt arguments, and parse boolean values robustly. Added coverage in src/rmplan/commands/generate.test.ts to confirm that both planning prompt variants emit the blocking instructions. These changes ensure agents receive explicit rmplan add guidance for blockers while the CLI automatically detects and reports any subplans created during generation.
+Implemented tasks 1, 2, 3, 6, 9, 10, and 11: Add --with-blocking-subissues CLI flag; Update multi-phase prompt generation; Update simple mode prompt generation; Add tests for prompt generation; Snapshot plan IDs before LLM invocation; Add tim add instructions to prompts; Detect and report newly created plans. Introduced the new flag in src/tim/tim.ts and enforced Claude-mode-only execution inside src/tim/commands/generate.ts. Updated prompt builders in src/tim/prompt.ts to accept option objects, inject the Blocking Subissues guidance, and remind the agent to summarize blockers. Wired the withBlockingSubissues option through the CLI flow by snapshotting plan IDs, propagating prompt options, and logging newly created blocking plans after invokeClaudeCodeForGeneration, including warnings for unrelated plans. Extended MCP entry points in src/tim/mcp/generate_mode.ts to forward the new flag, register prompt arguments, and parse boolean values robustly. Added coverage in src/tim/commands/generate.test.ts to confirm that both planning prompt variants emit the blocking instructions. These changes ensure agents receive explicit tim add guidance for blockers while the CLI automatically detects and reports any subplans created during generation.
 
-Restored MCP task parameter exports and relaxed the blocking-subissue flag guard. Specifically, I reintroduced exported Zod schemas for addPlanTaskParameters and removePlanTaskParameters in src/rmplan/mcp/generate_mode.ts, deriving the internal argument types from those schemas so the task-management integration tests can continue to parse tool inputs without duplication. The remove schema now enforces that callers provide either taskTitle or taskIndex while leaving normalization to the existing helpers. I also replaced the hard error in src/rmplan/commands/generate.ts with a warning when --with-blocking-subissues is used outside Claude mode; this keeps the enhanced prompt path available for direct and clipboard workflows while making it clear that automatic blocker detection still depends on Claude automation. Tasks addressed: restore MCP exports for task management tools; allow --with-blocking-subissues in non-Claude flows.
+Restored MCP task parameter exports and relaxed the blocking-subissue flag guard. Specifically, I reintroduced exported Zod schemas for addPlanTaskParameters and removePlanTaskParameters in src/tim/mcp/generate_mode.ts, deriving the internal argument types from those schemas so the task-management integration tests can continue to parse tool inputs without duplication. The remove schema now enforces that callers provide either taskTitle or taskIndex while leaving normalization to the existing helpers. I also replaced the hard error in src/tim/commands/generate.ts with a warning when --with-blocking-subissues is used outside Claude mode; this keeps the enhanced prompt path available for direct and clipboard workflows while making it clear that automatic blocker detection still depends on Claude automation. Tasks addressed: restore MCP exports for task management tools; allow --with-blocking-subissues in non-Claude flows.
 
-Added an end-to-end regression test for Task 7 that exercises the blocking-subissue workflow inside src/rmplan/commands/generate.test.ts by invoking handleAddCommand and handleSetCommand inside the Claude executor mock. The test asserts that rmplan add creates a new child plan, rmplan set records discoveredFrom, the parent plan gains the dependency, and the CLI log reports the blockers, ensuring future regressions are caught. For Task 8 I expanded README.md with a new 'Blocking Subissues' subsection describing the --with-blocking-subissues flag, example invocation, expected Markdown format, and the confirmation message users should see so operators understand how the automation behaves.
+Added an end-to-end regression test for Task 7 that exercises the blocking-subissue workflow inside src/tim/commands/generate.test.ts by invoking handleAddCommand and handleSetCommand inside the Claude executor mock. The test asserts that tim add creates a new child plan, tim set records discoveredFrom, the parent plan gains the dependency, and the CLI log reports the blockers, ensuring future regressions are caught. For Task 8 I expanded README.md with a new 'Blocking Subissues' subsection describing the --with-blocking-subissues flag, example invocation, expected Markdown format, and the confirmation message users should see so operators understand how the automation behaves.
 
-Implemented --discovered-from support in rmplan add so the blocking subissue workflow described in the prompts/docs actually executes without crashing. Touched src/rmplan/rmplan.ts to expose the new option in the CLI (with positive-integer validation that reuses intArg) and extended src/rmplan/commands/add.ts to validate the referenced plan exists before setting plan.discoveredFrom on the newly created record. Updated src/rmplan/commands/generate.test.ts to mimic the documented flow by invoking handleAddCommand with discoveredFrom and asserting the discoveredFrom field is propagated; this guards the regression that the reviewer reported. Tasks covered: Add --with-blocking-subissues CLI flag, Add integration test for end-to-end flow. Verified with bun test src/rmplan/commands/add.test.ts src/rmplan/commands/generate.test.ts so future maintainers know the scenario stays green.
+Implemented --discovered-from support in tim add so the blocking subissue workflow described in the prompts/docs actually executes without crashing. Touched src/tim/tim.ts to expose the new option in the CLI (with positive-integer validation that reuses intArg) and extended src/tim/commands/add.ts to validate the referenced plan exists before setting plan.discoveredFrom on the newly created record. Updated src/tim/commands/generate.test.ts to mimic the documented flow by invoking handleAddCommand with discoveredFrom and asserting the discoveredFrom field is propagated; this guards the regression that the reviewer reported. Tasks covered: Add --with-blocking-subissues CLI flag, Add integration test for end-to-end flow. Verified with bun test src/tim/commands/add.test.ts src/tim/commands/generate.test.ts so future maintainers know the scenario stays green.

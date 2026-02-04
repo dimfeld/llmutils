@@ -1,10 +1,10 @@
 # Linear Integration Documentation
 
-This document provides comprehensive information about rmplan's Linear integration, including setup, usage, and advanced features.
+This document provides comprehensive information about tim's Linear integration, including setup, usage, and advanced features.
 
 ## Overview
 
-rmplan includes native support for Linear issues, allowing you to use Linear as your issue tracking system instead of or alongside GitHub. The Linear integration provides the same core functionality as GitHub integration, including issue importing, plan generation, and comment support.
+tim includes native support for Linear issues, allowing you to use Linear as your issue tracking system instead of or alongside GitHub. The Linear integration provides the same core functionality as GitHub integration, including issue importing, plan generation, and comment support.
 
 ## Setup and Configuration
 
@@ -12,7 +12,7 @@ rmplan includes native support for Linear issues, allowing you to use Linear as 
 
 1. **Linear Account**: You need access to a Linear workspace
 2. **API Key**: Generate a Personal API key from Linear
-3. **rmplan Configuration**: Configure rmplan to use Linear as your issue tracker
+3. **tim Configuration**: Configure tim to use Linear as your issue tracker
 
 ### Step 1: Generate a Linear API Key
 
@@ -29,20 +29,20 @@ Set the `LINEAR_API_KEY` environment variable in your shell:
 export LINEAR_API_KEY="lin_api_1234567890abcdef"
 
 # Or set it for a single session
-LINEAR_API_KEY="lin_api_1234567890abcdef" rmplan import TEAM-123
+LINEAR_API_KEY="lin_api_1234567890abcdef" tim import TEAM-123
 ```
 
-### Step 3: Configure rmplan
+### Step 3: Configure tim
 
-Create or update your rmplan configuration file at `.rmfilter/config/rmplan.yml`:
+Create or update your tim configuration file at `.rmfilter/config/tim.yml`:
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-config-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-config-schema.json
 
 # Set Linear as your issue tracker
 issueTracker: 'linear'
 
-# Optional: Configure other rmplan settings
+# Optional: Configure other tim settings
 paths:
   tasks: './tasks'
   docs:
@@ -62,7 +62,7 @@ Linear uses a specific format for issue identifiers:
 
 ### Supported Input Formats
 
-rmplan accepts Linear issues in multiple formats:
+tim accepts Linear issues in multiple formats:
 
 1. **Direct Issue ID**: `TEAM-123`
 2. **Linear URL**: `https://linear.app/workspace/issue/TEAM-123`
@@ -72,26 +72,26 @@ rmplan accepts Linear issues in multiple formats:
 
 ```bash
 # All of these refer to the same Linear issue:
-rmplan import TEAM-123
-rmplan import https://linear.app/mycompany/issue/TEAM-123
-rmplan import https://linear.app/mycompany/issue/TEAM-123/implement-user-authentication
+tim import TEAM-123
+tim import https://linear.app/mycompany/issue/TEAM-123
+tim import https://linear.app/mycompany/issue/TEAM-123/implement-user-authentication
 ```
 
 ## Core Features
 
 ### Issue Import
 
-Import Linear issues as rmplan task files:
+Import Linear issues as tim task files:
 
 ```bash
 # Import a specific Linear issue
-rmplan import TEAM-123
+tim import TEAM-123
 
 # Import with custom output location
-rmplan import TEAM-456 --output custom-tasks/feature.yml
+tim import TEAM-456 --output custom-tasks/feature.yml
 
 # Interactive mode - select multiple issues to import
-rmplan import
+tim import
 ```
 
 **Interactive Mode Features:**
@@ -107,13 +107,13 @@ Generate detailed implementation plans from Linear issues:
 
 ```bash
 # Generate a plan from a Linear issue
-rmplan generate --issue TEAM-456 -- src/**/*.ts
+tim generate --issue TEAM-456 -- src/**/*.ts
 
 # Generate and commit the resulting plan file
-rmplan generate --issue TEAM-789 --commit -- src/api/**/*.ts
+tim generate --issue TEAM-789 --commit -- src/api/**/*.ts
 
 # Use with rmfilter options for better context
-rmplan generate --issue TEAM-123 -- src/**/*.ts --grep auth --with-imports
+tim generate --issue TEAM-123 -- src/**/*.ts --grep auth --with-imports
 ```
 
 ### Comment Integration
@@ -133,15 +133,15 @@ Linear issue comments are automatically included in imported plans:
 # 1. Set up your environment
 export LINEAR_API_KEY="lin_api_your_key_here"
 
-# 2. Configure rmplan for Linear
-cat > .rmfilter/config/rmplan.yml << EOF
+# 2. Configure tim for Linear
+cat > .rmfilter/config/tim.yml << EOF
 issueTracker: 'linear'
 paths:
   tasks: './tasks'
 EOF
 
 # 3. Import a Linear issue
-rmplan import TEAM-123
+tim import TEAM-123
 
 # 4. The resulting task file is created at tasks/team-123-issue-title.yml
 ```
@@ -150,30 +150,30 @@ rmplan import TEAM-123
 
 ```bash
 # 1. Generate a detailed plan from a Linear issue with full context
-rmplan generate --issue TEAM-456 --rmfilter -- \
+tim generate --issue TEAM-456 --rmfilter -- \
   src/**/*.ts \
   --grep authentication \
   --with-imports \
   --with-tests
 
 # 2. Execute the plan automatically
-rmplan agent tasks/team-456-implement-oauth.yml
+tim agent tasks/team-456-implement-oauth.yml
 
 # 3. Or mark steps as completed manually and commit changes
-rmplan done tasks/team-456-implement-oauth.yml --commit
+tim done tasks/team-456-implement-oauth.yml --commit
 ```
 
 ### Multi-Issue Project Planning
 
 ```bash
 # 1. Import multiple related Linear issues interactively
-rmplan import
+tim import
 
 # 2. Create dependencies between imported plans
 # Edit the YAML files to add dependency relationships
 
 # 3. Execute plans in dependency order
-rmplan agent --next-ready parent-plan-id
+tim agent --next-ready parent-plan-id
 ```
 
 ## Sample Output
@@ -181,7 +181,7 @@ rmplan agent --next-ready parent-plan-id
 ### Import Command Output
 
 ```
-$ rmplan import TEAM-123
+$ tim import TEAM-123
 ✓ Connected to Linear workspace: MyCompany
 ✓ Found Linear issue: TEAM-123 - Implement user authentication
 ✓ Processing issue comments (3 found)
@@ -193,7 +193,7 @@ Issue imported successfully!
 ### Interactive Import Session
 
 ```
-$ rmplan import
+$ tim import
 ✓ Connected to Linear workspace: MyCompany
 ✓ Found 15 open Linear issues
 
@@ -265,8 +265,8 @@ updatedAt: '2024-01-16T10:30:00.000Z'
 
 ### ❌ Not Supported
 
-- **Pull Requests**: Linear doesn't have pull requests; PR-related rmplan features remain GitHub-only
-- **Issue Creation**: rmplan can only read Linear issues, not create them
+- **Pull Requests**: Linear doesn't have pull requests; PR-related tim features remain GitHub-only
+- **Issue Creation**: tim can only read Linear issues, not create them
 - **Webhooks**: No webhook integration for automatic plan updates
 
 ## Differences from GitHub Integration
@@ -329,10 +329,10 @@ Enable debug logging to troubleshoot issues:
 
 ```bash
 # Enable debug output
-DEBUG=rmplan:* rmplan import TEAM-123
+DEBUG=tim:* tim import TEAM-123
 
 # Or use the --debug flag
-rmplan import TEAM-123 --debug
+tim import TEAM-123 --debug
 ```
 
 ## Performance Considerations
@@ -363,11 +363,11 @@ If you're migrating from GitHub to Linear integration:
 ```bash
 # Before (GitHub)
 export GITHUB_TOKEN="ghp_your_github_token"
-rmplan import 123
+tim import 123
 
 # After (Linear)
 export LINEAR_API_KEY="lin_api_your_linear_key"
-rmplan import TEAM-123
+tim import TEAM-123
 ```
 
 ## Advanced Configuration
@@ -378,15 +378,15 @@ You can maintain separate configurations for different projects:
 
 ```bash
 # Project A uses GitHub
-rmplan --config .rmfilter/config/github-rmplan.yml import 123
+tim --config .rmfilter/config/github-tim.yml import 123
 
 # Project B uses Linear
-rmplan --config .rmfilter/config/linear-rmplan.yml import TEAM-456
+tim --config .rmfilter/config/linear-tim.yml import TEAM-456
 ```
 
 ### Custom Issue Processing
 
-You can customize how Linear issues are processed by modifying the rmplan configuration:
+You can customize how Linear issues are processed by modifying the tim configuration:
 
 ```yaml
 # Custom paths for Linear projects
@@ -410,7 +410,7 @@ The Linear integration uses the `@linear/sdk` package. Key components:
 
 - **LinearIssueTrackerClient**: Main client for Linear API interactions
 - **Issue Parsing**: Handles Linear-specific issue ID formats
-- **Comment Processing**: Converts Linear comments to rmplan format
+- **Comment Processing**: Converts Linear comments to tim format
 - **Error Handling**: Provides specific error messages for Linear API issues
 
 For detailed API information, see the Linear SDK documentation at: https://linear.app/developers/sdk

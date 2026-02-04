@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: PR review command - Enhanced Review Features and Configuration
 goal: Add advanced review capabilities including custom review criteria,
   configuration options, and improved output formatting
@@ -18,9 +18,9 @@ promptsGeneratedAt: 2025-08-13T21:48:21.383Z
 createdAt: 2025-08-13T20:28:04.715Z
 updatedAt: 2025-10-27T08:39:04.309Z
 project:
-  title: Add PR review command to rmplan for comprehensive code review against
+  title: Add PR review command to tim for comprehensive code review against
     plan requirements
-  goal: Implement a new `rmplan review` command that analyzes code changes on the
+  goal: Implement a new `tim review` command that analyzes code changes on the
     current branch against trunk, evaluates compliance with plan requirements,
     and provides comprehensive code quality feedback using the reviewer agent.
   details: >-
@@ -53,7 +53,7 @@ tasks:
   - title: Add review configuration schema
     done: true
     description: >
-      Extend the rmplan configuration schema to include review-specific settings
+      Extend the tim configuration schema to include review-specific settings
       such as default review focus areas, custom instructions, and output
       preferences. Following the existing pattern in configSchema.ts, add a new
       'review' section with Zod validation. The configuration should support:

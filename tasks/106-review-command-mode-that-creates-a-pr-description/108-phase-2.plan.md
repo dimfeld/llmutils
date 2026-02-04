@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Change description command - Interactive Output Handling and CLI Integration
 goal: To enhance the `description` command with interactive options for handling
   the generated output, allowing users to easily copy it, save it, or create a
@@ -21,7 +21,7 @@ updatedAt: 2025-10-27T08:39:04.325Z
 project:
   title: Implement a `description` command to generate PR descriptions from plan
     context
-  goal: To create a new `rmplan description` command that, similar to the `review`
+  goal: To create a new `tim description` command that, similar to the `review`
     command, gathers context from a plan and code changes, but uses it to
     generate a comprehensive pull request description.
   details: >
@@ -57,7 +57,7 @@ project:
 
     **Acceptance Criteria:**
 
-    - A new `rmplan description <plan>` command is available in the CLI.
+    - A new `tim description <plan>` command is available in the CLI.
 
     - The context-gathering logic from the `review` command is successfully
     refactored into a shared function without breaking existing `review`
@@ -75,11 +75,11 @@ project:
     **Technical Considerations:**
 
     - The refactoring of context-gathering logic from
-    `src/rmplan/commands/review.ts` is a critical first step. This shared
+    `src/tim/commands/review.ts` is a critical first step. This shared
     utility will be used by both `review` and the new `description` command.
 
     - A new prompt will be created, likely in
-    `src/rmplan/executors/claude_code/agent_prompts.ts`, specifically for
+    `src/tim/executors/claude_code/agent_prompts.ts`, specifically for
     generating PR descriptions.
 
     - The `@inquirer/prompts` library will be used for interactive output
@@ -91,7 +91,7 @@ tasks:
   - title: Add Output Handling CLI Flags
     done: true
     description: >
-      Extend the `description` command definition in `rmplan.ts` to include
+      Extend the `description` command definition in `tim.ts` to include
       flags for non-interactive output handling: `--output-file <path>` to save
       to a file, `--copy` to copy to the clipboard, and `--create-pr` to
       initiate PR creation. Also update the DescriptionOptions interface in
@@ -171,10 +171,10 @@ tasks:
       Use the existing test structure in description.test.ts as a template,
       following the ModuleMocker pattern already established.
 rmfilter:
-  - src/rmplan/commands/review.ts
+  - src/tim/commands/review.ts
   - --with-imports
   - --
-  - src/rmplan/rmplan.ts
+  - src/tim/tim.ts
 ---
 
 Building on the core functionality from Phase 1, this phase adds the user-facing output handling features. We will add CLI flags for direct actions and implement an interactive prompt as a fallback. This will make the command significantly more useful in a real-world development workflow.

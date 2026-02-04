@@ -1,6 +1,6 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-goal: Add import analysis options (--with-imports, --with-all-imports) to rmplan
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
+goal: Add import analysis options (--with-imports, --with-all-imports) to tim
   next command.
 id: 7
 uuid: e716161d-5260-4932-812a-8d9b42aa45a0
@@ -9,7 +9,7 @@ updatedAt: 2025-10-27T08:39:04.208Z
 tasks:
   - title: Add CLI Options and Basic Logic Structure
     done: true
-    description: Add the new command-line options to `rmplan next` and set up the
+    description: Add the new command-line options to `tim next` and set up the
       conditional logic structure for handling them.
   - title: Implement Candidate File Extraction
     done: true
@@ -23,7 +23,7 @@ tasks:
       used.
   - title: Implement Standalone Import Analysis
     done: true
-    description: Implement the import analysis directly within rmplan for cases
+    description: Implement the import analysis directly within tim for cases
       where `--rmfilter` is not used, leveraging the existing `ImportWalker` and
       `Resolver`.
   - title: Refine and Test
@@ -32,10 +32,10 @@ tasks:
       all scenarios.
 ---
 
-This feature allows `rmplan next` to automatically include imported files relevant to the current task, similar to `rmfilter`.
+This feature allows `tim next` to automatically include imported files relevant to the current task, similar to `rmfilter`.
 
-When `rmplan next` is run with `--with-imports` or `--with-all-imports`:
+When `tim next` is run with `--with-imports` or `--with-all-imports`:
 1. It will first attempt to extract file references mentioned directly within the generated LLM prompt text for the step.
 2. If no files are found in the prompt, it will fall back to using the `files` list defined in the current task of the plan YAML.
 3. If the `--rmfilter` option is also used, these candidate files and the corresponding import flag (`--with-imports` or `--with-all-imports`) will be passed as a separate command block (`-- <files> <flag>`) to the `rmfilter` process. The original task files will *not* be passed directly in the main arguments.
-4. If `--rmfilter` is *not* used, `rmplan` will perform the import analysis itself using `ImportWalker`, expand the file list, deduplicate it, and include the full list in the generated prompt context.
+4. If `--rmfilter` is *not* used, `tim` will perform the import analysis itself using `ImportWalker`, expand the file list, deduplicate it, and include the full list in the generated prompt context.

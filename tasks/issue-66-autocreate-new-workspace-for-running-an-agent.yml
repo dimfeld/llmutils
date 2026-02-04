@@ -1,7 +1,7 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 goal: Implement a feature to automatically create a new workspace (Git clone or
-  worktree) for running an `rmplan` agent, based on repository-level
+  worktree) for running an `tim` agent, based on repository-level
   configuration. This includes managing the workspace lifecycle, customizing its
   location, and tracking its association with a specific task.
 id: 2
@@ -11,7 +11,7 @@ updatedAt: 2025-10-27T08:39:04.207Z
 tasks:
   - title: 1. Define and Load Workspace Creation Configuration
     done: true
-    description: Update the `rmplan.yml` configuration schema to include options for
+    description: Update the `tim.yml` configuration schema to include options for
       workspace creation. Implement the loading and validation of this new
       configuration.
   - title: 2. WorkspaceManager Structure and Script-Based Creation
@@ -30,9 +30,9 @@ tasks:
     done: true
     description: Implement a system to track created workspaces and their
       association with tasks using a global JSON file.
-  - title: 6. Integrate Workspace Creation into `rmplan agent`
+  - title: 6. Integrate Workspace Creation into `tim agent`
     done: true
-    description: Modify the `rmplan agent` command to use the `WorkspaceManager` to
+    description: Modify the `tim agent` command to use the `WorkspaceManager` to
       create and operate within a new workspace when specific options are
       provided.
   - title: 7. Documentation Update
@@ -42,10 +42,10 @@ tasks:
 ---
 
 The project involves several key areas:
-1.  **Configuration:** Enhancing the `rmplan.yml` schema to define how new workspaces should be created. This includes options for using a custom script or having `llmutils` manage the cloning and setup process.
+1.  **Configuration:** Enhancing the `tim.yml` schema to define how new workspaces should be created. This includes options for using a custom script or having `llmutils` manage the cloning and setup process.
 2.  **Workspace Management:** A new `WorkspaceManager` service will encapsulate the logic for creating workspaces. This service will handle both script-based and `llmutils`-managed creation, including cloning, branch creation, and running initialization commands.
 3.  **Tracking:** A system for recording which task a workspace was created for, likely using a global JSON file (`~/.llmutils/workspaces.json`).
-4.  **Agent Integration:** Modifying the `rmplan agent` command to utilize the `WorkspaceManager`. The agent will operate within the newly created workspace, ensuring that all file operations and Git commands are contextually correct.
+4.  **Agent Integration:** Modifying the `tim agent` command to utilize the `WorkspaceManager`. The agent will operate within the newly created workspace, ensuring that all file operations and Git commands are contextually correct.
 5.  **Customization:** Allowing users to specify the location for new clones and define repository-specific initialization steps.
 
-The implementation will be broken down into iterative tasks, focusing on building the core components first (configuration, workspace manager basics) and then integrating them into the existing `rmplan agent` workflow.
+The implementation will be broken down into iterative tasks, focusing on building the core components first (configuration, workspace manager basics) and then integrating them into the existing `tim agent` workflow.

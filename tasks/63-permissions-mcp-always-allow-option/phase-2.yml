@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Implement Custom Bash Command Prefix Selection
 goal: To introduce a specialized, interactive prompt for defining allowed
   prefixes for `Bash` commands when a user chooses the "Always Allow" option for
@@ -52,7 +52,7 @@ project:
 
 
     This feature will be implemented primarily within the `ClaudeCodeExecutor`
-    in `src/rmplan/executors/claude_code.ts`, which handles the permission
+    in `src/tim/executors/claude_code.ts`, which handles the permission
     prompting logic.
 tasks:
   - title: Create a Custom Interactive Prompt for Prefix Selection
@@ -76,12 +76,12 @@ tasks:
       of stored, approved prefixes to determine if it can be automatically
       approved.
 changedFiles:
-  - src/rmplan/actions.ts
-  - src/rmplan/executors/claude_code/prefix_prompt.ts
-  - src/rmplan/executors/claude_code.ts
+  - src/tim/actions.ts
+  - src/tim/executors/claude_code/prefix_prompt.ts
+  - src/tim/executors/claude_code.ts
 rmfilter:
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/executors/claude_code/permissions_mcp.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/claude_code/permissions_mcp.ts
 ---
 
 This phase builds on the "Always Allow" feature by adding the required special handling for `Bash` tools. When a user decides to always allow a `Bash` command, instead of approving the entire tool wholesale, they will be presented with a new custom prompt. This prompt will allow them to interactively select a prefix of the command to approve, providing more granular and safer control.

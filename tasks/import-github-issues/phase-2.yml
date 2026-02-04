@@ -1,7 +1,7 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: "Interactive Mode: List and Import Multiple Issues"
-goal: Enhance the `rmplan import` command to support an interactive mode for
+goal: Enhance the `tim import` command to support an interactive mode for
   selecting and importing multiple issues when no specific issue is provided.
 id: 41
 uuid: 6be1e8ce-b009-41cf-89a5-19e609cc46f8
@@ -16,11 +16,11 @@ promptsGeneratedAt: 2025-06-06T09:39:15.402Z
 createdAt: 2025-06-06T05:40:44.136Z
 updatedAt: 2025-10-27T08:39:04.305Z
 project:
-  title: Add `rmplan import` Command to Import GitHub Issues
-  goal: The project aims to add a new `rmplan import` command that allows users to
+  title: Add `tim import` Command to Import GitHub Issues
+  goal: The project aims to add a new `tim import` command that allows users to
     import GitHub issues and create corresponding local plan files. This will
     streamline the process of turning feature requests and bug reports from
-    GitHub into actionable development plans within the `rmplan` ecosystem.
+    GitHub into actionable development plans within the `tim` ecosystem.
   details: The new command will support two primary modes of operation. When a
     specific issue is provided via a flag, it will import that single issue.
     Otherwise, it will enter an interactive mode, listing all open issues for
@@ -34,8 +34,8 @@ project:
     `rmfilter` arguments embedded in the issue's text, similar to the `generate`
     command. The final output for each imported issue will be a "stub" plan
     file, containing metadata like the title, goal, details, and issue link, but
-    with an empty task list, ready for further planning with `rmplan generate`.
-    This feature shares significant functionality with the existing `rmplan
+    with an empty task list, ready for further planning with `tim generate`.
+    This feature shares significant functionality with the existing `tim
     generate` command, particularly around GitHub issue processing. A major goal
     is to reuse existing code from `generate` and its helper modules to ensure
     consistency and reduce implementation effort.
@@ -66,13 +66,13 @@ tasks:
 changedFiles:
   - src/common/github/issues.test.ts
   - src/common/github/issues.ts
-  - src/rmplan/commands/import.test.ts
-  - src/rmplan/commands/import.ts
+  - src/tim/commands/import.test.ts
+  - src/tim/commands/import.ts
 rmfilter:
-  - src/rmplan/commands/generate.ts
+  - src/tim/commands/generate.ts
   - --with-imports
   - --
-  - src/rmplan/rmplan.ts
+  - src/tim/tim.ts
 ---
 
-This phase builds upon the single-issue import functionality to create a user-friendly, interactive workflow. When `rmplan import` is run without the `--issue` flag, it will fetch all open issues for the current repository. It will then filter out any issues that have already been imported by checking existing plan files. Finally, it will present the user with a checklist of remaining issues, allowing them to select multiple issues to import in a single operation.
+This phase builds upon the single-issue import functionality to create a user-friendly, interactive workflow. When `tim import` is run without the `--issue` flag, it will fetch all open issues for the current repository. It will then filter out any issues that have already been imported by checking existing plan files. Finally, it will present the user with a checklist of remaining issues, allowing them to select multiple issues to import in a single operation.

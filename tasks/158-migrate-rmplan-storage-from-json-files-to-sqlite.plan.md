@@ -1,6 +1,6 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-title: Migrate rmplan storage from JSON files to SQLite database
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
+title: Migrate tim storage from JSON files to SQLite database
 goal: ""
 id: 158
 uuid: e17331a4-1827-49ea-88e6-82de91f993df
@@ -14,15 +14,15 @@ tags: []
 
 ## Overview
 
-Migrate all rmplan functionality that tracks state via JSON files in `.config/rmplan` to use an SQLite database instead. The data model should be relational (normalized), replacing the current denormalized JSON structure.
+Migrate all tim functionality that tracks state via JSON files in `.config/tim` to use an SQLite database instead. The data model should be relational (normalized), replacing the current denormalized JSON structure.
 
 ## Current JSON Storage
 
 Files being replaced:
-- `~/.config/rmplan/shared/{repositoryId}/assignments.json` - Plan claims/assignments
-- `~/.config/rmplan/shared/{repositoryId}/permissions.json` - Claude Code approval permissions
-- `~/.config/rmplan/workspaces.json` - Global workspace tracking
-- `~/.config/rmplan/repositories/{repoName}/metadata.json` - External storage metadata
+- `~/.config/tim/shared/{repositoryId}/assignments.json` - Plan claims/assignments
+- `~/.config/tim/shared/{repositoryId}/permissions.json` - Claude Code approval permissions
+- `~/.config/tim/workspaces.json` - Global workspace tracking
+- `~/.config/tim/repositories/{repoName}/metadata.json` - External storage metadata
 
 ## Database Schema
 
@@ -122,4 +122,4 @@ SQL as part of the build script or some other way.
 
 ## Database Location
 
-Store the SQLite database at `~/.config/rmplan/rmplan.db` (or platform equivalent).
+Store the SQLite database at `~/.config/tim/tim.db` (or platform equivalent).

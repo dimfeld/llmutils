@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Create the Interactive Permissions MCP Server
 goal: Implement a standalone MCP server script that prompts the user for tool
   execution permission.
@@ -30,7 +30,7 @@ tasks:
   - title: Create the Permissions MCP Server File
     done: true
     description: Create a new file at
-      `src/rmplan/executors/claude_code/permissions_mcp.ts` to house the logic
+      `src/tim/executors/claude_code/permissions_mcp.ts` to house the logic
       for the permissions server.
   - title: Implement the MCP Server and Input Schema
     done: true
@@ -53,9 +53,9 @@ tasks:
       "behavior": "deny", "message": ... }` as required by the Claude Code SDK.'
 changedFiles:
   - docs/tutorials/claude-permissions-mcp.md
-  - src/rmplan/executors/claude_code/permissions_mcp.ts
+  - src/tim/executors/claude_code/permissions_mcp.ts
 rmfilter:
-  - src/rmplan/executors/claude_code.ts
+  - src/tim/executors/claude_code.ts
 ---
 
 This phase focuses on creating the core component: the permissions server. This script will run as a separate process managed by the Claude Code SDK. It will define a specific tool (`approval_prompt`) that the SDK calls when a tool needs permission to run. The script will be responsible for parsing the request, presenting it clearly to the user, and returning a formatted response based on the user's input.

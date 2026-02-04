@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Change description command - Core Functionality and Context Refactoring
 goal: To implement the foundational `description` command that generates a PR
   description and refactor the shared context-gathering logic from the `review`
@@ -19,7 +19,7 @@ updatedAt: 2025-10-27T08:39:04.313Z
 project:
   title: Implement a `description` command to generate PR descriptions from plan
     context
-  goal: To create a new `rmplan description` command that, similar to the `review`
+  goal: To create a new `tim description` command that, similar to the `review`
     command, gathers context from a plan and code changes, but uses it to
     generate a comprehensive pull request description.
   details: >
@@ -55,7 +55,7 @@ project:
 
     **Acceptance Criteria:**
 
-    - A new `rmplan description <plan>` command is available in the CLI.
+    - A new `tim description <plan>` command is available in the CLI.
 
     - The context-gathering logic from the `review` command is successfully
     refactored into a shared function without breaking existing `review`
@@ -73,11 +73,11 @@ project:
     **Technical Considerations:**
 
     - The refactoring of context-gathering logic from
-    `src/rmplan/commands/review.ts` is a critical first step. This shared
+    `src/tim/commands/review.ts` is a critical first step. This shared
     utility will be used by both `review` and the new `description` command.
 
     - A new prompt will be created, likely in
-    `src/rmplan/executors/claude_code/agent_prompts.ts`, specifically for
+    `src/tim/executors/claude_code/agent_prompts.ts`, specifically for
     generating PR descriptions.
 
     - The `@inquirer/prompts` library will be used for interactive output
@@ -97,7 +97,7 @@ tasks:
 
 
       The new function should be created in
-      `src/rmplan/utils/context_gathering.ts` and should return a structured
+      `src/tim/utils/context_gathering.ts` and should return a structured
       object containing all gathered context. This follows the existing pattern
       of utility modules in the utils directory.
 
@@ -125,7 +125,7 @@ tasks:
 
 
       This follows the existing pattern in
-      src/rmplan/executors/claude_code/agent_prompts.ts where each agent has its
+      src/tim/executors/claude_code/agent_prompts.ts where each agent has its
       own prompt function returning an AgentDefinition.
 
 
@@ -154,7 +154,7 @@ tasks:
 
 
       The handler should follow the existing pattern of command handlers in
-      src/rmplan/commands/, using similar error handling, configuration loading,
+      src/tim/commands/, using similar error handling, configuration loading,
       and executor setup as seen in the review command.
 
 
@@ -175,7 +175,7 @@ tasks:
   - title: Register the New `description` Command
     done: true
     description: >
-      Add the `description` command to the main CLI entry point in `rmplan.ts`.
+      Add the `description` command to the main CLI entry point in `tim.ts`.
       The command should accept a plan file/ID and support relevant options like
       `--executor`, `--model`, and `--dry-run`.
 
@@ -185,7 +185,7 @@ tasks:
       share similar functionality.
 
 
-      Command syntax: `rmplan description <plan>`
+      Command syntax: `tim description <plan>`
 
 
       Options to support:
@@ -200,10 +200,10 @@ tasks:
 
       - --instructions-file <path>: Path to file with custom instructions
 rmfilter:
-  - src/rmplan/commands/review.ts
+  - src/tim/commands/review.ts
   - --with-imports
   - --
-  - src/rmplan/rmplan.ts
+  - src/tim/tim.ts
 ---
 
 This phase focuses on establishing the core logic. We will first refactor the context-gathering code out of the `review` command into a reusable function. This ensures that both the existing `review` command and the new `description` command use the same, consistent method for understanding the state of a plan and its associated code changes. Then, we will build the new `description` command on top of this refactored logic, implementing the prompt and basic execution flow to generate and display a PR description.
@@ -211,6 +211,6 @@ This phase focuses on establishing the core logic. We will first refactor the co
 **Acceptance Criteria:**
 - A new shared function exists that gathers plan data, hierarchy, and diff context.
 - The `review` command is updated to use this shared function and continues to work as expected.
-- A new `rmplan description` command is registered in the CLI.
+- A new `tim description` command is registered in the CLI.
 - The `description` command can successfully generate a PR description and print it to the console.
 - The new command and refactored function are covered by unit tests.

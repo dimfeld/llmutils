@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Update review command to use JSON output for better parsing
 goal: Replace semi-structured text parsing with JSON schema-based output from
   Claude and Codex executors for more reliable review issue extraction
@@ -16,7 +16,7 @@ tasks:
   - title: Create Zod schema for review output
     done: true
     description: >-
-      Create `src/rmplan/formatters/review_output_schema.ts` with:
+      Create `src/tim/formatters/review_output_schema.ts` with:
 
       - `ReviewIssueOutputSchema` - severity (enum), category (enum), content
       (string), file (optional string), line (optional number), suggestion
@@ -31,7 +31,7 @@ tasks:
   - title: Update Claude executor for JSON schema review mode
     done: true
     description: |-
-      In `src/rmplan/executors/claude_code.ts`:
+      In `src/tim/executors/claude_code.ts`:
       - When `executionMode === 'review'`, add dedicated review execution path
       - Add `--output-format json` and `--json-schema <schema>` arguments
       - Generate JSON schema string from the Zod schema
@@ -39,7 +39,7 @@ tasks:
   - title: Update Codex executor for JSON schema review mode
     done: true
     description: |-
-      In `src/rmplan/executors/codex_cli/review_mode.ts`:
+      In `src/tim/executors/codex_cli/review_mode.ts`:
       - Write JSON schema to a temporary file before execution
       - Add `--output-schema <temp-file-path>` to codex arguments
       - Ensure temp file is cleaned up after execution (use try/finally)
@@ -47,7 +47,7 @@ tasks:
   - title: Add JSON parsing function in review_formatter.ts
     done: true
     description: >-
-      In `src/rmplan/formatters/review_formatter.ts`:
+      In `src/tim/formatters/review_formatter.ts`:
 
       - Add `parseJsonReviewOutput(jsonString: string): ParsedReviewOutput`
       function
@@ -60,7 +60,7 @@ tasks:
   - title: Update createReviewResult to use JSON parsing
     done: true
     description: |-
-      In `src/rmplan/commands/review.ts`:
+      In `src/tim/commands/review.ts`:
       - Update `createReviewResult()` to detect JSON vs text output
       - Call new JSON parsing function when output is JSON
       - Populate ReviewResult from parsed JSON data
@@ -70,27 +70,27 @@ tasks:
     description: >-
       Update test files:
 
-      - `src/rmplan/formatters/review_formatter.test.ts` - Add tests for JSON
+      - `src/tim/formatters/review_formatter.test.ts` - Add tests for JSON
       parsing function
 
-      - `src/rmplan/commands/review.test.ts` - Update tests that mock executor
+      - `src/tim/commands/review.test.ts` - Update tests that mock executor
       output to use JSON format
 
       - Test error handling for malformed JSON
 
       - Test ID auto-generation
 changedFiles:
-  - src/rmplan/commands/review.test.ts
-  - src/rmplan/commands/review.ts
-  - src/rmplan/executors/claude_code.test.ts
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/executors/claude_code_model_test.ts
-  - src/rmplan/executors/codex_cli/review_mode.ts
-  - src/rmplan/executors/codex_cli.review_mode.test.ts
-  - src/rmplan/formatters/review_formatter.test.ts
-  - src/rmplan/formatters/review_formatter.ts
-  - src/rmplan/formatters/review_output_schema.test.ts
-  - src/rmplan/formatters/review_output_schema.ts
+  - src/tim/commands/review.test.ts
+  - src/tim/commands/review.ts
+  - src/tim/executors/claude_code.test.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/claude_code_model_test.ts
+  - src/tim/executors/codex_cli/review_mode.ts
+  - src/tim/executors/codex_cli.review_mode.test.ts
+  - src/tim/formatters/review_formatter.test.ts
+  - src/tim/formatters/review_formatter.ts
+  - src/tim/formatters/review_output_schema.test.ts
+  - src/tim/formatters/review_output_schema.ts
 tags: []
 ---
 
@@ -107,14 +107,14 @@ For codex: `codex exec --output-schema <schema-file> <review prompt>` (Note that
 
 Finally, replace all the existing review format parsing code and just parse the JSON output instead.
 
-<!-- rmplan-generated-start -->
+<!-- tim-generated-start -->
 ## Expected Behavior/Outcome
 - Review command receives structured JSON output from executors instead of free-form text
 - Issues are parsed directly from JSON rather than using regex/heuristic parsing
 - Same `ReviewResult` data structure is produced, maintaining compatibility with existing formatters and persistence
 
 ## Key Findings
-- **Product & User Story**: Users running `rmplan review` get more reliable issue extraction with fewer parsing errors
+- **Product & User Story**: Users running `tim review` get more reliable issue extraction with fewer parsing errors
 - **Design & UX Approach**: No user-facing changes - internal parsing improvement only
 - **Technical Plan & Risks**: 
   - Create Zod schema for LLM output (issues array only, not full ReviewResult)
@@ -139,7 +139,7 @@ Finally, replace all the existing review format parsing code and just parse the 
 
 ## Implementation Notes
 - **Recommended Approach**: 
-  1. Create schema first in a new file (e.g., `src/rmplan/formatters/review_output_schema.ts`)
+  1. Create schema first in a new file (e.g., `src/tim/formatters/review_output_schema.ts`)
   2. Update executors to use schema when `executionMode === 'review'`
   3. Add JSON parsing function alongside existing `parseReviewerOutput()`
   4. Update `createReviewResult()` to use new parsing
@@ -148,7 +148,7 @@ Finally, replace all the existing review format parsing code and just parse the 
   - Codex temp file needs cleanup after use
   - Schema descriptions should guide LLM to produce good output
   - May need to handle partial/malformed JSON gracefully
-<!-- rmplan-generated-end -->
+<!-- tim-generated-end -->
 
 ## Research
 
@@ -160,9 +160,9 @@ Finally, replace all the existing review format parsing code and just parse the 
 
 ### Findings
 
-#### Review Command Implementation (src/rmplan/commands/review.ts)
+#### Review Command Implementation (src/tim/commands/review.ts)
 
-**Current Data Structures** (defined in `src/rmplan/formatters/review_formatter.ts`):
+**Current Data Structures** (defined in `src/tim/formatters/review_formatter.ts`):
 
 ```typescript
 export type ReviewSeverity = 'critical' | 'major' | 'minor' | 'info';
@@ -209,7 +209,7 @@ export interface ReviewResult {
 }
 ```
 
-**Current Parsing Logic** (`parseReviewerOutput()` in `src/rmplan/formatters/review_formatter.ts`, lines 277-530):
+**Current Parsing Logic** (`parseReviewerOutput()` in `src/tim/formatters/review_formatter.ts`, lines 277-530):
 - Uses `---` separators to identify issue blocks
 - Pattern matches severity prefixes: `CRITICAL:`, `MAJOR:`, `MINOR:`, `INFO:`
 - Detects issue markers: bullet points, numbered lists, emoji markers
@@ -218,14 +218,14 @@ export interface ReviewResult {
 - Has performance safeguards: 10MB output limit, 100 issues max, 100k lines max
 
 **Key Files Involved:**
-- `src/rmplan/commands/review.ts` - Main command handler, builds prompts, orchestrates review
-- `src/rmplan/formatters/review_formatter.ts` - Core parsing logic and data structures
-- `src/rmplan/review_persistence.ts` - Saves reviews to `.rmfilter/reviews/`
-- `src/rmplan/incremental_review.ts` - Diff tracking for incremental reviews
+- `src/tim/commands/review.ts` - Main command handler, builds prompts, orchestrates review
+- `src/tim/formatters/review_formatter.ts` - Core parsing logic and data structures
+- `src/tim/review_persistence.ts` - Saves reviews to `.rmfilter/reviews/`
+- `src/tim/incremental_review.ts` - Diff tracking for incremental reviews
 
 #### Executor Implementations
 
-**Claude Code Executor** (`src/rmplan/executors/claude_code.ts`):
+**Claude Code Executor** (`src/tim/executors/claude_code.ts`):
 - No dedicated review mode - review execution goes through standard orchestration wrapper
 - Already uses `--output-format stream-json` for streaming JSON output
 - Supports `--json-schema` argument for structured output (per plan description)
@@ -234,8 +234,8 @@ export interface ReviewResult {
   args.push('--verbose', '--output-format', 'stream-json', '--print', contextContent);
   ```
 
-**Codex CLI Executor** (`src/rmplan/executors/codex_cli.ts`):
-- Has dedicated review mode in `src/rmplan/executors/codex_cli/review_mode.ts`
+**Codex CLI Executor** (`src/tim/executors/codex_cli.ts`):
+- Has dedicated review mode in `src/tim/executors/codex_cli/review_mode.ts`
 - Returns `ExecutorOutput` with structured content
 - Already uses `--json` flag for output
 - According to plan description, supports `--output-schema <schema-file>` for structured output
@@ -246,7 +246,7 @@ export interface ReviewResult {
   }
   ```
 
-**Codex Review Mode** (`src/rmplan/executors/codex_cli/review_mode.ts`):
+**Codex Review Mode** (`src/tim/executors/codex_cli/review_mode.ts`):
 - Runs single reviewer step via `executeCodexStep()`
 - Returns structured `ExecutorOutput`:
   ```typescript
@@ -261,10 +261,10 @@ export interface ReviewResult {
 #### Zod Schema Patterns
 
 **Existing Schema Examples:**
-- `src/rmplan/planSchema.ts` - Plan/task schemas with factory pattern
-- `src/rmplan/configSchema.ts` - Configuration schemas
-- `src/rmplan/executors/schemas.ts` - Executor option schemas
-- `src/rmplan/executors/codex_cli/review_analysis.ts` - Review analysis schema for Gemini
+- `src/tim/planSchema.ts` - Plan/task schemas with factory pattern
+- `src/tim/configSchema.ts` - Configuration schemas
+- `src/tim/executors/schemas.ts` - Executor option schemas
+- `src/tim/executors/codex_cli/review_analysis.ts` - Review analysis schema for Gemini
 
 **JSON Schema Generation** (`scripts/update-json-schemas.ts`):
 ```typescript
@@ -274,7 +274,7 @@ const jsonSchema = z.toJSONSchema(zodSchema, {
 });
 ```
 
-**Review Analysis Schema Example** (existing pattern in `src/rmplan/executors/codex_cli/review_analysis.ts`):
+**Review Analysis Schema Example** (existing pattern in `src/tim/executors/codex_cli/review_analysis.ts`):
 ```typescript
 export const ReviewAnalysisSchema = z.object({
   needs_fixes: z.boolean().describe('Whether fixes are required'),
@@ -285,15 +285,15 @@ export const ReviewAnalysisSchema = z.object({
 ```
 
 #### Test Coverage
-- `src/rmplan/formatters/review_formatter.test.ts` - Tests parsing with various output formats
-- `src/rmplan/commands/review.test.ts` - Tests plan resolution, prompt building, issue detection
+- `src/tim/formatters/review_formatter.test.ts` - Tests parsing with various output formats
+- `src/tim/commands/review.test.ts` - Tests plan resolution, prompt building, issue detection
 
 ### Risks & Constraints
 
 1. **Executor Command Differences**: Claude Code uses `--json-schema <schema>` inline, Codex requires `--output-schema <schema-file>` with a temporary file
 2. **Backwards Compatibility**: The current text parsing supports many edge cases and LLM output variations - JSON schema enforcement may cause some valid outputs to fail parsing if LLM doesn't strictly follow schema
 3. **Schema Complexity**: The full `ReviewResult` structure may be too complex for direct LLM generation - may need a simpler output schema that gets transformed
-4. **Incremental Review Support**: Need to ensure JSON output works with incremental review metadata tracking in `src/rmplan/incremental_review.ts`
+4. **Incremental Review Support**: Need to ensure JSON output works with incremental review metadata tracking in `src/tim/incremental_review.ts`
 5. **Existing Formatters**: The `JsonFormatter`, `MarkdownFormatter`, `TerminalFormatter` in `review_formatter.ts` will need to work with JSON-parsed data instead of text-parsed data
 6. **Test Updates**: Both test files will need updates to test JSON parsing instead of text parsing
 7. **Temporary File Cleanup**: Codex requires schema file - need proper temp file management with cleanup
@@ -301,7 +301,7 @@ export const ReviewAnalysisSchema = z.object({
 Completed Tasks 1 and 4: Created Zod schema for review output and added JSON parsing function.
 
 **Task 1 - Zod Schema (review_output_schema.ts):**
-Created new file src/rmplan/formatters/review_output_schema.ts with:
+Created new file src/tim/formatters/review_output_schema.ts with:
 - ReviewSeveritySchema: Zod enum for 'critical' | 'major' | 'minor' | 'info' with descriptive .describe() calls explaining when to use each severity level
 - ReviewCategorySchema: Zod enum for 'security' | 'performance' | 'bug' | 'style' | 'compliance' | 'testing' | 'other' with detailed descriptions for LLM guidance
 - ReviewIssueOutputSchema: Object schema with severity, category, content (required), and file, line, suggestion (optional). Line uses .int().positive() for validation
@@ -311,7 +311,7 @@ Created new file src/rmplan/formatters/review_output_schema.ts with:
 - Exported inferred types: ReviewSeverityOutput, ReviewCategoryOutput, ReviewIssueOutput, ReviewOutput
 
 **Task 4 - JSON Parsing Function (review_formatter.ts):**
-Added to src/rmplan/formatters/review_formatter.ts:
+Added to src/tim/formatters/review_formatter.ts:
 - ParsedReviewOutput interface: Exported type with issues, recommendations, and actionItems arrays
 - ReviewJsonParseError class: Custom error class with 'cause' property for underlying error and 'rawInput' property (truncated to 500 chars) for debugging
 - parseJsonReviewOutput(jsonString: string): ParsedReviewOutput: Validates JSON against ReviewOutputSchema using Zod, auto-generates sequential IDs (issue-1, issue-2, etc.) for each issue, throws ReviewJsonParseError on parse or validation failures
@@ -329,7 +329,7 @@ Created review_output_schema.test.ts with tests for all schema validations. Exte
 
 Completed Tasks 2 and 3: Updated Claude and Codex executors to use JSON schema output for review mode.
 
-**Task 2 - Claude Executor (src/rmplan/executors/claude_code.ts):**
+**Task 2 - Claude Executor (src/tim/executors/claude_code.ts):**
 Added new private method executeReviewMode() (lines ~463-525) that provides a dedicated review execution path when planInfo.executionMode === 'review'. Key implementation details:
 - Uses --output-format json (not stream-json) for single JSON response
 - Passes inline JSON schema via --json-schema argument using getReviewOutputJsonSchemaString() from review_output_schema.ts
@@ -339,7 +339,7 @@ Added new private method executeReviewMode() (lines ~463-525) that provides a de
 - Modified execute() method (lines ~843-846) to dispatch to executeReviewMode() for review mode
 - Proper error handling: throws on non-zero exit code with stderr details
 
-**Task 3 - Codex Executor (src/rmplan/executors/codex_cli/review_mode.ts):**
+**Task 3 - Codex Executor (src/tim/executors/codex_cli/review_mode.ts):**
 Added new function executeCodexReviewWithSchema() (lines ~60-146) that handles JSON schema review mode. Key implementation details:
 - Creates temp directory using fs.mkdtemp() in os.tmpdir()
 - Writes JSON schema object to temp file using getReviewOutputJsonSchema()
@@ -366,7 +366,7 @@ Completed Tasks 5 and 6: Updated createReviewResult() to use JSON parsing with c
 **Task 5 - createReviewResult JSON Parsing:**
 Modified two files to enable JSON parsing integration:
 
-1. src/rmplan/formatters/review_formatter.ts:
+1. src/tim/formatters/review_formatter.ts:
    - Added CreateReviewResultOptions interface with isJsonOutput?: boolean field
    - Updated createReviewResult() function signature to accept optional options parameter
    - When options.isJsonOutput === true, attempts JSON parsing first using tryParseJsonReviewOutput()
@@ -374,7 +374,7 @@ Modified two files to enable JSON parsing integration:
    - Falls back gracefully to existing text parsing via parseReviewerOutput() if JSON parsing fails
    - Maintains full backward compatibility when isJsonOutput is false or undefined
 
-2. src/rmplan/commands/review.ts:
+2. src/tim/commands/review.ts:
    - Added logic to detect JSON output from executor by checking executorOutput?.metadata?.jsonOutput === true
    - Passes { isJsonOutput } option to createReviewResult() to enable JSON parsing when appropriate
    - Works seamlessly with both Claude and Codex executors which set metadata.jsonOutput = true
@@ -382,13 +382,13 @@ Modified two files to enable JSON parsing integration:
 **Task 6 - Test Coverage:**
 Added comprehensive test coverage in two test files:
 
-1. src/rmplan/formatters/review_formatter.test.ts (4 tests added):
+1. src/tim/formatters/review_formatter.test.ts (4 tests added):
    - 'parses JSON output when isJsonOutput option is true' - verifies JSON parsing works correctly
    - 'falls back to text parsing when JSON parsing fails with isJsonOutput true' - verifies fallback behavior  
    - 'uses text parsing when isJsonOutput is false' - verifies explicit text parsing
    - 'uses text parsing when options parameter is omitted' - verifies backward compatibility
 
-2. src/rmplan/commands/review.test.ts (7 tests added in 'JSON output mode integration' describe block):
+2. src/tim/commands/review.test.ts (7 tests added in 'JSON output mode integration' describe block):
    - 'detects JSON output from executor metadata and parses correctly'
    - 'executor string output uses text parsing (non-JSON mode)'
    - 'executor output with metadata.jsonOutput=false uses text parsing'

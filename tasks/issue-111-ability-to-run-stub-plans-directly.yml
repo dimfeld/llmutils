@@ -1,7 +1,7 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Implement Direct Stub Plan Execution
-goal: Allow `rmplan run` to execute plans without detailed steps directly after
+goal: Allow `tim run` to execute plans without detailed steps directly after
   a user prompt.
 id: 45
 uuid: a7488708-5e2a-446d-8ae8-dff92238b9ed
@@ -19,7 +19,7 @@ project:
   goal: "Implement: Ability to run stub plans directly"
   details: >
     Some issues are simple enough that an LLM can generate the code directly
-    from a high-level description. This feature will enhance `rmplan run` to
+    from a high-level description. This feature will enhance `tim run` to
     handle such cases. When the command detects a plan that lacks detailed steps
     (a "stub" plan), it will present the user with a choice: either generate the
     detailed steps as it does now, or execute the plan immediately. If immediate
@@ -29,7 +29,7 @@ project:
 tasks:
   - title: Detect stub plans and prompt the user for action
     done: true
-    description: In the `rmplan run` command logic, when a plan is identified as
+    description: In the `tim run` command logic, when a plan is identified as
       needing preparation (i.e., it lacks detailed steps), present an
       interactive prompt to the user. The prompt will offer the choice to either
       generate detailed steps first (the current behavior) or to run the plan
@@ -65,13 +65,13 @@ tasks:
       updated to 'done' upon completion. The tests should also verify that
       non-interactive mode correctly defaults to the step-generation flow.
 changedFiles:
-  - src/rmplan/commands/agent.test.ts
-  - src/rmplan/commands/agent.ts
+  - src/tim/commands/agent.test.ts
+  - src/tim/commands/agent.ts
 rmfilter:
-  - src/rmplan/rmplan.ts
+  - src/tim/tim.ts
   - --
-  - src/rmplan/commands/agent.ts
+  - src/tim/commands/agent.ts
   - --with-imports
 ---
 
-This phase will modify the `rmplan run` command's logic. When a plan is identified as a "stub" (lacking detailed steps), the user will be prompted to either generate the steps first (current behavior) or execute the plan directly. Direct execution will involve creating a single prompt from the plan's high-level goal and details, running it through the selected executor, and then marking the plan as complete.
+This phase will modify the `tim run` command's logic. When a plan is identified as a "stub" (lacking detailed steps), the user will be prompted to either generate the steps first (current behavior) or execute the plan directly. Direct execution will involve creating a single prompt from the plan's high-level goal and details, running it through the selected executor, and then marking the plan as complete.

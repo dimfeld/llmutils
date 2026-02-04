@@ -31,7 +31,7 @@ This repository contains command-line utilities for managing context with chat-o
 
 - `rmfilter`: Analyzes import trees to gather related files, adds instructions, and prepares context for LLMs
 - `rmfind`: Finds relevant files to use with rmfilter
-- `rmplan`: Generates and manages step-by-step project plans using LLMs (organized with separate sub-command modules)
+- `tim`: Generates and manages step-by-step project plans using LLMs (organized with separate sub-command modules)
 - `apply-llm-edits`: Applies LLM-generated edits back to the codebase
 - `rmrun`: Sends rmfilter output to an LLM and applies edits
 - `rmfix`: Toolkit for fixing LLM-generated code when it doesn't apply cleanly
@@ -47,7 +47,7 @@ The codebase is organized into several main modules with improved modularity and
    - SSH detection (`ssh_detection.ts`) and model factory (`model_factory.ts`)
    - GitHub integration utilities in `github/` subdirectory
 
-2. **rmplan**: Manages step-by-step project plans with LLM integration, organized by sub-commands
+2. **tim**: Manages step-by-step project plans with LLM integration, organized by sub-commands
    - Modular command structure in `commands/` directory with separate files per sub-command
    - Core functionality: `add.ts`, `agent.ts`, `generate.ts`, `list.ts`, `next.ts`, `done.ts`
    - Specialized commands: `answer-pr.ts`, `cleanup.ts`, `extract.ts`, `split.ts`, `validate.ts`, `set.ts`
@@ -100,7 +100,7 @@ When adding new features, ensure test coverage for:
 - Happy path functionality
 - Edge cases and error handling
 - Different file formats and configurations
-- Reuse the cross-interface scenarios in `src/rmplan/commands/task-management.integration.test.ts` when modifying task management commands or MCP tools; they ensure CLI and MCP behavior stays aligned.
+- Reuse the cross-interface scenarios in `src/tim/commands/task-management.integration.test.ts` when modifying task management commands or MCP tools; they ensure CLI and MCP behavior stays aligned.
 
 - Don't mock in tests if you can help it.
 - Make sure that tests actually test the real code. Don't mock so many things in tests that you aren't testing anything.
@@ -119,7 +119,7 @@ You can check if compilation works using `bun run check`
 ## Writing Code
 
 See @.cursor/rules/general.mdc for coding guidelines and patterns
-See .cursor/rules/plan_files.mdc for tips on working with plan files in rmplan commands
+See .cursor/rules/plan_files.mdc for tips on working with plan files in tim commands
 
 ## Code Quality Best Practices
 

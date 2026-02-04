@@ -1,8 +1,8 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Implementer should exit if it finds impossible or conflicting
   requirements it can not resolve
-goal: Enable rmplan executors to gracefully exit when they encounter conflicting
+goal: Enable tim executors to gracefully exit when they encounter conflicting
   or impossible requirements, providing detailed failure reports and preventing
   incorrect implementations from proceeding.
 id: 120
@@ -19,7 +19,7 @@ tasks:
     done: true
     description: >
       Create a reusable prompt template in
-      `src/rmplan/executors/claude_code/agent_prompts.ts` that instructs agents
+      `src/tim/executors/claude_code/agent_prompts.ts` that instructs agents
       how to handle conflicting or impossible requirements. The template should
       specify the "FAILED:" prefix format and required report structure
       (requirements, problems, solutions).
@@ -35,7 +35,7 @@ tasks:
     description: >
       Integrate the failure detection template into `getImplementerPrompt()`,
       `getTesterPrompt()`, and `getReviewerPrompt()` functions in
-      `src/rmplan/executors/claude_code/agent_prompts.ts`. Place the
+      `src/tim/executors/claude_code/agent_prompts.ts`. Place the
       instructions prominently in the error handling or guidelines sections.
 
 
@@ -47,7 +47,7 @@ tasks:
     done: true
     description: >
       Add failure detection instructions to the orchestrator prompt in
-      `src/rmplan/executors/claude_code/orchestrator_prompt.ts`. Include
+      `src/tim/executors/claude_code/orchestrator_prompt.ts`. Include
       instructions for detecting subagent failures and propagating them with the
       "FAILED:" prefix.
 
@@ -60,7 +60,7 @@ tasks:
     done: true
     description: >
       Modify the `getFixerPrompt()` method in
-      `src/rmplan/executors/codex_cli.ts` to include the failure detection
+      `src/tim/executors/codex_cli.ts` to include the failure detection
       template, ensuring consistency with other agents.
 
 
@@ -70,7 +70,7 @@ tasks:
   - title: Enhance ExecutorOutput Interface
     done: true
     description: >
-      Update `src/rmplan/executors/types.ts` to add optional `success: boolean`
+      Update `src/tim/executors/types.ts` to add optional `success: boolean`
       and `failureDetails?: { requirements: string; problems: string;
       solutions?: string }` fields to the ExecutorOutput interface.
 
@@ -83,7 +83,7 @@ tasks:
     done: true
     description: >
       Create utility functions in a new file
-      `src/rmplan/executors/failure_detection.ts` for detecting "FAILED:"
+      `src/tim/executors/failure_detection.ts` for detecting "FAILED:"
       prefixes in text and extracting failure details. These will be shared by
       both executors.
 
@@ -94,7 +94,7 @@ tasks:
   - title: Add Failure Detection to Claude Executor
     done: true
     description: >
-      Modify `src/rmplan/executors/claude_code.ts` to check for "FAILED:" in the
+      Modify `src/tim/executors/claude_code.ts` to check for "FAILED:" in the
       final assistant message. Update the `execute()` method to return failure
       indication in ExecutorOutput when detected.
 
@@ -106,7 +106,7 @@ tasks:
     done: true
     description: >
       Enhance the output processing in
-      `src/rmplan/executors/claude_code/format.ts` to identify and extract
+      `src/tim/executors/claude_code/format.ts` to identify and extract
       failure messages from the JSON stream, making them available for the
       executor to process.
 
@@ -118,7 +118,7 @@ tasks:
     done: true
     description: >
       Update the orchestrator handling in
-      `src/rmplan/executors/claude_code_orchestrator.ts` to detect when
+      `src/tim/executors/claude_code_orchestrator.ts` to detect when
       subagents report failures and propagate them appropriately.
 
 
@@ -128,7 +128,7 @@ tasks:
   - title: Add Failure Detection to Codex Executor
     done: true
     description: >
-      Modify `src/rmplan/executors/codex_cli.ts` to check each agent's output
+      Modify `src/tim/executors/codex_cli.ts` to check each agent's output
       for "FAILED:" messages. Update the `execute()` method to track failure
       state and return appropriate ExecutorOutput.
 
@@ -150,7 +150,7 @@ tasks:
   - title: Update Codex Output Processing
     done: true
     description: >
-      Enhance `src/rmplan/executors/codex_cli/format.ts` to identify failure
+      Enhance `src/tim/executors/codex_cli/format.ts` to identify failure
       messages in the JSON stream and make them available for detection.
 
 
@@ -159,7 +159,7 @@ tasks:
   - title: Update Serial Mode Agent Loop
     done: true
     description: >
-      Modify `src/rmplan/commands/agent/agent.ts` to check executor output for
+      Modify `src/tim/commands/agent/agent.ts` to check executor output for
       failure indication. Update error handling to display detailed failure
       information and exit with appropriate code.
 
@@ -170,7 +170,7 @@ tasks:
   - title: Update Batch Mode Handler
     done: true
     description: >
-      Modify `src/rmplan/commands/agent/batch_mode.ts` to handle executor
+      Modify `src/tim/commands/agent/batch_mode.ts` to handle executor
       failures in batch execution. Implement strategy for partial failures when
       multiple tasks are involved.
 
@@ -193,7 +193,7 @@ tasks:
     done: true
     description: >
       Write comprehensive tests in
-      `src/rmplan/executors/failure_detection.test.ts` for the utility
+      `src/tim/executors/failure_detection.test.ts` for the utility
       functions. Create test fixtures with various failure message formats.
 
 
@@ -203,8 +203,8 @@ tasks:
   - title: Test Executor Failure Scenarios
     done: true
     description: >
-      Add tests to `src/rmplan/executors/claude_code.test.ts` and
-      `src/rmplan/executors/codex_cli.test.ts` for failure detection scenarios,
+      Add tests to `src/tim/executors/claude_code.test.ts` and
+      `src/tim/executors/codex_cli.test.ts` for failure detection scenarios,
       including subagent failures and orchestrator failures.
 
 
@@ -235,30 +235,30 @@ tasks:
 changedFiles:
   - CLAUDE.md
   - README.md
-  - src/rmplan/commands/agent/agent.failure_handling.test.ts
-  - src/rmplan/commands/agent/agent.ts
-  - src/rmplan/commands/agent/batch_mode.soft_failure.test.ts
-  - src/rmplan/commands/agent/batch_mode.ts
-  - src/rmplan/executors/claude_code/agent_prompts.test.ts
-  - src/rmplan/executors/claude_code/agent_prompts.ts
-  - src/rmplan/executors/claude_code/format.ts
-  - src/rmplan/executors/claude_code/orchestrator_prompt.test.ts
-  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
-  - src/rmplan/executors/claude_code.test.ts
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/executors/codex_cli/format.ts
-  - src/rmplan/executors/codex_cli.fixer_prompt.test.ts
-  - src/rmplan/executors/codex_cli.test.ts
-  - src/rmplan/executors/codex_cli.ts
-  - src/rmplan/executors/failure_detection.test.ts
-  - src/rmplan/executors/failure_detection.ts
-  - src/rmplan/executors/types.ts
-  - src/rmplan/prompt_builder.ts
-  - src/rmplan/summary/collector.ts
-  - src/rmplan/summary/display.test.ts
-  - src/rmplan/summary/display.ts
-  - src/rmplan/summary/parsers.ts
-  - src/rmplan/summary/types.ts
+  - src/tim/commands/agent/agent.failure_handling.test.ts
+  - src/tim/commands/agent/agent.ts
+  - src/tim/commands/agent/batch_mode.soft_failure.test.ts
+  - src/tim/commands/agent/batch_mode.ts
+  - src/tim/executors/claude_code/agent_prompts.test.ts
+  - src/tim/executors/claude_code/agent_prompts.ts
+  - src/tim/executors/claude_code/format.ts
+  - src/tim/executors/claude_code/orchestrator_prompt.test.ts
+  - src/tim/executors/claude_code/orchestrator_prompt.ts
+  - src/tim/executors/claude_code.test.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/codex_cli/format.ts
+  - src/tim/executors/codex_cli.fixer_prompt.test.ts
+  - src/tim/executors/codex_cli.test.ts
+  - src/tim/executors/codex_cli.ts
+  - src/tim/executors/failure_detection.test.ts
+  - src/tim/executors/failure_detection.ts
+  - src/tim/executors/types.ts
+  - src/tim/prompt_builder.ts
+  - src/tim/summary/collector.ts
+  - src/tim/summary/display.test.ts
+  - src/tim/summary/display.ts
+  - src/tim/summary/parsers.ts
+  - src/tim/summary/types.ts
 rmfilter: []
 ---
 

@@ -1,6 +1,6 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-title: The dependencies table cell in rmplan list should show which dependencies
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
+title: The dependencies table cell in tim list should show which dependencies
   are done or not
 goal: ""
 id: 38

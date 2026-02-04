@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: The validate command should check that a plan's parent also depends on
   the child and automatically fix that if it doesn't. - Consistency Updates for
   Related Commands
@@ -20,7 +20,7 @@ promptsGeneratedAt: 2025-08-12T01:22:51.307Z
 createdAt: 2025-07-29T19:17:43.223Z
 updatedAt: 2025-10-27T08:39:04.314Z
 project:
-  title: Implement parent-child dependency validation and auto-fix in rmplan
+  title: Implement parent-child dependency validation and auto-fix in tim
     validate command
   goal: Add validation to ensure bidirectional parent-child relationships in plan
     files, where child plans with a parent field are automatically included in
@@ -52,14 +52,14 @@ tasks:
   - title: Update set command for parent field changes
     done: true
     description: >
-      Modify `/src/rmplan/commands/set.ts` to handle parent field updates
+      Modify `/src/tim/commands/set.ts` to handle parent field updates
       bidirectionally. When setting a parent, load the parent plan and add the
       child to its dependencies. When removing a parent (--no-parent), remove
       the child from the old parent's dependencies. Handle changing parents by
       updating both old and new parent plans.
 
 
-      Follow the pattern established in `/src/rmplan/commands/add.ts` (lines
+      Follow the pattern established in `/src/tim/commands/add.ts` (lines
       95-121) where it updates the parent's dependencies when creating a child
       plan. Use the same approach from the validate command for loading and
       updating plans.
@@ -80,7 +80,7 @@ tasks:
   - title: Add tests for set command updates
     done: true
     description: >
-      Create comprehensive tests in `/src/rmplan/commands/set.test.ts` for the
+      Create comprehensive tests in `/src/tim/commands/set.test.ts` for the
       new bidirectional behavior. The test file already exists and has good
       examples of testing patterns (creating test plans, checking updates,
       etc.).

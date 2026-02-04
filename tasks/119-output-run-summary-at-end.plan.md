@@ -1,7 +1,7 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: output run summary at end
-goal: Add ability for rmplan run to display a summary of execution results,
+goal: Add ability for tim run to display a summary of execution results,
   capturing important output from each step and presenting an aggregated report
   at completion.
 id: 119
@@ -44,7 +44,7 @@ tasks:
     description: >
       Update the main agent execution flow to integrate summary collection
       throughout the execution process. This involves modifying
-      src/rmplan/commands/agent/agent.ts to initialize a SummaryCollector at the
+      src/tim/commands/agent/agent.ts to initialize a SummaryCollector at the
       start of execution, configure executor calls to use captureOutput:
       'result' when summary is enabled, collect step results after each
       executor.execute() call, and track file changes after markStepDone() and
@@ -57,7 +57,7 @@ tasks:
     description: >
       Modify the batch mode execution to properly aggregate summary data across
       multiple batch iterations. This involves updating
-      src/rmplan/commands/agent/batch_mode.ts to accept and use a
+      src/tim/commands/agent/batch_mode.ts to accept and use a
       SummaryCollector instance, aggregate step results across iterations,
       maintain cumulative file change tracking, and preserve summary state
       between batch iterations. The batch mode aggregation should handle the
@@ -70,7 +70,7 @@ tasks:
     description: >
       Create the summary display functionality that formats and presents
       execution summaries in a user-friendly format. This should follow the
-      established patterns from src/rmplan/formatters/review_formatter.ts, using
+      established patterns from src/tim/formatters/review_formatter.ts, using
       consistent chalk colors, section dividers, and terminal formatting. The
       display should include sections for execution overview (plan name,
       execution mode, duration, success/failure status), step results summary,
@@ -165,35 +165,35 @@ tasks:
 changedFiles:
   - src/common/git.ts
   - src/dependency_graph/__snapshots__/walk_imports.test.ts.snap
-  - src/rmplan/commands/agent/agent.serial.capture_output.test.ts
-  - src/rmplan/commands/agent/agent.test.ts
-  - src/rmplan/commands/agent/agent.ts
-  - src/rmplan/commands/agent/agent_batch_mode.test.ts
-  - src/rmplan/commands/agent/agent_summary_options.test.ts
-  - src/rmplan/commands/agent/batch_mode.capture_output.test.ts
-  - src/rmplan/commands/agent/batch_mode.ts
-  - src/rmplan/commands/agent/batch_tasks_unit.test.ts
-  - src/rmplan/commands/agent/commander_negated_options.test.ts
-  - src/rmplan/executors/claude_code_orchestrator.ts
-  - src/rmplan/executors/codex_cli.capture_output.test.ts
-  - src/rmplan/executors/codex_cli.fix_loop.test.ts
-  - src/rmplan/executors/codex_cli.ts
-  - src/rmplan/prompt.test.ts
-  - src/rmplan/prompt.ts
-  - src/rmplan/rmplan.ts
-  - src/rmplan/summary/collector.test.ts
-  - src/rmplan/summary/collector.ts
-  - src/rmplan/summary/display.test.ts
-  - src/rmplan/summary/display.ts
-  - src/rmplan/summary/parsers.test.ts
-  - src/rmplan/summary/parsers.ts
-  - src/rmplan/summary/types.ts
+  - src/tim/commands/agent/agent.serial.capture_output.test.ts
+  - src/tim/commands/agent/agent.test.ts
+  - src/tim/commands/agent/agent.ts
+  - src/tim/commands/agent/agent_batch_mode.test.ts
+  - src/tim/commands/agent/agent_summary_options.test.ts
+  - src/tim/commands/agent/batch_mode.capture_output.test.ts
+  - src/tim/commands/agent/batch_mode.ts
+  - src/tim/commands/agent/batch_tasks_unit.test.ts
+  - src/tim/commands/agent/commander_negated_options.test.ts
+  - src/tim/executors/claude_code_orchestrator.ts
+  - src/tim/executors/codex_cli.capture_output.test.ts
+  - src/tim/executors/codex_cli.fix_loop.test.ts
+  - src/tim/executors/codex_cli.ts
+  - src/tim/prompt.test.ts
+  - src/tim/prompt.ts
+  - src/tim/tim.ts
+  - src/tim/summary/collector.test.ts
+  - src/tim/summary/collector.ts
+  - src/tim/summary/display.test.ts
+  - src/tim/summary/display.ts
+  - src/tim/summary/parsers.test.ts
+  - src/tim/summary/parsers.ts
+  - src/tim/summary/types.ts
 rmfilter: []
 ---
 
 # Original Plan Details
 
-Add ability for rmplan run to give a summary of what happened from the executor. This should involve capturing the important output from every step and returning it. Loop then aggregates it and prints at the end
+Add ability for tim run to give a summary of what happened from the executor. This should involve capturing the important output from every step and returning it. Loop then aggregates it and prints at the end
 
 For Claude: this should just be the final messages from the orchestrator in each run.
 For Codex: this should be the final output from every call that runs codex, combined together and labelled appropriately.
@@ -202,11 +202,11 @@ Other executors won't have access to relevant information, so don't need to retu
 
 # Processed Plan Details
 
-## Add execution summary display to rmplan run command
+## Add execution summary display to tim run command
 
-The rmplan system currently executes plans but provides limited visibility into what actually happened during execution. This feature will capture key outputs from executors (final messages from Claude Code orchestrator, final output from Codex CLI calls) and display a consolidated summary showing executed steps, key results, file changes, and execution metadata.
+The tim system currently executes plans but provides limited visibility into what actually happened during execution. This feature will capture key outputs from executors (final messages from Claude Code orchestrator, final output from Codex CLI calls) and display a consolidated summary showing executed steps, key results, file changes, and execution metadata.
 
-**Expected Behavior**: After `rmplan run` completes, users see a summary section with:
+**Expected Behavior**: After `tim run` completes, users see a summary section with:
 - Execution overview (plan name, steps executed, success/failure status)
 - Key output from each executed step (final LLM responses)
 - List of files created, modified, or deleted

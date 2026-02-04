@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: validate command should use zod validation on plan files instead of custom code
 goal: Convert plan schemas to strict mode and remove manual validation logic
 id: 93
@@ -14,7 +14,7 @@ tasks:
   - title: Update plan schemas to use strict mode
     done: true
     description: >
-      Modify `src/rmplan/planSchema.ts` to add `.strict()` to all object schemas
+      Modify `src/tim/planSchema.ts` to add `.strict()` to all object schemas
       including the main `phaseSchema` and nested schemas for tasks, steps, and
       project. This follows the pattern used successfully in
       `src/rmfilter/config.ts` where schemas use `.strict()` to automatically
@@ -26,7 +26,7 @@ tasks:
   - title: Remove manual unknown key validation logic
     done: true
     description: >
-      In `src/rmplan/commands/validate.ts`, remove the custom unknown key
+      In `src/tim/commands/validate.ts`, remove the custom unknown key
       checking code (lines 61-111) that manually inspects parsed objects. The
       validation should now rely entirely on Zod's strict mode to detect unknown
       keys. The existing error handling already processes Zod's
@@ -53,7 +53,7 @@ tasks:
       with clear error messages, frontmatter format files are handled correctly,
       and the command exits with code 1 when invalid files are found. Create
       temporary test files in the test to verify each scenario, following the
-      pattern used in other rmplan tests that create temporary directories with
+      pattern used in other tim tests that create temporary directories with
       fs.mkdtemp().
   - title: Update existing tests if needed
     done: true
@@ -64,7 +64,7 @@ tasks:
       that create plan objects programmatically to ensure they don't include
       extra fields that would now be rejected by strict validation. Verify that
       the command still exits with code 1 when invalid files are found. Run all
-      rmplan tests to ensure no regressions were introduced.
+      tim tests to ensure no regressions were introduced.
 ---
 
 The validate command currently uses Zod for basic schema validation but then manually checks for unknown keys in a custom implementation spanning 50+ lines of code. By converting the plan schemas to use Zod's `.strict()` mode, we can eliminate this custom logic while maintaining the same validation behavior. This approach is already used successfully in other parts of the codebase (e.g., rmfilter config schemas).

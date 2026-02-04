@@ -51,9 +51,9 @@ The project planning tool generates phase-based plans for software development, 
 ### 3.2 Data Flow
 
 1. **Input**: Project plan from GitHub issues, local MD file, or other source
-2. **Generate Plan**: Use `rmplan generate` to produce phase-based markdown plan
-3. **Parse Plan**: Use `rmplan parse` to convert markdown into phase YAML files
-4. **Generate Phase Prompts**: Use `rmplan generate-phase` to populate phase with detailed steps
+2. **Generate Plan**: Use `tim generate` to produce phase-based markdown plan
+3. **Parse Plan**: Use `tim parse` to convert markdown into phase YAML files
+4. **Generate Phase Prompts**: Use `tim generate-phase` to populate phase with detailed steps
 5. **Implement and Review**: Execute phase with AI coding agent, review, merge
 6. **Repeat**: Continue with next phase after dependencies complete
 
@@ -165,17 +165,17 @@ const phaseSchema = z.object({
 
 ## 5. CLI Commands
 
-### 5.1 `rmplan generate`
+### 5.1 `tim generate`
 
 **Purpose**: Generate high-level phase-based plan  
-**Command**: `rmplan generate --input plan.md --output feature_plan.md`  
+**Command**: `tim generate --input plan.md --output feature_plan.md`  
 **Input**: Original project plan with `rmfilter` context  
 **Output**: Markdown file with phases, goals, dependencies, and tasks  
 
-### 5.2 `rmplan parse`
+### 5.2 `tim parse`
 
 **Purpose**: Parse markdown plan into YAML files  
-**Command**: `rmplan parse --input feature_plan.md --output-dir feature_plan/`  
+**Command**: `tim parse --input feature_plan.md --output-dir feature_plan/`  
 **Process**:
 1. Parse markdown structure
 2. Extract phase information and numeric indices
@@ -185,10 +185,10 @@ const phaseSchema = z.object({
 6. Create separate YAML file for each phase
 7. Validate no circular dependencies
 
-### 5.3 `rmplan generate-phase`
+### 5.3 `tim generate-phase`
 
 **Purpose**: Generate detailed steps and prompts for a specific phase  
-**Command**: `rmplan generate-phase --phase feature_plan/phase_1.yaml`  
+**Command**: `tim generate-phase --phase feature_plan/phase_1.yaml`  
 **Process**:
 1. Load target phase YAML
 2. Check all dependencies have `status: done` (warn if not, exit unless `--force`)

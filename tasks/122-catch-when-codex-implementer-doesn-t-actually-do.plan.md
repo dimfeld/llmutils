@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Catch when Codex implementer doesn't actually do anything
 goal: Implement automatic detection and retry when the Codex implementer outputs
   planning text without making actual file changes, improving reliability and
@@ -30,7 +30,7 @@ tasks:
   - title: Implement Planning Detection Logic
     done: true
     description: >-
-      Add detection functions to `src/rmplan/executors/failure_detection.ts`:
+      Add detection functions to `src/tim/executors/failure_detection.ts`:
 
       - Define `PlanningWithoutImplementationDetection` interface
 
@@ -58,7 +58,7 @@ tasks:
   - title: Add State Capture to Codex CLI Executor
     done: true
     description: |-
-      Modify `src/rmplan/executors/codex_cli.ts` to capture repository state:
+      Modify `src/tim/executors/codex_cli.ts` to capture repository state:
       - Add state capture before implementer execution (around line 131)
       - Add state capture after implementer execution (after line 136)
       - Store retry count in execution context
@@ -118,21 +118,21 @@ changedFiles:
   - CLAUDE.md
   - src/common/git.test.ts
   - src/common/git.ts
-  - src/rmplan/commands/generate.test.ts
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/executors/claude_code/format.ts
-  - src/rmplan/executors/codex_cli/format.test.ts
-  - src/rmplan/executors/codex_cli/format.ts
-  - src/rmplan/executors/codex_cli.capture_output.test.ts
-  - src/rmplan/executors/codex_cli.fix_loop.test.ts
-  - src/rmplan/executors/codex_cli.retry.test.ts
-  - src/rmplan/executors/codex_cli.test.ts
-  - src/rmplan/executors/codex_cli.ts
-  - src/rmplan/executors/failure_detection.test.ts
-  - src/rmplan/executors/failure_detection.ts
-  - src/rmplan/executors/shared/todo_format.ts
-  - src/rmplan/process_markdown.ts
-  - src/rmplan/research_utils.ts
+  - src/tim/commands/generate.test.ts
+  - src/tim/commands/generate.ts
+  - src/tim/executors/claude_code/format.ts
+  - src/tim/executors/codex_cli/format.test.ts
+  - src/tim/executors/codex_cli/format.ts
+  - src/tim/executors/codex_cli.capture_output.test.ts
+  - src/tim/executors/codex_cli.fix_loop.test.ts
+  - src/tim/executors/codex_cli.retry.test.ts
+  - src/tim/executors/codex_cli.test.ts
+  - src/tim/executors/codex_cli.ts
+  - src/tim/executors/failure_detection.test.ts
+  - src/tim/executors/failure_detection.ts
+  - src/tim/executors/shared/todo_format.ts
+  - src/tim/process_markdown.ts
+  - src/tim/research_utils.ts
 rmfilter: []
 ---
 
@@ -205,7 +205,7 @@ the implementer up to 3 times when we detect this.
 **Dependencies**
 - Existing `hasUncommittedChanges()` function from `src/common/git.ts`
 - `getCurrentCommitHash()` for commit-level change detection
-- Existing failure detection framework in `src/rmplan/executors/failure_detection.ts`
+- Existing failure detection framework in `src/tim/executors/failure_detection.ts`
 - Codex CLI stdout formatter for capturing implementer output
 
 **Technical Constraints**
@@ -297,11 +297,11 @@ This final phase focuses on integration testing, edge case handling, and documen
 - The solution requires detecting both planning text patterns in the output AND verifying no actual file changes occurred, then retrying with progressively more explicit prompts.
 
 ### Findings
-- The main executor file `src/rmplan/executors/codex_cli.ts` orchestrates a sequential flow: implementer → tester → reviewer → (optional fixer loop)
+- The main executor file `src/tim/executors/codex_cli.ts` orchestrates a sequential flow: implementer → tester → reviewer → (optional fixer loop)
 - The implementer step execution happens at line 132, with output captured and logged at line 136
-- The existing failure detection system (`src/rmplan/executors/failure_detection.ts`) uses a FAILED: protocol where agents explicitly report blocking issues
+- The existing failure detection system (`src/tim/executors/failure_detection.ts`) uses a FAILED: protocol where agents explicitly report blocking issues
 - The `src/common/git.ts` module provides comprehensive repository state utilities supporting both Git and Jujutsu
-- The `src/rmplan/executors/codex_cli/format.ts` module handles JSON streaming from Codex and captures agent messages
+- The `src/tim/executors/codex_cli/format.ts` module handles JSON streaming from Codex and captures agent messages
 - Existing retry patterns are found in `src/state_machine/store.ts` (generic retry with exponential backoff) and `src/apply-llm-edits/retry.ts` (LLM correction feedback)
 
 #### Retry Pattern Analysis (from subagent)
@@ -333,7 +333,7 @@ Based on my analysis of the codebase, I can now provide a comprehensive report o
   - Rollback support with `withRollback()` for context consistency
   - Event queuing during rollback operations
 
-#### Codex CLI Executor Fix Loop (`src/rmplan/executors/codex_cli.ts`)
+#### Codex CLI Executor Fix Loop (`src/tim/executors/codex_cli.ts`)
 - **Pattern**: Multi-step retry with reviewer feedback
 - **Current Logic**: Fix-and-review loop (up to 5 iterations) in lines 295-388
 - **Process**: implementer → tester → reviewer → (if NEEDS_FIXES) → fixer → reviewer → repeat
@@ -355,7 +355,7 @@ Based on my analysis of the codebase, I can now provide a comprehensive report o
 
 ### 3. Failure Detection Patterns
 
-#### Standardized FAILED Protocol (`src/rmplan/executors/failure_detection.ts`)
+#### Standardized FAILED Protocol (`src/tim/executors/failure_detection.ts`)
 - **Pattern**: Detects "FAILED:" prefix in agent outputs
 - **Functions**:
   - `detectFailedLine()`: Checks first non-empty line for FAILED prefix
@@ -370,7 +370,7 @@ Based on my analysis of the codebase, I can now provide a comprehensive report o
 
 ### 4. Resumption/Rerun Patterns
 
-#### Batch Mode Continuation (`src/rmplan/commands/agent/batch_mode.ts`)
+#### Batch Mode Continuation (`src/tim/commands/agent/batch_mode.ts`)
 - **Pattern**: Continue-until-complete loop
 - **Logic**: Re-reads plan file each iteration to check for remaining incomplete tasks
 - **Process**: Loops until no incomplete tasks remain or error occurs
@@ -413,7 +413,7 @@ if (didNothing) {
 #### Existing Utilities to Leverage
 - `hasUncommittedChanges()` from `src/common/git.ts`
 - Retry patterns from `src/state_machine/store.ts`
-- Failure detection patterns from `src/rmplan/executors/failure_detection.ts`
+- Failure detection patterns from `src/tim/executors/failure_detection.ts`
 
 The codebase already has robust patterns for retry logic, change detection, and failure handling that can be adapted for this specific use case of detecting when the Codex implementer plans but doesn't execute any actual changes.
 
@@ -451,7 +451,7 @@ The codebase has a comprehensive set of utilities for checking git and jj reposi
 ### Status Checking Patterns Used in the Codebase
 
 #### 1. Before/After Operation Comparison
-**Pattern found in `src/rmplan/summary/collector.ts`:**
+**Pattern found in `src/tim/summary/collector.ts`:**
 ```typescript
 // Capture baseline before operation
 async recordExecutionStart(baseDir?: string): void {
@@ -497,7 +497,7 @@ if (hasChanges) {
 ```
 
 #### 3. Plan Metadata Updates
-**Pattern found in `src/rmplan/plans/mark_done.ts`:**
+**Pattern found in `src/tim/plans/mark_done.ts`:**
 ```typescript
 // Always update metadata after marking steps done
 const gitRoot = await getGitRoot(baseDir);
@@ -567,7 +567,7 @@ Based on my analysis of the codebase, here's a comprehensive overview of how fai
 
 ## Current Failure Detection Mechanisms
 
-### 1. FAILED Protocol Detection (`src/rmplan/executors/failure_detection.ts`)
+### 1. FAILED Protocol Detection (`src/tim/executors/failure_detection.ts`)
 
 **Current Implementation:**
 - **Primary Detection**: `detectFailedLine()` - looks for `FAILED:` as the first non-empty line
@@ -592,17 +592,17 @@ if (parsed.failed) {
 
 ### 2. Agent-Specific Failure Flows
 
-**Claude Code Executor (`src/rmplan/executors/claude_code.ts`):**
+**Claude Code Executor (`src/tim/executors/claude_code.ts`):**
 - Monitors orchestrator output for `FAILED:` lines from sub-agents
 - Identifies source agent from failure summary
 - Returns structured failure with `sourceAgent` field
 
-**Codex CLI Executor (`src/rmplan/executors/codex_cli.ts`):**
+**Codex CLI Executor (`src/tim/executors/codex_cli.ts`):**
 - Sequential implement → test → review → fix loop
 - Each phase checks for `FAILED:` in output
 - Tracks failure state across iterations
 
-**Agent Prompts (`src/rmplan/executors/claude_code/agent_prompts.ts`):**
+**Agent Prompts (`src/tim/executors/claude_code/agent_prompts.ts`):**
 ```typescript
 const FAILED_PROTOCOL_INSTRUCTIONS = `
 If you encounter conflicting or impossible requirements that you cannot safely resolve, do NOT proceed.
@@ -723,7 +723,7 @@ if (!hasChanges) {
 ### 1. Enhance Failure Detection Interface
 
 ```typescript
-// Add to src/rmplan/executors/failure_detection.ts
+// Add to src/tim/executors/failure_detection.ts
 export interface PlanningWithoutImplementationDetection {
   detected: boolean;
   planningIndicators: string[];
@@ -821,7 +821,7 @@ The infrastructure exists to implement this detection effectively. The main work
 - **Dependency on Git Utilities**: The solution heavily relies on `hasUncommittedChanges()` and `getCurrentCommitHash()` working correctly for both Git and Jujutsu repositories.
 
 ### Follow-up Questions
-- Should the retry mechanism be configurable (e.g., max retry count, disable entirely) via rmplan config or environment variables?
+- Should the retry mechanism be configurable (e.g., max retry count, disable entirely) via tim config or environment variables?
 - When the implementer is retried, should we append information about previous attempts to the prompt, or start fresh each time?
 - Should we track metrics about how often this detection triggers to help improve the base implementer prompts over time?
 - Is there a preference for how verbose the logging should be when detection and retry occur?

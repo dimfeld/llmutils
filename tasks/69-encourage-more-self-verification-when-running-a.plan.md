@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Encourage more planning and self-verification when running a task
 goal: ""
 id: 69
@@ -10,7 +10,7 @@ createdAt: 2025-07-20T00:16:47.678Z
 updatedAt: 2025-10-27T08:39:04.232Z
 tasks: []
 rmfilter:
-  - src/rmplan/commands/agent.ts
+  - src/tim/commands/agent.ts
   - --with-imports
 ---
 
@@ -18,7 +18,7 @@ We want to make sure that the agent does not just generate code and not check it
 the agent should:
 - Verify that the changes it just made match the plan and the best practices in the codebase.
 
-Update the buildExecutionPrompt function in src/rmplan/prompt_builder.ts to add extra directions that
+Update the buildExecutionPrompt function in src/tim/prompt_builder.ts to add extra directions that
 - Verify that the steps match the best practices and existing patterns of the codebase.
 - Generate a TODO list to track its progress.
 - Ensure that its changes build and pass lints and tests.

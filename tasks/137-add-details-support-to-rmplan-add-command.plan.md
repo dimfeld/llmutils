@@ -1,6 +1,6 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-title: Add details support to rmplan add command
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
+title: Add details support to tim add command
 goal: ""
 id: 137
 uuid: ece4b9f5-eb81-40ed-85b5-217b93f947e7
@@ -19,7 +19,7 @@ createdAt: 2025-10-26T22:51:32.843Z
 updatedAt: 2025-10-29T08:46:14.273Z
 progressNotes:
   - timestamp: 2025-10-29T08:40:38.223Z
-    text: Successfully implemented details support for rmplan add command. Added
+    text: Successfully implemented details support for tim add command. Added
       three new CLI options (--details, --editor-details, --details-file) that
       allow users to provide plan details during creation. Created new utility
       functions for editor interaction and stdin reading. All tests pass (8 new
@@ -33,7 +33,7 @@ progressNotes:
     source: "verifier: verification"
   - timestamp: 2025-10-29T08:45:42.104Z
     text: Successfully completed implementation and verification of details support
-      for rmplan add command. All tests pass (2,241 total), type checking clean,
+      for tim add command. All tests pass (2,241 total), type checking clean,
       no linting errors in modified files. Implementation includes four input
       methods (inline, file, stdin, editor) with comprehensive test coverage.
       Ready for production use.
@@ -45,20 +45,20 @@ rmfilter: []
 
 ## Overview
 
-Currently, `rmplan add` creates plan stubs with only frontmatter (title, priority, dependencies, etc.). There's no way to add the details text (markdown content after the frontmatter) at creation time. This enhancement adds several options for providing plan details during creation.
+Currently, `tim add` creates plan stubs with only frontmatter (title, priority, dependencies, etc.). There's no way to add the details text (markdown content after the frontmatter) at creation time. This enhancement adds several options for providing plan details during creation.
 
 ## Problem
 
 When agents or users create plans, they often have context or research to include immediately. Current workflow requires:
-1. `rmplan add "title"` - Creates stub
+1. `tim add "title"` - Creates stub
 2. Manually edit file or use another tool to add details
-3. Or run `rmplan generate` later
+3. Or run `tim generate` later
 
 This is cumbersome for agents that want to create detailed plans programmatically.
 
 ## Proposed Options
 
-Add to `src/rmplan/commands/add.ts`:
+Add to `src/tim/commands/add.ts`:
 
 ### Option 1: Inline details
 
@@ -68,7 +68,7 @@ Add to `src/rmplan/commands/add.ts`:
 
 Usage:
 ```bash
-rmplan add "Implement feature" --details "## Overview\nThis feature requires...\n\n## Approach\n..."
+tim add "Implement feature" --details "## Overview\nThis feature requires...\n\n## Approach\n..."
 ```
 
 Good for: Programmatic creation where details are already formatted
@@ -81,7 +81,7 @@ Good for: Programmatic creation where details are already formatted
 
 Usage:
 ```bash
-rmplan add "Implement feature" --editor-details
+tim add "Implement feature" --editor-details
 # Opens editor, user writes markdown, saves and closes
 ```
 
@@ -95,7 +95,7 @@ Good for: Interactive creation with longer details
 
 Usage:
 ```bash
-rmplan add "Implement feature" --details-file research-notes.md
+tim add "Implement feature" --details-file research-notes.md
 ```
 
 Good for: When details already exist in a separate file
@@ -105,14 +105,14 @@ Good for: When details already exist in a separate file
 Support reading from stdin when `--details-file -` is specified:
 
 ```bash
-cat research.md | rmplan add "Implement feature" --details-file -
+cat research.md | tim add "Implement feature" --details-file -
 ```
 
 Good for: Pipeline automation
 
 ## Implementation
 
-File: `src/rmplan/commands/add.ts`
+File: `src/tim/commands/add.ts`
 
 1. Add the new options to the command definition
 2. In the handler, after creating the plan object but before writing:
@@ -150,12 +150,12 @@ await fs.writeFile(planFile, fileContent, 'utf-8');
 
 ## Utility Functions
 
-Consider extracting shared utilities to `src/rmplan/utils/editor.ts`:
+Consider extracting shared utilities to `src/tim/utils/editor.ts`:
 
 ```typescript
 export async function openEditorForInput(prompt: string): Promise<string> {
   const editor = process.env.EDITOR || 'nano';
-  const tempFile = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-'));
+  const tempFile = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-'));
   const tempPath = path.join(tempFile, 'details.md');
   
   // Write prompt as comment
@@ -190,7 +190,7 @@ export async function readStdin(): Promise<string> {
 ### Agent creating discovered work with context
 
 ```bash
-rmplan add "Fix authentication edge case" \
+tim add "Fix authentication edge case" \
   --discovered-from 42 \
   --priority high \
   --details "## Problem
@@ -210,7 +210,7 @@ The validateEmail() function assumes email is always a string.
 ### Using research notes as details
 
 ```bash
-rmplan add "Implement caching layer" \
+tim add "Implement caching layer" \
   --priority medium \
   --details-file research/caching-options.md
 ```
@@ -218,7 +218,7 @@ rmplan add "Implement caching layer" \
 ### Interactive with editor
 
 ```bash
-rmplan add "Refactor database layer" --editor-details
+tim add "Refactor database layer" --editor-details
 # Opens nano/vim with template
 ```
 
@@ -226,12 +226,12 @@ rmplan add "Refactor database layer" --editor-details
 
 ```bash
 echo "## Research\nLLM found that..." | \
-  rmplan add "Generated plan" --details-file -
+  tim add "Generated plan" --details-file -
 ```
 
 ## CLI Integration
 
-Update command definition in `src/rmplan/rmplan.ts`:
+Update command definition in `src/tim/tim.ts`:
 
 ```typescript
 program
@@ -249,7 +249,7 @@ program
 
 ### Unit Tests
 
-File: `src/rmplan/commands/add.test.ts`
+File: `src/tim/commands/add.test.ts`
 
 - Add plan with inline details
 - Add plan with details from file
@@ -289,7 +289,7 @@ The existing `update-plan-tasks` MCP tool doesn't support creating new plans - i
   parent?: number,
   dependsOn?: number[],
   discoveredFrom?: number,
-  // ... other fields from rmplan add
+  // ... other fields from tim add
 }
 ```
 
@@ -297,7 +297,7 @@ This will enable agents to create fully-formed plans programmatically without ne
 
 # Implementation Notes
 
-Successfully implemented details support for the `rmplan add` command, enabling users to provide plan details at creation time through multiple input methods.
+Successfully implemented details support for the `tim add` command, enabling users to provide plan details at creation time through multiple input methods.
 
 ## Implementation Overview
 
@@ -309,12 +309,12 @@ Added four different ways to provide plan details when creating a new plan:
 
 ## Files Created
 
-### src/rmplan/utils/editor.ts
+### src/tim/utils/editor.ts
 New utility module providing two core functions:
 - `openEditorForInput(prompt?: string): Promise<string>` - Opens the user's configured editor (from $EDITOR env var, defaults to nano) in a temporary file, allows user to write markdown content, then returns the content with comment lines removed
 - `readStdin(): Promise<string>` - Reads complete input from stdin using Node.js stream API
 
-### src/rmplan/commands/add.details.test.ts
+### src/tim/commands/add.details.test.ts
 Comprehensive test suite with 8 tests covering:
 - Inline details functionality
 - File-based details input
@@ -324,12 +324,12 @@ Comprehensive test suite with 8 tests covering:
 - Integration with other command options (priority, status, etc.)
 - Error handling for missing files
 
-### src/rmplan/utils/editor.test.ts
+### src/tim/utils/editor.test.ts
 Basic test coverage for the editor utility functions
 
 ## Files Modified
 
-### src/rmplan/rmplan.ts (lines 166-168)
+### src/tim/tim.ts (lines 166-168)
 Added three new CLI options to the 'add' command definition:
 ```typescript
 .option('--details <text>', 'Plan details (markdown text)')
@@ -337,7 +337,7 @@ Added three new CLI options to the 'add' command definition:
 .option('--details-file <path>', 'Read details from file (use "-" for stdin)')
 ```
 
-### src/rmplan/commands/add.ts (lines 160-175)
+### src/tim/commands/add.ts (lines 160-175)
 Added details collection logic after `updatePlanProperties` call and before plan file writing:
 - Checks options in priority order: inline details > file > editor
 - Uses dynamic imports for editor utilities (only loaded when needed)
@@ -361,7 +361,7 @@ Added details collection logic after `updatePlanProperties` call and before plan
 ## Integration Points
 
 The implementation integrates cleanly with:
-- Existing `writePlanFile` function in src/rmplan/plans.ts which already handles details separation
+- Existing `writePlanFile` function in src/tim/plans.ts which already handles details separation
 - Other add command options (priority, status, parent, dependencies, etc.)
 - Plan file format (YAML frontmatter + markdown body)
 - Test infrastructure (Bun test runner, temp directory fixtures)
@@ -378,25 +378,25 @@ All verification passed:
 
 Inline details for quick notes:
 ```bash
-rmplan add "Fix auth bug" --details "## Problem\nUsers getting 401 errors\n\n## Solution\nAdd token refresh"
+tim add "Fix auth bug" --details "## Problem\nUsers getting 401 errors\n\n## Solution\nAdd token refresh"
 ```
 
 From research notes file:
 ```bash
-rmplan add "Implement caching" --details-file docs/caching-research.md
+tim add "Implement caching" --details-file docs/caching-research.md
 ```
 
 Interactive editor for longer content:
 ```bash
-rmplan add "Refactor database" --editor-details
+tim add "Refactor database" --editor-details
 ```
 
 Pipeline from other tools:
 ```bash
-cat research.md | rmplan add "Generated plan" --details-file -
+cat research.md | tim add "Generated plan" --details-file -
 ```
 
 Combined with other options:
 ```bash
-rmplan add "Urgent fix" --priority high --parent 128 --discovered-from 42 --details "Critical security patch needed"
+tim add "Urgent fix" --priority high --parent 128 --discovered-from 42 --details "Critical security patch needed"
 ```

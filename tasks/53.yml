@@ -1,6 +1,6 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-title: Add rmplan set command to quickly update plans
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
+title: Add tim set command to quickly update plans
 goal: >
   We want to be able to quickly update things like the priority or status or
   dependencies of a plan from the command line without needing to open it in the
@@ -13,10 +13,10 @@ createdAt: 2025-06-07T03:41:12.059Z
 updatedAt: 2025-10-27T08:39:04.285Z
 tasks: []
 rmfilter:
-  - src/rmplan
+  - src/tim
 ---
 
-The `rmplan set` command should be a way to quickly update things like the priority or status or dependencies of a plan from the command line without needing to open it in the editor.
+The `tim set` command should be a way to quickly update things like the priority or status or dependencies of a plan from the command line without needing to open it in the editor.
 Arguments supported should be:
 - `--priority [low|medium|high|urgent]`
 - `--status [pending|in progress|done]`

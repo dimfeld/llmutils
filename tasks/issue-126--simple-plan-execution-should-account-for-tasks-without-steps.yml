@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Implement Direct Execution of Tasks without Steps
 goal: Modify the agent to correctly identify and execute tasks that have a
   description but no explicit steps, and to track their completion status.
@@ -68,15 +68,15 @@ tasks:
       complete if it has no steps and its `done` flag is true, or if it has
       steps and all of those steps are marked as done.
 changedFiles:
-  - src/rmplan/actions.test.ts
-  - src/rmplan/actions.ts
-  - src/rmplan/commands/agent.test.ts
-  - src/rmplan/commands/agent.ts
-  - src/rmplan/commands/research.test.ts
-  - src/rmplan/planSchema.ts
-  - src/rmplan/plans.test.ts
+  - src/tim/actions.test.ts
+  - src/tim/actions.ts
+  - src/tim/commands/agent.test.ts
+  - src/tim/commands/agent.ts
+  - src/tim/commands/research.test.ts
+  - src/tim/planSchema.ts
+  - src/tim/plans.test.ts
 rmfilter:
-  - src/rmplan/commands/agent.ts
+  - src/tim/commands/agent.ts
   - --with-imports
 ---
 

@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import { createModel } from './model_factory.js';
-import type { RmplanConfig } from '../rmplan/configSchema.js';
+import type { TimConfig } from '../tim/configSchema.js';
 
 describe('createModel with custom API keys', () => {
   const originalEnv = process.env;
@@ -27,7 +27,7 @@ describe('createModel with custom API keys', () => {
     process.env.CUSTOM_GPT4_KEY = 'custom-gpt4-key';
     process.env.OPENAI_API_KEY = 'default-openai-key';
 
-    const config: RmplanConfig = {
+    const config: TimConfig = {
       modelApiKeys: {
         'openai/gpt-4': 'CUSTOM_GPT4_KEY',
       },
@@ -41,7 +41,7 @@ describe('createModel with custom API keys', () => {
     process.env.MY_ANTHROPIC_KEY = 'custom-anthropic-key';
     process.env.ANTHROPIC_API_KEY = 'default-anthropic-key';
 
-    const config: RmplanConfig = {
+    const config: TimConfig = {
       modelApiKeys: {
         'anthropic/*': 'MY_ANTHROPIC_KEY',
       },
@@ -57,7 +57,7 @@ describe('createModel with custom API keys', () => {
     process.env.GENERAL_ANTHROPIC_KEY = 'general-anthropic-key';
     process.env.ANTHROPIC_API_KEY = 'default-anthropic-key';
 
-    const config: RmplanConfig = {
+    const config: TimConfig = {
       modelApiKeys: {
         'anthropic/*': 'GENERAL_ANTHROPIC_KEY',
         'anthropic/claude-3.5-sonnet': 'SONNET_KEY',
@@ -75,7 +75,7 @@ describe('createModel with custom API keys', () => {
     process.env.OPENAI_API_KEY = 'default-key';
     // NOT setting CUSTOM_KEY
 
-    const config: RmplanConfig = {
+    const config: TimConfig = {
       modelApiKeys: {
         'openai/*': 'CUSTOM_KEY',
       },
@@ -91,7 +91,7 @@ describe('createModel with custom API keys', () => {
     process.env.GOOGLE_VERTEX_LOCATION = 'us-central1';
     process.env.GOOGLE_VERTEX_PROJECT = 'test-project';
 
-    const config: RmplanConfig = {
+    const config: TimConfig = {
       modelApiKeys: {
         'vertex/*': 'CUSTOM_VERTEX_KEY',
       },
@@ -106,7 +106,7 @@ describe('createModel with custom API keys', () => {
     process.env.MY_ANTHROPIC = 'anthropic-key';
     process.env.MY_GROQ = 'groq-key';
 
-    const config: RmplanConfig = {
+    const config: TimConfig = {
       modelApiKeys: {
         'openai/*': 'MY_OPENAI',
         'anthropic/*': 'MY_ANTHROPIC',
@@ -124,7 +124,7 @@ describe('createModel with custom API keys', () => {
     process.env.OPENAI_API_KEY = 'default-key';
     process.env.CUSTOM_KEY = 'custom-key';
 
-    const config: RmplanConfig = {
+    const config: TimConfig = {
       modelApiKeys: {
         'openai/gpt': 'CUSTOM_KEY', // Should NOT match openai/gpt-4
       },

@@ -1,7 +1,7 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Enhance show command with full details and inverse relationships
-goal: Enhance the `rmplan show` command to display complete plan details without
+goal: Enhance the `tim show` command to display complete plan details without
   truncation and show inverse relationships (blocked plans, children, discovered
   plans) for better autonomous agent visibility
 id: 130
@@ -72,7 +72,7 @@ tasks:
   - title: Fix details truncation with --full flag
     done: true
     description: Investigate and fix the details display in
-      src/rmplan/commands/show.ts (lines 280-295). The --full flag should
+      src/tim/commands/show.ts (lines 280-295). The --full flag should
       display all lines without truncation. Check if plan.details contains
       literal \n escape sequences vs actual newlines. If literal sequences are
       found, add .replace(/\\n/g, '\n') before splitting. Test with details
@@ -107,7 +107,7 @@ tasks:
       if plan.discoveredFrom is set.
   - title: Write automated tests for enhanced show command
     done: true
-    description: "Create or update src/rmplan/commands/show.test.ts with tests for:
+    description: "Create or update src/tim/commands/show.test.ts with tests for:
       (1) Details truncation removed with --full flag using 50+ line details,
       (2) Inverse relationships display correctly with complex plan graph, (3)
       Missing plan references show graceful warnings, (4) Empty relationship
@@ -115,26 +115,26 @@ tasks:
       inverse relationships. Use real filesystem with temporary directories and
       fixture files."
 changedFiles:
-  - src/rmplan/commands/show.test.ts
-  - src/rmplan/commands/show.ts
+  - src/tim/commands/show.test.ts
+  - src/tim/commands/show.ts
   - test-show-enhancement.ts
 rmfilter: []
 ---
 
 ## Overview
 
-Enhance the `rmplan show` command to provide complete visibility into plan relationships. This makes it easier for autonomous agents to understand the full context of a plan, including what plans depend on it, what plans it spawned, and complete details without truncation.
+Enhance the `tim show` command to provide complete visibility into plan relationships. This makes it easier for autonomous agents to understand the full context of a plan, including what plans depend on it, what plans it spawned, and complete details without truncation.
 
 ## Problem
 
-Currently `rmplan show` has two limitations:
+Currently `tim show` has two limitations:
 
-1. **Truncation even with --full**: The details field is truncated at 20 lines even when using `--full` flag (see src/rmplan/commands/show.ts:280-295)
+1. **Truncation even with --full**: The details field is truncated at 20 lines even when using `--full` flag (see src/tim/commands/show.ts:280-295)
 2. **One-way relationships only**: Shows forward relationships (dependencies, parent) but not inverse (blocked plans, children, discovered plans)
 
 ## Changes Required
 
-File: `src/rmplan/commands/show.ts`
+File: `src/tim/commands/show.ts`
 
 ### 1. Fix --full Flag (lines 280-295)
 
@@ -240,15 +240,15 @@ Consider whether short mode (`--short`) should also show a summary of inverse re
 
 1. **Full details display:**
    - Create a plan with long details (>20 lines)
-   - Run `rmplan show <plan>` - should truncate
-   - Run `rmplan show <plan> --full` - should show ALL lines
+   - Run `tim show <plan>` - should truncate
+   - Run `tim show <plan> --full` - should show ALL lines
 
 2. **Inverse relationships:**
    - Create plan A
    - Create plan B with `--depends-on A`
    - Create plan C with `--parent A`
    - Create plan D with `--discovered-from A`
-   - Run `rmplan show A`
+   - Run `tim show A`
    - Verify it shows:
      - "Blocks These Plans: B"
      - "Child Plans: C"
@@ -261,7 +261,7 @@ Consider whether short mode (`--short`) should also show a summary of inverse re
 
 ### Automated Tests
 
-File: `src/rmplan/commands/show.test.ts`
+File: `src/tim/commands/show.test.ts`
 
 Add tests for:
 1. Full details flag removes truncation
@@ -271,7 +271,7 @@ Add tests for:
 
 ## User Experience
 
-After this change, agents running `rmplan show <plan> --full` will see:
+After this change, agents running `tim show <plan> --full` will see:
 
 1. **Complete context** - No truncated details
 2. **Impact visibility** - See what plans are blocked by this one
@@ -286,7 +286,7 @@ Depends on plan 129 for the utility functions (`getBlockedPlans`, `getChildPlans
 
 ## MCP Integration
 
-The existing `get-plan` MCP tool (src/rmplan/mcp/generate_mode.ts:425-431) already provides plan details but uses a simplified text format via `buildPlanContext()`. 
+The existing `get-plan` MCP tool (src/tim/mcp/generate_mode.ts:425-431) already provides plan details but uses a simplified text format via `buildPlanContext()`. 
 
 Consider enhancing it to include inverse relationships:
 
@@ -329,21 +329,21 @@ export async function handleGetPlanTool(
 
 This way agents using the MCP server get the same visibility as the CLI show command.
 
-<!-- rmplan-generated-start -->
+<!-- tim-generated-start -->
 ## Overview
 
-Enhance the `rmplan show` command to provide complete visibility into plan relationships. This makes it easier for autonomous agents to understand the full context of a plan, including what plans depend on it, what plans it spawned, and complete details without truncation.
+Enhance the `tim show` command to provide complete visibility into plan relationships. This makes it easier for autonomous agents to understand the full context of a plan, including what plans depend on it, what plans it spawned, and complete details without truncation.
 
 ## Problem
 
-Currently `rmplan show` has two limitations:
+Currently `tim show` has two limitations:
 
-1. **Truncation even with --full**: The details field is truncated at 20 lines even when using `--full` flag (see src/rmplan/commands/show.ts:280-295)
+1. **Truncation even with --full**: The details field is truncated at 20 lines even when using `--full` flag (see src/tim/commands/show.ts:280-295)
 2. **One-way relationships only**: Shows forward relationships (dependencies, parent) but not inverse (blocked plans, children, discovered plans)
 
 ## Expected Behavior/Outcome
 
-After this enhancement, `rmplan show <plan> --full` will:
+After this enhancement, `tim show <plan> --full` will:
 
 1. **Display complete details** - The `--full` flag will show all lines of the details field without any truncation
 2. **Show inverse relationships** - Display three new sections:
@@ -363,7 +363,7 @@ The output format will maintain consistency with existing relationship displays,
 
 ### Product & User Story
 
-**User Story**: As an autonomous agent or developer using rmplan, I need to see the complete context of a plan including what depends on it, so I can understand the full impact and scope of work before making decisions.
+**User Story**: As an autonomous agent or developer using tim, I need to see the complete context of a plan including what depends on it, so I can understand the full impact and scope of work before making decisions.
 
 **Current Pain Points**:
 - Details truncation at 20 lines makes it impossible to see full context even with `--full`
@@ -389,10 +389,10 @@ The output format will maintain consistency with existing relationship displays,
 ### Technical Plan & Risks
 
 **Key Files to Modify**:
-1. `src/rmplan/commands/show.ts` - Main implementation
+1. `src/tim/commands/show.ts` - Main implementation
    - Lines 280-295: Fix details truncation logic
    - After line 256: Add inverse relationship sections
-2. `src/rmplan/plans.ts` - Already has required utility functions from plan 129
+2. `src/tim/plans.ts` - Already has required utility functions from plan 129
 
 **Implementation Approach**:
 1. Fix the `--full` flag by ensuring plan.details contains actual newlines (not escaped `\n`)
@@ -434,7 +434,7 @@ The output format will maintain consistency with existing relationship displays,
 ## Dependencies & Constraints
 
 **Dependencies**:
-- **Plan 129** (done): Provides utility functions `getBlockedPlans`, `getChildPlans`, `getDiscoveredPlans` in src/rmplan/plans.ts
+- **Plan 129** (done): Provides utility functions `getBlockedPlans`, `getChildPlans`, `getDiscoveredPlans` in src/tim/plans.ts
 
 **Technical Constraints**:
 - Must load all plans to compute inverse relationships (same as existing dependency display)
@@ -480,7 +480,7 @@ The output format will maintain consistency with existing relationship displays,
 
 ### Code Location Details
 
-**File**: `src/rmplan/commands/show.ts`
+**File**: `src/tim/commands/show.ts`
 
 **Section 1: Fix Details Truncation** (lines 280-295)
 - Current code structure looks correct but may have escaped newline issue
@@ -500,14 +500,14 @@ The output format will maintain consistency with existing relationship displays,
 ### Conflicting, Unclear, or Impossible Requirements
 
 None identified. The requirements are clear and achievable with existing infrastructure from plan 129.
-<!-- rmplan-generated-end -->
+<!-- tim-generated-end -->
 
 # Implementation Notes
 
 ## Task 6: Automated Tests for Enhanced Show Command (Completed)
 
 ### Overview
-Completed comprehensive test suite for the enhanced rmplan show command in `src/rmplan/commands/show.test.ts`. The test suite includes 22 tests that fully validate all requirements specified in Task 6.
+Completed comprehensive test suite for the enhanced tim show command in `src/tim/commands/show.test.ts`. The test suite includes 22 tests that fully validate all requirements specified in Task 6.
 
 ### Test Coverage Details
 
@@ -556,7 +556,7 @@ During the review phase, a critical bug was identified and fixed:
 
 ### Files Modified
 
-- `src/rmplan/commands/show.test.ts`: Fixed field name bug from `dependsOn` to `dependencies` in status icons test
+- `src/tim/commands/show.test.ts`: Fixed field name bug from `dependsOn` to `dependencies` in status icons test
 
 ### Verification
 

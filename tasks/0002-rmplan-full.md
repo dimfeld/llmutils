@@ -2,7 +2,7 @@ This is a project plan for an upcoming feature.
 
 # Project Plan
 
-This is a new utility called rmplan, which is used for generating plans for a given task and then executing that plan.
+This is a new utility called tim, which is used for generating plans for a given task and then executing that plan.
 
 ## Commands
 

@@ -1,4 +1,4 @@
-Add a 'agent' command to rmplan. The agent command should:
+Add a 'agent' command to tim. The agent command should:
 
 - Run the equivalent of the "next" command to get a prompt. Use the `rmfilter` option in this case. Make a way to
 disable the step selection; instead always do just one step.

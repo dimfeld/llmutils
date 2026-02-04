@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Option to use Claude Code for generate and prepare commands - Implement
   Claude Code Option for the `prepare` Command
 goal: To extend the Claude Code functionality to the `prepare` command, reusing
@@ -22,7 +22,7 @@ tasks:
   - title: Add a `--claude` Flag to the `prepare` Command
     done: true
     description: Modify the command-line interface definition in
-      `src/rmplan/rmplan.ts` to add the new boolean `--claude` flag to the
+      `src/tim/tim.ts` to add the new boolean `--claude` flag to the
       `prepare` command. This will allow users to opt into the two-step Claude
       Code generation flow.
   - title: Integrate the Orchestration Service into the `prepare` Command
@@ -44,19 +44,19 @@ tasks:
       `--claude` flag to verify its correct functionality and output. This will
       involve testing the `preparePhase` function directly.
 changedFiles:
-  - src/rmplan/commands/generate.test.ts
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/commands/prepare.ts
-  - src/rmplan/executors/claude_code_orchestrator.ts
-  - src/rmplan/plans/prepare_phase.test.ts
-  - src/rmplan/plans/prepare_phase.ts
-  - src/rmplan/prompt.ts
-  - src/rmplan/{prompt.ts => prompt.ts.bak}
-  - src/rmplan/rmplan.ts
+  - src/tim/commands/generate.test.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/prepare.ts
+  - src/tim/executors/claude_code_orchestrator.ts
+  - src/tim/plans/prepare_phase.test.ts
+  - src/tim/plans/prepare_phase.ts
+  - src/tim/prompt.ts
+  - src/tim/{prompt.ts => prompt.ts.bak}
+  - src/tim/tim.ts
 rmfilter:
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/commands/prepare.ts
-  - src/rmplan/executors/claude_code.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/prepare.ts
+  - src/tim/executors/claude_code.ts
   - --with-imports
 ---
 

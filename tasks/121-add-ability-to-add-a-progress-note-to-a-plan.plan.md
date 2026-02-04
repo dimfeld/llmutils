@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: add ability to add a progress note to a plan
 goal: Enable agents to add timestamped progress notes to plans during execution,
   providing an audit trail of significant work completion, unexpected behaviors,
@@ -17,7 +17,7 @@ tasks:
   - title: Extend Plan Schema
     done: true
     description: >
-      Add progressNotes field to phaseSchema in `src/rmplan/planSchema.ts` after
+      Add progressNotes field to phaseSchema in `src/tim/planSchema.ts` after
       line 35 with other array fields:
 
       ```typescript
@@ -35,7 +35,7 @@ tasks:
   - title: Add Schema Validation Tests
     done: true
     description: |
-      Create tests in `src/rmplan/planSchema.test.ts` to validate:
+      Create tests in `src/tim/planSchema.test.ts` to validate:
       - Plans with valid progress notes are accepted
       - Invalid timestamp formats are rejected
       - Missing required fields are caught
@@ -44,7 +44,7 @@ tasks:
   - title: Create Command Handler
     done: true
     description: |
-      Create `src/rmplan/commands/add-progress-note.ts` with:
+      Create `src/tim/commands/add-progress-note.ts` with:
       - Interface for command options
       - Handler function that loads plan, adds note, saves plan
       - Proper error handling and user feedback
@@ -52,7 +52,7 @@ tasks:
   - title: Register Command in CLI
     done: true
     description: >
-      Add command registration to `src/rmplan/rmplan.ts`:
+      Add command registration to `src/tim/tim.ts`:
 
       ```typescript
 
@@ -69,7 +69,7 @@ tasks:
   - title: Write Command Tests
     done: true
     description: |
-      Create `src/rmplan/commands/add-progress-note.test.ts` with tests for:
+      Create `src/tim/commands/add-progress-note.test.ts` with tests for:
       - Adding notes to existing plans
       - Handling non-existent plan files
       - Preserving existing notes when adding new ones
@@ -78,7 +78,7 @@ tasks:
   - title: Add Progress Notes to Prompt Builder
     done: true
     description: |
-      Modify `src/rmplan/prompt_builder.ts`:
+      Modify `src/tim/prompt_builder.ts`:
       - Create `buildProgressNotesSection()` function
       - Include notes in `buildExecutionPromptWithoutSteps()` after plan context
       - Format notes with timestamps and proper markdown
@@ -86,7 +86,7 @@ tasks:
   - title: Update Show Command
     done: true
     description: |
-      Modify `src/rmplan/commands/show.ts`:
+      Modify `src/tim/commands/show.ts`:
       - Display progress notes section when notes exist
       - Format with timestamps and indentation
       - Show note count in summary
@@ -94,7 +94,7 @@ tasks:
   - title: Update List Command
     done: true
     description: |
-      Modify `src/rmplan/commands/list.ts`:
+      Modify `src/tim/commands/list.ts`:
       - Add progress note count to plan listings
       - Only show count when notes exist
       - Maintain clean output format
@@ -102,7 +102,7 @@ tasks:
     done: true
     description: |
       Modify executor prompts to document progress note capability:
-      - Update `src/rmplan/executors/claude_code/orchestrator_prompt.ts`
+      - Update `src/tim/executors/claude_code/orchestrator_prompt.ts`
       - Add instructions for when to use progress notes
       - Include example of adding progress notes
   - title: Write Integration Tests
@@ -140,32 +140,32 @@ tasks:
       - Include progress notes in workflow examples
 changedFiles:
   - README.md
-  - schema/rmplan-plan-schema.json
-  - src/rmplan/commands/add-progress-note.merge.test.ts
-  - src/rmplan/commands/add-progress-note.rotation.test.ts
-  - src/rmplan/commands/add-progress-note.test.ts
-  - src/rmplan/commands/add-progress-note.ts
-  - src/rmplan/commands/list.progress_notes.test.ts
-  - src/rmplan/commands/list.test.ts
-  - src/rmplan/commands/list.ts
-  - src/rmplan/commands/merge.test.ts
-  - src/rmplan/commands/merge.ts
-  - src/rmplan/commands/show.test.ts
-  - src/rmplan/commands/show.ts
-  - src/rmplan/commands/split.test.ts
-  - src/rmplan/configSchema.ts
-  - src/rmplan/executors/claude_code/orchestrator_prompt.test.ts
-  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
-  - src/rmplan/planSchema.test.ts
-  - src/rmplan/planSchema.ts
-  - src/rmplan/progress_notes.edge_cases.test.ts
-  - src/rmplan/progress_notes.integration.test.ts
-  - src/rmplan/prompt.ts
-  - src/rmplan/prompt_builder.test.ts
-  - src/rmplan/prompt_builder.ts
-  - src/rmplan/rmplan.ts
-  - src/rmplan/truncation.test.ts
-  - src/rmplan/truncation.ts
+  - schema/tim-plan-schema.json
+  - src/tim/commands/add-progress-note.merge.test.ts
+  - src/tim/commands/add-progress-note.rotation.test.ts
+  - src/tim/commands/add-progress-note.test.ts
+  - src/tim/commands/add-progress-note.ts
+  - src/tim/commands/list.progress_notes.test.ts
+  - src/tim/commands/list.test.ts
+  - src/tim/commands/list.ts
+  - src/tim/commands/merge.test.ts
+  - src/tim/commands/merge.ts
+  - src/tim/commands/show.test.ts
+  - src/tim/commands/show.ts
+  - src/tim/commands/split.test.ts
+  - src/tim/configSchema.ts
+  - src/tim/executors/claude_code/orchestrator_prompt.test.ts
+  - src/tim/executors/claude_code/orchestrator_prompt.ts
+  - src/tim/planSchema.test.ts
+  - src/tim/planSchema.ts
+  - src/tim/progress_notes.edge_cases.test.ts
+  - src/tim/progress_notes.integration.test.ts
+  - src/tim/prompt.ts
+  - src/tim/prompt_builder.test.ts
+  - src/tim/prompt_builder.ts
+  - src/tim/tim.ts
+  - src/tim/truncation.test.ts
+  - src/tim/truncation.ts
 rmfilter: []
 ---
 
@@ -179,12 +179,12 @@ Each progress note should contain the following:
 - text of the note
 
 - Add a new optional array of progress notes to the plan schema called progressNotes
-- Add a new command `add-progress-note` to rmplan similar to `set-task-done` that can add a string to the progressNotes array for a plan
+- Add a new command `add-progress-note` to tim similar to `set-task-done` that can add a string to the progressNotes array for a plan
 - Update the prompts to indicate that it should be used to add progress notes 
 - When building the agent prompts, include the progress notes from the current plan in the prompt
 
 Sample execution:
-`rmplan add-progress-note "<text>"`
+`tim add-progress-note "<text>"`
 
 Progress notes should be added when:
 - Significant chunks of work are done
@@ -196,16 +196,16 @@ and the plan. Readers won't know what was happening when you wrote the note unle
 
 # Processed Plan Details
 
-## Add Progress Notes Feature to rmplan for Agent Execution Tracking
+## Add Progress Notes Feature to tim for Agent Execution Tracking
 
 Agents currently lack a mechanism to document their progress and decisions during execution, making it difficult to understand what happened during complex plan runs. This feature adds progress notes as a first-class concept in the plan schema, allowing both automated agents and human operators to add timestamped notes that provide context about execution history.
 
 ### Expected Behavior/Outcome
-- Agents can add progress notes via `rmplan add-progress-note <plan> "<text>"` command
+- Agents can add progress notes via `tim add-progress-note <plan> "<text>"` command
 - Progress notes persist in plan YAML files as an array at the plan level
 - Each note contains a timestamp (ISO datetime) and text content
 - Notes appear in agent prompts to provide execution context
-- Notes are displayed in `rmplan show` output and counted in `rmplan list`
+- Notes are displayed in `tim show` output and counted in `tim list`
 - Notes accumulate chronologically and persist across plan operations
 
 ### Key Findings
@@ -215,9 +215,9 @@ Agents currently lack a mechanism to document their progress and decisions durin
 - **Pragmatic Effort Estimate**: 6-9 hours total (4-6 hours implementation, 2-3 hours testing/refinement)
 
 ### Acceptance Criteria
-- [ ] Agents can call `rmplan add-progress-note` to add timestamped notes to plans
+- [ ] Agents can call `tim add-progress-note` to add timestamped notes to plans
 - [ ] Progress notes persist in plan YAML files and survive plan updates
-- [ ] Notes appear in `rmplan show` output with timestamps and formatted text
+- [ ] Notes appear in `tim show` output with timestamps and formatted text
 - [ ] Agent prompts include progress notes section when notes exist. Prompt does not include note timestamps
 - [ ] Schema validation ensures proper note structure
 - [ ] All new code paths are covered by comprehensive tests
@@ -260,7 +260,7 @@ Tasks:
 Create a new command following the established pattern from commands like `set-task-done`. The command should load the plan file, add a timestamped note to the progressNotes array, and save the updated plan. The command must handle edge cases like non-existent plans and provide clear feedback.
 
 ### Acceptance Criteria
-- [ ] Command is registered in rmplan.ts with proper options
+- [ ] Command is registered in tim.ts with proper options
 - [ ] Command handler validates inputs and provides clear error messages
 - [ ] Progress notes are added with current timestamp
 - [ ] Plan file is correctly updated and saved
@@ -281,8 +281,8 @@ Progress notes must be included in agent execution prompts to provide context ab
 ### Acceptance Criteria
 - [ ] Progress notes appear in execution prompts via buildExecutionPromptWithoutSteps
 - [ ] Notes are formatted without timestamps in agent prompts
-- [ ] `rmplan show` displays progress notes when present
-- [ ] `rmplan list` shows count of progress notes
+- [ ] `tim show` displays progress notes when present
+- [ ] `tim list` shows count of progress notes
 - [ ] Batch mode includes progress notes context
 - [ ] Agent documentation mentions progress note capability
 

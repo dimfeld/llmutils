@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 goal: Implement the "Detailed Planning Mode" feature for `dimfeld/llmutils`,
   enabling phase-based project planning. This involves generating a high-level
   markdown plan with phases, parsing it into phase-specific YAML files,
@@ -23,18 +23,18 @@ tasks:
       project and phase IDs.
   - title: 2. Modify Planning Prompt for Phase-Based Markdown Generation
     done: true
-    description: Update the existing planning prompt in `src/rmplan/prompt.ts` to
+    description: Update the existing planning prompt in `src/tim/prompt.ts` to
       instruct the LLM to generate high-level, phase-based plans in Markdown.
-      This Markdown will serve as the input for the `rmplan parse` command.
+      This Markdown will serve as the input for the `tim parse` command.
   - title: 3. Implement Markdown Parser Logic
     done: true
-    description: Create a new module `src/rmplan/markdown_parser.ts` to parse the
+    description: Create a new module `src/tim/markdown_parser.ts` to parse the
       phase-based markdown generated in the previous task. This parser will
       extract the overall project goal and details, as well as information for
       each phase (title, numeric index, goal, dependencies, details, and tasks).
-  - title: 4. Implement `rmplan parse` Command
+  - title: 4. Implement `tim parse` Command
     done: true
-    description: Create the `rmplan parse --input <markdown_file> --output-dir
+    description: Create the `tim parse --input <markdown_file> --output-dir
       <dir>` command. This command will use the markdown parser from Task 3,
       generate project and phase IDs, resolve dependencies, and create
       individual YAML files for each phase.
@@ -44,9 +44,9 @@ tasks:
       a phase. Implement the logic to aggregate all necessary context for this
       prompt, including overall project goals, details of the current phase,
       information from completed dependent phases, and relevant codebase files.
-  - title: 6. Implement `rmplan generate-phase` Command
+  - title: 6. Implement `tim generate-phase` Command
     done: true
-    description: Create the `rmplan generate-phase --phase <phase_yaml_file>`
+    description: Create the `tim generate-phase --phase <phase_yaml_file>`
       command. This command loads a phase YAML, checks its dependencies, gathers
       context (including codebase files via `rmfilter`), invokes an LLM to
       generate detailed steps for tasks, and updates the phase YAML with these
@@ -54,8 +54,8 @@ tasks:
   - title: 7. Single-Phase Project Support and Error Handling Refinements
     done: true
     description: Ensure that single-phase projects (where the markdown plan has no
-      explicit `### Phase X` headers) are correctly handled by `rmplan parse`
-      and `rmplan generate-phase`. Implement robust error handling across all
+      explicit `### Phase X` headers) are correctly handled by `tim parse`
+      and `tim generate-phase`. Implement robust error handling across all
       new commands, saving partial or erroneous outputs to disk for manual
       correction as specified in the project plan.
   - title: 8. Documentation Update
@@ -63,9 +63,9 @@ tasks:
     description: Update the `README.md` file to include documentation for the new
       "Detailed Planning Mode" feature, including the new CLI commands,
       workflow, and file structures.
-  - title: 9. Refine Project ID Generation for `rmplan parse`
+  - title: 9. Refine Project ID Generation for `tim parse`
     done: true
-    description: Refine the project ID generation logic within the `rmplan parse`
+    description: Refine the project ID generation logic within the `tim parse`
       command. If a GitHub issue is provided, the project ID should be
       `issue-ISSUENUMBER-SLUGIFIEDTITLE`. Otherwise, if no explicit project ID
       is given, use Gemini Flash (or a similar fast model) to generate a concise
@@ -74,31 +74,31 @@ tasks:
 changedFiles:
   - README.md
   - package.json
-  - src/rmplan/actions.ts
-  - src/rmplan/cleanup.test.ts
-  - src/rmplan/cleanup.ts
-  - src/rmplan/generate-phase.test.ts
-  - src/rmplan/id_utils.test.ts
-  - src/rmplan/id_utils.ts
-  - src/rmplan/integration.test.ts
-  - src/rmplan/markdown_parser.test.ts
-  - src/rmplan/markdown_parser.ts
-  - src/rmplan/parse-id-generation.test.ts
-  - src/rmplan/parse.test.ts
-  - src/rmplan/planSchema.ts
-  - src/rmplan/prompt.test.ts
-  - src/rmplan/prompt.ts
-  - src/rmplan/rmplan.ts
+  - src/tim/actions.ts
+  - src/tim/cleanup.test.ts
+  - src/tim/cleanup.ts
+  - src/tim/generate-phase.test.ts
+  - src/tim/id_utils.test.ts
+  - src/tim/id_utils.ts
+  - src/tim/integration.test.ts
+  - src/tim/markdown_parser.test.ts
+  - src/tim/markdown_parser.ts
+  - src/tim/parse-id-generation.test.ts
+  - src/tim/parse.test.ts
+  - src/tim/planSchema.ts
+  - src/tim/prompt.test.ts
+  - src/tim/prompt.ts
+  - src/tim/tim.ts
   - tasks/issue-98-detailed-planning-mode.md
   - tasks/issue-98-detailed-planning-mode.yml
   - test-id-generation.ts
   - test-id-utils.ts
 rmfilter:
-  - src/rmplan
+  - src/tim
   - --with-imports
 ---
 
-The project aims to enhance `rmplan` with a structured, multi-phase planning capability. This will allow breaking down large software features into incremental, functional deliverables. Each phase will deliver a working component, building upon previous validated phases. The system must maintain compatibility with existing single-phase workflows.
+The project aims to enhance `tim` with a structured, multi-phase planning capability. This will allow breaking down large software features into incremental, functional deliverables. Each phase will deliver a working component, building upon previous validated phases. The system must maintain compatibility with existing single-phase workflows.
 
 Key deliverables:
 1.  **Modified Planning Prompt:** Update the existing planning prompt to generate markdown plans with distinct phases, goals, dependencies, and tasks (without implementation details).
@@ -106,9 +106,9 @@ Key deliverables:
 3.  **Phase-Specific YAML Generation:** Logic to convert the parsed markdown into individual YAML files for each phase, adhering to an updated `phaseSchema`. This includes generating unique project and phase IDs and resolving dependencies.
 4.  **Per-Phase Prompt Generation:** A new prompt and logic to generate detailed implementation steps (prompts, file lists, etc.) for each task within a phase, using context from the overall plan and completed dependent phases.
 5.  **CLI Commands:**
-    *   `rmplan generate`: (Modified) To output the phase-based markdown plan.
-    *   `rmplan parse`: (New) To parse the markdown plan into phase YAML files.
-    *   `rmplan generate-phase`: (New) To populate a phase's YAML file with detailed implementation steps.
+    *   `tim generate`: (Modified) To output the phase-based markdown plan.
+    *   `tim parse`: (New) To parse the markdown plan into phase YAML files.
+    *   `tim generate-phase`: (New) To populate a phase's YAML file with detailed implementation steps.
 6.  **Error Handling:** Mechanisms to save incomplete or erroneous outputs for manual correction.
 7.  **Documentation:** Updated README explaining the new feature and CLI commands.
 

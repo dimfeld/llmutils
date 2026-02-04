@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Support reading issues from Linear
 goal: Integrate the Linear SDK and refactor the existing GitHub issue-fetching
   logic to use a common, abstract interface, enabling support for both
@@ -25,7 +25,7 @@ tasks:
 
 
       The configuration should be added at the root level of the
-      rmplanConfigSchema object, similar to how other service configurations are
+      timConfigSchema object, similar to how other service configurations are
       handled in the codebase. The field should use a zod enum validator to
       ensure only valid values are accepted.
   - title: Define Generic Issue Tracker Data Structures
@@ -82,7 +82,7 @@ tasks:
   - title: Refactor `import` Command to Use Abstraction Layer
     done: true
     description: >
-      Update the `rmplan import` command to use the new issue tracker
+      Update the `tim import` command to use the new issue tracker
       abstraction layer. This will involve replacing direct calls to
       GitHub-specific functions with calls to the generic issue tracker
       interface, enabling the command to work with both GitHub and Linear
@@ -133,30 +133,30 @@ changedFiles:
   - src/common/linear_client.test.ts
   - src/common/linear_client.ts
   - src/rmfilter/rmfilter.ts
-  - src/rmplan/commands/documentation_consistency_check.test.ts
-  - src/rmplan/commands/generate.test.ts
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/commands/import.integration.test.ts
-  - src/rmplan/commands/import.test.ts
-  - src/rmplan/commands/import.ts
-  - src/rmplan/commands/integration_linear.test.ts
-  - src/rmplan/commands/issue_tracker_integration.test.ts
-  - src/rmplan/commands/linear_documentation_examples.test.ts
-  - src/rmplan/commands/linear_plan_structure.test.ts
-  - src/rmplan/commands/plan_file_validation.test.ts
-  - src/rmplan/configLoader.test.ts
-  - src/rmplan/configSchema.test.ts
-  - src/rmplan/configSchema.ts
-  - src/rmplan/issue_utils.ts
-  - src/rmplan/plans/prepare_phase.ts
+  - src/tim/commands/documentation_consistency_check.test.ts
+  - src/tim/commands/generate.test.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/import.integration.test.ts
+  - src/tim/commands/import.test.ts
+  - src/tim/commands/import.ts
+  - src/tim/commands/integration_linear.test.ts
+  - src/tim/commands/issue_tracker_integration.test.ts
+  - src/tim/commands/linear_documentation_examples.test.ts
+  - src/tim/commands/linear_plan_structure.test.ts
+  - src/tim/commands/plan_file_validation.test.ts
+  - src/tim/configLoader.test.ts
+  - src/tim/configSchema.test.ts
+  - src/tim/configSchema.ts
+  - src/tim/issue_utils.ts
+  - src/tim/plans/prepare_phase.ts
 rmfilter:
-  - src/rmplan
+  - src/tim
   - src/common/github*
 ---
 
 # Original Plan Details
 
-Any rmplan command that reads from a Github issue and its comments should be able to read from Linear instead. No need
+Any tim command that reads from a Github issue and its comments should be able to read from Linear instead. No need
 to add any support here for pull requests since Linear doesn't host those.
 
 The choice of Github or Linear should be configurable in the project config in configSchema.ts. Look for LINEAR_API_KEY
@@ -167,19 +167,19 @@ Use the @linear/sdk NPM package for the SDK.
 # Processed Plan Details
 
 ### Analysis
-The current implementation for importing issues is tightly coupled with the GitHub API. Specifically, commands like `rmplan import` rely on functions in `src/common/github/issues.js` to fetch issue and comment data. To support Linear, we need to introduce an abstraction layer for issue tracking services.
+The current implementation for importing issues is tightly coupled with the GitHub API. Specifically, commands like `tim import` rely on functions in `src/common/github/issues.js` to fetch issue and comment data. To support Linear, we need to introduce an abstraction layer for issue tracking services.
 
 This involves:
-1.  **Configuration:** Adding a new setting in `src/rmplan/configSchema.ts` to let users specify their issue tracker (`github` or `linear`).
+1.  **Configuration:** Adding a new setting in `src/tim/configSchema.ts` to let users specify their issue tracker (`github` or `linear`).
 2.  **Abstraction:** Creating a generic interface for issue trackers and common data structures (for issues, comments, etc.) that both GitHub and Linear implementations will adhere to.
 3.  **Linear Implementation:** Creating a new module that uses the `@linear/sdk` package to fetch issue and comment data from the Linear API, authenticating via the `LINEAR_API_KEY` environment variable.
-4.  **Refactoring:** Updating the `rmplan import` command and related utilities to use the new abstraction layer, allowing them to function with either GitHub or Linear based on the user's configuration.
+4.  **Refactoring:** Updating the `tim import` command and related utilities to use the new abstraction layer, allowing them to function with either GitHub or Linear based on the user's configuration.
 
 This approach will make the system more modular and easier to extend with other issue trackers in the future.
 
 ### Acceptance Criteria
-- The `rmplan.yml` configuration file accepts a new `issueTracker` property, which can be set to either `'github'` or `'linear'`.
-- When `issueTracker` is set to `'linear'`, the `rmplan import` command can successfully fetch an issue and its comments from Linear using a Linear issue ID (e.g., `TEAM-123`).
+- The `tim.yml` configuration file accepts a new `issueTracker` property, which can be set to either `'github'` or `'linear'`.
+- When `issueTracker` is set to `'linear'`, the `tim import` command can successfully fetch an issue and its comments from Linear using a Linear issue ID (e.g., `TEAM-123`).
 - The system correctly reads the `LINEAR_API_KEY` from the environment variables to authenticate with the Linear API.
 - The existing functionality for importing from GitHub remains unchanged and fully functional when `issueTracker` is set to `'github'` or is not specified.
 - The system can handle both creating new plan files from Linear issues and updating existing ones.

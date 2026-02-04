@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: remove deprecated commands
 goal: ""
 id: 140
@@ -20,31 +20,31 @@ research: Deprecated in favor of doing it inside coding agent
 
 # Implementation Notes
 
-Successfully removed four deprecated rmplan commands from the codebase: address-comments, next, update, and research. These commands were deprecated because their functionality has been superseded by other mechanisms (slash commands for address-comments, coding agents for update/research, and the agent/show commands for next).
+Successfully removed four deprecated tim commands from the codebase: address-comments, next, update, and research. These commands were deprecated because their functionality has been superseded by other mechanisms (slash commands for address-comments, coding agents for update/research, and the agent/show commands for next).
 
 ## Files Deleted
 
 **Command implementations (4 files):**
-- src/rmplan/commands/addressComments.ts - Address comments command
-- src/rmplan/commands/next.ts - Next command  
-- src/rmplan/commands/update.ts - Update command
-- src/rmplan/commands/research.ts - Research command
+- src/tim/commands/addressComments.ts - Address comments command
+- src/tim/commands/next.ts - Next command  
+- src/tim/commands/update.ts - Update command
+- src/tim/commands/research.ts - Research command
 
 **Test files (3 files):**
-- src/rmplan/commands/update.test.ts
-- src/rmplan/commands/research.test.ts  
-- src/rmplan/research_utils.test.ts
+- src/tim/commands/update.test.ts
+- src/tim/commands/research.test.ts  
+- src/tim/research_utils.test.ts
 
 **Total: 7 files deleted**
 
 ## Files Modified
 
-**src/rmplan/rmplan.ts:**
+**src/tim/tim.ts:**
 - Removed command registrations for all four deprecated commands
-- Updated code comments to reference 'rmplan agent' instead of 'rmplan next'
+- Updated code comments to reference 'tim agent' instead of 'tim next'
 - The CLI command tree no longer includes these commands
 
-**src/rmplan/mcp/generate_mode.ts:**
+**src/tim/mcp/generate_mode.ts:**
 - Moved three MCP helper functions from deleted command files:
   - mcpAppendResearch() - previously exported from research.ts
   - mcpUpdatePlanDetails() - previously exported from update.ts  
@@ -52,29 +52,29 @@ Successfully removed four deprecated rmplan commands from the codebase: address-
 - Added imports for mergeTasksIntoPlan, updateDetailsWithinDelimiters, and appendResearchToPlan
 - These functions are used by the MCP server and needed to be preserved
 
-**src/rmplan/mcp/generate_mode.test.ts:**
+**src/tim/mcp/generate_mode.test.ts:**
 - Updated imports to reference mcpUpdatePlanTasks and mcpAppendResearch from generate_mode.ts instead of deleted files
 - All 25 MCP tests continue to pass
 
 **README.md (extensive updates):**
 - Removed 'Address Comments Command' and 'Cleanup Comments Command' from table of contents
 - Removed both command documentation sections (~60 lines)
-- Updated all examples that used 'rmplan next' to use 'rmplan show' or 'rmplan agent'
-- Removed all examples using 'rmplan research' and 'rmplan update'
-- Updated error message suggestions to recommend 'rmplan generate' instead of 'rmplan update'
+- Updated all examples that used 'tim next' to use 'tim show' or 'tim agent'
+- Removed all examples using 'tim research' and 'tim update'
+- Updated error message suggestions to recommend 'tim generate' instead of 'tim update'
 - Removed feature description mentioning 'research' command
 - Removed two full paragraphs describing the removed research and update commands
 - Changed usage pattern step to reference 'show' command instead of 'next'
 
 **docs/linear-integration.md:**
-- Line 160: Changed workflow step from 'rmplan next' to 'rmplan agent' with manual alternative option
+- Line 160: Changed workflow step from 'tim next' to 'tim agent' with manual alternative option
 
 **docs/import_command.md:**
-- Line 97: Updated workflow description to reference 'rmplan agent' and 'rmplan show' instead of 'rmplan next'
+- Line 97: Updated workflow description to reference 'tim agent' and 'tim show' instead of 'tim next'
 
-**src/rmplan/commands/workspace.ts:**
-- Line 215: Updated help text to suggest 'rmplan agent' instead of 'rmplan next'
-- Added alternative suggestion to use 'rmplan show' to view the plan
+**src/tim/commands/workspace.ts:**
+- Line 215: Updated help text to suggest 'tim agent' instead of 'tim next'
+- Added alternative suggestion to use 'tim show' to view the plan
 
 ## Key Design Decisions
 
@@ -89,13 +89,13 @@ The research_utils.ts file was intentionally preserved even though research_util
 
 **Documentation Replacement Strategy:**
 When replacing command references in documentation:
-- 'rmplan next' → 'rmplan show' (for viewing plans) or 'rmplan agent' (for executing)
-- 'rmplan update' → Manual plan editing or 'rmplan generate'  
-- 'rmplan research' → 'rmplan generate' with research phase
+- 'tim next' → 'tim show' (for viewing plans) or 'tim agent' (for executing)
+- 'tim update' → Manual plan editing or 'tim generate'  
+- 'tim research' → 'tim generate' with research phase
 - Complete removal of sections rather than deprecation notices (clean break)
 
 **CHANGELOG Preservation:**
-The historical reference to 'rmplan next' in CHANGELOG.md line 111 was intentionally left unchanged. CHANGELOGs document what existed at the time, so preserving historical references is the correct approach.
+The historical reference to 'tim next' in CHANGELOG.md line 111 was intentionally left unchanged. CHANGELOGs document what existed at the time, so preserving historical references is the correct approach.
 
 ## Testing & Verification
 
@@ -117,10 +117,10 @@ Verified with grep searches that no other files import or depend on the removed 
 ## Integration Points
 
 **MCP Server:**
-The MCP server in src/rmplan/mcp/generate_mode.ts continues to work correctly with the migrated helper functions. The server provides tools for updating plans, appending research, and managing plan details.
+The MCP server in src/tim/mcp/generate_mode.ts continues to work correctly with the migrated helper functions. The server provides tools for updating plans, appending research, and managing plan details.
 
 **CLI Command Tree:**
-The rmplan CLI command tree (defined in rmplan.ts) no longer includes the deprecated commands. Users attempting to use these commands will receive a command-not-found error from the CLI framework.
+The tim CLI command tree (defined in tim.ts) no longer includes the deprecated commands. Users attempting to use these commands will receive a command-not-found error from the CLI framework.
 
 **Workspace Management:**
 The workspace.ts command's help text now suggests the correct replacement commands for users.

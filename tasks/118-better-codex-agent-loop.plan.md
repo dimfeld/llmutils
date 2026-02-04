@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: better codex agent loop
 goal: To create a robust, multi-step agent loop for the Codex executor,
   mirroring the implement-test-review-fix workflow of the Claude Code executor,
@@ -114,16 +114,16 @@ tasks:
       ensuring that the code meets quality standards before the executor
       finishes.
 changedFiles:
-  - src/rmplan/commands/add.test.ts
-  - src/rmplan/commands/cli_integration.test.ts
-  - src/rmplan/executors/codex_cli/format.test.ts
-  - src/rmplan/executors/codex_cli/format.ts
-  - src/rmplan/executors/codex_cli/review_analysis.test.ts
-  - src/rmplan/executors/codex_cli/review_analysis.ts
-  - src/rmplan/executors/codex_cli.fix_loop.test.ts
-  - src/rmplan/executors/codex_cli.ts
+  - src/tim/commands/add.test.ts
+  - src/tim/commands/cli_integration.test.ts
+  - src/tim/executors/codex_cli/format.test.ts
+  - src/tim/executors/codex_cli/format.ts
+  - src/tim/executors/codex_cli/review_analysis.test.ts
+  - src/tim/executors/codex_cli/review_analysis.ts
+  - src/tim/executors/codex_cli.fix_loop.test.ts
+  - src/tim/executors/codex_cli.ts
 rmfilter:
-  - src/rmplan/executors
+  - src/tim/executors
   - --with-imports
 ---
 
@@ -243,8 +243,8 @@ This project will replace the current single-prompt `CodexCliExecutor` with a so
 - The entire process is logged clearly to the console, showing the progression through each stage of the loop.
 
 ### Technical Considerations
-- The core logic will reside in `src/rmplan/executors/codex_cli.ts`.
-- A new module will be created for parsing and formatting the Codex-specific JSON output, similar to `src/rmplan/executors/claude_code/format.ts`.
+- The core logic will reside in `src/tim/executors/codex_cli.ts`.
+- A new module will be created for parsing and formatting the Codex-specific JSON output, similar to `src/tim/executors/claude_code/format.ts`.
 - The `spawnAndLogOutput` utility will be used to execute `codex exec --json`, with a custom `formatStdout` callback to handle the streaming JSON.
 - The `ai.generateObject` function from the Vercel AI SDK will be used for the Review Analysis step.
 - State (e.g., outputs from previous steps, fix loop count) must be managed within the `execute` method of the `CodexCliExecutor`.

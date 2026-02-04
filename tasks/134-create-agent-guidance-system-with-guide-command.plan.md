@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Create agent guidance system with guide command and help reorganization
 goal: ""
 id: 134
@@ -16,19 +16,19 @@ tasks: []
 
 ## Overview
 
-Create an agent-friendly guidance system that helps autonomous agents understand rmplan commands and workflows. This includes:
-1. A base `rmplan` command (no args) that displays guidance
+Create an agent-friendly guidance system that helps autonomous agents understand tim commands and workflows. This includes:
+1. A base `tim` command (no args) that displays guidance
 2. Reorganized help output grouped by agent workflow
 3. Best practices and examples for common agent tasks
 
 ## Components
 
-### 1. Guide Command (base rmplan with no subcommand)
+### 1. Guide Command (base tim with no subcommand)
 
-File: `src/rmplan/commands/guide.ts`
+File: `src/tim/commands/guide.ts`
 
-When user runs just `rmplan`, show:
-- Overview of rmplan for agents
+When user runs just `tim`, show:
+- Overview of tim for agents
 - Key concepts (dependencies, ready state, parent/child)
 - Common workflows grouped by purpose
 - Best practices for autonomous work
@@ -36,7 +36,7 @@ When user runs just `rmplan`, show:
 
 ### 2. Help Reorganization
 
-Update `src/rmplan/rmplan.ts` to group commands by workflow category:
+Update `src/tim/tim.ts` to group commands by workflow category:
 
 **Categories:**
 - **Discovery**: list, ready, show
@@ -52,20 +52,20 @@ Use Commander.js's `configureHelp()` to customize the help output format.
 ### 3. Agent Best Practices Section
 
 Include guidance on:
-- Creating discovered issues: `rmplan add "..." --discovered-from <id>`
+- Creating discovered issues: `tim add "..." --discovered-from <id>`
 - Managing dependencies and blockers
-- Using `rmplan ready` to find work
-- Using `rmplan show --full` for complete context
+- Using `tim ready` to find work
+- Using `tim show --full` for complete context
 - Updating status as work progresses
 
 ## Example Guide Output
 
 ```
-📋 rmplan - Autonomous Agent Guide
+📋 tim - Autonomous Agent Guide
 ────────────────────────────────────────────────────────────────────────────────
 
 🤖 For Autonomous Agents:
-rmplan helps you manage complex projects through plan files that track
+tim helps you manage complex projects through plan files that track
 tasks, dependencies, and progress.
 
 Key Concepts:
@@ -74,32 +74,32 @@ Key Concepts:
   • Use parent/child relationships for hierarchical organization
 
 📝 Creating and Managing Plans:
-  rmplan add [title]              Create a new plan stub
+  tim add [title]              Create a new plan stub
     --parent <id>                 Set parent plan
     --depends-on <ids...>         Set dependencies
     --discovered-from <id>        Mark discovery source
 
 🔍 Finding Work:
-  rmplan list --status ready      Show ready-to-execute plans
-  rmplan ready                    Detailed view of ready plans
-  rmplan show <plan> --full       Show complete plan details
+  tim list --status ready      Show ready-to-execute plans
+  tim ready                    Detailed view of ready plans
+  tim show <plan> --full       Show complete plan details
 
 ...
 ```
 
 ## Implementation Tasks
 
-1. Create `src/rmplan/commands/guide.ts` with `handleGuideCommand()`
-2. Update `src/rmplan/rmplan.ts` to call guide when no subcommand specified
+1. Create `src/tim/commands/guide.ts` with `handleGuideCommand()`
+2. Update `src/tim/tim.ts` to call guide when no subcommand specified
 3. Add `configureHelp()` to group commands by category
 4. Add help text sections with best practices
-5. Test that `rmplan` shows guide and `rmplan --help` shows standard help
+5. Test that `tim` shows guide and `tim --help` shows standard help
 
 ## Testing
 
-- Run `rmplan` with no args, verify guide displays
-- Run `rmplan --help`, verify standard help displays
-- Run `rmplan <command> --help`, verify command-specific help displays
+- Run `tim` with no args, verify guide displays
+- Run `tim --help`, verify standard help displays
+- Run `tim <command> --help`, verify command-specific help displays
 - Verify categorization makes sense and all commands are included
 
 ## Dependencies

@@ -1,7 +1,7 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 goal: "Implement the feature: Read `rmpr` comments from GitHub issues and use
-  them to provide arguments to `rmfilter` when using the `rmplan generate
+  them to provide arguments to `rmfilter` when using the `tim generate
   --issue` command."
 id: 5
 uuid: 14da35e7-e075-43eb-b646-f292a1892b38
@@ -30,10 +30,10 @@ tasks:
       return them along with the cleaned plan text. The plan text itself should
       be constructed from the parts of the issue content after `rmpr` directives
       have been removed.
-  - title: 3. Integrate `rmpr` options from issues into `rmplan generate` command
+  - title: 3. Integrate `rmpr` options from issues into `tim generate` command
     done: true
     description: >
-      Modify the `rmplan generate` command in `src/rmplan/rmplan.ts`. When
+      Modify the `tim generate` command in `src/tim/tim.ts`. When
       processing an issue (`--issue` flag), it should now use the
       `combinedRmprOptions` returned by `getInstructionsFromGithubIssue`. These
       options will be converted into `rmfilter` arguments using the
@@ -41,13 +41,13 @@ tasks:
       arguments passed to the `rmfilter` subprocess.
 ---
 
-The `rmplan generate` command, when used with the `--issue` option, fetches content from a GitHub issue (title, body, comments) to form a plan. This project will extend this functionality to parse `rmpr` (ReadMePRompt) directives from this issue content.
+The `tim generate` command, when used with the `--issue` option, fetches content from a GitHub issue (title, body, comments) to form a plan. This project will extend this functionality to parse `rmpr` (ReadMePRompt) directives from this issue content.
 
-Similar to how `rmpr` directives in PR comments guide context generation for `pr-answer`, these directives in issues will be translated into arguments for the `rmfilter` command that `rmplan generate` uses. This allows users to specify `rmfilter` options (like including specific files, enabling import analysis, or passing arbitrary `rmfilter` flags) directly within the issue description or comments.
+Similar to how `rmpr` directives in PR comments guide context generation for `pr-answer`, these directives in issues will be translated into arguments for the `rmfilter` command that `tim generate` uses. This allows users to specify `rmfilter` options (like including specific files, enabling import analysis, or passing arbitrary `rmfilter` flags) directly within the issue description or comments.
 
 The project involves:
 1.  Creating a generic function to convert `RmprOptions` (parsed from comments) into `rmfilter` arguments, suitable for contexts other than Pull Requests (i.e., ignoring PR-specific directives).
 2.  Modifying the GitHub issue processing logic to parse `rmpr` directives from the selected issue content (title, body, comments), combine these options, and return them along with the cleaned plan text.
-3.  Updating the `rmplan generate` command to take these parsed `RmprOptions` and use them to augment the arguments passed to `rmfilter`.
+3.  Updating the `tim generate` command to take these parsed `RmprOptions` and use them to augment the arguments passed to `rmfilter`.
 
 This will provide more fine-grained control over the context generation process when starting a plan from a GitHub issue.

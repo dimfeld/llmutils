@@ -1,4 +1,4 @@
-We need a way to manually add a workspace. Right now this is only done as part of the `rmplan run` command but there
+We need a way to manually add a workspace. Right now this is only done as part of the `tim run` command but there
 should be an explicit command that just adds and initializes a workspace.
 
 It should be optional to specify a plan ID or file for the workspace. If specified, we should:

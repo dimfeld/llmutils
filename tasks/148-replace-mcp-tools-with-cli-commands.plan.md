@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: replace MCP tools with CLI commands
 goal: ""
 id: 148
@@ -9,7 +9,7 @@ priority: medium
 createdAt: 2025-12-29T01:16:02.088Z
 updatedAt: 2025-12-30T20:10:13.829Z
 tasks:
-  - title: Create src/rmplan/tools/ directory and files
+  - title: Create src/tim/tools/ directory and files
     done: true
     description: |-
       - Move Zod schemas from generate_mode.ts to tools/schemas.ts
@@ -29,7 +29,7 @@ tasks:
       - Replace inline mcp* functions with calls to tool functions
       - Keep MCP-specific wrapper logic (logging, error handling)
       - Use toMcpResult() helper to extract text from ToolResult
-  - title: Add tools command to rmplan.ts
+  - title: Add tools command to tim.ts
     done: true
     description: >-
       - Create tools command group with subcommands
@@ -53,20 +53,20 @@ tasks:
       - Add noTools option to StartMcpServerOptions in server.ts
       - Update registerGenerateMode() signature to accept RegisterOptions
       - Conditionally register tools based on registerTools option
-      - Update CLI command registration in rmplan.ts
+      - Update CLI command registration in tim.ts
   - title: Write tests
     done: true
     description: |-
-      - Unit tests for each tool function in src/rmplan/tools/
+      - Unit tests for each tool function in src/tim/tools/
       - Integration tests comparing CLI and MCP outputs
       - Tests for error handling (invalid JSON, missing fields, etc.)
       - Follow existing patterns in task-management.integration.test.ts
   - title: Update documentation
     done: true
     description: >-
-      - Update claude-plugin/skills/rmplan-usage/SKILL.md with CLI tool section
+      - Update claude-plugin/skills/tim-usage/SKILL.md with CLI tool section
 
-      - Update claude-plugin/skills/rmplan-usage/references/mcp-tools.md to show
+      - Update claude-plugin/skills/tim-usage/references/mcp-tools.md to show
       CLI alternatives
 
       - Consider creating cli-tools.md dedicated reference
@@ -79,32 +79,32 @@ tasks:
       - Compare CLI and MCP outputs for consistency
 changedFiles:
   - README.md
-  - claude-plugin/skills/rmplan-usage/SKILL.md
-  - claude-plugin/skills/rmplan-usage/references/cli-commands.md
-  - claude-plugin/skills/rmplan-usage/references/mcp-tools.md
-  - src/rmplan/commands/ready.ts
-  - src/rmplan/commands/show.ts
-  - src/rmplan/commands/tools.test.ts
-  - src/rmplan/commands/tools.ts
-  - src/rmplan/mcp/generate_mode.test.ts
-  - src/rmplan/mcp/generate_mode.ts
-  - src/rmplan/mcp/server.ts
-  - src/rmplan/plans.ts
-  - src/rmplan/rmplan.ts
-  - src/rmplan/tools/context.ts
-  - src/rmplan/tools/create_plan.ts
-  - src/rmplan/tools/get_plan.ts
-  - src/rmplan/tools/index.ts
-  - src/rmplan/tools/list_ready_plans.ts
-  - src/rmplan/tools/manage_plan_task.ts
-  - src/rmplan/tools/schemas.ts
-  - src/rmplan/tools/update_plan_details.ts
-  - src/rmplan/tools/update_plan_tasks.ts
+  - claude-plugin/skills/tim-usage/SKILL.md
+  - claude-plugin/skills/tim-usage/references/cli-commands.md
+  - claude-plugin/skills/tim-usage/references/mcp-tools.md
+  - src/tim/commands/ready.ts
+  - src/tim/commands/show.ts
+  - src/tim/commands/tools.test.ts
+  - src/tim/commands/tools.ts
+  - src/tim/mcp/generate_mode.test.ts
+  - src/tim/mcp/generate_mode.ts
+  - src/tim/mcp/server.ts
+  - src/tim/plans.ts
+  - src/tim/tim.ts
+  - src/tim/tools/context.ts
+  - src/tim/tools/create_plan.ts
+  - src/tim/tools/get_plan.ts
+  - src/tim/tools/index.ts
+  - src/tim/tools/list_ready_plans.ts
+  - src/tim/tools/manage_plan_task.ts
+  - src/tim/tools/schemas.ts
+  - src/tim/tools/update_plan_details.ts
+  - src/tim/tools/update_plan_tasks.ts
 tags: []
 ---
 
 We want to make it possible to run an agent without the MCP tools, and have it use the CLI instead based on the info in
-the rmplan-usage skill. 
+the tim-usage skill. 
 
 The main thing we need to figure out here is how to make this work in a way that is compatible with passing a large
 amount of data. I suggest a new command `tools` which has a subcommand for each MCP tool. 
@@ -126,12 +126,12 @@ tools.
 
 ### Overview
 
-This feature enables agents to use rmplan functionality without requiring MCP server connectivity. Instead of MCP tools, agents will use CLI subcommands under `rmplan tools <tool-name>` that accept JSON input via stdin and return JSON/text output to stdout. This maintains feature parity while supporting environments where MCP servers cannot run.
+This feature enables agents to use tim functionality without requiring MCP server connectivity. Instead of MCP tools, agents will use CLI subcommands under `tim tools <tool-name>` that accept JSON input via stdin and return JSON/text output to stdout. This maintains feature parity while supporting environments where MCP servers cannot run.
 
 ### Expected Behavior/Outcome
 
 **New User-Facing Behavior:**
-- A new `rmplan tools` command group with subcommands mirroring each MCP tool
+- A new `tim tools` command group with subcommands mirroring each MCP tool
 - Each subcommand reads JSON from stdin (matching the MCP tool's parameter schema)
 - Each subcommand writes its result to stdout (matching MCP tool return format)
 - The MCP server gains a `--no-tools` flag to run prompts/resources only
@@ -148,23 +148,23 @@ This feature enables agents to use rmplan functionality without requiring MCP se
 
 **Primary Users:** Agents running in environments without MCP server support (e.g., API-based agents, custom orchestration systems, or environments where WebSocket/stdio MCP transport is problematic).
 
-**User Story:** "As an agent, I want to manage rmplan plans using CLI commands so that I can create, update, and query plans without requiring an MCP server connection."
+**User Story:** "As an agent, I want to manage tim plans using CLI commands so that I can create, update, and query plans without requiring an MCP server connection."
 
 #### Design & UX Approach
 
 **CLI Command Structure:**
 ```bash
-rmplan tools <tool-name> [options]
+tim tools <tool-name> [options]
 # JSON input from stdin
 # Result written to stdout
 
 # Example usage:
-echo '{"plan": "123"}' | rmplan tools get-plan
-echo '{"title": "New Plan", "priority": "high"}' | rmplan tools create-plan
+echo '{"plan": "123"}' | tim tools get-plan
+echo '{"title": "New Plan", "priority": "high"}' | tim tools create-plan
 
 # JSON output option for scripting:
-echo '{"plan": "123"}' | rmplan tools get-plan --json
-echo '{}' | rmplan tools list-ready-plans --json
+echo '{"plan": "123"}' | tim tools get-plan --json
+echo '{}' | tim tools list-ready-plans --json
 ```
 
 **Output Modes:**
@@ -199,7 +199,7 @@ Error JSON structure:
 
 **MCP Server Flag:**
 ```bash
-rmplan mcp-server --no-tools  # Prompts and resources only
+tim mcp-server --no-tools  # Prompts and resources only
 ```
 
 #### Technical Plan & Risks
@@ -209,7 +209,7 @@ rmplan mcp-server --no-tools  # Prompts and resources only
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                    Shared Tool Functions                      │
-│  src/rmplan/tools/                                            │
+│  src/tim/tools/                                            │
 │  ├── get_plan.ts         (getPlanTool)                       │
 │  ├── create_plan.ts      (createPlanTool)                    │
 │  ├── update_plan_tasks.ts (updatePlanTasksTool)              │
@@ -224,7 +224,7 @@ rmplan mcp-server --no-tools  # Prompts and resources only
             ▼                 ▼                 ▼
    ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
    │   CLI Commands   │ │   MCP Tools     │ │   Integration   │
-   │   rmplan tools   │ │   generate_mode │ │   Tests         │
+   │   tim tools   │ │   generate_mode │ │   Tests         │
    │   stdin → stdout │ │   server.addTool│ │   Both paths    │
    └─────────────────┘ └─────────────────┘ └─────────────────┘
 ```
@@ -232,22 +232,22 @@ rmplan mcp-server --no-tools  # Prompts and resources only
 **Key Files Affected:**
 
 1. **New files to create:**
-   - `src/rmplan/tools/` directory with shared implementations
-   - `src/rmplan/commands/tools.ts` - CLI command registration
-   - `src/rmplan/tools/*.ts` - One file per tool function
+   - `src/tim/tools/` directory with shared implementations
+   - `src/tim/commands/tools.ts` - CLI command registration
+   - `src/tim/tools/*.ts` - One file per tool function
 
 2. **Files to modify:**
-   - `src/rmplan/rmplan.ts` - Add `tools` command group
-   - `src/rmplan/mcp/server.ts` - Add `--no-tools` option
-   - `src/rmplan/mcp/generate_mode.ts` - Refactor to use shared functions
-   - `claude-plugin/skills/rmplan-usage/SKILL.md` - Update docs
-   - `claude-plugin/skills/rmplan-usage/references/mcp-tools.md` - Add CLI alternatives
+   - `src/tim/tim.ts` - Add `tools` command group
+   - `src/tim/mcp/server.ts` - Add `--no-tools` option
+   - `src/tim/mcp/generate_mode.ts` - Refactor to use shared functions
+   - `claude-plugin/skills/tim-usage/SKILL.md` - Update docs
+   - `claude-plugin/skills/tim-usage/references/mcp-tools.md` - Add CLI alternatives
 
 3. **Existing shared utilities (no changes needed):**
-   - `src/rmplan/plan_display.ts` - `resolvePlan()`, `buildPlanContext()`
-   - `src/rmplan/ready_plans.ts` - `filterAndSortReadyPlans()`, `formatReadyPlansAsJson()`
-   - `src/rmplan/plan_merge.ts` - `mergeTasksIntoPlan()`, `updateDetailsWithinDelimiters()`
-   - `src/rmplan/plans.ts` - `readPlanFile()`, `writePlanFile()`
+   - `src/tim/plan_display.ts` - `resolvePlan()`, `buildPlanContext()`
+   - `src/tim/ready_plans.ts` - `filterAndSortReadyPlans()`, `formatReadyPlansAsJson()`
+   - `src/tim/plan_merge.ts` - `mergeTasksIntoPlan()`, `updateDetailsWithinDelimiters()`
+   - `src/tim/plans.ts` - `readPlanFile()`, `writePlanFile()`
 
 **Risks & Mitigations:**
 
@@ -255,7 +255,7 @@ rmplan mcp-server --no-tools  # Prompts and resources only
    - **Mitigation:** Use existing `task-management.integration.test.ts` pattern to test both CLI and MCP paths
 
 2. **Risk:** Schema drift between CLI and MCP
-   - **Mitigation:** Single source of truth for Zod schemas in `src/rmplan/tools/schemas.ts`
+   - **Mitigation:** Single source of truth for Zod schemas in `src/tim/tools/schemas.ts`
 
 3. **Risk:** Large JSON input could be problematic
    - **Mitigation:** stdin reads handle large buffers; this is tested with existing `--format json` commands
@@ -273,19 +273,19 @@ rmplan mcp-server --no-tools  # Prompts and resources only
 
 ### Acceptance Criteria
 
-- [ ] **Functional:** `echo '{"plan": "123"}' | rmplan tools get-plan` returns plan details as text
-- [ ] **Functional:** All 6 MCP tools have corresponding CLI subcommands under `rmplan tools`
+- [ ] **Functional:** `echo '{"plan": "123"}' | tim tools get-plan` returns plan details as text
+- [ ] **Functional:** All 6 MCP tools have corresponding CLI subcommands under `tim tools`
 - [ ] **Functional:** CLI tools use same Zod schemas as MCP tools for input validation
 - [ ] **Functional:** CLI tools support `--json` flag for structured JSON output
 - [ ] **Functional:** JSON output includes `success`, `result`, and optional `message` fields
 - [ ] **Functional:** Error JSON output includes `success: false`, `error`, and optional `code` fields
-- [ ] **Functional:** `rmplan mcp-server --no-tools` starts server with prompts/resources only
-- [ ] **Technical:** Shared tool functions are in `src/rmplan/tools/` directory
+- [ ] **Functional:** `tim mcp-server --no-tools` starts server with prompts/resources only
+- [ ] **Technical:** Shared tool functions are in `src/tim/tools/` directory
 - [ ] **Technical:** MCP tools call shared functions (no duplicated logic)
 - [ ] **Technical:** CLI tools call same shared functions as MCP tools
 - [ ] **Technical:** Invalid JSON input produces clear error messages
-- [ ] **Documentation:** `claude-plugin/skills/rmplan-usage/SKILL.md` documents CLI alternatives
-- [ ] **Documentation:** `claude-plugin/skills/rmplan-usage/references/mcp-tools.md` shows both MCP and CLI usage
+- [ ] **Documentation:** `claude-plugin/skills/tim-usage/SKILL.md` documents CLI alternatives
+- [ ] **Documentation:** `claude-plugin/skills/tim-usage/references/mcp-tools.md` shows both MCP and CLI usage
 - [ ] **Testing:** Integration tests verify CLI and MCP produce identical results
 
 ### Dependencies & Constraints
@@ -306,9 +306,9 @@ rmplan mcp-server --no-tools  # Prompts and resources only
 
 **Phase 1: Create shared tool functions**
 
-1. Create `src/rmplan/tools/` directory structure:
+1. Create `src/tim/tools/` directory structure:
 ```
-src/rmplan/tools/
+src/tim/tools/
 ├── index.ts              # Re-exports all
 ├── schemas.ts            # All Zod schemas (moved from generate_mode.ts)
 ├── context.ts            # ToolContext type definition
@@ -322,7 +322,7 @@ src/rmplan/tools/
 
 2. Define `ToolContext` and `ToolResult` interfaces:
 ```typescript
-// src/rmplan/tools/context.ts
+// src/tim/tools/context.ts
 export interface ToolContext {
   config: RmplanConfig;
   gitRoot: string;
@@ -338,7 +338,7 @@ export interface ToolResult<T = unknown> {
 
 3. Each tool function returns a `ToolResult`:
 ```typescript
-// src/rmplan/tools/get_plan.ts
+// src/tim/tools/get_plan.ts
 export async function getPlanTool(
   args: GetPlanArguments,
   context: ToolContext
@@ -352,7 +352,7 @@ export async function getPlanTool(
   };
 }
 
-// src/rmplan/tools/create_plan.ts
+// src/tim/tools/create_plan.ts
 export async function createPlanTool(
   args: CreatePlanArguments,
   context: ToolContext
@@ -365,7 +365,7 @@ export async function createPlanTool(
   };
 }
 
-// src/rmplan/tools/list_ready_plans.ts
+// src/tim/tools/list_ready_plans.ts
 export async function listReadyPlansTool(
   args: ListReadyPlansArguments,
   context: ToolContext
@@ -424,7 +424,7 @@ server.addTool({
 
 **Phase 3: Create CLI command handler**
 
-Add to `src/rmplan/rmplan.ts`:
+Add to `src/tim/tim.ts`:
 ```typescript
 const toolsCommand = program.command('tools').description('Run MCP tool equivalents via CLI');
 
@@ -440,7 +440,7 @@ toolsCommand
 // ... similar for other tools, each with --json option
 ```
 
-Create `src/rmplan/commands/tools.ts`:
+Create `src/tim/commands/tools.ts`:
 ```typescript
 import {
   getPlanTool, createPlanTool, updatePlanTasksTool,
@@ -530,7 +530,7 @@ export async function handleToolCommand(
 
 **Phase 4: Add --no-tools option to MCP server**
 
-Modify `src/rmplan/mcp/server.ts`:
+Modify `src/tim/mcp/server.ts`:
 ```typescript
 export interface StartMcpServerOptions {
   configPath?: string;
@@ -576,7 +576,7 @@ export function registerGenerateMode(
 }
 ```
 
-Update CLI in `rmplan.ts`:
+Update CLI in `tim.ts`:
 ```typescript
 program
   .command('mcp-server')
@@ -593,15 +593,15 @@ program
 
 **Phase 5: Update documentation**
 
-1. Update `claude-plugin/skills/rmplan-usage/SKILL.md`:
+1. Update `claude-plugin/skills/tim-usage/SKILL.md`:
    - Add section on CLI tools as alternative to MCP
    - Update MCP integration section to mention CLI alternatives
 
-2. Update `claude-plugin/skills/rmplan-usage/references/mcp-tools.md`:
+2. Update `claude-plugin/skills/tim-usage/references/mcp-tools.md`:
    - Add CLI equivalent for each tool
    - Show stdin/stdout usage examples
 
-3. Consider creating `claude-plugin/skills/rmplan-usage/references/cli-tools.md`:
+3. Consider creating `claude-plugin/skills/tim-usage/references/cli-tools.md`:
    - Dedicated reference for CLI tool commands
 
 #### Potential Gotchas
@@ -639,24 +639,24 @@ None identified - the requirements are clear and achievable.
 1. **Test CLI tools work correctly:**
    ```bash
    # Get plan (text output)
-   echo '{"plan": "123"}' | rmplan tools get-plan
+   echo '{"plan": "123"}' | tim tools get-plan
 
    # Get plan (JSON output)
-   echo '{"plan": "123"}' | rmplan tools get-plan --json
+   echo '{"plan": "123"}' | tim tools get-plan --json
 
    # Create plan
-   echo '{"title": "Test Plan", "priority": "medium"}' | rmplan tools create-plan
-   echo '{"title": "Test Plan", "priority": "medium"}' | rmplan tools create-plan --json
+   echo '{"title": "Test Plan", "priority": "medium"}' | tim tools create-plan
+   echo '{"title": "Test Plan", "priority": "medium"}' | tim tools create-plan --json
 
    # List ready plans
-   echo '{}' | rmplan tools list-ready-plans
-   echo '{"priority": "high", "limit": 5}' | rmplan tools list-ready-plans --json
+   echo '{}' | tim tools list-ready-plans
+   echo '{"priority": "high", "limit": 5}' | tim tools list-ready-plans --json
    ```
 
 2. **Test MCP server with --no-tools:**
    ```bash
    # Start server without tools
-   rmplan mcp-server --no-tools
+   tim mcp-server --no-tools
 
    # Verify prompts still work, tools are not available
    # (use MCP client or inspector)
@@ -665,7 +665,7 @@ None identified - the requirements are clear and achievable.
 3. **Test that CLI and MCP produce same results:**
    ```bash
    # Compare outputs
-   echo '{"plan": "123"}' | rmplan tools get-plan > cli-output.txt
+   echo '{"plan": "123"}' | tim tools get-plan > cli-output.txt
    # Use MCP client to call get-plan with same args
    # Compare outputs
    ```
@@ -673,29 +673,29 @@ None identified - the requirements are clear and achievable.
 4. **Test error handling:**
    ```bash
    # Invalid JSON (text error)
-   echo 'not json' | rmplan tools get-plan
+   echo 'not json' | tim tools get-plan
    # Should error clearly
 
    # Invalid JSON (JSON error format)
-   echo 'not json' | rmplan tools get-plan --json
+   echo 'not json' | tim tools get-plan --json
    # Should output {"success": false, "error": "..."}
 
    # Missing required field
-   echo '{}' | rmplan tools create-plan
+   echo '{}' | tim tools create-plan
    # Should show validation error
 
    # Missing required field (JSON format)
-   echo '{}' | rmplan tools create-plan --json
+   echo '{}' | tim tools create-plan --json
    # Should output {"success": false, "error": "...", "code": "VALIDATION_ERROR"}
 
    # No stdin
-   rmplan tools get-plan
+   tim tools get-plan
    # Should error about missing input
    ```
 
 ### Step-by-Step Implementation Guide
 
-1. **Create `src/rmplan/tools/` directory and files**
+1. **Create `src/tim/tools/` directory and files**
    - Move Zod schemas from `generate_mode.ts` to `tools/schemas.ts`
    - Create `tools/context.ts` with `ToolContext` interface
    - Create individual tool files, extracting logic from `generate_mode.ts`
@@ -705,7 +705,7 @@ None identified - the requirements are clear and achievable.
    - Replace inline `mcp*` functions with calls to tool functions
    - Keep MCP-specific wrapper logic (logging, error handling)
 
-3. **Add `tools` command to `rmplan.ts`**
+3. **Add `tools` command to `tim.ts`**
    - Create command group with subcommands
    - Each subcommand calls `handleToolCommand()`
 
@@ -731,14 +731,14 @@ None identified - the requirements are clear and achievable.
 
 8. **Run full test suite and manual verification**
 
-Implemented shared rmplan tool modules and wired them into both MCP and CLI paths (Tasks: Create src/rmplan/tools directory and files; Update generate_mode.ts to use shared tools; Add tools command to rmplan.ts; Create commands/tools.ts; Add --no-tools option to MCP server). Added `src/rmplan/tools/context.ts` with ToolContext/ToolResult and logger typing, and moved all MCP tool parameter schemas into `src/rmplan/tools/schemas.ts` (exported from `src/rmplan/tools/index.ts` and re-exported from `src/rmplan/mcp/generate_mode.ts` for compatibility). Implemented tool functions in `src/rmplan/tools/get_plan.ts`, `create_plan.ts`, `update_plan_tasks.ts`, `update_plan_details.ts`, `manage_plan_task.ts`, and `list_ready_plans.ts` to encapsulate plan mutations, reuse existing helpers (`resolvePlan`, `mergeTasksIntoPlan`, `updateDetailsWithinDelimiters`, `validateTags`, `formatReadyPlansAsJson`), and return ToolResult with text plus structured data for JSON output. Updated `src/rmplan/mcp/generate_mode.ts` to call these shared tools via thin mcp* wrappers (using a new toMcpResult helper), added a RegisterOptions/registerTools switch to conditionally register MCP tools, and removed duplicated logic from generate_mode while keeping prompts/resources intact. Updated `src/rmplan/commands/show.ts` and `src/rmplan/commands/ready.ts` MCP helper functions to call the new tools for get-plan/list-ready-plans. Added `src/rmplan/commands/tools.ts` to implement stdin JSON parsing (with TTY guard), zod validation, structured JSON output via `--json`, and consistent error formatting; wired new `rmplan tools <tool-name>` subcommands in `src/rmplan/rmplan.ts`. Added `--no-tools` to MCP server options in `src/rmplan/mcp/server.ts` and CLI to run prompts/resources only, and documented the new flag plus CLI fallback in `README.md`. Key design decisions: keep error messages identical to existing MCP behavior; keep schema single source of truth in tools/schemas; pass logging through ToolContext to avoid MCP-only dependencies; preserve backward-compatible exports from generate_mode while centralizing tool logic. Integration points include MCP tool registration, CLI tool execution, and existing plan/task update helpers. No deviations from the plan beyond adding a minimal README mention for the new CLI/flag.
+Implemented shared tim tool modules and wired them into both MCP and CLI paths (Tasks: Create src/tim/tools directory and files; Update generate_mode.ts to use shared tools; Add tools command to tim.ts; Create commands/tools.ts; Add --no-tools option to MCP server). Added `src/tim/tools/context.ts` with ToolContext/ToolResult and logger typing, and moved all MCP tool parameter schemas into `src/tim/tools/schemas.ts` (exported from `src/tim/tools/index.ts` and re-exported from `src/tim/mcp/generate_mode.ts` for compatibility). Implemented tool functions in `src/tim/tools/get_plan.ts`, `create_plan.ts`, `update_plan_tasks.ts`, `update_plan_details.ts`, `manage_plan_task.ts`, and `list_ready_plans.ts` to encapsulate plan mutations, reuse existing helpers (`resolvePlan`, `mergeTasksIntoPlan`, `updateDetailsWithinDelimiters`, `validateTags`, `formatReadyPlansAsJson`), and return ToolResult with text plus structured data for JSON output. Updated `src/tim/mcp/generate_mode.ts` to call these shared tools via thin mcp* wrappers (using a new toMcpResult helper), added a RegisterOptions/registerTools switch to conditionally register MCP tools, and removed duplicated logic from generate_mode while keeping prompts/resources intact. Updated `src/tim/commands/show.ts` and `src/tim/commands/ready.ts` MCP helper functions to call the new tools for get-plan/list-ready-plans. Added `src/tim/commands/tools.ts` to implement stdin JSON parsing (with TTY guard), zod validation, structured JSON output via `--json`, and consistent error formatting; wired new `tim tools <tool-name>` subcommands in `src/tim/tim.ts`. Added `--no-tools` to MCP server options in `src/tim/mcp/server.ts` and CLI to run prompts/resources only, and documented the new flag plus CLI fallback in `README.md`. Key design decisions: keep error messages identical to existing MCP behavior; keep schema single source of truth in tools/schemas; pass logging through ToolContext to avoid MCP-only dependencies; preserve backward-compatible exports from generate_mode while centralizing tool logic. Integration points include MCP tool registration, CLI tool execution, and existing plan/task update helpers. No deviations from the plan beyond adding a minimal README mention for the new CLI/flag.
 
 Tasks: fix the --no-tools flag handling, preserve manage-plan-task JSON data, restore MCP create-plan UserError behavior, and add CLI/MCP parity coverage for update-plan-details, update-plan-tasks, manage-plan-task, and list-ready-plans.
 
-Implementation details: updated `src/rmplan/rmplan.ts` to derive `noTools` from Commander’s negated `--no-tools` option via `options.tools === false`. Updated `src/rmplan/tools/manage_plan_task.ts` to merge the action tag into the underlying add/update/remove tool data so JSON results retain fields like `index`/`shifted`. Wrapped `createPlanTool` errors in `src/rmplan/mcp/generate_mode.ts` with `UserError` to restore MCP user-facing error semantics without changing the shared tool behavior. Added parity tests in `src/rmplan/commands/tools.test.ts` for update-plan-details, update-plan-tasks, manage-plan-task (including JSON payload assertions), and list-ready-plans; tests compare CLI output with shared tool output and MCP wrapper output, reset plan files between runs to avoid mutation side effects, and use a noop logger for `mcpUpdatePlanTasks`.
+Implementation details: updated `src/tim/tim.ts` to derive `noTools` from Commander’s negated `--no-tools` option via `options.tools === false`. Updated `src/tim/tools/manage_plan_task.ts` to merge the action tag into the underlying add/update/remove tool data so JSON results retain fields like `index`/`shifted`. Wrapped `createPlanTool` errors in `src/tim/mcp/generate_mode.ts` with `UserError` to restore MCP user-facing error semantics without changing the shared tool behavior. Added parity tests in `src/tim/commands/tools.test.ts` for update-plan-details, update-plan-tasks, manage-plan-task (including JSON payload assertions), and list-ready-plans; tests compare CLI output with shared tool output and MCP wrapper output, reset plan files between runs to avoid mutation side effects, and use a noop logger for `mcpUpdatePlanTasks`.
 
-Tasks worked: Task 7 (Update documentation). Updated claude-plugin/skills/rmplan-usage/SKILL.md to document CLI tool equivalents for MCP tools, including JSON stdin usage, --json structured output, and the rmplan mcp-server --no-tools prompt/resource-only mode. Expanded claude-plugin/skills/rmplan-usage/references/mcp-tools.md with a general CLI equivalence note plus per-tool CLI examples (get-plan, create-plan, update-plan-tasks, update-plan-details, manage-plan-task, list-ready-plans) to keep schemas and behaviors aligned. Extended claude-plugin/skills/rmplan-usage/references/cli-commands.md with a dedicated rmplan tools section and sample commands, opting to fold CLI tool docs into the existing CLI reference instead of adding a new cli-tools.md file. This keeps the CLI and MCP docs in sync and gives agents a clear fallback path when MCP tools are unavailable.
+Tasks worked: Task 7 (Update documentation). Updated claude-plugin/skills/tim-usage/SKILL.md to document CLI tool equivalents for MCP tools, including JSON stdin usage, --json structured output, and the tim mcp-server --no-tools prompt/resource-only mode. Expanded claude-plugin/skills/tim-usage/references/mcp-tools.md with a general CLI equivalence note plus per-tool CLI examples (get-plan, create-plan, update-plan-tasks, update-plan-details, manage-plan-task, list-ready-plans) to keep schemas and behaviors aligned. Extended claude-plugin/skills/tim-usage/references/cli-commands.md with a dedicated tim tools section and sample commands, opting to fold CLI tool docs into the existing CLI reference instead of adding a new cli-tools.md file. This keeps the CLI and MCP docs in sync and gives agents a clear fallback path when MCP tools are unavailable.
 
-Fixed create-plan parent validation and parity tests. For the create-plan tool, I now resolve the parent plan (via readAllPlans) before writing the new plan file so an invalid parent ID fails fast and no orphan plan file is left behind; the resolved parent plan is then reused for dependency/status updates after the child plan is written. For CLI/MCP parity, I adjusted the update-plan-details and update-plan-tasks tests to reset the plan file before each run (shared tool, CLI handler, MCP wrapper) so all three execute against identical starting content and the output comparison is meaningful. Tasks worked on: fix create-plan failure behavior when parent is invalid; make CLI/MCP parity tests start from the same plan state. Files touched: src/rmplan/tools/create_plan.ts, src/rmplan/commands/tools.test.ts. Key decisions: validate parent before write to avoid partial success; reuse the cached parent plan to avoid duplicate reads; reinitialize plan fixtures between each update run to remove hidden state. No deviations from plan beyond these minimal changes.
+Fixed create-plan parent validation and parity tests. For the create-plan tool, I now resolve the parent plan (via readAllPlans) before writing the new plan file so an invalid parent ID fails fast and no orphan plan file is left behind; the resolved parent plan is then reused for dependency/status updates after the child plan is written. For CLI/MCP parity, I adjusted the update-plan-details and update-plan-tasks tests to reset the plan file before each run (shared tool, CLI handler, MCP wrapper) so all three execute against identical starting content and the output comparison is meaningful. Tasks worked on: fix create-plan failure behavior when parent is invalid; make CLI/MCP parity tests start from the same plan state. Files touched: src/tim/tools/create_plan.ts, src/tim/commands/tools.test.ts. Key decisions: validate parent before write to avoid partial success; reuse the cached parent plan to avoid duplicate reads; reinitialize plan fixtures between each update run to remove hidden state. No deviations from plan beyond these minimal changes.
 
-Completed Task 8 (Run full test suite and manual verification). Ran bun test and confirmed 2382 passing tests with 85 skipped tests; the existing rmfix warnings still appear. Manually exercised rmplan tools get-plan --json for plan 148 and rmplan tools list-ready-plans --json with empty input to confirm stdin JSON parsing and structured output without mutating plans. Started rmplan mcp-server --no-tools briefly and terminated after startup to confirm the flag wiring; observed a harmless nice(5) warning in the shell but no functional errors. No code changes were required for this task; the only file change was the plan progress note, committed via jj.
+Completed Task 8 (Run full test suite and manual verification). Ran bun test and confirmed 2382 passing tests with 85 skipped tests; the existing rmfix warnings still appear. Manually exercised tim tools get-plan --json for plan 148 and tim tools list-ready-plans --json with empty input to confirm stdin JSON parsing and structured output without mutating plans. Started tim mcp-server --no-tools briefly and terminated after startup to confirm the flag wiring; observed a harmless nice(5) warning in the shell but no functional errors. No code changes were required for this task; the only file change was the plan progress note, committed via jj.

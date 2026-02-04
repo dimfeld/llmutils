@@ -8,9 +8,9 @@
 
 import { createGitHubClient } from './github.js';
 import { createLinearClient } from '../linear.js';
-import { loadEffectiveConfig } from '../../rmplan/configLoader.js';
+import { loadEffectiveConfig } from '../../tim/configLoader.js';
 import { debugLog } from '../../logging.js';
-import type { RmplanConfig } from '../../rmplan/configSchema.js';
+import type { TimConfig } from '../../tim/configSchema.js';
 import type { IssueTrackerClient, IssueTrackerConfig, IssueTrackerRegistry } from './types.js';
 
 /**
@@ -59,7 +59,7 @@ export function getAvailableTrackers(): {
  * @returns Promise resolving to an IssueTrackerClient instance
  * @throws Error if the tracker is not supported or not properly configured
  */
-export async function getIssueTracker(config?: RmplanConfig): Promise<IssueTrackerClient> {
+export async function getIssueTracker(config?: TimConfig): Promise<IssueTrackerClient> {
   // Load configuration if not provided
   if (!config) {
     config = await loadEffectiveConfig();

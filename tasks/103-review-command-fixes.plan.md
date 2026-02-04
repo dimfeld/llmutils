@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: review command fixes
 goal: The goal of this project is to modify the `review` command to perform a
   review-only action by default and introduce an explicit `--autofix` option to
@@ -22,9 +22,9 @@ createdAt: 2025-08-13T23:54:11.755Z
 updatedAt: 2025-10-27T08:39:04.279Z
 tasks: []
 rmfilter:
-  - src/rmplan/rmplan.ts
-  - src/rmplan/commands/review.ts
-  - src/rmplan/executors
+  - src/tim/tim.ts
+  - src/tim/commands/review.ts
+  - src/tim/executors
 ---
 
 # Original Plan Details
@@ -41,4 +41,4 @@ This is actually potentially a good thing, but is really better for a separate o
 
 ## Refactor the review command to separate review and autofix functionality
 
-The current implementation of the `rmplan review` command uses the standard executor, which for `claude-code` initiates a full implement/test/review cycle. This means it not only reviews the code but also attempts to fix any identified issues, which is not the intended default behavior. This project will introduce a "simple" execution mode for executors. For the `claude-code` executor, this mode will run a prompt directly without the multi-agent orchestration, effectively performing a review-only task. The `review` command will use this simple mode by default. Additionally, an `--autofix` flag will be added to the `review` command. When this flag is used, or when the user interactively consents, the system will take the output from the initial review and feed it back into the executor using the standard (non-simple) execution mode to automatically fix the identified problems.
+The current implementation of the `tim review` command uses the standard executor, which for `claude-code` initiates a full implement/test/review cycle. This means it not only reviews the code but also attempts to fix any identified issues, which is not the intended default behavior. This project will introduce a "simple" execution mode for executors. For the `claude-code` executor, this mode will run a prompt directly without the multi-agent orchestration, effectively performing a review-only task. The `review` command will use this simple mode by default. Additionally, an `--autofix` flag will be added to the `review` command. When this flag is used, or when the user interactively consents, the system will take the output from the initial review and feed it back into the executor using the standard (non-simple) execution mode to automatically fix the identified problems.

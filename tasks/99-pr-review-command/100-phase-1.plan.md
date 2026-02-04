@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: PR review command - Core Review Command Implementation
 goal: Implement the basic review command that can analyze a single plan against
   current branch changes
@@ -18,9 +18,9 @@ promptsGeneratedAt: 2025-08-13T20:40:39.944Z
 createdAt: 2025-08-13T20:28:04.715Z
 updatedAt: 2025-10-27T08:39:04.296Z
 project:
-  title: Add PR review command to rmplan for comprehensive code review against
+  title: Add PR review command to tim for comprehensive code review against
     plan requirements
-  goal: Implement a new `rmplan review` command that analyzes code changes on the
+  goal: Implement a new `tim review` command that analyzes code changes on the
     current branch against trunk, evaluates compliance with plan requirements,
     and provides comprehensive code quality feedback using the reviewer agent.
   details: >-
@@ -53,7 +53,7 @@ tasks:
   - title: Create review command handler
     done: true
     description: >
-      Create /src/rmplan/commands/review.ts with the main command handler
+      Create /src/tim/commands/review.ts with the main command handler
       function that loads configuration, resolves the plan file, and
       orchestrates the review process. Follow the pattern established by other
       command handlers like show.ts and agent.ts, including proper error
@@ -63,10 +63,10 @@ tasks:
   - title: Register review command in CLI
     done: true
     description: >
-      Update /src/rmplan/rmplan.ts to register the new review command with
+      Update /src/tim/tim.ts to register the new review command with
       appropriate options including plan argument, executor selection, model
       selection, and execution mode (direct vs clipboard). The command should
-      follow the established pattern of other rmplan commands, using dynamic
+      follow the established pattern of other tim commands, using dynamic
       imports for the handler and supporting standard CLI options. Include help
       text that clearly explains the command's purpose and available options.
   - title: Implement diff generation logic
@@ -104,7 +104,7 @@ tasks:
 Create the foundational review command that accepts a plan file/ID, generates a diff of the current branch against trunk, and executes a review using the reviewer agent. This phase establishes the core functionality and command structure that will be extended in later phases.
 
 Acceptance criteria:
-- `rmplan review <plan>` command works with single plan
+- `tim review <plan>` command works with single plan
 - Correctly identifies and diffs against trunk branch (main/master)
 - Generates review prompt with plan context and code changes
 - Executes review using selected executor

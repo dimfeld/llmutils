@@ -1,6 +1,6 @@
 # Dependency-Based Execution with --next-ready
 
-The `--next-ready` feature in rmplan enables automated workflow management by allowing you to work with complex, multi-phase projects where tasks have interdependencies. Instead of manually tracking which plan is ready to work on next, rmplan can automatically find the next logical step in your dependency chain.
+The `--next-ready` feature in tim enables automated workflow management by allowing you to work with complex, multi-phase projects where tasks have interdependencies. Instead of manually tracking which plan is ready to work on next, tim can automatically find the next logical step in your dependency chain.
 
 ## Problem It Solves
 
@@ -24,7 +24,7 @@ The `--next-ready` feature automates this process, allowing you to focus on impl
 
 ### Dependency Discovery Algorithm
 
-When you run a command with `--next-ready <parentPlanId>`, rmplan:
+When you run a command with `--next-ready <parentPlanId>`, tim:
 
 1. **Loads the parent plan** and validates it exists
 2. **Performs breadth-first search (BFS)** through the dependency graph to find all direct and indirect dependencies
@@ -52,7 +52,7 @@ The feature provides detailed feedback when no ready dependencies are found:
 
 - **No dependencies**: "No dependencies found for this plan"
 - **All complete**: "All dependencies are complete - ready to work on the parent plan"
-- **Missing tasks**: "N dependencies have no actionable tasks → Try: Run `rmplan prepare` to add detailed steps"
+- **Missing tasks**: "N dependencies have no actionable tasks → Try: Run `tim prepare` to add detailed steps"
 - **Maybe priority**: "All pending dependencies have 'maybe' priority → Try: Review and update priorities"
 - **Blocked dependencies**: "N dependencies are blocked by incomplete prerequisites → Try: Work on blocking dependencies first"
 
@@ -60,55 +60,55 @@ The feature provides detailed feedback when no ready dependencies are found:
 
 The `--next-ready` flag is supported by these commands:
 
-### 1. `rmplan generate --next-ready <parentPlanId>`
+### 1. `tim generate --next-ready <parentPlanId>`
 
 Generates a planning prompt for the next ready dependency instead of the specified plan.
 
 ```bash
 # Generate a plan for the next ready dependency of plan 100
-rmplan generate --next-ready 100 -- src/**/*.ts
+tim generate --next-ready 100 -- src/**/*.ts
 
 # Works with other generate options
-rmplan generate --next-ready parent-plan --direct --commit
+tim generate --next-ready parent-plan --direct --commit
 ```
 
-### 2. `rmplan prepare --next-ready <parentPlanId>`
+### 2. `tim prepare --next-ready <parentPlanId>`
 
 Prepares detailed implementation steps for the next ready dependency.
 
 ```bash
 # Prepare the next ready dependency with detailed steps
-rmplan prepare --next-ready 100
+tim prepare --next-ready 100
 
 # Use direct mode to call LLM automatically
-rmplan prepare --next-ready parent-plan --direct
+tim prepare --next-ready parent-plan --direct
 ```
 
-### 3. `rmplan agent --next-ready <parentPlanId>` / `rmplan run --next-ready <parentPlanId>`
+### 3. `tim agent --next-ready <parentPlanId>` / `tim run --next-ready <parentPlanId>`
 
 Automatically executes the next ready dependency using the agent system.
 
 ```bash
 # Execute the next ready dependency automatically
-rmplan agent --next-ready 100
+tim agent --next-ready 100
 
 # Execute with specific options
-rmplan run --next-ready parent-plan --steps 3 --dry-run
+tim run --next-ready parent-plan --steps 3 --dry-run
 
 # Use Claude Code executor
-rmplan agent --next-ready 100 --executor claude-code
+tim agent --next-ready 100 --executor claude-code
 ```
 
-### 4. `rmplan show --next-ready <parentPlanId>`
+### 4. `tim show --next-ready <parentPlanId>`
 
 Displays information about the next ready dependency without executing it.
 
 ```bash
 # Show details of the next ready dependency
-rmplan show --next-ready 100
+tim show --next-ready 100
 
 # Show full details without truncation
-rmplan show --next-ready parent-plan --full
+tim show --next-ready parent-plan --full
 ```
 
 ## Usage Examples
@@ -117,60 +117,60 @@ rmplan show --next-ready parent-plan --full
 
 ```bash
 # Start with a parent plan that has dependencies
-rmplan show 100
+tim show 100
 # Output: Parent Plan: "Major Feature Rollout" (has 5 dependencies)
 
 # Find and show the next ready dependency
-rmplan show --next-ready 100
+tim show --next-ready 100
 # Output: Found ready plan: Database Schema Setup (ID: 101)
 
 # Generate detailed steps for that dependency
-rmplan generate --next-ready 100 -- src/database/**/*.ts
+tim generate --next-ready 100 -- src/database/**/*.ts
 # Works on plan 101 (Database Schema Setup)
 
 # Execute the ready dependency
-rmplan agent --next-ready 100
+tim agent --next-ready 100
 # Automatically works on plan 101
 
 # After completion, find the next dependency
-rmplan show --next-ready 100
+tim show --next-ready 100
 # Output: Found ready plan: API Endpoints (ID: 102)
 # (Now ready because Database Schema Setup is done)
 ```
 
 ### Integration with Existing Workflows
 
-The `--next-ready` flag works seamlessly with all existing rmplan options:
+The `--next-ready` flag works seamlessly with all existing tim options:
 
 ```bash
 # Generate with file context and auto-commit
-rmplan generate --next-ready 100 --commit -- src/**/*.ts --grep auth
+tim generate --next-ready 100 --commit -- src/**/*.ts --grep auth
 
 # Prepare with Claude Code
-rmplan prepare --next-ready 100 --claude
+tim prepare --next-ready 100 --claude
 
 # Execute with workspace isolation
-rmplan agent --next-ready 100 --workspace feature-work
+tim agent --next-ready 100 --workspace feature-work
 
 # Execute specific number of steps
-rmplan run --next-ready 100 --steps 2 --dry-run
+tim run --next-ready 100 --steps 2 --dry-run
 ```
 
 ### Error Scenarios
 
 ```bash
 # Parent plan doesn't exist
-rmplan show --next-ready 999
+tim show --next-ready 999
 # Output: Plan not found: 999
-#         → Try: Run 'rmplan list' to see available plans
+#         → Try: Run 'tim list' to see available plans
 
 # No ready dependencies (all done)
-rmplan show --next-ready 100
+tim show --next-ready 100
 # Output: No ready dependencies found
 #         All dependencies are complete - ready to work on the parent plan
 
 # Dependencies blocked by prerequisites
-rmplan show --next-ready 100
+tim show --next-ready 100
 # Output: No ready dependencies found
 #         3 dependencies are blocked by incomplete prerequisites
 #         → Try: Work on the blocking dependencies first
@@ -225,12 +225,12 @@ Ensure dependencies have actionable tasks, not just stubs:
 
 ```bash
 # Prepare all dependencies with detailed steps
-rmplan prepare 101  # Database schema plan
-rmplan prepare 102  # API endpoints plan
-rmplan prepare 103  # Frontend plan
+tim prepare 101  # Database schema plan
+tim prepare 102  # API endpoints plan
+tim prepare 103  # Frontend plan
 
 # Now --next-ready can find and execute them automatically
-rmplan agent --next-ready 100
+tim agent --next-ready 100
 ```
 
 ### 4. Parent Plan Organization
@@ -255,7 +255,7 @@ dependencies: [] # Child plan IDs will be in here
 Use the `--debug` flag to see detailed logging of the dependency discovery process:
 
 ```bash
-rmplan show --next-ready 100 --debug
+tim show --next-ready 100 --debug
 ```
 
 This shows:
@@ -271,7 +271,7 @@ This shows:
 
 ```bash
 # In CI/CD pipeline, automatically find and validate next steps
-rmplan show --next-ready $PARENT_PLAN_ID --debug
+tim show --next-ready $PARENT_PLAN_ID --debug
 if [ $? -eq 0 ]; then
   echo "Next dependency is ready for development"
 else
@@ -283,10 +283,10 @@ fi
 
 ```bash
 # Team lead sets up parent plan with dependencies
-rmplan generate --plan "Sprint 1 - User Profile Feature"
+tim generate --plan "Sprint 1 - User Profile Feature"
 
 # Developers can independently find their next tasks
-rmplan agent --next-ready sprint-1-plan --workspace $(whoami)
+tim agent --next-ready sprint-1-plan --workspace $(whoami)
 
 # Progress automatically enables downstream dependencies
 ```
@@ -296,9 +296,9 @@ rmplan agent --next-ready sprint-1-plan --workspace $(whoami)
 ```bash
 # Parent plan coordinates work across repositories
 # Each dependency can specify different rmfilter targets
-rmplan generate --next-ready infra-plan -- infrastructure/**/*.tf
-rmplan generate --next-ready app-plan -- src/**/*.ts
-rmplan generate --next-ready docs-plan -- docs/**/*.md
+tim generate --next-ready infra-plan -- infrastructure/**/*.tf
+tim generate --next-ready app-plan -- src/**/*.ts
+tim generate --next-ready docs-plan -- docs/**/*.md
 ```
 
-This dependency-based approach transforms project management from manual coordination into automated workflow orchestration, allowing teams to focus on implementation while rmplan handles the coordination complexity.
+This dependency-based approach transforms project management from manual coordination into automated workflow orchestration, allowing teams to focus on implementation while tim handles the coordination complexity.

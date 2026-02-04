@@ -1,7 +1,7 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Update generate process to retain more of the planning output
-goal: Modify the rmplan generate and prepare commands to use a three-step Claude
+goal: Modify the tim generate and prepare commands to use a three-step Claude
   Code process that preserves the research and analysis done during planning by
   appending it to the plan file under a "## Research" heading before final plan
   generation.
@@ -16,7 +16,7 @@ updatedAt: 2025-10-27T08:39:04.251Z
 tasks:
   - title: Modify Claude Code orchestrator for three-step flow
     done: true
-    description: Update `/src/rmplan/executors/claude_code_orchestrator.ts` to
+    description: Update `/src/tim/executors/claude_code_orchestrator.ts` to
       accept an optional research extraction prompt parameter. Implement
       conditional execution that runs the research prompt between planning and
       generation when provided, maintaining session state across all three
@@ -24,7 +24,7 @@ tasks:
   - title: Create research extraction prompt template
     done: true
     description: Add a new prompt function `generateClaudeCodeResearchPrompt()` to
-      `/src/rmplan/prompt.ts` that instructs Claude to format and output all
+      `/src/tim/prompt.ts` that instructs Claude to format and output all
       research findings in a structured markdown format suitable for appending
       to the plan file.
   - title: Update orchestrator response handling
@@ -34,13 +34,13 @@ tasks:
       formatting and error handling for the intermediate research step.
   - title: Update generate command for three-step flow
     done: true
-    description: Modify `/src/rmplan/commands/generate.ts` to always use the
+    description: Modify `/src/tim/commands/generate.ts` to always use the
       three-step process when in Claude mode. Update the
-      `invokeClaudeCodeForGeneration` wrapper in `/src/rmplan/claude_utils.ts`
+      `invokeClaudeCodeForGeneration` wrapper in `/src/tim/claude_utils.ts`
       to pass the research prompt to the orchestrator.
   - title: Add conditional research extraction to prepare command
     done: true
-    description: Update `/src/rmplan/commands/prepare.ts` to check the plan's
+    description: Update `/src/tim/commands/prepare.ts` to check the plan's
       `generatedBy` field and conditionally include the research extraction step
       for 'oneshot' plans. Ensure proper plan file reading and updating with
       research content.
@@ -52,7 +52,7 @@ tasks:
   - title: Create orchestrator unit tests
     done: true
     description: Write comprehensive unit tests for the modified orchestrator in
-      `/src/rmplan/executors/claude_code_orchestrator.test.ts`, covering
+      `/src/tim/executors/claude_code_orchestrator.test.ts`, covering
       successful three-step flow, two-step fallback, and error scenarios.
   - title: Add integration tests for commands
     done: true
@@ -72,20 +72,20 @@ tasks:
 changedFiles:
   - CLAUDE.md
   - README.md
-  - src/rmplan/claude_utils.test.ts
-  - src/rmplan/claude_utils.ts
-  - src/rmplan/commands/generate.test.ts
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/commands/research.test.ts
-  - src/rmplan/commands/research.ts
-  - src/rmplan/executors/claude_code_orchestrator.test.ts
-  - src/rmplan/executors/claude_code_orchestrator.ts
-  - src/rmplan/plans/prepare_phase.test.ts
-  - src/rmplan/plans/prepare_phase.ts
-  - src/rmplan/process_markdown.ts
-  - src/rmplan/prompt.ts
-  - src/rmplan/research_utils.test.ts
-  - src/rmplan/research_utils.ts
+  - src/tim/claude_utils.test.ts
+  - src/tim/claude_utils.ts
+  - src/tim/commands/generate.test.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/research.test.ts
+  - src/tim/commands/research.ts
+  - src/tim/executors/claude_code_orchestrator.test.ts
+  - src/tim/executors/claude_code_orchestrator.ts
+  - src/tim/plans/prepare_phase.test.ts
+  - src/tim/plans/prepare_phase.ts
+  - src/tim/process_markdown.ts
+  - src/tim/prompt.ts
+  - src/tim/research_utils.test.ts
+  - src/tim/research_utils.ts
 rmfilter: []
 ---
 
@@ -106,7 +106,7 @@ Then after that, we can reread the plan file and process the markdown into tasks
 
 # Processed Plan Details
 
-## Update rmplan generate process to retain planning research output in a dedicated Research section
+## Update tim generate process to retain planning research output in a dedicated Research section
 
 The current two-step Claude Code generation process performs extensive codebase research during the planning phase, but this valuable context is lost when distilled into the final plan. This enhancement adds an optional intermediate step to capture and preserve these findings, making them available for future reference and providing better context for implementation.
 

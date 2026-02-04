@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Persist Approval Rules
 goal: To save the "Always Allow" rules to a configuration file and load them on
   startup, making them persistent across multiple sessions.
@@ -49,7 +49,7 @@ project:
 
 
     This feature will be implemented primarily within the `ClaudeCodeExecutor`
-    in `src/rmplan/executors/claude_code.ts`, which handles the permission
+    in `src/tim/executors/claude_code.ts`, which handles the permission
     prompting logic.
 tasks:
   - title: Save Permission Rules on Update
@@ -70,12 +70,12 @@ tasks:
       where the permissions configuration file is stored, including its format.
 changedFiles:
   - README.md
-  - src/rmplan/actions.ts
-  - src/rmplan/executors/claude_code/prefix_prompt.ts
-  - src/rmplan/executors/claude_code.ts
+  - src/tim/actions.ts
+  - src/tim/executors/claude_code/prefix_prompt.ts
+  - src/tim/executors/claude_code.ts
 rmfilter:
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/executors/claude_code/permissions_mcp.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/claude_code/permissions_mcp.ts
 ---
 
 The final phase makes the "Always Allow" feature robust by ensuring user preferences are not lost when the application restarts. This involves implementing file I/O to save and load the ruleset, defining a clear location for this configuration, and documenting the feature for end-users.

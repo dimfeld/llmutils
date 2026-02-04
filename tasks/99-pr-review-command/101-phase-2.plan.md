@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: PR review command - Parent-Child Plan Integration
 goal: Enhance the review command to intelligently handle plan hierarchies and
   multiple plan reviews
@@ -18,9 +18,9 @@ promptsGeneratedAt: 2025-08-13T21:14:17.043Z
 createdAt: 2025-08-13T20:28:04.715Z
 updatedAt: 2025-10-27T08:39:04.300Z
 project:
-  title: Add PR review command to rmplan for comprehensive code review against
+  title: Add PR review command to tim for comprehensive code review against
     plan requirements
-  goal: Implement a new `rmplan review` command that analyzes code changes on the
+  goal: Implement a new `tim review` command that analyzes code changes on the
     current branch against trunk, evaluates compliance with plan requirements,
     and provides comprehensive code quality feedback using the reviewer agent.
   details: >-
@@ -59,15 +59,15 @@ tasks:
       modifying the handleReviewCommand to load parent plan data when
       planData.parent exists, and updating buildReviewPrompt to accept and
       format parent context appropriately. Follow the pattern used in
-      src/rmplan/commands/agent/parent_plans.ts for loading parent plans.
+      src/tim/commands/agent/parent_plans.ts for loading parent plans.
   - title: Add completed children aggregation
     done: true
     description: >
       Implement functionality to find all completed child plans when reviewing a
       parent, aggregating their requirements and changes to ensure the parent's
       goals are fully met. This follows the pattern from
-      src/rmplan/commands/agent/parent_plans.ts and
-      src/rmplan/plans/mark_done.ts where children are found using
+      src/tim/commands/agent/parent_plans.ts and
+      src/tim/plans/mark_done.ts where children are found using
       Array.from(plans.values()).filter(plan => plan.parent === parentId). The
       aggregated children information should include their titles, goals, and
       changed files to provide complete context for reviewing the parent plan's
@@ -78,7 +78,7 @@ tasks:
       Extend the command to accept multiple plan files/IDs as arguments,
       gathering context for all specified plans and their relationships while
       avoiding duplication. This follows the pattern from
-      src/rmplan/commands/merge.ts which handles multiple child plans. The
+      src/tim/commands/merge.ts which handles multiple child plans. The
       command signature needs to change from <planFile> to <planFiles...> and
       the implementation must deduplicate plans to avoid including the same plan
       multiple times when hierarchies overlap.
@@ -110,7 +110,7 @@ Extend the review command to automatically include relevant context from parent 
 Acceptance criteria:
 - Automatically includes parent plan context when reviewing children
 - Includes completed children when reviewing parent plans
-- Supports multiple plan arguments: `rmplan review plan1 plan2 plan3`
+- Supports multiple plan arguments: `tim review plan1 plan2 plan3`
 - Handles deep hierarchies (grandparents, grandchildren)
 - Maintains clear structure in review prompt despite complex relationships
 - Properly aggregates requirements across all included plans

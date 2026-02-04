@@ -22,7 +22,7 @@ The existing planning prompt and "markdown to yaml" steps should not change to h
 - createdAt, updatedAt, planGeneratedAt, promptsGeneratedAt - these can all be the same "now" date at first
 - priority
 - issue - if --issue was used
-- rmfilter - if `rmfilter:` comments were in the issue and with the rmfilter arguments passed to `rmplan generate`
+- rmfilter - if `rmfilter:` comments were in the issue and with the rmfilter arguments passed to `tim generate`
 - status: New task files should start in the pending status, move to in progress as soon as a step starts, and then change to done once all steps are done. "Planning" is reserved for future use
  
 Every time a step is completed, we should compare the list of changed files to baseBranch (or main/master if not set) and update changed files to be that set of files. 
@@ -40,5 +40,5 @@ Use the existing functionality for parsing rmpr: and rmfilter: comments for pars
 
 
 
-rmfilter: src/rmpr src/rmplan --with-imports
+rmfilter: src/rmpr src/tim --with-imports
 rmfilter: src/rmfilter

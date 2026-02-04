@@ -1,6 +1,6 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-goal: Refactor rmfind for programmatic use and add --autofind option to rmplan.
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
+goal: Refactor rmfind for programmatic use and add --autofind option to tim.
 id: 6
 uuid: 0dac1169-c599-40eb-b8c7-bff8f19cf297
 status: done
@@ -18,19 +18,19 @@ tasks:
     done: true
     description: Update rmfind.ts to use the new core function and handle CLI
       specific tasks like argument parsing and fzf integration.
-  - title: Add --autofind Option to rmplan next
+  - title: Add --autofind Option to tim next
     done: true
-    description: Add the new command-line option to rmplan and pass it down to the
+    description: Add the new command-line option to tim and pass it down to the
       action handler.
-  - title: Implement Autofind Logic in rmplan prepareNextStep
+  - title: Implement Autofind Logic in tim prepareNextStep
     done: true
     description: Call the refactored rmfind core logic when --autofind is enabled.
-  - title: Integrate Autofind Results into rmplan
+  - title: Integrate Autofind Results into tim
     done: true
     description: Merge files found by --autofind into the relevant file list and
       rmfilter arguments.
 ---
 
 This plan involves two main parts:
-1. Refactor the `rmfind` tool by separating its core file-finding logic from the command-line interface (CLI) wrapper. This will allow the core logic to be imported and used by other tools like `rmplan`.
-2. Enhance the `rmplan next` command by adding an `--autofind` option. When used, this option will invoke the refactored `rmfind` core logic using the current plan task's details as a query. The files found by `rmfind` will then be automatically included in the list of relevant files, particularly when generating context for `rmfilter`.
+1. Refactor the `rmfind` tool by separating its core file-finding logic from the command-line interface (CLI) wrapper. This will allow the core logic to be imported and used by other tools like `tim`.
+2. Enhance the `tim next` command by adding an `--autofind` option. When used, this option will invoke the refactored `rmfind` core logic using the current plan task's details as a query. The files found by `rmfind` will then be automatically included in the list of relevant files, particularly when generating context for `rmfilter`.
