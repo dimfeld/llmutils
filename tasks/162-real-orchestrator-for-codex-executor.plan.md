@@ -12,7 +12,10 @@ tasks: []
 tags: []
 ---
 
-Consider remaking the codex executor loop into a main orchestrator loop where each of the agents is actually an "rmplan subagent XXX" command that runs and then prints its final message. We can use claude code or codex as the orchestrator.
+Consider remaking the codex executor loop into a main orchestrator loop where each of the agents is actually an "rmplan subagent XXX" command that takes some arbitrary input from the orchestorator, adds that to the base subagent prompt for the task and plan, runs, and then prints its final message. We can use claude code or codex as the orchestrator, but probably claude code by default.
+
+This will allow us to merge a lot of the claude and codex executor code into a single mode, and potentially provide
+additional features like "use claude for frontend, codex for backend."
 
 Use environment variables to supply the necessary context.
 

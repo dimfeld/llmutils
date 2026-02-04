@@ -24,9 +24,19 @@ tags: []
 - Each "tab" (not necessarily actual tabs but the concept) corresponds to an active in_progress plan and its workspace.
 - Make rmplan able to run headless. The current terminal IO is just a client to the headless server.
 - Manager can run rmplan and forward input/output using the headless server protocol
-- Manager can run Claude Code and forward input/output as a regular terminal
-- Thinking about using Swift for the UI, can actually do both TUI, macOS, and iOS versions then.
-- We should also have some way to show when a session is waiting for input. I don't know if we can do this reliably on the Claude/Codex running modes, but we can show how long it has been since the last message was printed, and if it's longer than a certain threshold, say 30 seconds or a minute, then we highlight that line. So then we just need the logging infrastructure to also update that.  It's possible that running in JSON mode we can show requests for input.
+- Manager can run Claude Code or Codex and forward input/output as a regular terminal
+  - For Claude we can use streaming JSON input and output
+  - Codex to start can use the `exec` command like we do in the executor, but they also support an "app server" mode - https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md
+- Thinking about using Swift for the UI, can actually do macOS, and iOS versions then.
+- We should also have some way to show when a session is waiting for input. 
+  - Both of these have the ability to trigger notifications.
+
+### Notifying Manager UI
+
+First version:
+- GUI starts a Unix socket, processes look for this socket and can ping it with a message including the terminal type and pane id. 
+- When it receives a message the GUI adds it to the top of the list with a timestamp and action button to focus that terminal pane. This also replaces by message for the same workspace previously in the list. 
+
 
 ## Headless Mode
 
@@ -35,13 +45,8 @@ tags: []
 - Protocol needs to support things like select or text prompts. Basically everywhere we use `inquirer` now needs to be
   supported in the protocol, where the terminal adapter will use inquirer and the other clients will do something similar
   but appropriate for their presentation.
-- 
-
-### Terminal Client
-
-- Make the terminal mode either: only run for agent/review/similar long-running commands, or make a Rust shell that can
-  start fast and spawn rmplan if needed.
-- Use ratatui so that we can have an input box at the bottom and the terminal output on top.
+- To start, only need to support the long running commands like `agent` and `review`. The rest can follow later since
+they can also be run as regular CLI commands.
 
 ## Server Coordinator Agents
 
@@ -53,7 +58,7 @@ tags: []
 ### Session Tracking
 
 - server coordinator can track sessions in SQLite
-- Add a sessions table where we can track active sessions when an rmpplan instance starts it will add an entry to the sessions table, noting the command that is being run and the workspace it is in and the PID.
+- Add a sessions table where we can track active sessions when an rmplan instance starts it will add an entry to the sessions table, noting the command that is being run and the workspace it is in and the PID.
 - When a session exits, whether from an error or successfully, or a SIGINT, it should mark itself as exited with an accompanying status in the table. Server coordinator should also do some heartbeat monitoring.
 - Server coordinator can clean up the Sessions table as Sessions exit or become stale. 
 
@@ -65,6 +70,6 @@ We want to be able to do these things:
 - Create and tear down workspaces
 - `rmplan run <plan>`
 - `rmplan review <plan>`
-- run claude or codex interactively with the prompt from `rmplan prompts generate <planId>`
+- run claude or codex interactively with any arbitrary prompt but also the prompts from `rmplan prompts generate <planId>`
 - quick add new plans (how does this work when the plans are all in git? Where do we add them? Maybe in primary
 workspace or something. Maybe just don't worry about this for now)
