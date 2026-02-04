@@ -263,13 +263,11 @@ async function runExecutorsSerially(
   planInfo: ReviewPlanInfo
 ): Promise<
   Array<
-    | { name: ReviewExecutorName; rawOutput: string }
-    | { name: ReviewExecutorName; error: unknown }
+    { name: ReviewExecutorName; rawOutput: string } | { name: ReviewExecutorName; error: unknown }
   >
 > {
   const results: Array<
-    | { name: ReviewExecutorName; rawOutput: string }
-    | { name: ReviewExecutorName; error: unknown }
+    { name: ReviewExecutorName; rawOutput: string } | { name: ReviewExecutorName; error: unknown }
   > = [];
 
   const primary = preparedExecutors.find((executor) => executor.name === 'claude-code');

@@ -14,6 +14,7 @@ import {
   logTaskStatus,
   parseCompletedTasksFromImplementer,
   markTasksAsDone,
+  appendReviewNotesToPlan,
 } from './task_management';
 import { getFixerPrompt } from './context_composition';
 import {
@@ -387,11 +388,19 @@ export async function executeSimpleMode(
       !hadFailure &&
       planContextAvailable &&
       newlyCompletedTitles.length > 0 &&
-      finalReviewVerdict === 'ACCEPTABLE'
+      (finalReviewVerdict === 'ACCEPTABLE' || finalReviewVerdict === 'NEEDS_FIXES')
     ) {
       await markTasksAsDone(planInfo.planFilePath, newlyCompletedTitles, gitRoot, rmplanConfig);
-    } else if (!hadFailure && finalReviewVerdict === 'NEEDS_FIXES') {
-      warn('Skipping automatic task completion marking due to unresolved review issues.');
+      if (finalReviewVerdict === 'NEEDS_FIXES') {
+        const lastReviewMessage = [...events].reverse().find((e) => e.type === 'verifier')?.message;
+        if (lastReviewMessage) {
+          await appendReviewNotesToPlan(
+            planInfo.planFilePath,
+            lastReviewMessage,
+            newlyCompletedTitles
+          );
+        }
+      }
     } else if (hadFailure) {
       warn('Skipping automatic task completion marking due to executor failure.');
     }

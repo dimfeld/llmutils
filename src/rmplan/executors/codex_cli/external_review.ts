@@ -140,8 +140,7 @@ export async function runExternalReviewForCodex(
 
   const shouldSerialBoth =
     options.executorSelection === 'both' ||
-    (options.executorSelection == null &&
-      options.rmplanConfig.review?.defaultExecutor === 'both');
+    (options.executorSelection == null && options.rmplanConfig.review?.defaultExecutor === 'both');
 
   const reviewOutput = await runReview({
     executorSelection: options.executorSelection,

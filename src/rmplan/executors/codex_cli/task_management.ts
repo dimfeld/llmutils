@@ -6,6 +6,7 @@ import { setTaskDone } from '../../plans/mark_done';
 import type { ExecutePlanInfo } from '../types';
 import type { RmplanConfig } from '../../configSchema';
 import { log, warn } from '../../../logging';
+import { resolve } from 'path';
 
 /** Categorize tasks in a plan into completed and pending lists */
 export function categorizeTasks(plan: { tasks?: Array<{ title: string; done?: boolean }> }): {
@@ -129,6 +130,44 @@ Return JSON only, like: {"completed_titles": ["Task A", "Task B"]}`;
       `Skipping automatic task completion parsing due to error: ${e instanceof Error ? e.message : String(e)}`
     );
     return [];
+  }
+}
+
+/**
+ * Append a review notes section to the bottom of a plan file.
+ * Used when tasks are marked done despite unresolved review issues,
+ * so the review feedback and affected tasks are preserved in the plan.
+ */
+export async function appendReviewNotesToPlan(
+  planFilePath: string,
+  reviewContent: string,
+  taskTitles: string[]
+): Promise<void> {
+  try {
+    const absolutePath = resolve(planFilePath);
+    const existing = await Bun.file(absolutePath).text();
+
+    const taskList = taskTitles.map((t) => `- ${t}`).join('\n');
+    const section = [
+      '',
+      '## Unresolved Review Issues',
+      '',
+      '### Tasks Worked On',
+      '',
+      taskList,
+      '',
+      '### Review Output',
+      '',
+      reviewContent,
+      '',
+    ].join('\n');
+
+    await Bun.write(absolutePath, existing.trimEnd() + '\n' + section);
+    log('Appended unresolved review notes to plan file.');
+  } catch (e) {
+    warn(
+      `Failed to append review notes to plan file: ${e instanceof Error ? e.message : String(e)}`
+    );
   }
 }
 

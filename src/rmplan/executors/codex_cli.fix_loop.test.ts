@@ -316,9 +316,10 @@ describe('CodexCliExecutor - Fix Loop', () => {
     expect(warnMessages.some((msg) => msg.includes('Maximum fix iterations reached'))).toBeTrue();
   }, 15000);
 
-  test('does not mark tasks done when review remains NEEDS_FIXES', async () => {
+  test('marks tasks done and appends review notes when review remains NEEDS_FIXES', async () => {
     const warnMessages: string[] = [];
     const markTasksDoneSpy = mock(async () => {});
+    const appendReviewNotesSpy = mock(async () => {});
 
     await moduleMocker.mock('../../logging.ts', () => ({
       log: mock(() => {}),
@@ -377,6 +378,7 @@ describe('CodexCliExecutor - Fix Loop', () => {
       logTaskStatus: mock(() => {}),
       parseCompletedTasksFromImplementer: mock(async () => ['Task A']),
       markTasksAsDone: markTasksDoneSpy,
+      appendReviewNotesToPlan: appendReviewNotesSpy,
     }));
 
     await moduleMocker.mock('./codex_cli/context_composition.ts', () => ({
@@ -423,11 +425,16 @@ describe('CodexCliExecutor - Fix Loop', () => {
       executeNormalMode('context', mockPlanInfo, '/tmp/repo', 'test-model', mockConfig)
     ).resolves.toBeUndefined();
 
-    expect(markTasksDoneSpy).not.toHaveBeenCalled();
-    expect(
-      warnMessages.some((msg) =>
-        msg.includes('Skipping automatic task completion marking due to unresolved review issues.')
-      )
-    ).toBeTrue();
+    expect(markTasksDoneSpy).toHaveBeenCalledWith(
+      mockPlanInfo.planFilePath,
+      ['Task A'],
+      '/tmp/repo',
+      mockConfig
+    );
+    expect(appendReviewNotesSpy).toHaveBeenCalledWith(
+      mockPlanInfo.planFilePath,
+      'Still issues.\n\nVERDICT: NEEDS_FIXES',
+      ['Task A']
+    );
   }, 15000);
 });
