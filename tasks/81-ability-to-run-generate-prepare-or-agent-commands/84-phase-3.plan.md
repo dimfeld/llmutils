@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Ability to run, generate, prepare, or agent commands on the next ready
   dependency of a plan. - Final Polish and Documentation
 goal: To enhance the user experience with improved error handling and to provide
@@ -33,7 +33,7 @@ tasks:
       Key areas to enhance:
 
       - "Plan not found" errors should suggest checking the plan ID or using
-      'rmplan list' to see available plans
+      'tim list' to see available plans
 
       - "No ready dependencies" messages should explain why (e.g., all
       dependencies are done, or pending dependencies have incomplete
@@ -81,7 +81,7 @@ tasks:
     description: >
       Review and enhance the command-line help documentation for all commands
       that support the --next-ready flag. While the basic help text already
-      exists in rmplan.ts, ensure it clearly explains the flag's purpose and
+      exists in tim.ts, ensure it clearly explains the flag's purpose and
       behavior across all commands.
 
 
@@ -134,32 +134,32 @@ changedFiles:
   - README.md
   - docs/next-ready-feature.md
   - src/rmfilter/additional_docs.test.ts
-  - src/rmplan/cleanup.test.ts
-  - src/rmplan/commands/agent.test.ts
-  - src/rmplan/commands/agent.ts
-  - src/rmplan/commands/cli_integration.test.ts
-  - src/rmplan/commands/cli_parsing.test.ts
-  - src/rmplan/commands/find_next_dependency.test.ts
-  - src/rmplan/commands/find_next_dependency.ts
-  - src/rmplan/commands/generate.test.ts
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/commands/integration.test.ts
-  - src/rmplan/commands/next_ready_integration.test.ts
-  - src/rmplan/commands/prepare.test.ts
-  - src/rmplan/commands/prepare.ts
-  - src/rmplan/commands/show.ts
-  - src/rmplan/dependency_traversal.test.ts
-  - src/rmplan/dependency_traversal.ts
-  - src/rmplan/executors/claude_code/agent_generator.test.ts
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/parent_completion.test.ts
-  - src/rmplan/plans/plan_state_utils.test.ts
-  - src/rmplan/plans/plan_state_utils.ts
-  - src/rmplan/plans.ts
-  - src/rmplan/rmplan.ts
+  - src/tim/cleanup.test.ts
+  - src/tim/commands/agent.test.ts
+  - src/tim/commands/agent.ts
+  - src/tim/commands/cli_integration.test.ts
+  - src/tim/commands/cli_parsing.test.ts
+  - src/tim/commands/find_next_dependency.test.ts
+  - src/tim/commands/find_next_dependency.ts
+  - src/tim/commands/generate.test.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/integration.test.ts
+  - src/tim/commands/next_ready_integration.test.ts
+  - src/tim/commands/prepare.test.ts
+  - src/tim/commands/prepare.ts
+  - src/tim/commands/show.ts
+  - src/tim/dependency_traversal.test.ts
+  - src/tim/dependency_traversal.ts
+  - src/tim/executors/claude_code/agent_generator.test.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/parent_completion.test.ts
+  - src/tim/plans/plan_state_utils.test.ts
+  - src/tim/plans/plan_state_utils.ts
+  - src/tim/plans.ts
+  - src/tim/tim.ts
   - src/rmpr/modes/hybrid_context.test.ts
 rmfilter:
-  - src/rmplan
+  - src/tim
 ---
 
 This final phase focuses on making the feature robust and easy to use. It involves refining error messages, adding logging for better visibility, and updating all user-facing documentation to explain the new capability.

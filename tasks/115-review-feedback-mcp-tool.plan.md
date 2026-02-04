@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: review feedback MCP tool
 goal: To create the end-to-end functionality for the review feedback tool, from
   MCP server implementation to user interaction and integration into the
@@ -66,8 +66,8 @@ tasks:
       that the user maintains ultimate control over the development process and
       can override reviewer recommendations when appropriate.
 rmfilter:
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/executors/claude_code
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/claude_code
   - --with-imports
 ---
 

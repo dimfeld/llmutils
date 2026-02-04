@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: review command fixes - Introduce Autofix Functionality
 goal: To build upon the review-only functionality by adding an `--autofix`
   option and an interactive prompt, allowing users to explicitly trigger an
@@ -24,7 +24,7 @@ project:
     review-only action by default and introduce an explicit `--autofix` option
     to trigger a subsequent fix-up process, providing a more predictable and
     user-controlled workflow.
-  details: The current implementation of the `rmplan review` command uses the
+  details: The current implementation of the `tim review` command uses the
     standard executor, which for `claude-code` initiates a full
     implement/test/review cycle. This means it not only reviews the code but
     also attempts to fix any identified issues, which is not the intended
@@ -41,7 +41,7 @@ tasks:
   - title: Add --autofix Flag to Review Command
     done: true
     description: >
-      Update the CLI definition in rmplan.ts to add a new --autofix boolean
+      Update the CLI definition in tim.ts to add a new --autofix boolean
       option to the review command. This flag will allow users to automatically
       trigger code fixes based on review findings without being prompted. The
       option should be placed after the existing review command options,
@@ -87,9 +87,9 @@ tasks:
       correct executionMode in each scenario. Follow the existing test patterns
       in review.test.ts, using the ModuleMocker class for mocking dependencies.
 rmfilter:
-  - src/rmplan/rmplan.ts
-  - src/rmplan/commands/review.ts
-  - src/rmplan/executors
+  - src/tim/tim.ts
+  - src/tim/commands/review.ts
+  - src/tim/executors
 ---
 
 This phase introduces the autofix feature. We will add an `--autofix` flag to the `review` command. If this flag is passed, or if the user agrees via an interactive prompt, the results of the initial review will be used to create a new prompt to fix the identified issues. This new prompt will then be executed using the standard, full-featured mode of the executor.

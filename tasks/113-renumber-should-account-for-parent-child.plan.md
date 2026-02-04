@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Renumber should account for parent/child relationships when only parent
   is being renumbered
 goal: To update the `renumber` command to correctly order plan IDs based on
@@ -81,7 +81,7 @@ tasks:
       Follow the existing testing patterns using real filesystem operations and
       temporary directories.
 rmfilter:
-  - src/rmplan/commands/renumber.ts
+  - src/tim/commands/renumber.ts
   - --with-imports
 ---
 
@@ -114,7 +114,7 @@ The new logic will execute after the initial conflict resolution is complete. It
 - The `--dry-run` option must accurately report the proposed hierarchical changes without modifying any files.
 
 ### Technical Considerations and Approach
-The implementation will be added to the `handleRenumber` function in `src/rmplan/commands/renumber.ts`. The core of the approach is to:
+The implementation will be added to the `handleRenumber` function in `src/tim/commands/renumber.ts`. The core of the approach is to:
 1.  Build a graph or map representation of the parent-child relationships from the conflict-resolved plan data.
 2.  Identify all families where a parent's ID is greater than a descendant's ID.
 3.  For each such family, perform a topological sort to establish the correct order.

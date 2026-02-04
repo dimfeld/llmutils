@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: workspace cloning tweaks for local config files
 goal: ""
 id: 161
@@ -13,7 +13,7 @@ tasks: []
 tags: []
 ---
 
-We copy some "local" settings files for rmplan when copying a workspace. Make these changes:
+We copy some "local" settings files for tim when copying a workspace. Make these changes:
 
 - Use symlinks instead of copying local config files
 - Update workspace cloning methods that use work trees to also symlink the local configs in the new workspace
@@ -23,7 +23,7 @@ We copy some "local" settings files for rmplan when copying a workspace. Make th
 - Implementation complete and all tests passing
 
 ### Completed (So Far)
-- Removed local config files (`.rmfilter/config/rmplan.local.yml`, `.claude/settings.local.json`) from regular file copying in `collectFilesToCopy()`
+- Removed local config files (`.rmfilter/config/tim.local.yml`, `.claude/settings.local.json`) from regular file copying in `collectFilesToCopy()`
 - Created `symlinkLocalConfigs()` function that creates symlinks for local config files from source to target directory
 - Updated all three clone methods (`cloneWithGit`, `cloneWithCp`, `cloneWithMacCow`) to call `symlinkLocalConfigs()` after their main operations
 - Updated tests to verify symlink behavior instead of copy behavior

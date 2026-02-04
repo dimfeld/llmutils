@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Support custom docs for implementer, tester, and reviewer agents
 goal: To implement the core functionality for defining, loading, and injecting
   custom instructions into the prompts for the implementer, tester, and reviewer
@@ -13,11 +13,11 @@ promptsGeneratedAt: 2025-08-13T19:18:44.562Z
 createdAt: 2025-08-13T19:06:31.948Z
 updatedAt: 2025-10-27T08:39:04.269Z
 tasks:
-  - title: "Task 1: Extend `rmplanConfigSchema` to support agent-specific
+  - title: "Task 1: Extend `timConfigSchema` to support agent-specific
       instructions"
     done: true
     description: >
-      The `rmplanConfigSchema` in `src/rmplan/configSchema.ts` will be updated
+      The `timConfigSchema` in `src/tim/configSchema.ts` will be updated
       to include a new optional `agents` object. This object will contain
       optional sub-objects for `implementer`, `tester`, and `reviewer`, each
       with an optional `instructions` string field for the file path. This
@@ -48,7 +48,7 @@ tasks:
     done: true
     description: >
       The `getImplementerPrompt`, `getTesterPrompt`, and `getReviewerPrompt`
-      functions in `src/rmplan/executors/claude_code/agent_prompts.ts` will be
+      functions in `src/tim/executors/claude_code/agent_prompts.ts` will be
       updated to accept an optional `customInstructions` parameter. When
       provided, this string will be formatted and included in the agent's prompt
       under a dedicated "Custom Instructions" section, placed after the context
@@ -79,7 +79,7 @@ tasks:
     done: true
     description: >
       In the `execute` method of `ClaudeCodeExecutor`
-      (`src/rmplan/executors/claude_code.ts`), logic will be added to read the
+      (`src/tim/executors/claude_code.ts`), logic will be added to read the
       new `agents` configuration. If an `instructions` path is defined for an
       agent, the executor will read the content of that file, resolving the path
       relative to the git root using the same pattern as
@@ -88,7 +88,7 @@ tasks:
 
       The implementation will:
 
-      1. Check if `rmplanConfig.agents` exists and contains instruction paths
+      1. Check if `timConfig.agents` exists and contains instruction paths
 
       2. For each agent with an instructions path, resolve the path (absolute or
       relative to git root)
@@ -106,7 +106,7 @@ tasks:
     done: true
     description: >
       A new integration test will be added to
-      `src/rmplan/executors/claude_code.test.ts` that verifies the end-to-end
+      `src/tim/executors/claude_code.test.ts` that verifies the end-to-end
       flow of custom agent instructions. The test will:
 
 
@@ -130,10 +130,10 @@ tasks:
       philosophy of preferring real filesystem operations over mocks where
       possible).
 rmfilter:
-  - src/rmplan/configSchema.ts
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/executors/claude_code/
-  - src/rmplan/commands/agent
+  - src/tim/configSchema.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/claude_code/
+  - src/tim/commands/agent
 ---
 
 # Original Plan Details
@@ -165,18 +165,18 @@ instructions should be included seamlessly.
 
 # Processed Plan Details
 
-This project will introduce a new configuration section in `rmplan.yml` to support custom instructions for the specialized agents used by the `ClaudeCodeExecutor`. Currently, a similar feature exists for the planning phase (`planning.instructions`), and this project extends that concept to the execution agents.
+This project will introduce a new configuration section in `tim.yml` to support custom instructions for the specialized agents used by the `ClaudeCodeExecutor`. Currently, a similar feature exists for the planning phase (`planning.instructions`), and this project extends that concept to the execution agents.
 
 ### Analysis
 The work involves three main parts:
-1.  **Configuration Schema Update:** The `rmplanConfigSchema` in `src/rmplan/configSchema.ts` needs to be extended to include a new `agents` object. This object will contain optional fields for `implementer`, `tester`, and `reviewer`, each with an optional `instructions` string field pointing to a file path.
-2.  **Prompt Generation Logic:** The functions responsible for creating the agent prompts (`getImplementerPrompt`, `getTesterPrompt`, `getReviewerPrompt` in `src/rmplan/executors/claude_code/agent_prompts.ts`) must be updated to accept and incorporate the content of these custom instruction files.
-3.  **Integration in the Executor:** The `ClaudeCodeExecutor` in `src/rmplan/executors/claude_code.ts` needs to be modified to read the new configuration, load the instruction files if they are specified, and pass their contents to the prompt generation functions.
+1.  **Configuration Schema Update:** The `timConfigSchema` in `src/tim/configSchema.ts` needs to be extended to include a new `agents` object. This object will contain optional fields for `implementer`, `tester`, and `reviewer`, each with an optional `instructions` string field pointing to a file path.
+2.  **Prompt Generation Logic:** The functions responsible for creating the agent prompts (`getImplementerPrompt`, `getTesterPrompt`, `getReviewerPrompt` in `src/tim/executors/claude_code/agent_prompts.ts`) must be updated to accept and incorporate the content of these custom instruction files.
+3.  **Integration in the Executor:** The `ClaudeCodeExecutor` in `src/tim/executors/claude_code.ts` needs to be modified to read the new configuration, load the instruction files if they are specified, and pass their contents to the prompt generation functions.
 
 The implementation will be contained within a single phase, as the components are tightly coupled and deliver the full feature once integrated.
 
 ### Acceptance Criteria
-- The `rmplan.yml` configuration file accepts a new optional structure: `agents: { implementer: { instructions: '...' }, tester: { instructions: '...' }, reviewer: { instructions: '...' } }`.
+- The `tim.yml` configuration file accepts a new optional structure: `agents: { implementer: { instructions: '...' }, tester: { instructions: '...' }, reviewer: { instructions: '...' } }`.
 - If an `instructions` path is provided for an agent, the content of that file is included in the prompt for that agent.
 - If no `instructions` path is provided, the agent prompt is generated as it is currently, without any errors.
 - The system gracefully handles cases where an instruction file is specified in the config but does not exist.

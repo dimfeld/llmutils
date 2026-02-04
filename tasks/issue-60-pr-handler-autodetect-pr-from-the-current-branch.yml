@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 goal: Implement a feature for `answer-pr` to automatically detect the relevant
   Pull Request (PR) from the current Git or Jujutsu branch if no PR identifier
   is provided. Additionally, warn the user if an explicitly provided PR number

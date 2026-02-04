@@ -1,2 +1,2 @@
 #!/bin/bash
-hyperfine -w 5 'bun src/rmplan/rmplan.ts list'
+hyperfine -w 5 'bun src/tim/tim.ts list'

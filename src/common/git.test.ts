@@ -16,7 +16,7 @@ import {
   isInGitRepository,
   clearGitRootCache,
 } from './git';
-import { detectPlanningWithoutImplementation } from '../rmplan/executors/failure_detection.ts';
+import { detectPlanningWithoutImplementation } from '../tim/executors/failure_detection.ts';
 
 async function runGit(dir: string, args: string[]): Promise<void> {
   const proc = Bun.spawn(['git', ...args], { cwd: dir, stdout: 'pipe', stderr: 'pipe' });

@@ -1,7 +1,7 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-title: Implement `rmplan workspace add` Command and Plan Association
-goal: To deliver a fully functional `rmplan workspace add` command that allows
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
+title: Implement `tim workspace add` Command and Plan Association
+goal: To deliver a fully functional `tim workspace add` command that allows
   manual creation of workspaces, with optional linking to a plan file and
   appropriate status updates for that plan.
 id: 27
@@ -12,15 +12,15 @@ promptsGeneratedAt: 2025-06-01T09:14:07.116Z
 createdAt: 2025-06-01T09:05:05.132Z
 updatedAt: 2025-10-27T08:39:04.261Z
 project:
-  title: Add `rmplan workspace add` Command
-  goal: The project aims to introduce a new CLI command, `rmplan workspace add`,
+  title: Add `tim workspace add` Command
+  goal: The project aims to introduce a new CLI command, `tim workspace add`,
     enabling users to manually create and initialize a new workspace. This
     command will optionally allow associating the new workspace with a specific
     plan, updating the plan's status to `in_progress` in both the current
     context and the newly created workspace.
   details: >
     Currently, workspaces are primarily created implicitly as part of the
-    `rmplan run` (or `agent`) command. This feature will provide an explicit
+    `tim run` (or `agent`) command. This feature will provide an explicit
     mechanism for workspace creation, offering more granular control.
 
 
@@ -31,7 +31,7 @@ project:
     2.  Accept an optional workspace ID. If not provided, one will be generated.
 
     3.  Utilize the existing `createWorkspace` function from
-    `src/rmplan/workspace/workspace_manager.ts`.
+    `src/tim/workspace/workspace_manager.ts`.
 
     4.  If a plan is specified:
         *   The plan file will be resolved.
@@ -52,14 +52,14 @@ tasks:
   - title: Define `workspace add` CLI command structure
     done: true
     description: This task involves adding the `workspace add` subcommand to the
-      main `rmplan` CLI program defined in `src/rmplan/rmplan.ts`. The command
+      main `tim` CLI program defined in `src/tim/tim.ts`. The command
       should accept an optional positional argument for the plan identifier
       (which can be a plan ID or a file path) and an optional `--id
       <workspaceId>` option for specifying a custom workspace ID.
   - title: Implement helper function to update plan status
     done: true
     description: Create a new utility function, tentatively named `setPlanStatus`,
-      likely within `src/rmplan/plans.ts`. This function will take a plan file
+      likely within `src/tim/plans.ts`. This function will take a plan file
       path and a new status (e.g., 'pending', 'in_progress', 'done') as input.
       It will be responsible for reading the specified YAML plan file, updating
       its `status` and `updatedAt` fields, and then writing the modified plan
@@ -67,8 +67,8 @@ tasks:
   - title: Adapt `WorkspaceInfo` and related types for optional plan
     done: true
     description: Modify the `WorkspaceInfo` interface in
-      `src/rmplan/workspace/workspace_tracker.ts` and the `Workspace` interface
-      in `src/rmplan/workspace/workspace_manager.ts`. The `originalPlanFilePath`
+      `src/tim/workspace/workspace_tracker.ts` and the `Workspace` interface
+      in `src/tim/workspace/workspace_manager.ts`. The `originalPlanFilePath`
       field in these interfaces should be made optional to reflect that a
       workspace might be created without an associated plan. The `taskId` field
       in these types will represent the workspace ID.
@@ -76,7 +76,7 @@ tasks:
     done: true
     description: >
       Update the `createWorkspace` function in
-      `src/rmplan/workspace/workspace_manager.ts`.
+      `src/tim/workspace/workspace_manager.ts`.
 
       The `originalPlanFilePath` argument will now be `string | undefined`.
 
@@ -94,7 +94,7 @@ tasks:
       `originalPlanFilePath`.
   - title: Implement core logic for `workspace add` command handler
     done: true
-    description: Develop the action handler for the `rmplan rmplan workspace add`
+    description: Develop the action handler for the `tim tim workspace add`
       command. This logic will integrate previous tasks to create workspaces,
       optionally link plans, and update plan statuses.
   - title: Add comprehensive tests
@@ -106,22 +106,22 @@ tasks:
   - title: Update documentation
     done: true
     description: Update the project's `README.md` file and any other relevant
-      documentation to include details about the new `rmplan workspace add`
+      documentation to include details about the new `tim workspace add`
       command. This should cover its purpose, syntax, options, and examples of
       usage.
 changedFiles:
   - README.md
-  - src/rmplan/plans.test.ts
-  - src/rmplan/plans.ts
-  - src/rmplan/rmplan.test.ts
-  - src/rmplan/rmplan.ts
-  - src/rmplan/workspace/workspace_add.test.ts
-  - src/rmplan/workspace/workspace_manager.test.ts
-  - src/rmplan/workspace/workspace_manager.ts
-  - src/rmplan/workspace/workspace_tracker.ts
-  - src/rmplan/workspace_add_command.test.ts
+  - src/tim/plans.test.ts
+  - src/tim/plans.ts
+  - src/tim/tim.test.ts
+  - src/tim/tim.ts
+  - src/tim/workspace/workspace_add.test.ts
+  - src/tim/workspace/workspace_manager.test.ts
+  - src/tim/workspace/workspace_manager.ts
+  - src/tim/workspace/workspace_tracker.ts
+  - src/tim/workspace_add_command.test.ts
 rmfilter:
-  - src/rmplan
+  - src/tim
   - src/common
 ---
 

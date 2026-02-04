@@ -1,6 +1,6 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-goal: Add an 'agent' command to rmplan for automated plan execution.
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
+goal: Add an 'agent' command to tim for automated plan execution.
 id: 14
 uuid: 44a3aaa0-b6d2-41f3-a53e-59e397f1202a
 status: done
@@ -21,7 +21,7 @@ tasks:
       function.
   - title: Add 'agent' command skeleton and loop structure
     done: true
-    description: Add the basic 'agent <planFile>' command to rmplan.ts. Implement
+    description: Add the basic 'agent <planFile>' command to tim.ts. Implement
       the main loop structure that loads the plan and iterates using
       `findPendingTask` until completion or error.
   - title: Integrate 'prepareNextStep' into the agent command
@@ -46,10 +46,10 @@ tasks:
       informative logging for user feedback throughout the process.
 ---
 
-The agent command will automate the process of executing steps defined in an rmplan YAML file.
+The agent command will automate the process of executing steps defined in an tim YAML file.
 It will sequentially:
-1. Prepare the next step using logic similar to `rmplan next --rmfilter` (selecting the first pending step automatically).
+1. Prepare the next step using logic similar to `tim next --rmfilter` (selecting the first pending step automatically).
 2. Execute the step using logic similar to an assumed `rmrun` command/function (implementation placeholder).
-3. Mark the step as done using logic similar to `rmplan done --commit` if execution succeeds.
+3. Mark the step as done using logic similar to `tim done --commit` if execution succeeds.
 4. Repeat until all steps are completed.
 This requires refactoring the `next` and `done` command logic into reusable functions placed in a new `actions.ts` file.

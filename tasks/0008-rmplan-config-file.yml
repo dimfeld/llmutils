@@ -1,6 +1,6 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-goal: Enhance `rmplan` to support loading configuration from a YAML file,
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
+goal: Enhance `tim` to support loading configuration from a YAML file,
   enabling customizable behavior, starting with post-apply commands for the
   agent.
 id: 11
@@ -10,7 +10,7 @@ updatedAt: 2025-10-27T08:39:04.289Z
 tasks:
   - title: Define Configuration Schema
     done: true
-    description: Define the structure and validation rules for the `rmplan.yml`
+    description: Define the structure and validation rules for the `tim.yml`
       configuration file using Zod. This includes the initial
       `postApplyCommands` section with its nested properties.
   - title: Implement Configuration Loading Logic
@@ -20,11 +20,11 @@ tasks:
       command-line overrides, and file non-existence gracefully.
   - title: Add Command-Line Option
     done: true
-    description: Add the `-c, --config` option to the main `rmplan` command using
+    description: Add the `-c, --config` option to the main `tim` command using
       `commander` to allow users to specify a custom configuration file path.
   - title: Integrate Configuration Loading
     done: true
-    description: Modify the `rmplan.ts` script to call the configuration loading
+    description: Modify the `tim.ts` script to call the configuration loading
       logic early in the execution flow and make the loaded configuration
       available to the command actions, particularly the `agent` command.
   - title: Implement Post-Apply Command Execution
@@ -35,17 +35,17 @@ tasks:
       directory, environment variables, and the `allowFailure` flag.
 ---
 
-The `rmplan` tool currently operates without external configuration. This feature introduces the ability to read settings from a YAML file to customize its operation.
+The `tim` tool currently operates without external configuration. This feature introduces the ability to read settings from a YAML file to customize its operation.
 
 **Configuration File Location:**
-1. Default: `.rmfilter/rmplan.yml` in the Git repository root.
+1. Default: `.rmfilter/tim.yml` in the Git repository root.
 2. Override: Specified via a new `-c, --config <path>` command-line option.
-3. Absence: If neither the default nor a specified file exists, `rmplan` should proceed with default behavior without error.
+3. Absence: If neither the default nor a specified file exists, `tim` should proceed with default behavior without error.
 
 **Configuration Schema (Initial):**
 The configuration will be validated using Zod. Initially, it will support `postApplyCommands`:
 ```yaml
-# Example .rmfilter/rmplan.yml
+# Example .rmfilter/tim.yml
 postApplyCommands:
   - title: Format Code # User-friendly title for logging
     command: bun fmt # The command to execute
@@ -61,7 +61,7 @@ postApplyCommands:
 **Implementation Strategy:**
 1. Define the Zod schema for the configuration.
 2. Implement logic to find and load the configuration file (handling default path, override path, and non-existence).
-3. Add the `--config` option to the main `rmplan` command.
-4. Integrate config loading into the `rmplan` startup sequence.
+3. Add the `--config` option to the main `tim` command.
+4. Integrate config loading into the `tim` startup sequence.
 5. Modify the `agent` command to execute the `postApplyCommands` after successfully applying changes via `runAndApplyChanges` but before marking the step as done.
 6. Ensure robust error handling (e.g., invalid YAML, schema validation errors, command execution failures based on `allowFailure`).

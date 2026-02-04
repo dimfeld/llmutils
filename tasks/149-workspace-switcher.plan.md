@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: workspace switcher
 goal: ""
 id: 149
@@ -12,12 +12,12 @@ updatedAt: 2025-12-29T17:28:36.033Z
 tasks:
   - title: Extend workspace metadata storage + patch helper
     done: true
-    description: Update `src/rmplan/workspace/workspace_tracker.ts` to persist new
+    description: Update `src/tim/workspace/workspace_tracker.ts` to persist new
       optional fields (name, description, planId, planTitle, issueUrls,
       updatedAt). Add a patch/merge helper that can update existing entries or
       create new ones (with minimal required fields). Cover clearing values
       (empty strings) and creation in
-      `src/rmplan/workspace/workspace_tracker.test.ts`.
+      `src/tim/workspace/workspace_tracker.test.ts`.
   - title: Add VCS-aware branch helper + list data model
     done: true
     description: Add/extend a helper in `src/common/git.ts` (or a new helper module)
@@ -28,7 +28,7 @@ tasks:
       assembly behavior.
   - title: Workspace list output formats + repo scope
     done: true
-    description: Update `src/rmplan/commands/workspace.ts` to render list output in
+    description: Update `src/tim/commands/workspace.ts` to render list output in
       table/TSV/JSON, defaulting to current repo and abbreviated path in table
       output; add `--format` and `--no-header` plus `--all` to list across
       repositories. TSV should include full path + basename + hidden fields;
@@ -36,23 +36,23 @@ tasks:
       command-level tests for list output and repo filtering.
   - title: Workspace update command
     done: true
-    description: Add `rmplan workspace update [workspaceIdentifier]` in
-      `src/rmplan/rmplan.ts` and handler in `src/rmplan/commands/workspace.ts`.
+    description: Add `tim workspace update [workspaceIdentifier]` in
+      `src/tim/tim.ts` and handler in `src/tim/commands/workspace.ts`.
       Support `--name`, `--description`, clearing via empty strings, and
       `--from-plan <id>` to seed description only from the plan. Use the patch
       helper to update/create entries. Add tests with ModuleMocker and temp
       tracking file.
   - title: Agent auto-description updates
     done: true
-    description: "In `src/rmplan/commands/agent/agent.ts`, after workspace selection
+    description: "In `src/tim/commands/agent/agent.ts`, after workspace selection
       and plan resolution, update workspace description on every run. Format:
       `#<issueNumber> <plan title>` using the first issue URL if present (issue
       number only). Use patch helper; failures should warn but not abort. Add
       targeted tests if feasible."
   - title: Shell integration command + docs
     done: true
-    description: Add `rmplan workspace shell-integration --shell bash|zsh` (default
-      zsh) that prints a fixed-name function. The function should call `rmplan
+    description: Add `tim workspace shell-integration --shell bash|zsh` (default
+      zsh) that prints a fixed-name function. The function should call `tim
       workspace list --format tsv --no-header`, use `fzf` with delimiter and
       preview (full path + description/branch), accept optional query
       (`--query`), and `cd` to selected full path; handle missing `fzf` and
@@ -60,21 +60,21 @@ tasks:
       `docs/multi-workspace-workflow.md`.
 changedFiles:
   - README.md
-  - claude-plugin/skills/rmplan-usage/SKILL.md
-  - claude-plugin/skills/rmplan-usage/references/mcp-tools.md
+  - claude-plugin/skills/tim-usage/SKILL.md
+  - claude-plugin/skills/tim-usage/references/mcp-tools.md
   - docs/multi-workspace-workflow.md
-  - src/rmplan/commands/agent/agent.ts
-  - src/rmplan/commands/agent/agent.workspace_description.test.ts
-  - src/rmplan/commands/workspace.list.test.ts
-  - src/rmplan/commands/workspace.ts
-  - src/rmplan/commands/workspace.update.test.ts
-  - src/rmplan/rmplan.ts
-  - src/rmplan/workspace/workspace_tracker.test.ts
-  - src/rmplan/workspace/workspace_tracker.ts
+  - src/tim/commands/agent/agent.ts
+  - src/tim/commands/agent/agent.workspace_description.test.ts
+  - src/tim/commands/workspace.list.test.ts
+  - src/tim/commands/workspace.ts
+  - src/tim/commands/workspace.update.test.ts
+  - src/tim/tim.ts
+  - src/tim/workspace/workspace_tracker.test.ts
+  - src/tim/workspace/workspace_tracker.ts
 tags: []
 ---
 
-- Named workspaces with rmplan command to switch via a bash function, add a selector that lets you find based on the issue, branch, issue title, etc.
+- Named workspaces with tim command to switch via a bash function, add a selector that lets you find based on the issue, branch, issue title, etc.
 - Add a command to update a workspace (or the current one) with a name and description.
 - When running the `agent` command automatically update the description of the current workspace
 - This will need to end with a `cd` command, so the implementation here should be a combination of:
@@ -86,35 +86,35 @@ tags: []
 ## Implementation Guide
 
 ### Overview / Opportunity
-This feature turns the existing workspace tracking into a first-class workspace switcher. Today rmplan can create, list, lock, and unlock workspaces, but switching between them requires manual `cd` and there is no naming/description metadata to make selection easy. The goal is to add lightweight metadata (name/description plus plan/issue context), expose it through `rmplan workspace list`, and provide a shell integration function that uses `fzf` to select a workspace and `cd` into it. The agent command should keep workspace descriptions fresh so the selection stays relevant without extra manual effort.
+This feature turns the existing workspace tracking into a first-class workspace switcher. Today tim can create, list, lock, and unlock workspaces, but switching between them requires manual `cd` and there is no naming/description metadata to make selection easy. The goal is to add lightweight metadata (name/description plus plan/issue context), expose it through `tim workspace list`, and provide a shell integration function that uses `fzf` to select a workspace and `cd` into it. The agent command should keep workspace descriptions fresh so the selection stays relevant without extra manual effort.
 
 ### Subagent Research Reports (Parallel Exploration)
 
 #### Subagent A: CLI Command Surface & Patterns
-- Inspected `src/rmplan/rmplan.ts` for how subcommands are registered (Commander patterns and dynamic imports). Workspace commands are currently `list`, `add`, `lock`, `unlock` with handlers in `src/rmplan/commands/workspace.ts`.
+- Inspected `src/tim/tim.ts` for how subcommands are registered (Commander patterns and dynamic imports). Workspace commands are currently `list`, `add`, `lock`, `unlock` with handlers in `src/tim/commands/workspace.ts`.
 - Observed pattern: commands use `handleCommandError`, and handlers accept `(options, command)` with `command.parent!.parent!.opts()` to access global config.
-- No existing shell-integration command; will need to introduce a new command entry in `src/rmplan/rmplan.ts` and a handler module under `src/rmplan/commands/`.
+- No existing shell-integration command; will need to introduce a new command entry in `src/tim/tim.ts` and a handler module under `src/tim/commands/`.
 
 #### Subagent B: Workspace Tracking & Creation
-- `src/rmplan/workspace/workspace_tracker.ts` owns the tracking file (`~/.config/rmfilter/workspaces.json`) and defines `WorkspaceInfo` with `taskId`, `workspacePath`, `branch`, `createdAt`, `repositoryUrl`, etc. No name/description metadata yet.
+- `src/tim/workspace/workspace_tracker.ts` owns the tracking file (`~/.config/rmfilter/workspaces.json`) and defines `WorkspaceInfo` with `taskId`, `workspacePath`, `branch`, `createdAt`, `repositoryUrl`, etc. No name/description metadata yet.
 - `recordWorkspace` overwrites entries; no dedicated “update/patch” helper exists.
-- `src/rmplan/workspace/workspace_manager.ts` records workspaces after creation and can be extended to include new metadata fields (name/description/plan info) on initial creation.
+- `src/tim/workspace/workspace_manager.ts` records workspaces after creation and can be extended to include new metadata fields (name/description/plan info) on initial creation.
 
 #### Subagent C: Agent / Auto-Workspace Flow
-- `src/rmplan/commands/agent/agent.ts` copies the plan file into the workspace root, updates `currentBaseDir`, and acquires a workspace lock when needed.
+- `src/tim/commands/agent/agent.ts` copies the plan file into the workspace root, updates `currentBaseDir`, and acquires a workspace lock when needed.
 - No current hook to update workspace metadata or descriptions during agent execution, but the code has the necessary context (`currentPlanFile`, `workspace.path`).
 
 #### Subagent D: Interactive Selection & External Tooling
 - `src/rmfind/rmfind.ts` shows established `fzf` usage patterns: pre-flight `which fzf`, pipe newline-delimited input, handle exit code 130 (cancel) gracefully.
-- This is a good model for the workspace selector, especially when the shell integration wants to rely on `rmplan` to produce a machine-friendly list.
+- This is a good model for the workspace selector, especially when the shell integration wants to rely on `tim` to produce a machine-friendly list.
 
 ### Expected Behavior/Outcome
 
 New user-facing behavior:
-- `rmplan workspace list` displays each workspace’s directory, name, description, and branch (plus lock state if available), so users can scan and filter quickly.
-- `rmplan workspace update [workspaceIdentifier] --name <name> --description <desc>` updates a workspace’s name/description. If no identifier is given, it targets the current directory’s workspace entry.
-- `rmplan agent` auto-updates the current workspace description using the plan’s title/goal context (only when a tracked workspace is in use).
-- `rmplan workspace shell-integration --shell bash|zsh` (or equivalent command name) prints a shell function that uses `rmplan workspace list` + `fzf` to select a workspace and `cd` into it.
+- `tim workspace list` displays each workspace’s directory, name, description, and branch (plus lock state if available), so users can scan and filter quickly.
+- `tim workspace update [workspaceIdentifier] --name <name> --description <desc>` updates a workspace’s name/description. If no identifier is given, it targets the current directory’s workspace entry.
+- `tim agent` auto-updates the current workspace description using the plan’s title/goal context (only when a tracked workspace is in use).
+- `tim workspace shell-integration --shell bash|zsh` (or equivalent command name) prints a shell function that uses `tim workspace list` + `fzf` to select a workspace and `cd` into it.
 
 Relevant states (explicit definition):
 - Workspace tracking state: tracked vs untracked directory.
@@ -130,14 +130,14 @@ Relevant states (explicit definition):
 - The existing workspace tracking file is the natural place to store names and descriptions; it already spans multiple clones.
 
 **Design & UX Approach**
-- Keep `rmplan workspace list` human-readable by default, but support a stable machine-friendly format (TSV/JSON) for shell integration and `fzf`.
+- Keep `tim workspace list` human-readable by default, but support a stable machine-friendly format (TSV/JSON) for shell integration and `fzf`.
 - Present the workspace path in the output but make it optionally hidden in the `fzf` display using `--with-nth` so the search surface emphasizes name/description/issue/branch.
 - Make the shell function do the `cd` so it works in the current shell process (Node cannot `cd` a parent shell).
 
 **Technical Plan & Risks**
 - Extend `WorkspaceInfo` to include `name`, `description`, and plan/issue-derived fields (plan title, plan id, issue URLs or extracted issue labels) so selection can match on them.
 - Add an update/patch helper in `workspace_tracker.ts` to merge metadata updates without clobbering existing data.
-- Update `rmplan agent` to refresh workspace metadata after the plan file is copied and `currentPlanFile` is known.
+- Update `tim agent` to refresh workspace metadata after the plan file is copied and `currentPlanFile` is known.
 - Risk: stored `branch` may become stale; decision: recompute branch live during list and treat failures as a non-fatal empty/unknown branch field. Use shared VCS helpers that support both jj and git instead of shelling out directly to `git`.
 - Risk: shell integration relies on `fzf` being installed. The CLI should give a clear error path similar to `rmfind`.
 
@@ -151,21 +151,21 @@ Relevant states (explicit definition):
 - `table` npm package already in repo and can be reused for tabular display.
 
 **Technical Constraints**
-- `rmplan` cannot change the parent shell’s working directory; must output a shell function or `cd` string.
+- `tim` cannot change the parent shell’s working directory; must output a shell function or `cd` string.
 - Workspace tracking file is global; list commands should filter by repository URL to avoid cross-repo confusion.
 - Keep Zod schema defaults rules in mind if config changes are introduced (avoid new defaults in schema).
 - Use existing VCS helper functions that support both jj and git when reading branch/status info.
 
 ### Notable Files and Patterns Inspected
 
-- `src/rmplan/commands/workspace.ts`: current list/add/lock/unlock command handlers; will need new update + list formatting.
-- `src/rmplan/rmplan.ts`: command registration patterns for Commander, dynamic imports, and global options.
-- `src/rmplan/workspace/workspace_tracker.ts`: workspace tracking file schema and I/O. Needs optional metadata fields + update helper.
-- `src/rmplan/workspace/workspace_manager.ts`: records workspace data on creation.
-- `src/rmplan/workspace/workspace_auto_selector.ts`: list with lock status; likely refactor to return data rather than print for reusability.
-- `src/rmplan/commands/agent/agent.ts`: best hook point for automatic description updates.
+- `src/tim/commands/workspace.ts`: current list/add/lock/unlock command handlers; will need new update + list formatting.
+- `src/tim/tim.ts`: command registration patterns for Commander, dynamic imports, and global options.
+- `src/tim/workspace/workspace_tracker.ts`: workspace tracking file schema and I/O. Needs optional metadata fields + update helper.
+- `src/tim/workspace/workspace_manager.ts`: records workspace data on creation.
+- `src/tim/workspace/workspace_auto_selector.ts`: list with lock status; likely refactor to return data rather than print for reusability.
+- `src/tim/commands/agent/agent.ts`: best hook point for automatic description updates.
 - `src/rmfind/rmfind.ts`: `fzf` usage and cancellation handling pattern.
-- `src/rmplan/display_utils.ts`: helper to format workspace paths (relative/home). Useful for list display.
+- `src/tim/display_utils.ts`: helper to format workspace paths (relative/home). Useful for list display.
 
 ### Implementation Notes
 
@@ -180,11 +180,11 @@ Relevant states (explicit definition):
   - Offer `--format table|tsv|json` (default `table`) and `--no-header` for machine use.
 - Add `workspace update` to set name/description. Resolve identifier the same way as lock/unlock. If no identifier, use current directory’s entry.
 - Add `workspace shell-integration` (or top-level `shell-integration`) to print a function that:
-  - Calls `rmplan workspace list --format tsv --no-header`.
+  - Calls `tim workspace list --format tsv --no-header`.
   - Pipes into `fzf` with a `--delimiter '\t'` and `--with-nth=2..` display.
   - Extracts the workspace path field and runs `cd`.
   - Exits gracefully on cancel or missing `fzf`.
-- Add `rmplan agent` hook: when `currentBaseDir` points to a tracked workspace, update description from the plan (e.g., combined title/goal). Do not error if the workspace is untracked.
+- Add `tim agent` hook: when `currentBaseDir` points to a tracked workspace, update description from the plan (e.g., combined title/goal). Do not error if the workspace is untracked.
 
 **Potential Gotchas**
 - Path resolution mismatches (symlink vs real path) can prevent updates from locating a workspace entry. Decide whether to normalize with `realpath` or keep existing `resolveWorkspaceIdentifier` behavior.
@@ -197,49 +197,49 @@ Relevant states (explicit definition):
 
 ### Acceptance Criteria
 
-- [ ] Functional Criterion: `rmplan workspace list` shows directory, name, description, and branch for every tracked workspace in the current repo.
-- [ ] Functional Criterion: `rmplan workspace update` updates name/description for the specified workspace or the current workspace when no identifier is provided.
+- [ ] Functional Criterion: `tim workspace list` shows directory, name, description, and branch for every tracked workspace in the current repo.
+- [ ] Functional Criterion: `tim workspace update` updates name/description for the specified workspace or the current workspace when no identifier is provided.
 - [ ] UX Criterion: Shell integration function can be sourced and uses `fzf` to select a workspace, then `cd` into it; canceling selection leaves the current directory unchanged.
-- [ ] Technical Criterion: `rmplan agent` updates the current workspace description when running in a tracked workspace without crashing if no workspace entry exists.
+- [ ] Technical Criterion: `tim agent` updates the current workspace description when running in a tracked workspace without crashing if no workspace entry exists.
 - [ ] All new code paths are covered by tests.
 
 ### Manual Testing Steps (for later validation)
 
 1. Create or ensure multiple tracked workspaces exist for a repo.
-2. Run `rmplan workspace update --name "my ws" --description "API auth"` in one workspace and confirm metadata is persisted in the tracking file.
-3. Run `rmplan workspace list` and confirm directory/name/description/branch are present and readable.
-4. Source the shell function from `rmplan workspace shell-integration --shell zsh` and use it to switch between workspaces.
-5. Run `rmplan agent <plan>` inside a workspace and confirm the description updates automatically in the tracking file.
+2. Run `tim workspace update --name "my ws" --description "API auth"` in one workspace and confirm metadata is persisted in the tracking file.
+3. Run `tim workspace list` and confirm directory/name/description/branch are present and readable.
+4. Source the shell function from `tim workspace shell-integration --shell zsh` and use it to switch between workspaces.
+5. Run `tim agent <plan>` inside a workspace and confirm the description updates automatically in the tracking file.
 
 ### Step-by-Step Implementation Guide
 
 1. Data model updates
-   - Extend `WorkspaceInfo` in `src/rmplan/workspace/workspace_tracker.ts` with optional metadata fields (`name`, `description`, `planId`, `planTitle`, `issueUrls`, `updatedAt`) and persist these values in the tracking file.
+   - Extend `WorkspaceInfo` in `src/tim/workspace/workspace_tracker.ts` with optional metadata fields (`name`, `description`, `planId`, `planTitle`, `issueUrls`, `updatedAt`) and persist these values in the tracking file.
    - Add `patchWorkspaceMetadata` (or similar) to merge updates into existing tracking data without overwriting other fields.
 
 2. Workspace list data assembly
    - Create a helper (in `workspace.ts` or a new module) to assemble `WorkspaceInfo` + derived plan/issue data into a `WorkspaceListEntry` structure.
-   - Consider using `getCombinedTitleFromSummary` from `src/rmplan/display_utils.ts` for plan title/issue title derivation.
+   - Consider using `getCombinedTitleFromSummary` from `src/tim/display_utils.ts` for plan title/issue title derivation.
    - Refresh `branch` via shared VCS helpers that support jj/git (decision captured: live recompute).
 
-3. `rmplan workspace list` output modes
+3. `tim workspace list` output modes
    - Default to a clean table output including directory (abbreviated path), name, description, branch, and lock state, filtered to the current repository by default.
    - Provide a flag (e.g., `--all`) to list workspaces across all repositories when needed.
    - Add `--format tsv|json` and `--no-header` so a shell function can consume deterministic output.
    - Include hidden/searchable fields (plan title, issue URLs, taskId) in TSV to enable `fzf` matching on those fields. Decision captured: use the full TSV with extra searchable fields for the switcher, and include a display column that is only the basename of the workspace path (separate column from the full path). Lock status is not required in TSV/JSON. JSON output should include all metadata fields (full payload, not just visible fields).
 
-4. `rmplan workspace update` command
-   - Add a new subcommand in `src/rmplan/rmplan.ts` (e.g., `workspace update [workspaceIdentifier]`).
+4. `tim workspace update` command
+   - Add a new subcommand in `src/tim/tim.ts` (e.g., `workspace update [workspaceIdentifier]`).
    - Handler should resolve workspace identifier the same way as lock/unlock. If missing, use current directory. If the target directory is not already tracked, create a new tracking entry with the provided metadata (and minimal required fields).
    - Update name/description using the new patch helper; support `--from-plan <id>` to seed description (only) from the specified plan file. Allow clearing values (empty string) explicitly.
 
 5. Agent auto-description update
-   - In `src/rmplan/commands/agent/agent.ts`, after `currentBaseDir` is set to workspace and `currentPlanFile` is known, read the plan and update workspace description in the tracking file (overwrite every run). Use a concise format: issue reference extracted from the issue URL (if present, just the issue number like `#123`) plus the plan title.
+   - In `src/tim/commands/agent/agent.ts`, after `currentBaseDir` is set to workspace and `currentPlanFile` is known, read the plan and update workspace description in the tracking file (overwrite every run). Use a concise format: issue reference extracted from the issue URL (if present, just the issue number like `#123`) plus the plan title.
    - Guard for missing tracking entry or read errors (log a warning but do not fail the agent).
 
 6. Shell integration command
-   - Add `rmplan workspace shell-integration --shell bash|zsh` (default: zsh) to print a function that:
-     - Calls `rmplan workspace list --format tsv --no-header`.
+   - Add `tim workspace shell-integration --shell bash|zsh` (default: zsh) to print a function that:
+     - Calls `tim workspace list --format tsv --no-header`.
      - Pipes to `fzf` with `--delimiter '\t' --with-nth=2..`, using the basename column for display while keeping the full path as the first TSV field.
      - Extracts the full path and executes `cd`.
      - Accepts an optional query argument and passes it to `fzf --query` when provided.
@@ -248,8 +248,8 @@ Relevant states (explicit definition):
    - Follow the `rmfind` pattern for checking `fzf` availability and handling cancellation (exit code 130).
 
 7. Tests
-   - Update/add tests in `src/rmplan/workspace/workspace_tracker.test.ts` for patching metadata.
-   - Add command tests for `workspace update` and list output formats (likely under `src/rmplan/commands/` with ModuleMocker + temp tracking file).
+   - Update/add tests in `src/tim/workspace/workspace_tracker.test.ts` for patching metadata.
+   - Add command tests for `workspace update` and list output formats (likely under `src/tim/commands/` with ModuleMocker + temp tracking file).
    - Add tests for shell integration output string (bash/zsh) to ensure formatting and quoting stability.
    - Update or add tests for agent description updates (mock tracking file and plan data) if feasible.
 
@@ -262,7 +262,7 @@ Relevant states (explicit definition):
 ### Task 1: Extend workspace metadata storage + patch helper
 
 **Files Modified:**
-- `src/rmplan/workspace/workspace_tracker.ts`
+- `src/tim/workspace/workspace_tracker.ts`
 
 **Changes:**
 1. Extended the `WorkspaceInfo` interface with new optional fields for backward compatibility:
@@ -289,7 +289,7 @@ Relevant states (explicit definition):
 ### Task 2: Add VCS-aware branch helper + list data model
 
 **Files Modified:**
-- `src/rmplan/workspace/workspace_tracker.ts`
+- `src/tim/workspace/workspace_tracker.ts`
 
 **Changes:**
 1. Leveraged the existing `getCurrentBranchName()` function from `src/common/git.ts` which already supports both git and jj (returns first bookmark for jj repositories).
@@ -313,11 +313,11 @@ Relevant states (explicit definition):
 ### Task 4: Workspace update command
 
 **Files Modified:**
-- `src/rmplan/rmplan.ts` - Added command registration
-- `src/rmplan/commands/workspace.ts` - Added handler and helper functions
+- `src/tim/tim.ts` - Added command registration
+- `src/tim/commands/workspace.ts` - Added handler and helper functions
 
 **Command Registration:**
-Added `rmplan workspace update [workspaceIdentifier]` command with options:
+Added `tim workspace update [workspaceIdentifier]` command with options:
 - `--name <name>` - Set workspace name (empty string to clear)
 - `--description <description>` - Set workspace description (empty string to clear)
 - `--from-plan <planId>` - Seed description from a plan file
@@ -343,8 +343,8 @@ The handler then validates that at least one update option is provided and uses 
 ### Task 3: Workspace list output formats + repo scope
 
 **Files Modified:**
-- `src/rmplan/commands/workspace.ts` - Added output formatting logic
-- `src/rmplan/rmplan.ts` - Updated command options
+- `src/tim/commands/workspace.ts` - Added output formatting logic
+- `src/tim/tim.ts` - Updated command options
 
 **Changes:**
 1. Enhanced `handleWorkspaceListCommand()` with new options:
@@ -364,20 +364,20 @@ The handler then validates that at least one update option is provided and uses 
 ### Task 6: Shell integration command + docs
 
 **Files Modified:**
-- `src/rmplan/commands/workspace.ts` - Added shell integration handler
-- `src/rmplan/rmplan.ts` - Registered shell-integration subcommand
+- `src/tim/commands/workspace.ts` - Added shell integration handler
+- `src/tim/tim.ts` - Registered shell-integration subcommand
 - `README.md` - Added workspace switcher usage documentation
 - `docs/multi-workspace-workflow.md` - Added shell integration setup instructions
 
 **Changes:**
-1. Added `rmplan workspace shell-integration --shell bash|zsh` command (default: zsh)
+1. Added `tim workspace shell-integration --shell bash|zsh` command (default: zsh)
 
-2. Implemented `generateShellFunction(shell: 'bash' | 'zsh')` that creates a shell function named `rmplan_ws`:
+2. Implemented `generateShellFunction(shell: 'bash' | 'zsh')` that creates a shell function named `tim_ws`:
    - Checks for fzf availability with `command -v fzf`
-   - Calls `rmplan workspace list --format tsv --no-header`
+   - Calls `tim workspace list --format tsv --no-header`
    - Uses fzf with `--delimiter '\t' --with-nth '2..'` to hide full path from display while keeping basename, name, description, branch, etc. visible for fuzzy matching
    - Shows preview window displaying: Path (field 1), Name (field 3), Description (field 4), Branch (field 5)
-   - Accepts optional query argument: `rmplan_ws <query>` passes to `fzf --query`
+   - Accepts optional query argument: `tim_ws <query>` passes to `fzf --query`
    - Handles cancellation (exit code 130) by returning silently
    - Extracts full path (first TSV field) using cut and runs `cd`
 
@@ -390,13 +390,13 @@ The handler then validates that at least one update option is provided and uses 
 
 **Documentation Updates:**
 - README.md: Added workspace switcher section explaining the shell integration setup and usage
-- docs/multi-workspace-workflow.md: Added detailed instructions for sourcing the shell function and using rmplan_ws
+- docs/multi-workspace-workflow.md: Added detailed instructions for sourcing the shell function and using tim_ws
 
 ## Task 5 Implementation: Agent Auto-Description Updates
 
 ### Files Modified
-- `src/rmplan/commands/agent/agent.ts` - Added the auto-description update functionality
-- `src/rmplan/commands/agent/agent.workspace_description.test.ts` - New test file with 5 comprehensive tests
+- `src/tim/commands/agent/agent.ts` - Added the auto-description update functionality
+- `src/tim/commands/agent/agent.workspace_description.test.ts` - New test file with 5 comprehensive tests
 
 ### Implementation Details
 
@@ -434,6 +434,6 @@ Created 5 tests covering:
 
 All tests pass. Type checking passes. The implementation reuses existing helpers (`buildDescriptionFromPlan`, `extractIssueNumber`, `getCombinedTitleFromSummary`, `patchWorkspaceMetadata`, `getWorkspaceMetadata`) to maintain consistency with the workspace update command.
 
-Fixed workspace switcher repo identity and metadata handling across list/update/agent flows (Tasks: Extend workspace metadata storage + patch helper; Workspace list output formats + repo scope; Workspace update command; Agent auto-description updates). In src/rmplan/commands/workspace.ts I replaced direct git remote probing with getRepositoryIdentity-based resolution (determineRepositoryUrl now returns remoteUrl or repositoryId), so list/lock-available work in jj/no-origin repos, and update now seeds repositoryUrl when missing by resolving identity for the target path. I also updated from-plan handling to explicitly clear stale planId/issueUrls when absent (planId set to empty string, issueUrls to []), and to normalize planTitle so old values don’t linger. In src/rmplan/commands/agent/agent.ts I aligned the auto-description update to clear missing planId/issueUrls and to clear planTitle when empty, ensuring the description is derived only from current plan content. For cleanup, I introduced a directory status check in workspace list cleanup to treat non-ENOENT stat errors as unknown (warn but keep entries) so transient permission/mount errors don’t delete tracked workspaces. In src/rmplan/workspace/workspace_tracker.ts I made patchWorkspaceMetadata derive a taskId from planId when creating new entries (task-<planId>), keeping task IDs aligned with plan identifiers when updates create tracking entries. Tests were updated and expanded: workspace.list.test.ts now mocks getRepositoryIdentity, adds coverage for no-origin fallback and for stat-error cleanup; workspace.lock.test.ts adds a no-origin lock-available test; workspace.update.test.ts now verifies repositoryUrl is set for new entries and stale plan/issue metadata is cleared; workspace_tracker.test.ts covers planId-derived taskIds; agent.workspace_description.test.ts ensures issue-less plans don’t retain prefixes and that stale metadata is cleared. These changes integrate with existing workspace tracking (WorkspaceInfo), list output (WorkspaceListEntry), and agent flow (rmplanAgent) without altering other behavior.
+Fixed workspace switcher repo identity and metadata handling across list/update/agent flows (Tasks: Extend workspace metadata storage + patch helper; Workspace list output formats + repo scope; Workspace update command; Agent auto-description updates). In src/tim/commands/workspace.ts I replaced direct git remote probing with getRepositoryIdentity-based resolution (determineRepositoryUrl now returns remoteUrl or repositoryId), so list/lock-available work in jj/no-origin repos, and update now seeds repositoryUrl when missing by resolving identity for the target path. I also updated from-plan handling to explicitly clear stale planId/issueUrls when absent (planId set to empty string, issueUrls to []), and to normalize planTitle so old values don’t linger. In src/tim/commands/agent/agent.ts I aligned the auto-description update to clear missing planId/issueUrls and to clear planTitle when empty, ensuring the description is derived only from current plan content. For cleanup, I introduced a directory status check in workspace list cleanup to treat non-ENOENT stat errors as unknown (warn but keep entries) so transient permission/mount errors don’t delete tracked workspaces. In src/tim/workspace/workspace_tracker.ts I made patchWorkspaceMetadata derive a taskId from planId when creating new entries (task-<planId>), keeping task IDs aligned with plan identifiers when updates create tracking entries. Tests were updated and expanded: workspace.list.test.ts now mocks getRepositoryIdentity, adds coverage for no-origin fallback and for stat-error cleanup; workspace.lock.test.ts adds a no-origin lock-available test; workspace.update.test.ts now verifies repositoryUrl is set for new entries and stale plan/issue metadata is cleared; workspace_tracker.test.ts covers planId-derived taskIds; agent.workspace_description.test.ts ensures issue-less plans don’t retain prefixes and that stale metadata is cleared. These changes integrate with existing workspace tracking (WorkspaceInfo), list output (WorkspaceListEntry), and agent flow (timAgent) without altering other behavior.
 
-Implemented reviewer fix for auto workspace selection in the workspace switcher (tasks: Workspace list output formats + repo scope; Workspace update command; Agent auto-description updates). Updated src/rmplan/workspace/workspace_auto_selector.ts to use getRepositoryIdentity with cwd set to the main repo root and to select the repository key via remoteUrl or repositoryId instead of shelling out to git remote, so jj-only or no-origin repositories still match tracked workspace entries. Added coverage in src/rmplan/workspace/workspace_auto_selector.test.ts for the origin-missing/jj-style identity path by mocking getRepositoryIdentity, asserting findWorkspacesByRepoUrl receives the repositoryId, and verifying an unlocked workspace is selected; also set RMPLAN_LOCK_DIR per test so WorkspaceLock files stay in a temp directory. This keeps auto-selection aligned with the repository identity fallback already used in workspace list/update flows and avoids returning null when git remote commands fail.
+Implemented reviewer fix for auto workspace selection in the workspace switcher (tasks: Workspace list output formats + repo scope; Workspace update command; Agent auto-description updates). Updated src/tim/workspace/workspace_auto_selector.ts to use getRepositoryIdentity with cwd set to the main repo root and to select the repository key via remoteUrl or repositoryId instead of shelling out to git remote, so jj-only or no-origin repositories still match tracked workspace entries. Added coverage in src/tim/workspace/workspace_auto_selector.test.ts for the origin-missing/jj-style identity path by mocking getRepositoryIdentity, asserting findWorkspacesByRepoUrl receives the repositoryId, and verifying an unlocked workspace is selected; also set RMPLAN_LOCK_DIR per test so WorkspaceLock files stay in a temp directory. This keeps auto-selection aligned with the repository identity fallback already used in workspace list/update flows and avoids returning null when git remote commands fail.

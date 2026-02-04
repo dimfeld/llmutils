@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: improved intra-task progress tracking
 goal: ""
 id: 152
@@ -31,51 +31,51 @@ tasks:
   - title: Update discovery guidance, compaction config, docs, and schemas
     done: true
     description: Expand planning guidance to create new plans for discovered issues
-      (`rmplan add ... --discovered-from <planId>`). Remove progress-notes
-      compaction support and config, update README and rmplan usage skill docs
+      (`tim add ... --discovered-from <planId>`). Remove progress-notes
+      compaction support and config, update README and tim usage skill docs
       to reflect the new progress section model, and regenerate JSON schemas.
       Update tests impacted by compaction/docs changes.
 changedFiles:
   - README.md
-  - claude-plugin/skills/rmplan-usage/SKILL.md
-  - claude-plugin/skills/rmplan-usage/references/cli-commands.md
-  - schema/rmplan-config-schema.json
-  - schema/rmplan-plan-schema.json
-  - src/rmplan/commands/agent/agent.ts
-  - src/rmplan/commands/compact.test.ts
-  - src/rmplan/commands/compact.ts
-  - src/rmplan/commands/list.test.ts
-  - src/rmplan/commands/list.ts
-  - src/rmplan/commands/merge.test.ts
-  - src/rmplan/commands/merge.ts
-  - src/rmplan/commands/show.test.ts
-  - src/rmplan/commands/show.ts
-  - src/rmplan/commands/split.test.ts
-  - src/rmplan/commands/workspace.ts
-  - src/rmplan/configSchema.ts
-  - src/rmplan/display_utils.test.ts
-  - src/rmplan/display_utils.ts
-  - src/rmplan/executors/claude_code/agent_prompts.test.ts
-  - src/rmplan/executors/claude_code/agent_prompts.ts
-  - src/rmplan/executors/claude_code/orchestrator_integration.test.ts
-  - src/rmplan/executors/claude_code/orchestrator_prompt.test.ts
-  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/executors/codex_cli/prompt.test.ts
-  - src/rmplan/executors/codex_cli/prompt.ts
-  - src/rmplan/planSchema.test.ts
-  - src/rmplan/planSchema.ts
-  - src/rmplan/plan_display.test.ts
-  - src/rmplan/plans.test.ts
-  - src/rmplan/plans.ts
-  - src/rmplan/prompt.test.ts
-  - src/rmplan/prompt.ts
-  - src/rmplan/prompt_builder.test.ts
-  - src/rmplan/prompt_builder.ts
-  - src/rmplan/ready_plans.test.ts
-  - src/rmplan/rmplan.ts
-  - src/rmplan/workspace/workspace_manager.test.ts
-  - src/rmplan/workspace/workspace_manager.ts
+  - claude-plugin/skills/tim-usage/SKILL.md
+  - claude-plugin/skills/tim-usage/references/cli-commands.md
+  - schema/tim-config-schema.json
+  - schema/tim-plan-schema.json
+  - src/tim/commands/agent/agent.ts
+  - src/tim/commands/compact.test.ts
+  - src/tim/commands/compact.ts
+  - src/tim/commands/list.test.ts
+  - src/tim/commands/list.ts
+  - src/tim/commands/merge.test.ts
+  - src/tim/commands/merge.ts
+  - src/tim/commands/show.test.ts
+  - src/tim/commands/show.ts
+  - src/tim/commands/split.test.ts
+  - src/tim/commands/workspace.ts
+  - src/tim/configSchema.ts
+  - src/tim/display_utils.test.ts
+  - src/tim/display_utils.ts
+  - src/tim/executors/claude_code/agent_prompts.test.ts
+  - src/tim/executors/claude_code/agent_prompts.ts
+  - src/tim/executors/claude_code/orchestrator_integration.test.ts
+  - src/tim/executors/claude_code/orchestrator_prompt.test.ts
+  - src/tim/executors/claude_code/orchestrator_prompt.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/codex_cli/prompt.test.ts
+  - src/tim/executors/codex_cli/prompt.ts
+  - src/tim/planSchema.test.ts
+  - src/tim/planSchema.ts
+  - src/tim/plan_display.test.ts
+  - src/tim/plans.test.ts
+  - src/tim/plans.ts
+  - src/tim/prompt.test.ts
+  - src/tim/prompt.ts
+  - src/tim/prompt_builder.test.ts
+  - src/tim/prompt_builder.ts
+  - src/tim/ready_plans.test.ts
+  - src/tim/tim.ts
+  - src/tim/workspace/workspace_manager.test.ts
+  - src/tim/workspace/workspace_manager.ts
 tags: []
 ---
 
@@ -89,14 +89,14 @@ made on the task, and how and why.
 ## Implementation Guide
 
 ### Overview / Opportunity
-The current progress tracking relies on a dedicated `progressNotes` array in plan YAML frontmatter and a CLI command (`rmplan add-progress-note`). This creates a parallel progress channel that is detached from the plan's main narrative in `details`, complicates prompt/context assembly, and adds extra schema/CLI/test surface area. The goal is to shift progress tracking into a human-readable "progress section" inside the plan file itself, instruct orchestrators and Codex prompts to update that section with meaningful progress notes, and remove the legacy `progressNotes` data model and CLI command entirely.
+The current progress tracking relies on a dedicated `progressNotes` array in plan YAML frontmatter and a CLI command (`tim add-progress-note`). This creates a parallel progress channel that is detached from the plan's main narrative in `details`, complicates prompt/context assembly, and adds extra schema/CLI/test surface area. The goal is to shift progress tracking into a human-readable "progress section" inside the plan file itself, instruct orchestrators and Codex prompts to update that section with meaningful progress notes, and remove the legacy `progressNotes` data model and CLI command entirely.
 
 ### Expected Behavior/Outcome
 - Progress tracking lives in the plan file's Markdown body under a clearly named section (recommended: `## Progress`), not in YAML frontmatter.
 - Orchestrator guidance (Claude Code) instructs updating this progress section at the end of a successful iteration with a concise summary of what was done, why, and the current state. It should insert the section if missing and update existing content if present.
 - Codex prompts include similar progress-update instructions, but repeated per prompt/step rather than only at the end of orchestration.
 - The dedicated `progressNotes` field is removed from the plan schema and no longer appears in prompts, CLI output, or documentation.
-- The `rmplan add-progress-note` command and its tests/docs are removed; progress updates are done by editing the plan file directly.
+- The `tim add-progress-note` command and its tests/docs are removed; progress updates are done by editing the plan file directly.
 - The system still supports plan status states (`pending`, `in_progress`, `done`, `cancelled`, `deferred`); progress tracking is purely narrative and does not change status automatically.
 
 ### Relevant States (explicit definitions)
@@ -112,12 +112,12 @@ The current progress tracking relies on a dedicated `progressNotes` array in pla
 
 ### Key Findings
 **Product & User Story**
-- rmplan already captures implementation history via `# Implementation Notes` (appended by `rmplan add-implementation-note`), but progress notes live in a separate YAML array. This split makes "what happened recently" hard to discover in the main plan narrative.
+- tim already captures implementation history via `# Implementation Notes` (appended by `tim add-implementation-note`), but progress notes live in a separate YAML array. This split makes "what happened recently" hard to discover in the main plan narrative.
 - Orchestrators and Codex agents are already instructed to add progress notes; shifting to a `## Progress` section keeps those updates visible in the plan file itself without special tooling.
 - There is already a pattern for inline plan updates in the orchestrator prompts (task completion, implementation notes). Extending this to progress updates aligns with existing workflow.
 
 **Design & UX Approach**
-- Place the `## Progress` section at the end of the plan file (outside generated delimiters), so it is visible in `rmplan show` and when reading the plan directly.
+- Place the `## Progress` section at the end of the plan file (outside generated delimiters), so it is visible in `tim show` and when reading the plan directly.
 - Keep progress updates factual and tied to the current plan state (what changed, why, next status). Be as detailed as necessary so the next iteration can understand context without re-discovery.
 - Use a structured template in the progress section (see Implementation Notes) to keep updates consistent and scannable. Do not add timestamps anywhere in the section.
 - Treat the progress section as a living summary: include earlier meaningful progress but rewrite/remove outdated statements so the section stays accurate.
@@ -134,7 +134,7 @@ The current progress tracking relies on a dedicated `progressNotes` array in pla
 - Medium effort: multi-file refactor with doc/test updates. Expect a few hours of focused changes plus test fixes and schema regeneration.
 
 ### Dependencies & Constraints
-- **Dependencies**: `src/rmplan/planSchema.ts` (data model), `scripts/update-json-schemas.ts` (schema regeneration), executor prompts (`src/rmplan/executors/claude_code/*`, `src/rmplan/executors/codex_cli/*`), and CLI docs/skills.
+- **Dependencies**: `src/tim/planSchema.ts` (data model), `scripts/update-json-schemas.ts` (schema regeneration), executor prompts (`src/tim/executors/claude_code/*`, `src/tim/executors/codex_cli/*`), and CLI docs/skills.
 - **Technical Constraints**:
   - Plan schema uses `.passthrough()`, so legacy fields may persist unless explicitly removed.
   - `mergeDetails`/`updateDetailsWithinDelimiters` manage generated sections; progress updates should live outside generated delimiters to avoid being overwritten.
@@ -142,47 +142,47 @@ The current progress tracking relies on a dedicated `progressNotes` array in pla
 
 ### Subagent Reports (parallel analysis recap)
 **Report: Plan schema & file I/O**
-- `src/rmplan/planSchema.ts` defines `progressNotes` in `phaseSchema`. Removing it will require updating `PlanSchema` tests.
-- `src/rmplan/plans.ts` removes empty arrays for `progressNotes` during write; update to stop mentioning it and optionally strip legacy field.
-- `schema/rmplan-plan-schema.json` is generated from Zod via `scripts/update-json-schemas.ts`.
+- `src/tim/planSchema.ts` defines `progressNotes` in `phaseSchema`. Removing it will require updating `PlanSchema` tests.
+- `src/tim/plans.ts` removes empty arrays for `progressNotes` during write; update to stop mentioning it and optionally strip legacy field.
+- `schema/tim-plan-schema.json` is generated from Zod via `scripts/update-json-schemas.ts`.
 
 **Report: CLI commands & display**
-- `src/rmplan/rmplan.ts` wires `rmplan add-progress-note`; this needs removal.
-- `src/rmplan/commands/show.ts` and `src/rmplan/commands/list.ts` show progress notes; these must be removed or replaced with progress-section-aware output if desired.
-- `src/rmplan/commands/merge.ts`, `split.test.ts`, `compact.ts` all touch progress notes; update or remove.
+- `src/tim/tim.ts` wires `tim add-progress-note`; this needs removal.
+- `src/tim/commands/show.ts` and `src/tim/commands/list.ts` show progress notes; these must be removed or replaced with progress-section-aware output if desired.
+- `src/tim/commands/merge.ts`, `split.test.ts`, `compact.ts` all touch progress notes; update or remove.
 
 **Report: Prompt and executor flows**
-- `src/rmplan/executors/claude_code/orchestrator_prompt.ts` injects `progressNotesGuidance` (add-progress-note) into orchestration. Replace with progress-section update guidance.
-- `src/rmplan/executors/claude_code/agent_prompts.ts` includes `progressNotesGuidance` in implementer/tester/reviewer/verifier prompts.
+- `src/tim/executors/claude_code/orchestrator_prompt.ts` injects `progressNotesGuidance` (add-progress-note) into orchestration. Replace with progress-section update guidance.
+- `src/tim/executors/claude_code/agent_prompts.ts` includes `progressNotesGuidance` in implementer/tester/reviewer/verifier prompts.
 - Codex CLI uses the same agent prompts in `simple_mode.ts`/`normal_mode.ts`, plus a separate `codex_cli/prompt.ts` for single-shot runs. Both need progress-section update guidance.
-- `src/rmplan/prompt_builder.ts` injects a `## Progress Notes` section into execution prompts; remove.
+- `src/tim/prompt_builder.ts` injects a `## Progress Notes` section into execution prompts; remove.
 
 **Report: Documentation & skills**
-- `claude-plugin/skills/rmplan-usage/SKILL.md` and `claude-plugin/skills/rmplan-usage/references/cli-commands.md` mention progress notes and `rmplan add-progress-note`.
+- `claude-plugin/skills/tim-usage/SKILL.md` and `claude-plugin/skills/tim-usage/references/cli-commands.md` mention progress notes and `tim add-progress-note`.
 - `README.md` includes progress notes in plan structure, show output, and compaction description.
 
 ### Implementation Notes
 **Recommended Approach**
-1. Remove `progressNotes` from the plan schema (`src/rmplan/planSchema.ts`) and update any type usage. Explicitly strip legacy fields on write (in `writePlanFile`).
-2. Remove the `rmplan add-progress-note` command wiring (`src/rmplan/rmplan.ts`) and delete `src/rmplan/commands/add-progress-note.ts` plus related tests (`add-progress-note*.test.ts`, `progress_notes*.test.ts`).
+1. Remove `progressNotes` from the plan schema (`src/tim/planSchema.ts`) and update any type usage. Explicitly strip legacy fields on write (in `writePlanFile`).
+2. Remove the `tim add-progress-note` command wiring (`src/tim/tim.ts`) and delete `src/tim/commands/add-progress-note.ts` plus related tests (`add-progress-note*.test.ts`, `progress_notes*.test.ts`).
 3. Remove progress-notes display from CLI outputs:
-   - `src/rmplan/commands/show.ts`: remove latest notes summary and the full "Progress Notes" section.
-   - `src/rmplan/commands/list.ts`: drop Notes column and related logic.
+   - `src/tim/commands/show.ts`: remove latest notes summary and the full "Progress Notes" section.
+   - `src/tim/commands/list.ts`: drop Notes column and related logic.
 4. Remove prompt-time progress notes context:
-   - `src/rmplan/prompt_builder.ts`: remove `buildProgressNotesSection` and its truncation helpers.
-   - `src/rmplan/truncation.ts`: remove constants only used for progress notes or repurpose if still needed.
+   - `src/tim/prompt_builder.ts`: remove `buildProgressNotesSection` and its truncation helpers.
+   - `src/tim/truncation.ts`: remove constants only used for progress notes or repurpose if still needed.
 5. Replace progress notes guidance with progress-section guidance:
-   - `src/rmplan/executors/claude_code/orchestrator_prompt.ts`: add a new guidance block telling orchestrator to update the plan file's `## Progress` section at the end of a successful loop (and when tasks are marked done).
-   - `src/rmplan/executors/claude_code/agent_prompts.ts`: add a short instruction that each agent should include a progress update in its final response and update the plan file if it is directly responsible for edits.
-   - `src/rmplan/executors/codex_cli/prompt.ts`: add per-prompt instructions to update `## Progress` after each implement/test/review cycle.
+   - `src/tim/executors/claude_code/orchestrator_prompt.ts`: add a new guidance block telling orchestrator to update the plan file's `## Progress` section at the end of a successful loop (and when tasks are marked done).
+   - `src/tim/executors/claude_code/agent_prompts.ts`: add a short instruction that each agent should include a progress update in its final response and update the plan file if it is directly responsible for edits.
+   - `src/tim/executors/codex_cli/prompt.ts`: add per-prompt instructions to update `## Progress` after each implement/test/review cycle.
 6. Add/expand guidance about creating new issues/plans:
-   - `src/rmplan/prompt.ts`: extend the "Blocking Subissues" section or add a new "Discovered Issues" section describing when to create new plans for newly discovered work. Use `rmplan add ... --discovered-from <planId>` as the standard.
-   - `claude-plugin/skills/rmplan-usage/SKILL.md` and `references/cli-commands.md`: include explicit instructions and examples for adding new issues when discovered during research/implementation.
+   - `src/tim/prompt.ts`: extend the "Blocking Subissues" section or add a new "Discovered Issues" section describing when to create new plans for newly discovered work. Use `tim add ... --discovered-from <planId>` as the standard.
+   - `claude-plugin/skills/tim-usage/SKILL.md` and `references/cli-commands.md`: include explicit instructions and examples for adding new issues when discovered during research/implementation.
 7. Update compaction configuration/docs:
-   - Remove `progressNotes` compaction toggles and guidance in `src/rmplan/commands/compact.ts`.
-   - Remove `progressNotes` config in `src/rmplan/configSchema.ts` and regenerate `schema/rmplan-config-schema.json`.
+   - Remove `progressNotes` compaction toggles and guidance in `src/tim/commands/compact.ts`.
+   - Remove `progressNotes` config in `src/tim/configSchema.ts` and regenerate `schema/tim-config-schema.json`.
 8. Update docs and schema artifacts:
-   - `README.md` references to progress notes and `rmplan add-progress-note`.
+   - `README.md` references to progress notes and `tim add-progress-note`.
    - Regenerate JSON schemas using `scripts/update-json-schemas.ts`.
 9. Adjust tests to reflect the new guidance and removed features.
 
@@ -213,42 +213,42 @@ The current progress tracking relies on a dedicated `progressNotes` array in pla
 - None detected, but the exact format of the new `## Progress` section should be standardized to avoid inconsistent updates.
 
 ### Notable Files and What They Do
-- `src/rmplan/planSchema.ts`: plan data model; remove `progressNotes` and update tests.
-- `src/rmplan/plans.ts`: read/write logic; currently removes empty `progressNotes` arrays on write.
-- `src/rmplan/rmplan.ts`: CLI wiring for `rmplan add-progress-note`.
-- `src/rmplan/commands/add-progress-note.ts`: progress note creation (remove).
-- `src/rmplan/commands/show.ts`: displays progress notes summary and full list.
-- `src/rmplan/commands/list.ts`: conditionally adds a "Notes" column.
-- `src/rmplan/prompt_builder.ts`: injects `## Progress Notes` into prompts; remove.
-- `src/rmplan/executors/claude_code/orchestrator_prompt.ts`: orchestrator guidance; replace progress notes with progress-section update guidance.
-- `src/rmplan/executors/claude_code/agent_prompts.ts`: agent prompts reuse progress notes guidance.
-- `src/rmplan/executors/codex_cli/prompt.ts`: single-shot Codex prompt; add progress-section update guidance.
-- `src/rmplan/commands/compact.ts` + `src/rmplan/configSchema.ts`: compaction config mentions progress notes.
-- `claude-plugin/skills/rmplan-usage/SKILL.md`, `claude-plugin/skills/rmplan-usage/references/cli-commands.md`, `README.md`: document progress notes and should be updated.
+- `src/tim/planSchema.ts`: plan data model; remove `progressNotes` and update tests.
+- `src/tim/plans.ts`: read/write logic; currently removes empty `progressNotes` arrays on write.
+- `src/tim/tim.ts`: CLI wiring for `tim add-progress-note`.
+- `src/tim/commands/add-progress-note.ts`: progress note creation (remove).
+- `src/tim/commands/show.ts`: displays progress notes summary and full list.
+- `src/tim/commands/list.ts`: conditionally adds a "Notes" column.
+- `src/tim/prompt_builder.ts`: injects `## Progress Notes` into prompts; remove.
+- `src/tim/executors/claude_code/orchestrator_prompt.ts`: orchestrator guidance; replace progress notes with progress-section update guidance.
+- `src/tim/executors/claude_code/agent_prompts.ts`: agent prompts reuse progress notes guidance.
+- `src/tim/executors/codex_cli/prompt.ts`: single-shot Codex prompt; add progress-section update guidance.
+- `src/tim/commands/compact.ts` + `src/tim/configSchema.ts`: compaction config mentions progress notes.
+- `claude-plugin/skills/tim-usage/SKILL.md`, `claude-plugin/skills/tim-usage/references/cli-commands.md`, `README.md`: document progress notes and should be updated.
 - `scripts/update-json-schemas.ts`: regenerates JSON schemas after Zod changes.
 
 ### Step-by-Step Implementation Guide
 1. **Schema cleanup**
-   - Remove `progressNotes` from `phaseSchema` in `src/rmplan/planSchema.ts`.
+   - Remove `progressNotes` from `phaseSchema` in `src/tim/planSchema.ts`.
    - Update or remove `planSchema` tests that validate progress notes.
    - Explicitly strip legacy `progressNotes` in `writePlanFile` to avoid reserializing old data.
 2. **CLI removal**
-   - Delete `add-progress-note` command wiring from `src/rmplan/rmplan.ts`.
-   - Remove `src/rmplan/commands/add-progress-note.ts` and its tests.
+   - Delete `add-progress-note` command wiring from `src/tim/tim.ts`.
+   - Remove `src/tim/commands/add-progress-note.ts` and its tests.
 3. **CLI output adjustments**
-   - Remove progress notes output from `src/rmplan/commands/show.ts` and tests.
-   - Remove Notes column logic from `src/rmplan/commands/list.ts` and tests.
+   - Remove progress notes output from `src/tim/commands/show.ts` and tests.
+   - Remove Notes column logic from `src/tim/commands/list.ts` and tests.
 4. **Prompt updates**
    - Replace `progressNotesGuidance` with new "progress section update" guidance in `orchestrator_prompt.ts` that explicitly calls for updating the section in-place (edit outdated text, preserve meaningful prior progress).
    - Update `agent_prompts.ts` to include a brief, consistent instruction about updating `## Progress` as a living summary.
    - Update Codex CLI prompt (`codex_cli/prompt.ts`) to instruct progress-section updates for each prompt cycle, emphasizing "update-in-place" rather than append-only logs.
    - Embed the structured progress template in prompt guidance so agents have a consistent format to update.
 5. **New issue discovery guidance**
-   - Update `src/rmplan/prompt.ts` (research + generation prompts) to explicitly call out when to create new plans for discovered issues.
-   - Update skill docs (`claude-plugin/skills/rmplan-usage/SKILL.md` and references) with a short, concrete example.
+   - Update `src/tim/prompt.ts` (research + generation prompts) to explicitly call out when to create new plans for discovered issues.
+   - Update skill docs (`claude-plugin/skills/tim-usage/SKILL.md` and references) with a short, concrete example.
 6. **Compaction + config cleanup**
-   - Remove progress-notes compaction toggles from `src/rmplan/commands/compact.ts` and config schema.
-   - Regenerate `schema/rmplan-config-schema.json` and `schema/rmplan-plan-schema.json`.
+   - Remove progress-notes compaction toggles from `src/tim/commands/compact.ts` and config schema.
+   - Regenerate `schema/tim-config-schema.json` and `schema/tim-plan-schema.json`.
 7. **Docs & README updates**
    - Remove progress-notes references and add new progress-section guidance.
 8. **Testing**
@@ -257,30 +257,30 @@ The current progress tracking relies on a dedicated `progressNotes` array in pla
 
 ### Automated Test Coverage (targets to update/add)
 - Remove/adjust:
-  - `src/rmplan/progress_notes.integration.test.ts`
-  - `src/rmplan/progress_notes.edge_cases.test.ts`
-  - `src/rmplan/commands/add-progress-note*.test.ts`
-  - `src/rmplan/commands/list.progress_notes.test.ts`
-  - `src/rmplan/planSchema.test.ts` progress notes cases
-  - `src/rmplan/prompt_builder.test.ts` progress notes section tests
-  - `src/rmplan/executors/claude_code/orchestrator_prompt.test.ts` progress notes assertions
-  - `src/rmplan/commands/show.test.ts` progress notes assertions
-  - `src/rmplan/commands/merge.test.ts`, `split.test.ts`, `compact.test.ts` progress notes cases
+  - `src/tim/progress_notes.integration.test.ts`
+  - `src/tim/progress_notes.edge_cases.test.ts`
+  - `src/tim/commands/add-progress-note*.test.ts`
+  - `src/tim/commands/list.progress_notes.test.ts`
+  - `src/tim/planSchema.test.ts` progress notes cases
+  - `src/tim/prompt_builder.test.ts` progress notes section tests
+  - `src/tim/executors/claude_code/orchestrator_prompt.test.ts` progress notes assertions
+  - `src/tim/commands/show.test.ts` progress notes assertions
+  - `src/tim/commands/merge.test.ts`, `split.test.ts`, `compact.test.ts` progress notes cases
 - Add/adjust:
   - Prompt tests to assert new progress-section update guidance for orchestrator and Codex prompts.
   - CLI show/list tests to ensure no Notes column or progress-notes output.
 
 ### Manual Testing Steps (for human verification)
-- Run `rmplan show <planId>` and confirm no progress-notes section is displayed.
-- Run `rmplan list` and confirm there is no Notes column.
-- Run `rmplan agent <planId> --executor claude-code` and verify the prompt includes progress-section update guidance.
-- Run `rmplan agent <planId> --executor codex-cli` and confirm Codex prompt includes progress-section update guidance.
+- Run `tim show <planId>` and confirm no progress-notes section is displayed.
+- Run `tim list` and confirm there is no Notes column.
+- Run `tim agent <planId> --executor claude-code` and verify the prompt includes progress-section update guidance.
+- Run `tim agent <planId> --executor codex-cli` and confirm Codex prompt includes progress-section update guidance.
 
-<!-- rmplan-generated-start -->
+<!-- tim-generated-start -->
 Expected Behavior/Outcome
 - Progress tracking lives in a structured `## Progress` section at the end of the plan file (outside generated delimiters).
 - Orchestrator (Claude Code) and Codex prompts instruct updating `## Progress` in place: insert if missing, preserve meaningful history while removing outdated statements, and **no timestamps anywhere**.
-- `progressNotes` is removed from the plan schema, CLI, prompts, and docs. The `rmplan add-progress-note` command is removed.
+- `progressNotes` is removed from the plan schema, CLI, prompts, and docs. The `tim add-progress-note` command is removed.
 - Legacy `progressNotes` are stripped in `writePlanFile` to prevent re-serialization.
 - Plan status states remain unchanged.
 
@@ -323,20 +323,20 @@ Potential Gotchas
 - Avoid duplicate/conflicting guidance across orchestrator + agent + Codex prompts.
 
 Acceptance Criteria
-- Functional: `progressNotes` and `rmplan add-progress-note` are removed; progress tracking uses only `## Progress`.
+- Functional: `progressNotes` and `tim add-progress-note` are removed; progress tracking uses only `## Progress`.
 - UX: Prompts instruct detailed, structured, timestamp-free updates at the end of the plan file.
 - Technical: `progressNotes` stripped on write; schemas updated; no remaining references.
 - Tests: All updated tests pass.
-<!-- rmplan-generated-end -->
+<!-- tim-generated-end -->
 
-Implemented review fixes for intra-task progress tracking and plan generation prompts. Tasks worked on: remove subagent progress-update instructions, prevent merge from duplicating progress sections, and keep discovered-issue guidance YAML-friendly. Updated src/rmplan/executors/claude_code/agent_prompts.ts to replace progressSectionGuidance with a Progress Reporting block that tells implementer/tester/reviewer/verifier to report status to the orchestrator and not edit plan files directly. Updated src/rmplan/commands/merge.ts to strip child ## Progress sections before appending child details so merged plans keep a single progress section, and added coverage in src/rmplan/commands/merge.test.ts asserting the child progress content is removed and only one Progress header remains. Adjusted discovered-issue and blocking-subissue prompt wording in src/rmplan/prompt.ts so summaries are placed inside the plan Details section instead of before output, preserving YAML extraction; updated src/rmplan/prompt.test.ts expectations accordingly. Updated agent prompt tests in src/rmplan/executors/claude_code/agent_prompts.test.ts to validate the new reporting guidance. Design choice: strip progress sections only from children during merge so the parent progress summary remains the single source of truth while avoiding duplicate sections. Integration points: merge command details concatenation, claude_code subagent prompt composition, and plan prompt generation for discovered issues. No deviations from the requested fixes beyond aligning blocking-subissue guidance with the same Details-section placement for consistency.
+Implemented review fixes for intra-task progress tracking and plan generation prompts. Tasks worked on: remove subagent progress-update instructions, prevent merge from duplicating progress sections, and keep discovered-issue guidance YAML-friendly. Updated src/tim/executors/claude_code/agent_prompts.ts to replace progressSectionGuidance with a Progress Reporting block that tells implementer/tester/reviewer/verifier to report status to the orchestrator and not edit plan files directly. Updated src/tim/commands/merge.ts to strip child ## Progress sections before appending child details so merged plans keep a single progress section, and added coverage in src/tim/commands/merge.test.ts asserting the child progress content is removed and only one Progress header remains. Adjusted discovered-issue and blocking-subissue prompt wording in src/tim/prompt.ts so summaries are placed inside the plan Details section instead of before output, preserving YAML extraction; updated src/tim/prompt.test.ts expectations accordingly. Updated agent prompt tests in src/tim/executors/claude_code/agent_prompts.test.ts to validate the new reporting guidance. Design choice: strip progress sections only from children during merge so the parent progress summary remains the single source of truth while avoiding duplicate sections. Integration points: merge command details concatenation, claude_code subagent prompt composition, and plan prompt generation for discovered issues. No deviations from the requested fixes beyond aligning blocking-subissue guidance with the same Details-section placement for consistency.
 
-Worked on tasks: Replace progress notes guidance with structured progress section template in prompts; Update discovery guidance, compaction config, docs, and schemas. Added progress guidance mode handling in src/rmplan/executors/claude_code/agent_prompts.ts, wiring to progressSectionGuidance for Codex executions and keeping report-only guidance for Claude orchestrator subagents; updated Codex normal/simple mode runners in src/rmplan/executors/codex_cli/normal_mode.ts and src/rmplan/executors/codex_cli/simple_mode.ts plus agent definition wiring in src/rmplan/executors/claude_code.ts to pass explicit progress guidance options. Updated src/rmplan/commands/merge.ts to extract the parent plan's Progress section, strip progress from children, and re-append the parent section at the end after merged details so merged plans keep a single progress section in the required location; covered by updated assertions in src/rmplan/commands/merge.test.ts. Added discovered-issue guidance to Claude Code planning prompts in src/rmplan/prompt.ts and expanded tests in src/rmplan/commands/generate.test.ts to assert the new section and command examples. Design decisions: reuse the orchestrator progress-section template to keep a single canonical format for Codex prompts, and only reposition the parent progress section during merge so it stays the sole source of truth. Integration points include codex agent prompt composition, Claude Code agent definition setup, plan merge details concatenation, and planning prompt generation. No deviations from the plan requirements; changes focus on restoring missing progress/discovered-issue guidance and maintaining progress section placement.
+Worked on tasks: Replace progress notes guidance with structured progress section template in prompts; Update discovery guidance, compaction config, docs, and schemas. Added progress guidance mode handling in src/tim/executors/claude_code/agent_prompts.ts, wiring to progressSectionGuidance for Codex executions and keeping report-only guidance for Claude orchestrator subagents; updated Codex normal/simple mode runners in src/tim/executors/codex_cli/normal_mode.ts and src/tim/executors/codex_cli/simple_mode.ts plus agent definition wiring in src/tim/executors/claude_code.ts to pass explicit progress guidance options. Updated src/tim/commands/merge.ts to extract the parent plan's Progress section, strip progress from children, and re-append the parent section at the end after merged details so merged plans keep a single progress section in the required location; covered by updated assertions in src/tim/commands/merge.test.ts. Added discovered-issue guidance to Claude Code planning prompts in src/tim/prompt.ts and expanded tests in src/tim/commands/generate.test.ts to assert the new section and command examples. Design decisions: reuse the orchestrator progress-section template to keep a single canonical format for Codex prompts, and only reposition the parent progress section during merge so it stays the sole source of truth. Integration points include codex agent prompt composition, Claude Code agent definition setup, plan merge details concatenation, and planning prompt generation. No deviations from the plan requirements; changes focus on restoring missing progress/discovered-issue guidance and maintaining progress section placement.
 
-Implemented Codex fix-loop progress updates and Codex-friendly plan path guidance. Added an optional useAtPrefix flag to progressSectionGuidance in src/rmplan/executors/claude_code/orchestrator_prompt.ts and threaded it through ProgressGuidanceOptions in src/rmplan/executors/claude_code/agent_prompts.ts so Codex prompts can emit plain filesystem paths while Claude keeps the @ reference style. Updated Codex normal and simple mode calls in src/rmplan/executors/codex_cli/normal_mode.ts and src/rmplan/executors/codex_cli/simple_mode.ts to pass useAtPrefix false for update-mode progress guidance. Added progress update guidance to fixer and fix-review prompts in src/rmplan/executors/codex_cli/context_composition.ts and passed the planFilePath into composeFixReviewContext so each fix iteration updates the plan progress section. Tests updated in src/rmplan/executors/claude_code/agent_prompts.test.ts and src/rmplan/executors/codex_cli.fixer_prompt.test.ts to cover the no-@ path and fixer progress guidance. This addresses the tasks for keeping progress updated during fix loops and ensuring Codex prompts reference real paths.
+Implemented Codex fix-loop progress updates and Codex-friendly plan path guidance. Added an optional useAtPrefix flag to progressSectionGuidance in src/tim/executors/claude_code/orchestrator_prompt.ts and threaded it through ProgressGuidanceOptions in src/tim/executors/claude_code/agent_prompts.ts so Codex prompts can emit plain filesystem paths while Claude keeps the @ reference style. Updated Codex normal and simple mode calls in src/tim/executors/codex_cli/normal_mode.ts and src/tim/executors/codex_cli/simple_mode.ts to pass useAtPrefix false for update-mode progress guidance. Added progress update guidance to fixer and fix-review prompts in src/tim/executors/codex_cli/context_composition.ts and passed the planFilePath into composeFixReviewContext so each fix iteration updates the plan progress section. Tests updated in src/tim/executors/claude_code/agent_prompts.test.ts and src/tim/executors/codex_cli.fixer_prompt.test.ts to cover the no-@ path and fixer progress guidance. This addresses the tasks for keeping progress updated during fix loops and ensuring Codex prompts reference real paths.
 
-Implemented review fixes for merge progress handling in the rmplan merge command (task: fix merge progress section handling to avoid data loss and overbroad matching). Updated src/rmplan/commands/merge.ts to replace the regex-based progress stripping with a line-based parser that finds exact '## Progress' headings outside fenced code blocks, keeps subheadings (### etc.) within the section, and avoids touching '## Progress Tracking' or code-fenced headings. Added helpers getHeadingLevel, findProgressSectionRanges, extractProgressSections, and buildMergedProgressSection to capture progress sections safely. The merge flow now extracts the parent progress section (if present) and, when the parent lacks one, synthesizes a merged progress section from child progress sections labeled with each child plan's title/goal/ID so progress data is preserved instead of dropped. Integration points: handleMergeCommand now uses extractProgressSections for both parent and children, accumulates child progress sections, and appends either the parent progress section or a merged fallback at the end of the combined details.
+Implemented review fixes for merge progress handling in the tim merge command (task: fix merge progress section handling to avoid data loss and overbroad matching). Updated src/tim/commands/merge.ts to replace the regex-based progress stripping with a line-based parser that finds exact '## Progress' headings outside fenced code blocks, keeps subheadings (### etc.) within the section, and avoids touching '## Progress Tracking' or code-fenced headings. Added helpers getHeadingLevel, findProgressSectionRanges, extractProgressSections, and buildMergedProgressSection to capture progress sections safely. The merge flow now extracts the parent progress section (if present) and, when the parent lacks one, synthesizes a merged progress section from child progress sections labeled with each child plan's title/goal/ID so progress data is preserved instead of dropped. Integration points: handleMergeCommand now uses extractProgressSections for both parent and children, accumulates child progress sections, and appends either the parent progress section or a merged fallback at the end of the combined details.
 
-Updated tests in src/rmplan/commands/merge.test.ts to cover the new behavior: added a case ensuring child progress is preserved when the parent has no progress section, and a case ensuring non-matching headings ('## Progress Tracking') and code-fenced '## Progress' content remain intact after merge. Existing test for stripping child progress when the parent has one continues to assert only one Progress section remains and appears after child details. Design decision: keep the parent progress as the single source of truth when it exists, but use a merged child progress section to avoid silent data loss when no parent progress exists. No deviations from the plan requirements; this change strictly addresses review issues 1 and 2 while preserving existing merge semantics.
+Updated tests in src/tim/commands/merge.test.ts to cover the new behavior: added a case ensuring child progress is preserved when the parent has no progress section, and a case ensuring non-matching headings ('## Progress Tracking') and code-fenced '## Progress' content remain intact after merge. Existing test for stripping child progress when the parent has one continues to assert only one Progress section remains and appears after child details. Design decision: keep the parent progress as the single source of truth when it exists, but use a merged child progress section to avoid silent data loss when no parent progress exists. No deviations from the plan requirements; this change strictly addresses review issues 1 and 2 while preserving existing merge semantics.
 
-Addressed reviewer issues for merge progress handling and progress detection. Tasks worked on: merge child progress into parent progress sections without data loss, and prevent indented code blocks from being treated as headings. Updated src/rmplan/commands/merge.ts to tighten progress heading detection to only match headings starting at column 0-3 spaces, and to use non-trimmed heading level detection so indented code blocks (4 spaces or tabs) are ignored. Reworked buildMergedProgressSection to accept the parent ProgressSection and, when child progress exists, synthesize a single ## Progress block that keeps the parent content first and appends labeled child sections (### From <child>), instead of dropping child progress when the parent already had a progress section. Updated src/rmplan/commands/merge.test.ts: replaced the parent plus child test to assert child progress is preserved and labeled, and added a regression test to keep indented code blocks containing ## Progress. Design decision: keep one Progress section at the end while preserving both parent and child content to avoid data loss.
+Addressed reviewer issues for merge progress handling and progress detection. Tasks worked on: merge child progress into parent progress sections without data loss, and prevent indented code blocks from being treated as headings. Updated src/tim/commands/merge.ts to tighten progress heading detection to only match headings starting at column 0-3 spaces, and to use non-trimmed heading level detection so indented code blocks (4 spaces or tabs) are ignored. Reworked buildMergedProgressSection to accept the parent ProgressSection and, when child progress exists, synthesize a single ## Progress block that keeps the parent content first and appends labeled child sections (### From <child>), instead of dropping child progress when the parent already had a progress section. Updated src/tim/commands/merge.test.ts: replaced the parent plus child test to assert child progress is preserved and labeled, and added a regression test to keep indented code blocks containing ## Progress. Design decision: keep one Progress section at the end while preserving both parent and child content to avoid data loss.

@@ -2,34 +2,34 @@
 
 ## Overview
 
-The `--batch-tasks` feature is a new execution mode for the `rmplan agent` command that allows the orchestrator agent to intelligently select and execute multiple related tasks in a single operation. This mode improves efficiency when working with plans containing many small or related tasks by reducing context switching and enabling better coordination between related work items.
+The `--batch-tasks` feature is a new execution mode for the `tim agent` command that allows the orchestrator agent to intelligently select and execute multiple related tasks in a single operation. This mode improves efficiency when working with plans containing many small or related tasks by reducing context switching and enabling better coordination between related work items.
 
 ## Usage
 
 ### Basic Command
 
 ```bash
-rmplan agent --batch-tasks <plan_file>
+tim agent --batch-tasks <plan_file>
 ```
 
 ### Examples
 
 ```bash
 # Execute a plan in batch mode
-rmplan agent --batch-tasks tasks/my-feature.yml
+tim agent --batch-tasks tasks/my-feature.yml
 
 # Use batch mode with a different executor
-rmplan agent --batch-tasks --executor claude-code tasks/refactor-plan.yml
+tim agent --batch-tasks --executor claude-code tasks/refactor-plan.yml
 
 # Run with verbose output to see batch selection decisions
-rmplan agent --batch-tasks --verbose tasks/optimization-tasks.yml
+tim agent --batch-tasks --verbose tasks/optimization-tasks.yml
 ```
 
 ## How It Works
 
 ### Orchestrator Intelligence
 
-In batch mode, the rmplan agent operates differently from normal single-task execution:
+In batch mode, the tim agent operates differently from normal single-task execution:
 
 1. **Task Analysis**: The orchestrator agent receives all incomplete tasks from the plan file and analyzes their relationships, dependencies, and complexity.
 
@@ -230,4 +230,4 @@ In this example, the orchestrator selected tasks 1, 2, 4, and 5 as a logical bat
 
 4. **Use Verbose Mode**: Include `--verbose` to see the orchestrator's reasoning and improve your plan structure over time
 
-The batch tasks feature represents a significant step forward in automated project execution, enabling more efficient and intelligent task management while maintaining the quality and reliability of the rmplan system.
+The batch tasks feature represents a significant step forward in automated project execution, enabling more efficient and intelligent task management while maintaining the quality and reliability of the tim system.

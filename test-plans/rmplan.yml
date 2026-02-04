@@ -1,5 +1,5 @@
 ---
-# Test configuration for rmplan with example plans
+# Test configuration for tim with example plans
 paths:
   tasks: test-plans/plans
   docs:
@@ -34,7 +34,7 @@ answerPr:
 defaultExecutor: claude-code
 
 workspaceCreation:
-  cloneLocation: ~/.rmplan/test-workspaces/
+  cloneLocation: ~/.tim/test-workspaces/
   postCloneCommands:
     - title: Install dependencies
       command: bun install

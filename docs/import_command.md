@@ -1,6 +1,6 @@
-# rmplan import Command
+# tim import Command
 
-The `rmplan import` command allows you to import GitHub issues and create corresponding local plan files. This streamlines the process of turning feature requests and bug reports from GitHub into actionable development plans within the `rmplan` ecosystem.
+The `tim import` command allows you to import GitHub issues and create corresponding local plan files. This streamlines the process of turning feature requests and bug reports from GitHub into actionable development plans within the `tim` ecosystem.
 
 ## Purpose
 
@@ -9,7 +9,7 @@ The import command bridges the gap between issue tracking and implementation pla
 - Converting GitHub issues into structured plan files
 - Providing a foundation for detailed task planning
 - Ensuring issue context is preserved for development work
-- Creating "stub" plans ready for further expansion with `rmplan generate`
+- Creating "stub" plans ready for further expansion with `tim generate`
 
 ## Two Modes of Operation
 
@@ -19,10 +19,10 @@ When you specify a specific issue, the command imports that single issue directl
 
 ```bash
 # Import a specific issue by number
-rmplan import --issue 123
+tim import --issue 123
 
 # Import an issue by full URL
-rmplan import --issue https://github.com/owner/repo/issues/456
+tim import --issue https://github.com/owner/repo/issues/456
 ```
 
 ### Interactive Multi-Issue Import Mode
@@ -31,7 +31,7 @@ When no specific issue is provided, the command enters interactive mode:
 
 ```bash
 # Interactive mode - select multiple issues
-rmplan import
+tim import
 ```
 
 In interactive mode, the command will:
@@ -70,32 +70,32 @@ Each imported issue creates a "stub" plan file containing:
 - **Goal**: Summary of what the issue aims to accomplish
 - **Details**: Selected content from the issue body and comments
 - **Issue link**: Direct reference to the original GitHub issue
-- **Empty task list**: Ready for population with `rmplan generate`
+- **Empty task list**: Ready for population with `tim generate`
 
 ## Usage Examples
 
 ```bash
 # Import a specific issue
-rmplan import --issue 123
+tim import --issue 123
 
 # Import using full GitHub URL
-rmplan import --issue https://github.com/dimfeld/llmutils/issues/42
+tim import --issue https://github.com/dimfeld/llmutils/issues/42
 
 # Interactive mode to select multiple issues
-rmplan import
+tim import
 
 # Import with custom output location
-rmplan import --issue 123 --output custom-tasks/feature-123.yml
+tim import --issue 123 --output custom-tasks/feature-123.yml
 ```
 
 ## Integration with Existing Workflow
 
-The import command is designed to work seamlessly with the existing rmplan workflow:
+The import command is designed to work seamlessly with the existing tim workflow:
 
-1. **Import**: Use `rmplan import` to create stub plans from GitHub issues
-2. **Generate**: Use `rmplan generate` to add detailed implementation steps
-3. **Execute**: Use `rmplan agent` to automatically implement, or use `rmplan show` to view and execute manually
-4. **Track**: Use `rmplan done` to mark progress and commit changes
+1. **Import**: Use `tim import` to create stub plans from GitHub issues
+2. **Generate**: Use `tim generate` to add detailed implementation steps
+3. **Execute**: Use `tim agent` to automatically implement, or use `tim show` to view and execute manually
+4. **Track**: Use `tim done` to mark progress and commit changes
 
 ## Requirements
 
@@ -105,7 +105,7 @@ The import command is designed to work seamlessly with the existing rmplan workf
 
 ## Output Format
 
-The generated plan files follow the standard rmplan YAML schema:
+The generated plan files follow the standard tim YAML schema:
 
 ```yaml
 id: issue-123-implement-feature
@@ -118,4 +118,4 @@ details: |
 tasks: []
 ```
 
-The empty `tasks` array can then be populated using `rmplan generate` to create a fully executable implementation plan.
+The empty `tasks` array can then be populated using `tim generate` to create a fully executable implementation plan.

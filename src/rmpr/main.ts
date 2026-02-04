@@ -14,7 +14,7 @@
  * - Common Git utilities in src/common/git.ts for branch detection and operations
  * - Common process utilities in src/common/process.ts for commits and spawning
  * - Shared file system utilities in src/common/fs.ts for secure file operations
- * - Centralized executor system from src/rmplan/executors/ for LLM integration
+ * - Centralized executor system from src/tim/executors/ for LLM integration
  */
 
 import { confirm, input, select } from '@inquirer/prompts';
@@ -35,12 +35,12 @@ import { askForModelId } from '../common/model_factory.js';
 import { commitAll } from '../common/process.js';
 import { debugLog, error, log, warn } from '../logging.js';
 import { fullRmfilterRun } from '../rmfilter/rmfilter.js';
-import type { RmplanConfig } from '../rmplan/configSchema.js';
+import type { TimConfig } from '../tim/configSchema.js';
 import {
   buildExecutorAndLog,
   DEFAULT_EXECUTOR,
   defaultModelForExecutor,
-} from '../rmplan/executors/index.js';
+} from '../tim/executors/index.js';
 import {
   argsFromRmprOptions,
   combineRmprOptions,
@@ -80,12 +80,12 @@ import type { CommentDiffContext, DetailedReviewComment } from './types.js';
  * - Uses src/common/git.ts for branch operations and change detection
  * - Uses src/common/process.ts for commit operations
  * - Uses src/common/fs.ts for secure file writing
- * - Uses src/rmplan/executors/ for LLM execution strategies
+ * - Uses src/tim/executors/ for LLM execution strategies
  *
  * @param prIdentifierArg - Optional PR identifier (URL, number, or undefined for auto-detection)
  * @param options - Configuration options for execution mode, model, etc.
  * @param globalCliOptions - Global CLI options like debug flags
- * @param config - RmplanConfig instance with user preferences and settings
+ * @param config - TimConfig instance with user preferences and settings
  * @throws {Error} When PR cannot be identified, GitHub token is missing, or execution fails
  */
 export async function handleRmprCommand(
@@ -101,7 +101,7 @@ export async function handleRmprCommand(
     comment: boolean;
   },
   globalCliOptions: { debug?: boolean },
-  config: RmplanConfig
+  config: TimConfig
 ) {
   if (!process.env.GITHUB_TOKEN) {
     error(
@@ -578,7 +578,7 @@ export async function handleRmprCommand(
       const shortSha = commitSha.slice(0, 7);
 
       for (const { thread } of selectedComments) {
-        const replyMessage = `rmplan: Addressed in commit [${shortSha}](${commitUrl}).`;
+        const replyMessage = `tim: Addressed in commit [${shortSha}](${commitUrl}).`;
         const success = await addReplyToReviewThread(thread.id, replyMessage);
 
         if (success) {

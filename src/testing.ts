@@ -1,12 +1,12 @@
 import { mock } from 'bun:test';
 import yaml from 'yaml';
-import { clearPlanCache } from './rmplan/plans.js';
-import { clearConfigCache } from './rmplan/configLoader.js';
+import { clearPlanCache } from './tim/plans.js';
+import { clearConfigCache } from './tim/configLoader.js';
 import { clearAllGitCaches } from './common/git.js';
 
 /**
  * Converts a plan object to a string with YAML frontmatter format.
- * This is useful for writing plan files in tests since rmplan now requires
+ * This is useful for writing plan files in tests since tim now requires
  * files to have frontmatter delimiters.
  */
 export function stringifyPlanWithFrontmatter(plan: Record<string, unknown>): string {
@@ -20,10 +20,10 @@ export function stringifyPlanWithFrontmatter(plan: Record<string, unknown>): str
 }
 
 /**
- * Clears all rmplan-related caches. Call this in beforeEach and afterEach
+ * Clears all tim-related caches. Call this in beforeEach and afterEach
  * to ensure tests don't pollute each other's state.
  */
-export function clearAllRmplanCaches(): void {
+export function clearAllTimCaches(): void {
   clearPlanCache();
   clearConfigCache();
   clearAllGitCaches();

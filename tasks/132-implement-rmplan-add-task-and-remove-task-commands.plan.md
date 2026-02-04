@@ -1,6 +1,6 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-title: Implement rmplan add-task and remove-task commands
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
+title: Implement tim add-task and remove-task commands
 goal: ""
 id: 132
 uuid: 7ebf9d14-805e-4178-83a7-a1e91154de23
@@ -30,7 +30,7 @@ progressNotes:
   - timestamp: 2025-10-29T03:04:24.866Z
     text: Added add-task and remove-task command handlers leveraging shared
       utilities, normalized option inputs, and integrated both commands into the
-      main rmplan CLI.
+      main tim CLI.
     source: "implementer: Implement add/remove task commands"
   - timestamp: 2025-10-29T03:09:59.338Z
     text: Added add-plan-task and remove-plan-task MCP handlers with validation,
@@ -46,7 +46,7 @@ progressNotes:
       management features; all checks passed successfully.
     source: "implementer: Verification"
   - timestamp: 2025-10-29T03:18:41.288Z
-    text: Added integration coverage for rmplan add-task and remove-task commands;
+    text: Added integration coverage for tim add-task and remove-task commands;
       bun run check and targeted integration suite both pass.
     source: "tester: integration tests"
   - timestamp: 2025-10-29T03:33:59.794Z
@@ -56,7 +56,7 @@ progressNotes:
     source: "implementer: Task 11"
   - timestamp: 2025-10-29T03:39:11.125Z
     text: Added end-to-end coverage in
-      src/rmplan/commands/task-management.integration.test.ts for CLI add/remove
+      src/tim/commands/task-management.integration.test.ts for CLI add/remove
       flows, diverse MCP tool combinations, and cross-interface round-trips.
     source: "implementer: Task 11"
   - timestamp: 2025-10-29T03:39:15.964Z
@@ -81,7 +81,7 @@ tasks:
   - title: Create shared task utilities module
     done: true
     description: >-
-      Create `src/rmplan/utils/task_operations.ts` with shared utility functions
+      Create `src/tim/utils/task_operations.ts` with shared utility functions
       for task manipulation:
 
 
@@ -100,7 +100,7 @@ tasks:
   - title: Implement add-task command handler
     done: true
     description: >-
-      Create `src/rmplan/commands/add-task.ts` with `handleAddTaskCommand()`
+      Create `src/tim/commands/add-task.ts` with `handleAddTaskCommand()`
       function:
 
 
@@ -168,7 +168,7 @@ tasks:
   - title: Implement remove-task command handler
     done: true
     description: >-
-      Create `src/rmplan/commands/remove-task.ts` with
+      Create `src/tim/commands/remove-task.ts` with
       `handleRemoveTaskCommand()` function:
 
 
@@ -233,10 +233,10 @@ tasks:
       - Throw error if no selection method provided
 
       - Handle confirmation cancellation (user selects 'no')
-  - title: Register CLI commands in rmplan.ts
+  - title: Register CLI commands in tim.ts
     done: true
     description: >-
-      Add command registrations to `src/rmplan/rmplan.ts`:
+      Add command registrations to `src/tim/tim.ts`:
 
 
       **add-task command:**
@@ -282,7 +282,7 @@ tasks:
   - title: Implement MCP add-plan-task tool
     done: true
     description: >-
-      Add MCP tool for adding tasks in `src/rmplan/mcp/generate_mode.ts`:
+      Add MCP tool for adding tasks in `src/tim/mcp/generate_mode.ts`:
 
 
       **1. Define parameter schema:**
@@ -361,7 +361,7 @@ tasks:
   - title: Implement MCP remove-plan-task tool
     done: true
     description: >-
-      Add MCP tool for removing tasks in `src/rmplan/mcp/generate_mode.ts`:
+      Add MCP tool for removing tasks in `src/tim/mcp/generate_mode.ts`:
 
 
       **1. Define parameter schema:**
@@ -448,7 +448,7 @@ tasks:
   - title: Write tests for task utilities
     done: true
     description: >-
-      Create `src/rmplan/utils/task_operations.test.ts` with comprehensive
+      Create `src/tim/utils/task_operations.test.ts` with comprehensive
       tests:
 
 
@@ -497,7 +497,7 @@ tasks:
   - title: Write tests for add-task command
     done: true
     description: |-
-      Create `src/rmplan/commands/add-task.test.ts` with comprehensive tests:
+      Create `src/tim/commands/add-task.test.ts` with comprehensive tests:
 
       **Test cases:**
       1. Add task with --title and --description flags
@@ -526,7 +526,7 @@ tasks:
   - title: Write tests for remove-task command
     done: true
     description: |-
-      Create `src/rmplan/commands/remove-task.test.ts` with comprehensive tests:
+      Create `src/tim/commands/remove-task.test.ts` with comprehensive tests:
 
       **Test cases:**
       1. Remove task by --title (exact match)
@@ -561,7 +561,7 @@ tasks:
   - title: Write tests for MCP tools
     done: true
     description: |-
-      Add tests to `src/rmplan/mcp/generate_mode.test.ts` for the new MCP tools:
+      Add tests to `src/tim/mcp/generate_mode.test.ts` for the new MCP tools:
 
       **Test cases for add-plan-task:**
       1. Add task with all fields (title, description, files, docs)
@@ -604,13 +604,13 @@ tasks:
 
       1. **Add-then-show workflow:**
          - Add task to plan using add-task command
-         - Use `rmplan show` to display plan
+         - Use `tim show` to display plan
          - Verify new task appears in output
 
       2. **Remove-then-show workflow:**
          - Create plan with 3 tasks
          - Remove middle task using remove-task command
-         - Use `rmplan show` to display plan
+         - Use `tim show` to display plan
          - Verify correct task removed and indices shifted
 
       3. **Round-trip workflow:**
@@ -629,7 +629,7 @@ tasks:
          - Verify cross-compatibility
 
       **Test location:** Add to existing integration test file or create
-      `src/rmplan/commands/task-management.integration.test.ts`
+      `src/tim/commands/task-management.integration.test.ts`
 
 
       **Verification:**
@@ -649,9 +649,9 @@ tasks:
 
       **1. Update README.md:**
 
-      - Add `rmplan add-task` to command list with brief description
+      - Add `tim add-task` to command list with brief description
 
-      - Add `rmplan remove-task` to command list with brief description
+      - Add `tim remove-task` to command list with brief description
 
       - Include note about preferring title-based removal
 
@@ -666,20 +666,20 @@ tasks:
 
       # Add a task
 
-      rmplan add-task 42 --title "Add tests" --description "Add unit tests for
+      tim add-task 42 --title "Add tests" --description "Add unit tests for
       new feature"
 
 
       # Remove a task by title (recommended)
 
-      rmplan remove-task 42 --title "Add tests"
+      tim remove-task 42 --title "Add tests"
 
 
       # Interactive task management
 
-      rmplan add-task 42 --interactive
+      tim add-task 42 --interactive
 
-      rmplan remove-task 42 --interactive
+      tim remove-task 42 --interactive
 
       ```
 
@@ -705,34 +705,34 @@ tasks:
 changedFiles:
   - CLAUDE.md
   - README.md
-  - src/rmplan/commands/add-task.test.ts
-  - src/rmplan/commands/add-task.ts
-  - src/rmplan/commands/agent/agent.test.ts
-  - src/rmplan/commands/agent/agent.ts
-  - src/rmplan/commands/agent/agent_batch_mode.test.ts
-  - src/rmplan/commands/done.test.ts
-  - src/rmplan/commands/remove-task.test.ts
-  - src/rmplan/commands/remove-task.ts
-  - src/rmplan/commands/renumber.ts
-  - src/rmplan/commands/task-management.integration.test.ts
-  - src/rmplan/commands/validate.test.ts
-  - src/rmplan/commands/validate.ts
-  - src/rmplan/mcp/generate_mode.test.ts
-  - src/rmplan/mcp/generate_mode.ts
-  - src/rmplan/planSchema.ts
-  - src/rmplan/plans/prepare_step.ts
-  - src/rmplan/process_markdown.ts
-  - src/rmplan/rmplan.integration.test.ts
-  - src/rmplan/rmplan.ts
-  - src/rmplan/utils/references.ts
-  - src/rmplan/utils/task_operations.test.ts
-  - src/rmplan/utils/task_operations.ts
+  - src/tim/commands/add-task.test.ts
+  - src/tim/commands/add-task.ts
+  - src/tim/commands/agent/agent.test.ts
+  - src/tim/commands/agent/agent.ts
+  - src/tim/commands/agent/agent_batch_mode.test.ts
+  - src/tim/commands/done.test.ts
+  - src/tim/commands/remove-task.test.ts
+  - src/tim/commands/remove-task.ts
+  - src/tim/commands/renumber.ts
+  - src/tim/commands/task-management.integration.test.ts
+  - src/tim/commands/validate.test.ts
+  - src/tim/commands/validate.ts
+  - src/tim/mcp/generate_mode.test.ts
+  - src/tim/mcp/generate_mode.ts
+  - src/tim/planSchema.ts
+  - src/tim/plans/prepare_step.ts
+  - src/tim/process_markdown.ts
+  - src/tim/tim.integration.test.ts
+  - src/tim/tim.ts
+  - src/tim/utils/references.ts
+  - src/tim/utils/task_operations.test.ts
+  - src/tim/utils/task_operations.ts
 rmfilter: []
 ---
 
 ## Summary
 
-Successfully implemented dynamic task management for rmplan, enabling both CLI and autonomous agent workflows to add and remove tasks from existing
+Successfully implemented dynamic task management for tim, enabling both CLI and autonomous agent workflows to add and remove tasks from existing
 plans without manual YAML editing. Delivered two CLI commands (`add-task` and `remove-task`) with interactive, editor, and flag-based input modes,
 plus corresponding MCP tools (`add-plan-task` and `remove-plan-task`) for agent integration.
 
@@ -742,7 +742,7 @@ plus corresponding MCP tools (`add-plan-task` and `remove-plan-task`) for agent 
   removal available but discouraged due to index instability. Documented index shift warnings in both CLI output and MCP tool return messages.
 - **Index stability trade-off**: Selected simple array `splice()` removal with clear user warnings over stable identifiers, matching existing codebase
   patterns and minimizing implementation complexity. CLI displays shift warnings; documentation emphasizes title-based removal.
-- **Shared utilities module**: Created `src/rmplan/utils/task_operations.ts` consolidating `findTaskByTitle`, `selectTaskInteractive`, and
+- **Shared utilities module**: Created `src/tim/utils/task_operations.ts` consolidating `findTaskByTitle`, `selectTaskInteractive`, and
   `promptForTaskInfo` to ensure consistent behavior across CLI commands and enable potential future reuse.
 - **Interactive input modes**: Implemented three task input methods for add-task: flag-based (--title/--description), editor mode (--editor), and
   fully interactive (--interactive), with metadata normalization (files/docs) across all modes.
@@ -762,13 +762,13 @@ plus corresponding MCP tools (`add-plan-task` and `remove-plan-task`) for agent 
 ## Research
 
 - Task schema requires `title` and `description` fields; `done` defaults to false, optional `files`/`docs` arrays default to empty
-  (src/rmplan/planSchema.ts:25-33) - directly informed task creation logic in add-task and MCP handlers.
+  (src/tim/planSchema.ts:25-33) - directly informed task creation logic in add-task and MCP handlers.
 - Existing commands use `resolvePlanFile()` → `readPlanFile()` → modify → `writePlanFile()` pattern with automatic `updatedAt` timestamp updates
-  (src/rmplan/plans.ts:208-641) - adopted for both add-task and remove-task implementations.
+  (src/tim/plans.ts:208-641) - adopted for both add-task and remove-task implementations.
 - MCP tools use FastMCP with Zod schemas, delegation pattern where registration wraps errors in UserError, and command modules contain handler logic
-  (src/rmplan/mcp/generate_mode.ts) - followed for add-plan-task and remove-plan-task tool registration.
+  (src/tim/mcp/generate_mode.ts) - followed for add-plan-task and remove-plan-task tool registration.
 - Interactive features use @inquirer/prompts with `--yes` flag pattern: check flag first, then prompt with `confirm()` if unset
-  (src/rmplan/commands/assignments.ts:332-335) - implemented for remove-task confirmation workflow.
+  (src/tim/commands/assignments.ts:332-335) - implemented for remove-task confirmation workflow.
 - Testing uses real filesystem with temp directories, ModuleMocker for module mocks (Bun's mock.module() unreliable), and clearPlanCache() in
-  beforeEach (src/rmplan/commands/*.test.ts) - applied across task_operations, add-task, remove-task, and MCP test suites.
+  beforeEach (src/tim/commands/*.test.ts) - applied across task_operations, add-task, remove-task, and MCP test suites.
 

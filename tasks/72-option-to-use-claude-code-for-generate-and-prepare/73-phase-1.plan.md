@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Option to use Claude Code for generate and prepare commands - Implement
   Claude Code Option for the `generate` Command
 goal: To implement the core logic for the two-step Claude Code invocation and
@@ -44,15 +44,15 @@ tasks:
       that the command successfully completes and produces the expected output
       format when using the Claude Code execution path.
 changedFiles:
-  - src/rmplan/commands/generate.test.ts
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/executors/claude_code_orchestrator.ts
-  - src/rmplan/prompt.ts
-  - src/rmplan/rmplan.ts
+  - src/tim/commands/generate.test.ts
+  - src/tim/commands/generate.ts
+  - src/tim/executors/claude_code_orchestrator.ts
+  - src/tim/prompt.ts
+  - src/tim/tim.ts
 rmfilter:
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/commands/prepare.ts
-  - src/rmplan/executors/claude_code.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/prepare.ts
+  - src/tim/executors/claude_code.ts
   - --with-imports
 ---
 

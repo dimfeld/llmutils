@@ -1,7 +1,7 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Add multi-user assignment and status tracking with shared config
-goal: Enable multi-user workflows in rmplan by supporting user identity via
+goal: Enable multi-user workflows in tim by supporting user identity via
   environment variables and tracking both plan assignments and status in a
   shared configuration
 id: 139
@@ -17,28 +17,28 @@ compactedAt: 2025-10-30T20:00:42.776Z
 tasks:
   - title: Add UUID field to plan schema with auto-generation
     done: true
-    description: Add `uuid` field to plan schema in `src/rmplan/planSchema.ts` as
+    description: Add `uuid` field to plan schema in `src/tim/planSchema.ts` as
       `z.string().uuid().optional()`. Update JSON schema generation. Implement
-      UUID auto-generation in `rmplan add` and `rmplan generate` commands using
+      UUID auto-generation in `tim add` and `tim generate` commands using
       `crypto.randomUUID()`. Add lazy UUID generation in `readPlanFile()` that
       generates and writes back UUID if missing (for existing plans). Include
       test coverage for UUID generation and persistence.
   - title: Create assignments file schema and utilities
     done: true
-    description: "Create `src/rmplan/assignments/assignments_schema.ts` with Zod
+    description: "Create `src/tim/assignments/assignments_schema.ts` with Zod
       schema for assignments file structure. Schema should include:
       repositoryId, repositoryRemoteUrl, version field for optimistic locking,
       and assignments map. Each assignment entry: {planId (cached),
       workspacePaths (array - supports multiple), users (array - who claimed
       it), status (optional override), assignedAt, updatedAt}. Create
-      `src/rmplan/assignments/assignments_io.ts` with functions:
+      `src/tim/assignments/assignments_io.ts` with functions:
       readAssignments(), writeAssignments() using atomic writes (temp file +
       rename), getAssignmentsFilePath(). Include comprehensive tests for I/O
       operations and edge cases (missing file, corrupted JSON, concurrent
       writes)."
   - title: Implement workspace and repository identification
     done: true
-    description: "Create `src/rmplan/assignments/workspace_identifier.ts` with:
+    description: "Create `src/tim/assignments/workspace_identifier.ts` with:
       getCurrentWorkspacePath() that resolves git root to absolute normalized
       path using fs.realpathSync(), getRepositoryId() that reuses logic from
       repository_config_resolver.ts to derive repo ID from remote URL. Add
@@ -47,28 +47,28 @@ tasks:
       sensitivity) and repo ID tests (various remote URL formats)."
   - title: Implement plan UUID lookup utilities
     done: true
-    description: "Create `src/rmplan/assignments/uuid_lookup.ts` with:
+    description: "Create `src/tim/assignments/uuid_lookup.ts` with:
       findPlanByUuid(uuid, allPlans) that scans plans to find matching UUID,
       resolvePlanWithUuid(planArg) that resolves numeric ID/path to plan and
       returns {plan, uuid}, verifyPlanIdCache(planId, uuid, allPlans) that
       implements the fast-path verification logic (try planId first, fall back
       to UUID scan if mismatch, update cache if needed). Include tests for cache
       hit/miss scenarios and renumbering cases."
-  - title: Implement rmplan claim command
+  - title: Implement tim claim command
     done: true
-    description: "Create `src/rmplan/commands/claim.ts` with handleClaimCommand().
+    description: "Create `src/tim/commands/claim.ts` with handleClaimCommand().
       Logic: resolve plan, ensure it has UUID (generate if missing), get
       workspace path and user, read assignments file, add workspace to
       workspacePaths array and user to users array (if not already present),
       warn if already claimed by different workspace/user. Do NOT change plan
       status. Write assignments file with atomic operation. Add CLI definition
-      in rmplan.ts. Create shared utility claimPlan(planId, options) that can be
+      in tim.ts. Create shared utility claimPlan(planId, options) that can be
       called by other commands. Include tests for: claiming unassigned plans,
       already-claimed plans (same workspace = no-op, different workspace =
       warning), multiple workspace claims."
-  - title: Implement rmplan release command
+  - title: Implement tim release command
     done: true
-    description: "Create `src/rmplan/commands/release.ts` with
+    description: "Create `src/tim/commands/release.ts` with
       handleReleaseCommand(). Logic: resolve plan to UUID, read assignments
       file, remove current workspace from workspacePaths array and current user
       from users array. If arrays become empty, remove entire assignment entry.
@@ -79,7 +79,7 @@ tasks:
       workspaces), status handling."
   - title: Update ready command with assignment filtering
     done: true
-    description: "Modify `src/rmplan/commands/ready.ts`: read assignments file,
+    description: "Modify `src/tim/commands/ready.ts`: read assignments file,
       filter by current workspace path by default (show plans claimed here OR
       unassigned), add --all flag (ignore assignments), add --unassigned flag
       (only show unassigned), add --user <name> flag (filter by user). Use
@@ -90,18 +90,18 @@ tasks:
       tests for all filtering modes."
   - title: Update list and show commands with assignment display
     done: true
-    description: "Modify `src/rmplan/commands/list.ts`: read assignments file, add
+    description: "Modify `src/tim/commands/list.ts`: read assignments file, add
       assignment indicator column (workspace names or icon), optionally filter
-      by --assigned/--unassigned flags. Modify `src/rmplan/commands/show.ts`:
+      by --assigned/--unassigned flags. Modify `src/tim/commands/show.ts`:
       display workspace paths and users if plan is assigned, show assignment
       timestamp, warn if claimed in multiple workspaces. Update display
-      utilities in `src/rmplan/utils/display_utils.ts` if needed for formatting
+      utilities in `src/tim/utils/display_utils.ts` if needed for formatting
       workspace paths (abbreviate home directory, show relative to current
       workspace). Include tests for display with and without assignments."
   - title: Add automatic cleanup when plans marked done
     done: true
-    description: "Modify `src/rmplan/plans/mark_done.ts` and
-      `src/rmplan/commands/set.ts`: when plan status changes to 'done' or
+    description: "Modify `src/tim/plans/mark_done.ts` and
+      `src/tim/commands/set.ts`: when plan status changes to 'done' or
       'cancelled', automatically remove entire assignment entry from assignments
       file. Add removeAssignment(uuid) utility in assignments_io.ts. Ensure this
       works for both direct status changes and task completion. Include tests
@@ -109,10 +109,10 @@ tasks:
   - title: Add stale assignment detection and cleanup
     done: true
     description: "Add configuration option `assignments.staleTimeout` (default 7
-      days) to rmplan config schema. Create
-      `src/rmplan/assignments/stale_detection.ts` with:
+      days) to tim config schema. Create
+      `src/tim/assignments/stale_detection.ts` with:
       isStaleAssignment(assignment, timeoutDays) that checks updatedAt
-      timestamp, getStaleAssignments(assignments, timeoutDays). Add `rmplan
+      timestamp, getStaleAssignments(assignments, timeoutDays). Add `tim
       assignments` command with subcommands: list (show all assignments with
       workspace/user details), clean-stale (remove stale assignments with
       confirmation), show-conflicts (list plans claimed in multiple workspaces).
@@ -133,57 +133,57 @@ tasks:
 changedFiles:
   - README.md
   - docs/multi-workspace-workflow.md
-  - schema/rmplan-config-schema.json
-  - schema/rmplan-plan-schema.json
-  - src/rmplan/assignments/assignments_io.test.ts
-  - src/rmplan/assignments/assignments_io.ts
-  - src/rmplan/assignments/assignments_schema.ts
-  - src/rmplan/assignments/auto_claim.test.ts
-  - src/rmplan/assignments/auto_claim.ts
-  - src/rmplan/assignments/claim_logging.ts
-  - src/rmplan/assignments/claim_plan.ts
-  - src/rmplan/assignments/release_plan.ts
-  - src/rmplan/assignments/stale_detection.test.ts
-  - src/rmplan/assignments/stale_detection.ts
-  - src/rmplan/assignments/uuid_lookup.test.ts
-  - src/rmplan/assignments/uuid_lookup.ts
-  - src/rmplan/assignments/workspace_identifier.test.ts
-  - src/rmplan/assignments/workspace_identifier.ts
-  - src/rmplan/commands/add.test.ts
-  - src/rmplan/commands/add.ts
-  - src/rmplan/commands/agent/agent.auto_claim.integration.test.ts
-  - src/rmplan/commands/agent/agent.ts
-  - src/rmplan/commands/agent/parent_completion.test.ts
-  - src/rmplan/commands/agent/parent_plans.ts
-  - src/rmplan/commands/assignments.test.ts
-  - src/rmplan/commands/assignments.ts
-  - src/rmplan/commands/claim.test.ts
-  - src/rmplan/commands/claim.ts
-  - src/rmplan/commands/generate.auto_claim.integration.test.ts
-  - src/rmplan/commands/generate.test.ts
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/commands/list.test.ts
-  - src/rmplan/commands/list.ts
-  - src/rmplan/commands/ready.test.ts
-  - src/rmplan/commands/ready.ts
-  - src/rmplan/commands/release.test.ts
-  - src/rmplan/commands/release.ts
-  - src/rmplan/commands/renumber.test.ts
-  - src/rmplan/commands/set.test.ts
-  - src/rmplan/commands/set.ts
-  - src/rmplan/commands/show.test.ts
-  - src/rmplan/commands/show.ts
-  - src/rmplan/configLoader.test.ts
-  - src/rmplan/configSchema.ts
-  - src/rmplan/display_utils.test.ts
-  - src/rmplan/display_utils.ts
-  - src/rmplan/planSchema.ts
-  - src/rmplan/plans/mark_done.test.ts
-  - src/rmplan/plans/mark_done.ts
-  - src/rmplan/plans/mark_done_set_task.test.ts
-  - src/rmplan/plans.test.ts
-  - src/rmplan/plans.ts
-  - src/rmplan/rmplan.ts
+  - schema/tim-config-schema.json
+  - schema/tim-plan-schema.json
+  - src/tim/assignments/assignments_io.test.ts
+  - src/tim/assignments/assignments_io.ts
+  - src/tim/assignments/assignments_schema.ts
+  - src/tim/assignments/auto_claim.test.ts
+  - src/tim/assignments/auto_claim.ts
+  - src/tim/assignments/claim_logging.ts
+  - src/tim/assignments/claim_plan.ts
+  - src/tim/assignments/release_plan.ts
+  - src/tim/assignments/stale_detection.test.ts
+  - src/tim/assignments/stale_detection.ts
+  - src/tim/assignments/uuid_lookup.test.ts
+  - src/tim/assignments/uuid_lookup.ts
+  - src/tim/assignments/workspace_identifier.test.ts
+  - src/tim/assignments/workspace_identifier.ts
+  - src/tim/commands/add.test.ts
+  - src/tim/commands/add.ts
+  - src/tim/commands/agent/agent.auto_claim.integration.test.ts
+  - src/tim/commands/agent/agent.ts
+  - src/tim/commands/agent/parent_completion.test.ts
+  - src/tim/commands/agent/parent_plans.ts
+  - src/tim/commands/assignments.test.ts
+  - src/tim/commands/assignments.ts
+  - src/tim/commands/claim.test.ts
+  - src/tim/commands/claim.ts
+  - src/tim/commands/generate.auto_claim.integration.test.ts
+  - src/tim/commands/generate.test.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/list.test.ts
+  - src/tim/commands/list.ts
+  - src/tim/commands/ready.test.ts
+  - src/tim/commands/ready.ts
+  - src/tim/commands/release.test.ts
+  - src/tim/commands/release.ts
+  - src/tim/commands/renumber.test.ts
+  - src/tim/commands/set.test.ts
+  - src/tim/commands/set.ts
+  - src/tim/commands/show.test.ts
+  - src/tim/commands/show.ts
+  - src/tim/configLoader.test.ts
+  - src/tim/configSchema.ts
+  - src/tim/display_utils.test.ts
+  - src/tim/display_utils.ts
+  - src/tim/planSchema.ts
+  - src/tim/plans/mark_done.test.ts
+  - src/tim/plans/mark_done.ts
+  - src/tim/plans/mark_done_set_task.test.ts
+  - src/tim/plans.test.ts
+  - src/tim/plans.ts
+  - src/tim/tim.ts
   - test-plans/plans/001-stub-plan.yml
   - test-plans/plans/002-tasks-no-steps.yml
   - test-plans/plans/003-tasks-with-steps.yml
@@ -196,25 +196,25 @@ rmfilter: []
 ---
 
 ## Summary
-- Enabled multi-workspace and multi-user coordination in rmplan by introducing UUID-based plan identification, workspace-scoped assignment
+- Enabled multi-workspace and multi-user coordination in tim by introducing UUID-based plan identification, workspace-scoped assignment
   tracking via shared config, and filtering commands that prevent workspace conflicts.
-- Developers can now work on multiple plans simultaneously in separate workspace clones while `rmplan ready` shows only relevant plans.
-- Shared state stored in `~/.config/rmplan/shared/<repo-id>/assignments.json` tracks which workspace/user is working on each plan.
+- Developers can now work on multiple plans simultaneously in separate workspace clones while `tim ready` shows only relevant plans.
+- Shared state stored in `~/.config/tim/shared/<repo-id>/assignments.json` tracks which workspace/user is working on each plan.
 
 ## Decisions
 - **UUID as stable identifier**: Added optional `uuid` field to plan schema with lazy migration on first read; UUIDs are immutable once
   assigned and survive git operations/renumbering.
 - **Workspace-first tracking**: Primary identifier is workspace absolute path (e.g., `/Users/alice/work/myapp-feature-1`), secondary is
   user via `RMPLAN_USER` environment variable with fallback to `USER`/`USERNAME`/`LOGNAME`.
-- **Claim command does not change status**: `rmplan claim` only assigns workspace/user; status changes happen separately via existing
+- **Claim command does not change status**: `tim claim` only assigns workspace/user; status changes happen separately via existing
   commands to keep claiming lightweight and non-destructive.
-- **Shared assignments file location**: `~/.config/rmplan/shared/<repo-id>/assignments.json` with atomic writes (temp file + rename) and
+- **Shared assignments file location**: `~/.config/tim/shared/<repo-id>/assignments.json` with atomic writes (temp file + rename) and
   file locking to prevent concurrent write conflicts.
-- **Auto-claim behavior**: `rmplan generate` auto-claims after plan creation; `rmplan agent` auto-claims before execution; explicit
-  `rmplan claim` available for manual assignment.
+- **Auto-claim behavior**: `tim generate` auto-claims after plan creation; `tim agent` auto-claims before execution; explicit
+  `tim claim` available for manual assignment.
 - **Automatic cleanup**: Assignment entries removed automatically when plan status changes to done/cancelled, keeping shared state small
   and current.
-- **Stale detection**: Default 7-day timeout (configurable via `assignments.staleTimeout`) with `rmplan assignments clean-stale` command
+- **Stale detection**: Default 7-day timeout (configurable via `assignments.staleTimeout`) with `tim assignments clean-stale` command
   for manual cleanup.
 - **Concurrency protection**: File locking with retry/timeout prevents lost updates; optimistic versioning detects conflicts; stale lock
   cleanup after timeout.
@@ -229,7 +229,7 @@ rmfilter: []
 
 ## Research
 - Existing `assignedTo` field in plan schema provided single-user assignment; lacked workspace-scoped tracking or shared state.
-- Workspace locking system (src/rmplan/workspace/workspace_lock.ts) provided pattern for file locking with stale detection; informed
+- Workspace locking system (src/tim/workspace/workspace_lock.ts) provided pattern for file locking with stale detection; informed
   assignments file concurrency protection design.
-- Configuration system's external storage per-machine model (src/rmplan/repository_config_resolver.ts) provided repository identity
+- Configuration system's external storage per-machine model (src/tim/repository_config_resolver.ts) provided repository identity
   derivation pattern; shared assignments directory placed outside external storage to enable true multi-workspace coordination.

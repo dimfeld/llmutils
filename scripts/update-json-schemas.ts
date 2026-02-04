@@ -3,8 +3,8 @@
 import { z } from 'zod/v4';
 import { writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
-import { rmplanConfigSchema } from '../src/rmplan/configSchema.js';
-import { planSchema } from '../src/rmplan/planSchema.js';
+import { timConfigSchema } from '../src/tim/configSchema.js';
+import { planSchema } from '../src/tim/planSchema.js';
 import { ConfigSchema } from '../src/rmfilter/config.js';
 
 interface SchemaMapping {
@@ -15,14 +15,14 @@ interface SchemaMapping {
 
 const schemaMappings: SchemaMapping[] = [
   {
-    zodSchema: rmplanConfigSchema,
-    outputPath: 'schema/rmplan-config-schema.json',
-    schemaName: 'RmplanConfig',
+    zodSchema: timConfigSchema,
+    outputPath: 'schema/tim-config-schema.json',
+    schemaName: 'TimConfig',
   },
   {
     zodSchema: planSchema,
-    outputPath: 'schema/rmplan-plan-schema.json',
-    schemaName: 'RmplanPlan',
+    outputPath: 'schema/tim-plan-schema.json',
+    schemaName: 'TimPlan',
   },
   {
     zodSchema: ConfigSchema,

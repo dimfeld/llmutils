@@ -1,6 +1,6 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-title: Support executor options in rmplan config file
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
+title: Support executor options in tim config file
 goal: ""
 id: 54
 uuid: a59438a4-ed56-4b34-b68b-0f5457a9a6cb
@@ -12,21 +12,21 @@ updatedAt: 2025-10-27T08:39:04.234Z
 tasks:
   - title: Update Config Schema and Loader for Executor Options
     done: true
-    description: Add an `executors` key to the `rmplanConfigSchema` to hold
+    description: Add an `executors` key to the `timConfigSchema` to hold
       executor-specific options. Then, update the config loader to correctly
       merge these options from main and local config files.
   - title: Pass Executor-Specific Options During Instantiation
     done: true
     description: Update the executor creation logic to retrieve and use the options
-      defined in the `executors` section of the `rmplan.yml` configuration file.
+      defined in the `executors` section of the `tim.yml` configuration file.
 changedFiles:
-  - src/rmplan/configLoader.test.ts
-  - src/rmplan/configLoader.ts
-  - src/rmplan/configSchema.ts
-  - src/rmplan/executors/build.test.ts
-  - src/rmplan/executors/build.ts
+  - src/tim/configLoader.test.ts
+  - src/tim/configLoader.ts
+  - src/tim/configSchema.ts
+  - src/tim/executors/build.test.ts
+  - src/tim/executors/build.ts
 rmfilter:
-  - src/rmplan
+  - src/tim
 ---
 
 Add an `executors` key ot the plan schema and allow placing each executor's options under that.

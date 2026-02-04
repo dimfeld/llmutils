@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Implement and Test Issue Field Population
 goal: To fix the bug preventing issue URLs from being added to multi-phase plans
   and to add robust testing for this feature.
@@ -14,17 +14,17 @@ updatedAt: 2025-10-27T08:39:04.236Z
 project:
   title: Set issue field in plan files when generating from a GitHub issue
   goal: The goal of this project is to ensure that when a plan is generated using
-    the `rmplan generate --issue` command, the resulting YAML plan file(s)
+    the `tim generate --issue` command, the resulting YAML plan file(s)
     correctly include the URL of the source GitHub issue in their `issue` field.
   details: When a user generates a plan from a GitHub issue, it's important to
     maintain a link back to that issue for context and traceability. The
     `PlanSchema` already supports an `issue` field for this purpose. Currently,
     the logic to pass the issue URL from the `generate` command to the plan
     creation functions is partially implemented. It works correctly for
-    single-phase plans but is broken for multi-phase plans. The `rmplan
+    single-phase plans but is broken for multi-phase plans. The `tim
     generate` command correctly fetches the issue URL and passes it in the
     `ExtractMarkdownToYamlOptions`. The `extractMarkdownToYaml` function in
-    `src/rmplan/process_markdown.ts` correctly handles this for single-phase
+    `src/tim/process_markdown.ts` correctly handles this for single-phase
     plans. However, the `saveMultiPhaseYaml` function in the same file has a bug
     where it ignores the passed-in issue URLs, leaving the `issue` field empty
     in multi-phase plan files. This project will fix the bug in the multi-phase
@@ -34,7 +34,7 @@ tasks:
   - title: Correctly propagate issue URLs in multi-phase plan generation
     done: false
     description: The `saveMultiPhaseYaml` function in
-      `src/rmplan/process_markdown.ts` currently ignores the issue URLs passed
+      `src/tim/process_markdown.ts` currently ignores the issue URLs passed
       to it. This task involves modifying the function to correctly use the
       `options.issueUrls` and populate the `issue` field for each generated
       phase file.
@@ -47,7 +47,7 @@ tasks:
       data and assert that the generated YAML files contain the expected issue
       URL.
 rmfilter:
-  - src/rmplan/commands/generate.ts
+  - src/tim/commands/generate.ts
   - --with-imports
 ---
 

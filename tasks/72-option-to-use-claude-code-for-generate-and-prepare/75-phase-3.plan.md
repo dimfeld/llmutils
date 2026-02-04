@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Option to use Claude Code for generate and prepare commands - Refinement
   and Documentation
 goal: To refactor any duplicated code, enhance robustness, and document the new
@@ -35,22 +35,22 @@ tasks:
       Claude Code model.
 changedFiles:
   - README.md
-  - src/rmplan/claude_utils.test.ts
-  - src/rmplan/claude_utils.ts
-  - src/rmplan/commands/generate.test.ts
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/commands/prepare.ts
-  - src/rmplan/display_utils.ts
-  - src/rmplan/executors/claude_code_orchestrator.ts
-  - src/rmplan/plans/prepare_phase.test.ts
-  - src/rmplan/plans/prepare_phase.ts
-  - src/rmplan/prompt.ts
-  - src/rmplan/{prompt.ts => prompt.ts.bak}
-  - src/rmplan/rmplan.ts
+  - src/tim/claude_utils.test.ts
+  - src/tim/claude_utils.ts
+  - src/tim/commands/generate.test.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/prepare.ts
+  - src/tim/display_utils.ts
+  - src/tim/executors/claude_code_orchestrator.ts
+  - src/tim/plans/prepare_phase.test.ts
+  - src/tim/plans/prepare_phase.ts
+  - src/tim/prompt.ts
+  - src/tim/{prompt.ts => prompt.ts.bak}
+  - src/tim/tim.ts
 rmfilter:
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/commands/prepare.ts
-  - src/rmplan/executors/claude_code.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/prepare.ts
+  - src/tim/executors/claude_code.ts
   - --with-imports
 ---
 

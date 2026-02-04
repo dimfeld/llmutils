@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: manual splitting
 goal: To provide users with more control over how plans are split by adding
   manual and interactive methods, in addition to the existing automated
@@ -17,7 +17,7 @@ tasks:
   - title: Update CLI Definition for Split Command
     done: true
     description: >
-      Update the `rmplan.ts` file to add the new `--auto`, `--tasks
+      Update the `tim.ts` file to add the new `--auto`, `--tasks
       <specifier>`, and `--select` options to the `split` command definition.
       This involves modifying the existing split command at lines 443-450 to
       include three new mutually exclusive options. Follow the patterns used by
@@ -27,7 +27,7 @@ tasks:
   - title: Refactor the Split Command Handler
     done: true
     description: >
-      Modify the `handleSplitCommand` function in `src/rmplan/commands/split.ts`
+      Modify the `handleSplitCommand` function in `src/tim/commands/split.ts`
       to support multiple splitting modes. The current LLM-based logic should be
       moved into a conditional block that only executes when the `--auto` flag
       is present. Add branching logic to handle different modes based on which
@@ -100,29 +100,29 @@ tasks:
       scenarios.
 changedFiles:
   - src/common/linear.ts
-  - src/rmplan/commands/import/import.ts
-  - src/rmplan/commands/merge.ts
-  - src/rmplan/commands/split.test.ts
-  - src/rmplan/commands/split.ts
-  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
-  - src/rmplan/executors/claude_code.test.ts
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/executors/codex_cli/prompt.ts
-  - src/rmplan/issue_utils.ts
-  - src/rmplan/process_markdown.ts
-  - src/rmplan/rmplan.ts
-  - src/rmplan/utils/task_specifier_parser.test.ts
-  - src/rmplan/utils/task_specifier_parser.ts
+  - src/tim/commands/import/import.ts
+  - src/tim/commands/merge.ts
+  - src/tim/commands/split.test.ts
+  - src/tim/commands/split.ts
+  - src/tim/executors/claude_code/orchestrator_prompt.ts
+  - src/tim/executors/claude_code.test.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/codex_cli/prompt.ts
+  - src/tim/issue_utils.ts
+  - src/tim/process_markdown.ts
+  - src/tim/tim.ts
+  - src/tim/utils/task_specifier_parser.test.ts
+  - src/tim/utils/task_specifier_parser.ts
 rmfilter:
-  - src/rmplan/commands/split.ts
+  - src/tim/commands/split.ts
   - --with-imports
   - --
-  - src/rmplan/rmplan.ts
+  - src/tim/tim.ts
 ---
 
 # Original Plan Details
 
-Update the src/rmplan/commands/split.ts command:
+Update the src/tim/commands/split.ts command:
 - The current behavior which uses an LLM to split should be behind an `--auto` flag
 - Add a new manual split behavior, using a --tasks flag which will split out specific tasks (by index) into
 a new child plan
@@ -151,12 +151,12 @@ Flash 2.0 to generate a new one-line title from the title and descriptions from 
 
 ## Implement Manual and Interactive Plan Splitting
 
-This project will update the `rmplan split` command to support three modes of operation. The existing automated, LLM-based splitting will be placed behind an `--auto` flag. Two new modes will be added: a manual mode using a `--tasks` flag to specify task indices for splitting, and an interactive mode using a `--select` flag which presents a checkbox interface for task selection.
+This project will update the `tim split` command to support three modes of operation. The existing automated, LLM-based splitting will be placed behind an `--auto` flag. Two new modes will be added: a manual mode using a `--tasks` flag to specify task indices for splitting, and an interactive mode using a `--select` flag which presents a checkbox interface for task selection.
 
 The implementation will involve refactoring the existing command, creating a new utility for parsing task index specifiers (e.g., "1-3,5"), and implementing the core logic for creating a new child plan from selected tasks while correctly updating the parent plan. This includes generating a new title for the child plan, either from a single task's title or by using an LLM for multiple tasks.
 
 ### Acceptance Criteria
-- The `rmplan split` command must support three mutually exclusive flags: `--auto`, `--tasks`, and `--select`.
+- The `tim split` command must support three mutually exclusive flags: `--auto`, `--tasks`, and `--select`.
 - Using `--auto` preserves the existing functionality of splitting a plan into phases using an LLM.
 - Using `--tasks` with a valid specifier (e.g., "1-5", "1,3,5", "1-3,5") correctly splits the specified tasks into a new child plan.
 - Using `--select` launches an interactive checkbox prompt allowing the user to select tasks to split.
@@ -183,10 +183,10 @@ Tasks:
 - Implement Child Plan Title and Details Generation
 - Add Tests for Manual Splitting
 
-This phase lays the foundation for all new splitting functionality. We will first update the command-line interface in `rmplan.ts` to recognize the new flags. Then, the `split.ts` command handler will be refactored to isolate the existing LLM-based logic and create a new path for manual splitting. The core of this phase is building the logic to parse task indices, create a new child plan, update the parent plan, and handle title generation for the new plan.
+This phase lays the foundation for all new splitting functionality. We will first update the command-line interface in `tim.ts` to recognize the new flags. Then, the `split.ts` command handler will be refactored to isolate the existing LLM-based logic and create a new path for manual splitting. The core of this phase is building the logic to parse task indices, create a new child plan, update the parent plan, and handle title generation for the new plan.
 
 ### Acceptance Criteria
-- The `rmplan split` command accepts `--auto`, `--tasks`, and `--select` flags.
+- The `tim split` command accepts `--auto`, `--tasks`, and `--select` flags.
 - The existing LLM-based splitting logic is executed only when the `--auto` flag is provided.
 - A new utility function correctly parses task specifier strings (e.g., "1-3,5") into an array of zero-based indices.
 - Using the `--tasks` flag successfully creates a new child plan and updates the parent plan as per the project specifications.
@@ -207,7 +207,7 @@ Tasks:
 This phase introduces the user-friendly interactive splitting feature. It will leverage the `@inquirer/prompts` library, which is already a dependency, to present a checkbox list of tasks from the source plan. The core splitting logic developed in Phase 1 will be reused to process the user's selection. Finally, the command's argument handling will be polished to ensure correct behavior when flags are combined or omitted.
 
 ### Acceptance Criteria
-- Running `rmplan split` with the `--select` flag displays an interactive checkbox prompt listing all tasks from the source plan.
+- Running `tim split` with the `--select` flag displays an interactive checkbox prompt listing all tasks from the source plan.
 - After the user selects tasks and confirms, the plan is split correctly using the logic from Phase 1.
 - The command exits gracefully if the user cancels the interactive prompt.
 - The command shows a clear error message if more than one of `--auto`, `--tasks`, or `--select` is used.

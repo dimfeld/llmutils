@@ -1,6 +1,6 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-title: Enhanced autonomous agent support for rmplan
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
+title: Enhanced autonomous agent support for tim
 goal: ""
 id: 128
 uuid: f69d418b-aaf1-4c29-88a9-f557baf8f81e

@@ -134,8 +134,8 @@ Example of a nested diff block:
 
 \`\`\`diff
 \`\`\`diff
---- src/rmplan/rmplan.ts
-+++ src/rmplan/rmplan.ts
+--- src/tim/tim.ts
++++ src/tim/tim.ts
 @@ -290,6 +290,8 @@
    .description('Prepare the next step(s) from a plan YAML for execution')
    .option('--rmfilter', 'Use rmfilter to generate the prompt')
@@ -154,7 +154,7 @@ This should extract the inner diff correctly.
     // console.log(edits);
     expect(edits.length).toBe(1);
     const edit = edits[0];
-    expect(edit.filePath).toBe('src/rmplan/rmplan.ts');
+    expect(edit.filePath).toBe('src/tim/tim.ts');
     expect(edit.hunk).toEqual([
       "   .description('Prepare the next step(s) from a plan YAML for execution')\n",
       "   .option('--rmfilter', 'Use rmfilter to generate the prompt')\n",

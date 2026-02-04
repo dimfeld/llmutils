@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Use subagents in Claude Code executor - Implement Robust Cleanup with a
   SIGINT Handler
 goal: To make the agent file cleanup mechanism resilient to premature
@@ -40,7 +40,7 @@ tasks:
   - title: Implement a Global SIGINT Handler
     done: true
     description: >
-      At the application's main entry point in src/rmplan/rmplan.ts,
+      At the application's main entry point in src/tim/tim.ts,
       process-level listeners for 
 
       termination signals will be established. Following the pattern from
@@ -81,27 +81,27 @@ tasks:
 changedFiles:
   - src/common/cleanup_registry.test.ts
   - src/common/cleanup_registry.ts
-  - src/rmplan/agent_runner.test.ts
-  - src/rmplan/agent_runner.ts
-  - src/rmplan/commands/agent.test.ts
-  - src/rmplan/commands/agent.ts
-  - src/rmplan/executors/claude_code/agent_generator.test.ts
-  - src/rmplan/executors/claude_code/agent_generator.ts
-  - src/rmplan/executors/claude_code/agent_prompts.ts
-  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
-  - src/rmplan/executors/claude_code.test.ts
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/executors/copy_only.ts
-  - src/rmplan/executors/copy_paste.ts
-  - src/rmplan/executors/one-call.ts
-  - src/rmplan/executors/types.ts
-  - src/rmplan/prompt_builder.test.ts
-  - src/rmplan/rmplan.ts
+  - src/tim/agent_runner.test.ts
+  - src/tim/agent_runner.ts
+  - src/tim/commands/agent.test.ts
+  - src/tim/commands/agent.ts
+  - src/tim/executors/claude_code/agent_generator.test.ts
+  - src/tim/executors/claude_code/agent_generator.ts
+  - src/tim/executors/claude_code/agent_prompts.ts
+  - src/tim/executors/claude_code/orchestrator_prompt.ts
+  - src/tim/executors/claude_code.test.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/copy_only.ts
+  - src/tim/executors/copy_paste.ts
+  - src/tim/executors/one-call.ts
+  - src/tim/executors/types.ts
+  - src/tim/prompt_builder.test.ts
+  - src/tim/tim.ts
   - src/rmpr/main.ts
 rmfilter:
-  - src/rmplan/executors/claude_code
+  - src/tim/executors/claude_code
   - --
-  - src/rmplan/commands/agent.ts
+  - src/tim/commands/agent.ts
   - --with-imports
 ---
 

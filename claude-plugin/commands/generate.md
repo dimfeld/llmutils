@@ -1,9 +1,9 @@
 ---
-description: Research and fill in details for an rmplan plan
+description: Research and fill in details for an tim plan
 argument-hint: '[--next-ready] <plan id> | --latest'
-allowed-tools: Bash(rmplan prompts generate-plan:*)
+allowed-tools: Bash(tim prompts generate-plan:*)
 ---
 
-Load the using-rmplan skill and then:
+Load the using-tim skill and then:
 
-!`rmplan prompts generate-plan $ARGUMENTS`
+!`tim prompts generate-plan $ARGUMENTS`

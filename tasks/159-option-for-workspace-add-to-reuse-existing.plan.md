@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: option for workspace add to reuse existing workspace
 goal: ""
 id: 159
@@ -15,12 +15,12 @@ tasks:
   - title: Add CLI options to workspace add command
     done: true
     description: Add `--reuse`, `--try-reuse`, and `--from-branch` options to the
-      workspace add command in `src/rmplan/rmplan.ts`. Include validation that
+      workspace add command in `src/tim/tim.ts`. Include validation that
       `--reuse` and `--try-reuse` are mutually exclusive.
   - title: Add branch field to WorkspaceMetadataPatch interface
     done: true
     description: Update `WorkspaceMetadataPatch` interface in
-      `src/rmplan/workspace/workspace_tracker.ts` to include an optional
+      `src/tim/workspace/workspace_tracker.ts` to include an optional
       `branch` field so it can be updated when reusing workspaces.
   - title: Implement findUniqueBranchName utility function
     done: true
@@ -32,7 +32,7 @@ tasks:
     done: true
     description: >-
       Create `prepareExistingWorkspace()` in
-      `src/rmplan/workspace/workspace_manager.ts` that:
+      `src/tim/workspace/workspace_manager.ts` that:
 
       1. Detects VCS type (git vs jj)
 
@@ -53,7 +53,7 @@ tasks:
   - title: Implement tryReuseExistingWorkspace helper function
     done: true
     description: >-
-      Create helper function in `src/rmplan/commands/workspace.ts` that:
+      Create helper function in `src/tim/commands/workspace.ts` that:
 
       1. Finds repository ID using `determineRepositoryId()`
 
@@ -70,7 +70,7 @@ tasks:
   - title: Modify handleWorkspaceAddCommand to support reuse flags
     done: true
     description: >-
-      Update `handleWorkspaceAddCommand()` in `src/rmplan/commands/workspace.ts`
+      Update `handleWorkspaceAddCommand()` in `src/tim/commands/workspace.ts`
       to:
 
       1. Validate `--reuse` and `--try-reuse` are mutually exclusive
@@ -87,7 +87,7 @@ tasks:
   - title: Write tests for prepareExistingWorkspace function
     done: true
     description: |-
-      Add tests in `src/rmplan/workspace/workspace_manager.test.ts` covering:
+      Add tests in `src/tim/workspace/workspace_manager.test.ts` covering:
       - Successfully fetches, checks out base, creates branch (Git)
       - Successfully fetches, creates new change with bookmark (Jujutsu)
       - Fetch failure aborts by default
@@ -99,7 +99,7 @@ tasks:
   - title: Write tests for workspace reuse in handleWorkspaceAddCommand
     done: true
     description: |-
-      Add tests in `src/rmplan/commands/workspace.test.ts` covering:
+      Add tests in `src/tim/commands/workspace.test.ts` covering:
       - Finds and reuses available workspace
       - Skips workspaces with uncommitted changes
       - `--reuse` fails when no workspace available
@@ -112,7 +112,7 @@ tasks:
       - Works with `--from-branch` option
   - title: "Address Review Feedback: Lock acquisition happens after
       `prepareExistingWorkspace`, file copy, and metadata updates. That leaves a
-      race where two concurrent `rmplan workspace add --reuse` calls can select
+      race where two concurrent `tim workspace add --reuse` calls can select
       the same workspace, both mutate it (checkout/branch) and only then attempt
       to lock. This can corrupt workspace state and violates the reuse
       requirements and the plan’s explicit risk note about locking before
@@ -120,7 +120,7 @@ tasks:
     done: true
     description: >-
       Lock acquisition happens after `prepareExistingWorkspace`, file copy, and
-      metadata updates. That leaves a race where two concurrent `rmplan
+      metadata updates. That leaves a race where two concurrent `tim
       workspace add --reuse` calls can select the same workspace, both mutate it
       (checkout/branch) and only then attempt to lock. This can corrupt
       workspace state and violates the reuse requirements and the plan’s
@@ -133,18 +133,18 @@ tasks:
       the lock and continue.
 
 
-      Related file: src/rmplan/commands/workspace.ts:436
+      Related file: src/tim/commands/workspace.ts:436
   - title: "Address Review Feedback: `--from-branch` is ignored for non-reuse
       workspace creation. The flag is only passed into the reuse path;
       `createWorkspace` always creates the new branch from the clone’s current
-      HEAD. `rmplan workspace add <plan> --from-branch develop` will still
+      HEAD. `tim workspace add <plan> --from-branch develop` will still
       branch from the default branch unless `--reuse/--try-reuse` is used, which
       violates the requirement for `workspace add`."
     done: true
     description: >-
       `--from-branch` is ignored for non-reuse workspace creation. The flag is
       only passed into the reuse path; `createWorkspace` always creates the new
-      branch from the clone’s current HEAD. `rmplan workspace add <plan>
+      branch from the clone’s current HEAD. `tim workspace add <plan>
       --from-branch develop` will still branch from the default branch unless
       `--reuse/--try-reuse` is used, which violates the requirement for
       `workspace add`.
@@ -156,7 +156,7 @@ tasks:
       without reuse.
 
 
-      Related file: src/rmplan/commands/workspace.ts:615
+      Related file: src/tim/commands/workspace.ts:615
   - title: "Address Review Feedback: Mutual exclusivity for `--reuse` and
       `--try-reuse` is enforced only at the CLI entrypoint;
       `handleWorkspaceAddCommand` accepts both and tests codify that behavior.
@@ -176,7 +176,7 @@ tasks:
       update the test to expect an error when both flags are provided.
 
 
-      Related file: src/rmplan/commands/workspace.reuse.test.ts:548
+      Related file: src/tim/commands/workspace.reuse.test.ts:548
   - title: "Address Review Feedback: If `prepareExistingWorkspace` fails for the
       first clean/unlocked workspace, reuse immediately fails without trying
       other available workspaces. A single broken workspace can block `--reuse`
@@ -194,7 +194,7 @@ tasks:
       unlocked options.
 
 
-      Related file: src/rmplan/commands/workspace.ts:411
+      Related file: src/tim/commands/workspace.ts:411
   - title: "Address Review Feedback: Metadata is not properly updated when reusing
       without `planData` (e.g., `--issue` or no plan). The patch only updates
       `name`/`branch`, leaving stale
@@ -214,7 +214,7 @@ tasks:
       patch for issue-based reuse.
 
 
-      Related file: src/rmplan/commands/workspace.ts:465
+      Related file: src/tim/commands/workspace.ts:465
   - title: "Address Review Feedback: Reused workspace reports the new `workspaceId`
       as the ID even though the tracked workspace’s `taskId` is unchanged. This
       creates inconsistent IDs: the success output says `ID: task-<new>` while
@@ -234,16 +234,16 @@ tasks:
       plan notes it should stay unchanged).
 
 
-      Related file: src/rmplan/commands/workspace.ts:627
+      Related file: src/tim/commands/workspace.ts:627
   - title: "Address Review Feedback: Reuse path ignores `createBranch` config and
       `--no-create-branch`. `prepareExistingWorkspace` always creates a new
-      branch, so `rmplan workspace add --reuse --no-create-branch` (or config
+      branch, so `tim workspace add --reuse --no-create-branch` (or config
       `createBranch: false`) still creates a branch, diverging from normal
       workspace add behavior."
     done: true
     description: >-
       Reuse path ignores `createBranch` config and `--no-create-branch`.
-      `prepareExistingWorkspace` always creates a new branch, so `rmplan
+      `prepareExistingWorkspace` always creates a new branch, so `tim
       workspace add --reuse --no-create-branch` (or config `createBranch:
       false`) still creates a branch, diverging from normal workspace add
       behavior.
@@ -254,66 +254,66 @@ tasks:
       updates and downstream logic still behave correctly.
 
 
-      Related file: src/rmplan/workspace/workspace_manager.ts:836
+      Related file: src/tim/workspace/workspace_manager.ts:836
 changedFiles:
   - README.md
-  - claude-plugin/skills/using-rmplan/SKILL.md
-  - claude-plugin/skills/using-rmplan/references/cli-commands.md
-  - claude-plugin/skills/using-rmplan/references/generating-plans.md
-  - claude-plugin/skills/using-rmplan/references/viewing-and-completing.md
-  - schema/rmplan-config-schema.json
-  - src/rmplan/commands/agent/agent.test.ts
-  - src/rmplan/commands/agent/agent.ts
-  - src/rmplan/commands/compact.ts
-  - src/rmplan/commands/description.test.ts
-  - src/rmplan/commands/description.ts
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/commands/remove-task.test.ts
-  - src/rmplan/commands/remove-task.ts
-  - src/rmplan/commands/review.test.ts
-  - src/rmplan/commands/review.ts
-  - src/rmplan/commands/task-management.integration.test.ts
-  - src/rmplan/commands/tools.test.ts
-  - src/rmplan/commands/tools.ts
-  - src/rmplan/commands/update-docs.ts
-  - src/rmplan/commands/workspace.reuse.test.ts
-  - src/rmplan/commands/workspace.ts
-  - src/rmplan/configSchema.test.ts
-  - src/rmplan/configSchema.ts
-  - src/rmplan/executors/claude_code/agent_prompts.test.ts
-  - src/rmplan/executors/claude_code/agent_prompts.ts
-  - src/rmplan/executors/claude_code/orchestrator_prompt.test.ts
-  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/executors/codex_cli/external_review.test.ts
-  - src/rmplan/executors/codex_cli/external_review.ts
-  - src/rmplan/executors/codex_cli/normal_mode.ts
-  - src/rmplan/executors/codex_cli/simple_mode.ts
-  - src/rmplan/executors/codex_cli.capture_output.test.ts
-  - src/rmplan/executors/codex_cli.fix_loop.test.ts
-  - src/rmplan/executors/codex_cli.retry.test.ts
-  - src/rmplan/executors/codex_cli.simple_mode.test.ts
-  - src/rmplan/executors/codex_cli.test.ts
-  - src/rmplan/executors/codex_cli.ts
-  - src/rmplan/executors/schemas.test.ts
-  - src/rmplan/executors/schemas.ts
-  - src/rmplan/executors/types.ts
-  - src/rmplan/incremental_review.ts
-  - src/rmplan/mcp/README.md
-  - src/rmplan/mcp/generate_mode.test.ts
-  - src/rmplan/plans/mark_done.test.ts
-  - src/rmplan/review_runner.test.ts
-  - src/rmplan/review_runner.ts
-  - src/rmplan/rmplan.integration.test.ts
-  - src/rmplan/rmplan.ts
-  - src/rmplan/simple-field.test.ts
-  - src/rmplan/tools/manage_plan_task.ts
-  - src/rmplan/tools/schemas.ts
-  - src/rmplan/utils/cleanup_plan_creator.ts
-  - src/rmplan/utils/task_operations.ts
-  - src/rmplan/workspace/workspace_manager.ts
-  - src/rmplan/workspace/workspace_prepare.test.ts
-  - src/rmplan/workspace/workspace_tracker.ts
+  - claude-plugin/skills/using-tim/SKILL.md
+  - claude-plugin/skills/using-tim/references/cli-commands.md
+  - claude-plugin/skills/using-tim/references/generating-plans.md
+  - claude-plugin/skills/using-tim/references/viewing-and-completing.md
+  - schema/tim-config-schema.json
+  - src/tim/commands/agent/agent.test.ts
+  - src/tim/commands/agent/agent.ts
+  - src/tim/commands/compact.ts
+  - src/tim/commands/description.test.ts
+  - src/tim/commands/description.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/remove-task.test.ts
+  - src/tim/commands/remove-task.ts
+  - src/tim/commands/review.test.ts
+  - src/tim/commands/review.ts
+  - src/tim/commands/task-management.integration.test.ts
+  - src/tim/commands/tools.test.ts
+  - src/tim/commands/tools.ts
+  - src/tim/commands/update-docs.ts
+  - src/tim/commands/workspace.reuse.test.ts
+  - src/tim/commands/workspace.ts
+  - src/tim/configSchema.test.ts
+  - src/tim/configSchema.ts
+  - src/tim/executors/claude_code/agent_prompts.test.ts
+  - src/tim/executors/claude_code/agent_prompts.ts
+  - src/tim/executors/claude_code/orchestrator_prompt.test.ts
+  - src/tim/executors/claude_code/orchestrator_prompt.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/codex_cli/external_review.test.ts
+  - src/tim/executors/codex_cli/external_review.ts
+  - src/tim/executors/codex_cli/normal_mode.ts
+  - src/tim/executors/codex_cli/simple_mode.ts
+  - src/tim/executors/codex_cli.capture_output.test.ts
+  - src/tim/executors/codex_cli.fix_loop.test.ts
+  - src/tim/executors/codex_cli.retry.test.ts
+  - src/tim/executors/codex_cli.simple_mode.test.ts
+  - src/tim/executors/codex_cli.test.ts
+  - src/tim/executors/codex_cli.ts
+  - src/tim/executors/schemas.test.ts
+  - src/tim/executors/schemas.ts
+  - src/tim/executors/types.ts
+  - src/tim/incremental_review.ts
+  - src/tim/mcp/README.md
+  - src/tim/mcp/generate_mode.test.ts
+  - src/tim/plans/mark_done.test.ts
+  - src/tim/review_runner.test.ts
+  - src/tim/review_runner.ts
+  - src/tim/tim.integration.test.ts
+  - src/tim/tim.ts
+  - src/tim/simple-field.test.ts
+  - src/tim/tools/manage_plan_task.ts
+  - src/tim/tools/schemas.ts
+  - src/tim/utils/cleanup_plan_creator.ts
+  - src/tim/utils/task_operations.ts
+  - src/tim/workspace/workspace_manager.ts
+  - src/tim/workspace/workspace_prepare.test.ts
+  - src/tim/workspace/workspace_tracker.ts
 tags: []
 ---
 
@@ -328,7 +328,7 @@ We should also add a `--from-branch` argument which allows it to create the new 
 
 ## Expected Behavior/Outcome
 
-Two new flags for `rmplan workspace add`:
+Two new flags for `tim workspace add`:
 
 ### `--reuse` (strict mode)
 Reuses an existing unlocked workspace. **Fails if no suitable workspace is available.**
@@ -373,16 +373,16 @@ The `--from-branch` option allows specifying a different base branch instead of 
 **User workflow:**
 ```bash
 # Reuse an existing workspace (fails if none available)
-rmplan workspace add 42 --reuse
+tim workspace add 42 --reuse
 
 # Try to reuse, create new if none available
-rmplan workspace add 42 --try-reuse
+tim workspace add 42 --try-reuse
 
 # Reuse with a custom base branch
-rmplan workspace add 42 --reuse --from-branch feature/base
+tim workspace add 42 --reuse --from-branch feature/base
 
 # Try reuse with issue import
-rmplan workspace add --issue DF-1234 --try-reuse
+tim workspace add --issue DF-1234 --try-reuse
 ```
 
 ### Design & UX Approach
@@ -448,14 +448,14 @@ This is a medium-complexity feature touching:
 
 ### Workspace Command Structure
 
-The workspace commands are defined in `src/rmplan/rmplan.ts` (lines 962-1033) and implemented in `src/rmplan/commands/workspace.ts`. The relevant subcommands are:
+The workspace commands are defined in `src/tim/tim.ts` (lines 962-1033) and implemented in `src/tim/commands/workspace.ts`. The relevant subcommands are:
 
 - **`workspace add`**: Creates a new workspace (lines 354-570)
 - **`workspace lock`**: Locks a workspace, with `--available` flag to find and lock an unlocked one (lines 572-618)
 
 ### Current `handleWorkspaceAddCommand` Implementation
 
-Location: `src/rmplan/commands/workspace.ts:354-570`
+Location: `src/tim/commands/workspace.ts:354-570`
 
 The function:
 1. Loads configuration and validates workspace creation is enabled
@@ -469,7 +469,7 @@ The function:
 
 ### `lockAvailableWorkspace` Function - Key Logic to Reuse
 
-Location: `src/rmplan/commands/workspace.ts:692-735`
+Location: `src/tim/commands/workspace.ts:692-735`
 
 This function demonstrates the pattern for finding and selecting an available workspace:
 
@@ -502,7 +502,7 @@ async function lockAvailableWorkspace(
 
 ### Workspace Creation Logic
 
-Location: `src/rmplan/workspace/workspace_manager.ts:429-721`
+Location: `src/tim/workspace/workspace_manager.ts:429-721`
 
 The `createWorkspace()` function:
 1. Validates config and determines source (repository URL or source directory)
@@ -542,7 +542,7 @@ Location: `src/common/git.ts`
 
 ### Workspace Tracking
 
-Location: `src/rmplan/workspace/workspace_tracker.ts`
+Location: `src/tim/workspace/workspace_tracker.ts`
 
 Key functions:
 - `recordWorkspace(info, trackingFilePath)`: Adds/updates workspace in tracking file
@@ -570,7 +570,7 @@ interface WorkspaceInfo {
 
 ### Workspace Auto Selector
 
-Location: `src/rmplan/workspace/workspace_auto_selector.ts`
+Location: `src/tim/workspace/workspace_auto_selector.ts`
 
 The `WorkspaceAutoSelector` class provides a pattern for workspace selection:
 1. Gets repository ID from current git repo
@@ -608,7 +608,7 @@ jj bookmark set <bookmark-name>  # Associate current change with a bookmark
 
 ### Step 1: Add CLI Options to `workspace add` Command
 
-Location: `src/rmplan/rmplan.ts` (around line 978)
+Location: `src/tim/tim.ts` (around line 978)
 
 Add the new options to the workspace add command definition:
 ```typescript
@@ -621,7 +621,7 @@ Note: `--reuse` and `--try-reuse` are mutually exclusive - validate this in the 
 
 ### Step 2: Create `prepareExistingWorkspace` Function
 
-Location: `src/rmplan/workspace/workspace_manager.ts`
+Location: `src/tim/workspace/workspace_manager.ts`
 
 Create a new exported function that handles preparing an existing workspace for reuse:
 
@@ -665,7 +665,7 @@ Use `spawnAndLogOutput` for all git/jj commands, respecting the `cwd` parameter.
 
 ### Step 3: Modify `handleWorkspaceAddCommand` to Support Reuse
 
-Location: `src/rmplan/commands/workspace.ts:354-570`
+Location: `src/tim/commands/workspace.ts:354-570`
 
 After loading configuration (around line 363), add logic to handle `--reuse` and `--try-reuse`:
 
@@ -800,7 +800,7 @@ Log when a suffix is added so the user knows the actual branch name used.
 
 ### Step 7: Write Tests
 
-Location: `src/rmplan/workspace/workspace_manager.test.ts` and `src/rmplan/commands/workspace.test.ts`
+Location: `src/tim/workspace/workspace_manager.test.ts` and `src/tim/commands/workspace.test.ts`
 
 Tests should cover:
 
@@ -827,14 +827,14 @@ Tests should cover:
    - Works with `--from-branch` option
 
 3. **Integration tests:**
-   - End-to-end test of `rmplan workspace add <plan> --reuse`
+   - End-to-end test of `tim workspace add <plan> --reuse`
    - Verify workspace state after reuse (correct branch, fetched content)
 
 ### Manual Testing Steps
 
-1. Create a workspace normally: `rmplan workspace add 1`
-2. Unlock the workspace: `rmplan workspace unlock <path>`
-3. Reuse with a new task: `rmplan workspace add 2 --reuse`
+1. Create a workspace normally: `tim workspace add 1`
+2. Unlock the workspace: `tim workspace unlock <path>`
+3. Reuse with a new task: `tim workspace add 2 --reuse`
 4. Verify:
    - Same workspace path is used
    - New branch was created
@@ -844,25 +844,25 @@ Tests should cover:
 5. Test with dirty workspace:
    - Make changes in one workspace without committing
    - Have another clean, unlocked workspace available
-   - Run `rmplan workspace add 3 --reuse`
+   - Run `tim workspace add 3 --reuse`
    - Should skip the dirty workspace and use the clean one
 
 6. Test `--reuse` failure mode:
    - Lock all existing workspaces (or have only dirty ones)
-   - Run `rmplan workspace add 4 --reuse`
+   - Run `tim workspace add 4 --reuse`
    - Should fail with error "No available workspace found for reuse"
 
 7. Test `--try-reuse` fallback:
    - Lock all existing workspaces
-   - Run `rmplan workspace add 4 --try-reuse`
+   - Run `tim workspace add 4 --try-reuse`
    - Should create new workspace
 
 8. Test with `--from-branch`:
-   - `rmplan workspace add 5 --reuse --from-branch develop`
+   - `tim workspace add 5 --reuse --from-branch develop`
    - Verify new branch is created off `develop`
 
 9. Test mutual exclusivity:
-   - Run `rmplan workspace add 6 --reuse --try-reuse`
+   - Run `tim workspace add 6 --reuse --try-reuse`
    - Should fail with error about mutually exclusive options
 
 ### Potential Gotchas
@@ -886,7 +886,7 @@ Tests should cover:
 - Added rollback tests covering prepare failure and plan copy failure paths
 
 ### Completed (So Far)
-- Task 1: Added `--reuse`, `--try-reuse`, and `--from-branch` CLI options to workspace add command in rmplan.ts with mutual exclusivity validation
+- Task 1: Added `--reuse`, `--try-reuse`, and `--from-branch` CLI options to workspace add command in tim.ts with mutual exclusivity validation
 - Task 2: Added `branch` field to `WorkspaceMetadataPatch` interface in workspace_tracker.ts
 - Task 3: Implemented `findUniqueBranchName()` function supporting both Git and Jujutsu with auto-suffix capability
 - Task 4: Implemented `prepareExistingWorkspace()` function with Git/Jujutsu support, fetch handling, ALLOW_OFFLINE env var support, and branch creation
@@ -938,7 +938,7 @@ Tests should cover:
 - Updated fetch-failure tests to use an invalid origin URL so missing-remotes stay non-fatal
 - Ran `bun run format`, `bun run check`, and `bun test`
 - Added explicit rollback cleanup for plan copy failures and jj restore fallback behavior
-- Ran `bun test src/rmplan/commands/workspace.reuse.test.ts` after rollback coverage updates
+- Ran `bun test src/tim/commands/workspace.reuse.test.ts` after rollback coverage updates
 
 ### Risks / Blockers
 - None

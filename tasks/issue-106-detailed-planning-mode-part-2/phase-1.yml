@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Implement `add` Command and Enhance `generate` Command
 goal: To enable users to create basic plan files using a new `add` command and
   then populate these files with detailed tasks and steps using an enhanced
@@ -12,16 +12,16 @@ promptsGeneratedAt: 2025-06-01T02:19:59.271Z
 createdAt: 2025-05-31T20:32:33.555Z
 updatedAt: 2025-10-27T08:39:04.231Z
 project:
-  title: Enhance rmplan with `add` and `split` commands for improved plan creation
+  title: Enhance tim with `add` and `split` commands for improved plan creation
     and organization.
   goal: The overall goal of this project is to introduce two new commands, `add`
-    and `split`, to the `rmplan` CLI tool. The `add` command will facilitate the
+    and `split`, to the `tim` CLI tool. The `add` command will facilitate the
     quick creation of new, empty plan files. The `generate` command will be
     enhanced to populate these empty plans. The `split` command will enable
     users to break down large, existing plans into multiple, smaller phase-based
     plan files using an LLM.
   details: This project aims to improve the workflow of creating and managing
-    complex project plans with `rmplan`. The `add` command will allow users to
+    complex project plans with `tim`. The `add` command will allow users to
     initialize a plan with a title and optional metadata like dependencies and
     priority. The `generate` command will then be able to take this stub plan
     and use an LLM to fill in the detailed tasks and steps, updating the
@@ -33,10 +33,10 @@ project:
     in how they create and structure their plans, catering to both starting new
     plans from scratch and reorganizing existing ones.
 tasks:
-  - title: Define `add` command in `rmplan.ts` and implement basic YAML file creation.
+  - title: Define `add` command in `tim.ts` and implement basic YAML file creation.
     done: true
     description: >
-      This task involves adding the `add` command to the main `rmplan.ts`
+      This task involves adding the `add` command to the main `tim.ts`
       command-line interface. The command should accept positional arguments
       which will be used as the `title` for the new plan. It will then create a
       new YAML file in the configured tasks directory (or the current directory
@@ -59,7 +59,7 @@ tasks:
     done: true
     description: >
       This task requires updating the existing `generate` command in
-      `src/rmplan/rmplan.ts`. When the `generate` command is provided with a
+      `src/tim/tim.ts`. When the `generate` command is provided with a
       path to an existing plan YAML file that primarily contains metadata (like
       `id`, `title`, `goal`, `details`) but lacks a `tasks` array or has an
       empty one, it should:
@@ -86,7 +86,7 @@ tasks:
       effectively updating it in place.
 
       This modification will likely involve adapting logic within
-      `src/rmplan/process_markdown.ts` or `src/rmplan/actions.ts`.
+      `src/tim/process_markdown.ts` or `src/tim/actions.ts`.
   - title: Add tests for `add` command and updated `generate` functionality.
     done: true
     description: >
@@ -99,12 +99,12 @@ tasks:
       steps, and save the updated content back to the original file.
 changedFiles:
   - CLAUDE.md
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/rmplan.test.ts
-  - src/rmplan/rmplan.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/tim.test.ts
+  - src/tim/tim.ts
   - test-stub-plan.yml
 rmfilter:
-  - src/rmplan
+  - src/tim
 ---
 
 This phase focuses on introducing the `add` command for scaffolding new plan files. It also involves modifying the existing `generate` command to work with these pre-existing (but empty) plan files, populating them with LLM-generated content in place, rather than always creating a new file.

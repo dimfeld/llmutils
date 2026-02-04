@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Old plan compaction
 goal: Implement a command to compact completed plans for archival purposes,
   reducing verbose research and details while preserving critical decisions and
@@ -17,7 +17,7 @@ tasks:
   - title: Create compact command handler
     done: true
     description: >-
-      Create `src/rmplan/commands/compact.ts` with `handleCompactCommand()`
+      Create `src/tim/commands/compact.ts` with `handleCompactCommand()`
       function. Follow the pattern from extract.ts:
 
       - Accept plan identifier (ID or path) as argument
@@ -37,7 +37,7 @@ tasks:
   - title: Register compact command in CLI
     done: true
     description: |-
-      Add command registration in `src/rmplan/rmplan.ts`:
+      Add command registration in `src/tim/tim.ts`:
       - Add `.command('compact [plan]')` with description
       - Add options: --executor, --dry-run, --model
       - Wire up dynamic import and error handling
@@ -136,7 +136,7 @@ tasks:
   - title: Add tests for compact command
     done: true
     description: >-
-      Create `src/rmplan/commands/compact.test.ts` with tests for:
+      Create `src/tim/commands/compact.test.ts` with tests for:
 
       - Basic compaction of a done plan with verbose research
 
@@ -161,7 +161,7 @@ tasks:
   - title: Add configuration schema for compaction
     done: true
     description: |-
-      Update `src/rmplan/configSchema.ts` to add optional compaction config:
+      Update `src/tim/configSchema.ts` to add optional compaction config:
       - Default executor for compaction (claude-code)
       - Default model for compaction (faster/cheaper model)
       - Minimum age threshold in days (default: 30)
@@ -181,7 +181,7 @@ tasks:
   - title: Add MCP prompt for compaction
     done: true
     description: >-
-      Create MCP prompt in `src/rmplan/mcp/prompts/` directory to enable
+      Create MCP prompt in `src/tim/mcp/prompts/` directory to enable
       compaction from within Claude Code:
 
       - Create `compact_plan.ts` with prompt registration
@@ -194,7 +194,7 @@ tasks:
 
       - Return structured prompt with plan content and clear instructions
 
-      - Register in `src/rmplan/mcp/generate_mode.ts` prompts array
+      - Register in `src/tim/mcp/generate_mode.ts` prompts array
 
       - Follow pattern of existing prompts like generate_plan.ts
 
@@ -203,13 +203,13 @@ tasks:
       - Document in MCP section of README
 changedFiles:
   - README.md
-  - src/rmplan/commands/compact.test.ts
-  - src/rmplan/commands/compact.ts
-  - src/rmplan/configSchema.ts
-  - src/rmplan/mcp/generate_mode.test.ts
-  - src/rmplan/mcp/generate_mode.ts
-  - src/rmplan/mcp/prompts/compact_plan.ts
-  - src/rmplan/rmplan.ts
+  - src/tim/commands/compact.test.ts
+  - src/tim/commands/compact.ts
+  - src/tim/configSchema.ts
+  - src/tim/mcp/generate_mode.test.ts
+  - src/tim/mcp/generate_mode.ts
+  - src/tim/mcp/prompts/compact_plan.ts
+  - src/tim/tim.ts
 rmfilter: []
 ---
 
@@ -234,9 +234,9 @@ The feature should target plans with status `done`, `cancelled`, or `deferred` t
 
 ### Findings
 
-#### Command Structure (from Explore Agent: rmplan command structure)
+#### Command Structure (from Explore Agent: tim command structure)
 
-The rmplan CLI uses Commander.js with dynamic imports. Each command has a dedicated handler in `src/rmplan/commands/` that gets imported at runtime.
+The tim CLI uses Commander.js with dynamic imports. Each command has a dedicated handler in `src/tim/commands/` that gets imported at runtime.
 
 **Pattern for new commands:**
 ```typescript
@@ -253,9 +253,9 @@ program
 ```
 
 **Key files:**
-- Entry point: `src/rmplan/rmplan.ts`
-- Error handling: `src/rmplan/utils/commands.ts` (handleCommandError function)
-- Configuration: `src/rmplan/configLoader.ts` (loadEffectiveConfig function)
+- Entry point: `src/tim/tim.ts`
+- Error handling: `src/tim/utils/commands.ts` (handleCommandError function)
+- Configuration: `src/tim/configLoader.ts` (loadEffectiveConfig function)
 
 **Global options available:**
 - `-c, --config <path>` - Configuration file path
@@ -294,10 +294,10 @@ createdAt: 2025-10-01T...
 updatedAt: 2025-10-29T...
 ---
 
-<!-- rmplan-generated-start -->
+<!-- tim-generated-start -->
 ## Expected Behavior/Outcome
 
-Users can run `rmplan compact <plan-id>` to condense completed plans for archival purposes. The command will:
+Users can run `tim compact <plan-id>` to condense completed plans for archival purposes. The command will:
 
 - Accept a plan identifier (numeric ID or file path)
 - Verify the plan is eligible (status: done, cancelled, or deferred)
@@ -307,7 +307,7 @@ Users can run `rmplan compact <plan-id>` to condense completed plans for archiva
 - Write the compacted version back to the same file location
 - Add archival metadata (compactedAt timestamp, size reduction stats)
 
-The compacted plan remains fully functional within rmplan - it can still be referenced as a dependency, appears in filtered lists, and maintains all structural integrity.
+The compacted plan remains fully functional within tim - it can still be referenced as a dependency, appears in filtered lists, and maintains all structural integrity.
 
 **States:**
 - **Before compaction**: Plan has verbose research section, detailed progress notes, extensive generated details
@@ -327,16 +327,16 @@ The compacted plan remains fully functional within rmplan - it can still be refe
 **Command Interface:**
 ```bash
 # Compact a specific plan (uses claude-code executor by default)
-rmplan compact 144
+tim compact 144
 
 # Preview changes without writing
-rmplan compact 144 --dry-run
+tim compact 144 --dry-run
 
 # Use different executor
-rmplan compact 144 --executor direct-call
+tim compact 144 --executor direct-call
 
 # Use specific model
-rmplan compact 144 --model claude-3-5-haiku-20241022
+tim compact 144 --model claude-3-5-haiku-20241022
 ```
 
 **Output:**
@@ -393,7 +393,7 @@ rmplan compact 144 --model claude-3-5-haiku-20241022
 
 ## Acceptance Criteria
 
-- [ ] User can run `rmplan compact <plan-id>` on a done plan
+- [ ] User can run `tim compact <plan-id>` on a done plan
 - [ ] Command uses claude-code executor by default
 - [ ] Command validates plan eligibility (status must be done/cancelled/deferred)
 - [ ] LLM compacts details section while preserving delimiters
@@ -412,11 +412,11 @@ rmplan compact 144 --model claude-3-5-haiku-20241022
 ## Dependencies & Constraints
 
 **Dependencies:**
-- Existing executor system (src/rmplan/executors/)
-- Plan I/O utilities (src/rmplan/plans.ts)
-- Plan merge utilities (src/rmplan/plan_merge.ts)
-- Configuration system (src/rmplan/configLoader.ts)
-- Schema validation (src/rmplan/planSchema.ts)
+- Existing executor system (src/tim/executors/)
+- Plan I/O utilities (src/tim/plans.ts)
+- Plan merge utilities (src/tim/plan_merge.ts)
+- Configuration system (src/tim/configLoader.ts)
+- Schema validation (src/tim/planSchema.ts)
 
 **Technical Constraints:**
 - Must maintain YAML schema validity
@@ -448,10 +448,10 @@ rmplan compact 144 --model claude-3-5-haiku-20241022
 8. Document in README
 
 **File Structure:**
-- `src/rmplan/commands/compact.ts` - Main command implementation
-- `src/rmplan/commands/compact.test.ts` - Test suite
-- Registration in `src/rmplan/rmplan.ts`
-- Config updates in `src/rmplan/configSchema.ts`
+- `src/tim/commands/compact.ts` - Main command implementation
+- `src/tim/commands/compact.test.ts` - Test suite
+- Registration in `src/tim/tim.ts`
+- Config updates in `src/tim/configSchema.ts`
 
 ### Potential Gotchas
 
@@ -470,20 +470,20 @@ rmplan compact 144 --model claude-3-5-haiku-20241022
 ### Conflicting, Unclear, or Impossible Requirements
 
 None identified. All requirements are achievable with existing infrastructure.
-<!-- rmplan-generated-end -->
+<!-- tim-generated-end -->
 
 ## Research
 [Manual research notes]
 ```
 
 **Critical functions for compaction:**
-- `readPlanFile(path)` - Read and parse plan file (src/rmplan/plans.ts:525-605)
-- `writePlanFile(path, plan, options)` - Write plan with validation (src/rmplan/plans.ts:614-661)
-- `mergeDetails(newDetails, originalDetails)` - Smart merge preserving manual sections (src/rmplan/plan_merge.ts)
+- `readPlanFile(path)` - Read and parse plan file (src/tim/plans.ts:525-605)
+- `writePlanFile(path, plan, options)` - Write plan with validation (src/tim/plans.ts:614-661)
+- `mergeDetails(newDetails, originalDetails)` - Smart merge preserving manual sections (src/tim/plan_merge.ts)
 - `updateDetailsWithinDelimiters(newDetails, originalDetails, append)` - Update only generated content
 
 **Key sections to compact:**
-- Details (between `<!-- rmplan-generated-start/end -->` delimiters)
+- Details (between `<!-- tim-generated-start/end -->` delimiters)
 - Research section (after `## Research` heading)
 - Progress notes (in frontmatter `progressNotes` array)
 
@@ -497,7 +497,7 @@ The `GENERATED_START_DELIMITER` and `GENERATED_END_DELIMITER` constants allow sa
 
 #### Executor System (from Explore Agent: executor system)
 
-Five executors available in `src/rmplan/executors/`:
+Five executors available in `src/tim/executors/`:
 
 **1. claude-code** (Primary choice for compaction)
 - Full multi-agent orchestration (implementer/tester/reviewer)
@@ -550,7 +550,7 @@ if (output?.success === false) {
 ```
 
 **Configuration:**
-- Global config: `rmplanConfig.executors[executorName]`
+- Global config: `timConfig.executors[executorName]`
 - CLI options override config values
 - Zod schemas validate executor options
 - Model selection via `createModel()` function
@@ -564,7 +564,7 @@ Use `direct-call` executor initially for simplicity. This gives us:
 
 #### Similar Commands (from Explore Agent: find similar commands)
 
-**EXTRACT command** (src/rmplan/commands/extract.ts) is the best reference:
+**EXTRACT command** (src/tim/commands/extract.ts) is the best reference:
 
 **Why it's similar:**
 - Converts input format (Markdown → YAML) like compaction (verbose → concise)
@@ -596,14 +596,14 @@ export async function handleExtractCommand(inputFile: string | undefined, option
 
 **Other relevant commands:**
 
-**SPLIT command** (src/rmplan/commands/split.ts):
+**SPLIT command** (src/tim/commands/split.ts):
 - Uses `createModel()` for LLM initialization
 - Uses `runStreamingPrompt()` for LLM interaction
 - Generates prompts using dedicated functions
 - Parses YAML from LLM output using `fixYaml()`
 - Writes multiple output files
 
-**MERGE command** (src/rmplan/commands/merge.ts):
+**MERGE command** (src/tim/commands/merge.ts):
 - Combines plan content
 - Updates plan metadata
 - Maintains consistency across plans
@@ -652,17 +652,17 @@ const isCompactionCandidate = isCompletedStatus && isOldEnough && hasNoDependent
 ```
 
 **Key filtering utilities:**
-- `getBlockedPlans(planId, allPlans)` - Find plans that depend on this one (src/rmplan/plans.ts)
+- `getBlockedPlans(planId, allPlans)` - Find plans that depend on this one (src/tim/plans.ts)
 - `getChildPlans(planId, allPlans)` - Find child plans
 - `getDiscoveredPlans(planId, allPlans)` - Find plans discovered from this one
 - `findNextPlan(directory, options)` - Find next ready plan
 
-**List command filtering** (src/rmplan/commands/list.ts):
+**List command filtering** (src/tim/commands/list.ts):
 - Default: shows only `pending` and `in_progress`
 - Can filter by: `--status pending done cancelled deferred`
 - Special filters: `ready` (pending with resolved deps), `blocked` (pending with unresolved deps)
 
-**Done command behavior** (src/rmplan/commands/done.ts):
+**Done command behavior** (src/tim/commands/done.ts):
 - Marks plan as `done`
 - Updates `updatedAt` timestamp
 - Removes assignments and workspace locks
@@ -673,7 +673,7 @@ const isCompactionCandidate = isCompletedStatus && isOldEnough && hasNoDependent
 ### Risks & Constraints
 
 **Architectural constraints:**
-1. **Delimiter preservation**: Must respect `<!-- rmplan-generated-start/end -->` delimiters to avoid destroying manual research
+1. **Delimiter preservation**: Must respect `<!-- tim-generated-start/end -->` delimiters to avoid destroying manual research
 2. **YAML schema validation**: All plan writes go through `phaseSchema.safeParse()` - compacted plans must remain valid
 3. **Dependency integrity**: Cannot compact plans that other plans depend on (use `getBlockedPlans()` check)
 4. **Bidirectional updates**: If plan has parent/children, must maintain reference consistency
@@ -712,7 +712,7 @@ const isCompactionCandidate = isCompletedStatus && isOldEnough && hasNoDependent
 
 ### Follow-up Questions
 
-1. **Batch vs. single mode**: Should the command support compacting all old plans at once (`rmplan compact --all`) or only one at a time?
+1. **Batch vs. single mode**: Should the command support compacting all old plans at once (`tim compact --all`) or only one at a time?
 
 2. **Progress note handling**: Should we condense all progress notes into a single summary, keep the most recent N notes, or preserve all notes in compacted form?
 
@@ -726,18 +726,18 @@ const isCompactionCandidate = isCompletedStatus && isOldEnough && hasNoDependent
 
 Implemented compact command (Tasks 1-7) that resolves plan files, enforces completed-status/age checks, invokes the configured executor, and rewrites generated details, research, and progress notes while recording compaction metadata. Added dedicated compaction prompt builder emphasizing preservation of goal, outcome, and decisions, plus validation to ensure schema compliance and task/metadata integrity before writes. Introduced compaction configuration schema (Task 9) and CLI wiring (Task 2) with options for executor, model, age, dry-run, and confirmation bypass. Created test suite (Task 8) verifying core compaction behavior, dry-run safety, and status enforcement using module mocks for executors/config; updated README with usage examples and option descriptions (Task 10).
 
-Addressed reviewer fixes for the compact command. Task: Fix research section delimiter corruption. Task: Honor compaction section toggles. Updated src/rmplan/commands/compact.ts so updateResearchSection scans for the rmplan generated delimiters before replacing `## Research` headings, ensuring an executor-supplied research heading inside `details_markdown` no longer truncates the manual sections or removes the `<!-- rmplan-generated-end -->` marker. At the same time, applyCompactionSections now accepts compaction section toggles and only mutates details, research, or progress notes when the matching `config.compaction.sections` flag is true, while still recording compaction metadata. Added regression coverage in src/rmplan/commands/compact.test.ts that exercises an executor response containing an extra research heading and verifies both the delimiter preservation and the new configuration gating to guide future maintenance.
+Addressed reviewer fixes for the compact command. Task: Fix research section delimiter corruption. Task: Honor compaction section toggles. Updated src/tim/commands/compact.ts so updateResearchSection scans for the tim generated delimiters before replacing `## Research` headings, ensuring an executor-supplied research heading inside `details_markdown` no longer truncates the manual sections or removes the `<!-- tim-generated-end -->` marker. At the same time, applyCompactionSections now accepts compaction section toggles and only mutates details, research, or progress notes when the matching `config.compaction.sections` flag is true, while still recording compaction metadata. Added regression coverage in src/tim/commands/compact.test.ts that exercises an executor response containing an extra research heading and verifies both the delimiter preservation and the new configuration gating to guide future maintenance.
 
-Expanded the compaction prompt (Task 4: Create compaction prompt template) to explicitly delineate which plan details must be preserved versus trimmed, emphasized anti-hallucination rules, and embedded a representative YAML example so executors consistently target the desired structure. Reworked validateCompaction (Task 5: Implement validation step) into a structured validator that enforces schema parsing, required field presence, invariant metadata comparisons, and readability checks by serializing the plan and scanning for control characters. The validator now returns both the normalized plan and any issues so compactPlan can surface precise failures. Added targeted tests in src/rmplan/commands/compact.test.ts ensuring validateCompaction flags task mutations and non-printable output, and updated the import to exercise the new export. These changes integrate with existing compaction flow by keeping mergeDetails and serialization untouched while strengthening pre-write safeguards.
+Expanded the compaction prompt (Task 4: Create compaction prompt template) to explicitly delineate which plan details must be preserved versus trimmed, emphasized anti-hallucination rules, and embedded a representative YAML example so executors consistently target the desired structure. Reworked validateCompaction (Task 5: Implement validation step) into a structured validator that enforces schema parsing, required field presence, invariant metadata comparisons, and readability checks by serializing the plan and scanning for control characters. The validator now returns both the normalized plan and any issues so compactPlan can surface precise failures. Added targeted tests in src/tim/commands/compact.test.ts ensuring validateCompaction flags task mutations and non-printable output, and updated the import to exercise the new export. These changes integrate with existing compaction flow by keeping mergeDetails and serialization untouched while strengthening pre-write safeguards.
 
-Addressed reviewer feedback for Task 5 – Implement validation step by tightening validateCompaction so parent metadata cannot disappear unnoticed. Updated src/rmplan/commands/compact.ts to explicitly compare invariant fields when either side is undefined, reusing the existing JSON-based equality for defined values to retain consistency while surfacing removals and additions of parent data. Added regression coverage in src/rmplan/commands/compact.test.ts that constructs a plan with a parent and verifies the validator now flags the removal, ensuring future compactions preserve critical parent/child relationships.
+Addressed reviewer feedback for Task 5 – Implement validation step by tightening validateCompaction so parent metadata cannot disappear unnoticed. Updated src/tim/commands/compact.ts to explicitly compare invariant fields when either side is undefined, reusing the existing JSON-based equality for defined values to retain consistency while surfacing removals and additions of parent data. Added regression coverage in src/tim/commands/compact.test.ts that constructs a plan with a parent and verifies the validator now flags the removal, ensuring future compactions preserve critical parent/child relationships.
 
-Implemented Task 6: Add dry-run mode and Task 7: Implement file writing with backup. Updated src/rmplan/commands/compact.ts so compactPlan now returns the executor output alongside applied section flags, configuration toggles, and the original plan content. handleCompactCommand reuses a new reportCompactionPreview() helper to show the size delta, section status, and content previews for both dry-run and applying flows, then calls writeCompactedPlanWithBackup() which snapshots the original file to <plan>.backup-<timestamp>, attempts to write via writePlanFile(), and restores from the captured content if the write fails. applyCompactionSections now reports which sections actually changed and respects missing research summaries, while reportSuccessfulCompaction logs the backup location for auditing. Added writeCompactedPlanWithBackup() tests plus assertions about preview logging and backup creation in src/rmplan/commands/compact.test.ts to enforce the new behavior. These changes ensure dry runs surface the intended edits, compaction applies only to enabled sections, and users always have a recoverable backup when we write the condensed plan.
+Implemented Task 6: Add dry-run mode and Task 7: Implement file writing with backup. Updated src/tim/commands/compact.ts so compactPlan now returns the executor output alongside applied section flags, configuration toggles, and the original plan content. handleCompactCommand reuses a new reportCompactionPreview() helper to show the size delta, section status, and content previews for both dry-run and applying flows, then calls writeCompactedPlanWithBackup() which snapshots the original file to <plan>.backup-<timestamp>, attempts to write via writePlanFile(), and restores from the captured content if the write fails. applyCompactionSections now reports which sections actually changed and respects missing research summaries, while reportSuccessfulCompaction logs the backup location for auditing. Added writeCompactedPlanWithBackup() tests plus assertions about preview logging and backup creation in src/tim/commands/compact.test.ts to enforce the new behavior. These changes ensure dry runs surface the intended edits, compaction applies only to enabled sections, and users always have a recoverable backup when we write the condensed plan.
 
-Addressed review fixes for compact command size tracking and metrics. Updated src/rmplan/commands/compact.ts to recompute serialization after attaching compaction metadata using an iterative loop so compactedBytes/compactedReductionBytes reflect the actual post-metadata file size. Adjusted calculateMetrics to derive "after" lengths from the finalized plan details/progress notes, ensuring toggle-suppressed sections report accurate deltas during previews. Revised reportSuccessfulCompaction to surface the signed byte delta instead of clamping negative growth, avoiding contradictory logging. These changes keep compaction previews, stats, and completion messages aligned with what is written to disk.
+Addressed review fixes for compact command size tracking and metrics. Updated src/tim/commands/compact.ts to recompute serialization after attaching compaction metadata using an iterative loop so compactedBytes/compactedReductionBytes reflect the actual post-metadata file size. Adjusted calculateMetrics to derive "after" lengths from the finalized plan details/progress notes, ensuring toggle-suppressed sections report accurate deltas during previews. Revised reportSuccessfulCompaction to surface the signed byte delta instead of clamping negative growth, avoiding contradictory logging. These changes keep compaction previews, stats, and completion messages aligned with what is written to disk.
 
-Task 11: Add MCP prompt for compaction. Implemented loadCompactPlanPrompt in src/rmplan/mcp/prompts/compact_plan.ts to resolve plans through the MCP context, enforce eligible statuses, reuse generateCompactionPrompt for consistent instructions, surface age warnings when the plan was updated within the minimum threshold, and append a reminder to review the YAML with a human before applying it.
+Task 11: Add MCP prompt for compaction. Implemented loadCompactPlanPrompt in src/tim/mcp/prompts/compact_plan.ts to resolve plans through the MCP context, enforce eligible statuses, reuse generateCompactionPrompt for consistent instructions, surface age warnings when the plan was updated within the minimum threshold, and append a reminder to review the YAML with a human before applying it.
 
-Hooked the new loader into registerGenerateMode by importing it in src/rmplan/mcp/generate_mode.ts, adding the compact-plan prompt registration with explicit UserError handling when the plan argument is missing, and updated README.md to describe the additional prompt in the MCP server documentation.
+Hooked the new loader into registerGenerateMode by importing it in src/tim/mcp/generate_mode.ts, adding the compact-plan prompt registration with explicit UserError handling when the plan argument is missing, and updated README.md to describe the additional prompt in the MCP server documentation.
 
-Extended src/rmplan/mcp/generate_mode.test.ts with coverage for the compact prompt, ensuring it produces the expected instructions and rejects pending plans. These changes keep the compaction workflow aligned across CLI and MCP clients and highlight the review requirement before writing condensed plans.
+Extended src/tim/mcp/generate_mode.test.ts with coverage for the compact prompt, ensuring it produces the expected instructions and rejects pending plans. These changes keep the compaction workflow aligned across CLI and MCP clients and highlight the review requirement before writing condensed plans.

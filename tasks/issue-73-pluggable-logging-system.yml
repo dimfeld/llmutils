@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 goal: Implement a pluggable logging system for `dimfeld/llmutils` to allow log
   output to be directed to various targets like the console, Discord messages,
   etc., in preparation for chatbot integration.

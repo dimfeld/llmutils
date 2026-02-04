@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Allow Claude Code to delete files it created - Implement Core File
   Tracking and Auto-Approval Logic
 goal: To implement the fundamental mechanism for tracking created/modified files
@@ -57,13 +57,13 @@ tasks:
       without prompting the user, allowing Claude Code to seamlessly delete
       files it created.
 changedFiles:
-  - src/rmplan/executors/claude_code/format.test.ts
-  - src/rmplan/executors/claude_code/format.ts
-  - src/rmplan/executors/claude_code.test.ts
-  - src/rmplan/executors/claude_code.ts
+  - src/tim/executors/claude_code/format.test.ts
+  - src/tim/executors/claude_code/format.ts
+  - src/tim/executors/claude_code.test.ts
+  - src/tim/executors/claude_code.ts
   - test_parseRmCommand.ts
 rmfilter:
-  - src/rmplan/executors/
+  - src/tim/executors/
 ---
 
 This phase focuses on building the core functionality. We will introduce a stateful set within the executor to keep track of file paths touched by file-writing tools. We will then modify the permission-handling logic for the `bash` tool to recognize `rm` commands and check them against this set, auto-approving if a match is found. For this phase, the feature will be treated as always-on to simplify development and testing.

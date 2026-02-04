@@ -1,6 +1,6 @@
 ---
 description: Add cleanup plans
-allowed-tools: Bash(rmplan add:*)
+allowed-tools: Bash(tim add:*)
 ---
 
 Examine the repository for cleanup tasks such as:
@@ -44,10 +44,10 @@ Examine the repository for cleanup tasks such as:
 - Flaky or poorly written tests
 - Test utilities or setup code that could be shared
 
-For each cleanup task you identify, add it as a plan using `rmplan add`. Include relevant details and options:
+For each cleanup task you identify, add it as a plan using `tim add`. Include relevant details and options:
 
 ```
-rmplan add "<task title>" --details "<description of what needs to be done>" [options]
+tim add "<task title>" --details "<description of what needs to be done>" [options]
 ```
 
 Key options:
@@ -61,10 +61,10 @@ Key options:
 Example:
 
 ```
-rmplan add "Refactor duplicate validation logic" --details "The validateUser and validateAdmin functions in src/auth/ share nearly identical code. Extract common validation into a shared helper." --tag refactor --priority medium --rmfilter src/auth/validate.ts
+tim add "Refactor duplicate validation logic" --details "The validateUser and validateAdmin functions in src/auth/ share nearly identical code. Extract common validation into a shared helper." --tag refactor --priority medium --rmfilter src/auth/validate.ts
 ```
 
-Load the `using-rmplan` skill for more details.
+Load the `using-tim` skill for more details.
 
 You can also directly edit the plan file after creation to add additional details if you have a lot to add.
 

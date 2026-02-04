@@ -1,7 +1,7 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-title: Reorganize `rmplan` Directory by Command
-goal: Improve the internal structure of the `src/rmplan` module by organizing
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
+title: Reorganize `tim` Directory by Command
+goal: Improve the internal structure of the `src/tim` module by organizing
   its code based on individual command functionalities, making it easier to
   navigate and maintain.
 id: 35
@@ -12,108 +12,108 @@ promptsGeneratedAt: 2025-06-04T19:09:54.354Z
 createdAt: 2025-06-04T08:24:18.885Z
 updatedAt: 2025-10-27T08:39:04.286Z
 project:
-  title: Refactor codebase to improve modularity and reorganize `rmplan` by
+  title: Refactor codebase to improve modularity and reorganize `tim` by
     command functionality
   goal: The primary goal of this project is to reorganize the `dimfeld/llmutils`
     codebase to enhance modularity and maintainability. This involves
     refactoring code along functionality boundaries to reduce inter-directory
-    coupling and reorganizing the `rmplan` directory for better clarity by
+    coupling and reorganizing the `tim` directory for better clarity by
     structuring its code per command.
   details: >-
     The current codebase has dependencies and interactions between modules like
-    `rmfilter`, `rmplan`, and `rmpr` that have become unwieldy. This project
+    `rmfilter`, `tim`, and `rmpr` that have become unwieldy. This project
     aims to:
 
-    1. Reorganize the `rmplan` module by creating separate files for each of its
+    1. Reorganize the `tim` module by creating separate files for each of its
     sub-commands, improving its internal structure.
 
-    2. Analyze and refactor dependencies between `rmfilter`, `rmplan`, `rmpr`,
+    2. Analyze and refactor dependencies between `rmfilter`, `tim`, `rmpr`,
     and `common` modules. This includes consolidating shared utilities into
     `src/common/` or more specific common modules, and ensuring that
-    interactions between the main feature modules (`rmfilter`, `rmplan`, `rmpr`)
+    interactions between the main feature modules (`rmfilter`, `tim`, `rmpr`)
     are clean and well-defined.
 
     The project will be broken into phases to manage complexity and ensure
     incremental progress with continuous testing.
 tasks:
-  - title: Identify `rmplan` Commands and Related Logic
+  - title: Identify `tim` Commands and Related Logic
     done: true
-    description: Analyze `src/rmplan/rmplan.ts` and associated files (e.g.,
-      `src/rmplan/actions.ts`, `src/rmplan/agent.ts`) to list all distinct
-      sub-commands provided by `rmplan` (such as generate, agent/run, next,
+    description: Analyze `src/tim/tim.ts` and associated files (e.g.,
+      `src/tim/actions.ts`, `src/tim/agent.ts`) to list all distinct
+      sub-commands provided by `tim` (such as generate, agent/run, next,
       done, list, prepare, show, edit, split, workspace commands). Document the
       primary files and functions associated with each command. This task is
       primarily analysis and documentation to inform subsequent refactoring
       tasks.
-  - title: Create New Files for Each `rmplan` Command
+  - title: Create New Files for Each `tim` Command
     done: true
     description: For each command identified in the previous task, create a new
-      TypeScript file within a new `src/rmplan/commands/` subdirectory (e.g.,
-      `src/rmplan/commands/generate.ts`, `src/rmplan/commands/agent.ts`).
+      TypeScript file within a new `src/tim/commands/` subdirectory (e.g.,
+      `src/tim/commands/generate.ts`, `src/tim/commands/agent.ts`).
   - title: Relocate Command-Specific Logic
     done: true
     description: Move the core logic, argument parsing, and helper functions
-      specific to each `rmplan` command from their current locations (primarily
-      `src/rmplan/rmplan.ts`, `src/rmplan/actions.ts`, `src/rmplan/agent.ts`)
+      specific to each `tim` command from their current locations (primarily
+      `src/tim/tim.ts`, `src/tim/actions.ts`, `src/tim/agent.ts`)
       into the newly created dedicated command files. Each new command file
       should export a primary handler function.
-  - title: Organize Shared `rmplan` Utilities
+  - title: Organize Shared `tim` Utilities
     done: true
-    description: Identify functions and types that are used by multiple `rmplan`
-      commands but are specific to the `rmplan` domain. Consolidate these into
-      existing or new shared utility files within `src/rmplan/` (e.g.,
-      `src/rmplan/planUtils.ts`, or ensure `src/rmplan/plans.ts` and
-      `src/rmplan/actions.ts` serve this purpose clearly).
-  - title: Update `rmplan.ts` Entry Point
+    description: Identify functions and types that are used by multiple `tim`
+      commands but are specific to the `tim` domain. Consolidate these into
+      existing or new shared utility files within `src/tim/` (e.g.,
+      `src/tim/planUtils.ts`, or ensure `src/tim/plans.ts` and
+      `src/tim/actions.ts` serve this purpose clearly).
+  - title: Update `tim.ts` Entry Point
     done: true
-    description: Refactor `src/rmplan/rmplan.ts` to primarily serve as a command
+    description: Refactor `src/tim/tim.ts` to primarily serve as a command
       dispatcher. It should import and delegate execution to the functions in
       the new command-specific files.
-  - title: Update Internal Imports within `rmplan`
+  - title: Update Internal Imports within `tim`
     done: true
-    description: Adjust all import statements within the `src/rmplan/` directory to
+    description: Adjust all import statements within the `src/tim/` directory to
       reflect the new file structure and module organization.
-  - title: Test `rmplan` Functionality
+  - title: Test `tim` Functionality
     done: true
-    description: Run all existing tests related to `rmplan`. Add new unit or
+    description: Run all existing tests related to `tim`. Add new unit or
       integration tests as necessary to ensure the refactored command structure
-      works correctly and all `rmplan` commands remain functional.
+      works correctly and all `tim` commands remain functional.
 changedFiles:
   - CLAUDE.md
-  - src/rmplan/actions.test.ts
-  - src/rmplan/commands/add.ts
-  - src/rmplan/commands/agent.ts
-  - src/rmplan/commands/answer-pr.ts
-  - src/rmplan/commands/answerPr.ts
-  - src/rmplan/commands/cleanup.ts
-  - src/rmplan/commands/done.test.ts
-  - src/rmplan/commands/done.ts
-  - src/rmplan/commands/edit.ts
-  - src/rmplan/commands/extract.ts
-  - src/rmplan/commands/generate.test.ts
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/commands/list.test.ts
-  - src/rmplan/commands/list.ts
-  - src/rmplan/commands/next.ts
-  - src/rmplan/commands/prepare.ts
-  - src/rmplan/commands/show.test.ts
-  - src/rmplan/commands/show.ts
-  - src/rmplan/commands/split.ts
-  - src/rmplan/commands/workspace.ts
-  - src/rmplan/configLoader.test.ts
-  - src/rmplan/configLoader.ts
-  - src/rmplan/display_utils.test.ts
-  - src/rmplan/plans.test.ts
-  - src/rmplan/plans.ts
-  - src/rmplan/prompt.ts
-  - src/rmplan/rmplan.integration.test.ts
-  - src/rmplan/rmplan.ts
+  - src/tim/actions.test.ts
+  - src/tim/commands/add.ts
+  - src/tim/commands/agent.ts
+  - src/tim/commands/answer-pr.ts
+  - src/tim/commands/answerPr.ts
+  - src/tim/commands/cleanup.ts
+  - src/tim/commands/done.test.ts
+  - src/tim/commands/done.ts
+  - src/tim/commands/edit.ts
+  - src/tim/commands/extract.ts
+  - src/tim/commands/generate.test.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/list.test.ts
+  - src/tim/commands/list.ts
+  - src/tim/commands/next.ts
+  - src/tim/commands/prepare.ts
+  - src/tim/commands/show.test.ts
+  - src/tim/commands/show.ts
+  - src/tim/commands/split.ts
+  - src/tim/commands/workspace.ts
+  - src/tim/configLoader.test.ts
+  - src/tim/configLoader.ts
+  - src/tim/display_utils.test.ts
+  - src/tim/plans.test.ts
+  - src/tim/plans.ts
+  - src/tim/prompt.ts
+  - src/tim/tim.integration.test.ts
+  - src/tim/tim.ts
 rmfilter:
   - --
-  - src/rmplan
+  - src/tim
   - src/rmpr
   - src/common
   - src/rmfilter
 ---
 
-This phase focuses on refactoring the `src/rmplan` directory. Currently, `src/rmplan/rmplan.ts` likely handles multiple sub-commands. This work will involve identifying these commands and moving their respective logic into dedicated files. Shared utilities within `rmplan` will also be organized.
+This phase focuses on refactoring the `src/tim` directory. Currently, `src/tim/tim.ts` likely handles multiple sub-commands. This work will involve identifying these commands and moving their respective logic into dedicated files. Shared utilities within `tim` will also be organized.

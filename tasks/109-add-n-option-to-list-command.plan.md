@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Add -n option to list command
 goal: To add the `-n` option to the `list` command, implement the
   result-limiting logic, and verify its correctness with unit tests.
@@ -16,7 +16,7 @@ tasks:
     done: true
     description: >
       Add a new option `-n, --number <count>` to the `list` command in
-      `src/rmplan/rmplan.ts`. 
+      `src/tim/tim.ts`. 
 
       This will involve using `commander`'s `.option()` method and providing a
       suitable description. 
@@ -31,7 +31,7 @@ tasks:
   - title: Implement the result limiting logic in the `handleListCommand` function
     done: true
     description: >
-      Modify the `handleListCommand` function in `src/rmplan/commands/list.ts`
+      Modify the `handleListCommand` function in `src/tim/commands/list.ts`
       to respect the new `number` option.
 
       After the `planArray` has been filtered and sorted (around line 136),
@@ -50,7 +50,7 @@ tasks:
   - title: Add unit tests for the new `-n` option
     done: true
     description: >
-      Update the test file `src/rmplan/commands/list.test.ts` to include
+      Update the test file `src/tim/commands/list.test.ts` to include
       comprehensive tests for the new functionality.
 
       These tests will create a set of mock plan files, invoke
@@ -67,8 +67,8 @@ tasks:
 
       ModuleMocker and temporary directories.
 rmfilter:
-  - src/rmplan/commands/list.ts
-  - src/rmplan/rmplan.ts
+  - src/tim/commands/list.ts
+  - src/tim/tim.ts
 ---
 
 # Original Plan Details
@@ -78,20 +78,20 @@ results to return.
 
 # Processed Plan Details
 
-This project will enhance the `rmplan list` command by introducing a feature to limit the number of results. The implementation will involve modifying the command's definition, updating the command handler to apply the limit, and adding comprehensive tests to ensure correctness.
+This project will enhance the `tim list` command by introducing a feature to limit the number of results. The implementation will involve modifying the command's definition, updating the command handler to apply the limit, and adding comprehensive tests to ensure correctness.
 
 ### Acceptance Criteria
-- The `rmplan list` command must accept a new option, `-n <count>` (or a long-form equivalent like `--number <count>`), where `<count>` is a positive integer.
-- When `rmplan list -n 5` is executed, the output table should contain at most 5 plans (plus the header row).
+- The `tim list` command must accept a new option, `-n <count>` (or a long-form equivalent like `--number <count>`), where `<count>` is a positive integer.
+- When `tim list -n 5` is executed, the output table should contain at most 5 plans (plus the header row).
 - The limiting logic must be applied *after* all filtering (e.g., by status) and sorting has occurred, ensuring the last N results are shown.
 - If the number of plans after filtering is less than the value specified by `-n`, all filtered plans should be displayed.
 - If the `-n` option is not provided, the command's behavior should remain unchanged.
-- The new option must be documented in the command's help text (`rmplan list --help`).
+- The new option must be documented in the command's help text (`tim list --help`).
 - Unit tests must be added to verify the functionality of the `-n` option, including edge cases.
 
 ### Technical Considerations
-- The new option will be added to the `commander` definition in `src/rmplan/rmplan.ts`. A parser function should be used to ensure the option's value is treated as an integer.
-- The core logic will be implemented in `src/rmplan/commands/list.ts` by slicing the `planArray` before it is used to generate the output table.
-- New tests will be added to `src/rmplan/commands/list.test.ts` to cover the new functionality.
+- The new option will be added to the `commander` definition in `src/tim/tim.ts`. A parser function should be used to ensure the option's value is treated as an integer.
+- The core logic will be implemented in `src/tim/commands/list.ts` by slicing the `planArray` before it is used to generate the output table.
+- New tests will be added to `src/tim/commands/list.test.ts` to cover the new functionality.
 
 This phase encompasses all the work required to deliver the new feature. We will first define the new command-line option, then implement the logic to limit the results in the command handler, and finally, create tests to ensure the feature works as expected.

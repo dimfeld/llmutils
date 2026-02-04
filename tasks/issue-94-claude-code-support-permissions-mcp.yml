@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: "Claude Code: Support Permissions MCP"
 goal: "Implement: Claude Code: Support Permissions MCP"
 id: 50
@@ -21,7 +21,7 @@ createdAt: 2025-06-07T02:05:26.354Z
 updatedAt: 2025-10-27T08:39:04.201Z
 tasks: []
 rmfilter:
-  - src/rmplan/executors/claude_code.ts
+  - src/tim/executors/claude_code.ts
 ---
 
 Claude Code SDK is able to use an MCP server to request permissions. Implement this and then ask the user to respond to permissions when Claude Code needs it. Follow the tutorial for instructions on how to do so.

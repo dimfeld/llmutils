@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Integrate Permissions MCP into the Claude Code Executor
 goal: Modify the `ClaudeCodeExecutor` to use the new permissions MCP when enabled.
 id: 56
@@ -33,9 +33,9 @@ tasks:
   - title: Add Configuration Option to Enable Permissions MCP
     done: true
     description: Modify the `claudeCodeOptionsSchema` in
-      `src/rmplan/executors/claude_code.ts` by adding a new optional boolean
+      `src/tim/executors/claude_code.ts` by adding a new optional boolean
       field named `enablePermissionsMcp`. This will allow users to enable the
-      feature via their `rmplan.json` configuration.
+      feature via their `tim.json` configuration.
   - title: Implement MCP Activation Logic
     done: true
     description: In the `execute` method of the `ClaudeCodeExecutor`, add logic to
@@ -64,10 +64,10 @@ tasks:
       success or failure. This prevents cluttering the filesystem.
 changedFiles:
   - docs/tutorials/claude-permissions-mcp.md
-  - src/rmplan/executors/claude_code/permissions_mcp.ts
-  - src/rmplan/executors/claude_code.ts
+  - src/tim/executors/claude_code/permissions_mcp.ts
+  - src/tim/executors/claude_code.ts
 rmfilter:
-  - src/rmplan/executors/claude_code.ts
+  - src/tim/executors/claude_code.ts
 ---
 
 With the permissions server script ready, this phase integrates it into the main `ClaudeCodeExecutor`. This involves adding configuration options, detecting when the feature should be active, and dynamically creating the necessary configuration file for the Claude Code CLI. The executor will be responsible for managing the lifecycle of this temporary configuration.

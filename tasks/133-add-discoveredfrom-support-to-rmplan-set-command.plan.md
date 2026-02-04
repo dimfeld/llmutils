@@ -1,6 +1,6 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-title: Add discoveredFrom support to rmplan set command
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
+title: Add discoveredFrom support to tim set command
 goal: ""
 id: 133
 uuid: cf076ee0-2c50-48ce-a549-c267c7fe57fb
@@ -23,7 +23,7 @@ updatedAt: 2025-10-29T07:27:55.596Z
 progressNotes:
   - timestamp: 2025-10-29T07:19:31.845Z
     text: Successfully implemented --discovered-from and --no-discovered-from
-      options in rmplan set command. Added CLI options in rmplan.ts with
+      options in tim set command. Added CLI options in tim.ts with
       validation for positive integers, updated SetOptions interface, and added
       handler logic in set.ts that follows the same pattern as other options.
       Type checking and linting passed. Implementation verified via help text
@@ -48,11 +48,11 @@ rmfilter: []
 
 ## Overview
 
-Extend the `rmplan set` command to support the new `discoveredFrom` field, allowing agents to mark plans with their discovery source.
+Extend the `tim set` command to support the new `discoveredFrom` field, allowing agents to mark plans with their discovery source.
 
 ## Changes Required
 
-File: `src/rmplan/commands/set.ts`
+File: `src/tim/commands/set.ts`
 
 Add two new options:
 ```typescript
@@ -79,18 +79,18 @@ if (options.discoveredFrom !== undefined) {
 
 ```bash
 # Mark that plan 42 was discovered while working on plan 38
-rmplan set 42 --discovered-from 38
+tim set 42 --discovered-from 38
 
 # Remove the discovery link
-rmplan set 42 --no-discovered-from
+tim set 42 --no-discovered-from
 ```
 
 ## Testing
 
-- Set discoveredFrom on a plan, verify with `rmplan show`
+- Set discoveredFrom on a plan, verify with `tim show`
 - Remove discoveredFrom, verify it's gone
 - Try invalid values (negative, non-integer), expect errors
-- Verify that `rmplan show` displays the "Discovered From" section correctly
+- Verify that `tim show` displays the "Discovered From" section correctly
 
 ## Dependencies
 
@@ -111,8 +111,8 @@ The tool would accept:
 }
 ```
 
-This provides agents the same capability as `rmplan set --discovered-from`.
+This provides agents the same capability as `tim set --discovered-from`.
 
 # Implementation Notes
 
-Successfully implemented discoveredFrom support for rmplan set command, allowing agents to mark plans with their discovery source. Modified src/rmplan/rmplan.ts to add --discovered-from and --no-discovered-from CLI options with validation for positive integers. Modified src/rmplan/commands/set.ts to handle setting and removing the discoveredFrom field, following the same pattern as other optional fields like parent. Added comprehensive test coverage in set.test.ts with 4 new tests covering setting, removing, and changing discoveredFrom values. Fixed validation bug during verification that allowed decimal values - added Number.isInteger check. All quality gates passed: type checking, linting, and 2269 tests all pass. Integration works seamlessly with plan schema from plan 129 and show command from plan 130.
+Successfully implemented discoveredFrom support for tim set command, allowing agents to mark plans with their discovery source. Modified src/tim/tim.ts to add --discovered-from and --no-discovered-from CLI options with validation for positive integers. Modified src/tim/commands/set.ts to handle setting and removing the discoveredFrom field, following the same pattern as other optional fields like parent. Added comprehensive test coverage in set.test.ts with 4 new tests covering setting, removing, and changing discoveredFrom values. Fixed validation bug during verification that allowed decimal values - added Number.isInteger check. All quality gates passed: type checking, linting, and 2269 tests all pass. Integration works seamlessly with plan schema from plan 129 and show command from plan 130.

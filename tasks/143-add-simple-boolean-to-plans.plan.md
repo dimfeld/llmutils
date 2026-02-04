@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Add simple boolean to plans
 goal: Add a `simple` boolean field to plan schemas that indicates whether a plan
   can be implemented without extensive planning or research, enabling automatic
@@ -16,30 +16,30 @@ updatedAt: 2025-10-28T08:29:48.309Z
 tasks:
   - title: Add simple field to plan schema
     done: true
-    description: "Update the phaseSchema in src/rmplan/planSchema.ts to include an
+    description: "Update the phaseSchema in src/tim/planSchema.ts to include an
       optional `simple: z.boolean().default(false).optional()` field. This field
       indicates whether a plan should use simplified workflows. Ensure the field
       is properly typed in PlanSchema and PhaseSchema types. Add schema
       validation test cases to verify the field is correctly parsed and defaults
       to false."
-  - title: Add --simple flag to rmplan add command
+  - title: Add --simple flag to tim add command
     done: true
-    description: Update src/rmplan/rmplan.ts to add `.option('--simple', 'Mark this
+    description: Update src/tim/tim.ts to add `.option('--simple', 'Mark this
       plan as simple (skips research phase in generation)')` to the add command
-      definition. Update src/rmplan/commands/add.ts handleAddCommand to read
+      definition. Update src/tim/commands/add.ts handleAddCommand to read
       options.simple and set it on the plan object before writing. Add test
       cases for creating plans with --simple flag.
   - title: Update MCP generate prompt to check plan.simple field
     done: true
     description: "Modify the MCP prompt registration in
-      src/rmplan/mcp/generate_mode.ts. Update the 'generate-plan' prompt's load
+      src/tim/mcp/generate_mode.ts. Update the 'generate-plan' prompt's load
       function to check if the resolved plan has `simple: true`. If true, skip
       the research phase and return the generate-plan-simple prompt directly. If
       false or undefined, use the normal research → generate flow. Ensure this
       logic correctly reads the plan schema."
   - title: Update generate command to respect plan.simple field
     done: true
-    description: "In src/rmplan/commands/generate.ts handleGenerateCommand, after
+    description: "In src/tim/commands/generate.ts handleGenerateCommand, after
       loading the stub plan, check if parsedPlan.simple is true. If so, set
       options.simple = true unless the user explicitly passed --no-simple on the
       command line. Implement precedence: explicit CLI flags override plan
@@ -54,19 +54,19 @@ tasks:
       default to false, (6) Agent/run commands honor simple field during
       execution."
 changedFiles:
-  - src/rmplan/commands/add.ts
-  - src/rmplan/commands/agent/agent.ts
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/commands/show.ts
-  - src/rmplan/commands/storage.ts
-  - src/rmplan/commands/workspace.ts
-  - src/rmplan/mcp/generate_mode.ts
-  - src/rmplan/planSchema.ts
-  - src/rmplan/ready_plans.test.ts
-  - src/rmplan/rmplan.ts
-  - src/rmplan/simple-field.test.ts
-  - src/rmplan/summary/collector.ts
-  - src/rmplan/summary/parsers.ts
+  - src/tim/commands/add.ts
+  - src/tim/commands/agent/agent.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/show.ts
+  - src/tim/commands/storage.ts
+  - src/tim/commands/workspace.ts
+  - src/tim/mcp/generate_mode.ts
+  - src/tim/planSchema.ts
+  - src/tim/ready_plans.test.ts
+  - src/tim/tim.ts
+  - src/tim/simple-field.test.ts
+  - src/tim/summary/collector.ts
+  - src/tim/summary/parsers.ts
 rmfilter: []
 ---
 
@@ -78,12 +78,12 @@ When a plan is simple:
 
 Implementation:
 - Add the `simple` boolean to the plan schema. Default to false.
-- Add the `simple` flag to the `rmplan add` command
+- Add the `simple` flag to the `tim add` command
 - Update the generate MCP prompt as above
 - the `generate` command acts as if `--simple` was passed to it
 - the `run` command allows just running without creating tasks, and it acts as if `--simple` was passed to it
 
-<!-- rmplan-generated-start -->
+<!-- tim-generated-start -->
 # Add Simple Boolean to Plans
 
 ## Expected Behavior/Outcome
@@ -105,7 +105,7 @@ This provides a streamlined workflow for straightforward implementations that do
 
 ### Design & UX Approach
 - Add `simple` as an optional boolean field in plan schemas (defaults to `false`)
-- Expose `--simple` flag in `rmplan add` command for marking plans at creation
+- Expose `--simple` flag in `tim add` command for marking plans at creation
 - MCP prompt selection should check plan's `simple` field to choose appropriate workflow
 - Generate and run commands should respect the plan's `simple` setting
 
@@ -132,7 +132,7 @@ This provides a streamlined workflow for straightforward implementations that do
 
 ## Acceptance Criteria
 
-- [ ] Functional: Users can create plans with `simple: true` via `rmplan add --simple`
+- [ ] Functional: Users can create plans with `simple: true` via `tim add --simple`
 - [ ] Functional: Plans with `simple: true` automatically trigger simple generation workflow in MCP
 - [ ] Functional: Generate command respects plan's `simple` field when determining workflow
 - [ ] Functional: Existing plans without `simple` field default to complex workflow (`simple: false`)
@@ -160,7 +160,7 @@ This provides a streamlined workflow for straightforward implementations that do
    - Add validation tests
 
 2. **Phase 2: CLI Integration**  
-   - Add `--simple` flag to `add` command in `rmplan.ts`
+   - Add `--simple` flag to `add` command in `tim.ts`
    - Update `handleAddCommand` to set `simple` field on plan creation
    - Add tests for plan creation with simple flag
 
@@ -184,50 +184,50 @@ This provides a streamlined workflow for straightforward implementations that do
 - **MCP Prompt Logic:** The current MCP prompts are registered statically. May need conditional logic in prompt loading to check plan field
 - **Backward Compatibility:** Existing plans have no `simple` field. Must ensure undefined/missing field defaults to `false`
 - **Documentation:** Multiple places reference simple mode - need to update docs about when simple workflow is triggered
-<!-- rmplan-generated-end -->
+<!-- tim-generated-end -->
 
 Successfully implemented all 5 tasks for adding the 'simple' boolean field to plan schemas, enabling automatic selection of simplified generation workflows.
 
 **Tasks Completed:**
 1. Add simple field to plan schema
-2. Add --simple flag to rmplan add command  
+2. Add --simple flag to tim add command  
 3. Update MCP generate prompt to check plan.simple field
 4. Update generate command to respect plan.simple field
 5. Test simple field integration across workflows
 
 **Implementation Details:**
 
-**Schema Update (src/rmplan/planSchema.ts):**
+**Schema Update (src/tim/planSchema.ts):**
 - Added 'simple: z.boolean().optional()' field to phaseSchema
 - Field is optional and defaults to undefined (evaluates to false in conditional checks)
 - Follows project convention of not using .default() in zod schemas per CLAUDE.md
 
-**CLI Integration (src/rmplan/rmplan.ts and commands/add.ts):**
-- Added '--simple' option to 'rmplan add' command with description 'Mark this plan as simple (skips research phase in generation)'
+**CLI Integration (src/tim/tim.ts and commands/add.ts):**
+- Added '--simple' option to 'tim add' command with description 'Mark this plan as simple (skips research phase in generation)'
 - In handleAddCommand, reads options.simple and sets it on the plan object: 'simple: options.simple || false'
 - When --simple flag is specified, creates plans with simple: true
 - Without flag, creates plans with simple: false
 
-**MCP Prompt Selection (src/rmplan/mcp/generate_mode.ts):**
+**MCP Prompt Selection (src/tim/mcp/generate_mode.ts):**
 - Modified loadResearchPrompt to check if plan.simple === true
 - When true, immediately calls and returns loadGeneratePrompt (simple generation flow)
 - When false/undefined, uses normal research → generate flow
 - This enables automatic workflow selection based on plan metadata
 
-**Generate Command Integration (src/rmplan/commands/generate.ts, lines 441-446):**
+**Generate Command Integration (src/tim/commands/generate.ts, lines 441-446):**
 - After loading stub plan, checks if parsedPlan.simple === true
 - If true and no explicit CLI flag provided, sets options.simple = true
 - Implements proper precedence: explicit CLI flags (--simple or --no-simple) override plan field
 - Uses 'hasExplicitSimpleFlag' check to detect if user provided explicit flag
 
-**Agent/Run Command Integration (src/rmplan/commands/agent/agent.ts, lines 282-287):**
+**Agent/Run Command Integration (src/tim/commands/agent/agent.ts, lines 282-287):**
 - Moved readPlanFile call earlier in function flow (before executor setup)
 - After parsing plan, checks if planData.simple === true
 - Only applies plan's simple value when no explicit CLI flag is provided
 - Maintains CLI flag precedence identical to generate command
 - This was added in response to reviewer feedback - initially missed in first implementation
 
-**Test Coverage (src/rmplan/simple-field.test.ts):**
+**Test Coverage (src/tim/simple-field.test.ts):**
 - Created comprehensive test file with 23 tests covering all integration points
 - Schema validation tests (accepts boolean, defaults correctly, rejects invalid values)
 - File I/O tests (writes and reads simple field correctly)
@@ -254,17 +254,17 @@ Successfully implemented all 5 tasks for adding the 'simple' boolean field to pl
 2. **MCP test improvement:** Initial MCP tests only verified trivial boolean logic. Improved to call actual loadResearchPrompt function and verify returned prompt content, ensuring real integration behavior is tested.
 
 **Modified Files:**
-- src/rmplan/planSchema.ts
-- src/rmplan/rmplan.ts
-- src/rmplan/commands/add.ts
-- src/rmplan/commands/generate.ts
-- src/rmplan/commands/agent/agent.ts
-- src/rmplan/mcp/generate_mode.ts
-- src/rmplan/ready_plans.ts
-- src/rmplan/ready_plans.test.ts
+- src/tim/planSchema.ts
+- src/tim/tim.ts
+- src/tim/commands/add.ts
+- src/tim/commands/generate.ts
+- src/tim/commands/agent/agent.ts
+- src/tim/mcp/generate_mode.ts
+- src/tim/ready_plans.ts
+- src/tim/ready_plans.test.ts
 
 **Created Files:**
-- src/rmplan/simple-field.test.ts
+- src/tim/simple-field.test.ts
 
 **Test Results:**
 - All 2,271 tests pass

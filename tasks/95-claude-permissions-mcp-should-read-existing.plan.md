@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Claude Permissions MCP should read existing allowlist
 goal: To add the core logic for checking permission requests against the
   configured `allowedTools` list and to add comprehensive tests verifying the
@@ -74,8 +74,8 @@ tasks:
       existing test structure from the tracked file deletion tests as a
       reference (starting around line 1365).
 rmfilter:
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/executors/claude_code
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/claude_code
 ---
 
 # Original Plan Details
@@ -86,7 +86,7 @@ calls to automatically respond, if appropriate, instead of prompting.
 
 # Processed Plan Details
 
-The current permission Master Control Program (MCP) for the Claude Code executor prompts for every tool use that has not been explicitly allowed during the current session via the "Always Allow" option. However, the executor is configured with a static `allowedTools` list (e.g., in `.rmplan.json` or via defaults) which the `claude` process itself respects. The interactive permission handler does not currently consult this list, leading to redundant prompts.
+The current permission Master Control Program (MCP) for the Claude Code executor prompts for every tool use that has not been explicitly allowed during the current session via the "Always Allow" option. However, the executor is configured with a static `allowedTools` list (e.g., in `.tim.json` or via defaults) which the `claude` process itself respects. The interactive permission handler does not currently consult this list, leading to redundant prompts.
 
 This project will modify the permission request handler within the `ClaudeCodeExecutor` to consult this pre-configured allowlist. If an incoming tool request matches a rule in the allowlist, it will be automatically approved without user interaction.
 
@@ -99,7 +99,7 @@ This project will modify the permission request handler within the `ClaudeCodeEx
 - The new functionality is thoroughly covered by unit tests in `claude_code.test.ts`.
 
 ### Technical Considerations and Approach
-The core logic will be implemented within the `createPermissionSocketServer` method in `src/rmplan/executors/claude_code.ts`. The `allowedTools` array, which is already available in the executor, will be parsed into a more efficient lookup structure (e.g., a `Map<string, true | string[]>`) at the start of the execution. This structure will map tool names to either `true` (for simple tools) or an array of allowed command prefixes (for `Bash`).
+The core logic will be implemented within the `createPermissionSocketServer` method in `src/tim/executors/claude_code.ts`. The `allowedTools` array, which is already available in the executor, will be parsed into a more efficient lookup structure (e.g., a `Map<string, true | string[]>`) at the start of the execution. This structure will map tool names to either `true` (for simple tools) or an array of allowed command prefixes (for `Bash`).
 
 When a permission request is received from the MCP process, the handler will first check it against this new structure. If a match is found, it will send an approval response and bypass the user prompt. This new check will be integrated with the existing auto-approval logic.
 

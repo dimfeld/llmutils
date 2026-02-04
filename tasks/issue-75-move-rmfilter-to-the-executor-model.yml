@@ -1,8 +1,8 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 goal: Refactor the `rmfilter` command to replace its current `--run` option with
   a more flexible `--executor` option, aligning its execution model with
-  `rmplan`. This will allow users to specify different executors to process the
+  `tim`. This will allow users to specify different executors to process the
   generated prompt.
 id: 18
 uuid: c11700f1-63d5-4c08-a959-24928378fdf7
@@ -29,10 +29,10 @@ The `rmfilter` command currently has a `--run` boolean option that, when enabled
 2. A new option, `--executor <executor_name>`, will be added. This option is optional.
 3. **If `--executor` is provided:**
     * `rmfilter` will generate the prompt content as it currently does.
-    * It will then use the `buildExecutorAndLog` function (from the `rmplan` executor system) to instantiate the specified executor.
+    * It will then use the `buildExecutorAndLog` function (from the `tim` executor system) to instantiate the specified executor.
     * The `execute` method of the instantiated executor will be called with the generated prompt content.
     * The `globalValues.model` from `rmfilter` will be passed to the executor via `ExecutorCommonOptions` and used to populate a minimal `RmplanConfig`.
 4. **If `--executor` is NOT provided:**
     * `rmfilter` will behave as it currently does when `options.run` is `false`. That is, it will generate the prompt, write it to the output file, copy it to the clipboard if requested (`-c` or `copy: true` in config), and log information about the output, but it will *not* automatically execute the prompt.
 
-This change involves modifying the CLI option parsing in `src/rmfilter/config.ts` and the main execution logic in `src/rmfilter/rmfilter.ts` to integrate with the executor system defined in `src/rmplan/executors/`.
+This change involves modifying the CLI option parsing in `src/rmfilter/config.ts` and the main execution logic in `src/rmfilter/rmfilter.ts` to integrate with the executor system defined in `src/tim/executors/`.

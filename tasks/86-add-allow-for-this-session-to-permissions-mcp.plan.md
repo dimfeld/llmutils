@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Add "Allow for this session" to permissions MCP
 goal: Add the "Allow for this session" option to the permissions prompt and
   implement session-based approval logic without persistence.
@@ -15,7 +15,7 @@ tasks:
   - title: Add "Allow for Session" choice to permissions prompt
     done: true
     description: >
-      Modify the select prompt in src/rmplan/executors/claude_code.ts (around
+      Modify the select prompt in src/tim/executors/claude_code.ts (around
       line 465-469) to include the new "Allow for Session" option between
       "Allow" and "Always Allow". The choice value should be 'session_allow' to
       maintain consistency with existing naming patterns. The prompt currently
@@ -51,7 +51,7 @@ tasks:
   - title: Add comprehensive test coverage
     done: true
     description: >
-      Create test cases in src/rmplan/executors/claude_code.test.ts to verify
+      Create test cases in src/tim/executors/claude_code.test.ts to verify
       the new "Allow for Session" functionality. Tests should verify that the
       new option appears in the prompt, that selecting 'session_allow' adds to
       alwaysAllowedTools but not to the settings file, that session approvals

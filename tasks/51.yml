@@ -1,7 +1,7 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Implement the `research` command
-goal: To implement the core functionality of the `rmplan research` command,
+goal: To implement the core functionality of the `tim research` command,
   including prompt generation, clipboard interaction, file-based context using
   `rmfilter`, and updating the plan with research results.
 id: 51
@@ -16,7 +16,7 @@ project:
   title: research command
   goal: ""
   details: >
-    The `rmplan` command should support a `research [planArg]` option that
+    The `tim` command should support a `research [planArg]` option that
     creates a prompt encouraging the model to do research related
 
     to the goal and details in the plan, and copies it to the clipboard.
@@ -33,23 +33,23 @@ project:
     When the user pastes their content back in, append it to the end of the plan
     details.
 tasks:
-  - title: Define the `research` command structure in `rmplan.ts`
+  - title: Define the `research` command structure in `tim.ts`
     done: true
-    description: Add the new `research [planArg]` command to the main `rmplan.ts`
+    description: Add the new `research [planArg]` command to the main `tim.ts`
       file using `commander`. This includes defining the command, its
       description, the `--rmfilter` option, and setting up the action handler to
       call a new function in a new `commands/research.ts` file. This task only
       sets up the CLI definition and the call to the handler.
   - title: Create the research command handler and core action logic
     done: true
-    description: Create a new file `src/rmplan/commands/research.ts` with a
+    description: Create a new file `src/tim/commands/research.ts` with a
       `handleResearchCommand` function. This handler will resolve the plan file
       and call a new core action function in `actions.ts`. The new action
       function will read the plan, generate a basic research prompt, and copy it
       to the clipboard.
   - title: Implement the research prompt generation
     done: true
-    description: In `src/rmplan/prompt.ts`, create a new function
+    description: In `src/tim/prompt.ts`, create a new function
       `generateResearchPrompt` that takes the plan's goal and details and
       constructs a prompt instructing an LLM to perform research, find relevant
       information, and synthesize it.
@@ -68,25 +68,25 @@ tasks:
       the final prompt.
   - title: Add tests for the new `research` command
     done: true
-    description: "Create a new test file `src/rmplan/commands/research.test.ts`.
+    description: "Create a new test file `src/tim/commands/research.test.ts`.
       Write tests to cover the new functionality, including: resolving the plan,
       generating the correct prompt, handling the `--rmfilter` option, and
       correctly appending the pasted research to the plan details. Use a
       temporary directory for file operations."
   - title: Update user documentation
     done: true
-    description: Add a section for the new `rmplan research` command in the
+    description: Add a section for the new `tim research` command in the
       project's `README.md` or other relevant documentation files, explaining
       its purpose, usage, and options.
 changedFiles:
   - README.md
-  - src/rmplan/actions.ts
-  - src/rmplan/commands/research.test.ts
-  - src/rmplan/commands/research.ts
-  - src/rmplan/prompt.ts
-  - src/rmplan/rmplan.ts
+  - src/tim/actions.ts
+  - src/tim/commands/research.test.ts
+  - src/tim/commands/research.ts
+  - src/tim/prompt.ts
+  - src/tim/tim.ts
 rmfilter:
-  - src/rmplan
+  - src/tim
 ---
 
 This phase will introduce the `research` command, its associated logic, and tests. It will cover everything from parsing the command-line arguments to generating the research prompt, handling optional file context with `rmfilter`, and saving the research back to the plan file.

@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Better handling of running in a specific branch
 goal: ""
 id: 123
@@ -11,7 +11,7 @@ updatedAt: 2025-10-27T08:39:04.299Z
 tasks: []
 ---
 
-This mostly is related to the `rmplan agent` command, adding a `--branch` flag to select a branch to run in.
+This mostly is related to the `tim agent` command, adding a `--branch` flag to select a branch to run in.
 
 We should be able to:
 - Select a branch to run in when running in the current directory

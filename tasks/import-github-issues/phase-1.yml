@@ -1,7 +1,7 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: "Core: Import a Single GitHub Issue"
-goal: Implement the core functionality of the `rmplan import` command to import
+goal: Implement the core functionality of the `tim import` command to import
   a single, specified GitHub issue and create a local stub plan file for it.
 id: 39
 uuid: bf4094fa-3ed4-4b65-8565-1048b2e1b7df
@@ -12,11 +12,11 @@ promptsGeneratedAt: 2025-06-06T08:59:58.038Z
 createdAt: 2025-06-06T05:40:44.136Z
 updatedAt: 2025-10-27T08:39:04.312Z
 project:
-  title: Add `rmplan import` Command to Import GitHub Issues
-  goal: The project aims to add a new `rmplan import` command that allows users to
+  title: Add `tim import` Command to Import GitHub Issues
+  goal: The project aims to add a new `tim import` command that allows users to
     import GitHub issues and create corresponding local plan files. This will
     streamline the process of turning feature requests and bug reports from
-    GitHub into actionable development plans within the `rmplan` ecosystem.
+    GitHub into actionable development plans within the `tim` ecosystem.
   details: The new command will support two primary modes of operation. When a
     specific issue is provided via a flag, it will import that single issue.
     Otherwise, it will enter an interactive mode, listing all open issues for
@@ -30,15 +30,15 @@ project:
     `rmfilter` arguments embedded in the issue's text, similar to the `generate`
     command. The final output for each imported issue will be a "stub" plan
     file, containing metadata like the title, goal, details, and issue link, but
-    with an empty task list, ready for further planning with `rmplan generate`.
-    This feature shares significant functionality with the existing `rmplan
+    with an empty task list, ready for further planning with `tim generate`.
+    This feature shares significant functionality with the existing `tim
     generate` command, particularly around GitHub issue processing. A major goal
     is to reuse existing code from `generate` and its helper modules to ensure
     consistency and reduce implementation effort.
 tasks:
-  - title: Create the `rmplan import` Command Structure
+  - title: Create the `tim import` Command Structure
     done: true
-    description: Create the new `rmplan import` command in the main CLI file and set
+    description: Create the new `tim import` command in the main CLI file and set
       up its handler. This involves adding the command definition, defining the
       `--issue` option, and creating the `import.ts` command handler file to
       which the action will be delegated.
@@ -55,24 +55,24 @@ tasks:
       a valid, minimal "stub" plan file. This plan will include the issue's
       title, the user-selected details, the associated GitHub issue URL, and any
       parsed `rmfilter` arguments. It will be assigned a new, unique plan ID and
-      will not contain any tasks, making it ready for the `rmplan generate`
+      will not contain any tasks, making it ready for the `tim generate`
       command.
 changedFiles:
   - src/common/model_factory.ts
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/commands/import.test.ts
-  - src/rmplan/commands/import.ts
-  - src/rmplan/executors/copy_paste.ts
-  - src/rmplan/executors/one-call.ts
-  - src/rmplan/llm_utils/run_and_apply.ts
-  - src/rmplan/plans.ts
-  - src/rmplan/process_markdown.ts
-  - src/rmplan/rmplan.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/import.test.ts
+  - src/tim/commands/import.ts
+  - src/tim/executors/copy_paste.ts
+  - src/tim/executors/one-call.ts
+  - src/tim/llm_utils/run_and_apply.ts
+  - src/tim/plans.ts
+  - src/tim/process_markdown.ts
+  - src/tim/tim.ts
 rmfilter:
-  - src/rmplan/commands/generate.ts
+  - src/tim/commands/generate.ts
   - --with-imports
   - --
-  - src/rmplan/rmplan.ts
+  - src/tim/tim.ts
 ---
 
-This phase focuses on establishing the `rmplan import` command and its single-issue import capability using the `--issue` flag. We will heavily leverage existing functions from the `generate` command's workflow, particularly for fetching issue data, prompting the user for content selection, and parsing `rmfilter` arguments. The outcome will be a fully functional, non-interactive import that lays the foundation for the multi-issue interactive mode.
+This phase focuses on establishing the `tim import` command and its single-issue import capability using the `--issue` flag. We will heavily leverage existing functions from the `generate` command's workflow, particularly for fetching issue data, prompting the user for content selection, and parsing `rmfilter` arguments. The outcome will be a fully functional, non-interactive import that lays the foundation for the multi-issue interactive mode.

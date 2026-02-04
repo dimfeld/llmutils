@@ -1,4 +1,4 @@
-// Forwarding export - actual implementation moved to src/rmplan/llm_utils/run_and_apply.ts
+// Forwarding export - actual implementation moved to src/tim/llm_utils/run_and_apply.ts
 export {
   DEFAULT_RUN_MODEL,
   runStreamingPrompt,
@@ -6,4 +6,4 @@ export {
   type LlmPromptMessage,
   type LlmPromptStructure,
   type RunPromptOptions,
-} from '../rmplan/llm_utils/run_and_apply.js';
+} from '../tim/llm_utils/run_and_apply.js';

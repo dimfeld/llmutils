@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Ability to run, generate, prepare, or agent commands on the next ready
   dependency of a plan. - Integrate Dependency Discovery into CLI Commands
 goal: To expose the new dependency discovery logic through a command-line flag
@@ -22,7 +22,7 @@ tasks:
   - title: Add New CLI Flag to Command Parser
     done: true
     description: >
-      Modify the CLI argument parsing configuration in src/rmplan/rmplan.ts to
+      Modify the CLI argument parsing configuration in src/tim/tim.ts to
       add a new flag, --next-ready, to the generate, prepare, and agent
       commands. This flag will accept a parent plan ID (either numeric or file
       path) and signal that the command should find and operate on the next
@@ -34,9 +34,9 @@ tasks:
     done: true
     description: >
       Update the generate command's implementation in
-      src/rmplan/commands/generate.ts to handle the --next-ready flag. When this
+      src/tim/commands/generate.ts to handle the --next-ready flag. When this
       flag is present, the command will use the findNextReadyDependency function
-      from src/rmplan/commands/find_next_dependency.ts to locate the appropriate
+      from src/tim/commands/find_next_dependency.ts to locate the appropriate
       dependency plan. If a ready dependency is found, the command proceeds with
       generation for that plan. If no ready dependency is found, the command
       exits gracefully with an informative message. The implementation should
@@ -46,7 +46,7 @@ tasks:
     done: true
     description: >
       Update the prepare command's implementation in
-      src/rmplan/commands/prepare.ts to handle the --next-ready flag. The
+      src/tim/commands/prepare.ts to handle the --next-ready flag. The
       implementation follows a similar pattern to the generate command but
       integrates with the existing --next and --current flag logic. The command
       should check for --next-ready first, resolve the parent plan, find its
@@ -57,7 +57,7 @@ tasks:
   - title: Modify `agent` Command to Use New Logic
     done: true
     description: >
-      Update the agent command's implementation in src/rmplan/commands/agent.ts
+      Update the agent command's implementation in src/tim/commands/agent.ts
       to handle the --next-ready flag. Since the agent command has more complex
       initialization including workspace management, the implementation needs to
       resolve the target plan early in the execution flow. The --next-ready
@@ -78,27 +78,27 @@ tasks:
       also the messages displayed to users and the final state of plan files
       where applicable.
 changedFiles:
-  - src/rmplan/commands/agent.test.ts
-  - src/rmplan/commands/agent.ts
-  - src/rmplan/commands/cli_integration.test.ts
-  - src/rmplan/commands/cli_parsing.test.ts
-  - src/rmplan/commands/find_next_dependency.test.ts
-  - src/rmplan/commands/find_next_dependency.ts
-  - src/rmplan/commands/generate.test.ts
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/commands/integration.test.ts
-  - src/rmplan/commands/next_ready_integration.test.ts
-  - src/rmplan/commands/prepare.test.ts
-  - src/rmplan/commands/prepare.ts
-  - src/rmplan/commands/show.ts
-  - src/rmplan/dependency_traversal.test.ts
-  - src/rmplan/dependency_traversal.ts
-  - src/rmplan/executors/claude_code/agent_generator.test.ts
-  - src/rmplan/plans/plan_state_utils.test.ts
-  - src/rmplan/plans/plan_state_utils.ts
-  - src/rmplan/rmplan.ts
+  - src/tim/commands/agent.test.ts
+  - src/tim/commands/agent.ts
+  - src/tim/commands/cli_integration.test.ts
+  - src/tim/commands/cli_parsing.test.ts
+  - src/tim/commands/find_next_dependency.test.ts
+  - src/tim/commands/find_next_dependency.ts
+  - src/tim/commands/generate.test.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/integration.test.ts
+  - src/tim/commands/next_ready_integration.test.ts
+  - src/tim/commands/prepare.test.ts
+  - src/tim/commands/prepare.ts
+  - src/tim/commands/show.ts
+  - src/tim/dependency_traversal.test.ts
+  - src/tim/dependency_traversal.ts
+  - src/tim/executors/claude_code/agent_generator.test.ts
+  - src/tim/plans/plan_state_utils.test.ts
+  - src/tim/plans/plan_state_utils.ts
+  - src/tim/tim.ts
 rmfilter:
-  - src/rmplan
+  - src/tim
 ---
 
 This phase connects the core logic from Phase 1 to the user-facing CLI. A new flag will be added to the relevant commands. When this flag is present, the command's execution target will be determined by the dependency discovery logic instead of being the plan provided directly as an argument.

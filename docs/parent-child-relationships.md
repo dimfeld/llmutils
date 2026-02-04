@@ -1,10 +1,10 @@
-# Parent-Child Plan Relationships in rmplan
+# Parent-Child Plan Relationships in tim
 
-This guide provides a comprehensive overview of working with parent-child relationships in rmplan, including how to create hierarchical plans, understand the automatic maintenance features, and follow best practices for organizing multi-phase projects.
+This guide provides a comprehensive overview of working with parent-child relationships in tim, including how to create hierarchical plans, understand the automatic maintenance features, and follow best practices for organizing multi-phase projects.
 
 ## Overview
 
-Parent-child relationships in rmplan allow you to organize complex projects into manageable hierarchies. These relationships are **bidirectional**, meaning that when a child plan references a parent, the parent plan automatically includes that child in its dependencies array. This ensures consistency in the dependency graph and prevents orphaned child plans.
+Parent-child relationships in tim allow you to organize complex projects into manageable hierarchies. These relationships are **bidirectional**, meaning that when a child plan references a parent, the parent plan automatically includes that child in its dependencies array. This ensures consistency in the dependency graph and prevents orphaned child plans.
 
 ## Key Features
 
@@ -16,7 +16,7 @@ Parent-child relationships in rmplan allow you to organize complex projects into
 
 ### Automatic Maintenance
 
-All rmplan commands work together to maintain consistency:
+All tim commands work together to maintain consistency:
 
 - **`add` command**: When creating plans with `--parent`, automatically updates the parent's dependencies
 - **`set` command**: When modifying parent relationships, updates all affected plans
@@ -34,12 +34,12 @@ When creating new plans, you can establish parent-child relationships immediatel
 
 ```bash
 # Create a parent plan
-rmplan add "User Authentication System" --output tasks/auth-system.yml
+tim add "User Authentication System" --output tasks/auth-system.yml
 
 # Create child plans that reference the parent
-rmplan add "Database Schema" --parent auth-system --output tasks/db-schema.yml
-rmplan add "API Endpoints" --parent auth-system --depends-on db-schema --output tasks/api-endpoints.yml
-rmplan add "Frontend Components" --parent auth-system --depends-on api-endpoints --output tasks/frontend.yml
+tim add "Database Schema" --parent auth-system --output tasks/db-schema.yml
+tim add "API Endpoints" --parent auth-system --depends-on db-schema --output tasks/api-endpoints.yml
+tim add "Frontend Components" --parent auth-system --depends-on api-endpoints --output tasks/frontend.yml
 ```
 
 In this example:
@@ -54,13 +54,13 @@ You can establish or modify parent-child relationships for existing plans:
 
 ```bash
 # Set a parent for an existing plan
-rmplan set existing-plan.yml --parent parent-plan-id
+tim set existing-plan.yml --parent parent-plan-id
 
 # Change a plan's parent (updates both old and new parents)
-rmplan set child-plan.yml --parent new-parent-id
+tim set child-plan.yml --parent new-parent-id
 
 # Remove a parent relationship
-rmplan set child-plan.yml --no-parent
+tim set child-plan.yml --no-parent
 ```
 
 ## Plan File Structure
@@ -94,7 +94,7 @@ tasks:
 
 ## Working with Multi-Level Hierarchies
 
-rmplan supports complex, multi-level hierarchies:
+tim supports complex, multi-level hierarchies:
 
 ```
 Project Root (ID: 100)
@@ -113,19 +113,19 @@ Project Root (ID: 100)
 
 ```bash
 # Create the root project
-rmplan add "Complete Authentication System" --output tasks/auth-root.yml
+tim add "Complete Authentication System" --output tasks/auth-root.yml
 
 # Create phase plans
-rmplan add "Foundation Phase" --parent auth-root --output tasks/phase-1.yml
-rmplan add "Features Phase" --parent auth-root --depends-on phase-1 --output tasks/phase-2.yml
-rmplan add "Integration Phase" --parent auth-root --depends-on phase-2 --output tasks/phase-3.yml
+tim add "Foundation Phase" --parent auth-root --output tasks/phase-1.yml
+tim add "Features Phase" --parent auth-root --depends-on phase-1 --output tasks/phase-2.yml
+tim add "Integration Phase" --parent auth-root --depends-on phase-2 --output tasks/phase-3.yml
 
 # Create sub-tasks for each phase
-rmplan add "Database Schema" --parent phase-1 --output tasks/db-schema.yml
-rmplan add "Core API" --parent phase-1 --depends-on db-schema --output tasks/core-api.yml
+tim add "Database Schema" --parent phase-1 --output tasks/db-schema.yml
+tim add "Core API" --parent phase-1 --depends-on db-schema --output tasks/core-api.yml
 
-rmplan add "User Management" --parent phase-2 --depends-on core-api --output tasks/user-mgmt.yml
-rmplan add "Authentication" --parent phase-2 --depends-on user-mgmt --output tasks/auth-impl.yml
+tim add "User Management" --parent phase-2 --depends-on core-api --output tasks/user-mgmt.yml
+tim add "Authentication" --parent phase-2 --depends-on user-mgmt --output tasks/auth-impl.yml
 ```
 
 ## Validation and Auto-Fixing
@@ -136,16 +136,16 @@ The `validate` command ensures your plan relationships remain consistent:
 
 ```bash
 # Validate all plans
-rmplan validate
+tim validate
 
 # Validate specific plans
-rmplan validate tasks/*.yml
+tim validate tasks/*.yml
 
 # Validate with detailed output
-rmplan validate --verbose
+tim validate --verbose
 
 # Check without auto-fixing
-rmplan validate --no-fix
+tim validate --no-fix
 ```
 
 ### What Gets Validated
@@ -182,12 +182,12 @@ Example output:
 
 ```bash
 # Good: Clear, descriptive names
-rmplan add "User Authentication - Phase 1: Database Setup"
-rmplan add "User Authentication - Phase 2: API Implementation"
+tim add "User Authentication - Phase 1: Database Setup"
+tim add "User Authentication - Phase 2: API Implementation"
 
 # Avoid: Vague or unclear names
-rmplan add "Part 1"
-rmplan add "TODO Items"
+tim add "Part 1"
+tim add "TODO Items"
 ```
 
 **Organize files logically:**
@@ -228,26 +228,26 @@ Database Schema → API Endpoints → Frontend → Testing
 
 ```bash
 # 1. Create the overall project structure
-rmplan add "E-commerce Platform" --output tasks/ecommerce-root.yml
+tim add "E-commerce Platform" --output tasks/ecommerce-root.yml
 
 # 2. Break into phases
-rmplan add "Backend Services" --parent ecommerce-root --output tasks/backend.yml
-rmplan add "Frontend Application" --parent ecommerce-root --output tasks/frontend.yml
-rmplan add "Integration & Testing" --parent ecommerce-root --output tasks/integration.yml
+tim add "Backend Services" --parent ecommerce-root --output tasks/backend.yml
+tim add "Frontend Application" --parent ecommerce-root --output tasks/frontend.yml
+tim add "Integration & Testing" --parent ecommerce-root --output tasks/integration.yml
 
 # 3. Add detailed tasks to each phase as needed
-rmplan add "Product Catalog API" --parent backend --output tasks/catalog-api.yml
-rmplan add "Shopping Cart Service" --parent backend --depends-on catalog-api --output tasks/cart-service.yml
+tim add "Product Catalog API" --parent backend --output tasks/catalog-api.yml
+tim add "Shopping Cart Service" --parent backend --depends-on catalog-api --output tasks/cart-service.yml
 ```
 
 **Use the `--next-ready` workflow:**
 
 ```bash
 # Find and work on the next ready dependency
-rmplan show --next-ready ecommerce-root
+tim show --next-ready ecommerce-root
 
 # Automatically execute the next ready task
-rmplan agent --next-ready ecommerce-root
+tim agent --next-ready ecommerce-root
 
 # Continue until all dependencies are complete
 ```
@@ -258,10 +258,10 @@ rmplan agent --next-ready ecommerce-root
 
 ```bash
 # Run before major changes
-rmplan validate --verbose
+tim validate --verbose
 
 # Include in CI/CD pipeline
-rmplan validate --no-fix  # Fail if inconsistencies found
+tim validate --no-fix  # Fail if inconsistencies found
 ```
 
 **Keep relationships simple:**
@@ -278,28 +278,28 @@ rmplan validate --no-fix  # Fail if inconsistencies found
 1. **Create the root plan:**
 
    ```bash
-   rmplan add "My New Feature" --priority high --output tasks/my-feature.yml
+   tim add "My New Feature" --priority high --output tasks/my-feature.yml
    ```
 
 2. **Break into phases:**
 
    ```bash
-   rmplan add "Phase 1: Foundation" --parent my-feature --output tasks/phase-1.yml
-   rmplan add "Phase 2: Implementation" --parent my-feature --depends-on phase-1 --output tasks/phase-2.yml
-   rmplan add "Phase 3: Testing" --parent my-feature --depends-on phase-2 --output tasks/phase-3.yml
+   tim add "Phase 1: Foundation" --parent my-feature --output tasks/phase-1.yml
+   tim add "Phase 2: Implementation" --parent my-feature --depends-on phase-1 --output tasks/phase-2.yml
+   tim add "Phase 3: Testing" --parent my-feature --depends-on phase-2 --output tasks/phase-3.yml
    ```
 
 3. **Add detailed tasks:**
 
    ```bash
-   rmplan add "Database Setup" --parent phase-1 --output tasks/db-setup.yml
-   rmplan add "API Framework" --parent phase-1 --depends-on db-setup --output tasks/api-framework.yml
+   tim add "Database Setup" --parent phase-1 --output tasks/db-setup.yml
+   tim add "API Framework" --parent phase-1 --depends-on db-setup --output tasks/api-framework.yml
    ```
 
 4. **Validate and execute:**
    ```bash
-   rmplan validate
-   rmplan agent --next-ready my-feature
+   tim validate
+   tim agent --next-ready my-feature
    ```
 
 ### Refactoring Existing Plans
@@ -307,26 +307,26 @@ rmplan validate --no-fix  # Fail if inconsistencies found
 1. **Assess current structure:**
 
    ```bash
-   rmplan list --all
-   rmplan show existing-plan.yml
+   tim list --all
+   tim show existing-plan.yml
    ```
 
 2. **Create new parent if needed:**
 
    ```bash
-   rmplan add "Refactored Project Structure" --output tasks/new-parent.yml
+   tim add "Refactored Project Structure" --output tasks/new-parent.yml
    ```
 
 3. **Update relationships:**
 
    ```bash
-   rmplan set existing-child-1.yml --parent new-parent
-   rmplan set existing-child-2.yml --parent new-parent
+   tim set existing-child-1.yml --parent new-parent
+   tim set existing-child-2.yml --parent new-parent
    ```
 
 4. **Validate changes:**
    ```bash
-   rmplan validate --verbose
+   tim validate --verbose
    ```
 
 ## Troubleshooting
@@ -355,26 +355,26 @@ Solution: Either create the missing parent plan or update the child to reference
 Warning: Parent 'parent-plan' doesn't include child 'child-plan' in dependencies
 ```
 
-Solution: Run `rmplan validate` to automatically fix the inconsistency.
+Solution: Run `tim validate` to automatically fix the inconsistency.
 
 ### Debugging Commands
 
 ```bash
 # See detailed plan information
-rmplan show plan.yml --verbose
+tim show plan.yml --verbose
 
 # Check dependency resolution
-rmplan list --status all --sort dependencies
+tim list --status all --sort dependencies
 
 # Validate with full output
-rmplan validate --verbose --no-fix
+tim validate --verbose --no-fix
 ```
 
 ## Advanced Features
 
 ### Conditional Dependencies
 
-While rmplan doesn't have built-in conditional logic, you can model complex scenarios using priority levels and manual dependency management:
+While tim doesn't have built-in conditional logic, you can model complex scenarios using priority levels and manual dependency management:
 
 ```yaml
 # High-priority critical path
@@ -404,10 +404,10 @@ Parent-child relationships work seamlessly with:
 
 ## Conclusion
 
-Parent-child relationships in rmplan provide a powerful way to organize complex projects while maintaining consistency automatically. By following these patterns and best practices, you can create maintainable, scalable project structures that grow with your needs.
+Parent-child relationships in tim provide a powerful way to organize complex projects while maintaining consistency automatically. By following these patterns and best practices, you can create maintainable, scalable project structures that grow with your needs.
 
 For additional help:
 
-- Run `rmplan --help` for command-specific documentation
-- Use `rmplan validate --verbose` to understand relationship issues
+- Run `tim --help` for command-specific documentation
+- Use `tim validate --verbose` to understand relationship issues
 - Check the main README for usage examples and configuration options

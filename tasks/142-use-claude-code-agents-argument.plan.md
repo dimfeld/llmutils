@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: use claude code agents argument
 goal: ""
 id: 142
@@ -36,7 +36,7 @@ Successfully updated the Claude Code executor to use the --agents command-line a
 
 ## Implementation Overview
 
-The Claude Code executor (src/rmplan/executors/claude_code.ts) now passes agent configurations to the claude CLI using the --agents JSON argument instead of relying solely on generated markdown files. This provides a more direct and efficient way to configure custom agents while maintaining backward compatibility.
+The Claude Code executor (src/tim/executors/claude_code.ts) now passes agent configurations to the claude CLI using the --agents JSON argument instead of relying solely on generated markdown files. This provides a more direct and efficient way to configure custom agents while maintaining backward compatibility.
 
 ## Key Changes Made
 
@@ -102,11 +102,11 @@ Only include model and tools fields in the JSON when they are explicitly provide
 
 ## Files Modified
 
-1. src/rmplan/executors/claude_code/agent_generator.ts - Added buildAgentsArgument function and tools to AgentDefinition
-2. src/rmplan/executors/claude_code.ts - Updated to use --agents argument while maintaining file generation
-3. src/rmplan/executors/claude_code/agent_generator.test.ts - Added comprehensive tests for buildAgentsArgument
-4. src/rmplan/executors/claude_code_model_test.ts - Updated mocks to capture buildAgentsArgument calls
-5. src/rmplan/executors/claude_code.test.ts - Updated mocks for new function
+1. src/tim/executors/claude_code/agent_generator.ts - Added buildAgentsArgument function and tools to AgentDefinition
+2. src/tim/executors/claude_code.ts - Updated to use --agents argument while maintaining file generation
+3. src/tim/executors/claude_code/agent_generator.test.ts - Added comprehensive tests for buildAgentsArgument
+4. src/tim/executors/claude_code_model_test.ts - Updated mocks to capture buildAgentsArgument calls
+5. src/tim/executors/claude_code.test.ts - Updated mocks for new function
 
 ## Verification Results
 

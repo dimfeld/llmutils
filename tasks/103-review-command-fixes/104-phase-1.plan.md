@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: review command fixes - Implement "Simple" Execution Mode for Review-Only
   Operations
 goal: To create a "simple" execution mode that allows the `review` command to
@@ -23,7 +23,7 @@ project:
     review-only action by default and introduce an explicit `--autofix` option
     to trigger a subsequent fix-up process, providing a more predictable and
     user-controlled workflow.
-  details: The current implementation of the `rmplan review` command uses the
+  details: The current implementation of the `tim review` command uses the
     standard executor, which for `claude-code` initiates a full
     implement/test/review cycle. This means it not only reviews the code but
     also attempts to fix any identified issues, which is not the intended
@@ -63,7 +63,7 @@ tasks:
     description: >
       Modify the `handleReviewCommand` function to call the executor with
       `executionMode: 'simple'` in the `ExecutePlanInfo` object. This change
-      ensures that when a user runs `rmplan review`, it performs a review-only
+      ensures that when a user runs `tim review`, it performs a review-only
       operation by default without invoking the multi-agent orchestration. The
       review will run as a single direct prompt to Claude, providing the review
       analysis without attempting to fix any issues.
@@ -78,13 +78,13 @@ tasks:
       verify behavior through spies and mocks on the key functions that should
       be skipped in simple mode.
 rmfilter:
-  - src/rmplan/rmplan.ts
-  - src/rmplan/commands/review.ts
-  - src/rmplan/executors
+  - src/tim/tim.ts
+  - src/tim/commands/review.ts
+  - src/tim/executors
 ---
 
-This phase focuses on creating the foundational "simple" execution mode and integrating it into the `review` command. We will modify the executor interface to support different execution modes and update the `ClaudeCodeExecutor` to handle this new mode by bypassing its complex orchestration logic. This will ensure that `rmplan review` behaves as expected, only providing a review analysis.
+This phase focuses on creating the foundational "simple" execution mode and integrating it into the `review` command. We will modify the executor interface to support different execution modes and update the `ClaudeCodeExecutor` to handle this new mode by bypassing its complex orchestration logic. This will ensure that `tim review` behaves as expected, only providing a review analysis.
 
 ### Acceptance Criteria
-- The `rmplan review <plan>` command, by default, only executes a review and does not modify any code.
+- The `tim review <plan>` command, by default, only executes a review and does not modify any code.
 - The `claude-code` executor has a "simple" execution mode that bypasses the multi-agent orchestration.

@@ -1,6 +1,6 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-title: Add ability to rmplan config file to set "direct" mode in generate and
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
+title: Add ability to tim config file to set "direct" mode in generate and
   prepare commands by default
 goal: This phase will deliver the complete functionality by updating the
   configuration model, modifying the CLI commands to respect the new setting,
@@ -16,11 +16,11 @@ updatedAt: 2025-10-27T08:39:04.209Z
 project:
   title: Add `direct_mode` Configuration Option
   goal: The project's goal is to introduce a new configuration option,
-    `planning.direct_mode`, in the `rmplan` config file. This will allow users
+    `planning.direct_mode`, in the `tim` config file. This will allow users
     to set "direct" mode as the default behavior for the `generate` and
     `prepare` commands, improving user experience and workflow customization.
   details: >-
-    This project involves updating the `rmplan` configuration system and the
+    This project involves updating the `tim` configuration system and the
     command-line interface for the `generate` and `prepare` commands.
 
 
@@ -47,10 +47,10 @@ project:
 
     **Acceptance Criteria:**
 
-    - A new boolean option `planning.direct_mode` can be added to the `rmplan`
+    - A new boolean option `planning.direct_mode` can be added to the `tim`
     config file.
 
-    - When `direct_mode` is `true`, `rmplan generate` and `rmplan prepare`
+    - When `direct_mode` is `true`, `tim generate` and `tim prepare`
     execute in "direct" mode by default.
 
     - The `--no-direct` command-line flag successfully overrides a configuration
@@ -94,19 +94,19 @@ tasks:
       flags.
 changedFiles:
   - docs/direct_mode_feature.md
-  - src/rmplan/commands/generate.test.ts
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/commands/prepare.test.ts
-  - src/rmplan/commands/prepare.ts
-  - src/rmplan/configLoader.test.ts
-  - src/rmplan/configLoader.ts
+  - src/tim/commands/generate.test.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/prepare.test.ts
+  - src/tim/commands/prepare.ts
+  - src/tim/configLoader.test.ts
+  - src/tim/configLoader.ts
 rmfilter:
-  - src/rmplan
+  - src/tim
 ---
 
 # Original Plan Details
 
-Update the rmplan config file with a flag that, if true, will set "direct" mode in the
+Update the tim config file with a flag that, if true, will set "direct" mode in the
 generate and prepare commands by default.
 
 # Processed Plan Details

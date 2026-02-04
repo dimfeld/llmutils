@@ -1,9 +1,9 @@
-rmplan should be able to read from a YAML configuration file. 
+tim should be able to read from a YAML configuration file. 
 
 # Finding the configuration file
 
-1. Look for `.rmfilter/rmplan.yml` in the repository root. It is ok if this file does not exist.
-2. Add a `-c, --config` option to the `rmplan` command to specify a different configuration.
+1. Look for `.rmfilter/tim.yml` in the repository root. It is ok if this file does not exist.
+2. Add a `-c, --config` option to the `tim` command to specify a different configuration.
 
 # Configuration File Format
 

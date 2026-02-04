@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: The validate command should check that a plan's parent also depends on
   the child and automatically fix that if it doesn't.
 goal: Add validation to ensure bidirectional parent-child relationships in plan
@@ -21,7 +21,7 @@ updatedAt: 2025-10-27T08:39:04.278Z
 tasks: []
 ---
 
-## Implement parent-child dependency validation and auto-fix in rmplan validate command
+## Implement parent-child dependency validation and auto-fix in tim validate command
 
 The validate command should detect when a plan specifies a parent but that parent doesn't include the child in its dependencies array. This ensures consistency in the dependency graph and prevents orphaned child plans. The implementation should automatically fix these inconsistencies by updating parent plans, provide clear reporting of what was fixed, and maintain backward compatibility with existing validation functionality.
 

@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Documentation and Final Review
 goal: Ensure all project documentation is updated to reflect the new code
   organization and perform a final review of the changes.
@@ -16,25 +16,25 @@ promptsGeneratedAt: 2025-06-06T06:16:05.626Z
 createdAt: 2025-06-04T08:24:18.886Z
 updatedAt: 2025-10-27T08:39:04.280Z
 project:
-  title: Refactor codebase to improve modularity and reorganize `rmplan` by
+  title: Refactor codebase to improve modularity and reorganize `tim` by
     command functionality
   goal: The primary goal of this project is to reorganize the `dimfeld/llmutils`
     codebase to enhance modularity and maintainability. This involves
     refactoring code along functionality boundaries to reduce inter-directory
-    coupling and reorganizing the `rmplan` directory for better clarity by
+    coupling and reorganizing the `tim` directory for better clarity by
     structuring its code per command.
   details: >-
     The current codebase has dependencies and interactions between modules like
-    `rmfilter`, `rmplan`, and `rmpr` that have become unwieldy. This project
+    `rmfilter`, `tim`, and `rmpr` that have become unwieldy. This project
     aims to:
 
-    1. Reorganize the `rmplan` module by creating separate files for each of its
+    1. Reorganize the `tim` module by creating separate files for each of its
     sub-commands, improving its internal structure.
 
-    2. Analyze and refactor dependencies between `rmfilter`, `rmplan`, `rmpr`,
+    2. Analyze and refactor dependencies between `rmfilter`, `tim`, `rmpr`,
     and `common` modules. This includes consolidating shared utilities into
     `src/common/` or more specific common modules, and ensuring that
-    interactions between the main feature modules (`rmfilter`, `rmplan`, `rmpr`)
+    interactions between the main feature modules (`rmfilter`, `tim`, `rmpr`)
     are clean and well-defined.
 
     The project will be broken into phases to manage complexity and ensure
@@ -56,7 +56,7 @@ tasks:
     description: Conduct a final review of the refactored codebase, focusing on
       module boundaries and dependency clarity. Identify and fix any remaining
       dependency issues, such as `common` modules importing from feature modules
-      (`rmfilter`, `rmplan`, `rmpr`).
+      (`rmfilter`, `tim`, `rmpr`).
   - title: Clean Up Unused Code
     done: true
     description: Identify and remove any old files, unused functions, or dead code
@@ -106,54 +106,54 @@ changedFiles:
   - src/rmfind/rmfind.ts
   - src/rmfix/cli.ts
   - src/rmfix/rmfix.ts
-  - src/rmplan/actions.test.ts
-  - src/rmplan/actions.ts
-  - src/rmplan/agent_runner.test.ts
-  - src/rmplan/agent_runner.ts
-  - src/rmplan/cleanup.ts
-  - src/rmplan/commands/add.ts
-  - src/rmplan/commands/agent.ts
-  - src/rmplan/commands/answer-pr.ts
-  - src/rmplan/commands/answerPr.ts
-  - src/rmplan/commands/cleanup.ts
-  - src/rmplan/commands/done.test.ts
-  - src/rmplan/commands/done.ts
-  - src/rmplan/commands/edit.ts
-  - src/rmplan/commands/extract.ts
-  - src/rmplan/commands/generate.test.ts
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/commands/list.test.ts
-  - src/rmplan/commands/list.ts
-  - src/rmplan/commands/next.ts
-  - src/rmplan/commands/prepare.ts
-  - src/rmplan/commands/renumber.test.ts
-  - src/rmplan/commands/renumber.ts
-  - src/rmplan/commands/show.test.ts
-  - src/rmplan/commands/show.ts
-  - src/rmplan/commands/split.ts
-  - src/rmplan/commands/workspace.ts
-  - src/rmplan/configLoader.test.ts
-  - src/rmplan/configLoader.ts
-  - src/rmplan/display_utils.test.ts
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/executors/copy_paste.ts
-  - src/rmplan/executors/index.ts
-  - src/rmplan/executors/one-call.ts
-  - src/rmplan/llm_utils/llm.ts
-  - src/rmplan/llm_utils/run_and_apply.ts
-  - src/rmplan/plans.test.ts
-  - src/rmplan/plans.ts
-  - src/rmplan/process_markdown.ts
-  - src/rmplan/prompt.ts
-  - src/rmplan/rmplan.integration.test.ts
-  - src/rmplan/rmplan.ts
-  - src/rmplan/rmplan_add.test.ts
-  - src/rmplan/utils/commands.ts
-  - src/rmplan/utils/env.ts
-  - src/rmplan/workspace/workspace_auto_selector.test.ts
-  - src/rmplan/workspace/workspace_auto_selector.ts
-  - src/rmplan/workspace/workspace_manager.test.ts
-  - src/rmplan/workspace/workspace_manager.ts
+  - src/tim/actions.test.ts
+  - src/tim/actions.ts
+  - src/tim/agent_runner.test.ts
+  - src/tim/agent_runner.ts
+  - src/tim/cleanup.ts
+  - src/tim/commands/add.ts
+  - src/tim/commands/agent.ts
+  - src/tim/commands/answer-pr.ts
+  - src/tim/commands/answerPr.ts
+  - src/tim/commands/cleanup.ts
+  - src/tim/commands/done.test.ts
+  - src/tim/commands/done.ts
+  - src/tim/commands/edit.ts
+  - src/tim/commands/extract.ts
+  - src/tim/commands/generate.test.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/list.test.ts
+  - src/tim/commands/list.ts
+  - src/tim/commands/next.ts
+  - src/tim/commands/prepare.ts
+  - src/tim/commands/renumber.test.ts
+  - src/tim/commands/renumber.ts
+  - src/tim/commands/show.test.ts
+  - src/tim/commands/show.ts
+  - src/tim/commands/split.ts
+  - src/tim/commands/workspace.ts
+  - src/tim/configLoader.test.ts
+  - src/tim/configLoader.ts
+  - src/tim/display_utils.test.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/copy_paste.ts
+  - src/tim/executors/index.ts
+  - src/tim/executors/one-call.ts
+  - src/tim/llm_utils/llm.ts
+  - src/tim/llm_utils/run_and_apply.ts
+  - src/tim/plans.test.ts
+  - src/tim/plans.ts
+  - src/tim/process_markdown.ts
+  - src/tim/prompt.ts
+  - src/tim/tim.integration.test.ts
+  - src/tim/tim.ts
+  - src/tim/tim_add.test.ts
+  - src/tim/utils/commands.ts
+  - src/tim/utils/env.ts
+  - src/tim/workspace/workspace_auto_selector.test.ts
+  - src/tim/workspace/workspace_auto_selector.ts
+  - src/tim/workspace/workspace_manager.test.ts
+  - src/tim/workspace/workspace_manager.ts
   - src/rmpr/comment_options.ts
   - src/rmpr/git_utils.test.ts
   - src/rmpr/git_utils.ts
@@ -164,7 +164,7 @@ changedFiles:
   - src/testing.ts
 rmfilter:
   - --
-  - src/rmplan
+  - src/tim
   - src/rmpr
   - src/common
   - src/rmfilter

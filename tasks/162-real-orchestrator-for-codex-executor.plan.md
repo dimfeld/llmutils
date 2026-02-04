@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: real orchestrator for codex executor
 goal: ""
 id: 162
@@ -12,11 +12,11 @@ tasks: []
 tags: []
 ---
 
-Consider remaking the codex executor loop into a main orchestrator loop where each of the agents is actually an "rmplan subagent XXX" command that takes some arbitrary input from the orchestorator, adds that to the base subagent prompt for the task and plan, runs, and then prints its final message. We can use claude code or codex as the orchestrator, but probably claude code by default.
+Consider remaking the codex executor loop into a main orchestrator loop where each of the agents is actually an "tim subagent XXX" command that takes some arbitrary input from the orchestorator, adds that to the base subagent prompt for the task and plan, runs, and then prints its final message. We can use claude code or codex as the orchestrator, but probably claude code by default.
 
 This will allow us to merge a lot of the claude and codex executor code into a single mode, and potentially provide
 additional features like "use claude for frontend, codex for backend."
 
 Use environment variables to supply the necessary context.
 
-Implement a way (named pipes?) for the processes to write to the root rmplan process's stdout and stderr without filling up claudes context window.
+Implement a way (named pipes?) for the processes to write to the root tim process's stdout and stderr without filling up claudes context window.

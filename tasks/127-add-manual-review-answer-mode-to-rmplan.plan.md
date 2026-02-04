@@ -1,7 +1,7 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-title: Add manual review answer mode to rmplan
-goal: Implement `rmplan address-comments` command to find and address AI review
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
+title: Add manual review answer mode to tim
+goal: Implement `tim address-comments` command to find and address AI review
   comments that are already inserted in source files, similar to `answer-pr` but
   without needing a GitHub PR.
 id: 127
@@ -17,7 +17,7 @@ tasks:
   - title: Create addressComments.ts command file
     done: true
     description: >-
-      Create `src/rmplan/commands/addressComments.ts` with:
+      Create `src/tim/commands/addressComments.ts` with:
 
       - `handleAddressCommentsCommand(paths, options, command)` - Main command
       handler
@@ -60,9 +60,9 @@ tasks:
 
       Files to reference:
 
-      - src/rmplan/commands/answerPr.ts (command structure pattern)
+      - src/tim/commands/answerPr.ts (command structure pattern)
 
-      - src/rmplan/commands/agent/agent.ts (minimal executor setup)
+      - src/tim/commands/agent/agent.ts (minimal executor setup)
 
       - src/rmpr/modes/inline_comments.ts (removeAiCommentMarkers function)
 
@@ -70,7 +70,7 @@ tasks:
   - title: Register commands in CLI
     done: true
     description: |-
-      Update `src/rmplan/cli.ts` to register both new commands:
+      Update `src/tim/cli.ts` to register both new commands:
 
       1. `address-comments [paths...]` command with options:
          - --base-branch <branch>
@@ -85,7 +85,7 @@ tasks:
 
       Both commands accept optional path arguments for filtering.
 
-      Also update `src/rmplan/commands/index.ts` to export both handlers.
+      Also update `src/tim/commands/index.ts` to export both handlers.
   - title: Implement prompt generation with path filtering
     done: true
     description: >-
@@ -175,7 +175,7 @@ tasks:
   - title: Write tests for address-comments command
     done: true
     description: |-
-      Create `src/rmplan/commands/addressComments.test.ts` with tests for:
+      Create `src/tim/commands/addressComments.test.ts` with tests for:
 
       1. **Path filtering**:
          - Search entire repository when no paths provided
@@ -226,13 +226,13 @@ tasks:
     description: |-
       Update README.md to document the new commands:
 
-      1. Add `rmplan address-comments` section:
+      1. Add `tim address-comments` section:
          - Purpose and use case
          - Command syntax and options
          - Example usage
          - Workflow explanation
 
-      2. Add `rmplan cleanup-comments` section:
+      2. Add `tim cleanup-comments` section:
          - Purpose (manual cleanup without executor)
          - Command syntax
          - Example usage
@@ -283,13 +283,13 @@ tasks:
       Document any executor-specific quirks or limitations.
 changedFiles:
   - README.md
-  - src/rmplan/commands/addressComments.test.ts
-  - src/rmplan/commands/addressComments.ts
-  - src/rmplan/rmplan.ts
+  - src/tim/commands/addressComments.test.ts
+  - src/tim/commands/addressComments.ts
+  - src/tim/tim.ts
 rmfilter: []
 ---
 
-Call this new command `rmplan address-comments`
+Call this new command `tim address-comments`
 
 The idea is similar to the `answer-pr` command, except the AI comments are already in the files so it does not need to look at an existing PR, insert the comments itself, or do any of the other preparatory work. 
 
@@ -313,7 +313,7 @@ We should still run the final cleanup step though.
 
 ### Summary
 
-This task introduces a new `rmplan address-comments` command that finds and addresses AI review comments already inserted in source files. Unlike `answer-pr`, this command does not interact with GitHub PRs or insert comments—it assumes AI comments are already present and focuses on directing the executor to find and address them. The agent will handle grepping for comments and diffing against the base branch as needed, with the command only responsible for executor setup and cleanup.
+This task introduces a new `tim address-comments` command that finds and addresses AI review comments already inserted in source files. Unlike `answer-pr`, this command does not interact with GitHub PRs or insert comments—it assumes AI comments are already present and focuses on directing the executor to find and address them. The agent will handle grepping for comments and diffing against the base branch as needed, with the command only responsible for executor setup and cleanup.
 
 The implementation leverages existing utilities for AI comment detection, base branch resolution, and executor orchestration. Key differences from `answer-pr` include: no GitHub interaction, no comment selection UI, no diff context preparation (agent-driven instead), and simplified workflow focusing on executor prompt construction.
 
@@ -321,7 +321,7 @@ The implementation leverages existing utilities for AI comment detection, base b
 
 #### answer-pr Command Implementation
 
-**Location:** `src/rmplan/commands/answerPr.ts` and `src/rmpr/main.ts`
+**Location:** `src/tim/commands/answerPr.ts` and `src/rmpr/main.ts`
 
 The `answer-pr` command follows a five-phase workflow:
 
@@ -383,7 +383,7 @@ The `answer-pr` command follows a five-phase workflow:
 
 #### Executor Patterns and Prompting
 
-**Location:** `src/rmplan/executors/types.ts`, `src/rmplan/executors/build.ts`, executor implementations
+**Location:** `src/tim/executors/types.ts`, `src/tim/executors/build.ts`, executor implementations
 
 **Five Executor Types:**
 1. **claude-code**: Multi-agent orchestration (implementer→tester→reviewer or implementer→verifier in simple mode)
@@ -591,8 +591,8 @@ rmfilter --with-diff --diff-from staging src/
 
 **Usage in Commands:**
 - `src/rmfilter/additional_docs.ts:432-494` - `getDiffTag()` uses base branch for diff generation
-- `src/rmplan/plans.ts:698-747` - `getNewPlanFilesOnBranch()` finds plan files on current branch
-- `src/rmplan/incremental_review.ts` - Incremental review diffing
+- `src/tim/plans.ts:698-747` - `getNewPlanFilesOnBranch()` finds plan files on current branch
+- `src/tim/incremental_review.ts` - Incremental review diffing
 
 **Key Insight for address-comments:**
 We should add a `--base-branch` or `--diff-from` CLI option that:
@@ -608,7 +608,7 @@ The agent can use these commands when it needs to understand what changed in a f
 
 #### Command Structure Pattern
 
-Looking at similar commands in `src/rmplan/commands/`:
+Looking at similar commands in `src/tim/commands/`:
 
 **Typical Command File Structure:**
 1. CLI argument parsing and validation
@@ -618,11 +618,11 @@ Looking at similar commands in `src/rmplan/commands/`:
 5. Execute
 6. Post-processing (cleanup, commit, etc.)
 
-**Example: `src/rmplan/commands/agent/agent.ts`** (minimal setup, delegates to executor)
+**Example: `src/tim/commands/agent/agent.ts`** (minimal setup, delegates to executor)
 
 **For address-comments, we need:**
 
-File: `src/rmplan/commands/addressComments.ts`
+File: `src/tim/commands/addressComments.ts`
 
 1. **CLI Options:**
    - `[paths...]`: Optional file/directory paths to search (default: entire repository)
@@ -808,7 +808,7 @@ async function commitAddressedComments(): Promise<void> {
 
 #### Standalone Cleanup Command
 
-**New Command:** `rmplan cleanup-comments [paths...]`
+**New Command:** `tim cleanup-comments [paths...]`
 
 Provides a standalone way to remove AI comment markers without running the executor.
 
@@ -846,12 +846,12 @@ export async function handleCleanupCommentsCommand(paths: string[] = [], options
 
 #### Integration Points
 
-**CLI Integration:** `src/rmplan/cli.ts`
+**CLI Integration:** `src/tim/cli.ts`
 
 Add command registrations:
 ```typescript
 // Main address-comments command
-rmplanCommand
+timCommand
   .command('address-comments [paths...]')
   .description('Find and address AI review comments already inserted in source files')
   .option('--base-branch <branch>', 'Base branch for comparison (default: auto-detect main/master)')
@@ -863,14 +863,14 @@ rmplanCommand
   .action((paths, options, command) => handleAddressCommentsCommand(paths || [], options, command));
 
 // Standalone cleanup command
-rmplanCommand
+timCommand
   .command('cleanup-comments [paths...]')
   .description('Remove AI comment markers from source files')
   .option('--yes', 'Skip confirmation prompt')
   .action((paths, options, command) => handleCleanupCommentsCommand(paths || [], options, command));
 ```
 
-**Exports:** Add to `src/rmplan/commands/index.ts`:
+**Exports:** Add to `src/tim/commands/index.ts`:
 ```typescript
 export { handleAddressCommentsCommand, handleCleanupCommentsCommand } from './addressComments.js';
 ```
@@ -893,7 +893,7 @@ export { handleAddressCommentsCommand, handleCleanupCommentsCommand } from './ad
 
 ### Follow-up Questions
 
-1. ✅ **RESOLVED**: Should the command support filtering which files or directories to search for AI comments (e.g., `rmplan address-comments src/` vs entire repository)?
+1. ✅ **RESOLVED**: Should the command support filtering which files or directories to search for AI comments (e.g., `tim address-comments src/` vs entire repository)?
    - **Decision**: Support both - accept optional `[paths...]` arguments, default to entire repository if none provided
 
 2. ✅ **RESOLVED**: Should we support incremental mode where only some AI comments are addressed, with others left for later? Or always address all found comments?
@@ -911,13 +911,13 @@ export { handleAddressCommentsCommand, handleCleanupCommentsCommand } from './ad
 6. ✅ **RESOLVED**: Should we support a "verify" mode that checks if all AI comments have been removed before completing?
    - **Decision**: Smart cleanup already provides this - it reports remaining markers and prompts user
 
-7. ✅ **RESOLVED**: Should the command integrate with rmplan's workspace isolation feature, or always work in the current directory?
+7. ✅ **RESOLVED**: Should the command integrate with tim's workspace isolation feature, or always work in the current directory?
    - **Decision**: Always work in current directory - simpler implementation, user can work on a branch for safety if needed, workspace isolation would be overkill for this use case
 
 # Implemented Functionality Notes
 
-Implemented Task 1 by adding `src/rmplan/commands/addressComments.ts`, which introduces `handleAddressCommentsCommand`, `handleCleanupCommentsCommand`, and the supporting helpers requested in the plan. The handler now loads repository configuration, derives the git root, resolves the base branch via `getTrunkBranch`, and builds the executor with `buildExecutorAndLog`. The new `createAddressCommentsPrompt` produces review-mode prompts that instruct the agent to use ripgrep for markers, diff against the selected base branch, remove comment markers, and run Bun checks; it also respects executor path prefixes so Claude Code can auto-read files. I implemented path normalization to guard against arguments that escape the repo root and re-used `removeAiCommentMarkers` from `rmpr/modes/hybrid_context.ts` so hybrid IDs are stripped as well as plain `AI:` lines.
+Implemented Task 1 by adding `src/tim/commands/addressComments.ts`, which introduces `handleAddressCommentsCommand`, `handleCleanupCommentsCommand`, and the supporting helpers requested in the plan. The handler now loads repository configuration, derives the git root, resolves the base branch via `getTrunkBranch`, and builds the executor with `buildExecutorAndLog`. The new `createAddressCommentsPrompt` produces review-mode prompts that instruct the agent to use ripgrep for markers, diff against the selected base branch, remove comment markers, and run Bun checks; it also respects executor path prefixes so Claude Code can auto-read files. I implemented path normalization to guard against arguments that escape the repo root and re-used `removeAiCommentMarkers` from `rmpr/modes/hybrid_context.ts` so hybrid IDs are stripped as well as plain `AI:` lines.
 
-Tasks 2, 3, 4, 5, and 6 were handled together in the same module: `findFilesWithAiComments` shells out to `rg` with literal patterns covering `AI:`, `AI_COMMENT_START/END`, and `AI (id:` to discover files, `cleanupAiCommentMarkers` rewrites files through `secureWrite`, `smartCleanupAiCommentMarkers` provides the interactive cleanup pass (with a `--yes` bypass), and `commitAddressedComments` calls `commitAll` only when `hasUncommittedChanges` reports worktree modifications. I wired the commands into the CLI in `src/rmplan/rmplan.ts`, registering both `address-comments` and the standalone `cleanup-comments` command with all documented options. The README now documents both commands, their options, example workflows, and the supported AI marker formats so future maintainers understand the intended flow (Task 9).
+Tasks 2, 3, 4, 5, and 6 were handled together in the same module: `findFilesWithAiComments` shells out to `rg` with literal patterns covering `AI:`, `AI_COMMENT_START/END`, and `AI (id:` to discover files, `cleanupAiCommentMarkers` rewrites files through `secureWrite`, `smartCleanupAiCommentMarkers` provides the interactive cleanup pass (with a `--yes` bypass), and `commitAddressedComments` calls `commitAll` only when `hasUncommittedChanges` reports worktree modifications. I wired the commands into the CLI in `src/tim/tim.ts`, registering both `address-comments` and the standalone `cleanup-comments` command with all documented options. The README now documents both commands, their options, example workflows, and the supported AI marker formats so future maintainers understand the intended flow (Task 9).
 
-For Task 7 (and coverage for Task 8’s cleanup workflow) I added `src/rmplan/commands/addressComments.test.ts`. The tests spin up a temporary repository, confirm that ripgrep-based discovery respects path filters, verify that cleaning removes `AI_COMMENT` blocks and `AI (id:` markers, and exercise the prompt builder to ensure base-branch instructions, validation commands, and scoped path lists appear as expected. This gives us regression coverage without mocking the underlying filesystem. README updates and CLI wiring ensure the feature is discoverable, while the helper exports keep the code testable for future enhancements.
+For Task 7 (and coverage for Task 8’s cleanup workflow) I added `src/tim/commands/addressComments.test.ts`. The tests spin up a temporary repository, confirm that ripgrep-based discovery respects path filters, verify that cleaning removes `AI_COMMENT` blocks and `AI (id:` markers, and exercise the prompt builder to ensure base-branch instructions, validation commands, and scoped path lists appear as expected. This gives us regression coverage without mocking the underlying filesystem. README updates and CLI wiring ensure the feature is discoverable, while the helper exports keep the code testable for future enhancements.

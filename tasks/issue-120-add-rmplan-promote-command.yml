@@ -1,7 +1,7 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
-title: Add rmplan promote command
-goal: "Implement: Add rmplan promote command"
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
+title: Add tim promote command
+goal: "Implement: Add tim promote command"
 id: 47
 uuid: d35a6c54-3804-487c-b6e4-bc4c74b36755
 status: done
@@ -13,7 +13,7 @@ updatedAt: 2025-10-27T08:39:04.282Z
 tasks:
   - title: Add `promote` command and Task ID parser
     done: true
-    description: Add the `promote` command to the `rmplan` CLI and create the
+    description: Add the `promote` command to the `tim` CLI and create the
       utility for parsing task ID arguments. This sets up the command structure
       and the core logic for identifying which tasks to promote. The task ID
       format is `PLAN_ID.TASK_INDEX` or `PLAN_ID.START_INDEX-END_INDEX`, where
@@ -37,16 +37,16 @@ tasks:
 changedFiles:
   - debug_promote.js
   - src/common/github/issues.ts
-  - src/rmplan/actions.ts
-  - src/rmplan/commands/agent.ts
-  - src/rmplan/commands/import.ts
-  - src/rmplan/commands/promote.test.ts
-  - src/rmplan/commands/promote.ts
-  - src/rmplan/rmplan.ts
-  - src/rmplan/utils/id_parser.test.ts
-  - src/rmplan/utils/id_parser.ts
+  - src/tim/actions.ts
+  - src/tim/commands/agent.ts
+  - src/tim/commands/import.ts
+  - src/tim/commands/promote.test.ts
+  - src/tim/commands/promote.ts
+  - src/tim/tim.ts
+  - src/tim/utils/id_parser.test.ts
+  - src/tim/utils/id_parser.ts
 rmfilter:
-  - src/rmplan
+  - src/tim
 ---
 
 This should take one or more tasks and promote them to top-level plans. If any tasks remain in the original plan, it should depend on the tasks. All promoted tasks should also depend on each other according to the original order of the tasks.

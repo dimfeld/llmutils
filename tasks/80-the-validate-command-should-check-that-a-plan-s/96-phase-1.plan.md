@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: The validate command should check that a plan's parent also depends on
   the child and automatically fix that if it doesn't. - Core Validation and
   Auto-Fix Implementation
@@ -18,7 +18,7 @@ promptsGeneratedAt: 2025-08-12T00:49:25.602Z
 createdAt: 2025-07-29T19:17:43.223Z
 updatedAt: 2025-10-27T08:39:04.320Z
 project:
-  title: Implement parent-child dependency validation and auto-fix in rmplan
+  title: Implement parent-child dependency validation and auto-fix in tim
     validate command
   goal: Add validation to ensure bidirectional parent-child relationships in plan
     files, where child plans with a parent field are automatically included in
@@ -50,7 +50,7 @@ tasks:
   - title: Add parent-child validation logic to validate.ts
     done: true
     description: >
-      Modify `/src/rmplan/commands/validate.ts` to add a new validation phase
+      Modify `/src/tim/commands/validate.ts` to add a new validation phase
       after schema validation that checks parent-child relationships. Create a
       function that iterates through all plans, identifies those with parent
       fields, and verifies the parent includes them in dependencies. Track which
@@ -86,7 +86,7 @@ tasks:
   - title: Add comprehensive tests for validation
     done: true
     description: >
-      Create tests in `/src/rmplan/commands/validate.test.ts` covering: plans
+      Create tests in `/src/tim/commands/validate.test.ts` covering: plans
       with correct parent-child relationships (should pass), plans with missing
       parent dependencies (should be fixed), multiple children with same parent,
       nested parent-child hierarchies, and edge cases like non-existent parent
@@ -101,7 +101,7 @@ tasks:
       Add a command-line flag `--no-fix` to allow users to run validation
       without auto-fixing. When this flag is present, the command should report
       inconsistencies but not modify any files. Update the command description
-      in rmplan.ts to document this new option. The flag should be a boolean
+      in tim.ts to document this new option. The flag should be a boolean
       option that defaults to false (auto-fix enabled by default). When --no-fix
       is used, the output should clearly indicate that issues were found but not
       fixed, suggesting the user run without the flag to fix them. This follows

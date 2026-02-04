@@ -1,7 +1,7 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Change description command
-goal: To create a new `rmplan description` command that, similar to the `review`
+goal: To create a new `tim description` command that, similar to the `review`
   command, gathers context from a plan and code changes, but uses it to generate
   a comprehensive pull request description.
 id: 106
@@ -19,10 +19,10 @@ createdAt: 2025-08-14T00:55:08.903Z
 updatedAt: 2025-10-27T08:39:04.312Z
 tasks: []
 rmfilter:
-  - src/rmplan/commands/review.ts
+  - src/tim/commands/review.ts
   - --with-imports
   - --
-  - src/rmplan/rmplan.ts
+  - src/tim/tim.ts
 ---
 
 # Original Plan Details
@@ -61,14 +61,14 @@ The new command will:
 Unlike the `review` command, this new command will not support incremental reviews, issue detection, or autofixing, as its sole purpose is text generation.
 
 **Acceptance Criteria:**
-- A new `rmplan description <plan>` command is available in the CLI.
+- A new `tim description <plan>` command is available in the CLI.
 - The context-gathering logic from the `review` command is successfully refactored into a shared function without breaking existing `review` functionality.
 - The `description` command generates a PR description and prints it to the console.
 - The user is prompted with options to copy the description, save it to a file, or create a PR.
 - The command is documented and has corresponding tests.
 
 **Technical Considerations:**
-- The refactoring of context-gathering logic from `src/rmplan/commands/review.ts` is a critical first step. This shared utility will be used by both `review` and the new `description` command.
-- A new prompt will be created, likely in `src/rmplan/executors/claude_code/agent_prompts.ts`, specifically for generating PR descriptions.
+- The refactoring of context-gathering logic from `src/tim/commands/review.ts` is a critical first step. This shared utility will be used by both `review` and the new `description` command.
+- A new prompt will be created, likely in `src/tim/executors/claude_code/agent_prompts.ts`, specifically for generating PR descriptions.
 - The `@inquirer/prompts` library will be used for interactive output handling.
 - The GitHub CLI (`gh`) will be invoked as a subprocess for the "Create PR" option.

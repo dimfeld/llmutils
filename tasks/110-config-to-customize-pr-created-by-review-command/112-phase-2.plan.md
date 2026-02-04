@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: config to customize PR created by review command - Implementation and
   Integration
 goal: Implement PR creation functionality that uses the new configuration options
@@ -18,15 +18,15 @@ promptsGeneratedAt: 2025-08-16T06:51:01.707Z
 createdAt: 2025-08-16T00:21:10.187Z
 updatedAt: 2025-10-27T08:39:04.298Z
 project:
-  title: Add configuration options for customizing auto-created PRs in rmplan
-  goal: Enable users to configure default settings for PRs created by rmplan
+  title: Add configuration options for customizing auto-created PRs in tim
+  goal: Enable users to configure default settings for PRs created by tim
     commands, including draft status and title prefix
   details: >-
     This feature adds configuration options to the project config file that
     control how PRs are created by the `description` command. Currently, PRs are
     always created as drafts with no title prefix customization. The new
     configuration will live under a `prCreation` section in the config schema
-    and will apply to all PR creation operations triggered by rmplan commands.
+    and will apply to all PR creation operations triggered by tim commands.
     The implementation must maintain backward compatibility, defaulting to
     draft=true when not specified.
 
@@ -50,7 +50,7 @@ tasks:
     done: true
     description: >
       Modify the `createPullRequest` function in
-      `src/rmplan/commands/description.ts` to accept configuration options and
+      `src/tim/commands/description.ts` to accept configuration options and
       use them when building the `gh pr create` command. Remove the hardcoded
       `--draft` flag and make it conditional based on config. The function
       should accept a new parameter for PR creation options that includes the
@@ -60,7 +60,7 @@ tasks:
   - title: Load and apply prCreation config in description command
     done: true
     description: >
-      Update `handleDescriptionCommand` in `src/rmplan/commands/description.ts`
+      Update `handleDescriptionCommand` in `src/tim/commands/description.ts`
       to load the `prCreation` config from the effective configuration and pass
       it to the `createPullRequest` function. The config is already loaded via
       loadEffectiveConfig, so we need to extract the prCreation settings and
@@ -80,7 +80,7 @@ tasks:
   - title: Update description command tests
     done: true
     description: >
-      Modify existing tests in `src/rmplan/commands/description.test.ts` to
+      Modify existing tests in `src/tim/commands/description.test.ts` to
       account for the new configuration options. Add new test cases for
       draft/non-draft PR creation, title prefix application, and edge cases.
       Update mock configurations to include the prCreation field with
@@ -97,8 +97,8 @@ tasks:
       should verify the actual gh command construction rather than just mocking
       everything.
 rmfilter:
-  - src/rmplan/configSchema.ts
-  - src/rmplan/commands/description.ts
+  - src/tim/configSchema.ts
+  - src/tim/commands/description.ts
   - --with-imports
 ---
 

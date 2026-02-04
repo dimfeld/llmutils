@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Update documentation for autonomous agent features
 goal: ""
 id: 136
@@ -37,18 +37,18 @@ Update project documentation to reflect all the new autonomous agent features. T
 
 ### 1. README.md
 
-Add new section after rmplan introduction:
+Add new section after tim introduction:
 
 ```markdown
 ### Autonomous Agent Features
 
-rmplan includes several features designed for autonomous agents:
+tim includes several features designed for autonomous agents:
 
 - **Discovery tracking**: Track which plans led to discovering new work with `discoveredFrom` field
-- **Ready command**: `rmplan ready` shows prioritized list of executable plans  
-- **Enhanced visibility**: `rmplan show --full` displays complete details and inverse relationships
+- **Ready command**: `tim ready` shows prioritized list of executable plans  
+- **Enhanced visibility**: `tim show --full` displays complete details and inverse relationships
 - **Dynamic task management**: Add/remove tasks without manual YAML editing
-- **Agent guidance**: Run `rmplan` with no args to see agent-friendly workflow guide
+- **Agent guidance**: Run `tim` with no args to see agent-friendly workflow guide
 
 See [Autonomous Agent Guide](#autonomous-agent-guide) for details.
 ```
@@ -66,32 +66,32 @@ Add detailed section:
 
 **When you discover out-of-scope work:**
 ```bash
-rmplan add "Fix discovered bug" --discovered-from <current-plan-id> -p high
+tim add "Fix discovered bug" --discovered-from <current-plan-id> -p high
 ```
 
 **When breaking down a large plan:**
 ```bash
-rmplan add "Phase 1" --parent <parent-id>
-rmplan add "Phase 2" --parent <parent-id> --depends-on <phase-1-id>
+tim add "Phase 1" --parent <parent-id>
+tim add "Phase 2" --parent <parent-id> --depends-on <phase-1-id>
 ```
 
 **When you need to add a task mid-execution:**
 ```bash
-rmplan add-task <plan> --title "Additional requirement" --description "..."
+tim add-task <plan> --title "Additional requirement" --description "..."
 ```
 
 ### Command Reference
 
-- `rmplan ready` - See what's ready to work on
-- `rmplan show <plan> --full` - Get complete context
-- `rmplan add-task <plan>` - Add tasks dynamically
-- `rmplan remove-task <plan>` - Remove obsolete tasks
-- `rmplan set <plan> --discovered-from <id>` - Track discovery
+- `tim ready` - See what's ready to work on
+- `tim show <plan> --full` - Get complete context
+- `tim add-task <plan>` - Add tasks dynamically
+- `tim remove-task <plan>` - Remove obsolete tasks
+- `tim set <plan> --discovered-from <id>` - Track discovery
 ```
 
 ### 2. CLAUDE.md
 
-Add section for agents working on rmplan codebase:
+Add section for agents working on tim codebase:
 
 ```markdown
 ## Working with Plan Files
@@ -116,7 +116,7 @@ These should be used instead of storing redundant arrays.
 
 Use real filesystem for tests:
 ```typescript
-const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-test-'));
+const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-test-'));
 // Create test plan files
 // Run command
 // Verify results
@@ -126,7 +126,7 @@ const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rmplan-test-'));
 
 ### 3. Command Help Text
 
-Update help strings in `src/rmplan/rmplan.ts`:
+Update help strings in `src/tim/tim.ts`:
 
 - Add examples to command descriptions
 - Mention `--full` flag in show command help
@@ -134,7 +134,7 @@ Update help strings in `src/rmplan/rmplan.ts`:
 
 ### 4. Schema JSON
 
-File: `schema/rmplan-plan-schema.json`
+File: `schema/tim-plan-schema.json`
 
 Add `discoveredFrom` to the JSON schema with description and validation rules.
 

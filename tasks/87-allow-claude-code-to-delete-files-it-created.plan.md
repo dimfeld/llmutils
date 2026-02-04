@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Allow Claude Code to delete files it created
 goal: The project aims to add a configuration option to the Claude code executor
   that, when enabled, permits it to automatically approve any `rm` or `rm -f`
@@ -21,16 +21,16 @@ updatedAt: 2025-10-27T08:39:04.237Z
 tasks: []
 changedFiles:
   - README.md
-  - src/rmplan/executors/build.test.ts
-  - src/rmplan/executors/claude_code/format.test.ts
-  - src/rmplan/executors/claude_code/format.ts
-  - src/rmplan/executors/claude_code.test.ts
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/executors/schemas.test.ts
-  - src/rmplan/executors/schemas.ts
+  - src/tim/executors/build.test.ts
+  - src/tim/executors/claude_code/format.test.ts
+  - src/tim/executors/claude_code/format.ts
+  - src/tim/executors/claude_code.test.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/schemas.test.ts
+  - src/tim/executors/schemas.ts
   - test_parseRmCommand.ts
 rmfilter:
-  - src/rmplan/executors/
+  - src/tim/executors/
 ---
 
 # Original Plan Details

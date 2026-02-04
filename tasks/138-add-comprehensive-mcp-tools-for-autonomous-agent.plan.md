@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Add MCP resources and create-plan tool
 goal: ""
 id: 138
@@ -28,8 +28,8 @@ progressNotes:
   - timestamp: 2025-11-01T08:47:43.995Z
     text: Successfully implemented helper functions (getNextPlanId,
       generatePlanFilename, addChildToParent), create-plan MCP tool, and three
-      MCP resources (rmplan://plans/list, rmplan://plans/{planId},
-      rmplan://plans/ready). All type checks pass. Pre-existing test failures in
+      MCP resources (tim://plans/list, tim://plans/{planId},
+      tim://plans/ready). All type checks pass. Pre-existing test failures in
       mcpUpdatePlanTask are not related to this implementation.
     source: "implementer: Tasks 1-3"
   - timestamp: 2025-11-01T08:56:50.220Z
@@ -96,8 +96,8 @@ tasks:
       update parent plan if specified
   - title: Implement plan MCP resources
     done: true
-    description: "Add three resources: rmplan://plans/list (all plans summary),
-      rmplan://plans/{planId} (specific plan details), and rmplan://plans/ready
+    description: "Add three resources: tim://plans/list (all plans summary),
+      tim://plans/{planId} (specific plan details), and tim://plans/ready
       (ready-to-execute plans). Include getReadyPlans() helper function"
   - title: Register create-plan tool and resources in registerGenerateMode
     done: true
@@ -110,7 +110,7 @@ tasks:
       in generate_mode.test.ts
   - title: Update MCP documentation
     done: true
-    description: Update src/rmplan/mcp/README.md to document the create-plan tool
+    description: Update src/tim/mcp/README.md to document the create-plan tool
       and the three plan resources with examples
 changedFiles:
   - 145-test-plan.plan.md
@@ -125,22 +125,22 @@ changedFiles:
   - README.md
   - docs/next-ready-feature.md
   - src/common/git.ts
-  - src/rmplan/assignments/claim_logging.ts
-  - src/rmplan/commands/claim.test.ts
-  - src/rmplan/commands/ready.test.ts
-  - src/rmplan/executors/claude_code/agent_prompts.ts
-  - src/rmplan/mcp/README.md
-  - src/rmplan/mcp/generate_mode.test.ts
-  - src/rmplan/mcp/generate_mode.ts
-  - src/rmplan/ready_plans.test.ts
-  - src/rmplan/ready_plans.ts
+  - src/tim/assignments/claim_logging.ts
+  - src/tim/commands/claim.test.ts
+  - src/tim/commands/ready.test.ts
+  - src/tim/executors/claude_code/agent_prompts.ts
+  - src/tim/mcp/README.md
+  - src/tim/mcp/generate_mode.test.ts
+  - src/tim/mcp/generate_mode.ts
+  - src/tim/ready_plans.test.ts
+  - src/tim/ready_plans.ts
   - test-plans/plans/001-stub-plan.yml
 rmfilter: []
 ---
 
 ## Overview
 
-The current MCP server (src/rmplan/mcp/generate_mode.ts) provides tools for updating existing plans but lacks tools for creating plans and updating plan properties. This plan adds comprehensive MCP tool coverage so autonomous agents can perform all essential rmplan operations programmatically without CLI access.
+The current MCP server (src/tim/mcp/generate_mode.ts) provides tools for updating existing plans but lacks tools for creating plans and updating plan properties. This plan adds comprehensive MCP tool coverage so autonomous agents can perform all essential tim operations programmatically without CLI access.
 
 ## Current MCP Tools
 
@@ -154,27 +154,27 @@ Existing tools in the MCP server:
 
 Comparing with CLI commands, agents need MCP tools for:
 
-1. **Plan Creation** (`rmplan add`)
+1. **Plan Creation** (`tim add`)
    - Create new plan files
    - Set initial properties (title, priority, parent, dependencies, etc.)
    - Include initial details if available
 
-2. **Property Updates** (`rmplan set`)
+2. **Property Updates** (`tim set`)
    - Update priority, status, dependencies
    - Set parent, discoveredFrom relationships
    - Update assignedTo, issue links
 
-3. **Task Management** (`rmplan add-task`, `rmplan remove-task`)
+3. **Task Management** (`tim add-task`, `tim remove-task`)
    - Add tasks to existing plans
    - Remove tasks by index or title
 
-4. **Plan Discovery** (`rmplan ready`, `rmplan list`)
+4. **Plan Discovery** (`tim ready`, `tim list`)
    - Query ready plans
    - Search plans by criteria
 
 ## Tools to Implement
 
-File: `src/rmplan/mcp/generate_mode.ts`
+File: `src/tim/mcp/generate_mode.ts`
 
 ### 1. create-plan Tool
 
@@ -266,7 +266,7 @@ export const updatePlanPropertiesParameters = z
     addDocs: z.array(z.string()).optional().describe('Add documentation paths'),
     removeDocs: z.array(z.string()).optional().describe('Remove documentation paths'),
   })
-  .describe('Update plan properties (equivalent to rmplan set)');
+  .describe('Update plan properties (equivalent to tim set)');
 
 export async function handleUpdatePlanPropertiesTool(
   args: z.infer<typeof updatePlanPropertiesParameters>,
@@ -538,7 +538,7 @@ async function addChildToParent(
 
 ### Unit Tests
 
-File: `src/rmplan/mcp/generate_mode.test.ts`
+File: `src/tim/mcp/generate_mode.test.ts`
 
 Add tests for each new tool:
 1. create-plan creates valid plan file
@@ -631,10 +631,10 @@ await mcp.call('remove-plan-task', {
 
 ## Documentation Updates
 
-Update `src/rmplan/mcp/README.md` (create if doesn't exist):
+Update `src/tim/mcp/README.md` (create if doesn't exist):
 
 ```markdown
-# rmplan MCP Server
+# tim MCP Server
 
 ## Available Tools
 
@@ -676,14 +676,14 @@ Depends on:
 7. Add tests
 8. Update documentation
 
-<!-- rmplan-generated-start -->
+<!-- tim-generated-start -->
 ## Overview
 
 This plan implements MCP resources for browsing plan data and the create-plan tool for autonomous agents to create new plans programmatically. This provides the foundation for agents to discover existing work and create new plans as they discover additional tasks.
 
 ## Current MCP Tools
 
-Existing tools in the MCP server (src/rmplan/mcp/generate_mode.ts):
+Existing tools in the MCP server (src/tim/mcp/generate_mode.ts):
 - ✅ `update-plan-tasks` - Merge tasks into existing plan
 - ✅ `append-plan-research` - Add research section
 - ✅ `get-plan` - Read plan details
@@ -694,9 +694,9 @@ Existing tools in the MCP server (src/rmplan/mcp/generate_mode.ts):
 This plan implements:
 
 1. **Plan Resources** - Read-only access to plan data via MCP resources
-   - `rmplan://plans/list` - All plans with summary information
-   - `rmplan://plans/{planId}` - Full details of specific plan
-   - `rmplan://plans/ready` - Plans ready to execute
+   - `tim://plans/list` - All plans with summary information
+   - `tim://plans/{planId}` - Full details of specific plan
+   - `tim://plans/ready` - Plans ready to execute
 
 2. **Create Plan Tool** - Programmatic plan creation
    - Create new plan files with all metadata
@@ -707,7 +707,7 @@ This plan implements:
 
 ### 1. Helper Functions
 
-File: `src/rmplan/mcp/generate_mode.ts`
+File: `src/tim/mcp/generate_mode.ts`
 
 Add three helper functions:
 
@@ -852,10 +852,10 @@ export async function handleCreatePlanTool(
 
 Add three resource handlers in `registerGenerateMode()`:
 
-**rmplan://plans/list** - All plans summary
+**tim://plans/list** - All plans summary
 ```typescript
 server.addResource({
-  uri: 'rmplan://plans/list',
+  uri: 'tim://plans/list',
   name: 'All Plans',
   description: 'List of all plans in the repository',
   mimeType: 'application/json',
@@ -881,7 +881,7 @@ server.addResource({
     return {
       contents: [
         {
-          uri: 'rmplan://plans/list',
+          uri: 'tim://plans/list',
           mimeType: 'application/json',
           text: JSON.stringify(planList, null, 2),
         },
@@ -891,15 +891,15 @@ server.addResource({
 });
 ```
 
-**rmplan://plans/{planId}** - Specific plan details
+**tim://plans/{planId}** - Specific plan details
 ```typescript
 server.addResource({
-  uri: 'rmplan://plans/{planId}',
+  uri: 'tim://plans/{planId}',
   name: 'Plan Details',
   description: 'Full details of a specific plan including tasks and details',
   mimeType: 'application/json',
   async read(uri: string) {
-    const match = uri.match(/^rmplan:\/\/plans\/(.+)$/);
+    const match = uri.match(/^tim:\/\/plans\/(.+)$/);
     if (!match) {
       throw new Error('Invalid plan URI format');
     }
@@ -920,10 +920,10 @@ server.addResource({
 });
 ```
 
-**rmplan://plans/ready** - Ready plans
+**tim://plans/ready** - Ready plans
 ```typescript
 server.addResource({
-  uri: 'rmplan://plans/ready',
+  uri: 'tim://plans/ready',
   name: 'Ready Plans',
   description: 'Plans ready to execute (all dependencies satisfied)',
   mimeType: 'application/json',
@@ -934,7 +934,7 @@ server.addResource({
     return {
       contents: [
         {
-          uri: 'rmplan://plans/ready',
+          uri: 'tim://plans/ready',
           mimeType: 'application/json',
           text: JSON.stringify(readyPlans, null, 2),
         },
@@ -976,14 +976,14 @@ const result = await mcp.call('create-plan', {
 
 ```javascript
 // Browse ready plans
-const readyPlans = await mcp.readResource('rmplan://plans/ready');
+const readyPlans = await mcp.readResource('tim://plans/ready');
 const plans = JSON.parse(readyPlans.contents[0].text);
 
 // Pick highest priority plan
 const nextPlan = plans[0];
 
 // Get full details
-const planDetails = await mcp.readResource(`rmplan://plans/${nextPlan.id}`);
+const planDetails = await mcp.readResource(`tim://plans/${nextPlan.id}`);
 const fullPlan = JSON.parse(planDetails.contents[0].text);
 ```
 
@@ -991,7 +991,7 @@ const fullPlan = JSON.parse(planDetails.contents[0].text);
 
 ```javascript
 // Display plan list
-const allPlans = await mcp.readResource('rmplan://plans/list');
+const allPlans = await mcp.readResource('tim://plans/list');
 const plans = JSON.parse(allPlans.contents[0].text);
 
 // Show by status
@@ -1019,28 +1019,28 @@ const byStatus = plans.reduce((acc, plan) => {
    - Returns correct path in response
 
 3. **Resources Tests**
-   - rmplan://plans/list returns all plans with summaries
-   - rmplan://plans/{planId} returns specific plan
-   - rmplan://plans/ready filters by dependencies and status
+   - tim://plans/list returns all plans with summaries
+   - tim://plans/{planId} returns specific plan
+   - tim://plans/ready filters by dependencies and status
    - Resources return valid JSON
    - Invalid URIs throw appropriate errors
 
 ## Documentation Updates
 
-Update `src/rmplan/mcp/README.md` to include:
+Update `src/tim/mcp/README.md` to include:
 
 - **Tools section**: Document create-plan with parameters and examples
 - **Resources section**: Document all three resources with URIs and use cases
 - **When to Use Resources vs Tools**: Guidance on pull vs push models
 - **Example workflows**: Show common agent patterns
-<!-- rmplan-generated-end -->
+<!-- tim-generated-end -->
 
 # Implementation Notes
 
 Completed Tasks 1, 2, and 3 from plan 138: Implement helper functions, create-plan MCP tool, and plan MCP resources.
 
 **Task 1: Helper Functions**
-Implemented two helper functions in src/rmplan/mcp/generate_mode.ts:
+Implemented two helper functions in src/tim/mcp/generate_mode.ts:
 - getNextPlanId(tasksDir): Finds the maximum numeric plan ID in the tasks directory and returns max+1. Returns 1 for empty directories.
 - generatePlanFilename(id, title): Creates a slug-based filename from the plan ID and title. Converts to lowercase, replaces non-alphanumeric characters with hyphens, removes leading/trailing hyphens, and truncates to 50 characters. Returns format: '{id}-{slug}.plan.md'.
 
@@ -1056,9 +1056,9 @@ Implemented comprehensive create-plan tool with full parameter support:
 
 **Task 3: Plan MCP Resources**
 Implemented three MCP resources for browsing plan data:
-- rmplan://plans/list: Returns JSON with summary information for all plans (id, title, goal, status, priority, parent, dependencies, assignedTo, task counts, timestamps)
-- rmplan://plans/{planId}: Resource template that returns full details for a specific plan by ID or path. Supports both numeric IDs and file paths.
-- rmplan://plans/ready: Returns JSON with plans ready to execute (pending or in_progress status, all dependencies satisfied, contains at least one task). Results are sorted by priority (urgent > high > medium > low > maybe).
+- tim://plans/list: Returns JSON with summary information for all plans (id, title, goal, status, priority, parent, dependencies, assignedTo, task counts, timestamps)
+- tim://plans/{planId}: Resource template that returns full details for a specific plan by ID or path. Supports both numeric IDs and file paths.
+- tim://plans/ready: Returns JSON with plans ready to execute (pending or in_progress status, all dependencies satisfied, contains at least one task). Results are sorted by priority (urgent > high > medium > low > maybe).
 
 All three resources registered in registerGenerateMode() function.
 
@@ -1067,12 +1067,12 @@ All three resources registered in registerGenerateMode() function.
 
 2. Empty Title Validation: Added validation to prevent creating plans with empty titles, which would result in invalid filenames like '1-.plan.md'.
 
-3. Ready Plans Filtering: Enhanced isReadyPlan() function in src/rmplan/ready_plans.ts to check for task existence. Plans without tasks are not considered ready, even if all dependencies are satisfied.
+3. Ready Plans Filtering: Enhanced isReadyPlan() function in src/tim/ready_plans.ts to check for task existence. Plans without tasks are not considered ready, even if all dependencies are satisfied.
 
 **Files Modified:**
-- src/rmplan/mcp/generate_mode.ts: Added helper functions, mcpCreatePlan handler, and three resource handlers
-- src/rmplan/mcp/generate_mode.test.ts: Added 16 new tests covering helper functions (4 tests), create-plan tool (10 tests), and resources (not counted separately - tested via integration)
-- src/rmplan/ready_plans.ts: Enhanced isReadyPlan() to check for task existence
+- src/tim/mcp/generate_mode.ts: Added helper functions, mcpCreatePlan handler, and three resource handlers
+- src/tim/mcp/generate_mode.test.ts: Added 16 new tests covering helper functions (4 tests), create-plan tool (10 tests), and resources (not counted separately - tested via integration)
+- src/tim/ready_plans.ts: Enhanced isReadyPlan() to check for task existence
 
 **Integration Points:**
 - Uses existing utilities: resolvePlan(), readAllPlans(), writePlanFile() from plans.ts
@@ -1087,7 +1087,7 @@ Comprehensive test coverage with 16 new tests:
 - Resources: All three resources tested for correct JSON output and content
 - Ready plans: Task existence filtering, dependency checking, status filtering
 
-All tests pass: 1,621 tests in full rmplan test suite, 73 tests in generate_mode.test.ts specifically.
+All tests pass: 1,621 tests in full tim test suite, 73 tests in generate_mode.test.ts specifically.
 
 Completed remaining tasks 4, 5, and 6 for plan 138 (MCP resources and create-plan tool).
 
@@ -1107,9 +1107,9 @@ Completed remaining tasks 4, 5, and 6 for plan 138 (MCP resources and create-pla
 - All tests pass successfully
 
 **Task 6: Update MCP documentation**
-- Created comprehensive src/rmplan/mcp/README.md documentation file (~500 lines)
+- Created comprehensive src/tim/mcp/README.md documentation file (~500 lines)
 - Documented all 9+ MCP tools with complete parameter lists and examples: create-plan, add-plan-task, remove-plan-task, update-plan-task, update-plan-tasks, update-plan-details, append-plan-research, get-plan, list-ready-plans
-- Documented all 3 MCP resources with URIs and usage: rmplan://plans/list (all plans summary), rmplan://plans/{planId} (specific plan details), rmplan://plans/ready (ready-to-execute plans)
+- Documented all 3 MCP resources with URIs and usage: tim://plans/list (all plans summary), tim://plans/{planId} (specific plan details), tim://plans/ready (ready-to-execute plans)
 - Added 'When to Use Resources vs Tools' section explaining the pull vs push model
 - Included 5 example workflows showing practical agent usage: discovering and starting work, discovering work during implementation, managing plan lifecycle, dynamic task adjustment, monitoring progress
 - Added best practices section covering parent-child relationships, task management, plan discovery, and details/research handling
@@ -1120,9 +1120,9 @@ Completed remaining tasks 4, 5, and 6 for plan 138 (MCP resources and create-pla
 The parent plan update logic was initially removed during previous code review based on incorrect assumptions. After examining the actual CLI code (commands/add.ts line 200) and the validate command's parent-child relationship checks (commands/validate.ts lines 162-312), it's clear the project requires bidirectional parent-child relationships. When a child plan is created with a parent, BOTH the child's parent field AND the parent's dependencies array must be updated. This is now correctly implemented in the MCP tool.
 
 **Files Modified:**
-- src/rmplan/mcp/generate_mode.ts: Added parent plan update logic to mcpCreatePlan (lines 646-678)
-- src/rmplan/mcp/generate_mode.test.ts: Updated test expectation at line 1424 to verify parent modification
-- src/rmplan/mcp/README.md: Created comprehensive MCP documentation (new file, ~500 lines)
+- src/tim/mcp/generate_mode.ts: Added parent plan update logic to mcpCreatePlan (lines 646-678)
+- src/tim/mcp/generate_mode.test.ts: Updated test expectation at line 1424 to verify parent modification
+- src/tim/mcp/README.md: Created comprehensive MCP documentation (new file, ~500 lines)
 
 **Test Results:**
 - All 73 tests in generate_mode.test.ts pass

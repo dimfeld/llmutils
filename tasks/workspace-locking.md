@@ -7,14 +7,14 @@ This feature adds lockfile-based workspace tracking to prevent concurrent usage 
 ## Lockfile Design
 
 ### Location
-- **Per-workspace lockfile**: `.rmplan.lock` in each workspace root directory
+- **Per-workspace lockfile**: `.tim.lock` in each workspace root directory
 - **Central registry enhancement**: Add `lockedBy` field to workspaces.json entries
 
 ### Lockfile Format (JSON)
 ```json
 {
   "pid": 12345,
-  "command": "rmplan agent --workspace task-123",
+  "command": "tim agent --workspace task-123",
   "startedAt": "2025-01-22T10:30:00Z",
   "hostname": "dev-machine",
   "version": 1
@@ -24,7 +24,7 @@ This feature adds lockfile-based workspace tracking to prevent concurrent usage 
 ### Stale Lock Detection
 A lock is considered stale if:
 1. The PID doesn't exist on the system
-2. The process exists but isn't an rmplan process
+2. The process exists but isn't an tim process
 3. The lock is older than a configurable timeout (default: 24 hours)
 
 ## Implementation Approach
@@ -43,7 +43,7 @@ A lock is considered stale if:
 
 **Stale Handling:**
 - Check if PID is alive using `process.kill(pid, 0)`
-- Verify process command matches rmplan (via /proc/[pid]/cmdline on Linux)
+- Verify process command matches tim (via /proc/[pid]/cmdline on Linux)
 - Prompt user before clearing stale locks in interactive mode
 
 ### 2. Auto-Choose Workspace Logic

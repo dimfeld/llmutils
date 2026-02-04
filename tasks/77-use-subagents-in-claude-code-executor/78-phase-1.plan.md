@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Use subagents in Claude Code executor - Implement Core Subagent Logic and
   Basic Cleanup
 goal: To implement the core functionality of creating, using, and cleaning up
@@ -33,7 +33,7 @@ tasks:
       A utility function will be created to dynamically generate the agent
       definition files. This function will take a `planId` and agent details,
       create the `.claude/agents` directory if it doesn't exist, and write the
-      formatted Markdown files (`rmplan-${planId}-implementer.md`, etc.) to that
+      formatted Markdown files (`tim-${planId}-implementer.md`, etc.) to that
       directory. The function should handle errors gracefully and ensure the
       directory has proper permissions. Agent files follow a specific format
       with YAML frontmatter containing name and description fields, followed by
@@ -53,8 +53,8 @@ tasks:
     description: >
       The main prompt sent to the Claude Code executor will be revised. It will
       now include instructions for a primary agent to manage a workflow loop,
-      explicitly calling the `rmplan-${planId}-implementer`,
-      `rmplan-${planId}-tester`, and `rmplan-${planId}-reviewer` agents in
+      explicitly calling the `tim-${planId}-implementer`,
+      `tim-${planId}-tester`, and `tim-${planId}-reviewer` agents in
       sequence to complete the coding task. The orchestration instructions
       should be clear about when to use each agent and how to handle the
       iterative nature of the development process.
@@ -68,26 +68,26 @@ tasks:
       This ensures that temporary agent files don't accumulate in the repository
       even if the execution fails or is interrupted.
 changedFiles:
-  - src/rmplan/agent_runner.test.ts
-  - src/rmplan/agent_runner.ts
-  - src/rmplan/commands/agent.test.ts
-  - src/rmplan/commands/agent.ts
-  - src/rmplan/executors/claude_code/agent_generator.test.ts
-  - src/rmplan/executors/claude_code/agent_generator.ts
-  - src/rmplan/executors/claude_code/agent_prompts.ts
-  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
-  - src/rmplan/executors/claude_code.test.ts
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/executors/copy_only.ts
-  - src/rmplan/executors/copy_paste.ts
-  - src/rmplan/executors/one-call.ts
-  - src/rmplan/executors/types.ts
-  - src/rmplan/prompt_builder.test.ts
+  - src/tim/agent_runner.test.ts
+  - src/tim/agent_runner.ts
+  - src/tim/commands/agent.test.ts
+  - src/tim/commands/agent.ts
+  - src/tim/executors/claude_code/agent_generator.test.ts
+  - src/tim/executors/claude_code/agent_generator.ts
+  - src/tim/executors/claude_code/agent_prompts.ts
+  - src/tim/executors/claude_code/orchestrator_prompt.ts
+  - src/tim/executors/claude_code.test.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/copy_only.ts
+  - src/tim/executors/copy_paste.ts
+  - src/tim/executors/one-call.ts
+  - src/tim/executors/types.ts
+  - src/tim/prompt_builder.test.ts
   - src/rmpr/main.ts
 rmfilter:
-  - src/rmplan/executors/claude_code
+  - src/tim/executors/claude_code
   - --
-  - src/rmplan/commands/agent.ts
+  - src/tim/commands/agent.ts
   - --with-imports
 ---
 

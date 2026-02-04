@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: single command to push branch to the primary local repo
 goal: ""
 id: 163
@@ -18,5 +18,5 @@ We have a concept of a primary checkout for a project. Add a command that will:
 remote too.
 - Optionally push to origin as well.
 
-We should add a command to `rmplan workspace` that will allow setting a particular checkout as the primary. This can
+We should add a command to `tim workspace` that will allow setting a particular checkout as the primary. This can
 take the place of the current method which defines it in sourceDirectory in configSchema.ts.

@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Allow agent to perform multiple tasks in a phase at once
 goal: Implement the end-to-end functionality for the new batch task execution
   mode, from CLI flag to final plan modification.
@@ -16,20 +16,20 @@ tasks:
     done: true
     description: >
       Introduce a new boolean flag, `--batch-tasks`, to the `agent` command in
-      src/rmplan/commands/agent.ts. This flag will be the entry point for
+      src/tim/commands/agent.ts. This flag will be the entry point for
       activating the new batch execution mode.
 
 
       The flag should be added to the CLI command definition where other options
       are defined. It should be passed through the handleAgentCommand function
-      to rmplanAgent as part of the options object. The flag should be optional
+      to timAgent as part of the options object. The flag should be optional
       and default to false to maintain backward compatibility with existing
       behavior.
   - title: "Task 2: Implement a function to retrieve all incomplete tasks"
     done: true
     description: >
       Create a new helper function `getAllIncompleteTasks` in
-      src/rmplan/plans/find_next.ts that takes a PlanSchema object and returns
+      src/tim/plans/find_next.ts that takes a PlanSchema object and returns
       an array of all tasks that are not yet marked as `done: true`. This
       function will be used by the batch mode to collect all pending work.
 
@@ -42,7 +42,7 @@ tasks:
   - title: "Task 3: Create the batch mode execution loop in the agent command"
     done: true
     description: >
-      In the rmplanAgent function, add a new execution path when `--batch-tasks`
+      In the timAgent function, add a new execution path when `--batch-tasks`
       is true. This path will use a while loop that continues as long as there
       are incomplete tasks in the plan.
 
@@ -62,7 +62,7 @@ tasks:
     done: true
     description: >
       Modify the wrapWithOrchestration function in
-      src/rmplan/executors/claude_code/orchestrator_prompt.ts to handle batch
+      src/tim/executors/claude_code/orchestrator_prompt.ts to handle batch
       task processing when multiple tasks are provided.
 
 
@@ -99,7 +99,7 @@ tasks:
     done: true
     description: >
       Adjust the prompts for the implementer, tester, and reviewer agents in
-      src/rmplan/executors/claude_code/agent_prompts.ts so they understand they
+      src/tim/executors/claude_code/agent_prompts.ts so they understand they
       may receive multiple related tasks from the orchestrator.
 
 
@@ -116,7 +116,7 @@ tasks:
   - title: "Task 7: Add integration tests for the batch execution mode"
     done: true
     description: >
-      Create a comprehensive test suite in src/rmplan/commands/agent.test.ts for
+      Create a comprehensive test suite in src/tim/commands/agent.test.ts for
       the batch execution mode functionality.
 
 
@@ -169,47 +169,47 @@ changedFiles:
   - src/common/linear_client.test.ts
   - src/common/linear_client.ts
   - src/rmfilter/rmfilter.ts
-  - src/rmplan/batch_mode_integration.test.ts
-  - src/rmplan/commands/agent.test.ts
-  - src/rmplan/commands/agent.ts
-  - src/rmplan/commands/agent_batch_mode.test.ts
-  - src/rmplan/commands/batch_tasks.test.ts
-  - src/rmplan/commands/batch_tasks_simple.test.ts
-  - src/rmplan/commands/batch_tasks_unit.test.ts
-  - src/rmplan/commands/documentation_consistency_check.test.ts
-  - src/rmplan/commands/generate.test.ts
-  - src/rmplan/commands/generate.ts
-  - src/rmplan/commands/import.integration.test.ts
-  - src/rmplan/commands/import.test.ts
-  - src/rmplan/commands/import.ts
-  - src/rmplan/commands/integration_linear.test.ts
-  - src/rmplan/commands/issue_tracker_integration.test.ts
-  - src/rmplan/commands/linear_documentation_examples.test.ts
-  - src/rmplan/commands/linear_plan_structure.test.ts
-  - src/rmplan/commands/plan_file_validation.test.ts
-  - src/rmplan/configLoader.test.ts
-  - src/rmplan/configSchema.test.ts
-  - src/rmplan/configSchema.ts
-  - src/rmplan/executors/claude_code/agent_prompts.test.ts
-  - src/rmplan/executors/claude_code/agent_prompts.ts
-  - src/rmplan/executors/claude_code/orchestrator_integration.test.ts
-  - src/rmplan/executors/claude_code/orchestrator_prompt.test.ts
-  - src/rmplan/executors/claude_code/orchestrator_prompt.ts
-  - src/rmplan/executors/claude_code.test.ts
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/executors/types.ts
-  - src/rmplan/issue_utils.ts
-  - src/rmplan/plans/find_next.test.ts
-  - src/rmplan/plans/find_next.ts
-  - src/rmplan/plans/prepare_phase.ts
-  - src/rmplan/prompt_builder.test.ts
-  - src/rmplan/prompt_builder.ts
-  - src/rmplan/rmplan.ts
+  - src/tim/batch_mode_integration.test.ts
+  - src/tim/commands/agent.test.ts
+  - src/tim/commands/agent.ts
+  - src/tim/commands/agent_batch_mode.test.ts
+  - src/tim/commands/batch_tasks.test.ts
+  - src/tim/commands/batch_tasks_simple.test.ts
+  - src/tim/commands/batch_tasks_unit.test.ts
+  - src/tim/commands/documentation_consistency_check.test.ts
+  - src/tim/commands/generate.test.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/import.integration.test.ts
+  - src/tim/commands/import.test.ts
+  - src/tim/commands/import.ts
+  - src/tim/commands/integration_linear.test.ts
+  - src/tim/commands/issue_tracker_integration.test.ts
+  - src/tim/commands/linear_documentation_examples.test.ts
+  - src/tim/commands/linear_plan_structure.test.ts
+  - src/tim/commands/plan_file_validation.test.ts
+  - src/tim/configLoader.test.ts
+  - src/tim/configSchema.test.ts
+  - src/tim/configSchema.ts
+  - src/tim/executors/claude_code/agent_prompts.test.ts
+  - src/tim/executors/claude_code/agent_prompts.ts
+  - src/tim/executors/claude_code/orchestrator_integration.test.ts
+  - src/tim/executors/claude_code/orchestrator_prompt.test.ts
+  - src/tim/executors/claude_code/orchestrator_prompt.ts
+  - src/tim/executors/claude_code.test.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/types.ts
+  - src/tim/issue_utils.ts
+  - src/tim/plans/find_next.test.ts
+  - src/tim/plans/find_next.ts
+  - src/tim/plans/prepare_phase.ts
+  - src/tim/prompt_builder.test.ts
+  - src/tim/prompt_builder.ts
+  - src/tim/tim.ts
   - test.yml
   - test_yaml.js
 rmfilter:
-  - src/rmplan/commands/agent.ts
-  - src/rmplan/executors
+  - src/tim/commands/agent.ts
+  - src/tim/executors
 ---
 
 # Original Plan Details
@@ -218,7 +218,7 @@ Add a new mode to the agent command that gived the agent the plan file and all t
 tasks that makes sense to do in a batch together for a single unit of work. Then the orchestrator agent should edit the plan file to set `done: true` mark those tasks as done once
 complete and then exit. 
 
-Then the rmplan agent loop will reread the plan file, and go again if there are still tasks to be done in the plan file.
+Then the tim agent loop will reread the plan file, and go again if there are still tasks to be done in the plan file.
 
 Put this mode under a new CLI option for now.
 
@@ -227,18 +227,18 @@ as well as passing all the not-done tasks to it and to the subagent prompts.
 
 # Processed Plan Details
 
-The current `rmplan agent` processes one task or step at a time in a linear fashion. This can be inefficient for plans with many small, independent, or related tasks that could be addressed concurrently or in a single context. This project will add a new `--batch-tasks` mode. In this mode, the agent loop will identify all incomplete tasks in a plan and pass them to an orchestrator agent. This orchestrator will be instructed to select a logical subset of these tasks, execute them (leveraging existing sub-agents like implementer, tester, reviewer), and then use a file editing tool to update the plan file, marking the completed tasks as `done: true`. The main agent loop will then re-evaluate the plan and continue if more tasks remain.
+The current `tim agent` processes one task or step at a time in a linear fashion. This can be inefficient for plans with many small, independent, or related tasks that could be addressed concurrently or in a single context. This project will add a new `--batch-tasks` mode. In this mode, the agent loop will identify all incomplete tasks in a plan and pass them to an orchestrator agent. This orchestrator will be instructed to select a logical subset of these tasks, execute them (leveraging existing sub-agents like implementer, tester, reviewer), and then use a file editing tool to update the plan file, marking the completed tasks as `done: true`. The main agent loop will then re-evaluate the plan and continue if more tasks remain.
 
 ### Technical Approach
-1. A new CLI flag `--batch-tasks` will be added to `src/rmplan/commands/agent.ts`.
-2. A new execution path within `rmplanAgent` will be created for this mode.
+1. A new CLI flag `--batch-tasks` will be added to `src/tim/commands/agent.ts`.
+2. A new execution path within `timAgent` will be created for this mode.
 3. A helper function will be created to gather all incomplete tasks from a `PlanSchema`.
 4. The `claude-code` executor will be enhanced. Its orchestrator prompt (`orchestrator_prompt.ts`) will be updated with instructions for batching and for using a file editing tool.
 5. The `claude-code` executor will be configured to allow the orchestrator agent to use the `Edit` tool on the plan file.
-6. The main loop in `rmplanAgent` will be structured to run until no incomplete tasks are left in the plan.
+6. The main loop in `timAgent` will be structured to run until no incomplete tasks are left in the plan.
 
 ### Acceptance Criteria
-1. Running `rmplan agent --batch-tasks <plan_file>` successfully executes a plan with multiple tasks.
+1. Running `tim agent --batch-tasks <plan_file>` successfully executes a plan with multiple tasks.
 2. The orchestrator agent correctly identifies a subset of tasks to work on.
 3. After the orchestrator agent completes a batch, the corresponding tasks in the plan YAML file are marked with `done: true`.
 4. The agent loop continues until all tasks in the plan are marked as `done`.

@@ -283,7 +283,7 @@ describe('Issue Tracker Types', () => {
         apiKey: 'github_token_here',
         baseUrl: 'https://api.github.com',
         options: {
-          userAgent: 'rmplan/1.0.0',
+          userAgent: 'tim/1.0.0',
         },
       };
 

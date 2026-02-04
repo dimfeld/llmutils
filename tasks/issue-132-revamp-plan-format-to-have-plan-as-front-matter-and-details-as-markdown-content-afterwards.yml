@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Implement Front Matter Support and Ensure Backward Compatibility
 goal: Modify the core plan file reading and writing functions to support the new
   front matter format, ensuring that existing functionalities are not broken and
@@ -50,7 +50,7 @@ project:
 tasks:
   - title: Update `readPlanFile` to parse YAML front matter and a Markdown body
     done: true
-    description: Modify the `readPlanFile` function in `src/rmplan/plans.ts` to
+    description: Modify the `readPlanFile` function in `src/tim/plans.ts` to
       detect and parse files using the new format. It should correctly separate
       the YAML front matter from the subsequent Markdown content. The Markdown
       content will be loaded into the `details` field of the returned
@@ -58,7 +58,7 @@ tasks:
       YAML to support the old format.
   - title: Update `writePlanFile` to save plans in the new front matter format
     done: true
-    description: Modify the `writePlanFile` function in `src/rmplan/plans.ts`. This
+    description: Modify the `writePlanFile` function in `src/tim/plans.ts`. This
       function will now take a `PlanSchema` object, extract the `details` string
       to be used as the Markdown body, and serialize the remaining fields into a
       YAML front matter block. This ensures that any plan saved by the system
@@ -72,18 +72,18 @@ tasks:
       present. This prevents data loss and ensures a seamless transition.
   - title: Create comprehensive tests for plan file input and output
     done: true
-    description: Add and update tests in `src/rmplan/plans.test.ts` to thoroughly
+    description: Add and update tests in `src/tim/plans.test.ts` to thoroughly
       validate the changes to `readPlanFile` and `writePlanFile`. The tests must
       cover reading and writing the new format, reading the old pure-YAML
       format, and the specific backward-compatibility case where `details`
       exists in both the front matter and the Markdown body. All tests will use
       real file operations in a temporary directory.
 changedFiles:
-  - src/rmplan/plans.test.ts
-  - src/rmplan/plans.ts
+  - src/tim/plans.test.ts
+  - src/tim/plans.ts
 rmfilter:
-  - src/rmplan/plans.ts
+  - src/tim/plans.ts
   - --with-imports
 ---
 
-This phase focuses on the implementation within `src/rmplan/plans.ts` and its corresponding test file, `src/rmplan/plans.test.ts`. We will first update the reading logic to handle the new format, then the writing logic to produce it. A crucial part of this phase is ensuring full backward compatibility for a smooth transition. Each step will be accompanied by dedicated tests to validate its correctness.
+This phase focuses on the implementation within `src/tim/plans.ts` and its corresponding test file, `src/tim/plans.test.ts`. We will first update the reading logic to handle the new format, then the writing logic to produce it. A crucial part of this phase is ensuring full backward compatibility for a smooth transition. Each step will be accompanied by dedicated tests to validate its correctness.

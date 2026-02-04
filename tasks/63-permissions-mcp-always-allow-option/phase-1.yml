@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/rmplan-plan-schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Implement Core "Always Allow" Functionality
 goal: To replace the binary yes/no prompt with a multi-choice prompt that
   includes an "Always Allow" option and to handle the basic in-memory approval
@@ -48,7 +48,7 @@ project:
 
 
     This feature will be implemented primarily within the `ClaudeCodeExecutor`
-    in `src/rmplan/executors/claude_code.ts`, which handles the permission
+    in `src/tim/executors/claude_code.ts`, which handles the permission
     prompting logic.
 tasks:
   - title: Upgrade Permission Prompt to a Select Input
@@ -75,10 +75,10 @@ tasks:
       "Always Allow" option, the corresponding `tool_name` is added to the
       in-memory data structure for future reference in the session.
 changedFiles:
-  - src/rmplan/executors/claude_code.ts
+  - src/tim/executors/claude_code.ts
 rmfilter:
-  - src/rmplan/executors/claude_code.ts
-  - src/rmplan/executors/claude_code/permissions_mcp.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/claude_code/permissions_mcp.ts
 ---
 
 This initial phase focuses on establishing the core workflow. We will replace the existing `@inquirer/prompts` `confirm` call with a `select` call. We will then implement the logic to store "Always Allow" decisions in memory and bypass the prompt for tools that have been pre-approved within the active session. The special handling for Bash commands will be deferred to a later phase.
