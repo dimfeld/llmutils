@@ -1955,6 +1955,20 @@ tim answer-pr [PR] [--mode MODE] [--commit] [--comment]
 tim extract [--input FILE] [--output FILE]
 ```
 
+### tim-gui (macOS)
+
+`tim-gui` is a small macOS SwiftUI app that listens for local HTTP messages and shows them in a list.
+
+```bash
+# Open in Xcode
+open tim-gui/TimGUI.xcodeproj
+
+# Example request
+curl -X POST http://127.0.0.1:8123/messages \\
+  -H 'Content-Type: application/json' \\
+  -d '{\"message\":\"Hello\",\"workspacePath\":\"/tmp/example\"}'
+```
+
 ---
 
 ## Acknowledgements
