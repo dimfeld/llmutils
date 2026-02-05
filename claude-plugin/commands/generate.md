@@ -1,5 +1,5 @@
 ---
-description: Research and fill in details for an tim plan
+description: Research and fill in details for a tim plan
 argument-hint: '[--next-ready] <plan id> | --latest'
 allowed-tools: Bash(tim prompts generate-plan:*)
 ---

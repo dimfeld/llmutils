@@ -145,7 +145,7 @@ IMPORTANT: Do NOT split plans by architectural layers (frontend/backend, UI/API,
 Only create multiple plans if it genuinely improves the project organization. For smaller or tightly coupled features, a single plan is preferred.`
     : '';
 
-  const text = `You are generating an tim implementation plan. tim is a tool for managing step-by-step project plans.
+  const text = `You are generating a tim implementation plan. tim is a tool for managing step-by-step project plans.
 
 # Progress Tracking
 
@@ -197,7 +197,7 @@ export async function loadQuestionsPrompt(
     contextBlock = buildPlanContext(plan, planPath, context) + '\n\n';
   }
 
-  const text = `You are working with an tim implementation plan. tim is a tool for managing step-by-step project plans.
+  const text = `You are working with a tim implementation plan. tim is a tool for managing step-by-step project plans.
 
 ${contextBlock}You are collaborating with a human partner to refine this plan. ${questionText}`;
 
@@ -222,7 +222,7 @@ export async function loadPlanPrompt(
   const { plan, planPath } = await resolvePlan(args.plan, context);
   const contextBlock = buildPlanContext(plan, planPath, context);
 
-  const text = `You are working with an tim implementation plan. tim is a tool for managing step-by-step project plans.
+  const text = `You are working with a tim implementation plan. tim is a tool for managing step-by-step project plans.
 
 ${contextBlock}
 
@@ -282,7 +282,7 @@ IMPORTANT: Do NOT split plans by architectural layers (frontend/backend, UI/API,
 Only create multiple plans if it genuinely improves the project organization. For smaller or tightly coupled features, a single plan is preferred.`
     : '';
 
-  const text = `You are generating an tim implementation plan. tim is a tool for managing step-by-step project plans.
+  const text = `You are generating a tim implementation plan. tim is a tool for managing step-by-step project plans.
 
 # Progress Tracking
 
@@ -515,7 +515,7 @@ export function registerGenerateMode(
     server.addTool({
       name: 'update-plan-tasks',
       description:
-        'Update an tim file with generated tasks and details. Takes pre-generated plan content and merges it into the existing plan file, preserving metadata and completed tasks.',
+        'Update a tim file with generated tasks and details. Takes pre-generated plan content and merges it into the existing plan file, preserving metadata and completed tasks.',
       parameters: generateTasksParameters,
       annotations: {
         destructiveHint: true,

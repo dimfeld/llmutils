@@ -49,7 +49,7 @@ export function setDebug(value: boolean | undefined) {
 export type TimExecutorType = 'claude' | 'codex';
 
 /**
- * Detects if the current process was spawned by an tim executor.
+ * Detects if the current process was spawned by a tim executor.
  * This checks for the TIM_EXECUTOR environment variable set by the parent process.
  *
  * @returns The executor type ('claude' or 'codex') if running under an executor, or null otherwise

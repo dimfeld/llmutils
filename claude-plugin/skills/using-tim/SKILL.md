@@ -1,6 +1,6 @@
 ---
 name: using-tim
-description: Manages project plans with tim. Use whenever the user mentions tim, asks to "generate plan 123" (or any number), "work on plan 123", or when you are working on an tim task.
+description: Manages project plans with tim. Use whenever the user mentions tim, asks to "generate plan 123" (or any number), "work on plan 123", or when you are working on a tim task.
 version: 1.0.1
 ---
 

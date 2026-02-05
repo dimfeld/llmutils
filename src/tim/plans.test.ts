@@ -759,7 +759,7 @@ describe('readAllPlans', () => {
         join(notTimDir, 'not-tim.yml'),
         stringifyWithFrontmatter({
           id: 401,
-          title: 'Not an tim',
+          title: 'Not a tim',
           goal: 'Test',
           details: 'Test',
           tasks: [],

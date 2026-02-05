@@ -103,7 +103,7 @@ export interface ExecutorFactory<E extends Executor, SCHEMA extends z.ZodType = 
 }
 
 /**
- * Defines the structure for an tim executor.
+ * Defines the structure for a tim executor.
  * @template ExecutorSpecificOptionsSchema - Zod schema for executor-specific options.
  */
 export interface Executor {

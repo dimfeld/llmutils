@@ -101,7 +101,7 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
     not_tim: z
       .boolean()
       .optional()
-      .describe('Mark file as not an tim plan, to be ignored when listing and reading plans'),
+      .describe('Mark file as not a tim plan, to be ignored when listing and reading plans'),
   }).describe('tim phase file schema');
 
   const multiPhasePlanSchema = objectFactory({

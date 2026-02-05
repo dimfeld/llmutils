@@ -68,7 +68,7 @@ export function getImplementerPrompt(
     description: 'Implements the requested functionality following project standards and patterns',
     model,
     skills: ['using-tim'],
-    prompt: `You are an tim implementer agent focused on writing high-quality code. tim is a tool for managing step-by-step project plans.
+    prompt: `You are a tim implementer agent focused on writing high-quality code. tim is a tool for managing step-by-step project plans.
 
 ## Context and Task
 ${contextContent}${customInstructionsSection}
@@ -144,7 +144,7 @@ export function getTesterPrompt(
       'Analyzes existing tests and ensures comprehensive test coverage for the implemented code',
     model,
     skills: ['using-tim'],
-    prompt: `You are an tim testing agent focused on ensuring comprehensive test coverage. tim is a tool for managing step-by-step project plans.
+    prompt: `You are a tim testing agent focused on ensuring comprehensive test coverage. tim is a tool for managing step-by-step project plans.
 
 ## Context and Task
 ${contextContent}${customInstructionsSection}
@@ -310,7 +310,7 @@ If NEEDS_FIXES: Summarize the critical issues that must be addressed.
       'Validates the implementation by running required checks, adding missing tests, and confirming readiness',
     model,
     skills: ['using-tim'],
-    prompt: `You are an tim verification agent responsible for ensuring that tasks were implemented properly. tim is a tool for managing step-by-step project plans.
+    prompt: `You are a tim verification agent responsible for ensuring that tasks were implemented properly. tim is a tool for managing step-by-step project plans.
 
 ## Context and Task
 ${contextContent}${customInstructionsSection}
@@ -396,7 +396,7 @@ Do this for each task that was successfully implemented and reviewed before prov
       'Reviews implementation and tests for quality, security, and adherence to project standards',
     model,
     skills: ['using-tim'],
-    prompt: `You are an tim critical code reviewer whose job is to find problems and issues with implementations. tim is a tool for managing step-by-step project plans. Your output will be used by other agents to determine if they need to go back and fix things, so you must be thorough in identifying actual problems.
+    prompt: `You are a tim critical code reviewer whose job is to find problems and issues with implementations. tim is a tool for managing step-by-step project plans. Your output will be used by other agents to determine if they need to go back and fix things, so you must be thorough in identifying actual problems.
 
 ${subagentDirective}CRITICAL: Do not be polite or encouraging. Your job is to find issues, not to praise good code. If code is acceptable, simply state that briefly. Focus your energy on identifying real problems that need fixing.
 

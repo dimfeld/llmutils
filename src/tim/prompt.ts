@@ -1297,7 +1297,7 @@ Use your Todo tools to track progress through these steps:
 - [ ] Add tasks - use the 'tim tools update-plan-tasks' CLI command to add tasks
 `;
 
-  return `You are generating an tim implementation plan. tim is a tool for managing step-by-step project plans.
+  return `You are generating a tim implementation plan. tim is a tool for managing step-by-step project plans.
 
 ${progressChecklist}
 This is a description for an upcoming feature that I want you to analyze and create a plan for.

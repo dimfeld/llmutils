@@ -252,7 +252,7 @@ export function wrapWithOrchestration(
 
   const header = `# Multi-Agent Orchestration Instructions
 
-You are the orchestrator for an tim multi-agent development workflow. tim is a tool for managing step-by-step project plans. Your role is to coordinate between specialized agents to complete the coding task${options.batchMode ? 's' : ''} described below.
+You are the orchestrator for a tim multi-agent development workflow. tim is a tool for managing step-by-step project plans. Your role is to coordinate between specialized agents to complete the coding task${options.batchMode ? 's' : ''} described below.
 
 ${batchModeInstructions}`;
 
@@ -286,7 +286,7 @@ export function wrapWithOrchestrationSimple(
 
   const header = `# Two-Phase Orchestration Instructions
 
-You are coordinating an tim streamlined two-phase workflow (implement → verify) for the tasks below. tim is a tool for managing step-by-step project plans.`;
+You are coordinating a tim streamlined two-phase workflow (implement → verify) for the tasks below. tim is a tool for managing step-by-step project plans.`;
 
   const availableAgents = `## Available Agents
 
