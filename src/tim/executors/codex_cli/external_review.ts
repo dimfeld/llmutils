@@ -217,7 +217,7 @@ function formatReviewForDisplay(reviewResult: ReviewResult): string {
   const formatter = createFormatter('markdown');
   return formatter.format(reviewResult, {
     verbosity: 'detailed',
-    showFiles: true,
+    showFiles: false,
     showSuggestions: true,
   });
 }
