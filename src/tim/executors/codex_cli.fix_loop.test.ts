@@ -183,7 +183,7 @@ describe('CodexCliExecutor - Fix Loop', () => {
     }
   }, 15000);
 
-  test('stops after max 5 fix iterations when still NEEDS_FIXES', async () => {
+  test('stops after max 7 fix iterations when still NEEDS_FIXES', async () => {
     const logMessages: string[] = [];
     const warnMessages: string[] = [];
 
@@ -306,8 +306,8 @@ describe('CodexCliExecutor - Fix Loop', () => {
       executeNormalMode('context', mockPlanInfo, '/tmp/repo', 'test-model', mockConfig)
     ).resolves.toBeUndefined();
 
-    // Expect: 1 implementer + 1 tester + 5 fixer = 7 calls
-    expect(calls.length).toBe(7);
+    // Expect: 1 implementer + 1 tester + 7 fixer = 9 calls
+    expect(calls.length).toBe(9);
 
     // Ensure at least one fixer prompt was used
     expect(calls.some((p) => p.includes('Fixer'))).toBeTrue();

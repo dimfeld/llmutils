@@ -347,8 +347,8 @@ export async function executeNormalMode(
 
     let fixInstructions = reviewOutcome.fixInstructions;
 
-    // Implement fix-and-review loop (up to 5 iterations)
-    const maxFixIterations = 5;
+    // Implement fix-and-review loop (up to 7 iterations)
+    const maxFixIterations = 7;
     for (let iter = 1; iter <= maxFixIterations; iter++) {
       log(`Starting fix iteration ${iter}/${maxFixIterations}...`);
 
