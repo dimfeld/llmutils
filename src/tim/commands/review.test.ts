@@ -2059,6 +2059,7 @@ tasks:
       expect(result.planData).toBe(planData);
       expect(result.taskScopeNote).toBeUndefined();
       expect(result.isScoped).toBe(false);
+      expect(result.remainingTasks).toEqual([]);
     });
 
     test('filters tasks by index and preserves order', () => {
@@ -2078,6 +2079,8 @@ tasks:
       expect(result.planData.tasks?.map((task) => task.title)).toEqual(['Task One', 'Task Three']);
       expect(result.taskScopeNote).toContain('(2 of 3)');
       expect(result.isScoped).toBe(true);
+      // Task Two (index 2) is unfinished and outside the scope
+      expect(result.remainingTasks).toEqual([{ index: 2, title: 'Task Two' }]);
     });
 
     test('preserves original task indexes when filtering', () => {
@@ -2181,6 +2184,48 @@ tasks:
         resolveReviewTaskScope(planData, { taskIndex: ['-1'], taskTitle: ['Missing Task'] })
       ).toThrow('Invalid task indexes: -1; Unknown task titles: Missing Task');
     });
+
+    test('remainingTasks excludes done tasks outside scope', () => {
+      const planData: PlanSchema = {
+        id: 8,
+        title: 'Remaining Tasks Plan',
+        goal: 'Test remaining tasks',
+        tasks: [
+          { title: 'Scoped Task', description: 'In scope', done: false },
+          { title: 'Done Task', description: 'Already done', done: true },
+          { title: 'Pending Task', description: 'Still pending', done: false },
+          { title: 'Another Pending', description: 'Also pending', done: false },
+        ],
+      };
+
+      const result = resolveReviewTaskScope(planData, { taskIndex: ['1'] });
+
+      expect(result.isScoped).toBe(true);
+      expect(result.planData.tasks?.map((t) => t.title)).toEqual(['Scoped Task']);
+      // Done Task (index 2) should be excluded, Pending Task (3) and Another Pending (4) included
+      expect(result.remainingTasks).toEqual([
+        { index: 3, title: 'Pending Task' },
+        { index: 4, title: 'Another Pending' },
+      ]);
+    });
+
+    test('remainingTasks is empty when all non-scoped tasks are done', () => {
+      const planData: PlanSchema = {
+        id: 9,
+        title: 'All Done Plan',
+        goal: 'Test no remaining tasks',
+        tasks: [
+          { title: 'Scoped Task', description: 'In scope', done: false },
+          { title: 'Done One', description: 'Finished', done: true },
+          { title: 'Done Two', description: 'Also finished', done: true },
+        ],
+      };
+
+      const result = resolveReviewTaskScope(planData, { taskIndex: ['1'] });
+
+      expect(result.isScoped).toBe(true);
+      expect(result.remainingTasks).toEqual([]);
+    });
   });
 });
 
@@ -2239,6 +2284,68 @@ describe('Custom review instructions', () => {
       buildReviewPrompt(planData, diffResult, true, false, [], [], 'custom instructions')
     ).not.toThrow();
     expect(() => buildReviewPrompt(planData, diffResult, true, false, [], [])).not.toThrow();
+  });
+
+  test('buildReviewPrompt includes remaining tasks section when provided', () => {
+    const planData = {
+      id: 1,
+      title: 'Test',
+      goal: 'Test goal',
+      tasks: [{ title: 'Scoped Task', description: 'In scope', done: false }],
+    };
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['test.ts'],
+      baseBranch: 'main',
+      diffContent: 'diff',
+    };
+    const remainingTasks = [
+      { index: 2, title: 'Pending Task' },
+      { index: 4, title: 'Another Pending' },
+    ];
+
+    const prompt = buildReviewPrompt(
+      planData,
+      diffResult,
+      false,
+      false,
+      [],
+      [],
+      undefined,
+      'Scoped to 1 of 4 tasks',
+      undefined,
+      remainingTasks
+    );
+
+    expect(prompt).toContain('Remaining Unfinished Tasks');
+    expect(prompt).toContain('2. Pending Task');
+    expect(prompt).toContain('4. Another Pending');
+    expect(prompt).toContain('not yet implemented');
+  });
+
+  test('buildReviewPrompt omits remaining tasks section when empty', () => {
+    const planData = { id: 1, title: 'Test', goal: 'Test goal', tasks: [] };
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['test.ts'],
+      baseBranch: 'main',
+      diffContent: 'diff',
+    };
+
+    const prompt = buildReviewPrompt(
+      planData,
+      diffResult,
+      false,
+      false,
+      [],
+      [],
+      undefined,
+      undefined,
+      undefined,
+      []
+    );
+
+    expect(prompt).not.toContain('Remaining Unfinished Tasks');
   });
 
   test('validates function signatures work correctly after security fixes', () => {

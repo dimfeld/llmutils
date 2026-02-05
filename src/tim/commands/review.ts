@@ -501,6 +501,7 @@ export async function handleReviewCommand(
       planData: scopedPlanData,
       taskScopeNote,
       isScoped,
+      remainingTasks,
     } = resolveReviewTaskScope(planData, {
       taskIndex: options.taskIndex,
       taskTitle: options.taskTitle,
@@ -515,7 +516,9 @@ export async function handleReviewCommand(
         parentChain,
         completedChildren,
         customInstructions,
-        taskScopeNote
+        taskScopeNote,
+        undefined,
+        remainingTasks
       );
 
     // Execute the review
@@ -1040,10 +1043,13 @@ type ReviewTaskFilterOptions = {
   taskTitle?: string | string[];
 };
 
+type RemainingTask = { index: number; title: string };
+
 type ReviewTaskScope = {
   planData: PlanSchema;
   taskScopeNote?: string;
   isScoped: boolean;
+  remainingTasks: RemainingTask[];
 };
 
 function normalizeTaskFilterInput(value: string | string[] | undefined): string[] {
@@ -1086,7 +1092,7 @@ export function resolveReviewTaskScope(
   const taskTitles = normalizeTaskFilterInput(options.taskTitle);
 
   if (taskIndexes.length === 0 && taskTitles.length === 0 && invalidTokens.length === 0) {
-    return { planData, isScoped: false };
+    return { planData, isScoped: false, remainingTasks: [] };
   }
 
   const tasks = planData.tasks ?? [];
@@ -1157,6 +1163,12 @@ export function resolveReviewTaskScope(
   const totalTasks = tasks.length;
   const taskScopeNote = `This review is limited to the tasks listed below (${filteredTasks.length} of ${totalTasks}). Other plan tasks are out of scope.`;
 
+  // Compute remaining unfinished tasks outside the review scope
+  const remainingTasks: RemainingTask[] = tasks
+    .map((task, index) => ({ index: index + 1, title: task.title, done: task.done }))
+    .filter((task) => !matchedIndexes.has(task.index - 1) && !task.done)
+    .map(({ index, title }) => ({ index, title }));
+
   return {
     planData: {
       ...planData,
@@ -1164,6 +1176,7 @@ export function resolveReviewTaskScope(
     },
     taskScopeNote,
     isScoped: true,
+    remainingTasks,
   };
 }
 
@@ -1421,7 +1434,11 @@ export async function buildReviewPromptFromOptions(
   }
 
   // Resolve task scope
-  const { planData: scopedPlanData, taskScopeNote } = resolveReviewTaskScope(planData, {
+  const {
+    planData: scopedPlanData,
+    taskScopeNote,
+    remainingTasks,
+  } = resolveReviewTaskScope(planData, {
     taskIndex: options.taskIndex,
     taskTitle: options.taskTitle,
   });
@@ -1435,7 +1452,9 @@ export async function buildReviewPromptFromOptions(
     parentChain,
     completedChildren,
     customInstructions,
-    taskScopeNote
+    taskScopeNote,
+    undefined,
+    remainingTasks
   );
 }
 
@@ -1448,7 +1467,8 @@ export function buildReviewPrompt(
   completedChildren: PlanWithFilename[] = [],
   customInstructions?: string,
   taskScopeNote?: string,
-  additionalContext?: string
+  additionalContext?: string,
+  remainingTasks?: RemainingTask[]
 ): string {
   // Build parent plan context section if available
   const parentContext: string[] = [];
@@ -1527,6 +1547,18 @@ export function buildReviewPrompt(
 
   if (taskScopeNote) {
     planContext.push(`**Review Scope:** ${taskScopeNote}`, ``);
+  }
+
+  if (remainingTasks && remainingTasks.length > 0) {
+    planContext.push(`**Remaining Unfinished Tasks:**`);
+    for (const task of remainingTasks) {
+      planContext.push(`- ${task.index}. ${task.title}`);
+    }
+    planContext.push(
+      ``,
+      `*Note: The tasks listed above are not yet implemented. Do not flag issues that are clearly expected to be addressed by these remaining tasks.*`,
+      ``
+    );
   }
 
   if (planData.tasks && planData.tasks.length > 0) {
