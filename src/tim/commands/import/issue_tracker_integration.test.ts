@@ -615,8 +615,9 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
 
       await handleImportCommand('999');
 
-      const { getIssueTracker: getIssueTracker1 } =
-        await import('../../common/issue_tracker/factory.js');
+      const { getIssueTracker: getIssueTracker1 } = await import(
+        '../../common/issue_tracker/factory.js'
+      );
       expect(getIssueTracker1).toHaveBeenCalledWith(githubConfig);
       expect(mockGitHubClient.getDisplayName()).toBe('GitHub');
 
@@ -690,8 +691,9 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
 
       await handleImportCommand('TEAM-SWITCH');
 
-      const { getIssueTracker: getIssueTracker2 } =
-        await import('../../common/issue_tracker/factory.js');
+      const { getIssueTracker: getIssueTracker2 } = await import(
+        '../../common/issue_tracker/factory.js'
+      );
       expect(getIssueTracker2).toHaveBeenCalledWith(linearConfig);
       expect(mockLinearClient.getDisplayName()).toBe('Linear');
     });

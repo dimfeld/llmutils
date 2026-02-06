@@ -50,8 +50,9 @@ await moduleMocker.mock('../configLoader.js', () => ({
   loadEffectiveConfig: mockLoadEffectiveConfig,
 }));
 
-const { handleCompactCommand, compactPlan, generateCompactionPrompt } =
-  await import('./compact.js');
+const { handleCompactCommand, compactPlan, generateCompactionPrompt } = await import(
+  './compact.js'
+);
 
 describe('compact command', () => {
   let tempDir: string;

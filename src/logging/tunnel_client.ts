@@ -54,18 +54,21 @@ export class TunnelAdapter implements LoggerAdapter {
   }
 
   log(...args: any[]): void {
-    this.send({ type: 'log', args: serializeArgs(args) });
-    writeToLogFile(serializeArgs(args).join(' ') + '\n');
+    const serialized = serializeArgs(args);
+    this.send({ type: 'log', args: serialized });
+    writeToLogFile(serialized.join(' ') + '\n');
   }
 
   error(...args: any[]): void {
-    this.send({ type: 'error', args: serializeArgs(args) });
-    writeToLogFile(serializeArgs(args).join(' ') + '\n');
+    const serialized = serializeArgs(args);
+    this.send({ type: 'error', args: serialized });
+    writeToLogFile(serialized.join(' ') + '\n');
   }
 
   warn(...args: any[]): void {
-    this.send({ type: 'warn', args: serializeArgs(args) });
-    writeToLogFile(serializeArgs(args).join(' ') + '\n');
+    const serialized = serializeArgs(args);
+    this.send({ type: 'warn', args: serialized });
+    writeToLogFile(serialized.join(' ') + '\n');
   }
 
   writeStdout(data: string): void {
@@ -80,7 +83,9 @@ export class TunnelAdapter implements LoggerAdapter {
 
   debugLog(...args: any[]): void {
     if (debug) {
-      this.log('[DEBUG]', ...args);
+      const serialized = serializeArgs(args);
+      this.send({ type: 'debug', args: serialized });
+      writeToLogFile('[DEBUG] ' + serialized.join(' ') + '\n');
     }
   }
 

@@ -103,7 +103,14 @@ export function createTunnelServer(socketPath: string): Promise<TunnelServer> {
       });
     });
 
+    // Register cleanup to ensure socket is removed on process exit.
+    // The unregister variable is assigned after the close function is defined,
+    // but always before close can be called (since close is only callable after
+    // the server is listening or on error).
+    let unregister: (() => void) | undefined;
+
     const close = () => {
+      unregister?.();
       server.close();
       try {
         fs.unlinkSync(socketPath);
@@ -112,8 +119,7 @@ export function createTunnelServer(socketPath: string): Promise<TunnelServer> {
       }
     };
 
-    // Register cleanup to ensure socket is removed on process exit
-    const unregister = CleanupRegistry.getInstance().register(close);
+    unregister = CleanupRegistry.getInstance().register(close);
 
     server.on('error', (err) => {
       unregister();

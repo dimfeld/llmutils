@@ -1374,8 +1374,9 @@ describe('tim renumber', () => {
     };
     await writeTestPlan(path.join(tasksDir, '8-child2.yml'), child2Plan);
 
-    const { buildParentChildHierarchy, findPlanFamily, topologicalSortFamily } =
-      await import('./renumber.js');
+    const { buildParentChildHierarchy, findPlanFamily, topologicalSortFamily } = await import(
+      './renumber.js'
+    );
 
     const allPlans = new Map();
     const parent = await readPlanFile(path.join(tasksDir, '10-parent.yml'));
