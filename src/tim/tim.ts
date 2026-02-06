@@ -1185,7 +1185,11 @@ async function run() {
       cleanupRegistry.register(() => tunnelAdapter.destroy());
       await runWithLogger(tunnelAdapter, () => program.parseAsync(process.argv));
     } catch {
-      // If tunnel connection fails, fall back to normal console output
+      // If tunnel connection fails, fall back to normal console output.
+      // Clear the env var so isTunnelActive() returns false — otherwise
+      // the review command would skip installing its quiet/verbose logger
+      // even though no tunnel adapter is actually installed.
+      delete process.env[TIM_OUTPUT_SOCKET];
       await program.parseAsync(process.argv);
     }
   } else {

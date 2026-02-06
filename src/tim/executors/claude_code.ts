@@ -777,7 +777,7 @@ export class ClaudeCodeExecutor implements Executor {
       }
 
       // Clean up tunnel temp directory if we created a separate one
-      if (!tempMcpConfigDir && tunnelServer) {
+      if (!tempMcpConfigDir) {
         await fs.rm(tunnelTempDir, { recursive: true, force: true });
       }
     }
@@ -1494,7 +1494,7 @@ export class ClaudeCodeExecutor implements Executor {
       }
 
       // Clean up tunnel temp directory if we created a separate one
-      if (!tempMcpConfigDir && tunnelServer) {
+      if (!tempMcpConfigDir) {
         await fs.rm(tunnelTempDir, { recursive: true, force: true });
       }
     }
