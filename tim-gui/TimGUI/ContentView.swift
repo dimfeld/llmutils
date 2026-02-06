@@ -8,14 +8,10 @@ struct ContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("tim-gui")
-                    .font(.title2)
-                Text("Listening on http://127.0.0.1:8123/messages")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(16)
+            Text(verbatim: "Listening on http://127.0.0.1:8123/messages")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .padding(16)
 
             if let startError {
                 Text(startError)
