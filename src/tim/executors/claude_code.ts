@@ -36,6 +36,8 @@ import {
 import { getReviewOutputJsonSchemaString } from '../formatters/review_output_schema.ts';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { readSharedPermissions, addSharedPermission } from '../assignments/permissions_io.js';
+import { createTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
+import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -630,6 +632,17 @@ export class ClaudeCodeExecutor implements Executor {
       await Bun.file(dynamicMcpConfigFile).write(JSON.stringify(mcpConfig, null, 2));
     }
 
+    // Create tunnel server for output forwarding from child processes
+    let tunnelServer: TunnelServer | undefined;
+    const tunnelTempDir =
+      tempMcpConfigDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-')));
+    const tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
+    try {
+      tunnelServer = await createTunnelServer(tunnelSocketPath);
+    } catch (err) {
+      debugLog('Could not create tunnel server for output forwarding:', err);
+    }
+
     try {
       // Build args for review mode - simpler than full orchestration
       const args = ['claude', '--no-session-persistence'];
@@ -679,6 +692,7 @@ export class ClaudeCodeExecutor implements Executor {
           ...process.env,
           TIM_EXECUTOR: 'claude',
           TIM_NOTIFY_SUPPRESS: '1',
+          ...(tunnelServer ? { [TIM_OUTPUT_SOCKET]: tunnelSocketPath } : {}),
           ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
           CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
         },
@@ -745,6 +759,9 @@ export class ClaudeCodeExecutor implements Executor {
         metadata: { phase: 'review', jsonOutput: true },
       };
     } finally {
+      // Close the tunnel server if it was created
+      tunnelServer?.close();
+
       // Close the Unix socket server if it exists
       if (unixSocketServer) {
         await new Promise<void>((resolve) => {
@@ -757,6 +774,11 @@ export class ClaudeCodeExecutor implements Executor {
       // Clean up temporary MCP configuration directory if it was created
       if (tempMcpConfigDir) {
         await fs.rm(tempMcpConfigDir, { recursive: true, force: true });
+      }
+
+      // Clean up tunnel temp directory if we created a separate one
+      if (!tempMcpConfigDir && tunnelServer) {
+        await fs.rm(tunnelTempDir, { recursive: true, force: true });
       }
     }
   }
@@ -1150,6 +1172,17 @@ export class ClaudeCodeExecutor implements Executor {
       await Bun.file(dynamicMcpConfigFile).write(JSON.stringify(mcpConfig, null, 2));
     }
 
+    // Create tunnel server for output forwarding from child processes
+    let tunnelServer: TunnelServer | undefined;
+    const tunnelTempDir =
+      tempMcpConfigDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-')));
+    const tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
+    try {
+      tunnelServer = await createTunnelServer(tunnelSocketPath);
+    } catch (err) {
+      debugLog('Could not create tunnel server for output forwarding:', err);
+    }
+
     // Build agent definitions when plan information is provided
     let agentDefinitions: AgentDefinition[] | undefined;
     if (planContextAvailable) {
@@ -1320,6 +1353,7 @@ export class ClaudeCodeExecutor implements Executor {
           ...process.env,
           TIM_EXECUTOR: 'claude',
           TIM_NOTIFY_SUPPRESS: '1',
+          ...(tunnelServer ? { [TIM_OUTPUT_SOCKET]: tunnelSocketPath } : {}),
           ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
           CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
         },
@@ -1442,6 +1476,9 @@ export class ClaudeCodeExecutor implements Executor {
 
       return; // Explicitly return void for 'none' or undefined captureOutput
     } finally {
+      // Close the tunnel server if it was created
+      tunnelServer?.close();
+
       // Close the Unix socket server if it exists
       if (unixSocketServer) {
         await new Promise<void>((resolve) => {
@@ -1454,6 +1491,11 @@ export class ClaudeCodeExecutor implements Executor {
       // Clean up temporary MCP configuration directory if it was created
       if (tempMcpConfigDir) {
         await fs.rm(tempMcpConfigDir, { recursive: true, force: true });
+      }
+
+      // Clean up tunnel temp directory if we created a separate one
+      if (!tempMcpConfigDir && tunnelServer) {
+        await fs.rm(tunnelTempDir, { recursive: true, force: true });
       }
     }
   }
