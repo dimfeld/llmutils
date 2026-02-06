@@ -31,12 +31,15 @@ struct ContentView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(item.message)
                                     .font(.headline)
-                                Text(item.workspacePath)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                Text(item.receivedAt, style: .time)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                HStack {
+                                    Text(item.workspacePath)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    Text(item.receivedAt, style: .time)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
