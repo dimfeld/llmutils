@@ -11,6 +11,7 @@ final class AppState {
         let item = MessageItem(
             message: payload.message,
             workspacePath: payload.workspacePath,
+            terminal: payload.terminal,
             receivedAt: Date()
         )
         items.insert(item, at: 0)

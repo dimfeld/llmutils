@@ -43,3 +43,5 @@ rmplan-*
 .rmfilter/config/*.local.yml
 .rmfilter/reviews
 .*.bun-build
+
+*.xcuserstate

@@ -1,15 +1,27 @@
 import Foundation
 import Network
 
+struct TerminalPayload: Codable {
+    let type: String
+    let paneId: String
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case paneId = "pane_id"
+    }
+}
+
 struct MessagePayload: Codable {
     let message: String
     let workspacePath: String
+    let terminal: TerminalPayload?
 }
 
 struct MessageItem: Identifiable {
     let id = UUID()
     let message: String
     let workspacePath: String
+    let terminal: TerminalPayload?
     let receivedAt: Date
 }
 
