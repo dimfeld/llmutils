@@ -7,6 +7,12 @@ import UserNotifications
 final class AppState {
     var items: [MessageItem] = []
 
+    func markRead(_ id: UUID) {
+        if let index = self.items.firstIndex(where: { $0.id == id }) {
+            self.items[index].isRead = true
+        }
+    }
+
     func ingest(_ payload: MessagePayload) {
         self.items.removeAll { $0.workspacePath == payload.workspacePath }
         let item = MessageItem(

@@ -22,21 +22,29 @@ struct ContentView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(self.appState.items) { item in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(item.message)
-                                .font(.headline)
-                            Text(item.workspacePath)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            Text(item.receivedAt, style: .time)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        HStack(alignment: .top, spacing: 8) {
+                            Circle()
+                                .fill(item.isRead ? .clear : .blue)
+                                .frame(width: 8, height: 8)
+                                .padding(.top, 6)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(item.message)
+                                    .font(.headline)
+                                Text(item.workspacePath)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Text(item.receivedAt, style: .time)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                         .contentShape(Rectangle())
                         .onTapGesture {
+                            self.appState.markRead(item.id)
                             if let terminal = item.terminal {
                                 self.activateTerminalPane(terminal)
                             }

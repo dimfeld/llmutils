@@ -23,6 +23,7 @@ struct MessageItem: Identifiable {
     let workspacePath: String
     let terminal: TerminalPayload?
     let receivedAt: Date
+    var isRead: Bool = false
 }
 
 final class LocalHTTPServer: @unchecked Sendable {
