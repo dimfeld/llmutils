@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, mock, vi } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test';
 import { mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -19,7 +19,7 @@ let originalTIMInteractive: string | undefined;
 
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'tim-review-tunnel-test-'));
-  vi.spyOn(console, 'error').mockImplementation(() => {});
+  spyOn(console, 'error').mockImplementation(() => {});
   originalTIMOutputSocket = process.env[TIM_OUTPUT_SOCKET];
   originalTIMInteractive = process.env.TIM_INTERACTIVE;
 
@@ -138,7 +138,7 @@ describe('Review command tunnel integration', () => {
 
       // We need to track both `log()` calls AND `process.stdout.write` calls
       const originalStdoutWrite = process.stdout.write;
-      const stdoutWriteMock = vi.fn((...args: any[]) => {
+      const stdoutWriteMock = mock((...args: any[]) => {
         const data = typeof args[0] === 'string' ? args[0] : args[0]?.toString() || '';
         stdoutWrites.push(data);
         return true;
@@ -254,7 +254,7 @@ describe('Review command tunnel integration', () => {
       const stdoutWrites: string[] = [];
 
       const originalStdoutWrite = process.stdout.write;
-      const stdoutWriteMock = vi.fn((...args: any[]) => {
+      const stdoutWriteMock = mock((...args: any[]) => {
         const data = typeof args[0] === 'string' ? args[0] : args[0]?.toString() || '';
         stdoutWrites.push(data);
         return true;
@@ -316,7 +316,7 @@ describe('Review command tunnel integration', () => {
       const stdoutWrites: string[] = [];
 
       const originalStdoutWrite = process.stdout.write;
-      const stdoutWriteMock = vi.fn((...args: any[]) => {
+      const stdoutWriteMock = mock((...args: any[]) => {
         const data = typeof args[0] === 'string' ? args[0] : args[0]?.toString() || '';
         stdoutWrites.push(data);
         return true;
@@ -379,7 +379,7 @@ describe('Review command tunnel integration', () => {
 
       // Track stderr to verify the verbose logger (which redirects to stderr) is NOT installed
       const originalStderrWrite = process.stderr.write;
-      const stderrWriteMock = vi.fn((...args: any[]) => {
+      const stderrWriteMock = mock((...args: any[]) => {
         const data = typeof args[0] === 'string' ? args[0] : args[0]?.toString() || '';
         stderrWrites.push(data);
         return true;
@@ -387,7 +387,7 @@ describe('Review command tunnel integration', () => {
       process.stderr.write = stderrWriteMock as any;
 
       const originalStdoutWrite = process.stdout.write;
-      const stdoutWriteMock = vi.fn((...args: any[]) => {
+      const stdoutWriteMock = mock((...args: any[]) => {
         const data = typeof args[0] === 'string' ? args[0] : args[0]?.toString() || '';
         stdoutWrites.push(data);
         return true;
@@ -456,7 +456,7 @@ describe('Review command tunnel integration', () => {
       const logCalls: string[] = [];
 
       const originalStdoutWrite = process.stdout.write;
-      process.stdout.write = vi.fn(() => true) as any;
+      process.stdout.write = mock(() => true) as any;
 
       await moduleMocker.mock('../../logging.js', () => ({
         log: (...args: any[]) => {
