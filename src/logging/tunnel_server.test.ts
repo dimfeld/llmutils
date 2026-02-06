@@ -293,6 +293,37 @@ describe('createTunnelServer', () => {
     expect(calls[0]).toEqual({ method: 'log', args: ['valid after invalid'] });
   });
 
+  it('should reject messages with non-string args elements', async () => {
+    const sp = uniqueSocketPath();
+    const { adapter, calls } = createRecordingAdapter();
+
+    await runWithLogger(adapter, async () => {
+      tunnelServer = await createTunnelServer(sp);
+
+      await new Promise<void>((resolve, reject) => {
+        const client = net.connect(sp, () => {
+          // args contains a number instead of a string
+          client.write(JSON.stringify({ type: 'log', args: ['valid', 42] }) + '\n');
+          // args contains an object instead of a string
+          client.write(JSON.stringify({ type: 'error', args: [{ nested: true }] }) + '\n');
+          // valid message after
+          client.write(JSON.stringify({ type: 'log', args: ['all strings here'] }) + '\n');
+          setTimeout(() => {
+            client.end();
+            resolve();
+          }, 20);
+        });
+        client.on('error', reject);
+      });
+
+      await waitForCalls(calls, 1);
+    });
+
+    // Only the message with all-string args should have been dispatched
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({ method: 'log', args: ['all strings here'] });
+  });
+
   it('should handle malformed JSON gracefully without crashing', async () => {
     const sp = uniqueSocketPath();
     const { adapter, calls } = createRecordingAdapter();
@@ -369,6 +400,16 @@ describe('createTunnelServer', () => {
 
     // Socket file should be removed
     expect(fs.existsSync(sp)).toBe(false);
+  });
+
+  it('should handle close() being called multiple times without error', async () => {
+    const sp = uniqueSocketPath();
+    tunnelServer = await createTunnelServer(sp);
+
+    // Calling close() multiple times should not throw
+    tunnelServer.close();
+    tunnelServer.close(); // Should be idempotent
+    tunnelServer = null;
   });
 
   it('should remove a stale socket file before creating the server', async () => {

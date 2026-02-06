@@ -278,7 +278,7 @@ describe('tunnel integration', () => {
     });
   });
 
-  describe('multi-level nesting', () => {
+  describe('multiple clients', () => {
     it('should support multiple clients connecting to the same server', async () => {
       const sp = uniqueSocketPath();
       const { adapter, calls } = createRecordingAdapter();
@@ -286,7 +286,7 @@ describe('tunnel integration', () => {
       await runWithLogger(adapter, async () => {
         tunnelServer = await createTunnelServer(sp);
 
-        // Simulate two nested processes connecting to the same root server
+        // Simulate two processes connecting to the same root server
         const client1 = await createTunnelAdapter(sp);
         const client2 = await createTunnelAdapter(sp);
 
@@ -305,38 +305,34 @@ describe('tunnel integration', () => {
       expect(allArgs).toEqual(['from level 1', 'from level 2']);
     });
 
-    it('should pass through socket path for multi-level tunneling', async () => {
-      // This test verifies the concept that the same socket path can be passed
-      // to further nested processes. We simulate this by creating multiple clients
-      // that all connect to the same server.
+    it('should deliver messages from many clients sharing the same server socket', async () => {
+      // Multiple child processes share the same TIM_OUTPUT_SOCKET path,
+      // connecting independently. All messages arrive at the single server.
       const sp = uniqueSocketPath();
       const { adapter, calls } = createRecordingAdapter();
 
       await runWithLogger(adapter, async () => {
         tunnelServer = await createTunnelServer(sp);
 
-        // Level 1 child
-        const level1Client = await createTunnelAdapter(sp);
-        level1Client.log('level 1 process');
+        const clientA = await createTunnelAdapter(sp);
+        clientA.log('client A message');
 
-        // Level 2 child (would get the same socket path via env var passthrough)
-        const level2Client = await createTunnelAdapter(sp);
-        level2Client.log('level 2 process');
+        const clientB = await createTunnelAdapter(sp);
+        clientB.log('client B message');
 
-        // Level 3 child
-        const level3Client = await createTunnelAdapter(sp);
-        level3Client.log('level 3 process');
+        const clientC = await createTunnelAdapter(sp);
+        clientC.log('client C message');
 
         await waitForCalls(calls, 3);
 
-        await level1Client.destroy();
-        await level2Client.destroy();
-        await level3Client.destroy();
+        await clientA.destroy();
+        await clientB.destroy();
+        await clientC.destroy();
       });
 
       expect(calls).toHaveLength(3);
       const allArgs = calls.map((c) => c.args[0]).sort();
-      expect(allArgs).toEqual(['level 1 process', 'level 2 process', 'level 3 process']);
+      expect(allArgs).toEqual(['client A message', 'client B message', 'client C message']);
     });
   });
 

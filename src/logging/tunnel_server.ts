@@ -37,7 +37,7 @@ function isValidTunnelMessage(message: unknown): message is TunnelMessage {
     case 'error':
     case 'warn':
     case 'debug':
-      return Array.isArray(msg.args);
+      return Array.isArray(msg.args) && msg.args.every((a: unknown) => typeof a === 'string');
     case 'stdout':
     case 'stderr':
       return typeof msg.data === 'string';
@@ -136,8 +136,11 @@ export function createTunnelServer(socketPath: string): Promise<TunnelServer> {
     // but always before close can be called (since close is only callable after
     // the server is listening or on error).
     let unregister: (() => void) | undefined;
+    let closed = false;
 
     const close = () => {
+      if (closed) return;
+      closed = true;
       unregister?.();
       server.close();
       try {
@@ -149,12 +152,23 @@ export function createTunnelServer(socketPath: string): Promise<TunnelServer> {
 
     unregister = CleanupRegistry.getInstance().register(close);
 
+    let listening = false;
+
     server.on('error', (err) => {
-      unregister();
-      reject(err);
+      if (!listening) {
+        // Pre-listen error: the server never started, so reject the promise
+        // and clean up the registry entry.
+        unregister();
+        reject(err);
+      } else {
+        // Post-listen error: log but don't remove cleanup handler since the
+        // server may still need cleanup on process exit.
+        error('Tunnel server error:', `${err as Error}`);
+      }
     });
 
     server.listen(socketPath, () => {
+      listening = true;
       resolve({ server, close });
     });
   });

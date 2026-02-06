@@ -396,7 +396,8 @@ Write tests for:
 ## Current Progress
 ### Current State
 - All 7 tasks complete. Full tunnel output system implemented and integrated.
-- 71 tests passing across 5 test files with 265 assertions
+- 75 tests passing across 5 test files with 270 assertions
+- Review autofix round completed — all 4 review issues resolved.
 ### Completed (So Far)
 - Task 1: JSONL tunnel protocol (`src/logging/tunnel_protocol.ts`) with TunnelMessage type, TIM_OUTPUT_SOCKET constant, serializeArg/serializeArgs helpers
 - Task 2: Tunnel client adapter (`src/logging/tunnel_client.ts`) with TunnelAdapter class, createTunnelAdapter factory, isTunnelActive helper, graceful disconnect handling
@@ -405,6 +406,7 @@ Write tests for:
 - Task 5: Executor integration — all three executors (claude_code.ts, claude_code_orchestrator.ts, codex_runner.ts) create tunnel servers and pass TIM_OUTPUT_SOCKET to child processes. Orchestrator shares one server across all phases. Cleanup in finally blocks.
 - Task 6: CLI startup in tim.ts — checks TIM_OUTPUT_SOCKET, connects tunnel adapter, wraps program.parseAsync() in runWithLogger. Falls back to console if connection fails, clearing env var so isTunnelActive() returns false.
 - Task 7: Review mode in review.ts — withReviewLogger skips quiet/verbose logger when tunnel active. Final output in --print mode writes to both process.stdout.write() and log() for dual output.
+- Autofix: destroy() now flushes with socket.end() before destroy(), dispatchMessage validates message structure, error handler registered before connect, tests use mkdtemp
 ### Remaining
 - None — all tasks complete. Manual testing recommended.
 ### Next Iteration Guidance
@@ -415,5 +417,9 @@ Write tests for:
 - close() on tunnel server calls unregister() on CleanupRegistry to prevent double-close errors
 - tim.ts catch block deletes process.env[TIM_OUTPUT_SOCKET] on tunnel connection failure so isTunnelActive() correctly returns false downstream
 - claude_code.ts cleanup uses `if (!tempMcpConfigDir)` instead of `if (!tempMcpConfigDir && tunnelServer)` to avoid temp directory leak when tunnel server creation fails
+- TunnelAdapter.destroy() uses socket.end() + finish/close event waiting with timeout fallback instead of immediate socket.destroy()
+- dispatchMessage() validates message structure with isValidTunnelMessage() type guard before dispatching
+- createTunnelAdapter() creates socket with `new net.Socket()` and registers error handler before calling `socket.connect()`
+- All test files use mkdtemp with short prefixes under /tmp/claude to stay within Unix socket 104-byte path limit
 ### Risks / Blockers
 - None

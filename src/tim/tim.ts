@@ -1182,7 +1182,7 @@ async function run() {
   if (tunnelSocketPath) {
     try {
       const tunnelAdapter = await createTunnelAdapter(tunnelSocketPath);
-      cleanupRegistry.register(() => tunnelAdapter.destroy());
+      cleanupRegistry.register(() => tunnelAdapter.destroySync());
       await runWithLogger(tunnelAdapter, () => program.parseAsync(process.argv));
     } catch {
       // If tunnel connection fails, fall back to normal console output.

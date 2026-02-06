@@ -90,13 +90,31 @@ export class TunnelAdapter implements LoggerAdapter {
   }
 
   /**
+   * Synchronously initiates socket shutdown by calling end() (which starts the
+   * flush) and then destroy(). This is suitable for use in synchronous cleanup
+   * handlers (e.g. CleanupRegistry) where awaiting is not possible.
+   *
+   * The tunnel is a visibility aid, so losing the last few buffered bytes during
+   * signal-triggered exit is acceptable. Critical output (like --print review
+   * results) is written directly to process.stdout.write() and does not depend
+   * on this flush.
+   */
+  destroySync(): void {
+    this.connected = false;
+    if (!this.socket.destroyed) {
+      this.socket.end();
+      this.socket.destroy();
+    }
+  }
+
+  /**
    * Gracefully closes the socket connection, flushing any pending writes before
    * tearing down the connection. Uses socket.end() to signal the write side is
    * done, then waits for the 'finish' event (indicating all data has been flushed
    * to the kernel) before calling socket.destroy(). A timeout ensures this doesn't
    * hang forever if the server is gone.
    *
-   * Should be called during cleanup.
+   * Should be called during cleanup when an async context is available.
    *
    * @param timeoutMs - Maximum time to wait for flush before forcing destroy (default: 2000ms)
    */
@@ -150,7 +168,7 @@ export function createTunnelAdapter(socketPath: string): Promise<TunnelAdapter> 
 
     // Register error handler immediately before initiating the connection
     // to ensure no error events are missed.
-    socket.on('error', (err) => {
+    socket.once('error', (err) => {
       reject(err);
     });
 

@@ -304,6 +304,29 @@ describe('TunnelAdapter', () => {
       expect(messages[0]).toEqual({ type: 'log', args: ['final message'] });
     });
 
+    it('should synchronously close the socket via destroySync()', async () => {
+      testServer = await createTestServer(socketPath);
+      adapter = await createTunnelAdapter(socketPath);
+
+      adapter.destroySync();
+
+      // After destroySync, writes should not throw
+      expect(() => adapter!.log('after destroySync')).not.toThrow();
+
+      // Give a moment for any potential message to arrive
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const messages = testServer.getMessages();
+      expect(messages).toHaveLength(0);
+    });
+
+    it('should handle destroySync() called multiple times without error', async () => {
+      testServer = await createTestServer(socketPath);
+      adapter = await createTunnelAdapter(socketPath);
+
+      adapter.destroySync();
+      adapter.destroySync(); // Should not throw
+    });
+
     it('should resolve even if socket is already destroyed', async () => {
       testServer = await createTestServer(socketPath);
       adapter = await createTunnelAdapter(socketPath);
