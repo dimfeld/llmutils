@@ -49,14 +49,14 @@ final class LocalHTTPServer: @unchecked Sendable {
     }
 
     func stop() {
-        listener?.cancel()
-        listener = nil
+        self.listener?.cancel()
+        self.listener = nil
     }
 
     private func handle(connection: NWConnection) {
         connection.start(queue: .global())
         Task {
-            await handleRequest(on: connection)
+            await self.handleRequest(on: connection)
         }
     }
 
@@ -64,22 +64,22 @@ final class LocalHTTPServer: @unchecked Sendable {
         do {
             let request = try await readRequest(from: connection)
             guard request.method == "POST", request.path == "/messages" else {
-                try await sendResponse(connection, status: 404, jsonBody: ["error": "Not found"])
+                try await self.sendResponse(connection, status: 404, jsonBody: ["error": "Not found"])
                 connection.cancel()
                 return
             }
 
             guard let body = request.body else {
-                try await sendResponse(connection, status: 400, jsonBody: ["error": "Missing body"])
+                try await self.sendResponse(connection, status: 400, jsonBody: ["error": "Missing body"])
                 connection.cancel()
                 return
             }
 
             let payload = try JSONDecoder().decode(MessagePayload.self, from: body)
-            await handler(payload)
-            try await sendResponse(connection, status: 200, jsonBody: ["status": "ok"])
+            await self.handler(payload)
+            try await self.sendResponse(connection, status: 200, jsonBody: ["status": "ok"])
         } catch {
-            try? await sendResponse(connection, status: 400, jsonBody: ["error": "Bad request"])
+            try? await self.sendResponse(connection, status: 400, jsonBody: ["error": "Bad request"])
         }
         connection.cancel()
     }
@@ -145,11 +145,10 @@ final class LocalHTTPServer: @unchecked Sendable {
         let method = String(requestParts[0])
         let path = String(requestParts[1])
         let bodyStart = headersEnd.upperBound
-        let body: Data?
-        if contentLength > 0, buffer.count >= bodyStart + contentLength {
-            body = buffer.subdata(in: bodyStart..<(bodyStart + contentLength))
+        let body: Data? = if contentLength > 0, buffer.count >= bodyStart + contentLength {
+            buffer.subdata(in: bodyStart..<(bodyStart + contentLength))
         } else {
-            body = nil
+            nil
         }
 
         return HTTPRequest(method: method, path: path, body: body)
@@ -170,14 +169,14 @@ final class LocalHTTPServer: @unchecked Sendable {
     private func sendResponse(
         _ connection: NWConnection,
         status: Int,
-        jsonBody: [String: String]
-    ) async throws {
+        jsonBody: [String: String]) async throws
+    {
         let bodyData = try JSONSerialization.data(withJSONObject: jsonBody, options: [])
         let statusLine = "HTTP/1.1 \(status) \(statusText(for: status))"
         let headers = [
             "Content-Type: application/json",
             "Content-Length: \(bodyData.count)",
-            "Connection: close"
+            "Connection: close",
         ]
         let responseHead = ([statusLine] + headers + ["", ""]).joined(separator: "\r\n")
         var responseData = Data(responseHead.utf8)
@@ -196,10 +195,10 @@ final class LocalHTTPServer: @unchecked Sendable {
 
     private func statusText(for status: Int) -> String {
         switch status {
-        case 200: return "OK"
-        case 400: return "Bad Request"
-        case 404: return "Not Found"
-        default: return "OK"
+        case 200: "OK"
+        case 400: "Bad Request"
+        case 404: "Not Found"
+        default: "OK"
         }
     }
 }

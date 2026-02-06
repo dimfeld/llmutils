@@ -1,6 +1,6 @@
 import AppKit
-import SwiftUI
 import Observation
+import SwiftUI
 
 struct ContentView: View {
     @Bindable var appState: AppState
@@ -21,7 +21,7 @@ struct ContentView: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(appState.items) { item in
+                    ForEach(self.appState.items) { item in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.message)
                                 .font(.headline)
@@ -38,7 +38,7 @@ struct ContentView: View {
                         .contentShape(Rectangle())
                         .onTapGesture {
                             if let terminal = item.terminal {
-                                activateTerminalPane(terminal)
+                                self.activateTerminalPane(terminal)
                             }
                         }
                         Divider()
@@ -93,9 +93,10 @@ struct ContentView: View {
             let sendProcess = Process()
             sendProcess.executableURL = URL(fileURLWithPath: weztermPath)
             sendProcess.arguments = [
-                "cli", "spawn", 
+                "cli", "spawn",
                 // The sleep gives time for wezterm to process the escape sequence. Otherwise it doesn't take effect.
-                "--", "/bin/sh", "-c", "printf '\\033]1337;SetUserVar=switch-workspace=\(encodedArgs)\\007' && sleep 0.1"
+                "--", "/bin/sh", "-c",
+                "printf '\\033]1337;SetUserVar=switch-workspace=\(encodedArgs)\\007' && sleep 0.1",
             ]
             print("[workspace-switch] Running: \(sendProcess.arguments!.joined(separator: " "))")
             try? sendProcess.run()
@@ -121,10 +122,8 @@ struct ContentView: View {
             state.ingest(.init(
                 message: "Example message",
                 workspacePath: "/tmp/example",
-                terminal: TerminalPayload(type: "wezterm", paneId: "42")
-            ))
+                terminal: TerminalPayload(type: "wezterm", paneId: "42")))
             return state
         }(),
-        startError: nil
-    )
+        startError: nil)
 }

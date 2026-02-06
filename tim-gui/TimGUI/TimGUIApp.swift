@@ -1,5 +1,5 @@
-import SwiftUI
 import Observation
+import SwiftUI
 
 @MainActor
 @Observable
@@ -7,14 +7,13 @@ final class AppState {
     var items: [MessageItem] = []
 
     func ingest(_ payload: MessagePayload) {
-        items.removeAll { $0.workspacePath == payload.workspacePath }
+        self.items.removeAll { $0.workspacePath == payload.workspacePath }
         let item = MessageItem(
             message: payload.message,
             workspacePath: payload.workspacePath,
             terminal: payload.terminal,
-            receivedAt: Date()
-        )
-        items.insert(item, at: 0)
+            receivedAt: Date())
+        self.items.insert(item, at: 0)
     }
 }
 
@@ -26,24 +25,24 @@ struct TimGUIApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(appState: appState, startError: startError)
+            ContentView(appState: self.appState, startError: self.startError)
                 .task {
-                    await startServerIfNeeded()
+                    await self.startServerIfNeeded()
                 }
         }
     }
 
     @MainActor
     private func startServerIfNeeded() async {
-        guard server == nil else { return }
+        guard self.server == nil else { return }
         let newServer = LocalHTTPServer(port: 8123) { [weak appState] payload in
             appState?.ingest(payload)
         }
-        server = newServer
+        self.server = newServer
         do {
             try await newServer.start()
         } catch {
-            startError = "Failed to start server: \(error.localizedDescription)"
+            self.startError = "Failed to start server: \(error.localizedDescription)"
         }
     }
 }
