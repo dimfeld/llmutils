@@ -10,10 +10,10 @@ priority: medium
 planGeneratedAt: 2026-02-06T07:44:40.758Z
 promptsGeneratedAt: 2026-02-06T07:44:40.758Z
 createdAt: 2026-01-05T07:25:14.011Z
-updatedAt: 2026-02-06T08:57:52.944Z
+updatedAt: 2026-02-06T09:09:28.261Z
 tasks:
   - title: Define JSONL tunnel protocol
-    done: false
+    done: true
     description: Create src/logging/tunnel_protocol.ts with shared types for the
       tunnel protocol. Define TunnelMessage type (log/error/warn/debug with args
       array, stdout/stderr with data string). Export the TIM_OUTPUT_SOCKET
@@ -21,7 +21,7 @@ tasks:
       serialize LoggerAdapter arguments to strings (using util.inspect() for
       non-strings, matching ConsoleAdapter pattern).
   - title: Create tunnel client adapter
-    done: false
+    done: true
     description: Create src/logging/tunnel_client.ts with TunnelAdapter class
       implementing LoggerAdapter. Provide async factory function
       createTunnelAdapter(socketPath) that connects via net.connect() and awaits
@@ -32,7 +32,7 @@ tasks:
       is set. Write tests in src/logging/tunnel_client.test.ts covering all 6
       adapter methods, connection to socket, and graceful error handling.
   - title: Create tunnel server
-    done: false
+    done: true
     description: Create src/logging/tunnel_server.ts with
       createTunnelServer(socketPath) function that creates a Unix domain socket
       server. Server listens for connections and parses incoming JSONL messages.
@@ -45,7 +45,7 @@ tasks:
       message re-emission, multiple connections, malformed message handling, and
       cleanup.
   - title: Write tunnel integration tests
-    done: false
+    done: true
     description: "Create src/logging/tunnel_integration.test.ts with end-to-end
       tests: create a tunnel server, create a tunnel client adapter connected to
       it, send messages through the adapter and verify they are re-emitted by
@@ -82,6 +82,21 @@ tasks:
       write to BOTH process.stdout.write() directly (for executor capture) AND
       log() (for tunnel to parent). Update or add review tests to verify
       behavior when TIM_OUTPUT_SOCKET is set."
+changedFiles:
+  - docs/direct_mode_feature.md
+  - docs/next-ready-feature.md
+  - src/logging/tunnel_client.test.ts
+  - src/logging/tunnel_client.ts
+  - src/logging/tunnel_integration.test.ts
+  - src/logging/tunnel_protocol.test.ts
+  - src/logging/tunnel_protocol.ts
+  - src/logging/tunnel_server.test.ts
+  - src/logging/tunnel_server.ts
+  - src/tim/assignments/auto_claim.test.ts
+  - src/tim/commands/compact.test.ts
+  - src/tim/commands/import/issue_tracker_integration.test.ts
+  - src/tim/commands/renumber.test.ts
+  - test-plans/rmplan.yml
 tags: []
 ---
 
@@ -371,3 +386,26 @@ Write tests for:
 - **AsyncLocalStorage inheritance**: When `tim.ts` wraps `program.parseAsync()` in `runWithLogger()`, all async operations spawned within inherit the tunnel adapter. But some code may bypass this by using `runWithLogger()` to install a different adapter (like the review's quiet logger). The review code uses `isTunnelActive()` to skip installing its own loggers when the tunnel is active.
 - **Socket connection timing**: Handled by awaiting the socket connection at startup in `tim.ts` before running any commands.
 - **Process exit timing**: The child process may exit before all buffered messages are flushed to the socket. Need to ensure flushing on exit (register with cleanup registry or handle in process exit).
+
+## Current Progress
+### Current State
+- Core tunnel infrastructure (protocol, client, server) is fully implemented and tested
+- 62 tests passing across 4 test files with 243 assertions
+### Completed (So Far)
+- Task 1: JSONL tunnel protocol (`src/logging/tunnel_protocol.ts`) with TunnelMessage type, TIM_OUTPUT_SOCKET constant, serializeArg/serializeArgs helpers
+- Task 2: Tunnel client adapter (`src/logging/tunnel_client.ts`) with TunnelAdapter class, createTunnelAdapter factory, isTunnelActive helper, graceful disconnect handling
+- Task 3: Tunnel server (`src/logging/tunnel_server.ts`) with createTunnelServer, JSONL parsing, line splitting for TCP chunks, CleanupRegistry integration with proper unregister on close
+- Task 4: Integration tests (`src/logging/tunnel_integration.test.ts`) covering all message types, multi-client, disconnect/reconnect, large messages, rapid bursts
+### Remaining
+- Task 5: Integrate tunnel server into executors (claude_code.ts, claude_code_orchestrator.ts, codex_runner.ts)
+- Task 6: Install tunnel adapter at CLI startup in tim.ts
+- Task 7: Handle review mode dual output with tunnel in review.ts
+### Next Iteration Guidance
+- Task 5 (executor integration) and Task 6 (CLI startup) are closely related and should be done together
+- Task 7 (review mode) depends on Task 6 being complete
+### Decisions / Changes
+- debugLog() sends `type: 'debug'` directly instead of delegating to log() — keeps the protocol type meaningful
+- TunnelAdapter also writes to log file locally (via writeToLogFile) in addition to sending over socket
+- close() on tunnel server calls unregister() on CleanupRegistry to prevent double-close errors
+### Risks / Blockers
+- None
