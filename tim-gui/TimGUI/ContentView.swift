@@ -53,11 +53,6 @@ struct ContentView: View {
         guard terminal.type == "wezterm" else { return }
         let weztermPath = "/opt/homebrew/bin/wezterm"
 
-        let activateProcess = Process()
-        activateProcess.executableURL = URL(fileURLWithPath: weztermPath)
-        activateProcess.arguments = ["cli", "activate-pane", "--pane-id", terminal.paneId]
-        try? activateProcess.run()
-
         let paneId = terminal.paneId
         Task.detached {
             print("[workspace-switch] Looking up pane \(paneId)")
@@ -106,6 +101,11 @@ struct ContentView: View {
             try? sendProcess.run()
             sendProcess.waitUntilExit()
             print("[workspace-switch] Exit code: \(sendProcess.terminationStatus)")
+
+            let activateProcess = Process()
+            activateProcess.executableURL = URL(fileURLWithPath: weztermPath)
+            activateProcess.arguments = ["cli", "activate-pane", "--pane-id", terminal.paneId]
+            try? activateProcess.run()
         }
 
         if let app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.github.wez.wezterm").first {
