@@ -1,7 +1,13 @@
+import * as os from 'os';
+import * as path from 'path';
+import * as fs from 'fs/promises';
 import type { TimConfig } from '../../configSchema';
 import { spawnAndLogOutput } from '../../../common/process';
-import { error, warn } from '../../../logging';
+import { error, warn, debugLog } from '../../../logging';
+import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { createCodexStdoutFormatter } from './format';
+import { createTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
+import { TIM_OUTPUT_SOCKET } from '../../../logging/tunnel_protocol.js';
 
 export interface CodexStepOptions {
   /** Path to JSON schema file for structured output */
@@ -64,91 +70,117 @@ export async function executeCodexStep(
     args.push('--output-schema', options.outputSchemaPath);
   }
 
+  // Create tunnel server for output forwarding from child processes
+  let tunnelServer: TunnelServer | undefined;
+  let tunnelTempDir: string | undefined;
+  let tunnelSocketPath: string | undefined;
+  if (!isTunnelActive()) {
+    try {
+      tunnelTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-'));
+      tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
+      tunnelServer = await createTunnelServer(tunnelSocketPath);
+    } catch (err) {
+      debugLog('Could not create tunnel server for output forwarding:', err);
+    }
+  }
+
+  const tunnelEnv: Record<string, string> =
+    tunnelServer && tunnelSocketPath ? { [TIM_OUTPUT_SOCKET]: tunnelSocketPath } : {};
+
   let lastExitCode: number | undefined;
   let lastSignal: NodeJS.Signals | undefined;
   let threadId: string | undefined;
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const formatter = createCodexStdoutFormatter();
-    const attemptArgs = [...args];
-    if (attempt === 1 || !threadId) {
-      attemptArgs.push('--json', prompt);
-      if (attempt > 1 && !threadId) {
-        warn('Codex retry requested but no thread id was captured; issuing a fresh run.');
-      }
-    } else {
-      attemptArgs.push(
-        '--json',
-        'resume',
-        threadId,
-        // We just prompt "continue" since we're resuming and it should still have the previous context
-        'continue'
-      );
-    }
-
-    const result = await spawnAndLogOutput(attemptArgs, {
-      cwd,
-      env: {
-        ...process.env,
-        TIM_EXECUTOR: 'codex',
-        AGENT: process.env.AGENT || '1',
-        TIM_NOTIFY_SUPPRESS: '1',
-      },
-      formatStdout: formatter ? (chunk: string) => formatter.formatChunk(chunk) : undefined,
-      inactivityTimeoutMs,
-      initialInactivityTimeoutMs: 60 * 1000, // 1 minute before first output
-      onInactivityKill: () => {
-        const minutes = Math.round(inactivityTimeoutMs / 60000);
-        warn(
-          `Codex produced no output for ${minutes} minute${minutes === 1 ? '' : 's'}; terminating attempt ${attempt}/${maxAttempts}.`
+  try {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const formatter = createCodexStdoutFormatter();
+      const attemptArgs = [...args];
+      if (attempt === 1 || !threadId) {
+        attemptArgs.push('--json', prompt);
+        if (attempt > 1 && !threadId) {
+          warn('Codex retry requested but no thread id was captured; issuing a fresh run.');
+        }
+      } else {
+        attemptArgs.push(
+          '--json',
+          'resume',
+          threadId,
+          // We just prompt "continue" since we're resuming and it should still have the previous context
+          'continue'
         );
-      },
-      // stderr is not JSON – print as-is
-    });
-
-    const { exitCode, signal, killedByInactivity } = result;
-
-    threadId ||= formatter?.getThreadId?.();
-
-    const inferredSignal = signal ?? inferSignalFromExitCode(exitCode);
-    const shouldRetry =
-      exitCode !== 0 ||
-      killedByInactivity ||
-      inferredSignal === 'SIGTERM' ||
-      inferredSignal === 'SIGKILL';
-
-    if (shouldRetry) {
-      lastExitCode = exitCode;
-      lastSignal = inferredSignal;
-
-      if (attempt < maxAttempts) {
-        const reason = describeTermination(exitCode, inferredSignal, killedByInactivity);
-        warn(`Codex attempt ${attempt}/${maxAttempts} ${reason}; retrying...`);
-        continue;
       }
 
-      const reason = describeTermination(exitCode, inferredSignal, killedByInactivity);
-      throw new Error(`codex failed after ${maxAttempts} attempts (${reason}).`);
+      const result = await spawnAndLogOutput(attemptArgs, {
+        cwd,
+        env: {
+          ...process.env,
+          TIM_EXECUTOR: 'codex',
+          AGENT: process.env.AGENT || '1',
+          TIM_NOTIFY_SUPPRESS: '1',
+          ...tunnelEnv,
+        },
+        formatStdout: formatter ? (chunk: string) => formatter.formatChunk(chunk) : undefined,
+        inactivityTimeoutMs,
+        initialInactivityTimeoutMs: 60 * 1000, // 1 minute before first output
+        onInactivityKill: () => {
+          const minutes = Math.round(inactivityTimeoutMs / 60000);
+          warn(
+            `Codex produced no output for ${minutes} minute${minutes === 1 ? '' : 's'}; terminating attempt ${attempt}/${maxAttempts}.`
+          );
+        },
+        // stderr is not JSON – print as-is
+      });
+
+      const { exitCode, signal, killedByInactivity } = result;
+
+      threadId ||= formatter?.getThreadId?.();
+
+      const inferredSignal = signal ?? inferSignalFromExitCode(exitCode);
+      const shouldRetry =
+        exitCode !== 0 ||
+        killedByInactivity ||
+        inferredSignal === 'SIGTERM' ||
+        inferredSignal === 'SIGKILL';
+
+      if (shouldRetry) {
+        lastExitCode = exitCode;
+        lastSignal = inferredSignal;
+
+        if (attempt < maxAttempts) {
+          const reason = describeTermination(exitCode, inferredSignal, killedByInactivity);
+          warn(`Codex attempt ${attempt}/${maxAttempts} ${reason}; retrying...`);
+          continue;
+        }
+
+        const reason = describeTermination(exitCode, inferredSignal, killedByInactivity);
+        throw new Error(`codex failed after ${maxAttempts} attempts (${reason}).`);
+      }
+
+      // Prefer a FAILED agent message when available to surface failures reliably
+      const failedMsg =
+        typeof (formatter as any).getFailedAgentMessage === 'function'
+          ? (formatter as any).getFailedAgentMessage()
+          : undefined;
+      const final = failedMsg || formatter.getFinalAgentMessage();
+      if (!final) {
+        // Provide helpful context for debugging
+        error('Codex returned no final agent message. Enable debug logs for details.');
+        throw new Error('No final agent message found in Codex output.');
+      }
+
+      return final;
     }
 
-    // Prefer a FAILED agent message when available to surface failures reliably
-    const failedMsg =
-      typeof (formatter as any).getFailedAgentMessage === 'function'
-        ? (formatter as any).getFailedAgentMessage()
-        : undefined;
-    const final = failedMsg || formatter.getFinalAgentMessage();
-    if (!final) {
-      // Provide helpful context for debugging
-      error('Codex returned no final agent message. Enable debug logs for details.');
-      throw new Error('No final agent message found in Codex output.');
+    throw new Error(
+      `codex failed after ${maxAttempts} attempts with code ${lastExitCode ?? 'unknown'}${lastSignal ? ` (signal ${lastSignal})` : ''}.`
+    );
+  } finally {
+    // Clean up tunnel server and temp directory
+    tunnelServer?.close();
+    if (tunnelTempDir) {
+      await fs.rm(tunnelTempDir, { recursive: true, force: true });
     }
-
-    return final;
   }
-
-  throw new Error(
-    `codex failed after ${maxAttempts} attempts with code ${lastExitCode ?? 'unknown'}${lastSignal ? ` (signal ${lastSignal})` : ''}.`
-  );
 }
 
 function inferSignalFromExitCode(exitCode: number | null): NodeJS.Signals | undefined {

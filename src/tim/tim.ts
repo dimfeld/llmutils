@@ -43,6 +43,9 @@ import { prioritySchema, statusSchema } from './planSchema.js';
 import { CleanupRegistry } from '../common/cleanup_registry.js';
 import { startMcpServer } from './mcp/server.js';
 import { enableAutoClaim } from './assignments/auto_claim.js';
+import { runWithLogger } from '../logging.js';
+import { createTunnelAdapter } from '../logging/tunnel_client.js';
+import { TIM_OUTPUT_SOCKET } from '../logging/tunnel_protocol.js';
 import {
   getPlanParameters,
   createPlanParameters,
@@ -1173,7 +1176,25 @@ async function run() {
     process.exit();
   });
 
-  await program.parseAsync(process.argv);
+  // If TIM_OUTPUT_SOCKET is set, install the tunnel adapter to forward all
+  // logging output to the parent tim process via Unix socket.
+  const tunnelSocketPath = process.env[TIM_OUTPUT_SOCKET];
+  if (tunnelSocketPath) {
+    try {
+      const tunnelAdapter = await createTunnelAdapter(tunnelSocketPath);
+      cleanupRegistry.register(() => tunnelAdapter.destroySync());
+      await runWithLogger(tunnelAdapter, () => program.parseAsync(process.argv));
+    } catch {
+      // If tunnel connection fails, fall back to normal console output.
+      // Clear the env var so isTunnelActive() returns false — otherwise
+      // the review command would skip installing its quiet/verbose logger
+      // even though no tunnel adapter is actually installed.
+      delete process.env[TIM_OUTPUT_SOCKET];
+      await program.parseAsync(process.argv);
+    }
+  } else {
+    await program.parseAsync(process.argv);
+  }
 }
 
 run().catch((e) => {

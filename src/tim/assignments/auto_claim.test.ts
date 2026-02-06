@@ -47,8 +47,9 @@ describe('autoClaimPlan', () => {
       getUserIdentity: () => userName,
     }));
 
-    ({ enableAutoClaim, disableAutoClaim, autoClaimPlan, isAutoClaimEnabled } =
-      await import('./auto_claim.js'));
+    ({ enableAutoClaim, disableAutoClaim, autoClaimPlan, isAutoClaimEnabled } = await import(
+      './auto_claim.js'
+    ));
 
     disableAutoClaim();
   });

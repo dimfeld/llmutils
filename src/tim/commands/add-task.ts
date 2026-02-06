@@ -78,7 +78,6 @@ async function collectTaskInput(options: AddTaskOptions): Promise<TaskInput> {
       description = await editor({
         message: 'Task description (opens editor):',
         default: options.description ?? '',
-        waitForUserInput: false,
       });
     } catch (err: any) {
       if (err instanceof Error && err.name === 'ExitPromptError') {

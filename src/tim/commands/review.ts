@@ -12,8 +12,9 @@ import {
   readPlanFile,
   writePlanFile,
 } from '../plans.js';
-import { log, warn, runWithLogger, writeStdout } from '../../logging.js';
-import { getLoggerAdapter, type LoggerAdapter } from '../../logging/adapter.js';
+import { log, warn, runWithLogger } from '../../logging.js';
+import { type LoggerAdapter } from '../../logging/adapter.js';
+import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig, loadGlobalConfigForNotifications } from '../configLoader.js';
 import { getDefaultConfig } from '../configSchema.js';
 import { buildExecutorAndLog } from '../executors/index.js';
@@ -265,8 +266,13 @@ export async function handleReviewCommand(
   command: any
 ): Promise<ReviewCommandResult> {
   const isPrintMode = options.print === true;
+  const tunnelActive = isTunnelActive();
   const withReviewLogger = <T>(cb: () => T) => {
-    if (isPrintMode) {
+    if (isPrintMode && !tunnelActive) {
+      // In print mode without tunnel: suppress or redirect output to avoid
+      // polluting stdout (which the executor captures). When the tunnel is
+      // active the adapter installed at tim.ts level already forwards output
+      // to the parent process, so we let it handle everything.
       const logger = options.verbose ? reviewPrintVerboseLogger : reviewPrintQuietLogger;
       return runWithLogger(logger, cb);
     } else {
@@ -613,6 +619,12 @@ export async function handleReviewCommand(
         const outputWithNewline = formattedOutput.endsWith('\n')
           ? formattedOutput
           : `${formattedOutput}\n`;
+        if (tunnelActive) {
+          // When tunnel is active, write to BOTH:
+          // 1. process.stdout directly so the executor can capture it from the child's stdout
+          // 2. log() which goes through the tunnel adapter to the parent for display
+          process.stdout.write(outputWithNewline);
+        }
         log(outputWithNewline);
       } else if (!options.outputFile || outputFormat === 'terminal') {
         log('\n' + formattedOutput);

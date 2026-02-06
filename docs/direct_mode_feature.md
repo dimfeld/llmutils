@@ -102,7 +102,6 @@ default_executor: claude_code
 planning:
   direct_mode: true # Enable direct mode by default
 
-
 # Other configuration options...
 ```
 
