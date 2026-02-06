@@ -22,6 +22,31 @@ function createLineSplitter(): (input: string) => string[] {
 }
 
 /**
+ * Validates that a parsed JSON object has the expected structure for a TunnelMessage.
+ * Returns true if the message is valid, false otherwise.
+ */
+function isValidTunnelMessage(message: unknown): message is TunnelMessage {
+  if (typeof message !== 'object' || message === null) {
+    return false;
+  }
+
+  const msg = message as Record<string, unknown>;
+
+  switch (msg.type) {
+    case 'log':
+    case 'error':
+    case 'warn':
+    case 'debug':
+      return Array.isArray(msg.args);
+    case 'stdout':
+    case 'stderr':
+      return typeof msg.data === 'string';
+    default:
+      return false;
+  }
+}
+
+/**
  * Dispatches a parsed tunnel message to the appropriate logging function.
  * Malformed or unrecognized messages are silently dropped.
  */
@@ -90,8 +115,11 @@ export function createTunnelServer(socketPath: string): Promise<TunnelServer> {
             continue;
           }
           try {
-            const message = JSON.parse(line) as TunnelMessage;
-            dispatchMessage(message);
+            const parsed = JSON.parse(line);
+            if (isValidTunnelMessage(parsed)) {
+              dispatchMessage(parsed);
+            }
+            // Invalid structure - silently drop
           } catch {
             // Malformed JSON - silently drop
           }

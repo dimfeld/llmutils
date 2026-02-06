@@ -2,9 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import net from 'node:net';
 import path from 'node:path';
 import fs from 'node:fs';
+import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { TunnelAdapter, createTunnelAdapter, isTunnelActive } from './tunnel_client.ts';
 import { TIM_OUTPUT_SOCKET } from './tunnel_protocol.ts';
 import type { TunnelMessage } from './tunnel_protocol.ts';
+
+// Use /tmp/claude as the base for mkdtemp to keep socket paths short enough
+// for the Unix domain socket path length limit (104 bytes on macOS).
+const TEMP_BASE = '/tmp/claude';
 
 /**
  * Helper: creates a real Unix domain socket server that collects received JSONL messages.
@@ -77,21 +82,22 @@ async function waitForMessages(
 
 describe('TunnelAdapter', () => {
   let socketPath: string;
+  let testDir: string;
   let testServer: Awaited<ReturnType<typeof createTestServer>> | null = null;
   let adapter: TunnelAdapter | null = null;
 
-  beforeEach(() => {
-    socketPath = path.join(
-      '/tmp/claude',
-      `tunnel-client-test-${Date.now()}-${Math.random().toString(36).slice(2)}.sock`
-    );
+  beforeEach(async () => {
+    await mkdir(TEMP_BASE, { recursive: true });
+    testDir = await mkdtemp(path.join(TEMP_BASE, 'tc-'));
+    socketPath = path.join(testDir, 't.sock');
   });
 
-  afterEach(() => {
-    adapter?.destroy();
+  afterEach(async () => {
+    await adapter?.destroy();
     adapter = null;
     testServer?.close();
     testServer = null;
+    await rm(testDir, { recursive: true, force: true });
   });
 
   describe('createTunnelAdapter', () => {
@@ -102,7 +108,7 @@ describe('TunnelAdapter', () => {
     });
 
     it('should reject when the socket does not exist', async () => {
-      const nonExistentPath = path.join('/tmp/claude', `nonexistent-${Date.now()}.sock`);
+      const nonExistentPath = path.join(testDir, 'nonexistent.sock');
       await expect(createTunnelAdapter(nonExistentPath)).rejects.toThrow();
     });
   });
@@ -272,7 +278,7 @@ describe('TunnelAdapter', () => {
       testServer = await createTestServer(socketPath);
       adapter = await createTunnelAdapter(socketPath);
 
-      adapter.destroy();
+      await adapter.destroy();
 
       // After destroy, writes should not throw
       expect(() => adapter!.log('after destroy')).not.toThrow();
@@ -281,6 +287,50 @@ describe('TunnelAdapter', () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
       const messages = testServer.getMessages();
       expect(messages).toHaveLength(0);
+    });
+
+    it('should flush pending writes before closing', async () => {
+      testServer = await createTestServer(socketPath);
+      adapter = await createTunnelAdapter(socketPath);
+
+      // Write a message and immediately destroy
+      adapter.log('final message');
+      await adapter.destroy();
+
+      // The message should have been flushed before the socket was destroyed
+      await waitForMessages(testServer.getMessages, 1);
+      const messages = testServer.getMessages();
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toEqual({ type: 'log', args: ['final message'] });
+    });
+
+    it('should resolve even if socket is already destroyed', async () => {
+      testServer = await createTestServer(socketPath);
+      adapter = await createTunnelAdapter(socketPath);
+
+      // Destroy twice should not hang or throw
+      await adapter.destroy();
+      await adapter.destroy();
+    });
+
+    it('should resolve within timeout if server is gone', async () => {
+      testServer = await createTestServer(socketPath);
+      adapter = await createTunnelAdapter(socketPath);
+
+      // Close the server first
+      testServer.close();
+      testServer = null;
+
+      // Wait for close event to propagate
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // destroy should still resolve (via timeout or close event)
+      const start = Date.now();
+      await adapter.destroy();
+      const elapsed = Date.now() - start;
+
+      // Should resolve quickly, not wait for the full timeout
+      expect(elapsed).toBeLessThan(1000);
     });
   });
 });

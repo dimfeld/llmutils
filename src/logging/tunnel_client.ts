@@ -90,11 +90,49 @@ export class TunnelAdapter implements LoggerAdapter {
   }
 
   /**
-   * Closes the socket connection. Should be called during cleanup.
+   * Gracefully closes the socket connection, flushing any pending writes before
+   * tearing down the connection. Uses socket.end() to signal the write side is
+   * done, then waits for the 'finish' event (indicating all data has been flushed
+   * to the kernel) before calling socket.destroy(). A timeout ensures this doesn't
+   * hang forever if the server is gone.
+   *
+   * Should be called during cleanup.
+   *
+   * @param timeoutMs - Maximum time to wait for flush before forcing destroy (default: 2000ms)
    */
-  destroy(): void {
+  destroy(timeoutMs: number = 2000): Promise<void> {
     this.connected = false;
-    this.socket.destroy();
+
+    return new Promise<void>((resolve) => {
+      // If the socket is already destroyed/closed, resolve immediately
+      if (this.socket.destroyed) {
+        resolve();
+        return;
+      }
+
+      let resolved = false;
+      const done = () => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timer);
+        if (!this.socket.destroyed) {
+          this.socket.destroy();
+        }
+        resolve();
+      };
+
+      // Timeout fallback: force destroy if flush doesn't complete in time
+      const timer = setTimeout(done, timeoutMs);
+
+      // socket.end() flushes pending writes and signals the write side is done.
+      // The 'finish' event fires when all data has been flushed to the underlying
+      // system (kernel buffer). The 'close' event fires when the socket is fully closed.
+      this.socket.on('finish', done);
+      this.socket.on('close', done);
+      this.socket.on('error', done);
+
+      this.socket.end();
+    });
   }
 }
 
@@ -108,12 +146,16 @@ export class TunnelAdapter implements LoggerAdapter {
  */
 export function createTunnelAdapter(socketPath: string): Promise<TunnelAdapter> {
   return new Promise<TunnelAdapter>((resolve, reject) => {
-    const socket = net.connect(socketPath, () => {
-      resolve(new TunnelAdapter(socket));
-    });
+    const socket = new net.Socket();
 
+    // Register error handler immediately before initiating the connection
+    // to ensure no error events are missed.
     socket.on('error', (err) => {
       reject(err);
+    });
+
+    socket.connect(socketPath, () => {
+      resolve(new TunnelAdapter(socket));
     });
   });
 }

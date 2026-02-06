@@ -1,11 +1,16 @@
-import { describe, it, expect, afterEach } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import net from 'node:net';
 import path from 'node:path';
 import fs from 'node:fs';
+import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { createTunnelServer, type TunnelServer } from './tunnel_server.ts';
 import { runWithLogger } from './adapter.ts';
 import type { LoggerAdapter } from './adapter.ts';
 import type { TunnelMessage } from './tunnel_protocol.ts';
+
+// Use /tmp/claude as the base for mkdtemp to keep socket paths short enough
+// for the Unix domain socket path length limit (104 bytes on macOS).
+const TEMP_BASE = '/tmp/claude';
 
 /**
  * A test LoggerAdapter that records all calls for assertion purposes.
@@ -74,17 +79,21 @@ async function waitForCalls(
 describe('createTunnelServer', () => {
   let tunnelServer: TunnelServer | null = null;
   let socketPath: string;
+  let testDir: string;
 
-  afterEach(() => {
+  beforeEach(async () => {
+    await mkdir(TEMP_BASE, { recursive: true });
+    testDir = await mkdtemp(path.join(TEMP_BASE, 'ts-'));
+  });
+
+  afterEach(async () => {
     tunnelServer?.close();
     tunnelServer = null;
+    await rm(testDir, { recursive: true, force: true });
   });
 
   function uniqueSocketPath(): string {
-    socketPath = path.join(
-      '/tmp/claude',
-      `tunnel-server-test-${Date.now()}-${Math.random().toString(36).slice(2)}.sock`
-    );
+    socketPath = path.join(testDir, 't.sock');
     return socketPath;
   }
 
@@ -244,6 +253,44 @@ describe('createTunnelServer', () => {
     expect(methods).toEqual(['error', 'log']);
     const allArgs = calls.map((c) => c.args[0]).sort();
     expect(allArgs).toEqual(['from client 1', 'from client 2']);
+  });
+
+  it('should handle structurally invalid messages gracefully', async () => {
+    const sp = uniqueSocketPath();
+    const { adapter, calls } = createRecordingAdapter();
+
+    await runWithLogger(adapter, async () => {
+      tunnelServer = await createTunnelServer(sp);
+
+      // Send messages with valid JSON but wrong structure:
+      // - 'log' type with missing args
+      // - 'log' type with args as a string instead of array
+      // - 'stdout' type with missing data
+      // - 'stdout' type with data as a number
+      // - unknown type
+      // - valid message at the end
+      await new Promise<void>((resolve, reject) => {
+        const client = net.connect(sp, () => {
+          client.write(JSON.stringify({ type: 'log' }) + '\n');
+          client.write(JSON.stringify({ type: 'log', args: 'not-an-array' }) + '\n');
+          client.write(JSON.stringify({ type: 'stdout' }) + '\n');
+          client.write(JSON.stringify({ type: 'stdout', data: 42 }) + '\n');
+          client.write(JSON.stringify({ type: 'unknown', args: ['test'] }) + '\n');
+          client.write(JSON.stringify({ type: 'log', args: ['valid after invalid'] }) + '\n');
+          setTimeout(() => {
+            client.end();
+            resolve();
+          }, 20);
+        });
+        client.on('error', reject);
+      });
+
+      await waitForCalls(calls, 1);
+    });
+
+    // Only the valid message should have been dispatched
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({ method: 'log', args: ['valid after invalid'] });
   });
 
   it('should handle malformed JSON gracefully without crashing', async () => {

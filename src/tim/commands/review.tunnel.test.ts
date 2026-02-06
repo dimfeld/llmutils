@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ModuleMocker } from '../../testing.js';
 import { handleReviewCommand } from './review.js';
@@ -17,8 +16,13 @@ let testDir: string;
 let originalTIMOutputSocket: string | undefined;
 let originalTIMInteractive: string | undefined;
 
+// Use /tmp/claude as the base for mkdtemp to keep socket paths short enough
+// for the Unix domain socket path length limit (104 bytes on macOS).
+const TEMP_BASE = '/tmp/claude';
+
 beforeEach(async () => {
-  testDir = await mkdtemp(join(tmpdir(), 'tim-review-tunnel-test-'));
+  await mkdir(TEMP_BASE, { recursive: true });
+  testDir = await mkdtemp(join(TEMP_BASE, 'rt-'));
   spyOn(console, 'error').mockImplementation(() => {});
   originalTIMOutputSocket = process.env[TIM_OUTPUT_SOCKET];
   originalTIMInteractive = process.env.TIM_INTERACTIVE;
@@ -28,7 +32,7 @@ beforeEach(async () => {
   }));
 });
 
-afterEach(() => {
+afterEach(async () => {
   moduleMocker.clear();
   // Restore original env
   if (originalTIMOutputSocket === undefined) {
@@ -40,6 +44,10 @@ afterEach(() => {
     delete process.env.TIM_INTERACTIVE;
   } else {
     process.env.TIM_INTERACTIVE = originalTIMInteractive;
+  }
+  // Clean up temp directory
+  if (testDir) {
+    await rm(testDir, { recursive: true, force: true });
   }
 });
 
@@ -612,20 +620,23 @@ describe('Review command tunnel integration', () => {
 describe('End-to-end tunnel review test with real socket', () => {
   let tunnelServer: TunnelServer | null = null;
   let clientAdapter: TunnelAdapter | null = null;
+  let e2eTestDir: string;
 
-  afterEach(() => {
-    clientAdapter?.destroy();
+  afterEach(async () => {
+    await clientAdapter?.destroy();
     clientAdapter = null;
     tunnelServer?.close();
     tunnelServer = null;
     moduleMocker.clear();
+    if (e2eTestDir) {
+      await rm(e2eTestDir, { recursive: true, force: true });
+    }
   });
 
   it('should forward review output through a real tunnel server', async () => {
-    const socketPath = path.join(
-      '/tmp/claude',
-      `review-tunnel-e2e-${Date.now()}-${Math.random().toString(36).slice(2)}.sock`
-    );
+    await mkdir(TEMP_BASE, { recursive: true });
+    e2eTestDir = await mkdtemp(join(TEMP_BASE, 're-'));
+    const socketPath = path.join(e2eTestDir, 't.sock');
 
     // Create a recording adapter to capture messages from the tunnel server
     const receivedCalls: { method: string; args: any[] }[] = [];

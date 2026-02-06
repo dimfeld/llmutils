@@ -1,10 +1,15 @@
-import { describe, it, expect, afterEach } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import path from 'node:path';
 import fs from 'node:fs';
+import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { createTunnelServer, type TunnelServer } from './tunnel_server.ts';
 import { createTunnelAdapter, TunnelAdapter } from './tunnel_client.ts';
 import { runWithLogger } from './adapter.ts';
 import type { LoggerAdapter } from './adapter.ts';
+
+// Use /tmp/claude as the base for mkdtemp to keep socket paths short enough
+// for the Unix domain socket path length limit (104 bytes on macOS).
+const TEMP_BASE = '/tmp/claude';
 
 /**
  * A test LoggerAdapter that records all calls for assertion purposes.
@@ -55,20 +60,24 @@ describe('tunnel integration', () => {
   let tunnelServer: TunnelServer | null = null;
   let clientAdapter: TunnelAdapter | null = null;
   let socketPath: string;
+  let testDir: string;
 
   function uniqueSocketPath(): string {
-    socketPath = path.join(
-      '/tmp/claude',
-      `tunnel-integration-${Date.now()}-${Math.random().toString(36).slice(2)}.sock`
-    );
+    socketPath = path.join(testDir, 't.sock');
     return socketPath;
   }
 
-  afterEach(() => {
-    clientAdapter?.destroy();
+  beforeEach(async () => {
+    await mkdir(TEMP_BASE, { recursive: true });
+    testDir = await mkdtemp(path.join(TEMP_BASE, 'ti-'));
+  });
+
+  afterEach(async () => {
+    await clientAdapter?.destroy();
     clientAdapter = null;
     tunnelServer?.close();
     tunnelServer = null;
+    await rm(testDir, { recursive: true, force: true });
   });
 
   describe('end-to-end message flow', () => {
@@ -224,7 +233,7 @@ describe('tunnel integration', () => {
         await waitForCalls(calls, 1);
 
         // Destroy the client
-        clientAdapter.destroy();
+        await clientAdapter.destroy();
 
         // Wait a moment for the server to process the disconnect
         await new Promise((resolve) => setTimeout(resolve, 50));
@@ -234,7 +243,7 @@ describe('tunnel integration', () => {
         clientAdapter2.log('from new client');
         await waitForCalls(calls, 2);
 
-        clientAdapter2.destroy();
+        await clientAdapter2.destroy();
       });
 
       expect(calls).toHaveLength(2);
@@ -286,8 +295,8 @@ describe('tunnel integration', () => {
 
         await waitForCalls(calls, 2);
 
-        client1.destroy();
-        client2.destroy();
+        await client1.destroy();
+        await client2.destroy();
       });
 
       expect(calls).toHaveLength(2);
@@ -320,9 +329,9 @@ describe('tunnel integration', () => {
 
         await waitForCalls(calls, 3);
 
-        level1Client.destroy();
-        level2Client.destroy();
-        level3Client.destroy();
+        await level1Client.destroy();
+        await level2Client.destroy();
+        await level3Client.destroy();
       });
 
       expect(calls).toHaveLength(3);
