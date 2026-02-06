@@ -5,12 +5,12 @@ goal: ""
 id: 165
 uuid: ad5bc044-81a4-4675-b1fa-4e3ca9038000
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 planGeneratedAt: 2026-02-06T07:44:40.758Z
 promptsGeneratedAt: 2026-02-06T07:44:40.758Z
 createdAt: 2026-01-05T07:25:14.011Z
-updatedAt: 2026-02-06T09:09:28.261Z
+updatedAt: 2026-02-06T09:39:13.845Z
 tasks:
   - title: Define JSONL tunnel protocol
     done: true
@@ -53,7 +53,7 @@ tasks:
       debug). Test connection/disconnection lifecycle. Test that multi-level
       nesting works (output goes to root)."
   - title: Integrate tunnel server into executors
-    done: false
+    done: true
     description: "Modify all three executor files to create a tunnel server and pass
       TIM_OUTPUT_SOCKET env var to child processes. In claude_code.ts: create
       tunnel server in executeReviewWithClaudeCode() (around line 595) and in
@@ -64,7 +64,7 @@ tasks:
       executors should use the same createTunnelServer utility from
       tunnel_server.ts."
   - title: Install tunnel adapter at CLI startup
-    done: false
+    done: true
     description: "In src/tim/tim.ts: after loadEnv() and before
       program.parseAsync(), check if process.env.TIM_OUTPUT_SOCKET is set. If
       set, await createTunnelAdapter(socketPath) to connect. Wrap
@@ -73,7 +73,7 @@ tasks:
       (tunnel-only mode). Register adapter cleanup with CleanupRegistry to
       ensure socket is flushed and closed on exit."
   - title: Handle review mode dual output with tunnel
-    done: false
+    done: true
     description: "In src/tim/commands/review.ts: modify the withReviewLogger helper
       (lines 267-275) to check isTunnelActive(). When tunnel is active, skip
       installing reviewPrintQuietLogger or reviewPrintVerboseLogger — let the
@@ -96,6 +96,12 @@ changedFiles:
   - src/tim/commands/compact.test.ts
   - src/tim/commands/import/issue_tracker_integration.test.ts
   - src/tim/commands/renumber.test.ts
+  - src/tim/commands/review.ts
+  - src/tim/commands/review.tunnel.test.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/claude_code_orchestrator.ts
+  - src/tim/executors/codex_cli/codex_runner.ts
+  - src/tim/tim.ts
   - test-plans/rmplan.yml
 tags: []
 ---
@@ -389,23 +395,25 @@ Write tests for:
 
 ## Current Progress
 ### Current State
-- Core tunnel infrastructure (protocol, client, server) is fully implemented and tested
-- 62 tests passing across 4 test files with 243 assertions
+- All 7 tasks complete. Full tunnel output system implemented and integrated.
+- 71 tests passing across 5 test files with 265 assertions
 ### Completed (So Far)
 - Task 1: JSONL tunnel protocol (`src/logging/tunnel_protocol.ts`) with TunnelMessage type, TIM_OUTPUT_SOCKET constant, serializeArg/serializeArgs helpers
 - Task 2: Tunnel client adapter (`src/logging/tunnel_client.ts`) with TunnelAdapter class, createTunnelAdapter factory, isTunnelActive helper, graceful disconnect handling
 - Task 3: Tunnel server (`src/logging/tunnel_server.ts`) with createTunnelServer, JSONL parsing, line splitting for TCP chunks, CleanupRegistry integration with proper unregister on close
 - Task 4: Integration tests (`src/logging/tunnel_integration.test.ts`) covering all message types, multi-client, disconnect/reconnect, large messages, rapid bursts
+- Task 5: Executor integration — all three executors (claude_code.ts, claude_code_orchestrator.ts, codex_runner.ts) create tunnel servers and pass TIM_OUTPUT_SOCKET to child processes. Orchestrator shares one server across all phases. Cleanup in finally blocks.
+- Task 6: CLI startup in tim.ts — checks TIM_OUTPUT_SOCKET, connects tunnel adapter, wraps program.parseAsync() in runWithLogger. Falls back to console if connection fails, clearing env var so isTunnelActive() returns false.
+- Task 7: Review mode in review.ts — withReviewLogger skips quiet/verbose logger when tunnel active. Final output in --print mode writes to both process.stdout.write() and log() for dual output.
 ### Remaining
-- Task 5: Integrate tunnel server into executors (claude_code.ts, claude_code_orchestrator.ts, codex_runner.ts)
-- Task 6: Install tunnel adapter at CLI startup in tim.ts
-- Task 7: Handle review mode dual output with tunnel in review.ts
+- None — all tasks complete. Manual testing recommended.
 ### Next Iteration Guidance
-- Task 5 (executor integration) and Task 6 (CLI startup) are closely related and should be done together
-- Task 7 (review mode) depends on Task 6 being complete
+- None
 ### Decisions / Changes
 - debugLog() sends `type: 'debug'` directly instead of delegating to log() — keeps the protocol type meaningful
 - TunnelAdapter also writes to log file locally (via writeToLogFile) in addition to sending over socket
 - close() on tunnel server calls unregister() on CleanupRegistry to prevent double-close errors
+- tim.ts catch block deletes process.env[TIM_OUTPUT_SOCKET] on tunnel connection failure so isTunnelActive() correctly returns false downstream
+- claude_code.ts cleanup uses `if (!tempMcpConfigDir)` instead of `if (!tempMcpConfigDir && tunnelServer)` to avoid temp directory leak when tunnel server creation fails
 ### Risks / Blockers
 - None
