@@ -1,5 +1,6 @@
 import Observation
 import SwiftUI
+import UserNotifications
 
 @MainActor
 @Observable
@@ -14,6 +15,16 @@ final class AppState {
             terminal: payload.terminal,
             receivedAt: Date())
         self.items.insert(item, at: 0)
+
+        let content = UNMutableNotificationContent()
+        content.title = "Tim"
+        content.body = payload.message
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil)
+        UNUserNotificationCenter.current().add(request)
     }
 }
 
@@ -27,6 +38,8 @@ struct TimGUIApp: App {
         WindowGroup {
             ContentView(appState: self.appState, startError: self.startError)
                 .task {
+                    UNUserNotificationCenter.current().requestAuthorization(
+                        options: [.alert, .sound]) { _, _ in }
                     await self.startServerIfNeeded()
                 }
         }
