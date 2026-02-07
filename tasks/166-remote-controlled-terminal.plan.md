@@ -10,38 +10,42 @@ priority: medium
 parent: 160
 references:
   "160": 514cedb9-6431-400a-a997-12d139376146
-planGeneratedAt: 2026-02-07T21:23:54.155Z
-promptsGeneratedAt: 2026-02-07T21:23:54.155Z
+planGeneratedAt: 2026-02-07T21:27:08.375Z
+promptsGeneratedAt: 2026-02-07T21:27:08.375Z
 createdAt: 2026-01-12T06:36:28.922Z
-updatedAt: 2026-02-07T21:23:54.155Z
+updatedAt: 2026-02-07T21:27:08.376Z
 tasks:
   - title: Define headless message protocol
     done: false
     description: "Create src/logging/headless_protocol.ts with extensible envelope
-      types: HeadlessOutputMessage (wraps TunnelMessage),
-      HeadlessReplayStartMessage, HeadlessReplayEndMessage. Export
-      HeadlessMessage union type. Reuse TunnelMessage from tunnel_protocol.ts
-      for the inner message data."
+      types: HeadlessSessionInfoMessage (sent on every connect with command,
+      planId, planTitle, workspacePath, gitRemote), HeadlessOutputMessage (wraps
+      TunnelMessage), HeadlessReplayStartMessage, HeadlessReplayEndMessage.
+      Export HeadlessMessage union type and HeadlessSessionInfo interface. Reuse
+      TunnelMessage from tunnel_protocol.ts for the inner output data."
   - title: Create HeadlessAdapter class
     done: false
     description: "Create src/logging/headless_adapter.ts implementing LoggerAdapter.
-      Wraps a ConsoleAdapter (or any LoggerAdapter) for local output. Buffers
-      all output as serialized HeadlessMessage strings. Manages WebSocket
-      connection with states: disconnected, connecting, connected, draining.
-      Uses pendingMessages array with single drainLoop for race-condition-free
-      sending. Implements buffer cap (default 10MB, drops oldest). Reconnects on
-      each write when disconnected (rate-limited to 5s between attempts). Sends
-      replay_start/replay_end markers around buffer flush on connect. Provides
-      destroy() for graceful shutdown and destroySync() for signal handlers.
-      Constructor takes URL and optional wrapped adapter."
+      Constructor takes url, sessionInfo (HeadlessSessionInfo), and optional
+      wrapped LoggerAdapter (defaults to ConsoleAdapter). Wraps adapter for
+      local output. Buffers all output as serialized HeadlessOutputMessage
+      strings. Manages WebSocket connection with states: disconnected,
+      connecting, connected, draining. On connect: sends session_info, then
+      replay_start, flushes buffer, sends replay_end. Uses pendingMessages array
+      with single drainLoop for race-condition-free sending. Implements buffer
+      cap (default 10MB, drops oldest). Reconnects on each write when
+      disconnected (rate-limited to 5s between attempts). Provides destroy() for
+      graceful shutdown and destroySync() for signal handlers."
   - title: Install HeadlessAdapter in agent and review commands
     done: false
     description: "In handleAgentCommand (src/tim/commands/agent/agent.ts) and
       handleReviewCommand (src/tim/commands/review.ts), after config is loaded:
-      check !isTunnelActive(), resolve URL from TIM_HEADLESS_URL env var then
+      check !isTunnelActive(), gather session info (command name, plan ID/title
+      from resolved plan, workspace path from getGitRoot(), git remote from 'git
+      remote get-url origin'), resolve URL from TIM_HEADLESS_URL env var then
       config.headless.url then default ws://localhost:8123/tim-agent, create
-      HeadlessAdapter wrapping current adapter, run rest of command with
-      runWithLogger(headlessAdapter, ...), destroy adapter on cleanup."
+      HeadlessAdapter with url/sessionInfo/currentAdapter, run rest of command
+      with runWithLogger(headlessAdapter, ...), destroy adapter on cleanup."
   - title: Add headless config schema
     done: false
     description: "Add headless section to timConfigSchema in
@@ -52,19 +56,20 @@ tasks:
     done: false
     description: "Create src/logging/headless_adapter.test.ts. Test: buffering
       without server (verify local output works, messages buffered), connection
-      and buffer flush (use Bun.serve() WebSocket server, verify all buffered
-      messages arrive with replay markers), streaming after connection,
-      disconnect and reconnect (verify buffer replay), buffer cap (exceed max,
-      verify oldest dropped), rapid message ordering, graceful shutdown via
-      destroy(), no server available (verify no errors). Follow patterns from
-      tunnel_integration.test.ts."
+      and buffer flush (use Bun.serve() WebSocket server, verify session_info
+      sent first then replay markers then buffered messages), streaming after
+      connection, disconnect and reconnect (verify session_info re-sent and
+      buffer replayed), buffer cap (exceed max, verify oldest dropped), rapid
+      message ordering, graceful shutdown via destroy(), no server available
+      (verify no errors), session_info content verification. Follow patterns
+      from tunnel_integration.test.ts."
   - title: Update README with headless mode documentation
     done: false
     description: "Add section to README.md documenting headless mode: always-on for
       agent/review commands when not tunneled, default URL
       ws://localhost:8123/tim-agent, TIM_HEADLESS_URL env var override,
       headless.url config option, buffer behavior, message protocol envelope
-      format."
+      format including session_info message sent on connect."
 tags: []
 ---
 
@@ -72,8 +77,8 @@ We have some method of exposing all the terminal output over a socket and also a
 tunneling system by which a child process can send data to a parent process.  This is kind of different, since a
 non-tunneling process needs to instead proactively send data to a parent server.
 
-The way this will work is that there should be a socket to connect to which can either be a Unix socket or HTTP, with a
-default of `http://localhost:8123/tim-agent`. Every time we write output, we should see if we are connected, and if so, send the output on the existing socket connection. If not, try to connect. Failing to connect should be a no-op, since it is possible that the listening process is not running. 
+The way this will work is that there should be an HTTP websocket server, with a
+default of `ws://localhost:8123/tim-agent`. Every time we write output, we should see if we are connected, and if so, send the output on the existing socket connection. If not, try to connect. Failing to connect should be a no-op, since it is possible that the listening process is not running. 
 
 We only want to do this connection on long-running commands such as agent or review, and only when we are not running in tunneled mode already.
 
@@ -253,39 +258,65 @@ No external dependency needed.
 Define an extensible envelope type for WebSocket messages:
 
 ```typescript
+// Session info sent on every connect/reconnect, before any output
+interface HeadlessSessionInfoMessage {
+  type: 'session_info';
+  command: string;          // e.g. 'agent' or 'review'
+  planId?: number;          // the plan ID being operated on
+  planTitle?: string;       // the plan title
+  workspacePath?: string;   // absolute path to the workspace/repo
+  gitRemote?: string;       // git remote URL (origin)
+}
+
 // Output messages wrap the existing TunnelMessage type
 interface HeadlessOutputMessage {
   type: 'output';
   message: TunnelMessage;
 }
 
+// Replay markers
+interface HeadlessReplayStartMessage { type: 'replay_start'; }
+interface HeadlessReplayEndMessage { type: 'replay_end'; }
+
 // Future message types can be added here, e.g.:
 // interface HeadlessPromptMessage { type: 'prompt'; ... }
-// interface HeadlessStatusMessage { type: 'status'; ... }
 
-type HeadlessMessage = HeadlessOutputMessage; // | HeadlessPromptMessage | ...
+type HeadlessMessage =
+  | HeadlessSessionInfoMessage
+  | HeadlessOutputMessage
+  | HeadlessReplayStartMessage
+  | HeadlessReplayEndMessage;
 ```
 
 This reuses the existing `TunnelMessage` types from `src/logging/tunnel_protocol.ts` for the actual log data, wrapped in an envelope that identifies the message category. Each WebSocket `send()` call sends one JSON-serialized `HeadlessMessage`.
 
-On reconnect, a special `{ type: "replay_start" }` message is sent before the buffered messages, and `{ type: "replay_end" }` after, so the server can distinguish replayed history from live output.
+**On every connect/reconnect**, the sequence is:
+1. Send `session_info` — identifies which command, plan, workspace, and git remote this process is for.
+2. Send `replay_start` — signals that buffered history follows.
+3. Send all buffered `output` messages.
+4. Send `replay_end` — signals that live streaming begins.
+
+The `session_info` is sent on every connection (not just the first), so the server always knows context even after a reconnect. The `HeadlessAdapter` constructor accepts a `HeadlessSessionInfo` object containing the command, plan, and workspace details, which are gathered by the command handler before creating the adapter.
 
 ### Step 2: Create the HeadlessAdapter class
 
 **File**: `src/logging/headless_adapter.ts`
 
-Create a new `HeadlessAdapter` class implementing `LoggerAdapter` that wraps a `ConsoleAdapter`. The adapter has these responsibilities:
+Create a new `HeadlessAdapter` class implementing `LoggerAdapter` that wraps a `ConsoleAdapter`. Constructor signature: `new HeadlessAdapter(url: string, sessionInfo: HeadlessSessionInfo, wrappedAdapter?: LoggerAdapter)`.
 
-1. **Delegates all logging to the wrapped `ConsoleAdapter`** so local output works normally.
-2. **Buffers all output** as serialized envelope messages: `{ type: "output", message: TunnelMessage }`. The envelope format is extensible for future message types (e.g., interactive prompts, status updates).
+The adapter has these responsibilities:
+
+1. **Delegates all logging to the wrapped adapter** (defaults to `ConsoleAdapter`) so local output works normally.
+2. **Buffers all output** as serialized `HeadlessOutputMessage` strings.
 3. **Manages a WebSocket connection** to an external server.
+4. **Sends `session_info` on every connect/reconnect** with the command, plan, workspace path, and git remote, followed by replay of the buffer.
 
 **Connection state machine**:
 - Start in `disconnected` state.
 - On first log call (or on construction), attempt to connect.
 - While connecting, buffer all messages.
-- On open, flush the buffer then switch to streaming mode.
-- On close/error, switch back to disconnected, start buffering again, schedule retry.
+- On open, send `session_info`, then `replay_start`, flush the buffer, send `replay_end`, then switch to streaming mode.
+- On close/error, switch back to disconnected, start buffering again.
 - On process exit, attempt to flush and close gracefully.
 
 **Key design for race-condition prevention**:
@@ -309,10 +340,11 @@ Reference: Follow the patterns in `src/logging/tunnel_client.ts` for the adapter
 
 In `handleAgentCommand` and `handleReviewCommand`, early in the function (before main work begins):
 1. Check `!isTunnelActive()`.
-2. If not tunneled, create a `HeadlessAdapter` wrapping the current adapter (obtained via `getLoggerAdapter()`) or the default `ConsoleAdapter`.
-3. The URL is resolved in priority order: `TIM_HEADLESS_URL` env var > `config.headless.url` > default `ws://localhost:8123/tim-agent`.
-4. Run the rest of the command within `runWithLogger(headlessAdapter, ...)`.
-5. On cleanup, call `headlessAdapter.destroy()`.
+2. If not tunneled, gather session info: command name (`'agent'` or `'review'`), plan ID and title (from the resolved plan file), workspace path (from `getGitRoot()` or `process.cwd()`), git remote URL (from `git remote get-url origin`, failing silently if not available).
+3. Resolve the URL in priority order: `TIM_HEADLESS_URL` env var > `config.headless.url` > default `ws://localhost:8123/tim-agent`.
+4. Create a `HeadlessAdapter` with the URL, session info, and the current adapter.
+5. Run the rest of the command within `runWithLogger(headlessAdapter, ...)`.
+6. On cleanup, call `headlessAdapter.destroy()`.
 
 No CLI flags are needed — headless is always on for these commands when not tunneled.
 
