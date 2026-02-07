@@ -402,6 +402,7 @@ export async function executeNormalMode(
           initiallyPendingTitles,
           implementerOutput: finalImplementerOutput,
           testerOutput,
+          previousResponse: fixerOutput,
           executorSelection: reviewExecutor,
         });
       } catch (error) {

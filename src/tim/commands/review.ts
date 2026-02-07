@@ -404,6 +404,7 @@ export async function handleReviewCommand(
 
     // Load custom instructions
     let customInstructions = '';
+    let previousReviewResponse: string | undefined;
 
     // First try CLI options (CLI takes precedence)
     if (options.instructions) {
@@ -442,6 +443,26 @@ export async function handleReviewCommand(
         reviewLog(
           chalk.yellow(
             `Warning: Could not read instructions file from config: ${config.review.customInstructionsPath}. ${errorMessage}`
+          )
+        );
+      }
+    }
+
+    if (options.previousResponse) {
+      try {
+        const previousResponsePath = validateInstructionsFilePath(
+          options.previousResponse,
+          gitRoot
+        );
+        previousReviewResponse = await readFile(previousResponsePath, 'utf-8');
+        reviewLog(
+          chalk.gray(`Using previous review response from file: ${options.previousResponse}`)
+        );
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        reviewLog(
+          chalk.yellow(
+            `Warning: Could not read previous review response file: ${options.previousResponse}. ${errorMessage}`
           )
         );
       }
@@ -524,7 +545,8 @@ export async function handleReviewCommand(
         customInstructions,
         taskScopeNote,
         undefined,
-        remainingTasks
+        remainingTasks,
+        previousReviewResponse
       );
 
     // Execute the review
@@ -1363,6 +1385,7 @@ export async function buildReviewPromptFromOptions(
     sinceLastReview?: boolean;
     since?: string;
     base?: string;
+    previousResponse?: string;
   },
   globalOpts: {
     config?: string;
@@ -1382,6 +1405,7 @@ export async function buildReviewPromptFromOptions(
 
   // Load custom instructions
   let customInstructions = '';
+  let previousReviewResponse: string | undefined;
 
   // First try CLI options (CLI takes precedence)
   if (options.instructions) {
@@ -1408,6 +1432,18 @@ export async function buildReviewPromptFromOptions(
       const errorMessage = err instanceof Error ? err.message : String(err);
       warn(
         `Warning: Could not read instructions file from config: ${config.review.customInstructionsPath}. ${errorMessage}`
+      );
+    }
+  }
+
+  if (options.previousResponse) {
+    try {
+      const previousResponsePath = validateInstructionsFilePath(options.previousResponse, gitRoot);
+      previousReviewResponse = await readFile(previousResponsePath, 'utf-8');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      warn(
+        `Warning: Could not read previous review response file: ${options.previousResponse}. ${errorMessage}`
       );
     }
   }
@@ -1466,7 +1502,8 @@ export async function buildReviewPromptFromOptions(
     customInstructions,
     taskScopeNote,
     undefined,
-    remainingTasks
+    remainingTasks,
+    previousReviewResponse
   );
 }
 
@@ -1480,7 +1517,8 @@ export function buildReviewPrompt(
   customInstructions?: string,
   taskScopeNote?: string,
   additionalContext?: string,
-  remainingTasks?: RemainingTask[]
+  remainingTasks?: RemainingTask[],
+  previousReviewResponse?: string
 ): string {
   // Build parent plan context section if available
   const parentContext: string[] = [];
@@ -1612,6 +1650,16 @@ export function buildReviewPrompt(
     ...changedFilesSection,
     ``,
     ...(additionalContext?.trim() ? [additionalContext.trim(), ``] : []),
+    ...(previousReviewResponse?.trim()
+      ? [
+          `# Previous Review Response`,
+          ``,
+          `The previous review response was:`,
+          ``,
+          previousReviewResponse.trim(),
+          ``,
+        ]
+      : []),
     `# Review Instructions`,
     ``,
     `Please review the code changes above in the context of the plan requirements. Focus on:`,

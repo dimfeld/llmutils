@@ -418,6 +418,47 @@ index 1234567..abcdefg 100644
     expect(prompt).toContain('REVIEWER AGENT');
   });
 
+  test('includes previous review response when provided', async () => {
+    const planData: PlanSchema = {
+      id: 7,
+      title: 'Previous Review Response Test',
+      goal: 'Ensure previous review response is included',
+      tasks: [],
+    };
+
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['src/example.ts'],
+      baseBranch: 'main',
+      diffContent: 'diff --git a/src/example.ts b/src/example.ts',
+    };
+
+    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+      getReviewerPrompt: (contextContent: string) => ({
+        name: 'reviewer',
+        description: 'Reviews code',
+        prompt: contextContent,
+      }),
+    }));
+
+    const prompt = buildReviewPrompt(
+      planData,
+      diffResult,
+      false,
+      false,
+      [],
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'Resolved the missing edge cases in the last review.'
+    );
+
+    expect(prompt).toContain('Previous Review Response');
+    expect(prompt).toContain('Resolved the missing edge cases in the last review.');
+  });
+
   test('includes review scope note when provided', async () => {
     const planData: PlanSchema = {
       id: 7,

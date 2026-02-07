@@ -913,6 +913,10 @@ program
     'Path to file containing custom review instructions. Overrides config file instructions.'
   )
   .option(
+    '--previous-response <path>',
+    'Path to a file containing the previous review response to include in this review prompt.'
+  )
+  .option(
     '--focus <areas>',
     'Comma-separated list of focus areas (e.g., security,performance,testing). Overrides config focus areas.'
   )
