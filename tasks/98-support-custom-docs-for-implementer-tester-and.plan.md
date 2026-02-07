@@ -13,15 +13,14 @@ promptsGeneratedAt: 2025-08-13T19:18:44.562Z
 createdAt: 2025-08-13T19:06:31.948Z
 updatedAt: 2025-10-27T08:39:04.269Z
 tasks:
-  - title: "Task 1: Extend `timConfigSchema` to support agent-specific
-      instructions"
+  - title: "Task 1: Extend `timConfigSchema` to support agent-specific instructions"
     done: true
     description: >
-      The `timConfigSchema` in `src/tim/configSchema.ts` will be updated
-      to include a new optional `agents` object. This object will contain
-      optional sub-objects for `implementer`, `tester`, and `reviewer`, each
-      with an optional `instructions` string field for the file path. This
-      follows the same pattern as the existing `planning.instructions` field.
+      The `timConfigSchema` in `src/tim/configSchema.ts` will be updated to
+      include a new optional `agents` object. This object will contain optional
+      sub-objects for `implementer`, `tester`, and `reviewer`, each with an
+      optional `instructions` string field for the file path. This follows the
+      same pattern as the existing `planning.instructions` field.
 
 
       The schema structure will be:
@@ -79,9 +78,9 @@ tasks:
     done: true
     description: >
       In the `execute` method of `ClaudeCodeExecutor`
-      (`src/tim/executors/claude_code.ts`), logic will be added to read the
-      new `agents` configuration. If an `instructions` path is defined for an
-      agent, the executor will read the content of that file, resolving the path
+      (`src/tim/executors/claude_code.ts`), logic will be added to read the new
+      `agents` configuration. If an `instructions` path is defined for an agent,
+      the executor will read the content of that file, resolving the path
       relative to the git root using the same pattern as
       `planning.instructions`.
 
@@ -106,8 +105,8 @@ tasks:
     done: true
     description: >
       A new integration test will be added to
-      `src/tim/executors/claude_code.test.ts` that verifies the end-to-end
-      flow of custom agent instructions. The test will:
+      `src/tim/executors/claude_code.test.ts` that verifies the end-to-end flow
+      of custom agent instructions. The test will:
 
 
       1. Create a temporary directory with instruction files for each agent

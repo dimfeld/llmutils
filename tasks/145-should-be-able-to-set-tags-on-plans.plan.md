@@ -16,8 +16,8 @@ tasks:
     done: true
     description: "Add `tags: z.array(z.string()).default([]).optional()` to
       PlanSchema in src/tim/planSchema.ts and add corresponding field to
-      schema/tim-plan-schema.json with type array of strings. This
-      establishes the foundation for tag support across the codebase."
+      schema/tim-plan-schema.json with type array of strings. This establishes
+      the foundation for tag support across the codebase."
   - title: Add tag normalization utility function
     done: true
     description: "Create a `normalizeTags(tags: string[]): string[]` utility
@@ -75,9 +75,9 @@ tasks:
       JSON format, include tags array.
   - title: Add tags display to ready command output
     done: true
-    description: In src/tim/commands/ready.ts, add tags to all three output
-      formats (list, table, JSON). Follow same display patterns as list command.
-      Ensure tags are visible but don't clutter the output.
+    description: In src/tim/commands/ready.ts, add tags to all three output formats
+      (list, table, JSON). Follow same display patterns as list command. Ensure
+      tags are visible but don't clutter the output.
   - title: Add tags parameter to MCP create-plan tool
     done: true
     description: "In src/tim/mcp/generate_mode.ts, add `tags:
@@ -94,14 +94,14 @@ tasks:
       to lowercase. No validation needed."
   - title: Add tags to MCP list-ready-plans output
     done: true
-    description: In src/tim/mcp/generate_mode.ts, add tags field to the plan
-      object in list-ready-plans output JSON (lines ~209-233). Include the full
-      tags array in the response for each plan.
+    description: In src/tim/mcp/generate_mode.ts, add tags field to the plan object
+      in list-ready-plans output JSON (lines ~209-233). Include the full tags
+      array in the response for each plan.
   - title: Write tests for tag schema validation
     done: true
-    description: "Add tests to src/tim/planSchema.test.ts (or create if needed)
-      to verify: tags field accepts string arrays, defaults to empty array,
-      rejects non-string values, and handles optional/missing tags field."
+    description: "Add tests to src/tim/planSchema.test.ts (or create if needed) to
+      verify: tags field accepts string arrays, defaults to empty array, rejects
+      non-string values, and handles optional/missing tags field."
   - title: Write tests for set command tag operations
     done: true
     description: "Add tests to src/tim/commands/set.test.ts for: adding tags,
@@ -122,9 +122,9 @@ tasks:
       tags in output."
   - title: Write tests for ready command tag filtering
     done: true
-    description: "Add tests to src/tim/commands/ready.test.ts for: filtering
-      ready plans by tags, OR logic with multiple tags, and tags display in all
-      output formats (list, table, JSON)."
+    description: "Add tests to src/tim/commands/ready.test.ts for: filtering ready
+      plans by tags, OR logic with multiple tags, and tags display in all output
+      formats (list, table, JSON)."
   - title: Write tests for MCP tag operations
     done: true
     description: "Add tests to src/tim/mcp/generate_mode.test.ts for: create-plan

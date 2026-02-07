@@ -16,9 +16,9 @@ updatedAt: 2025-10-27T08:39:04.209Z
 project:
   title: Add `direct_mode` Configuration Option
   goal: The project's goal is to introduce a new configuration option,
-    `planning.direct_mode`, in the `tim` config file. This will allow users
-    to set "direct" mode as the default behavior for the `generate` and
-    `prepare` commands, improving user experience and workflow customization.
+    `planning.direct_mode`, in the `tim` config file. This will allow users to
+    set "direct" mode as the default behavior for the `generate` and `prepare`
+    commands, improving user experience and workflow customization.
   details: >-
     This project involves updating the `tim` configuration system and the
     command-line interface for the `generate` and `prepare` commands.
@@ -50,8 +50,8 @@ project:
     - A new boolean option `planning.direct_mode` can be added to the `tim`
     config file.
 
-    - When `direct_mode` is `true`, `tim generate` and `tim prepare`
-    execute in "direct" mode by default.
+    - When `direct_mode` is `true`, `tim generate` and `tim prepare` execute in
+    "direct" mode by default.
 
     - The `--no-direct` command-line flag successfully overrides a configuration
     of `direct_mode: true`.

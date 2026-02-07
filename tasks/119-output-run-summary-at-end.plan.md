@@ -57,14 +57,13 @@ tasks:
     description: >
       Modify the batch mode execution to properly aggregate summary data across
       multiple batch iterations. This involves updating
-      src/tim/commands/agent/batch_mode.ts to accept and use a
-      SummaryCollector instance, aggregate step results across iterations,
-      maintain cumulative file change tracking, and preserve summary state
-      between batch iterations. The batch mode aggregation should handle the
-      iterative nature of batch execution where multiple rounds of executor
-      calls happen until all tasks are complete. This requires careful handling
-      of step numbering, timing across iterations, and proper cleanup at the end
-      of batch execution.
+      src/tim/commands/agent/batch_mode.ts to accept and use a SummaryCollector
+      instance, aggregate step results across iterations, maintain cumulative
+      file change tracking, and preserve summary state between batch iterations.
+      The batch mode aggregation should handle the iterative nature of batch
+      execution where multiple rounds of executor calls happen until all tasks
+      are complete. This requires careful handling of step numbering, timing
+      across iterations, and proper cleanup at the end of batch execution.
   - title: Implement Basic Summary Display
     done: true
     description: >

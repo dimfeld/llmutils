@@ -21,23 +21,22 @@ project:
     `PlanSchema` already supports an `issue` field for this purpose. Currently,
     the logic to pass the issue URL from the `generate` command to the plan
     creation functions is partially implemented. It works correctly for
-    single-phase plans but is broken for multi-phase plans. The `tim
-    generate` command correctly fetches the issue URL and passes it in the
+    single-phase plans but is broken for multi-phase plans. The `tim generate`
+    command correctly fetches the issue URL and passes it in the
     `ExtractMarkdownToYamlOptions`. The `extractMarkdownToYaml` function in
-    `src/tim/process_markdown.ts` correctly handles this for single-phase
-    plans. However, the `saveMultiPhaseYaml` function in the same file has a bug
-    where it ignores the passed-in issue URLs, leaving the `issue` field empty
-    in multi-phase plan files. This project will fix the bug in the multi-phase
+    `src/tim/process_markdown.ts` correctly handles this for single-phase plans.
+    However, the `saveMultiPhaseYaml` function in the same file has a bug where
+    it ignores the passed-in issue URLs, leaving the `issue` field empty in
+    multi-phase plan files. This project will fix the bug in the multi-phase
     generation logic and add comprehensive tests to ensure both single and
     multi-phase plan generation scenarios correctly populate the `issue` field.
 tasks:
   - title: Correctly propagate issue URLs in multi-phase plan generation
     done: false
-    description: The `saveMultiPhaseYaml` function in
-      `src/tim/process_markdown.ts` currently ignores the issue URLs passed
-      to it. This task involves modifying the function to correctly use the
-      `options.issueUrls` and populate the `issue` field for each generated
-      phase file.
+    description: The `saveMultiPhaseYaml` function in `src/tim/process_markdown.ts`
+      currently ignores the issue URLs passed to it. This task involves
+      modifying the function to correctly use the `options.issueUrls` and
+      populate the `issue` field for each generated phase file.
   - title: Add tests for setting the issue field in generated plans
     done: false
     description: Create tests to verify that the `issue` field is correctly

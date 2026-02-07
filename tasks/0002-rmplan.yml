@@ -1,7 +1,7 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
-goal: Create a new command-line utility `tim` for generating and executing
-  task plans using an LLM.
+goal: Create a new command-line utility `tim` for generating and executing task
+  plans using an LLM.
 id: 20
 uuid: 68f73fc0-7cec-4b96-859c-562e6672adba
 status: done

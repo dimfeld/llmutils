@@ -24,10 +24,10 @@ tasks:
       value should remain 'github' to ensure backward compatibility.
 
 
-      The configuration should be added at the root level of the
-      timConfigSchema object, similar to how other service configurations are
-      handled in the codebase. The field should use a zod enum validator to
-      ensure only valid values are accepted.
+      The configuration should be added at the root level of the timConfigSchema
+      object, similar to how other service configurations are handled in the
+      codebase. The field should use a zod enum validator to ensure only valid
+      values are accepted.
   - title: Define Generic Issue Tracker Data Structures
     done: true
     description: >
@@ -82,11 +82,10 @@ tasks:
   - title: Refactor `import` Command to Use Abstraction Layer
     done: true
     description: >
-      Update the `tim import` command to use the new issue tracker
-      abstraction layer. This will involve replacing direct calls to
-      GitHub-specific functions with calls to the generic issue tracker
-      interface, enabling the command to work with both GitHub and Linear
-      seamlessly.
+      Update the `tim import` command to use the new issue tracker abstraction
+      layer. This will involve replacing direct calls to GitHub-specific
+      functions with calls to the generic issue tracker interface, enabling the
+      command to work with both GitHub and Linear seamlessly.
 
 
       The refactoring should maintain all existing functionality while adding

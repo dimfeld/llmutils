@@ -13,11 +13,11 @@ updatedAt: 2025-10-27T08:39:04.282Z
 tasks:
   - title: Add `promote` command and Task ID parser
     done: true
-    description: Add the `promote` command to the `tim` CLI and create the
-      utility for parsing task ID arguments. This sets up the command structure
-      and the core logic for identifying which tasks to promote. The task ID
-      format is `PLAN_ID.TASK_INDEX` or `PLAN_ID.START_INDEX-END_INDEX`, where
-      indices are 1-based.
+    description: Add the `promote` command to the `tim` CLI and create the utility
+      for parsing task ID arguments. This sets up the command structure and the
+      core logic for identifying which tasks to promote. The task ID format is
+      `PLAN_ID.TASK_INDEX` or `PLAN_ID.START_INDEX-END_INDEX`, where indices are
+      1-based.
   - title: Implement single task promotion logic
     done: true
     description: Implement the core logic for promoting a single task to a new

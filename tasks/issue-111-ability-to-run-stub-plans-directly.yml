@@ -1,8 +1,8 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Implement Direct Stub Plan Execution
-goal: Allow `tim run` to execute plans without detailed steps directly after
-  a user prompt.
+goal: Allow `tim run` to execute plans without detailed steps directly after a
+  user prompt.
 id: 45
 uuid: a7488708-5e2a-446d-8ae8-dff92238b9ed
 status: done
@@ -19,9 +19,9 @@ project:
   goal: "Implement: Ability to run stub plans directly"
   details: >
     Some issues are simple enough that an LLM can generate the code directly
-    from a high-level description. This feature will enhance `tim run` to
-    handle such cases. When the command detects a plan that lacks detailed steps
-    (a "stub" plan), it will present the user with a choice: either generate the
+    from a high-level description. This feature will enhance `tim run` to handle
+    such cases. When the command detects a plan that lacks detailed steps (a
+    "stub" plan), it will present the user with a choice: either generate the
     detailed steps as it does now, or execute the plan immediately. If immediate
     execution is chosen, the plan's high-level `title`, `goal`, and `details`
     will be consolidated into a single prompt for the executor. This provides a

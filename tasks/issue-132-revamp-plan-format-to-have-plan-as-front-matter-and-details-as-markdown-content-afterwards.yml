@@ -50,9 +50,9 @@ project:
 tasks:
   - title: Update `readPlanFile` to parse YAML front matter and a Markdown body
     done: true
-    description: Modify the `readPlanFile` function in `src/tim/plans.ts` to
-      detect and parse files using the new format. It should correctly separate
-      the YAML front matter from the subsequent Markdown content. The Markdown
+    description: Modify the `readPlanFile` function in `src/tim/plans.ts` to detect
+      and parse files using the new format. It should correctly separate the
+      YAML front matter from the subsequent Markdown content. The Markdown
       content will be loaded into the `details` field of the returned
       `PlanSchema` object. Files without front matter should be treated as pure
       YAML to support the old format.

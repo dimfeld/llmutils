@@ -181,8 +181,8 @@ tasks:
   - title: Add MCP prompt for compaction
     done: true
     description: >-
-      Create MCP prompt in `src/tim/mcp/prompts/` directory to enable
-      compaction from within Claude Code:
+      Create MCP prompt in `src/tim/mcp/prompts/` directory to enable compaction
+      from within Claude Code:
 
       - Create `compact_plan.ts` with prompt registration
 

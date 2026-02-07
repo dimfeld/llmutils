@@ -1,9 +1,9 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 goal: Implement a feature to automatically create a new workspace (Git clone or
-  worktree) for running an `tim` agent, based on repository-level
-  configuration. This includes managing the workspace lifecycle, customizing its
-  location, and tracking its association with a specific task.
+  worktree) for running an `tim` agent, based on repository-level configuration.
+  This includes managing the workspace lifecycle, customizing its location, and
+  tracking its association with a specific task.
 id: 2
 uuid: efecbae6-3ed5-46f8-ae4f-4ba5479c1427
 status: done

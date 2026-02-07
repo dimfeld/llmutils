@@ -27,14 +27,14 @@ tasks:
       Ensure `--print` forces JSON output and suppresses interactive prompts.
   - title: Refactor review flow into reusable runner helper
     done: true
-    description: Create a new helper module (e.g., `src/tim/review_runner.ts`)
-      that executes reviews and returns a merged `ReviewResult`. The helper
-      should accept task filters and optional extra context, handle executor
-      selection (including `both` in parallel), parse JSON outputs, merge/sort
-      issues by file/line (missing last), and surface partial failures with
-      stderr warnings while still returning results. Integrate
-      `handleReviewCommand` to use this helper and bypass autofix/cleanup/append
-      flows when `--print` is set.
+    description: Create a new helper module (e.g., `src/tim/review_runner.ts`) that
+      executes reviews and returns a merged `ReviewResult`. The helper should
+      accept task filters and optional extra context, handle executor selection
+      (including `both` in parallel), parse JSON outputs, merge/sort issues by
+      file/line (missing last), and surface partial failures with stderr
+      warnings while still returning results. Integrate `handleReviewCommand` to
+      use this helper and bypass autofix/cleanup/append flows when `--print` is
+      set.
   - title: Implement task filtering + prompt scope notes
     done: true
     description: Implement exact, case-insensitive task title matching and 0-based
@@ -47,26 +47,26 @@ tasks:
     done: true
     description: Modify `getReviewerPrompt` in
       `src/tim/executors/claude_code/agent_prompts.ts` to include the word
-      “ultrathink” and to mark “implemented but does not meet requirements” as
+      "ultrathink" and to mark "implemented but does not meet requirements" as
       CRITICAL. Update prompt-related tests accordingly.
   - title: Update Claude orchestrator review instructions
     done: true
     description: Replace reviewer-subagent guidance in
-      `src/tim/executors/claude_code/orchestrator_prompt.ts` with
-      instructions to run `tim review --print` (including executor selection
-      guidance). The prompt must indicate that the command may take up to 15
-      minutes so a long timeout is appropriate. Remove reviewer-agent references
-      from available agents and guidelines as needed.
+      `src/tim/executors/claude_code/orchestrator_prompt.ts` with instructions
+      to run `tim review --print` (including executor selection guidance). The
+      prompt must indicate that the command may take up to 15 minutes so a long
+      timeout is appropriate. Remove reviewer-agent references from available
+      agents and guidelines as needed.
   - title: Replace Codex internal review with external review helper
     done: true
-    description: "In `src/tim/executors/codex_cli/normal_mode.ts` (and simple
-      mode if applicable), replace the internal reviewer step with an in-process
-      call to the new review helper. Pass `newlyCompletedTitles` and extra
-      context (implementer/tester outputs plus
-      initiallyCompleted/initiallyPending titles). Always run the review even
-      when no tasks are newly completed (no task filter). Derive verdicts from
-      JSON: critical/major/minor => NEEDS_FIXES, info-only => ACCEPTABLE. Adjust
-      fix-loop logic to use the external review result."
+    description: "In `src/tim/executors/codex_cli/normal_mode.ts` (and simple mode
+      if applicable), replace the internal reviewer step with an in-process call
+      to the new review helper. Pass `newlyCompletedTitles` and extra context
+      (implementer/tester outputs plus initiallyCompleted/initiallyPending
+      titles). Always run the review even when no tasks are newly completed (no
+      task filter). Derive verdicts from JSON: critical/major/minor =>
+      NEEDS_FIXES, info-only => ACCEPTABLE. Adjust fix-loop logic to use the
+      external review result."
   - title: Add/update automated tests for review changes
     done: true
     description: "Add/adjust tests covering: `--print` behavior, task filtering and

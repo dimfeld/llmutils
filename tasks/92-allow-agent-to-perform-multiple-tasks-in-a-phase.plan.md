@@ -22,16 +22,16 @@ tasks:
 
       The flag should be added to the CLI command definition where other options
       are defined. It should be passed through the handleAgentCommand function
-      to timAgent as part of the options object. The flag should be optional
-      and default to false to maintain backward compatibility with existing
+      to timAgent as part of the options object. The flag should be optional and
+      default to false to maintain backward compatibility with existing
       behavior.
   - title: "Task 2: Implement a function to retrieve all incomplete tasks"
     done: true
     description: >
       Create a new helper function `getAllIncompleteTasks` in
-      src/tim/plans/find_next.ts that takes a PlanSchema object and returns
-      an array of all tasks that are not yet marked as `done: true`. This
-      function will be used by the batch mode to collect all pending work.
+      src/tim/plans/find_next.ts that takes a PlanSchema object and returns an
+      array of all tasks that are not yet marked as `done: true`. This function
+      will be used by the batch mode to collect all pending work.
 
 
       The function should iterate through all tasks in the plan and filter out
@@ -42,9 +42,9 @@ tasks:
   - title: "Task 3: Create the batch mode execution loop in the agent command"
     done: true
     description: >
-      In the timAgent function, add a new execution path when `--batch-tasks`
-      is true. This path will use a while loop that continues as long as there
-      are incomplete tasks in the plan.
+      In the timAgent function, add a new execution path when `--batch-tasks` is
+      true. This path will use a while loop that continues as long as there are
+      incomplete tasks in the plan.
 
 
       The loop should: 1) Read the current plan file to get updated state, 2)
@@ -62,8 +62,8 @@ tasks:
     done: true
     description: >
       Modify the wrapWithOrchestration function in
-      src/tim/executors/claude_code/orchestrator_prompt.ts to handle batch
-      task processing when multiple tasks are provided.
+      src/tim/executors/claude_code/orchestrator_prompt.ts to handle batch task
+      processing when multiple tasks are provided.
 
 
       The updated prompt must instruct the orchestrator to: 1) Analyze the
@@ -99,8 +99,8 @@ tasks:
     done: true
     description: >
       Adjust the prompts for the implementer, tester, and reviewer agents in
-      src/tim/executors/claude_code/agent_prompts.ts so they understand they
-      may receive multiple related tasks from the orchestrator.
+      src/tim/executors/claude_code/agent_prompts.ts so they understand they may
+      receive multiple related tasks from the orchestrator.
 
 
       The sub-agents should be instructed that when they receive multiple tasks,

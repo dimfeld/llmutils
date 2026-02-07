@@ -1,9 +1,9 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Reorganize `tim` Directory by Command
-goal: Improve the internal structure of the `src/tim` module by organizing
-  its code based on individual command functionalities, making it easier to
-  navigate and maintain.
+goal: Improve the internal structure of the `src/tim` module by organizing its
+  code based on individual command functionalities, making it easier to navigate
+  and maintain.
 id: 35
 uuid: 1349dbdb-1c69-4977-8d1f-6700402e9603
 status: done
@@ -12,8 +12,8 @@ promptsGeneratedAt: 2025-06-04T19:09:54.354Z
 createdAt: 2025-06-04T08:24:18.885Z
 updatedAt: 2025-10-27T08:39:04.286Z
 project:
-  title: Refactor codebase to improve modularity and reorganize `tim` by
-    command functionality
+  title: Refactor codebase to improve modularity and reorganize `tim` by command
+    functionality
   goal: The primary goal of this project is to reorganize the `dimfeld/llmutils`
     codebase to enhance modularity and maintainability. This involves
     refactoring code along functionality boundaries to reduce inter-directory
@@ -21,14 +21,14 @@ project:
     structuring its code per command.
   details: >-
     The current codebase has dependencies and interactions between modules like
-    `rmfilter`, `tim`, and `rmpr` that have become unwieldy. This project
-    aims to:
+    `rmfilter`, `tim`, and `rmpr` that have become unwieldy. This project aims
+    to:
 
     1. Reorganize the `tim` module by creating separate files for each of its
     sub-commands, improving its internal structure.
 
-    2. Analyze and refactor dependencies between `rmfilter`, `tim`, `rmpr`,
-    and `common` modules. This includes consolidating shared utilities into
+    2. Analyze and refactor dependencies between `rmfilter`, `tim`, `rmpr`, and
+    `common` modules. This includes consolidating shared utilities into
     `src/common/` or more specific common modules, and ensuring that
     interactions between the main feature modules (`rmfilter`, `tim`, `rmpr`)
     are clean and well-defined.
@@ -40,8 +40,8 @@ tasks:
     done: true
     description: Analyze `src/tim/tim.ts` and associated files (e.g.,
       `src/tim/actions.ts`, `src/tim/agent.ts`) to list all distinct
-      sub-commands provided by `tim` (such as generate, agent/run, next,
-      done, list, prepare, show, edit, split, workspace commands). Document the
+      sub-commands provided by `tim` (such as generate, agent/run, next, done,
+      list, prepare, show, edit, split, workspace commands). Document the
       primary files and functions associated with each command. This task is
       primarily analysis and documentation to inform subsequent refactoring
       tasks.
@@ -54,9 +54,9 @@ tasks:
     done: true
     description: Move the core logic, argument parsing, and helper functions
       specific to each `tim` command from their current locations (primarily
-      `src/tim/tim.ts`, `src/tim/actions.ts`, `src/tim/agent.ts`)
-      into the newly created dedicated command files. Each new command file
-      should export a primary handler function.
+      `src/tim/tim.ts`, `src/tim/actions.ts`, `src/tim/agent.ts`) into the newly
+      created dedicated command files. Each new command file should export a
+      primary handler function.
   - title: Organize Shared `tim` Utilities
     done: true
     description: Identify functions and types that are used by multiple `tim`

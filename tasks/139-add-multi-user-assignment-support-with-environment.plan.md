@@ -25,17 +25,16 @@ tasks:
       test coverage for UUID generation and persistence.
   - title: Create assignments file schema and utilities
     done: true
-    description: "Create `src/tim/assignments/assignments_schema.ts` with Zod
-      schema for assignments file structure. Schema should include:
-      repositoryId, repositoryRemoteUrl, version field for optimistic locking,
-      and assignments map. Each assignment entry: {planId (cached),
-      workspacePaths (array - supports multiple), users (array - who claimed
-      it), status (optional override), assignedAt, updatedAt}. Create
-      `src/tim/assignments/assignments_io.ts` with functions:
-      readAssignments(), writeAssignments() using atomic writes (temp file +
-      rename), getAssignmentsFilePath(). Include comprehensive tests for I/O
-      operations and edge cases (missing file, corrupted JSON, concurrent
-      writes)."
+    description: "Create `src/tim/assignments/assignments_schema.ts` with Zod schema
+      for assignments file structure. Schema should include: repositoryId,
+      repositoryRemoteUrl, version field for optimistic locking, and assignments
+      map. Each assignment entry: {planId (cached), workspacePaths (array -
+      supports multiple), users (array - who claimed it), status (optional
+      override), assignedAt, updatedAt}. Create
+      `src/tim/assignments/assignments_io.ts` with functions: readAssignments(),
+      writeAssignments() using atomic writes (temp file + rename),
+      getAssignmentsFilePath(). Include comprehensive tests for I/O operations
+      and edge cases (missing file, corrupted JSON, concurrent writes)."
   - title: Implement workspace and repository identification
     done: true
     description: "Create `src/tim/assignments/workspace_identifier.ts` with:
@@ -68,19 +67,19 @@ tasks:
       warning), multiple workspace claims."
   - title: Implement tim release command
     done: true
-    description: "Create `src/tim/commands/release.ts` with
-      handleReleaseCommand(). Logic: resolve plan to UUID, read assignments
-      file, remove current workspace from workspacePaths array and current user
-      from users array. If arrays become empty, remove entire assignment entry.
-      Optionally reset plan status to pending (with --reset-status flag). Write
-      assignments file and plan file if status changed. Add CLI definition with
-      options: --reset-status (reset to pending). Include tests for releasing
-      assigned plans, already-released plans, partial releases (multiple
-      workspaces), status handling."
+    description: "Create `src/tim/commands/release.ts` with handleReleaseCommand().
+      Logic: resolve plan to UUID, read assignments file, remove current
+      workspace from workspacePaths array and current user from users array. If
+      arrays become empty, remove entire assignment entry. Optionally reset plan
+      status to pending (with --reset-status flag). Write assignments file and
+      plan file if status changed. Add CLI definition with options:
+      --reset-status (reset to pending). Include tests for releasing assigned
+      plans, already-released plans, partial releases (multiple workspaces),
+      status handling."
   - title: Update ready command with assignment filtering
     done: true
-    description: "Modify `src/tim/commands/ready.ts`: read assignments file,
-      filter by current workspace path by default (show plans claimed here OR
+    description: "Modify `src/tim/commands/ready.ts`: read assignments file, filter
+      by current workspace path by default (show plans claimed here OR
       unassigned), add --all flag (ignore assignments), add --unassigned flag
       (only show unassigned), add --user <name> flag (filter by user). Use
       assignment status as source of truth if present, fall back to plan file
@@ -100,12 +99,12 @@ tasks:
       workspace). Include tests for display with and without assignments."
   - title: Add automatic cleanup when plans marked done
     done: true
-    description: "Modify `src/tim/plans/mark_done.ts` and
-      `src/tim/commands/set.ts`: when plan status changes to 'done' or
-      'cancelled', automatically remove entire assignment entry from assignments
-      file. Add removeAssignment(uuid) utility in assignments_io.ts. Ensure this
-      works for both direct status changes and task completion. Include tests
-      for automatic cleanup on done/cancelled."
+    description: "Modify `src/tim/plans/mark_done.ts` and `src/tim/commands/set.ts`:
+      when plan status changes to 'done' or 'cancelled', automatically remove
+      entire assignment entry from assignments file. Add removeAssignment(uuid)
+      utility in assignments_io.ts. Ensure this works for both direct status
+      changes and task completion. Include tests for automatic cleanup on
+      done/cancelled."
   - title: Add stale assignment detection and cleanup
     done: true
     description: "Add configuration option `assignments.staleTimeout` (default 7

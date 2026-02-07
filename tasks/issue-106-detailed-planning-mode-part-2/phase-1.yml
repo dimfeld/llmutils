@@ -59,10 +59,10 @@ tasks:
     done: true
     description: >
       This task requires updating the existing `generate` command in
-      `src/tim/tim.ts`. When the `generate` command is provided with a
-      path to an existing plan YAML file that primarily contains metadata (like
-      `id`, `title`, `goal`, `details`) but lacks a `tasks` array or has an
-      empty one, it should:
+      `src/tim/tim.ts`. When the `generate` command is provided with a path to
+      an existing plan YAML file that primarily contains metadata (like `id`,
+      `title`, `goal`, `details`) but lacks a `tasks` array or has an empty one,
+      it should:
 
       1. Load the content of the specified plan file.
 

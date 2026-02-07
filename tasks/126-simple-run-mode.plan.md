@@ -1,8 +1,8 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: simple run mode
-goal: Implement a --simple flag for the tim agent command that runs executors
-  in a streamlined 2-phase "implement and verify" mode instead of the current
+goal: Implement a --simple flag for the tim agent command that runs executors in
+  a streamlined 2-phase "implement and verify" mode instead of the current
   3-phase "implement-test-review" orchestration loop.
 id: 126
 uuid: 227a05fa-5ada-4a86-ace2-941d7ee68265
@@ -15,9 +15,9 @@ updatedAt: 2025-10-27T08:39:04.228Z
 tasks:
   - title: Add --simple flag to tim agent CLI command
     done: true
-    description: Update `/src/tim/tim.ts` to add the --simple option after
-      line 349 in the `createAgentCommand()` function. Follow the pattern of
-      existing flags like --serial-tasks.
+    description: Update `/src/tim/tim.ts` to add the --simple option after line 349
+      in the `createAgentCommand()` function. Follow the pattern of existing
+      flags like --serial-tasks.
   - title: Update executor type definitions for simple mode
     done: true
     description: Modify `/src/tim/executors/types.ts` to support simple mode in
@@ -26,14 +26,13 @@ tasks:
   - title: Update executor schemas to include simpleMode option
     done: true
     description: Add simpleMode field to both claudeCodeOptionsSchema and
-      codexCliOptionsSchema in `/src/tim/executors/schemas.ts`. Include
-      proper zod validation and descriptions.
+      codexCliOptionsSchema in `/src/tim/executors/schemas.ts`. Include proper
+      zod validation and descriptions.
   - title: Modify executor build process to pass simple mode flag
     done: true
-    description: Update `/src/tim/executors/build.ts` buildExecutorAndLog
-      function to accept and pass executor-specific options. Modify the call
-      site in `/src/tim/commands/agent/agent.ts` to pass the simple flag when
-      present.
+    description: Update `/src/tim/executors/build.ts` buildExecutorAndLog function
+      to accept and pass executor-specific options. Modify the call site in
+      `/src/tim/commands/agent/agent.ts` to pass the simple flag when present.
   - title: Create simple mode orchestrator prompt
     done: true
     description: Add new `wrapWithOrchestrationSimple()` function in
@@ -48,10 +47,9 @@ tasks:
       linting, tests, and add tests if needed.
   - title: Update Claude Code executor to branch on simple mode
     done: true
-    description: Modify `/src/tim/executors/claude_code.ts` execute() method
-      around line 789 to check for simple mode and use
-      wrapWithOrchestrationSimple() instead of wrapWithOrchestration() when
-      appropriate.
+    description: Modify `/src/tim/executors/claude_code.ts` execute() method around
+      line 789 to check for simple mode and use wrapWithOrchestrationSimple()
+      instead of wrapWithOrchestration() when appropriate.
   - title: Modify agent file generation for simple mode
     done: true
     description: Update `/src/tim/executors/claude_code/agent_generator.ts` to
@@ -60,13 +58,13 @@ tasks:
   - title: Add failure detection for verifier agent
     done: true
     description: "Extend failure detection in
-      `/src/tim/executors/failure_detection.ts` to recognize failures from
-      the new verifier agent using the existing FAILED: protocol."
+      `/src/tim/executors/failure_detection.ts` to recognize failures from the
+      new verifier agent using the existing FAILED: protocol."
   - title: Create simple mode execution loop
     done: true
-    description: Add new method in `/src/tim/executors/codex_cli.ts` for simple
-      mode execution that implements the 2-phase loop (implement → verify)
-      without the review and fix iteration phases.
+    description: Add new method in `/src/tim/executors/codex_cli.ts` for simple mode
+      execution that implements the 2-phase loop (implement → verify) without
+      the review and fix iteration phases.
   - title: Create verifier prompts for Codex
     done: true
     description: Add verifier prompt generation functions in Codex executor that

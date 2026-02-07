@@ -31,8 +31,8 @@ tasks:
   - title: Implement the result limiting logic in the `handleListCommand` function
     done: true
     description: >
-      Modify the `handleListCommand` function in `src/tim/commands/list.ts`
-      to respect the new `number` option.
+      Modify the `handleListCommand` function in `src/tim/commands/list.ts` to
+      respect the new `number` option.
 
       After the `planArray` has been filtered and sorted (around line 136),
       check if the `number` option is present.

@@ -1,8 +1,8 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 goal: "Implement the feature: Read `rmpr` comments from GitHub issues and use
-  them to provide arguments to `rmfilter` when using the `tim generate
-  --issue` command."
+  them to provide arguments to `rmfilter` when using the `tim generate --issue`
+  command."
 id: 5
 uuid: 14da35e7-e075-43eb-b646-f292a1892b38
 status: done
@@ -33,12 +33,12 @@ tasks:
   - title: 3. Integrate `rmpr` options from issues into `tim generate` command
     done: true
     description: >
-      Modify the `tim generate` command in `src/tim/tim.ts`. When
-      processing an issue (`--issue` flag), it should now use the
-      `combinedRmprOptions` returned by `getInstructionsFromGithubIssue`. These
-      options will be converted into `rmfilter` arguments using the
-      `genericArgsFromRmprOptions` function (from Task 1) and appended to the
-      arguments passed to the `rmfilter` subprocess.
+      Modify the `tim generate` command in `src/tim/tim.ts`. When processing an
+      issue (`--issue` flag), it should now use the `combinedRmprOptions`
+      returned by `getInstructionsFromGithubIssue`. These options will be
+      converted into `rmfilter` arguments using the `genericArgsFromRmprOptions`
+      function (from Task 1) and appended to the arguments passed to the
+      `rmfilter` subprocess.
 ---
 
 The `tim generate` command, when used with the `--issue` option, fetches content from a GitHub issue (title, body, comments) to form a plan. This project will extend this functionality to parse `rmpr` (ReadMePRompt) directives from this issue content.

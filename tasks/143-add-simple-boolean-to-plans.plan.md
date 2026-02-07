@@ -24,8 +24,8 @@ tasks:
       to false."
   - title: Add --simple flag to tim add command
     done: true
-    description: Update src/tim/tim.ts to add `.option('--simple', 'Mark this
-      plan as simple (skips research phase in generation)')` to the add command
+    description: Update src/tim/tim.ts to add `.option('--simple', 'Mark this plan
+      as simple (skips research phase in generation)')` to the add command
       definition. Update src/tim/commands/add.ts handleAddCommand to read
       options.simple and set it on the plan object before writing. Add test
       cases for creating plans with --simple flag.

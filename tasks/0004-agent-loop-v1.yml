@@ -21,8 +21,8 @@ tasks:
       function.
   - title: Add 'agent' command skeleton and loop structure
     done: true
-    description: Add the basic 'agent <planFile>' command to tim.ts. Implement
-      the main loop structure that loads the plan and iterates using
+    description: Add the basic 'agent <planFile>' command to tim.ts. Implement the
+      main loop structure that loads the plan and iterates using
       `findPendingTask` until completion or error.
   - title: Integrate 'prepareNextStep' into the agent command
     done: true

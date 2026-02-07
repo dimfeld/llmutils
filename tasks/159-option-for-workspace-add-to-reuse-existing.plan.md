@@ -20,8 +20,8 @@ tasks:
   - title: Add branch field to WorkspaceMetadataPatch interface
     done: true
     description: Update `WorkspaceMetadataPatch` interface in
-      `src/tim/workspace/workspace_tracker.ts` to include an optional
-      `branch` field so it can be updated when reusing workspaces.
+      `src/tim/workspace/workspace_tracker.ts` to include an optional `branch`
+      field so it can be updated when reusing workspaces.
   - title: Implement findUniqueBranchName utility function
     done: true
     description: Create a function in `workspace_manager.ts` that checks if a branch
@@ -112,18 +112,17 @@ tasks:
       - Works with `--from-branch` option
   - title: "Address Review Feedback: Lock acquisition happens after
       `prepareExistingWorkspace`, file copy, and metadata updates. That leaves a
-      race where two concurrent `tim workspace add --reuse` calls can select
-      the same workspace, both mutate it (checkout/branch) and only then attempt
-      to lock. This can corrupt workspace state and violates the reuse
-      requirements and the plan’s explicit risk note about locking before
-      changes."
+      race where two concurrent `tim workspace add --reuse` calls can select the
+      same workspace, both mutate it (checkout/branch) and only then attempt to
+      lock. This can corrupt workspace state and violates the reuse requirements
+      and the plan's explicit risk note about locking before changes."
     done: true
     description: >-
       Lock acquisition happens after `prepareExistingWorkspace`, file copy, and
-      metadata updates. That leaves a race where two concurrent `tim
-      workspace add --reuse` calls can select the same workspace, both mutate it
+      metadata updates. That leaves a race where two concurrent `tim workspace
+      add --reuse` calls can select the same workspace, both mutate it
       (checkout/branch) and only then attempt to lock. This can corrupt
-      workspace state and violates the reuse requirements and the plan’s
+      workspace state and violates the reuse requirements and the plan's
       explicit risk note about locking before changes.
 
 
@@ -136,15 +135,15 @@ tasks:
       Related file: src/tim/commands/workspace.ts:436
   - title: "Address Review Feedback: `--from-branch` is ignored for non-reuse
       workspace creation. The flag is only passed into the reuse path;
-      `createWorkspace` always creates the new branch from the clone’s current
-      HEAD. `tim workspace add <plan> --from-branch develop` will still
-      branch from the default branch unless `--reuse/--try-reuse` is used, which
+      `createWorkspace` always creates the new branch from the clone's current
+      HEAD. `tim workspace add <plan> --from-branch develop` will still branch
+      from the default branch unless `--reuse/--try-reuse` is used, which
       violates the requirement for `workspace add`."
     done: true
     description: >-
       `--from-branch` is ignored for non-reuse workspace creation. The flag is
       only passed into the reuse path; `createWorkspace` always creates the new
-      branch from the clone’s current HEAD. `tim workspace add <plan>
+      branch from the clone's current HEAD. `tim workspace add <plan>
       --from-branch develop` will still branch from the default branch unless
       `--reuse/--try-reuse` is used, which violates the requirement for
       `workspace add`.
@@ -216,16 +215,16 @@ tasks:
 
       Related file: src/tim/commands/workspace.ts:465
   - title: "Address Review Feedback: Reused workspace reports the new `workspaceId`
-      as the ID even though the tracked workspace’s `taskId` is unchanged. This
+      as the ID even though the tracked workspace's `taskId` is unchanged. This
       creates inconsistent IDs: the success output says `ID: task-<new>` while
       the tracker still contains the old `taskId`, so later id-based commands
-      won’t find it."
+      won't find it."
     done: true
     description: >-
       Reused workspace reports the new `workspaceId` as the ID even though the
-      tracked workspace’s `taskId` is unchanged. This creates inconsistent IDs:
+      tracked workspace's `taskId` is unchanged. This creates inconsistent IDs:
       the success output says `ID: task-<new>` while the tracker still contains
-      the old `taskId`, so later id-based commands won’t find it.
+      the old `taskId`, so later id-based commands won't find it.
 
 
       Suggestion: Return the actual existing workspace `taskId` from
@@ -243,10 +242,9 @@ tasks:
     done: true
     description: >-
       Reuse path ignores `createBranch` config and `--no-create-branch`.
-      `prepareExistingWorkspace` always creates a new branch, so `tim
-      workspace add --reuse --no-create-branch` (or config `createBranch:
-      false`) still creates a branch, diverging from normal workspace add
-      behavior.
+      `prepareExistingWorkspace` always creates a new branch, so `tim workspace
+      add --reuse --no-create-branch` (or config `createBranch: false`) still
+      creates a branch, diverging from normal workspace add behavior.
 
 
       Suggestion: Pass an explicit `createBranch` flag into reuse preparation

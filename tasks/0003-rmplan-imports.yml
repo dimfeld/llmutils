@@ -23,8 +23,8 @@ tasks:
       used.
   - title: Implement Standalone Import Analysis
     done: true
-    description: Implement the import analysis directly within tim for cases
-      where `--rmfilter` is not used, leveraging the existing `ImportWalker` and
+    description: Implement the import analysis directly within tim for cases where
+      `--rmfilter` is not used, leveraging the existing `ImportWalker` and
       `Resolver`.
   - title: Refine and Test
     done: true

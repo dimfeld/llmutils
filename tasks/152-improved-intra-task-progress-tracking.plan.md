@@ -32,8 +32,8 @@ tasks:
     done: true
     description: Expand planning guidance to create new plans for discovered issues
       (`tim add ... --discovered-from <planId>`). Remove progress-notes
-      compaction support and config, update README and tim usage skill docs
-      to reflect the new progress section model, and regenerate JSON schemas.
+      compaction support and config, update README and tim usage skill docs to
+      reflect the new progress section model, and regenerate JSON schemas.
       Update tests impacted by compaction/docs changes.
 changedFiles:
   - README.md

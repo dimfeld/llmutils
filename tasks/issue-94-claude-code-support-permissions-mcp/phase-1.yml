@@ -30,8 +30,8 @@ tasks:
   - title: Create the Permissions MCP Server File
     done: true
     description: Create a new file at
-      `src/tim/executors/claude_code/permissions_mcp.ts` to house the logic
-      for the permissions server.
+      `src/tim/executors/claude_code/permissions_mcp.ts` to house the logic for
+      the permissions server.
   - title: Implement the MCP Server and Input Schema
     done: true
     description: In the new `permissions_mcp.ts` file, set up the basic structure

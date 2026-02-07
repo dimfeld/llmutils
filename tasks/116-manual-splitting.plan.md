@@ -17,18 +17,18 @@ tasks:
   - title: Update CLI Definition for Split Command
     done: true
     description: >
-      Update the `tim.ts` file to add the new `--auto`, `--tasks
-      <specifier>`, and `--select` options to the `split` command definition.
-      This involves modifying the existing split command at lines 443-450 to
-      include three new mutually exclusive options. Follow the patterns used by
-      other commands in the file for option definitions and help text. The
-      `--auto` flag should be a boolean, `--tasks` should accept a string
-      specifier, and `--select` should be a boolean for interactive selection.
+      Update the `tim.ts` file to add the new `--auto`, `--tasks <specifier>`,
+      and `--select` options to the `split` command definition. This involves
+      modifying the existing split command at lines 443-450 to include three new
+      mutually exclusive options. Follow the patterns used by other commands in
+      the file for option definitions and help text. The `--auto` flag should be
+      a boolean, `--tasks` should accept a string specifier, and `--select`
+      should be a boolean for interactive selection.
   - title: Refactor the Split Command Handler
     done: true
     description: >
-      Modify the `handleSplitCommand` function in `src/tim/commands/split.ts`
-      to support multiple splitting modes. The current LLM-based logic should be
+      Modify the `handleSplitCommand` function in `src/tim/commands/split.ts` to
+      support multiple splitting modes. The current LLM-based logic should be
       moved into a conditional block that only executes when the `--auto` flag
       is present. Add branching logic to handle different modes based on which
       flag is used, and implement validation to ensure flags are mutually

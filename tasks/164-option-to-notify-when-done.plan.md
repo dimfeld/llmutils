@@ -14,16 +14,16 @@ updatedAt: 2026-01-06T02:23:46.096Z
 tasks:
   - title: Add notifications config to schema
     done: true
-    description: Update src/tim/configSchema.ts with an optional notifications
-      block (command, workingDirectory, env, enabled). Avoid zod defaults.
-      Regenerate schema/tim-config-schema.json via
-      scripts/update-json-schemas.ts and add/update any schema tests as needed.
+    description: Update src/tim/configSchema.ts with an optional notifications block
+      (command, workingDirectory, env, enabled). Avoid zod defaults. Regenerate
+      schema/tim-config-schema.json via scripts/update-json-schemas.ts and
+      add/update any schema tests as needed.
   - title: Load global config with precedence and tests
     done: true
-    description: Extend src/tim/configLoader.ts to load
-      ~/.config/tim/config.yml when present and merge with existing repo
-      config (default -> global -> repo/external -> local). Add configLoader
-      tests covering presence/absence and precedence of global config.
+    description: Extend src/tim/configLoader.ts to load ~/.config/tim/config.yml
+      when present and merge with existing repo config (default -> global ->
+      repo/external -> local). Add configLoader tests covering presence/absence
+      and precedence of global config.
   - title: Implement notification helper with suppression env
     done: true
     description: Create src/tim/notifications.ts to build and send Notification
@@ -33,8 +33,8 @@ tasks:
       suppression.
   - title: Integrate notifications into tim agent
     done: true
-    description: Wire notification helper into src/tim/commands/agent/agent.ts so
-      a single notification fires on exit for all paths (stub, batch, serial,
+    description: Wire notification helper into src/tim/commands/agent/agent.ts so a
+      single notification fires on exit for all paths (stub, batch, serial,
       error). Include correct cwd, plan info, event=agent_done, and message
       reflecting success/failure. Add tests covering success, error, and
       suppression env.
@@ -48,9 +48,9 @@ tasks:
   - title: Propagate suppression env from Claude executor
     done: true
     description: Add RMPLAN_NOTIFY_SUPPRESS=1 to environment passed in
-      src/tim/executors/claude_code.ts (and claude_code_orchestrator.ts if
-      used for spawning) so nested tim runs do not notify. Add tests
-      verifying env propagation.
+      src/tim/executors/claude_code.ts (and claude_code_orchestrator.ts if used
+      for spawning) so nested tim runs do not notify. Add tests verifying env
+      propagation.
   - title: Document notifications and global config
     done: true
     description: Update README.md to document notifications config and global config

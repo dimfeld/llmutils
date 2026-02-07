@@ -16,8 +16,8 @@ project:
   title: research command
   goal: ""
   details: >
-    The `tim` command should support a `research [planArg]` option that
-    creates a prompt encouraging the model to do research related
+    The `tim` command should support a `research [planArg]` option that creates
+    a prompt encouraging the model to do research related
 
     to the goal and details in the plan, and copies it to the clipboard.
 
@@ -35,11 +35,11 @@ project:
 tasks:
   - title: Define the `research` command structure in `tim.ts`
     done: true
-    description: Add the new `research [planArg]` command to the main `tim.ts`
-      file using `commander`. This includes defining the command, its
-      description, the `--rmfilter` option, and setting up the action handler to
-      call a new function in a new `commands/research.ts` file. This task only
-      sets up the CLI definition and the call to the handler.
+    description: Add the new `research [planArg]` command to the main `tim.ts` file
+      using `commander`. This includes defining the command, its description,
+      the `--rmfilter` option, and setting up the action handler to call a new
+      function in a new `commands/research.ts` file. This task only sets up the
+      CLI definition and the call to the handler.
   - title: Create the research command handler and core action logic
     done: true
     description: Create a new file `src/tim/commands/research.ts` with a
@@ -68,16 +68,16 @@ tasks:
       the final prompt.
   - title: Add tests for the new `research` command
     done: true
-    description: "Create a new test file `src/tim/commands/research.test.ts`.
-      Write tests to cover the new functionality, including: resolving the plan,
+    description: "Create a new test file `src/tim/commands/research.test.ts`. Write
+      tests to cover the new functionality, including: resolving the plan,
       generating the correct prompt, handling the `--rmfilter` option, and
       correctly appending the pasted research to the plan details. Use a
       temporary directory for file operations."
   - title: Update user documentation
     done: true
-    description: Add a section for the new `tim research` command in the
-      project's `README.md` or other relevant documentation files, explaining
-      its purpose, usage, and options.
+    description: Add a section for the new `tim research` command in the project's
+      `README.md` or other relevant documentation files, explaining its purpose,
+      usage, and options.
 changedFiles:
   - README.md
   - src/tim/actions.ts

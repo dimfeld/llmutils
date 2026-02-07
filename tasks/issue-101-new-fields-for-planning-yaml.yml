@@ -16,10 +16,10 @@ tasks:
       utility function for generating unique, base36-encoded, time-based IDs.
   - title: 2. Metadata Initialization
     done: true
-    description: Modify `extractMarkdownToYaml` in `src/tim/actions.ts` to
-      populate the new metadata fields. This also involves updating the `tim
-      generate` command in `src/tim/tim.ts` to parse `rmfilter:` comments
-      from issues and pass necessary information.
+    description: Modify `extractMarkdownToYaml` in `src/tim/actions.ts` to populate
+      the new metadata fields. This also involves updating the `tim generate`
+      command in `src/tim/tim.ts` to parse `rmfilter:` comments from issues and
+      pass necessary information.
   - title: 3. Runtime Status and Timestamp Updates
     done: true
     description: Update `tim agent` and `markStepDone` to manage `status`,

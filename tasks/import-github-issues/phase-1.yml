@@ -1,8 +1,8 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: "Core: Import a Single GitHub Issue"
-goal: Implement the core functionality of the `tim import` command to import
-  a single, specified GitHub issue and create a local stub plan file for it.
+goal: Implement the core functionality of the `tim import` command to import a
+  single, specified GitHub issue and create a local stub plan file for it.
 id: 39
 uuid: bf4094fa-3ed4-4b65-8565-1048b2e1b7df
 status: done
@@ -38,8 +38,8 @@ project:
 tasks:
   - title: Create the `tim import` Command Structure
     done: true
-    description: Create the new `tim import` command in the main CLI file and set
-      up its handler. This involves adding the command definition, defining the
+    description: Create the new `tim import` command in the main CLI file and set up
+      its handler. This involves adding the command definition, defining the
       `--issue` option, and creating the `import.ts` command handler file to
       which the action will be delegated.
   - title: Implement Single-Issue Import Logic

@@ -1,8 +1,7 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
-goal: Enhance `tim` to support loading configuration from a YAML file,
-  enabling customizable behavior, starting with post-apply commands for the
-  agent.
+goal: Enhance `tim` to support loading configuration from a YAML file, enabling
+  customizable behavior, starting with post-apply commands for the agent.
 id: 11
 uuid: 013aec80-27ed-477e-8e73-b0f2b4328946
 status: done
@@ -24,9 +23,9 @@ tasks:
       `commander` to allow users to specify a custom configuration file path.
   - title: Integrate Configuration Loading
     done: true
-    description: Modify the `tim.ts` script to call the configuration loading
-      logic early in the execution flow and make the loaded configuration
-      available to the command actions, particularly the `agent` command.
+    description: Modify the `tim.ts` script to call the configuration loading logic
+      early in the execution flow and make the loaded configuration available to
+      the command actions, particularly the `agent` command.
   - title: Implement Post-Apply Command Execution
     done: true
     description: Modify the `agent` command loop to execute the configured

@@ -25,8 +25,8 @@ tasks:
   - title: Add quiet option to loadEffectiveConfig
     done: true
     description: >
-      Modify `loadEffectiveConfig()` in `src/tim/configLoader.ts` to accept
-      an optional second
+      Modify `loadEffectiveConfig()` in `src/tim/configLoader.ts` to accept an
+      optional second
 
       parameter `options: { quiet?: boolean }`. When `quiet: true`, suppress the
       'Using external
@@ -35,8 +35,8 @@ tasks:
   - title: Modify handleWorkspaceListCommand for outside-repo behavior
     done: true
     description: >
-      Update `handleWorkspaceListCommand()` in
-      `src/tim/commands/workspace.ts` to:
+      Update `handleWorkspaceListCommand()` in `src/tim/commands/workspace.ts`
+      to:
 
       1) Import `isInGitRepository` from `../../common/git.js`
 

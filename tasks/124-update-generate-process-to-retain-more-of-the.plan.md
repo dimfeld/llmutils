@@ -16,11 +16,10 @@ updatedAt: 2025-10-27T08:39:04.251Z
 tasks:
   - title: Modify Claude Code orchestrator for three-step flow
     done: true
-    description: Update `/src/tim/executors/claude_code_orchestrator.ts` to
-      accept an optional research extraction prompt parameter. Implement
-      conditional execution that runs the research prompt between planning and
-      generation when provided, maintaining session state across all three
-      steps.
+    description: Update `/src/tim/executors/claude_code_orchestrator.ts` to accept
+      an optional research extraction prompt parameter. Implement conditional
+      execution that runs the research prompt between planning and generation
+      when provided, maintaining session state across all three steps.
   - title: Create research extraction prompt template
     done: true
     description: Add a new prompt function `generateClaudeCodeResearchPrompt()` to
@@ -34,10 +33,10 @@ tasks:
       formatting and error handling for the intermediate research step.
   - title: Update generate command for three-step flow
     done: true
-    description: Modify `/src/tim/commands/generate.ts` to always use the
-      three-step process when in Claude mode. Update the
-      `invokeClaudeCodeForGeneration` wrapper in `/src/tim/claude_utils.ts`
-      to pass the research prompt to the orchestrator.
+    description: Modify `/src/tim/commands/generate.ts` to always use the three-step
+      process when in Claude mode. Update the `invokeClaudeCodeForGeneration`
+      wrapper in `/src/tim/claude_utils.ts` to pass the research prompt to the
+      orchestrator.
   - title: Add conditional research extraction to prepare command
     done: true
     description: Update `/src/tim/commands/prepare.ts` to check the plan's
@@ -52,8 +51,8 @@ tasks:
   - title: Create orchestrator unit tests
     done: true
     description: Write comprehensive unit tests for the modified orchestrator in
-      `/src/tim/executors/claude_code_orchestrator.test.ts`, covering
-      successful three-step flow, two-step fallback, and error scenarios.
+      `/src/tim/executors/claude_code_orchestrator.test.ts`, covering successful
+      three-step flow, two-step fallback, and error scenarios.
   - title: Add integration tests for commands
     done: true
     description: Create integration tests for generate and prepare commands that

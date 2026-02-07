@@ -26,14 +26,14 @@ tasks:
   - title: Remove manual unknown key validation logic
     done: true
     description: >
-      In `src/tim/commands/validate.ts`, remove the custom unknown key
-      checking code (lines 61-111) that manually inspects parsed objects. The
-      validation should now rely entirely on Zod's strict mode to detect unknown
-      keys. The existing error handling already processes Zod's
-      unrecognized_keys errors (line 127), so the result handling just needs
-      minor adjustments to work with the automatic validation from strict mode.
-      The removal should maintain the same ValidationResult interface structure
-      to preserve compatibility with the rest of the command.
+      In `src/tim/commands/validate.ts`, remove the custom unknown key checking
+      code (lines 61-111) that manually inspects parsed objects. The validation
+      should now rely entirely on Zod's strict mode to detect unknown keys. The
+      existing error handling already processes Zod's unrecognized_keys errors
+      (line 127), so the result handling just needs minor adjustments to work
+      with the automatic validation from strict mode. The removal should
+      maintain the same ValidationResult interface structure to preserve
+      compatibility with the rest of the command.
   - title: Update error formatting and reporting
     done: true
     description: >

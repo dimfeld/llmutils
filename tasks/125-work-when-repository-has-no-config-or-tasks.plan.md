@@ -33,13 +33,13 @@ tasks:
       and fallback scenarios. Include tests for repositories without remotes.
   - title: Create RepositoryConfigResolver Class
     done: true
-    description: Implement `src/tim/repository_config_resolver.ts` with methods
-      for determining external config paths, checking existence, and creating
+    description: Implement `src/tim/repository_config_resolver.ts` with methods for
+      determining external config paths, checking existence, and creating
       directory structure.
   - title: Extend Config Loading Logic
     done: true
-    description: Update `loadEffectiveConfig()` in `src/tim/configLoader.ts` to
-      use RepositoryConfigResolver when no local config exists. Add
+    description: Update `loadEffectiveConfig()` in `src/tim/configLoader.ts` to use
+      RepositoryConfigResolver when no local config exists. Add
       `isUsingExternalStorage` flag to config.
   - title: Add User Messaging
     done: true
@@ -76,9 +76,8 @@ tasks:
       directory path.
   - title: Update Codex CLI Executor
     done: true
-    description: Modify `src/tim/executors/codex_cli.ts` to include external
-      config directory in `sandbox_workspace_write.writable_roots`
-      configuration.
+    description: Modify `src/tim/executors/codex_cli.ts` to include external config
+      directory in `sandbox_workspace_write.writable_roots` configuration.
   - title: Add Conditional Logic
     done: true
     description: Implement logic to only add directory access when
@@ -97,8 +96,8 @@ tasks:
       include helpful information about storage location and management.
   - title: Add Storage Management Commands (Optional)
     done: true
-    description: Consider adding `tim storage list` and `tim storage clean`
-      commands for managing external storage directories.
+    description: Consider adding `tim storage list` and `tim storage clean` commands
+      for managing external storage directories.
   - title: Create Example Workflows
     done: true
     description: Document example workflows for common scenarios like contributing

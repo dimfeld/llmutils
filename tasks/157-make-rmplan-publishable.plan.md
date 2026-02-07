@@ -24,8 +24,8 @@ tasks:
     done: false
     description: "Modify build.ts to generate a dist/package.json during the build
       process. Read version from root package.json. Include: name
-      (@dimfeld/tim), bin entry, files array, repository info, license,
-      engines requirement for Bun."
+      (@dimfeld/tim), bin entry, files array, repository info, license, engines
+      requirement for Bun."
   - title: Update build.ts to copy README and LICENSE to dist
     done: false
     description: Add logic to build.ts to copy README.md and LICENSE to the dist
@@ -38,8 +38,8 @@ tasks:
   - title: Update README with npm installation instructions
     done: false
     description: Add a section to README.md explaining how to install via npm (npm
-      install -g @dimfeld/tim or bun add -g @dimfeld/tim). Include note
-      that Bun is required as the runtime.
+      install -g @dimfeld/tim or bun add -g @dimfeld/tim). Include note that Bun
+      is required as the runtime.
   - title: Test publish workflow with npm pack
     done: false
     description: "Run bun run build, then npm pack in dist directory to create a

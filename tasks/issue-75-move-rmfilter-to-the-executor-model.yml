@@ -1,9 +1,9 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 goal: Refactor the `rmfilter` command to replace its current `--run` option with
-  a more flexible `--executor` option, aligning its execution model with
-  `tim`. This will allow users to specify different executors to process the
-  generated prompt.
+  a more flexible `--executor` option, aligning its execution model with `tim`.
+  This will allow users to specify different executors to process the generated
+  prompt.
 id: 18
 uuid: c11700f1-63d5-4c08-a959-24928378fdf7
 status: done

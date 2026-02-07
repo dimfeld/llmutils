@@ -14,10 +14,9 @@ tasks:
   - title: 1. Basic CLI Structure and PR Identifier Parsing
     done: true
     description: >
-      Set up the `rmpr` subcommand within `src/tim/tim.ts`. Create the
-      main file for `rmpr` logic (`src/rmpr/main.ts`) and implement parsing for
-      the PR identifier (URL or `owner/repo#number` or
-      `owner/repo/pull/number`).
+      Set up the `rmpr` subcommand within `src/tim/tim.ts`. Create the main file
+      for `rmpr` logic (`src/rmpr/main.ts`) and implement parsing for the PR
+      identifier (URL or `owner/repo#number` or `owner/repo/pull/number`).
   - title: 2. Fetch PR Data and Enhance Comment Selection
     done: true
     description: >

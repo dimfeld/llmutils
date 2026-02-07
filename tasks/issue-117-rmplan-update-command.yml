@@ -1,9 +1,9 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Core `update` command implementation
-goal: Deliver a fully functional `tim update` command that can take an
-  existing plan and a text description, use an LLM to generate an updated plan,
-  and write the changes back to the original file.
+goal: Deliver a fully functional `tim update` command that can take an existing
+  plan and a text description, use an LLM to generate an updated plan, and write
+  the changes back to the original file.
 id: 44
 uuid: 1edc5276-1e85-4373-8830-6e2659a851f4
 status: done
@@ -16,10 +16,10 @@ createdAt: 2025-06-06T16:55:35.032Z
 updatedAt: 2025-10-27T08:39:04.242Z
 project:
   title: Implement the `tim update` command
-  goal: The goal of this project is to implement a new `tim update` command.
-    This command will allow users to modify an existing plan by providing a
-    natural language description of the desired changes. It will leverage an LLM
-    to intelligently update the plan's tasks and structure, similar to how the
+  goal: The goal of this project is to implement a new `tim update` command. This
+    command will allow users to modify an existing plan by providing a natural
+    language description of the desired changes. It will leverage an LLM to
+    intelligently update the plan's tasks and structure, similar to how the
     `generate` command creates a plan from scratch.
   details: >-
     The `tim update` command will provide an iterative workflow for plan
@@ -71,8 +71,8 @@ tasks:
     done: true
     description: A new, specialized prompt is required to instruct the LLM on how to
       perform the update. This task will involve creating a prompt template in
-      `src/tim/prompt.ts` that includes placeholders for the existing plan
-      (in Markdown) and the user's update description.
+      `src/tim/prompt.ts` that includes placeholders for the existing plan (in
+      Markdown) and the user's update description.
   - title: Implement the core update logic
     done: true
     description: This task will wire all the components together in the command
@@ -97,9 +97,9 @@ tasks:
       updated.
   - title: Update user documentation
     done: true
-    description: The final task is to document the new `tim update` command. We
-      will update the `README.md` and any other relevant documentation to
-      include a description of the command, its options, and usage examples.
+    description: The final task is to document the new `tim update` command. We will
+      update the `README.md` and any other relevant documentation to include a
+      description of the command, its options, and usage examples.
 changedFiles:
   - README.md
   - src/tim/commands/update.test.ts

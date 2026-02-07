@@ -16,18 +16,18 @@ tasks:
   - title: Update CLI definition for the 'add' command
     done: true
     description: >
-      Modify the `tim add` command in `src/tim/tim.ts` to include the
-      new `--cleanup <planId>` option. The existing `<title...>` argument should
-      be made optional to allow for default title generation when using
+      Modify the `tim add` command in `src/tim/tim.ts` to include the new
+      `--cleanup <planId>` option. The existing `<title...>` argument should be
+      made optional to allow for default title generation when using
       `--cleanup`. This involves changing the command definition from requiring
       a title to making it optional, and adding the cleanup option that accepts
       a plan ID parameter.
   - title: Implement cleanup plan creation and relationship linking
     done: true
     description: >
-      In `src/tim/commands/add.ts`, add logic to handle the `--cleanup`
-      option. This includes finding the referenced plan using existing utilities
-      like `readAllPlans`, generating the new plan's title if one isn't provided
+      In `src/tim/commands/add.ts`, add logic to handle the `--cleanup` option.
+      This includes finding the referenced plan using existing utilities like
+      `readAllPlans`, generating the new plan's title if one isn't provided
       using the pattern "<referenced plan title> cleanup", and setting the
       `parent` property on the new cleanup plan. The implementation should
       validate that the referenced plan exists and handle error cases
@@ -52,8 +52,8 @@ tasks:
   - title: Add tests for the `--cleanup` option
     done: true
     description: >
-      Create comprehensive tests in `src/tim/commands/add.test.ts` to
-      validate the entire `--cleanup` workflow. Tests should cover default title
+      Create comprehensive tests in `src/tim/commands/add.test.ts` to validate
+      the entire `--cleanup` workflow. Tests should cover default title
       generation, `rmfilter` aggregation from a parent and a "done" child,
       correct parent/dependency linking, and error handling for non-existent
       plan IDs. Follow the existing test patterns in the file using temporary

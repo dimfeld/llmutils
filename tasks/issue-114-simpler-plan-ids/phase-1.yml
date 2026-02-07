@@ -60,14 +60,14 @@ tasks:
       1`. The existing `generateProjectId` will be updated/renamed.
   - title: Update `tim add` Command for Numeric IDs
     done: true
-    description: Modify the `tim add` command in `src/tim/tim.ts` to use
-      the new numeric ID system. It will assign a sequential numeric ID, save
-      the plan with this ID in its content, and name the file `[ID].yml`.
+    description: Modify the `tim add` command in `src/tim/tim.ts` to use the new
+      numeric ID system. It will assign a sequential numeric ID, save the plan
+      with this ID in its content, and name the file `[ID].yml`.
   - title: Adapt Plan Resolution for Numeric IDs and Filenames
     done: true
-    description: Update `resolvePlanFile` in `src/tim/plans.ts` to correctly
-      resolve plans by numeric ID and new `[ID].yml` filenames, while
-      maintaining compatibility with older alphanumeric IDs and filenames.
+    description: Update `resolvePlanFile` in `src/tim/plans.ts` to correctly resolve
+      plans by numeric ID and new `[ID].yml` filenames, while maintaining
+      compatibility with older alphanumeric IDs and filenames.
   - title: Add Basic Tests for Numeric IDs
     done: true
     description: "Create new tests or augment existing ones to specifically verify

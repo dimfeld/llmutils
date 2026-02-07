@@ -19,9 +19,9 @@ project:
     plan, updating the plan's status to `in_progress` in both the current
     context and the newly created workspace.
   details: >
-    Currently, workspaces are primarily created implicitly as part of the
-    `tim run` (or `agent`) command. This feature will provide an explicit
-    mechanism for workspace creation, offering more granular control.
+    Currently, workspaces are primarily created implicitly as part of the `tim
+    run` (or `agent`) command. This feature will provide an explicit mechanism
+    for workspace creation, offering more granular control.
 
 
     The command will:
@@ -52,26 +52,26 @@ tasks:
   - title: Define `workspace add` CLI command structure
     done: true
     description: This task involves adding the `workspace add` subcommand to the
-      main `tim` CLI program defined in `src/tim/tim.ts`. The command
-      should accept an optional positional argument for the plan identifier
-      (which can be a plan ID or a file path) and an optional `--id
-      <workspaceId>` option for specifying a custom workspace ID.
+      main `tim` CLI program defined in `src/tim/tim.ts`. The command should
+      accept an optional positional argument for the plan identifier (which can
+      be a plan ID or a file path) and an optional `--id <workspaceId>` option
+      for specifying a custom workspace ID.
   - title: Implement helper function to update plan status
     done: true
     description: Create a new utility function, tentatively named `setPlanStatus`,
-      likely within `src/tim/plans.ts`. This function will take a plan file
-      path and a new status (e.g., 'pending', 'in_progress', 'done') as input.
-      It will be responsible for reading the specified YAML plan file, updating
-      its `status` and `updatedAt` fields, and then writing the modified plan
-      back to the file system. This function will not handle git commits itself.
+      likely within `src/tim/plans.ts`. This function will take a plan file path
+      and a new status (e.g., 'pending', 'in_progress', 'done') as input. It
+      will be responsible for reading the specified YAML plan file, updating its
+      `status` and `updatedAt` fields, and then writing the modified plan back
+      to the file system. This function will not handle git commits itself.
   - title: Adapt `WorkspaceInfo` and related types for optional plan
     done: true
     description: Modify the `WorkspaceInfo` interface in
-      `src/tim/workspace/workspace_tracker.ts` and the `Workspace` interface
-      in `src/tim/workspace/workspace_manager.ts`. The `originalPlanFilePath`
-      field in these interfaces should be made optional to reflect that a
-      workspace might be created without an associated plan. The `taskId` field
-      in these types will represent the workspace ID.
+      `src/tim/workspace/workspace_tracker.ts` and the `Workspace` interface in
+      `src/tim/workspace/workspace_manager.ts`. The `originalPlanFilePath` field
+      in these interfaces should be made optional to reflect that a workspace
+      might be created without an associated plan. The `taskId` field in these
+      types will represent the workspace ID.
   - title: Enhance `createWorkspace` for optional plan file
     done: true
     description: >
@@ -94,9 +94,9 @@ tasks:
       `originalPlanFilePath`.
   - title: Implement core logic for `workspace add` command handler
     done: true
-    description: Develop the action handler for the `tim tim workspace add`
-      command. This logic will integrate previous tasks to create workspaces,
-      optionally link plans, and update plan statuses.
+    description: Develop the action handler for the `tim tim workspace add` command.
+      This logic will integrate previous tasks to create workspaces, optionally
+      link plans, and update plan statuses.
   - title: Add comprehensive tests
     done: true
     description: Write unit and integration tests to ensure the reliability of the

@@ -2,8 +2,8 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: Implementer should exit if it finds impossible or conflicting
   requirements it can not resolve
-goal: Enable tim executors to gracefully exit when they encounter conflicting
-  or impossible requirements, providing detailed failure reports and preventing
+goal: Enable tim executors to gracefully exit when they encounter conflicting or
+  impossible requirements, providing detailed failure reports and preventing
   incorrect implementations from proceeding.
 id: 120
 uuid: 39ea630c-2f4f-4a24-bde6-2babb750e418
@@ -19,8 +19,8 @@ tasks:
     done: true
     description: >
       Create a reusable prompt template in
-      `src/tim/executors/claude_code/agent_prompts.ts` that instructs agents
-      how to handle conflicting or impossible requirements. The template should
+      `src/tim/executors/claude_code/agent_prompts.ts` that instructs agents how
+      to handle conflicting or impossible requirements. The template should
       specify the "FAILED:" prefix format and required report structure
       (requirements, problems, solutions).
 
@@ -35,8 +35,8 @@ tasks:
     description: >
       Integrate the failure detection template into `getImplementerPrompt()`,
       `getTesterPrompt()`, and `getReviewerPrompt()` functions in
-      `src/tim/executors/claude_code/agent_prompts.ts`. Place the
-      instructions prominently in the error handling or guidelines sections.
+      `src/tim/executors/claude_code/agent_prompts.ts`. Place the instructions
+      prominently in the error handling or guidelines sections.
 
 
       Each agent prompt should include the failure detection template in a
@@ -59,9 +59,9 @@ tasks:
   - title: Update Codex Fixer Prompt
     done: true
     description: >
-      Modify the `getFixerPrompt()` method in
-      `src/tim/executors/codex_cli.ts` to include the failure detection
-      template, ensuring consistency with other agents.
+      Modify the `getFixerPrompt()` method in `src/tim/executors/codex_cli.ts`
+      to include the failure detection template, ensuring consistency with other
+      agents.
 
 
       The fixer agent is unique to Codex and runs when the reviewer finds
@@ -70,9 +70,9 @@ tasks:
   - title: Enhance ExecutorOutput Interface
     done: true
     description: >
-      Update `src/tim/executors/types.ts` to add optional `success: boolean`
-      and `failureDetails?: { requirements: string; problems: string;
-      solutions?: string }` fields to the ExecutorOutput interface.
+      Update `src/tim/executors/types.ts` to add optional `success: boolean` and
+      `failureDetails?: { requirements: string; problems: string; solutions?:
+      string }` fields to the ExecutorOutput interface.
 
 
       These new fields will allow executors to indicate structured failure
@@ -83,9 +83,9 @@ tasks:
     done: true
     description: >
       Create utility functions in a new file
-      `src/tim/executors/failure_detection.ts` for detecting "FAILED:"
-      prefixes in text and extracting failure details. These will be shared by
-      both executors.
+      `src/tim/executors/failure_detection.ts` for detecting "FAILED:" prefixes
+      in text and extracting failure details. These will be shared by both
+      executors.
 
 
       The utilities should handle various formats of failure messages, extract
@@ -105,10 +105,9 @@ tasks:
   - title: Update Claude Output Processing
     done: true
     description: >
-      Enhance the output processing in
-      `src/tim/executors/claude_code/format.ts` to identify and extract
-      failure messages from the JSON stream, making them available for the
-      executor to process.
+      Enhance the output processing in `src/tim/executors/claude_code/format.ts`
+      to identify and extract failure messages from the JSON stream, making them
+      available for the executor to process.
 
 
       The formatter processes JSON messages from the Claude CLI. It needs to
@@ -118,8 +117,8 @@ tasks:
     done: true
     description: >
       Update the orchestrator handling in
-      `src/tim/executors/claude_code_orchestrator.ts` to detect when
-      subagents report failures and propagate them appropriately.
+      `src/tim/executors/claude_code_orchestrator.ts` to detect when subagents
+      report failures and propagate them appropriately.
 
 
       Since this file doesn't exist based on the codebase analysis, this
@@ -128,9 +127,9 @@ tasks:
   - title: Add Failure Detection to Codex Executor
     done: true
     description: >
-      Modify `src/tim/executors/codex_cli.ts` to check each agent's output
-      for "FAILED:" messages. Update the `execute()` method to track failure
-      state and return appropriate ExecutorOutput.
+      Modify `src/tim/executors/codex_cli.ts` to check each agent's output for
+      "FAILED:" messages. Update the `execute()` method to track failure state
+      and return appropriate ExecutorOutput.
 
 
       The Codex executor runs multiple agents sequentially and needs to check
@@ -170,9 +169,9 @@ tasks:
   - title: Update Batch Mode Handler
     done: true
     description: >
-      Modify `src/tim/commands/agent/batch_mode.ts` to handle executor
-      failures in batch execution. Implement strategy for partial failures when
-      multiple tasks are involved.
+      Modify `src/tim/commands/agent/batch_mode.ts` to handle executor failures
+      in batch execution. Implement strategy for partial failures when multiple
+      tasks are involved.
 
 
       Batch mode needs similar failure handling as serial mode but should break
@@ -192,9 +191,9 @@ tasks:
   - title: Create Failure Detection Tests
     done: true
     description: >
-      Write comprehensive tests in
-      `src/tim/executors/failure_detection.test.ts` for the utility
-      functions. Create test fixtures with various failure message formats.
+      Write comprehensive tests in `src/tim/executors/failure_detection.test.ts`
+      for the utility functions. Create test fixtures with various failure
+      message formats.
 
 
       Tests should cover detection accuracy, parsing of structured failure

@@ -37,11 +37,10 @@ tasks:
   - title: Workspace update command
     done: true
     description: Add `tim workspace update [workspaceIdentifier]` in
-      `src/tim/tim.ts` and handler in `src/tim/commands/workspace.ts`.
-      Support `--name`, `--description`, clearing via empty strings, and
-      `--from-plan <id>` to seed description only from the plan. Use the patch
-      helper to update/create entries. Add tests with ModuleMocker and temp
-      tracking file.
+      `src/tim/tim.ts` and handler in `src/tim/commands/workspace.ts`. Support
+      `--name`, `--description`, clearing via empty strings, and `--from-plan
+      <id>` to seed description only from the plan. Use the patch helper to
+      update/create entries. Add tests with ModuleMocker and temp tracking file.
   - title: Agent auto-description updates
     done: true
     description: "In `src/tim/commands/agent/agent.ts`, after workspace selection
