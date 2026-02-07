@@ -34,6 +34,7 @@ export interface ExternalReviewOptions {
   implementerOutput: string;
   testerOutput?: string;
   executorSelection?: string;
+  previousResponse?: string;
 }
 
 export interface ExternalReviewResult {
@@ -128,7 +129,9 @@ export async function runExternalReviewForCodex(
       completedChildren,
       customInstructions,
       taskScopeNote,
-      executionContext
+      executionContext,
+      undefined,
+      options.previousResponse
     );
 
   const planInfo = buildPlanInfoForReview(

@@ -1987,6 +1987,7 @@ tim cleanup [FILES...] [--diff-from BRANCH]
 
 # Review plan changes
 tim review [PLAN] [--executor NAME] [--serial-both] [--task-index N...]
+tim review [PLAN] --previous-response .rmfilter/reviews/last-review.md
 
 # Answer PR comments
 tim answer-pr [PR] [--mode MODE] [--commit] [--comment]

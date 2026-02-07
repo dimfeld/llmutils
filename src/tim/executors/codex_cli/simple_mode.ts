@@ -339,6 +339,7 @@ export async function executeSimpleMode(
           initiallyCompletedTitles,
           initiallyPendingTitles,
           implementerOutput: finalImplementerOutput,
+          previousResponse: fixerOutput,
           executorSelection: reviewExecutor,
         });
       } catch (error) {

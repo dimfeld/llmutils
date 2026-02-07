@@ -178,6 +178,11 @@ describe('CodexCliExecutor - Fix Loop', () => {
     // Third call should be fixer
     expect(calls[2]).toContain('Fixer');
     expect(runExternalReviewForCodexMock).toHaveBeenCalled();
+    expect(runExternalReviewForCodexMock).toHaveBeenCalledTimes(2);
+    const firstCallOptions = runExternalReviewForCodexMock.mock.calls[0]?.[0];
+    const secondCallOptions = runExternalReviewForCodexMock.mock.calls[1]?.[0];
+    expect(firstCallOptions?.previousResponse).toBeUndefined();
+    expect(secondCallOptions?.previousResponse).toBe('Applied targeted fixes.');
     for (const [callOptions] of runExternalReviewForCodexMock.mock.calls) {
       expect(callOptions.executorSelection).toBe('claude-code');
     }
