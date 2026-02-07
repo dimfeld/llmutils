@@ -12,8 +12,8 @@ import {
   readPlanFile,
   writePlanFile,
 } from '../plans.js';
-import { log, warn, runWithLogger, writeStdout } from '../../logging.js';
-import { getLoggerAdapter, type LoggerAdapter } from '../../logging/adapter.js';
+import { log, warn, runWithLogger } from '../../logging.js';
+import { type LoggerAdapter } from '../../logging/adapter.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig, loadGlobalConfigForNotifications } from '../configLoader.js';
 import { getDefaultConfig } from '../configSchema.js';
@@ -624,10 +624,8 @@ export async function handleReviewCommand(
           // 1. process.stdout directly so the executor can capture it from the child's stdout
           // 2. log() which goes through the tunnel adapter to the parent for display
           process.stdout.write(outputWithNewline);
-          log(outputWithNewline);
-        } else {
-          log(outputWithNewline);
         }
+        log(outputWithNewline);
       } else if (!options.outputFile || outputFormat === 'terminal') {
         log('\n' + formattedOutput);
       }

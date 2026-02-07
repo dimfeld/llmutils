@@ -4,6 +4,7 @@ import * as fs from 'fs/promises';
 import type { TimConfig } from '../../configSchema';
 import { spawnAndLogOutput } from '../../../common/process';
 import { error, warn, debugLog } from '../../../logging';
+import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { createCodexStdoutFormatter } from './format';
 import { createTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
 import { TIM_OUTPUT_SOCKET } from '../../../logging/tunnel_protocol.js';
@@ -73,12 +74,14 @@ export async function executeCodexStep(
   let tunnelServer: TunnelServer | undefined;
   let tunnelTempDir: string | undefined;
   let tunnelSocketPath: string | undefined;
-  try {
-    tunnelTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-'));
-    tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
-    tunnelServer = await createTunnelServer(tunnelSocketPath);
-  } catch (err) {
-    debugLog('Could not create tunnel server for output forwarding:', err);
+  if (!isTunnelActive()) {
+    try {
+      tunnelTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-'));
+      tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
+      tunnelServer = await createTunnelServer(tunnelSocketPath);
+    } catch (err) {
+      debugLog('Could not create tunnel server for output forwarding:', err);
+    }
   }
 
   const tunnelEnv: Record<string, string> =

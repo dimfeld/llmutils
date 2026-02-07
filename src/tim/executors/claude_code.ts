@@ -36,6 +36,7 @@ import {
 import { getReviewOutputJsonSchemaString } from '../formatters/review_output_schema.ts';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { readSharedPermissions, addSharedPermission } from '../assignments/permissions_io.js';
+import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { createTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
 import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
 
@@ -637,10 +638,12 @@ export class ClaudeCodeExecutor implements Executor {
     const tunnelTempDir =
       tempMcpConfigDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-')));
     const tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
-    try {
-      tunnelServer = await createTunnelServer(tunnelSocketPath);
-    } catch (err) {
-      debugLog('Could not create tunnel server for output forwarding:', err);
+    if (!isTunnelActive()) {
+      try {
+        tunnelServer = await createTunnelServer(tunnelSocketPath);
+      } catch (err) {
+        debugLog('Could not create tunnel server for output forwarding:', err);
+      }
     }
 
     try {
@@ -1177,10 +1180,12 @@ export class ClaudeCodeExecutor implements Executor {
     const tunnelTempDir =
       tempMcpConfigDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-')));
     const tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
-    try {
-      tunnelServer = await createTunnelServer(tunnelSocketPath);
-    } catch (err) {
-      debugLog('Could not create tunnel server for output forwarding:', err);
+    if (!isTunnelActive()) {
+      try {
+        tunnelServer = await createTunnelServer(tunnelSocketPath);
+      } catch (err) {
+        debugLog('Could not create tunnel server for output forwarding:', err);
+      }
     }
 
     // Build agent definitions when plan information is provided

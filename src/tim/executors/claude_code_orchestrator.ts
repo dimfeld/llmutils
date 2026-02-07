@@ -7,6 +7,7 @@ import { log, debugLog, warn } from '../../logging.ts';
 import type { ClaudeCodeExecutorOptions } from './claude_code.ts';
 import { formatJsonMessage, type Message } from './claude_code/format.ts';
 import chalk from 'chalk';
+import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { createTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
 import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
 
@@ -42,12 +43,14 @@ export async function runClaudeCodeGeneration(
   let tunnelServer: TunnelServer | undefined;
   let tunnelTempDir: string | undefined;
   let tunnelSocketPath: string | undefined;
-  try {
-    tunnelTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-'));
-    tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
-    tunnelServer = await createTunnelServer(tunnelSocketPath);
-  } catch (err) {
-    debugLog('Could not create tunnel server for output forwarding:', err);
+  if (!isTunnelActive()) {
+    try {
+      tunnelTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-'));
+      tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
+      tunnelServer = await createTunnelServer(tunnelSocketPath);
+    } catch (err) {
+      debugLog('Could not create tunnel server for output forwarding:', err);
+    }
   }
 
   const tunnelEnv: Record<string, string> =
