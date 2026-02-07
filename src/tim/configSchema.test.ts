@@ -84,6 +84,35 @@ describe('configSchema', () => {
     });
   });
 
+  describe('headless configuration', () => {
+    test('accepts headless url', () => {
+      const config = {
+        headless: {
+          url: 'ws://localhost:8123/tim-agent',
+        },
+      };
+
+      const result = timConfigSchema.parse(config);
+      expect(result.headless?.url).toBe('ws://localhost:8123/tim-agent');
+    });
+
+    test('makes headless field optional', () => {
+      const result = timConfigSchema.parse({});
+      expect(result.headless).toBeUndefined();
+    });
+
+    test('rejects unknown fields within headless due to strict', () => {
+      const config = {
+        headless: {
+          url: 'ws://localhost:8123/tim-agent',
+          unknownField: 'invalid',
+        },
+      };
+
+      expect(() => timConfigSchema.parse(config)).toThrow();
+    });
+  });
+
   describe('getDefaultConfig', () => {
     test('should include issueTracker with default value "github"', () => {
       const defaultConfig = getDefaultConfig();

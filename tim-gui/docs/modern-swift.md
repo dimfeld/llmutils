@@ -14,6 +14,7 @@ Write idiomatic SwiftUI code following Apple's latest architectural recommendati
 ### 1. Embrace Native State Management
 
 Use SwiftUI's built-in property wrappers appropriately:
+
 - `@State` - Local, ephemeral view state
 - `@Binding` - Two-way data flow between views
 - `@Observable` - Shared state (iOS 17+)
@@ -51,15 +52,16 @@ Use SwiftUI's built-in property wrappers appropriately:
 ## Implementation Patterns
 
 ### Simple State Example
+
 ```swift
 struct CounterView: View {
     @State private var count = 0
-    
+
     var body: some View {
         VStack {
             Text("Count: \(count)")
-            Button("Increment") { 
-                count += 1 
+            Button("Increment") {
+                count += 1
             }
         }
     }
@@ -67,12 +69,13 @@ struct CounterView: View {
 ```
 
 ### Shared State with @Observable
+
 ```swift
 @Observable
 class UserSession {
     var isAuthenticated = false
     var currentUser: User?
-    
+
     func signIn(user: User) {
         currentUser = user
         isAuthenticated = true
@@ -81,7 +84,7 @@ class UserSession {
 
 struct MyApp: App {
     @State private var session = UserSession()
-    
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -92,12 +95,13 @@ struct MyApp: App {
 ```
 
 ### Async Data Loading
+
 ```swift
 struct ProfileView: View {
     @State private var profile: Profile?
     @State private var isLoading = false
     @State private var error: Error?
-    
+
     var body: some View {
         Group {
             if isLoading {
@@ -112,11 +116,11 @@ struct ProfileView: View {
             await loadProfile()
         }
     }
-    
+
     private func loadProfile() async {
         isLoading = true
         defer { isLoading = false }
-        
+
         do {
             profile = try await ProfileService.fetch()
         } catch {
@@ -129,6 +133,7 @@ struct ProfileView: View {
 ## Best Practices
 
 ### DO:
+
 - Write self-contained views when possible
 - Use property wrappers as intended by Apple
 - Test logic in isolation, preview UI visually
@@ -137,6 +142,7 @@ struct ProfileView: View {
 - Use Swift's type system for safety
 
 ### DON'T:
+
 - Create ViewModels for every view
 - Move state out of views unnecessarily
 - Add abstraction layers without clear benefit

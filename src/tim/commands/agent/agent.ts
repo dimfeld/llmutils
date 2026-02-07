@@ -58,6 +58,8 @@ import { runUpdateDocs } from '../update-docs.js';
 import { handleReviewCommand } from '../review.js';
 import { ensureUuidsAndReferences } from '../../utils/references.js';
 import { sendNotification } from '../../notifications.js';
+import { isTunnelActive } from '../../../logging/tunnel_client.js';
+import { runWithHeadlessAdapterIfEnabled, type HeadlessPlanSummary } from '../../headless.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -66,6 +68,7 @@ export async function handleAgentCommand(
 ) {
   let config = getDefaultConfig();
   let resolvedPlanFile: string | undefined;
+  let headlessPlanSummary: HeadlessPlanSummary | undefined;
   let didInvokeAgent = false;
   const notifyNoPlanFound = async (message: string): Promise<void> => {
     try {
@@ -143,6 +146,7 @@ export async function handleAgentCommand(
 
       log(chalk.green(`Found ready plan: ${result.plan.id} - ${result.plan.title}`));
       resolvedPlanFile = result.plan.filename;
+      headlessPlanSummary = { id: result.plan.id, title: result.plan.title };
     } else if (options.latest) {
       // Find the most recently updated plan
       const tasksDir = await resolveTasksDir(config);
@@ -170,6 +174,7 @@ export async function handleAgentCommand(
         )
       );
       resolvedPlanFile = latestPlan.filename;
+      headlessPlanSummary = { id: latestPlan.id, title: latestPlan.title };
     } else if (options.next || options.current) {
       // Find the next ready plan or current plan
       const tasksDir = await resolveTasksDir(config);
@@ -192,6 +197,7 @@ export async function handleAgentCommand(
         : `Found next ready plan: ${plan.id} - ${getCombinedTitleFromSummary(plan)}`;
       log(chalk.green(message));
       resolvedPlanFile = plan.filename;
+      headlessPlanSummary = { id: plan.id, title: plan.title };
     } else {
       if (!planFile) {
         throw new Error(
@@ -205,8 +211,27 @@ export async function handleAgentCommand(
       throw new Error('No plan file resolved for agent execution.');
     }
 
+    const resolvedPlanFilePath = resolvedPlanFile;
     didInvokeAgent = true;
-    await timAgent(resolvedPlanFile, options, globalCliOptions);
+    if (!headlessPlanSummary) {
+      try {
+        const plan = await readPlanFile(resolvedPlanFilePath);
+        headlessPlanSummary = {
+          id: plan.id,
+          title: plan.title,
+        };
+      } catch {
+        // No-op: missing plan metadata should not block execution.
+      }
+    }
+
+    await runWithHeadlessAdapterIfEnabled({
+      enabled: !isTunnelActive(),
+      command: 'agent',
+      config,
+      plan: headlessPlanSummary,
+      callback: async () => timAgent(resolvedPlanFilePath, options, globalCliOptions),
+    });
   } catch (err) {
     if (!didInvokeAgent) {
       const errorMessage = err instanceof Error ? err.message : String(err);

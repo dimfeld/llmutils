@@ -111,6 +111,13 @@ export const timConfigSchema = z
     notifications: notificationCommandSchema
       .optional()
       .describe('Configuration for notification hooks when agent/review commands finish'),
+    headless: z
+      .object({
+        url: z.string().optional().describe('WebSocket URL for headless output streaming'),
+      })
+      .strict()
+      .optional()
+      .describe('Configuration for headless output streaming'),
     paths: z
       .object({
         tasks: z.string().optional().describe('Path to directory containing task definitions'),

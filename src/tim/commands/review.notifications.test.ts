@@ -1,7 +1,10 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { runWithLogger } from '../../logging.js';
+import { getLoggerAdapter, type LoggerAdapter } from '../../logging/adapter.js';
+import { HeadlessAdapter } from '../../logging/headless_adapter.js';
 import { ModuleMocker } from '../../testing.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
@@ -15,6 +18,15 @@ let selectSpy: ReturnType<typeof mock>;
 let checkboxSpy: ReturnType<typeof mock>;
 let loadEffectiveConfigSpy: ReturnType<typeof mock>;
 let loadGlobalConfigForNotificationsSpy: ReturnType<typeof mock>;
+
+const noOpAdapter: LoggerAdapter = {
+  log: () => {},
+  error: () => {},
+  warn: () => {},
+  writeStdout: () => {},
+  writeStderr: () => {},
+  debugLog: () => {},
+};
 
 const basePlan = {
   id: 123,
@@ -89,6 +101,10 @@ beforeEach(async () => {
     getCurrentCommitHash: mock(async () => undefined),
     getTrunkBranch: mock(async () => 'main'),
     getUsingJj: mock(async () => false),
+  }));
+
+  await moduleMocker.mock('../../logging/tunnel_client.js', () => ({
+    isTunnelActive: () => false,
   }));
 
   await moduleMocker.mock('../utils/context_gathering.js', () => ({
@@ -230,6 +246,52 @@ describe('review notifications', () => {
     await handleReviewCommand(planFile, { noSave: true, dryRun: true }, mockCommand);
 
     expect(sendNotificationSpy).not.toHaveBeenCalled();
+  });
+
+  test('does not create a second headless adapter when one is already active', async () => {
+    const headlessModule = await import('../headless.js');
+    const createAdapterSpy = spyOn(headlessModule, 'createHeadlessAdapterForCommand');
+    const { handleReviewCommand } = await import('./review.js');
+    const existingHeadlessAdapter = new HeadlessAdapter(
+      'not-a-websocket-url',
+      { command: 'agent' },
+      noOpAdapter,
+      { reconnectIntervalMs: Number.MAX_SAFE_INTEGER }
+    );
+
+    try {
+      await runWithLogger(existingHeadlessAdapter, () =>
+        handleReviewCommand(planFile, { noSave: true, noAutofix: true }, mockCommand)
+      );
+      expect(createAdapterSpy).not.toHaveBeenCalled();
+    } finally {
+      await existingHeadlessAdapter.destroy();
+      createAdapterSpy.mockRestore();
+    }
+  });
+
+  test('creates and destroys a headless adapter in standalone mode', async () => {
+    const destroySpy = spyOn(HeadlessAdapter.prototype, 'destroy');
+    gatherPlanContextSpy.mockImplementationOnce(async () => {
+      expect(getLoggerAdapter()).toBeInstanceOf(HeadlessAdapter);
+      return {
+        resolvedPlanFile: planFile,
+        planData: { ...basePlan },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: { ...baseDiff },
+        noChangesDetected: false,
+      };
+    });
+
+    const { handleReviewCommand } = await import('./review.js');
+
+    try {
+      await handleReviewCommand(planFile, { noSave: true, noAutofix: true }, mockCommand);
+      expect(destroySpy).toHaveBeenCalledTimes(1);
+    } finally {
+      destroySpy.mockRestore();
+    }
   });
 
   test('skips review_input notifications in non-interactive mode', async () => {

@@ -18,14 +18,14 @@ excluded:
   - DerivedData
   - .build
   - .swiftpm
-  - "**/Generated"
-  - "**/Resources"
-  - "**/.swiftpm"
-  - "**/DerivedData"
-  - "**/Package.swift"
-  - "*.playground"
+  - '**/Generated'
+  - '**/Resources'
+  - '**/.swiftpm'
+  - '**/DerivedData'
+  - '**/Package.swift'
+  - '*.playground'
   - Package.swift
-  - "*.xcodeproj"
+  - '*.xcodeproj'
 
 analyzer_rules:
   - unused_declaration

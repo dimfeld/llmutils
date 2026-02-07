@@ -74,6 +74,17 @@
       },
       "additionalProperties": false
     },
+    "headless": {
+      "description": "Configuration for headless output streaming",
+      "type": "object",
+      "properties": {
+        "url": {
+          "description": "WebSocket URL for headless output streaming",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "paths": {
       "type": "object",
       "properties": {

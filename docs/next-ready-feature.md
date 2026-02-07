@@ -244,6 +244,7 @@ title: 'User Authentication System'
 status: pending
 dependencies: [] # Child plan IDs will be in here
 
+
 # Child plans implement specific components
 # Each child can have: parent: 100
 # When children are added with parent: 100, they're automatically added to dependencies array above

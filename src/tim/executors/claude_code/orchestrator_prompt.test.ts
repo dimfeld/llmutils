@@ -21,7 +21,7 @@ describe('orchestrator_prompt failure protocol', () => {
 
   it('instructs review via tim review instead of reviewer agent', () => {
     const out = wrapWithOrchestration('Context', '123', { batchMode: false });
-    expect(out).toContain('tim review 123 --print --serial-both');
+    expect(out).toContain('tim review 123 --print');
     expect(out).toContain('15 minutes');
     expect(out).not.toContain('tim-reviewer');
   });
@@ -31,7 +31,7 @@ describe('orchestrator_prompt failure protocol', () => {
       batchMode: false,
       reviewExecutor: 'codex-cli',
     });
-    expect(out).toContain('tim review 123 --print --serial-both --executor codex-cli');
+    expect(out).toContain('tim review 123 --print --executor codex-cli');
   });
 
   it('includes progress section guidance in non-batch mode as well', () => {

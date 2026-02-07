@@ -1288,6 +1288,32 @@ autoexamples:
 issueTracker: github # or 'linear'
 ```
 
+### Headless Mode
+
+`tim agent` and `tim review` automatically stream terminal output to a WebSocket endpoint when
+tim is not running in tunnel mode (`TIM_OUTPUT_SOCKET` is unset).
+
+- Default URL: `ws://localhost:8123/tim-agent`
+- Env override (highest priority): `TIM_HEADLESS_URL`
+- Config override: `headless.url`
+
+```yaml
+headless:
+  url: ws://localhost:8123/tim-agent
+```
+
+Behavior:
+
+- Output is still written locally (console and log files) as usual.
+- Output is buffered from adapter startup and replayed to the WebSocket server after connect.
+- The output buffer defaults to 10MB; oldest buffered output is dropped when the cap is reached.
+- Reconnect attempts are rate-limited to once every 5 seconds while disconnected.
+- Connection failures are silent no-ops, so commands continue normally if no server is listening.
+- Note: headless streaming is not active in `tim review --print` mode, which installs a separate
+  output adapter for executor capture.
+- WebSocket messages use an envelope with `session_info`, `replay_start`, `output`, and
+  `replay_end` message types.
+
 ### Configuration Files and Precedence
 
 tim merges configuration from multiple sources. Later entries override earlier ones:
