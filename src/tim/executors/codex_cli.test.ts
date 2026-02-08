@@ -16,6 +16,24 @@ describe('CodexCliExecutor - failure detection across agents', () => {
   });
 
   test('implementer failure short-circuits execution and skips auto-mark', async () => {
+    const structuredMessages: Array<{
+      type?: string;
+      phase?: string;
+      success?: boolean;
+      sourceAgent?: string;
+    }> = [];
+
+    await moduleMocker.mock('../../logging.ts', () => ({
+      log: mock(() => {}),
+      warn: mock(() => {}),
+      error: mock(() => {}),
+      sendStructured: mock(
+        (message: { type?: string; phase?: string; success?: boolean; sourceAgent?: string }) => {
+          structuredMessages.push(message);
+        }
+      ),
+    }));
+
     // Mock git + plan reading
     await moduleMocker.mock('../../common/git.ts', () => ({
       getGitRoot: mock(async () => tempDir),
@@ -77,9 +95,37 @@ describe('CodexCliExecutor - failure detection across agents', () => {
     expect(out.failureDetails?.sourceAgent).toBe('implementer');
     expect(out.failureDetails?.problems).toContain('conflict');
     expect(autoMarkCalled).toBeFalse();
+    expect(
+      structuredMessages.some(
+        (message) =>
+          message.type === 'agent_step_end' &&
+          message.phase === 'implementer' &&
+          message.success === false
+      )
+    ).toBeTrue();
+    expect(
+      structuredMessages.some(
+        (message) => message.type === 'failure_report' && message.sourceAgent === 'implementer'
+      )
+    ).toBeTrue();
   });
 
   test('reviewer failure is detected when previous agents succeed', async () => {
+    const structuredMessages: Array<{
+      type?: string;
+      phase?: string;
+      success?: boolean;
+    }> = [];
+
+    await moduleMocker.mock('../../logging.ts', () => ({
+      log: mock(() => {}),
+      warn: mock(() => {}),
+      error: mock(() => {}),
+      sendStructured: mock((message: { type?: string; phase?: string; success?: boolean }) => {
+        structuredMessages.push(message);
+      }),
+    }));
+
     // Mock git + plan reading
     await moduleMocker.mock('../../common/git.ts', () => ({
       getGitRoot: mock(async () => tempDir),
@@ -139,6 +185,14 @@ describe('CodexCliExecutor - failure detection across agents', () => {
     expect(out.success).toBeFalse();
     expect(out.failureDetails?.sourceAgent).toBe('reviewer');
     expect(out.failureDetails?.problems).toContain('conflict');
+    expect(
+      structuredMessages.some(
+        (message) =>
+          message.type === 'agent_step_end' &&
+          message.phase === 'reviewer' &&
+          message.success === false
+      )
+    ).toBeTrue();
   });
 
   test('fixer failure short-circuits after NEEDS_FIXES reviewer verdict', async () => {
@@ -214,10 +268,14 @@ describe('CodexCliExecutor - failure detection across agents', () => {
   test('retries implementer when output only contains planning text', async () => {
     const logMessages: string[] = [];
     const warnMessages: string[] = [];
+    const structuredMessages: Array<{ type?: string; phase?: string; verdict?: string }> = [];
 
     await moduleMocker.mock('../../logging.ts', () => ({
       log: mock((...args: any[]) => logMessages.push(args.map(String).join(' '))),
       warn: mock((...args: any[]) => warnMessages.push(args.map(String).join(' '))),
+      sendStructured: mock((message: { type?: string; phase?: string; verdict?: string }) =>
+        structuredMessages.push(message)
+      ),
     }));
 
     // First two calls: no repo changes (sha1 -> sha1), then third call shows changes (sha1 -> sha2)
@@ -387,6 +445,21 @@ describe('CodexCliExecutor - failure detection across agents', () => {
     expect(
       logMessages.some((msg) =>
         msg.includes('Retrying implementer with more explicit instructions (attempt 2/4)')
+      )
+    ).toBeTrue();
+    expect(
+      structuredMessages.some(
+        (message) => message.type === 'agent_step_start' && message.phase === 'implementer'
+      )
+    ).toBeTrue();
+    expect(
+      structuredMessages.some(
+        (message) => message.type === 'agent_step_end' && message.phase === 'implementer'
+      )
+    ).toBeTrue();
+    expect(
+      structuredMessages.some(
+        (message) => message.type === 'review_verdict' && message.verdict === 'ACCEPTABLE'
       )
     ).toBeTrue();
   });

@@ -2,6 +2,8 @@ import type { LoggerAdapter } from './adapter.js';
 import { writeToLogFile } from './common.js';
 import { debug } from '../common/process.js';
 import { inspect } from 'node:util';
+import type { StructuredMessage } from './structured_messages.js';
+import { formatStructuredMessage } from './console_formatter.js';
 
 function convert(arg: unknown): string {
   return typeof arg === 'string' ? arg : inspect(arg);
@@ -65,5 +67,15 @@ export class ConsoleAdapter implements LoggerAdapter {
     if (debug) {
       this.log('[DEBUG]', ...args);
     }
+  }
+
+  sendStructured(message: StructuredMessage): void {
+    const formatted = formatStructuredMessage(message);
+    if (formatted.length === 0) {
+      return;
+    }
+
+    console.log(formatted);
+    writeToLogFile(formatted + '\n');
   }
 }

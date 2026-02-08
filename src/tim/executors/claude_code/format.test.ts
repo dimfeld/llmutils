@@ -1,7 +1,11 @@
-import { test, describe, expect } from 'bun:test';
-import { formatJsonMessage } from './format.ts';
+import { test, describe, expect, beforeEach } from 'bun:test';
+import { formatJsonMessage, resetToolUseCache } from './format.ts';
 
 describe('formatJsonMessage', () => {
+  beforeEach(() => {
+    resetToolUseCache();
+  });
+
   describe('file path extraction', () => {
     test('extracts file_path from Write tool invocation', () => {
       const writeMessage = JSON.stringify({
@@ -24,8 +28,8 @@ describe('formatJsonMessage', () => {
 
       const result = formatJsonMessage(writeMessage);
       expect(result.filePaths).toEqual(['/test/file.ts']);
-      expect(result.message).toContain('File path: /test/file.ts');
-      expect(result.message).toContain('Number of lines: 2');
+      expect(result.message).toContain('/test/file.ts');
+      expect(result.message).toContain('(2 lines)');
     });
 
     test('extracts file_path from Edit tool invocation', () => {
@@ -50,7 +54,7 @@ describe('formatJsonMessage', () => {
 
       const result = formatJsonMessage(editMessage);
       expect(result.filePaths).toEqual(['/src/utils.ts']);
-      expect(result.message).toContain('File path: /src/utils.ts');
+      expect(result.message).toContain('/src/utils.ts');
       expect(result.message).toContain('const x = 1');
       expect(result.message).toContain('const x = 2');
     });
@@ -82,7 +86,6 @@ describe('formatJsonMessage', () => {
       const result = formatJsonMessage(multiEditMessage);
       expect(result.filePaths).toEqual(['/components/Button.tsx']);
       expect(result.message).toContain('MultiEdit');
-      expect(result.message).toContain('file_path: /components/Button.tsx');
     });
 
     test('returns empty filePaths array for tools without file_path', () => {
@@ -112,6 +115,18 @@ describe('formatJsonMessage', () => {
       const debugMessage = '[DEBUG] Some debug information';
       const result = formatJsonMessage(debugMessage);
       expect(result).toEqual({ type: '' });
+    });
+
+    test('returns parse error status for malformed JSON', () => {
+      const result = formatJsonMessage('not-json');
+      expect(result.type).toBe('parse_error');
+      expect(result.structured).toEqual({
+        type: 'llm_status',
+        status: 'llm.parse_error',
+        source: 'claude',
+        detail: 'not-json',
+        timestamp: expect.any(String),
+      });
     });
 
     test('handles multiple tool invocations with mixed file operations', () => {
@@ -297,7 +312,7 @@ describe('formatJsonMessage', () => {
       const result = formatJsonMessage(resultMessage);
       expect(result.filePaths).toBeUndefined();
       expect(result.message).toContain('Cost: $0.05');
-      expect(result.message).toContain('5s for 3 turns');
+      expect(result.message).toContain('Turns: 3');
     });
 
     test('handles system init messages without file paths', () => {
@@ -311,7 +326,7 @@ describe('formatJsonMessage', () => {
 
       const result = formatJsonMessage(systemMessage);
       expect(result.filePaths).toBeUndefined();
-      expect(result.message).toContain('Tools: Write, Edit, Read');
+      expect(result.message).toContain('Starting');
     });
 
     test('extracts relative file paths correctly', () => {
@@ -433,7 +448,7 @@ describe('formatJsonMessage', () => {
       });
 
       const result = formatJsonMessage(taskNotificationMessage);
-      expect(result.message).toContain('Task Notification');
+      expect(result.message).toContain('task_notification');
       expect(result.message).toContain('bff49b0');
       expect(result.message).toContain('completed');
       expect(result.message).toContain('Background command');
@@ -449,7 +464,8 @@ describe('formatJsonMessage', () => {
       });
 
       const result = formatJsonMessage(statusMessage);
-      expect(result.message).toContain('Status: compacting');
+      expect(result.message).toContain('Status');
+      expect(result.message).toContain('compacting');
       expect(result.type).toBe('system');
     });
 
@@ -482,6 +498,173 @@ describe('formatJsonMessage', () => {
       expect(result.message).toContain('auto');
       expect(result.message).toContain('156423 tokens');
       expect(result.type).toBe('system');
+    });
+  });
+
+  describe('structured payload mapping', () => {
+    test('maps successful result to agent_session_end', () => {
+      const resultLine = JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        session_id: 'session-1',
+        total_cost_usd: 0.25,
+        duration_ms: 1234,
+        duration_api_ms: 1000,
+        is_error: false,
+        num_turns: 7,
+        result: 'done',
+      });
+
+      const result = formatJsonMessage(resultLine);
+      expect(result.structured).toEqual(
+        expect.objectContaining({
+          type: 'agent_session_end',
+          sessionId: 'session-1',
+          success: true,
+          costUsd: 0.25,
+          durationMs: 1234,
+          turns: 7,
+        })
+      );
+    });
+
+    test('maps Write tool_use to file_write with line count', () => {
+      const message = JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tool1',
+              name: 'Write',
+              input: {
+                file_path: '/tmp/test.ts',
+                content: 'line1\nline2\nline3',
+              },
+            },
+          ],
+        },
+        session_id: 's',
+      });
+
+      const result = formatJsonMessage(message);
+      expect(result.filePaths).toEqual(['/tmp/test.ts']);
+      expect(Array.isArray(result.structured)).toBeTrue();
+      expect(result.structured).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'file_write',
+            path: '/tmp/test.ts',
+            lineCount: 3,
+          }),
+        ])
+      );
+    });
+
+    test('maps Bash tool_result to command_result', () => {
+      const message = JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tool-bash',
+              name: 'Bash',
+              input: { command: 'pwd' },
+            },
+            {
+              type: 'tool_result',
+              tool_use_id: 'tool-bash',
+              content: {
+                command: 'pwd',
+                stdout: '/repo\n',
+                stderr: '',
+                exit_code: 0,
+              },
+            },
+          ],
+        },
+        session_id: 's',
+      });
+
+      const result = formatJsonMessage(message);
+      expect(Array.isArray(result.structured)).toBeTrue();
+      expect(result.structured).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'command_result',
+            command: 'pwd',
+            exitCode: 0,
+            stdout: '/repo',
+          }),
+        ])
+      );
+    });
+
+    test('maps TodoWrite to todo_update with structured items', () => {
+      const message = JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tool-todo',
+              name: 'TodoWrite',
+              input: {
+                todos: [{ id: '1', content: 'Ship fix', status: 'in_progress', priority: 'high' }],
+              },
+            },
+          ],
+        },
+        session_id: 's',
+      });
+
+      const result = formatJsonMessage(message);
+      expect(Array.isArray(result.structured)).toBeTrue();
+      expect(result.structured).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'todo_update',
+            source: 'claude',
+            items: expect.arrayContaining([
+              expect.objectContaining({
+                label: 'Ship fix',
+                status: 'in_progress',
+              }),
+            ]),
+          }),
+        ])
+      );
+    });
+
+    test('handles malformed TodoWrite todos payload without throwing', () => {
+      const message = JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tool-todo',
+              name: 'TodoWrite',
+              input: {
+                todos: 'not-an-array',
+              },
+            },
+          ],
+        },
+        session_id: 's',
+      });
+
+      const result = formatJsonMessage(message);
+      expect(Array.isArray(result.structured)).toBeTrue();
+      expect(result.structured).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'llm_tool_use',
+            toolName: 'TodoWrite',
+          }),
+        ])
+      );
     });
   });
 });

@@ -673,7 +673,6 @@ export async function handleValidateCommand(
         }
       }
     }
-
   }
 
   // Validate all files (after fixing obsolete keys if applicable)

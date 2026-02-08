@@ -9,6 +9,7 @@ import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
 import { runWithLogger } from '../../logging.js';
 import { TunnelAdapter, createTunnelAdapter } from '../../logging/tunnel_client.js';
 import type { LoggerAdapter } from '../../logging/adapter.js';
+import type { StructuredMessage } from '../../logging/structured_messages.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -163,6 +164,7 @@ describe('Review command tunnel integration', () => {
         runWithLogger,
         writeStdout: () => {},
         writeStderr: () => {},
+        sendStructured: (_message: StructuredMessage) => {},
       }));
 
       // Set TIM_OUTPUT_SOCKET to make isTunnelActive() return true
@@ -221,6 +223,7 @@ describe('Review command tunnel integration', () => {
         runWithLogger,
         writeStdout: () => {},
         writeStderr: () => {},
+        sendStructured: (_message: StructuredMessage) => {},
       }));
 
       // Make sure tunnel is NOT active
@@ -277,6 +280,7 @@ describe('Review command tunnel integration', () => {
         runWithLogger,
         writeStdout: () => {},
         writeStderr: () => {},
+        sendStructured: (_message: StructuredMessage) => {},
       }));
 
       // Tunnel active
@@ -339,6 +343,7 @@ describe('Review command tunnel integration', () => {
         runWithLogger,
         writeStdout: () => {},
         writeStderr: () => {},
+        sendStructured: (_message: StructuredMessage) => {},
       }));
 
       // Tunnel NOT active
@@ -410,6 +415,7 @@ describe('Review command tunnel integration', () => {
         runWithLogger,
         writeStdout: () => {},
         writeStderr: () => {},
+        sendStructured: (_message: StructuredMessage) => {},
       }));
 
       // Tunnel active + verbose + print
@@ -476,6 +482,7 @@ describe('Review command tunnel integration', () => {
         runWithLogger,
         writeStdout: () => {},
         writeStderr: () => {},
+        sendStructured: (_message: StructuredMessage) => {},
       }));
 
       // Tunnel active + print mode
@@ -533,6 +540,7 @@ describe('Review command tunnel integration', () => {
         },
         writeStdout: () => {},
         writeStderr: () => {},
+        sendStructured: (_message: StructuredMessage) => {},
       }));
 
       // Tunnel NOT active
@@ -585,6 +593,7 @@ describe('Review command tunnel integration', () => {
         runWithLogger,
         writeStdout: () => {},
         writeStderr: () => {},
+        sendStructured: (_message: StructuredMessage) => {},
       }));
 
       // Tunnel active but NOT print mode
@@ -658,6 +667,9 @@ describe('End-to-end tunnel review test with real socket', () => {
       },
       debugLog(...args: any[]) {
         receivedCalls.push({ method: 'debugLog', args });
+      },
+      sendStructured(message: StructuredMessage) {
+        receivedCalls.push({ method: 'sendStructured', args: [message] });
       },
     };
 

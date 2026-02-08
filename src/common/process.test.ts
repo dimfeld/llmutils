@@ -11,6 +11,9 @@ import {
   quiet,
   createLineSplitter,
 } from './process';
+import { runWithLogger } from '../logging.ts';
+import type { LoggerAdapter } from '../logging/adapter.ts';
+import type { StructuredMessage } from '../logging/structured_messages.ts';
 
 describe('process utilities', () => {
   let originalDebug: boolean;
@@ -84,6 +87,111 @@ describe('process utilities', () => {
   });
 
   describe('spawnAndLogOutput', () => {
+    it('captures raw stdout and does not send structured output when quiet is true', async () => {
+      const captured: StructuredMessage[] = [];
+      const adapter: LoggerAdapter = {
+        log: () => {},
+        error: () => {},
+        warn: () => {},
+        writeStdout: () => {},
+        writeStderr: () => {},
+        debugLog: () => {},
+        sendStructured: (message: StructuredMessage) => {
+          captured.push(message);
+        },
+      };
+
+      await runWithLogger(adapter, async () => {
+        const result = await spawnAndLogOutput(['echo', 'hello'], {
+          formatStdout: () => ({
+            type: 'workflow_progress',
+            timestamp: '2026-02-08T00:00:00.000Z',
+            message: 'formatted',
+          }),
+          quiet: true,
+        });
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('hello');
+      });
+
+      expect(captured).toEqual([]);
+    });
+
+    it('captures raw stdout and skips structured arrays when quiet is true', async () => {
+      const captured: StructuredMessage[] = [];
+      const adapter: LoggerAdapter = {
+        log: () => {},
+        error: () => {},
+        warn: () => {},
+        writeStdout: () => {},
+        writeStderr: () => {},
+        debugLog: () => {},
+        sendStructured: (message: StructuredMessage) => {
+          captured.push(message);
+        },
+      };
+
+      await runWithLogger(adapter, async () => {
+        const result = await spawnAndLogOutput(['echo', 'hello'], {
+          formatStdout: () => [
+            {
+              type: 'workflow_progress',
+              timestamp: '2026-02-08T00:00:00.000Z',
+              message: 'first',
+            },
+            {
+              type: 'workflow_progress',
+              timestamp: '2026-02-08T00:00:00.000Z',
+              message: 'second',
+            },
+          ],
+          quiet: true,
+        });
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('hello');
+      });
+
+      expect(captured).toEqual([]);
+    });
+
+    it('routes structured stdout formatter output via sendStructured and keeps raw stdout', async () => {
+      const captured: StructuredMessage[] = [];
+      const adapter: LoggerAdapter = {
+        log: () => {},
+        error: () => {},
+        warn: () => {},
+        writeStdout: () => {},
+        writeStderr: () => {},
+        debugLog: () => {},
+        sendStructured: (message: StructuredMessage) => {
+          captured.push(message);
+        },
+      };
+
+      await runWithLogger(adapter, async () => {
+        const result = await spawnAndLogOutput(['echo', 'hello'], {
+          formatStdout: () => ({
+            type: 'workflow_progress',
+            timestamp: '2026-02-08T00:00:00.000Z',
+            message: 'formatted',
+          }),
+        });
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('hello');
+      });
+
+      expect(captured).toEqual([
+        {
+          type: 'workflow_progress',
+          timestamp: '2026-02-08T00:00:00.000Z',
+          message: 'formatted',
+        },
+      ]);
+    });
+
     it('should execute commands and capture output', async () => {
       const result = await spawnAndLogOutput(['echo', 'hello world']);
 

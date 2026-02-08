@@ -1,17 +1,29 @@
 import { describe, test, expect, mock, afterEach, beforeEach } from 'bun:test';
+import { runWithLogger, type LoggerAdapter } from '../../../logging/adapter.js';
+import type { StructuredMessage } from '../../../logging/structured_messages.js';
 import { ModuleMocker } from '../../../testing.js';
 
 describe('executeBatchMode stops on structured executor failure', () => {
   const moduleMocker = new ModuleMocker(import.meta);
 
-  const logSpy = mock(() => {});
-  const errorSpy = mock(() => {});
   const commitAllSpy = mock(async () => 0);
   const executePostApplyCommandSpy = mock(async () => true);
 
+  function createCaptureAdapter(structuredMessages: StructuredMessage[]): LoggerAdapter {
+    return {
+      log: () => {},
+      error: () => {},
+      warn: () => {},
+      writeStdout: () => {},
+      writeStderr: () => {},
+      debugLog: () => {},
+      sendStructured: (message: StructuredMessage) => {
+        structuredMessages.push(message);
+      },
+    };
+  }
+
   beforeEach(() => {
-    logSpy.mockClear();
-    errorSpy.mockClear();
     commitAllSpy.mockClear();
     executePostApplyCommandSpy.mockClear();
   });
@@ -21,13 +33,6 @@ describe('executeBatchMode stops on structured executor failure', () => {
   });
 
   test('breaks after first iteration, prints details, records failed step, and throws', async () => {
-    // Mock logging to capture formatted output
-    await moduleMocker.mock('../../../logging.js', () => ({
-      log: logSpy,
-      error: errorSpy,
-      boldMarkdownHeaders: (s: string) => s,
-    }));
-
     // Mock plans and helpers used by batch_mode
     let readCount = 0;
     await moduleMocker.mock('../../plans.js', () => ({
@@ -103,32 +108,48 @@ describe('executeBatchMode stops on structured executor failure', () => {
       planFilePath: '/tmp/plan.yml',
       mode: 'batch',
     });
+    const structuredMessages: StructuredMessage[] = [];
 
-    await expect(
-      executeBatchMode(
-        {
-          currentPlanFile: '/tmp/plan.yml',
-          config: { postApplyCommands: [{ title: 'Should not run', command: 'echo x' }] } as any,
-          executor,
-          baseDir: '/tmp/repo',
-          dryRun: false,
-          executorName: 'codex-cli',
-          executionMode: 'normal',
-        },
-        collector as any
-      )
-    ).rejects.toThrow('Batch mode stopped due to error.');
+    await runWithLogger(createCaptureAdapter(structuredMessages), async () => {
+      await expect(
+        executeBatchMode(
+          {
+            currentPlanFile: '/tmp/plan.yml',
+            config: { postApplyCommands: [{ title: 'Should not run', command: 'echo x' }] } as any,
+            executor,
+            baseDir: '/tmp/repo',
+            dryRun: false,
+            executorName: 'codex-cli',
+            executionMode: 'normal',
+          },
+          collector as any
+        )
+      ).rejects.toThrow('Batch mode stopped due to error.');
+    });
 
     // Ensure post-apply commands were NOT executed
     expect(executePostApplyCommandSpy).not.toHaveBeenCalled();
     // Ensure no commits occurred
     expect(commitAllSpy).not.toHaveBeenCalled();
 
-    // Console output contains FAILED header and sections
-    const logged = logSpy.mock.calls.map((c) => String(c[0] ?? ''));
-    expect(logged.some((l) => /FAILED\s*\(implementer\)/i.test(l))).toBeTrue();
-    expect(logged.some((l) => /Requirements:/i.test(l))).toBeTrue();
-    expect(logged.some((l) => /Possible solutions:/i.test(l))).toBeTrue();
+    // Structured failure details were emitted
+    expect(structuredMessages).toContainEqual(
+      expect.objectContaining({
+        type: 'failure_report',
+        summary: '- B',
+        requirements: '- A',
+        problems: '- B',
+        solutions: '- C',
+        sourceAgent: 'implementer',
+      })
+    );
+    expect(structuredMessages).toContainEqual(
+      expect.objectContaining({
+        type: 'agent_step_end',
+        phase: 'execution',
+        success: false,
+      })
+    );
 
     // Summary contains one failed step with details
     const summary = collector.getExecutionSummary();

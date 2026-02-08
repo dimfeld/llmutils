@@ -219,6 +219,62 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     expect(out.failureDetails?.problems).toContain('X');
   });
 
+  test('strips ANSI escape codes from non-raw messages when captureOutput is all', async () => {
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+        if (opts && typeof opts.formatStdout === 'function') {
+          opts.formatStdout('line-1\nline-2\n');
+        }
+        return { exitCode: 0 };
+      }),
+      createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
+      debug: false,
+    }));
+
+    let callIndex = 0;
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock((_line: string) => {
+        if (callIndex++ === 0) {
+          return {
+            type: 'assistant',
+            message: 'Assistant rendered output',
+            rawMessage: 'Assistant plain output',
+          };
+        }
+
+        return {
+          type: 'tool_use',
+          message: '\u001b[36mTool Use: Bash ls\u001b[39m',
+        };
+      }),
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir },
+      {} as any
+    );
+
+    const out = (await exec.execute('CTX', {
+      planId: 'p1',
+      planTitle: 'T',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'normal',
+      captureOutput: 'all',
+    })) as any;
+
+    expect(out).toBeDefined();
+    expect(out.content).toContain('Assistant plain output');
+    expect(out.content).toContain('Tool Use: Bash ls');
+    expect(out.content).not.toContain('\u001b[');
+  });
+
   test('simple mode generates implementer and verifier agents', async () => {
     const planRoot = await fs.mkdtemp(path.join(tmpdir(), 'claude-simple-mode-'));
 

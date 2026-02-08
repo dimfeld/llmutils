@@ -9,6 +9,7 @@ import type {
 import { serializeArgs } from './tunnel_protocol.js';
 import type { TunnelMessage } from './tunnel_protocol.js';
 import { debug } from '../common/process.js';
+import type { StructuredMessage } from './structured_messages.js';
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'draining';
 
@@ -91,6 +92,11 @@ export class HeadlessAdapter implements LoggerAdapter {
     this.enqueueTunnelMessage({ type: 'debug', args: serializeArgs(args) });
   }
 
+  sendStructured(message: StructuredMessage): void {
+    this.wrappedAdapter.sendStructured(message);
+    this.enqueueTunnelMessage({ type: 'structured', message });
+  }
+
   destroySync(): void {
     this.destroyed = true;
     this.drainGeneration += 1;
@@ -156,7 +162,13 @@ export class HeadlessAdapter implements LoggerAdapter {
       message,
     };
     this.nextOutputSequence += 1;
-    const payload = JSON.stringify(envelope);
+    let payload: string;
+    try {
+      payload = JSON.stringify(envelope);
+    } catch (err) {
+      this.wrappedAdapter.error('Failed to serialize headless tunnel message:', err as Error);
+      return;
+    }
     this.enqueueOutputPayload(payload);
 
     this.maybeConnect();

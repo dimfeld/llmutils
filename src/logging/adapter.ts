@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import type { StructuredMessage } from './structured_messages.js';
 
 /**
  * Interface that all logger adapters must implement.
@@ -22,6 +23,9 @@ export interface LoggerAdapter {
 
   /** Logs a debug message (only shown in debug mode) */
   debugLog(...args: any[]): void;
+
+  /** Sends a structured logging message */
+  sendStructured(message: StructuredMessage): void;
 }
 
 /**

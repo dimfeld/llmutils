@@ -27,10 +27,21 @@ const chalkMock = {
 
 // Mock table to a simple TSV-ish join so we can inspect structure
 const mockTable = mock((data: any[]) => data.map((row) => row.join('\t')).join('\n'));
+const mockSendStructured = mock(() => {});
+const mockLog = mock(() => {});
+const mockWarn = mock(() => {});
 
 beforeEach(async () => {
+  mockSendStructured.mockClear();
+  mockLog.mockClear();
+  mockWarn.mockClear();
   await moduleMocker.mock('chalk', () => ({ default: chalkMock }));
   await moduleMocker.mock('table', () => ({ table: mockTable }));
+  await moduleMocker.mock('../../logging.js', () => ({
+    log: mockLog,
+    warn: mockWarn,
+    sendStructured: mockSendStructured,
+  }));
 });
 
 afterEach(() => {
@@ -118,7 +129,7 @@ describe('displayExecutionSummary', () => {
     expect(out).toContain('batch');
     expect(out).toContain('[bold][cyan]File Changes[/cyan][/bold]');
     expect(out).toContain('No changed files detected.');
-    expect(out).toContain('[green]✓ Completed plan 7[/green]');
+    expect(out).toContain('[red]✖ Execution finished for plan 7[/red]');
     expect(out).toContain('[bold][red]Errors[/red][/bold]');
     expect(out).toContain('Failed to track file changes');
     expect(out).toContain('boom');
@@ -253,5 +264,99 @@ describe('displayExecutionSummary', () => {
     await writeOrDisplaySummary(summary, target);
     const content = await fs.readFile(target, 'utf8');
     expect(content).toContain('Execution Summary: Write Plan');
+    expect(mockSendStructured).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'execution_summary',
+        summary,
+      })
+    );
+    expect(mockSendStructured).toHaveBeenCalledTimes(1);
+  });
+
+  it('writeOrDisplaySummary warns when writing fails after structured display emission', async () => {
+    const summary: ExecutionSummary = {
+      planId: 'w2',
+      planTitle: 'Write Fallback Plan',
+      planFilePath: 'tasks/plan.yml',
+      mode: 'serial',
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      durationMs: 50,
+      steps: [],
+      changedFiles: [],
+      errors: [],
+      metadata: { totalSteps: 0, failedSteps: 0 },
+    };
+    const dirPath = await fs.mkdtemp(path.join(os.tmpdir(), 'summary-write-fail-'));
+    const { writeOrDisplaySummary } = await import('./display.js');
+
+    await writeOrDisplaySummary(summary, dirPath);
+
+    expect(mockWarn).toHaveBeenCalled();
+    expect(mockSendStructured).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'execution_summary',
+        summary,
+      })
+    );
+    expect(mockSendStructured).toHaveBeenCalledTimes(1);
+  });
+
+  it('displayExecutionSummary emits a structured execution_summary message', async () => {
+    const summary: ExecutionSummary = {
+      planId: '201',
+      planTitle: 'Structured Summary',
+      planFilePath: 'tasks/201.plan.md',
+      mode: 'serial',
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      durationMs: 50,
+      steps: [],
+      changedFiles: [],
+      errors: [],
+      metadata: { totalSteps: 0, failedSteps: 0 },
+    };
+
+    const { displayExecutionSummary } = await import('./display.js');
+    displayExecutionSummary(summary);
+
+    expect(mockSendStructured).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'execution_summary',
+        summary,
+      })
+    );
+    expect(mockSendStructured).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to line-by-line logging when structured summary emission fails', async () => {
+    const summary: ExecutionSummary = {
+      planId: '202',
+      planTitle: 'Fallback Summary',
+      planFilePath: 'tasks/202.plan.md',
+      mode: 'serial',
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      durationMs: 50,
+      steps: [],
+      changedFiles: [],
+      errors: [],
+      metadata: { totalSteps: 0, failedSteps: 0 },
+    };
+
+    mockSendStructured.mockImplementation(() => {
+      throw new Error('structured send failed');
+    });
+
+    const { displayExecutionSummary, formatExecutionSummaryToLines } = await import('./display.js');
+    displayExecutionSummary(summary);
+
+    expect(mockSendStructured).toHaveBeenCalledTimes(1);
+    expect(mockWarn).toHaveBeenCalledWith(
+      'Warning: Failed to display summary: structured send failed'
+    );
+    expect(mockLog.mock.calls.map((call) => call[0])).toEqual(
+      formatExecutionSummaryToLines(summary)
+    );
   });
 });

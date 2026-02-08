@@ -2,6 +2,8 @@ import type { LoggerAdapter } from './adapter.js';
 import { writeToLogFile } from './common.js';
 import { debug } from '../common/process.js';
 import { inspect } from 'node:util';
+import type { StructuredMessage } from './structured_messages.js';
+import { formatStructuredMessage } from './console_formatter.js';
 
 /**
  * A LoggerAdapter implementation that logs only to a file without console output.
@@ -56,5 +58,14 @@ export class SilentAdapter implements LoggerAdapter {
     if (debug) {
       this.log('[DEBUG]', ...args);
     }
+  }
+
+  sendStructured(message: StructuredMessage): void {
+    const formatted = formatStructuredMessage(message);
+    if (formatted.length === 0) {
+      return;
+    }
+
+    writeToLogFile(formatted + '\n');
   }
 }

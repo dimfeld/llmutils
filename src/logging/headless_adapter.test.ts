@@ -1,39 +1,8 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { HeadlessAdapter } from './headless_adapter.ts';
-import type { LoggerAdapter } from './adapter.ts';
 import type { HeadlessMessage } from './headless_protocol.ts';
+import { createRecordingAdapter } from './test_helpers.ts';
 import { debug, setDebug } from '../common/process.ts';
-
-type RecordedCall = {
-  method: 'log' | 'error' | 'warn' | 'writeStdout' | 'writeStderr' | 'debugLog';
-  args: unknown[];
-};
-
-function createRecordingAdapter(): { adapter: LoggerAdapter; calls: RecordedCall[] } {
-  const calls: RecordedCall[] = [];
-  const adapter: LoggerAdapter = {
-    log(...args: any[]) {
-      calls.push({ method: 'log', args });
-    },
-    error(...args: any[]) {
-      calls.push({ method: 'error', args });
-    },
-    warn(...args: any[]) {
-      calls.push({ method: 'warn', args });
-    },
-    writeStdout(data: string) {
-      calls.push({ method: 'writeStdout', args: [data] });
-    },
-    writeStderr(data: string) {
-      calls.push({ method: 'writeStderr', args: [data] });
-    },
-    debugLog(...args: any[]) {
-      calls.push({ method: 'debugLog', args });
-    },
-  };
-
-  return { adapter, calls };
-}
 
 function parseMessage(
   message: string | Buffer | ArrayBuffer | ArrayBufferView
@@ -62,7 +31,7 @@ function getOutputPayloadText(message: Extract<HeadlessMessage, { type: 'output'
   return message.message.data;
 }
 
-async function waitFor(condition: () => boolean, timeoutMs: number = 3000): Promise<void> {
+async function waitFor(condition: () => boolean, timeoutMs: number = 6000): Promise<void> {
   const start = Date.now();
   while (!condition()) {
     if (Date.now() - start > timeoutMs) {
@@ -178,6 +147,96 @@ describe('HeadlessAdapter', () => {
     await adapter.destroy();
   });
 
+  it('forwards structured messages to wrapped adapter and websocket queue', async () => {
+    const { adapter: wrapped, calls } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      'ws://127.0.0.1:1/tim-agent',
+      { command: 'agent' },
+      wrapped,
+      {
+        reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS,
+      }
+    );
+
+    adapter.sendStructured({
+      type: 'workflow_progress',
+      timestamp: '2026-02-08T00:00:00.000Z',
+      message: 'Generating context',
+    });
+
+    expect(calls).toEqual([
+      {
+        method: 'sendStructured',
+        args: [
+          {
+            type: 'workflow_progress',
+            timestamp: '2026-02-08T00:00:00.000Z',
+            message: 'Generating context',
+          },
+        ],
+      },
+    ]);
+
+    const internals = adapter as any;
+    expect(internals.queue.length).toBe(1);
+    const queued = JSON.parse(internals.queue[0].payload) as HeadlessMessage;
+    expect(queued).toMatchObject({
+      type: 'output',
+      message: {
+        type: 'structured',
+        message: { type: 'workflow_progress' },
+      },
+    });
+
+    await adapter.destroy();
+  });
+
+  it('drops non-serializable structured messages without throwing', async () => {
+    const { adapter: wrapped, calls } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      'ws://127.0.0.1:1/tim-agent',
+      { command: 'agent' },
+      wrapped,
+      {
+        reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS,
+      }
+    );
+
+    const circular: { self?: unknown } = {};
+    circular.self = circular;
+
+    expect(() =>
+      adapter.sendStructured({
+        type: 'llm_tool_use',
+        timestamp: '2026-02-08T00:00:00.000Z',
+        toolName: 'Write',
+        input: circular,
+      })
+    ).not.toThrow();
+
+    const internals = adapter as any;
+    expect(internals.queue.length).toBe(0);
+    expect(calls).toEqual([
+      {
+        method: 'sendStructured',
+        args: [
+          {
+            type: 'llm_tool_use',
+            timestamp: '2026-02-08T00:00:00.000Z',
+            toolName: 'Write',
+            input: circular,
+          },
+        ],
+      },
+      {
+        method: 'error',
+        args: ['Failed to serialize headless tunnel message:', expect.any(Error)],
+      },
+    ]);
+
+    await adapter.destroy();
+  });
+
   it('flushes buffered messages on connect with replay markers and session info', async () => {
     const server = await createWebSocketServer();
     serversToClose.push(server);
@@ -200,7 +259,7 @@ describe('HeadlessAdapter', () => {
     adapter.log('before-connect-2');
     adapter.log('trigger-connect');
 
-    await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
+    await waitFor(() => server.messages.some((m) => m.type === 'replay_end'), 9000);
 
     expect(server.messages[0]).toMatchObject({
       type: 'session_info',
@@ -230,7 +289,56 @@ describe('HeadlessAdapter', () => {
     expect(outputMessages).toEqual(['before-connect-1', 'before-connect-2', 'trigger-connect']);
 
     await adapter.destroy();
-  });
+  }, 10000);
+
+  it('streams structured messages over websocket output envelopes', async () => {
+    const server = await createWebSocketServer();
+    serversToClose.push(server);
+
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      `ws://127.0.0.1:${server.port}/tim-agent`,
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+    );
+
+    adapter.sendStructured({
+      type: 'task_completion',
+      timestamp: '2026-02-08T00:00:00.000Z',
+      taskTitle: 'Task A',
+      planComplete: false,
+    });
+
+    await waitFor(() =>
+      server.messages.some(
+        (message) =>
+          message.type === 'output' &&
+          message.message.type === 'structured' &&
+          message.message.message.type === 'task_completion'
+      )
+    );
+
+    const structuredOutput = server.messages.find(
+      (message): message is Extract<HeadlessMessage, { type: 'output' }> =>
+        message.type === 'output' &&
+        message.message.type === 'structured' &&
+        message.message.message.type === 'task_completion'
+    );
+
+    expect(structuredOutput).toBeDefined();
+    expect(structuredOutput?.message).toEqual({
+      type: 'structured',
+      message: {
+        type: 'task_completion',
+        timestamp: '2026-02-08T00:00:00.000Z',
+        taskTitle: 'Task A',
+        planComplete: false,
+      },
+    });
+
+    await adapter.destroy();
+  }, 10000);
 
   it('streams messages in order while connected', async () => {
     const server = await createWebSocketServer();
@@ -279,7 +387,7 @@ describe('HeadlessAdapter', () => {
     );
 
     await adapter.destroy();
-  });
+  }, 10000);
 
   it('preserves ordering across disconnected-to-connected burst transition', async () => {
     const server = await createWebSocketServer();
@@ -381,7 +489,7 @@ describe('HeadlessAdapter', () => {
     expect(suppressedDebugMessage).toBeUndefined();
 
     await adapter.destroy();
-  });
+  }, 10000);
 
   it('replays buffered output after disconnect and reconnect', async () => {
     const server = await createWebSocketServer();

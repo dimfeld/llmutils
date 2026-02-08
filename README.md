@@ -1313,6 +1313,10 @@ Behavior:
   output adapter for executor capture.
 - WebSocket messages use an envelope with `session_info`, `replay_start`, `output`, and
   `replay_end` message types.
+- For `tim agent` and `tim review`, major lifecycle events are emitted as structured `output`
+  payloads (for example: plan discovery, iteration/step lifecycle, failure reports, review
+  start/result/verdict, and `input_required` before interactive prompts). Other commands continue
+  emitting plain log output.
 
 For local testing, run a simple listener that accepts `/tim-agent` and prints every received
 message:

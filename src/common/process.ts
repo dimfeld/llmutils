@@ -16,8 +16,9 @@
  */
 
 import type { SpawnOptions } from 'bun';
-import { debugLog, log, writeStderr, writeStdout } from '../logging.js';
+import { debugLog, log, sendStructured, writeStderr, writeStdout } from '../logging.js';
 import { getUsingJj, hasUncommittedChanges } from './git.js';
+import type { StructuredMessage } from '../logging/structured_messages.js';
 
 // Debug and quiet flags for process operations
 export let debug = false;
@@ -141,7 +142,7 @@ export async function spawnAndLogOutput(
     env?: Record<string, string>;
     quiet?: boolean;
     stdin?: string;
-    formatStdout?: (output: string) => string;
+    formatStdout?: (output: string) => StructuredMessage | StructuredMessage[] | string;
     formatStderr?: (output: string) => string;
     /**
      * Kill the process if neither stdout nor stderr produce output for this many milliseconds.
@@ -239,15 +240,30 @@ export async function spawnAndLogOutput(
   async function readStdout() {
     const stdoutDecoder = new TextDecoder();
     for await (const value of proc.stdout) {
-      let output = stdoutDecoder.decode(value, { stream: true });
+      const rawOutput = stdoutDecoder.decode(value, { stream: true });
 
       if (options?.formatStdout) {
-        output = options.formatStdout(output);
-      }
-
-      stdout.push(output);
-      if (!options?.quiet) {
-        writeStdout(output);
+        const formatted = options.formatStdout(rawOutput);
+        if (typeof formatted === 'string') {
+          stdout.push(formatted);
+          if (!options?.quiet) {
+            writeStdout(formatted);
+          }
+        } else {
+          const messages = Array.isArray(formatted) ? formatted : [formatted];
+          // Keep returned stdout as raw process output for downstream parsers.
+          stdout.push(rawOutput);
+          for (const message of messages) {
+            if (!options?.quiet) {
+              sendStructured(message);
+            }
+          }
+        }
+      } else {
+        stdout.push(rawOutput);
+        if (!options?.quiet) {
+          writeStdout(rawOutput);
+        }
       }
 
       // Activity observed; mark output seen and reset inactivity timer

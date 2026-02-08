@@ -3,6 +3,7 @@ import { getLoggerAdapter, runWithLogger, type LoggerAdapter } from '../logging/
 import { HeadlessAdapter } from '../logging/headless_adapter.js';
 import * as logging from '../logging.js';
 import { ModuleMocker } from '../testing.js';
+import type { StructuredMessage } from '../logging/structured_messages.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -144,6 +145,7 @@ describe('runWithHeadlessAdapterIfEnabled', () => {
     writeStdout: () => {},
     writeStderr: () => {},
     debugLog: () => {},
+    sendStructured: (_message: StructuredMessage) => {},
   };
 
   test('installs a headless adapter when enabled', async () => {
@@ -208,6 +210,7 @@ describe('createHeadlessAdapterForCommand', () => {
     writeStdout: () => {},
     writeStderr: () => {},
     debugLog: () => {},
+    sendStructured: (_message: StructuredMessage) => {},
   };
 
   test('wraps the current logger adapter when one is present', async () => {

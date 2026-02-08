@@ -25,6 +25,11 @@ export interface FormatTodoLikeOptions {
    * Defaults to true so existing call sites retain their behaviour.
    */
   includePriority?: boolean;
+  /**
+   * Control whether ANSI colors are applied to each line.
+   * Defaults to true to preserve current console output.
+   */
+  colorize?: boolean;
 }
 
 const statusIconMap: Record<string, string> = {
@@ -79,16 +84,17 @@ export function formatTodoLikeLines(
 ): string[] {
   const indent = resolveIndent(options.indent);
   const includePriority = options.includePriority ?? true;
+  const colorize = options.colorize ?? true;
 
   return items.map((item) => {
     const icon = iconForStatus(item.status);
     const textColor = colorForStatus(item.status);
-    const label = textColor(item.label);
+    const label = colorize ? textColor(item.label) : item.label;
 
     let priorityPart = '';
     if (includePriority && item.priority) {
       const priorityColor = colorForPriority(item.priority);
-      priorityPart = `[${priorityColor(item.priority)}] `;
+      priorityPart = colorize ? `[${priorityColor(item.priority)}] ` : `[${item.priority}] `;
     }
 
     return `${indent}${icon} ${priorityPart}${label}`;

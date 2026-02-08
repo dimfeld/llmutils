@@ -5,7 +5,7 @@ import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { createTunnelServer, type TunnelServer } from './tunnel_server.ts';
 import { createTunnelAdapter, TunnelAdapter } from './tunnel_client.ts';
 import { runWithLogger } from './adapter.ts';
-import type { LoggerAdapter } from './adapter.ts';
+import { createRecordingAdapter, type RecordingAdapterCall } from './test_helpers.ts';
 
 // Use /tmp/claude as the base for mkdtemp to keep socket paths short enough
 // for the Unix domain socket path length limit (104 bytes on macOS).
@@ -14,39 +14,9 @@ const TEMP_BASE = '/tmp/claude';
 /**
  * A test LoggerAdapter that records all calls for assertion purposes.
  */
-interface RecordedCall {
-  method: 'log' | 'error' | 'warn' | 'writeStdout' | 'writeStderr' | 'debugLog';
-  args: any[];
-}
-
-function createRecordingAdapter(): { adapter: LoggerAdapter; calls: RecordedCall[] } {
-  const calls: RecordedCall[] = [];
-  const adapter: LoggerAdapter = {
-    log(...args: any[]) {
-      calls.push({ method: 'log', args });
-    },
-    error(...args: any[]) {
-      calls.push({ method: 'error', args });
-    },
-    warn(...args: any[]) {
-      calls.push({ method: 'warn', args });
-    },
-    writeStdout(data: string) {
-      calls.push({ method: 'writeStdout', args: [data] });
-    },
-    writeStderr(data: string) {
-      calls.push({ method: 'writeStderr', args: [data] });
-    },
-    debugLog(...args: any[]) {
-      calls.push({ method: 'debugLog', args });
-    },
-  };
-  return { adapter, calls };
-}
-
 /** Wait for recorded calls to appear */
 async function waitForCalls(
-  calls: RecordedCall[],
+  calls: RecordingAdapterCall[],
   expectedCount: number,
   timeoutMs: number = 3000
 ): Promise<void> {
@@ -194,6 +164,71 @@ describe('tunnel integration', () => {
       expect(calls[2]).toEqual({ method: 'warn', args: ['warn msg'] });
       expect(calls[3]).toEqual({ method: 'writeStdout', args: ['stdout msg'] });
       expect(calls[4]).toEqual({ method: 'writeStderr', args: ['stderr msg'] });
+    });
+
+    it('should tunnel structured messages from client to server', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+        clientAdapter = await createTunnelAdapter(sp);
+
+        clientAdapter.sendStructured({
+          type: 'workflow_progress',
+          timestamp: '2026-02-08T00:00:00.000Z',
+          message: 'Running review',
+        });
+
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].method).toBe('sendStructured');
+      expect(calls[0].args[0]).toMatchObject({
+        type: 'workflow_progress',
+        message: 'Running review',
+      });
+    });
+
+    it('should tunnel structured execution summaries with nested payloads', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+        clientAdapter = await createTunnelAdapter(sp);
+
+        clientAdapter.sendStructured({
+          type: 'execution_summary',
+          timestamp: '2026-02-08T00:00:00.000Z',
+          summary: {
+            planId: '168',
+            planTitle: 'Structured logging',
+            planFilePath: 'tasks/168.plan.md',
+            mode: 'serial',
+            startedAt: '2026-02-08T00:00:00.000Z',
+            endedAt: '2026-02-08T00:01:00.000Z',
+            durationMs: 60_000,
+            steps: [],
+            changedFiles: ['src/logging/console_formatter.ts'],
+            errors: [],
+            metadata: { totalSteps: 1, failedSteps: 0 },
+          },
+        });
+
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].method).toBe('sendStructured');
+      expect(calls[0].args[0]).toMatchObject({
+        type: 'execution_summary',
+        summary: {
+          planId: '168',
+          changedFiles: ['src/logging/console_formatter.ts'],
+        },
+      });
     });
 
     it('should handle messages with multiple arguments', async () => {

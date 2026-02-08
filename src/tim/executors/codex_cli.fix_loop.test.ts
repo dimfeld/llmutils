@@ -24,9 +24,13 @@ describe('CodexCliExecutor - Fix Loop', () => {
   });
 
   test('runs fixer then reviewer becomes ACCEPTABLE', async () => {
+    const structuredMessages: Array<{ type?: string; phase?: string }> = [];
     await moduleMocker.mock('../../logging.ts', () => ({
       log: mock(() => {}),
       warn: mock(() => {}),
+      sendStructured: mock((message: { type?: string; phase?: string }) => {
+        structuredMessages.push(message);
+      }),
     }));
 
     await moduleMocker.mock('../../common/git.ts', () => ({
@@ -186,6 +190,14 @@ describe('CodexCliExecutor - Fix Loop', () => {
     for (const [callOptions] of runExternalReviewForCodexMock.mock.calls) {
       expect(callOptions.executorSelection).toBe('claude-code');
     }
+    const reviewerStarts = structuredMessages.filter(
+      (message) => message.type === 'agent_step_start' && message.phase === 'reviewer'
+    );
+    const reviewerEnds = structuredMessages.filter(
+      (message) => message.type === 'agent_step_end' && message.phase === 'reviewer'
+    );
+    expect(reviewerStarts.length).toBeGreaterThan(0);
+    expect(reviewerEnds.length).toBe(reviewerStarts.length);
   }, 15000);
 
   test('stops after max 7 fix iterations when still NEEDS_FIXES', async () => {

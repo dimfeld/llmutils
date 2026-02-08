@@ -3,18 +3,23 @@ import * as clipboard from '../../common/clipboard.ts';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { debugLog, log } from '../../logging.ts';
+import { debugLog, log, sendStructured } from '../../logging.ts';
 import { createLineSplitter, debug, spawnAndLogOutput } from '../../common/process.ts';
 import { getGitRoot } from '../../common/git.ts';
 import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
 import type { TimConfig } from '../configSchema.ts';
 import type { Executor, ExecutorCommonOptions, ExecutePlanInfo } from './types.ts';
-import { formatJsonMessage } from './claude_code/format.ts';
+import {
+  extractStructuredMessages,
+  formatJsonMessage,
+  resetToolUseCache,
+} from './claude_code/format.ts';
 import { claudeCodeOptionsSchema, ClaudeCodeExecutorName } from './schemas.js';
 import chalk from 'chalk';
 import * as net from 'net';
 import { confirm, select, editor } from '@inquirer/prompts';
 import { stringify } from 'yaml';
+import stripAnsi from 'strip-ansi';
 import { prefixPrompt } from './claude_code/prefix_prompt.ts';
 import {
   wrapWithOrchestration,
@@ -50,6 +55,10 @@ const USER_CHOICE_SESSION_ALLOW = 'session_allow';
 const USER_CHOICE_DISALLOW = 'disallow';
 
 const DEFAULT_CLAUDE_MODEL = 'opus';
+
+function timestamp(): string {
+  return new Date().toISOString();
+}
 
 export class ClaudeCodeExecutor implements Executor {
   static name = ClaudeCodeExecutorName;
@@ -690,6 +699,7 @@ export class ClaudeCodeExecutor implements Executor {
       log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
       const reviewTimeoutMs = 30 * 60 * 1000; // 30 minutes
       let killedByTimeout = false;
+      resetToolUseCache();
       const result = await spawnAndLogOutput(args, {
         env: {
           ...process.env,
@@ -711,6 +721,7 @@ export class ClaudeCodeExecutor implements Executor {
         formatStdout: (output) => {
           let lines = splitter(output);
           const formattedResults = lines.map(formatJsonMessage);
+          const structuredMessages = extractStructuredMessages(formattedResults);
 
           for (const result of formattedResults) {
             if (result.type === 'result') {
@@ -725,9 +736,7 @@ export class ClaudeCodeExecutor implements Executor {
             }
           }
 
-          const formattedOutput =
-            formattedResults.map((r) => r.message || '').join('\n\n') + '\n\n';
-          return formattedOutput;
+          return structuredMessages.length > 0 ? structuredMessages : '';
         },
       });
 
@@ -906,6 +915,11 @@ export class ClaudeCodeExecutor implements Executor {
             const controller = new AbortController();
 
             // Prompt the user for confirmation
+            sendStructured({
+              type: 'input_required',
+              timestamp: timestamp(),
+              prompt: `Claude permission request for tool ${tool_name}`,
+            });
             const promptPromise = select(
               {
                 message: `Claude wants to run a tool:\n\nTool: ${chalk.blue(tool_name)}\nInput:\n${chalk.white(formattedInput)}\n\nAllow this tool to run?`,
@@ -1353,6 +1367,7 @@ export class ClaudeCodeExecutor implements Executor {
       log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
       const executionTimeoutMs = 60 * 60 * 1000; // 60 minutes
       let killedByTimeout = false;
+      resetToolUseCache();
       const result = await spawnAndLogOutput(args, {
         env: {
           ...process.env,
@@ -1374,6 +1389,7 @@ export class ClaudeCodeExecutor implements Executor {
         formatStdout: (output) => {
           let lines = splitter(output);
           const formattedResults = lines.map(formatJsonMessage);
+          const structuredMessages = extractStructuredMessages(formattedResults);
           // Capture output based on the specified mode
           const captureMode = planInfo?.captureOutput;
 
@@ -1394,7 +1410,7 @@ export class ClaudeCodeExecutor implements Executor {
 
             if (result.message) {
               if (captureMode === 'all') {
-                capturedOutputLines.push(result.message);
+                capturedOutputLines.push(result.rawMessage ?? stripAnsi(result.message));
               } else if (
                 captureMode === 'result' &&
                 result.type === 'assistant' &&
@@ -1413,9 +1429,7 @@ export class ClaudeCodeExecutor implements Executor {
             }
           }
 
-          const formattedOutput =
-            formattedResults.map((r) => r.message || '').join('\n\n') + '\n\n';
-          return formattedOutput;
+          return structuredMessages.length > 0 ? structuredMessages : '';
         },
       });
 

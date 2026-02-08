@@ -5,7 +5,11 @@ import { spawnAndLogOutput, createLineSplitter } from '../../common/process.ts';
 import { getGitRoot } from '../../common/git.ts';
 import { log, debugLog, warn } from '../../logging.ts';
 import type { ClaudeCodeExecutorOptions } from './claude_code.ts';
-import { formatJsonMessage, type Message } from './claude_code/format.ts';
+import {
+  extractStructuredMessagesFromLines,
+  resetToolUseCache,
+  type Message,
+} from './claude_code/format.ts';
 import chalk from 'chalk';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { createTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
@@ -141,6 +145,7 @@ export async function runClaudeCodeGeneration(
     const planningArgs = [...baseArgs, '--print', planningPrompt];
     const planningSplitter = createLineSplitter();
 
+    resetToolUseCache();
     const planningResult = await spawnAndLogOutput(planningArgs, {
       env: {
         ...process.env,
@@ -151,23 +156,21 @@ export async function runClaudeCodeGeneration(
       cwd: gitRoot,
       formatStdout: (output) => {
         const lines = planningSplitter(output);
-        const formatted = lines
-          .map((line) => {
-            // Try to parse each line to extract session ID
-            try {
-              const parsed = JSON.parse(line);
-              if (parsed.session_id && !sessionId) {
-                sessionId = parsed.session_id;
-                debugLog(`Captured session ID: ${sessionId}`);
-              }
-            } catch {
-              // Not JSON, ignore
+        for (const line of lines) {
+          // Try to parse each line to extract session ID
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed.session_id && !sessionId) {
+              sessionId = parsed.session_id;
+              debugLog(`Captured session ID: ${sessionId}`);
             }
-            return formatJsonMessage(line)?.message;
-          })
-          .filter(Boolean)
-          .join('\n\n');
-        return formatted ? formatted + '\n\n' : '';
+          } catch {
+            // Not JSON, ignore
+          }
+        }
+        const structuredMessages = extractStructuredMessagesFromLines(lines);
+
+        return structuredMessages.length > 0 ? structuredMessages : '';
       },
     });
 
@@ -191,6 +194,7 @@ export async function runClaudeCodeGeneration(
       const researchSplitter = createLineSplitter();
 
       try {
+        resetToolUseCache();
         const researchResult = await spawnAndLogOutput(researchArgs, {
           env: {
             ...process.env,
@@ -216,11 +220,8 @@ export async function runClaudeCodeGeneration(
               researchOutput = candidate;
             }
 
-            const formatted = lines
-              .map((line) => formatJsonMessage(line)?.message)
-              .filter(Boolean)
-              .join('\n\n');
-            return formatted ? formatted + '\n\n' : '';
+            const structuredMessages = extractStructuredMessagesFromLines(lines);
+            return structuredMessages.length > 0 ? structuredMessages : '';
           },
         });
 
@@ -247,6 +248,7 @@ export async function runClaudeCodeGeneration(
     let generationOutput = '';
     const generationSplitter = createLineSplitter();
 
+    resetToolUseCache();
     const generationResult = await spawnAndLogOutput(generationArgs, {
       env: {
         ...process.env,
@@ -272,11 +274,8 @@ export async function runClaudeCodeGeneration(
           generationOutput = candidate;
         }
 
-        const formatted = lines
-          .map((line) => formatJsonMessage(line)?.message)
-          .filter(Boolean)
-          .join('\n\n');
-        return formatted ? formatted + '\n\n' : '';
+        const structuredMessages = extractStructuredMessagesFromLines(lines);
+        return structuredMessages.length > 0 ? structuredMessages : '';
       },
     });
 

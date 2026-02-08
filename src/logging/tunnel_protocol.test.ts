@@ -2,11 +2,13 @@ import { describe, it, expect } from 'bun:test';
 import { inspect } from 'node:util';
 import {
   TIM_OUTPUT_SOCKET,
+  isStructuredTunnelMessage,
   serializeArg,
   serializeArgs,
   type TunnelMessage,
   type TunnelArgsMessage,
   type TunnelDataMessage,
+  type StructuredTunnelMessage,
 } from './tunnel_protocol.ts';
 
 describe('tunnel_protocol', () => {
@@ -137,6 +139,26 @@ describe('tunnel_protocol', () => {
       const json = JSON.stringify(message);
       const parsed = JSON.parse(json) as TunnelMessage;
       expect(parsed).toEqual(message);
+    });
+
+    it('should roundtrip a structured message through JSON', () => {
+      const message: StructuredTunnelMessage = {
+        type: 'structured',
+        message: {
+          type: 'workflow_progress',
+          timestamp: '2026-02-08T00:00:00.000Z',
+          message: 'Running',
+        },
+      };
+      const json = JSON.stringify(message);
+      const parsed = JSON.parse(json) as TunnelMessage;
+      expect(parsed).toEqual(message);
+      expect(isStructuredTunnelMessage(parsed)).toBe(true);
+    });
+
+    it('isStructuredTunnelMessage returns false for non-structured messages', () => {
+      const logMessage: TunnelMessage = { type: 'log', args: ['hello'] };
+      expect(isStructuredTunnelMessage(logMessage)).toBe(false);
     });
   });
 });

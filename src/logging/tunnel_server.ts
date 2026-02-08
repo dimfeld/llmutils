@@ -1,8 +1,303 @@
 import net from 'node:net';
 import fs from 'node:fs';
-import { log, error, warn, writeStdout, writeStderr, debugLog } from '../logging.js';
+import {
+  log,
+  error,
+  warn,
+  writeStdout,
+  writeStderr,
+  debugLog,
+  sendStructured,
+} from '../logging.js';
 import { CleanupRegistry } from '../common/cleanup_registry.js';
 import type { TunnelMessage } from './tunnel_protocol.js';
+import { isStructuredTunnelMessage } from './tunnel_protocol.js';
+import { structuredMessageTypeList, type StructuredMessage } from './structured_messages.js';
+
+export const structuredMessageTypes = new Set<StructuredMessage['type']>(structuredMessageTypeList);
+
+const fileChangeKinds = new Set(['added', 'updated', 'removed']);
+const reviewSeverities = new Set(['critical', 'major', 'minor', 'info']);
+const reviewCategories = new Set([
+  'security',
+  'performance',
+  'bug',
+  'style',
+  'compliance',
+  'testing',
+  'other',
+]);
+const reviewVerdicts = new Set(['ACCEPTABLE', 'NEEDS_FIXES', 'UNKNOWN']);
+const executionSummaryModes = new Set(['serial', 'batch']);
+const todoStatuses = new Set(['pending', 'in_progress', 'completed', 'blocked', 'unknown']);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function isJsonSerializableValue(value: unknown): boolean {
+  if (value == null) {
+    return true;
+  }
+
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return Number.isFinite(value) || typeof value !== 'number';
+  }
+
+  if (Array.isArray(value)) {
+    return value.every((item) => isJsonSerializableValue(item));
+  }
+
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return Object.values(value).every((item) => isJsonSerializableValue(item));
+}
+
+function isValidStepOutput(output: unknown): boolean {
+  if (!isRecord(output) || typeof output.content !== 'string') {
+    return false;
+  }
+
+  if (
+    output.steps != null &&
+    (!Array.isArray(output.steps) ||
+      !output.steps.every(
+        (step) => isRecord(step) && typeof step.title === 'string' && typeof step.body === 'string'
+      ))
+  ) {
+    return false;
+  }
+
+  if (
+    output.metadata != null &&
+    (!isRecord(output.metadata) || !isJsonSerializableValue(output.metadata))
+  ) {
+    return false;
+  }
+
+  if (output.failureDetails != null) {
+    if (!isRecord(output.failureDetails)) {
+      return false;
+    }
+
+    for (const key of ['sourceAgent', 'requirements', 'problems', 'solutions']) {
+      const value = output.failureDetails[key];
+      if (value != null && typeof value !== 'string') {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+function isValidReviewIssue(issue: unknown): boolean {
+  if (!isRecord(issue)) {
+    return false;
+  }
+
+  return (
+    typeof issue.severity === 'string' &&
+    reviewSeverities.has(issue.severity) &&
+    typeof issue.category === 'string' &&
+    reviewCategories.has(issue.category) &&
+    typeof issue.content === 'string' &&
+    typeof issue.file === 'string' &&
+    typeof issue.line === 'string' &&
+    typeof issue.suggestion === 'string'
+  );
+}
+
+function isValidExecutionSummary(summary: unknown): boolean {
+  if (!isRecord(summary)) {
+    return false;
+  }
+
+  if (
+    typeof summary.planId !== 'string' ||
+    typeof summary.planTitle !== 'string' ||
+    typeof summary.planFilePath !== 'string' ||
+    typeof summary.mode !== 'string' ||
+    !executionSummaryModes.has(summary.mode) ||
+    typeof summary.startedAt !== 'string' ||
+    !Array.isArray(summary.steps) ||
+    !isStringArray(summary.changedFiles) ||
+    !isStringArray(summary.errors) ||
+    !isRecord(summary.metadata) ||
+    typeof summary.metadata.totalSteps !== 'number' ||
+    typeof summary.metadata.failedSteps !== 'number'
+  ) {
+    return false;
+  }
+
+  if (
+    !summary.steps.every(
+      (step) =>
+        isRecord(step) &&
+        typeof step.title === 'string' &&
+        typeof step.executor === 'string' &&
+        typeof step.success === 'boolean' &&
+        (step.output == null || isValidStepOutput(step.output))
+    )
+  ) {
+    return false;
+  }
+
+  if (summary.endedAt != null && typeof summary.endedAt !== 'string') {
+    return false;
+  }
+
+  if (summary.durationMs != null && typeof summary.durationMs !== 'number') {
+    return false;
+  }
+
+  if (summary.createdFiles != null && !isStringArray(summary.createdFiles)) {
+    return false;
+  }
+
+  if (summary.deletedFiles != null && !isStringArray(summary.deletedFiles)) {
+    return false;
+  }
+
+  if (summary.planInfo != null && !isRecord(summary.planInfo)) {
+    return false;
+  }
+
+  if (
+    summary.metadata.batchIterations != null &&
+    typeof summary.metadata.batchIterations !== 'number'
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function isOptionalNumberField(message: Record<string, unknown>, key: string): boolean {
+  return message[key] == null || typeof message[key] === 'number';
+}
+
+function isValidStructuredMessagePayload(message: unknown): message is StructuredMessage {
+  if (!isRecord(message)) {
+    return false;
+  }
+
+  const structured = message;
+  if (typeof structured.type !== 'string' || typeof structured.timestamp !== 'string') {
+    return false;
+  }
+
+  const structuredType = structured.type as StructuredMessage['type'];
+  if (!structuredMessageTypes.has(structuredType)) {
+    return false;
+  }
+
+  switch (structuredType) {
+    case 'agent_session_start':
+    case 'review_start':
+    case 'input_required':
+      return true;
+    case 'token_usage':
+      return (
+        isOptionalNumberField(structured, 'inputTokens') &&
+        isOptionalNumberField(structured, 'cachedInputTokens') &&
+        isOptionalNumberField(structured, 'outputTokens') &&
+        isOptionalNumberField(structured, 'reasoningTokens') &&
+        isOptionalNumberField(structured, 'totalTokens')
+      );
+    case 'agent_session_end':
+      return typeof structured.success === 'boolean';
+    case 'agent_iteration_start':
+      return typeof structured.iterationNumber === 'number';
+    case 'agent_step_start':
+      return typeof structured.phase === 'string';
+    case 'agent_step_end':
+      return typeof structured.phase === 'string' && typeof structured.success === 'boolean';
+    case 'llm_thinking':
+    case 'llm_response':
+      return typeof structured.text === 'string';
+    case 'llm_tool_use':
+      return (
+        typeof structured.toolName === 'string' &&
+        (structured.input == null || isJsonSerializableValue(structured.input))
+      );
+    case 'llm_tool_result':
+      return (
+        typeof structured.toolName === 'string' &&
+        (structured.result == null || isJsonSerializableValue(structured.result))
+      );
+    case 'llm_status':
+      return typeof structured.status === 'string';
+    case 'todo_update':
+      return (
+        Array.isArray(structured.items) &&
+        structured.items.every((item) => {
+          if (!isRecord(item)) {
+            return false;
+          }
+
+          return (
+            typeof item.label === 'string' &&
+            typeof item.status === 'string' &&
+            todoStatuses.has(item.status)
+          );
+        })
+      );
+    case 'file_write':
+      return typeof structured.path === 'string' && typeof structured.lineCount === 'number';
+    case 'file_edit':
+      return typeof structured.path === 'string' && typeof structured.diff === 'string';
+    case 'file_change_summary':
+      return (
+        Array.isArray(structured.changes) &&
+        structured.changes.every((change) => {
+          if (!isRecord(change)) {
+            return false;
+          }
+          return (
+            typeof change.path === 'string' &&
+            typeof change.kind === 'string' &&
+            fileChangeKinds.has(change.kind)
+          );
+        })
+      );
+    case 'command_exec':
+      return typeof structured.command === 'string';
+    case 'command_result':
+      return typeof structured.exitCode === 'number';
+    case 'review_result':
+      return (
+        Array.isArray(structured.issues) &&
+        structured.issues.every((issue) => isValidReviewIssue(issue)) &&
+        isStringArray(structured.recommendations) &&
+        isStringArray(structured.actionItems)
+      );
+    case 'review_verdict':
+      return typeof structured.verdict === 'string' && reviewVerdicts.has(structured.verdict);
+    case 'workflow_progress':
+      return typeof structured.message === 'string';
+    case 'failure_report':
+      return typeof structured.summary === 'string';
+    case 'task_completion':
+      return typeof structured.planComplete === 'boolean';
+    case 'execution_summary':
+      return isValidExecutionSummary(structured.summary);
+    case 'plan_discovery':
+      return typeof structured.planId === 'number' && typeof structured.title === 'string';
+    case 'workspace_info':
+      return typeof structured.path === 'string';
+    default: {
+      const _exhaustive: never = structuredType;
+      return false;
+    }
+  }
+}
 
 /**
  * Creates a line splitter function that handles message framing across TCP chunks.
@@ -41,6 +336,8 @@ function isValidTunnelMessage(message: unknown): message is TunnelMessage {
     case 'stdout':
     case 'stderr':
       return typeof msg.data === 'string';
+    case 'structured':
+      return isValidStructuredMessagePayload(msg.message);
     default:
       return false;
   }
@@ -51,6 +348,11 @@ function isValidTunnelMessage(message: unknown): message is TunnelMessage {
  * Malformed or unrecognized messages are silently dropped.
  */
 function dispatchMessage(message: TunnelMessage): void {
+  if (isStructuredTunnelMessage(message)) {
+    sendStructured(message.message);
+    return;
+  }
+
   switch (message.type) {
     case 'log':
       log(...message.args);
@@ -70,6 +372,10 @@ function dispatchMessage(message: TunnelMessage): void {
     case 'stderr':
       writeStderr(message.data);
       break;
+    default: {
+      const _exhaustive: never = message;
+      _exhaustive;
+    }
   }
 }
 
@@ -163,7 +469,7 @@ export function createTunnelServer(socketPath: string): Promise<TunnelServer> {
       } else {
         // Post-listen error: log but don't remove cleanup handler since the
         // server may still need cleanup on process exit.
-        error('Tunnel server error:', `${err as Error}`);
+        error('Tunnel server error:', `${err}`);
       }
     });
 

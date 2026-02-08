@@ -1,10 +1,10 @@
-import chalk from 'chalk';
-import { debugLog, log, warn } from '../../../logging.js';
+import { sendStructured, warn } from '../../../logging.js';
 import { resolveTasksDir, type TimConfig } from '../../configSchema.js';
 import { clearPlanCache, readAllPlans, writePlanFile } from '../../plans.js';
 import { removeAssignment } from '../../assignments/assignments_io.js';
 import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
 import type { PlanSchema } from '../../planSchema.js';
+import { timestamp } from './agent_helpers.js';
 
 async function removePlanAssignment(plan: PlanSchema, baseDir?: string): Promise<void> {
   if (!plan.uuid) {
@@ -50,7 +50,12 @@ export async function markParentInProgress(parentId: number, config: TimConfig):
     parentPlan.status = 'in_progress';
     parentPlan.updatedAt = new Date().toISOString();
     await writePlanFile(parentPlan.filename, parentPlan);
-    log(chalk.yellow(`↻ Parent plan "${parentPlan.title}" marked as in_progress`));
+    sendStructured({
+      type: 'workflow_progress',
+      timestamp: timestamp(),
+      phase: 'parent-plan-start',
+      message: `Parent plan "${parentPlan.title}" marked as in_progress`,
+    });
 
     // Recursively mark parent's parent if it exists
     if (parentPlan.parent) {
@@ -109,7 +114,12 @@ export async function checkAndMarkParentDone(
 
     await writePlanFile(parentPlan.filename, parentPlan);
     await removePlanAssignment(parentPlan, baseDir);
-    log(chalk.green(`✓ Parent plan "${parentPlan.title}" marked as complete (all children done)`));
+    sendStructured({
+      type: 'workflow_progress',
+      timestamp: timestamp(),
+      phase: 'parent-plan-complete',
+      message: `Parent plan "${parentPlan.title}" marked as complete`,
+    });
 
     // Recursively check if this parent has a parent
     if (parentPlan.parent) {

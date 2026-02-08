@@ -33,7 +33,7 @@ export async function executeReviewMode(
 ): Promise<ExecutorOutput | void> {
   const gitRoot = await getGitRoot(baseDir);
 
-  log('Running Codex reviewer step with JSON schema output...');
+  log('Running Codex reviewer step in review-only mode with JSON schema output...');
 
   // Use the injected executor for testing, or the default JSON schema executor
   const executor = options?.reviewExecutor ?? executeCodexReviewWithSchema;

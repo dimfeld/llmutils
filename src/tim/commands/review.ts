@@ -12,8 +12,10 @@ import {
   readPlanFile,
   writePlanFile,
 } from '../plans.js';
-import { log, warn, runWithLogger } from '../../logging.js';
+import { log, warn, runWithLogger, sendStructured } from '../../logging.js';
 import { getLoggerAdapter, type LoggerAdapter } from '../../logging/adapter.js';
+import type { StructuredMessage } from '../../logging/structured_messages.js';
+import { formatStructuredMessage } from '../../logging/console_formatter.js';
 import { HeadlessAdapter } from '../../logging/headless_adapter.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig, loadGlobalConfigForNotifications } from '../configLoader.js';
@@ -55,6 +57,7 @@ import {
   type ReviewPromptBuilder,
 } from '../review_runner.js';
 import { createHeadlessAdapterForCommand } from '../headless.js';
+import { timestamp } from './agent/agent_helpers.js';
 import which from 'which';
 const FIX_EXECUTOR_COMMANDS = {
   'claude-code': 'claude',
@@ -221,6 +224,12 @@ const reviewPrintVerboseLogger: LoggerAdapter = {
   debugLog: (...args: any[]) => {
     console.error(...args);
   },
+  sendStructured: (message: StructuredMessage) => {
+    const formatted = formatStructuredMessage(message);
+    if (formatted.length > 0) {
+      console.error(formatted);
+    }
+  },
 };
 
 /** Quiet logger for --print mode (no --verbose): suppresses all output */
@@ -231,6 +240,7 @@ const reviewPrintQuietLogger: LoggerAdapter = {
   writeStdout: () => {},
   writeStderr: () => {},
   debugLog: () => {},
+  sendStructured: () => {},
 };
 
 async function isCommandAvailable(command: string): Promise<boolean> {
@@ -611,7 +621,12 @@ export async function handleReviewCommand(
         return;
       }
 
-      reviewLog(chalk.cyan('\n## Executing Code Review\n'));
+      sendStructured({
+        type: 'review_start',
+        timestamp: timestamp(),
+        executor: options.executor || config.defaultExecutor,
+        planId: planData.id,
+      });
 
       // Execute the review with output capture enabled
       try {
@@ -679,6 +694,21 @@ export async function handleReviewCommand(
         );
         const formattedOutput = formatter.format(reviewResult, formatterOptions);
 
+        sendStructured({
+          type: 'review_result',
+          timestamp: timestamp(),
+          issues: reviewResult.issues.map((issue) => ({
+            severity: issue.severity,
+            category: issue.category,
+            content: issue.content,
+            file: issue.file ?? '',
+            line: issue.line != null ? String(issue.line) : '',
+            suggestion: issue.suggestion ?? '',
+          })),
+          recommendations: reviewResult.recommendations,
+          actionItems: reviewResult.actionItems,
+        });
+
         // Display formatted output to console
         if (isPrintMode) {
           const outputWithNewline = formattedOutput.endsWith('\n')
@@ -697,6 +727,12 @@ export async function handleReviewCommand(
 
         // Check if autofix should be performed - with robust issue detection
         const hasIssues = detectIssuesInReview(reviewResult, rawOutput);
+        sendStructured({
+          type: 'review_verdict',
+          timestamp: timestamp(),
+          verdict: hasIssues ? 'NEEDS_FIXES' : 'ACCEPTABLE',
+          fixInstructions: hasIssues ? reviewResult.actionItems.join('\n') : undefined,
+        });
         let shouldAutofix = false;
         let shouldCreateCleanupPlan = false;
         let shouldAppendTasksToPlan = false;
@@ -708,7 +744,9 @@ export async function handleReviewCommand(
             if (!options.autofixAll && reviewResult.issues && reviewResult.issues.length > 0) {
               // Allow selection unless --autofix-all is used
               if (isInteractiveEnv) {
-                selectedIssues = await selectIssuesToFix(reviewResult.issues, 'fix');
+                selectedIssues = await selectIssuesToFix(reviewResult.issues, 'fix', () =>
+                  notifyReviewInput('Review needs input: select issues for autofix.')
+                );
               } else {
                 selectedIssues = reviewResult.issues;
               }
@@ -741,6 +779,11 @@ export async function handleReviewCommand(
             let action: ReviewIssueAction = 'exit';
             if (isInteractiveEnv) {
               await notifyReviewInput('Review needs input: choose how to proceed with issues.');
+              sendStructured({
+                type: 'input_required',
+                timestamp: timestamp(),
+                prompt: 'Choose how to proceed with review issues',
+              });
               action = await select({
                 message: 'Issues were found during review. What would you like to do?',
                 choices: [
@@ -764,7 +807,9 @@ export async function handleReviewCommand(
               shouldAutofix = true;
               autofixExecutorName = FIX_ACTION_EXECUTOR_MAP[action];
               if (reviewResult.issues && reviewResult.issues.length > 0) {
-                selectedIssues = await selectIssuesToFix(reviewResult.issues, 'fix');
+                selectedIssues = await selectIssuesToFix(reviewResult.issues, 'fix', () =>
+                  notifyReviewInput('Review needs input: select issues for autofix.')
+                );
                 shouldAutofix = selectedIssues.length > 0;
                 if (!shouldAutofix) {
                   log(chalk.yellow('No issues selected for autofix.'));
@@ -792,7 +837,8 @@ export async function handleReviewCommand(
               if (reviewResult.issues && reviewResult.issues.length > 0) {
                 selectedIssues = await selectIssuesToFix(
                   reviewResult.issues,
-                  'append as plan tasks'
+                  'append as plan tasks',
+                  () => notifyReviewInput('Review needs input: select issues to append as tasks.')
                 );
                 shouldAppendTasksToPlan = selectedIssues.length > 0;
                 if (!shouldAppendTasksToPlan) {
@@ -941,7 +987,12 @@ export async function handleReviewCommand(
 
         // Create cleanup plan if requested
         if (shouldCreateCleanupPlan && hasIssues && planData.id && !isPrintMode) {
-          log(chalk.cyan('\n## Creating Cleanup Plan\n'));
+          sendStructured({
+            type: 'workflow_progress',
+            timestamp: timestamp(),
+            phase: 'cleanup',
+            message: 'Creating cleanup plan',
+          });
 
           try {
             const cleanupScopeNote =
@@ -982,7 +1033,12 @@ export async function handleReviewCommand(
 
         // Execute autofix if requested or confirmed and issues were detected
         if (performAutofix && hasIssues && !isPrintMode) {
-          log(chalk.cyan('\n## Executing Autofix\n'));
+          sendStructured({
+            type: 'workflow_progress',
+            timestamp: timestamp(),
+            phase: 'autofix',
+            message: 'Executing autofix',
+          });
 
           try {
             // Build the autofix prompt with validation
@@ -1301,6 +1357,11 @@ async function selectIssuesToFix(
   if (notifyInput) {
     await notifyInput();
   }
+  sendStructured({
+    type: 'input_required',
+    timestamp: timestamp(),
+    prompt: `Select issues to ${purpose}`,
+  });
   // Group issues by severity for better organization
   const groupedIssues = issues.reduce(
     (acc, issue) => {

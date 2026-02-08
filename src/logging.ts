@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import { getLoggerAdapter, runWithLogger } from './logging/adapter.js';
 import { ConsoleAdapter } from './logging/console.js';
 import { SilentAdapter } from './logging/silent.js';
+import type { StructuredMessage } from './logging/structured_messages.js';
 
 // Default console adapter that will be used when no other adapter is set
 const suppressConsole = process.env.NODE_ENV === 'test' && !process.env.TEST_ALLOW_CONSOLE;
@@ -63,6 +64,15 @@ export function writeStderr(data: string): void {
 export function debugLog(...args: any[]): void {
   const adapter = getLoggerAdapter() ?? defaultConsoleAdapter;
   adapter.debugLog(...args);
+}
+
+/**
+ * Sends a structured message to the current logger adapter.
+ * @param message Structured message payload
+ */
+export function sendStructured(message: StructuredMessage): void {
+  const adapter = getLoggerAdapter() ?? defaultConsoleAdapter;
+  adapter.sendStructured(message);
 }
 
 /**

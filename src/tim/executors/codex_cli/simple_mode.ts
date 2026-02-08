@@ -3,7 +3,7 @@ import type { TimConfig } from '../../configSchema';
 import type { PlanSchema } from '../../planSchema';
 import { CodexCliExecutorName, type CodexReasoningLevel } from '../schemas';
 import { captureRepositoryState, getGitRoot } from '../../../common/git';
-import { log, warn } from '../../../logging';
+import { log, sendStructured, warn } from '../../../logging';
 import { getImplementerPrompt } from '../claude_code/agent_prompts';
 import { readPlanFile } from '../../plans';
 import { detectPlanningWithoutImplementation, parseFailedReport } from '../failure_detection';
@@ -25,6 +25,24 @@ import {
 } from './external_review';
 
 type AgentType = 'implementer' | 'verifier';
+function timestamp(): string {
+  return new Date().toISOString();
+}
+
+function emitFailureReport(
+  sourceAgent: 'implementer' | 'fixer',
+  parsed: Extract<ReturnType<typeof parseFailedReport>, { failed: true }>
+): void {
+  sendStructured({
+    type: 'failure_report',
+    timestamp: timestamp(),
+    summary: parsed.summary || 'FAILED',
+    requirements: parsed.details?.requirements,
+    problems: parsed.details?.problems,
+    solutions: parsed.details?.solutions,
+    sourceAgent,
+  });
+}
 
 export async function executeSimpleMode(
   contextContent: string,
@@ -128,16 +146,31 @@ export async function executeSimpleMode(
       }
     );
 
-    log(`Running implementer step${attempt > 0 ? ` (attempt ${attemptNumber})` : ''}...`);
+    sendStructured({
+      type: 'agent_step_start',
+      timestamp: timestamp(),
+      phase: 'implementer',
+      attempt: attemptNumber,
+      message: `Running implementer step${attempt > 0 ? ` (attempt ${attemptNumber})` : ''}...`,
+    });
     const attemptOutput = await executeCodexStep(implementerPrompt.prompt, gitRoot, timConfig, {
       reasoningLevel: defaultReasoningLevel,
     });
     events.push({ type: 'implementer', message: attemptOutput });
-    log('Implementer output captured.');
-
     const parsed = parseFailedReport(attemptOutput);
+    sendStructured({
+      type: 'agent_step_end',
+      timestamp: timestamp(),
+      phase: 'implementer',
+      success: !parsed.failed,
+      summary: parsed.failed
+        ? `Implementer reported failure: ${parsed.summary || 'FAILED'}`
+        : 'Implementer output captured.',
+    });
+
     if (parsed.failed) {
       hadFailure = true;
+      emitFailureReport('implementer', parsed);
       const aggregated = buildAggregatedOutput();
       return {
         ...(aggregated ?? { content: attemptOutput }),
@@ -241,7 +274,12 @@ export async function executeSimpleMode(
 
     let reviewOutcome;
     try {
-      log('Running external review step...');
+      sendStructured({
+        type: 'agent_step_start',
+        timestamp: timestamp(),
+        phase: 'reviewer',
+        message: 'Running external review step...',
+      });
       reviewOutcome = await runExternalReviewForCodex({
         planInfo,
         gitRoot,
@@ -259,6 +297,13 @@ export async function executeSimpleMode(
     } catch (error) {
       hadFailure = true;
       const message = error instanceof Error ? error.message : String(error);
+      sendStructured({
+        type: 'agent_step_end',
+        timestamp: timestamp(),
+        phase: 'reviewer',
+        success: false,
+        summary: message,
+      });
       const aggregated = buildAggregatedOutput();
       return {
         ...(aggregated ?? { content: message }),
@@ -272,24 +317,46 @@ export async function executeSimpleMode(
     }
 
     events.push({ type: 'verifier', message: reviewOutcome.formattedOutput });
-    log('Verifier output captured.');
+    sendStructured({
+      type: 'agent_step_end',
+      timestamp: timestamp(),
+      phase: 'reviewer',
+      success: true,
+      summary: 'Verifier output captured.',
+    });
 
     if (reviewOutcome.verdict === 'ACCEPTABLE') {
       finalReviewVerdict = 'ACCEPTABLE';
-      log('Verification verdict: ACCEPTABLE');
+      sendStructured({
+        type: 'review_verdict',
+        timestamp: timestamp(),
+        verdict: 'ACCEPTABLE',
+      });
       const aggregated = buildAggregatedOutput();
       if (aggregated != null) return aggregated;
       return;
     }
 
     finalReviewVerdict = 'NEEDS_FIXES';
-    log('Verification verdict: NEEDS_FIXES');
+    sendStructured({
+      type: 'review_verdict',
+      timestamp: timestamp(),
+      verdict: 'NEEDS_FIXES',
+      fixInstructions: reviewOutcome.fixInstructions,
+    });
+    log(`Issues: ${reviewOutcome.fixInstructions}`);
     let fixInstructions = reviewOutcome.fixInstructions;
 
     // Implement fix-and-review loop (up to 5 iterations)
     const maxFixIterations = 5;
     for (let iter = 1; iter <= maxFixIterations; iter++) {
-      log(`Starting fix iteration ${iter}/${maxFixIterations}...`);
+      sendStructured({
+        type: 'agent_step_start',
+        timestamp: timestamp(),
+        phase: 'fixer',
+        stepNumber: iter,
+        message: `Starting fix iteration ${iter}/${maxFixIterations}...`,
+      });
 
       const fixerPrompt = getFixerPrompt({
         planPath: planInfo.planFilePath,
@@ -304,28 +371,43 @@ export async function executeSimpleMode(
         reasoningLevel: defaultReasoningLevel,
       });
       events.push({ type: 'verifier', message: fixerOutput });
-      log('Fixer output captured. Re-running verifier...');
+      const fixerFailure = parseFailedReport(fixerOutput);
+      sendStructured({
+        type: 'agent_step_end',
+        timestamp: timestamp(),
+        phase: 'fixer',
+        success: !fixerFailure.failed,
+        summary: fixerFailure.failed
+          ? `Fixer reported failure: ${fixerFailure.summary || 'FAILED'}`
+          : 'Fixer output captured. Re-running verifier...',
+      });
 
       // Failure detection: fixer
       {
-        const parsed = parseFailedReport(fixerOutput);
-        if (parsed.failed) {
+        if (fixerFailure.failed) {
           hadFailure = true;
+          emitFailureReport('fixer', fixerFailure);
           const aggregated = buildAggregatedOutput();
           return {
             ...(aggregated ?? { content: fixerOutput }),
             success: false,
-            failureDetails: parsed.details
-              ? { ...parsed.details, sourceAgent: 'fixer' }
+            failureDetails: fixerFailure.details
+              ? { ...fixerFailure.details, sourceAgent: 'fixer' }
               : {
                   requirements: '',
-                  problems: parsed.summary || 'FAILED',
+                  problems: fixerFailure.summary || 'FAILED',
                   sourceAgent: 'fixer',
                 },
           };
         }
       }
 
+      sendStructured({
+        type: 'agent_step_start',
+        timestamp: timestamp(),
+        phase: 'reviewer',
+        message: 'Re-running reviewer after fixer output...',
+      });
       try {
         reviewOutcome = await runExternalReviewForCodex({
           planInfo,
@@ -345,6 +427,13 @@ export async function executeSimpleMode(
       } catch (error) {
         hadFailure = true;
         const message = error instanceof Error ? error.message : String(error);
+        sendStructured({
+          type: 'agent_step_end',
+          timestamp: timestamp(),
+          phase: 'reviewer',
+          success: false,
+          summary: message,
+        });
         const aggregated = buildAggregatedOutput();
         return {
           ...(aggregated ?? { content: message }),
@@ -358,17 +447,33 @@ export async function executeSimpleMode(
       }
 
       events.push({ type: 'verifier', message: reviewOutcome.formattedOutput });
+      sendStructured({
+        type: 'agent_step_end',
+        timestamp: timestamp(),
+        phase: 'reviewer',
+        success: true,
+        summary: 'Verifier output captured.',
+      });
 
       if (reviewOutcome.verdict === 'ACCEPTABLE') {
         finalReviewVerdict = 'ACCEPTABLE';
-        log(`Verification verdict after fixes (iteration ${iter}): ACCEPTABLE`);
+        sendStructured({
+          type: 'review_verdict',
+          timestamp: timestamp(),
+          verdict: 'ACCEPTABLE',
+        });
         const aggregated = buildAggregatedOutput();
         if (aggregated != null) return aggregated;
         return;
       }
 
       finalReviewVerdict = 'NEEDS_FIXES';
-      log(`Verification verdict after fixes (iteration ${iter}): NEEDS_FIXES`);
+      sendStructured({
+        type: 'review_verdict',
+        timestamp: timestamp(),
+        verdict: 'NEEDS_FIXES',
+        fixInstructions: reviewOutcome.fixInstructions,
+      });
       fixInstructions = reviewOutcome.fixInstructions;
       continue;
     }

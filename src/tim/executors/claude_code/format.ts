@@ -1,10 +1,17 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import chalk from 'chalk';
 import yaml from 'yaml';
-import { formatTodoLikeLines } from '../shared/todo_format.ts';
 import { debugLog } from '../../../logging.ts';
 import { createTwoFilesPatch } from 'diff';
 import { detectFailedLineAnywhere } from '../failure_detection.ts';
+import type { StructuredMessage } from '../../../logging/structured_messages.ts';
+import { formatStructuredMessage } from '../../../logging/console_formatter.ts';
+import {
+  buildCommandResult,
+  buildParseErrorStatus,
+  buildSessionStart,
+  buildTodoUpdate,
+  buildUnknownStatus,
+} from '../shared/structured_message_builders.ts';
 
 // Represents the top-level message object
 export type Message =
@@ -90,8 +97,28 @@ export type Message =
       };
     };
 
-// Cache for tool use IDs mapped to their names
+export interface FormattedClaudeMessage {
+  structured?: StructuredMessage | StructuredMessage[];
+  message?: string;
+  rawMessage?: string;
+  structuredOutput?: unknown;
+  type: string;
+  filePaths?: string[];
+  // Failure detection for assistant messages
+  failed?: boolean;
+  failedSummary?: string;
+}
+
+// Cache for tool use IDs mapped to their names.
 const toolUseCache = new Map<string, string>();
+
+export function resetToolUseCache(): void {
+  toolUseCache.clear();
+}
+
+function timestamp(): string {
+  return new Date().toISOString();
+}
 
 function truncateString(result: string, maxLines = 15): string {
   let lines = result.split('\n');
@@ -103,21 +130,48 @@ function truncateString(result: string, maxLines = 15): string {
   return lines.join('\n');
 }
 
-export function formatJsonMessage(input: string): {
-  message?: string;
-  rawMessage?: string;
-  structuredOutput?: unknown;
-  type: string;
-  filePaths?: string[];
-  // Failure detection for assistant messages
-  failed?: boolean;
-  failedSummary?: string;
-} {
-  // TODOS implemented:
-  // - Cache tool use IDs across calls so that we can print the tool names with the results
-  // - When reading and writing files, just show number of lines read and written
-  // - Add timestamps at each header
+function formatValue(value: unknown): string {
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  return yaml.stringify(value).trim();
+}
 
+function toArray(
+  message: StructuredMessage | StructuredMessage[] | undefined
+): StructuredMessage[] {
+  if (message == null) {
+    return [];
+  }
+  return Array.isArray(message) ? message : [message];
+}
+
+export function extractStructuredMessages(
+  formattedResults: FormattedClaudeMessage[]
+): StructuredMessage[] {
+  return formattedResults.flatMap((result) => toArray(result.structured));
+}
+
+export function extractStructuredMessagesFromLines(lines: string[]): StructuredMessage[] {
+  return extractStructuredMessages(lines.map(formatJsonMessage));
+}
+
+function withMessage(result: Omit<FormattedClaudeMessage, 'message'>): FormattedClaudeMessage {
+  const structuredMessages = toArray(result.structured);
+  if (structuredMessages.length === 0) {
+    return result;
+  }
+
+  return {
+    ...result,
+    message: structuredMessages
+      .map((structuredMessage) => formatStructuredMessage(structuredMessage))
+      .filter((line) => line.length > 0)
+      .join('\n\n'),
+  };
+}
+
+export function formatJsonMessage(input: string): FormattedClaudeMessage {
   debugLog(input);
 
   if (input.startsWith('[DEBUG]')) {
@@ -125,85 +179,118 @@ export function formatJsonMessage(input: string): {
   }
 
   const filePaths: string[] = [];
-  const message = JSON.parse(input) as Message;
-
-  // Get the current timestamp in HH:MM:SS format
-  const timestamp = new Date().toTimeString().split(' ')[0];
-
-  const outputLines: string[] = [];
-  let rawMessage: string[] = [];
+  let message: Message;
+  try {
+    message = JSON.parse(input) as Message;
+  } catch (err) {
+    debugLog('Failed to parse Claude JSON line:', input, err);
+    return withMessage({
+      type: 'parse_error',
+      structured: buildParseErrorStatus('claude', timestamp(), input),
+    });
+  }
 
   if (message.type === 'result') {
     if (message.subtype === 'success' || message.subtype === 'error_max_turns') {
-      let result = `Cost: $${message.total_cost_usd.toFixed(2)}, ${Math.round(message.duration_ms / 1000)}s for ${message.num_turns} turns`;
-      if (message.subtype === 'error_max_turns') {
-        result += ' (max turns reached)';
-      }
-      outputLines.push(
-        chalk.bold.green(`### Done [${timestamp}]\n`),
-        `Session ID: ${message.session_id}`,
-        result
-      );
-      return {
-        message: outputLines.join('\n'),
+      return withMessage({
         type: message.type,
+        structured: {
+          type: 'agent_session_end',
+          timestamp: timestamp(),
+          success: message.subtype === 'success' && !message.is_error,
+          sessionId: message.session_id,
+          durationMs: message.duration_ms,
+          costUsd: message.total_cost_usd,
+          turns: message.num_turns,
+          summary: message.subtype === 'error_max_turns' ? 'Maximum turns reached' : undefined,
+        },
         structuredOutput: 'structured_output' in message ? message.structured_output : undefined,
-      };
+      });
     }
   } else if (message.type === 'system' && message.subtype === 'init') {
-    outputLines.push(
-      chalk.bold.green(`### Starting [${timestamp}]\n`),
-      `Session ID: ${message.session_id}`,
-      `Tools: ${message.tools.join(', ')}`
-    );
-
-    if (message.mcp_servers.length > 0) {
-      outputLines.push(
-        `MCP Servers: ${message.mcp_servers.map((s) => `${s.name} (${s.status})`).join(', ')}`
-      );
-    }
-
-    return { message: outputLines.join('\n'), type: message.type };
+    return withMessage({
+      type: message.type,
+      structured: buildSessionStart(timestamp(), 'claude', {
+        sessionId: message.session_id,
+        tools: message.tools,
+        mcpServers: message.mcp_servers.map((server) => `${server.name} (${server.status})`),
+      }),
+    });
   } else if (message.type === 'system' && message.subtype === 'task_notification') {
-    outputLines.push(
-      chalk.bold.yellow(`### Task Notification [${timestamp}]`),
-      `Task ${message.task_id}: ${message.status}`,
-      message.summary
-    );
-    return { message: outputLines.join('\n'), type: message.type };
+    return withMessage({
+      type: message.type,
+      structured: {
+        type: 'workflow_progress',
+        timestamp: timestamp(),
+        phase: 'task_notification',
+        message: `Task ${message.task_id}: ${message.status}\n${message.summary}`,
+      },
+    });
   } else if (message.type === 'system' && message.subtype === 'status') {
     // Ignore status messages with null status
     if (message.status === null) {
       return { type: '' };
     }
-    outputLines.push(chalk.dim(`### Status: ${message.status} [${timestamp}]`));
-    return { message: outputLines.join('\n'), type: message.type };
+
+    return withMessage({
+      type: message.type,
+      structured: {
+        type: 'llm_status',
+        timestamp: timestamp(),
+        status: message.status,
+      },
+    });
   } else if (message.type === 'system' && message.subtype === 'compact_boundary') {
-    outputLines.push(
-      chalk.dim(
-        `### Compacting (${message.compact_metadata.trigger}, ${message.compact_metadata.pre_tokens} tokens) [${timestamp}]`
-      )
-    );
-    return { message: outputLines.join('\n'), type: message.type };
+    return withMessage({
+      type: message.type,
+      structured: {
+        type: 'llm_status',
+        timestamp: timestamp(),
+        status: `Compacting (${message.compact_metadata.trigger})`,
+        detail: `${message.compact_metadata.pre_tokens} tokens before compact`,
+      },
+    });
   } else if (message.type === 'assistant' || message.type === 'user') {
     const m = message.message;
 
-    for (const content of m.content) {
-      if (typeof content === 'string') {
-        outputLines.push(content);
-        rawMessage.push(content);
-      } else if (content.type === 'thinking') {
-        outputLines.push(chalk.blue(`### Thinking [${timestamp}]`), content.thinking);
-      } else if (content.type === 'text') {
-        if (message.type === 'assistant') {
-          outputLines.push(chalk.bold.green(`### Model Response [${timestamp}]`));
-        } else {
-          outputLines.push(chalk.bold.blue(`### Agent Request [${timestamp}]`));
-        }
+    const structuredMessages: StructuredMessage[] = [];
+    const rawMessage: string[] = [];
 
-        outputLines.push(content.text);
+    for (const content of m.content) {
+      const ts = timestamp();
+
+      if (typeof content === 'string') {
+        rawMessage.push(content);
+        structuredMessages.push({
+          type: 'llm_response',
+          timestamp: ts,
+          text: content,
+          isUserRequest: message.type === 'user',
+        });
+        continue;
+      }
+
+      if (content.type === 'thinking') {
+        structuredMessages.push({
+          type: 'llm_thinking',
+          timestamp: ts,
+          text: content.thinking,
+        });
+        continue;
+      }
+
+      if (content.type === 'text') {
         rawMessage.push(content.text);
-      } else if (content.type === 'tool_use') {
+        structuredMessages.push({
+          type: 'llm_response',
+          timestamp: ts,
+          text: content.text,
+          isUserRequest: message.type === 'user',
+        });
+        continue;
+      }
+
+      if (content.type === 'tool_use') {
         // Store tool use ID mapping
         if ('id' in content) {
           toolUseCache.set(content.id, content.name);
@@ -221,11 +308,16 @@ export function formatJsonMessage(input: string): {
           filePaths.push(filePath);
           const fileContent = content.input.content as string;
           const lineCount = fileContent.split('\n').length;
-          outputLines.push(
-            chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
-            `File path: ${filePath}\nNumber of lines: ${lineCount}`
-          );
-        } else if (
+          structuredMessages.push({
+            type: 'file_write',
+            timestamp: ts,
+            path: filePath,
+            lineCount,
+          });
+          continue;
+        }
+
+        if (
           content.name === 'Edit' &&
           content.input &&
           typeof content.input === 'object' &&
@@ -244,25 +336,16 @@ export function formatJsonMessage(input: string): {
           // Create a diff between the old and new strings
           const diff = createTwoFilesPatch('old', 'new', old_string, new_string);
 
-          // Colorize diff lines: green for additions (+), red for deletions (-)
-          const colorizedDiff = diff
-            .split('\n')
-            .map((line) => {
-              if (line.startsWith('+') && !line.startsWith('+++')) {
-                return chalk.green(line);
-              } else if (line.startsWith('-') && !line.startsWith('---')) {
-                return chalk.red(line);
-              }
-              return line;
-            })
-            .join('\n');
+          structuredMessages.push({
+            type: 'file_edit',
+            timestamp: ts,
+            path: file_path,
+            diff,
+          });
+          continue;
+        }
 
-          outputLines.push(
-            chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
-            `File path: ${file_path}\n`,
-            colorizedDiff
-          );
-        } else if (
+        if (
           content.name === 'MultiEdit' &&
           content.input &&
           typeof content.input === 'object' &&
@@ -270,40 +353,62 @@ export function formatJsonMessage(input: string): {
         ) {
           const filePath = content.input.file_path as string;
           filePaths.push(filePath);
-          outputLines.push(
-            chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`),
-            yaml.stringify(content.input ?? {})
-          );
-        } else if (
+        }
+
+        if (
           content.name === 'TodoWrite' &&
           content.input &&
           typeof content.input === 'object' &&
           'todos' in content.input
         ) {
-          const todos = (content.input as any).todos as Array<{
-            id: string;
-            content: string;
-            status?: string;
-            priority?: string;
-          }>;
-          outputLines.push(chalk.cyan(`### Invoke Tool: ${content.name} [${timestamp}]`));
+          const todos = content.input.todos;
+          if (!Array.isArray(todos)) {
+            structuredMessages.push({
+              type: 'llm_tool_use',
+              timestamp: ts,
+              toolName: content.name,
+              inputSummary: formatValue(content.input ?? {}),
+              input: content.input,
+            });
+            continue;
+          }
 
-          const todoLines = formatTodoLikeLines(
-            todos.map((todo) => ({
-              label: todo.content,
-              status: todo.status,
-              priority: todo.priority,
-            }))
+          structuredMessages.push(
+            buildTodoUpdate(
+              'claude',
+              ts,
+              todos.map((todo) => ({
+                label:
+                  todo &&
+                  typeof todo === 'object' &&
+                  'content' in todo &&
+                  typeof todo.content === 'string'
+                    ? todo.content
+                    : '',
+                status:
+                  todo &&
+                  typeof todo === 'object' &&
+                  'status' in todo &&
+                  typeof todo.status === 'string'
+                    ? todo.status
+                    : undefined,
+              }))
+            )
           );
-          outputLines.push(todoLines.join('\n'));
-        } else {
-          const color = content.name === 'Task' ? chalk.red : chalk.cyan;
-          outputLines.push(
-            color(`### Invoke Tool: ${content.name} [${timestamp}]`),
-            yaml.stringify(content.input ?? {}).trim()
-          );
+          continue;
         }
-      } else if (content.type === 'tool_result') {
+
+        structuredMessages.push({
+          type: 'llm_tool_use',
+          timestamp: ts,
+          toolName: content.name,
+          inputSummary: formatValue(content.input ?? {}),
+          input: content.input,
+        });
+        continue;
+      }
+
+      if (content.type === 'tool_result') {
         // Get the tool name if we have it cached
         let toolName = '';
         if ('tool_use_id' in content && toolUseCache.has(content.tool_use_id)) {
@@ -313,46 +418,61 @@ export function formatJsonMessage(input: string): {
         // Check if this is a file operation (read/write) and simplify output
         const result = content.content;
 
-        let formattedResult: string;
         if (toolName === 'Read' && typeof result === 'string') {
-          formattedResult = `Lines: ${result.split('\n').length}`;
-        } else if (
+          structuredMessages.push({
+            type: 'llm_tool_result',
+            timestamp: ts,
+            toolName,
+            resultSummary: `Lines: ${result.split('\n').length}`,
+            result,
+          });
+          continue;
+        }
+
+        if (
+          toolName === 'Bash' &&
+          typeof result === 'object' &&
+          result !== null &&
+          ('stdout' in result || 'stderr' in result)
+        ) {
+          const stdout = typeof (result as any).stdout === 'string' ? (result as any).stdout : '';
+          const stderr = typeof (result as any).stderr === 'string' ? (result as any).stderr : '';
+          const exitCode =
+            typeof (result as any).exit_code === 'number'
+              ? (result as any).exit_code
+              : typeof (result as any).exitCode === 'number'
+                ? (result as any).exitCode
+                : stderr
+                  ? 1
+                  : 0;
+
+          structuredMessages.push(
+            buildCommandResult(ts, {
+              command: typeof (result as any).command === 'string' ? (result as any).command : '',
+              exitCode,
+              stdout,
+              stderr,
+            })
+          );
+          continue;
+        }
+
+        let formattedResult: string;
+        if (
           toolName === 'Edit' &&
           typeof result === 'string' &&
           result.includes('has been updated.')
         ) {
           formattedResult = truncateString(result);
         } else if ((toolName === 'LS' || toolName === 'Glob') && typeof result === 'string') {
-          // This tends to have a lot of files listed and isn't useful
-          // to the user
+          // This tends to have a lot of files listed and isn't useful to the user.
           formattedResult = truncateString(result, 10);
-        } else if (
-          toolName === 'Bash' &&
-          typeof result === 'object' &&
-          ('stdout' in result || 'stderr' in result)
-        ) {
-          let stdout = (result as any).stdout?.trim();
-          let stderr = (result as any).stderr?.trim();
-
-          let lines: string[] = [];
-
-          if (stderr) {
-            lines.push(chalk.red('Stderr:\n') + stderr);
-          }
-
-          if (stdout) {
-            lines.push(chalk.green('Stdout:\n') + stdout);
-          }
-
-          formattedResult = lines.join('\n\n');
         } else if (
           typeof result === 'object' &&
           result !== null &&
           'file_path' in result &&
           'content' in result
         ) {
-          // Handle file read/write operations by showing only summary
-          // This is likely a file read or write operation
           const filePath = (result as any).file_path;
           const fileContent = (result as any).content as string;
           const lineCount = fileContent.split('\n').length;
@@ -361,37 +481,45 @@ export function formatJsonMessage(input: string): {
           formattedResult = formatValue(result);
         }
 
-        const color = toolName === 'Task' ? chalk.red : chalk.magenta;
-        outputLines.push(color(`### Tool Result: ${toolName} [${timestamp}]`), formattedResult);
-      } else {
-        debugLog('Unknown message type:', content.type);
-        outputLines.push(`### ${content.type as string} [${timestamp}]`, formatValue(content));
+        structuredMessages.push({
+          type: 'llm_tool_result',
+          timestamp: ts,
+          toolName,
+          resultSummary: formattedResult,
+          result,
+        });
+        continue;
       }
+
+      debugLog('Unknown message type:', content.type);
+      structuredMessages.push(
+        buildUnknownStatus('claude', ts, formatValue(content), 'unknown_content')
+      );
     }
+
     const rawCombined = rawMessage.filter(Boolean).join('\n');
     // Detect FAILED anywhere in the assistant message (not only first non-empty line)
     const failure =
       message.type === 'assistant' ? detectFailedLineAnywhere(rawCombined) : { failed: false };
-    return {
-      message: outputLines.join('\n\n'),
-      rawMessage: rawCombined,
+
+    return withMessage({
       type: message.type,
+      structured: structuredMessages,
+      rawMessage: rawCombined,
       structuredOutput: 'structured_output' in message ? message.structured_output : undefined,
       filePaths: filePaths.length > 0 ? filePaths : undefined,
       failed: failure.failed || undefined,
       failedSummary: failure.failed ? failure.summary : undefined,
-    };
+    });
   }
 
-  return {
-    message: `Unknown message: ${JSON.stringify(message)}`,
+  return withMessage({
     type: (message as Record<string, unknown>)?.type as string,
-  };
-}
-
-function formatValue(value: unknown): string {
-  if (typeof value === 'string') {
-    return value.trim();
-  }
-  return yaml.stringify(value).trim();
+    structured: buildUnknownStatus(
+      'claude',
+      timestamp(),
+      `Unknown message: ${JSON.stringify(message)}`,
+      'unknown_message'
+    ),
+  });
 }

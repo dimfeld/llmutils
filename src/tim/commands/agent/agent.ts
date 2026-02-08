@@ -13,6 +13,7 @@ import {
   error,
   log,
   openLogFile,
+  sendStructured,
   warn,
 } from '../../../logging.js';
 import { executePostApplyCommand } from '../../actions.js';
@@ -49,6 +50,7 @@ import {
 import { buildDescriptionFromPlan } from '../../display_utils.js';
 import { findNextReadyDependency } from '../find_next_dependency.js';
 import { executeBatchMode } from './batch_mode.js';
+import { sendFailureReport, timestamp } from './agent_helpers.js';
 import { markParentInProgress } from './parent_plans.js';
 import { executeStubPlan } from './stub_plan.js';
 import { SummaryCollector } from '../../summary/collector.js';
@@ -144,7 +146,16 @@ export async function handleAgentCommand(
         return;
       }
 
-      log(chalk.green(`Found ready plan: ${result.plan.id} - ${result.plan.title}`));
+      if (typeof result.plan.id === 'number' && result.plan.title) {
+        sendStructured({
+          type: 'plan_discovery',
+          timestamp: timestamp(),
+          planId: result.plan.id,
+          title: result.plan.title,
+        });
+      } else {
+        log(chalk.green(`Found ready plan: ${result.plan.filename}`));
+      }
       resolvedPlanFile = result.plan.filename;
       headlessPlanSummary = { id: result.plan.id, title: result.plan.title };
     } else if (options.latest) {
@@ -168,11 +179,16 @@ export async function handleAgentCommand(
         return;
       }
 
-      log(
-        chalk.green(
-          `Found latest plan: ${latestPlan.id} - ${getCombinedTitleFromSummary(latestPlan)}`
-        )
-      );
+      if (typeof latestPlan.id === 'number') {
+        sendStructured({
+          type: 'plan_discovery',
+          timestamp: timestamp(),
+          planId: latestPlan.id,
+          title: getCombinedTitleFromSummary(latestPlan),
+        });
+      } else {
+        log(chalk.green(`Found latest plan: ${latestPlan.filename}`));
+      }
       resolvedPlanFile = latestPlan.filename;
       headlessPlanSummary = { id: latestPlan.id, title: latestPlan.title };
     } else if (options.next || options.current) {
@@ -192,10 +208,16 @@ export async function handleAgentCommand(
         return;
       }
 
-      const message = options.current
-        ? `Found current plan: ${plan.id} - ${getCombinedTitleFromSummary(plan)}`
-        : `Found next ready plan: ${plan.id} - ${getCombinedTitleFromSummary(plan)}`;
-      log(chalk.green(message));
+      if (typeof plan.id === 'number') {
+        sendStructured({
+          type: 'plan_discovery',
+          timestamp: timestamp(),
+          planId: plan.id,
+          title: getCombinedTitleFromSummary(plan),
+        });
+      } else {
+        log(chalk.green(`Found plan: ${plan.filename}`));
+      }
       resolvedPlanFile = plan.filename;
       headlessPlanSummary = { id: plan.id, title: plan.title };
     } else {
@@ -359,11 +381,6 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
       }
 
       if (workspace) {
-        log(boldMarkdownHeaders('\n## Workspace Information'));
-        log(`Task ID: ${options.workspace}`);
-        log(`Workspace Path: ${workspace.path}`);
-        log(`Original Plan: ${currentPlanFile}`);
-
         // Validate that the workspace is properly initialized
         try {
           const gitStatus = logSpawn(['git', 'status'], {
@@ -398,7 +415,13 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
 
         // Use the workspace path as the base directory for operations
         currentBaseDir = workspace.path;
-        log(`Using workspace as base directory: ${workspace.path}`);
+        sendStructured({
+          type: 'workspace_info',
+          timestamp: timestamp(),
+          workspaceId: workspace.taskId,
+          path: workspace.path,
+          planFile: currentPlanFile,
+        });
 
         // Acquire lock if we didn't already (auto-selector doesn't create new workspaces)
         if (selectedWorkspace && !selectedWorkspace.isNew) {
@@ -600,22 +623,24 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
 
         const actionableItem = findNextActionableItem(planData);
         if (!actionableItem) {
-          log('Plan complete!');
+          sendStructured({
+            type: 'task_completion',
+            timestamp: timestamp(),
+            planComplete: true,
+          });
           break;
         }
 
         // Branch based on the type of actionable item
         if (actionableItem.type === 'task') {
           // Simple task without steps
-          log(
-            boldMarkdownHeaders(
-              `# Iteration ${stepCount}: Simple Task ${actionableItem.taskIndex + 1}...`
-            )
-          );
-          log(`Title: ${actionableItem.task.title}`);
-          if (actionableItem.task.description) {
-            log(`Description: ${actionableItem.task.description}`);
-          }
+          sendStructured({
+            type: 'agent_iteration_start',
+            timestamp: timestamp(),
+            iterationNumber: stepCount,
+            taskTitle: actionableItem.task.title,
+            taskDescription: actionableItem.task.description,
+          });
 
           // Build the prompt for the simple task using the unified function
           const taskPrompt = await buildExecutionPromptWithoutSteps({
@@ -640,7 +665,13 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
           }
 
           try {
-            log(boldMarkdownHeaders('\n## Execution\n'));
+            sendStructured({
+              type: 'agent_step_start',
+              timestamp: timestamp(),
+              phase: 'execution',
+              executor: executorName,
+              stepNumber: stepCount,
+            });
             const start = Date.now();
             const output = await executor.execute(taskPrompt, {
               planId: planData.id?.toString() ?? 'unknown',
@@ -653,19 +684,22 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
             const ok = output ? output.success !== false : true;
             if (!ok) {
               const fd = output?.failureDetails;
-              const src = fd?.sourceAgent ? ` (${fd.sourceAgent})` : '';
-              log(
-                chalk.redBright(`\nFAILED${src}: ${fd?.problems || 'Executor reported failure.'}`)
-              );
-              if (fd?.requirements?.trim()) {
-                log(chalk.yellow('\nRequirements:\n') + fd.requirements.trim());
-              }
-              if (fd?.solutions?.trim()) {
-                log(chalk.yellow('\nPossible solutions:\n') + fd.solutions.trim());
-              }
+              sendFailureReport(fd?.problems || 'Executor reported failure.', {
+                requirements: fd?.requirements,
+                problems: fd?.problems,
+                solutions: fd?.solutions,
+                sourceAgent: fd?.sourceAgent,
+              });
               hasError = true;
               recordFailure(fd?.problems || 'Executor reported failure.');
             }
+            sendStructured({
+              type: 'agent_step_end',
+              timestamp: timestamp(),
+              phase: 'execution',
+              success: ok,
+              summary: ok ? 'Task execution completed.' : 'Task execution failed.',
+            });
             if (summaryEnabled) {
               const end = Date.now();
               summaryCollector.addStepResult({
@@ -691,12 +725,24 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                 errorMessage: String(err instanceof Error ? err.message : err),
               });
             }
+            sendStructured({
+              type: 'agent_step_end',
+              timestamp: timestamp(),
+              phase: 'execution',
+              success: false,
+              summary: `Task execution threw: ${String(err instanceof Error ? err.message : err)}`,
+            });
             break;
           }
 
           // Run post-apply commands if configured
           if (config.postApplyCommands && config.postApplyCommands.length > 0) {
-            log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
+            sendStructured({
+              type: 'workflow_progress',
+              timestamp: timestamp(),
+              phase: 'post-apply',
+              message: 'Running post-apply commands',
+            });
             for (const commandConfig of config.postApplyCommands) {
               const commandSucceeded = await executePostApplyCommand(commandConfig, currentBaseDir);
               if (!commandSucceeded) {
@@ -740,7 +786,12 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
             // Defer file change tracking to the end for efficiency
 
             if (markResult.planComplete) {
-              log('Plan fully completed!');
+              sendStructured({
+                type: 'task_completion',
+                timestamp: timestamp(),
+                taskTitle: actionableItem.task.title,
+                planComplete: true,
+              });
 
               // Update docs if configured for after-completion mode
               if (updateDocsMode === 'after-completion') {
@@ -762,7 +813,12 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                 options.finalReview === false ||
                 (initialCompletedTaskCount === 0 && stepCount === 1);
               if (!shouldSkipFinalReview) {
-                log(boldMarkdownHeaders('\n## Running Final Review\n'));
+                sendStructured({
+                  type: 'workflow_progress',
+                  timestamp: timestamp(),
+                  phase: 'final-review',
+                  message: 'Running final review',
+                });
                 try {
                   const reviewResult = await handleReviewCommand(
                     currentPlanFile,
@@ -777,6 +833,11 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                     // Read the updated plan to get the plan ID
                     const updatedPlanData = await readPlanFile(currentPlanFile);
                     const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';
+                    sendStructured({
+                      type: 'input_required',
+                      timestamp: timestamp(),
+                      prompt: 'Continue after final review appended new tasks',
+                    });
                     const shouldContinue = await confirm({
                       message: `${reviewResult.tasksAppended} new task(s) added from review to plan${planIdStr}. You can edit the plan first if needed. Continue running?`,
                       default: true,
@@ -794,6 +855,12 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
 
               break;
             }
+            sendStructured({
+              type: 'task_completion',
+              timestamp: timestamp(),
+              taskTitle: actionableItem.task.title,
+              planComplete: false,
+            });
           } catch (err) {
             error('Failed to mark task as done:', err);
             hasError = true;
@@ -834,9 +901,13 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
           break;
         }
 
-        log(
-          boldMarkdownHeaders(`# Iteration ${stepCount}: Task ${pendingTaskInfo.taskIndex + 1}...`)
-        );
+        sendStructured({
+          type: 'agent_iteration_start',
+          timestamp: timestamp(),
+          iterationNumber: stepCount,
+          taskTitle: pendingTaskInfo.task.title,
+          taskDescription: pendingTaskInfo.task.description,
+        });
 
         const { promptFilePath, taskIndex, rmfilterArgs } = stepPreparationResult;
 
@@ -857,7 +928,12 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
               );
             break;
           }
-          log(boldMarkdownHeaders('\n## Generating Context with rmfilter\n'));
+          sendStructured({
+            type: 'workflow_progress',
+            timestamp: timestamp(),
+            phase: 'context',
+            message: 'Generating context with rmfilter',
+          });
           const rmfilterOutputPath = promptFilePath.replace('.md', '.xml');
           const proc = logSpawn(['rmfilter', '--output', rmfilterOutputPath, ...rmfilterArgs], {
             cwd: currentBaseDir,
@@ -885,7 +961,12 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
           contextContent = await Bun.file(rmfilterOutputPath).text();
           // Clean up rmfilter output path if needed, or handle in executor
         } else {
-          log(boldMarkdownHeaders('\n## Using Direct Prompt as Context\n'));
+          sendStructured({
+            type: 'workflow_progress',
+            timestamp: timestamp(),
+            phase: 'context',
+            message: 'Using direct prompt as context',
+          });
           contextContent = stepPreparationResult.prompt;
           log(contextContent);
         }
@@ -902,7 +983,13 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
         }
 
         try {
-          log(boldMarkdownHeaders('\n## Execution\n'));
+          sendStructured({
+            type: 'agent_step_start',
+            timestamp: timestamp(),
+            phase: 'execution',
+            executor: executorName,
+            stepNumber: stepCount,
+          });
           const start = Date.now();
           const output = await executor.execute(contextContent, {
             planId: planData.id?.toString() ?? 'unknown',
@@ -914,17 +1001,22 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
           const ok = output ? output.success !== false : true;
           if (!ok) {
             const fd = output?.failureDetails;
-            const src = fd?.sourceAgent ? ` (${fd.sourceAgent})` : '';
-            log(chalk.redBright(`\nFAILED${src}: ${fd?.problems || 'Executor reported failure.'}`));
-            if (fd?.requirements?.trim()) {
-              log(chalk.yellow('\nRequirements:\n') + fd.requirements.trim());
-            }
-            if (fd?.solutions?.trim()) {
-              log(chalk.yellow('\nPossible solutions:\n') + fd.solutions.trim());
-            }
+            sendFailureReport(fd?.problems || 'Executor reported failure.', {
+              requirements: fd?.requirements,
+              problems: fd?.problems,
+              solutions: fd?.solutions,
+              sourceAgent: fd?.sourceAgent,
+            });
             hasError = true;
             recordFailure(fd?.problems || 'Executor reported failure.');
           }
+          sendStructured({
+            type: 'agent_step_end',
+            timestamp: timestamp(),
+            phase: 'execution',
+            success: ok,
+            summary: ok ? 'Step execution completed.' : 'Step execution failed.',
+          });
           if (summaryEnabled) {
             const end = Date.now();
             summaryCollector.addStepResult({
@@ -950,11 +1042,23 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
               errorMessage: String(err instanceof Error ? err.message : err),
             });
           }
+          sendStructured({
+            type: 'agent_step_end',
+            timestamp: timestamp(),
+            phase: 'execution',
+            success: false,
+            summary: `Step execution threw: ${String(err instanceof Error ? err.message : err)}`,
+          });
           break;
         }
 
         if (config.postApplyCommands && config.postApplyCommands.length > 0) {
-          log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
+          sendStructured({
+            type: 'workflow_progress',
+            timestamp: timestamp(),
+            phase: 'post-apply',
+            message: 'Running post-apply commands',
+          });
           for (const commandConfig of config.postApplyCommands) {
             const commandSucceeded = await executePostApplyCommand(commandConfig, currentBaseDir);
             if (!commandSucceeded) {
@@ -997,10 +1101,13 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
             config
           );
           // Defer file change tracking to the end for efficiency
-          log(`Marked task as done: ${markResult.message.split('\n')[0]}`);
+          sendStructured({
+            type: 'task_completion',
+            timestamp: timestamp(),
+            taskTitle: pendingTaskInfo.task.title,
+            planComplete: markResult.planComplete,
+          });
           if (markResult.planComplete) {
-            log('Plan fully completed!');
-
             // Update docs if configured for after-completion mode
             if (updateDocsMode === 'after-completion') {
               try {

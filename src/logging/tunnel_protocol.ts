@@ -1,4 +1,5 @@
 import { inspect } from 'node:util';
+import type { StructuredMessage } from './structured_messages.js';
 
 /**
  * Environment variable name for the Unix socket path used to tunnel
@@ -22,10 +23,21 @@ export interface TunnelDataMessage {
   data: string;
 }
 
+export interface StructuredTunnelMessage {
+  type: 'structured';
+  message: StructuredMessage;
+}
+
 /**
  * Union type for all messages sent over the tunnel socket as JSONL.
  */
-export type TunnelMessage = TunnelArgsMessage | TunnelDataMessage;
+export type TunnelMessage = TunnelArgsMessage | TunnelDataMessage | StructuredTunnelMessage;
+
+export function isStructuredTunnelMessage(
+  message: TunnelMessage
+): message is StructuredTunnelMessage {
+  return message.type === 'structured';
+}
 
 /**
  * Serializes a single argument to a string suitable for tunnel transport.

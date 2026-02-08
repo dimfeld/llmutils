@@ -1,20 +1,19 @@
 import chalk from 'chalk';
 import { createLineSplitter } from '../../../common/process.ts';
-import { formatTodoLikeLines } from '../shared/todo_format.ts';
 import { debugLog } from '../../../logging.ts';
+import type { StructuredMessage } from '../../../logging/structured_messages.ts';
+import {
+  buildCommandResult,
+  buildParseErrorStatus,
+  buildSessionStart,
+  buildTodoUpdate,
+  buildUnknownStatus,
+} from '../shared/structured_message_builders.ts';
 
 interface RateLimitInfo {
   used_percent: number;
   window_minutes: number;
   resets_in_seconds: number;
-}
-
-interface TokenUsage {
-  input_tokens: number;
-  cached_input_tokens: number;
-  output_tokens: number;
-  reasoning_output_tokens: number;
-  total_tokens: number;
 }
 
 interface CodexOutUsage {
@@ -158,8 +157,8 @@ function formatRateLimit(rateLimit: RateLimitInfo): string {
 }
 
 export interface FormattedCodexMessage {
-  // Pretty-printed message to display to the console (optional for ignored types)
-  message?: string;
+  // Structured message payload(s) for headless consumers
+  structured?: StructuredMessage | StructuredMessage[];
   // A simplified type label for routing/logic
   type: string;
   // If this line carries or finalizes the agent message, include it here
@@ -194,19 +193,6 @@ function isCodexOutMessage(value: unknown): value is CodexOutMessage {
   }
 
   return true;
-}
-
-type HeaderColor = (text: string) => string;
-
-function formatHeader(
-  label: string,
-  ts: string,
-  color: HeaderColor,
-  item?: CodexOutItem | null
-): string {
-  const id = item?.id;
-  const idTag = typeof id === 'string' || typeof id === 'number' ? ` ${chalk.gray(`[${id}]`)}` : '';
-  return color(`### ${label} [${ts}]${idTag}`);
 }
 
 function detectFailure(text: string | null | undefined): boolean {
@@ -247,20 +233,14 @@ function formatReasoningItem(
   item: CodexOutItem | null | undefined,
   ts: string
 ): FormattedCodexMessage {
-  const text = (item?.text ?? '') || '';
-  const headerLabel =
-    eventType === 'item.started'
-      ? 'Thinking'
-      : eventType === 'item.updated'
-        ? 'Thinking Update'
-        : 'Agent Message';
-  const headerColor = eventType === 'item.completed' ? chalk.bold.green : chalk.blue;
-  const header = formatHeader(headerLabel, ts, headerColor, item);
-  const message = text ? `${header}\n\n${text}` : header;
-
+  const text = item?.text || '';
   const formatted: FormattedCodexMessage = {
     type: eventType,
-    message,
+    structured: {
+      type: 'llm_thinking',
+      timestamp: ts,
+      text,
+    },
   };
 
   if (eventType === 'item.completed' && text) {
@@ -274,46 +254,36 @@ function formatReasoningItem(
 }
 
 function formatAgentMessageItem(
-  eventType: 'item.started' | 'item.updated' | 'item.completed',
+  _eventType: 'item.started' | 'item.updated' | 'item.completed',
   item: CodexOutItem | null | undefined,
   ts: string
 ): FormattedCodexMessage {
-  const text = (item?.text ?? '') || '';
-  const header = formatHeader('Agent Message', ts, chalk.bold.green, item);
-  const message = text ? `${header}\n\n${text}` : header;
+  const text = item?.text || '';
   return {
     type: 'agent_message',
-    message,
+    structured: {
+      type: 'llm_response',
+      timestamp: ts,
+      text,
+    },
     agentMessage: text || undefined,
     failed: detectFailure(text) || undefined,
   };
 }
 
 function formatTodoListItem(
-  eventType: 'item.started' | 'item.updated' | 'item.completed',
+  _eventType: 'item.started' | 'item.updated' | 'item.completed',
   item: CodexOutItem | null | undefined,
   ts: string
 ): FormattedCodexMessage {
-  const label =
-    eventType === 'item.started'
-      ? 'Task List'
-      : eventType === 'item.updated'
-        ? 'Task List Update'
-        : 'Task List Summary';
-  const header = formatHeader(label, ts, chalk.bold.blue, item);
-
   const todoItems = ensureTodoItems(item?.items).map((todo) => ({
     label: (todo.text ?? '').trim() || '(missing item text)',
     status: todo.status ?? (todo.completed ? 'completed' : 'pending'),
-    priority: todo.priority ?? undefined,
   }));
-
-  const todoLines = formatTodoLikeLines(todoItems, { includePriority: false });
-  const body = todoLines.length > 0 ? todoLines.join('\n') : chalk.gray('No todo items provided.');
 
   return {
     type: 'plan_update',
-    message: `${header}\n\n${body}`,
+    structured: buildTodoUpdate('codex', ts, todoItems),
   };
 }
 
@@ -330,19 +300,6 @@ function formatCommandItem(
     item?.aggregated_output ?? item?.formatted_output ?? item?.stdout ?? item?.text ?? '';
   const output = truncateToLines(outputSource, 20);
 
-  let label: string;
-  let color: HeaderColor = chalk.cyan;
-  if (eventType === 'item.started') {
-    label = 'Exec Begin';
-  } else if (eventType === 'item.updated') {
-    label = 'Exec Update';
-  } else {
-    const failed = status === 'failed' || (typeof exitCode === 'number' && exitCode !== 0);
-    color = failed ? chalk.red : chalk.cyan;
-    label = failed ? 'Exec Failed' : 'Exec End';
-  }
-
-  const header = formatHeader(label, ts, color, item);
   const details: string[] = [];
   if (command) details.push(command);
   if (cwd) details.push(cwd);
@@ -354,7 +311,20 @@ function formatCommandItem(
 
   return {
     type: 'command_execution',
-    message: [header, ...details].join('\n\n'),
+    structured:
+      eventType === 'item.completed'
+        ? buildCommandResult(ts, {
+            command,
+            exitCode: typeof exitCode === 'number' ? exitCode : status === 'failed' ? 1 : 0,
+            stdout: item?.stdout ?? item?.aggregated_output ?? '',
+            stderr: item?.stderr ?? '',
+          })
+        : {
+            type: 'command_exec',
+            timestamp: ts,
+            command: command ?? '',
+            cwd: item?.cwd ?? undefined,
+          },
   };
 }
 
@@ -389,8 +359,6 @@ function formatDiffItem(
     }
   }
 
-  const label = eventType === 'item.started' ? 'Diff Start' : 'Diff';
-  const header = formatHeader(label, ts, chalk.magenta, item);
   const fileCount = uniqueFiles.length;
   const fileText = fileCount === 1 ? '1 file' : `${fileCount} files`;
   const fileList =
@@ -409,7 +377,85 @@ function formatDiffItem(
 
   return {
     type: 'turn_diff',
-    message: `${header}\n\n${summary}`,
+    structured: (() => {
+      if (uniqueFiles.length === 0) {
+        return {
+          type: 'llm_status' as const,
+          timestamp: ts,
+          status: 'codex.diff.no_files',
+          detail: summary,
+        };
+      }
+
+      const changesByPath = new Map<string, 'added' | 'updated' | 'removed'>();
+      const diffHeaderLines = diff.split('\n');
+      let oldPath: string | undefined;
+
+      const normalizeDiffPath = (path: string): string | undefined => {
+        if (path === '/dev/null') return undefined;
+        if (path.startsWith('a/') || path.startsWith('b/')) {
+          return path.substring(2);
+        }
+        return path;
+      };
+
+      const addChange = (path: string, kind: 'added' | 'updated' | 'removed') => {
+        const existing = changesByPath.get(path);
+        if (!existing || existing === kind) {
+          changesByPath.set(path, kind);
+          return;
+        }
+
+        if (existing === 'updated' || kind === 'updated') {
+          changesByPath.set(path, 'updated');
+          return;
+        }
+
+        changesByPath.set(path, 'updated');
+      };
+
+      for (const line of diffHeaderLines) {
+        const oldMatch = /^--- (.+?)(?:\t.*)?$/.exec(line);
+        if (oldMatch) {
+          oldPath = oldMatch[1];
+          continue;
+        }
+
+        const newMatch = /^\+\+\+ (.+?)(?:\t.*)?$/.exec(line);
+        if (!newMatch) {
+          continue;
+        }
+
+        const newPath = newMatch[1];
+        const normalizedOldPath = oldPath ? normalizeDiffPath(oldPath) : undefined;
+        const normalizedNewPath = normalizeDiffPath(newPath);
+
+        if (oldPath === '/dev/null' && normalizedNewPath) {
+          addChange(normalizedNewPath, 'added');
+        } else if (newPath === '/dev/null' && normalizedOldPath) {
+          addChange(normalizedOldPath, 'removed');
+        } else {
+          const updatedPath = normalizedNewPath ?? normalizedOldPath;
+          if (updatedPath) {
+            addChange(updatedPath, 'updated');
+          }
+        }
+
+        oldPath = undefined;
+      }
+
+      if (changesByPath.size === 0) {
+        for (const path of uniqueFiles) {
+          addChange(path, 'updated');
+        }
+      }
+
+      return {
+        type: 'file_change_summary' as const,
+        timestamp: ts,
+        changes: [...changesByPath.entries()].map(([path, kind]) => ({ path, kind })),
+      };
+    })(),
   };
 }
 
@@ -418,51 +464,41 @@ function formatPatchApplyItem(
   item: CodexOutItem | null | undefined,
   ts: string
 ): FormattedCodexMessage {
-  const autoApproved = item?.auto_approved ? ' (auto-approved)' : '';
-  const headerLabel =
-    eventType === 'item.started'
-      ? `Patch Apply Begin${autoApproved}`
-      : eventType === 'item.updated'
-        ? `Patch Apply Update${autoApproved}`
-        : `Patch Apply End${autoApproved}`;
-  const header = formatHeader(headerLabel, ts, chalk.yellow, item);
   const changes = item?.changes && typeof item.changes === 'object' ? item.changes : {};
   const entries = Object.entries(changes as Record<string, any>);
   if (entries.length === 0) {
     return {
       type: 'patch_apply',
-      message: `${header}\n\n${chalk.gray('No change details provided.')}`,
+      structured: {
+        type: 'llm_status',
+        timestamp: ts,
+        status: 'codex.patch_apply.no_changes',
+        detail: 'No change details provided.',
+      },
     };
   }
 
-  const formattedChanges = entries
-    .map(([filePath, change]) => {
-      if (change && typeof change === 'object') {
-        if ('add' in change && change.add && typeof change.add === 'object') {
-          const content = truncateToLines(String(change.add.content ?? ''), 10);
-          return `${chalk.green('ADD')} ${filePath}:\n${content}`;
-        }
-        if ('update' in change && change.update && typeof change.update === 'object') {
-          const update = change.update as Record<string, unknown>;
-          // eslint-disable-next-line @typescript-eslint/no-base-to-string
-          const diff = truncateToLines(String(update.unified_diff ?? ''), 10);
-          const movePath =
-            typeof update.move_path === 'string' && update.move_path.length > 0
-              ? ` -> ${update.move_path}`
-              : '';
-          return `${chalk.cyan('UPDATE')} ${filePath}${movePath}:\n${diff}`;
-        }
-        if ('remove' in change) {
-          return `${chalk.red('REMOVE')} ${filePath}`;
-        }
-      }
-      return `${chalk.gray('UNKNOWN')} ${filePath}: ${JSON.stringify(change)}`;
-    })
-    .join('\n\n');
-
   return {
     type: 'patch_apply',
-    message: `${header}\n\n${formattedChanges}`,
+    structured: {
+      type: 'file_change_summary',
+      timestamp: ts,
+      changes: entries.map(([filePath, change]) => {
+        if (change && typeof change === 'object') {
+          if ('add' in change) {
+            return { path: filePath, kind: 'added' as const };
+          }
+          if ('update' in change) {
+            return { path: filePath, kind: 'updated' as const };
+          }
+          if ('remove' in change) {
+            return { path: filePath, kind: 'removed' as const };
+          }
+        }
+
+        return { path: filePath, kind: 'updated' as const };
+      }),
+    },
   };
 }
 
@@ -472,11 +508,15 @@ function formatUnknownItem(
   ts: string
 ): FormattedCodexMessage {
   const itemType = resolveItemType(item);
-  const header = formatHeader(`Item ${itemType}`, ts, chalk.gray, item);
   const serialized = item ? JSON.stringify(item, null, 2) : 'No item payload provided.';
   return {
     type: eventType,
-    message: `${header}\n\n${serialized}`,
+    structured: {
+      type: 'llm_status',
+      timestamp: ts,
+      status: `item.${itemType}`,
+      detail: serialized,
+    },
   };
 }
 
@@ -485,31 +525,19 @@ function formatFileChangeItem(
   item: CodexOutItem | null | undefined,
   ts: string
 ): FormattedCodexMessage {
-  const status = (item?.status ?? '').toString().toLowerCase();
   const changes = Array.isArray(item?.changes) ? item.changes : [];
-
-  const label =
-    eventType === 'item.started'
-      ? 'File Change Begin'
-      : eventType === 'item.updated'
-        ? 'File Change Update'
-        : status === 'completed'
-          ? 'File Change Complete'
-          : 'File Change End';
-
-  const color =
-    eventType === 'item.completed' && status === 'completed' ? chalk.bold.green : chalk.magenta;
-  const header = formatHeader(label, ts, color, item);
 
   if (changes.length === 0) {
     return {
       type: 'file_change',
-      message: `${header}\n\n${chalk.gray('No file changes provided.')}`,
+      structured: {
+        type: 'llm_status',
+        timestamp: ts,
+        status: 'codex.file_change.no_changes',
+        detail: 'No file changes provided.',
+      },
     };
   }
-
-  const fileCount = changes.length;
-  const fileText = fileCount === 1 ? '1 file' : `${fileCount} files`;
 
   const changesByKind: Record<string, string[]> = {};
   for (const change of changes) {
@@ -535,11 +563,21 @@ function formatFileChangeItem(
     summary.push(`${chalk.gray('Unknown')}: ${changesByKind.unknown.join(', ')}`);
   }
 
-  const body = summary.length > 0 ? summary.join('\n') : `${fileText} changed`;
-
   return {
     type: 'file_change',
-    message: `${header}\n\n${body}`,
+    structured: {
+      type: 'file_change_summary',
+      timestamp: ts,
+      changes: changes.map((change) => ({
+        path: String(change.path ?? '(unknown path)'),
+        kind:
+          change.kind === 'add'
+            ? ('added' as const)
+            : change.kind === 'remove'
+              ? ('removed' as const)
+              : ('updated' as const),
+      })),
+    },
   };
 }
 
@@ -617,29 +655,40 @@ function formatCodexOutUsageMessage(message: CodexOutMessage, ts: string): Forma
     }
   }
 
-  const body = parts.length > 0 ? parts.join('\n') : chalk.gray('No usage information provided.');
   return {
     type: 'turn.completed',
     lastTokenCount: totalTokens > 0 ? totalTokens : undefined,
-    message: chalk.gray(`### Usage [${ts}]\n\n`) + body,
+    structured: {
+      type: 'token_usage',
+      timestamp: ts,
+      inputTokens: inputTokens > 0 ? inputTokens : undefined,
+      cachedInputTokens: cachedTokens > 0 ? cachedTokens : undefined,
+      outputTokens: outputTokens > 0 ? outputTokens : undefined,
+      reasoningTokens: reasoningTokens > 0 ? reasoningTokens : undefined,
+      totalTokens: totalTokens > 0 ? totalTokens : undefined,
+      rateLimits: rateLimits ?? undefined,
+    },
   };
 }
 
 function formatCodexOutMessage(message: CodexOutMessage, ts: string): FormattedCodexMessage {
   switch (message.type) {
     case 'thread.started': {
-      const details = message.thread_id ? `Thread: ${message.thread_id}` : undefined;
-      const header = chalk.bold.green(`### Start [${ts}]`);
       return {
         type: 'thread.started',
         threadId: message.thread_id ?? undefined,
-        message: details ? `${header}\n\n${details}` : header,
+        structured: buildSessionStart(ts, 'codex', { threadId: message.thread_id ?? undefined }),
       };
     }
     case 'turn.started': {
       return {
         type: 'task_started',
-        message: chalk.bold.green(`### Task Started [${ts}]`),
+        structured: {
+          type: 'agent_step_start',
+          timestamp: ts,
+          phase: 'turn',
+          message: 'Turn started',
+        },
       };
     }
     case 'turn.completed': {
@@ -656,12 +705,10 @@ function formatCodexOutMessage(message: CodexOutMessage, ts: string): FormattedC
     }
     case 'session.created': {
       const sessionId = message.session_id ?? message.sessionId;
-      const header = chalk.bold.green(`### Session Created [${ts}]`);
-      const details = sessionId ? `Session ID: ${sessionId}` : undefined;
       return {
         type: 'session.created',
         sessionId: sessionId ?? undefined,
-        message: details ? `${header}\n\n${details}` : header,
+        structured: buildSessionStart(ts, 'codex', { sessionId: sessionId ?? undefined }),
       };
     }
     default: {
@@ -671,7 +718,7 @@ function formatCodexOutMessage(message: CodexOutMessage, ts: string): FormattedC
         type: typeLabel,
         threadId: message.thread_id ?? undefined,
         sessionId: (message as any).session_id ?? (message as any).sessionId ?? undefined,
-        message: JSON.stringify(message),
+        structured: buildUnknownStatus('codex', ts, JSON.stringify(message), typeLabel),
       };
     }
   }
@@ -681,13 +728,15 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
   try {
     if (!jsonLine || jsonLine.trim() === '') return { type: '' };
     debugLog(`codex: `, jsonLine);
+    const ts = new Date().toISOString();
     const parsed = JSON.parse(jsonLine) as unknown;
 
     if (!parsed || typeof parsed !== 'object') {
-      return { type: 'unknown', message: jsonLine };
+      return {
+        type: 'unknown',
+        structured: buildUnknownStatus('codex', ts, jsonLine),
+      };
     }
-
-    const ts = new Date().toTimeString().split(' ')[0];
 
     if (isCodexOutMessage(parsed)) {
       return formatCodexOutMessage(parsed, ts);
@@ -695,11 +744,15 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
 
     return {
       type: 'unknown',
-      message: JSON.stringify(parsed),
+      structured: buildUnknownStatus('codex', ts, JSON.stringify(parsed)),
     };
   } catch (err) {
     debugLog('Failed to parse Codex JSON line:', jsonLine, err);
-    return { type: 'parse_error', message: jsonLine };
+    const ts = new Date().toISOString();
+    return {
+      type: 'parse_error',
+      structured: buildParseErrorStatus('codex', ts, jsonLine),
+    };
   }
 }
 
@@ -716,9 +769,9 @@ export function createCodexStdoutFormatter() {
 
   let previousTokenCount = -1;
 
-  function formatChunk(chunk: string): string {
+  function formatChunk(chunk: string): StructuredMessage[] | string {
     const lines = split(chunk);
-    const out: string[] = [];
+    const structuredMessages: StructuredMessage[] = [];
     for (const line of lines) {
       const fm = formatCodexJsonMessage(line);
 
@@ -744,9 +797,15 @@ export function createCodexStdoutFormatter() {
       if (fm.sessionId && !sessionId) {
         sessionId = fm.sessionId;
       }
-      if (fm.message) out.push(fm.message);
+      if (fm.structured) {
+        if (Array.isArray(fm.structured)) {
+          structuredMessages.push(...fm.structured);
+        } else {
+          structuredMessages.push(fm.structured);
+        }
+      }
     }
-    return out.length ? out.join('\n\n') + '\n\n' : '';
+    return structuredMessages.length > 0 ? structuredMessages : '';
   }
 
   function getFinalAgentMessage(): string | undefined {

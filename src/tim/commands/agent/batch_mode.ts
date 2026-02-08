@@ -1,6 +1,6 @@
 import { confirm } from '@inquirer/prompts';
 import { commitAll } from '../../../common/process.js';
-import { boldMarkdownHeaders, error, log, warn } from '../../../logging.js';
+import { boldMarkdownHeaders, error, log, sendStructured, warn } from '../../../logging.js';
 import chalk from 'chalk';
 import { executePostApplyCommand } from '../../actions.js';
 import { type TimConfig } from '../../configSchema.js';
@@ -9,6 +9,7 @@ import { readPlanFile, setPlanStatus, writePlanFile } from '../../plans.js';
 import { getAllIncompleteTasks } from '../../plans/find_next.js';
 import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
 import { checkAndMarkParentDone, markParentInProgress } from './parent_plans.js';
+import { sendFailureReport, timestamp } from './agent_helpers.js';
 import type { SummaryCollector } from '../../summary/collector.js';
 import { runUpdateDocs } from '../update-docs.js';
 import { handleReviewCommand } from '../review.js';
@@ -41,7 +42,12 @@ export async function executeBatchMode(
   },
   summaryCollector?: SummaryCollector
 ) {
-  log('Starting batch mode execution:', currentPlanFile);
+  sendStructured({
+    type: 'workflow_progress',
+    timestamp: timestamp(),
+    phase: 'batch',
+    message: `Starting batch mode execution: ${currentPlanFile}`,
+  });
   try {
     let hasError = false;
     let iteration = 0;
@@ -73,11 +79,21 @@ export async function executeBatchMode(
 
       // If no incomplete tasks remain, exit the loop
       if (incompleteTasks.length === 0) {
-        log('Batch mode complete: No incomplete tasks remaining');
+        sendStructured({
+          type: 'task_completion',
+          timestamp: timestamp(),
+          planComplete: true,
+        });
         break;
       }
 
-      log(`Batch mode: Processing ${incompleteTasks.length} incomplete task(s)`);
+      sendStructured({
+        type: 'agent_iteration_start',
+        timestamp: timestamp(),
+        iterationNumber: iteration + 1,
+        taskTitle: `${incompleteTasks.length} task(s) selected`,
+        taskDescription: incompleteTasks.map((taskResult) => taskResult.task.title).join(', '),
+      });
 
       // Format all incomplete tasks into a single prompt for the executor
       const taskDescriptions = incompleteTasks
@@ -120,7 +136,13 @@ Available tasks:\n\n${taskDescriptions}`,
       }
 
       try {
-        log(boldMarkdownHeaders('\n## Batch Mode Execution\n'));
+        sendStructured({
+          type: 'agent_step_start',
+          timestamp: timestamp(),
+          phase: 'execution',
+          executor: executorName,
+          stepNumber: iteration + 1,
+        });
         const start = Date.now();
         const output = await executor.execute(batchPrompt, {
           planId: planData.id?.toString() ?? 'unknown',
@@ -134,17 +156,20 @@ Available tasks:\n\n${taskDescriptions}`,
         const ok = output ? (output as any).success !== false : true;
         if (!ok) {
           const fd = output?.failureDetails;
-          const src = fd?.sourceAgent ? ` (${fd.sourceAgent})` : '';
-          log(chalk.redBright(`\nFAILED${src}: ${fd?.problems || 'Executor reported failure.'}`));
-          const req = typeof fd?.requirements === 'string' ? fd.requirements.trim() : '';
-          if (req) {
-            log(chalk.yellow('\nRequirements:\n') + req);
-          }
-          const sols = typeof fd?.solutions === 'string' ? fd.solutions.trim() : '';
-          if (sols) {
-            log(chalk.yellow('\nPossible solutions:\n') + sols);
-          }
+          sendFailureReport(fd?.problems || 'Executor reported failure.', {
+            requirements: fd?.requirements,
+            problems: fd?.problems,
+            solutions: fd?.solutions,
+            sourceAgent: fd?.sourceAgent,
+          });
         }
+        sendStructured({
+          type: 'agent_step_end',
+          timestamp: timestamp(),
+          phase: 'execution',
+          success: ok,
+          summary: ok ? 'Batch executor step completed.' : 'Batch executor step failed.',
+        });
         if (summaryCollector) {
           const end = Date.now();
           // Coerce executor output to normalized shape for predictable summaries
@@ -183,12 +208,24 @@ Available tasks:\n\n${taskDescriptions}`,
           });
           summaryCollector.addError(err);
         }
+        sendStructured({
+          type: 'agent_step_end',
+          timestamp: timestamp(),
+          phase: 'execution',
+          success: false,
+          summary: `Batch executor step threw: ${String(err instanceof Error ? err.message : err)}`,
+        });
         break;
       }
 
       // Run post-apply commands if configured
       if (config.postApplyCommands && config.postApplyCommands.length > 0) {
-        log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
+        sendStructured({
+          type: 'workflow_progress',
+          timestamp: timestamp(),
+          phase: 'post-apply',
+          message: 'Running post-apply commands',
+        });
         for (const commandConfig of config.postApplyCommands) {
           const commandSucceeded = await executePostApplyCommand(commandConfig, baseDir);
           if (!commandSucceeded) {
@@ -206,6 +243,10 @@ Available tasks:\n\n${taskDescriptions}`,
       // After execution, re-read the plan file to get the updated state
       const updatedPlanData = await readPlanFile(currentPlanFile);
       const remainingIncompleteTasks = getAllIncompleteTasks(updatedPlanData);
+      const remainingTaskIndices = new Set(remainingIncompleteTasks.map((task) => task.taskIndex));
+      const completedTaskTitles = incompleteTasks
+        .filter((task) => !remainingTaskIndices.has(task.taskIndex))
+        .map((task) => task.task.title);
 
       log(
         `Batch iteration complete. Remaining incomplete tasks: ${remainingIncompleteTasks.length}`
@@ -214,10 +255,9 @@ Available tasks:\n\n${taskDescriptions}`,
       // Update docs if configured for after-iteration mode
       // Calculate which tasks were just completed by comparing before/after state
       if (updateDocsMode === 'after-iteration') {
-        const remainingIndices = new Set(remainingIncompleteTasks.map((t) => t.taskIndex));
         const justCompletedTaskIndices = incompleteTasks
           .map((t) => t.taskIndex)
-          .filter((index) => !remainingIndices.has(index));
+          .filter((index) => !remainingTaskIndices.has(index));
 
         try {
           await runUpdateDocs(currentPlanFile, config, {
@@ -235,7 +275,12 @@ Available tasks:\n\n${taskDescriptions}`,
       // If all tasks are now marked done, update the plan status to 'done'
       const finished = remainingIncompleteTasks.length === 0;
       if (finished) {
-        log('Batch mode: All tasks completed, marking plan as done');
+        sendStructured({
+          type: 'task_completion',
+          timestamp: timestamp(),
+          taskTitle: completedTaskTitles.join(', ') || 'Batch mode iteration',
+          planComplete: true,
+        });
         await setPlanStatus(currentPlanFile, 'done');
 
         // Update docs if configured for after-completion mode
@@ -257,7 +302,12 @@ Available tasks:\n\n${taskDescriptions}`,
         const shouldSkipFinalReview =
           finalReview === false || (initialCompletedTaskCount === 0 && iteration === 1);
         if (!shouldSkipFinalReview) {
-          log(boldMarkdownHeaders('\n## Running Final Review\n'));
+          sendStructured({
+            type: 'workflow_progress',
+            timestamp: timestamp(),
+            phase: 'final-review',
+            message: 'Running final review',
+          });
           try {
             const reviewResult = await handleReviewCommand(
               currentPlanFile,
@@ -270,6 +320,11 @@ Available tasks:\n\n${taskDescriptions}`,
             // If tasks were appended, ask if user wants to continue
             if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
               const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';
+              sendStructured({
+                type: 'input_required',
+                timestamp: timestamp(),
+                prompt: 'Continue after final review appended new tasks',
+              });
               const shouldContinue = await confirm({
                 message: `${reviewResult.tasksAppended} new task(s) added from review to plan${planIdStr}. You can edit the plan first if needed. Continue running?`,
                 default: true,

@@ -6,6 +6,7 @@ import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { TunnelAdapter, createTunnelAdapter, isTunnelActive } from './tunnel_client.ts';
 import { TIM_OUTPUT_SOCKET } from './tunnel_protocol.ts';
 import type { TunnelMessage } from './tunnel_protocol.ts';
+import type { StructuredMessage } from './structured_messages.ts';
 
 // Use /tmp/claude as the base for mkdtemp to keep socket paths short enough
 // for the Unix domain socket path length limit (104 bytes on macOS).
@@ -210,6 +211,56 @@ describe('TunnelAdapter', () => {
       expect(messages[0]).toEqual({
         type: 'stderr',
         data: 'error output\n',
+      });
+    });
+  });
+
+  describe('sendStructured()', () => {
+    it('should send a structured message', async () => {
+      testServer = await createTestServer(socketPath);
+      adapter = await createTunnelAdapter(socketPath);
+
+      const structuredMessage: StructuredMessage = {
+        type: 'workflow_progress',
+        timestamp: '2026-02-08T00:00:00.000Z',
+        message: 'Running step',
+      };
+
+      adapter.sendStructured(structuredMessage);
+
+      await waitForMessages(testServer.getMessages, 1);
+      const messages = testServer.getMessages();
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toEqual({
+        type: 'structured',
+        message: structuredMessage,
+      });
+    });
+
+    it('should keep connection alive when structured message serialization fails', async () => {
+      testServer = await createTestServer(socketPath);
+      adapter = await createTunnelAdapter(socketPath);
+
+      const circular: { self?: unknown } = {};
+      circular.self = circular;
+
+      expect(() =>
+        adapter.sendStructured({
+          type: 'llm_tool_use',
+          timestamp: '2026-02-08T00:00:00.000Z',
+          toolName: 'Write',
+          input: circular,
+        })
+      ).not.toThrow();
+
+      adapter.log('still connected');
+
+      await waitForMessages(testServer.getMessages, 1);
+      const messages = testServer.getMessages();
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toEqual({
+        type: 'log',
+        args: ['still connected'],
       });
     });
   });

@@ -4,19 +4,21 @@ title: monitor/dashboard GUI
 goal: ""
 id: 160
 uuid: 514cedb9-6431-400a-a997-12d139376146
-status: pending
+status: in_progress
 priority: medium
 epic: true
 dependencies:
   - 158
   - 166
   - 167
+  - 168
 references:
   "158": e17331a4-1827-49ea-88e6-82de91f993df
   "166": 783bf184-9ec5-4919-bf30-8ae618785f0c
   "167": b0cf87ed-ba48-4d26-b028-476cf38e0cff
+  "168": 59358b82-95c5-47a6-95a7-54adc501928f
 createdAt: 2026-01-04T01:04:44.082Z
-updatedAt: 2026-01-12T06:45:11.425Z
+updatedAt: 2026-02-08T08:33:41.115Z
 tasks: []
 tags: []
 ---

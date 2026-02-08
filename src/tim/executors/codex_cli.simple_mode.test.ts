@@ -5,11 +5,13 @@ describe('CodexCliExecutor simple mode', () => {
   let moduleMocker: ModuleMocker;
   let logMessages: string[];
   let warnMessages: string[];
+  let structuredMessages: Array<{ type?: string; phase?: string; verdict?: string }>;
 
   beforeEach(() => {
     moduleMocker = new ModuleMocker(import.meta);
     logMessages = [];
     warnMessages = [];
+    structuredMessages = [];
   });
 
   afterEach(() => {
@@ -27,6 +29,9 @@ describe('CodexCliExecutor simple mode', () => {
       log: mock((...args: any[]) => logMessages.push(args.map((a) => String(a)).join(' '))),
       warn: mock((...args: any[]) => warnMessages.push(args.map((a) => String(a)).join(' '))),
       error: mock(() => {}),
+      sendStructured: mock((message: { type?: string; phase?: string; verdict?: string }) =>
+        structuredMessages.push(message)
+      ),
     }));
 
     await moduleMocker.mock('../../common/git.ts', () => ({
@@ -192,6 +197,31 @@ describe('CodexCliExecutor simple mode', () => {
       body: 'Verification succeeded. All checks pass.\n\nVERDICT: ACCEPTABLE',
     });
     expect(result.content).toBe('Verification succeeded. All checks pass.\n\nVERDICT: ACCEPTABLE');
+    expect(
+      structuredMessages.some(
+        (message) => message.type === 'agent_step_start' && message.phase === 'implementer'
+      )
+    ).toBeTrue();
+    expect(
+      structuredMessages.some(
+        (message) => message.type === 'agent_step_end' && message.phase === 'implementer'
+      )
+    ).toBeTrue();
+    expect(
+      structuredMessages.some(
+        (message) => message.type === 'agent_step_start' && message.phase === 'reviewer'
+      )
+    ).toBeTrue();
+    expect(
+      structuredMessages.some(
+        (message) => message.type === 'agent_step_end' && message.phase === 'reviewer'
+      )
+    ).toBeTrue();
+    expect(
+      structuredMessages.some(
+        (message) => message.type === 'review_verdict' && message.verdict === 'ACCEPTABLE'
+      )
+    ).toBeTrue();
   });
 
   test('retries implementer when initial attempt only plans work', async () => {
@@ -207,6 +237,7 @@ describe('CodexCliExecutor simple mode', () => {
       log: mock((...args: any[]) => logMessages.push(args.map((a) => String(a)).join(' '))),
       warn: mock((...args: any[]) => warnMessages.push(args.map((a) => String(a)).join(' '))),
       error: mock(() => {}),
+      sendStructured: mock(() => {}),
     }));
 
     await moduleMocker.mock('../../common/git.ts', () => ({
@@ -357,6 +388,7 @@ describe('CodexCliExecutor simple mode', () => {
       log: mock(() => {}),
       warn: mock(() => {}),
       error: mock(() => {}),
+      sendStructured: mock(() => {}),
     }));
 
     await moduleMocker.mock('../../common/git.ts', () => ({
@@ -467,6 +499,7 @@ describe('CodexCliExecutor simple mode', () => {
       log: mock(() => {}),
       warn: mock(() => {}),
       error: mock(() => {}),
+      sendStructured: mock(() => {}),
     }));
 
     await moduleMocker.mock('../../common/git.ts', () => ({
@@ -576,6 +609,7 @@ describe('CodexCliExecutor simple mode', () => {
       log: mock((...args: any[]) => logMessages.push(args.map((a) => String(a)).join(' '))),
       warn: mock((...args: any[]) => warnMessages.push(args.map((a) => String(a)).join(' '))),
       error: mock(() => {}),
+      sendStructured: mock(() => {}),
     }));
 
     await moduleMocker.mock('../../common/git.ts', () => ({

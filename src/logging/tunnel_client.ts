@@ -4,6 +4,8 @@ import { writeToLogFile } from './common.js';
 import { debug } from '../common/process.js';
 import { TIM_OUTPUT_SOCKET, serializeArgs } from './tunnel_protocol.js';
 import type { TunnelMessage } from './tunnel_protocol.js';
+import type { StructuredMessage } from './structured_messages.js';
+import { formatStructuredMessage } from './console_formatter.js';
 
 /**
  * Returns true when the TIM_OUTPUT_SOCKET environment variable is set,
@@ -45,8 +47,18 @@ export class TunnelAdapter implements LoggerAdapter {
       return;
     }
 
+    let serialized: string;
     try {
-      this.socket.write(JSON.stringify(message) + '\n');
+      serialized = JSON.stringify(message) + '\n';
+    } catch (err) {
+      // Serialization errors can happen with non-JSON-safe payloads (e.g. circular refs).
+      // Drop only this message and keep the tunnel connection alive.
+      writeToLogFile(`[tunnel] Failed to serialize message: ${err as Error}\n`);
+      return;
+    }
+
+    try {
+      this.socket.write(serialized);
     } catch {
       // If write fails, mark as disconnected and fall back to no-op
       this.connected = false;
@@ -86,6 +98,14 @@ export class TunnelAdapter implements LoggerAdapter {
       const serialized = serializeArgs(args);
       this.send({ type: 'debug', args: serialized });
       writeToLogFile('[DEBUG] ' + serialized.join(' ') + '\n');
+    }
+  }
+
+  sendStructured(message: StructuredMessage): void {
+    this.send({ type: 'structured', message });
+    const formatted = formatStructuredMessage(message);
+    if (formatted.length > 0) {
+      writeToLogFile(formatted + '\n');
     }
   }
 

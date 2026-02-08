@@ -5,6 +5,9 @@ import * as os from 'node:os';
 import yaml from 'yaml';
 import { timAgent } from './agent.js';
 import { clearPlanCache } from '../../plans.js';
+import { runWithLogger } from '../../../logging/adapter.js';
+import { createRecordingAdapter } from '../../../logging/test_helpers.js';
+import type { StructuredMessage } from '../../../logging/structured_messages.js';
 import type { PlanSchema, PlanSchemaInput } from '../../planSchema.js';
 import { ModuleMocker } from '../../../testing.js';
 
@@ -14,6 +17,7 @@ const moduleMocker = new ModuleMocker(import.meta);
 const logSpy = mock(() => {});
 const errorSpy = mock(() => {});
 const warnSpy = mock(() => {});
+const sendStructuredSpy = mock(() => {});
 const openLogFileSpy = mock(() => {});
 const closeLogFileSpy = mock(async () => {});
 
@@ -43,6 +47,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
     logSpy.mockClear();
     errorSpy.mockClear();
     warnSpy.mockClear();
+    sendStructuredSpy.mockClear();
     openLogFileSpy.mockClear();
     closeLogFileSpy.mockClear();
     executorExecuteSpy.mockClear();
@@ -70,6 +75,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       log: logSpy,
       error: errorSpy,
       warn: warnSpy,
+      sendStructured: sendStructuredSpy,
       openLogFile: openLogFileSpy,
       closeLogFile: closeLogFileSpy,
       boldMarkdownHeaders: mock((text: string) => text),
@@ -296,14 +302,19 @@ describe('timAgent - Batch Mode Execution Loop', () => {
 
       const options = { log: false, nonInteractive: true } as any;
       const globalCliOptions = {};
+      const { adapter } = createRecordingAdapter();
 
-      await timAgent(planFile, options, globalCliOptions);
+      await runWithLogger(adapter, () => timAgent(planFile, options, globalCliOptions));
 
       // Should not execute anything since all tasks are already done
       expect(executorExecuteSpy).not.toHaveBeenCalled();
 
-      // Should log completion message
-      expect(logSpy).toHaveBeenCalledWith('Batch mode complete: No incomplete tasks remaining');
+      expect(sendStructuredSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'task_completion',
+          planComplete: true,
+        })
+      );
     });
   });
 

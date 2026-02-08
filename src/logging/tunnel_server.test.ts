@@ -3,10 +3,11 @@ import net from 'node:net';
 import path from 'node:path';
 import fs from 'node:fs';
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
-import { createTunnelServer, type TunnelServer } from './tunnel_server.ts';
+import { createTunnelServer, type TunnelServer, structuredMessageTypes } from './tunnel_server.ts';
+import { structuredMessageTypeList } from './structured_messages.ts';
 import { runWithLogger } from './adapter.ts';
-import type { LoggerAdapter } from './adapter.ts';
 import type { TunnelMessage } from './tunnel_protocol.ts';
+import { createRecordingAdapter, type RecordingAdapterCall } from './test_helpers.ts';
 
 // Use /tmp/claude as the base for mkdtemp to keep socket paths short enough
 // for the Unix domain socket path length limit (104 bytes on macOS).
@@ -15,36 +16,6 @@ const TEMP_BASE = '/tmp/claude';
 /**
  * A test LoggerAdapter that records all calls for assertion purposes.
  */
-interface RecordedCall {
-  method: 'log' | 'error' | 'warn' | 'writeStdout' | 'writeStderr' | 'debugLog';
-  args: any[];
-}
-
-function createRecordingAdapter(): { adapter: LoggerAdapter; calls: RecordedCall[] } {
-  const calls: RecordedCall[] = [];
-  const adapter: LoggerAdapter = {
-    log(...args: any[]) {
-      calls.push({ method: 'log', args });
-    },
-    error(...args: any[]) {
-      calls.push({ method: 'error', args });
-    },
-    warn(...args: any[]) {
-      calls.push({ method: 'warn', args });
-    },
-    writeStdout(data: string) {
-      calls.push({ method: 'writeStdout', args: [data] });
-    },
-    writeStderr(data: string) {
-      calls.push({ method: 'writeStderr', args: [data] });
-    },
-    debugLog(...args: any[]) {
-      calls.push({ method: 'debugLog', args });
-    },
-  };
-  return { adapter, calls };
-}
-
 /**
  * Helper: connects a client to the socket and sends JSONL messages.
  */
@@ -66,7 +37,7 @@ function connectAndSend(socketPath: string, messages: TunnelMessage[]): Promise<
 
 /** Wait for recorded calls to appear */
 async function waitForCalls(
-  calls: RecordedCall[],
+  calls: RecordingAdapterCall[],
   expectedCount: number,
   timeoutMs: number = 2000
 ): Promise<void> {
@@ -96,6 +67,10 @@ describe('createTunnelServer', () => {
     socketPath = path.join(testDir, 't.sock');
     return socketPath;
   }
+
+  it('keeps structured message type set in sync with the structured union', () => {
+    expect(structuredMessageTypes).toEqual(new Set(structuredMessageTypeList));
+  });
 
   it('should create a server that listens on the socket path', async () => {
     const sp = uniqueSocketPath();
@@ -207,6 +182,35 @@ describe('createTunnelServer', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].method).toBe('writeStderr');
     expect(calls[0].args).toEqual(['stderr output\n']);
+  });
+
+  it('should re-emit structured messages through the logging system', async () => {
+    const sp = uniqueSocketPath();
+    const { adapter, calls } = createRecordingAdapter();
+
+    await runWithLogger(adapter, async () => {
+      tunnelServer = await createTunnelServer(sp);
+
+      await connectAndSend(sp, [
+        {
+          type: 'structured',
+          message: {
+            type: 'workflow_progress',
+            timestamp: '2026-02-08T00:00:00.000Z',
+            message: 'Generating context',
+          },
+        },
+      ]);
+
+      await waitForCalls(calls, 1);
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('sendStructured');
+    expect(calls[0].args[0]).toMatchObject({
+      type: 'workflow_progress',
+      message: 'Generating context',
+    });
   });
 
   it('should handle multiple messages from a single connection', async () => {
@@ -322,6 +326,364 @@ describe('createTunnelServer', () => {
     // Only the message with all-string args should have been dispatched
     expect(calls).toHaveLength(1);
     expect(calls[0]).toEqual({ method: 'log', args: ['all strings here'] });
+  });
+
+  it('should reject malformed structured messages and keep valid ones', async () => {
+    const sp = uniqueSocketPath();
+    const { adapter, calls } = createRecordingAdapter();
+
+    await runWithLogger(adapter, async () => {
+      tunnelServer = await createTunnelServer(sp);
+
+      await new Promise<void>((resolve, reject) => {
+        const client = net.connect(sp, () => {
+          // missing type
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: { timestamp: '2026-02-08T00:00:00.000Z', message: 'missing type' },
+            }) + '\n'
+          );
+          // missing timestamp
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: { type: 'workflow_progress', message: 'missing timestamp' },
+            }) + '\n'
+          );
+          // invalid message type value
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: {
+                type: 'not_a_real_type',
+                timestamp: '2026-02-08T00:00:00.000Z',
+              },
+            }) + '\n'
+          );
+          // invalid execution_summary payload
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: {
+                type: 'execution_summary',
+                timestamp: '2026-02-08T00:00:00.000Z',
+                summary: 'not-an-object',
+              },
+            }) + '\n'
+          );
+          // invalid execution_summary shape
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: {
+                type: 'execution_summary',
+                timestamp: '2026-02-08T00:00:00.000Z',
+                summary: { garbage: true },
+              },
+            }) + '\n'
+          );
+          // missing required agent_iteration_start field
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: {
+                type: 'agent_iteration_start',
+                timestamp: '2026-02-08T00:00:00.000Z',
+              },
+            }) + '\n'
+          );
+          // missing required llm_thinking field
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: {
+                type: 'llm_thinking',
+                timestamp: '2026-02-08T00:00:00.000Z',
+              },
+            }) + '\n'
+          );
+          // missing required command_result field
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: {
+                type: 'command_result',
+                timestamp: '2026-02-08T00:00:00.000Z',
+              },
+            }) + '\n'
+          );
+          // token_usage optional numeric fields must be numbers when present
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: {
+                type: 'token_usage',
+                timestamp: '2026-02-08T00:00:00.000Z',
+                inputTokens: 'not-a-number',
+              },
+            }) + '\n'
+          );
+          // review_result issues must contain valid issue objects
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: {
+                type: 'review_result',
+                timestamp: '2026-02-08T00:00:00.000Z',
+                issues: [42, 'not-an-object', null],
+                recommendations: ['ok'],
+                actionItems: ['ok'],
+              },
+            }) + '\n'
+          );
+          // execution_summary optional fields must have valid types when present
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: {
+                type: 'execution_summary',
+                timestamp: '2026-02-08T00:00:00.000Z',
+                summary: {
+                  planId: '168',
+                  planTitle: 'Structured Logging',
+                  planFilePath: 'tasks/168.plan.md',
+                  mode: 'serial',
+                  startedAt: '2026-02-08T00:00:00.000Z',
+                  endedAt: 42,
+                  durationMs: 'not-a-number',
+                  steps: [],
+                  changedFiles: [],
+                  createdFiles: [1, 2, 3],
+                  deletedFiles: [],
+                  errors: [],
+                  metadata: { totalSteps: 1, failedSteps: 0 },
+                },
+              },
+            }) + '\n'
+          );
+          // execution_summary steps must contain valid step records
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: {
+                type: 'execution_summary',
+                timestamp: '2026-02-08T00:00:00.000Z',
+                summary: {
+                  planId: '168',
+                  planTitle: 'Structured Logging',
+                  planFilePath: 'tasks/168.plan.md',
+                  mode: 'serial',
+                  startedAt: '2026-02-08T00:00:00.000Z',
+                  steps: ['garbage', 42, null],
+                  changedFiles: [],
+                  errors: [],
+                  metadata: { totalSteps: 1, failedSteps: 0 },
+                },
+              },
+            }) + '\n'
+          );
+          // execution_summary planInfo must be an object when present
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: {
+                type: 'execution_summary',
+                timestamp: '2026-02-08T00:00:00.000Z',
+                summary: {
+                  planId: '168',
+                  planTitle: 'Structured Logging',
+                  planFilePath: 'tasks/168.plan.md',
+                  mode: 'serial',
+                  startedAt: '2026-02-08T00:00:00.000Z',
+                  steps: [],
+                  changedFiles: [],
+                  errors: [],
+                  metadata: { totalSteps: 1, failedSteps: 0 },
+                  planInfo: ['not-an-object'],
+                },
+              },
+            }) + '\n'
+          );
+          // execution_summary step.output must be an object with string content
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: {
+                type: 'execution_summary',
+                timestamp: '2026-02-08T00:00:00.000Z',
+                summary: {
+                  planId: '168',
+                  planTitle: 'Structured Logging',
+                  planFilePath: 'tasks/168.plan.md',
+                  mode: 'serial',
+                  startedAt: '2026-02-08T00:00:00.000Z',
+                  steps: [
+                    {
+                      title: 'Step 1',
+                      executor: 'codex',
+                      success: true,
+                      output: [],
+                    },
+                  ],
+                  changedFiles: [],
+                  errors: [],
+                  metadata: { totalSteps: 1, failedSteps: 0 },
+                },
+              },
+            }) + '\n'
+          );
+          // execution_summary step.output.steps must be an array of {title, body}
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: {
+                type: 'execution_summary',
+                timestamp: '2026-02-08T00:00:00.000Z',
+                summary: {
+                  planId: '168',
+                  planTitle: 'Structured Logging',
+                  planFilePath: 'tasks/168.plan.md',
+                  mode: 'serial',
+                  startedAt: '2026-02-08T00:00:00.000Z',
+                  steps: [
+                    {
+                      title: 'Step 1',
+                      executor: 'codex',
+                      success: true,
+                      output: { content: 'ok', steps: [{ title: 'Only title' }] },
+                    },
+                  ],
+                  changedFiles: [],
+                  errors: [],
+                  metadata: { totalSteps: 1, failedSteps: 0 },
+                },
+              },
+            }) + '\n'
+          );
+          // execution_summary step.output.metadata must be JSON-serializable
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: {
+                type: 'execution_summary',
+                timestamp: '2026-02-08T00:00:00.000Z',
+                summary: {
+                  planId: '168',
+                  planTitle: 'Structured Logging',
+                  planFilePath: 'tasks/168.plan.md',
+                  mode: 'serial',
+                  startedAt: '2026-02-08T00:00:00.000Z',
+                  steps: [
+                    {
+                      title: 'Step 1',
+                      executor: 'codex',
+                      success: true,
+                      output: { content: 'ok', metadata: ['not-an-object'] },
+                    },
+                  ],
+                  changedFiles: [],
+                  errors: [],
+                  metadata: { totalSteps: 1, failedSteps: 0 },
+                },
+              },
+            }) + '\n'
+          );
+          // execution_summary step.output.failureDetails should allow unknown keys
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: {
+                type: 'execution_summary',
+                timestamp: '2026-02-08T00:00:00.000Z',
+                summary: {
+                  planId: '168',
+                  planTitle: 'Structured Logging',
+                  planFilePath: 'tasks/168.plan.md',
+                  mode: 'serial',
+                  startedAt: '2026-02-08T00:00:00.000Z',
+                  steps: [
+                    {
+                      title: 'Step 1',
+                      executor: 'codex',
+                      success: false,
+                      output: {
+                        content: 'FAILED: test',
+                        failureDetails: { unknownField: 'oops' },
+                      },
+                    },
+                  ],
+                  changedFiles: [],
+                  errors: [],
+                  metadata: { totalSteps: 1, failedSteps: 1 },
+                },
+              },
+            }) + '\n'
+          );
+          // execution_summary step.output.failureDetails known fields must still be strings when present
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: {
+                type: 'execution_summary',
+                timestamp: '2026-02-08T00:00:00.000Z',
+                summary: {
+                  planId: '168',
+                  planTitle: 'Structured Logging',
+                  planFilePath: 'tasks/168.plan.md',
+                  mode: 'serial',
+                  startedAt: '2026-02-08T00:00:00.000Z',
+                  steps: [
+                    {
+                      title: 'Step 1',
+                      executor: 'codex',
+                      success: false,
+                      output: {
+                        content: 'FAILED: test',
+                        failureDetails: { sourceAgent: 123 },
+                      },
+                    },
+                  ],
+                  changedFiles: [],
+                  errors: [],
+                  metadata: { totalSteps: 1, failedSteps: 1 },
+                },
+              },
+            }) + '\n'
+          );
+          // valid structured message should still pass
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: {
+                type: 'workflow_progress',
+                timestamp: '2026-02-08T00:00:00.000Z',
+                message: 'valid structured',
+              },
+            }) + '\n'
+          );
+
+          setTimeout(() => {
+            client.end();
+            resolve();
+          }, 20);
+        });
+        client.on('error', reject);
+      });
+
+      await waitForCalls(calls, 2);
+    });
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0].method).toBe('sendStructured');
+    expect(calls[0].args[0]).toMatchObject({
+      type: 'execution_summary',
+    });
+    expect(calls[1].method).toBe('sendStructured');
+    expect(calls[1].args[0]).toMatchObject({
+      type: 'workflow_progress',
+      message: 'valid structured',
+    });
   });
 
   it('should handle malformed JSON gracefully without crashing', async () => {

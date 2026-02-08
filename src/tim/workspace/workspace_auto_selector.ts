@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 import chalk from 'chalk';
 import { confirm } from '@inquirer/prompts';
-import { log } from '../../logging.js';
+import { log, sendStructured } from '../../logging.js';
 import { WorkspaceLock, type LockInfo } from './workspace_lock.js';
 import { createWorkspace } from './workspace_manager.js';
 import {
@@ -13,6 +13,7 @@ import {
 } from './workspace_tracker.js';
 import type { TimConfig } from '../configSchema.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { timestamp } from '../commands/agent/agent_helpers.js';
 
 export interface AutoSelectOptions {
   /** Whether to run in interactive mode (prompt for stale locks) */
@@ -136,6 +137,12 @@ export class WorkspaceAutoSelector {
       console.log(`  Task ID: ${workspace.taskId}`);
       console.log(`  Locked by PID: ${lockInfo.pid} on ${lockInfo.hostname}`);
       console.log(`  Lock age: ${lockAgeHours} hours`);
+
+      sendStructured({
+        type: 'input_required',
+        timestamp: timestamp(),
+        prompt: `Clear stale lock for workspace ${workspace.workspacePath} (${lockAgeHours} hours old)?`,
+      });
 
       const shouldClear = await confirm({
         message: 'Clear this stale lock and use the workspace?',
