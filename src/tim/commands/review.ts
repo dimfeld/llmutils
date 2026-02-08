@@ -495,11 +495,7 @@ export async function handleReviewCommand(
 
       if (options.previousResponse) {
         try {
-          const previousResponsePath = validateInstructionsFilePath(
-            options.previousResponse,
-            gitRoot
-          );
-          previousReviewResponse = await readFile(previousResponsePath, 'utf-8');
+          previousReviewResponse = await readFile(options.previousResponse, 'utf-8');
           reviewLog(
             chalk.gray(`Using previous review response from file: ${options.previousResponse}`)
           );
@@ -1686,7 +1682,8 @@ export function buildReviewPrompt(
     );
   }
 
-  if (planData.tasks && planData.tasks.length > 0) {
+  const hasSpecificTasks = planData.tasks?.length;
+  if (hasSpecificTasks) {
     planContext.push(`**Tasks:**`);
     planData.tasks.forEach((task, index) => {
       const status = task.done ? '✓' : '○';
@@ -1716,6 +1713,8 @@ export function buildReviewPrompt(
     changedFilesSection.push(``, `**Full Diff:**`, ``, '```diff', diffResult.diffContent, '```');
   }
 
+  const planScope = hasSpecificTasks ? ' of the specified tasks' : '';
+
   // Combine everything into the final prompt
   const contextContent = [
     ...parentContext,
@@ -1727,9 +1726,9 @@ export function buildReviewPrompt(
     ...(additionalContext?.trim() ? [additionalContext.trim(), ``] : []),
     ...(previousReviewResponse?.trim()
       ? [
-          `# Previous Review Response`,
+          `# Previous Fixer Response`,
           ``,
-          `The previous review response was:`,
+          `We just ran a round of fixing in response to a previous review. The final output from the fixing work is below. Please conduct a general review${planScope}, taking this fixer output into account:`,
           ``,
           previousReviewResponse.trim(),
           ``,
