@@ -18,6 +18,7 @@
     "dev-install": "bun run build && pnpm add -g file://$(pwd)",
     "format": "prettier --write .",
     "update-schemas": "scripts/update-json-schemas.ts",
+    "tim-agent-listener": "bun scripts/tim-agent-listener.ts",
     "rmfilter": "src/rmfilter/rmfilter.ts",
     "rmfind": "src/rmfind/rmfind.ts",
     "tim": "src/tim/tim.ts",

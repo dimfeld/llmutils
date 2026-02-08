@@ -1314,6 +1314,20 @@ Behavior:
 - WebSocket messages use an envelope with `session_info`, `replay_start`, `output`, and
   `replay_end` message types.
 
+For local testing, run a simple listener that accepts `/tim-agent` and prints every received
+message:
+
+```bash
+bun run tim-agent-listener
+```
+
+Optional port override:
+
+```bash
+bun run tim-agent-listener -- 9000
+# or TIM_AGENT_PORT=9000 bun run tim-agent-listener
+```
+
 ### Configuration Files and Precedence
 
 tim merges configuration from multiple sources. Later entries override earlier ones:
