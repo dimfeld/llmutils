@@ -674,31 +674,6 @@ export async function handleValidateCommand(
       }
     }
 
-    // Ensure all plans have complete references
-    if (options.fix !== false) {
-      console.log(chalk.blue.bold('Ensuring all references are complete...'));
-      const ensureResult = await ensureAllReferences(planMap);
-
-      if (ensureResult.updated > 0) {
-        console.log(
-          chalk.green(
-            `✓ Updated ${ensureResult.updated} plan${ensureResult.updated === 1 ? '' : 's'} with missing references\n`
-          )
-        );
-
-        // Reload plans one more time
-        const reloadedPlans = await readAllPlans(tasksDir, false);
-        planMap = reloadedPlans.plans;
-      }
-
-      if (ensureResult.errors.length > 0) {
-        console.log(chalk.red.bold('Errors during reference updates:'));
-        ensureResult.errors.forEach((error) => {
-          console.log(chalk.red(`  • ${error}`));
-        });
-        console.log();
-      }
-    }
   }
 
   // Validate all files (after fixing obsolete keys if applicable)
@@ -791,6 +766,12 @@ export async function handleValidateCommand(
           // Auto-fix the inconsistencies
           console.log(chalk.blue('\nAuto-fixing parent-child relationships...'));
           fixResult = await fixParentChildRelationships(safeInconsistencies);
+
+          if (fixResult.fixedRelationships > 0) {
+            // Reload plans to pick up the new dependencies
+            const reloadedPlans = await readAllPlans(tasksDir, false);
+            planMap = reloadedPlans.plans;
+          }
         }
       }
     } catch (error) {
@@ -833,12 +814,44 @@ export async function handleValidateCommand(
         } else {
           console.log(chalk.blue('\nRemoving invalid discoveredFrom references...'));
           discoveredFixResult = await fixDiscoveredFromReferences(discoveredFromIssues);
+
+          if (discoveredFixResult.cleared.length > 0) {
+            // Reload plans to pick up the removed references
+            const reloadedPlans = await readAllPlans(tasksDir, false);
+            planMap = reloadedPlans.plans;
+          }
         }
       } else if (options.verbose) {
         console.log(chalk.green('  No orphaned discovery references found.'));
       }
 
       console.log(); // Extra line for spacing after discoveredFrom check
+
+      // Ensure all plans have complete references (after all fixes that may add dependencies)
+      if (options.fix !== false && uuidToId.size > 0) {
+        console.log(chalk.blue.bold('Ensuring all references are complete...'));
+        const ensureResult = await ensureAllReferences(planMap);
+
+        if (ensureResult.updated > 0) {
+          console.log(
+            chalk.green(
+              `✓ Updated ${ensureResult.updated} plan${ensureResult.updated === 1 ? '' : 's'} with missing references\n`
+            )
+          );
+
+          // Reload plans one more time
+          const reloadedPlans = await readAllPlans(tasksDir, false);
+          planMap = reloadedPlans.plans;
+        }
+
+        if (ensureResult.errors.length > 0) {
+          console.log(chalk.red.bold('Errors during reference updates:'));
+          ensureResult.errors.forEach((error) => {
+            console.log(chalk.red(`  • ${error}`));
+          });
+          console.log();
+        }
+      }
     } else {
       console.log(); // Maintain spacing when plan map unavailable
     }
