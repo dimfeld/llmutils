@@ -117,8 +117,9 @@ function buildAnalysisPrompt(input: {
 1) Are the issues valid for the current batch scope (i.e., within completed tasks) or out-of-scope (belong to pending tasks or future phases)?
 2) Is the issue overlay pedantic or trivial nits that do not impact correctness or acceptance criteria? (Note, this judgement is independent of the issue's severity.)
 3) Is the issue still present? Issues marked "resolved" or similar do not need to be fixed.
+4) Is the issue pre-existing (present in code not modified by the current changes)? Pre-existing issues should be labeled "info" severity and do not require fixes.
 
-For any issues you deem valid, copy the issue title and its corresponding description verbatim into your fix_instructions output.
+For any issues you deem valid and not pre-existing, copy the issue title and its corresponding description verbatim into your fix_instructions output.
 
 Return a strict JSON object that matches this schema exactly:
 {
@@ -128,6 +129,7 @@ Return a strict JSON object that matches this schema exactly:
 
 Rules:
 - Issues that are out-of-scope because they relate to pending tasks do not need to be fixed.
+- Pre-existing issues (in code not modified by the current changes) do not need to be fixed, even if mentioned in the review.
 - For trivial nits that do not impact correctness or acceptance criteria, use your best judgment. This does not mean to just exclude minor issues.
 - Issues in fix_instructions should be verbatim quotes from the Reviewer Report section as much as possible.
 - Set needs_fixes to true if there are any issues in fix_instructions.

@@ -1743,6 +1743,8 @@ export function buildReviewPrompt(
     `4. **Error Handling:** Are edge cases and error conditions properly handled?`,
     `5. **Testing:** Are the changes adequately tested?`,
     ``,
+    `**Pre-existing Issues:** If you notice concerns in code that was not modified by these changes, they may still be worth noting. However, any pre-existing issues MUST be labeled as "info" severity. Only issues introduced or affected by the current changes should receive higher severity ratings.`,
+    ``,
   ].join('\n');
 
   // Use the reviewer agent template with our context and custom instructions

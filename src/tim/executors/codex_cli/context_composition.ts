@@ -144,6 +144,11 @@ For each issue identified in the previous review, determine:
 - **Resource leaks** (memory, files, connections)
 - **Type safety violations** that could cause runtime errors
 
+### Pre-existing Issues:
+- Issues in code that was not modified by the current changes are pre-existing
+- Pre-existing issues should be labeled "info" severity if included in the review output
+- They do not require fixes and should not affect the verdict
+
 ### Issues That Can Be Acceptable If Explained:
 - Style or formatting concerns (if consistent with codebase)
 - Minor performance optimizations (if impact is negligible)

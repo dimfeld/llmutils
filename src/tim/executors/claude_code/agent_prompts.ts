@@ -475,6 +475,12 @@ Any functionality that is implemented but does not meet requirements is a CRITIC
 - Tests with insufficient coverage of critical paths
 - Integration tests missing for complex workflows
 
+## Pre-existing Issues
+
+If you notice issues in the codebase that pre-date the current changes (i.e. they exist in code that was not modified
+by this work), they may still be useful to note. However, pre-existing issues MUST always be labeled as "info" severity
+in the review output. Only issues introduced or affected by the current changes should receive higher severity ratings.
+
 ## Don't be too Pedantic
 
 Although you should be thorough in your review, you should not be too picky.
