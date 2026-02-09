@@ -51,10 +51,17 @@ export function formatStructuredMessage(message: StructuredMessage): string {
     }
     case 'agent_session_end': {
       const lines = [formatHeader(chalk.bold.green, 'Done', message.timestamp)];
-      lines.push(`Success: ${message.success ? chalk.green('yes') : chalk.red('no')}`);
-      if (message.durationMs != null) lines.push(`Duration: ${message.durationMs}ms`);
-      if (message.costUsd != null) lines.push(`Cost: $${message.costUsd.toFixed(2)}`);
-      if (message.turns != null) lines.push(`Turns: ${message.turns}`);
+
+      const info: string[] = [];
+
+      info.push(`Success: ${message.success ? chalk.green('yes') : chalk.red('no')}`);
+      if (message.durationMs != null)
+        info.push(`Duration: ${Math.round(message.durationMs / 1000)}s`);
+      if (message.costUsd != null) info.push(`Cost: $${message.costUsd.toFixed(2)}`);
+      if (message.turns != null) info.push(`Turns: ${message.turns}`);
+
+      lines.push(info.join(', '));
+
       if (message.summary) lines.push(message.summary);
       return lines.join('\n');
     }
@@ -120,10 +127,14 @@ export function formatStructuredMessage(message: StructuredMessage): string {
     case 'command_exec':
       return `${formatHeader(chalk.cyan, 'Exec Begin', message.timestamp)}\n${message.command}${message.cwd ? `\n${chalk.gray(message.cwd)}` : ''}`;
     case 'command_result': {
-      const status = message.exitCode === 0 ? chalk.green : chalk.red;
-      const lines = [status(`Exit Code: ${message.exitCode}`)];
+      const lines: string[] = [
+        `${formatHeader(chalk.cyan, 'Exec Finished', message.timestamp)}\n${message.command}${message.cwd ? `\n${chalk.gray(message.cwd)}` : ''}`,
+      ];
+      if (message.exitCode !== 0) {
+        lines.push(chalk.red(`Exit Code: ${message.exitCode}`));
+      }
       if (message.command) lines.unshift(chalk.gray(message.command));
-      if (message.stdout) lines.push(chalk.green(message.stdout));
+      if (message.stdout) lines.push(message.stdout);
       if (message.stderr) lines.push(chalk.red(message.stderr));
       return lines.join('\n');
     }

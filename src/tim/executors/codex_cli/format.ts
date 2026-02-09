@@ -295,19 +295,11 @@ function formatCommandItem(
   const status = (item?.status ?? '').toString().toLowerCase();
   const exitCode = typeof item?.exit_code === 'number' ? item.exit_code : undefined;
   const command = normalizeCommand(item?.command ?? null);
-  const cwd = item?.cwd ? `CWD: ${item.cwd}` : undefined;
-  const outputSource =
-    item?.aggregated_output ?? item?.formatted_output ?? item?.stdout ?? item?.text ?? '';
-  const output = truncateToLines(outputSource, 20);
-
-  const details: string[] = [];
-  if (command) details.push(command);
-  if (cwd) details.push(cwd);
 
   const meta: string[] = [];
+  const stdout = item?.stdout ?? item?.aggregated_output;
+  const stderr = item?.stderr;
   if (typeof exitCode === 'number' && exitCode !== 0) meta.push(`Exit Code: ${exitCode}`);
-  if (meta.length > 0) details.push(meta.join(' • '));
-  if (output) details.push(output);
 
   return {
     type: 'command_execution',
@@ -316,8 +308,8 @@ function formatCommandItem(
         ? buildCommandResult(ts, {
             command,
             exitCode: typeof exitCode === 'number' ? exitCode : status === 'failed' ? 1 : 0,
-            stdout: item?.stdout ?? item?.aggregated_output ?? '',
-            stderr: item?.stderr ?? '',
+            stdout: stdout ?? '',
+            stderr: stderr ?? '',
           })
         : {
             type: 'command_exec',

@@ -70,12 +70,14 @@ export class ConsoleAdapter implements LoggerAdapter {
   }
 
   sendStructured(message: StructuredMessage): void {
-    const formatted = formatStructuredMessage(message);
+    let formatted = formatStructuredMessage(message);
     if (formatted.length === 0) {
       return;
     }
 
+    formatted += '\n';
+
     console.log(formatted);
-    writeToLogFile(formatted + '\n');
+    writeToLogFile(formatted);
   }
 }
