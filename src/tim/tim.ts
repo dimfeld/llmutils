@@ -1216,6 +1216,7 @@ async function run() {
       const tunnelAdapter = await createTunnelAdapter(tunnelSocketPath);
       cleanupRegistry.register(() => tunnelAdapter.destroySync());
       await runWithLogger(tunnelAdapter, () => program.parseAsync(process.argv));
+      await tunnelAdapter.destroy();
     } catch {
       // If tunnel connection fails, fall back to normal console output.
       // Clear the env var so isTunnelActive() returns false — otherwise
