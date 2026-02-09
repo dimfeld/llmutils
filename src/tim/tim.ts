@@ -588,6 +588,34 @@ createAgentCommand(
 );
 
 program
+  .command('run-prompt [prompt]')
+  .description(
+    'Run a one-shot prompt through Claude Code or Codex CLI. Result is printed to stdout.'
+  )
+  .option(
+    '-x, --executor <name>',
+    'Executor to use: claude/claude-code (default) or codex/codex-cli',
+    'claude'
+  )
+  .option('-m, --model <model>', 'Model to use for Claude')
+  .option(
+    '--reasoning-level <level>',
+    'Reasoning effort level for Codex (low, medium, high, xhigh)'
+  )
+  .option(
+    '--json-schema <schema>',
+    'JSON schema for structured output (prefix with @ to load from file)'
+  )
+  .option('--prompt-file <path>', 'Read the prompt from a file')
+  .option('-q, --quiet', 'Suppress execution log output on stderr')
+  .action(async (promptText, options, command) => {
+    const { handleRunPromptCommand } = await import('./commands/run_prompt.js');
+    await handleRunPromptCommand(promptText, options, command.parent.opts()).catch(
+      handleCommandError
+    );
+  });
+
+program
   .command('list [searchTerms...]')
   .description(
     'List all plan files in the tasks directory. Optionally filter by title search terms.'

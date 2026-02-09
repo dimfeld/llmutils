@@ -138,6 +138,7 @@ export interface CommandExecMessage extends StructuredMessageBase {
 export interface CommandResultMessage extends StructuredMessageBase {
   type: 'command_result';
   command?: string;
+  cwd?: string;
   exitCode: number;
   stdout?: string;
   stderr?: string;

@@ -29,6 +29,7 @@ These tools are deprecated as coding agents have largely replaced them, but sill
 - [Core Commands](#core-commands)
   - [generate - Create Plans](#generate---create-plans)
   - [agent/run - Execute Plans](#agentrun---execute-plans)
+  - [run-prompt - One-Shot Prompts](#run-prompt---one-shot-prompts)
   - [add - Create Plan Stubs](#add---create-plan-stubs)
   - [show - View Plan Details](#show---view-plan-details)
   - [ready - List Ready Plans](#ready---list-ready-plans)
@@ -421,6 +422,44 @@ File Changes
 • src/middleware/auth.ts
 • src/routes/auth.ts
 • tests/auth.test.ts
+```
+
+---
+
+### run-prompt - One-Shot Prompts
+
+Run a single prompt through Claude Code (default) or Codex without plan orchestration.
+Executor aliases: `claude`/`claude-code` and `codex`/`codex-cli`.
+
+Execution log output goes to stderr, and the final result goes to stdout for easy piping.
+
+```bash
+# Basic usage (Claude default)
+tim run-prompt "What is 2 + 2?"
+
+# Specify an explicit Claude model
+tim run-prompt --model claude-sonnet-4-5-20250929 "What is 2 + 2?"
+
+# Use Codex with explicit reasoning effort
+tim run-prompt -x codex --reasoning-level high "Summarize this repository in 3 bullets"
+
+# Structured JSON output (inline schema)
+tim run-prompt --json-schema '{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}' "Return JSON only"
+
+# Structured JSON output (schema file)
+tim run-prompt --json-schema @schema.json "Return JSON only"
+
+# Read prompt from stdin
+echo "Explain this function" | tim run-prompt
+
+# Read prompt from a file
+tim run-prompt --prompt-file task.md
+
+# Pipe result to a file
+tim run-prompt "summarize this" > result.txt
+
+# Suppress execution log output on stderr
+tim run-prompt -q "question" > answer.txt
 ```
 
 ---
@@ -1885,6 +1924,8 @@ tim generate ID -- [RMFILTER_ARGS]
 # Execute plan
 tim agent ID [--executor NAME] [--workspace ID] [--steps N]
 tim run ID  # alias for agent
+tim run-prompt [PROMPT] [-x claude|claude-code|codex|codex-cli] [--model MODEL] [--reasoning-level LEVEL]
+tim run-prompt [PROMPT] [--json-schema JSON_OR_@FILE] [--prompt-file FILE] [-q]
 
 # Track progress
 tim show ID [--short | --full]

@@ -311,8 +311,26 @@ describe('formatJsonMessage', () => {
 
       const result = formatJsonMessage(resultMessage);
       expect(result.filePaths).toBeUndefined();
+      expect(result.resultText).toBe('Task completed successfully');
       expect(result.message).toContain('Cost: $0.05');
       expect(result.message).toContain('Turns: 3');
+    });
+
+    test('does not set resultText for error_max_turns result messages', () => {
+      const resultMessage = JSON.stringify({
+        type: 'result',
+        subtype: 'error_max_turns',
+        total_cost_usd: 0.05,
+        duration_ms: 5000,
+        duration_api_ms: 2000,
+        is_error: true,
+        num_turns: 3,
+        session_id: 'test-session',
+      });
+
+      const result = formatJsonMessage(resultMessage);
+      expect(result.resultText).toBeUndefined();
+      expect(result.message).toContain('Maximum turns reached');
     });
 
     test('handles system init messages without file paths', () => {

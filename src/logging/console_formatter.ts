@@ -128,12 +128,12 @@ export function formatStructuredMessage(message: StructuredMessage): string {
       return `${formatHeader(chalk.cyan, 'Exec Begin', message.timestamp)}\n${message.command}${message.cwd ? `\n${chalk.gray(message.cwd)}` : ''}`;
     case 'command_result': {
       const lines: string[] = [
-        `${formatHeader(chalk.cyan, 'Exec Finished', message.timestamp)}\n${message.command}${message.cwd ? `\n${chalk.gray(message.cwd)}` : ''}`,
+        `${formatHeader(chalk.cyan, 'Exec Finished', message.timestamp)}\n${message.command}`,
       ];
+      if (message.cwd) lines.push(chalk.gray(message.cwd));
       if (message.exitCode !== 0) {
         lines.push(chalk.red(`Exit Code: ${message.exitCode}`));
       }
-      if (message.command) lines.unshift(chalk.gray(message.command));
       if (message.stdout) lines.push(message.stdout);
       if (message.stderr) lines.push(chalk.red(message.stderr));
       return lines.join('\n');

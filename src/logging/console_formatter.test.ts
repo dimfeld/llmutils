@@ -117,12 +117,15 @@ describe('console_formatter', () => {
       type: 'command_result',
       timestamp,
       command: 'bun test',
+      cwd: '/tmp/project',
       exitCode: 1,
       stderr: 'fail',
     });
     expect(commandResult).toContain('Exit Code: 1');
     expect(commandResult).toContain('bun test');
+    expect(commandResult).toContain('/tmp/project');
     expect(commandResult).toContain('fail');
+    expect(commandResult.match(/bun test/g)?.length).toBe(1);
   });
 
   it('formats review and workflow messages', () => {

@@ -101,6 +101,7 @@ export interface FormattedClaudeMessage {
   structured?: StructuredMessage | StructuredMessage[];
   message?: string;
   rawMessage?: string;
+  resultText?: string;
   structuredOutput?: unknown;
   type: string;
   filePaths?: string[];
@@ -194,6 +195,10 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
     if (message.subtype === 'success' || message.subtype === 'error_max_turns') {
       return withMessage({
         type: message.type,
+        resultText:
+          message.subtype === 'success' && typeof message.result === 'string'
+            ? message.result
+            : undefined,
         structured: {
           type: 'agent_session_end',
           timestamp: timestamp(),

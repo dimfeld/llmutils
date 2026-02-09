@@ -234,6 +234,32 @@ describe('createCodexStdoutFormatter', () => {
     expect((formatted as Array<{ type: string }>)[0].type).toBe('token_usage');
     expect((formatted as Array<{ type: string }>)[1].type).toBe('llm_response');
     expect(formatter.getFinalAgentMessage()).toContain('FAILED: cannot continue');
+    expect(formatter.getFinalAgentResponseMessage()).toContain('FAILED: cannot continue');
     expect(formatter.getFailedAgentMessage()).toContain('FAILED: cannot continue');
+  });
+
+  test('tracks final response message separately from reasoning', () => {
+    const formatter = createCodexStdoutFormatter();
+    const chunk = [
+      JSON.stringify({
+        type: 'item.completed',
+        item: {
+          item_type: 'agent_message',
+          text: 'actual answer',
+        },
+      }),
+      JSON.stringify({
+        type: 'item.completed',
+        item: {
+          item_type: 'reasoning',
+          text: 'late reasoning',
+        },
+      }),
+    ].join('\n');
+
+    formatter.formatChunk(`${chunk}\n`);
+
+    expect(formatter.getFinalAgentMessage()).toBe('late reasoning');
+    expect(formatter.getFinalAgentResponseMessage()).toBe('actual answer');
   });
 });

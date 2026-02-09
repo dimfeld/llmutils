@@ -755,6 +755,7 @@ export function formatCodexJsonMessage(jsonLine: string): FormattedCodexMessage 
 export function createCodexStdoutFormatter() {
   const split = createLineSplitter();
   let finalAgentMessage: string | undefined;
+  let finalAgentResponseMessage: string | undefined;
   let lastFailedAgentMessage: string | undefined;
   let threadId: string | undefined;
   let sessionId: string | undefined;
@@ -781,6 +782,9 @@ export function createCodexStdoutFormatter() {
 
       if (fm.agentMessage) {
         finalAgentMessage = fm.agentMessage;
+        if (fm.type === 'agent_message') {
+          finalAgentResponseMessage = fm.agentMessage;
+        }
         if (fm.failed) lastFailedAgentMessage = fm.agentMessage;
       }
       if (fm.threadId && !threadId) {
@@ -804,6 +808,10 @@ export function createCodexStdoutFormatter() {
     return finalAgentMessage;
   }
 
+  function getFinalAgentResponseMessage(): string | undefined {
+    return finalAgentResponseMessage;
+  }
+
   function getFailedAgentMessage(): string | undefined {
     return lastFailedAgentMessage;
   }
@@ -816,5 +824,12 @@ export function createCodexStdoutFormatter() {
     return sessionId;
   }
 
-  return { formatChunk, getFinalAgentMessage, getFailedAgentMessage, getThreadId, getSessionId };
+  return {
+    formatChunk,
+    getFinalAgentMessage,
+    getFinalAgentResponseMessage,
+    getFailedAgentMessage,
+    getThreadId,
+    getSessionId,
+  };
 }
