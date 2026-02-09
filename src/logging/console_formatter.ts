@@ -3,8 +3,27 @@ import type { StructuredMessage, FileChangeItem } from './structured_messages.js
 import { formatExecutionSummaryToLines } from '../tim/summary/format.js';
 import { formatTodoLikeLines } from '../tim/executors/shared/todo_format.js';
 
+function formatTimestamp(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (isNaN(date.getTime())) return timestamp;
+  const h = String(date.getHours()).padStart(2, '0');
+  const m = String(date.getMinutes()).padStart(2, '0');
+  const s = String(date.getSeconds()).padStart(2, '0');
+  return `${h}:${m}:${s}`;
+}
+
+const TRUNCATE_LINES = 40;
+
+function truncateLines(text: string): string {
+  const lines = text.split('\n');
+  if (lines.length <= TRUNCATE_LINES) return text;
+  const truncated = lines.length - TRUNCATE_LINES;
+  return lines.slice(0, TRUNCATE_LINES).join('\n') + `\n... (${truncated} lines truncated)`;
+}
+
 function formatHeader(color: (value: string) => string, title: string, timestamp?: string): string {
-  return color(`### ${title}${timestamp ? ` [${timestamp}]` : ''}`);
+  const ts = timestamp ? ` [${formatTimestamp(timestamp)}]` : '';
+  return color(`### ${title}${ts}`);
 }
 
 function formatFileChange(change: FileChangeItem): string {
@@ -98,7 +117,11 @@ export function formatStructuredMessage(message: StructuredMessage): string {
     case 'llm_tool_result':
       return [
         formatHeader(chalk.magenta, `Tool Result: ${message.toolName}`, message.timestamp),
-        message.resultSummary,
+        message.resultSummary
+          ? message.toolName === 'Task'
+            ? message.resultSummary
+            : truncateLines(message.resultSummary)
+          : undefined,
       ]
         .filter(Boolean)
         .join('\n');
@@ -134,8 +157,8 @@ export function formatStructuredMessage(message: StructuredMessage): string {
       if (message.exitCode !== 0) {
         lines.push(chalk.red(`Exit Code: ${message.exitCode}`));
       }
-      if (message.stdout) lines.push(message.stdout);
-      if (message.stderr) lines.push(chalk.red(message.stderr));
+      if (message.stdout) lines.push(truncateLines(message.stdout));
+      if (message.stderr) lines.push(chalk.red(truncateLines(message.stderr)));
       return lines.join('\n');
     }
     case 'review_start':

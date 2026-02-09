@@ -17,7 +17,8 @@ describe('console_formatter', () => {
       planId: 168,
     });
     expect(start).toContain('Starting');
-    expect(start).toContain(timestamp);
+    expect(start).toContain('01:02:03');
+    expect(start).not.toContain('2026-02-08');
     expect(start).toContain('codex');
     expect(start).toContain('168');
 
@@ -244,5 +245,73 @@ describe('console_formatter', () => {
 
   it('returns empty output for input_required without prompt', () => {
     expect(format({ type: 'input_required', timestamp })).toBe('');
+  });
+
+  it('truncates long tool result output after 40 lines', () => {
+    const longOutput = Array.from({ length: 60 }, (_, i) => `line ${i + 1}`).join('\n');
+    const result = format({
+      type: 'llm_tool_result',
+      timestamp,
+      toolName: 'Read',
+      resultSummary: longOutput,
+    });
+    expect(result).toContain('line 1');
+    expect(result).toContain('line 40');
+    expect(result).not.toContain('line 41');
+    expect(result).toContain('(20 lines truncated)');
+  });
+
+  it('does not truncate tool result output for Task tool', () => {
+    const longOutput = Array.from({ length: 60 }, (_, i) => `line ${i + 1}`).join('\n');
+    const result = format({
+      type: 'llm_tool_result',
+      timestamp,
+      toolName: 'Task',
+      resultSummary: longOutput,
+    });
+    expect(result).toContain('line 60');
+    expect(result).not.toContain('truncated');
+  });
+
+  it('does not truncate short tool result output', () => {
+    const shortOutput = Array.from({ length: 10 }, (_, i) => `line ${i + 1}`).join('\n');
+    const result = format({
+      type: 'llm_tool_result',
+      timestamp,
+      toolName: 'Read',
+      resultSummary: shortOutput,
+    });
+    expect(result).toContain('line 10');
+    expect(result).not.toContain('truncated');
+  });
+
+  it('truncates long command result stdout and stderr after 40 lines', () => {
+    const longStdout = Array.from({ length: 50 }, (_, i) => `out ${i + 1}`).join('\n');
+    const longStderr = Array.from({ length: 45 }, (_, i) => `err ${i + 1}`).join('\n');
+    const result = format({
+      type: 'command_result',
+      timestamp,
+      command: 'bun test',
+      exitCode: 0,
+      stdout: longStdout,
+      stderr: longStderr,
+    });
+    expect(result).toContain('out 40');
+    expect(result).not.toContain('out 41');
+    expect(result).toContain('(10 lines truncated)');
+    expect(result).toContain('err 40');
+    expect(result).not.toContain('err 41');
+    expect(result).toContain('(5 lines truncated)');
+  });
+
+  it('formats timestamps as HH:MM:SS', () => {
+    const result = format({
+      type: 'llm_thinking',
+      timestamp: '2026-02-08T14:30:45.123Z',
+      text: 'thinking...',
+    });
+    // Should show the local-time HH:MM:SS, not the full ISO string
+    expect(result).not.toContain('2026-02-08');
+    expect(result).toMatch(/\d{2}:\d{2}:\d{2}/);
   });
 });
