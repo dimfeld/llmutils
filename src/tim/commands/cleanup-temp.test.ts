@@ -4,6 +4,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
 import { handleCleanupTempCommand } from './cleanup-temp.js';
+import { stringifyPlanWithFrontmatter } from '../../testing.js';
+import type { PlanSchema } from '../planSchema.js';
 
 describe('tim cleanup-temp command', () => {
   let tempDir: string;
@@ -34,57 +36,51 @@ describe('tim cleanup-temp command', () => {
   });
 
   test('deletes only plans with temp: true', async () => {
-    const schemaLine =
-      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
-
     // Create a temporary plan
     await fs.writeFile(
       path.join(tasksDir, '1-temp-plan.plan.md'),
-      schemaLine +
-        yaml.stringify({
-          id: 1,
-          title: 'Temp Plan',
-          goal: 'Test goal',
-          details: 'Test details',
-          status: 'pending',
-          temp: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          tasks: [],
-        })
+      stringifyPlanWithFrontmatter({
+        id: 1,
+        title: 'Temp Plan',
+        goal: 'Test goal',
+        details: 'Test details',
+        status: 'pending',
+        temp: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tasks: [],
+      })
     );
 
     // Create a permanent plan
     await fs.writeFile(
       path.join(tasksDir, '2-permanent-plan.plan.md'),
-      schemaLine +
-        yaml.stringify({
-          id: 2,
-          title: 'Permanent Plan',
-          goal: 'Test goal',
-          details: 'Test details',
-          status: 'pending',
-          temp: false,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          tasks: [],
-        })
+      stringifyPlanWithFrontmatter({
+        id: 2,
+        title: 'Permanent Plan',
+        goal: 'Test goal',
+        details: 'Test details',
+        status: 'pending',
+        temp: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tasks: [],
+      })
     );
 
     // Create a plan without temp field (should be treated as false)
     await fs.writeFile(
       path.join(tasksDir, '3-normal-plan.plan.md'),
-      schemaLine +
-        yaml.stringify({
-          id: 3,
-          title: 'Normal Plan',
-          goal: 'Test goal',
-          details: 'Test details',
-          status: 'pending',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          tasks: [],
-        })
+      stringifyPlanWithFrontmatter({
+        id: 3,
+        title: 'Normal Plan',
+        goal: 'Test goal',
+        details: 'Test details',
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tasks: [],
+      })
     );
 
     const command = {
@@ -118,25 +114,21 @@ describe('tim cleanup-temp command', () => {
   });
 
   test('deletes multiple temporary plans', async () => {
-    const schemaLine =
-      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
-
     // Create multiple temporary plans
     for (let i = 1; i <= 3; i++) {
       await fs.writeFile(
         path.join(tasksDir, `${i}-temp-plan-${i}.plan.md`),
-        schemaLine +
-          yaml.stringify({
-            id: i,
-            title: `Temp Plan ${i}`,
-            goal: 'Test goal',
-            details: 'Test details',
-            status: 'pending',
-            temp: true,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            tasks: [],
-          })
+        stringifyPlanWithFrontmatter({
+          id: i,
+          title: `Temp Plan ${i}`,
+          goal: 'Test goal',
+          details: 'Test details',
+          status: 'pending',
+          temp: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          tasks: [],
+        } satisfies PlanSchema)
       );
     }
 
@@ -170,23 +162,19 @@ describe('tim cleanup-temp command', () => {
   });
 
   test('handles directory with no temp plans', async () => {
-    const schemaLine =
-      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
-
     // Create only permanent plans
     await fs.writeFile(
       path.join(tasksDir, '1-permanent-plan.plan.md'),
-      schemaLine +
-        yaml.stringify({
-          id: 1,
-          title: 'Permanent Plan',
-          goal: 'Test goal',
-          details: 'Test details',
-          status: 'pending',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          tasks: [],
-        })
+      stringifyPlanWithFrontmatter({
+        id: 1,
+        title: 'Permanent Plan',
+        goal: 'Test goal',
+        details: 'Test details',
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tasks: [],
+      })
     );
 
     const command = {

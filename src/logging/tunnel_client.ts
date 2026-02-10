@@ -3,9 +3,53 @@ import type { LoggerAdapter } from './adapter.js';
 import { writeToLogFile } from './common.js';
 import { debug } from '../common/process.js';
 import { TIM_OUTPUT_SOCKET, serializeArgs } from './tunnel_protocol.js';
-import type { TunnelMessage } from './tunnel_protocol.js';
-import type { StructuredMessage } from './structured_messages.js';
+import type { TunnelMessage, ServerTunnelMessage } from './tunnel_protocol.js';
+import type { StructuredMessage, PromptRequestMessage } from './structured_messages.js';
 import { formatStructuredMessage } from './console_formatter.js';
+
+/** Pending prompt request entry tracked by the TunnelAdapter. */
+interface PendingPromptRequest {
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
+/**
+ * Creates a line splitter function that handles message framing across TCP chunks.
+ * Buffers partial lines and returns complete newline-terminated lines.
+ */
+function createLineSplitter(): (input: string) => string[] {
+  let fragment: string = '';
+
+  return function splitLines(input: string): string[] {
+    const fullInput = fragment + input;
+    const lines = fullInput.split('\n');
+    // Last element is the new fragment (empty if input ends with newline)
+    fragment = lines.pop() || '';
+    return lines;
+  };
+}
+
+/**
+ * Validates that a parsed JSON object is a valid ServerTunnelMessage.
+ */
+function isValidServerTunnelMessage(message: unknown): message is ServerTunnelMessage {
+  if (typeof message !== 'object' || message === null) {
+    return false;
+  }
+
+  const msg = message as Record<string, unknown>;
+
+  switch (msg.type) {
+    case 'prompt_response':
+      return (
+        typeof msg.requestId === 'string' &&
+        (msg.error === undefined || typeof msg.error === 'string')
+      );
+    default:
+      return false;
+  }
+}
 
 /**
  * Returns true when the TIM_OUTPUT_SOCKET environment variable is set,
@@ -25,26 +69,131 @@ export function isTunnelActive(): boolean {
 export class TunnelAdapter implements LoggerAdapter {
   private socket: net.Socket;
   private connected: boolean = true;
+  private pendingPrompts: Map<string, PendingPromptRequest> = new Map();
 
   constructor(socket: net.Socket) {
     this.socket = socket;
 
+    // Set up incoming data handler for server->client messages (prompt responses)
+    const splitLines = createLineSplitter();
+    this.socket.on('data', (data) => {
+      const lines = splitLines(data.toString());
+      for (const line of lines) {
+        if (!line) continue;
+        try {
+          const parsed = JSON.parse(line);
+          if (isValidServerTunnelMessage(parsed)) {
+            this.handleServerMessage(parsed);
+          }
+        } catch {
+          // Malformed JSON from server - silently ignore
+        }
+      }
+    });
+
     this.socket.on('error', () => {
       this.connected = false;
+      this.rejectAllPending(new Error('Tunnel connection error'));
     });
 
     this.socket.on('close', () => {
       this.connected = false;
+      this.rejectAllPending(new Error('Tunnel connection closed'));
+    });
+  }
+
+  /**
+   * Handles an incoming server->client message.
+   */
+  private handleServerMessage(message: ServerTunnelMessage): void {
+    switch (message.type) {
+      case 'prompt_response': {
+        const pending = this.pendingPrompts.get(message.requestId);
+        if (!pending) {
+          // Unknown requestId - silently ignore (may have already timed out)
+          return;
+        }
+        this.pendingPrompts.delete(message.requestId);
+        if (pending.timer) {
+          clearTimeout(pending.timer);
+        }
+        if (message.error) {
+          pending.reject(new Error(message.error));
+        } else {
+          pending.resolve(message.value);
+        }
+        break;
+      }
+    }
+  }
+
+  /**
+   * Rejects all pending prompt requests with the given error.
+   * Called when the socket connection is lost.
+   */
+  private rejectAllPending(error: Error): void {
+    for (const [requestId, pending] of this.pendingPrompts) {
+      if (pending.timer) {
+        clearTimeout(pending.timer);
+      }
+      pending.reject(error);
+      this.pendingPrompts.delete(requestId);
+    }
+  }
+
+  /**
+   * Sends a prompt request over the tunnel and returns a promise that resolves
+   * when the server sends back the prompt response.
+   *
+   * @param message - The PromptRequestMessage to send
+   * @param timeoutMs - Optional timeout in milliseconds. If the server doesn't respond within
+   *   this time, the promise rejects with a timeout error.
+   * @returns The prompt result value from the server
+   */
+  sendPromptRequest(message: PromptRequestMessage, timeoutMs?: number): Promise<unknown> {
+    return new Promise<unknown>((resolve, reject) => {
+      if (!this.connected) {
+        reject(new Error('Tunnel is not connected'));
+        return;
+      }
+
+      const entry: PendingPromptRequest = { resolve, reject };
+
+      if (timeoutMs != null && timeoutMs > 0) {
+        entry.timer = setTimeout(() => {
+          this.pendingPrompts.delete(message.requestId);
+          reject(new Error(`Prompt request timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }
+
+      this.pendingPrompts.set(message.requestId, entry);
+
+      // Send the message as a structured tunnel message.
+      // If send() fails (serialization error or write failure), clean up
+      // the pending entry immediately so the promise doesn't hang forever.
+      const sent = this.send({ type: 'structured', message });
+      if (!sent) {
+        this.pendingPrompts.delete(message.requestId);
+        if (entry.timer) {
+          clearTimeout(entry.timer);
+        }
+        reject(new Error('Failed to send prompt request over tunnel'));
+      }
     });
   }
 
   /**
    * Writes a JSONL-encoded tunnel message to the socket.
    * Silently drops the message if the socket is no longer connected.
+   *
+   * @returns `true` if the message was successfully written, `false` if it was
+   *   dropped due to disconnection, serialization failure, or write error.
+   *   Callers that need to detect failures (e.g. sendPromptRequest) can check
+   *   the return value; fire-and-forget callers (log, error, etc.) ignore it.
    */
-  private send(message: TunnelMessage): void {
+  private send(message: TunnelMessage): boolean {
     if (!this.connected) {
-      return;
+      return false;
     }
 
     let serialized: string;
@@ -54,14 +203,16 @@ export class TunnelAdapter implements LoggerAdapter {
       // Serialization errors can happen with non-JSON-safe payloads (e.g. circular refs).
       // Drop only this message and keep the tunnel connection alive.
       writeToLogFile(`[tunnel] Failed to serialize message: ${err as Error}\n`);
-      return;
+      return false;
     }
 
     try {
       this.socket.write(serialized);
+      return true;
     } catch {
       // If write fails, mark as disconnected and fall back to no-op
       this.connected = false;
+      return false;
     }
   }
 
@@ -121,6 +272,7 @@ export class TunnelAdapter implements LoggerAdapter {
    */
   destroySync(): void {
     this.connected = false;
+    this.rejectAllPending(new Error('Tunnel adapter destroyed'));
     if (!this.socket.destroyed) {
       this.socket.end();
       this.socket.destroy();
@@ -140,6 +292,7 @@ export class TunnelAdapter implements LoggerAdapter {
    */
   destroy(timeoutMs: number = 2000): Promise<void> {
     this.connected = false;
+    this.rejectAllPending(new Error('Tunnel adapter destroyed'));
 
     return new Promise<void>((resolve) => {
       // If the socket is already destroyed/closed, resolve immediately

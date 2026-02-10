@@ -123,8 +123,6 @@ const defaultSchemas = createPlanSchemas();
 export const phaseSchema = defaultSchemas.phaseSchema;
 export const multiPhasePlanSchema = defaultSchemas.multiPhasePlanSchema;
 
-export type PhaseSchema = z.output<typeof phaseSchema>;
-
 export function normalizeContainerToEpic<T extends { container?: boolean; epic?: boolean | null }>(
   plan: T
 ): Omit<T, 'container'> & { epic?: boolean } {
@@ -142,9 +140,8 @@ export function normalizeContainerToEpic<T extends { container?: boolean; epic?:
   return { ...(rest as Omit<T, 'container'>), epic: normalizedEpic };
 }
 
-// Backward compatibility - export phaseSchema as planSchema
 export const planSchema = phaseSchema;
-export type PlanSchema = PhaseSchema;
+export type PlanSchema = z.output<typeof phaseSchema>;
 export type PlanSchemaWithFilename = PlanSchema & {
   filename: string;
 };

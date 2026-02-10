@@ -14,6 +14,7 @@ import {
   combineRmprOptions,
   type RmprOptions,
 } from '../rmpr/comment_options.js';
+import { log } from '../logging.js';
 
 /**
  * Result of parsing an issue identifier
@@ -172,9 +173,9 @@ export async function selectHierarchicalIssueComments(
     selectedChildren = selectedChildIndices.map((index) => data.children![index]);
 
     if (selectedChildren.length === 0) {
-      console.log('No subissues selected for import.\n');
+      log('No subissues selected for import.\n');
     } else {
-      console.log(
+      log(
         `Selected ${selectedChildren.length} of ${data.children.length} subissue(s) for import.\n`
       );
     }
@@ -300,7 +301,7 @@ export async function selectHierarchicalIssueComments(
     selectedContent: childrenContentMap.get(index) || [],
   }));
 
-  console.log({
+  log({
     selectedChildren,
     parentContent,
     childrenContent,

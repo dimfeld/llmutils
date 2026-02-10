@@ -29,9 +29,31 @@ export interface StructuredTunnelMessage {
 }
 
 /**
- * Union type for all messages sent over the tunnel socket as JSONL.
+ * Union type for all messages sent from client to server over the tunnel socket as JSONL.
  */
 export type TunnelMessage = TunnelArgsMessage | TunnelDataMessage | StructuredTunnelMessage;
+
+/**
+ * A server-to-client message carrying a prompt response.
+ * Sent by the tunnel server after rendering an inquirer prompt on behalf of the client.
+ *
+ * When both `value` and `error` are present, `error` takes precedence and the
+ * response is treated as a failure. Consumers should check `error` first.
+ */
+export interface TunnelPromptResponseMessage {
+  type: 'prompt_response';
+  requestId: string;
+  /** The prompt result (present on success) */
+  value?: unknown;
+  /** Error message (present on failure). Takes precedence over `value` when both are set. */
+  error?: string;
+}
+
+/**
+ * Union type for all messages sent from server to client over the tunnel socket as JSONL.
+ * Separate from TunnelMessage (client->server) to maintain clear protocol directionality.
+ */
+export type ServerTunnelMessage = TunnelPromptResponseMessage;
 
 export function isStructuredTunnelMessage(
   message: TunnelMessage

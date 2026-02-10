@@ -62,6 +62,13 @@ describe('structured_messages', () => {
       { type: 'execution_summary', timestamp, summary: summaryFixture },
       { type: 'token_usage', timestamp, totalTokens: 123 },
       { type: 'input_required', timestamp, prompt: 'Confirm' },
+      {
+        type: 'prompt_request',
+        timestamp,
+        requestId: 'test-id',
+        promptType: 'confirm',
+        promptConfig: { message: 'Continue?' },
+      },
       { type: 'plan_discovery', timestamp, planId: 1, title: 'Plan' },
       { type: 'workspace_info', timestamp, path: '/tmp/ws' },
     ];

@@ -1483,6 +1483,7 @@ describe('subagent command - tunnel behavior', () => {
 
   // Track tunnel mock calls
   let createTunnelServerCalls: string[] = [];
+  let createTunnelServerOptions: any[] = [];
   let tunnelCloseCallCount = 0;
 
   const basePlan: PlanSchema = {
@@ -1502,6 +1503,7 @@ describe('subagent command - tunnel behavior', () => {
 
   async function setupCommonMocks(tunnelActive: boolean) {
     createTunnelServerCalls = [];
+    createTunnelServerOptions = [];
     tunnelCloseCallCount = 0;
     capturedSpawnEnv = undefined;
 
@@ -1536,8 +1538,9 @@ describe('subagent command - tunnel behavior', () => {
 
     // Mock tunnel server - track calls and expose close spy
     await moduleMocker.mock('../../logging/tunnel_server.js', () => ({
-      createTunnelServer: mock(async (socketPath: string) => {
+      createTunnelServer: mock(async (socketPath: string, options?: any) => {
         createTunnelServerCalls.push(socketPath);
+        createTunnelServerOptions.push(options);
         return {
           close: mock(() => {
             tunnelCloseCallCount++;
@@ -1643,6 +1646,11 @@ describe('subagent command - tunnel behavior', () => {
     // createTunnelServer should have been called
     expect(createTunnelServerCalls).toHaveLength(1);
     expect(createTunnelServerCalls[0]).toContain('output.sock');
+
+    // onPromptRequest handler should have been passed
+    expect(createTunnelServerOptions).toHaveLength(1);
+    expect(createTunnelServerOptions[0]).toBeDefined();
+    expect(typeof createTunnelServerOptions[0].onPromptRequest).toBe('function');
 
     // The spawned process env should include TIM_OUTPUT_SOCKET
     expect(capturedSpawnEnv).toBeDefined();

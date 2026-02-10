@@ -1,4 +1,4 @@
-import { expect, test, mock, beforeEach } from 'bun:test';
+import { expect, test, mock, beforeEach, afterAll } from 'bun:test';
 import { EventEmitter } from 'events';
 import { waitForEnter, readStdinUntilTimeout } from './terminal';
 
@@ -32,7 +32,7 @@ beforeEach(() => {
 });
 
 // Restore original stdin after all tests
-test('teardown', () => {
+afterAll(() => {
   Object.defineProperty(process, 'stdin', {
     value: originalStdin,
     writable: true,

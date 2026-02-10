@@ -10,9 +10,13 @@ import {
   sendStructured,
 } from '../logging.js';
 import { CleanupRegistry } from '../common/cleanup_registry.js';
-import type { TunnelMessage } from './tunnel_protocol.js';
+import type { TunnelMessage, TunnelPromptResponseMessage } from './tunnel_protocol.js';
 import { isStructuredTunnelMessage } from './tunnel_protocol.js';
-import { structuredMessageTypeList, type StructuredMessage } from './structured_messages.js';
+import {
+  structuredMessageTypeList,
+  type StructuredMessage,
+  type PromptRequestMessage,
+} from './structured_messages.js';
 
 export const structuredMessageTypes = new Set<StructuredMessage['type']>(structuredMessageTypeList);
 
@@ -30,6 +34,7 @@ const reviewCategories = new Set([
 const reviewVerdicts = new Set(['ACCEPTABLE', 'NEEDS_FIXES', 'UNKNOWN']);
 const executionSummaryModes = new Set(['serial', 'batch']);
 const todoStatuses = new Set(['pending', 'in_progress', 'completed', 'blocked', 'unknown']);
+const promptTypes = new Set(['input', 'confirm', 'select', 'checkbox']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -37,6 +42,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function isPrimitiveValue(value: unknown): value is string | number | boolean {
+  if (typeof value === 'string' || typeof value === 'boolean') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  return false;
 }
 
 function isJsonSerializableValue(value: unknown): boolean {
@@ -288,6 +299,36 @@ function isValidStructuredMessagePayload(message: unknown): message is Structure
       return typeof structured.planComplete === 'boolean';
     case 'execution_summary':
       return isValidExecutionSummary(structured.summary);
+    case 'prompt_request': {
+      if (typeof structured.requestId !== 'string') return false;
+      if (typeof structured.promptType !== 'string' || !promptTypes.has(structured.promptType))
+        return false;
+      if (!isRecord(structured.promptConfig)) return false;
+      if (typeof structured.promptConfig.message !== 'string') return false;
+
+      // Validate optional fields in promptConfig
+      const config = structured.promptConfig;
+      if (config.default != null && !isPrimitiveValue(config.default)) return false;
+      if (config.pageSize != null && typeof config.pageSize !== 'number') return false;
+      if (config.validationHint != null && typeof config.validationHint !== 'string') return false;
+
+      // Validate choices array if present
+      if (config.choices != null) {
+        if (!Array.isArray(config.choices)) return false;
+        for (const choice of config.choices) {
+          if (!isRecord(choice)) return false;
+          if (typeof choice.name !== 'string') return false;
+          if (!isPrimitiveValue(choice.value)) return false;
+          if (choice.description != null && typeof choice.description !== 'string') return false;
+          if (choice.checked != null && typeof choice.checked !== 'boolean') return false;
+        }
+      }
+
+      // Validate optional timeoutMs
+      if (structured.timeoutMs != null && typeof structured.timeoutMs !== 'number') return false;
+
+      return true;
+    }
     case 'plan_discovery':
       return typeof structured.planId === 'number' && typeof structured.title === 'string';
     case 'workspace_info':
@@ -374,9 +415,33 @@ function dispatchMessage(message: TunnelMessage): void {
       break;
     default: {
       const _exhaustive: never = message;
-      _exhaustive;
+      void _exhaustive;
     }
   }
+}
+
+/**
+ * Handler function for prompt requests received from tunnel clients.
+ * The handler should render the prompt (e.g. via inquirer) and call `respond`
+ * with the result or error.
+ */
+export type PromptRequestHandler = (
+  message: PromptRequestMessage,
+  respond: (response: TunnelPromptResponseMessage) => void
+) => void | Promise<void>;
+
+/**
+ * Options for creating a tunnel server.
+ */
+export interface TunnelServerOptions {
+  /**
+   * Optional handler for prompt_request messages from clients.
+   * When provided, the server will call this handler for prompt_request messages
+   * and write the response back to the originating client socket.
+   * When not provided, prompt_request messages are dispatched via sendStructured()
+   * but no response is sent back (the client will hang or timeout).
+   */
+  onPromptRequest?: PromptRequestHandler;
 }
 
 /**
@@ -397,12 +462,19 @@ export interface TunnelServer {
  * - Multiple concurrent client connections
  * - Message framing across TCP chunks (via line splitting)
  * - Malformed JSON messages (silently dropped)
+ * - Bidirectional prompt request/response handling (when onPromptRequest is provided)
  * - Cleanup on process exit (via CleanupRegistry)
  *
  * @param socketPath - Path where the Unix domain socket will be created
+ * @param options - Optional configuration including a prompt request handler
  * @returns A promise that resolves with a TunnelServer once the server is listening
  */
-export function createTunnelServer(socketPath: string): Promise<TunnelServer> {
+export function createTunnelServer(
+  socketPath: string,
+  options?: TunnelServerOptions
+): Promise<TunnelServer> {
+  const { onPromptRequest } = options ?? {};
+
   return new Promise<TunnelServer>((resolve, reject) => {
     // Remove any stale socket file from a previous run
     try {
@@ -414,20 +486,71 @@ export function createTunnelServer(socketPath: string): Promise<TunnelServer> {
     const server = net.createServer((socket) => {
       const splitLines = createLineSplitter();
 
+      /**
+       * Writes a JSONL-encoded server->client message back to this client socket.
+       */
+      const writeResponse = (response: TunnelPromptResponseMessage): void => {
+        if (socket.destroyed) return;
+        try {
+          socket.write(JSON.stringify(response) + '\n');
+        } catch {
+          // Socket write failed - client is gone
+        }
+      };
+
       socket.on('data', (data) => {
         const lines = splitLines(data.toString());
         for (const line of lines) {
           if (!line) {
             continue;
           }
+
+          let parsed: unknown;
           try {
-            const parsed = JSON.parse(line);
-            if (isValidTunnelMessage(parsed)) {
-              dispatchMessage(parsed);
-            }
-            // Invalid structure - silently drop
+            parsed = JSON.parse(line);
           } catch {
             // Malformed JSON - silently drop
+            continue;
+          }
+
+          if (!isValidTunnelMessage(parsed)) {
+            // Invalid structure - silently drop
+            continue;
+          }
+
+          // Check if this is a prompt_request that needs special handling
+          if (
+            isStructuredTunnelMessage(parsed) &&
+            parsed.message.type === 'prompt_request' &&
+            onPromptRequest
+          ) {
+            const promptMessage = parsed.message;
+            // Still dispatch for logging/visibility
+            sendStructured(promptMessage);
+            const { requestId } = promptMessage;
+            // Call the prompt handler with a respond function bound to this socket.
+            // Handle both sync throws and async rejections so that handler errors
+            // send an error response back to the client instead of leaving it hanging.
+            try {
+              const result = onPromptRequest(promptMessage, writeResponse);
+              if (result && typeof result.catch === 'function') {
+                result.catch((err: unknown) => {
+                  writeResponse({
+                    type: 'prompt_response',
+                    requestId,
+                    error: `Prompt handler error: ${err instanceof Error ? err.message : String(err)}`,
+                  });
+                });
+              }
+            } catch (err) {
+              writeResponse({
+                type: 'prompt_response',
+                requestId,
+                error: `Prompt handler error: ${err instanceof Error ? err.message : String(err)}`,
+              });
+            }
+          } else {
+            dispatchMessage(parsed);
           }
         }
       });

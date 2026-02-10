@@ -14,9 +14,10 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as net from 'net';
 import chalk from 'chalk';
-import { select } from '@inquirer/prompts';
 import { stringify } from 'yaml';
-import { debugLog, log, sendStructured } from '../../../logging.js';
+import { promptSelect, isPromptTimeoutError } from '../../../common/input.js';
+import { debugLog, log } from '../../../logging.js';
+import { createLineSplitter } from '../../../common/process.js';
 
 const BASH_TOOL_NAME = 'Bash';
 
@@ -183,8 +184,147 @@ export function parseAllowedToolsList(allowedTools: string[]): Map<string, true 
   return result;
 }
 
-function timestamp(): string {
-  return new Date().toISOString();
+async function handlePermissionLine(
+  line: string,
+  socket: net.Socket,
+  allowedToolsMap: Map<string, true | string[]>,
+  options: Pick<
+    PermissionsMcpOptions,
+    | 'defaultResponse'
+    | 'timeout'
+    | 'autoApproveCreatedFileDeletion'
+    | 'trackedFiles'
+    | 'workingDirectory'
+  >
+): Promise<void> {
+  let message: { type?: string; requestId?: string; tool_name?: string; input?: any };
+  try {
+    message = JSON.parse(line);
+  } catch (err) {
+    debugLog('Failed to parse permission request JSON:', err);
+    return;
+  }
+
+  if (message.type !== 'permission_request') {
+    return;
+  }
+
+  const { requestId, tool_name, input } = message;
+
+  if (!requestId || !tool_name) {
+    debugLog('Permission request missing requestId or tool_name');
+    return;
+  }
+
+  // Check if this tool is in the allowed set
+  const allowedValue = allowedToolsMap.get(tool_name);
+  if (allowedValue !== undefined) {
+    if (tool_name === BASH_TOOL_NAME && Array.isArray(allowedValue)) {
+      if (typeof input.command === 'string') {
+        const command = input.command;
+        const isAllowed = allowedValue.some((prefix) => command.startsWith(prefix));
+
+        if (isAllowed) {
+          const response = {
+            type: 'permission_response',
+            requestId,
+            approved: true,
+          };
+          socket.write(JSON.stringify(response) + '\n');
+          return;
+        }
+      }
+    } else if (allowedValue === true) {
+      const response = {
+        type: 'permission_response',
+        requestId,
+        approved: true,
+      };
+      socket.write(JSON.stringify(response) + '\n');
+      return;
+    }
+  }
+
+  if (
+    options.autoApproveCreatedFileDeletion === true &&
+    tool_name === BASH_TOOL_NAME &&
+    typeof input.command === 'string'
+  ) {
+    const baseDir = options.workingDirectory ?? process.cwd();
+    const filesToDelete = parseRmCommand(input.command, baseDir);
+    if (
+      filesToDelete.length > 0 &&
+      options.trackedFiles &&
+      filesToDelete.every((filePath) => options.trackedFiles!.has(filePath))
+    ) {
+      const response = {
+        type: 'permission_response',
+        requestId,
+        approved: true,
+      };
+      socket.write(JSON.stringify(response) + '\n');
+      return;
+    }
+  }
+
+  // Not in the allowed list -- prompt the user
+  let formattedInput = stringify(input);
+  if (formattedInput.length > 500) {
+    formattedInput = formattedInput.substring(0, 500) + '...';
+  }
+
+  // Alert the user
+  process.stdout.write('\x07');
+
+  let approved: boolean;
+  try {
+    const userChoice = await promptSelect({
+      message: `Claude wants to run a tool:\n\nTool: ${chalk.blue(tool_name)}\nInput:\n${chalk.white(formattedInput)}\n\nAllow this tool to run?`,
+      choices: [
+        { name: 'Allow', value: 'allow' as const },
+        { name: 'Allow for Session', value: 'session_allow' as const },
+        { name: 'Disallow', value: 'disallow' as const },
+      ],
+      timeoutMs: options.timeout,
+    });
+
+    approved = userChoice === 'allow' || userChoice === 'session_allow';
+
+    // For session allow, add to the allowed map for future requests
+    if (userChoice === 'session_allow') {
+      if (tool_name === BASH_TOOL_NAME && typeof input.command === 'string') {
+        const existing = allowedToolsMap.get(BASH_TOOL_NAME);
+        const prefix = input.command.split(' ')[0];
+        if (Array.isArray(existing)) {
+          if (!existing.includes(prefix)) {
+            existing.push(prefix);
+          }
+        } else {
+          allowedToolsMap.set(BASH_TOOL_NAME, [prefix]);
+        }
+      } else {
+        allowedToolsMap.set(tool_name, true);
+      }
+    }
+  } catch (err) {
+    if (isPromptTimeoutError(err)) {
+      // Prompt was aborted due to timeout - apply configured default
+      const defaultResp = options.defaultResponse ?? 'no';
+      approved = defaultResp === 'yes';
+      log(`\nPermission prompt timed out, using default: ${defaultResp}`);
+    } else {
+      // Transport error, tunnel disconnect, or unexpected failure - deny for safety
+      approved = false;
+      debugLog('Permission prompt failed with non-timeout error:', err);
+    }
+  }
+
+  const response = {
+    type: 'permission_response',
+    requestId,
+    approved,
+  };
+  socket.write(JSON.stringify(response) + '\n');
 }
 
 /**
@@ -206,146 +346,13 @@ function createPermissionSocketServer(
 ): Promise<net.Server> {
   return new Promise((resolve, reject) => {
     const server = net.createServer((socket) => {
-      socket.on('data', async (data) => {
-        try {
-          const message = JSON.parse(data.toString());
+      const splitLines = createLineSplitter();
 
-          if (message.type === 'permission_request') {
-            const { requestId, tool_name, input } = message;
-
-            // Check if this tool is in the allowed set
-            const allowedValue = allowedToolsMap.get(tool_name);
-            if (allowedValue !== undefined) {
-              if (tool_name === BASH_TOOL_NAME && Array.isArray(allowedValue)) {
-                if (typeof input.command === 'string') {
-                  const command = input.command;
-                  const isAllowed = allowedValue.some((prefix) => command.startsWith(prefix));
-
-                  if (isAllowed) {
-                    const response = {
-                      type: 'permission_response',
-                      requestId,
-                      approved: true,
-                    };
-                    socket.write(JSON.stringify(response) + '\n');
-                    return;
-                  }
-                }
-              } else if (allowedValue === true) {
-                const response = {
-                  type: 'permission_response',
-                  requestId,
-                  approved: true,
-                };
-                socket.write(JSON.stringify(response) + '\n');
-                return;
-              }
-            }
-
-            if (
-              options.autoApproveCreatedFileDeletion === true &&
-              tool_name === BASH_TOOL_NAME &&
-              typeof input.command === 'string'
-            ) {
-              const baseDir = options.workingDirectory ?? process.cwd();
-              const filesToDelete = parseRmCommand(input.command, baseDir);
-              if (
-                filesToDelete.length > 0 &&
-                options.trackedFiles &&
-                filesToDelete.every((filePath) => options.trackedFiles!.has(filePath))
-              ) {
-                const response = {
-                  type: 'permission_response',
-                  requestId,
-                  approved: true,
-                };
-                socket.write(JSON.stringify(response) + '\n');
-                return;
-              }
-            }
-
-            // Not in the allowed list -- prompt the user
-            let formattedInput = stringify(input);
-            if (formattedInput.length > 500) {
-              formattedInput = formattedInput.substring(0, 500) + '...';
-            }
-
-            // Alert the user
-            process.stdout.write('\x07');
-
-            let promptActive = true;
-            const timeoutPromise = options.timeout
-              ? new Promise<string>((resolve) => {
-                  const defaultResp = options.defaultResponse ?? 'no';
-                  setTimeout(() => {
-                    if (promptActive) {
-                      log(`\nPermission prompt timed out, using default: ${defaultResp}`);
-                      resolve(defaultResp === 'yes' ? 'allow' : 'disallow');
-                    }
-                  }, options.timeout);
-                })
-              : null;
-
-            const controller = new AbortController();
-
-            sendStructured({
-              type: 'input_required',
-              timestamp: timestamp(),
-              prompt: `Claude permission request for tool ${tool_name}`,
-            });
-
-            const promptPromise = select(
-              {
-                message: `Claude wants to run a tool:\n\nTool: ${chalk.blue(tool_name)}\nInput:\n${chalk.white(formattedInput)}\n\nAllow this tool to run?`,
-                choices: [
-                  { name: 'Allow', value: 'allow' },
-                  { name: 'Allow for Session', value: 'session_allow' },
-                  { name: 'Disallow', value: 'disallow' },
-                ],
-              },
-              { signal: controller.signal }
-            );
-
-            let approved: boolean;
-            try {
-              const userChoice = await Promise.race(
-                [promptPromise, timeoutPromise as Promise<string>].filter(Boolean)
-              );
-              controller.abort();
-              promptActive = false;
-
-              approved = userChoice === 'allow' || userChoice === 'session_allow';
-
-              // For session allow, add to the allowed map for future requests
-              if (userChoice === 'session_allow') {
-                if (tool_name === BASH_TOOL_NAME && typeof input.command === 'string') {
-                  const existing = allowedToolsMap.get(BASH_TOOL_NAME);
-                  const prefix = input.command.split(' ')[0];
-                  if (Array.isArray(existing)) {
-                    if (!existing.includes(prefix)) {
-                      existing.push(prefix);
-                    }
-                  } else {
-                    allowedToolsMap.set(BASH_TOOL_NAME, [prefix]);
-                  }
-                } else {
-                  allowedToolsMap.set(tool_name, true);
-                }
-              }
-            } catch {
-              promptActive = false;
-              approved = false;
-            }
-
-            const response = {
-              type: 'permission_response',
-              requestId,
-              approved,
-            };
-            socket.write(JSON.stringify(response) + '\n');
-          }
-        } catch (err) {
-          debugLog('Error handling permission request in subagent:', err);
+      socket.on('data', (data) => {
+        const lines = splitLines(data.toString());
+        for (const line of lines) {
+          if (!line) continue;
+          handlePermissionLine(line, socket, allowedToolsMap, options);
         }
       });
     });

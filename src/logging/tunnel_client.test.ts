@@ -69,6 +69,70 @@ function createTestServer(socketPath: string): Promise<{
   });
 }
 
+/**
+ * Helper: creates a Unix domain socket server that collects messages AND supports
+ * writing responses back to connected clients. Used for testing bidirectional transport.
+ */
+function createBidirectionalTestServer(socketPath: string): Promise<{
+  server: net.Server;
+  getMessages: () => TunnelMessage[];
+  getSockets: () => net.Socket[];
+  close: () => void;
+}> {
+  return new Promise((resolve, reject) => {
+    const messages: TunnelMessage[] = [];
+    const sockets: net.Socket[] = [];
+
+    // Remove stale socket file if it exists
+    try {
+      fs.unlinkSync(socketPath);
+    } catch {
+      // Fine if it doesn't exist
+    }
+
+    const server = net.createServer((socket) => {
+      sockets.push(socket);
+      let buffer = '';
+      socket.on('data', (data) => {
+        buffer += data.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (line) {
+            try {
+              messages.push(JSON.parse(line) as TunnelMessage);
+            } catch {
+              // Ignore malformed
+            }
+          }
+        }
+      });
+      socket.on('close', () => {
+        const idx = sockets.indexOf(socket);
+        if (idx >= 0) sockets.splice(idx, 1);
+      });
+    });
+
+    server.on('error', reject);
+
+    server.listen(socketPath, () => {
+      resolve({
+        server,
+        getMessages: () => messages,
+        getSockets: () => sockets,
+        close: () => {
+          server.close();
+          try {
+            fs.unlinkSync(socketPath);
+          } catch {
+            // Fine
+          }
+        },
+      });
+    });
+  });
+}
+
 /** Wait for messages to appear with a timeout */
 async function waitForMessages(
   getMessages: () => TunnelMessage[],
@@ -245,7 +309,7 @@ describe('TunnelAdapter', () => {
       circular.self = circular;
 
       expect(() =>
-        adapter.sendStructured({
+        adapter!.sendStructured({
           type: 'llm_tool_use',
           timestamp: '2026-02-08T00:00:00.000Z',
           toolName: 'Write',
@@ -406,6 +470,362 @@ describe('TunnelAdapter', () => {
       // Should resolve quickly, not wait for the full timeout
       expect(elapsed).toBeLessThan(1000);
     });
+  });
+});
+
+describe('TunnelAdapter bidirectional transport', () => {
+  let socketPath: string;
+  let testDir: string;
+  let testServer: Awaited<ReturnType<typeof createBidirectionalTestServer>> | null = null;
+  let adapter: TunnelAdapter | null = null;
+
+  beforeEach(async () => {
+    await mkdir(TEMP_BASE, { recursive: true });
+    testDir = await mkdtemp(path.join(TEMP_BASE, 'tc-bidir-'));
+    socketPath = path.join(testDir, 't.sock');
+  });
+
+  afterEach(async () => {
+    await adapter?.destroy();
+    adapter = null;
+    testServer?.close();
+    testServer = null;
+    await rm(testDir, { recursive: true, force: true });
+  });
+
+  function makePromptRequest(
+    requestId: string,
+    promptType: 'confirm' | 'select' | 'input' | 'checkbox' = 'confirm',
+    message: string = 'Continue?'
+  ) {
+    return {
+      type: 'prompt_request' as const,
+      timestamp: new Date().toISOString(),
+      requestId,
+      promptType,
+      promptConfig: { message },
+    };
+  }
+
+  it('should resolve when server sends prompt_response for a pending request', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    const promptMsg = makePromptRequest('req-1');
+    const resultPromise = adapter.sendPromptRequest(promptMsg);
+
+    // Wait for the message to arrive at the server
+    await waitForMessages(testServer.getMessages, 1);
+
+    // Server sends back a response
+    const sockets = testServer.getSockets();
+    expect(sockets.length).toBeGreaterThan(0);
+    const response = {
+      type: 'prompt_response' as const,
+      requestId: 'req-1',
+      value: true,
+    };
+    sockets[0].write(JSON.stringify(response) + '\n');
+
+    const result = await resultPromise;
+    expect(result).toBe(true);
+  });
+
+  it('should resolve with string values from server', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    const promptMsg = makePromptRequest('req-str', 'input', 'Enter name:');
+    const resultPromise = adapter.sendPromptRequest(promptMsg);
+
+    await waitForMessages(testServer.getMessages, 1);
+
+    const sockets = testServer.getSockets();
+    sockets[0].write(
+      JSON.stringify({
+        type: 'prompt_response',
+        requestId: 'req-str',
+        value: 'John',
+      }) + '\n'
+    );
+
+    const result = await resultPromise;
+    expect(result).toBe('John');
+  });
+
+  it('should reject when server sends error response', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    const promptMsg = makePromptRequest('req-err');
+    const resultPromise = adapter.sendPromptRequest(promptMsg);
+
+    await waitForMessages(testServer.getMessages, 1);
+
+    const sockets = testServer.getSockets();
+    sockets[0].write(
+      JSON.stringify({
+        type: 'prompt_response',
+        requestId: 'req-err',
+        error: 'Prompt cancelled by user',
+      }) + '\n'
+    );
+
+    await expect(resultPromise).rejects.toThrow('Prompt cancelled by user');
+  });
+
+  it('should reject with timeout when server does not respond in time', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    const promptMsg = makePromptRequest('req-timeout');
+    const resultPromise = adapter.sendPromptRequest(promptMsg, 100);
+
+    await expect(resultPromise).rejects.toThrow(/timed out/i);
+  });
+
+  it('should reject all pending requests when connection is lost', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    const prompt1 = adapter.sendPromptRequest(makePromptRequest('req-conn-1'));
+    const prompt2 = adapter.sendPromptRequest(makePromptRequest('req-conn-2'));
+
+    // Attach catch handlers before triggering disconnect to avoid unhandled rejection
+    const result1 = prompt1.catch((err: Error) => err);
+    const result2 = prompt2.catch((err: Error) => err);
+
+    // Wait for messages to arrive
+    await waitForMessages(testServer.getMessages, 2);
+
+    // Destroy the connected client sockets to simulate connection loss
+    // (closing the server only stops new connections; existing ones stay alive)
+    for (const s of testServer.getSockets()) {
+      s.destroy();
+    }
+
+    // Both should reject with a connection-related error
+    const err1 = await result1;
+    const err2 = await result2;
+    expect(err1).toBeInstanceOf(Error);
+    expect((err1 as Error).message).toMatch(/connection|tunnel/i);
+    expect(err2).toBeInstanceOf(Error);
+    expect((err2 as Error).message).toMatch(/connection|tunnel/i);
+  });
+
+  it('should handle multiple concurrent prompt requests', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    const p1 = adapter.sendPromptRequest(makePromptRequest('req-multi-1'));
+    const p2 = adapter.sendPromptRequest(makePromptRequest('req-multi-2'));
+    const p3 = adapter.sendPromptRequest(makePromptRequest('req-multi-3'));
+
+    await waitForMessages(testServer.getMessages, 3);
+
+    // Respond in reverse order to test that matching works correctly
+    const sockets = testServer.getSockets();
+    sockets[0].write(
+      JSON.stringify({ type: 'prompt_response', requestId: 'req-multi-3', value: 'third' }) + '\n'
+    );
+    sockets[0].write(
+      JSON.stringify({ type: 'prompt_response', requestId: 'req-multi-1', value: 'first' }) + '\n'
+    );
+    sockets[0].write(
+      JSON.stringify({ type: 'prompt_response', requestId: 'req-multi-2', value: 'second' }) + '\n'
+    );
+
+    const [r1, r2, r3] = await Promise.all([p1, p2, p3]);
+    expect(r1).toBe('first');
+    expect(r2).toBe('second');
+    expect(r3).toBe('third');
+  });
+
+  it('should silently ignore unknown requestId responses', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    const promptMsg = makePromptRequest('req-known');
+    const resultPromise = adapter.sendPromptRequest(promptMsg);
+
+    await waitForMessages(testServer.getMessages, 1);
+
+    const sockets = testServer.getSockets();
+
+    // Send a response for an unknown requestId first
+    sockets[0].write(
+      JSON.stringify({
+        type: 'prompt_response',
+        requestId: 'req-unknown-xyz',
+        value: 'should be ignored',
+      }) + '\n'
+    );
+
+    // Small delay to let the unknown response be processed
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // Then send the real response
+    sockets[0].write(
+      JSON.stringify({
+        type: 'prompt_response',
+        requestId: 'req-known',
+        value: 'correct',
+      }) + '\n'
+    );
+
+    const result = await resultPromise;
+    expect(result).toBe('correct');
+  });
+
+  it('should reject when sending prompt request on a destroyed adapter', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    await adapter.destroy();
+
+    const promptMsg = makePromptRequest('req-after-destroy');
+    await expect(adapter.sendPromptRequest(promptMsg)).rejects.toThrow(/not connected/i);
+  });
+
+  it('should reject pending prompt requests when adapter is destroyed', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    const promptMsg = makePromptRequest('req-pending-destroy');
+    const resultPromise = adapter.sendPromptRequest(promptMsg);
+
+    await waitForMessages(testServer.getMessages, 1);
+
+    // Destroy the adapter while the request is pending
+    await adapter.destroy();
+
+    await expect(resultPromise).rejects.toThrow(/destroyed/i);
+  });
+
+  it('should clear timeout when response arrives before timeout expires', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    const promptMsg = makePromptRequest('req-timeout-clear');
+    // Set a long timeout that should not fire
+    const resultPromise = adapter.sendPromptRequest(promptMsg, 5000);
+
+    await waitForMessages(testServer.getMessages, 1);
+
+    const sockets = testServer.getSockets();
+    sockets[0].write(
+      JSON.stringify({
+        type: 'prompt_response',
+        requestId: 'req-timeout-clear',
+        value: 'quick response',
+      }) + '\n'
+    );
+
+    const result = await resultPromise;
+    expect(result).toBe('quick response');
+  });
+
+  it('should handle response with null/undefined value', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    const promptMsg = makePromptRequest('req-null-value');
+    const resultPromise = adapter.sendPromptRequest(promptMsg);
+
+    await waitForMessages(testServer.getMessages, 1);
+
+    const sockets = testServer.getSockets();
+    // Send response without a value field (undefined in JSON becomes absent)
+    sockets[0].write(
+      JSON.stringify({
+        type: 'prompt_response',
+        requestId: 'req-null-value',
+      }) + '\n'
+    );
+
+    const result = await resultPromise;
+    expect(result).toBeUndefined();
+  });
+
+  it('should handle malformed server responses gracefully', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    const promptMsg = makePromptRequest('req-malformed');
+    const resultPromise = adapter.sendPromptRequest(promptMsg);
+
+    await waitForMessages(testServer.getMessages, 1);
+
+    const sockets = testServer.getSockets();
+
+    // Send various malformed data
+    sockets[0].write('not valid json\n');
+    sockets[0].write('{"broken\n');
+    sockets[0].write(JSON.stringify({ type: 'unknown_type', requestId: 'req-malformed' }) + '\n');
+
+    // Small delay to let malformed messages be processed
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Then send the valid response
+    sockets[0].write(
+      JSON.stringify({
+        type: 'prompt_response',
+        requestId: 'req-malformed',
+        value: 'survived malformed',
+      }) + '\n'
+    );
+
+    const result = await resultPromise;
+    expect(result).toBe('survived malformed');
+  });
+
+  it('should send prompt_request as a structured tunnel message', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    const promptMsg = makePromptRequest('req-structure-check', 'select', 'Choose option:');
+    const resultPromise = adapter.sendPromptRequest(promptMsg);
+
+    await waitForMessages(testServer.getMessages, 1);
+
+    // Verify the message structure that was sent over the wire
+    const messages = testServer.getMessages();
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      type: 'structured',
+      message: {
+        type: 'prompt_request',
+        requestId: 'req-structure-check',
+        promptType: 'select',
+        promptConfig: { message: 'Choose option:' },
+      },
+    });
+
+    // Clean up: send a response so the promise resolves
+    const sockets = testServer.getSockets();
+    sockets[0].write(
+      JSON.stringify({
+        type: 'prompt_response',
+        requestId: 'req-structure-check',
+        value: 'option-a',
+      }) + '\n'
+    );
+
+    await resultPromise;
+  });
+
+  it('should reject pending requests when destroySync is called', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    const promptMsg = makePromptRequest('req-sync-destroy');
+    const resultPromise = adapter.sendPromptRequest(promptMsg);
+
+    await waitForMessages(testServer.getMessages, 1);
+
+    adapter.destroySync();
+
+    await expect(resultPromise).rejects.toThrow(/destroyed/i);
   });
 });
 

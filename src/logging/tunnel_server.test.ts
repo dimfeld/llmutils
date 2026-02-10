@@ -813,4 +813,723 @@ describe('createTunnelServer', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]).toEqual({ method: 'log', args: ['after empty lines'] });
   });
+
+  describe('prompt_request validation', () => {
+    it('should accept a valid prompt_request with confirm type', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+
+        await connectAndSend(sp, [
+          {
+            type: 'structured',
+            message: {
+              type: 'prompt_request',
+              timestamp: '2026-02-08T00:00:00.000Z',
+              requestId: 'req-001',
+              promptType: 'confirm',
+              promptConfig: {
+                message: 'Continue?',
+              },
+            },
+          },
+        ]);
+
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].method).toBe('sendStructured');
+      expect(calls[0].args[0]).toMatchObject({
+        type: 'prompt_request',
+        requestId: 'req-001',
+        promptType: 'confirm',
+        promptConfig: { message: 'Continue?' },
+      });
+    });
+
+    it('should accept a valid prompt_request with select type and choices', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+
+        await connectAndSend(sp, [
+          {
+            type: 'structured',
+            message: {
+              type: 'prompt_request',
+              timestamp: '2026-02-08T00:00:00.000Z',
+              requestId: 'req-002',
+              promptType: 'select',
+              promptConfig: {
+                message: 'Choose an option:',
+                choices: [
+                  { name: 'Option A', value: 'a' },
+                  { name: 'Option B', value: 'b', description: 'The B option' },
+                ],
+                default: 'a',
+                pageSize: 10,
+              },
+            },
+          },
+        ]);
+
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].method).toBe('sendStructured');
+      expect(calls[0].args[0]).toMatchObject({
+        type: 'prompt_request',
+        requestId: 'req-002',
+        promptType: 'select',
+      });
+    });
+
+    it('should accept a valid prompt_request with input type and all optional fields', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+
+        await connectAndSend(sp, [
+          {
+            type: 'structured',
+            message: {
+              type: 'prompt_request',
+              timestamp: '2026-02-08T00:00:00.000Z',
+              requestId: 'req-003',
+              promptType: 'input',
+              promptConfig: {
+                message: 'Enter your name:',
+                default: 'anonymous',
+                validationHint: 'Must be non-empty',
+              },
+              timeoutMs: 30000,
+            },
+          },
+        ]);
+
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].method).toBe('sendStructured');
+      expect(calls[0].args[0]).toMatchObject({
+        type: 'prompt_request',
+        requestId: 'req-003',
+        promptType: 'input',
+        timeoutMs: 30000,
+      });
+    });
+
+    it('should accept a valid prompt_request with checkbox type and checked choices', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+
+        await connectAndSend(sp, [
+          {
+            type: 'structured',
+            message: {
+              type: 'prompt_request',
+              timestamp: '2026-02-08T00:00:00.000Z',
+              requestId: 'req-004',
+              promptType: 'checkbox',
+              promptConfig: {
+                message: 'Select items:',
+                choices: [
+                  { name: 'Item 1', value: 1, checked: true },
+                  { name: 'Item 2', value: 2, checked: false },
+                  { name: 'Item 3', value: true, description: 'Boolean value' },
+                ],
+              },
+            },
+          },
+        ]);
+
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].method).toBe('sendStructured');
+      expect(calls[0].args[0]).toMatchObject({
+        type: 'prompt_request',
+        requestId: 'req-004',
+        promptType: 'checkbox',
+      });
+    });
+
+    it('should reject prompt_request with missing requestId', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+
+        await new Promise<void>((resolve, reject) => {
+          const client = net.connect(sp, () => {
+            client.write(
+              JSON.stringify({
+                type: 'structured',
+                message: {
+                  type: 'prompt_request',
+                  timestamp: '2026-02-08T00:00:00.000Z',
+                  promptType: 'confirm',
+                  promptConfig: { message: 'Continue?' },
+                },
+              }) + '\n'
+            );
+            // Valid message after to prove invalid one was dropped
+            client.write(
+              JSON.stringify({ type: 'log', args: ['after invalid prompt_request'] }) + '\n'
+            );
+            setTimeout(() => {
+              client.end();
+              resolve();
+            }, 20);
+          });
+          client.on('error', reject);
+        });
+
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toEqual({ method: 'log', args: ['after invalid prompt_request'] });
+    });
+
+    it('should reject prompt_request with invalid promptType', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+
+        await new Promise<void>((resolve, reject) => {
+          const client = net.connect(sp, () => {
+            client.write(
+              JSON.stringify({
+                type: 'structured',
+                message: {
+                  type: 'prompt_request',
+                  timestamp: '2026-02-08T00:00:00.000Z',
+                  requestId: 'req-bad-type',
+                  promptType: 'editor',
+                  promptConfig: { message: 'Open editor?' },
+                },
+              }) + '\n'
+            );
+            client.write(
+              JSON.stringify({ type: 'log', args: ['after invalid promptType'] }) + '\n'
+            );
+            setTimeout(() => {
+              client.end();
+              resolve();
+            }, 20);
+          });
+          client.on('error', reject);
+        });
+
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toEqual({ method: 'log', args: ['after invalid promptType'] });
+    });
+
+    it('should reject prompt_request with missing promptConfig', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+
+        await new Promise<void>((resolve, reject) => {
+          const client = net.connect(sp, () => {
+            client.write(
+              JSON.stringify({
+                type: 'structured',
+                message: {
+                  type: 'prompt_request',
+                  timestamp: '2026-02-08T00:00:00.000Z',
+                  requestId: 'req-no-config',
+                  promptType: 'confirm',
+                },
+              }) + '\n'
+            );
+            client.write(JSON.stringify({ type: 'log', args: ['after missing config'] }) + '\n');
+            setTimeout(() => {
+              client.end();
+              resolve();
+            }, 20);
+          });
+          client.on('error', reject);
+        });
+
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toEqual({ method: 'log', args: ['after missing config'] });
+    });
+
+    it('should reject prompt_request with missing promptConfig.message', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+
+        await new Promise<void>((resolve, reject) => {
+          const client = net.connect(sp, () => {
+            client.write(
+              JSON.stringify({
+                type: 'structured',
+                message: {
+                  type: 'prompt_request',
+                  timestamp: '2026-02-08T00:00:00.000Z',
+                  requestId: 'req-no-message',
+                  promptType: 'confirm',
+                  promptConfig: { default: true },
+                },
+              }) + '\n'
+            );
+            client.write(JSON.stringify({ type: 'log', args: ['after missing message'] }) + '\n');
+            setTimeout(() => {
+              client.end();
+              resolve();
+            }, 20);
+          });
+          client.on('error', reject);
+        });
+
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toEqual({ method: 'log', args: ['after missing message'] });
+    });
+
+    it('should reject prompt_request with non-primitive default value', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+
+        await new Promise<void>((resolve, reject) => {
+          const client = net.connect(sp, () => {
+            client.write(
+              JSON.stringify({
+                type: 'structured',
+                message: {
+                  type: 'prompt_request',
+                  timestamp: '2026-02-08T00:00:00.000Z',
+                  requestId: 'req-bad-default',
+                  promptType: 'input',
+                  promptConfig: { message: 'Enter:', default: { nested: true } },
+                },
+              }) + '\n'
+            );
+            client.write(JSON.stringify({ type: 'log', args: ['after bad default'] }) + '\n');
+            setTimeout(() => {
+              client.end();
+              resolve();
+            }, 20);
+          });
+          client.on('error', reject);
+        });
+
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toEqual({ method: 'log', args: ['after bad default'] });
+    });
+
+    it('should reject prompt_request with non-number pageSize', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+
+        await new Promise<void>((resolve, reject) => {
+          const client = net.connect(sp, () => {
+            client.write(
+              JSON.stringify({
+                type: 'structured',
+                message: {
+                  type: 'prompt_request',
+                  timestamp: '2026-02-08T00:00:00.000Z',
+                  requestId: 'req-bad-pagesize',
+                  promptType: 'select',
+                  promptConfig: { message: 'Choose:', pageSize: 'large' },
+                },
+              }) + '\n'
+            );
+            client.write(JSON.stringify({ type: 'log', args: ['after bad pageSize'] }) + '\n');
+            setTimeout(() => {
+              client.end();
+              resolve();
+            }, 20);
+          });
+          client.on('error', reject);
+        });
+
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toEqual({ method: 'log', args: ['after bad pageSize'] });
+    });
+
+    it('should reject prompt_request with non-string validationHint', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+
+        await new Promise<void>((resolve, reject) => {
+          const client = net.connect(sp, () => {
+            client.write(
+              JSON.stringify({
+                type: 'structured',
+                message: {
+                  type: 'prompt_request',
+                  timestamp: '2026-02-08T00:00:00.000Z',
+                  requestId: 'req-bad-hint',
+                  promptType: 'input',
+                  promptConfig: { message: 'Enter:', validationHint: 42 },
+                },
+              }) + '\n'
+            );
+            client.write(
+              JSON.stringify({ type: 'log', args: ['after bad validationHint'] }) + '\n'
+            );
+            setTimeout(() => {
+              client.end();
+              resolve();
+            }, 20);
+          });
+          client.on('error', reject);
+        });
+
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toEqual({ method: 'log', args: ['after bad validationHint'] });
+    });
+
+    it('should reject prompt_request with non-array choices', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+
+        await new Promise<void>((resolve, reject) => {
+          const client = net.connect(sp, () => {
+            client.write(
+              JSON.stringify({
+                type: 'structured',
+                message: {
+                  type: 'prompt_request',
+                  timestamp: '2026-02-08T00:00:00.000Z',
+                  requestId: 'req-bad-choices',
+                  promptType: 'select',
+                  promptConfig: { message: 'Choose:', choices: 'not-an-array' },
+                },
+              }) + '\n'
+            );
+            client.write(JSON.stringify({ type: 'log', args: ['after bad choices'] }) + '\n');
+            setTimeout(() => {
+              client.end();
+              resolve();
+            }, 20);
+          });
+          client.on('error', reject);
+        });
+
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toEqual({ method: 'log', args: ['after bad choices'] });
+    });
+
+    it('should reject prompt_request with invalid choice entries', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+
+        await new Promise<void>((resolve, reject) => {
+          const client = net.connect(sp, () => {
+            // Choice missing value
+            client.write(
+              JSON.stringify({
+                type: 'structured',
+                message: {
+                  type: 'prompt_request',
+                  timestamp: '2026-02-08T00:00:00.000Z',
+                  requestId: 'req-bad-choice-1',
+                  promptType: 'select',
+                  promptConfig: {
+                    message: 'Choose:',
+                    choices: [{ name: 'Option A' }],
+                  },
+                },
+              }) + '\n'
+            );
+            // Choice with non-primitive value
+            client.write(
+              JSON.stringify({
+                type: 'structured',
+                message: {
+                  type: 'prompt_request',
+                  timestamp: '2026-02-08T00:00:00.000Z',
+                  requestId: 'req-bad-choice-2',
+                  promptType: 'select',
+                  promptConfig: {
+                    message: 'Choose:',
+                    choices: [{ name: 'Option A', value: { nested: true } }],
+                  },
+                },
+              }) + '\n'
+            );
+            // Choice with non-string name
+            client.write(
+              JSON.stringify({
+                type: 'structured',
+                message: {
+                  type: 'prompt_request',
+                  timestamp: '2026-02-08T00:00:00.000Z',
+                  requestId: 'req-bad-choice-3',
+                  promptType: 'select',
+                  promptConfig: {
+                    message: 'Choose:',
+                    choices: [{ name: 123, value: 'a' }],
+                  },
+                },
+              }) + '\n'
+            );
+            // Choice with non-string description
+            client.write(
+              JSON.stringify({
+                type: 'structured',
+                message: {
+                  type: 'prompt_request',
+                  timestamp: '2026-02-08T00:00:00.000Z',
+                  requestId: 'req-bad-choice-4',
+                  promptType: 'select',
+                  promptConfig: {
+                    message: 'Choose:',
+                    choices: [{ name: 'Option A', value: 'a', description: 42 }],
+                  },
+                },
+              }) + '\n'
+            );
+            // Choice with non-boolean checked
+            client.write(
+              JSON.stringify({
+                type: 'structured',
+                message: {
+                  type: 'prompt_request',
+                  timestamp: '2026-02-08T00:00:00.000Z',
+                  requestId: 'req-bad-choice-5',
+                  promptType: 'checkbox',
+                  promptConfig: {
+                    message: 'Choose:',
+                    choices: [{ name: 'Option A', value: 'a', checked: 'yes' }],
+                  },
+                },
+              }) + '\n'
+            );
+            client.write(
+              JSON.stringify({ type: 'log', args: ['after bad choices entries'] }) + '\n'
+            );
+            setTimeout(() => {
+              client.end();
+              resolve();
+            }, 20);
+          });
+          client.on('error', reject);
+        });
+
+        await waitForCalls(calls, 1);
+      });
+
+      // Only the trailing valid log message should be dispatched
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toEqual({ method: 'log', args: ['after bad choices entries'] });
+    });
+
+    it('should reject prompt_request with non-number timeoutMs', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+
+        await new Promise<void>((resolve, reject) => {
+          const client = net.connect(sp, () => {
+            client.write(
+              JSON.stringify({
+                type: 'structured',
+                message: {
+                  type: 'prompt_request',
+                  timestamp: '2026-02-08T00:00:00.000Z',
+                  requestId: 'req-bad-timeout',
+                  promptType: 'confirm',
+                  promptConfig: { message: 'Continue?' },
+                  timeoutMs: 'forever',
+                },
+              }) + '\n'
+            );
+            client.write(JSON.stringify({ type: 'log', args: ['after bad timeoutMs'] }) + '\n');
+            setTimeout(() => {
+              client.end();
+              resolve();
+            }, 20);
+          });
+          client.on('error', reject);
+        });
+
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toEqual({ method: 'log', args: ['after bad timeoutMs'] });
+    });
+
+    it('should reject prompt_request with non-object promptConfig', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+
+        await new Promise<void>((resolve, reject) => {
+          const client = net.connect(sp, () => {
+            // promptConfig as a string
+            client.write(
+              JSON.stringify({
+                type: 'structured',
+                message: {
+                  type: 'prompt_request',
+                  timestamp: '2026-02-08T00:00:00.000Z',
+                  requestId: 'req-string-config',
+                  promptType: 'confirm',
+                  promptConfig: 'not an object',
+                },
+              }) + '\n'
+            );
+            // promptConfig as an array
+            client.write(
+              JSON.stringify({
+                type: 'structured',
+                message: {
+                  type: 'prompt_request',
+                  timestamp: '2026-02-08T00:00:00.000Z',
+                  requestId: 'req-array-config',
+                  promptType: 'confirm',
+                  promptConfig: ['message'],
+                },
+              }) + '\n'
+            );
+            client.write(JSON.stringify({ type: 'log', args: ['after bad config types'] }) + '\n');
+            setTimeout(() => {
+              client.end();
+              resolve();
+            }, 20);
+          });
+          client.on('error', reject);
+        });
+
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toEqual({ method: 'log', args: ['after bad config types'] });
+    });
+
+    it('should accept all valid promptType values', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+
+        const validTypes = ['input', 'confirm', 'select', 'checkbox'] as const;
+        const messages: TunnelMessage[] = validTypes.map((promptType, i) => ({
+          type: 'structured' as const,
+          message: {
+            type: 'prompt_request' as const,
+            timestamp: '2026-02-08T00:00:00.000Z',
+            requestId: `req-type-${i}`,
+            promptType,
+            promptConfig: { message: `Prompt for ${promptType}` },
+          },
+        }));
+
+        await connectAndSend(sp, messages);
+        await waitForCalls(calls, validTypes.length);
+      });
+
+      expect(calls).toHaveLength(4);
+      for (let i = 0; i < 4; i++) {
+        expect(calls[i].method).toBe('sendStructured');
+        expect(calls[i].args[0]).toMatchObject({ type: 'prompt_request' });
+      }
+    });
+
+    it('should accept prompt_request with numeric and boolean choice values', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+
+        await connectAndSend(sp, [
+          {
+            type: 'structured',
+            message: {
+              type: 'prompt_request',
+              timestamp: '2026-02-08T00:00:00.000Z',
+              requestId: 'req-mixed-values',
+              promptType: 'select',
+              promptConfig: {
+                message: 'Choose:',
+                choices: [
+                  { name: 'String', value: 'str' },
+                  { name: 'Number', value: 42 },
+                  { name: 'Boolean', value: true },
+                  { name: 'Zero', value: 0 },
+                  { name: 'False', value: false },
+                ],
+                default: 42,
+              },
+            },
+          },
+        ]);
+
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].method).toBe('sendStructured');
+    });
+  });
 });

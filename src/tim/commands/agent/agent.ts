@@ -1,10 +1,10 @@
 // Command handler for 'tim agent' and 'tim run'
 // Automatically executes steps in a plan YAML file
 
-import { confirm, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import * as path from 'path';
 import * as fs from 'node:fs/promises';
+import { promptConfirm } from '../../../common/input.js';
 import { getGitRoot } from '../../../common/git.js';
 import { logSpawn } from '../../../common/process.js';
 import {
@@ -848,12 +848,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                     // Read the updated plan to get the plan ID
                     const updatedPlanData = await readPlanFile(currentPlanFile);
                     const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';
-                    sendStructured({
-                      type: 'input_required',
-                      timestamp: timestamp(),
-                      prompt: 'Continue after final review appended new tasks',
-                    });
-                    const shouldContinue = await confirm({
+                    const shouldContinue = await promptConfirm({
                       message: `${reviewResult.tasksAppended} new task(s) added from review to plan${planIdStr}. You can edit the plan first if needed. Continue running?`,
                       default: true,
                     });

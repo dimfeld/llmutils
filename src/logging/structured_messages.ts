@@ -206,6 +206,32 @@ export interface InputRequiredMessage extends StructuredMessageBase {
   prompt?: string;
 }
 
+export type PromptType = 'input' | 'confirm' | 'select' | 'checkbox';
+
+export interface PromptChoiceConfig {
+  name: string;
+  value: string | number | boolean;
+  description?: string;
+  checked?: boolean;
+}
+
+export interface PromptConfig {
+  message: string;
+  default?: string | number | boolean;
+  choices?: PromptChoiceConfig[];
+  pageSize?: number;
+  /** Human-readable description of validation rules (validation runs on the receiving end) */
+  validationHint?: string;
+}
+
+export interface PromptRequestMessage extends StructuredMessageBase {
+  type: 'prompt_request';
+  requestId: string;
+  promptType: PromptType;
+  promptConfig: PromptConfig;
+  timeoutMs?: number;
+}
+
 export interface PlanDiscoveryMessage extends StructuredMessageBase {
   type: 'plan_discovery';
   planId: number;
@@ -245,6 +271,7 @@ export type StructuredMessage =
   | ExecutionSummaryMessage
   | TokenUsageMessage
   | InputRequiredMessage
+  | PromptRequestMessage
   | PlanDiscoveryMessage
   | WorkspaceInfoMessage;
 
@@ -274,6 +301,7 @@ export const structuredMessageTypeList = [
   'execution_summary',
   'token_usage',
   'input_required',
+  'prompt_request',
   'plan_discovery',
   'workspace_info',
 ] as const satisfies readonly StructuredMessage['type'][];

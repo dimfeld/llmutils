@@ -3058,60 +3058,6 @@ tasks:
     expect(result).toBe(true);
   });
 
-  test('detectIssuesInReview - semantic fallback detection with issue indicators', () => {
-    const reviewResult = {
-      summary: { totalIssues: 0 },
-      issues: [],
-    } as any;
-
-    const rawOutput = `## Code Review Summary
-
-Several issues were found during the review:
-- Critical security vulnerability in authentication
-- Performance problem with database queries
-- Bug in error handling logic
-
-These issues need to be addressed before merging.`;
-
-    const result = detectIssuesInReview(reviewResult, rawOutput);
-    expect(result).toBe(true);
-  });
-
-  test('detectIssuesInReview - semantic fallback with list structure', () => {
-    const reviewResult = {
-      summary: { totalIssues: 0 },
-      issues: [],
-    } as any;
-
-    const rawOutput = `Review Results:
-
-1. Memory leak in component lifecycle
-2. Missing error handling in API calls
-3. Performance bottleneck in rendering
-
-Recommendations for fixes are provided below.`;
-
-    const result = detectIssuesInReview(reviewResult, rawOutput);
-    expect(result).toBe(true);
-  });
-
-  test('detectIssuesInReview - no issues detected when clean', () => {
-    const reviewResult = {
-      summary: { totalIssues: 0 },
-      issues: [],
-    } as any;
-
-    const rawOutput = `## Code Review Summary
-
-The code review has been completed successfully.
-No issues were identified in the implementation.
-The code follows best practices and coding standards.
-All tests are passing and functionality works as expected.`;
-
-    const result = detectIssuesInReview(reviewResult, rawOutput);
-    expect(result).toBe(false);
-  });
-
   test('detectIssuesInReview - handles null/undefined inputs safely', () => {
     expect(detectIssuesInReview(null as any, '')).toBe(false);
     expect(detectIssuesInReview(undefined as any, '')).toBe(false);

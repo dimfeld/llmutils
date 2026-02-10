@@ -2,10 +2,15 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import path from 'node:path';
 import fs from 'node:fs';
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
-import { createTunnelServer, type TunnelServer } from './tunnel_server.ts';
+import {
+  createTunnelServer,
+  type TunnelServer,
+  type PromptRequestHandler,
+} from './tunnel_server.ts';
 import { createTunnelAdapter, TunnelAdapter } from './tunnel_client.ts';
 import { runWithLogger } from './adapter.ts';
 import { createRecordingAdapter, type RecordingAdapterCall } from './test_helpers.ts';
+import type { PromptRequestMessage } from './structured_messages.ts';
 
 // Use /tmp/claude as the base for mkdtemp to keep socket paths short enough
 // for the Unix domain socket path length limit (104 bytes on macOS).
@@ -425,6 +430,365 @@ describe('tunnel integration', () => {
       tunnelServer = null;
 
       expect(fs.existsSync(sp)).toBe(false);
+    });
+  });
+
+  describe('prompt request/response flow', () => {
+    function makePromptRequest(
+      requestId: string,
+      promptType: 'confirm' | 'select' | 'input' | 'checkbox' = 'confirm',
+      message: string = 'Continue?'
+    ): PromptRequestMessage {
+      return {
+        type: 'prompt_request',
+        timestamp: new Date().toISOString(),
+        requestId,
+        promptType,
+        promptConfig: { message },
+      };
+    }
+
+    it('should dispatch prompt_request to onPromptRequest handler and return response to client', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      // The handler immediately responds with a value
+      const onPromptRequest: PromptRequestHandler = (message, respond) => {
+        respond({
+          type: 'prompt_response',
+          requestId: message.requestId,
+          value: true,
+        });
+      };
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp, { onPromptRequest });
+        clientAdapter = await createTunnelAdapter(sp);
+
+        const promptMsg = makePromptRequest('int-req-1');
+        const result = await clientAdapter.sendPromptRequest(promptMsg);
+
+        expect(result).toBe(true);
+
+        // The server should also have dispatched the message via sendStructured
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].method).toBe('sendStructured');
+      expect(calls[0].args[0]).toMatchObject({
+        type: 'prompt_request',
+        requestId: 'int-req-1',
+      });
+    });
+
+    it('should handle async prompt handler that delays before responding', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter } = createRecordingAdapter();
+
+      // The handler responds after a short delay (simulating user thinking)
+      const onPromptRequest: PromptRequestHandler = (message, respond) => {
+        setTimeout(() => {
+          respond({
+            type: 'prompt_response',
+            requestId: message.requestId,
+            value: 'delayed answer',
+          });
+        }, 50);
+      };
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp, { onPromptRequest });
+        clientAdapter = await createTunnelAdapter(sp);
+
+        const promptMsg = makePromptRequest('int-req-delayed', 'input', 'Enter something:');
+        const result = await clientAdapter.sendPromptRequest(promptMsg);
+
+        expect(result).toBe('delayed answer');
+      });
+    });
+
+    it('should handle prompt handler that responds with an error', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter } = createRecordingAdapter();
+
+      const onPromptRequest: PromptRequestHandler = (message, respond) => {
+        respond({
+          type: 'prompt_response',
+          requestId: message.requestId,
+          error: 'User cancelled the prompt',
+        });
+      };
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp, { onPromptRequest });
+        clientAdapter = await createTunnelAdapter(sp);
+
+        const promptMsg = makePromptRequest('int-req-error');
+        await expect(clientAdapter.sendPromptRequest(promptMsg)).rejects.toThrow(
+          'User cancelled the prompt'
+        );
+      });
+    });
+
+    it('should handle async prompt handler that rejects with an error', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter } = createRecordingAdapter();
+
+      // This handler returns a rejected promise (simulates an async handler throwing)
+      const onPromptRequest: PromptRequestHandler = async (_message, _respond) => {
+        throw new Error('Async handler exploded');
+      };
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp, { onPromptRequest });
+        clientAdapter = await createTunnelAdapter(sp);
+
+        const promptMsg = makePromptRequest('int-async-reject');
+        await expect(clientAdapter.sendPromptRequest(promptMsg)).rejects.toThrow(
+          'Prompt handler error: Async handler exploded'
+        );
+      });
+    });
+
+    it('should handle multiple concurrent prompt requests from the same client', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      // The handler responds immediately with a value derived from the requestId
+      const onPromptRequest: PromptRequestHandler = (message, respond) => {
+        // Simulate varying response times
+        const delay = message.requestId.endsWith('1')
+          ? 30
+          : message.requestId.endsWith('2')
+            ? 10
+            : 20;
+        setTimeout(() => {
+          respond({
+            type: 'prompt_response',
+            requestId: message.requestId,
+            value: `answer-for-${message.requestId}`,
+          });
+        }, delay);
+      };
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp, { onPromptRequest });
+        clientAdapter = await createTunnelAdapter(sp);
+
+        const p1 = clientAdapter.sendPromptRequest(makePromptRequest('mc-1'));
+        const p2 = clientAdapter.sendPromptRequest(makePromptRequest('mc-2'));
+        const p3 = clientAdapter.sendPromptRequest(makePromptRequest('mc-3'));
+
+        const [r1, r2, r3] = await Promise.all([p1, p2, p3]);
+
+        expect(r1).toBe('answer-for-mc-1');
+        expect(r2).toBe('answer-for-mc-2');
+        expect(r3).toBe('answer-for-mc-3');
+
+        // All three should have been logged via sendStructured
+        await waitForCalls(calls, 3);
+      });
+
+      expect(calls).toHaveLength(3);
+      for (const call of calls) {
+        expect(call.method).toBe('sendStructured');
+        expect(call.args[0]).toMatchObject({ type: 'prompt_request' });
+      }
+    });
+
+    it('should handle prompt requests from multiple clients', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter } = createRecordingAdapter();
+
+      const onPromptRequest: PromptRequestHandler = (message, respond) => {
+        respond({
+          type: 'prompt_response',
+          requestId: message.requestId,
+          value: `response-to-${message.requestId}`,
+        });
+      };
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp, { onPromptRequest });
+
+        const client1 = await createTunnelAdapter(sp);
+        const client2 = await createTunnelAdapter(sp);
+
+        const p1 = client1.sendPromptRequest(makePromptRequest('client1-req'));
+        const p2 = client2.sendPromptRequest(makePromptRequest('client2-req'));
+
+        const [r1, r2] = await Promise.all([p1, p2]);
+
+        expect(r1).toBe('response-to-client1-req');
+        expect(r2).toBe('response-to-client2-req');
+
+        await client1.destroy();
+        await client2.destroy();
+      });
+    });
+
+    it('should still dispatch regular messages while handling prompt requests', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      const onPromptRequest: PromptRequestHandler = (message, respond) => {
+        setTimeout(() => {
+          respond({
+            type: 'prompt_response',
+            requestId: message.requestId,
+            value: true,
+          });
+        }, 30);
+      };
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp, { onPromptRequest });
+        clientAdapter = await createTunnelAdapter(sp);
+
+        // Send a regular log message
+        clientAdapter.log('before prompt');
+
+        // Send a prompt request
+        const promptPromise = clientAdapter.sendPromptRequest(makePromptRequest('int-mixed'));
+
+        // Send another log message while prompt is pending
+        clientAdapter.log('during prompt');
+
+        const result = await promptPromise;
+        expect(result).toBe(true);
+
+        // Send a log message after prompt resolves
+        clientAdapter.log('after prompt');
+
+        // Wait for all messages: 3 logs + 1 sendStructured (prompt_request)
+        await waitForCalls(calls, 4);
+      });
+
+      expect(calls).toHaveLength(4);
+      const logCalls = calls.filter((c) => c.method === 'log');
+      const structuredCalls = calls.filter((c) => c.method === 'sendStructured');
+
+      expect(logCalls).toHaveLength(3);
+      expect(structuredCalls).toHaveLength(1);
+      expect(structuredCalls[0].args[0]).toMatchObject({
+        type: 'prompt_request',
+        requestId: 'int-mixed',
+      });
+    });
+
+    it('should dispatch prompt_request via sendStructured even without onPromptRequest handler', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      // No onPromptRequest handler - server should still dispatch via sendStructured
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+        clientAdapter = await createTunnelAdapter(sp);
+
+        const promptMsg = makePromptRequest('int-no-handler');
+
+        // Send the structured message but use a timeout since no handler will respond
+        const resultPromise = clientAdapter.sendPromptRequest(promptMsg, 200);
+
+        // The message should be dispatched to sendStructured for logging
+        await waitForCalls(calls, 1);
+
+        // The promise should timeout since no handler sends a response
+        const error = await resultPromise.catch((e: Error) => e);
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toMatch(/timed out/i);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].method).toBe('sendStructured');
+      expect(calls[0].args[0]).toMatchObject({
+        type: 'prompt_request',
+        requestId: 'int-no-handler',
+      });
+    });
+
+    it('should handle select prompt with choices end-to-end', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter } = createRecordingAdapter();
+
+      const receivedMessages: PromptRequestMessage[] = [];
+
+      const onPromptRequest: PromptRequestHandler = (message, respond) => {
+        receivedMessages.push(message);
+        // Simulate selecting the second choice
+        const choices = message.promptConfig.choices;
+        if (choices && choices.length >= 2) {
+          respond({
+            type: 'prompt_response',
+            requestId: message.requestId,
+            value: choices[1].value,
+          });
+        } else {
+          respond({
+            type: 'prompt_response',
+            requestId: message.requestId,
+            error: 'No choices available',
+          });
+        }
+      };
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp, { onPromptRequest });
+        clientAdapter = await createTunnelAdapter(sp);
+
+        const promptMsg: PromptRequestMessage = {
+          type: 'prompt_request',
+          timestamp: new Date().toISOString(),
+          requestId: 'int-select',
+          promptType: 'select',
+          promptConfig: {
+            message: 'Choose a tool permission:',
+            choices: [
+              { name: 'Allow', value: 'allow' },
+              { name: 'Deny', value: 'deny' },
+              { name: 'Ask each time', value: 'ask', description: 'Prompt every time' },
+            ],
+            default: 'allow',
+            pageSize: 5,
+          },
+        };
+
+        const result = await clientAdapter.sendPromptRequest(promptMsg);
+        expect(result).toBe('deny');
+      });
+
+      // Verify the handler received the full message
+      expect(receivedMessages).toHaveLength(1);
+      expect(receivedMessages[0].promptConfig.choices).toHaveLength(3);
+      expect(receivedMessages[0].promptConfig.default).toBe('allow');
+      expect(receivedMessages[0].promptConfig.pageSize).toBe(5);
+    });
+
+    it('should handle client timeout while server handler is still running', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter } = createRecordingAdapter();
+
+      // This handler takes too long - longer than the client timeout
+      const onPromptRequest: PromptRequestHandler = (message, respond) => {
+        setTimeout(() => {
+          respond({
+            type: 'prompt_response',
+            requestId: message.requestId,
+            value: 'too late',
+          });
+        }, 500);
+      };
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp, { onPromptRequest });
+        clientAdapter = await createTunnelAdapter(sp);
+
+        const promptMsg = makePromptRequest('int-timeout');
+        const error = await clientAdapter.sendPromptRequest(promptMsg, 100).catch((e: Error) => e);
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toMatch(/timed out/i);
+      });
     });
   });
 });

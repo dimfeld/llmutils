@@ -1101,3 +1101,120 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
     }
   });
 });
+
+describe('ClaudeCodeExecutor - tunnel prompt handler wiring', () => {
+  const moduleMocker = new ModuleMocker(import.meta);
+  let tempDir = '/tmp/claude-tunnel-wiring-test';
+
+  let capturedTunnelServerOptions: any[] = [];
+
+  beforeEach(async () => {
+    capturedTunnelServerOptions = [];
+    (await import('node:fs/promises')).mkdir(tempDir, { recursive: true }).catch(() => {});
+  });
+
+  afterEach(() => {
+    moduleMocker.clear();
+  });
+
+  test('passes onPromptRequest handler to createTunnelServer in normal mode', async () => {
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+        if (opts && typeof opts.formatStdout === 'function') {
+          opts.formatStdout('{}\n');
+        }
+        return { exitCode: 0 };
+      }),
+      createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock(() => ({
+        type: 'assistant',
+        message: 'Output',
+        rawMessage: 'Output',
+      })),
+    }));
+
+    await moduleMocker.mock('../../logging/tunnel_server.ts', () => ({
+      createTunnelServer: mock(async (_socketPath: string, options?: any) => {
+        capturedTunnelServerOptions.push(options);
+        return { close: mock(() => {}) };
+      }),
+    }));
+
+    // Ensure isTunnelActive returns false so the tunnel server gets created
+    await moduleMocker.mock('../../logging/tunnel_client.ts', () => ({
+      isTunnelActive: mock(() => false),
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir },
+      {} as any
+    );
+
+    await exec.execute('CTX', {
+      planId: 'p1',
+      planTitle: 'Plan',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'normal',
+    });
+
+    expect(capturedTunnelServerOptions).toHaveLength(1);
+    expect(capturedTunnelServerOptions[0]).toBeDefined();
+    expect(typeof capturedTunnelServerOptions[0].onPromptRequest).toBe('function');
+  });
+
+  test('passes onPromptRequest handler to createTunnelServer in review mode', async () => {
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async () => ({
+        exitCode: 0,
+        stdout: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+      })),
+      createLineSplitter: () => (s: string) => s.split('\n'),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('../../logging/tunnel_server.ts', () => ({
+      createTunnelServer: mock(async (_socketPath: string, options?: any) => {
+        capturedTunnelServerOptions.push(options);
+        return { close: mock(() => {}) };
+      }),
+    }));
+
+    await moduleMocker.mock('../../logging/tunnel_client.ts', () => ({
+      isTunnelActive: mock(() => false),
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir },
+      {} as any
+    );
+
+    await exec.execute('REVIEW CTX', {
+      planId: 'review1',
+      planTitle: 'Review Plan',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'review',
+    });
+
+    expect(capturedTunnelServerOptions).toHaveLength(1);
+    expect(capturedTunnelServerOptions[0]).toBeDefined();
+    expect(typeof capturedTunnelServerOptions[0].onPromptRequest).toBe('function');
+  });
+});

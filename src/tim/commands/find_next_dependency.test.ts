@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import type { PlanSchema } from '../planSchema.js';
 import yaml from 'yaml';
-import { ModuleMocker, clearAllTimCaches } from '../../testing.js';
+import { ModuleMocker, clearAllTimCaches, stringifyPlanWithFrontmatter } from '../../testing.js';
 
 describe('findNextReadyDependency', () => {
   let testDir: string;
@@ -1104,7 +1104,7 @@ describe('findNextReadyDependency', () => {
         tasks: [], // Empty tasks array
       };
       const filePath = path.join(testDir, '2-no-tasks-field.yml');
-      const yamlContent = yaml.stringify(planData);
+      const yamlContent = stringifyPlanWithFrontmatter(planData);
       await fs.writeFile(filePath, yamlContent, 'utf-8');
 
       // Should include plan with empty tasks when includeEmptyPlans = true

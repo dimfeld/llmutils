@@ -7,6 +7,7 @@ import { error, warn, debugLog } from '../../../logging';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { createCodexStdoutFormatter } from './format';
 import { createTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
+import { createPromptRequestHandler } from '../../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../../logging/tunnel_protocol.js';
 
 export interface CodexStepOptions {
@@ -78,7 +79,8 @@ export async function executeCodexStep(
     try {
       tunnelTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-'));
       tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
-      tunnelServer = await createTunnelServer(tunnelSocketPath);
+      const promptHandler = createPromptRequestHandler();
+      tunnelServer = await createTunnelServer(tunnelSocketPath, { onPromptRequest: promptHandler });
     } catch (err) {
       debugLog('Could not create tunnel server for output forwarding:', err);
     }

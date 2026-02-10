@@ -26,6 +26,7 @@ import { createLineSplitter, spawnAndLogOutput } from '../../common/process.js';
 import { debugLog, error } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { createTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
+import { createPromptRequestHandler } from '../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
 import {
   extractStructuredMessages,
@@ -386,7 +387,8 @@ async function executeWithClaude(
     try {
       tunnelTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-subagent-'));
       tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
-      tunnelServer = await createTunnelServer(tunnelSocketPath);
+      const promptHandler = createPromptRequestHandler();
+      tunnelServer = await createTunnelServer(tunnelSocketPath, { onPromptRequest: promptHandler });
     } catch (err) {
       debugLog('Could not create tunnel server for subagent output forwarding:', err);
     }

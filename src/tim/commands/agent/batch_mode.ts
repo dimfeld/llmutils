@@ -1,5 +1,5 @@
-import { confirm } from '@inquirer/prompts';
 import { commitAll } from '../../../common/process.js';
+import { promptConfirm } from '../../../common/input.js';
 import { boldMarkdownHeaders, error, log, sendStructured, warn } from '../../../logging.js';
 import chalk from 'chalk';
 import { executePostApplyCommand } from '../../actions.js';
@@ -320,12 +320,7 @@ Available tasks:\n\n${taskDescriptions}`,
             // If tasks were appended, ask if user wants to continue
             if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
               const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';
-              sendStructured({
-                type: 'input_required',
-                timestamp: timestamp(),
-                prompt: 'Continue after final review appended new tasks',
-              });
-              const shouldContinue = await confirm({
+              const shouldContinue = await promptConfirm({
                 message: `${reviewResult.tasksAppended} new task(s) added from review to plan${planIdStr}. You can edit the plan first if needed. Continue running?`,
                 default: true,
               });
