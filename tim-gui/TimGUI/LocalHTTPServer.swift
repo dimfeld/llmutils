@@ -31,6 +31,11 @@ final class LocalHTTPServer: @unchecked Sendable {
     private let handler: @MainActor (MessagePayload) -> Void
     private var listener: NWListener?
 
+    /// The port the server is actually listening on. Only valid after `start()` returns.
+    var boundPort: UInt16 {
+        listener?.port?.rawValue ?? 0
+    }
+
     init(port: UInt16, handler: @escaping @MainActor (MessagePayload) -> Void) {
         self.port = NWEndpoint.Port(rawValue: port) ?? 8123
         self.handler = handler
