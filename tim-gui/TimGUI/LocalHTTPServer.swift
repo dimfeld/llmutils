@@ -41,12 +41,28 @@ final class LocalHTTPServer: @unchecked Sendable {
         let parameters = NWParameters.tcp
         parameters.requiredInterfaceType = .loopback
         parameters.allowLocalEndpointReuse = true
-        let listener = try NWListener(using: parameters, on: port)
-        listener.newConnectionHandler = { [weak self] connection in
+        let newListener = try NWListener(using: parameters, on: port)
+        newListener.newConnectionHandler = { [weak self] connection in
             self?.handle(connection: connection)
         }
-        listener.start(queue: .global())
-        self.listener = listener
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            newListener.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    continuation.resume()
+                case .failed(let error):
+                    continuation.resume(throwing: error)
+                default:
+                    break
+                }
+            }
+            newListener.start(queue: .global())
+        }
+
+        // Clear the startup handler so it doesn't retain the continuation.
+        newListener.stateUpdateHandler = nil
+        self.listener = newListener
     }
 
     func stop() {

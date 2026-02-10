@@ -21,8 +21,6 @@ struct LocalHTTPServerTests {
             received.withLock { $0 = payload }
         }
         try await server.start()
-        // Give the listener a moment to bind
-        try await Task.sleep(for: .milliseconds(50))
 
         let url = URL(string: "http://127.0.0.1:\(port)/messages")!
         var request = URLRequest(url: url)
@@ -39,8 +37,6 @@ struct LocalHTTPServerTests {
         let body = try JSONSerialization.jsonObject(with: data) as? [String: String]
         #expect(body?["status"] == "ok")
 
-        // Allow handler dispatch
-        try await Task.sleep(for: .milliseconds(100))
         let payload = received.withLock { $0 }
         let p = try #require(payload)
         #expect(p.message == "hi")
@@ -55,7 +51,6 @@ struct LocalHTTPServerTests {
 
         let server = LocalHTTPServer(port: port) { _ in }
         try await server.start()
-        try await Task.sleep(for: .milliseconds(50))
 
         let url = URL(string: "http://127.0.0.1:\(port)/unknown")!
         var request = URLRequest(url: url)
@@ -74,7 +69,6 @@ struct LocalHTTPServerTests {
 
         let server = LocalHTTPServer(port: port) { _ in }
         try await server.start()
-        try await Task.sleep(for: .milliseconds(50))
 
         let url = URL(string: "http://127.0.0.1:\(port)/messages")!
         var request = URLRequest(url: url)
