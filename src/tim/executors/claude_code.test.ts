@@ -731,3 +731,373 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
     expect(capturedEnv?.TIM_NOTIFY_SUPPRESS).toBe('1');
   });
 });
+
+describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () => {
+  const moduleMocker = new ModuleMocker(import.meta);
+  let tempDir = '/tmp/claude-subagent-model-test';
+
+  beforeEach(async () => {
+    (await import('node:fs/promises')).mkdir(tempDir, { recursive: true }).catch(() => {});
+  });
+
+  afterEach(() => {
+    moduleMocker.clear();
+  });
+
+  async function setupMocks(options: {
+    wrapNormalSpy?: ReturnType<typeof mock>;
+    wrapSimpleSpy?: ReturnType<typeof mock>;
+    buildAgentsSpy?: ReturnType<typeof mock>;
+  }) {
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (args: string[], opts: any) => {
+        if (opts && typeof opts.formatStdout === 'function') {
+          opts.formatStdout('{}\n');
+        }
+        return { exitCode: 0 };
+      }),
+      createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock(() => ({
+        type: 'assistant',
+        message: 'Output',
+        rawMessage: 'Output',
+      })),
+      extractStructuredMessages: mock(() => []),
+      resetToolUseCache: mock(() => {}),
+    }));
+
+    const wrapNormal = options.wrapNormalSpy ?? mock((_content: string) => 'WRAPPED_NORMAL');
+    const wrapSimple = options.wrapSimpleSpy ?? mock((_content: string) => 'WRAPPED_SIMPLE');
+
+    await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+      wrapWithOrchestration: wrapNormal,
+      wrapWithOrchestrationSimple: wrapSimple,
+    }));
+
+    const buildAgents = options.buildAgentsSpy ?? mock(() => '{"agents":[]}');
+
+    await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
+      buildAgentsArgument: buildAgents,
+    }));
+  }
+
+  test('skips --agents flag when subagentExecutor is set', async () => {
+    const buildAgentsSpy = mock(() => '{"agents":[]}');
+    const recordedArgs: string[][] = [];
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (args: string[], opts: any) => {
+        recordedArgs.push([...args]);
+        if (opts && typeof opts.formatStdout === 'function') {
+          opts.formatStdout('{}\n');
+        }
+        return { exitCode: 0 };
+      }),
+      createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock(() => ({
+        type: 'assistant',
+        message: 'Output',
+        rawMessage: 'Output',
+      })),
+      extractStructuredMessages: mock(() => []),
+      resetToolUseCache: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+      wrapWithOrchestration: mock((_content: string) => 'WRAPPED'),
+      wrapWithOrchestrationSimple: mock((_content: string) => 'WRAPPED'),
+    }));
+
+    await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
+      buildAgentsArgument: buildAgentsSpy,
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir, subagentExecutor: 'dynamic' },
+      {} as any
+    );
+
+    await exec.execute('CTX', {
+      planId: 'p1',
+      planTitle: 'Plan',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'normal',
+    });
+
+    expect(recordedArgs).toHaveLength(1);
+    // --agents should NOT be in the args when subagentExecutor is set
+    expect(recordedArgs[0]).not.toContain('--agents');
+    // buildAgentsArgument should NOT have been called
+    expect(buildAgentsSpy).not.toHaveBeenCalled();
+  });
+
+  test('skips --agents flag in normal mode even when subagentExecutor is not set', async () => {
+    const buildAgentsSpy = mock(() => '{"agents":[]}');
+    const recordedArgs: string[][] = [];
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (args: string[], opts: any) => {
+        recordedArgs.push([...args]);
+        if (opts && typeof opts.formatStdout === 'function') {
+          opts.formatStdout('{}\n');
+        }
+        return { exitCode: 0 };
+      }),
+      createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock(() => ({
+        type: 'assistant',
+        message: 'Output',
+        rawMessage: 'Output',
+      })),
+      extractStructuredMessages: mock(() => []),
+      resetToolUseCache: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+      wrapWithOrchestration: mock((_content: string) => 'WRAPPED'),
+      wrapWithOrchestrationSimple: mock((_content: string) => 'WRAPPED'),
+    }));
+
+    await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
+      buildAgentsArgument: buildAgentsSpy,
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    // No subagentExecutor set - normal mode still uses tim subagent via prompt
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir },
+      {} as any
+    );
+
+    await exec.execute('CTX', {
+      planId: 'p1',
+      planTitle: 'Plan',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'normal',
+    });
+
+    expect(recordedArgs).toHaveLength(1);
+    // --agents should NOT be in the args in normal mode (orchestrator uses tim subagent)
+    expect(recordedArgs[0]).not.toContain('--agents');
+    // buildAgentsArgument should NOT have been called
+    expect(buildAgentsSpy).not.toHaveBeenCalled();
+  });
+
+  test('passes subagentExecutor and dynamicSubagentInstructions to orchestration wrapper in normal mode', async () => {
+    const wrapNormalSpy = mock(
+      (_content: string, _planId: string, _options: any) => 'WRAPPED_NORMAL'
+    );
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+        if (opts && typeof opts.formatStdout === 'function') {
+          opts.formatStdout('{}\n');
+        }
+        return { exitCode: 0 };
+      }),
+      createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock(() => ({
+        type: 'assistant',
+        message: 'Output',
+        rawMessage: 'Output',
+      })),
+      extractStructuredMessages: mock(() => []),
+      resetToolUseCache: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+      wrapWithOrchestration: wrapNormalSpy,
+      wrapWithOrchestrationSimple: mock((_content: string) => 'WRAPPED'),
+    }));
+
+    await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
+      buildAgentsArgument: mock(() => '{}'),
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      {
+        baseDir: tempDir,
+        subagentExecutor: 'codex-cli',
+        dynamicSubagentInstructions: 'Use codex for Rust.',
+      },
+      {} as any
+    );
+
+    await exec.execute('CTX', {
+      planId: 'p1',
+      planTitle: 'Plan',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'normal',
+    });
+
+    expect(wrapNormalSpy).toHaveBeenCalledTimes(1);
+    const [, , options] = wrapNormalSpy.mock.calls[0];
+    expect(options.subagentExecutor).toBe('codex-cli');
+    expect(options.dynamicSubagentInstructions).toBe('Use codex for Rust.');
+  });
+
+  test('passes subagentExecutor and dynamicSubagentInstructions to orchestration wrapper in simple mode', async () => {
+    const wrapSimpleSpy = mock(
+      (_content: string, _planId: string, _options: any) => 'WRAPPED_SIMPLE'
+    );
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+        if (opts && typeof opts.formatStdout === 'function') {
+          opts.formatStdout('{}\n');
+        }
+        return { exitCode: 0 };
+      }),
+      createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock(() => ({
+        type: 'assistant',
+        message: 'Output',
+        rawMessage: 'Output',
+      })),
+      extractStructuredMessages: mock(() => []),
+      resetToolUseCache: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+      wrapWithOrchestration: mock((_content: string) => 'WRAPPED'),
+      wrapWithOrchestrationSimple: wrapSimpleSpy,
+    }));
+
+    await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
+      buildAgentsArgument: mock(() => '{}'),
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      {
+        baseDir: tempDir,
+        subagentExecutor: 'dynamic',
+        dynamicSubagentInstructions: 'Prefer claude for UI.',
+      },
+      {} as any
+    );
+
+    await exec.execute('CTX', {
+      planId: 'p1',
+      planTitle: 'Plan',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'simple',
+    });
+
+    expect(wrapSimpleSpy).toHaveBeenCalledTimes(1);
+    const [, , options] = wrapSimpleSpy.mock.calls[0];
+    expect(options.subagentExecutor).toBe('dynamic');
+    expect(options.dynamicSubagentInstructions).toBe('Prefer claude for UI.');
+  });
+
+  test('skips --agents flag for each valid subagentExecutor value', async () => {
+    for (const executorValue of ['codex-cli', 'claude-code', 'dynamic'] as const) {
+      moduleMocker.clear();
+
+      const recordedArgs: string[][] = [];
+
+      await moduleMocker.mock('../../common/git.ts', () => ({
+        getGitRoot: mock(async () => tempDir),
+      }));
+
+      await moduleMocker.mock('../../common/process.ts', () => ({
+        spawnAndLogOutput: mock(async (args: string[], opts: any) => {
+          recordedArgs.push([...args]);
+          if (opts && typeof opts.formatStdout === 'function') {
+            opts.formatStdout('{}\n');
+          }
+          return { exitCode: 0 };
+        }),
+        createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
+        debug: false,
+      }));
+
+      await moduleMocker.mock('./claude_code/format.ts', () => ({
+        formatJsonMessage: mock(() => ({
+          type: 'assistant',
+          message: 'Output',
+          rawMessage: 'Output',
+        })),
+        extractStructuredMessages: mock(() => []),
+        resetToolUseCache: mock(() => {}),
+      }));
+
+      await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+        wrapWithOrchestration: mock((_content: string) => 'WRAPPED'),
+        wrapWithOrchestrationSimple: mock((_content: string) => 'WRAPPED'),
+      }));
+
+      await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
+        buildAgentsArgument: mock(() => '{}'),
+      }));
+
+      const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+      const exec = new ClaudeCodeExecutor(
+        { permissionsMcp: { enabled: false } } as any,
+        { baseDir: tempDir, subagentExecutor: executorValue },
+        {} as any
+      );
+
+      await exec.execute('CTX', {
+        planId: `p-${executorValue}`,
+        planTitle: 'Plan',
+        planFilePath: `${tempDir}/plan.yml`,
+        executionMode: 'normal',
+      });
+
+      expect(recordedArgs).toHaveLength(1);
+      expect(recordedArgs[0]).not.toContain('--agents');
+    }
+  });
+});

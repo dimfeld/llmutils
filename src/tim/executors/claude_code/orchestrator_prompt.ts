@@ -2,6 +2,17 @@ interface OrchestrationOptions {
   batchMode?: boolean;
   planFilePath?: string;
   reviewExecutor?: string;
+  /**
+   * Which executor to use for subagents: 'codex-cli', 'claude-code', or 'dynamic'.
+   * When 'dynamic', the orchestrator decides per-task based on dynamicSubagentInstructions.
+   * When undefined, defaults to 'dynamic' behavior.
+   */
+  subagentExecutor?: 'codex-cli' | 'claude-code' | 'dynamic';
+  /**
+   * Instructions for the orchestrator when choosing between claude-code and codex-cli
+   * for subagent execution in dynamic mode.
+   */
+  dynamicSubagentInstructions?: string;
 }
 
 export function progressSectionGuidance(
@@ -101,23 +112,65 @@ You don't need to mark the entire plan file as complete. We will handle that for
 `;
 }
 
+const DEFAULT_DYNAMIC_SUBAGENT_INSTRUCTIONS =
+  'Prefer claude-code for frontend tasks, codex-cli for backend tasks.';
+
+/**
+ * Builds the -x flag portion of a tim subagent command based on executor selection mode.
+ * For fixed mode, always includes -x <executor>.
+ * For dynamic mode, returns empty string (orchestrator decides per invocation).
+ */
+function buildSubagentExecutorFlag(options: OrchestrationOptions): string {
+  const executor = options.subagentExecutor;
+  if (executor === 'codex-cli' || executor === 'claude-code') {
+    return ` -x ${executor}`;
+  }
+  // dynamic or undefined: orchestrator decides per invocation
+  return '';
+}
+
+/**
+ * Builds the subagent executor selection guidance for dynamic mode.
+ */
+function buildDynamicExecutorGuidance(options: OrchestrationOptions): string {
+  if (options.subagentExecutor && options.subagentExecutor !== 'dynamic') {
+    return '';
+  }
+
+  const instructions = options.dynamicSubagentInstructions || DEFAULT_DYNAMIC_SUBAGENT_INSTRUCTIONS;
+
+  return `## Subagent Executor Selection
+
+You must choose which executor to use for each subagent invocation by passing \`-x codex-cli\` or \`-x claude-code\` to the \`tim subagent\` command.
+
+Decision guidance: ${instructions}
+
+If unsure, default to \`-x claude-code\`.
+`;
+}
+
 /**
  * Builds the available agents section
  */
-function buildAvailableAgents(planId: string): string {
+function buildAvailableAgents(planId: string, options: OrchestrationOptions): string {
+  const executorFlag = buildSubagentExecutorFlag(options);
   return `## Available Agents
 
-You have access to two specialized agents that you MUST use for this task:
-- **tim-implementer**: Use this agent to implement new features and write code
-- **tim-tester**: Use this agent to write and run tests for the implementation
+You have access to two specialized agents that you MUST invoke via the Bash tool:
+- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
+- **Tester**: Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
 
-Code reviews are performed by running \`tim review\` (not a subagent).`;
+Code reviews are performed by running \`tim review\` (not a subagent).
+
+Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.`;
 }
 
 /**
  * Builds the workflow instructions section
  */
 function buildWorkflowInstructions(planId: string, options: OrchestrationOptions): string {
+  const executorFlag = buildSubagentExecutorFlag(options);
+
   const taskSelectionPhase = options.batchMode
     ? `1. **Task Selection Phase**
    - First, analyze all provided tasks and select a logical subset to work on
@@ -127,16 +180,22 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
 2. **Implementation Phase**`
     : `1. **Implementation Phase**`;
 
+  const dynamicNote =
+    !options.subagentExecutor || options.subagentExecutor === 'dynamic'
+      ? `\n   - Choose the appropriate executor (\`-x claude-code\` or \`-x codex-cli\`) based on the executor selection guidance above.`
+      : '';
+
   const implementationSteps = `
-   - Use the Task tool to invoke the implementer agent with subagent_type="tim-implementer"
-   - Provide the implementer with the specific task requirements from the context below
-   - Wait for the implementer to complete their work`;
+   - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - In the input (\`--input\` or \`--input-file\`), specify which tasks to work on and provide relevant context
+   - Wait for the subagent to complete and review its output`;
 
   const testingPhase = `${options.batchMode ? '3' : '2'}. **Testing Phase**
-   - After implementation is complete, use the Task tool to invoke the tester agent with subagent_type="tim-tester"
-   - Ask the tester to create comprehensive tests for the implemented functionality, if needed
+   - After implementation is complete, run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - In the input (\`--input\` or \`--input-file\`), ask the tester to create comprehensive tests for the implemented functionality, if needed
    - Emphasize that tests must test actual implementation code. Testing a reproduction or simulation of the code is useless.
-   - Have the tester run the tests and work on fixing any failures`;
+   - In the input, instruct the tester to run tests and fix any failures
+   - Include relevant context from the implementer's output in the input`;
 
   const reviewCommand = buildReviewCommand(planId, options);
   const reviewExecutorGuidance = options.reviewExecutor
@@ -194,13 +253,15 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
   const reviewCommand = buildReviewCommand(planId, options);
   const baseGuidelines = `## Important Guidelines
 
-- **DO NOT implement code directly**. Always delegate implementation tasks to the appropriate agents.
-- **DO NOT write tests directly**. Always use the tester agent for test execution and updates.
+- **DO NOT implement code directly**. Always delegate implementation tasks to the appropriate subagent via \`tim subagent\`.
+- **DO NOT write tests directly**. Always use the tester subagent via \`tim subagent tester\` for test execution and updates.
 - **DO NOT review code directly**. Always run \`${reviewCommand}\` for code quality assessment.
 - You are responsible only for coordination and ensuring the workflow is followed correctly.
-- The agents have access to the same task instructions below that you do, so you don't need to repeat them. You should reference which specific tasks titles are being worked on so the agents can focus on the right tasks.
-- When invoking agents, provide clear, specific instructions about what needs to be done in addition to referencing the task titles.
-- Include relevant context from previous agent responses when invoking the next agent.`;
+- The subagents have access to the same task instructions below that you do, so you don't need to repeat them. You should reference which specific task titles are being worked on so the subagents can focus on the right tasks.
+- When invoking subagents, provide clear, specific instructions in \`--input\` (or \`--input-file\`) about what needs to be done in addition to referencing the task titles.
+- Include relevant context from previous subagent responses when invoking the next subagent.
+- If input is large (roughly over 50KB), write it to a temporary file and pass \`--input-file <path>\` instead of \`--input\`.
+- You can also pipe input to stdin and use \`--input-file -\`.`;
 
   const failureProtocol = `
 \n## Failure Protocol (Conflicting/Impossible Requirements)
@@ -246,13 +307,14 @@ export function wrapWithOrchestration(
   options: OrchestrationOptions = {}
 ): string {
   const batchModeInstructions = buildBatchModeInstructions(options);
-  const availableAgents = buildAvailableAgents(planId);
+  const availableAgents = buildAvailableAgents(planId, options);
+  const dynamicGuidance = buildDynamicExecutorGuidance(options);
   const workflowInstructions = buildWorkflowInstructions(planId, options);
   const importantGuidelines = buildImportantGuidelines(planId, options);
 
   const header = `# Multi-Agent Orchestration Instructions
 
-You are the orchestrator for a tim multi-agent development workflow. tim is a tool for managing step-by-step project plans. Your role is to coordinate between specialized agents to complete the coding task${options.batchMode ? 's' : ''} described below.
+You are the orchestrator for a tim multi-agent development workflow. tim is a tool for managing step-by-step project plans. Your role is to coordinate between specialized subagents to complete the coding task${options.batchMode ? 's' : ''} described below.
 
 ${batchModeInstructions}`;
 
@@ -266,7 +328,7 @@ ${contextContent}`;
 
   return `${header}${availableAgents}
 
-${workflowInstructions}
+${dynamicGuidance}${workflowInstructions}
 
 ${importantGuidelines}
 
@@ -283,6 +345,8 @@ export function wrapWithOrchestrationSimple(
 ): string {
   const batchModeInstructions = buildBatchModeInstructions(options);
   const progressSection = progressSectionGuidance(options.planFilePath);
+  const executorFlag = buildSubagentExecutorFlag(options);
+  const dynamicGuidance = buildDynamicExecutorGuidance(options);
 
   const header = `# Two-Phase Orchestration Instructions
 
@@ -290,9 +354,11 @@ You are coordinating a tim streamlined two-phase workflow (implement → verify)
 
   const availableAgents = `## Available Agents
 
-You have two specialized agents:
-- **tim-implementer**: Implements the requested functionality and updates code/tests as needed.
-- **tim-verifier**: Runs verification commands (typecheck, lint, tests) and ensures the work meets requirements.`;
+You have two specialized subagents that you MUST invoke via the Bash tool:
+- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
+- **Verifier**: Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
+
+Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.`;
 
   const taskSelectionPhase = options.batchMode
     ? `1. **Task Selection Phase**
@@ -303,24 +369,30 @@ You have two specialized agents:
 2. **Implementation Phase**`
     : `1. **Implementation Phase**`;
 
+  const dynamicNote =
+    !options.subagentExecutor || options.subagentExecutor === 'dynamic'
+      ? `\n   - Choose the appropriate executor (\`-x claude-code\` or \`-x codex-cli\`) based on the executor selection guidance above.`
+      : '';
+
   const workflowInstructions = `## Workflow Instructions
 
 You MUST follow this simplified loop:
 
 ${taskSelectionPhase}
    - Explore the repository and create a plan on how to implement the task.
-   - Call the implementer agent via the Task tool with subagent_type="tim-implementer"
-   - Provide precise task instructions and relevant context
-   - Wait for the implementer to finish before moving on
+   - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - In the input (\`--input\` or \`--input-file\`), specify which tasks to work on and provide relevant context
+   - Wait for the subagent to complete and review its output
 
 ${options.batchMode ? '3' : '2'}. **Verification Phase**
-   - Invoke the verifier agent with subagent_type="tim-verifier"
-   - Direct the verifier to:
+   - Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - In the input (\`--input\` or \`--input-file\`), direct the verifier to:
      - Ensure tests exist for new or changed behavior (adding tests if gaps remain)
      - Run type checking (e.g. \`bun run check\`)
      - Run linting (e.g. \`bun run lint\`)
      - Run the project test suite (e.g. \`bun test\`)
      - Confirm all commands pass and summarize any failures
+   - Include relevant context from the implementer's output in the input
    - If verification fails, return to the implementer with the issues found
 
 ${options.batchMode ? '4' : '3'}. **Notes Phase**
@@ -343,9 +415,11 @@ ${options.batchMode ? '5' : '4'}. **Iteration**
 
   const guidance = `## Important Guidelines
 
-- Do NOT implement, verify, or edit files yourself—delegate all work to the agents.
-- When invoking agents, give clear instructions referencing the specific task titles.
-- Provide prior agent outputs to the next agent so they have full context.
+- Do NOT implement, verify, or edit files yourself--delegate all work to the subagents via \`tim subagent\`.
+- When invoking subagents, give clear instructions in \`--input\` (or \`--input-file\`) referencing the specific task titles.
+- Provide prior subagent outputs to the next subagent so they have full context.
+- If input is large (roughly over 50KB), write it to a temporary file and pass \`--input-file <path>\` instead of \`--input\`.
+- You can also pipe input to stdin and use \`--input-file -\`.
 - Keep the scope focused; if verification fails, loop back to implementation before moving forward.${
     options.batchMode
       ? `
@@ -369,7 +443,7 @@ ${contextContent}`;
 
 ${batchModeInstructions}${availableAgents}
 
-${workflowInstructions}
+${dynamicGuidance}${workflowInstructions}
 
 ${failureProtocol}
 

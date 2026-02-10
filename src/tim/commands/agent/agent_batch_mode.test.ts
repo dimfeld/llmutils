@@ -861,12 +861,12 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const customExecutor = { execute: mock(), filePathPrefix: '/custom/' };
       buildExecutorAndLogSpy.mockReturnValue(customExecutor);
 
-      const options = { executor: 'custom-executor', log: false } as any;
+      const options = { orchestrator: 'custom-executor', log: false } as any;
       const globalCliOptions = {};
 
       await timAgent(planFile, options, globalCliOptions);
 
-      // Should have built executor with the custom executor name
+      // Should have built executor with the custom orchestrator name
       expect(buildExecutorAndLogSpy).toHaveBeenCalledWith(
         'custom-executor',
         expect.any(Object),

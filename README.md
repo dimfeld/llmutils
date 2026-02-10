@@ -30,6 +30,7 @@ These tools are deprecated as coding agents have largely replaced them, but sill
   - [generate - Create Plans](#generate---create-plans)
   - [agent/run - Execute Plans](#agentrun---execute-plans)
   - [run-prompt - One-Shot Prompts](#run-prompt---one-shot-prompts)
+  - [subagent - Run Subagents](#subagent---run-subagents)
   - [add - Create Plan Stubs](#add---create-plan-stubs)
   - [show - View Plan Details](#show---view-plan-details)
   - [ready - List Ready Plans](#ready---list-ready-plans)
@@ -105,7 +106,7 @@ tim show 123
 # Shows: title, goal, status, tasks, and a progress summary
 
 # 3. Execute the plan automatically
-tim agent 123 --executor claude-code
+tim agent 123 --orchestrator claude-code
 # Creates isolated workspace
 # Executes each task with LLM
 # Runs tests and formatting
@@ -326,8 +327,8 @@ tim run 123
 # Execute next ready plan (all dependencies done)
 tim agent --next
 
-# Execute with specific executor
-tim agent 123 --executor claude-code
+# Execute with specific orchestrator
+tim agent 123 --orchestrator claude-code
 ```
 
 **Execution modes:**
@@ -347,6 +348,26 @@ tim agent 123 --simple
 # Limit execution to N steps
 tim agent 123 --steps 3
 ```
+
+**Subagent executor selection:**
+
+The orchestrator delegates implementation, testing, and verification to subagents. You can control which executor runs these subagents:
+
+```bash
+# Use Codex CLI for all subagents
+tim agent 123 -x codex-cli
+
+# Use Claude Code for all subagents
+tim agent 123 -x claude-code
+
+# Let the orchestrator choose per-task (default)
+tim agent 123 -x dynamic
+
+# Provide guidance for dynamic selection
+tim agent 123 -x dynamic --dynamic-instructions "Use codex for database migrations, claude for UI work"
+```
+
+In dynamic mode, the orchestrator decides between `claude-code` and `codex-cli` for each subagent invocation based on the task characteristics. Default guidance: "Prefer claude-code for frontend tasks, codex-cli for backend tasks." Override via `--dynamic-instructions` or the `dynamicSubagentInstructions` config field.
 
 **Workspace integration:**
 
@@ -461,6 +482,25 @@ tim run-prompt "summarize this" > result.txt
 # Suppress execution log output on stderr
 tim run-prompt -q "question" > answer.txt
 ```
+
+---
+
+### subagent - Run Subagents
+
+Used by the orchestrator to delegate work to subagents. Each subagent loads the plan context, builds a role-specific prompt, and executes via the specified executor. Intermediate output is forwarded to the terminal via tunneling while the final result is printed to stdout.
+
+```bash
+# Run the implementer subagent with Claude Code
+tim subagent implementer 123 -x claude-code --input "Implement tasks 1 and 2"
+
+# Run the tester subagent with Codex CLI
+tim subagent tester 123 -x codex-cli --input "Write tests for the auth module"
+
+# Run the verifier subagent (used in simple mode)
+tim subagent verifier 123 --input "Verify type checks, linting, and tests pass"
+```
+
+Available subagent types: `implementer`, `tester`, `verifier`. The `-x` flag accepts `codex-cli` or `claude-code` (default: `claude-code`).
 
 ---
 
@@ -1286,8 +1326,17 @@ paths:
     - ./docs
     - ./project-docs
 
-# Default executor for agent command
+# Default executor (used by generate, review, and other commands)
 defaultExecutor: claude-code # or codex-cli, direct-call, copy-paste
+
+# Default orchestrator for the agent command main loop
+defaultOrchestrator: claude-code # Any executor name (claude-code, codex-cli, direct-call, copy-paste, copy-only)
+
+# Default subagent executor for the agent command
+defaultSubagentExecutor: dynamic # codex-cli, claude-code, or dynamic
+
+# Instructions for dynamic subagent executor selection
+dynamicSubagentInstructions: 'Use claude-code for UI components, codex-cli for data layer'
 
 # Default executor for review command
 review:
@@ -1477,8 +1526,17 @@ executors:
 **Override via CLI:**
 
 ```bash
-tim agent 123 --executor claude-code --model anthropic/claude-opus
+# Set the orchestrator (main agent loop)
+tim agent 123 --orchestrator claude-code --model anthropic/claude-opus
+
+# Set the subagent executor (for implementation/testing/verification subagents)
+tim agent 123 -x codex-cli
+
+# Combine both
+tim agent 123 --orchestrator claude-code -x dynamic
 ```
+
+Note: `defaultExecutor` is used by commands like `generate`, `review`, and `compact`. The `agent` command uses `defaultOrchestrator` for its main loop (defaulting to `claude-code`) and `defaultSubagentExecutor` for subagents (defaulting to `dynamic`).
 
 ### Post-Apply Commands
 
@@ -1922,10 +1980,16 @@ tim generate [--issue NUM | --plan FILE | --plan-editor] -- [RMFILTER_ARGS]
 tim generate ID -- [RMFILTER_ARGS]
 
 # Execute plan
-tim agent ID [--executor NAME] [--workspace ID] [--steps N]
+tim agent ID [--orchestrator NAME] [-x codex-cli|claude-code|dynamic] [--dynamic-instructions TEXT]
+tim agent ID [--workspace ID] [--steps N]
 tim run ID  # alias for agent
 tim run-prompt [PROMPT] [-x claude|claude-code|codex|codex-cli] [--model MODEL] [--reasoning-level LEVEL]
 tim run-prompt [PROMPT] [--json-schema JSON_OR_@FILE] [--prompt-file FILE] [-q]
+
+# Run subagents (used by orchestrator, can also be run standalone)
+tim subagent implementer PLAN [-x codex-cli|claude-code] [--input TEXT] [-m MODEL]
+tim subagent tester PLAN [-x codex-cli|claude-code] [--input TEXT] [-m MODEL]
+tim subagent verifier PLAN [-x codex-cli|claude-code] [--input TEXT] [-m MODEL]
 
 # Track progress
 tim show ID [--short | --full]

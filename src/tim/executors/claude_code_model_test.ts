@@ -137,16 +137,6 @@ describe('ClaudeCodeExecutor model selection', () => {
       wrapWithOrchestration: mock((content: string) => content),
     }));
 
-    await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
-      buildAgentsArgument: mock(() => '{}'),
-    }));
-
-    await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
-      getImplementerPrompt: mock(() => ({ name: 'implementer', prompt: 'test' })),
-      getTesterPrompt: mock(() => ({ name: 'tester', prompt: 'test' })),
-      getReviewerPrompt: mock(() => ({ name: 'reviewer', prompt: 'test' })),
-    }));
-
     const executor = new ClaudeCodeExecutor(
       {
         allowedTools: [],
@@ -223,7 +213,7 @@ describe('ClaudeCodeExecutor model selection', () => {
     expect(capturedArgs[modelIndex + 1]).toBe('haiku');
   });
 
-  test('invokes simple-mode orchestration and generates implementer/verifier agents', async () => {
+  test('invokes simple-mode orchestration without agent definitions (uses tim subagent instead)', async () => {
     let capturedArgs: string[] = [];
 
     await moduleMocker.mock('../../common/process.ts', () => ({
@@ -246,46 +236,6 @@ describe('ClaudeCodeExecutor model selection', () => {
     await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
       wrapWithOrchestrationSimple: wrapSimple,
     }));
-
-    let capturedAgentDefs: any;
-    const buildAgentsArgument = mock((defs: any) => {
-      capturedAgentDefs = defs;
-      return '{}';
-    });
-    await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
-      buildAgentsArgument,
-    }));
-
-    const implementerPrompt = { name: 'implementer', prompt: 'impl' };
-    const verifierPrompt = { name: 'verifier', prompt: 'verify' };
-    const getImplementerPrompt = mock(() => implementerPrompt);
-    const getTesterPrompt = mock(() => ({ name: 'tester', prompt: 'tester' }));
-    const getVerifierAgentPrompt = mock(
-      (_context: string, _planId?: string | number, _instructions?: string, _model?: string) =>
-        verifierPrompt
-    );
-    await moduleMocker.mock('./claude_code/agent_prompts.ts', () => ({
-      getImplementerPrompt,
-      getTesterPrompt,
-      getVerifierAgentPrompt,
-      getReviewerPrompt: mock(() => ({ name: 'reviewer', prompt: 'review' })),
-    }));
-
-    const loadAgentInstructionsMock = mock(async (_instructionPath: string, _gitRoot: string) => {
-      if (_instructionPath.includes('implementer')) {
-        return 'implementer instructions';
-      }
-      if (_instructionPath.includes('tester')) {
-        return 'tester instructions';
-      }
-      if (_instructionPath.includes('reviewer')) {
-        return 'reviewer instructions';
-      }
-      return undefined;
-    });
-    const originalLoadAgentInstructions = (ClaudeCodeExecutor.prototype as any)
-      .loadAgentInstructions;
-    (ClaudeCodeExecutor.prototype as any).loadAgentInstructions = loadAgentInstructionsMock;
 
     const executor = new ClaudeCodeExecutor(
       {
@@ -312,24 +262,16 @@ describe('ClaudeCodeExecutor model selection', () => {
       executionMode: 'simple',
     };
 
-    try {
-      await executor.execute('context content', planInfo);
+    await executor.execute('context content', planInfo);
 
-      expect(capturedArgs).toContain('--model');
-      const modelIndex = capturedArgs.indexOf('--model');
-      expect(capturedArgs[modelIndex + 1]).toBe('opus');
-      expect(wrapSimple).toHaveBeenCalledTimes(1);
-      expect(wrapSimple.mock.calls[0][1]).toBe('simple-plan');
-      expect(wrapSimple.mock.calls[0][2]).toMatchObject({ planFilePath: '/plans/simple.plan.md' });
-      expect(capturedAgentDefs).toBeTruthy();
-      expect(capturedAgentDefs?.map((def: any) => def.name)).toEqual(['implementer', 'verifier']);
-      expect(getImplementerPrompt).toHaveBeenCalledTimes(1);
-      expect(getVerifierAgentPrompt).toHaveBeenCalledTimes(1);
-      expect(getTesterPrompt).not.toHaveBeenCalled();
-      const verifierCall = getVerifierAgentPrompt.mock.calls[0];
-      expect(verifierCall?.[2]).toBe('tester instructions\n\nreviewer instructions');
-    } finally {
-      (ClaudeCodeExecutor.prototype as any).loadAgentInstructions = originalLoadAgentInstructions;
-    }
+    expect(capturedArgs).toContain('--model');
+    const modelIndex = capturedArgs.indexOf('--model');
+    expect(capturedArgs[modelIndex + 1]).toBe('opus');
+    expect(wrapSimple).toHaveBeenCalledTimes(1);
+    expect(wrapSimple.mock.calls[0][1]).toBe('simple-plan');
+    expect(wrapSimple.mock.calls[0][2]).toMatchObject({ planFilePath: '/plans/simple.plan.md' });
+    // Agent definitions are no longer built in simple mode - the orchestrator
+    // uses `tim subagent` Bash commands instead of --agents Task tool agents
+    expect(capturedArgs).not.toContain('--agents');
   });
 });

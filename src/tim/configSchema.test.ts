@@ -756,6 +756,69 @@ describe('configSchema', () => {
     });
   });
 
+  describe('orchestrator and subagent executor config fields', () => {
+    test('accepts defaultOrchestrator as optional string', () => {
+      const config = { defaultOrchestrator: 'claude-code' };
+      const result = timConfigSchema.parse(config);
+      expect(result.defaultOrchestrator).toBe('claude-code');
+    });
+
+    test('defaultOrchestrator is undefined when not specified', () => {
+      const result = timConfigSchema.parse({});
+      expect(result.defaultOrchestrator).toBeUndefined();
+    });
+
+    test('accepts any string for defaultOrchestrator (not restricted to enum)', () => {
+      const config = { defaultOrchestrator: 'codex-cli' };
+      const result = timConfigSchema.parse(config);
+      expect(result.defaultOrchestrator).toBe('codex-cli');
+    });
+
+    test('accepts defaultSubagentExecutor with valid enum values', () => {
+      for (const value of ['codex-cli', 'claude-code', 'dynamic'] as const) {
+        const result = timConfigSchema.parse({ defaultSubagentExecutor: value });
+        expect(result.defaultSubagentExecutor).toBe(value);
+      }
+    });
+
+    test('rejects invalid defaultSubagentExecutor values', () => {
+      expect(() => timConfigSchema.parse({ defaultSubagentExecutor: 'invalid' })).toThrow();
+    });
+
+    test('defaultSubagentExecutor is undefined when not specified', () => {
+      const result = timConfigSchema.parse({});
+      expect(result.defaultSubagentExecutor).toBeUndefined();
+    });
+
+    test('accepts dynamicSubagentInstructions as optional string', () => {
+      const instructions = 'Always use codex for Rust, claude for TypeScript.';
+      const config = { dynamicSubagentInstructions: instructions };
+      const result = timConfigSchema.parse(config);
+      expect(result.dynamicSubagentInstructions).toBe(instructions);
+    });
+
+    test('dynamicSubagentInstructions is undefined when not specified', () => {
+      const result = timConfigSchema.parse({});
+      expect(result.dynamicSubagentInstructions).toBeUndefined();
+    });
+
+    test('all three fields work together with other config fields', () => {
+      const config = {
+        defaultOrchestrator: 'claude-code',
+        defaultSubagentExecutor: 'dynamic' as const,
+        dynamicSubagentInstructions: 'Prefer codex for backend.',
+        defaultExecutor: 'codex-cli',
+        issueTracker: 'github' as const,
+      };
+
+      const result = timConfigSchema.parse(config);
+      expect(result.defaultOrchestrator).toBe('claude-code');
+      expect(result.defaultSubagentExecutor).toBe('dynamic');
+      expect(result.dynamicSubagentInstructions).toBe('Prefer codex for backend.');
+      expect(result.defaultExecutor).toBe('codex-cli');
+    });
+  });
+
   describe('resolveTasksDir', () => {
     test('uses external repository directory when external storage is active', async () => {
       const externalDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-external-'));

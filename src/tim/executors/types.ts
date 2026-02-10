@@ -18,6 +18,16 @@ export interface ExecutorCommonOptions {
    * Optional override for which executor to use during external review phases.
    */
   reviewExecutor?: string;
+  /**
+   * Which executor to use for subagents when orchestrating (codex-cli, claude-code, or dynamic).
+   * In dynamic mode, the orchestrator decides per-task.
+   */
+  subagentExecutor?: 'codex-cli' | 'claude-code' | 'dynamic';
+  /**
+   * Instructions for the orchestrator when choosing between claude-code and codex-cli
+   * for subagent execution in dynamic mode.
+   */
+  dynamicSubagentInstructions?: string;
 }
 
 /**

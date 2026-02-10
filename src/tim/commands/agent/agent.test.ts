@@ -433,7 +433,7 @@ describe('timAgent - simple mode flag plumbing', () => {
     execute: executorExecuteSpy,
   };
   const defaultConfig = {
-    defaultExecutor: 'test-executor',
+    defaultOrchestrator: 'test-executor',
     executors: {},
     models: {},
     postApplyCommands: [],
@@ -729,6 +729,126 @@ describe('timAgent - simple mode flag plumbing', () => {
         planComplete: true,
       })
     );
+  });
+
+  test('passes subagentExecutor and dynamicSubagentInstructions to executor builder from CLI options', async () => {
+    await timAgent(
+      simplePlanFile,
+      {
+        log: false,
+        executor: 'codex-cli',
+        dynamicInstructions: 'Always use codex.',
+      } as any,
+      {}
+    );
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(sharedOptions.subagentExecutor).toBe('codex-cli');
+    expect(sharedOptions.dynamicSubagentInstructions).toBe('Always use codex.');
+  });
+
+  test('subagentExecutor defaults to dynamic when not specified in CLI or config', async () => {
+    await timAgent(simplePlanFile, { log: false } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(sharedOptions.subagentExecutor).toBe('dynamic');
+  });
+
+  test('subagentExecutor falls back to config.defaultSubagentExecutor when CLI option not set', async () => {
+    (defaultConfig as any).defaultSubagentExecutor = 'claude-code';
+
+    await timAgent(simplePlanFile, { log: false } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(sharedOptions.subagentExecutor).toBe('claude-code');
+
+    delete (defaultConfig as any).defaultSubagentExecutor;
+  });
+
+  test('CLI --executor overrides config.defaultSubagentExecutor', async () => {
+    (defaultConfig as any).defaultSubagentExecutor = 'claude-code';
+
+    await timAgent(simplePlanFile, { log: false, executor: 'codex-cli' } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(sharedOptions.subagentExecutor).toBe('codex-cli');
+
+    delete (defaultConfig as any).defaultSubagentExecutor;
+  });
+
+  test('dynamicSubagentInstructions falls back to config when CLI not set', async () => {
+    (defaultConfig as any).dynamicSubagentInstructions = 'Config-level instructions.';
+
+    await timAgent(simplePlanFile, { log: false } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(sharedOptions.dynamicSubagentInstructions).toBe('Config-level instructions.');
+
+    delete (defaultConfig as any).dynamicSubagentInstructions;
+  });
+
+  test('dynamicSubagentInstructions falls back to default when not in CLI or config', async () => {
+    await timAgent(simplePlanFile, { log: false } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(sharedOptions.dynamicSubagentInstructions).toBe(
+      'Prefer claude-code for frontend tasks, codex-cli for backend tasks.'
+    );
+  });
+
+  test('CLI --dynamic-instructions overrides config.dynamicSubagentInstructions', async () => {
+    (defaultConfig as any).dynamicSubagentInstructions = 'Config-level instructions.';
+
+    await timAgent(
+      simplePlanFile,
+      { log: false, dynamicInstructions: 'CLI override instructions.' } as any,
+      {}
+    );
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(sharedOptions.dynamicSubagentInstructions).toBe('CLI override instructions.');
+
+    delete (defaultConfig as any).dynamicSubagentInstructions;
+  });
+
+  test('orchestrator flag selects main loop executor independently of subagent executor', async () => {
+    await timAgent(
+      simplePlanFile,
+      { log: false, orchestrator: 'codex-cli', executor: 'claude-code' } as any,
+      {}
+    );
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [executorName, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    // Orchestrator determines the main loop executor name
+    expect(executorName).toBe('codex-cli');
+    // -x/--executor determines the subagent executor
+    expect(sharedOptions.subagentExecutor).toBe('claude-code');
+  });
+
+  test('orchestrator falls back to config.defaultOrchestrator when CLI not set', async () => {
+    // defaultConfig already has defaultOrchestrator: 'test-executor'
+    await timAgent(simplePlanFile, { log: false } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [executorName] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(executorName).toBe('test-executor');
+  });
+
+  test('CLI --orchestrator overrides config.defaultOrchestrator', async () => {
+    // defaultConfig already has defaultOrchestrator: 'test-executor'
+    await timAgent(simplePlanFile, { log: false, orchestrator: 'codex-cli' } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [executorName] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(executorName).toBe('codex-cli');
   });
 });
 
@@ -1077,7 +1197,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
 
     const options = {
       nextReady: '100',
-      executor: 'claude',
+      orchestrator: 'claude',
       model: 'claude-3-5-sonnet-20241022',
       steps: '5',
       dryRun: true,
@@ -1736,7 +1856,7 @@ describe('timAgent - Batch Tasks Mode Integration', () => {
     const options = {
       log: false,
       nonInteractive: true,
-      executor: 'copy-only',
+      orchestrator: 'copy-only',
     } as any;
     const globalCliOptions = {
       config: {

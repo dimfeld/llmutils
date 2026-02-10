@@ -115,7 +115,7 @@ describe('tim agent integration (timeout simulation)', () => {
     await expect(
       timAgent(
         planPath,
-        { executor: 'stub-timeout', serialTasks: true, summaryFile: summaryOut, model: 'auto' },
+        { orchestrator: 'stub-timeout', serialTasks: true, summaryFile: summaryOut, model: 'auto' },
         { config: configPath }
       )
     ).rejects.toBeInstanceOf(Error);

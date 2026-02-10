@@ -224,6 +224,25 @@ export const timConfigSchema = z
       ),
     /** Default executor to use when not specified via --executor option */
     defaultExecutor: z.string().optional().describe('Default executor to use for plan execution'),
+    /** Default orchestrator to use for the agent command main loop */
+    defaultOrchestrator: z
+      .string()
+      .optional()
+      .describe('Default orchestrator to use for the agent command main loop'),
+    /** Default executor to use for subagents in the agent command */
+    defaultSubagentExecutor: z
+      .enum(['codex-cli', 'claude-code', 'dynamic'])
+      .optional()
+      .describe(
+        'Default executor to use for subagents in the agent command (codex-cli, claude-code, or dynamic)'
+      ),
+    /** Instructions for the orchestrator when choosing between claude-code and codex-cli for subagent execution in dynamic mode */
+    dynamicSubagentInstructions: z
+      .string()
+      .optional()
+      .describe(
+        'Instructions for the orchestrator when choosing between claude-code and codex-cli for subagent execution in dynamic mode'
+      ),
     /** Configuration for automatic workspace creation. */
     workspaceCreation: workspaceCreationConfigSchema.optional(),
     /** Planning-related configuration options */

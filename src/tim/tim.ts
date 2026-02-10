@@ -33,7 +33,7 @@
  * ```
  */
 
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { z } from 'zod/v4';
 import { loadEnv } from '../common/env.js';
 import { setDebug } from '../common/process.js';
@@ -520,12 +520,25 @@ function createAgentCommand(command: Command, description: string) {
   return command
     .description(description)
     .option('-m, --model <model>', 'Model to use for LLM')
-    .option(`-x, --executor <name>`, 'The executor to use for plan execution')
+    .option('--orchestrator <name>', 'The orchestrator executor to use for the main agent loop')
+    .addOption(
+      new Option(
+        '-x, --executor <name>',
+        'Executor for subagents: codex-cli, claude-code, or dynamic (default: dynamic)'
+      ).choices(['codex-cli', 'claude-code', 'dynamic'])
+    )
     .option(
       '--review-executor <name>',
       'Executor to use for review steps: claude-code, codex-cli, or both'
     )
-    .addHelpText('after', `Available executors: ${executorNames}`)
+    .option(
+      '--dynamic-instructions <text>',
+      'Instructions for dynamic executor selection when choosing between claude-code and codex-cli for subagents'
+    )
+    .addHelpText(
+      'after',
+      `Available orchestrators: ${executorNames}\nSubagent executors: codex-cli, claude-code, dynamic`
+    )
     .option('--steps <steps>', 'Number of steps to execute')
     .option('--no-log', 'Do not log to file')
     .option('--no-summary', 'Disable execution summary display at the end')
@@ -1181,6 +1194,34 @@ storageCommand
     const { handleStorageCleanCommand } = await import('./commands/storage.js');
     await handleStorageCleanCommand(names, options).catch(handleCommandError);
   });
+
+// Register the subagent command with implementer, tester, and verifier subcommands
+const subagentCommand = program
+  .command('subagent')
+  .description('Run a subagent for the orchestrator');
+
+for (const agentType of ['implementer', 'tester', 'verifier'] as const) {
+  subagentCommand
+    .command(`${agentType} <planFile>`)
+    .description(`Run the ${agentType} subagent`)
+    .addOption(
+      new Option('-x, --executor <name>', 'Executor to use: codex-cli or claude-code')
+        .choices(['codex-cli', 'claude-code'])
+        .default('claude-code')
+    )
+    .option('-m, --model <model>', 'Model to use')
+    .option('--input <text>', 'Additional instructions from orchestrator')
+    .option(
+      '--input-file <path>',
+      'Read additional instructions from file (use "-" to read from stdin)'
+    )
+    .action(async (planFile: string, options: any, command: any) => {
+      const { handleSubagentCommand } = await import('./commands/subagent.js');
+      await handleSubagentCommand(agentType, planFile, options, command.parent.parent.opts()).catch(
+        handleCommandError
+      );
+    });
+}
 
 async function run() {
   await loadEnv();

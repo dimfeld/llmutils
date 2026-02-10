@@ -446,12 +446,25 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
       }
     }
 
-    // Use executor from CLI options, fallback to config defaultExecutor, or fallback to CopyOnlyExecutor
-    const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
+    // Use orchestrator from CLI options, fallback to config defaultOrchestrator, or fallback to DEFAULT_EXECUTOR
+    // Note: defaultOrchestrator and defaultExecutor are independent - agent command uses defaultOrchestrator
+    const executorName = options.orchestrator || config.defaultOrchestrator || DEFAULT_EXECUTOR;
     const agentExecutionModel =
       options.model ||
       config.models?.execution ||
       defaultModelForExecutor(executorName, 'execution');
+
+    // Determine subagent executor: CLI --executor flag -> config defaultSubagentExecutor -> 'dynamic'
+    const subagentExecutor = (options.executor || config.defaultSubagentExecutor || 'dynamic') as
+      | 'codex-cli'
+      | 'claude-code'
+      | 'dynamic';
+
+    // Determine dynamic subagent instructions: CLI flag -> config -> default
+    const dynamicSubagentInstructions =
+      options.dynamicInstructions ||
+      config.dynamicSubagentInstructions ||
+      'Prefer claude-code for frontend tasks, codex-cli for backend tasks.';
 
     // Check if the plan needs preparation
     const planData = await readPlanFile(currentPlanFile);
@@ -482,6 +495,8 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
       model: agentExecutionModel,
       simpleMode: simpleModeEnabled ? true : undefined,
       reviewExecutor: options.reviewExecutor,
+      subagentExecutor,
+      dynamicSubagentInstructions,
     };
 
     const executor = options.simple

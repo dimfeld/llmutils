@@ -25,13 +25,6 @@ import {
   wrapWithOrchestration,
   wrapWithOrchestrationSimple,
 } from './claude_code/orchestrator_prompt.ts';
-import { buildAgentsArgument, type AgentDefinition } from './claude_code/agent_generator.ts';
-import {
-  getImplementerPrompt,
-  getVerifierAgentPrompt,
-  getTesterPrompt,
-  getReviewerPrompt,
-} from './claude_code/agent_prompts.ts';
 import {
   parseFailedReport,
   parseFailedReportAnywhere,
@@ -44,6 +37,7 @@ import { readSharedPermissions, addSharedPermission } from '../assignments/permi
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { createTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
 import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
+import { setupPermissionsMcp } from './claude_code/permissions_mcp_setup.js';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -170,32 +164,6 @@ export class ClaudeCodeExecutor implements Executor {
   }
   private trackedFiles = new Set<string>();
   private planInfo?: ExecutePlanInfo;
-
-  /**
-   * Load agent instructions from file path, with proper error handling.
-   * Returns undefined if the file doesn't exist or can't be read.
-   */
-  private async loadAgentInstructions(
-    instructionPath: string,
-    gitRoot: string
-  ): Promise<string | undefined> {
-    try {
-      const resolvedPath = path.isAbsolute(instructionPath)
-        ? instructionPath
-        : path.join(gitRoot, instructionPath);
-
-      const file = Bun.file(resolvedPath);
-      const content = await file.text();
-      log(chalk.blue(`📋 Including agent instructions:`), path.relative(gitRoot, resolvedPath));
-      return content;
-    } catch (error) {
-      // Log a warning but don't fail the execution
-      debugLog(
-        `Warning: Could not load agent instructions from ${instructionPath}: ${error as Error}`
-      );
-      return undefined;
-    }
-  }
 
   constructor(
     public options: ClaudeCodeExecutorOptions,
@@ -584,6 +552,7 @@ export class ClaudeCodeExecutor implements Executor {
             'Bash(tim add:*)',
             'Bash(tim review:*)',
             'Bash(tim set-task-done:*)',
+            'Bash(tim subagent:*)',
           ]
         : [];
 
@@ -605,41 +574,21 @@ export class ClaudeCodeExecutor implements Executor {
     // Setup permissions MCP if enabled
     let tempMcpConfigDir: string | undefined = undefined;
     let dynamicMcpConfigFile: string | undefined;
-    let unixSocketServer: net.Server | undefined;
-    let unixSocketPath: string | undefined;
+    let permissionsMcpCleanup: (() => Promise<void>) | undefined;
 
     if (isPermissionsMcpEnabled) {
-      // Create a temporary directory
-      tempMcpConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-code-mcp-'));
-
-      // Create Unix socket path
-      unixSocketPath = path.join(tempMcpConfigDir, 'permissions.sock');
-
-      // Create and start the Unix socket server
-      unixSocketServer = await this.createPermissionSocketServer(unixSocketPath);
-
-      // Resolve the absolute path to the permissions MCP script
-      let permissionsMcpPath = path.resolve(import.meta.dir, './claude_code/permissions_mcp.ts');
-      if (!(await Bun.file(permissionsMcpPath).exists())) {
-        permissionsMcpPath = path.resolve(import.meta.dir, './claude_code/permissions_mcp.js');
-      }
-
-      // Construct the MCP configuration object with stdio transport
-      const permissionsMcpArgs = [permissionsMcpPath, unixSocketPath];
-
-      const mcpConfig = {
-        mcpServers: {
-          permissions: {
-            type: 'stdio',
-            command: process.execPath,
-            args: permissionsMcpArgs,
-          },
-        },
-      };
-
-      // Write the configuration to a file
-      dynamicMcpConfigFile = path.join(tempMcpConfigDir, 'mcp-config.json');
-      await Bun.file(dynamicMcpConfigFile).write(JSON.stringify(mcpConfig, null, 2));
+      const result = await setupPermissionsMcp({
+        allowedTools,
+        defaultResponse: this.options.permissionsMcp?.defaultResponse,
+        timeout: this.options.permissionsMcp?.timeout,
+        autoApproveCreatedFileDeletion: this.options.permissionsMcp?.autoApproveCreatedFileDeletion,
+        trackedFiles: this.trackedFiles,
+        workingDirectory: gitRoot,
+        createSocketServer: (socketPath) => this.createPermissionSocketServer(socketPath),
+      });
+      tempMcpConfigDir = result.tempDir;
+      dynamicMcpConfigFile = result.mcpConfigFile;
+      permissionsMcpCleanup = result.cleanup;
     }
 
     // Create tunnel server for output forwarding from child processes
@@ -774,18 +723,8 @@ export class ClaudeCodeExecutor implements Executor {
       // Close the tunnel server if it was created
       tunnelServer?.close();
 
-      // Close the Unix socket server if it exists
-      if (unixSocketServer) {
-        await new Promise<void>((resolve) => {
-          unixSocketServer.close(() => {
-            resolve();
-          });
-        });
-      }
-
-      // Clean up temporary MCP configuration directory if it was created
-      if (tempMcpConfigDir) {
-        await fs.rm(tempMcpConfigDir, { recursive: true, force: true });
+      if (permissionsMcpCleanup) {
+        await permissionsMcpCleanup();
       }
 
       // Clean up tunnel temp directory if we created a separate one
@@ -1040,7 +979,6 @@ export class ClaudeCodeExecutor implements Executor {
       return this.executeReviewMode(contextContent, planInfo);
     }
 
-    let originalContextContent = contextContent;
     const planId = planInfo.planId;
     const planFilePath = planInfo.planFilePath;
     const planContextAvailable = planId.trim().length > 0 && planFilePath.trim().length > 0;
@@ -1058,11 +996,15 @@ export class ClaudeCodeExecutor implements Executor {
           batchMode: planInfo.batchMode,
           planFilePath,
           reviewExecutor: this.sharedOptions.reviewExecutor,
+          subagentExecutor: this.sharedOptions.subagentExecutor,
+          dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
         });
       } else if (planInfo.executionMode === 'simple') {
         contextContent = wrapWithOrchestrationSimple(contextContent, planId, {
           batchMode: planInfo.batchMode,
           planFilePath,
+          subagentExecutor: this.sharedOptions.subagentExecutor,
+          dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
         });
       }
     }
@@ -1090,6 +1032,7 @@ export class ClaudeCodeExecutor implements Executor {
 
     let tempMcpConfigDir: string | undefined = undefined;
     let dynamicMcpConfigFile: string | undefined;
+    let permissionsMcpCleanup: (() => Promise<void>) | undefined;
 
     const jsTaskRunners = ['npm', 'pnpm', 'yarn', 'bun'];
 
@@ -1133,6 +1076,7 @@ export class ClaudeCodeExecutor implements Executor {
             'Bash(tim add:*)',
             'Bash(tim review:*)',
             'Bash(tim set-task-done:*)',
+            'Bash(tim subagent:*)',
           ]
         : [];
 
@@ -1151,42 +1095,19 @@ export class ClaudeCodeExecutor implements Executor {
     // Parse allowedTools into efficient lookup structure for auto-approval
     this.parseAllowedTools(allowedTools);
 
-    // Create temporary MCP configuration if permissions MCP is enabled
-    let unixSocketServer: net.Server | undefined;
-    let unixSocketPath: string | undefined;
-
     if (isPermissionsMcpEnabled) {
-      // Create a temporary directory
-      tempMcpConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-code-mcp-'));
-
-      // Create Unix socket path
-      unixSocketPath = path.join(tempMcpConfigDir, 'permissions.sock');
-
-      // Create and start the Unix socket server
-      unixSocketServer = await this.createPermissionSocketServer(unixSocketPath);
-
-      // Resolve the absolute path to the permissions MCP script
-      let permissionsMcpPath = path.resolve(import.meta.dir, './claude_code/permissions_mcp.ts');
-      if (!(await Bun.file(permissionsMcpPath).exists())) {
-        permissionsMcpPath = path.resolve(import.meta.dir, './claude_code/permissions_mcp.js');
-      }
-
-      // Construct the MCP configuration object with stdio transport
-      const permissionsMcpArgs = [permissionsMcpPath, unixSocketPath];
-
-      const mcpConfig = {
-        mcpServers: {
-          permissions: {
-            type: 'stdio',
-            command: process.execPath,
-            args: permissionsMcpArgs,
-          },
-        },
-      };
-
-      // Write the configuration to a file
-      dynamicMcpConfigFile = path.join(tempMcpConfigDir, 'mcp-config.json');
-      await Bun.file(dynamicMcpConfigFile).write(JSON.stringify(mcpConfig, null, 2));
+      const result = await setupPermissionsMcp({
+        allowedTools,
+        defaultResponse: this.options.permissionsMcp?.defaultResponse,
+        timeout: this.options.permissionsMcp?.timeout,
+        autoApproveCreatedFileDeletion: this.options.permissionsMcp?.autoApproveCreatedFileDeletion,
+        trackedFiles: this.trackedFiles,
+        workingDirectory: gitRoot,
+        createSocketServer: (socketPath) => this.createPermissionSocketServer(socketPath),
+      });
+      tempMcpConfigDir = result.tempDir;
+      dynamicMcpConfigFile = result.mcpConfigFile;
+      permissionsMcpCleanup = result.cleanup;
     }
 
     // Create tunnel server for output forwarding from child processes
@@ -1202,91 +1123,9 @@ export class ClaudeCodeExecutor implements Executor {
       }
     }
 
-    // Build agent definitions when plan information is provided
-    let agentDefinitions: AgentDefinition[] | undefined;
-    if (planContextAvailable) {
-      let agentCreationMessage: string | undefined;
-
-      if (planInfo.executionMode === 'normal') {
-        const implementerInstructions = this.timConfig.agents?.implementer?.instructions
-          ? await this.loadAgentInstructions(
-              this.timConfig.agents.implementer.instructions,
-              gitRoot
-            )
-          : undefined;
-        const testerInstructions = this.timConfig.agents?.tester?.instructions
-          ? await this.loadAgentInstructions(this.timConfig.agents.tester.instructions, gitRoot)
-          : undefined;
-        const reviewerInstructions = this.timConfig.agents?.reviewer?.instructions
-          ? await this.loadAgentInstructions(this.timConfig.agents.reviewer.instructions, gitRoot)
-          : undefined;
-
-        agentDefinitions = [
-          getImplementerPrompt(
-            originalContextContent,
-            planId,
-            implementerInstructions,
-            this.options.agents?.implementer?.model,
-            { mode: 'report' }
-          ),
-          getTesterPrompt(
-            originalContextContent,
-            planId,
-            testerInstructions,
-            this.options.agents?.tester?.model,
-            { mode: 'report' }
-          ),
-          getReviewerPrompt(
-            originalContextContent,
-            planId,
-            reviewerInstructions,
-            this.options.agents?.reviewer?.model,
-            false,
-            false,
-            { mode: 'report' }
-          ),
-        ];
-        agentCreationMessage = `Configured implementer/tester/reviewer agents for plan ${planId}`;
-      } else if (planInfo.executionMode === 'simple') {
-        const implementerInstructions = this.timConfig.agents?.implementer?.instructions
-          ? await this.loadAgentInstructions(
-              this.timConfig.agents.implementer.instructions,
-              gitRoot
-            )
-          : undefined;
-        const testerInstructions = this.timConfig.agents?.tester?.instructions
-          ? await this.loadAgentInstructions(this.timConfig.agents.tester.instructions, gitRoot)
-          : undefined;
-        const reviewerInstructions = this.timConfig.agents?.reviewer?.instructions
-          ? await this.loadAgentInstructions(this.timConfig.agents.reviewer.instructions, gitRoot)
-          : undefined;
-        const verifierInstructions =
-          [testerInstructions, reviewerInstructions]
-            .filter((instructions): instructions is string => Boolean(instructions?.trim()))
-            .join('\n\n') || undefined;
-
-        agentDefinitions = [
-          getImplementerPrompt(
-            originalContextContent,
-            planId,
-            implementerInstructions,
-            this.options.agents?.implementer?.model,
-            { mode: 'report' }
-          ),
-          getVerifierAgentPrompt(
-            originalContextContent,
-            planId,
-            verifierInstructions,
-            this.options.agents?.tester?.model,
-            false,
-            false,
-            { mode: 'report' }
-          ),
-        ];
-        agentCreationMessage = `Configured implementer/verifier agents for plan ${planId}`;
-      }
-      // 'bare', 'planning', and 'review' modes: skip agent definitions entirely
-    }
+    // Agent definitions (--agents flag) are no longer used in normal/simple orchestration modes.
+    // The orchestrator prompt references `tim subagent` Bash commands instead.
+    // Other modes (bare, planning, review) also don't use agent definitions.
 
     try {
       const args = ['claude'];
@@ -1339,17 +1178,6 @@ export class ClaudeCodeExecutor implements Executor {
       } else {
         log(`Using default model: ${DEFAULT_CLAUDE_MODEL}\n`);
         args.push('--model', DEFAULT_CLAUDE_MODEL);
-      }
-
-      // Add agents argument if agent definitions were created
-      if (agentDefinitions && agentDefinitions.length > 0) {
-        for (const def of agentDefinitions) {
-          if (!def.model) {
-            def.model = DEFAULT_CLAUDE_MODEL;
-          }
-        }
-
-        args.push('--agents', buildAgentsArgument(agentDefinitions));
       }
 
       if (debug) {
@@ -1498,18 +1326,8 @@ export class ClaudeCodeExecutor implements Executor {
       // Close the tunnel server if it was created
       tunnelServer?.close();
 
-      // Close the Unix socket server if it exists
-      if (unixSocketServer) {
-        await new Promise<void>((resolve) => {
-          unixSocketServer.close(() => {
-            resolve();
-          });
-        });
-      }
-
-      // Clean up temporary MCP configuration directory if it was created
-      if (tempMcpConfigDir) {
-        await fs.rm(tempMcpConfigDir, { recursive: true, force: true });
+      if (permissionsMcpCleanup) {
+        await permissionsMcpCleanup();
       }
 
       // Clean up tunnel temp directory if we created a separate one

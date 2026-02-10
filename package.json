@@ -16,7 +16,7 @@
     "build": "./build.ts",
     "lint": "eslint .",
     "dev-install": "bun run build && pnpm add -g file://$(pwd)",
-    "format": "prettier --write .",
+    "format": "prettier --write --log-level warn .",
     "update-schemas": "scripts/update-json-schemas.ts",
     "tim-agent-listener": "bun scripts/tim-agent-listener.ts",
     "rmfilter": "src/rmfilter/rmfilter.ts",

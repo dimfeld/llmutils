@@ -1,13 +1,17 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: "tim-gui: list sessions as they become known"
-goal: "Add WebSocket server support to tim-gui so it can receive and display real-time session output from tim headless processes, with a two-pane session list and detail view alongside the existing notifications view."
+goal: Add WebSocket server support to tim-gui so it can receive and display
+  real-time session output from tim headless processes, with a two-pane session
+  list and detail view alongside the existing notifications view.
 id: 169
 uuid: 85aa17d2-7d55-4d91-afbb-09821893a59a
 generatedBy: agent
 status: pending
 priority: medium
 parent: 160
+references:
+  "160": 514cedb9-6431-400a-a997-12d139376146
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z

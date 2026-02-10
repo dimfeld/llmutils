@@ -154,7 +154,7 @@ describe('timAgent - summary file write (batch mode)', () => {
     }));
 
     const { timAgent } = await import('./agent.js');
-    const options: any = { log: false, executor: 'codex-cli', summaryFile: summaryOut };
+    const options: any = { log: false, orchestrator: 'codex-cli', summaryFile: summaryOut };
     await timAgent(planFile, options, {});
 
     // Verify file written and contains key elements
@@ -236,7 +236,7 @@ describe('timAgent - summary file write (batch mode)', () => {
     // Ensure parent directory does not exist beforehand
     await expect(fs.access(path.dirname(nestedOut))).rejects.toBeTruthy();
 
-    const options: any = { log: false, executor: 'codex-cli', summaryFile: nestedOut };
+    const options: any = { log: false, orchestrator: 'codex-cli', summaryFile: nestedOut };
     await timAgent(planFile, options, {});
 
     // File should now exist and contain a header
