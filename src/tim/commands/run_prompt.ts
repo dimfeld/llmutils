@@ -283,7 +283,7 @@ function ensureTrailingNewline(value: string): string {
   return value.endsWith('\n') ? value : `${value}\n`;
 }
 
-async function executeClaudePrompt(
+export async function executeClaudePrompt(
   prompt: string,
   options: {
     model?: string;
@@ -395,7 +395,7 @@ async function executeClaudePrompt(
   }
 }
 
-async function executeCodexPrompt(
+export async function executeCodexPrompt(
   prompt: string,
   options: {
     jsonSchema?: string;

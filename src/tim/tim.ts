@@ -587,6 +587,102 @@ createAgentCommand(
   'Alias for "agent". Automatically execute steps in a plan YAML file. Can be a file path or plan ID.'
 );
 
+const configureExecStepOptions = (command: any) =>
+  command
+    .option(
+      '-x, --executor <name>',
+      'Executor to use: codex/codex-cli (default) or claude/claude-code',
+      'codex'
+    )
+    .option('-m, --model <model>', 'Model to use for prompt generation and Claude execution')
+    .option(
+      '--reasoning-level <level>',
+      'Reasoning effort level for Codex (low, medium, high, xhigh)'
+    )
+    .option('--context-file <path>', 'Read the context input from a file')
+    .option('--plan-id <id>', 'Optional plan id to include in the generated prompt')
+    .option('--plan-file-path <path>', 'Optional plan file path for progress guidance in prompts')
+    .option(
+      '--instructions <text>',
+      'Additional inline instructions to append to agent instructions'
+    )
+    .option('--instructions-file <path>', 'File containing additional instructions to append')
+    .option('--progress-mode <mode>', 'Progress guidance mode: report or update')
+    .option('--use-at-prefix', 'Use @path prefixes when progress-mode is update')
+    .option('--implementer-output <text>', 'Inline implementer output (tester/fixer prompts)')
+    .option(
+      '--implementer-output-file <path>',
+      'Path to implementer output file (tester/fixer prompts)'
+    )
+    .option('--tester-output <text>', 'Inline tester output (fixer prompt)')
+    .option('--tester-output-file <path>', 'Path to tester output file (fixer prompt)')
+    .option(
+      '--newly-completed-task <titles...>',
+      'Newly completed task titles for tester context (repeatable or comma-separated)'
+    )
+    .option(
+      '--completed-task-title <titles...>',
+      'Completed task titles for fixer context (repeatable or comma-separated)'
+    )
+    .option('--fix-instructions <text>', 'Inline fix instructions for the fixer prompt')
+    .option('--fix-instructions-file <path>', 'Path to a file containing fix instructions')
+    .option('--inactivity-timeout-ms <ms>', 'Codex inactivity timeout in milliseconds');
+
+program
+  .command('exec-step')
+  .description(
+    'Run the codex implementer/tester/fixer prompts with either Codex CLI or Claude Code. Final agent response is printed to stdout.'
+  )
+  .addHelpText('after', 'Use one of the subcommands: implementer, tester, fixer.')
+  .addCommand(
+    configureExecStepOptions(
+      program
+        .createCommand('implementer [context]')
+        .description('Generate the codex implementer prompt and execute it')
+        .action(async (contextText, options, command) => {
+          const { handleExecStepCommand } = await import('./commands/exec_step.js');
+          await handleExecStepCommand(
+            'implementer',
+            contextText,
+            options,
+            command.parent?.parent?.opts?.() ?? command.parent.opts()
+          ).catch(handleCommandError);
+        })
+    )
+  )
+  .addCommand(
+    configureExecStepOptions(
+      program
+        .createCommand('tester [context]')
+        .description('Generate the codex tester prompt and execute it')
+        .action(async (contextText, options, command) => {
+          const { handleExecStepCommand } = await import('./commands/exec_step.js');
+          await handleExecStepCommand(
+            'tester',
+            contextText,
+            options,
+            command.parent?.parent?.opts?.() ?? command.parent.opts()
+          ).catch(handleCommandError);
+        })
+    )
+  )
+  .addCommand(
+    configureExecStepOptions(
+      program
+        .createCommand('fixer')
+        .description('Generate the codex fixer prompt and execute it')
+        .action(async (_contextText, options, command) => {
+          const { handleExecStepCommand } = await import('./commands/exec_step.js');
+          await handleExecStepCommand(
+            'fixer',
+            undefined,
+            options,
+            command.parent?.parent?.opts?.() ?? command.parent.opts()
+          ).catch(handleCommandError);
+        })
+    )
+  );
+
 program
   .command('run-prompt [prompt]')
   .description(

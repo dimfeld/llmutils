@@ -30,6 +30,7 @@ These tools are deprecated as coding agents have largely replaced them, but sill
   - [generate - Create Plans](#generate---create-plans)
   - [agent/run - Execute Plans](#agentrun---execute-plans)
   - [run-prompt - One-Shot Prompts](#run-prompt---one-shot-prompts)
+  - [exec-step - Run Codex Step Prompts](#exec-step---run-codex-step-prompts)
   - [add - Create Plan Stubs](#add---create-plan-stubs)
   - [show - View Plan Details](#show---view-plan-details)
   - [ready - List Ready Plans](#ready---list-ready-plans)
@@ -460,6 +461,29 @@ tim run-prompt "summarize this" > result.txt
 
 # Suppress execution log output on stderr
 tim run-prompt -q "question" > answer.txt
+```
+
+---
+
+### exec-step - Run Codex Step Prompts
+
+Run the Codex step prompts (`implementer`, `tester`, `fixer`) directly and execute them with either Codex or Claude.
+This is useful for debugging individual phases without running full orchestration.
+
+Execution logs are sent to stderr / tunnel streams, while only the final agent response is written to stdout.
+
+```bash
+# Implementer via Codex (default executor)
+tim exec-step implementer "Implement feature X" --reasoning-level high
+
+# Tester via Claude
+tim exec-step tester "Test feature X" -x claude --model claude-sonnet-4-5-20250929
+
+# Tester with implementer output context
+tim exec-step tester "Test feature X" --implementer-output-file .rmfilter/outputs/implementer.txt --newly-completed-task "Task A,Task B"
+
+# Fixer with required inputs
+tim exec-step fixer --implementer-output-file .rmfilter/outputs/implementer.txt --tester-output-file .rmfilter/outputs/tester.txt --fix-instructions-file .rmfilter/outputs/review.txt --completed-task-title "Task A"
 ```
 
 ---
