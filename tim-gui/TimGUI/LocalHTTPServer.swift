@@ -204,12 +204,12 @@ final class LocalHTTPServer: @unchecked Sendable {
     }
 }
 
-private struct HTTPRequest {
+struct HTTPRequest {
     let method: String
     let path: String
     let body: Data?
 }
 
-private enum HTTPError: Error {
+enum HTTPError: Error {
     case invalidRequest
 }

@@ -1,7 +1,8 @@
 ## Build and Test
 
 - `./scripts/restart.sh` (rebuild signed Debug + restart)
-- `./scripts/build.sh` (plain build without running),
+- `./scripts/build.sh` (plain build without running)
+- `./scripts/test.sh` (run unit tests via xcodebuild)
 - `./scripts/lint.sh` (SwiftFormat + SwiftLint)
 
 ## Documentation
