@@ -489,6 +489,10 @@ Although you should be thorough in your review, you should not be too picky.
 - When a function is wrapped in middleware, you can assume that the middleware is doing its job. For example, if the
 middleware already verifies the presence of an organization and user, the handler function inside the middleware does not need to check its presence again.
 
+## Final Pass Before Reporting
+
+Once you have finished your analysis and are ready to produce your report, review your list of issues one last time. Remove any issues that you have determined are not actually problems, and downgrade to "info" severity any issues that are only minor concerns or unlikely to cause real harm. The goal is to avoid confusing the person reading the report with false positives or overstated severity.
+
 ## Response Format:
 
 Place three dashes after each issue to make it easier to parse out which issues are listed.
