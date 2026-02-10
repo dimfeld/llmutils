@@ -31,6 +31,11 @@ final class LocalHTTPServer: @unchecked Sendable {
     private let handler: @MainActor (MessagePayload) -> Void
     private var listener: NWListener?
 
+    /// The port the server is actually listening on. Only valid after `start()` returns.
+    var boundPort: UInt16 {
+        listener?.port?.rawValue ?? 0
+    }
+
     init(port: UInt16, handler: @escaping @MainActor (MessagePayload) -> Void) {
         self.port = NWEndpoint.Port(rawValue: port) ?? 8123
         self.handler = handler
@@ -41,12 +46,28 @@ final class LocalHTTPServer: @unchecked Sendable {
         let parameters = NWParameters.tcp
         parameters.requiredInterfaceType = .loopback
         parameters.allowLocalEndpointReuse = true
-        let listener = try NWListener(using: parameters, on: port)
-        listener.newConnectionHandler = { [weak self] connection in
+        let newListener = try NWListener(using: parameters, on: port)
+        newListener.newConnectionHandler = { [weak self] connection in
             self?.handle(connection: connection)
         }
-        listener.start(queue: .global())
-        self.listener = listener
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            newListener.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    continuation.resume()
+                case .failed(let error):
+                    continuation.resume(throwing: error)
+                default:
+                    break
+                }
+            }
+            newListener.start(queue: .global())
+        }
+
+        // Clear the startup handler so it doesn't retain the continuation.
+        newListener.stateUpdateHandler = nil
+        self.listener = newListener
     }
 
     func stop() {
@@ -204,12 +225,12 @@ final class LocalHTTPServer: @unchecked Sendable {
     }
 }
 
-private struct HTTPRequest {
+struct HTTPRequest {
     let method: String
     let path: String
     let body: Data?
 }
 
-private enum HTTPError: Error {
+enum HTTPError: Error {
     case invalidRequest
 }

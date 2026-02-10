@@ -12,7 +12,20 @@
 		A10000000000000000000003 /* LocalHTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000013 /* LocalHTTPServer.swift */; };
 		A10000000000000000000004 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000014 /* Assets.xcassets */; };
 		A10000000000000000000005 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000015 /* Preview Assets.xcassets */; };
+		A20000000000000000000001 /* ModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* ModelTests.swift */; };
+		A20000000000000000000002 /* AppStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* AppStateTests.swift */; };
+		A20000000000000000000003 /* LocalHTTPServerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* LocalHTTPServerTests.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A20000000000000000000051 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000060 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000040;
+			remoteInfo = TimGUI;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		A10000000000000000000010 /* TimGUI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = TimGUI.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -22,10 +35,21 @@
 		A10000000000000000000014 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A10000000000000000000015 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		A10000000000000000000016 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A20000000000000000000010 /* TimGUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TimGUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000011 /* ModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000012 /* AppStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000013 /* LocalHTTPServerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHTTPServerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A10000000000000000000020 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A20000000000000000000042 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -60,6 +84,7 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000010 /* TimGUI.app */,
+				A20000000000000000000010 /* TimGUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -68,8 +93,19 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000030 /* TimGUI */,
+				A20000000000000000000030 /* TimGUITests */,
 				A10000000000000000000032 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		A20000000000000000000030 /* TimGUITests */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000011 /* ModelTests.swift */,
+				A20000000000000000000012 /* AppStateTests.swift */,
+				A20000000000000000000013 /* LocalHTTPServerTests.swift */,
+			);
+			path = TimGUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -92,6 +128,23 @@
 			productReference = A10000000000000000000010 /* TimGUI.app */;
 			productType = "com.apple.product-type.application";
 		};
+		A20000000000000000000040 /* TimGUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A20000000000000000000050 /* Build configuration list for PBXNativeTarget "TimGUITests" */;
+			buildPhases = (
+				A20000000000000000000041 /* Sources */,
+				A20000000000000000000042 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A20000000000000000000052 /* PBXTargetDependency */,
+			);
+			name = TimGUITests;
+			productName = TimGUITests;
+			productReference = A20000000000000000000010 /* TimGUITests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -104,6 +157,10 @@
 				TargetAttributes = {
 					A10000000000000000000040 = {
 						CreatedOnToolsVersion = 16.0;
+					};
+					A20000000000000000000040 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = A10000000000000000000040;
 					};
 				};
 			};
@@ -121,6 +178,7 @@
 			projectRoot = "";
 			targets = (
 				A10000000000000000000040 /* TimGUI */,
+				A20000000000000000000040 /* TimGUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -148,7 +206,25 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A20000000000000000000041 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A20000000000000000000001 /* ModelTests.swift in Sources */,
+				A20000000000000000000002 /* AppStateTests.swift in Sources */,
+				A20000000000000000000003 /* LocalHTTPServerTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A20000000000000000000052 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000040 /* TimGUI */;
+			targetProxy = A20000000000000000000051 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A10000000000000000000080 /* Debug */ = {
@@ -260,6 +336,38 @@
 			};
 			name = Release;
 		};
+		A20000000000000000000090 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_TESTING_SEARCH_PATHS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dimfeld.tim-gui.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TimGUI.app/Contents/MacOS/TimGUI";
+			};
+			name = Debug;
+		};
+		A20000000000000000000091 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_TESTING_SEARCH_PATHS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dimfeld.tim-gui.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TimGUI.app/Contents/MacOS/TimGUI";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -277,6 +385,15 @@
 			buildConfigurations = (
 				A10000000000000000000080 /* Debug */,
 				A10000000000000000000081 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		A20000000000000000000050 /* Build configuration list for PBXNativeTarget "TimGUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A20000000000000000000090 /* Debug */,
+				A20000000000000000000091 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
