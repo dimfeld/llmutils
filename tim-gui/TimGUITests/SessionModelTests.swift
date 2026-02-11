@@ -159,14 +159,17 @@ struct HeadlessMessageTests {
         }
     }
 
-    @Test("Unknown type throws DecodingError")
-    func unknownTypeThrows() {
+    @Test("Unknown type decodes to .unknown")
+    func unknownTypeFallsBack() throws {
         let json = """
             {"type": "unknown_message_type"}
             """
-        #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(HeadlessMessage.self, from: Data(json.utf8))
+        let msg = try JSONDecoder().decode(HeadlessMessage.self, from: Data(json.utf8))
+        guard case .unknown(let type) = msg else {
+            Issue.record("Expected unknown, got \(msg)")
+            return
         }
+        #expect(type == "unknown_message_type")
     }
 }
 
@@ -282,14 +285,17 @@ struct TunnelMessageTests {
         #expect(payload.planId == 169)
     }
 
-    @Test("Unknown tunnel type throws DecodingError")
-    func unknownTypeThrows() {
+    @Test("Unknown tunnel type decodes to .unknown")
+    func unknownTypeFallsBack() throws {
         let json = """
             {"type": "unknown_tunnel", "data": "something"}
             """
-        #expect(throws: DecodingError.self) {
-            try JSONDecoder().decode(TunnelMessage.self, from: Data(json.utf8))
+        let msg = try JSONDecoder().decode(TunnelMessage.self, from: Data(json.utf8))
+        guard case .unknown(let type) = msg else {
+            Issue.record("Expected unknown, got \(msg)")
+            return
         }
+        #expect(type == "unknown_tunnel")
     }
 }
 
@@ -396,7 +402,6 @@ struct StructuredMessagePayloadTests {
                 "type": "llm_tool_result",
                 "toolName": "Read",
                 "resultSummary": "File contents...",
-                "isError": false,
                 "timestamp": "2026-02-10T08:00:00Z"
             }
             """
@@ -407,7 +412,6 @@ struct StructuredMessagePayloadTests {
         }
         #expect(p.toolName == "Read")
         #expect(p.resultSummary == "File contents...")
-        #expect(p.isError == false)
     }
 
     @Test("Decodes file_write")
@@ -814,7 +818,9 @@ struct StructuredMessagePayloadTests {
                     "planId": "42",
                     "planTitle": "Add feature",
                     "mode": "agent",
-                    "durationMs": 60000
+                    "durationMs": 60000,
+                    "changedFiles": ["src/main.ts", "src/utils.ts"],
+                    "errors": ["Type check failed"]
                 },
                 "timestamp": "2026-02-10T08:00:00Z"
             }
@@ -828,6 +834,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.planTitle == "Add feature")
         #expect(p.mode == "agent")
         #expect(p.durationMs == 60000)
+        #expect(p.changedFiles == ["src/main.ts", "src/utils.ts"])
+        #expect(p.errors == ["Type check failed"])
     }
 
     @Test("Decodes prompt_request")
@@ -890,7 +898,14 @@ struct StructuredMessagePayloadTests {
             {
                 "type": "review_result",
                 "issues": [
-                    {"severity": "high", "category": "security", "content": "SQL injection risk"}
+                    {
+                        "severity": "critical",
+                        "category": "security",
+                        "content": "SQL injection risk",
+                        "file": "src/user.ts",
+                        "line": "42",
+                        "suggestion": "Use parameterized queries"
+                    }
                 ],
                 "recommendations": ["Use parameterized queries"],
                 "actionItems": ["Fix query in user.ts"],
@@ -903,7 +918,10 @@ struct StructuredMessagePayloadTests {
             return
         }
         #expect(p.issues.count == 1)
-        #expect(p.issues[0].severity == "high")
+        #expect(p.issues[0].severity == "critical")
+        #expect(p.issues[0].file == "src/user.ts")
+        #expect(p.issues[0].line == "42")
+        #expect(p.issues[0].suggestion == "Use parameterized queries")
         #expect(p.recommendations == ["Use parameterized queries"])
         #expect(p.actionItems == ["Fix query in user.ts"])
     }

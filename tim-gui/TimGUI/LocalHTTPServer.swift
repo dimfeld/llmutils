@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import os.log
 
 struct TerminalPayload: Codable {
     let type: String
@@ -184,6 +185,8 @@ final class LocalHTTPServer: @unchecked Sendable {
         connectionsLock.unlock()
     }
 
+    private static let logger = Logger(subsystem: "com.timgui", category: "WebSocket")
+
     private func handleWebSocketMessage(connectionId: UUID, text: String) {
         let wsHandler = self.wsHandler
         guard let data = text.data(using: .utf8) else { return }
@@ -200,10 +203,12 @@ final class LocalHTTPServer: @unchecked Sendable {
                     wsHandler(.replayStart(connectionId))
                 case .replayEnd:
                     wsHandler(.replayEnd(connectionId))
+                case .unknown(let type):
+                    Self.logger.warning("Received unknown HeadlessMessage type: \(type)")
                 }
             }
         } catch {
-            print("[WebSocket] Failed to decode message: \(error)")
+            Self.logger.error("Failed to decode WebSocket message: \(error)")
         }
     }
 

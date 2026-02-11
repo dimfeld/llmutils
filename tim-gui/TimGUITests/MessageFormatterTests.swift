@@ -132,7 +132,7 @@ struct MessageFormatterTests {
     @Test("Formats llm_tool_result as toolUse")
     func formatsLlmToolResult() {
         let payload = LlmToolResultPayload(
-            toolName: "Read", resultSummary: "File contents here", isError: false, timestamp: nil)
+            toolName: "Read", resultSummary: "File contents here", timestamp: nil)
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .llmToolResult(payload)),
             seq: 21
@@ -304,6 +304,16 @@ struct MessageFormatterTests {
         )
         #expect(msg.category == .log)
         #expect(msg.text.contains("Unknown message type: future_type"))
+    }
+
+    @Test("Formats unknown tunnel message as log")
+    func formatsUnknownTunnel() {
+        let msg = MessageFormatter.format(
+            tunnelMessage: .unknown(type: "future_tunnel_type"),
+            seq: 111
+        )
+        #expect(msg.category == .log)
+        #expect(msg.text.contains("Unknown message type: future_tunnel_type"))
     }
 
     @Test("Formats todo_update as progress with status indicators")

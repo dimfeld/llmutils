@@ -14,15 +14,27 @@ private enum WSOpcode: UInt8 {
 
 /// Manages a single WebSocket connection after the HTTP upgrade handshake.
 final class WebSocketConnection: @unchecked Sendable {
+    private static let maxFrameSize: UInt64 = 16 * 1024 * 1024  // 16 MB max
+
     let id: UUID
     private let connection: NWConnection
     private let onMessage: @Sendable (String) -> Void
     private let onDisconnect: @Sendable () -> Void
-    private var isClosed = false
+    private let closeLock = NSLock()
+    private var _isClosed = false
 
     /// Buffer for fragmented messages (continuation frames).
     private var fragmentBuffer = Data()
     private var fragmentOpcode: WSOpcode?
+
+    /// Atomically transitions isClosed from false to true. Returns true if this call performed the transition.
+    private nonisolated func markClosed() -> Bool {
+        closeLock.lock()
+        defer { closeLock.unlock() }
+        if _isClosed { return false }
+        _isClosed = true
+        return true
+    }
 
     init(
         id: UUID,
@@ -69,15 +81,21 @@ final class WebSocketConnection: @unchecked Sendable {
             } catch {
                 // Connection dropped or error
             }
-            if !isClosed {
-                isClosed = true
+            if markClosed() {
+                connection.cancel()
                 onDisconnect()
             }
         }
     }
 
+    private nonisolated var isClosedSafe: Bool {
+        closeLock.lock()
+        defer { closeLock.unlock() }
+        return _isClosed
+    }
+
     private func readLoop() async throws {
-        while !isClosed {
+        while !isClosedSafe {
             // Read the 2-byte header
             let headerBytes = try await readExact(count: 2)
             let byte0 = headerBytes[0]
@@ -98,6 +116,13 @@ final class WebSocketConnection: @unchecked Sendable {
                 for i in 0..<8 {
                     payloadLength = (payloadLength << 8) | UInt64(extBytes[i])
                 }
+            }
+
+            // Validate payload length before allocating memory
+            guard payloadLength <= WebSocketConnection.maxFrameSize else {
+                try? await sendCloseFrame(code: 1009)
+                close()
+                return
             }
 
             // Read mask key (clients always send masked frames)
@@ -150,9 +175,10 @@ final class WebSocketConnection: @unchecked Sendable {
             case .close:
                 // Send close frame back
                 try? await sendFrame(opcode: .close, payload: payload)
-                isClosed = true
-                onDisconnect()
-                connection.cancel()
+                if markClosed() {
+                    connection.cancel()
+                    onDisconnect()
+                }
                 return
 
             case .ping:
@@ -175,13 +201,20 @@ final class WebSocketConnection: @unchecked Sendable {
 
     /// Sends a close frame and cancels the connection.
     func close() {
-        guard !isClosed else { return }
-        isClosed = true
-        Task {
-            try? await sendFrame(opcode: .close, payload: Data())
-            connection.cancel()
+        if markClosed() {
+            Task {
+                try? await sendFrame(opcode: .close, payload: Data())
+                connection.cancel()
+            }
+            onDisconnect()
         }
-        onDisconnect()
+    }
+
+    private func sendCloseFrame(code: UInt16) async throws {
+        var payload = Data()
+        payload.append(UInt8((code >> 8) & 0xFF))
+        payload.append(UInt8(code & 0xFF))
+        try await sendFrame(opcode: .close, payload: payload)
     }
 
     private func sendFrame(opcode: WSOpcode, payload: Data) async throws {

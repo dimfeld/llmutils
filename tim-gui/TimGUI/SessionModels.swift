@@ -52,6 +52,7 @@ enum HeadlessMessage: Sendable {
     case output(seq: Int, message: TunnelMessage)
     case replayStart
     case replayEnd
+    case unknown(type: String)
 }
 
 struct SessionInfoPayload: Sendable {
@@ -97,9 +98,7 @@ extension HeadlessMessage: Decodable {
         case "replay_end":
             self = .replayEnd
         default:
-            throw DecodingError.dataCorruptedError(
-                forKey: .type, in: container,
-                debugDescription: "Unknown HeadlessMessage type: \(type)")
+            self = .unknown(type: type)
         }
     }
 }
@@ -110,6 +109,7 @@ enum TunnelMessage: Sendable {
     case args(type: String, args: [String])
     case data(type: String, data: String)
     case structured(message: StructuredMessagePayload)
+    case unknown(type: String)
 }
 
 extension TunnelMessage: Decodable {
@@ -135,9 +135,7 @@ extension TunnelMessage: Decodable {
             let message = try container.decode(StructuredMessagePayload.self, forKey: .message)
             self = .structured(message: message)
         default:
-            throw DecodingError.dataCorruptedError(
-                forKey: .type, in: container,
-                debugDescription: "Unknown TunnelMessage type: \(type)")
+            self = .unknown(type: type)
         }
     }
 }
@@ -233,7 +231,6 @@ struct LlmToolUsePayload: Sendable {
 struct LlmToolResultPayload: Sendable {
     let toolName: String
     let resultSummary: String?
-    let isError: Bool?
     let timestamp: String?
 }
 
@@ -270,11 +267,17 @@ struct ReviewIssueItem: Sendable, Decodable {
     let severity: String?
     let category: String?
     let content: String?
+    let file: String?
+    let line: String?
+    let suggestion: String?
 
     enum CodingKeys: String, CodingKey {
         case severity
         case category
         case content
+        case file
+        case line
+        case suggestion
     }
 }
 
@@ -399,6 +402,10 @@ struct PromptAnsweredPayload: Sendable {
 // MARK: - StructuredMessagePayload Decoding
 
 extension StructuredMessagePayload: Decodable {
+    private enum ExecutionSummaryCodingKeys: String, CodingKey {
+        case planId, planTitle, mode, durationMs, changedFiles, errors
+    }
+
     private enum CodingKeys: String, CodingKey {
         case type
         case timestamp
@@ -413,7 +420,7 @@ extension StructuredMessagePayload: Decodable {
         // llm_thinking/response
         case text, isUserRequest
         // llm_tool_use/result
-        case toolName, inputSummary, resultSummary, input, result, isError
+        case toolName, inputSummary, resultSummary, input, result
         // todo_update
         case items
         // file_write/edit
@@ -520,7 +527,6 @@ extension StructuredMessagePayload: Decodable {
             self = .llmToolResult(LlmToolResultPayload(
                 toolName: try container.decode(String.self, forKey: .toolName),
                 resultSummary: try container.decodeIfPresent(String.self, forKey: .resultSummary),
-                isError: try container.decodeIfPresent(Bool.self, forKey: .isError),
                 timestamp: timestamp))
 
         case "llm_status":
@@ -610,7 +616,7 @@ extension StructuredMessagePayload: Decodable {
             // Decode the nested 'summary' object with the fields we care about
             // The full ExecutionSummary is complex; extract key fields
             let summaryContainer = try container.nestedContainer(
-                keyedBy: CodingKeys.self, forKey: .summary)
+                keyedBy: ExecutionSummaryCodingKeys.self, forKey: .summary)
             self = .executionSummary(ExecutionSummaryPayload(
                 planId: try summaryContainer.decodeIfPresent(String.self, forKey: .planId),
                 planTitle: try summaryContainer.decodeIfPresent(String.self, forKey: .planTitle),
@@ -618,8 +624,8 @@ extension StructuredMessagePayload: Decodable {
                 durationMs: try summaryContainer.decodeIfPresent(Double.self, forKey: .durationMs),
                 totalSteps: nil,
                 failedSteps: nil,
-                changedFiles: try summaryContainer.decodeIfPresent([String].self, forKey: .changes),
-                errors: try summaryContainer.decodeIfPresent([String].self, forKey: .issues),
+                changedFiles: try summaryContainer.decodeIfPresent([String].self, forKey: .changedFiles),
+                errors: try summaryContainer.decodeIfPresent([String].self, forKey: .errors),
                 timestamp: timestamp))
 
         case "token_usage":
@@ -681,22 +687,30 @@ private func truncateLines(_ text: String) -> String {
     return lines.prefix(truncateLineCount).joined(separator: "\n") + "\n... (\(truncated) lines truncated)"
 }
 
+private nonisolated(unsafe) let isoFormatterWithFractions: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
+
+private nonisolated(unsafe) let isoFormatterWithoutFractions: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime]
+    return f
+}()
+
+private nonisolated(unsafe) let timeFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "HH:mm:ss"
+    return f
+}()
+
 private func formatTimestamp(_ ts: String?) -> String {
     guard let ts else { return "" }
-    // Parse ISO timestamp and format as HH:mm:ss
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    guard let date = formatter.date(from: ts) else {
-        // Try without fractional seconds
-        formatter.formatOptions = [.withInternetDateTime]
-        guard let date = formatter.date(from: ts) else { return "" }
-        let tf = DateFormatter()
-        tf.dateFormat = "HH:mm:ss"
-        return " [\(tf.string(from: date))]"
-    }
-    let tf = DateFormatter()
-    tf.dateFormat = "HH:mm:ss"
-    return " [\(tf.string(from: date))]"
+    let date = isoFormatterWithFractions.date(from: ts)
+        ?? isoFormatterWithoutFractions.date(from: ts)
+    guard let date else { return "" }
+    return " [\(timeFormatter.string(from: date))]"
 }
 
 private func header(_ title: String, timestamp: String?) -> String {
@@ -718,6 +732,9 @@ enum MessageFormatter {
         case .structured(let message):
             let (text, category) = formatStructured(message)
             return SessionMessage(seq: seq, text: text, category: category)
+
+        case .unknown(let type):
+            return SessionMessage(seq: seq, text: "Unknown message type: \(type)", category: .log)
         }
     }
 
