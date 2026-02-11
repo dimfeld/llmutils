@@ -2,16 +2,35 @@ import AppKit
 import Observation
 import SwiftUI
 
+enum AppViewMode: String, CaseIterable {
+    case sessions = "Sessions"
+    case notifications = "Notifications"
+}
+
 struct ContentView: View {
     @Bindable var appState: AppState
+    @Bindable var sessionState: SessionState
     let startError: String?
+    @State private var viewMode: AppViewMode = .sessions
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(verbatim: "Listening on http://127.0.0.1:8123/messages")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .padding(16)
+        VStack(spacing: 0) {
+            HStack {
+                Picker("View", selection: $viewMode) {
+                    ForEach(AppViewMode.allCases, id: \.self) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 300)
+
+                Spacer()
+
+                Text("Listening on port 8123")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(12)
 
             if let startError {
                 Text(startError)
@@ -19,45 +38,60 @@ struct ContentView: View {
                     .padding(.horizontal, 16)
             }
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(self.appState.items) { item in
-                        HStack(alignment: .top, spacing: 8) {
-                            Circle()
-                                .fill(item.isRead ? .clear : .blue)
-                                .frame(width: 8, height: 8)
-                                .padding(.top, 6)
+            switch viewMode {
+            case .notifications:
+                NotificationsView(appState: appState)
+            case .sessions:
+                SessionsView(sessionState: sessionState)
+            }
+        }
+        .frame(minWidth: 800, minHeight: 400)
+    }
+}
 
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(item.message)
-                                    .font(.headline)
-                                HStack {
-                                    Text(item.workspacePath)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                    Text(item.receivedAt, style: .time)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
+// MARK: - NotificationsView
+
+struct NotificationsView: View {
+    @Bindable var appState: AppState
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(appState.items) { item in
+                    HStack(alignment: .top, spacing: 8) {
+                        Circle()
+                            .fill(item.isRead ? .clear : .blue)
+                            .frame(width: 8, height: 8)
+                            .padding(.top, 6)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.message)
+                                .font(.headline)
+                            HStack {
+                                Text(item.workspacePath)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text(item.receivedAt, style: .time)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            self.appState.markRead(item.id)
-                            if let terminal = item.terminal {
-                                self.activateTerminalPane(terminal)
-                            }
-                        }
-                        Divider()
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        appState.markRead(item.id)
+                        if let terminal = item.terminal {
+                            activateTerminalPane(terminal)
+                        }
+                    }
+                    Divider()
                 }
             }
         }
-        .frame(minWidth: 520, minHeight: 360)
     }
 
     private func activateTerminalPane(_ terminal: TerminalPayload) {
@@ -93,7 +127,9 @@ struct ContentView: View {
             }
 
             guard let workspaceName = pane["workspace"] as? String, !workspaceName.isEmpty else {
-                print("[workspace-switch] No workspace for pane \(paneId): \(pane["workspace"] ?? "nil")")
+                print(
+                    "[workspace-switch] No workspace for pane \(paneId): \(pane["workspace"] ?? "nil")"
+                )
                 return
             }
 
@@ -105,7 +141,6 @@ struct ContentView: View {
             sendProcess.executableURL = URL(fileURLWithPath: weztermPath)
             sendProcess.arguments = [
                 "cli", "spawn",
-                // The sleep gives time for wezterm to process the escape sequence. Otherwise it doesn't take effect.
                 "--", "/bin/sh", "-c",
                 "printf '\\033]1337;SetUserVar=switch-workspace=\(encodedArgs)\\007' && sleep 0.1",
             ]
@@ -120,7 +155,9 @@ struct ContentView: View {
             try? activateProcess.run()
         }
 
-        if let app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.github.wez.wezterm").first {
+        if let app = NSRunningApplication.runningApplications(withBundleIdentifier:
+            "com.github.wez.wezterm").first
+        {
             app.activate()
         }
     }
@@ -136,5 +173,6 @@ struct ContentView: View {
                 terminal: TerminalPayload(type: "wezterm", paneId: "42")))
             return state
         }(),
+        sessionState: SessionState(),
         startError: nil)
 }

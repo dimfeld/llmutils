@@ -37,30 +37,48 @@ final class AppState {
 @main
 struct TimGUIApp: App {
     @State private var appState = AppState()
+    @State private var sessionState = SessionState()
     @State private var server: LocalHTTPServer?
     @State private var startError: String?
 
     var body: some Scene {
         WindowGroup {
-            ContentView(appState: self.appState, startError: self.startError)
-                .task {
-                    UNUserNotificationCenter.current().requestAuthorization(
-                        options: [.alert, .sound]) { _, _ in }
-                    await self.startServerIfNeeded()
-                }
+            ContentView(
+                appState: self.appState,
+                sessionState: self.sessionState,
+                startError: self.startError
+            )
+            .task {
+                UNUserNotificationCenter.current().requestAuthorization(
+                    options: [.alert, .sound]) { _, _ in }
+                await self.startServerIfNeeded()
+            }
         }
     }
 
     @MainActor
     private func startServerIfNeeded() async {
         guard self.server == nil else { return }
+        let appState = self.appState
+        let sessionState = self.sessionState
         let newServer = LocalHTTPServer(
             port: 8123,
-            handler: { [weak appState] payload in
-                appState?.ingest(payload)
+            handler: { payload in
+                appState.ingest(payload)
             },
-            wsHandler: { _ in
-                // WebSocket events will be wired up when SessionState is added
+            wsHandler: { event in
+                switch event {
+                case .sessionInfo(let connId, let info):
+                    sessionState.addSession(connectionId: connId, info: info)
+                case .output(let connId, let seq, let tunnelMessage):
+                    let message = MessageFormatter.format(
+                        tunnelMessage: tunnelMessage, seq: seq)
+                    sessionState.appendMessage(connectionId: connId, message: message)
+                case .replayStart, .replayEnd:
+                    break
+                case .disconnected(let connId):
+                    sessionState.markDisconnected(connectionId: connId)
+                }
             }
         )
         self.server = newServer
