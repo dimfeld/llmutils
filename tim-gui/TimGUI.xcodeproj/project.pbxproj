@@ -17,6 +17,9 @@
 		A20000000000000000000001 /* ModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* ModelTests.swift */; };
 		A20000000000000000000002 /* AppStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* AppStateTests.swift */; };
 		A20000000000000000000003 /* LocalHTTPServerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* LocalHTTPServerTests.swift */; };
+		A20000000000000000000004 /* SessionModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* SessionModelTests.swift */; };
+		A20000000000000000000005 /* MessageFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* MessageFormatterTests.swift */; };
+		A20000000000000000000006 /* WebSocketTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* WebSocketTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -43,6 +46,9 @@
 		A20000000000000000000011 /* ModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000012 /* AppStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000013 /* LocalHTTPServerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHTTPServerTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000014 /* SessionModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionModelTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000015 /* MessageFormatterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageFormatterTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000016 /* WebSocketTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -110,6 +116,9 @@
 				A20000000000000000000011 /* ModelTests.swift */,
 				A20000000000000000000012 /* AppStateTests.swift */,
 				A20000000000000000000013 /* LocalHTTPServerTests.swift */,
+				A20000000000000000000014 /* SessionModelTests.swift */,
+				A20000000000000000000015 /* MessageFormatterTests.swift */,
+				A20000000000000000000016 /* WebSocketTests.swift */,
 			);
 			path = TimGUITests;
 			sourceTree = "<group>";
@@ -221,6 +230,9 @@
 				A20000000000000000000001 /* ModelTests.swift in Sources */,
 				A20000000000000000000002 /* AppStateTests.swift in Sources */,
 				A20000000000000000000003 /* LocalHTTPServerTests.swift in Sources */,
+				A20000000000000000000004 /* SessionModelTests.swift in Sources */,
+				A20000000000000000000005 /* MessageFormatterTests.swift in Sources */,
+				A20000000000000000000006 /* WebSocketTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
