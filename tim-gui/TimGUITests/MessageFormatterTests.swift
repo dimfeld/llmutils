@@ -402,6 +402,32 @@ struct MessageFormatterTests {
         #expect(msg.text.contains("Build feature"))
     }
 
+    @Test("Formats agent_step_end success as lifecycle with checkmark")
+    func formatsAgentStepEndSuccess() {
+        let payload = AgentStepEndPayload(
+            phase: "implement", success: true, summary: "Completed successfully", timestamp: nil)
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .agentStepEnd(payload)),
+            seq: 155
+        )
+        #expect(msg.category == .lifecycle)
+        #expect(msg.text.contains("Step End: implement ✓"))
+        #expect(msg.text.contains("Completed successfully"))
+    }
+
+    @Test("Formats agent_step_end failure as error with X mark")
+    func formatsAgentStepEndFailure() {
+        let payload = AgentStepEndPayload(
+            phase: "review", success: false, summary: "Tests failed", timestamp: nil)
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .agentStepEnd(payload)),
+            seq: 156
+        )
+        #expect(msg.category == .error)
+        #expect(msg.text.contains("Step End: review ✗"))
+        #expect(msg.text.contains("Tests failed"))
+    }
+
     @Test("Formats workspace_info as log")
     func formatsWorkspaceInfo() {
         let msg = MessageFormatter.format(

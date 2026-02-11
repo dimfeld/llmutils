@@ -773,10 +773,11 @@ enum MessageFormatter {
             return (lines.joined(separator: "\n"), .lifecycle)
 
         case .agentStepEnd(let p):
-            let phase = "Step End: \(p.phase)"
+            let status = p.success ? "✓" : "✗"
+            let phase = "Step End: \(p.phase) \(status)"
             var lines = [header(phase, timestamp: p.timestamp)]
             if let s = p.summary { lines.append(s) }
-            return (lines.joined(separator: "\n"), .lifecycle)
+            return (lines.joined(separator: "\n"), p.success ? .lifecycle : .error)
 
         case .llmThinking(let text, let ts):
             return ("\(header("Thinking", timestamp: ts))\n\(text)", .llmOutput)

@@ -26,9 +26,11 @@ struct ContentView: View {
 
                 Spacer()
 
-                Text("Listening on port 8123")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if startError == nil {
+                    Text("Listening on port 8123")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding(12)
 
@@ -173,6 +175,21 @@ struct NotificationsView: View {
                 terminal: TerminalPayload(type: "wezterm", paneId: "42")))
             return state
         }(),
-        sessionState: SessionState(),
+        sessionState: {
+            let state = SessionState()
+            state.addSession(connectionId: UUID(), info: SessionInfoPayload(
+                command: "agent",
+                planId: 42,
+                planTitle: "Example plan",
+                workspacePath: "/tmp/workspace",
+                gitRemote: nil))
+            if let connId = state.sessions.first?.connectionId {
+                state.appendMessage(connectionId: connId, message: SessionMessage(
+                    seq: 1, text: "### Starting\nExecutor: claude-code", category: .lifecycle))
+                state.appendMessage(connectionId: connId, message: SessionMessage(
+                    seq: 2, text: "Working on task...", category: .progress))
+            }
+            return state
+        }(),
         startError: nil)
 }

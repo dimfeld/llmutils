@@ -12,6 +12,7 @@ struct SessionsView: View {
         } detail: {
             if let session = sessionState.selectedSession {
                 SessionDetailView(session: session)
+                    .id(session.id)
             } else {
                 ContentUnavailableView(
                     "No Session Selected",
@@ -105,6 +106,11 @@ struct SessionDetailView: View {
                     }
                 }
                 .padding(12)
+            }
+            .onAppear {
+                if let lastId = session.messages.last?.id {
+                    proxy.scrollTo(lastId, anchor: .bottom)
+                }
             }
             .onChange(of: session.messages.count) {
                 if let lastId = session.messages.last?.id {

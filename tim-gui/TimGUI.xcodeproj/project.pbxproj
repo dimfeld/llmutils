@@ -22,6 +22,7 @@
 		A20000000000000000000004 /* SessionModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* SessionModelTests.swift */; };
 		A20000000000000000000005 /* MessageFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* MessageFormatterTests.swift */; };
 		A20000000000000000000006 /* WebSocketTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* WebSocketTests.swift */; };
+		A20000000000000000000007 /* SessionStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* SessionStateTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -53,6 +54,7 @@
 		A20000000000000000000014 /* SessionModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionModelTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000015 /* MessageFormatterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageFormatterTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000016 /* WebSocketTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000017 /* SessionStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStateTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -125,6 +127,7 @@
 				A20000000000000000000014 /* SessionModelTests.swift */,
 				A20000000000000000000015 /* MessageFormatterTests.swift */,
 				A20000000000000000000016 /* WebSocketTests.swift */,
+				A20000000000000000000017 /* SessionStateTests.swift */,
 			);
 			path = TimGUITests;
 			sourceTree = "<group>";
@@ -241,6 +244,7 @@
 				A20000000000000000000004 /* SessionModelTests.swift in Sources */,
 				A20000000000000000000005 /* MessageFormatterTests.swift in Sources */,
 				A20000000000000000000006 /* WebSocketTests.swift in Sources */,
+				A20000000000000000000007 /* SessionStateTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

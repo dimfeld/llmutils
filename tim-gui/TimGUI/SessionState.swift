@@ -45,6 +45,7 @@ final class SessionState {
     }
 
     func dismissSession(id: UUID) {
+        guard let session = sessions.first(where: { $0.id == id }), !session.isActive else { return }
         sessions.removeAll { $0.id == id }
         if selectedSessionId == id {
             selectedSessionId = sessions.first?.id
