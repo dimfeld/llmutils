@@ -15,10 +15,10 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-11T21:02:27.568Z
+updatedAt: 2026-02-11T21:27:43.408Z
 tasks:
   - title: Define session data models and headless protocol types
-    done: false
+    done: true
     description: >-
       Create tim-gui/TimGUI/SessionModels.swift with Swift Codable types
       matching the TypeScript headless protocol:
@@ -53,7 +53,7 @@ tasks:
       Use custom init(from:) decoders for the discriminated unions that read the
       'type' field first. All types should be Sendable.
   - title: Implement WebSocket frame parsing and upgrade handshake
-    done: false
+    done: true
     description: >-
       Add WebSocket server support to the existing NWListener-based TCP server.
       Create a WebSocketConnection class (can be in a new file like
@@ -91,7 +91,7 @@ tasks:
       disconnect closure. Use async/await with the existing receiveChunk pattern
       from LocalHTTPServer.
   - title: Upgrade LocalHTTPServer to handle both HTTP and WebSocket
-    done: false
+    done: true
     description: >-
       Refactor LocalHTTPServer (tim-gui/TimGUI/LocalHTTPServer.swift) to route
       between HTTP requests and WebSocket upgrades on the same port 8123:
@@ -212,6 +212,16 @@ tasks:
 
       4. Ensure the window frame is large enough for the two-pane layout
       (increase minWidth if needed)
+changedFiles:
+  - tim-gui/TimGUI/LocalHTTPServer.swift
+  - tim-gui/TimGUI/SessionModels.swift
+  - tim-gui/TimGUI/TimGUIApp.swift
+  - tim-gui/TimGUI/WebSocketConnection.swift
+  - tim-gui/TimGUI.xcodeproj/project.pbxproj
+  - tim-gui/TimGUITests/LocalHTTPServerTests.swift
+  - tim-gui/TimGUITests/MessageFormatterTests.swift
+  - tim-gui/TimGUITests/SessionModelTests.swift
+  - tim-gui/TimGUITests/WebSocketTests.swift
 tags:
   - tim-gui
 ---
@@ -674,3 +684,31 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 4. **JSON decoding**: The headless protocol uses a discriminated union pattern on the `type` field. Swift's `Codable` can handle this with a custom `init(from:)` that reads the type first, then decodes the appropriate payload.
 5. **Frame fragmentation**: WebSocket messages can be split across multiple frames (FIN=0 for continuation frames). The implementation should buffer continuation frames until a FIN=1 frame is received. In practice, the headless adapter sends complete JSON messages as single frames, but the implementation should handle fragmentation for robustness.
 6. **Port 8123 already in use**: If the existing `tim-agent-listener.ts` script is also running on port 8123, the GUI won't be able to bind. This is expected—only one should run at a time.
+
+## Current Progress
+### Current State
+- Tasks 1-3 (data models, WebSocket connection, server upgrade) are complete and reviewed
+- Backend infrastructure is fully operational: the server handles both HTTP and WebSocket on port 8123
+### Completed (So Far)
+- SessionModels.swift: All Codable types for HeadlessMessage, TunnelMessage, StructuredMessagePayload (~28 types), SessionItem, SessionMessage, MessageCategory, plus MessageFormatter
+- WebSocketConnection.swift: Full RFC 6455 frame parsing/sending, upgrade handshake, fragmentation, close/ping/pong, NSLock-protected close state, 16MB frame limit
+- LocalHTTPServer.swift: Routes GET /tim-agent with Upgrade: websocket to WebSocket handler, POST /messages continues as HTTP, WebSocketEvent dispatch with os.Logger
+- All unknown message types handled gracefully with .unknown fallback cases
+- 97 tests passing (including model decoding, message formatting, WebSocket integration)
+### Remaining
+- Task 4: Create SessionState manager and message formatter (wire to state)
+- Task 5: Build the SessionsView two-pane layout
+- Task 6: Add view selector and wire everything together
+### Next Iteration Guidance
+- Tasks 4, 5, and 6 form a natural batch: state management, views, and wiring
+- SessionState should consume WebSocketEvent from LocalHTTPServer
+- The MessageFormatter is already in SessionModels.swift, so Task 4 mainly needs the SessionState class and wiring
+- ContentView needs to be refactored to extract NotificationsView and add the view mode picker
+### Decisions / Changes
+- Used Approach A (unified TCP server) with manual WebSocket frame parsing rather than NWProtocolWebSocket
+- Types are Decodable only (not full Codable) since we only receive, never encode protocol messages
+- All discriminated unions use .unknown fallback for forward compatibility
+- WebSocketConnection uses NSLock for thread safety (not actor, since it needs to interact with NWConnection synchronously)
+- 16MB max frame size limit for security
+### Risks / Blockers
+- None
