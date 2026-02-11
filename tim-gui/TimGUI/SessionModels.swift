@@ -403,7 +403,11 @@ struct PromptAnsweredPayload: Sendable {
 
 extension StructuredMessagePayload: Decodable {
     private enum ExecutionSummaryCodingKeys: String, CodingKey {
-        case planId, planTitle, mode, durationMs, changedFiles, errors
+        case planId, planTitle, mode, durationMs, changedFiles, errors, metadata
+    }
+
+    private enum MetadataCodingKeys: String, CodingKey {
+        case totalSteps, failedSteps
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -617,13 +621,21 @@ extension StructuredMessagePayload: Decodable {
             // The full ExecutionSummary is complex; extract key fields
             let summaryContainer = try container.nestedContainer(
                 keyedBy: ExecutionSummaryCodingKeys.self, forKey: .summary)
+            var totalSteps: Int?
+            var failedSteps: Int?
+            if let metadataContainer = try? summaryContainer.nestedContainer(
+                keyedBy: MetadataCodingKeys.self, forKey: .metadata)
+            {
+                totalSteps = try metadataContainer.decodeIfPresent(Int.self, forKey: .totalSteps)
+                failedSteps = try metadataContainer.decodeIfPresent(Int.self, forKey: .failedSteps)
+            }
             self = .executionSummary(ExecutionSummaryPayload(
                 planId: try summaryContainer.decodeIfPresent(String.self, forKey: .planId),
                 planTitle: try summaryContainer.decodeIfPresent(String.self, forKey: .planTitle),
                 mode: try summaryContainer.decodeIfPresent(String.self, forKey: .mode),
                 durationMs: try summaryContainer.decodeIfPresent(Double.self, forKey: .durationMs),
-                totalSteps: nil,
-                failedSteps: nil,
+                totalSteps: totalSteps,
+                failedSteps: failedSteps,
                 changedFiles: try summaryContainer.decodeIfPresent([String].self, forKey: .changedFiles),
                 errors: try summaryContainer.decodeIfPresent([String].self, forKey: .errors),
                 timestamp: timestamp))
@@ -687,24 +699,25 @@ private func truncateLines(_ text: String) -> String {
     return lines.prefix(truncateLineCount).joined(separator: "\n") + "\n... (\(truncated) lines truncated)"
 }
 
-private nonisolated(unsafe) let isoFormatterWithFractions: ISO8601DateFormatter = {
+@MainActor private let isoFormatterWithFractions: ISO8601DateFormatter = {
     let f = ISO8601DateFormatter()
     f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return f
 }()
 
-private nonisolated(unsafe) let isoFormatterWithoutFractions: ISO8601DateFormatter = {
+@MainActor private let isoFormatterWithoutFractions: ISO8601DateFormatter = {
     let f = ISO8601DateFormatter()
     f.formatOptions = [.withInternetDateTime]
     return f
 }()
 
-private nonisolated(unsafe) let timeFormatter: DateFormatter = {
+@MainActor private let timeFormatter: DateFormatter = {
     let f = DateFormatter()
     f.dateFormat = "HH:mm:ss"
     return f
 }()
 
+@MainActor
 private func formatTimestamp(_ ts: String?) -> String {
     guard let ts else { return "" }
     let date = isoFormatterWithFractions.date(from: ts)
@@ -713,10 +726,12 @@ private func formatTimestamp(_ ts: String?) -> String {
     return " [\(timeFormatter.string(from: date))]"
 }
 
+@MainActor
 private func header(_ title: String, timestamp: String?) -> String {
     "### \(title)\(formatTimestamp(timestamp))"
 }
 
+@MainActor
 enum MessageFormatter {
     static func format(tunnelMessage: TunnelMessage, seq: Int) -> SessionMessage {
         switch tunnelMessage {
@@ -854,13 +869,35 @@ enum MessageFormatter {
         case .reviewStart(let executor, _, let ts):
             return ("\(header("Executing Review", timestamp: ts))\n\(executor ?? "unknown executor")", .lifecycle)
 
-        case .reviewResult:
-            // Silent in console formatter too; review output is logged separately
-            return ("", .lifecycle)
+        case .reviewResult(let p):
+            var lines = [header("Review Result", timestamp: p.timestamp)]
+            lines.append("Issues: \(p.issues.count)")
+            if !p.recommendations.isEmpty {
+                lines.append("Recommendations: \(p.recommendations.count)")
+            }
+            if !p.actionItems.isEmpty {
+                lines.append("Action items: \(p.actionItems.count)")
+            }
+            for issue in p.issues {
+                var issueLine = "- "
+                if let sev = issue.severity { issueLine += "[\(sev)] " }
+                if let content = issue.content { issueLine += content }
+                if let file = issue.file {
+                    issueLine += " (\(file)"
+                    if let line = issue.line { issueLine += ":\(line)" }
+                    issueLine += ")"
+                }
+                lines.append(issueLine)
+            }
+            return (lines.joined(separator: "\n"), .lifecycle)
 
-        case .reviewVerdict:
-            // Silent in console formatter too
-            return ("", .lifecycle)
+        case .reviewVerdict(let verdict, let fixInstructions, let ts):
+            var lines = [header("Review Verdict", timestamp: ts)]
+            lines.append("Verdict: \(verdict)")
+            if let instructions = fixInstructions {
+                lines.append(instructions)
+            }
+            return (lines.joined(separator: "\n"), .lifecycle)
 
         case .workflowProgress(let message, let phase, _):
             let text = phase.map { "[\($0)] \(message)" } ?? message

@@ -7,7 +7,7 @@ goal: Add WebSocket server support to tim-gui so it can receive and display
 id: 169
 uuid: 85aa17d2-7d55-4d91-afbb-09821893a59a
 generatedBy: agent
-status: done
+status: in_progress
 priority: medium
 parent: 160
 references:
@@ -15,7 +15,7 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-11T21:46:49.286Z
+updatedAt: 2026-02-12T00:12:19.658Z
 tasks:
   - title: Define session data models and headless protocol types
     done: true
@@ -212,6 +212,165 @@ tasks:
 
       4. Ensure the window frame is large enough for the two-pane layout
       (increase minWidth if needed)
+  - title: "Address Review Feedback: `review_result` and `review_verdict` events are
+      intentionally formatted as empty strings and then filtered out in the
+      session detail UI, so these protocol messages never appear in the Sessions
+      pane."
+    done: false
+    description: >-
+      `review_result` and `review_verdict` events are intentionally formatted as
+      empty strings and then filtered out in the session detail UI, so these
+      protocol messages never appear in the Sessions pane. That violates the
+      plan requirement to show session content/messages as they arrive and to
+      format review lifecycle output.
+
+
+      Suggestion: Render non-empty summaries for
+      `review_result`/`review_verdict` (at minimum verdict + issue counts), and
+      stop dropping these messages in the detail view.
+
+
+      Related file: tim-gui/TimGUI/SessionModels.swift:857
+  - title: "Address Review Feedback: When readRequest reads the HTTP request from
+      the connection, it may consume data beyond the \\r\\n\\r\\n header
+      boundary if it arrives in the same TCP segment."
+    done: false
+    description: >-
+      When readRequest reads the HTTP request from the connection, it may
+      consume data beyond the \r\n\r\n header boundary if it arrives in the same
+      TCP segment. For WebSocket upgrades, contentLength is 0, so the method
+      breaks out of the loop and returns — but any extra bytes after the headers
+      that were read into the local buffer are discarded. The
+      WebSocketConnection then starts its own readLoop() which issues fresh
+      receive() calls, potentially missing data that was already consumed. In
+      practice this is unlikely because well-behaved WebSocket clients wait for
+      the 101 response before sending frames, but it's still a protocol
+      correctness gap.
+
+
+      Suggestion: Pass any leftover bytes from the HTTP read buffer (after the
+      \r\n\r\n) to the WebSocketConnection so it can prepend them to its read
+      state before starting the readLoop.
+
+
+      Related file: tim-gui/TimGUI/LocalHTTPServer.swift:113-123
+  - title: "Address Review Feedback: `execution_summary` decoding throws away
+      summary statistics by hardcoding `totalSteps` and `failedSteps` to `nil`."
+    done: false
+    description: >-
+      `execution_summary` decoding throws away summary statistics by hardcoding
+      `totalSteps` and `failedSteps` to `nil`. The formatter only prints these
+      fields when non-nil, so required execution summary stats never show in the
+      UI.
+
+
+      Suggestion: Decode `summary.metadata.totalSteps` and
+      `summary.metadata.failedSteps` into `ExecutionSummaryPayload` and render
+      them in `MessageFormatter`.
+
+
+      Related file: tim-gui/TimGUI/SessionModels.swift:615
+  - title: "Address Review Feedback: The close() method calls onDisconnect()
+      synchronously on the calling thread immediately after launching a
+      fire-and-forget Task to send the close frame."
+    done: false
+    description: >-
+      The close() method calls onDisconnect() synchronously on the calling
+      thread immediately after launching a fire-and-forget Task to send the
+      close frame. This means: (1) onDisconnect fires before the close frame is
+      actually sent, (2) handleWebSocketDisconnect removes the connection from
+      wsConnections immediately while the Task is still trying to send on the
+      connection, and (3) if server.stop() is called concurrently, the
+      connection may be cancelled mid-send. The onDisconnect callback fires to
+      the session state before the graceful close completes.
+
+
+      Suggestion: Move onDisconnect() inside the Task block, after the close
+      frame send completes (or fails) and after connection.cancel(), so the
+      disconnect notification happens in the correct order.
+
+
+      Related file: tim-gui/TimGUI/WebSocketConnection.swift:203-211
+  - title: "Address Review Feedback: The new WebSocket tests do not cover the
+      highest-risk protocol paths that were explicitly implemented: fragmented
+      messages, ping/pong handling, and oversize-frame rejection."
+    done: false
+    description: >-
+      The new WebSocket tests do not cover the highest-risk protocol paths that
+      were explicitly implemented: fragmented messages, ping/pong handling, and
+      oversize-frame rejection. Current tests mainly validate handshake and
+      simple text frames, leaving critical frame-parser behavior unverified.
+
+
+      Suggestion: Add integration tests for fragmented text reassembly,
+      ping->pong responses, close handshake behavior, and oversized
+      frame/fragment rejection.
+
+
+      Related file: tim-gui/TimGUITests/WebSocketTests.swift:142
+  - title: "Address Review Feedback: The text 'Listening on port 8123' is
+      hard-coded, but LocalHTTPServer supports dynamic port binding (port: 0 in
+      tests)."
+    done: false
+    description: >-
+      The text 'Listening on port 8123' is hard-coded, but LocalHTTPServer
+      supports dynamic port binding (port: 0 in tests). If the server's port
+      configuration were ever changed, this text would be wrong.
+
+
+      Suggestion: Consider passing the actual bound port to ContentView or
+      deriving it from the server state.
+
+
+      Related file: tim-gui/TimGUI/ContentView.swift:30-31
+  - title: "Address Review Feedback: After the listener successfully starts, the
+      stateUpdateHandler is set to nil."
+    done: false
+    description: >-
+      After the listener successfully starts, the stateUpdateHandler is set to
+      nil. If the NWListener subsequently fails (e.g., the port becomes
+      unavailable or the network interface changes), there's no way to detect or
+      recover from this. The server will silently stop accepting connections.
+
+
+      Suggestion: Set a new stateUpdateHandler after startup that logs errors or
+      updates the startError state instead of setting it to nil.
+
+
+      Related file: tim-gui/TimGUI/LocalHTTPServer.swift:90
+  - title: "Address Review Feedback: The three DateFormatter/ISO8601DateFormatter
+      instances are declared as nonisolated(unsafe) global lets."
+    done: false
+    description: >-
+      The three DateFormatter/ISO8601DateFormatter instances are declared as
+      nonisolated(unsafe) global lets. DateFormatter is not thread-safe per
+      Apple's documentation. MessageFormatter.format() is currently called from
+      @MainActor context, but neither MessageFormatter nor formatTimestamp are
+      explicitly @MainActor-isolated. The nonisolated(unsafe) annotation
+      explicitly opts out of concurrency safety checks, so future callers could
+      invoke these off the main actor and cause data races.
+
+
+      Suggestion: Either restrict MessageFormatter to @MainActor, use a lock
+      around formatter access, or replace DateFormatter with a manual parsing
+      approach.
+
+
+      Related file: tim-gui/TimGUI/SessionModels.swift:690-706
+  - title: "Address Review Feedback: Pre-existing: activateTerminalPane uses
+      Process.waitUntilExit() inside Task.detached which blocks a cooperative
+      thread from the thread pool."
+    done: false
+    description: >-
+      Pre-existing: activateTerminalPane uses Process.waitUntilExit() inside
+      Task.detached which blocks a cooperative thread from the thread pool.
+
+
+      Suggestion: Use Process termination handler or async wrapper instead of
+      blocking waitUntilExit.
+
+
+      Related file: tim-gui/TimGUI/ContentView.swift:112-113
 changedFiles:
   - tim-gui/TimGUI/ContentView.swift
   - tim-gui/TimGUI/LocalHTTPServer.swift

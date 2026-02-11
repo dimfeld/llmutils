@@ -40,13 +40,15 @@ struct TimGUIApp: App {
     @State private var sessionState = SessionState()
     @State private var server: LocalHTTPServer?
     @State private var startError: String?
+    @State private var serverPort: UInt16?
 
     var body: some Scene {
         WindowGroup {
             ContentView(
                 appState: self.appState,
                 sessionState: self.sessionState,
-                startError: self.startError
+                startError: self.startError,
+                serverPort: self.serverPort
             )
             .task {
                 UNUserNotificationCenter.current().requestAuthorization(
@@ -84,6 +86,7 @@ struct TimGUIApp: App {
         self.server = newServer
         do {
             try await newServer.start()
+            self.serverPort = newServer.boundPort
         } catch {
             self.startError = "Failed to start server: \(error.localizedDescription)"
         }

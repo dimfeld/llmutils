@@ -4,6 +4,7 @@ import Testing
 @testable import TimGUI
 
 @Suite("MessageFormatter")
+@MainActor
 struct MessageFormatterTests {
     // MARK: - Args messages
 

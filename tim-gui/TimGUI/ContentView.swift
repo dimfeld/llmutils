@@ -11,6 +11,7 @@ struct ContentView: View {
     @Bindable var appState: AppState
     @Bindable var sessionState: SessionState
     let startError: String?
+    let serverPort: UInt16?
     @State private var viewMode: AppViewMode = .sessions
 
     var body: some View {
@@ -26,8 +27,8 @@ struct ContentView: View {
 
                 Spacer()
 
-                if startError == nil {
-                    Text("Listening on port 8123")
+                if let port = serverPort, startError == nil {
+                    Text("Listening on port \(port)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -191,5 +192,6 @@ struct NotificationsView: View {
             }
             return state
         }(),
-        startError: nil)
+        startError: nil,
+        serverPort: 8123)
 }
