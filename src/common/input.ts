@@ -6,6 +6,7 @@ import {
   checkbox as inquirerCheckbox,
 } from '@inquirer/prompts';
 import { getLoggerAdapter } from '../logging/adapter.js';
+import { HeadlessAdapter } from '../logging/headless_adapter.js';
 import { TunnelAdapter } from '../logging/tunnel_client.js';
 import { sendStructured } from '../logging.js';
 import type {
@@ -86,6 +87,91 @@ function createTimeoutSignal(timeoutMs: number): {
 }
 
 /**
+ * Returns the HeadlessAdapter if the current async context is running with a
+ * headless websocket connection, or undefined if not.
+ */
+function getHeadlessAdapter(): HeadlessAdapter | undefined {
+  const adapter = getLoggerAdapter();
+  return adapter instanceof HeadlessAdapter ? adapter : undefined;
+}
+
+/**
+ * Sends a prompt_answered structured message after a prompt is resolved.
+ */
+function sendPromptAnswered(
+  promptMessage: PromptRequestMessage,
+  value: unknown,
+  source: 'terminal' | 'websocket'
+): void {
+  sendStructured({
+    type: 'prompt_answered',
+    timestamp: new Date().toISOString(),
+    requestId: promptMessage.requestId,
+    promptType: promptMessage.promptType,
+    value,
+    source,
+  });
+}
+
+/**
+ * Races a terminal inquirer prompt against a websocket prompt response.
+ * Whichever channel responds first wins; the loser is cancelled.
+ * After resolution, a prompt_answered structured message is broadcast.
+ */
+async function raceWithWebSocket<T>(
+  headlessAdapter: HeadlessAdapter,
+  promptMessage: PromptRequestMessage,
+  runInquirer: (signal?: AbortSignal) => Promise<T>,
+  timeoutMs?: number
+): Promise<T> {
+  const { promise: wsPromise, cancel: cancelWs } = headlessAdapter.waitForPromptResponse(
+    promptMessage.requestId
+  );
+  // Suppress unhandled rejection (cancel() rejects the promise)
+  wsPromise.catch(() => {});
+
+  const wsAbortController = new AbortController();
+  // When ws resolves, abort the terminal prompt
+  wsPromise.then(
+    () => wsAbortController.abort(),
+    () => {}
+  );
+
+  // Combine ws-abort signal with optional timeout signal
+  let timeoutCleanup: (() => void) | undefined;
+  const signals: AbortSignal[] = [wsAbortController.signal];
+  if (timeoutMs != null && timeoutMs > 0) {
+    const timeout = createTimeoutSignal(timeoutMs);
+    signals.push(timeout.signal);
+    timeoutCleanup = timeout.cleanup;
+  }
+  const combinedSignal = signals.length === 1 ? signals[0] : AbortSignal.any(signals);
+
+  try {
+    // Attempt terminal prompt -- may complete or be aborted by ws/timeout
+    const value = await runInquirer(combinedSignal);
+    // Terminal won
+    cancelWs();
+    sendPromptAnswered(promptMessage, value, 'terminal');
+    return value;
+  } catch (err) {
+    // Terminal was aborted. Was it because ws responded?
+    cancelWs(); // Clean up ws regardless
+    try {
+      const wsValue = await wsPromise;
+      // WS won (promise already resolved before cancel was called)
+      sendPromptAnswered(promptMessage, wsValue, 'websocket');
+      return wsValue as T;
+    } catch {
+      // WS was also cancelled/failed -- rethrow the original error (likely timeout)
+      throw err;
+    }
+  } finally {
+    timeoutCleanup?.();
+  }
+}
+
+/**
  * Prompts the user for a yes/no confirmation.
  *
  * When running inside a tunnel (subagent), the prompt is transparently forwarded
@@ -114,16 +200,28 @@ export async function promptConfirm(options: {
 
   sendStructured(promptMessage);
 
+  const headlessAdapter = getHeadlessAdapter();
+  if (headlessAdapter) {
+    return raceWithWebSocket(
+      headlessAdapter,
+      promptMessage,
+      (signal) => inquirerConfirm({ message, default: defaultValue }, { signal }),
+      timeoutMs
+    );
+  }
+
   let timeout: { signal: AbortSignal; cleanup: () => void } | undefined;
   if (timeoutMs != null && timeoutMs > 0) {
     timeout = createTimeoutSignal(timeoutMs);
   }
 
   try {
-    return await inquirerConfirm(
+    const value = await inquirerConfirm(
       { message, default: defaultValue },
       timeout ? { signal: timeout.signal } : undefined
     );
+    sendPromptAnswered(promptMessage, value, 'terminal');
+    return value;
   } finally {
     timeout?.cleanup();
   }
@@ -166,16 +264,29 @@ export async function promptSelect<Value extends string | number | boolean>(opti
 
   sendStructured(promptMessage);
 
+  const headlessAdapter = getHeadlessAdapter();
+  if (headlessAdapter) {
+    return raceWithWebSocket(
+      headlessAdapter,
+      promptMessage,
+      (signal) =>
+        inquirerSelect<Value>({ message, choices, default: defaultValue, pageSize }, { signal }),
+      timeoutMs
+    );
+  }
+
   let timeout: { signal: AbortSignal; cleanup: () => void } | undefined;
   if (timeoutMs != null && timeoutMs > 0) {
     timeout = createTimeoutSignal(timeoutMs);
   }
 
   try {
-    return await inquirerSelect<Value>(
+    const value = await inquirerSelect<Value>(
       { message, choices, default: defaultValue, pageSize },
       timeout ? { signal: timeout.signal } : undefined
     );
+    sendPromptAnswered(promptMessage, value, 'terminal');
+    return value;
   } finally {
     timeout?.cleanup();
   }
@@ -212,16 +323,28 @@ export async function promptInput(options: {
 
   sendStructured(promptMessage);
 
+  const headlessAdapter = getHeadlessAdapter();
+  if (headlessAdapter) {
+    return raceWithWebSocket(
+      headlessAdapter,
+      promptMessage,
+      (signal) => inquirerInput({ message, default: defaultValue }, { signal }),
+      timeoutMs
+    );
+  }
+
   let timeout: { signal: AbortSignal; cleanup: () => void } | undefined;
   if (timeoutMs != null && timeoutMs > 0) {
     timeout = createTimeoutSignal(timeoutMs);
   }
 
   try {
-    return await inquirerInput(
+    const value = await inquirerInput(
       { message, default: defaultValue },
       timeout ? { signal: timeout.signal } : undefined
     );
+    sendPromptAnswered(promptMessage, value, 'terminal');
+    return value;
   } finally {
     timeout?.cleanup();
   }
@@ -263,16 +386,28 @@ export async function promptCheckbox<Value extends string | number | boolean>(op
 
   sendStructured(promptMessage);
 
+  const headlessAdapter = getHeadlessAdapter();
+  if (headlessAdapter) {
+    return raceWithWebSocket(
+      headlessAdapter,
+      promptMessage,
+      (signal) => inquirerCheckbox<Value>({ message, choices, pageSize }, { signal }),
+      timeoutMs
+    );
+  }
+
   let timeout: { signal: AbortSignal; cleanup: () => void } | undefined;
   if (timeoutMs != null && timeoutMs > 0) {
     timeout = createTimeoutSignal(timeoutMs);
   }
 
   try {
-    return await inquirerCheckbox<Value>(
+    const value = await inquirerCheckbox<Value>(
       { message, choices, pageSize },
       timeout ? { signal: timeout.signal } : undefined
     );
+    sendPromptAnswered(promptMessage, value, 'terminal');
+    return value;
   } finally {
     timeout?.cleanup();
   }

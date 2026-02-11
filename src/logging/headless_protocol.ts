@@ -36,3 +36,14 @@ export type HeadlessMessage =
   | HeadlessOutputMessage
   | HeadlessReplayStartMessage
   | HeadlessReplayEndMessage;
+
+/** Server→client message: response to a prompt_request. */
+export interface HeadlessPromptResponseServerMessage {
+  type: 'prompt_response';
+  requestId: string;
+  value?: unknown;
+  error?: string;
+}
+
+/** Discriminated union of all server→client messages over the headless websocket. */
+export type HeadlessServerMessage = HeadlessPromptResponseServerMessage;

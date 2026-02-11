@@ -3,6 +3,7 @@ import { ConsoleAdapter } from './console.js';
 import type {
   HeadlessMessage,
   HeadlessOutputMessage,
+  HeadlessServerMessage,
   HeadlessSessionInfo,
   HeadlessSessionInfoMessage,
 } from './headless_protocol.js';
@@ -21,6 +22,33 @@ interface QueuedMessage {
 interface HeadlessAdapterOptions {
   maxBufferBytes?: number;
   reconnectIntervalMs?: number;
+}
+
+/** Pending prompt request entry tracked by the HeadlessAdapter. */
+interface PendingPromptRequest {
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
+}
+
+/**
+ * Validates that a parsed JSON object is a valid HeadlessServerMessage.
+ */
+function isValidHeadlessServerMessage(message: unknown): message is HeadlessServerMessage {
+  if (typeof message !== 'object' || message === null) {
+    return false;
+  }
+
+  const msg = message as Record<string, unknown>;
+
+  switch (msg.type) {
+    case 'prompt_response':
+      return (
+        typeof msg.requestId === 'string' &&
+        (msg.error === undefined || typeof msg.error === 'string')
+      );
+    default:
+      return false;
+  }
 }
 
 const DEFAULT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
@@ -44,6 +72,7 @@ export class HeadlessAdapter implements LoggerAdapter {
   private drainGeneration = 0;
   private destroyed = false;
   private nextOutputSequence = 1;
+  private pendingPrompts: Map<string, PendingPromptRequest> = new Map();
 
   constructor(
     url: string,
@@ -100,6 +129,7 @@ export class HeadlessAdapter implements LoggerAdapter {
   destroySync(): void {
     this.destroyed = true;
     this.drainGeneration += 1;
+    this.rejectAllPending();
 
     if (
       this.socket &&
@@ -119,6 +149,7 @@ export class HeadlessAdapter implements LoggerAdapter {
   async destroy(timeoutMs: number = 2000): Promise<void> {
     this.destroyed = true;
     this.state = 'draining';
+    this.rejectAllPending();
     const deadline = Date.now() + timeoutMs;
     const connectWaitMs = Math.max(0, Math.floor(timeoutMs / 2));
 
@@ -149,6 +180,72 @@ export class HeadlessAdapter implements LoggerAdapter {
 
     this.socket = undefined;
     this.state = 'disconnected';
+  }
+
+  /**
+   * Handles an incoming server→client message from the websocket.
+   */
+  private handleServerMessage(message: HeadlessServerMessage): void {
+    switch (message.type) {
+      case 'prompt_response': {
+        const pending = this.pendingPrompts.get(message.requestId);
+        if (!pending) {
+          // Unknown requestId -- silently ignore (may have already been cancelled)
+          return;
+        }
+        if (message.error) {
+          // Error responses are logged and the pending entry is removed, but the promise
+          // is NOT rejected -- terminal continues as the fallback input source.
+          this.wrappedAdapter.warn(
+            `Headless prompt error for ${message.requestId}: ${message.error}`
+          );
+          this.pendingPrompts.delete(message.requestId);
+          return;
+        }
+        this.pendingPrompts.delete(message.requestId);
+        pending.resolve(message.value);
+        break;
+      }
+    }
+  }
+
+  /**
+   * Registers a pending prompt and returns a promise that resolves when
+   * a matching prompt_response arrives over the websocket.
+   *
+   * The returned `cancel()` removes the entry and rejects the promise.
+   * Callers should add `.catch(() => {})` to the returned promise to
+   * suppress unhandled rejections when cancel is called.
+   */
+  waitForPromptResponse(requestId: string): { promise: Promise<unknown>; cancel: () => void } {
+    let resolve!: (value: unknown) => void;
+    let reject!: (error: Error) => void;
+    const promise = new Promise<unknown>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+
+    this.pendingPrompts.set(requestId, { resolve, reject });
+
+    const cancel = () => {
+      if (this.pendingPrompts.delete(requestId)) {
+        reject(new Error('Prompt cancelled'));
+      }
+    };
+
+    return { promise, cancel };
+  }
+
+  /**
+   * Rejects all pending prompt requests. Called only from destroy()/destroySync(),
+   * NOT on websocket disconnect (pending prompts survive disconnects).
+   */
+  private rejectAllPending(): void {
+    const error = new Error('HeadlessAdapter destroyed');
+    for (const [requestId, pending] of this.pendingPrompts) {
+      pending.reject(error);
+      this.pendingPrompts.delete(requestId);
+    }
   }
 
   private enqueueTunnelMessage(message: TunnelMessage): void {
@@ -233,6 +330,21 @@ export class HeadlessAdapter implements LoggerAdapter {
     }
 
     this.socket = socket;
+
+    socket.onmessage = (event) => {
+      const data =
+        typeof event.data === 'string'
+          ? event.data
+          : new TextDecoder().decode(event.data as ArrayBuffer);
+      try {
+        const parsed = JSON.parse(data);
+        if (isValidHeadlessServerMessage(parsed)) {
+          this.handleServerMessage(parsed);
+        }
+      } catch {
+        // Malformed JSON -- silently ignore
+      }
+    };
 
     socket.onopen = () => {
       if (this.socket !== socket || (this.destroyed && this.state !== 'draining')) {

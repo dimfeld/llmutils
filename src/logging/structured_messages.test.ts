@@ -69,6 +69,14 @@ describe('structured_messages', () => {
         promptType: 'confirm',
         promptConfig: { message: 'Continue?' },
       },
+      {
+        type: 'prompt_answered',
+        timestamp,
+        requestId: 'test-id',
+        promptType: 'confirm',
+        value: true,
+        source: 'terminal',
+      },
       { type: 'plan_discovery', timestamp, planId: 1, title: 'Plan' },
       { type: 'workspace_info', timestamp, path: '/tmp/ws' },
     ];

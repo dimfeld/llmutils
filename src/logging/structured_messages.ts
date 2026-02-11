@@ -232,6 +232,14 @@ export interface PromptRequestMessage extends StructuredMessageBase {
   timeoutMs?: number;
 }
 
+export interface PromptAnsweredMessage extends StructuredMessageBase {
+  type: 'prompt_answered';
+  requestId: string;
+  promptType: PromptType;
+  value?: unknown;
+  source: 'terminal' | 'websocket';
+}
+
 export interface PlanDiscoveryMessage extends StructuredMessageBase {
   type: 'plan_discovery';
   planId: number;
@@ -272,6 +280,7 @@ export type StructuredMessage =
   | TokenUsageMessage
   | InputRequiredMessage
   | PromptRequestMessage
+  | PromptAnsweredMessage
   | PlanDiscoveryMessage
   | WorkspaceInfoMessage;
 
@@ -302,6 +311,7 @@ export const structuredMessageTypeList = [
   'token_usage',
   'input_required',
   'prompt_request',
+  'prompt_answered',
   'plan_discovery',
   'workspace_info',
 ] as const satisfies readonly StructuredMessage['type'][];

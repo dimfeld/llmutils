@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { HeadlessAdapter } from './headless_adapter.ts';
-import type { HeadlessMessage } from './headless_protocol.ts';
+import type { HeadlessMessage, HeadlessServerMessage } from './headless_protocol.ts';
 import { createRecordingAdapter } from './test_helpers.ts';
 import { debug, setDebug } from '../common/process.ts';
 
@@ -997,6 +997,490 @@ describe('HeadlessAdapter', () => {
     expect(internals.historyOutputBytes).toBeLessThanOrEqual(maxBufferBytes);
     expect(internals.bufferedOutputBytes).toBe(0);
     assertByteCountersMatchInternals(internals);
+
+    await adapter.destroy();
+  });
+});
+
+/** A websocket server that can send messages back to clients (for prompt tests). */
+async function createPromptWebSocketServer(): Promise<{
+  port: number;
+  messages: HeadlessMessage[];
+  getOpenCount: () => number;
+  close: () => void;
+  disconnectClients: () => void;
+  sendToAll: (message: HeadlessServerMessage) => void;
+}> {
+  const messages: HeadlessMessage[] = [];
+  const clients = new Set<ServerWebSocket<unknown>>();
+  let openCount = 0;
+
+  const server = Bun.serve({
+    port: 0,
+    fetch(req, srv) {
+      const url = new URL(req.url);
+      if (url.pathname === '/tim-agent' && srv.upgrade(req)) {
+        return;
+      }
+      return new Response('Not Found', { status: 404 });
+    },
+    websocket: {
+      open(ws) {
+        openCount += 1;
+        clients.add(ws);
+      },
+      message(_, message) {
+        const parsed = parseMessage(message);
+        if (parsed) {
+          messages.push(parsed);
+        }
+      },
+      close(ws) {
+        clients.delete(ws);
+      },
+    },
+  });
+
+  return {
+    port: server.port,
+    messages,
+    getOpenCount: () => openCount,
+    close: () => {
+      for (const ws of clients) {
+        ws.close();
+      }
+      server.stop(true);
+    },
+    disconnectClients: () => {
+      for (const ws of clients) {
+        ws.close();
+      }
+    },
+    sendToAll: (message: HeadlessServerMessage) => {
+      const payload = JSON.stringify(message);
+      for (const ws of clients) {
+        ws.send(payload);
+      }
+    },
+  };
+}
+
+describe('HeadlessAdapter prompt handling', () => {
+  it('waitForPromptResponse resolves when a matching prompt_response with value is received', async () => {
+    const server = await createPromptWebSocketServer();
+    serversToClose.push(server);
+
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      `ws://127.0.0.1:${server.port}/tim-agent`,
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+    );
+
+    // Trigger connection
+    adapter.log('connect');
+    await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
+
+    const { promise, cancel } = adapter.waitForPromptResponse('req-1');
+    promise.catch(() => {});
+
+    // Send prompt_response from server
+    server.sendToAll({
+      type: 'prompt_response',
+      requestId: 'req-1',
+      value: true,
+    });
+
+    const result = await promise;
+    expect(result).toBe(true);
+
+    // Verify pending map is cleaned up
+    const internals = adapter as any;
+    expect(internals.pendingPrompts.size).toBe(0);
+
+    await adapter.destroy();
+  });
+
+  it('waitForPromptResponse resolves with complex values', async () => {
+    const server = await createPromptWebSocketServer();
+    serversToClose.push(server);
+
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      `ws://127.0.0.1:${server.port}/tim-agent`,
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+    );
+
+    adapter.log('connect');
+    await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
+
+    const { promise } = adapter.waitForPromptResponse('req-complex');
+    promise.catch(() => {});
+
+    server.sendToAll({
+      type: 'prompt_response',
+      requestId: 'req-complex',
+      value: ['opt1', 'opt3'],
+    });
+
+    const result = await promise;
+    expect(result).toEqual(['opt1', 'opt3']);
+
+    await adapter.destroy();
+  });
+
+  it('error responses are logged, pending entry removed, promise stays pending', async () => {
+    const server = await createPromptWebSocketServer();
+    serversToClose.push(server);
+
+    const { adapter: wrapped, calls } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      `ws://127.0.0.1:${server.port}/tim-agent`,
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+    );
+
+    adapter.log('connect');
+    await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
+
+    const { promise } = adapter.waitForPromptResponse('req-err');
+    promise.catch(() => {});
+
+    // Send error response
+    server.sendToAll({
+      type: 'prompt_response',
+      requestId: 'req-err',
+      error: 'Something went wrong',
+    });
+
+    // Wait briefly for the message to be processed
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // The pending entry should be removed (no point keeping a leaked entry)
+    const internals = adapter as any;
+    expect(internals.pendingPrompts.has('req-err')).toBe(false);
+
+    // But the promise should still be pending (not resolved or rejected),
+    // so terminal can continue as the fallback input source
+    let settled = false;
+    promise.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      }
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(settled).toBe(false);
+
+    // The error should have been logged as a warning on the wrapped adapter
+    const warnCalls = calls.filter((c) => c.method === 'warn');
+    expect(warnCalls.some((c) => String(c.args[0]).includes('req-err'))).toBe(true);
+    expect(warnCalls.some((c) => String(c.args[0]).includes('Something went wrong'))).toBe(true);
+
+    await adapter.destroy();
+  });
+
+  it('cancel() removes the pending entry and rejects the promise', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      'ws://127.0.0.1:1/tim-agent',
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+    );
+
+    const { promise, cancel } = adapter.waitForPromptResponse('req-cancel');
+    promise.catch(() => {});
+
+    const internals = adapter as any;
+    expect(internals.pendingPrompts.has('req-cancel')).toBe(true);
+
+    cancel();
+
+    expect(internals.pendingPrompts.has('req-cancel')).toBe(false);
+
+    await expect(promise).rejects.toThrow('Prompt cancelled');
+
+    await adapter.destroy();
+  });
+
+  it('cancel() is idempotent (second call is a no-op)', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      'ws://127.0.0.1:1/tim-agent',
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+    );
+
+    const { promise, cancel } = adapter.waitForPromptResponse('req-idem');
+    promise.catch(() => {});
+
+    cancel();
+    expect(() => cancel()).not.toThrow();
+
+    await adapter.destroy();
+  });
+
+  it('destroy() rejects all pending prompts', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      'ws://127.0.0.1:1/tim-agent',
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+    );
+
+    const { promise: p1 } = adapter.waitForPromptResponse('req-d1');
+    const { promise: p2 } = adapter.waitForPromptResponse('req-d2');
+    p1.catch(() => {});
+    p2.catch(() => {});
+
+    await adapter.destroy();
+
+    await expect(p1).rejects.toThrow('HeadlessAdapter destroyed');
+    await expect(p2).rejects.toThrow('HeadlessAdapter destroyed');
+
+    const internals = adapter as any;
+    expect(internals.pendingPrompts.size).toBe(0);
+  });
+
+  it('destroySync() rejects all pending prompts', () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      'ws://127.0.0.1:1/tim-agent',
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+    );
+
+    const { promise: p1 } = adapter.waitForPromptResponse('req-ds1');
+    const { promise: p2 } = adapter.waitForPromptResponse('req-ds2');
+    p1.catch(() => {});
+    p2.catch(() => {});
+
+    adapter.destroySync();
+
+    // Promises should reject on the next microtask
+    expect(p1).rejects.toThrow('HeadlessAdapter destroyed');
+    expect(p2).rejects.toThrow('HeadlessAdapter destroyed');
+  });
+
+  it('unknown requestIds are silently ignored', async () => {
+    const server = await createPromptWebSocketServer();
+    serversToClose.push(server);
+
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      `ws://127.0.0.1:${server.port}/tim-agent`,
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+    );
+
+    adapter.log('connect');
+    await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
+
+    // Register a pending prompt with a different ID
+    const { promise, cancel } = adapter.waitForPromptResponse('req-known');
+    promise.catch(() => {});
+
+    // Send a response with an unknown requestId
+    server.sendToAll({
+      type: 'prompt_response',
+      requestId: 'req-unknown',
+      value: 'should-be-ignored',
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // The known pending prompt should still be in the map
+    const internals = adapter as any;
+    expect(internals.pendingPrompts.has('req-known')).toBe(true);
+
+    cancel();
+    await adapter.destroy();
+  });
+
+  it('malformed incoming messages are silently ignored', async () => {
+    // We need a server that can send raw strings (not just HeadlessServerMessage)
+    const clients = new Set<ServerWebSocket<unknown>>();
+    const serverInstance = Bun.serve({
+      port: 0,
+      fetch(req, srv) {
+        const url = new URL(req.url);
+        if (url.pathname === '/tim-agent' && srv.upgrade(req)) {
+          return;
+        }
+        return new Response('Not Found', { status: 404 });
+      },
+      websocket: {
+        open(ws) {
+          clients.add(ws);
+        },
+        message() {},
+        close(ws) {
+          clients.delete(ws);
+        },
+      },
+    });
+    serversToClose.push({
+      close: () => {
+        for (const ws of clients) {
+          ws.close();
+        }
+        serverInstance.stop(true);
+      },
+    });
+
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      `ws://127.0.0.1:${serverInstance.port}/tim-agent`,
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+    );
+
+    adapter.log('connect');
+    await waitFor(() => (adapter as any).state === 'connected');
+
+    const { promise, cancel } = adapter.waitForPromptResponse('req-malformed');
+    promise.catch(() => {});
+
+    // Send various malformed messages
+    for (const ws of clients) {
+      ws.send('not json at all');
+      ws.send('{}');
+      ws.send(JSON.stringify({ type: 'unknown_type' }));
+      ws.send(JSON.stringify({ type: 'prompt_response' })); // missing requestId
+      ws.send(JSON.stringify({ type: 'prompt_response', requestId: 123 })); // requestId not string
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Pending prompt should still be there, not affected by malformed messages
+    const internals = adapter as any;
+    expect(internals.pendingPrompts.has('req-malformed')).toBe(true);
+
+    cancel();
+    await adapter.destroy();
+  });
+
+  it('pending prompts survive websocket disconnect (NOT rejected)', async () => {
+    const server = await createPromptWebSocketServer();
+    serversToClose.push(server);
+
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      `ws://127.0.0.1:${server.port}/tim-agent`,
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: 0 }
+    );
+
+    adapter.log('connect');
+    await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
+
+    const { promise, cancel } = adapter.waitForPromptResponse('req-survive');
+    promise.catch(() => {});
+
+    // Disconnect the websocket
+    server.disconnectClients();
+    await waitFor(() => (adapter as any).state === 'disconnected');
+
+    // Promise should still be pending (not rejected)
+    const internals = adapter as any;
+    expect(internals.pendingPrompts.has('req-survive')).toBe(true);
+
+    // Verify the promise hasn't settled
+    let settled = false;
+    promise.then(
+      () => (settled = true),
+      () => (settled = true)
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(settled).toBe(false);
+
+    cancel();
+    await adapter.destroy();
+  });
+
+  it('reconnection re-attaches onmessage handler and pending prompt resolves after reconnect', async () => {
+    const server = await createPromptWebSocketServer();
+    serversToClose.push(server);
+
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      `ws://127.0.0.1:${server.port}/tim-agent`,
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: 0 }
+    );
+
+    adapter.log('connect');
+    await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
+    const firstReplayEnds = server.messages.filter((m) => m.type === 'replay_end').length;
+
+    // Register pending prompt
+    const { promise } = adapter.waitForPromptResponse('req-reconnect');
+    promise.catch(() => {});
+
+    // Disconnect
+    server.disconnectClients();
+    await waitFor(() => (adapter as any).state === 'disconnected');
+
+    // Trigger reconnect
+    adapter.log('trigger-reconnect');
+    await waitFor(() => {
+      const replayEndCount = server.messages.filter((m) => m.type === 'replay_end').length;
+      return replayEndCount > firstReplayEnds;
+    });
+
+    // Now the adapter is reconnected. Send prompt_response.
+    server.sendToAll({
+      type: 'prompt_response',
+      requestId: 'req-reconnect',
+      value: 'after-reconnect',
+    });
+
+    const result = await promise;
+    expect(result).toBe('after-reconnect');
+
+    await adapter.destroy();
+  });
+
+  it('value of undefined is treated as a valid response', async () => {
+    const server = await createPromptWebSocketServer();
+    serversToClose.push(server);
+
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      `ws://127.0.0.1:${server.port}/tim-agent`,
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+    );
+
+    adapter.log('connect');
+    await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
+
+    const { promise } = adapter.waitForPromptResponse('req-undef');
+    promise.catch(() => {});
+
+    server.sendToAll({
+      type: 'prompt_response',
+      requestId: 'req-undef',
+      // no value field = undefined
+    });
+
+    const result = await promise;
+    expect(result).toBeUndefined();
 
     await adapter.destroy();
   });

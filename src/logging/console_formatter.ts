@@ -207,6 +207,10 @@ export function formatStructuredMessage(message: StructuredMessage): string {
       // Display the prompt message for local console visibility.
       // The actual prompt rendering is handled by the prompt wrapper or tunnel handler.
       return chalk.yellow(`Prompt (${message.promptType}): ${message.promptConfig.message}`);
+    case 'prompt_answered':
+      // Silent for local console -- the prompt result is already visible from the inquirer prompt.
+      // Transport adapters still forward the structured event for UI state tracking.
+      return '';
     case 'plan_discovery':
       return chalk.green(`Found ready plan: ${message.planId} - ${message.title}`);
     case 'workspace_info':

@@ -329,6 +329,14 @@ function isValidStructuredMessagePayload(message: unknown): message is Structure
 
       return true;
     }
+    case 'prompt_answered':
+      return (
+        typeof structured.requestId === 'string' &&
+        typeof structured.promptType === 'string' &&
+        promptTypes.has(structured.promptType) &&
+        typeof structured.source === 'string' &&
+        (structured.source === 'terminal' || structured.source === 'websocket')
+      );
     case 'plan_discovery':
       return typeof structured.planId === 'number' && typeof structured.title === 'string';
     case 'workspace_info':
