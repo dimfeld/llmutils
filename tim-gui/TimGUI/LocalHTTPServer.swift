@@ -26,19 +26,39 @@ struct MessageItem: Identifiable {
     var isRead: Bool = false
 }
 
+// MARK: - WebSocket Event
+
+enum WebSocketEvent: Sendable {
+    case sessionInfo(UUID, SessionInfoPayload)
+    case output(UUID, Int, TunnelMessage)
+    case replayStart(UUID)
+    case replayEnd(UUID)
+    case disconnected(UUID)
+}
+
+// MARK: - LocalHTTPServer
+
 final class LocalHTTPServer: @unchecked Sendable {
     private let port: NWEndpoint.Port
     private let handler: @MainActor (MessagePayload) -> Void
+    private let wsHandler: @MainActor (WebSocketEvent) -> Void
     private var listener: NWListener?
+    private var wsConnections: [UUID: WebSocketConnection] = [:]
+    private let connectionsLock = NSLock()
 
     /// The port the server is actually listening on. Only valid after `start()` returns.
     var boundPort: UInt16 {
         listener?.port?.rawValue ?? 0
     }
 
-    init(port: UInt16, handler: @escaping @MainActor (MessagePayload) -> Void) {
+    init(
+        port: UInt16,
+        handler: @escaping @MainActor (MessagePayload) -> Void,
+        wsHandler: @escaping @MainActor (WebSocketEvent) -> Void
+    ) {
         self.port = NWEndpoint.Port(rawValue: port) ?? 8123
         self.handler = handler
+        self.wsHandler = wsHandler
     }
 
     func start() async throws {
@@ -73,6 +93,13 @@ final class LocalHTTPServer: @unchecked Sendable {
     func stop() {
         self.listener?.cancel()
         self.listener = nil
+        connectionsLock.lock()
+        let connections = wsConnections
+        wsConnections.removeAll()
+        connectionsLock.unlock()
+        for (_, conn) in connections {
+            conn.close()
+        }
     }
 
     private func handle(connection: NWConnection) {
@@ -85,6 +112,16 @@ final class LocalHTTPServer: @unchecked Sendable {
     private func handleRequest(on connection: NWConnection) async {
         do {
             let request = try await readRequest(from: connection)
+
+            // Check for WebSocket upgrade
+            if request.method == "GET", request.path == "/tim-agent",
+                request.isWebSocketUpgrade, let wsKey = request.webSocketKey
+            {
+                await handleWebSocketUpgrade(connection: connection, key: wsKey)
+                return
+            }
+
+            // Existing HTTP handling
             guard request.method == "POST", request.path == "/messages" else {
                 try await self.sendResponse(connection, status: 404, jsonBody: ["error": "Not found"])
                 connection.cancel()
@@ -92,7 +129,8 @@ final class LocalHTTPServer: @unchecked Sendable {
             }
 
             guard let body = request.body else {
-                try await self.sendResponse(connection, status: 400, jsonBody: ["error": "Missing body"])
+                try await self.sendResponse(
+                    connection, status: 400, jsonBody: ["error": "Missing body"])
                 connection.cancel()
                 return
             }
@@ -101,15 +139,87 @@ final class LocalHTTPServer: @unchecked Sendable {
             await self.handler(payload)
             try await self.sendResponse(connection, status: 200, jsonBody: ["status": "ok"])
         } catch {
-            try? await self.sendResponse(connection, status: 400, jsonBody: ["error": "Bad request"])
+            try? await self.sendResponse(
+                connection, status: 400, jsonBody: ["error": "Bad request"])
         }
         connection.cancel()
     }
+
+    // MARK: - WebSocket Upgrade
+
+    private func handleWebSocketUpgrade(connection: NWConnection, key: String) async {
+        let connectionId = UUID()
+        let wsHandler = self.wsHandler
+
+        let wsConnection = WebSocketConnection(
+            id: connectionId,
+            connection: connection,
+            onMessage: { [weak self] text in
+                self?.handleWebSocketMessage(connectionId: connectionId, text: text)
+            },
+            onDisconnect: { [weak self] in
+                self?.handleWebSocketDisconnect(connectionId: connectionId)
+                Task { @MainActor in
+                    wsHandler(.disconnected(connectionId))
+                }
+            }
+        )
+
+        addConnection(connectionId, wsConnection)
+
+        do {
+            try await wsConnection.performUpgrade(key: key)
+            wsConnection.startReading()
+        } catch {
+            handleWebSocketDisconnect(connectionId: connectionId)
+            Task { @MainActor in
+                wsHandler(.disconnected(connectionId))
+            }
+        }
+    }
+
+    private nonisolated func addConnection(_ id: UUID, _ connection: WebSocketConnection) {
+        connectionsLock.lock()
+        wsConnections[id] = connection
+        connectionsLock.unlock()
+    }
+
+    private func handleWebSocketMessage(connectionId: UUID, text: String) {
+        let wsHandler = self.wsHandler
+        guard let data = text.data(using: .utf8) else { return }
+
+        do {
+            let message = try JSONDecoder().decode(HeadlessMessage.self, from: data)
+            Task { @MainActor in
+                switch message {
+                case .sessionInfo(let info):
+                    wsHandler(.sessionInfo(connectionId, info))
+                case .output(let seq, let tunnelMessage):
+                    wsHandler(.output(connectionId, seq, tunnelMessage))
+                case .replayStart:
+                    wsHandler(.replayStart(connectionId))
+                case .replayEnd:
+                    wsHandler(.replayEnd(connectionId))
+                }
+            }
+        } catch {
+            print("[WebSocket] Failed to decode message: \(error)")
+        }
+    }
+
+    private func handleWebSocketDisconnect(connectionId: UUID) {
+        connectionsLock.lock()
+        wsConnections.removeValue(forKey: connectionId)
+        connectionsLock.unlock()
+    }
+
+    // MARK: - HTTP Request Parsing
 
     private func readRequest(from connection: NWConnection) async throws -> HTTPRequest {
         var buffer = Data()
         var headersEnd: Range<Data.Index>?
         var contentLength = 0
+        var headerLines: [String] = []
 
         while true {
             let chunk = try await receiveChunk(from: connection)
@@ -120,15 +230,10 @@ final class LocalHTTPServer: @unchecked Sendable {
                 headersEnd = range
                 let headersData = buffer[..<range.lowerBound]
                 let headerText = String(decoding: headersData, as: UTF8.self)
-                let lines = headerText.components(separatedBy: "\r\n")
-                if let firstLine = lines.first {
-                    let parts = firstLine.split(separator: " ")
-                    if parts.count >= 2 {
-                        // Method/path parsed later
-                    }
-                }
-                for line in lines.dropFirst() {
-                    let parts = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+                headerLines = headerText.components(separatedBy: "\r\n")
+                for line in headerLines.dropFirst() {
+                    let parts = line.split(
+                        separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
                     guard parts.count == 2 else { continue }
                     let name = parts[0].trimmingCharacters(in: .whitespaces)
                     let value = parts[1].trimmingCharacters(in: .whitespaces)
@@ -167,18 +272,30 @@ final class LocalHTTPServer: @unchecked Sendable {
         let method = String(requestParts[0])
         let path = String(requestParts[1])
         let bodyStart = headersEnd.upperBound
-        let body: Data? = if contentLength > 0, buffer.count >= bodyStart + contentLength {
-            buffer.subdata(in: bodyStart..<(bodyStart + contentLength))
-        } else {
-            nil
+        let body: Data? =
+            if contentLength > 0, buffer.count >= bodyStart + contentLength {
+                buffer.subdata(in: bodyStart..<(bodyStart + contentLength))
+            } else {
+                nil
+            }
+
+        // Parse headers into a dictionary for WebSocket detection
+        var headers: [String: String] = [:]
+        for line in lines.dropFirst() {
+            let parts = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2 else { continue }
+            let name = parts[0].trimmingCharacters(in: .whitespaces).lowercased()
+            let value = parts[1].trimmingCharacters(in: .whitespaces)
+            headers[name] = value
         }
 
-        return HTTPRequest(method: method, path: path, body: body)
+        return HTTPRequest(method: method, path: path, body: body, headers: headers)
     }
 
     private func receiveChunk(from connection: NWConnection) async throws -> Data {
         try await withCheckedThrowingContinuation { continuation in
-            connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { data, _, _, error in
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) {
+                data, _, _, error in
                 if let error {
                     continuation.resume(throwing: error)
                     return
@@ -191,8 +308,8 @@ final class LocalHTTPServer: @unchecked Sendable {
     private func sendResponse(
         _ connection: NWConnection,
         status: Int,
-        jsonBody: [String: String]) async throws
-    {
+        jsonBody: [String: String]
+    ) async throws {
         let bodyData = try JSONSerialization.data(withJSONObject: jsonBody, options: [])
         let statusLine = "HTTP/1.1 \(status) \(statusText(for: status))"
         let headers = [
@@ -225,10 +342,28 @@ final class LocalHTTPServer: @unchecked Sendable {
     }
 }
 
+// MARK: - HTTPRequest
+
 struct HTTPRequest {
     let method: String
     let path: String
     let body: Data?
+    let headers: [String: String]
+
+    init(method: String, path: String, body: Data?, headers: [String: String] = [:]) {
+        self.method = method
+        self.path = path
+        self.body = body
+        self.headers = headers
+    }
+
+    var isWebSocketUpgrade: Bool {
+        headers["upgrade"]?.caseInsensitiveCompare("websocket") == .orderedSame
+    }
+
+    var webSocketKey: String? {
+        headers["sec-websocket-key"]
+    }
 }
 
 enum HTTPError: Error {

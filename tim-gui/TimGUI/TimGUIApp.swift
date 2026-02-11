@@ -54,9 +54,15 @@ struct TimGUIApp: App {
     @MainActor
     private func startServerIfNeeded() async {
         guard self.server == nil else { return }
-        let newServer = LocalHTTPServer(port: 8123) { [weak appState] payload in
-            appState?.ingest(payload)
-        }
+        let newServer = LocalHTTPServer(
+            port: 8123,
+            handler: { [weak appState] payload in
+                appState?.ingest(payload)
+            },
+            wsHandler: { _ in
+                // WebSocket events will be wired up when SessionState is added
+            }
+        )
         self.server = newServer
         do {
             try await newServer.start()

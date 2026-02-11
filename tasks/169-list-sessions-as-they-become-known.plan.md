@@ -7,7 +7,7 @@ goal: Add WebSocket server support to tim-gui so it can receive and display
 id: 169
 uuid: 85aa17d2-7d55-4d91-afbb-09821893a59a
 generatedBy: agent
-status: pending
+status: in_progress
 priority: medium
 parent: 160
 references:
@@ -15,7 +15,7 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-10T08:16:34.734Z
+updatedAt: 2026-02-11T21:02:27.568Z
 tasks:
   - title: Define session data models and headless protocol types
     done: false
@@ -179,6 +179,8 @@ tasks:
            - log: default text color
          - Auto-scroll to bottom when new messages arrive (using ScrollViewReader + onChange)
          - Empty state: ContentUnavailableView when no session is selected
+
+         Out of scope: handling 'prompt_request' messages interactively (just show something static for now)
 
       4. Use monospaced font for message content to preserve formatting of
       diffs, code, etc.
