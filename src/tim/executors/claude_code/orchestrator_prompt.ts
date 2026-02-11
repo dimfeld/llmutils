@@ -144,8 +144,6 @@ function buildDynamicExecutorGuidance(options: OrchestrationOptions): string {
 You must choose which executor to use for each subagent invocation by passing \`-x codex-cli\` or \`-x claude-code\` to the \`tim subagent\` command.
 
 Decision guidance: ${instructions}
-
-If unsure, default to \`-x claude-code\`.
 `;
 }
 
