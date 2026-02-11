@@ -7,7 +7,7 @@ goal: Add WebSocket server support to tim-gui so it can receive and display
 id: 169
 uuid: 85aa17d2-7d55-4d91-afbb-09821893a59a
 generatedBy: agent
-status: pending
+status: done
 priority: medium
 parent: 160
 references:
@@ -15,10 +15,10 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-10T08:16:34.734Z
+updatedAt: 2026-02-12T08:49:35.786Z
 tasks:
   - title: Define session data models and headless protocol types
-    done: false
+    done: true
     description: >-
       Create tim-gui/TimGUI/SessionModels.swift with Swift Codable types
       matching the TypeScript headless protocol:
@@ -53,7 +53,7 @@ tasks:
       Use custom init(from:) decoders for the discriminated unions that read the
       'type' field first. All types should be Sendable.
   - title: Implement WebSocket frame parsing and upgrade handshake
-    done: false
+    done: true
     description: >-
       Add WebSocket server support to the existing NWListener-based TCP server.
       Create a WebSocketConnection class (can be in a new file like
@@ -91,7 +91,7 @@ tasks:
       disconnect closure. Use async/await with the existing receiveChunk pattern
       from LocalHTTPServer.
   - title: Upgrade LocalHTTPServer to handle both HTTP and WebSocket
-    done: false
+    done: true
     description: >-
       Refactor LocalHTTPServer (tim-gui/TimGUI/LocalHTTPServer.swift) to route
       between HTTP requests and WebSocket upgrades on the same port 8123:
@@ -122,7 +122,7 @@ tasks:
       The server should remain a single NWListener on port 8123 that handles
       both protocols transparently.
   - title: Create SessionState manager and message formatter
-    done: false
+    done: true
     description: >-
       Create the session state management and message formatting:
 
@@ -146,7 +146,7 @@ tasks:
 
       No macOS system notifications for sessions - sessions are GUI-only.
   - title: Build the SessionsView two-pane layout
-    done: false
+    done: true
     description: >-
       Create tim-gui/TimGUI/SessionsView.swift with the two-pane session
       monitoring view:
@@ -180,10 +180,12 @@ tasks:
          - Auto-scroll to bottom when new messages arrive (using ScrollViewReader + onChange)
          - Empty state: ContentUnavailableView when no session is selected
 
+         Out of scope: handling 'prompt_request' messages interactively (just show something static for now)
+
       4. Use monospaced font for message content to preserve formatting of
       diffs, code, etc.
   - title: Add view selector and wire everything together
-    done: false
+    done: true
     description: >-
       Integrate all components into the app:
 
@@ -210,6 +212,680 @@ tasks:
 
       4. Ensure the window frame is large enough for the two-pane layout
       (increase minWidth if needed)
+  - title: "Address Review Feedback: `review_result` and `review_verdict` events are
+      intentionally formatted as empty strings and then filtered out in the
+      session detail UI, so these protocol messages never appear in the Sessions
+      pane."
+    done: true
+    description: >-
+      `review_result` and `review_verdict` events are intentionally formatted as
+      empty strings and then filtered out in the session detail UI, so these
+      protocol messages never appear in the Sessions pane. That violates the
+      plan requirement to show session content/messages as they arrive and to
+      format review lifecycle output.
+
+
+      Suggestion: Render non-empty summaries for
+      `review_result`/`review_verdict` (at minimum verdict + issue counts), and
+      stop dropping these messages in the detail view.
+
+
+      Related file: tim-gui/TimGUI/SessionModels.swift:857
+  - title: "Address Review Feedback: When readRequest reads the HTTP request from
+      the connection, it may consume data beyond the \\r\\n\\r\\n header
+      boundary if it arrives in the same TCP segment."
+    done: true
+    description: >-
+      When readRequest reads the HTTP request from the connection, it may
+      consume data beyond the \r\n\r\n header boundary if it arrives in the same
+      TCP segment. For WebSocket upgrades, contentLength is 0, so the method
+      breaks out of the loop and returns — but any extra bytes after the headers
+      that were read into the local buffer are discarded. The
+      WebSocketConnection then starts its own readLoop() which issues fresh
+      receive() calls, potentially missing data that was already consumed. In
+      practice this is unlikely because well-behaved WebSocket clients wait for
+      the 101 response before sending frames, but it's still a protocol
+      correctness gap.
+
+
+      Suggestion: Pass any leftover bytes from the HTTP read buffer (after the
+      \r\n\r\n) to the WebSocketConnection so it can prepend them to its read
+      state before starting the readLoop.
+
+
+      Related file: tim-gui/TimGUI/LocalHTTPServer.swift:113-123
+  - title: "Address Review Feedback: `execution_summary` decoding throws away
+      summary statistics by hardcoding `totalSteps` and `failedSteps` to `nil`."
+    done: true
+    description: >-
+      `execution_summary` decoding throws away summary statistics by hardcoding
+      `totalSteps` and `failedSteps` to `nil`. The formatter only prints these
+      fields when non-nil, so required execution summary stats never show in the
+      UI.
+
+
+      Suggestion: Decode `summary.metadata.totalSteps` and
+      `summary.metadata.failedSteps` into `ExecutionSummaryPayload` and render
+      them in `MessageFormatter`.
+
+
+      Related file: tim-gui/TimGUI/SessionModels.swift:615
+  - title: "Address Review Feedback: The close() method calls onDisconnect()
+      synchronously on the calling thread immediately after launching a
+      fire-and-forget Task to send the close frame."
+    done: true
+    description: >-
+      The close() method calls onDisconnect() synchronously on the calling
+      thread immediately after launching a fire-and-forget Task to send the
+      close frame. This means: (1) onDisconnect fires before the close frame is
+      actually sent, (2) handleWebSocketDisconnect removes the connection from
+      wsConnections immediately while the Task is still trying to send on the
+      connection, and (3) if server.stop() is called concurrently, the
+      connection may be cancelled mid-send. The onDisconnect callback fires to
+      the session state before the graceful close completes.
+
+
+      Suggestion: Move onDisconnect() inside the Task block, after the close
+      frame send completes (or fails) and after connection.cancel(), so the
+      disconnect notification happens in the correct order.
+
+
+      Related file: tim-gui/TimGUI/WebSocketConnection.swift:203-211
+  - title: "Address Review Feedback: The new WebSocket tests do not cover the
+      highest-risk protocol paths that were explicitly implemented: fragmented
+      messages, ping/pong handling, and oversize-frame rejection."
+    done: true
+    description: >-
+      The new WebSocket tests do not cover the highest-risk protocol paths that
+      were explicitly implemented: fragmented messages, ping/pong handling, and
+      oversize-frame rejection. Current tests mainly validate handshake and
+      simple text frames, leaving critical frame-parser behavior unverified.
+
+
+      Suggestion: Add integration tests for fragmented text reassembly,
+      ping->pong responses, close handshake behavior, and oversized
+      frame/fragment rejection.
+
+
+      Related file: tim-gui/TimGUITests/WebSocketTests.swift:142
+  - title: "Address Review Feedback: The text 'Listening on port 8123' is
+      hard-coded, but LocalHTTPServer supports dynamic port binding (port: 0 in
+      tests)."
+    done: true
+    description: >-
+      The text 'Listening on port 8123' is hard-coded, but LocalHTTPServer
+      supports dynamic port binding (port: 0 in tests). If the server's port
+      configuration were ever changed, this text would be wrong.
+
+
+      Suggestion: Consider passing the actual bound port to ContentView or
+      deriving it from the server state.
+
+
+      Related file: tim-gui/TimGUI/ContentView.swift:30-31
+  - title: "Address Review Feedback: After the listener successfully starts, the
+      stateUpdateHandler is set to nil."
+    done: true
+    description: >-
+      After the listener successfully starts, the stateUpdateHandler is set to
+      nil. If the NWListener subsequently fails (e.g., the port becomes
+      unavailable or the network interface changes), there's no way to detect or
+      recover from this. The server will silently stop accepting connections.
+
+
+      Suggestion: Set a new stateUpdateHandler after startup that logs errors or
+      updates the startError state instead of setting it to nil.
+
+
+      Related file: tim-gui/TimGUI/LocalHTTPServer.swift:90
+  - title: "Address Review Feedback: The three DateFormatter/ISO8601DateFormatter
+      instances are declared as nonisolated(unsafe) global lets."
+    done: true
+    description: >-
+      The three DateFormatter/ISO8601DateFormatter instances are declared as
+      nonisolated(unsafe) global lets. DateFormatter is not thread-safe per
+      Apple's documentation. MessageFormatter.format() is currently called from
+      @MainActor context, but neither MessageFormatter nor formatTimestamp are
+      explicitly @MainActor-isolated. The nonisolated(unsafe) annotation
+      explicitly opts out of concurrency safety checks, so future callers could
+      invoke these off the main actor and cause data races.
+
+
+      Suggestion: Either restrict MessageFormatter to @MainActor, use a lock
+      around formatter access, or replace DateFormatter with a manual parsing
+      approach.
+
+
+      Related file: tim-gui/TimGUI/SessionModels.swift:690-706
+  - title: "Address Review Feedback: Pre-existing: activateTerminalPane uses
+      Process.waitUntilExit() inside Task.detached which blocks a cooperative
+      thread from the thread pool."
+    done: true
+    description: >-
+      Pre-existing: activateTerminalPane uses Process.waitUntilExit() inside
+      Task.detached which blocks a cooperative thread from the thread pool.
+
+
+      Suggestion: Use Process termination handler or async wrapper instead of
+      blocking waitUntilExit.
+
+
+      Related file: tim-gui/TimGUI/ContentView.swift:112-113
+  - title: "Address Review Feedback: `prompt_answered` events are still dropped from
+      the Sessions UI, so not all session messages are shown."
+    done: true
+    description: >-
+      `prompt_answered` events are still dropped from the Sessions UI, so not
+      all session messages are shown. `MessageFormatter` emits empty text for
+      `.promptAnswered`, and `SessionDetailView` explicitly filters empty
+      messages. This violates the plan requirement to show session
+      content/messages as they arrive.
+
+
+      Suggestion: Render a non-empty line for `.promptAnswered` (for example
+      request id/source), and remove the empty-text filter in the detail list so
+      protocol events are not silently hidden.
+
+
+      Related file: tim-gui/TimGUI/SessionModels.swift:957
+  - title: "Address Review Feedback: Missing fields in LlmToolUsePayload and
+      LlmToolResultPayload — the input and result fields from the TypeScript
+      protocol are absent."
+    done: true
+    description: >-
+      Missing fields in LlmToolUsePayload and LlmToolResultPayload — the input
+      and result fields from the TypeScript protocol are absent. The CodingKeys
+      enum at line 427 declares input and result keys, but they are never used
+      in the decoder (lines 524-534). When inputSummary/resultSummary are nil,
+      the Swift formatter will show nothing for these tool invocations, losing
+      potentially important information. This suggests the implementer intended
+      to handle them but forgot.
+
+
+      Suggestion: Decode input and result as optional String (via JSON
+      serialization of the unknown type) and use them as fallback when
+      inputSummary/resultSummary are nil.
+
+
+      Related file: tim-gui/TimGUI/SessionModels.swift:225-235
+  - title: "Address Review Feedback: SessionItem is a struct with a messages:
+      [SessionMessage] array, causing full array copy on every mutation through
+      SwiftUI's observation system."
+    done: true
+    description: >-
+      SessionItem is a struct with a messages: [SessionMessage] array, causing
+      full array copy on every mutation through SwiftUI's observation system.
+      SessionState.appendMessage() does
+      sessions[index].messages.append(message). Since SessionItem is a struct
+      and sessions is an @Observable array, every single message append triggers
+      a copy of the entire SessionItem (including all accumulated messages) and
+      notifies all observers. For high-throughput sessions producing hundreds or
+      thousands of messages, this creates O(n) copy overhead per message and
+      excessive SwiftUI re-evaluation.
+
+
+      Suggestion: Refactor SessionItem to a class-based @Observable model, or
+      store messages separately keyed by connection ID, so appending a message
+      doesn't copy the entire session struct.
+
+
+      Related file: tim-gui/TimGUI/SessionState.swift:37
+  - title: "Address Review Feedback: WebSocket client-frame validation is
+      incomplete: unmasked client frames are accepted, and continuation frames
+      are processed even when no fragmented message is in progress."
+    done: true
+    description: >-
+      WebSocket client-frame validation is incomplete: unmasked client frames
+      are accepted, and continuation frames are processed even when no
+      fragmented message is in progress. RFC 6455 requires masked client frames
+      and strict fragmentation sequencing. Current behavior can mis-parse
+      malformed streams instead of closing with a protocol error.
+
+
+      Suggestion: Reject unmasked client data/control frames with close code
+      1002, and reject continuation frames when `fragmentOpcode` is nil (also
+      close 1002). Add validation for unexpected new data frames while
+      fragmentation is active.
+
+
+      Related file: tim-gui/TimGUI/WebSocketConnection.swift:136
+  - title: "Address Review Feedback: Tests still do not cover malformed-frame
+      rejection paths that are currently incorrect (unmasked frames, invalid
+      continuation ordering)."
+    done: true
+    description: >-
+      Tests still do not cover malformed-frame rejection paths that are
+      currently incorrect (unmasked frames, invalid continuation ordering).
+      Existing WebSocket tests mostly cover happy-path and size/ping/close
+      behavior, so the protocol-validation gaps can regress unnoticed.
+
+
+      Suggestion: Add explicit integration tests that send: (1) unmasked text
+      frame, (2) continuation without prior fragment, (3) new text frame while a
+      fragmented message is open; assert server returns close 1002 and
+      disconnects.
+
+
+      Related file: tim-gui/TimGUITests/WebSocketTests.swift:598
+  - title: "Address Review Feedback: activateTerminalPane constructs a shell command
+      with string interpolation of workspaceName without escaping."
+    done: true
+    description: >-
+      activateTerminalPane constructs a shell command with string interpolation
+      of workspaceName without escaping. If the workspace name contains a double
+      quote or backslash, the JSON will be malformed. While workspace names are
+      typically simple paths, this is a latent injection/formatting bug.
+
+
+      Suggestion: Use JSONSerialization or JSONEncoder to properly construct the
+      JSON string.
+
+
+      Related file: tim-gui/TimGUI/ContentView.swift:138
+  - title: "Address Review Feedback: waitForProcess has a potential double-resume if
+      the process terminates synchronously before run() returns."
+    done: true
+    description: >-
+      waitForProcess has a potential double-resume if the process terminates
+      synchronously before run() returns. The termination handler is set before
+      run(), which is correct for avoiding the race where the process terminates
+      before the handler is set. However, if process.run() throws an error AND
+      the termination handler has already fired (possible if the process starts
+      and fails extremely quickly), the continuation could be resumed twice.
+
+
+      Suggestion: Use a Bool flag or CheckedContinuation wrapper to ensure
+      single resumption, or use withCheckedContinuation with an atomic guard.
+
+
+      Related file: tim-gui/TimGUI/ContentView.swift:168-179
+  - title: "Address Review Feedback: readRequest parses headers twice — once during
+      the accumulation loop (lines 249-258) to extract Content-Length, then
+      again after the loop (lines 298-305) to build the headers dictionary."
+    done: true
+    description: >-
+      readRequest parses headers twice — once during the accumulation loop
+      (lines 249-258) to extract Content-Length, then again after the loop
+      (lines 298-305) to build the headers dictionary. The headerLines variable
+      from the first parse is computed but only contentLength is used from it.
+
+
+      Suggestion: Consolidate into a single header parse, or at minimum reuse
+      headerLines from the first pass.
+
+
+      Related file: tim-gui/TimGUI/LocalHTTPServer.swift:239-305
+  - title: "Address Review Feedback: PromptAnsweredPayload is missing the value
+      field from the TypeScript protocol."
+    done: true
+    description: >-
+      PromptAnsweredPayload is missing the value field from the TypeScript
+      protocol. The TypeScript PromptAnsweredMessage has a value?: unknown field
+      that carries the actual response value. While the Swift formatter returns
+      empty string for promptAnswered (matching the console formatter's silent
+      behavior), the field data is lost. If future formatting wants to show what
+      was answered, the data won't be available.
+
+
+      Suggestion: Add an optional value field (decoded as String? via JSON
+      coercion) to PromptAnsweredPayload.
+
+
+      Related file: tim-gui/TimGUI/SessionModels.swift:395-400
+  - title: "Address Review Feedback: WebSocket event delivery can reorder and drop
+      session output."
+    done: true
+    description: >-
+      WebSocket event delivery can reorder and drop session output.
+      `handleWebSocketMessage` dispatches every decoded message via a separate
+      `Task { @MainActor ... }` (`tim-gui/TimGUI/LocalHTTPServer.swift:206`).
+      `SessionState.appendMessage` is a silent no-op when the session row is not
+      present (`tim-gui/TimGUI/SessionState.swift:34`). Because `session_info`
+      and `output` are handled on independently scheduled tasks, output can be
+      processed before `session_info` and get lost. This violates the
+      requirement to show session content/messages as they arrive.
+
+
+      Suggestion: Process WebSocket events in strict arrival order (e.g., `await
+      MainActor.run` inline, or a per-connection serial event queue/actor). Also
+      buffer output events until `session_info` has been registered for that
+      connection instead of dropping them.
+
+
+      Related file: tim-gui/TimGUI/LocalHTTPServer.swift:206
+  - title: "Address Review Feedback: WebSocket parser is not RFC 6455-compliant on
+      several malformed-frame paths despite the plan's RFC requirement."
+    done: true
+    description: >-
+      WebSocket parser is not RFC 6455-compliant on several malformed-frame
+      paths despite the plan's RFC requirement. Unknown opcodes are ignored
+      instead of closing with protocol error
+      (`tim-gui/TimGUI/WebSocketConnection.swift:161`), binary data frames are
+      treated as text-path frames
+      (`tim-gui/TimGUI/WebSocketConnection.swift:167`), and control-frame
+      invariants (FIN=1, payload<=125 for ping/pong/close) are not enforced
+      (`tim-gui/TimGUI/WebSocketConnection.swift:225`). This allows invalid
+      client behavior to stay connected and can lead to silent data
+      loss/undefined behavior.
+
+
+      Suggestion: Enforce RFC rules: reject unknown opcodes with close 1002,
+      reject/handle binary frames explicitly (1003 or dedicated binary path),
+      and validate control frames (FIN required, max payload 125, no
+      fragmentation) with 1002 on violation.
+
+
+      Related file: tim-gui/TimGUI/WebSocketConnection.swift:161
+  - title: "Address Review Feedback: Test coverage misses the malformed-frame
+      branches above."
+    done: true
+    description: >-
+      Test coverage misses the malformed-frame branches above. Existing tests
+      cover unmasked frames, continuation ordering, and oversize handling, but
+      there are no assertions for unknown-opcode rejection, binary-frame
+      handling policy, or control-frame invariant violations (fragmented
+      ping/close, control payload >125). This leaves protocol-compliance
+      regressions undetected.
+
+
+      Suggestion: Add integration tests that send: unknown opcode frame, binary
+      frame with/without UTF-8 payload, ping/close with FIN=0, and ping with
+      payload length >125; assert close 1002/1003 behavior and disconnect.
+
+
+      Related file: tim-gui/TimGUITests/WebSocketTests.swift:1
+  - title: "Address Review Feedback: PromptChoiceConfigPayload.value coerces integer
+      values to floating-point string representation."
+    done: true
+    description: >-
+      PromptChoiceConfigPayload.value coerces integer values to floating-point
+      string representation. When the TypeScript protocol sends a numeric value
+      like 2, it gets decoded as Double and stored as "2.0" instead of "2". The
+      RawJSONString helper already handles this correctly with the n ==
+      n.rounded() check, but PromptChoiceConfigPayload uses a simpler approach
+      that loses integer fidelity.
+
+
+      Suggestion: Apply the same integer-detection pattern used in
+      RawJSONString: if n == n.rounded() && abs(n) < 1e15 { self.value =
+      String(Int(n)) } else { self.value = String(n) }
+
+
+      Related file: tim-gui/TimGUI/SessionModels.swift:366-370
+  - title: "Address Review Feedback: WebSocket frame validation is still incomplete
+      for RFC 6455-required invariants: RSV bits are never checked, and invalid
+      UTF-8 text payloads are silently dropped instead of closing with
+      protocol/data error."
+    done: true
+    description: >-
+      WebSocket frame validation is still incomplete for RFC 6455-required
+      invariants: RSV bits are never checked, and invalid UTF-8 text payloads
+      are silently dropped instead of closing with protocol/data error. This
+      means malformed frames can be accepted or ignored without terminating the
+      connection, which violates the plan's RFC-conformance requirement for the
+      manual parser.
+
+
+      Suggestion: Reject any frame where `(byte0 & 0x70) != 0` with close code
+      1002, and when text/continuation payload cannot decode as UTF-8, close
+      with 1007 instead of silently ignoring.
+
+
+      Related file: tim-gui/TimGUI/WebSocketConnection.swift:109
+  - title: "Address Review Feedback: WebSocket `onDisconnect` in
+      `handleWebSocketUpgrade` dispatches via fire-and-forget `Task { @MainActor
+      in }`, breaking the strict-ordering guarantee established elsewhere."
+    done: true
+    description: >-
+      WebSocket `onDisconnect` in `handleWebSocketUpgrade` dispatches via
+      fire-and-forget `Task { @MainActor in }`, breaking the strict-ordering
+      guarantee established elsewhere. The plan progress notes explicitly state
+      that `await MainActor.run` was chosen 'for strict ordering instead of
+      independent Task { @MainActor in } dispatches.' The disconnect callback
+      uses the old fire-and-forget pattern, which means a `.disconnected` event
+      could be processed before the last `.output` event if they arrive close
+      together. The same issue exists at lines 186-188 for the upgrade failure
+      path.
+
+
+      Suggestion: Change the disconnect callback to use `await MainActor.run {
+      wsHandler(.disconnected(connectionId)) }` for consistency with the message
+      handling path. Since `onDisconnect` is a synchronous closure, this
+      requires making it an async closure or restructuring the callback.
+
+
+      Related file: tim-gui/TimGUI/LocalHTTPServer.swift:173-175
+  - title: "Address Review Feedback: Server stored before start succeeds, preventing
+      retry on failure."
+    done: true
+    description: >-
+      Server stored before start succeeds, preventing retry on failure. In
+      `TimGUIApp.swift:86`, `self.server = newServer` is set before calling
+      `newServer.start()`. If `start()` throws (e.g., port 8123 is in use), the
+      `server` property is already non-nil. The guard on line 63 (`guard
+      self.server == nil else { return }`) means `startServerIfNeeded()` can
+      never retry. The only recovery is to quit and relaunch the app.
+
+
+      Suggestion: Move `self.server = newServer` into the `do` block after `try
+      await newServer.start()` succeeds, so that on failure the server remains
+      nil and a retry is possible.
+
+
+      Related file: tim-gui/TimGUI/TimGUIApp.swift:86
+  - title: "Address Review Feedback: WebSocket close-frame validation is incomplete,
+      so malformed close frames are accepted instead of rejected per RFC 6455."
+    done: true
+    description: >-
+      WebSocket close-frame validation is incomplete, so malformed close frames
+      are accepted instead of rejected per RFC 6455. In `readLoop`,
+      control-frame checks only enforce `FIN=1` and `payload <= 125`, then
+      `.close` immediately echoes payload and disconnects. A close payload of
+      exactly 1 byte is invalid by spec and should trigger protocol error
+      (1002). Close reason bytes (when payload >= 2) are also not validated for
+      UTF-8, which should trigger 1007 on invalid data. This violates the plan's
+      RFC-6455 compliance requirement for the manual parser.
+
+
+      Suggestion: In `.close` handling, add explicit validation: reject
+      `payload.count == 1` with close 1002; when `payload.count >= 2`, validate
+      close code range and UTF-8 validity of reason bytes (1007 for invalid
+      UTF-8). Only echo/close when payload is valid.
+
+
+      Related file: tim-gui/TimGUI/WebSocketConnection.swift:182, 279
+  - title: "Address Review Feedback: LocalHTTPServer.start() continuation can be
+      resumed twice."
+    done: true
+    description: >-
+      LocalHTTPServer.start() continuation can be resumed twice. The
+      withCheckedThrowingContinuation sets a stateUpdateHandler that resumes on
+      .ready or .failed. After the continuation resumes on .ready, the new
+      handler isn't installed until line 90. Between lines 87 and 90, the
+      NWListener could theoretically transition to .failed (e.g., the network
+      interface drops), which would fire the old closure and attempt to resume
+      the already-completed continuation. CheckedContinuation will trap on
+      double-resume.
+
+
+      Suggestion: Swap the handler to nil inside the closure after the first
+      resume. Alternatively, use a local Bool flag or atomic to ensure single
+      resumption, similar to the ResumeGuard pattern used in
+      ContentView.swift:192-210.
+
+
+
+      Related file: tim-gui/TimGUI/LocalHTTPServer.swift:75-87
+  - title: "Address Review Feedback: WebSocket readLoop error path silently drops
+      all errors."
+    done: true
+    description: >-
+      WebSocket readLoop error path silently drops all errors. The
+      startReading() method catches all errors from readLoop() with an empty
+      catch block. This means protocol errors, decoding failures, or unexpected
+      exceptions are silently swallowed with no logging.
+      WebSocketError.connectionClosed is expected, but any other error (e.g., a
+      logic bug) is also hidden, making debugging extremely difficult.
+
+
+      Suggestion: Log non-connectionClosed errors using os.Logger for
+      debuggability. At minimum, differentiate expected disconnects from
+      unexpected errors.
+
+
+      Related file: tim-gui/TimGUI/WebSocketConnection.swift:83-93
+  - title: "Address Review Feedback: The WebSocket malformed-frame test suite does
+      not cover invalid close payload semantics, so the parser bug above is not
+      detected."
+    done: true
+    description: >-
+      The WebSocket malformed-frame test suite does not cover invalid close
+      payload semantics, so the parser bug above is not detected. Existing tests
+      cover close handshake, fragmented close, and control-size/FIN rules, but
+      not (a) close payload length == 1 and (b) close payload with invalid UTF-8
+      reason.
+
+
+      Suggestion: Add integration tests that send malformed close frames:
+      one-byte payload and payload with invalid UTF-8 reason. Assert server
+      returns close 1002/1007 and disconnects.
+
+
+      Related file: tim-gui/TimGUITests/WebSocketTests.swift:707
+  - title: "Address Review Feedback: gitRemote field from SessionInfoPayload is
+      decoded but silently discarded."
+    done: true
+    description: >-
+      gitRemote field from SessionInfoPayload is decoded but silently discarded.
+      SessionInfoPayload decodes gitRemote, but SessionItem has no field to
+      store it. The addSession method creates a SessionItem without gitRemote.
+      The data is decoded but never preserved.
+
+
+      Suggestion: Add gitRemote to SessionItem since we will use it in the
+      future.
+
+
+      Related file: tim-gui/TimGUI/SessionState.swift:17-27
+  - title: "Address Review Feedback: Auto-scroll in SessionDetailView forces the
+      user to the bottom on every new message."
+    done: true
+    description: >-
+      Auto-scroll in SessionDetailView forces the user to the bottom on every
+      new message. onChange(of: session.messages.count) scrolls to the bottom
+      whenever a message arrives. If the user has scrolled up to read earlier
+      output, they'll be forcibly scrolled back down. This is a poor UX for
+      long-running sessions with many messages.
+
+
+      Suggestion: Track whether the user is at or near the bottom of the scroll
+      view and only auto-scroll when they are.
+
+
+      Related file: tim-gui/TimGUI/SessionsView.swift:113-116
+  - title: "Address Review Feedback: Duplicate `session_info` frames on the same
+      WebSocket connection create duplicate `SessionItem`s with the same
+      `connectionId`, which breaks lifecycle tracking."
+    done: true
+    description: >-
+      Duplicate `session_info` frames on the same WebSocket connection create
+      duplicate `SessionItem`s with the same `connectionId`, which breaks
+      lifecycle tracking. `appendMessage` and `markDisconnected` both use
+      `firstIndex(where:)`, so only the newest duplicate is updated; older
+      duplicates can remain permanently `isActive=true` and cannot be dismissed
+      (`dismissSession` blocks active sessions). This leaves stale, undeletable
+      rows and violates one-connection/one-session behavior.
+
+
+      Suggestion: Enforce a unique session per `connectionId` in `addSession`
+      (replace/update existing instead of insert), and use a direct
+      `connectionId -> SessionItem` lookup/map so message/disconnect routing
+      cannot become ambiguous.
+
+
+      Related file: tim-gui/TimGUI/SessionState.swift:16-64
+  - title: "Address Review Feedback: The new WebSocket integration tests are
+      timing-dependent (`Task.sleep(...)`) for event synchronization, which
+      makes the suite nondeterministic under slower CI/load and can mask real
+      ordering bugs."
+    done: true
+    description: |-
+      The new WebSocket integration tests are timing-dependent (`Task.sleep(...)`) for event synchronization, which makes the suite nondeterministic under slower CI/load and can mask real ordering bugs. This is especially risky because these tests are validating protocol parsing/order guarantees.
+
+      Suggestion: Replace sleeps with deterministic waits (eventually/poll helpers with timeout, async stream/continuation signaling when specific events arrive, or per-test expectation helpers that wait for exact event sequences).
+
+      Related file: tim-gui/TimGUITests/WebSocketTests.swift:337,375,408,491,545,574,642,741,787,942,975,1012,1046,1078,1110,1145,1178,1249,1281,1313,1346,1382,1425,1477,1512,1548,1584
+  - title: "Address Review Feedback: `activateTerminalPane` can hang indefinitely
+      when `wezterm` fails to launch."
+    done: true
+    description: >-
+      `activateTerminalPane` can hang indefinitely when `wezterm` fails to
+      launch. `waitForProcess` swallows `process.run()` errors and resumes as if
+      the process completed, then caller code immediately does
+      `readDataToEndOfFile()` on the pipe. If launch failed, EOF never arrives
+      and the task blocks (often on the main actor context inherited by `Task {
+      ... }` from the tap handler), freezing that interaction path.
+
+
+      Suggestion: Make `waitForProcess` throw/return failure when `run()` fails
+      and stop the flow early. Do not call `readDataToEndOfFile()` after a
+      failed launch. Explicitly close the writer handle (or use a helper that
+      captures output and completion atomically) before reading.
+
+
+      Related file: tim-gui/TimGUI/ContentView.swift:113
+  - title: "Address Review Feedback: The new process-wait refactor has no test
+      coverage for launch-failure behavior, so the blocking path above is
+      unguarded."
+    done: true
+    description: >-
+      The new process-wait refactor has no test coverage for launch-failure
+      behavior, so the blocking path above is unguarded. Current tests focus on
+      WebSocket/session logic and do not exercise notification click flow or
+      `waitForProcess` failure semantics.
+
+
+      Suggestion: Add a test for process launch failure (invalid executable)
+      that asserts the helper returns promptly and no blocking read is
+      attempted; add an integration-style test for the notification activation
+      flow with missing `wezterm`.
+
+
+      Related file: tim-gui/TimGUITests:1
+  - title: "Address Review Feedback: WebSocket close code validation is stricter
+      than necessary, rejecting valid IANA-registered codes."
+    done: true
+    description: >-
+      WebSocket close code validation is stricter than necessary, rejecting
+      valid IANA-registered codes. The close code validation explicitly lists
+      individual valid codes but omits some IANA-registered ones (1012 'Service
+      Restart', 1013 'Try Again Later', 1014 'Bad Gateway'). A well-behaved
+      WebSocket client sending close code 1012 would be rejected with a protocol
+      error.
+
+
+      Suggestion: Replace the individual code checks with a range:
+      `(1000...1014).contains(code) || (3000...4999).contains(code)` to accept
+      all IANA-registered codes while still rejecting truly invalid ones.
+
+
+      Related file: tim-gui/TimGUI/WebSocketConnection.swift:298-301
+changedFiles:
+  - src/tim/commands/review.ts
+  - tim-gui/TimGUI/ContentView.swift
+  - tim-gui/TimGUI/LocalHTTPServer.swift
+  - tim-gui/TimGUI/SessionModels.swift
+  - tim-gui/TimGUI/SessionState.swift
+  - tim-gui/TimGUI/SessionsView.swift
+  - tim-gui/TimGUI/TimGUIApp.swift
+  - tim-gui/TimGUI/WebSocketConnection.swift
+  - tim-gui/TimGUI.xcodeproj/project.pbxproj
+  - tim-gui/TimGUITests/AutoScrollTests.swift
+  - tim-gui/TimGUITests/LocalHTTPServerTests.swift
+  - tim-gui/TimGUITests/MessageFormatterTests.swift
+  - tim-gui/TimGUITests/SessionModelTests.swift
+  - tim-gui/TimGUITests/SessionStateTests.swift
+  - tim-gui/TimGUITests/WebSocketTests.swift
 tags:
   - tim-gui
 ---
@@ -672,3 +1348,52 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 4. **JSON decoding**: The headless protocol uses a discriminated union pattern on the `type` field. Swift's `Codable` can handle this with a custom `init(from:)` that reads the type first, then decodes the appropriate payload.
 5. **Frame fragmentation**: WebSocket messages can be split across multiple frames (FIN=0 for continuation frames). The implementation should buffer continuation frames until a FIN=1 frame is received. In practice, the headless adapter sends complete JSON messages as single frames, but the implementation should handle fragmentation for robustness.
 6. **Port 8123 already in use**: If the existing `tim-agent-listener.ts` script is also running on port 8123, the GUI won't be able to bind. This is expected—only one should run at a time.
+
+## Current Progress
+### Current State
+- All 42 of 42 tasks complete (6 core + 36 review feedback)
+- 212 tests passing
+### Completed (So Far)
+- SessionModels.swift: All Decodable types for HeadlessMessage, TunnelMessage, StructuredMessagePayload (~28 types), SessionItem, SessionMessage, MessageCategory, plus MessageFormatter
+- WebSocketConnection.swift: Full RFC 6455 frame parsing/sending, upgrade handshake, fragmentation, close/ping/pong, NSLock-protected close state, 16MB frame limit, fragment buffer size limit, client-frame validation (unmasked rejection, continuation ordering, unknown opcode rejection, binary frame rejection, control-frame invariant enforcement, RSV bit rejection, invalid UTF-8 close 1007), close-frame payload validation (1-byte reject 1002, invalid code range reject 1002, invalid UTF-8 reason reject 1007), os.Logger error logging for unexpected readLoop errors, close code validation using split ranges to exclude RFC-prohibited 1004/1005/1006
+- LocalHTTPServer.swift: Routes GET /tim-agent with Upgrade: websocket to WebSocket handler, POST /messages continues as HTTP, WebSocketEvent dispatch with os.Logger, leftover buffer forwarding to WebSocket, post-startup listener monitoring, consolidated single-pass header parsing, strict event ordering via await MainActor.run, async onDisconnect for strict ordering, StartupResumeGuard for double-resume prevention in start()
+- SessionState.swift: @MainActor @Observable class with addSession (deduplicates by connectionId), appendMessage, markDisconnected, dismissSession (guards against active sessions), auto-selection, selectedSession computed property, pending message buffering for pre-session output, gitRemote field preserved from SessionInfoPayload
+- SessionsView.swift: NavigationSplitView two-pane layout — SessionListView with selection/status/dismiss, SessionDetailView with smart auto-scroll (only scrolls when user is near bottom, extracted into testable shouldAutoScroll helper), monospaced message rendering, SessionMessageView with category-based coloring
+- ContentView.swift: Refactored with AppViewMode picker (Sessions/Notifications), NotificationsView extracted, accepts both appState and sessionState, dynamic port display, non-blocking Process execution, JSONSerialization for shell escaping, ThrowingResumeGuard for double-resume prevention with error propagation, waitForProcess throws on launch failure preventing pipe read hangs
+- TimGUIApp.swift: Wires WebSocket events to SessionState methods — sessionInfo→addSession, output→MessageFormatter.format→appendMessage, disconnected→markDisconnected; passes bound port to ContentView; single-flight startup guard with isStartingServer flag; startError cleared on successful startup; server assigned only after successful start for retry support
+- All unknown message types handled gracefully with .unknown fallback cases
+- Task 38: Duplicate session_info deduplication — addSession checks for existing connectionId, updates metadata in-place instead of creating duplicates. SessionItem metadata fields (command, planId, planTitle, workspacePath, gitRemote) changed to var. 5 new SessionState tests for deduplication behavior.
+- Task 39: Deterministic test waits — replaced all 28 Task.sleep calls in WebSocketTests with waitUntil polling helper that checks actual conditions (event counts, disconnect flags, connection IDs) instead of fixed delays. Eliminates CI timing flakiness.
+- Task 40: waitForProcess changed to async throws — ThrowingResumeGuard replaces ResumeGuard, activateTerminalPane catches launch failure and closes pipe write handle before returning early
+- Task 41: ProcessLaunchTests added — tests for waitForProcess launch failure (throws promptly) and success (/usr/bin/true completes normally)
+- Task 42: Close code validation fixed — uses split ranges (1000...1003) || (1007...1014) || (3000...4999) to exclude RFC-prohibited 1004/1005/1006. Tests added for reserved code rejection (1004, 1005, 1006) and private-use code acceptance (3000, 4000, 4999)
+### Remaining
+- None — all tasks complete
+### Next Iteration Guidance
+- Lifecycle messages all render green; the plan mentioned green/blue but current implementation is acceptable for v1
+- Post-startup listener failures are logged but not surfaced to UI; consider adding a callback to update startError state
+- WebSocketConnection.close() uses fire-and-forget Task for onDisconnect intentionally — it's only called during server shutdown via stop(), not during normal operation where ordering matters
+- readDataToEndOfFile() in activateTerminalPane still blocks the cooperative executor (pre-existing); consider wrapping in detached task or async file I/O in future
+### Decisions / Changes
+- Used Approach A (unified TCP server) with manual WebSocket frame parsing rather than NWProtocolWebSocket
+- Types are Decodable only (not full Codable) since we only receive, never encode protocol messages
+- All discriminated unions use .unknown fallback for forward compatibility
+- WebSocketConnection uses NSLock for thread safety (not actor, since it needs to interact with NWConnection synchronously)
+- 16MB max frame size limit for security (applies to both individual frames and accumulated fragment buffers)
+- dismissSession guards against active sessions — only closed sessions can be dismissed
+- Window minWidth increased to 800 to accommodate two-pane layout
+- MessageFormatter is @MainActor-isolated (chosen over locking or manual date parsing)
+- waitForProcess is async throws with ThrowingResumeGuard — propagates run() errors so callers can handle launch failures
+- RawJSONString uses AnyJSON helper to losslessly serialize objects/arrays to JSON strings (not lossy placeholder)
+- prompt_answered value is decoded and stored but NOT displayed in UI for security (could contain secrets)
+- SessionItem is an @Observable class with mutable metadata (var command, planId, etc.) to support in-place updates from duplicate session_info, plus mutable state (var isActive, var messages) for efficient SwiftUI observation
+- WebSocket event delivery uses `await MainActor.run` for strict ordering instead of independent `Task { @MainActor in }` dispatches
+- SessionState buffers output messages arriving before session_info, flushing them when the session is registered
+- SessionState.addSession deduplicates by connectionId — updates existing session metadata instead of creating duplicates
+- onDisconnect is async closure for strict ordering consistency; close() is intentionally fire-and-forget for shutdown path only
+- Server startup uses single-flight guard (isStartingServer) to prevent concurrent binding races
+- Auto-scroll uses pure shouldAutoScroll helper for testability; returns nil when viewport not yet measured to retain previous state
+- WebSocket tests use waitUntil polling helper instead of Task.sleep for deterministic CI behavior
+- Close code validation uses split ranges to accept IANA-registered 1012-1014 while excluding RFC-prohibited 1004/1005/1006
+### Risks / Blockers
+- None

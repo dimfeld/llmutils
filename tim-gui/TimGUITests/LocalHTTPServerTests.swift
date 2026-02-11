@@ -7,7 +7,7 @@ import Testing
 struct LocalHTTPServerTests {
     @Test("Server starts and stops without error")
     func startStop() async throws {
-        let server = LocalHTTPServer(port: 0) { _ in }
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { _ in })
         try await server.start()
         server.stop()
     }
@@ -16,9 +16,9 @@ struct LocalHTTPServerTests {
     func postMessage() async throws {
         let received = LockIsolated<MessagePayload?>(nil)
 
-        let server = LocalHTTPServer(port: 0) { @MainActor payload in
+        let server = LocalHTTPServer(port: 0, handler: { @MainActor payload in
             received.withLock { $0 = payload }
-        }
+        }, wsHandler: { _ in })
         try await server.start()
 
         let url = URL(string: "http://127.0.0.1:\(server.boundPort)/messages")!
@@ -46,7 +46,7 @@ struct LocalHTTPServerTests {
 
     @Test("Server returns 404 for unknown paths")
     func unknownPath() async throws {
-        let server = LocalHTTPServer(port: 0) { _ in }
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { _ in })
         try await server.start()
 
         let url = URL(string: "http://127.0.0.1:\(server.boundPort)/unknown")!
@@ -62,7 +62,7 @@ struct LocalHTTPServerTests {
 
     @Test("Server returns 400 for POST /messages with invalid JSON")
     func invalidJSON() async throws {
-        let server = LocalHTTPServer(port: 0) { _ in }
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { _ in })
         try await server.start()
 
         let url = URL(string: "http://127.0.0.1:\(server.boundPort)/messages")!

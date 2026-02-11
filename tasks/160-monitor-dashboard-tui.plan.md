@@ -4,7 +4,7 @@ title: monitor/dashboard GUI
 goal: ""
 id: 160
 uuid: 514cedb9-6431-400a-a997-12d139376146
-status: in_progress
+status: done
 priority: medium
 epic: true
 dependencies:
@@ -24,8 +24,130 @@ references:
   "170": 7dbef580-dad0-4961-a66a-96c46839a354
   "171": d6b2c0b6-90fc-4f04-8e2b-feab3fd4f9d0
 createdAt: 2026-01-04T01:04:44.082Z
-updatedAt: 2026-02-11T08:28:18.284Z
+updatedAt: 2026-02-11T21:46:49.350Z
 tasks: []
+changedFiles:
+  - README.md
+  - package.json
+  - scripts/manual-headless-prompt-harness.ts
+  - scripts/manual-tunnel-prompt-harness.ts
+  - src/common/input.test.ts
+  - src/common/input.ts
+  - src/common/terminal.test.ts
+  - src/logging/console_formatter.ts
+  - src/logging/headless_adapter.test.ts
+  - src/logging/headless_adapter.ts
+  - src/logging/headless_protocol.ts
+  - src/logging/structured_messages.test.ts
+  - src/logging/structured_messages.ts
+  - src/logging/tunnel_client.test.ts
+  - src/logging/tunnel_client.ts
+  - src/logging/tunnel_integration.test.ts
+  - src/logging/tunnel_prompt_handler.test.ts
+  - src/logging/tunnel_prompt_handler.ts
+  - src/logging/tunnel_protocol.ts
+  - src/logging/tunnel_server.test.ts
+  - src/logging/tunnel_server.ts
+  - src/testing.ts
+  - src/tim/commands/agent/agent.integration.test.ts
+  - src/tim/commands/agent/agent.summary_file.integration.test.ts
+  - src/tim/commands/agent/agent.test.ts
+  - src/tim/commands/agent/agent.timeout.integration.test.ts
+  - src/tim/commands/agent/agent.ts
+  - src/tim/commands/agent/agent_batch_mode.test.ts
+  - src/tim/commands/agent/batch_mode.ts
+  - src/tim/commands/cleanup-temp.test.ts
+  - src/tim/commands/find_next_dependency.test.ts
+  - src/tim/commands/review.test.ts
+  - src/tim/commands/subagent.test.ts
+  - src/tim/commands/subagent.ts
+  - src/tim/configSchema.test.ts
+  - src/tim/configSchema.ts
+  - src/tim/executors/claude_code/orchestrator_integration.test.ts
+  - src/tim/executors/claude_code/orchestrator_prompt.test.ts
+  - src/tim/executors/claude_code/orchestrator_prompt.ts
+  - src/tim/executors/claude_code/permissions_mcp_setup.test.ts
+  - src/tim/executors/claude_code/permissions_mcp_setup.ts
+  - src/tim/executors/claude_code.test.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/claude_code_model_test.ts
+  - src/tim/executors/codex_cli/codex_runner.ts
+  - src/tim/executors/types.ts
+  - src/tim/issue_utils.ts
+  - src/tim/planSchema.ts
+  - src/tim/tim.ts
+  - src/tim/workspace/workspace_auto_selector.ts
+  - src/common/prompt.test.ts
+  - src/common/prompt.ts
+  - tim-gui/TimGUI/ContentView.swift
+  - tim-gui/TimGUI/LocalHTTPServer.swift
+  - tim-gui/TimGUI/SessionModels.swift
+  - tim-gui/TimGUI/SessionState.swift
+  - tim-gui/TimGUI/SessionsView.swift
+  - tim-gui/TimGUI/TimGUIApp.swift
+  - tim-gui/TimGUI/WebSocketConnection.swift
+  - tim-gui/TimGUI.xcodeproj/project.pbxproj
+  - tim-gui/TimGUITests/LocalHTTPServerTests.swift
+  - tim-gui/TimGUITests/MessageFormatterTests.swift
+  - tim-gui/TimGUITests/SessionModelTests.swift
+  - tim-gui/TimGUITests/SessionStateTests.swift
+  - tim-gui/TimGUITests/WebSocketTests.swift
+  - src/common/process.test.ts
+  - src/common/process.ts
+  - src/logging/adapter.ts
+  - src/logging/console.ts
+  - src/logging/console_formatter.test.ts
+  - src/logging/send_structured.e2e.test.ts
+  - src/logging/silent.ts
+  - src/logging/test_helpers.ts
+  - src/logging/tunnel_protocol.test.ts
+  - src/logging.ts
+  - src/tim/commands/agent/agent_helpers.ts
+  - src/tim/commands/agent/batch_mode.soft_failure.test.ts
+  - src/tim/commands/agent/parent_plans.ts
+  - src/tim/commands/review.notifications.test.ts
+  - src/tim/commands/review.ts
+  - src/tim/commands/review.tunnel.test.ts
+  - src/tim/commands/validate.ts
+  - src/tim/executors/claude_code/format.test.ts
+  - src/tim/executors/claude_code/format.ts
+  - src/tim/executors/claude_code_orchestrator.ts
+  - src/tim/executors/codex_cli/format.test.ts
+  - src/tim/executors/codex_cli/format.ts
+  - src/tim/executors/codex_cli/normal_mode.ts
+  - src/tim/executors/codex_cli/review_mode.ts
+  - src/tim/executors/codex_cli/simple_mode.ts
+  - src/tim/executors/codex_cli.fix_loop.test.ts
+  - src/tim/executors/codex_cli.simple_mode.test.ts
+  - src/tim/executors/codex_cli.test.ts
+  - src/tim/executors/shared/todo_format.ts
+  - src/tim/headless.test.ts
+  - src/tim/summary/display.test.ts
+  - src/tim/summary/display.ts
+  - src/tim/summary/format.ts
+  - docs/direct_mode_feature.md
+  - docs/next-ready-feature.md
+  - schema/tim-config-schema.json
+  - schema/tim-plan-schema.json
+  - src/tim/assignments/auto_claim.test.ts
+  - src/tim/commands/compact.test.ts
+  - src/tim/commands/import/issue_tracker_integration.test.ts
+  - src/tim/commands/renumber.test.ts
+  - src/tim/headless.ts
+  - test-plans/rmplan.yml
+  - tim-gui/.swiftlint.yml
+  - tim-gui/AGENTS.md
+  - tim-gui/docs/index.md
+  - tim-gui/docs/liquid-glass/appkit.md
+  - tim-gui/docs/liquid-glass/overview.md
+  - tim-gui/docs/liquid-glass/patterns.md
+  - tim-gui/docs/liquid-glass/swiftui.md
+  - tim-gui/docs/modern-swift.md
+  - tim-gui/docs/swift-concurrency.md
+  - tim-gui/docs/swift-testing-playbook.md
+  - tim-gui/docs/toolbar/swiftui-features.md
+  - src/tim/commands/run_prompt.test.ts
+  - src/tim/commands/run_prompt.ts
 tags: []
 ---
 

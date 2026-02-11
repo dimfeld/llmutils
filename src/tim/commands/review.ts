@@ -1388,7 +1388,10 @@ async function selectIssuesToFix(
       const fileInfo = issue.file ? ` (${issue.file}${issue.line ? ':' + issue.line : ''})` : '';
 
       const firstLine = issue.content.split('\n')[0];
-      const fullDesc = issue.content + fileInfo;
+      let fullDesc = issue.content + fileInfo;
+      if (issue.suggestion) {
+        fullDesc += `\n\nSuggestion: ${issue.suggestion}`;
+      }
 
       options.push({
         name: `${severityIcons[severity]} [${severity.toUpperCase()}] ${firstLine}`,

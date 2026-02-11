@@ -10,11 +10,20 @@
 		A10000000000000000000001 /* TimGUIApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000011 /* TimGUIApp.swift */; };
 		A10000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000012 /* ContentView.swift */; };
 		A10000000000000000000003 /* LocalHTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000013 /* LocalHTTPServer.swift */; };
+		A10000000000000000000006 /* SessionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000017 /* SessionModels.swift */; };
+		A10000000000000000000007 /* WebSocketConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000018 /* WebSocketConnection.swift */; };
+		A10000000000000000000008 /* SessionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000019 /* SessionState.swift */; };
+		A10000000000000000000009 /* SessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000001A /* SessionsView.swift */; };
 		A10000000000000000000004 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000014 /* Assets.xcassets */; };
 		A10000000000000000000005 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000015 /* Preview Assets.xcassets */; };
 		A20000000000000000000001 /* ModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* ModelTests.swift */; };
 		A20000000000000000000002 /* AppStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* AppStateTests.swift */; };
 		A20000000000000000000003 /* LocalHTTPServerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* LocalHTTPServerTests.swift */; };
+		A20000000000000000000004 /* SessionModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* SessionModelTests.swift */; };
+		A20000000000000000000005 /* MessageFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* MessageFormatterTests.swift */; };
+		A20000000000000000000006 /* WebSocketTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* WebSocketTests.swift */; };
+		A20000000000000000000007 /* SessionStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* SessionStateTests.swift */; };
+		A20000000000000000000008 /* AutoScrollTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* AutoScrollTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -35,10 +44,19 @@
 		A10000000000000000000014 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A10000000000000000000015 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		A10000000000000000000016 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A10000000000000000000017 /* SessionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionModels.swift; sourceTree = "<group>"; };
+		A10000000000000000000018 /* WebSocketConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketConnection.swift; sourceTree = "<group>"; };
+		A10000000000000000000019 /* SessionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionState.swift; sourceTree = "<group>"; };
+		A1000000000000000000001A /* SessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionsView.swift; sourceTree = "<group>"; };
 		A20000000000000000000010 /* TimGUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TimGUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A20000000000000000000011 /* ModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000012 /* AppStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000013 /* LocalHTTPServerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHTTPServerTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000014 /* SessionModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionModelTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000015 /* MessageFormatterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageFormatterTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000016 /* WebSocketTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000017 /* SessionStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStateTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000018 /* AutoScrollTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoScrollTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -65,6 +83,10 @@
 				A10000000000000000000011 /* TimGUIApp.swift */,
 				A10000000000000000000012 /* ContentView.swift */,
 				A10000000000000000000013 /* LocalHTTPServer.swift */,
+				A10000000000000000000017 /* SessionModels.swift */,
+				A10000000000000000000018 /* WebSocketConnection.swift */,
+				A10000000000000000000019 /* SessionState.swift */,
+				A1000000000000000000001A /* SessionsView.swift */,
 				A10000000000000000000014 /* Assets.xcassets */,
 				A10000000000000000000031 /* Preview Content */,
 				A10000000000000000000016 /* Info.plist */,
@@ -104,6 +126,11 @@
 				A20000000000000000000011 /* ModelTests.swift */,
 				A20000000000000000000012 /* AppStateTests.swift */,
 				A20000000000000000000013 /* LocalHTTPServerTests.swift */,
+				A20000000000000000000014 /* SessionModelTests.swift */,
+				A20000000000000000000015 /* MessageFormatterTests.swift */,
+				A20000000000000000000016 /* WebSocketTests.swift */,
+				A20000000000000000000017 /* SessionStateTests.swift */,
+				A20000000000000000000018 /* AutoScrollTests.swift */,
 			);
 			path = TimGUITests;
 			sourceTree = "<group>";
@@ -203,6 +230,10 @@
 				A10000000000000000000001 /* TimGUIApp.swift in Sources */,
 				A10000000000000000000002 /* ContentView.swift in Sources */,
 				A10000000000000000000003 /* LocalHTTPServer.swift in Sources */,
+				A10000000000000000000006 /* SessionModels.swift in Sources */,
+				A10000000000000000000007 /* WebSocketConnection.swift in Sources */,
+				A10000000000000000000008 /* SessionState.swift in Sources */,
+				A10000000000000000000009 /* SessionsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -213,6 +244,11 @@
 				A20000000000000000000001 /* ModelTests.swift in Sources */,
 				A20000000000000000000002 /* AppStateTests.swift in Sources */,
 				A20000000000000000000003 /* LocalHTTPServerTests.swift in Sources */,
+				A20000000000000000000004 /* SessionModelTests.swift in Sources */,
+				A20000000000000000000005 /* MessageFormatterTests.swift in Sources */,
+				A20000000000000000000006 /* WebSocketTests.swift in Sources */,
+				A20000000000000000000007 /* SessionStateTests.swift in Sources */,
+				A20000000000000000000008 /* AutoScrollTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

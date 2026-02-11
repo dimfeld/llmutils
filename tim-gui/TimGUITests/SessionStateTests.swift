@@ -1,0 +1,662 @@
+import Foundation
+import Testing
+
+@testable import TimGUI
+
+@Suite("SessionState", .serialized)
+@MainActor
+struct SessionStateTests {
+    // MARK: - Helpers
+
+    private func makeInfo(
+        command: String = "agent",
+        planId: Int? = nil,
+        planTitle: String? = nil,
+        workspacePath: String? = nil,
+        gitRemote: String? = nil
+    ) -> SessionInfoPayload {
+        SessionInfoPayload(
+            command: command,
+            planId: planId,
+            planTitle: planTitle,
+            workspacePath: workspacePath,
+            gitRemote: gitRemote
+        )
+    }
+
+    private func makeMessage(seq: Int = 1, text: String = "hello", category: MessageCategory = .log)
+        -> SessionMessage
+    {
+        SessionMessage(seq: seq, text: text, category: category)
+    }
+
+    // MARK: - addSession
+
+    @Test("addSession creates a session with correct properties from SessionInfoPayload")
+    func addSessionProperties() {
+        let state = SessionState()
+        let connId = UUID()
+        let info = makeInfo(
+            command: "agent",
+            planId: 42,
+            planTitle: "My Plan",
+            workspacePath: "/projects/test",
+            gitRemote: "git@github.com:user/repo.git"
+        )
+
+        state.addSession(connectionId: connId, info: info)
+
+        #expect(state.sessions.count == 1)
+        let session = state.sessions[0]
+        #expect(session.connectionId == connId)
+        #expect(session.command == "agent")
+        #expect(session.planId == 42)
+        #expect(session.planTitle == "My Plan")
+        #expect(session.workspacePath == "/projects/test")
+        #expect(session.gitRemote == "git@github.com:user/repo.git")
+        #expect(session.isActive == true)
+        #expect(session.messages.isEmpty)
+    }
+
+    @Test("addSession inserts at index 0 (newest first)")
+    func addSessionInsertsAtFront() {
+        let state = SessionState()
+        let connId1 = UUID()
+        let connId2 = UUID()
+
+        state.addSession(connectionId: connId1, info: makeInfo(command: "agent"))
+        state.addSession(connectionId: connId2, info: makeInfo(command: "review"))
+
+        #expect(state.sessions.count == 2)
+        #expect(state.sessions[0].connectionId == connId2)
+        #expect(state.sessions[0].command == "review")
+        #expect(state.sessions[1].connectionId == connId1)
+        #expect(state.sessions[1].command == "agent")
+    }
+
+    @Test("addSession auto-selects first session if nothing is selected")
+    func addSessionAutoSelects() {
+        let state = SessionState()
+        #expect(state.selectedSessionId == nil)
+
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo())
+
+        #expect(state.selectedSessionId == state.sessions[0].id)
+    }
+
+    @Test("addSession does NOT change selection if something is already selected")
+    func addSessionPreservesSelection() {
+        let state = SessionState()
+        let connId1 = UUID()
+        state.addSession(connectionId: connId1, info: makeInfo(command: "agent"))
+        let firstSessionId = state.selectedSessionId!
+
+        let connId2 = UUID()
+        state.addSession(connectionId: connId2, info: makeInfo(command: "review"))
+
+        #expect(state.selectedSessionId == firstSessionId)
+        // Verify the first session is still selected, not the newly added one
+        #expect(state.sessions[0].connectionId == connId2)
+        #expect(state.selectedSessionId != state.sessions[0].id)
+    }
+
+    @Test("addSession with minimal info sets optional fields to nil")
+    func addSessionMinimalInfo() {
+        let state = SessionState()
+        let info = makeInfo(command: "review")
+
+        state.addSession(connectionId: UUID(), info: info)
+
+        let session = state.sessions[0]
+        #expect(session.command == "review")
+        #expect(session.planId == nil)
+        #expect(session.planTitle == nil)
+        #expect(session.workspacePath == nil)
+        #expect(session.gitRemote == nil)
+    }
+
+    // MARK: - Duplicate session_info handling
+
+    @Test("Duplicate session_info updates metadata instead of creating a new session")
+    func duplicateSessionInfoUpdatesMetadata() {
+        let state = SessionState()
+        let connId = UUID()
+
+        // First session_info
+        state.addSession(connectionId: connId, info: makeInfo(
+            command: "agent",
+            planId: 10,
+            planTitle: "Original Plan",
+            workspacePath: "/original/path",
+            gitRemote: "git@github.com:user/repo.git"
+        ))
+        #expect(state.sessions.count == 1)
+        let originalId = state.sessions[0].id
+        let originalConnectedAt = state.sessions[0].connectedAt
+
+        // Duplicate session_info with updated metadata
+        state.addSession(connectionId: connId, info: makeInfo(
+            command: "review",
+            planId: 20,
+            planTitle: "Updated Plan",
+            workspacePath: "/updated/path",
+            gitRemote: "git@github.com:user/other.git"
+        ))
+
+        // Should still be one session, not two
+        #expect(state.sessions.count == 1)
+        let session = state.sessions[0]
+        // Identity preserved
+        #expect(session.id == originalId)
+        #expect(session.connectionId == connId)
+        #expect(session.connectedAt == originalConnectedAt)
+        // Metadata updated
+        #expect(session.command == "review")
+        #expect(session.planId == 20)
+        #expect(session.planTitle == "Updated Plan")
+        #expect(session.workspacePath == "/updated/path")
+        #expect(session.gitRemote == "git@github.com:user/other.git")
+    }
+
+    @Test("Duplicate session_info preserves existing messages")
+    func duplicateSessionInfoPreservesMessages() {
+        let state = SessionState()
+        let connId = UUID()
+
+        state.addSession(connectionId: connId, info: makeInfo(command: "agent"))
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "msg1"))
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "msg2"))
+
+        // Duplicate session_info
+        state.addSession(connectionId: connId, info: makeInfo(command: "review"))
+
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].messages.count == 2)
+        #expect(state.sessions[0].messages[0].text == "msg1")
+        #expect(state.sessions[0].messages[1].text == "msg2")
+    }
+
+    @Test("Duplicate session_info does not change selection")
+    func duplicateSessionInfoPreservesSelection() {
+        let state = SessionState()
+        let connId1 = UUID()
+        let connId2 = UUID()
+
+        state.addSession(connectionId: connId1, info: makeInfo(command: "agent"))
+        let selectedId = state.selectedSessionId!
+
+        state.addSession(connectionId: connId2, info: makeInfo(command: "review"))
+
+        // Duplicate session_info for connId1 — should not affect selection
+        state.addSession(connectionId: connId1, info: makeInfo(command: "updated"))
+
+        #expect(state.selectedSessionId == selectedId)
+        #expect(state.sessions.count == 2)
+    }
+
+    @Test("Duplicate session_info preserves existing messages")
+    func duplicateSessionInfoPreservesExistingMessages() {
+        let state = SessionState()
+        let connId = UUID()
+
+        state.addSession(connectionId: connId, info: makeInfo(command: "agent"))
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "msg1"))
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "msg2"))
+
+        // Duplicate session_info should not affect accumulated messages
+        state.addSession(connectionId: connId, info: makeInfo(command: "review"))
+
+        let session = state.sessions.first { $0.connectionId == connId }!
+        #expect(session.messages.count == 2)
+        #expect(session.messages[0].text == "msg1")
+        #expect(session.messages[1].text == "msg2")
+        #expect(session.command == "review")
+    }
+
+    @Test("Duplicate session_info keeps isActive unchanged")
+    func duplicateSessionInfoKeepsIsActive() {
+        let state = SessionState()
+        let connId = UUID()
+
+        state.addSession(connectionId: connId, info: makeInfo(command: "agent"))
+        #expect(state.sessions[0].isActive == true)
+
+        // Duplicate session_info should not change isActive
+        state.addSession(connectionId: connId, info: makeInfo(command: "review"))
+        #expect(state.sessions[0].isActive == true)
+    }
+
+    // MARK: - appendMessage
+
+    @Test("appendMessage adds message to the correct session by connectionId")
+    func appendMessageCorrectSession() {
+        let state = SessionState()
+        let connId1 = UUID()
+        let connId2 = UUID()
+        state.addSession(connectionId: connId1, info: makeInfo(command: "first"))
+        state.addSession(connectionId: connId2, info: makeInfo(command: "second"))
+
+        let msg = makeMessage(seq: 1, text: "hello world", category: .llmOutput)
+        state.appendMessage(connectionId: connId1, message: msg)
+
+        // connId2 is at index 0 (newest first), connId1 is at index 1
+        #expect(state.sessions[1].messages.count == 1)
+        #expect(state.sessions[1].messages[0].text == "hello world")
+        #expect(state.sessions[1].messages[0].category == .llmOutput)
+        // Other session should have no messages
+        #expect(state.sessions[0].messages.isEmpty)
+    }
+
+    @Test("appendMessage appends multiple messages in order")
+    func appendMessageOrder() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo())
+
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "first"))
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "second"))
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 3, text: "third"))
+
+        #expect(state.sessions[0].messages.count == 3)
+        #expect(state.sessions[0].messages[0].text == "first")
+        #expect(state.sessions[0].messages[1].text == "second")
+        #expect(state.sessions[0].messages[2].text == "third")
+    }
+
+    @Test("appendMessage buffers messages for unknown connectionId (does not affect existing sessions)")
+    func appendMessageUnknownConnection() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo())
+
+        state.appendMessage(connectionId: UUID(), message: makeMessage(seq: 1, text: "orphan"))
+
+        // Existing session should not be affected
+        #expect(state.sessions[0].messages.isEmpty)
+    }
+
+    @Test("appendMessage buffers messages before session_info, addSession flushes them")
+    func appendMessageBufferingAndFlush() {
+        let state = SessionState()
+        let connId = UUID()
+
+        // Messages arrive before session_info
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "early msg 1"))
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "early msg 2"))
+
+        // No sessions exist yet
+        #expect(state.sessions.isEmpty)
+
+        // Now session_info arrives
+        state.addSession(connectionId: connId, info: makeInfo(command: "agent"))
+
+        // Buffered messages should be flushed to the new session
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].messages.count == 2)
+        #expect(state.sessions[0].messages[0].text == "early msg 1")
+        #expect(state.sessions[0].messages[1].text == "early msg 2")
+    }
+
+    @Test("appendMessage buffer is per-connection, messages go to correct sessions")
+    func appendMessageBufferingPerConnection() {
+        let state = SessionState()
+        let connId1 = UUID()
+        let connId2 = UUID()
+
+        // Buffer messages for two different connections
+        state.appendMessage(connectionId: connId1, message: makeMessage(seq: 1, text: "conn1 early"))
+        state.appendMessage(connectionId: connId2, message: makeMessage(seq: 1, text: "conn2 early"))
+
+        // Register first session
+        state.addSession(connectionId: connId1, info: makeInfo(command: "agent"))
+        #expect(state.sessions[0].messages.count == 1)
+        #expect(state.sessions[0].messages[0].text == "conn1 early")
+
+        // Register second session
+        state.addSession(connectionId: connId2, info: makeInfo(command: "review"))
+        #expect(state.sessions[0].messages.count == 1)
+        #expect(state.sessions[0].messages[0].text == "conn2 early")
+    }
+
+    @Test("appendMessage continues normally after buffered messages are flushed")
+    func appendMessageAfterFlush() {
+        let state = SessionState()
+        let connId = UUID()
+
+        // Buffer one message
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "buffered"))
+
+        // Register session (flushes buffer)
+        state.addSession(connectionId: connId, info: makeInfo())
+
+        // New messages append normally
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "live msg"))
+
+        #expect(state.sessions[0].messages.count == 2)
+        #expect(state.sessions[0].messages[0].text == "buffered")
+        #expect(state.sessions[0].messages[1].text == "live msg")
+    }
+
+    @Test("markDisconnected cleans up pending message buffer")
+    func markDisconnectedCleansPendingBuffer() {
+        let state = SessionState()
+        let connId = UUID()
+
+        // Buffer messages for a connection that never sends session_info
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "orphan"))
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "orphan 2"))
+
+        // Disconnect without ever registering the session
+        state.markDisconnected(connectionId: connId)
+
+        // Now if addSession is called (shouldn't happen but test cleanup), buffer should be empty
+        state.addSession(connectionId: connId, info: makeInfo())
+        #expect(state.sessions[0].messages.isEmpty)
+    }
+
+    // MARK: - markDisconnected
+
+    @Test("markDisconnected sets isActive to false")
+    func markDisconnectedSetsInactive() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo())
+        #expect(state.sessions[0].isActive == true)
+
+        state.markDisconnected(connectionId: connId)
+
+        #expect(state.sessions[0].isActive == false)
+    }
+
+    @Test("markDisconnected only affects the targeted session")
+    func markDisconnectedTargeted() {
+        let state = SessionState()
+        let connId1 = UUID()
+        let connId2 = UUID()
+        state.addSession(connectionId: connId1, info: makeInfo())
+        state.addSession(connectionId: connId2, info: makeInfo())
+
+        state.markDisconnected(connectionId: connId1)
+
+        // connId2 at index 0, connId1 at index 1
+        #expect(state.sessions[0].isActive == true)
+        #expect(state.sessions[1].isActive == false)
+    }
+
+    @Test("markDisconnected is a no-op for unknown connectionId")
+    func markDisconnectedUnknownConnection() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo())
+
+        state.markDisconnected(connectionId: UUID())
+
+        #expect(state.sessions[0].isActive == true)
+    }
+
+    // MARK: - dismissSession
+
+    @Test("dismissSession removes a closed session from the list")
+    func dismissSessionRemoves() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo())
+        let sessionId = state.sessions[0].id
+        state.markDisconnected(connectionId: connId)
+
+        state.dismissSession(id: sessionId)
+
+        #expect(state.sessions.isEmpty)
+    }
+
+    @Test("dismissSession is a no-op for an active session")
+    func dismissSessionActiveSessionNoop() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo())
+        let sessionId = state.sessions[0].id
+        #expect(state.sessions[0].isActive == true)
+
+        state.dismissSession(id: sessionId)
+
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].id == sessionId)
+    }
+
+    @Test("dismissSession reselects first session if dismissed session was selected")
+    func dismissSessionReselects() {
+        let state = SessionState()
+        let connId1 = UUID()
+        let connId2 = UUID()
+        state.addSession(connectionId: connId1, info: makeInfo(command: "first"))
+        state.addSession(connectionId: connId2, info: makeInfo(command: "second"))
+
+        // First session added was auto-selected; it's now at index 1
+        let selectedId = state.selectedSessionId!
+        #expect(state.sessions[1].id == selectedId)
+
+        // Mark disconnected before dismissing
+        state.markDisconnected(connectionId: connId1)
+        state.dismissSession(id: selectedId)
+
+        // Should reselect the remaining session (connId2, now the only one)
+        #expect(state.sessions.count == 1)
+        #expect(state.selectedSessionId == state.sessions[0].id)
+    }
+
+    @Test("dismissSession does not change selection if a different session was dismissed")
+    func dismissSessionPreservesSelection() {
+        let state = SessionState()
+        let connId1 = UUID()
+        let connId2 = UUID()
+        state.addSession(connectionId: connId1, info: makeInfo(command: "first"))
+        let firstSessionId = state.selectedSessionId!
+
+        state.addSession(connectionId: connId2, info: makeInfo(command: "second"))
+        let secondSessionId = state.sessions[0].id
+
+        // First session is still selected
+        #expect(state.selectedSessionId == firstSessionId)
+
+        // Mark second session disconnected before dismissing
+        state.markDisconnected(connectionId: connId2)
+        state.dismissSession(id: secondSessionId)
+
+        #expect(state.sessions.count == 1)
+        #expect(state.selectedSessionId == firstSessionId)
+    }
+
+    @Test("dismissSession sets selectedSessionId to nil when last session is dismissed")
+    func dismissSessionLastSession() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo())
+        let sessionId = state.sessions[0].id
+        state.markDisconnected(connectionId: connId)
+
+        state.dismissSession(id: sessionId)
+
+        #expect(state.sessions.isEmpty)
+        #expect(state.selectedSessionId == nil)
+    }
+
+    @Test("dismissSession is a no-op for unknown session ID")
+    func dismissSessionUnknownId() {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: makeInfo())
+        let originalCount = state.sessions.count
+
+        state.dismissSession(id: UUID())
+
+        #expect(state.sessions.count == originalCount)
+    }
+
+    // MARK: - selectedSession computed property
+
+    @Test("selectedSession returns the correct session when one is selected")
+    func selectedSessionReturnsCorrect() {
+        let state = SessionState()
+        let connId1 = UUID()
+        let connId2 = UUID()
+        state.addSession(connectionId: connId1, info: makeInfo(command: "first"))
+        state.addSession(connectionId: connId2, info: makeInfo(command: "second"))
+
+        // First session was auto-selected
+        let selected = state.selectedSession
+        #expect(selected != nil)
+        #expect(selected?.connectionId == connId1)
+        #expect(selected?.command == "first")
+    }
+
+    @Test("selectedSession returns nil when nothing is selected")
+    func selectedSessionReturnsNil() {
+        let state = SessionState()
+
+        #expect(state.selectedSession == nil)
+    }
+
+    @Test("selectedSession returns nil after selectedSessionId is set to an invalid ID")
+    func selectedSessionInvalidId() {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: makeInfo())
+        state.selectedSessionId = UUID()  // Set to a non-existent session ID
+
+        #expect(state.selectedSession == nil)
+    }
+
+    @Test("selectedSession updates when selection changes")
+    func selectedSessionUpdatesOnSelectionChange() {
+        let state = SessionState()
+        let connId1 = UUID()
+        let connId2 = UUID()
+        state.addSession(connectionId: connId1, info: makeInfo(command: "first"))
+        state.addSession(connectionId: connId2, info: makeInfo(command: "second"))
+
+        // Initially first session is selected
+        #expect(state.selectedSession?.connectionId == connId1)
+
+        // Switch selection to second session
+        state.selectedSessionId = state.sessions[0].id
+        #expect(state.selectedSession?.connectionId == connId2)
+    }
+
+    // MARK: - Integration scenarios
+
+    @Test("Full lifecycle: add, message, disconnect, dismiss")
+    func fullLifecycle() {
+        let state = SessionState()
+        let connId = UUID()
+        let info = makeInfo(
+            command: "agent", planId: 10, planTitle: "Build feature",
+            workspacePath: "/home/user/project")
+
+        // Connect
+        state.addSession(connectionId: connId, info: info)
+        #expect(state.sessions.count == 1)
+        #expect(state.selectedSession?.command == "agent")
+
+        // Receive messages
+        state.appendMessage(
+            connectionId: connId, message: makeMessage(seq: 1, text: "Starting...", category: .lifecycle))
+        state.appendMessage(
+            connectionId: connId,
+            message: makeMessage(seq: 2, text: "Thinking about the problem", category: .llmOutput))
+        state.appendMessage(
+            connectionId: connId,
+            message: makeMessage(seq: 3, text: "Edit: main.swift", category: .fileChange))
+        #expect(state.sessions[0].messages.count == 3)
+
+        // Disconnect
+        state.markDisconnected(connectionId: connId)
+        #expect(state.sessions[0].isActive == false)
+        #expect(state.sessions[0].messages.count == 3)  // Messages preserved
+
+        // Dismiss
+        let sessionId = state.sessions[0].id
+        state.dismissSession(id: sessionId)
+        #expect(state.sessions.isEmpty)
+        #expect(state.selectedSessionId == nil)
+    }
+
+    @Test("Multiple sessions: messages go to correct sessions")
+    func multipleSessionsMessageRouting() {
+        let state = SessionState()
+        let connId1 = UUID()
+        let connId2 = UUID()
+        let connId3 = UUID()
+        state.addSession(connectionId: connId1, info: makeInfo(command: "agent"))
+        state.addSession(connectionId: connId2, info: makeInfo(command: "review"))
+        state.addSession(connectionId: connId3, info: makeInfo(command: "codex"))
+
+        state.appendMessage(connectionId: connId2, message: makeMessage(seq: 1, text: "review msg"))
+        state.appendMessage(connectionId: connId1, message: makeMessage(seq: 1, text: "agent msg"))
+        state.appendMessage(connectionId: connId3, message: makeMessage(seq: 1, text: "codex msg"))
+        state.appendMessage(connectionId: connId2, message: makeMessage(seq: 2, text: "review msg 2"))
+
+        // Sessions are in reverse order: connId3 at 0, connId2 at 1, connId1 at 2
+        #expect(state.sessions[2].messages.count == 1)
+        #expect(state.sessions[2].messages[0].text == "agent msg")
+        #expect(state.sessions[1].messages.count == 2)
+        #expect(state.sessions[1].messages[0].text == "review msg")
+        #expect(state.sessions[1].messages[1].text == "review msg 2")
+        #expect(state.sessions[0].messages.count == 1)
+        #expect(state.sessions[0].messages[0].text == "codex msg")
+    }
+
+    // MARK: - Reference semantics (SessionItem as class)
+
+    @Test("SessionItem reference reflects mutations made through SessionState")
+    func referenceSemanticsMutations() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo(command: "agent", planTitle: "Test Plan"))
+
+        // Hold a reference to the session
+        let sessionRef = state.sessions[0]
+        #expect(sessionRef.isActive == true)
+        #expect(sessionRef.messages.isEmpty)
+
+        // Mutate through SessionState methods
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "msg1"))
+        state.markDisconnected(connectionId: connId)
+
+        // The held reference should reflect the changes (class semantics)
+        #expect(sessionRef.messages.count == 1)
+        #expect(sessionRef.messages[0].text == "msg1")
+        #expect(sessionRef.isActive == false)
+    }
+
+    @Test("selectedSession returns the same instance as sessions array element")
+    func selectedSessionIdentity() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo(command: "agent"))
+
+        let fromArray = state.sessions[0]
+        let fromSelected = state.selectedSession
+
+        // Both should be the exact same object (reference identity)
+        #expect(fromArray === fromSelected)
+    }
+
+    @Test("Appending messages to SessionItem via reference is visible through SessionState")
+    func referenceMessageAppend() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo())
+
+        // Append multiple messages and verify the reference stays consistent
+        for i in 1...5 {
+            state.appendMessage(connectionId: connId, message: makeMessage(seq: i, text: "msg \(i)"))
+        }
+
+        let session = state.selectedSession!
+        #expect(session.messages.count == 5)
+
+        // Append more after getting the reference
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 6, text: "msg 6"))
+        #expect(session.messages.count == 6)
+        #expect(session.messages[5].text == "msg 6")
+    }
+}
