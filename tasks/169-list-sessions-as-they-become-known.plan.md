@@ -7,7 +7,7 @@ goal: Add WebSocket server support to tim-gui so it can receive and display
 id: 169
 uuid: 85aa17d2-7d55-4d91-afbb-09821893a59a
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 parent: 160
 references:
@@ -15,7 +15,7 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-11T21:27:43.408Z
+updatedAt: 2026-02-11T21:46:49.286Z
 tasks:
   - title: Define session data models and headless protocol types
     done: true
@@ -122,7 +122,7 @@ tasks:
       The server should remain a single NWListener on port 8123 that handles
       both protocols transparently.
   - title: Create SessionState manager and message formatter
-    done: false
+    done: true
     description: >-
       Create the session state management and message formatting:
 
@@ -146,7 +146,7 @@ tasks:
 
       No macOS system notifications for sessions - sessions are GUI-only.
   - title: Build the SessionsView two-pane layout
-    done: false
+    done: true
     description: >-
       Create tim-gui/TimGUI/SessionsView.swift with the two-pane session
       monitoring view:
@@ -185,7 +185,7 @@ tasks:
       4. Use monospaced font for message content to preserve formatting of
       diffs, code, etc.
   - title: Add view selector and wire everything together
-    done: false
+    done: true
     description: >-
       Integrate all components into the app:
 
@@ -213,14 +213,18 @@ tasks:
       4. Ensure the window frame is large enough for the two-pane layout
       (increase minWidth if needed)
 changedFiles:
+  - tim-gui/TimGUI/ContentView.swift
   - tim-gui/TimGUI/LocalHTTPServer.swift
   - tim-gui/TimGUI/SessionModels.swift
+  - tim-gui/TimGUI/SessionState.swift
+  - tim-gui/TimGUI/SessionsView.swift
   - tim-gui/TimGUI/TimGUIApp.swift
   - tim-gui/TimGUI/WebSocketConnection.swift
   - tim-gui/TimGUI.xcodeproj/project.pbxproj
   - tim-gui/TimGUITests/LocalHTTPServerTests.swift
   - tim-gui/TimGUITests/MessageFormatterTests.swift
   - tim-gui/TimGUITests/SessionModelTests.swift
+  - tim-gui/TimGUITests/SessionStateTests.swift
   - tim-gui/TimGUITests/WebSocketTests.swift
 tags:
   - tim-gui
@@ -687,28 +691,31 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 
 ## Current Progress
 ### Current State
-- Tasks 1-3 (data models, WebSocket connection, server upgrade) are complete and reviewed
-- Backend infrastructure is fully operational: the server handles both HTTP and WebSocket on port 8123
+- All 6 tasks are complete. The feature is fully implemented and reviewed.
+- 126 tests passing (model decoding, message formatting, WebSocket integration, SessionState unit tests)
 ### Completed (So Far)
-- SessionModels.swift: All Codable types for HeadlessMessage, TunnelMessage, StructuredMessagePayload (~28 types), SessionItem, SessionMessage, MessageCategory, plus MessageFormatter
+- SessionModels.swift: All Decodable types for HeadlessMessage, TunnelMessage, StructuredMessagePayload (~28 types), SessionItem, SessionMessage, MessageCategory, plus MessageFormatter
 - WebSocketConnection.swift: Full RFC 6455 frame parsing/sending, upgrade handshake, fragmentation, close/ping/pong, NSLock-protected close state, 16MB frame limit
 - LocalHTTPServer.swift: Routes GET /tim-agent with Upgrade: websocket to WebSocket handler, POST /messages continues as HTTP, WebSocketEvent dispatch with os.Logger
+- SessionState.swift: @MainActor @Observable class with addSession, appendMessage, markDisconnected, dismissSession (guards against active sessions), auto-selection, selectedSession computed property
+- SessionsView.swift: NavigationSplitView two-pane layout — SessionListView with selection/status/dismiss, SessionDetailView with auto-scroll and monospaced message rendering, SessionMessageView with category-based coloring
+- ContentView.swift: Refactored with AppViewMode picker (Sessions/Notifications), NotificationsView extracted, accepts both appState and sessionState, hides "Listening" text on server error
+- TimGUIApp.swift: Wires WebSocket events to SessionState methods — sessionInfo→addSession, output→MessageFormatter.format→appendMessage, disconnected→markDisconnected
 - All unknown message types handled gracefully with .unknown fallback cases
-- 97 tests passing (including model decoding, message formatting, WebSocket integration)
+- agent_step_end shows success/failure indicator (✓/✗) and uses .error category for failures
 ### Remaining
-- Task 4: Create SessionState manager and message formatter (wire to state)
-- Task 5: Build the SessionsView two-pane layout
-- Task 6: Add view selector and wire everything together
+- None — all tasks complete
 ### Next Iteration Guidance
-- Tasks 4, 5, and 6 form a natural batch: state management, views, and wiring
-- SessionState should consume WebSocketEvent from LocalHTTPServer
-- The MessageFormatter is already in SessionModels.swift, so Task 4 mainly needs the SessionState class and wiring
-- ContentView needs to be refactored to extract NotificationsView and add the view mode picker
+- Performance: SessionItem is a struct with growing messages array. For high-throughput sessions, consider refactoring to class-based @Observable SessionItem or separate message storage to reduce SwiftUI re-evaluation
+- Auto-scroll uses both onAppear and onChange with .id(session.id) on SessionDetailView for stable view identity
+- Lifecycle messages all render green; the plan mentioned green/blue but current implementation is acceptable for v1
 ### Decisions / Changes
 - Used Approach A (unified TCP server) with manual WebSocket frame parsing rather than NWProtocolWebSocket
 - Types are Decodable only (not full Codable) since we only receive, never encode protocol messages
 - All discriminated unions use .unknown fallback for forward compatibility
 - WebSocketConnection uses NSLock for thread safety (not actor, since it needs to interact with NWConnection synchronously)
 - 16MB max frame size limit for security
+- dismissSession guards against active sessions — only closed sessions can be dismissed
+- Window minWidth increased to 800 to accommodate two-pane layout
 ### Risks / Blockers
 - None
