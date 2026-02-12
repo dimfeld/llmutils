@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import Network
+import os.log
 
 /// WebSocket opcodes per RFC 6455
 private enum WSOpcode: UInt8 {
@@ -78,13 +79,17 @@ final class WebSocketConnection: @unchecked Sendable {
 
     // MARK: - Frame Reading
 
+    private static let logger = Logger(subsystem: "com.timgui", category: "WebSocketConnection")
+
     /// Starts the read loop for incoming WebSocket frames.
     func startReading() {
         Task {
             do {
                 try await readLoop()
+            } catch is WebSocketError {
+                // Expected disconnection — no logging needed
             } catch {
-                // Connection dropped or error
+                Self.logger.error("WebSocket readLoop error on connection \(self.id): \(error)")
             }
             if markClosed() {
                 connection.cancel()
@@ -277,7 +282,45 @@ final class WebSocketConnection: @unchecked Sendable {
                 }
 
             case .close:
-                // Send close frame back
+                // RFC 6455 §5.5.1: Close frame payload validation
+                if payload.count == 1 {
+                    // Payload of exactly 1 byte is invalid
+                    try? await sendCloseFrame(code: 1002)
+                    if markClosed() {
+                        connection.cancel()
+                        await onDisconnect()
+                    }
+                    return
+                }
+                if payload.count >= 2 {
+                    // Validate close code range (RFC 6455 §7.4)
+                    let code = UInt16(payload[0]) << 8 | UInt16(payload[1])
+                    let validRanges: Bool = code == 1000 || code == 1001 || code == 1002
+                        || code == 1003 || code == 1007 || code == 1008 || code == 1009
+                        || code == 1010 || code == 1011
+                        || (3000...4999).contains(code)
+                    if !validRanges {
+                        try? await sendCloseFrame(code: 1002)
+                        if markClosed() {
+                            connection.cancel()
+                            await onDisconnect()
+                        }
+                        return
+                    }
+                    // Validate reason bytes are valid UTF-8
+                    if payload.count > 2 {
+                        let reasonBytes = payload[2...]
+                        if String(data: Data(reasonBytes), encoding: .utf8) == nil {
+                            try? await sendCloseFrame(code: 1007)
+                            if markClosed() {
+                                connection.cancel()
+                                await onDisconnect()
+                            }
+                            return
+                        }
+                    }
+                }
+                // Valid close frame — echo it back
                 try? await sendFrame(opcode: .close, payload: payload)
                 if markClosed() {
                     connection.cancel()

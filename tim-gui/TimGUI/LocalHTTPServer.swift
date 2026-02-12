@@ -72,13 +72,18 @@ final class LocalHTTPServer: @unchecked Sendable {
             self?.handle(connection: connection)
         }
 
+        let resumeGuard = StartupResumeGuard()
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             newListener.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
-                    continuation.resume()
+                    if resumeGuard.tryResume() {
+                        continuation.resume()
+                    }
                 case .failed(let error):
-                    continuation.resume(throwing: error)
+                    if resumeGuard.tryResume() {
+                        continuation.resume(throwing: error)
+                    }
                 default:
                     break
                 }
@@ -387,4 +392,19 @@ struct HTTPRequest {
 
 enum HTTPError: Error {
     case invalidRequest
+}
+
+/// Thread-safe guard ensuring a continuation is resumed at most once during server startup.
+private final class StartupResumeGuard: @unchecked Sendable {
+    private let lock = NSLock()
+    private var resumed = false
+
+    /// Returns true if this call is the first to claim the resume. Subsequent calls return false.
+    func tryResume() -> Bool {
+        lock.lock()
+        let alreadyResumed = resumed
+        resumed = true
+        lock.unlock()
+        return !alreadyResumed
+    }
 }

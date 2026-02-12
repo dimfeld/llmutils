@@ -7,7 +7,7 @@ goal: Add WebSocket server support to tim-gui so it can receive and display
 id: 169
 uuid: 85aa17d2-7d55-4d91-afbb-09821893a59a
 generatedBy: agent
-status: done
+status: in_progress
 priority: medium
 parent: 160
 references:
@@ -15,7 +15,7 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-12T02:46:27.856Z
+updatedAt: 2026-02-12T02:58:43.207Z
 tasks:
   - title: Define session data models and headless protocol types
     done: true
@@ -673,6 +673,114 @@ tasks:
 
 
       Related file: tim-gui/TimGUI/TimGUIApp.swift:86
+  - title: "Address Review Feedback: WebSocket close-frame validation is incomplete,
+      so malformed close frames are accepted instead of rejected per RFC 6455."
+    done: false
+    description: >-
+      WebSocket close-frame validation is incomplete, so malformed close frames
+      are accepted instead of rejected per RFC 6455. In `readLoop`,
+      control-frame checks only enforce `FIN=1` and `payload <= 125`, then
+      `.close` immediately echoes payload and disconnects. A close payload of
+      exactly 1 byte is invalid by spec and should trigger protocol error
+      (1002). Close reason bytes (when payload >= 2) are also not validated for
+      UTF-8, which should trigger 1007 on invalid data. This violates the plan's
+      RFC-6455 compliance requirement for the manual parser.
+
+
+      Suggestion: In `.close` handling, add explicit validation: reject
+      `payload.count == 1` with close 1002; when `payload.count >= 2`, validate
+      close code range and UTF-8 validity of reason bytes (1007 for invalid
+      UTF-8). Only echo/close when payload is valid.
+
+
+      Related file: tim-gui/TimGUI/WebSocketConnection.swift:182, 279
+  - title: "Address Review Feedback: LocalHTTPServer.start() continuation can be
+      resumed twice."
+    done: false
+    description: >-
+      LocalHTTPServer.start() continuation can be resumed twice. The
+      withCheckedThrowingContinuation sets a stateUpdateHandler that resumes on
+      .ready or .failed. After the continuation resumes on .ready, the new
+      handler isn't installed until line 90. Between lines 87 and 90, the
+      NWListener could theoretically transition to .failed (e.g., the network
+      interface drops), which would fire the old closure and attempt to resume
+      the already-completed continuation. CheckedContinuation will trap on
+      double-resume.
+
+
+      Suggestion: Swap the handler to nil inside the closure after the first
+      resume. Alternatively, use a local Bool flag or atomic to ensure single resumption,
+      similar to the ResumeGuard pattern used in ContentView.swift:192-210.
+
+
+
+      Related file: tim-gui/TimGUI/LocalHTTPServer.swift:75-87
+  - title: "Address Review Feedback: WebSocket readLoop error path silently drops
+      all errors."
+    done: false
+    description: >-
+      WebSocket readLoop error path silently drops all errors. The
+      startReading() method catches all errors from readLoop() with an empty
+      catch block. This means protocol errors, decoding failures, or unexpected
+      exceptions are silently swallowed with no logging.
+      WebSocketError.connectionClosed is expected, but any other error (e.g., a
+      logic bug) is also hidden, making debugging extremely difficult.
+
+
+      Suggestion: Log non-connectionClosed errors using os.Logger for
+      debuggability. At minimum, differentiate expected disconnects from
+      unexpected errors.
+
+
+      Related file: tim-gui/TimGUI/WebSocketConnection.swift:83-93
+  - title: "Address Review Feedback: The WebSocket malformed-frame test suite does
+      not cover invalid close payload semantics, so the parser bug above is not
+      detected."
+    done: false
+    description: >-
+      The WebSocket malformed-frame test suite does not cover invalid close
+      payload semantics, so the parser bug above is not detected. Existing tests
+      cover close handshake, fragmented close, and control-size/FIN rules, but
+      not (a) close payload length == 1 and (b) close payload with invalid UTF-8
+      reason.
+
+
+      Suggestion: Add integration tests that send malformed close frames:
+      one-byte payload and payload with invalid UTF-8 reason. Assert server
+      returns close 1002/1007 and disconnects.
+
+
+      Related file: tim-gui/TimGUITests/WebSocketTests.swift:707
+  - title: "Address Review Feedback: gitRemote field from SessionInfoPayload is
+      decoded but silently discarded."
+    done: false
+    description: >-
+      gitRemote field from SessionInfoPayload is decoded but silently discarded.
+      SessionInfoPayload decodes gitRemote, but SessionItem has no field to
+      store it. The addSession method creates a SessionItem without gitRemote.
+      The data is decoded but never preserved.
+
+
+      Suggestion: Add gitRemote to SessionItem since we will use it in the future.
+
+
+      Related file: tim-gui/TimGUI/SessionState.swift:17-27
+  - title: "Address Review Feedback: Auto-scroll in SessionDetailView forces the
+      user to the bottom on every new message."
+    done: false
+    description: >-
+      Auto-scroll in SessionDetailView forces the user to the bottom on every
+      new message. onChange(of: session.messages.count) scrolls to the bottom
+      whenever a message arrives. If the user has scrolled up to read earlier
+      output, they'll be forcibly scrolled back down. This is a poor UX for
+      long-running sessions with many messages.
+
+
+      Suggestion: Track whether the user is at or near the bottom of the scroll
+      view and only auto-scroll when they are.
+
+
+      Related file: tim-gui/TimGUI/SessionsView.swift:113-116
 changedFiles:
   - src/tim/commands/review.ts
   - tim-gui/TimGUI/ContentView.swift

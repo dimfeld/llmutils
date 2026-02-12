@@ -43,6 +43,7 @@ final class SessionItem: Identifiable {
     let planId: Int?
     let planTitle: String?
     let workspacePath: String?
+    let gitRemote: String?
     let connectedAt: Date
     var isActive: Bool
     var messages: [SessionMessage]
@@ -54,6 +55,7 @@ final class SessionItem: Identifiable {
         planId: Int?,
         planTitle: String?,
         workspacePath: String?,
+        gitRemote: String?,
         connectedAt: Date,
         isActive: Bool,
         messages: [SessionMessage]
@@ -64,6 +66,7 @@ final class SessionItem: Identifiable {
         self.planId = planId
         self.planTitle = planTitle
         self.workspacePath = workspacePath
+        self.gitRemote = gitRemote
         self.connectedAt = connectedAt
         self.isActive = isActive
         self.messages = messages

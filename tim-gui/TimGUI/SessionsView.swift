@@ -93,6 +93,7 @@ struct SessionRowView: View {
 
 struct SessionDetailView: View {
     let session: SessionItem
+    @State private var isNearBottom = true
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -104,6 +105,23 @@ struct SessionDetailView: View {
                     }
                 }
                 .padding(12)
+                .background(
+                    GeometryReader { contentGeometry in
+                        Color.clear
+                            .preference(
+                                key: ScrollOffsetPreferenceKey.self,
+                                value: contentGeometry.frame(in: .named("sessionScroll"))
+                            )
+                    }
+                )
+            }
+            .coordinateSpace(name: "sessionScroll")
+            .onPreferenceChange(ScrollOffsetPreferenceKey.self) { contentFrame in
+                // Content bottom relative to scroll view origin.
+                // When near the bottom, contentFrame.maxY is close to the visible height.
+                // We use a threshold to account for minor offsets.
+                let threshold: CGFloat = 50
+                isNearBottom = contentFrame.maxY <= contentFrame.height + threshold
             }
             .onAppear {
                 if let lastId = session.messages.last?.id {
@@ -111,11 +129,18 @@ struct SessionDetailView: View {
                 }
             }
             .onChange(of: session.messages.count) {
-                if let lastId = session.messages.last?.id {
+                if isNearBottom, let lastId = session.messages.last?.id {
                     proxy.scrollTo(lastId, anchor: .bottom)
                 }
             }
         }
+    }
+}
+
+private struct ScrollOffsetPreferenceKey: PreferenceKey {
+    nonisolated(unsafe) static var defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        value = nextValue()
     }
 }
 

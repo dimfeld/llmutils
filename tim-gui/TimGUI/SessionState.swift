@@ -21,6 +21,7 @@ final class SessionState {
             planId: info.planId,
             planTitle: info.planTitle,
             workspacePath: info.workspacePath,
+            gitRemote: info.gitRemote,
             connectedAt: Date(),
             isActive: true,
             messages: []

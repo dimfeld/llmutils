@@ -1478,6 +1478,77 @@ struct WebSocketTests {
         let didDisconnect = disconnected.withLock { $0 }
         #expect(didDisconnect, "Expected disconnect event after oversize frame rejection")
     }
+
+    // MARK: - Close Frame Validation Tests
+
+    @Test("Close frame with 1-byte payload is rejected with close 1002")
+    func closeOneBytePayloadRejection() async throws {
+        let disconnected = LockIsolated(false)
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            if case .disconnected = event {
+                disconnected.withLock { $0 = true }
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send a close frame with exactly 1 byte of payload (invalid per RFC 6455 §5.5.1)
+        let invalidPayload = Data([0x42])
+        try await Self.sendRawFrame(
+            fin: true, opcode: 0x8, payload: invalidPayload, on: connection)
+
+        let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+        #expect(closeFrame.opcode == 0x8, "Expected close opcode for 1-byte close payload rejection")
+        #expect(closeFrame.payload.count >= 2, "Close frame must contain status code")
+        if closeFrame.payload.count >= 2 {
+            let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+            #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
+        }
+
+        try await Task.sleep(for: .milliseconds(500))
+        let didDisconnect = disconnected.withLock { $0 }
+        #expect(didDisconnect, "Expected disconnect event after 1-byte close payload rejection")
+    }
+
+    @Test("Close frame with invalid UTF-8 reason is rejected with close 1007")
+    func closeInvalidUtf8ReasonRejection() async throws {
+        let disconnected = LockIsolated(false)
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            if case .disconnected = event {
+                disconnected.withLock { $0 = true }
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send a close frame with valid close code (1000) but invalid UTF-8 reason bytes
+        var payload = Data()
+        payload.append(UInt8((1000 >> 8) & 0xFF))  // close code high byte
+        payload.append(UInt8(1000 & 0xFF))          // close code low byte
+        payload.append(contentsOf: [0xFF, 0xFE] as [UInt8])  // invalid UTF-8 reason
+        try await Self.sendRawFrame(
+            fin: true, opcode: 0x8, payload: payload, on: connection)
+
+        let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+        #expect(closeFrame.opcode == 0x8, "Expected close opcode for invalid UTF-8 close reason rejection")
+        #expect(closeFrame.payload.count >= 2, "Close frame must contain status code")
+        if closeFrame.payload.count >= 2 {
+            let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+            #expect(statusCode == 1007, "Expected close status 1007 (invalid payload data), got \(statusCode)")
+        }
+
+        try await Task.sleep(for: .milliseconds(500))
+        let didDisconnect = disconnected.withLock { $0 }
+        #expect(didDisconnect, "Expected disconnect event after invalid UTF-8 close reason rejection")
+    }
 }
 
 /// Extension to WebSocketEvent for Sendable conformance to allow usage in LockIsolated.
