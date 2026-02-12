@@ -7,7 +7,7 @@ goal: Add WebSocket server support to tim-gui so it can receive and display
 id: 169
 uuid: 85aa17d2-7d55-4d91-afbb-09821893a59a
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 parent: 160
 references:
@@ -15,7 +15,7 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-12T01:39:30.882Z
+updatedAt: 2026-02-12T01:50:12.262Z
 tasks:
   - title: Define session data models and headless protocol types
     done: true
@@ -411,7 +411,7 @@ tasks:
   - title: "Address Review Feedback: SessionItem is a struct with a messages:
       [SessionMessage] array, causing full array copy on every mutation through
       SwiftUI's observation system."
-    done: false
+    done: true
     description: >-
       SessionItem is a struct with a messages: [SessionMessage] array, causing
       full array copy on every mutation through SwiftUI's observation system.
@@ -1012,8 +1012,8 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 
 ## Current Progress
 ### Current State
-- 23 of 24 tasks complete (6 core + 17 review feedback)
-- 172 tests passing
+- All 24 of 24 tasks complete (6 core + 18 review feedback)
+- 175 tests passing
 ### Completed (So Far)
 - SessionModels.swift: All Decodable types for HeadlessMessage, TunnelMessage, StructuredMessagePayload (~28 types), SessionItem, SessionMessage, MessageCategory, plus MessageFormatter
 - WebSocketConnection.swift: Full RFC 6455 frame parsing/sending, upgrade handshake, fragmentation, close/ping/pong, NSLock-protected close state, 16MB frame limit, fragment buffer size limit, client-frame validation (unmasked rejection, continuation ordering)
@@ -1035,6 +1035,7 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 - Task 15: waitForProcess async helper with terminationHandler replaces blocking waitUntilExit
 - Task 16: prompt_answered events now render non-empty text; removed empty-message filter from SessionDetailView
 - Task 17: LlmToolUsePayload.input and LlmToolResultPayload.result decoded via RawJSONString/AnyJSON helpers, used as fallback when inputSummary/resultSummary are nil
+- Task 18: SessionItem refactored from struct to @MainActor @Observable class for O(1) message append (no array copy). Never-mutated properties changed to `let`. 3 reference-semantics tests added.
 - Task 19: WebSocket rejects unmasked client frames (close 1002), rejects continuation without prior fragment (close 1002), rejects new data frames during active fragmentation (close 1002)
 - Task 20: 3 integration tests for malformed-frame rejection — mandatory close 1002 assertion (not permissive do/catch)
 - Task 21: activateTerminalPane uses JSONSerialization for proper JSON construction, eliminating injection risk from special characters in workspace names
@@ -1042,9 +1043,8 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 - Task 23: readRequest header parsing consolidated into single pass — headers dictionary built during accumulation loop
 - Task 24: PromptAnsweredPayload.value decoded via RawJSONString helper (stored but not displayed for security)
 ### Remaining
-- Task 18: SessionItem struct → class refactor for performance
+- None — all tasks complete
 ### Next Iteration Guidance
-- Performance: SessionItem is a struct with growing messages array. For high-throughput sessions, refactor to class-based @Observable SessionItem or separate message storage to reduce SwiftUI re-evaluation
 - Auto-scroll uses both onAppear and onChange with .id(session.id) on SessionDetailView for stable view identity
 - Lifecycle messages all render green; the plan mentioned green/blue but current implementation is acceptable for v1
 - Post-startup listener failures are logged but not surfaced to UI; consider adding a callback to update startError state
@@ -1060,5 +1060,6 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 - waitForProcess sets terminationHandler before run() to avoid race condition
 - RawJSONString uses AnyJSON helper to losslessly serialize objects/arrays to JSON strings (not lossy placeholder)
 - prompt_answered value is decoded and stored but NOT displayed in UI for security (could contain secrets)
+- SessionItem is an @Observable class (not struct) with immutable metadata properties (let) and mutable state (var isActive, var messages) for efficient SwiftUI observation
 ### Risks / Blockers
 - None
