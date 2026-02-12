@@ -193,6 +193,30 @@ struct MessageFormatterTests {
         #expect(!msg.text.contains("full raw output"))
     }
 
+    @Test("Formats llm_tool_use with neither inputSummary nor input shows just header")
+    func formatsLlmToolUseNoInput() {
+        let payload = LlmToolUsePayload(
+            toolName: "Bash", inputSummary: nil, input: nil, timestamp: nil)
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .llmToolUse(payload)),
+            seq: 26
+        )
+        #expect(msg.category == .toolUse)
+        #expect(msg.text.contains("Invoke Tool: Bash"))
+    }
+
+    @Test("Formats llm_tool_result with neither resultSummary nor result shows just header")
+    func formatsLlmToolResultNoResult() {
+        let payload = LlmToolResultPayload(
+            toolName: "Write", resultSummary: nil, result: nil, timestamp: nil)
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .llmToolResult(payload)),
+            seq: 27
+        )
+        #expect(msg.category == .toolUse)
+        #expect(msg.text.contains("Tool Result: Write"))
+    }
+
     @Test("Formats file_write as fileChange")
     func formatsFileWrite() {
         let msg = MessageFormatter.format(
