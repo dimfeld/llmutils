@@ -39,10 +39,10 @@ struct SessionMessage: Identifiable, Sendable {
 final class SessionItem: Identifiable {
     let id: UUID
     let connectionId: UUID
-    var command: String
-    var planId: Int?
-    var planTitle: String?
-    var workspacePath: String?
+    let command: String
+    let planId: Int?
+    let planTitle: String?
+    let workspacePath: String?
     let connectedAt: Date
     var isActive: Bool
     var messages: [SessionMessage]
