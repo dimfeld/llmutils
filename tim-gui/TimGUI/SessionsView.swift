@@ -129,13 +129,12 @@ struct SessionDetailView: View {
                 }
             )
             .onPreferenceChange(ScrollOffsetPreferenceKey.self) { contentFrame in
-                // contentFrame is the content's frame in the scroll view's coordinate space.
-                // As the user scrolls down, contentFrame.origin.y goes negative.
-                // contentFrame.maxY = contentFrame.origin.y + contentFrame.height
-                // When scrolled to bottom: contentFrame.maxY ≈ viewportHeight
-                // When scrolled to top: contentFrame.maxY ≈ contentFrame.height
-                let threshold: CGFloat = 50
-                isNearBottom = viewportHeight > 0 && contentFrame.maxY - viewportHeight <= threshold
+                if let shouldScroll = SessionDetailView.shouldAutoScroll(
+                    contentMaxY: contentFrame.maxY,
+                    viewportHeight: viewportHeight
+                ) {
+                    isNearBottom = shouldScroll
+                }
             }
             .onAppear {
                 if let lastId = session.messages.last?.id {
@@ -148,6 +147,18 @@ struct SessionDetailView: View {
                 }
             }
         }
+    }
+
+    /// Returns whether the scroll view should auto-scroll to the bottom.
+    /// Returns nil when viewportHeight hasn't been measured yet, meaning the caller
+    /// should retain the previous value.
+    static func shouldAutoScroll(
+        contentMaxY: CGFloat,
+        viewportHeight: CGFloat,
+        threshold: CGFloat = 50
+    ) -> Bool? {
+        guard viewportHeight > 0 else { return nil }
+        return contentMaxY - viewportHeight <= threshold
     }
 }
 

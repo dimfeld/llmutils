@@ -23,6 +23,7 @@
 		A20000000000000000000005 /* MessageFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* MessageFormatterTests.swift */; };
 		A20000000000000000000006 /* WebSocketTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* WebSocketTests.swift */; };
 		A20000000000000000000007 /* SessionStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* SessionStateTests.swift */; };
+		A20000000000000000000008 /* AutoScrollTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* AutoScrollTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -55,6 +56,7 @@
 		A20000000000000000000015 /* MessageFormatterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageFormatterTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000016 /* WebSocketTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000017 /* SessionStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStateTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000018 /* AutoScrollTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoScrollTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -128,6 +130,7 @@
 				A20000000000000000000015 /* MessageFormatterTests.swift */,
 				A20000000000000000000016 /* WebSocketTests.swift */,
 				A20000000000000000000017 /* SessionStateTests.swift */,
+				A20000000000000000000018 /* AutoScrollTests.swift */,
 			);
 			path = TimGUITests;
 			sourceTree = "<group>";
@@ -245,6 +248,7 @@
 				A20000000000000000000005 /* MessageFormatterTests.swift in Sources */,
 				A20000000000000000000006 /* WebSocketTests.swift in Sources */,
 				A20000000000000000000007 /* SessionStateTests.swift in Sources */,
+				A20000000000000000000008 /* AutoScrollTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
