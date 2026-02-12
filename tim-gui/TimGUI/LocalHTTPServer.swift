@@ -235,6 +235,7 @@ final class LocalHTTPServer: @unchecked Sendable {
         var headersEnd: Range<Data.Index>?
         var contentLength = 0
         var headerLines: [String] = []
+        var headers: [String: String] = [:]
 
         while true {
             let chunk = try await receiveChunk(from: connection)
@@ -252,6 +253,7 @@ final class LocalHTTPServer: @unchecked Sendable {
                     guard parts.count == 2 else { continue }
                     let name = parts[0].trimmingCharacters(in: .whitespaces)
                     let value = parts[1].trimmingCharacters(in: .whitespaces)
+                    headers[name.lowercased()] = value
                     if name.caseInsensitiveCompare("Content-Length") == .orderedSame {
                         contentLength = Int(value) ?? 0
                     }
@@ -273,10 +275,7 @@ final class LocalHTTPServer: @unchecked Sendable {
             throw HTTPError.invalidRequest
         }
 
-        let headerData = buffer[..<headersEnd.lowerBound]
-        let headerText = String(decoding: headerData, as: UTF8.self)
-        let lines = headerText.components(separatedBy: "\r\n")
-        guard let requestLine = lines.first else {
+        guard let requestLine = headerLines.first else {
             throw HTTPError.invalidRequest
         }
         let requestParts = requestLine.split(separator: " ")
@@ -293,16 +292,6 @@ final class LocalHTTPServer: @unchecked Sendable {
             } else {
                 nil
             }
-
-        // Parse headers into a dictionary for WebSocket detection
-        var headers: [String: String] = [:]
-        for line in lines.dropFirst() {
-            let parts = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
-            guard parts.count == 2 else { continue }
-            let name = parts[0].trimmingCharacters(in: .whitespaces).lowercased()
-            let value = parts[1].trimmingCharacters(in: .whitespaces)
-            headers[name] = value
-        }
 
         // Capture leftover bytes after headers for WebSocket upgrades
         let leftover: Data?

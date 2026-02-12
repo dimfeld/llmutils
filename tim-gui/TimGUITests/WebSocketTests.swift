@@ -870,6 +870,159 @@ struct WebSocketTests {
         #expect(info.planTitle == "Leftover Test")
     }
 
+    // MARK: - Malformed Frame Rejection Tests
+
+    /// Sends a raw UNMASKED WebSocket frame (violates RFC 6455 for client frames).
+    private static func sendUnmaskedFrame(
+        fin: Bool, opcode: UInt8, payload: Data, on connection: NWConnection
+    ) async throws {
+        var frame = Data()
+
+        // Byte 0: FIN bit + opcode
+        frame.append((fin ? 0x80 : 0x00) | (opcode & 0x0F))
+
+        // Byte 1: MASK=0 + payload length (no mask bit set)
+        let length = payload.count
+        if length < 126 {
+            frame.append(UInt8(length))
+        } else if length < 65536 {
+            frame.append(126)
+            frame.append(UInt8((length >> 8) & 0xFF))
+            frame.append(UInt8(length & 0xFF))
+        } else {
+            frame.append(127)
+            for i in stride(from: 56, through: 0, by: -8) {
+                frame.append(UInt8((length >> i) & 0xFF))
+            }
+        }
+
+        // No masking key, payload sent directly
+        frame.append(payload)
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            connection.send(content: frame, completion: .contentProcessed { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            })
+        }
+    }
+
+    @Test("Unmasked client frame is rejected with close 1002")
+    func unmaskedFrameRejection() async throws {
+        let disconnected = LockIsolated(false)
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            if case .disconnected = event {
+                disconnected.withLock { $0 = true }
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send an unmasked text frame (RFC 6455 requires client frames to be masked)
+        let payload = Data("hello".utf8)
+        try await Self.sendUnmaskedFrame(
+            fin: true, opcode: 0x1, payload: payload, on: connection)
+
+        // Server should send close 1002 and disconnect
+        do {
+            let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+            #expect(closeFrame.opcode == 0x8, "Expected close opcode for unmasked frame rejection")
+            if closeFrame.payload.count >= 2 {
+                let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+                #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
+            }
+        } catch {
+            // Connection may have been cancelled before we could read the close frame
+        }
+
+        try await Task.sleep(for: .milliseconds(500))
+        let didDisconnect = disconnected.withLock { $0 }
+        #expect(didDisconnect, "Expected disconnect event after unmasked frame rejection")
+    }
+
+    @Test("Continuation frame without prior fragment is rejected with close 1002")
+    func continuationWithoutFragmentRejection() async throws {
+        let disconnected = LockIsolated(false)
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            if case .disconnected = event {
+                disconnected.withLock { $0 = true }
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send a continuation frame (opcode 0x0) without any preceding fragmented message
+        try await Self.sendRawFrame(
+            fin: true, opcode: 0x0, payload: Data("stray continuation".utf8), on: connection)
+
+        // Server should send close 1002 and disconnect
+        do {
+            let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+            #expect(closeFrame.opcode == 0x8, "Expected close opcode for stray continuation rejection")
+            if closeFrame.payload.count >= 2 {
+                let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+                #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
+            }
+        } catch {
+            // Connection may have been cancelled before we could read the close frame
+        }
+
+        try await Task.sleep(for: .milliseconds(500))
+        let didDisconnect = disconnected.withLock { $0 }
+        #expect(didDisconnect, "Expected disconnect event after stray continuation rejection")
+    }
+
+    @Test("New data frame while fragmentation is active is rejected with close 1002")
+    func newFrameDuringFragmentationRejection() async throws {
+        let disconnected = LockIsolated(false)
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            if case .disconnected = event {
+                disconnected.withLock { $0 = true }
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Start a fragmented message: FIN=0, opcode=text
+        try await Self.sendRawFrame(
+            fin: false, opcode: 0x1, payload: Data("part1".utf8), on: connection)
+
+        // Instead of sending a continuation, send a new text frame (violates fragmentation protocol)
+        try await Self.sendRawFrame(
+            fin: true, opcode: 0x1, payload: Data("new message".utf8), on: connection)
+
+        // Server should send close 1002 and disconnect
+        do {
+            let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+            #expect(closeFrame.opcode == 0x8, "Expected close opcode for interleaved data frame rejection")
+            if closeFrame.payload.count >= 2 {
+                let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+                #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
+            }
+        } catch {
+            // Connection may have been cancelled before we could read the close frame
+        }
+
+        try await Task.sleep(for: .milliseconds(500))
+        let didDisconnect = disconnected.withLock { $0 }
+        #expect(didDisconnect, "Expected disconnect event after interleaved data frame rejection")
+    }
+
     @Test("Oversize frame is rejected with 1009 close and disconnect")
     func oversizeFrameRejection() async throws {
         let disconnected = LockIsolated(false)

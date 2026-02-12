@@ -133,11 +133,18 @@ final class WebSocketConnection: @unchecked Sendable {
                 return
             }
 
-            // Read mask key (clients always send masked frames)
-            var maskKey = Data()
-            if masked {
-                maskKey = try await readExact(count: 4)
+            // RFC 6455 requires client frames to be masked
+            guard masked else {
+                try? await sendCloseFrame(code: 1002)
+                if markClosed() {
+                    connection.cancel()
+                    onDisconnect()
+                }
+                return
             }
+
+            // Read mask key
+            let maskKey = try await readExact(count: 4)
 
             // Read payload
             var payload = payloadLength > 0
@@ -145,7 +152,7 @@ final class WebSocketConnection: @unchecked Sendable {
                 : Data()
 
             // Unmask payload
-            if masked && !payload.isEmpty {
+            if !payload.isEmpty {
                 for i in 0..<payload.count {
                     payload[i] ^= maskKey[i % 4]
                 }
@@ -158,6 +165,15 @@ final class WebSocketConnection: @unchecked Sendable {
 
             switch opcode {
             case .text, .binary:
+                // Reject new data frame while fragmentation is in progress
+                if fragmentOpcode != nil {
+                    try? await sendCloseFrame(code: 1002)
+                    if markClosed() {
+                        connection.cancel()
+                        onDisconnect()
+                    }
+                    return
+                }
                 if fin {
                     // Complete single-frame message
                     if let text = String(data: payload, encoding: .utf8) {
@@ -170,6 +186,15 @@ final class WebSocketConnection: @unchecked Sendable {
                 }
 
             case .continuation:
+                // Reject continuation when no fragmented message is in progress
+                guard fragmentOpcode != nil else {
+                    try? await sendCloseFrame(code: 1002)
+                    if markClosed() {
+                        connection.cancel()
+                        onDisconnect()
+                    }
+                    return
+                }
                 guard UInt64(fragmentBuffer.count) + UInt64(payload.count) <= WebSocketConnection.maxFrameSize else {
                     try? await sendCloseFrame(code: 1009)
                     if markClosed() {

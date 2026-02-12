@@ -135,7 +135,12 @@ struct NotificationsView: View {
                 return
             }
 
-            let args = "{\"workspace\":\"\(workspaceName)\"}"
+            let argsObj: [String: String] = ["workspace": workspaceName]
+            guard let argsData = try? JSONSerialization.data(withJSONObject: argsObj),
+                  let args = String(data: argsData, encoding: .utf8) else {
+                print("[workspace-switch] Failed to serialize workspace JSON")
+                return
+            }
             let encodedArgs = Data(args.utf8).base64EncodedString()
             print("[workspace-switch] workspace=\(workspaceName) encodedArgs=\(encodedArgs)")
 
@@ -165,16 +170,41 @@ struct NotificationsView: View {
 
     /// Runs a Process and waits for it to terminate without blocking a cooperative thread.
     /// Sets the termination handler before calling run() to avoid a race condition.
+    /// Uses an atomic flag to prevent double-resume if the process terminates
+    /// before run() returns and run() also throws.
     private func waitForProcess(_ process: Process) async {
         await withCheckedContinuation { continuation in
+            let guard_ = ResumeGuard(continuation: continuation)
+
             process.terminationHandler = { _ in
-                continuation.resume()
+                guard_.resumeOnce()
             }
             do {
                 try process.run()
             } catch {
-                continuation.resume()
+                guard_.resumeOnce()
             }
+        }
+    }
+}
+
+/// Thread-safe guard that ensures a CheckedContinuation is resumed exactly once.
+private final class ResumeGuard: @unchecked Sendable {
+    private let lock = NSLock()
+    private var resumed = false
+    private let continuation: CheckedContinuation<Void, Never>
+
+    init(continuation: CheckedContinuation<Void, Never>) {
+        self.continuation = continuation
+    }
+
+    func resumeOnce() {
+        lock.lock()
+        let alreadyResumed = resumed
+        resumed = true
+        lock.unlock()
+        if !alreadyResumed {
+            continuation.resume()
         }
     }
 }
