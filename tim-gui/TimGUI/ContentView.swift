@@ -110,7 +110,15 @@ struct NotificationsView: View {
             listProcess.executableURL = URL(fileURLWithPath: weztermPath)
             listProcess.arguments = ["cli", "list", "--format", "json"]
             listProcess.standardOutput = listPipe
-            await waitForProcess(listProcess)
+
+            do {
+                try await waitForProcess(listProcess)
+            } catch {
+                print("[workspace-switch] Failed to launch wezterm list: \(error as Error)")
+                // Close the write end so any reader won't block
+                listPipe.fileHandleForWriting.closeFile()
+                return
+            }
 
             let data = listPipe.fileHandleForReading.readDataToEndOfFile()
             guard let panes = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
@@ -152,7 +160,7 @@ struct NotificationsView: View {
                 "printf '\\033]1337;SetUserVar=switch-workspace=\(encodedArgs)\\007' && sleep 0.1",
             ]
             print("[workspace-switch] Running: \(sendProcess.arguments!.joined(separator: " "))")
-            await waitForProcess(sendProcess)
+            try? await waitForProcess(sendProcess)
             print("[workspace-switch] Exit code: \(sendProcess.terminationStatus)")
 
             let activateProcess = Process()
@@ -168,33 +176,36 @@ struct NotificationsView: View {
         }
     }
 
-    /// Runs a Process and waits for it to terminate without blocking a cooperative thread.
-    /// Sets the termination handler before calling run() to avoid a race condition.
-    /// Uses an atomic flag to prevent double-resume if the process terminates
-    /// before run() returns and run() also throws.
-    private func waitForProcess(_ process: Process) async {
-        await withCheckedContinuation { continuation in
-            let guard_ = ResumeGuard(continuation: continuation)
+}
 
-            process.terminationHandler = { _ in
-                guard_.resumeOnce()
-            }
-            do {
-                try process.run()
-            } catch {
-                guard_.resumeOnce()
-            }
+/// Runs a Process and waits for it to terminate without blocking a cooperative thread.
+/// Sets the termination handler before calling run() to avoid a race condition.
+/// Uses an atomic flag to prevent double-resume if the process terminates
+/// before run() returns and run() also throws.
+/// Throws if the process fails to launch.
+func waitForProcess(_ process: Process) async throws {
+    try await withCheckedThrowingContinuation { continuation in
+        let guard_ = ThrowingResumeGuard(continuation: continuation)
+
+        process.terminationHandler = { _ in
+            guard_.resumeOnce()
+        }
+        do {
+            try process.run()
+        } catch {
+            guard_.resumeOnce(throwing: error)
         }
     }
 }
 
 /// Thread-safe guard that ensures a CheckedContinuation is resumed exactly once.
-private final class ResumeGuard: @unchecked Sendable {
+/// Supports both success and failure resumption for process launch scenarios.
+final class ThrowingResumeGuard: @unchecked Sendable {
     private let lock = NSLock()
     private var resumed = false
-    private let continuation: CheckedContinuation<Void, Never>
+    private let continuation: CheckedContinuation<Void, Error>
 
-    init(continuation: CheckedContinuation<Void, Never>) {
+    init(continuation: CheckedContinuation<Void, Error>) {
         self.continuation = continuation
     }
 
@@ -205,6 +216,16 @@ private final class ResumeGuard: @unchecked Sendable {
         lock.unlock()
         if !alreadyResumed {
             continuation.resume()
+        }
+    }
+
+    func resumeOnce(throwing error: Error) {
+        lock.lock()
+        let alreadyResumed = resumed
+        resumed = true
+        lock.unlock()
+        if !alreadyResumed {
+            continuation.resume(throwing: error)
         }
     }
 }

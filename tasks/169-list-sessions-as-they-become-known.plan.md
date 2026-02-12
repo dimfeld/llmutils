@@ -7,7 +7,7 @@ goal: Add WebSocket server support to tim-gui so it can receive and display
 id: 169
 uuid: 85aa17d2-7d55-4d91-afbb-09821893a59a
 generatedBy: agent
-status: done
+status: in_progress
 priority: medium
 parent: 160
 references:
@@ -15,7 +15,7 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-12T08:30:19.523Z
+updatedAt: 2026-02-12T08:38:44.836Z
 tasks:
   - title: Define session data models and headless protocol types
     done: true
@@ -815,6 +815,61 @@ tasks:
       Suggestion: Replace sleeps with deterministic waits (eventually/poll helpers with timeout, async stream/continuation signaling when specific events arrive, or per-test expectation helpers that wait for exact event sequences).
 
       Related file: tim-gui/TimGUITests/WebSocketTests.swift:337,375,408,491,545,574,642,741,787,942,975,1012,1046,1078,1110,1145,1178,1249,1281,1313,1346,1382,1425,1477,1512,1548,1584
+  - title: "Address Review Feedback: `activateTerminalPane` can hang indefinitely
+      when `wezterm` fails to launch."
+    done: false
+    description: >-
+      `activateTerminalPane` can hang indefinitely when `wezterm` fails to
+      launch. `waitForProcess` swallows `process.run()` errors and resumes as if
+      the process completed, then caller code immediately does
+      `readDataToEndOfFile()` on the pipe. If launch failed, EOF never arrives
+      and the task blocks (often on the main actor context inherited by `Task {
+      ... }` from the tap handler), freezing that interaction path.
+
+
+      Suggestion: Make `waitForProcess` throw/return failure when `run()` fails
+      and stop the flow early. Do not call `readDataToEndOfFile()` after a
+      failed launch. Explicitly close the writer handle (or use a helper that
+      captures output and completion atomically) before reading.
+
+
+      Related file: tim-gui/TimGUI/ContentView.swift:113
+  - title: "Address Review Feedback: The new process-wait refactor has no test
+      coverage for launch-failure behavior, so the blocking path above is
+      unguarded."
+    done: false
+    description: >-
+      The new process-wait refactor has no test coverage for launch-failure
+      behavior, so the blocking path above is unguarded. Current tests focus on
+      WebSocket/session logic and do not exercise notification click flow or
+      `waitForProcess` failure semantics.
+
+
+      Suggestion: Add a test for process launch failure (invalid executable)
+      that asserts the helper returns promptly and no blocking read is
+      attempted; add an integration-style test for the notification activation
+      flow with missing `wezterm`.
+
+
+      Related file: tim-gui/TimGUITests:1
+  - title: "Address Review Feedback: WebSocket close code validation is stricter
+      than necessary, rejecting valid IANA-registered codes."
+    done: false
+    description: >-
+      WebSocket close code validation is stricter than necessary, rejecting
+      valid IANA-registered codes. The close code validation explicitly lists
+      individual valid codes but omits some IANA-registered ones (1012 'Service
+      Restart', 1013 'Try Again Later', 1014 'Bad Gateway'). A well-behaved
+      WebSocket client sending close code 1012 would be rejected with a protocol
+      error.
+
+
+      Suggestion: Replace the individual code checks with a range:
+      `(1000...1014).contains(code) || (3000...4999).contains(code)` to accept
+      all IANA-registered codes while still rejecting truly invalid ones.
+
+
+      Related file: tim-gui/TimGUI/WebSocketConnection.swift:298-301
 changedFiles:
   - src/tim/commands/review.ts
   - tim-gui/TimGUI/ContentView.swift
