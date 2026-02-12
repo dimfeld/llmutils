@@ -376,7 +376,7 @@ struct StructuredMessagePayloadTests {
         #expect(p.taskTitle == "Implement feature X")
     }
 
-    @Test("Decodes llm_tool_use")
+    @Test("Decodes llm_tool_use with inputSummary")
     func decodesLlmToolUse() throws {
         let json = """
             {
@@ -393,9 +393,68 @@ struct StructuredMessagePayloadTests {
         }
         #expect(p.toolName == "Read")
         #expect(p.inputSummary == "Reading src/main.ts")
+        #expect(p.input == nil)
     }
 
-    @Test("Decodes llm_tool_result")
+    @Test("Decodes llm_tool_use with string input field")
+    func decodesLlmToolUseWithInput() throws {
+        let json = """
+            {
+                "type": "llm_tool_use",
+                "toolName": "Bash",
+                "input": "npm test",
+                "timestamp": "2026-02-10T08:00:00Z"
+            }
+            """
+        let msg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(json.utf8))
+        guard case .llmToolUse(let p) = msg else {
+            Issue.record("Expected llmToolUse, got \(msg)")
+            return
+        }
+        #expect(p.toolName == "Bash")
+        #expect(p.inputSummary == nil)
+        #expect(p.input == "npm test")
+    }
+
+    @Test("Decodes llm_tool_use with both inputSummary and input")
+    func decodesLlmToolUseWithBoth() throws {
+        let json = """
+            {
+                "type": "llm_tool_use",
+                "toolName": "Read",
+                "inputSummary": "Reading file",
+                "input": "src/main.ts",
+                "timestamp": "2026-02-10T08:00:00Z"
+            }
+            """
+        let msg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(json.utf8))
+        guard case .llmToolUse(let p) = msg else {
+            Issue.record("Expected llmToolUse, got \(msg)")
+            return
+        }
+        #expect(p.inputSummary == "Reading file")
+        #expect(p.input == "src/main.ts")
+    }
+
+    @Test("Decodes llm_tool_use with numeric input")
+    func decodesLlmToolUseWithNumericInput() throws {
+        let json = """
+            {
+                "type": "llm_tool_use",
+                "toolName": "Test",
+                "input": 42,
+                "timestamp": "2026-02-10T08:00:00Z"
+            }
+            """
+        let msg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(json.utf8))
+        guard case .llmToolUse(let p) = msg else {
+            Issue.record("Expected llmToolUse, got \(msg)")
+            return
+        }
+        #expect(p.input == "42")
+    }
+
+    @Test("Decodes llm_tool_result with resultSummary")
     func decodesLlmToolResult() throws {
         let json = """
             {
@@ -412,6 +471,27 @@ struct StructuredMessagePayloadTests {
         }
         #expect(p.toolName == "Read")
         #expect(p.resultSummary == "File contents...")
+        #expect(p.result == nil)
+    }
+
+    @Test("Decodes llm_tool_result with string result field")
+    func decodesLlmToolResultWithResult() throws {
+        let json = """
+            {
+                "type": "llm_tool_result",
+                "toolName": "Bash",
+                "result": "All tests passed",
+                "timestamp": "2026-02-10T08:00:00Z"
+            }
+            """
+        let msg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(json.utf8))
+        guard case .llmToolResult(let p) = msg else {
+            Issue.record("Expected llmToolResult, got \(msg)")
+            return
+        }
+        #expect(p.toolName == "Bash")
+        #expect(p.resultSummary == nil)
+        #expect(p.result == "All tests passed")
     }
 
     @Test("Decodes file_write")
@@ -871,7 +951,7 @@ struct StructuredMessagePayloadTests {
         #expect(p.timeoutMs == 30000)
     }
 
-    @Test("Decodes prompt_answered")
+    @Test("Decodes prompt_answered without value")
     func decodesPromptAnswered() throws {
         let json = """
             {
@@ -890,6 +970,69 @@ struct StructuredMessagePayloadTests {
         #expect(p.requestId == "req-001")
         #expect(p.promptType == "select")
         #expect(p.source == "terminal")
+        #expect(p.value == nil)
+    }
+
+    @Test("Decodes prompt_answered with string value")
+    func decodesPromptAnsweredWithStringValue() throws {
+        let json = """
+            {
+                "type": "prompt_answered",
+                "requestId": "req-002",
+                "promptType": "input",
+                "source": "gui",
+                "value": "user response",
+                "timestamp": "2026-02-10T08:00:00Z"
+            }
+            """
+        let msg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(json.utf8))
+        guard case .promptAnswered(let p) = msg else {
+            Issue.record("Expected promptAnswered, got \(msg)")
+            return
+        }
+        #expect(p.requestId == "req-002")
+        #expect(p.source == "gui")
+        #expect(p.value == "user response")
+    }
+
+    @Test("Decodes prompt_answered with numeric value")
+    func decodesPromptAnsweredWithNumericValue() throws {
+        let json = """
+            {
+                "type": "prompt_answered",
+                "requestId": "req-003",
+                "promptType": "input",
+                "source": "terminal",
+                "value": 42,
+                "timestamp": "2026-02-10T08:00:00Z"
+            }
+            """
+        let msg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(json.utf8))
+        guard case .promptAnswered(let p) = msg else {
+            Issue.record("Expected promptAnswered, got \(msg)")
+            return
+        }
+        #expect(p.value == "42")
+    }
+
+    @Test("Decodes prompt_answered with boolean value")
+    func decodesPromptAnsweredWithBoolValue() throws {
+        let json = """
+            {
+                "type": "prompt_answered",
+                "requestId": "req-004",
+                "promptType": "confirm",
+                "source": "terminal",
+                "value": true,
+                "timestamp": "2026-02-10T08:00:00Z"
+            }
+            """
+        let msg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(json.utf8))
+        guard case .promptAnswered(let p) = msg else {
+            Issue.record("Expected promptAnswered, got \(msg)")
+            return
+        }
+        #expect(p.value == "true")
     }
 
     @Test("Decodes review_result with issues")

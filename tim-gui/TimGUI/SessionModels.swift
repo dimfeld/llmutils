@@ -225,12 +225,14 @@ struct AgentStepEndPayload: Sendable {
 struct LlmToolUsePayload: Sendable {
     let toolName: String
     let inputSummary: String?
+    let input: String?
     let timestamp: String?
 }
 
 struct LlmToolResultPayload: Sendable {
     let toolName: String
     let resultSummary: String?
+    let result: String?
     let timestamp: String?
 }
 
@@ -396,7 +398,33 @@ struct PromptAnsweredPayload: Sendable {
     let requestId: String
     let promptType: String
     let source: String
+    let value: String?
     let timestamp: String?
+}
+
+// MARK: - RawJSONString helper
+
+/// Decodes any JSON value (string, number, bool, object, array) into a String representation.
+private struct RawJSONString: Decodable, Sendable {
+    let stringValue: String
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let s = try? container.decode(String.self) {
+            stringValue = s
+        } else if let n = try? container.decode(Double.self) {
+            if n == n.rounded() && abs(n) < 1e15 {
+                stringValue = String(Int(n))
+            } else {
+                stringValue = String(n)
+            }
+        } else if let b = try? container.decode(Bool.self) {
+            stringValue = String(b)
+        } else {
+            // For objects/arrays, note that it's a complex value
+            stringValue = "<complex value>"
+        }
+    }
 }
 
 // MARK: - StructuredMessagePayload Decoding
@@ -525,12 +553,14 @@ extension StructuredMessagePayload: Decodable {
             self = .llmToolUse(LlmToolUsePayload(
                 toolName: try container.decode(String.self, forKey: .toolName),
                 inputSummary: try container.decodeIfPresent(String.self, forKey: .inputSummary),
+                input: (try? container.decodeIfPresent(RawJSONString.self, forKey: .input))?.stringValue,
                 timestamp: timestamp))
 
         case "llm_tool_result":
             self = .llmToolResult(LlmToolResultPayload(
                 toolName: try container.decode(String.self, forKey: .toolName),
                 resultSummary: try container.decodeIfPresent(String.self, forKey: .resultSummary),
+                result: (try? container.decodeIfPresent(RawJSONString.self, forKey: .result))?.stringValue,
                 timestamp: timestamp))
 
         case "llm_status":
@@ -667,6 +697,7 @@ extension StructuredMessagePayload: Decodable {
                 requestId: try container.decode(String.self, forKey: .requestId),
                 promptType: try container.decode(String.self, forKey: .promptType),
                 source: try container.decode(String.self, forKey: .source),
+                value: (try? container.decodeIfPresent(RawJSONString.self, forKey: .value))?.stringValue,
                 timestamp: timestamp))
 
         case "plan_discovery":
@@ -803,12 +834,12 @@ enum MessageFormatter {
 
         case .llmToolUse(let p):
             var lines = [header("Invoke Tool: \(p.toolName)", timestamp: p.timestamp)]
-            if let s = p.inputSummary { lines.append(s) }
+            if let s = p.inputSummary ?? p.input { lines.append(s) }
             return (lines.joined(separator: "\n"), .toolUse)
 
         case .llmToolResult(let p):
             var lines = [header("Tool Result: \(p.toolName)", timestamp: p.timestamp)]
-            if let s = p.resultSummary {
+            if let s = p.resultSummary ?? p.result {
                 lines.append(p.toolName == "Task" ? s : truncateLines(s))
             }
             return (lines.joined(separator: "\n"), .toolUse)
@@ -954,9 +985,10 @@ enum MessageFormatter {
         case .promptRequest(let p):
             return ("Prompt (\(p.promptType)): \(p.promptConfig.message)", .progress)
 
-        case .promptAnswered:
-            // Silent, same as console formatter
-            return ("", .log)
+        case .promptAnswered(let p):
+            var text = "Prompt answered (\(p.promptType)) by \(p.source)"
+            if let v = p.value { text += ": \(v)" }
+            return (text, .log)
 
         case .planDiscovery(let planId, let title, let ts):
             return ("\(header("Plan Discovery", timestamp: ts))\nFound ready plan: \(planId) - \(title)", .lifecycle)

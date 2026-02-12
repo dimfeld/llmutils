@@ -7,7 +7,7 @@ goal: Add WebSocket server support to tim-gui so it can receive and display
 id: 169
 uuid: 85aa17d2-7d55-4d91-afbb-09821893a59a
 generatedBy: agent
-status: done
+status: in_progress
 priority: medium
 parent: 160
 references:
@@ -15,7 +15,7 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-12T00:46:26.159Z
+updatedAt: 2026-02-12T01:08:23.910Z
 tasks:
   - title: Define session data models and headless protocol types
     done: true
@@ -371,6 +371,167 @@ tasks:
 
 
       Related file: tim-gui/TimGUI/ContentView.swift:112-113
+  - title: "Address Review Feedback: `prompt_answered` events are still dropped from
+      the Sessions UI, so not all session messages are shown."
+    done: false
+    description: >-
+      `prompt_answered` events are still dropped from the Sessions UI, so not
+      all session messages are shown. `MessageFormatter` emits empty text for
+      `.promptAnswered`, and `SessionDetailView` explicitly filters empty
+      messages. This violates the plan requirement to show session
+      content/messages as they arrive.
+
+
+      Suggestion: Render a non-empty line for `.promptAnswered` (for example
+      request id/source), and remove the empty-text filter in the detail list so
+      protocol events are not silently hidden.
+
+
+      Related file: tim-gui/TimGUI/SessionModels.swift:957
+  - title: "Address Review Feedback: Missing fields in LlmToolUsePayload and
+      LlmToolResultPayload — the input and result fields from the TypeScript
+      protocol are absent."
+    done: false
+    description: >-
+      Missing fields in LlmToolUsePayload and LlmToolResultPayload — the input
+      and result fields from the TypeScript protocol are absent. The CodingKeys
+      enum at line 427 declares input and result keys, but they are never used
+      in the decoder (lines 524-534). When inputSummary/resultSummary are nil,
+      the Swift formatter will show nothing for these tool invocations, losing
+      potentially important information. This suggests the implementer intended
+      to handle them but forgot.
+
+
+      Suggestion: Decode input and result as optional String (via JSON
+      serialization of the unknown type) and use them as fallback when
+      inputSummary/resultSummary are nil.
+
+
+      Related file: tim-gui/TimGUI/SessionModels.swift:225-235
+  - title: "Address Review Feedback: SessionItem is a struct with a messages:
+      [SessionMessage] array, causing full array copy on every mutation through
+      SwiftUI's observation system."
+    done: false
+    description: >-
+      SessionItem is a struct with a messages: [SessionMessage] array, causing
+      full array copy on every mutation through SwiftUI's observation system.
+      SessionState.appendMessage() does
+      sessions[index].messages.append(message). Since SessionItem is a struct
+      and sessions is an @Observable array, every single message append triggers
+      a copy of the entire SessionItem (including all accumulated messages) and
+      notifies all observers. For high-throughput sessions producing hundreds or
+      thousands of messages, this creates O(n) copy overhead per message and
+      excessive SwiftUI re-evaluation.
+
+
+      Suggestion: Refactor SessionItem to a class-based @Observable model, or
+      store messages separately keyed by connection ID, so appending a message
+      doesn't copy the entire session struct.
+
+
+      Related file: tim-gui/TimGUI/SessionState.swift:37
+  - title: "Address Review Feedback: WebSocket client-frame validation is
+      incomplete: unmasked client frames are accepted, and continuation frames
+      are processed even when no fragmented message is in progress."
+    done: false
+    description: >-
+      WebSocket client-frame validation is incomplete: unmasked client frames
+      are accepted, and continuation frames are processed even when no
+      fragmented message is in progress. RFC 6455 requires masked client frames
+      and strict fragmentation sequencing. Current behavior can mis-parse
+      malformed streams instead of closing with a protocol error.
+
+
+      Suggestion: Reject unmasked client data/control frames with close code
+      1002, and reject continuation frames when `fragmentOpcode` is nil (also
+      close 1002). Add validation for unexpected new data frames while
+      fragmentation is active.
+
+
+      Related file: tim-gui/TimGUI/WebSocketConnection.swift:136
+  - title: "Address Review Feedback: Tests still do not cover malformed-frame
+      rejection paths that are currently incorrect (unmasked frames, invalid
+      continuation ordering)."
+    done: false
+    description: >-
+      Tests still do not cover malformed-frame rejection paths that are
+      currently incorrect (unmasked frames, invalid continuation ordering).
+      Existing WebSocket tests mostly cover happy-path and size/ping/close
+      behavior, so the protocol-validation gaps can regress unnoticed.
+
+
+      Suggestion: Add explicit integration tests that send: (1) unmasked text
+      frame, (2) continuation without prior fragment, (3) new text frame while a
+      fragmented message is open; assert server returns close 1002 and
+      disconnects.
+
+
+      Related file: tim-gui/TimGUITests/WebSocketTests.swift:598
+  - title: "Address Review Feedback: activateTerminalPane constructs a shell command
+      with string interpolation of workspaceName without escaping."
+    done: false
+    description: >-
+      activateTerminalPane constructs a shell command with string interpolation
+      of workspaceName without escaping. If the workspace name contains a double
+      quote or backslash, the JSON will be malformed. While workspace names are
+      typically simple paths, this is a latent injection/formatting bug.
+
+
+      Suggestion: Use JSONSerialization or JSONEncoder to properly construct the
+      JSON string.
+
+
+      Related file: tim-gui/TimGUI/ContentView.swift:138
+  - title: "Address Review Feedback: waitForProcess has a potential double-resume if
+      the process terminates synchronously before run() returns."
+    done: false
+    description: >-
+      waitForProcess has a potential double-resume if the process terminates
+      synchronously before run() returns. The termination handler is set before
+      run(), which is correct for avoiding the race where the process terminates
+      before the handler is set. However, if process.run() throws an error AND
+      the termination handler has already fired (possible if the process starts
+      and fails extremely quickly), the continuation could be resumed twice.
+
+
+      Suggestion: Use a Bool flag or CheckedContinuation wrapper to ensure
+      single resumption, or use withCheckedContinuation with an atomic guard.
+
+
+      Related file: tim-gui/TimGUI/ContentView.swift:168-179
+  - title: "Address Review Feedback: readRequest parses headers twice — once during
+      the accumulation loop (lines 249-258) to extract Content-Length, then
+      again after the loop (lines 298-305) to build the headers dictionary."
+    done: false
+    description: >-
+      readRequest parses headers twice — once during the accumulation loop
+      (lines 249-258) to extract Content-Length, then again after the loop
+      (lines 298-305) to build the headers dictionary. The headerLines variable
+      from the first parse is computed but only contentLength is used from it.
+
+
+      Suggestion: Consolidate into a single header parse, or at minimum reuse
+      headerLines from the first pass.
+
+
+      Related file: tim-gui/TimGUI/LocalHTTPServer.swift:239-305
+  - title: "Address Review Feedback: PromptAnsweredPayload is missing the value
+      field from the TypeScript protocol."
+    done: false
+    description: >-
+      PromptAnsweredPayload is missing the value field from the TypeScript
+      protocol. The TypeScript PromptAnsweredMessage has a value?: unknown field
+      that carries the actual response value. While the Swift formatter returns
+      empty string for promptAnswered (matching the console formatter's silent
+      behavior), the field data is lost. If future formatting wants to show what
+      was answered, the data won't be available.
+
+
+      Suggestion: Add an optional value field (decoded as String? via JSON
+      coercion) to PromptAnsweredPayload.
+
+
+      Related file: tim-gui/TimGUI/SessionModels.swift:395-400
 changedFiles:
   - tim-gui/TimGUI/ContentView.swift
   - tim-gui/TimGUI/LocalHTTPServer.swift

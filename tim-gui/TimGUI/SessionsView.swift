@@ -99,10 +99,8 @@ struct SessionDetailView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     ForEach(session.messages) { message in
-                        if !message.text.isEmpty {
-                            SessionMessageView(message: message)
-                                .id(message.id)
-                        }
+                        SessionMessageView(message: message)
+                            .id(message.id)
                     }
                 }
                 .padding(12)
@@ -199,7 +197,7 @@ struct SessionMessageView: View {
                         tunnelMessage: .structured(
                             message: .llmToolUse(LlmToolUsePayload(
                                 toolName: "Read", inputSummary: "src/main.ts",
-                                timestamp: nil
+                                input: nil, timestamp: nil
                             ))
                         ),
                         seq: 3

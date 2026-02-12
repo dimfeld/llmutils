@@ -120,7 +120,7 @@ struct MessageFormatterTests {
     @Test("Formats llm_tool_use as toolUse")
     func formatsLlmToolUse() {
         let payload = LlmToolUsePayload(
-            toolName: "Read", inputSummary: "Reading file.ts", timestamp: nil)
+            toolName: "Read", inputSummary: "Reading file.ts", input: nil, timestamp: nil)
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .llmToolUse(payload)),
             seq: 20
@@ -133,7 +133,7 @@ struct MessageFormatterTests {
     @Test("Formats llm_tool_result as toolUse")
     func formatsLlmToolResult() {
         let payload = LlmToolResultPayload(
-            toolName: "Read", resultSummary: "File contents here", timestamp: nil)
+            toolName: "Read", resultSummary: "File contents here", result: nil, timestamp: nil)
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .llmToolResult(payload)),
             seq: 21
@@ -141,6 +141,56 @@ struct MessageFormatterTests {
         #expect(msg.category == .toolUse)
         #expect(msg.text.contains("Tool Result: Read"))
         #expect(msg.text.contains("File contents here"))
+    }
+
+    @Test("Formats llm_tool_use falls back to input when inputSummary is nil")
+    func formatsLlmToolUseInputFallback() {
+        let payload = LlmToolUsePayload(
+            toolName: "Bash", inputSummary: nil, input: "npm test", timestamp: nil)
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .llmToolUse(payload)),
+            seq: 22
+        )
+        #expect(msg.category == .toolUse)
+        #expect(msg.text.contains("Invoke Tool: Bash"))
+        #expect(msg.text.contains("npm test"))
+    }
+
+    @Test("Formats llm_tool_use prefers inputSummary over input")
+    func formatsLlmToolUseInputSummaryPreferred() {
+        let payload = LlmToolUsePayload(
+            toolName: "Read", inputSummary: "Reading file.ts", input: "src/file.ts", timestamp: nil)
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .llmToolUse(payload)),
+            seq: 23
+        )
+        #expect(msg.text.contains("Reading file.ts"))
+        #expect(!msg.text.contains("src/file.ts"))
+    }
+
+    @Test("Formats llm_tool_result falls back to result when resultSummary is nil")
+    func formatsLlmToolResultFallback() {
+        let payload = LlmToolResultPayload(
+            toolName: "Bash", resultSummary: nil, result: "All tests passed", timestamp: nil)
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .llmToolResult(payload)),
+            seq: 24
+        )
+        #expect(msg.category == .toolUse)
+        #expect(msg.text.contains("Tool Result: Bash"))
+        #expect(msg.text.contains("All tests passed"))
+    }
+
+    @Test("Formats llm_tool_result prefers resultSummary over result")
+    func formatsLlmToolResultSummaryPreferred() {
+        let payload = LlmToolResultPayload(
+            toolName: "Read", resultSummary: "File contents here", result: "full raw output", timestamp: nil)
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .llmToolResult(payload)),
+            seq: 25
+        )
+        #expect(msg.text.contains("File contents here"))
+        #expect(!msg.text.contains("full raw output"))
     }
 
     @Test("Formats file_write as fileChange")
@@ -284,6 +334,35 @@ struct MessageFormatterTests {
         #expect(msg.category == .lifecycle)
         #expect(msg.text.contains("Task complete: Add tests"))
         #expect(msg.text.contains("plan complete"))
+    }
+
+    @Test("Formats prompt_answered as log with non-empty text")
+    func formatsPromptAnswered() {
+        let payload = PromptAnsweredPayload(
+            requestId: "req-001", promptType: "select", source: "terminal",
+            value: nil, timestamp: nil)
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .promptAnswered(payload)),
+            seq: 95
+        )
+        #expect(msg.category == .log)
+        #expect(!msg.text.isEmpty)
+        #expect(msg.text.contains("Prompt answered"))
+        #expect(msg.text.contains("select"))
+        #expect(msg.text.contains("terminal"))
+    }
+
+    @Test("Formats prompt_answered with value")
+    func formatsPromptAnsweredWithValue() {
+        let payload = PromptAnsweredPayload(
+            requestId: "req-002", promptType: "input", source: "gui",
+            value: "user response", timestamp: nil)
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .promptAnswered(payload)),
+            seq: 96
+        )
+        #expect(msg.category == .log)
+        #expect(msg.text.contains("Prompt answered (input) by gui: user response"))
     }
 
     @Test("Formats plan_discovery as lifecycle")
