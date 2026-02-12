@@ -110,10 +110,6 @@ struct NotificationsView: View {
             listProcess.executableURL = URL(fileURLWithPath: weztermPath)
             listProcess.arguments = ["cli", "list", "--format", "json"]
             listProcess.standardOutput = listPipe
-            guard (try? listProcess.run()) != nil else {
-                print("[workspace-switch] Failed to launch wezterm cli list")
-                return
-            }
             await waitForProcess(listProcess)
 
             let data = listPipe.fileHandleForReading.readDataToEndOfFile()
@@ -151,10 +147,6 @@ struct NotificationsView: View {
                 "printf '\\033]1337;SetUserVar=switch-workspace=\(encodedArgs)\\007' && sleep 0.1",
             ]
             print("[workspace-switch] Running: \(sendProcess.arguments!.joined(separator: " "))")
-            guard (try? sendProcess.run()) != nil else {
-                print("[workspace-switch] Failed to launch wezterm cli spawn")
-                return
-            }
             await waitForProcess(sendProcess)
             print("[workspace-switch] Exit code: \(sendProcess.terminationStatus)")
 
@@ -171,10 +163,16 @@ struct NotificationsView: View {
         }
     }
 
-    /// Waits for a Process to terminate without blocking a cooperative thread.
+    /// Runs a Process and waits for it to terminate without blocking a cooperative thread.
+    /// Sets the termination handler before calling run() to avoid a race condition.
     private func waitForProcess(_ process: Process) async {
         await withCheckedContinuation { continuation in
             process.terminationHandler = { _ in
+                continuation.resume()
+            }
+            do {
+                try process.run()
+            } catch {
                 continuation.resume()
             }
         }

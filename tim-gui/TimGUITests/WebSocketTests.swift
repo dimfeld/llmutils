@@ -137,6 +137,161 @@ struct WebSocketTests {
         }
     }
 
+    /// Sends a raw masked WebSocket frame with the given FIN bit, opcode, and payload.
+    private static func sendRawFrame(
+        fin: Bool, opcode: UInt8, payload: Data, on connection: NWConnection
+    ) async throws {
+        var frame = Data()
+
+        // Byte 0: FIN bit + opcode
+        frame.append((fin ? 0x80 : 0x00) | (opcode & 0x0F))
+
+        // Byte 1: MASK=1 + payload length
+        let length = payload.count
+        if length < 126 {
+            frame.append(UInt8(length) | 0x80)
+        } else if length < 65536 {
+            frame.append(126 | 0x80)
+            frame.append(UInt8((length >> 8) & 0xFF))
+            frame.append(UInt8(length & 0xFF))
+        } else {
+            frame.append(127 | 0x80)
+            for i in stride(from: 56, through: 0, by: -8) {
+                frame.append(UInt8((length >> i) & 0xFF))
+            }
+        }
+
+        // 4-byte masking key
+        let maskKey: [UInt8] = [0x37, 0xFA, 0x21, 0x3D]
+        frame.append(contentsOf: maskKey)
+
+        // Masked payload
+        for (i, byte) in payload.enumerated() {
+            frame.append(byte ^ maskKey[i % 4])
+        }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            connection.send(content: frame, completion: .contentProcessed { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            })
+        }
+    }
+
+    /// Sends a raw masked WebSocket frame header that claims a large payload length,
+    /// but without actually sending that much data. Used for oversize frame rejection tests.
+    private static func sendOversizeFrameHeader(
+        opcode: UInt8, claimedLength: UInt64, on connection: NWConnection
+    ) async throws {
+        var frame = Data()
+
+        // Byte 0: FIN=1 + opcode
+        frame.append(0x80 | (opcode & 0x0F))
+
+        // Byte 1: MASK=1 + 127 (64-bit extended length)
+        frame.append(127 | 0x80)
+
+        // 8-byte extended length
+        for i in stride(from: 56, through: 0, by: -8) {
+            frame.append(UInt8((claimedLength >> i) & 0xFF))
+        }
+
+        // 4-byte masking key
+        frame.append(contentsOf: [0x37, 0xFA, 0x21, 0x3D] as [UInt8])
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            connection.send(content: frame, completion: .contentProcessed { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            })
+        }
+    }
+
+    /// Parsed server WebSocket frame (server frames are NOT masked).
+    private struct ServerFrame {
+        let fin: Bool
+        let opcode: UInt8
+        let payload: Data
+    }
+
+    /// Reads and parses a single WebSocket frame sent by the server (unmasked).
+    private static func readServerFrame(
+        on connection: NWConnection, timeout: Duration = .seconds(2)
+    ) async throws -> ServerFrame {
+        try await withThrowingTaskGroup(of: ServerFrame.self) { group in
+            group.addTask {
+                // Read 2-byte header
+                let header = try await readBytes(count: 2, on: connection)
+                let byte0 = header[0]
+                let byte1 = header[1]
+
+                let fin = (byte0 & 0x80) != 0
+                let opcode = byte0 & 0x0F
+                var payloadLength = UInt64(byte1 & 0x7F)
+
+                // Extended payload length
+                if payloadLength == 126 {
+                    let ext = try await readBytes(count: 2, on: connection)
+                    payloadLength = UInt64(ext[0]) << 8 | UInt64(ext[1])
+                } else if payloadLength == 127 {
+                    let ext = try await readBytes(count: 8, on: connection)
+                    payloadLength = 0
+                    for i in 0..<8 {
+                        payloadLength = (payloadLength << 8) | UInt64(ext[i])
+                    }
+                }
+
+                // Server frames are NOT masked (mask bit should be 0)
+                let payload =
+                    payloadLength > 0
+                    ? try await readBytes(count: Int(payloadLength), on: connection)
+                    : Data()
+
+                return ServerFrame(fin: fin, opcode: opcode, payload: payload)
+            }
+
+            group.addTask {
+                try await Task.sleep(for: timeout)
+                throw TimeoutError()
+            }
+
+            let result = try await group.next()!
+            group.cancelAll()
+            return result
+        }
+    }
+
+    private struct TimeoutError: Error {}
+
+    /// Reads exactly `count` bytes from the connection.
+    private static func readBytes(count: Int, on connection: NWConnection) async throws -> Data {
+        var buffer = Data()
+        while buffer.count < count {
+            let remaining = count - buffer.count
+            let chunk: Data = try await withCheckedThrowingContinuation { continuation in
+                connection.receive(minimumIncompleteLength: 1, maximumLength: remaining) {
+                    data, _, _, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume(returning: data ?? Data())
+                    }
+                }
+            }
+            if chunk.isEmpty {
+                throw WebSocketError.connectionClosed
+            }
+            buffer.append(chunk)
+        }
+        return buffer
+    }
+
     // MARK: - Tests
 
     @Test("WebSocket upgrade returns 101 with correct accept key")
@@ -436,6 +591,324 @@ struct WebSocketTests {
         }
         #expect(p.executor == "claude")
         #expect(p.mode == "agent")
+    }
+
+    // MARK: - Fragmented Message Tests
+
+    @Test("Fragmented text message is reassembled correctly")
+    func fragmentedTextReassembly() async throws {
+        let received = LockIsolated<[WebSocketEvent]>([])
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            received.withLock { $0.append(event) }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send session_info first so we can verify the fragmented message arrives
+        try await Self.sendTextFrame(
+            """
+            {"type":"session_info","command":"agent"}
+            """, on: connection)
+
+        try await Task.sleep(for: .milliseconds(100))
+
+        // Send a JSON message fragmented across 3 frames:
+        // Frame 1: FIN=0, opcode=text (0x1) — start of fragment
+        // Frame 2: FIN=0, opcode=continuation (0x0)
+        // Frame 3: FIN=1, opcode=continuation (0x0) — end of fragment
+        let fullMessage = """
+            {"type":"output","seq":1,"message":{"type":"log","args":["fragmented","message"]}}
+            """
+        let messageBytes = Data(fullMessage.utf8)
+        let chunkSize = messageBytes.count / 3
+        let chunk1 = messageBytes[0..<chunkSize]
+        let chunk2 = messageBytes[chunkSize..<(chunkSize * 2)]
+        let chunk3 = messageBytes[(chunkSize * 2)...]
+
+        // First fragment: FIN=0, opcode=text
+        try await Self.sendRawFrame(
+            fin: false, opcode: 0x1, payload: Data(chunk1), on: connection)
+        // Continuation: FIN=0, opcode=continuation
+        try await Self.sendRawFrame(
+            fin: false, opcode: 0x0, payload: Data(chunk2), on: connection)
+        // Final continuation: FIN=1, opcode=continuation
+        try await Self.sendRawFrame(
+            fin: true, opcode: 0x0, payload: Data(chunk3), on: connection)
+
+        try await Task.sleep(for: .milliseconds(300))
+
+        let events = received.withLock { $0 }
+        // Should have sessionInfo + the reassembled output message
+        #expect(events.count == 2, "Expected 2 events (sessionInfo + output), got \(events.count)")
+
+        guard case .output(_, let seq, let tunnelMsg) = events[1] else {
+            Issue.record("Expected output event, got \(events[1])")
+            return
+        }
+        #expect(seq == 1)
+        guard case .args(let type, let args) = tunnelMsg else {
+            Issue.record("Expected args tunnel message")
+            return
+        }
+        #expect(type == "log")
+        #expect(args == ["fragmented", "message"])
+    }
+
+    // MARK: - Ping/Pong Tests
+
+    @Test("Server responds to ping with pong containing same payload")
+    func pingPong() async throws {
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { _ in })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send a ping frame (opcode 0x9) with a payload
+        let pingPayload = Data("ping-test".utf8)
+        try await Self.sendRawFrame(
+            fin: true, opcode: 0x9, payload: pingPayload, on: connection)
+
+        // Read the pong response
+        let pongFrame = try await Self.readServerFrame(on: connection)
+
+        #expect(pongFrame.fin == true, "Pong frame should have FIN=1")
+        #expect(pongFrame.opcode == 0xA, "Expected pong opcode (0xA), got 0x\(String(pongFrame.opcode, radix: 16))")
+        #expect(pongFrame.payload == pingPayload, "Pong payload should match ping payload")
+    }
+
+    @Test("Server responds to ping with empty payload")
+    func pingPongEmptyPayload() async throws {
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { _ in })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send a ping frame with no payload
+        try await Self.sendRawFrame(
+            fin: true, opcode: 0x9, payload: Data(), on: connection)
+
+        // Read the pong response
+        let pongFrame = try await Self.readServerFrame(on: connection)
+
+        #expect(pongFrame.opcode == 0xA, "Expected pong opcode")
+        #expect(pongFrame.payload.isEmpty, "Pong payload should be empty for empty ping")
+    }
+
+    // MARK: - Close Handshake Tests
+
+    @Test("Server echoes close frame back before disconnecting")
+    func closeHandshake() async throws {
+        let disconnected = LockIsolated(false)
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            if case .disconnected = event {
+                disconnected.withLock { $0 = true }
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send a close frame with status code 1000 (normal closure)
+        var closePayload = Data()
+        closePayload.append(UInt8((1000 >> 8) & 0xFF))
+        closePayload.append(UInt8(1000 & 0xFF))
+        try await Self.sendRawFrame(
+            fin: true, opcode: 0x8, payload: closePayload, on: connection)
+
+        // Read the close frame response from server
+        let closeFrame = try await Self.readServerFrame(on: connection)
+
+        #expect(closeFrame.opcode == 0x8, "Expected close opcode (0x8), got 0x\(String(closeFrame.opcode, radix: 16))")
+        // Server should echo back the close payload (status code)
+        #expect(closeFrame.payload.count >= 2, "Close frame should contain status code")
+        if closeFrame.payload.count >= 2 {
+            let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+            #expect(statusCode == 1000, "Expected close status 1000, got \(statusCode)")
+        }
+
+        // Verify disconnect event fires
+        try await Task.sleep(for: .milliseconds(300))
+        let didDisconnect = disconnected.withLock { $0 }
+        #expect(didDisconnect, "Expected disconnect event after close handshake")
+    }
+
+    // MARK: - Oversize Frame Tests
+
+    @Test("Oversize fragmented message is rejected with 1009 close and disconnect")
+    func oversizeFragmentRejection() async throws {
+        let disconnected = LockIsolated(false)
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            if case .disconnected = event {
+                disconnected.withLock { $0 = true }
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send fragments that together exceed 16MB limit
+        // First fragment: 8MB
+        let chunk = Data(repeating: 0x41, count: 8 * 1024 * 1024)
+        try await Self.sendRawFrame(
+            fin: false, opcode: 0x1, payload: chunk, on: connection)
+
+        // Second fragment: another 9MB, pushing total over 16MB
+        let chunk2 = Data(repeating: 0x42, count: 9 * 1024 * 1024)
+        try await Self.sendRawFrame(
+            fin: false, opcode: 0x0, payload: chunk2, on: connection)
+
+        // The server should send a 1009 close frame and disconnect
+        do {
+            let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(5))
+            #expect(closeFrame.opcode == 0x8, "Expected close opcode for oversize fragment rejection")
+            if closeFrame.payload.count >= 2 {
+                let statusCode =
+                    UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+                #expect(statusCode == 1009, "Expected close status 1009 (message too big), got \(statusCode)")
+            }
+        } catch {
+            // Connection may have been cancelled before we could read the close frame.
+        }
+
+        try await Task.sleep(for: .milliseconds(500))
+        let didDisconnect = disconnected.withLock { $0 }
+        #expect(didDisconnect, "Expected disconnect event after oversize fragment rejection")
+    }
+
+    // MARK: - Leftover Buffer Tests
+
+    @Test("WebSocket upgrade with immediate frame in same TCP segment")
+    func upgradeWithImmediateFrame() async throws {
+        let received = LockIsolated<[WebSocketEvent]>([])
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            received.withLock { $0.append(event) }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        // Connect raw TCP
+        let connection = NWConnection(
+            host: "127.0.0.1",
+            port: NWEndpoint.Port(rawValue: server.boundPort)!,
+            using: .tcp
+        )
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            connection.stateUpdateHandler = { state in
+                switch state {
+                case .ready: continuation.resume()
+                case .failed(let error): continuation.resume(throwing: error)
+                default: break
+                }
+            }
+            connection.start(queue: .global())
+        }
+        connection.stateUpdateHandler = nil
+        defer { connection.cancel() }
+
+        // Build the upgrade request + a masked text frame as one combined buffer
+        let key = "dGhlIHNhbXBsZSBub25jZQ=="
+        let upgradeRequest = [
+            "GET /tim-agent HTTP/1.1",
+            "Host: 127.0.0.1:\(server.boundPort)",
+            "Upgrade: websocket",
+            "Connection: Upgrade",
+            "Sec-WebSocket-Key: \(key)",
+            "Sec-WebSocket-Version: 13",
+            "", "",
+        ].joined(separator: "\r\n")
+
+        // Build a masked text frame with a session_info message
+        let sessionInfoJson = """
+            {"type":"session_info","command":"agent","planId":99,"planTitle":"Leftover Test"}
+            """
+        let payload = Data(sessionInfoJson.utf8)
+        var frame = Data()
+        frame.append(0x81)  // FIN=1, opcode=text
+        frame.append(UInt8(payload.count) | 0x80)  // MASK=1 + length
+        let maskKey: [UInt8] = [0x37, 0xFA, 0x21, 0x3D]
+        frame.append(contentsOf: maskKey)
+        for (i, byte) in payload.enumerated() {
+            frame.append(byte ^ maskKey[i % 4])
+        }
+
+        // Send upgrade request + frame in one TCP write
+        var combined = Data(upgradeRequest.utf8)
+        combined.append(frame)
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            connection.send(content: combined, completion: .contentProcessed { error in
+                if let error { continuation.resume(throwing: error) }
+                else { continuation.resume() }
+            })
+        }
+
+        // Wait for processing
+        try await Task.sleep(for: .milliseconds(500))
+
+        // Verify the session_info was received despite being in the same TCP segment
+        let events = received.withLock { $0 }
+        guard case .sessionInfo(_, let info) = events.first else {
+            Issue.record("Expected sessionInfo event from immediate frame, got \(events)")
+            return
+        }
+        #expect(info.planId == 99)
+        #expect(info.planTitle == "Leftover Test")
+    }
+
+    @Test("Oversize frame is rejected with 1009 close and disconnect")
+    func oversizeFrameRejection() async throws {
+        let disconnected = LockIsolated(false)
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            if case .disconnected = event {
+                disconnected.withLock { $0 = true }
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send a frame header claiming 17MB payload (exceeds 16MB limit)
+        let oversizeLength: UInt64 = 17 * 1024 * 1024
+        try await Self.sendOversizeFrameHeader(
+            opcode: 0x1, claimedLength: oversizeLength, on: connection)
+
+        // The server should send a 1009 close frame and disconnect
+        // Try to read the close frame; the connection may also just drop
+        do {
+            let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+            #expect(closeFrame.opcode == 0x8, "Expected close opcode for oversize rejection")
+            if closeFrame.payload.count >= 2 {
+                let statusCode =
+                    UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+                #expect(statusCode == 1009, "Expected close status 1009 (message too big), got \(statusCode)")
+            }
+        } catch {
+            // Connection may have been cancelled before we could read the close frame.
+            // That's acceptable — the important thing is the disconnect event fires.
+        }
+
+        // Verify disconnect event fires
+        try await Task.sleep(for: .milliseconds(500))
+        let didDisconnect = disconnected.withLock { $0 }
+        #expect(didDisconnect, "Expected disconnect event after oversize frame rejection")
     }
 }
 

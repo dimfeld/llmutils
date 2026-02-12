@@ -126,7 +126,10 @@ final class WebSocketConnection: @unchecked Sendable {
             // Validate payload length before allocating memory
             guard payloadLength <= WebSocketConnection.maxFrameSize else {
                 try? await sendCloseFrame(code: 1009)
-                close()
+                if markClosed() {
+                    connection.cancel()
+                    onDisconnect()
+                }
                 return
             }
 
@@ -167,6 +170,14 @@ final class WebSocketConnection: @unchecked Sendable {
                 }
 
             case .continuation:
+                guard UInt64(fragmentBuffer.count) + UInt64(payload.count) <= WebSocketConnection.maxFrameSize else {
+                    try? await sendCloseFrame(code: 1009)
+                    if markClosed() {
+                        connection.cancel()
+                        onDisconnect()
+                    }
+                    return
+                }
                 fragmentBuffer.append(payload)
                 if fin {
                     // End of fragmented message
