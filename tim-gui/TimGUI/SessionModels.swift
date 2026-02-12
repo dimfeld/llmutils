@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 // MARK: - MessageCategory
 
@@ -33,7 +34,9 @@ struct SessionMessage: Identifiable, Sendable {
 
 // MARK: - SessionItem
 
-struct SessionItem: Identifiable, Sendable {
+@MainActor
+@Observable
+final class SessionItem: Identifiable {
     let id: UUID
     let connectionId: UUID
     var command: String
@@ -43,6 +46,28 @@ struct SessionItem: Identifiable, Sendable {
     let connectedAt: Date
     var isActive: Bool
     var messages: [SessionMessage]
+
+    init(
+        id: UUID,
+        connectionId: UUID,
+        command: String,
+        planId: Int?,
+        planTitle: String?,
+        workspacePath: String?,
+        connectedAt: Date,
+        isActive: Bool,
+        messages: [SessionMessage]
+    ) {
+        self.id = id
+        self.connectionId = connectionId
+        self.command = command
+        self.planId = planId
+        self.planTitle = planTitle
+        self.workspacePath = workspacePath
+        self.connectedAt = connectedAt
+        self.isActive = isActive
+        self.messages = messages
+    }
 }
 
 // MARK: - HeadlessMessage
