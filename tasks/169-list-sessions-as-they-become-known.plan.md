@@ -15,7 +15,7 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-12T00:12:19.658Z
+updatedAt: 2026-02-12T00:29:20.107Z
 tasks:
   - title: Define session data models and headless protocol types
     done: true
@@ -216,7 +216,7 @@ tasks:
       intentionally formatted as empty strings and then filtered out in the
       session detail UI, so these protocol messages never appear in the Sessions
       pane."
-    done: false
+    done: true
     description: >-
       `review_result` and `review_verdict` events are intentionally formatted as
       empty strings and then filtered out in the session detail UI, so these
@@ -256,7 +256,7 @@ tasks:
       Related file: tim-gui/TimGUI/LocalHTTPServer.swift:113-123
   - title: "Address Review Feedback: `execution_summary` decoding throws away
       summary statistics by hardcoding `totalSteps` and `failedSteps` to `nil`."
-    done: false
+    done: true
     description: >-
       `execution_summary` decoding throws away summary statistics by hardcoding
       `totalSteps` and `failedSteps` to `nil`. The formatter only prints these
@@ -311,7 +311,7 @@ tasks:
   - title: "Address Review Feedback: The text 'Listening on port 8123' is
       hard-coded, but LocalHTTPServer supports dynamic port binding (port: 0 in
       tests)."
-    done: false
+    done: true
     description: >-
       The text 'Listening on port 8123' is hard-coded, but LocalHTTPServer
       supports dynamic port binding (port: 0 in tests). If the server's port
@@ -340,7 +340,7 @@ tasks:
       Related file: tim-gui/TimGUI/LocalHTTPServer.swift:90
   - title: "Address Review Feedback: The three DateFormatter/ISO8601DateFormatter
       instances are declared as nonisolated(unsafe) global lets."
-    done: false
+    done: true
     description: >-
       The three DateFormatter/ISO8601DateFormatter instances are declared as
       nonisolated(unsafe) global lets. DateFormatter is not thread-safe per
@@ -850,24 +850,33 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 
 ## Current Progress
 ### Current State
-- All 6 tasks are complete. The feature is fully implemented and reviewed.
-- 126 tests passing (model decoding, message formatting, WebSocket integration, SessionState unit tests)
+- All 6 core tasks plus 4 review feedback tasks (7, 9, 12, 14) complete
+- 135 tests passing (9 new tests added for review feedback fixes)
 ### Completed (So Far)
 - SessionModels.swift: All Decodable types for HeadlessMessage, TunnelMessage, StructuredMessagePayload (~28 types), SessionItem, SessionMessage, MessageCategory, plus MessageFormatter
 - WebSocketConnection.swift: Full RFC 6455 frame parsing/sending, upgrade handshake, fragmentation, close/ping/pong, NSLock-protected close state, 16MB frame limit
 - LocalHTTPServer.swift: Routes GET /tim-agent with Upgrade: websocket to WebSocket handler, POST /messages continues as HTTP, WebSocketEvent dispatch with os.Logger
 - SessionState.swift: @MainActor @Observable class with addSession, appendMessage, markDisconnected, dismissSession (guards against active sessions), auto-selection, selectedSession computed property
 - SessionsView.swift: NavigationSplitView two-pane layout — SessionListView with selection/status/dismiss, SessionDetailView with auto-scroll and monospaced message rendering, SessionMessageView with category-based coloring
-- ContentView.swift: Refactored with AppViewMode picker (Sessions/Notifications), NotificationsView extracted, accepts both appState and sessionState, hides "Listening" text on server error
-- TimGUIApp.swift: Wires WebSocket events to SessionState methods — sessionInfo→addSession, output→MessageFormatter.format→appendMessage, disconnected→markDisconnected
+- ContentView.swift: Refactored with AppViewMode picker (Sessions/Notifications), NotificationsView extracted, accepts both appState and sessionState, dynamic port display
+- TimGUIApp.swift: Wires WebSocket events to SessionState methods — sessionInfo→addSession, output→MessageFormatter.format→appendMessage, disconnected→markDisconnected; passes bound port to ContentView
 - All unknown message types handled gracefully with .unknown fallback cases
 - agent_step_end shows success/failure indicator (✓/✗) and uses .error category for failures
+- review_result renders issue/recommendation/action-item counts and details; review_verdict renders verdict string and fix instructions
+- execution_summary properly decodes totalSteps/failedSteps from summary.metadata
+- ContentView port text is dynamic via serverPort parameter from LocalHTTPServer.boundPort
+- MessageFormatter and date formatters are @MainActor-isolated for thread safety
 ### Remaining
-- None — all tasks complete
+- Task 8: Pass leftover HTTP buffer bytes to WebSocketConnection for protocol correctness
+- Task 10: Move onDisconnect inside Task block after close frame send completes
+- Task 11: Add WebSocket protocol tests (fragmented messages, ping/pong, oversize-frame rejection)
+- Task 13: Keep stateUpdateHandler after startup to detect post-startup listener failures
+- Task 15: Replace blocking waitUntilExit with Process termination handler in activateTerminalPane
 ### Next Iteration Guidance
 - Performance: SessionItem is a struct with growing messages array. For high-throughput sessions, consider refactoring to class-based @Observable SessionItem or separate message storage to reduce SwiftUI re-evaluation
 - Auto-scroll uses both onAppear and onChange with .id(session.id) on SessionDetailView for stable view identity
 - Lifecycle messages all render green; the plan mentioned green/blue but current implementation is acceptable for v1
+- Review noted that promptAnswered messages still create empty SessionMessage objects that accumulate in memory without rendering (info-level, pre-existing design)
 ### Decisions / Changes
 - Used Approach A (unified TCP server) with manual WebSocket frame parsing rather than NWProtocolWebSocket
 - Types are Decodable only (not full Codable) since we only receive, never encode protocol messages
@@ -876,5 +885,6 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 - 16MB max frame size limit for security
 - dismissSession guards against active sessions — only closed sessions can be dismissed
 - Window minWidth increased to 800 to accommodate two-pane layout
+- MessageFormatter is @MainActor-isolated (chosen over locking or manual date parsing)
 ### Risks / Blockers
 - None
