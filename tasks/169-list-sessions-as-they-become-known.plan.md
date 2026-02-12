@@ -7,7 +7,7 @@ goal: Add WebSocket server support to tim-gui so it can receive and display
 id: 169
 uuid: 85aa17d2-7d55-4d91-afbb-09821893a59a
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 parent: 160
 references:
@@ -15,7 +15,7 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-12T08:38:44.836Z
+updatedAt: 2026-02-12T08:49:35.786Z
 tasks:
   - title: Define session data models and headless protocol types
     done: true
@@ -817,7 +817,7 @@ tasks:
       Related file: tim-gui/TimGUITests/WebSocketTests.swift:337,375,408,491,545,574,642,741,787,942,975,1012,1046,1078,1110,1145,1178,1249,1281,1313,1346,1382,1425,1477,1512,1548,1584
   - title: "Address Review Feedback: `activateTerminalPane` can hang indefinitely
       when `wezterm` fails to launch."
-    done: false
+    done: true
     description: >-
       `activateTerminalPane` can hang indefinitely when `wezterm` fails to
       launch. `waitForProcess` swallows `process.run()` errors and resumes as if
@@ -837,7 +837,7 @@ tasks:
   - title: "Address Review Feedback: The new process-wait refactor has no test
       coverage for launch-failure behavior, so the blocking path above is
       unguarded."
-    done: false
+    done: true
     description: >-
       The new process-wait refactor has no test coverage for launch-failure
       behavior, so the blocking path above is unguarded. Current tests focus on
@@ -854,7 +854,7 @@ tasks:
       Related file: tim-gui/TimGUITests:1
   - title: "Address Review Feedback: WebSocket close code validation is stricter
       than necessary, rejecting valid IANA-registered codes."
-    done: false
+    done: true
     description: >-
       WebSocket close code validation is stricter than necessary, rejecting
       valid IANA-registered codes. The close code validation explicitly lists
@@ -1351,25 +1351,29 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 
 ## Current Progress
 ### Current State
-- All 39 of 39 tasks complete (6 core + 33 review feedback)
-- 206 tests passing
+- All 42 of 42 tasks complete (6 core + 36 review feedback)
+- 212 tests passing
 ### Completed (So Far)
 - SessionModels.swift: All Decodable types for HeadlessMessage, TunnelMessage, StructuredMessagePayload (~28 types), SessionItem, SessionMessage, MessageCategory, plus MessageFormatter
-- WebSocketConnection.swift: Full RFC 6455 frame parsing/sending, upgrade handshake, fragmentation, close/ping/pong, NSLock-protected close state, 16MB frame limit, fragment buffer size limit, client-frame validation (unmasked rejection, continuation ordering, unknown opcode rejection, binary frame rejection, control-frame invariant enforcement, RSV bit rejection, invalid UTF-8 close 1007), close-frame payload validation (1-byte reject 1002, invalid code range reject 1002, invalid UTF-8 reason reject 1007), os.Logger error logging for unexpected readLoop errors
+- WebSocketConnection.swift: Full RFC 6455 frame parsing/sending, upgrade handshake, fragmentation, close/ping/pong, NSLock-protected close state, 16MB frame limit, fragment buffer size limit, client-frame validation (unmasked rejection, continuation ordering, unknown opcode rejection, binary frame rejection, control-frame invariant enforcement, RSV bit rejection, invalid UTF-8 close 1007), close-frame payload validation (1-byte reject 1002, invalid code range reject 1002, invalid UTF-8 reason reject 1007), os.Logger error logging for unexpected readLoop errors, close code validation using split ranges to exclude RFC-prohibited 1004/1005/1006
 - LocalHTTPServer.swift: Routes GET /tim-agent with Upgrade: websocket to WebSocket handler, POST /messages continues as HTTP, WebSocketEvent dispatch with os.Logger, leftover buffer forwarding to WebSocket, post-startup listener monitoring, consolidated single-pass header parsing, strict event ordering via await MainActor.run, async onDisconnect for strict ordering, StartupResumeGuard for double-resume prevention in start()
 - SessionState.swift: @MainActor @Observable class with addSession (deduplicates by connectionId), appendMessage, markDisconnected, dismissSession (guards against active sessions), auto-selection, selectedSession computed property, pending message buffering for pre-session output, gitRemote field preserved from SessionInfoPayload
 - SessionsView.swift: NavigationSplitView two-pane layout — SessionListView with selection/status/dismiss, SessionDetailView with smart auto-scroll (only scrolls when user is near bottom, extracted into testable shouldAutoScroll helper), monospaced message rendering, SessionMessageView with category-based coloring
-- ContentView.swift: Refactored with AppViewMode picker (Sessions/Notifications), NotificationsView extracted, accepts both appState and sessionState, dynamic port display, non-blocking Process execution, JSONSerialization for shell escaping, ResumeGuard for double-resume prevention
+- ContentView.swift: Refactored with AppViewMode picker (Sessions/Notifications), NotificationsView extracted, accepts both appState and sessionState, dynamic port display, non-blocking Process execution, JSONSerialization for shell escaping, ThrowingResumeGuard for double-resume prevention with error propagation, waitForProcess throws on launch failure preventing pipe read hangs
 - TimGUIApp.swift: Wires WebSocket events to SessionState methods — sessionInfo→addSession, output→MessageFormatter.format→appendMessage, disconnected→markDisconnected; passes bound port to ContentView; single-flight startup guard with isStartingServer flag; startError cleared on successful startup; server assigned only after successful start for retry support
 - All unknown message types handled gracefully with .unknown fallback cases
 - Task 38: Duplicate session_info deduplication — addSession checks for existing connectionId, updates metadata in-place instead of creating duplicates. SessionItem metadata fields (command, planId, planTitle, workspacePath, gitRemote) changed to var. 5 new SessionState tests for deduplication behavior.
 - Task 39: Deterministic test waits — replaced all 28 Task.sleep calls in WebSocketTests with waitUntil polling helper that checks actual conditions (event counts, disconnect flags, connection IDs) instead of fixed delays. Eliminates CI timing flakiness.
+- Task 40: waitForProcess changed to async throws — ThrowingResumeGuard replaces ResumeGuard, activateTerminalPane catches launch failure and closes pipe write handle before returning early
+- Task 41: ProcessLaunchTests added — tests for waitForProcess launch failure (throws promptly) and success (/usr/bin/true completes normally)
+- Task 42: Close code validation fixed — uses split ranges (1000...1003) || (1007...1014) || (3000...4999) to exclude RFC-prohibited 1004/1005/1006. Tests added for reserved code rejection (1004, 1005, 1006) and private-use code acceptance (3000, 4000, 4999)
 ### Remaining
 - None — all tasks complete
 ### Next Iteration Guidance
 - Lifecycle messages all render green; the plan mentioned green/blue but current implementation is acceptable for v1
 - Post-startup listener failures are logged but not surfaced to UI; consider adding a callback to update startError state
 - WebSocketConnection.close() uses fire-and-forget Task for onDisconnect intentionally — it's only called during server shutdown via stop(), not during normal operation where ordering matters
+- readDataToEndOfFile() in activateTerminalPane still blocks the cooperative executor (pre-existing); consider wrapping in detached task or async file I/O in future
 ### Decisions / Changes
 - Used Approach A (unified TCP server) with manual WebSocket frame parsing rather than NWProtocolWebSocket
 - Types are Decodable only (not full Codable) since we only receive, never encode protocol messages
@@ -1379,7 +1383,7 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 - dismissSession guards against active sessions — only closed sessions can be dismissed
 - Window minWidth increased to 800 to accommodate two-pane layout
 - MessageFormatter is @MainActor-isolated (chosen over locking or manual date parsing)
-- waitForProcess sets terminationHandler before run() to avoid race condition
+- waitForProcess is async throws with ThrowingResumeGuard — propagates run() errors so callers can handle launch failures
 - RawJSONString uses AnyJSON helper to losslessly serialize objects/arrays to JSON strings (not lossy placeholder)
 - prompt_answered value is decoded and stored but NOT displayed in UI for security (could contain secrets)
 - SessionItem is an @Observable class with mutable metadata (var command, planId, etc.) to support in-place updates from duplicate session_info, plus mutable state (var isActive, var messages) for efficient SwiftUI observation
@@ -1390,5 +1394,6 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 - Server startup uses single-flight guard (isStartingServer) to prevent concurrent binding races
 - Auto-scroll uses pure shouldAutoScroll helper for testability; returns nil when viewport not yet measured to retain previous state
 - WebSocket tests use waitUntil polling helper instead of Task.sleep for deterministic CI behavior
+- Close code validation uses split ranges to accept IANA-registered 1012-1014 while excluding RFC-prohibited 1004/1005/1006
 ### Risks / Blockers
 - None
