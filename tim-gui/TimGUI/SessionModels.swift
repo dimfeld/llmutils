@@ -403,7 +403,11 @@ struct PromptConfigPayload: Sendable, Decodable {
         if let s = try? container.decode(String.self, forKey: .defaultValue) {
             self.defaultValue = s
         } else if let n = try? container.decode(Double.self, forKey: .defaultValue) {
-            self.defaultValue = String(n)
+            if n == n.rounded() && abs(n) < 1e15 {
+                self.defaultValue = String(Int(n))
+            } else {
+                self.defaultValue = String(n)
+            }
         } else if let b = try? container.decode(Bool.self, forKey: .defaultValue) {
             self.defaultValue = String(b)
         } else {

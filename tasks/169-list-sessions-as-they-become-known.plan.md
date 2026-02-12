@@ -7,7 +7,7 @@ goal: Add WebSocket server support to tim-gui so it can receive and display
 id: 169
 uuid: 85aa17d2-7d55-4d91-afbb-09821893a59a
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 parent: 160
 references:
@@ -15,7 +15,7 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-12T02:08:31.435Z
+updatedAt: 2026-02-12T02:21:24.155Z
 tasks:
   - title: Define session data models and headless protocol types
     done: true
@@ -534,7 +534,7 @@ tasks:
       Related file: tim-gui/TimGUI/SessionModels.swift:395-400
   - title: "Address Review Feedback: WebSocket event delivery can reorder and drop
       session output."
-    done: false
+    done: true
     description: >-
       WebSocket event delivery can reorder and drop session output.
       `handleWebSocketMessage` dispatches every decoded message via a separate
@@ -555,7 +555,7 @@ tasks:
       Related file: tim-gui/TimGUI/LocalHTTPServer.swift:206
   - title: "Address Review Feedback: WebSocket parser is not RFC 6455-compliant on
       several malformed-frame paths despite the plan's RFC requirement."
-    done: false
+    done: true
     description: >-
       WebSocket parser is not RFC 6455-compliant on several malformed-frame
       paths despite the plan's RFC requirement. Unknown opcodes are ignored
@@ -578,7 +578,7 @@ tasks:
       Related file: tim-gui/TimGUI/WebSocketConnection.swift:161
   - title: "Address Review Feedback: Test coverage misses the malformed-frame
       branches above."
-    done: false
+    done: true
     description: >-
       Test coverage misses the malformed-frame branches above. Existing tests
       cover unmasked frames, continuation ordering, and oversize handling, but
@@ -596,7 +596,7 @@ tasks:
       Related file: tim-gui/TimGUITests/WebSocketTests.swift:1
   - title: "Address Review Feedback: PromptChoiceConfigPayload.value coerces integer
       values to floating-point string representation."
-    done: false
+    done: true
     description: >-
       PromptChoiceConfigPayload.value coerces integer values to floating-point
       string representation. When the TypeScript protocol sends a numeric value
@@ -1092,13 +1092,13 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 
 ## Current Progress
 ### Current State
-- All 24 of 24 tasks complete (6 core + 18 review feedback)
-- 175 tests passing
+- All 28 of 28 tasks complete (6 core + 22 review feedback)
+- 185 tests passing
 ### Completed (So Far)
 - SessionModels.swift: All Decodable types for HeadlessMessage, TunnelMessage, StructuredMessagePayload (~28 types), SessionItem, SessionMessage, MessageCategory, plus MessageFormatter
-- WebSocketConnection.swift: Full RFC 6455 frame parsing/sending, upgrade handshake, fragmentation, close/ping/pong, NSLock-protected close state, 16MB frame limit, fragment buffer size limit, client-frame validation (unmasked rejection, continuation ordering)
-- LocalHTTPServer.swift: Routes GET /tim-agent with Upgrade: websocket to WebSocket handler, POST /messages continues as HTTP, WebSocketEvent dispatch with os.Logger, leftover buffer forwarding to WebSocket, post-startup listener monitoring, consolidated single-pass header parsing
-- SessionState.swift: @MainActor @Observable class with addSession, appendMessage, markDisconnected, dismissSession (guards against active sessions), auto-selection, selectedSession computed property
+- WebSocketConnection.swift: Full RFC 6455 frame parsing/sending, upgrade handshake, fragmentation, close/ping/pong, NSLock-protected close state, 16MB frame limit, fragment buffer size limit, client-frame validation (unmasked rejection, continuation ordering, unknown opcode rejection, binary frame rejection, control-frame invariant enforcement)
+- LocalHTTPServer.swift: Routes GET /tim-agent with Upgrade: websocket to WebSocket handler, POST /messages continues as HTTP, WebSocketEvent dispatch with os.Logger, leftover buffer forwarding to WebSocket, post-startup listener monitoring, consolidated single-pass header parsing, strict event ordering via await MainActor.run
+- SessionState.swift: @MainActor @Observable class with addSession, appendMessage, markDisconnected, dismissSession (guards against active sessions), auto-selection, selectedSession computed property, pending message buffering for pre-session output
 - SessionsView.swift: NavigationSplitView two-pane layout — SessionListView with selection/status/dismiss, SessionDetailView with auto-scroll and monospaced message rendering, SessionMessageView with category-based coloring
 - ContentView.swift: Refactored with AppViewMode picker (Sessions/Notifications), NotificationsView extracted, accepts both appState and sessionState, dynamic port display, non-blocking Process execution, JSONSerialization for shell escaping, ResumeGuard for double-resume prevention
 - TimGUIApp.swift: Wires WebSocket events to SessionState methods — sessionInfo→addSession, output→MessageFormatter.format→appendMessage, disconnected→markDisconnected; passes bound port to ContentView
@@ -1122,6 +1122,10 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 - Task 22: ResumeGuard class with NSLock ensures waitForProcess continuation is resumed exactly once
 - Task 23: readRequest header parsing consolidated into single pass — headers dictionary built during accumulation loop
 - Task 24: PromptAnsweredPayload.value decoded via RawJSONString helper (stored but not displayed for security)
+- Task 25: WebSocket events processed in strict arrival order via `await MainActor.run` (not fire-and-forget Tasks). SessionState buffers messages for unknown connectionIds and flushes on addSession. Buffer cleaned on markDisconnected.
+- Task 26: Unknown opcodes → close 1002, binary frames → close 1003, control frames validated for FIN=1 and payload ≤ 125
+- Task 27: 5 new integration tests for malformed-frame rejection (unknown opcode, binary frame, fragmented ping, fragmented close, oversize ping)
+- Task 28: PromptChoiceConfigPayload.value and PromptConfigPayload.defaultValue use integer-detection pattern (n == n.rounded()) to preserve integer fidelity
 ### Remaining
 - None — all tasks complete
 ### Next Iteration Guidance
@@ -1141,5 +1145,7 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 - RawJSONString uses AnyJSON helper to losslessly serialize objects/arrays to JSON strings (not lossy placeholder)
 - prompt_answered value is decoded and stored but NOT displayed in UI for security (could contain secrets)
 - SessionItem is an @Observable class (not struct) with immutable metadata properties (let) and mutable state (var isActive, var messages) for efficient SwiftUI observation
+- WebSocket event delivery uses `await MainActor.run` for strict ordering instead of independent `Task { @MainActor in }` dispatches
+- SessionState buffers output messages arriving before session_info, flushing them when the session is registered
 ### Risks / Blockers
 - None
