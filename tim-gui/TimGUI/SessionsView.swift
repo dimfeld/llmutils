@@ -168,6 +168,12 @@ struct SessionDetailView: View {
                     proxy.scrollTo(lastId, anchor: .bottom)
                 }
             }
+            .onChange(of: session.forceScrollToBottomVersion) {
+                if let lastId = session.messages.last?.id {
+                    proxy.scrollTo(lastId, anchor: .bottom)
+                    isNearBottom = true
+                }
+            }
         }
     }
 

@@ -79,8 +79,10 @@ struct TimGUIApp: App {
                     let message = MessageFormatter.format(
                         tunnelMessage: tunnelMessage, seq: seq)
                     sessionState.appendMessage(connectionId: connId, message: message)
-                case .replayStart, .replayEnd:
-                    break
+                case .replayStart(let connId):
+                    sessionState.startReplay(connectionId: connId)
+                case .replayEnd(let connId):
+                    sessionState.endReplay(connectionId: connId)
                 case .disconnected(let connId):
                     sessionState.markDisconnected(connectionId: connId)
                 }

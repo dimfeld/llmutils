@@ -7,6 +7,8 @@ final class SessionState {
     var sessions: [SessionItem] = []
     var selectedSessionId: UUID?
     private var pendingMessages: [UUID: [SessionMessage]] = [:]
+    private var replayingConnections: Set<UUID> = []
+    private var replayMessages: [UUID: [SessionMessage]] = [:]
 
     var selectedSession: SessionItem? {
         guard let id = selectedSessionId else { return nil }
@@ -49,6 +51,11 @@ final class SessionState {
     }
 
     func appendMessage(connectionId: UUID, message: SessionMessage) {
+        if replayingConnections.contains(connectionId) {
+            replayMessages[connectionId, default: []].append(message)
+            return
+        }
+
         guard let index = sessions.firstIndex(where: { $0.connectionId == connectionId }) else {
             // Buffer messages that arrive before session_info
             pendingMessages[connectionId, default: []].append(message)
@@ -57,9 +64,32 @@ final class SessionState {
         sessions[index].messages.append(message)
     }
 
+    func startReplay(connectionId: UUID) {
+        replayingConnections.insert(connectionId)
+    }
+
+    func endReplay(connectionId: UUID) {
+        replayingConnections.remove(connectionId)
+
+        guard let bufferedReplayMessages = replayMessages.removeValue(forKey: connectionId),
+              !bufferedReplayMessages.isEmpty else {
+            return
+        }
+
+        guard let index = sessions.firstIndex(where: { $0.connectionId == connectionId }) else {
+            pendingMessages[connectionId, default: []].append(contentsOf: bufferedReplayMessages)
+            return
+        }
+
+        sessions[index].messages.append(contentsOf: bufferedReplayMessages)
+        sessions[index].forceScrollToBottomVersion += 1
+    }
+
     func markDisconnected(connectionId: UUID) {
         // Clean up any pending messages for this connection
         pendingMessages.removeValue(forKey: connectionId)
+        replayingConnections.remove(connectionId)
+        replayMessages.removeValue(forKey: connectionId)
         guard let index = sessions.firstIndex(where: { $0.connectionId == connectionId }) else {
             return
         }

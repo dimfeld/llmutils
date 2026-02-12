@@ -338,6 +338,61 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages[1].text == "live msg")
     }
 
+    @Test("replay buffers messages and flushes them only on replay_end")
+    func replayBuffersUntilEnd() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo())
+
+        state.startReplay(connectionId: connId)
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "replay 1"))
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "replay 2"))
+
+        // Messages should not be visible during replay.
+        #expect(state.sessions[0].messages.isEmpty)
+        #expect(state.sessions[0].forceScrollToBottomVersion == 0)
+
+        state.endReplay(connectionId: connId)
+
+        #expect(state.sessions[0].messages.count == 2)
+        #expect(state.sessions[0].messages[0].text == "replay 1")
+        #expect(state.sessions[0].messages[1].text == "replay 2")
+        #expect(state.sessions[0].forceScrollToBottomVersion == 1)
+    }
+
+    @Test("messages after replay_end append normally")
+    func replayThenLiveMessages() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo())
+
+        state.startReplay(connectionId: connId)
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "replay"))
+        state.endReplay(connectionId: connId)
+
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "live"))
+
+        #expect(state.sessions[0].messages.count == 2)
+        #expect(state.sessions[0].messages[0].text == "replay")
+        #expect(state.sessions[0].messages[1].text == "live")
+        #expect(state.sessions[0].forceScrollToBottomVersion == 1)
+    }
+
+    @Test("markDisconnected during replay discards buffered replay messages")
+    func replayBufferClearedOnDisconnect() {
+        let state = SessionState()
+        let connId = UUID()
+
+        state.startReplay(connectionId: connId)
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "replay orphan"))
+
+        state.markDisconnected(connectionId: connId)
+        state.addSession(connectionId: connId, info: makeInfo())
+        state.endReplay(connectionId: connId)
+
+        #expect(state.sessions[0].messages.isEmpty)
+    }
+
     @Test("markDisconnected cleans up pending message buffer")
     func markDisconnectedCleansPendingBuffer() {
         let state = SessionState()

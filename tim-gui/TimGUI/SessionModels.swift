@@ -47,6 +47,7 @@ final class SessionItem: Identifiable {
     let connectedAt: Date
     var isActive: Bool
     var messages: [SessionMessage]
+    var forceScrollToBottomVersion: Int
 
     init(
         id: UUID,
@@ -58,7 +59,8 @@ final class SessionItem: Identifiable {
         gitRemote: String?,
         connectedAt: Date,
         isActive: Bool,
-        messages: [SessionMessage]
+        messages: [SessionMessage],
+        forceScrollToBottomVersion: Int = 0
     ) {
         self.id = id
         self.connectionId = connectionId
@@ -70,6 +72,7 @@ final class SessionItem: Identifiable {
         self.connectedAt = connectedAt
         self.isActive = isActive
         self.messages = messages
+        self.forceScrollToBottomVersion = forceScrollToBottomVersion
     }
 }
 
