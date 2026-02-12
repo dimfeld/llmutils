@@ -15,7 +15,7 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-12T01:08:23.910Z
+updatedAt: 2026-02-12T01:26:55.148Z
 tasks:
   - title: Define session data models and headless protocol types
     done: true
@@ -373,7 +373,7 @@ tasks:
       Related file: tim-gui/TimGUI/ContentView.swift:112-113
   - title: "Address Review Feedback: `prompt_answered` events are still dropped from
       the Sessions UI, so not all session messages are shown."
-    done: false
+    done: true
     description: >-
       `prompt_answered` events are still dropped from the Sessions UI, so not
       all session messages are shown. `MessageFormatter` emits empty text for
@@ -391,7 +391,7 @@ tasks:
   - title: "Address Review Feedback: Missing fields in LlmToolUsePayload and
       LlmToolResultPayload — the input and result fields from the TypeScript
       protocol are absent."
-    done: false
+    done: true
     description: >-
       Missing fields in LlmToolUsePayload and LlmToolResultPayload — the input
       and result fields from the TypeScript protocol are absent. The CodingKeys
@@ -517,7 +517,7 @@ tasks:
       Related file: tim-gui/TimGUI/LocalHTTPServer.swift:239-305
   - title: "Address Review Feedback: PromptAnsweredPayload is missing the value
       field from the TypeScript protocol."
-    done: false
+    done: true
     description: >-
       PromptAnsweredPayload is missing the value field from the TypeScript
       protocol. The TypeScript PromptAnsweredMessage has a value?: unknown field
@@ -533,6 +533,7 @@ tasks:
 
       Related file: tim-gui/TimGUI/SessionModels.swift:395-400
 changedFiles:
+  - src/tim/commands/review.ts
   - tim-gui/TimGUI/ContentView.swift
   - tim-gui/TimGUI/LocalHTTPServer.swift
   - tim-gui/TimGUI/SessionModels.swift
@@ -1011,8 +1012,8 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 
 ## Current Progress
 ### Current State
-- All 15 tasks complete (6 core + 9 review feedback)
-- 142 tests passing
+- 18 of 24 tasks complete (6 core + 12 review feedback)
+- 169 tests passing
 ### Completed (So Far)
 - SessionModels.swift: All Decodable types for HeadlessMessage, TunnelMessage, StructuredMessagePayload (~28 types), SessionItem, SessionMessage, MessageCategory, plus MessageFormatter
 - WebSocketConnection.swift: Full RFC 6455 frame parsing/sending, upgrade handshake, fragmentation, close/ping/pong, NSLock-protected close state, 16MB frame limit, fragment buffer size limit
@@ -1032,15 +1033,24 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 - Task 11: WebSocket protocol tests for fragmentation, ping/pong, close handshake, oversize frame/fragment rejection, upgrade+immediate-frame
 - Task 13: stateUpdateHandler logs post-startup listener failures instead of being set to nil
 - Task 15: waitForProcess async helper with terminationHandler replaces blocking waitUntilExit
+- Task 16: prompt_answered events now render non-empty text ("Prompt answered (type) by source"); removed empty-message filter from SessionDetailView
+- Task 17: LlmToolUsePayload.input and LlmToolResultPayload.result decoded via RawJSONString/AnyJSON helpers, used as fallback when inputSummary/resultSummary are nil
+- Task 24: PromptAnsweredPayload.value decoded via RawJSONString helper (stored but not displayed for security)
 ### Remaining
-- None
+- Task 18: SessionItem struct → class refactor for performance
+- Task 19: WebSocket client-frame validation (unmasked frames, continuation ordering)
+- Task 20: Tests for malformed-frame rejection
+- Task 21: Shell escaping in activateTerminalPane
+- Task 22: waitForProcess double-resume prevention
+- Task 23: readRequest header parsing consolidation
 ### Next Iteration Guidance
 - Performance: SessionItem is a struct with growing messages array. For high-throughput sessions, consider refactoring to class-based @Observable SessionItem or separate message storage to reduce SwiftUI re-evaluation
 - Auto-scroll uses both onAppear and onChange with .id(session.id) on SessionDetailView for stable view identity
 - Lifecycle messages all render green; the plan mentioned green/blue but current implementation is acceptable for v1
-- Review noted that promptAnswered messages still create empty SessionMessage objects that accumulate in memory without rendering (info-level, pre-existing design)
 - Post-startup listener failures are logged but not surfaced to UI; consider adding a callback to update startError state
 - Headers are parsed twice in readRequest (once for Content-Length, once for dictionary); could consolidate for performance
+- Tasks 19+20 (WebSocket frame validation + tests) are a natural pair
+- Tasks 21+22 (ContentView fixes) are a natural pair
 ### Decisions / Changes
 - Used Approach A (unified TCP server) with manual WebSocket frame parsing rather than NWProtocolWebSocket
 - Types are Decodable only (not full Codable) since we only receive, never encode protocol messages
@@ -1051,5 +1061,7 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 - Window minWidth increased to 800 to accommodate two-pane layout
 - MessageFormatter is @MainActor-isolated (chosen over locking or manual date parsing)
 - waitForProcess sets terminationHandler before run() to avoid race condition
+- RawJSONString uses AnyJSON helper to losslessly serialize objects/arrays to JSON strings (not lossy placeholder)
+- prompt_answered value is decoded and stored but NOT displayed in UI for security (could contain secrets)
 ### Risks / Blockers
 - None
