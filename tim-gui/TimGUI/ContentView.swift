@@ -28,7 +28,7 @@ struct ContentView: View {
                 Spacer()
 
                 if let port = serverPort, startError == nil {
-                    Text("Listening on port \(port)")
+                    Text("Listening on port \(String(port))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
