@@ -117,6 +117,26 @@ struct SessionDetailView: View {
                 )
             }
             .coordinateSpace(name: "sessionScroll")
+            .overlay(alignment: .bottomTrailing) {
+                if !isNearBottom {
+                    Button {
+                        withAnimation {
+                            proxy.scrollTo(session.messages.last?.id, anchor: .bottom)
+                        }
+                    } label: {
+                        Image(systemName: "chevron.down.circle.fill")
+                            .font(.system(size: 32))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .background(.ultraThinMaterial)
+                    .clipShape(.circle)
+                    .help("Scroll to bottom")
+                    .transition(.opacity)
+                    .padding(16)
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: isNearBottom)
             .background(
                 GeometryReader { viewportGeometry in
                     Color.clear
