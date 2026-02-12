@@ -39,6 +39,7 @@ struct TimGUIApp: App {
     @State private var appState = AppState()
     @State private var sessionState = SessionState()
     @State private var server: LocalHTTPServer?
+    @State private var isStartingServer = false
     @State private var startError: String?
     @State private var serverPort: UInt16?
 
@@ -60,7 +61,9 @@ struct TimGUIApp: App {
 
     @MainActor
     private func startServerIfNeeded() async {
-        guard self.server == nil else { return }
+        guard self.server == nil, !self.isStartingServer else { return }
+        self.isStartingServer = true
+        defer { self.isStartingServer = false }
         let appState = self.appState
         let sessionState = self.sessionState
         let newServer = LocalHTTPServer(
@@ -85,6 +88,7 @@ struct TimGUIApp: App {
         )
         do {
             try await newServer.start()
+            self.startError = nil
             self.server = newServer
             self.serverPort = newServer.boundPort
         } catch {

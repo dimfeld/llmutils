@@ -304,6 +304,8 @@ final class WebSocketConnection: @unchecked Sendable {
     }
 
     /// Sends a close frame and cancels the connection.
+    /// Uses fire-and-forget Task intentionally: close() is only called during server shutdown
+    /// (from stop()), not during normal operation where strict event ordering matters.
     func close() {
         if markClosed() {
             Task {
