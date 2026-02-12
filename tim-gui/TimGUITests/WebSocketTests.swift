@@ -930,16 +930,13 @@ struct WebSocketTests {
         try await Self.sendUnmaskedFrame(
             fin: true, opcode: 0x1, payload: payload, on: connection)
 
-        // Server should send close 1002 and disconnect
-        do {
-            let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
-            #expect(closeFrame.opcode == 0x8, "Expected close opcode for unmasked frame rejection")
-            if closeFrame.payload.count >= 2 {
-                let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
-                #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
-            }
-        } catch {
-            // Connection may have been cancelled before we could read the close frame
+        // Server must send close 1002 before disconnecting
+        let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+        #expect(closeFrame.opcode == 0x8, "Expected close opcode for unmasked frame rejection")
+        #expect(closeFrame.payload.count >= 2, "Close frame must contain status code")
+        if closeFrame.payload.count >= 2 {
+            let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+            #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
         }
 
         try await Task.sleep(for: .milliseconds(500))
@@ -966,16 +963,13 @@ struct WebSocketTests {
         try await Self.sendRawFrame(
             fin: true, opcode: 0x0, payload: Data("stray continuation".utf8), on: connection)
 
-        // Server should send close 1002 and disconnect
-        do {
-            let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
-            #expect(closeFrame.opcode == 0x8, "Expected close opcode for stray continuation rejection")
-            if closeFrame.payload.count >= 2 {
-                let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
-                #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
-            }
-        } catch {
-            // Connection may have been cancelled before we could read the close frame
+        // Server must send close 1002 before disconnecting
+        let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+        #expect(closeFrame.opcode == 0x8, "Expected close opcode for stray continuation rejection")
+        #expect(closeFrame.payload.count >= 2, "Close frame must contain status code")
+        if closeFrame.payload.count >= 2 {
+            let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+            #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
         }
 
         try await Task.sleep(for: .milliseconds(500))
@@ -1006,16 +1000,13 @@ struct WebSocketTests {
         try await Self.sendRawFrame(
             fin: true, opcode: 0x1, payload: Data("new message".utf8), on: connection)
 
-        // Server should send close 1002 and disconnect
-        do {
-            let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
-            #expect(closeFrame.opcode == 0x8, "Expected close opcode for interleaved data frame rejection")
-            if closeFrame.payload.count >= 2 {
-                let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
-                #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
-            }
-        } catch {
-            // Connection may have been cancelled before we could read the close frame
+        // Server must send close 1002 before disconnecting
+        let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+        #expect(closeFrame.opcode == 0x8, "Expected close opcode for interleaved data frame rejection")
+        #expect(closeFrame.payload.count >= 2, "Close frame must contain status code")
+        if closeFrame.payload.count >= 2 {
+            let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+            #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
         }
 
         try await Task.sleep(for: .milliseconds(500))
