@@ -13,7 +13,7 @@ priority: medium
 planGeneratedAt: 2026-02-12T21:13:25.230Z
 promptsGeneratedAt: 2026-02-12T21:13:25.230Z
 createdAt: 2026-02-12T18:59:34.588Z
-updatedAt: 2026-02-12T21:47:16.377Z
+updatedAt: 2026-02-12T21:47:54.539Z
 tasks:
   - title: Add scroll-to-bottom button overlay to SessionDetailView
     done: true
