@@ -945,6 +945,63 @@ struct StructuredMessagePayloadTests {
         #expect(fixInstructions == "Fix the SQL injection")
     }
 
+    @Test("Decodes execution_summary with metadata totalSteps and failedSteps")
+    func decodesExecutionSummaryWithMetadata() throws {
+        let json = """
+            {
+                "type": "execution_summary",
+                "summary": {
+                    "planId": "99",
+                    "planTitle": "Big feature",
+                    "mode": "agent",
+                    "durationMs": 180000,
+                    "metadata": {
+                        "totalSteps": 7,
+                        "failedSteps": 2
+                    },
+                    "changedFiles": ["a.ts", "b.ts"]
+                },
+                "timestamp": "2026-02-10T08:00:00Z"
+            }
+            """
+        let msg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(json.utf8))
+        guard case .executionSummary(let p) = msg else {
+            Issue.record("Expected executionSummary, got \(msg)")
+            return
+        }
+        #expect(p.planId == "99")
+        #expect(p.planTitle == "Big feature")
+        #expect(p.totalSteps == 7)
+        #expect(p.failedSteps == 2)
+        #expect(p.durationMs == 180000)
+        #expect(p.changedFiles == ["a.ts", "b.ts"])
+    }
+
+    @Test("Decodes execution_summary without metadata (totalSteps/failedSteps nil)")
+    func decodesExecutionSummaryWithoutMetadata() throws {
+        let json = """
+            {
+                "type": "execution_summary",
+                "summary": {
+                    "planId": "42",
+                    "planTitle": "Add feature",
+                    "mode": "agent",
+                    "durationMs": 60000,
+                    "changedFiles": ["src/main.ts", "src/utils.ts"],
+                    "errors": ["Type check failed"]
+                },
+                "timestamp": "2026-02-10T08:00:00Z"
+            }
+            """
+        let msg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(json.utf8))
+        guard case .executionSummary(let p) = msg else {
+            Issue.record("Expected executionSummary, got \(msg)")
+            return
+        }
+        #expect(p.totalSteps == nil)
+        #expect(p.failedSteps == nil)
+    }
+
     @Test("Unknown structured type falls back to .unknown")
     func unknownTypeFallsBack() throws {
         let json = """

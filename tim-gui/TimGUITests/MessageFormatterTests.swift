@@ -441,4 +441,134 @@ struct MessageFormatterTests {
         #expect(msg.text.contains("/tmp/project"))
         #expect(msg.text.contains("Plan: tasks/42.plan.md"))
     }
+
+    // MARK: - Review messages (Task 7)
+
+    @Test("Formats review_result with issues as lifecycle with non-empty text")
+    func formatsReviewResult() {
+        let payload = ReviewResultPayload(
+            issues: [
+                ReviewIssueItem(
+                    severity: "critical", category: "security",
+                    content: "SQL injection risk", file: "src/user.ts",
+                    line: "42", suggestion: "Use parameterized queries"),
+                ReviewIssueItem(
+                    severity: "warning", category: "performance",
+                    content: "N+1 query", file: "src/api.ts",
+                    line: "10", suggestion: nil),
+            ],
+            recommendations: ["Use parameterized queries"],
+            actionItems: ["Fix query in user.ts"],
+            timestamp: nil)
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .reviewResult(payload)),
+            seq: 200
+        )
+        #expect(msg.category == .lifecycle)
+        #expect(!msg.text.isEmpty)
+        #expect(msg.text.contains("Review Result"))
+        #expect(msg.text.contains("Issues: 2"))
+        #expect(msg.text.contains("Recommendations: 1"))
+        #expect(msg.text.contains("Action items: 1"))
+        #expect(msg.text.contains("[critical]"))
+        #expect(msg.text.contains("SQL injection risk"))
+        #expect(msg.text.contains("(src/user.ts:42)"))
+        #expect(msg.text.contains("[warning]"))
+        #expect(msg.text.contains("N+1 query"))
+    }
+
+    @Test("Formats review_result with no issues")
+    func formatsReviewResultEmpty() {
+        let payload = ReviewResultPayload(
+            issues: [], recommendations: [], actionItems: [], timestamp: nil)
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .reviewResult(payload)),
+            seq: 201
+        )
+        #expect(msg.category == .lifecycle)
+        #expect(!msg.text.isEmpty)
+        #expect(msg.text.contains("Review Result"))
+        #expect(msg.text.contains("Issues: 0"))
+    }
+
+    @Test("Formats review_verdict ACCEPTABLE")
+    func formatsReviewVerdictAcceptable() {
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .reviewVerdict(
+                verdict: "ACCEPTABLE", fixInstructions: nil, timestamp: nil)),
+            seq: 202
+        )
+        #expect(msg.category == .lifecycle)
+        #expect(!msg.text.isEmpty)
+        #expect(msg.text.contains("Review Verdict"))
+        #expect(msg.text.contains("Verdict: ACCEPTABLE"))
+    }
+
+    @Test("Formats review_verdict NEEDS_FIXES with instructions")
+    func formatsReviewVerdictNeedsFixes() {
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .reviewVerdict(
+                verdict: "NEEDS_FIXES",
+                fixInstructions: "Fix the SQL injection vulnerability",
+                timestamp: nil)),
+            seq: 203
+        )
+        #expect(msg.category == .lifecycle)
+        #expect(!msg.text.isEmpty)
+        #expect(msg.text.contains("Review Verdict"))
+        #expect(msg.text.contains("Verdict: NEEDS_FIXES"))
+        #expect(msg.text.contains("Fix the SQL injection vulnerability"))
+    }
+
+    // MARK: - Execution summary with steps (Task 9)
+
+    @Test("Formats execution_summary with totalSteps and failedSteps")
+    func formatsExecutionSummaryWithSteps() {
+        let payload = ExecutionSummaryPayload(
+            planId: "42", planTitle: "Add feature", mode: "agent",
+            durationMs: 120000, totalSteps: 5, failedSteps: 1,
+            changedFiles: ["src/main.ts"], errors: nil, timestamp: nil)
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .executionSummary(payload)),
+            seq: 210
+        )
+        #expect(msg.category == .lifecycle)
+        #expect(msg.text.contains("Execution Summary"))
+        #expect(msg.text.contains("Plan: 42"))
+        #expect(msg.text.contains("Title: Add feature"))
+        #expect(msg.text.contains("Steps: 5"))
+        #expect(msg.text.contains("Failed: 1"))
+        #expect(msg.text.contains("Duration: 120s"))
+    }
+
+    @Test("Formats execution_summary without steps (nil)")
+    func formatsExecutionSummaryWithoutSteps() {
+        let payload = ExecutionSummaryPayload(
+            planId: "42", planTitle: nil, mode: nil,
+            durationMs: nil, totalSteps: nil, failedSteps: nil,
+            changedFiles: nil, errors: nil, timestamp: nil)
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .executionSummary(payload)),
+            seq: 211
+        )
+        #expect(msg.category == .lifecycle)
+        #expect(msg.text.contains("Execution Summary"))
+        #expect(msg.text.contains("Plan: 42"))
+        #expect(!msg.text.contains("Steps:"))
+        #expect(!msg.text.contains("Failed:"))
+    }
+
+    @Test("Formats execution_summary with zero failedSteps omits Failed line")
+    func formatsExecutionSummaryZeroFailed() {
+        let payload = ExecutionSummaryPayload(
+            planId: nil, planTitle: nil, mode: nil,
+            durationMs: nil, totalSteps: 3, failedSteps: 0,
+            changedFiles: nil, errors: nil, timestamp: nil)
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .executionSummary(payload)),
+            seq: 212
+        )
+        #expect(msg.text.contains("Steps: 3"))
+        #expect(!msg.text.contains("Failed:"))
+    }
 }
