@@ -8,15 +8,15 @@ goal: Add a floating scroll-to-bottom button in SessionDetailView that appears
 id: 174
 uuid: 450efd91-1cc9-4513-b43f-147d6a0d58d7
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 planGeneratedAt: 2026-02-12T21:13:25.230Z
 promptsGeneratedAt: 2026-02-12T21:13:25.230Z
 createdAt: 2026-02-12T18:59:34.588Z
-updatedAt: 2026-02-12T21:43:58.035Z
+updatedAt: 2026-02-12T21:47:16.377Z
 tasks:
   - title: Add scroll-to-bottom button overlay to SessionDetailView
-    done: false
+    done: true
     description: 'In tim-gui/TimGUI/SessionsView.swift, add an .overlay modifier to
       the ScrollView (inside the ScrollViewReader closure) containing a Button
       that: (1) is conditionally shown when !isNearBottom using an if statement,
@@ -27,6 +27,8 @@ tasks:
       .transition(.opacity) and .animation(.easeInOut(duration: 0.2), value:
       isNearBottom), (7) includes .help("Scroll to bottom") tooltip. Size should
       be around 32-36pt with ~16pt padding from edges.'
+changedFiles:
+  - tim-gui/TimGUI/SessionsView.swift
 tags: []
 ---
 
@@ -137,3 +139,22 @@ If desired, a SwiftUI preview can be added to visually verify the button behavio
 - **Reusing `isNearBottom`**: This state already perfectly represents whether the button should be visible. No new state tracking is needed.
 - **Reusing `proxy.scrollTo`**: The same scrolling mechanism used by auto-scroll ensures consistent behavior.
 - **Simple fade animation**: A fade is the most common and least distracting transition for floating action buttons. It avoids complex slide animations that might feel out of place in a utility app.
+
+## Current Progress
+### Current State
+- All tasks complete. Implementation is done and builds successfully.
+### Completed (So Far)
+- Added scroll-to-bottom button overlay to SessionDetailView in SessionsView.swift
+- Button uses `.overlay(alignment: .bottomTrailing)` on the ScrollView, inside the ScrollViewReader closure
+- Conditionally shown when `!isNearBottom`, uses `chevron.down.circle.fill` SF Symbol at 32pt
+- Styled with `.buttonStyle(.plain)`, `.ultraThinMaterial` background, `.clipShape(.circle)`
+- Smooth fade animation via `.transition(.opacity)` and `.animation(.easeInOut(duration: 0.2), value: isNearBottom)`
+- Fixed review-identified bug: unwrap optional UUID before passing to `proxy.scrollTo` to ensure proper AnyHashable matching
+### Remaining
+- None
+### Next Iteration Guidance
+- None
+### Decisions / Changes
+- Used `if let lastId = session.messages.last?.id` unwrapping in the button action to avoid passing `UUID?` to `scrollTo` (which matches by `AnyHashable` and wouldn't match `UUID` view IDs)
+### Risks / Blockers
+- None

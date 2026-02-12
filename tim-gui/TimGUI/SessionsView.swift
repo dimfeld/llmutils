@@ -120,8 +120,10 @@ struct SessionDetailView: View {
             .overlay(alignment: .bottomTrailing) {
                 if !isNearBottom {
                     Button {
-                        withAnimation {
-                            proxy.scrollTo(session.messages.last?.id, anchor: .bottom)
+                        if let lastId = session.messages.last?.id {
+                            withAnimation {
+                                proxy.scrollTo(lastId, anchor: .bottom)
+                            }
                         }
                     } label: {
                         Image(systemName: "chevron.down.circle.fill")
