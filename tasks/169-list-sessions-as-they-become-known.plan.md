@@ -7,7 +7,7 @@ goal: Add WebSocket server support to tim-gui so it can receive and display
 id: 169
 uuid: 85aa17d2-7d55-4d91-afbb-09821893a59a
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 parent: 160
 references:
@@ -15,7 +15,7 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-12T00:29:20.107Z
+updatedAt: 2026-02-12T00:46:26.159Z
 tasks:
   - title: Define session data models and headless protocol types
     done: true
@@ -234,7 +234,7 @@ tasks:
   - title: "Address Review Feedback: When readRequest reads the HTTP request from
       the connection, it may consume data beyond the \\r\\n\\r\\n header
       boundary if it arrives in the same TCP segment."
-    done: false
+    done: true
     description: >-
       When readRequest reads the HTTP request from the connection, it may
       consume data beyond the \r\n\r\n header boundary if it arrives in the same
@@ -273,7 +273,7 @@ tasks:
   - title: "Address Review Feedback: The close() method calls onDisconnect()
       synchronously on the calling thread immediately after launching a
       fire-and-forget Task to send the close frame."
-    done: false
+    done: true
     description: >-
       The close() method calls onDisconnect() synchronously on the calling
       thread immediately after launching a fire-and-forget Task to send the
@@ -294,7 +294,7 @@ tasks:
   - title: "Address Review Feedback: The new WebSocket tests do not cover the
       highest-risk protocol paths that were explicitly implemented: fragmented
       messages, ping/pong handling, and oversize-frame rejection."
-    done: false
+    done: true
     description: >-
       The new WebSocket tests do not cover the highest-risk protocol paths that
       were explicitly implemented: fragmented messages, ping/pong handling, and
@@ -325,7 +325,7 @@ tasks:
       Related file: tim-gui/TimGUI/ContentView.swift:30-31
   - title: "Address Review Feedback: After the listener successfully starts, the
       stateUpdateHandler is set to nil."
-    done: false
+    done: true
     description: >-
       After the listener successfully starts, the stateUpdateHandler is set to
       nil. If the NWListener subsequently fails (e.g., the port becomes
@@ -360,7 +360,7 @@ tasks:
   - title: "Address Review Feedback: Pre-existing: activateTerminalPane uses
       Process.waitUntilExit() inside Task.detached which blocks a cooperative
       thread from the thread pool."
-    done: false
+    done: true
     description: >-
       Pre-existing: activateTerminalPane uses Process.waitUntilExit() inside
       Task.detached which blocks a cooperative thread from the thread pool.
@@ -850,15 +850,15 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 
 ## Current Progress
 ### Current State
-- All 6 core tasks plus 4 review feedback tasks (7, 9, 12, 14) complete
-- 135 tests passing (9 new tests added for review feedback fixes)
+- All 15 tasks complete (6 core + 9 review feedback)
+- 142 tests passing
 ### Completed (So Far)
 - SessionModels.swift: All Decodable types for HeadlessMessage, TunnelMessage, StructuredMessagePayload (~28 types), SessionItem, SessionMessage, MessageCategory, plus MessageFormatter
-- WebSocketConnection.swift: Full RFC 6455 frame parsing/sending, upgrade handshake, fragmentation, close/ping/pong, NSLock-protected close state, 16MB frame limit
-- LocalHTTPServer.swift: Routes GET /tim-agent with Upgrade: websocket to WebSocket handler, POST /messages continues as HTTP, WebSocketEvent dispatch with os.Logger
+- WebSocketConnection.swift: Full RFC 6455 frame parsing/sending, upgrade handshake, fragmentation, close/ping/pong, NSLock-protected close state, 16MB frame limit, fragment buffer size limit
+- LocalHTTPServer.swift: Routes GET /tim-agent with Upgrade: websocket to WebSocket handler, POST /messages continues as HTTP, WebSocketEvent dispatch with os.Logger, leftover buffer forwarding to WebSocket, post-startup listener monitoring
 - SessionState.swift: @MainActor @Observable class with addSession, appendMessage, markDisconnected, dismissSession (guards against active sessions), auto-selection, selectedSession computed property
 - SessionsView.swift: NavigationSplitView two-pane layout — SessionListView with selection/status/dismiss, SessionDetailView with auto-scroll and monospaced message rendering, SessionMessageView with category-based coloring
-- ContentView.swift: Refactored with AppViewMode picker (Sessions/Notifications), NotificationsView extracted, accepts both appState and sessionState, dynamic port display
+- ContentView.swift: Refactored with AppViewMode picker (Sessions/Notifications), NotificationsView extracted, accepts both appState and sessionState, dynamic port display, non-blocking Process execution
 - TimGUIApp.swift: Wires WebSocket events to SessionState methods — sessionInfo→addSession, output→MessageFormatter.format→appendMessage, disconnected→markDisconnected; passes bound port to ContentView
 - All unknown message types handled gracefully with .unknown fallback cases
 - agent_step_end shows success/failure indicator (✓/✗) and uses .error category for failures
@@ -866,25 +866,29 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 - execution_summary properly decodes totalSteps/failedSteps from summary.metadata
 - ContentView port text is dynamic via serverPort parameter from LocalHTTPServer.boundPort
 - MessageFormatter and date formatters are @MainActor-isolated for thread safety
+- Task 8: HTTPRequest includes leftoverData, WebSocketConnection has readBuffer for pre-read bytes
+- Task 10: onDisconnect fires after close frame send and connection.cancel() inside Task block
+- Task 11: WebSocket protocol tests for fragmentation, ping/pong, close handshake, oversize frame/fragment rejection, upgrade+immediate-frame
+- Task 13: stateUpdateHandler logs post-startup listener failures instead of being set to nil
+- Task 15: waitForProcess async helper with terminationHandler replaces blocking waitUntilExit
 ### Remaining
-- Task 8: Pass leftover HTTP buffer bytes to WebSocketConnection for protocol correctness
-- Task 10: Move onDisconnect inside Task block after close frame send completes
-- Task 11: Add WebSocket protocol tests (fragmented messages, ping/pong, oversize-frame rejection)
-- Task 13: Keep stateUpdateHandler after startup to detect post-startup listener failures
-- Task 15: Replace blocking waitUntilExit with Process termination handler in activateTerminalPane
+- None
 ### Next Iteration Guidance
 - Performance: SessionItem is a struct with growing messages array. For high-throughput sessions, consider refactoring to class-based @Observable SessionItem or separate message storage to reduce SwiftUI re-evaluation
 - Auto-scroll uses both onAppear and onChange with .id(session.id) on SessionDetailView for stable view identity
 - Lifecycle messages all render green; the plan mentioned green/blue but current implementation is acceptable for v1
 - Review noted that promptAnswered messages still create empty SessionMessage objects that accumulate in memory without rendering (info-level, pre-existing design)
+- Post-startup listener failures are logged but not surfaced to UI; consider adding a callback to update startError state
+- Headers are parsed twice in readRequest (once for Content-Length, once for dictionary); could consolidate for performance
 ### Decisions / Changes
 - Used Approach A (unified TCP server) with manual WebSocket frame parsing rather than NWProtocolWebSocket
 - Types are Decodable only (not full Codable) since we only receive, never encode protocol messages
 - All discriminated unions use .unknown fallback for forward compatibility
 - WebSocketConnection uses NSLock for thread safety (not actor, since it needs to interact with NWConnection synchronously)
-- 16MB max frame size limit for security
+- 16MB max frame size limit for security (applies to both individual frames and accumulated fragment buffers)
 - dismissSession guards against active sessions — only closed sessions can be dismissed
 - Window minWidth increased to 800 to accommodate two-pane layout
 - MessageFormatter is @MainActor-isolated (chosen over locking or manual date parsing)
+- waitForProcess sets terminationHandler before run() to avoid race condition
 ### Risks / Blockers
 - None
