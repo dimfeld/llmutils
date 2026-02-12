@@ -166,7 +166,7 @@ final class LocalHTTPServer: @unchecked Sendable {
             connection: connection,
             initialBuffer: leftoverData,
             onMessage: { [weak self] text in
-                self?.handleWebSocketMessage(connectionId: connectionId, text: text)
+                await self?.handleWebSocketMessage(connectionId: connectionId, text: text)
             },
             onDisconnect: { [weak self] in
                 self?.handleWebSocketDisconnect(connectionId: connectionId)
@@ -197,13 +197,13 @@ final class LocalHTTPServer: @unchecked Sendable {
 
     private static let logger = Logger(subsystem: "com.timgui", category: "WebSocket")
 
-    private func handleWebSocketMessage(connectionId: UUID, text: String) {
+    private func handleWebSocketMessage(connectionId: UUID, text: String) async {
         let wsHandler = self.wsHandler
         guard let data = text.data(using: .utf8) else { return }
 
         do {
             let message = try JSONDecoder().decode(HeadlessMessage.self, from: data)
-            Task { @MainActor in
+            await MainActor.run {
                 switch message {
                 case .sessionInfo(let info):
                     wsHandler(.sessionInfo(connectionId, info))

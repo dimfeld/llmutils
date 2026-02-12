@@ -1014,6 +1014,172 @@ struct WebSocketTests {
         #expect(didDisconnect, "Expected disconnect event after interleaved data frame rejection")
     }
 
+    // MARK: - RFC 6455 Compliance Tests
+
+    @Test("Unknown opcode is rejected with close 1002")
+    func unknownOpcodeRejection() async throws {
+        let disconnected = LockIsolated(false)
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            if case .disconnected = event {
+                disconnected.withLock { $0 = true }
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send a frame with unknown opcode 0x3 (reserved)
+        try await Self.sendRawFrame(
+            fin: true, opcode: 0x3, payload: Data("test".utf8), on: connection)
+
+        let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+        #expect(closeFrame.opcode == 0x8, "Expected close opcode for unknown opcode rejection")
+        #expect(closeFrame.payload.count >= 2, "Close frame must contain status code")
+        if closeFrame.payload.count >= 2 {
+            let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+            #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
+        }
+
+        try await Task.sleep(for: .milliseconds(500))
+        let didDisconnect = disconnected.withLock { $0 }
+        #expect(didDisconnect, "Expected disconnect event after unknown opcode rejection")
+    }
+
+    @Test("Binary frame is rejected with close 1003")
+    func binaryFrameRejection() async throws {
+        let disconnected = LockIsolated(false)
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            if case .disconnected = event {
+                disconnected.withLock { $0 = true }
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send a binary frame (opcode 0x2)
+        try await Self.sendRawFrame(
+            fin: true, opcode: 0x2, payload: Data([0x00, 0x01, 0x02]), on: connection)
+
+        let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+        #expect(closeFrame.opcode == 0x8, "Expected close opcode for binary frame rejection")
+        #expect(closeFrame.payload.count >= 2, "Close frame must contain status code")
+        if closeFrame.payload.count >= 2 {
+            let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+            #expect(statusCode == 1003, "Expected close status 1003 (unsupported data), got \(statusCode)")
+        }
+
+        try await Task.sleep(for: .milliseconds(500))
+        let didDisconnect = disconnected.withLock { $0 }
+        #expect(didDisconnect, "Expected disconnect event after binary frame rejection")
+    }
+
+    @Test("Ping with FIN=0 is rejected with close 1002")
+    func fragmentedPingRejection() async throws {
+        let disconnected = LockIsolated(false)
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            if case .disconnected = event {
+                disconnected.withLock { $0 = true }
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send a ping frame with FIN=0 (control frames must not be fragmented)
+        try await Self.sendRawFrame(
+            fin: false, opcode: 0x9, payload: Data("ping".utf8), on: connection)
+
+        let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+        #expect(closeFrame.opcode == 0x8, "Expected close opcode for fragmented ping rejection")
+        #expect(closeFrame.payload.count >= 2, "Close frame must contain status code")
+        if closeFrame.payload.count >= 2 {
+            let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+            #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
+        }
+
+        try await Task.sleep(for: .milliseconds(500))
+        let didDisconnect = disconnected.withLock { $0 }
+        #expect(didDisconnect, "Expected disconnect event after fragmented ping rejection")
+    }
+
+    @Test("Close with FIN=0 is rejected with close 1002")
+    func fragmentedCloseRejection() async throws {
+        let disconnected = LockIsolated(false)
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            if case .disconnected = event {
+                disconnected.withLock { $0 = true }
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send a close frame with FIN=0 (control frames must not be fragmented)
+        var closePayload = Data()
+        closePayload.append(UInt8((1000 >> 8) & 0xFF))
+        closePayload.append(UInt8(1000 & 0xFF))
+        try await Self.sendRawFrame(
+            fin: false, opcode: 0x8, payload: closePayload, on: connection)
+
+        let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+        #expect(closeFrame.opcode == 0x8, "Expected close opcode for fragmented close rejection")
+        #expect(closeFrame.payload.count >= 2, "Close frame must contain status code")
+        if closeFrame.payload.count >= 2 {
+            let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+            #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
+        }
+
+        try await Task.sleep(for: .milliseconds(500))
+        let didDisconnect = disconnected.withLock { $0 }
+        #expect(didDisconnect, "Expected disconnect event after fragmented close rejection")
+    }
+
+    @Test("Ping with payload > 125 bytes is rejected with close 1002")
+    func oversizePingRejection() async throws {
+        let disconnected = LockIsolated(false)
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            if case .disconnected = event {
+                disconnected.withLock { $0 = true }
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send a ping frame with 126-byte payload (exceeds 125-byte control frame limit)
+        let oversizePayload = Data(repeating: 0x41, count: 126)
+        try await Self.sendRawFrame(
+            fin: true, opcode: 0x9, payload: oversizePayload, on: connection)
+
+        let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+        #expect(closeFrame.opcode == 0x8, "Expected close opcode for oversize ping rejection")
+        #expect(closeFrame.payload.count >= 2, "Close frame must contain status code")
+        if closeFrame.payload.count >= 2 {
+            let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+            #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
+        }
+
+        try await Task.sleep(for: .milliseconds(500))
+        let didDisconnect = disconnected.withLock { $0 }
+        #expect(didDisconnect, "Expected disconnect event after oversize ping rejection")
+    }
+
     @Test("Oversize frame is rejected with 1009 close and disconnect")
     func oversizeFrameRejection() async throws {
         let disconnected = LockIsolated(false)

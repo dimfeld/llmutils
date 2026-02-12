@@ -366,7 +366,11 @@ struct PromptChoiceConfigPayload: Sendable, Decodable {
         if let s = try? container.decode(String.self, forKey: .value) {
             self.value = s
         } else if let n = try? container.decode(Double.self, forKey: .value) {
-            self.value = String(n)
+            if n == n.rounded() && abs(n) < 1e15 {
+                self.value = String(Int(n))
+            } else {
+                self.value = String(n)
+            }
         } else if let b = try? container.decode(Bool.self, forKey: .value) {
             self.value = String(b)
         } else {

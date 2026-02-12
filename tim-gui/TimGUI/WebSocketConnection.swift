@@ -18,7 +18,7 @@ final class WebSocketConnection: @unchecked Sendable {
 
     let id: UUID
     private let connection: NWConnection
-    private let onMessage: @Sendable (String) -> Void
+    private let onMessage: @Sendable (String) async -> Void
     private let onDisconnect: @Sendable () -> Void
     private let closeLock = NSLock()
     private var _isClosed = false
@@ -43,7 +43,7 @@ final class WebSocketConnection: @unchecked Sendable {
         id: UUID,
         connection: NWConnection,
         initialBuffer: Data = Data(),
-        onMessage: @escaping @Sendable (String) -> Void,
+        onMessage: @escaping @Sendable (String) async -> Void,
         onDisconnect: @escaping @Sendable () -> Void
     ) {
         self.id = id
@@ -159,12 +159,39 @@ final class WebSocketConnection: @unchecked Sendable {
             }
 
             guard let opcode = WSOpcode(rawValue: opcodeRaw) else {
-                // Unknown opcode, skip
-                continue
+                // Unknown opcode: close with 1002 per RFC 6455
+                try? await sendCloseFrame(code: 1002)
+                if markClosed() {
+                    connection.cancel()
+                    onDisconnect()
+                }
+                return
+            }
+
+            // Validate control frame invariants (opcodes >= 0x8): must have FIN=1 and payload <= 125
+            if opcodeRaw >= 0x8 {
+                guard fin else {
+                    // Control frames must not be fragmented
+                    try? await sendCloseFrame(code: 1002)
+                    if markClosed() {
+                        connection.cancel()
+                        onDisconnect()
+                    }
+                    return
+                }
+                guard payloadLength <= 125 else {
+                    // Control frame payload must be 125 bytes or less
+                    try? await sendCloseFrame(code: 1002)
+                    if markClosed() {
+                        connection.cancel()
+                        onDisconnect()
+                    }
+                    return
+                }
             }
 
             switch opcode {
-            case .text, .binary:
+            case .text:
                 // Reject new data frame while fragmentation is in progress
                 if fragmentOpcode != nil {
                     try? await sendCloseFrame(code: 1002)
@@ -177,13 +204,22 @@ final class WebSocketConnection: @unchecked Sendable {
                 if fin {
                     // Complete single-frame message
                     if let text = String(data: payload, encoding: .utf8) {
-                        onMessage(text)
+                        await onMessage(text)
                     }
                 } else {
                     // Start of fragmented message
                     fragmentOpcode = opcode
                     fragmentBuffer = payload
                 }
+
+            case .binary:
+                // Binary frames are not supported; close with 1003 (unsupported data)
+                try? await sendCloseFrame(code: 1003)
+                if markClosed() {
+                    connection.cancel()
+                    onDisconnect()
+                }
+                return
 
             case .continuation:
                 // Reject continuation when no fragmented message is in progress
@@ -207,7 +243,7 @@ final class WebSocketConnection: @unchecked Sendable {
                 if fin {
                     // End of fragmented message
                     if let text = String(data: fragmentBuffer, encoding: .utf8) {
-                        onMessage(text)
+                        await onMessage(text)
                     }
                     fragmentBuffer = Data()
                     fragmentOpcode = nil

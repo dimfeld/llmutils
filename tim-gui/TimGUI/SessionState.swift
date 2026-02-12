@@ -6,6 +6,7 @@ import Observation
 final class SessionState {
     var sessions: [SessionItem] = []
     var selectedSessionId: UUID?
+    private var pendingMessages: [UUID: [SessionMessage]] = [:]
 
     var selectedSession: SessionItem? {
         guard let id = selectedSessionId else { return nil }
@@ -24,6 +25,12 @@ final class SessionState {
             isActive: true,
             messages: []
         )
+
+        // Flush any messages that arrived before session_info
+        if let buffered = pendingMessages.removeValue(forKey: connectionId) {
+            session.messages = buffered
+        }
+
         sessions.insert(session, at: 0)
         if selectedSessionId == nil {
             selectedSessionId = session.id
@@ -32,12 +39,16 @@ final class SessionState {
 
     func appendMessage(connectionId: UUID, message: SessionMessage) {
         guard let index = sessions.firstIndex(where: { $0.connectionId == connectionId }) else {
+            // Buffer messages that arrive before session_info
+            pendingMessages[connectionId, default: []].append(message)
             return
         }
         sessions[index].messages.append(message)
     }
 
     func markDisconnected(connectionId: UUID) {
+        // Clean up any pending messages for this connection
+        pendingMessages.removeValue(forKey: connectionId)
         guard let index = sessions.firstIndex(where: { $0.connectionId == connectionId }) else {
             return
         }

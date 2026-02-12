@@ -1131,7 +1131,7 @@ struct StructuredMessagePayloadTests {
         #expect(p.promptConfig.choices?.count == 2)
         #expect(p.promptConfig.choices?[0].name == "Option A")
         #expect(p.promptConfig.choices?[0].value == "a")
-        #expect(p.promptConfig.choices?[1].value == "2.0")  // number coerced to string
+        #expect(p.promptConfig.choices?[1].value == "2")  // integer number coerced to string without decimal
         #expect(p.timeoutMs == 30000)
     }
 

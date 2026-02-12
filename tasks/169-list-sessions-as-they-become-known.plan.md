@@ -7,7 +7,7 @@ goal: Add WebSocket server support to tim-gui so it can receive and display
 id: 169
 uuid: 85aa17d2-7d55-4d91-afbb-09821893a59a
 generatedBy: agent
-status: done
+status: in_progress
 priority: medium
 parent: 160
 references:
@@ -15,7 +15,7 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-12T01:50:12.262Z
+updatedAt: 2026-02-12T02:08:31.435Z
 tasks:
   - title: Define session data models and headless protocol types
     done: true
@@ -532,6 +532,86 @@ tasks:
 
 
       Related file: tim-gui/TimGUI/SessionModels.swift:395-400
+  - title: "Address Review Feedback: WebSocket event delivery can reorder and drop
+      session output."
+    done: false
+    description: >-
+      WebSocket event delivery can reorder and drop session output.
+      `handleWebSocketMessage` dispatches every decoded message via a separate
+      `Task { @MainActor ... }` (`tim-gui/TimGUI/LocalHTTPServer.swift:206`).
+      `SessionState.appendMessage` is a silent no-op when the session row is not
+      present (`tim-gui/TimGUI/SessionState.swift:34`). Because `session_info`
+      and `output` are handled on independently scheduled tasks, output can be
+      processed before `session_info` and get lost. This violates the
+      requirement to show session content/messages as they arrive.
+
+
+      Suggestion: Process WebSocket events in strict arrival order (e.g., `await
+      MainActor.run` inline, or a per-connection serial event queue/actor). Also
+      buffer output events until `session_info` has been registered for that
+      connection instead of dropping them.
+
+
+      Related file: tim-gui/TimGUI/LocalHTTPServer.swift:206
+  - title: "Address Review Feedback: WebSocket parser is not RFC 6455-compliant on
+      several malformed-frame paths despite the plan's RFC requirement."
+    done: false
+    description: >-
+      WebSocket parser is not RFC 6455-compliant on several malformed-frame
+      paths despite the plan's RFC requirement. Unknown opcodes are ignored
+      instead of closing with protocol error
+      (`tim-gui/TimGUI/WebSocketConnection.swift:161`), binary data frames are
+      treated as text-path frames
+      (`tim-gui/TimGUI/WebSocketConnection.swift:167`), and control-frame
+      invariants (FIN=1, payload<=125 for ping/pong/close) are not enforced
+      (`tim-gui/TimGUI/WebSocketConnection.swift:225`). This allows invalid
+      client behavior to stay connected and can lead to silent data
+      loss/undefined behavior.
+
+
+      Suggestion: Enforce RFC rules: reject unknown opcodes with close 1002,
+      reject/handle binary frames explicitly (1003 or dedicated binary path),
+      and validate control frames (FIN required, max payload 125, no
+      fragmentation) with 1002 on violation.
+
+
+      Related file: tim-gui/TimGUI/WebSocketConnection.swift:161
+  - title: "Address Review Feedback: Test coverage misses the malformed-frame
+      branches above."
+    done: false
+    description: >-
+      Test coverage misses the malformed-frame branches above. Existing tests
+      cover unmasked frames, continuation ordering, and oversize handling, but
+      there are no assertions for unknown-opcode rejection, binary-frame
+      handling policy, or control-frame invariant violations (fragmented
+      ping/close, control payload >125). This leaves protocol-compliance
+      regressions undetected.
+
+
+      Suggestion: Add integration tests that send: unknown opcode frame, binary
+      frame with/without UTF-8 payload, ping/close with FIN=0, and ping with
+      payload length >125; assert close 1002/1003 behavior and disconnect.
+
+
+      Related file: tim-gui/TimGUITests/WebSocketTests.swift:1
+  - title: "Address Review Feedback: PromptChoiceConfigPayload.value coerces integer
+      values to floating-point string representation."
+    done: false
+    description: >-
+      PromptChoiceConfigPayload.value coerces integer values to floating-point
+      string representation. When the TypeScript protocol sends a numeric value
+      like 2, it gets decoded as Double and stored as "2.0" instead of "2". The
+      RawJSONString helper already handles this correctly with the n ==
+      n.rounded() check, but PromptChoiceConfigPayload uses a simpler approach
+      that loses integer fidelity.
+
+
+      Suggestion: Apply the same integer-detection pattern used in
+      RawJSONString: if n == n.rounded() && abs(n) < 1e15 { self.value =
+      String(Int(n)) } else { self.value = String(n) }
+
+
+      Related file: tim-gui/TimGUI/SessionModels.swift:366-370
 changedFiles:
   - src/tim/commands/review.ts
   - tim-gui/TimGUI/ContentView.swift
