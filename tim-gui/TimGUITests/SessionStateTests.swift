@@ -410,4 +410,60 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages.count == 1)
         #expect(state.sessions[0].messages[0].text == "codex msg")
     }
+
+    // MARK: - Reference semantics (SessionItem as class)
+
+    @Test("SessionItem reference reflects mutations made through SessionState")
+    func referenceSemanticsMutations() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo(command: "agent", planTitle: "Test Plan"))
+
+        // Hold a reference to the session
+        let sessionRef = state.sessions[0]
+        #expect(sessionRef.isActive == true)
+        #expect(sessionRef.messages.isEmpty)
+
+        // Mutate through SessionState methods
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "msg1"))
+        state.markDisconnected(connectionId: connId)
+
+        // The held reference should reflect the changes (class semantics)
+        #expect(sessionRef.messages.count == 1)
+        #expect(sessionRef.messages[0].text == "msg1")
+        #expect(sessionRef.isActive == false)
+    }
+
+    @Test("selectedSession returns the same instance as sessions array element")
+    func selectedSessionIdentity() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo(command: "agent"))
+
+        let fromArray = state.sessions[0]
+        let fromSelected = state.selectedSession
+
+        // Both should be the exact same object (reference identity)
+        #expect(fromArray === fromSelected)
+    }
+
+    @Test("Appending messages to SessionItem via reference is visible through SessionState")
+    func referenceMessageAppend() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo())
+
+        // Append multiple messages and verify the reference stays consistent
+        for i in 1...5 {
+            state.appendMessage(connectionId: connId, message: makeMessage(seq: i, text: "msg \(i)"))
+        }
+
+        let session = state.selectedSession!
+        #expect(session.messages.count == 5)
+
+        // Append more after getting the reference
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 6, text: "msg 6"))
+        #expect(session.messages.count == 6)
+        #expect(session.messages[5].text == "msg 6")
+    }
 }
