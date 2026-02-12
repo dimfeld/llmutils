@@ -7,7 +7,7 @@ goal: Add WebSocket server support to tim-gui so it can receive and display
 id: 169
 uuid: 85aa17d2-7d55-4d91-afbb-09821893a59a
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 parent: 160
 references:
@@ -15,7 +15,7 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-12T08:21:12.007Z
+updatedAt: 2026-02-12T08:30:19.523Z
 tasks:
   - title: Define session data models and headless protocol types
     done: true
@@ -786,7 +786,7 @@ tasks:
   - title: "Address Review Feedback: Duplicate `session_info` frames on the same
       WebSocket connection create duplicate `SessionItem`s with the same
       `connectionId`, which breaks lifecycle tracking."
-    done: false
+    done: true
     description: >-
       Duplicate `session_info` frames on the same WebSocket connection create
       duplicate `SessionItem`s with the same `connectionId`, which breaks
@@ -808,7 +808,7 @@ tasks:
       timing-dependent (`Task.sleep(...)`) for event synchronization, which
       makes the suite nondeterministic under slower CI/load and can mask real
       ordering bugs."
-    done: false
+    done: true
     description: |-
       The new WebSocket integration tests are timing-dependent (`Task.sleep(...)`) for event synchronization, which makes the suite nondeterministic under slower CI/load and can mask real ordering bugs. This is especially risky because these tests are validating protocol parsing/order guarantees.
 
@@ -1296,23 +1296,19 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 
 ## Current Progress
 ### Current State
-- All 37 of 37 tasks complete (6 core + 31 review feedback)
-- 199 tests passing
+- All 39 of 39 tasks complete (6 core + 33 review feedback)
+- 206 tests passing
 ### Completed (So Far)
 - SessionModels.swift: All Decodable types for HeadlessMessage, TunnelMessage, StructuredMessagePayload (~28 types), SessionItem, SessionMessage, MessageCategory, plus MessageFormatter
 - WebSocketConnection.swift: Full RFC 6455 frame parsing/sending, upgrade handshake, fragmentation, close/ping/pong, NSLock-protected close state, 16MB frame limit, fragment buffer size limit, client-frame validation (unmasked rejection, continuation ordering, unknown opcode rejection, binary frame rejection, control-frame invariant enforcement, RSV bit rejection, invalid UTF-8 close 1007), close-frame payload validation (1-byte reject 1002, invalid code range reject 1002, invalid UTF-8 reason reject 1007), os.Logger error logging for unexpected readLoop errors
 - LocalHTTPServer.swift: Routes GET /tim-agent with Upgrade: websocket to WebSocket handler, POST /messages continues as HTTP, WebSocketEvent dispatch with os.Logger, leftover buffer forwarding to WebSocket, post-startup listener monitoring, consolidated single-pass header parsing, strict event ordering via await MainActor.run, async onDisconnect for strict ordering, StartupResumeGuard for double-resume prevention in start()
-- SessionState.swift: @MainActor @Observable class with addSession, appendMessage, markDisconnected, dismissSession (guards against active sessions), auto-selection, selectedSession computed property, pending message buffering for pre-session output, gitRemote field preserved from SessionInfoPayload
+- SessionState.swift: @MainActor @Observable class with addSession (deduplicates by connectionId), appendMessage, markDisconnected, dismissSession (guards against active sessions), auto-selection, selectedSession computed property, pending message buffering for pre-session output, gitRemote field preserved from SessionInfoPayload
 - SessionsView.swift: NavigationSplitView two-pane layout — SessionListView with selection/status/dismiss, SessionDetailView with smart auto-scroll (only scrolls when user is near bottom, extracted into testable shouldAutoScroll helper), monospaced message rendering, SessionMessageView with category-based coloring
 - ContentView.swift: Refactored with AppViewMode picker (Sessions/Notifications), NotificationsView extracted, accepts both appState and sessionState, dynamic port display, non-blocking Process execution, JSONSerialization for shell escaping, ResumeGuard for double-resume prevention
 - TimGUIApp.swift: Wires WebSocket events to SessionState methods — sessionInfo→addSession, output→MessageFormatter.format→appendMessage, disconnected→markDisconnected; passes bound port to ContentView; single-flight startup guard with isStartingServer flag; startError cleared on successful startup; server assigned only after successful start for retry support
 - All unknown message types handled gracefully with .unknown fallback cases
-- Task 32: Close-frame validation — 1-byte payload rejected with 1002, invalid close code range rejected with 1002, invalid UTF-8 reason bytes rejected with 1007
-- Task 33: StartupResumeGuard (NSLock-based) prevents double-resume of start() continuation
-- Task 34: WebSocket readLoop errors logged via os.Logger; WebSocketError silenced as expected disconnects
-- Task 35: 3 new close-frame validation tests (1-byte payload, invalid UTF-8 reason, invalid code range)
-- Task 36: gitRemote: String? added to SessionItem, passed through from addSession
-- Task 37: Smart auto-scroll — shouldAutoScroll pure helper tracks viewport height vs content bottom, only scrolls when near bottom (50pt threshold). 8 unit tests for auto-scroll logic.
+- Task 38: Duplicate session_info deduplication — addSession checks for existing connectionId, updates metadata in-place instead of creating duplicates. SessionItem metadata fields (command, planId, planTitle, workspacePath, gitRemote) changed to var. 5 new SessionState tests for deduplication behavior.
+- Task 39: Deterministic test waits — replaced all 28 Task.sleep calls in WebSocketTests with waitUntil polling helper that checks actual conditions (event counts, disconnect flags, connection IDs) instead of fixed delays. Eliminates CI timing flakiness.
 ### Remaining
 - None — all tasks complete
 ### Next Iteration Guidance
@@ -1331,11 +1327,13 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 - waitForProcess sets terminationHandler before run() to avoid race condition
 - RawJSONString uses AnyJSON helper to losslessly serialize objects/arrays to JSON strings (not lossy placeholder)
 - prompt_answered value is decoded and stored but NOT displayed in UI for security (could contain secrets)
-- SessionItem is an @Observable class (not struct) with immutable metadata properties (let) and mutable state (var isActive, var messages) for efficient SwiftUI observation
+- SessionItem is an @Observable class with mutable metadata (var command, planId, etc.) to support in-place updates from duplicate session_info, plus mutable state (var isActive, var messages) for efficient SwiftUI observation
 - WebSocket event delivery uses `await MainActor.run` for strict ordering instead of independent `Task { @MainActor in }` dispatches
 - SessionState buffers output messages arriving before session_info, flushing them when the session is registered
+- SessionState.addSession deduplicates by connectionId — updates existing session metadata instead of creating duplicates
 - onDisconnect is async closure for strict ordering consistency; close() is intentionally fire-and-forget for shutdown path only
 - Server startup uses single-flight guard (isStartingServer) to prevent concurrent binding races
 - Auto-scroll uses pure shouldAutoScroll helper for testability; returns nil when viewport not yet measured to retain previous state
+- WebSocket tests use waitUntil polling helper instead of Task.sleep for deterministic CI behavior
 ### Risks / Blockers
 - None

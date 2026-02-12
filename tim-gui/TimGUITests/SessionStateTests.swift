@@ -195,35 +195,23 @@ struct SessionStateTests {
         #expect(state.sessions.count == 2)
     }
 
-    @Test("Duplicate session_info flushes pending messages to existing session")
-    func duplicateSessionInfoFlushesPending() {
+    @Test("Duplicate session_info preserves existing messages")
+    func duplicateSessionInfoPreservesExistingMessages() {
         let state = SessionState()
         let connId = UUID()
 
         state.addSession(connectionId: connId, info: makeInfo(command: "agent"))
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "existing"))
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "msg1"))
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "msg2"))
 
-        // Simulate buffered messages arriving after the first session was registered
-        // (shouldn't normally happen, but tests the flush path)
-        // We need to buffer messages for this connId — only possible if we remove the session first.
-        // Instead, test the simpler case: pending messages from before any session_info are still
-        // flushed on a duplicate session_info if they happen to exist.
-        // In practice this path is hit if messages arrive, then session_info, then duplicate session_info
-        // with some messages buffered between. Let's test the straightforward path.
-        let connId2 = UUID()
-        state.appendMessage(connectionId: connId2, message: makeMessage(seq: 1, text: "buffered1"))
-        state.appendMessage(connectionId: connId2, message: makeMessage(seq: 2, text: "buffered2"))
+        // Duplicate session_info should not affect accumulated messages
+        state.addSession(connectionId: connId, info: makeInfo(command: "review"))
 
-        // First session_info creates the session and flushes
-        state.addSession(connectionId: connId2, info: makeInfo(command: "agent"))
-        #expect(state.sessions[0].messages.count == 2)
-
-        // Duplicate session_info — no pending messages to flush, messages preserved
-        state.addSession(connectionId: connId2, info: makeInfo(command: "review"))
-        #expect(state.sessions.count == 2) // connId and connId2
-        let session2 = state.sessions.first { $0.connectionId == connId2 }!
-        #expect(session2.messages.count == 2)
-        #expect(session2.messages[0].text == "buffered1")
+        let session = state.sessions.first { $0.connectionId == connId }!
+        #expect(session.messages.count == 2)
+        #expect(session.messages[0].text == "msg1")
+        #expect(session.messages[1].text == "msg2")
+        #expect(session.command == "review")
     }
 
     @Test("Duplicate session_info keeps isActive unchanged")

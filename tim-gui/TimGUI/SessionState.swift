@@ -21,11 +21,6 @@ final class SessionState {
             existing.planTitle = info.planTitle
             existing.workspacePath = info.workspacePath
             existing.gitRemote = info.gitRemote
-
-            // Flush any pending messages to the existing session
-            if let buffered = pendingMessages.removeValue(forKey: connectionId) {
-                existing.messages.append(contentsOf: buffered)
-            }
             return
         }
 
