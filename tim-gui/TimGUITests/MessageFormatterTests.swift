@@ -376,7 +376,7 @@ struct MessageFormatterTests {
         #expect(msg.text.contains("terminal"))
     }
 
-    @Test("Formats prompt_answered with value")
+    @Test("Formats prompt_answered with value does not display the value")
     func formatsPromptAnsweredWithValue() {
         let payload = PromptAnsweredPayload(
             requestId: "req-002", promptType: "input", source: "gui",
@@ -386,7 +386,8 @@ struct MessageFormatterTests {
             seq: 96
         )
         #expect(msg.category == .log)
-        #expect(msg.text.contains("Prompt answered (input) by gui: user response"))
+        #expect(msg.text == "Prompt answered (input) by gui")
+        #expect(!msg.text.contains("user response"))
     }
 
     @Test("Formats plan_discovery as lifecycle")

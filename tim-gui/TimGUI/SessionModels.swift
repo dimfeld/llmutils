@@ -404,6 +404,34 @@ struct PromptAnsweredPayload: Sendable {
 
 // MARK: - RawJSONString helper
 
+/// Decodes any JSON value into a Swift Any for re-serialization via JSONSerialization.
+private struct AnyJSON: Decodable {
+    let value: Any
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            value = NSNull()
+        } else if let b = try? container.decode(Bool.self) {
+            value = b
+        } else if let n = try? container.decode(Double.self) {
+            value = n
+        } else if let s = try? container.decode(String.self) {
+            value = s
+        } else if let arr = try? container.decode([AnyJSON].self) {
+            value = arr.map { $0.value }
+        } else if let dict = try? container.decode([String: AnyJSON].self) {
+            value = dict.mapValues { $0.value }
+        } else {
+            throw DecodingError.typeMismatch(
+                Any.self,
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "Unsupported JSON type"))
+        }
+    }
+}
+
 /// Decodes any JSON value (string, number, bool, object, array) into a String representation.
 private struct RawJSONString: Decodable, Sendable {
     let stringValue: String
@@ -421,8 +449,16 @@ private struct RawJSONString: Decodable, Sendable {
         } else if let b = try? container.decode(Bool.self) {
             stringValue = String(b)
         } else {
-            // For objects/arrays, note that it's a complex value
-            stringValue = "<complex value>"
+            // Re-decode as AnyJSON and serialize to JSON string
+            let anyValue = try AnyJSON(from: decoder)
+            if let data = try? JSONSerialization.data(
+                withJSONObject: anyValue.value, options: [.sortedKeys]),
+                let str = String(data: data, encoding: .utf8)
+            {
+                stringValue = str
+            } else {
+                stringValue = "<unserializable>"
+            }
         }
     }
 }
@@ -986,9 +1022,7 @@ enum MessageFormatter {
             return ("Prompt (\(p.promptType)): \(p.promptConfig.message)", .progress)
 
         case .promptAnswered(let p):
-            var text = "Prompt answered (\(p.promptType)) by \(p.source)"
-            if let v = p.value { text += ": \(v)" }
-            return (text, .log)
+            return ("Prompt answered (\(p.promptType)) by \(p.source)", .log)
 
         case .planDiscovery(let planId, let title, let ts):
             return ("\(header("Plan Discovery", timestamp: ts))\nFound ready plan: \(planId) - \(title)", .lifecycle)

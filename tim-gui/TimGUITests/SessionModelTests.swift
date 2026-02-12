@@ -472,7 +472,7 @@ struct StructuredMessagePayloadTests {
         #expect(p.input == "true")
     }
 
-    @Test("Decodes llm_tool_use with object input as complex value")
+    @Test("Decodes llm_tool_use with object input as serialized JSON")
     func decodesLlmToolUseWithObjectInput() throws {
         let json = """
             {
@@ -487,10 +487,10 @@ struct StructuredMessagePayloadTests {
             Issue.record("Expected llmToolUse, got \(msg)")
             return
         }
-        #expect(p.input == "<complex value>")
+        #expect(p.input == "{\"content\":\"hello\",\"file_path\":\"\\/tmp\\/test.ts\"}")
     }
 
-    @Test("Decodes llm_tool_use with array input as complex value")
+    @Test("Decodes llm_tool_use with array input as serialized JSON")
     func decodesLlmToolUseWithArrayInput() throws {
         let json = """
             {
@@ -505,7 +505,7 @@ struct StructuredMessagePayloadTests {
             Issue.record("Expected llmToolUse, got \(msg)")
             return
         }
-        #expect(p.input == "<complex value>")
+        #expect(p.input == "[1,2,3]")
     }
 
     @Test("Decodes llm_tool_use with floating point input")
@@ -621,7 +621,7 @@ struct StructuredMessagePayloadTests {
         #expect(p.result == "false")
     }
 
-    @Test("Decodes llm_tool_result with object result as complex value")
+    @Test("Decodes llm_tool_result with object result as serialized JSON")
     func decodesLlmToolResultWithObjectResult() throws {
         let json = """
             {
@@ -636,7 +636,7 @@ struct StructuredMessagePayloadTests {
             Issue.record("Expected llmToolResult, got \(msg)")
             return
         }
-        #expect(p.result == "<complex value>")
+        #expect(p.result == "{\"content\":\"file data\",\"lines\":42}")
     }
 
     @Test("Decodes llm_tool_result with both resultSummary and result")
@@ -1219,7 +1219,7 @@ struct StructuredMessagePayloadTests {
         #expect(p.value == "true")
     }
 
-    @Test("Decodes prompt_answered with object value as complex value")
+    @Test("Decodes prompt_answered with object value as serialized JSON")
     func decodesPromptAnsweredWithObjectValue() throws {
         let json = """
             {
@@ -1236,10 +1236,10 @@ struct StructuredMessagePayloadTests {
             Issue.record("Expected promptAnswered, got \(msg)")
             return
         }
-        #expect(p.value == "<complex value>")
+        #expect(p.value == "{\"confirmed\":true,\"selected\":[\"a\",\"b\"]}")
     }
 
-    @Test("Decodes prompt_answered with array value as complex value")
+    @Test("Decodes prompt_answered with array value as serialized JSON")
     func decodesPromptAnsweredWithArrayValue() throws {
         let json = """
             {
@@ -1256,7 +1256,7 @@ struct StructuredMessagePayloadTests {
             Issue.record("Expected promptAnswered, got \(msg)")
             return
         }
-        #expect(p.value == "<complex value>")
+        #expect(p.value == "[\"option1\",\"option2\"]")
     }
 
     @Test("Decodes review_result with issues")
