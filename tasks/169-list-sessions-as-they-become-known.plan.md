@@ -7,7 +7,7 @@ goal: Add WebSocket server support to tim-gui so it can receive and display
 id: 169
 uuid: 85aa17d2-7d55-4d91-afbb-09821893a59a
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 parent: 160
 references:
@@ -15,7 +15,7 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-12T02:33:58.498Z
+updatedAt: 2026-02-12T02:46:27.856Z
 tasks:
   - title: Define session data models and headless protocol types
     done: true
@@ -616,7 +616,7 @@ tasks:
       for RFC 6455-required invariants: RSV bits are never checked, and invalid
       UTF-8 text payloads are silently dropped instead of closing with
       protocol/data error."
-    done: false
+    done: true
     description: >-
       WebSocket frame validation is still incomplete for RFC 6455-required
       invariants: RSV bits are never checked, and invalid UTF-8 text payloads
@@ -635,7 +635,7 @@ tasks:
   - title: "Address Review Feedback: WebSocket `onDisconnect` in
       `handleWebSocketUpgrade` dispatches via fire-and-forget `Task { @MainActor
       in }`, breaking the strict-ordering guarantee established elsewhere."
-    done: false
+    done: true
     description: >-
       WebSocket `onDisconnect` in `handleWebSocketUpgrade` dispatches via
       fire-and-forget `Task { @MainActor in }`, breaking the strict-ordering
@@ -657,7 +657,7 @@ tasks:
       Related file: tim-gui/TimGUI/LocalHTTPServer.swift:173-175
   - title: "Address Review Feedback: Server stored before start succeeds, preventing
       retry on failure."
-    done: false
+    done: true
     description: >-
       Server stored before start succeeds, preventing retry on failure. In
       `TimGUIApp.swift:86`, `self.server = newServer` is set before calling
@@ -1153,16 +1153,16 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 
 ## Current Progress
 ### Current State
-- All 28 of 28 tasks complete (6 core + 22 review feedback)
-- 185 tests passing
+- All 31 of 31 tasks complete (6 core + 25 review feedback)
+- 191 tests passing
 ### Completed (So Far)
 - SessionModels.swift: All Decodable types for HeadlessMessage, TunnelMessage, StructuredMessagePayload (~28 types), SessionItem, SessionMessage, MessageCategory, plus MessageFormatter
-- WebSocketConnection.swift: Full RFC 6455 frame parsing/sending, upgrade handshake, fragmentation, close/ping/pong, NSLock-protected close state, 16MB frame limit, fragment buffer size limit, client-frame validation (unmasked rejection, continuation ordering, unknown opcode rejection, binary frame rejection, control-frame invariant enforcement)
-- LocalHTTPServer.swift: Routes GET /tim-agent with Upgrade: websocket to WebSocket handler, POST /messages continues as HTTP, WebSocketEvent dispatch with os.Logger, leftover buffer forwarding to WebSocket, post-startup listener monitoring, consolidated single-pass header parsing, strict event ordering via await MainActor.run
+- WebSocketConnection.swift: Full RFC 6455 frame parsing/sending, upgrade handshake, fragmentation, close/ping/pong, NSLock-protected close state, 16MB frame limit, fragment buffer size limit, client-frame validation (unmasked rejection, continuation ordering, unknown opcode rejection, binary frame rejection, control-frame invariant enforcement, RSV bit rejection, invalid UTF-8 close 1007)
+- LocalHTTPServer.swift: Routes GET /tim-agent with Upgrade: websocket to WebSocket handler, POST /messages continues as HTTP, WebSocketEvent dispatch with os.Logger, leftover buffer forwarding to WebSocket, post-startup listener monitoring, consolidated single-pass header parsing, strict event ordering via await MainActor.run, async onDisconnect for strict ordering
 - SessionState.swift: @MainActor @Observable class with addSession, appendMessage, markDisconnected, dismissSession (guards against active sessions), auto-selection, selectedSession computed property, pending message buffering for pre-session output
 - SessionsView.swift: NavigationSplitView two-pane layout — SessionListView with selection/status/dismiss, SessionDetailView with auto-scroll and monospaced message rendering, SessionMessageView with category-based coloring
 - ContentView.swift: Refactored with AppViewMode picker (Sessions/Notifications), NotificationsView extracted, accepts both appState and sessionState, dynamic port display, non-blocking Process execution, JSONSerialization for shell escaping, ResumeGuard for double-resume prevention
-- TimGUIApp.swift: Wires WebSocket events to SessionState methods — sessionInfo→addSession, output→MessageFormatter.format→appendMessage, disconnected→markDisconnected; passes bound port to ContentView
+- TimGUIApp.swift: Wires WebSocket events to SessionState methods — sessionInfo→addSession, output→MessageFormatter.format→appendMessage, disconnected→markDisconnected; passes bound port to ContentView; single-flight startup guard with isStartingServer flag; startError cleared on successful startup; server assigned only after successful start for retry support
 - All unknown message types handled gracefully with .unknown fallback cases
 - agent_step_end shows success/failure indicator and uses .error category for failures
 - review_result renders issue/recommendation/action-item counts and details; review_verdict renders verdict string and fix instructions
@@ -1187,12 +1187,16 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 - Task 26: Unknown opcodes → close 1002, binary frames → close 1003, control frames validated for FIN=1 and payload ≤ 125
 - Task 27: 5 new integration tests for malformed-frame rejection (unknown opcode, binary frame, fragmented ping, fragmented close, oversize ping)
 - Task 28: PromptChoiceConfigPayload.value and PromptConfigPayload.defaultValue use integer-detection pattern (n == n.rounded()) to preserve integer fidelity
+- Task 29: RSV bit validation (close 1002 for non-zero RSV), invalid UTF-8 text payload rejection (close 1007). 6 new tests: RSV1/2/3 bit rejection, single-frame and fragmented UTF-8 rejection.
+- Task 30: onDisconnect changed from sync to async closure; both handleWebSocketUpgrade disconnect callback and upgrade failure path use await MainActor.run for strict ordering. Disconnect ordering test added.
+- Task 31: self.server assigned only after successful start(); isStartingServer flag prevents concurrent startup races; startError cleared on success
 ### Remaining
 - None — all tasks complete
 ### Next Iteration Guidance
 - Auto-scroll uses both onAppear and onChange with .id(session.id) on SessionDetailView for stable view identity
 - Lifecycle messages all render green; the plan mentioned green/blue but current implementation is acceptable for v1
 - Post-startup listener failures are logged but not surfaced to UI; consider adding a callback to update startError state
+- WebSocketConnection.close() uses fire-and-forget Task for onDisconnect intentionally — it's only called during server shutdown via stop(), not during normal operation where ordering matters
 ### Decisions / Changes
 - Used Approach A (unified TCP server) with manual WebSocket frame parsing rather than NWProtocolWebSocket
 - Types are Decodable only (not full Codable) since we only receive, never encode protocol messages
@@ -1208,5 +1212,7 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 - SessionItem is an @Observable class (not struct) with immutable metadata properties (let) and mutable state (var isActive, var messages) for efficient SwiftUI observation
 - WebSocket event delivery uses `await MainActor.run` for strict ordering instead of independent `Task { @MainActor in }` dispatches
 - SessionState buffers output messages arriving before session_info, flushing them when the session is registered
+- onDisconnect is async closure for strict ordering consistency; close() is intentionally fire-and-forget for shutdown path only
+- Server startup uses single-flight guard (isStartingServer) to prevent concurrent binding races
 ### Risks / Blockers
 - None
