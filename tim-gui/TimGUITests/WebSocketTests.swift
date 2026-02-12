@@ -1635,6 +1635,79 @@ struct WebSocketTests {
         }
     }
 
+    @Test("Reserved close codes 1004, 1005, 1006 are rejected with close 1002")
+    func closeReservedCodesRejection() async throws {
+        for code: UInt16 in [1004, 1005, 1006] {
+            let disconnected = LockIsolated(false)
+
+            let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+                if case .disconnected = event {
+                    disconnected.withLock { $0 = true }
+                }
+            })
+            try await server.start()
+
+            let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+
+            var payload = Data()
+            payload.append(UInt8((code >> 8) & 0xFF))
+            payload.append(UInt8(code & 0xFF))
+            try await Self.sendRawFrame(
+                fin: true, opcode: 0x8, payload: payload, on: connection)
+
+            let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+            #expect(closeFrame.opcode == 0x8, "Expected close frame for reserved code \(code)")
+            #expect(closeFrame.payload.count >= 2, "Close frame must contain status code")
+            if closeFrame.payload.count >= 2 {
+                let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+                #expect(statusCode == 1002, "Expected close status 1002 for reserved code \(code), got \(statusCode)")
+            }
+
+            try await waitUntil("disconnect after reserved close code \(code)") {
+                disconnected.withLock { $0 }
+            }
+
+            connection.cancel()
+            server.stop()
+        }
+    }
+
+    @Test("Private-use close codes 3000-4999 are accepted")
+    func closePrivateUseCodesAccepted() async throws {
+        for code: UInt16 in [3000, 4000, 4999] {
+            let disconnected = LockIsolated(false)
+
+            let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+                if case .disconnected = event {
+                    disconnected.withLock { $0 = true }
+                }
+            })
+            try await server.start()
+
+            let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+
+            var payload = Data()
+            payload.append(UInt8((code >> 8) & 0xFF))
+            payload.append(UInt8(code & 0xFF))
+            try await Self.sendRawFrame(
+                fin: true, opcode: 0x8, payload: payload, on: connection)
+
+            let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+            #expect(closeFrame.opcode == 0x8, "Expected close frame echoed for code \(code)")
+            if closeFrame.payload.count >= 2 {
+                let echoedCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+                #expect(echoedCode == code, "Expected echoed close code \(code), got \(echoedCode)")
+            }
+
+            try await waitUntil("disconnect after close code \(code)") {
+                disconnected.withLock { $0 }
+            }
+
+            connection.cancel()
+            server.stop()
+        }
+    }
+
     @Test("IANA-registered close codes 1012-1014 are accepted")
     func closeIanaRegisteredCodesAccepted() async throws {
         for code: UInt16 in [1012, 1013, 1014] {

@@ -295,7 +295,8 @@ final class WebSocketConnection: @unchecked Sendable {
                 if payload.count >= 2 {
                     // Validate close code range (RFC 6455 §7.4)
                     let code = UInt16(payload[0]) << 8 | UInt16(payload[1])
-                    let validRanges: Bool = (1000...1014).contains(code)
+                    let validRanges: Bool = (1000...1003).contains(code)
+                        || (1007...1014).contains(code)
                         || (3000...4999).contains(code)
                     if !validRanges {
                         try? await sendCloseFrame(code: 1002)
