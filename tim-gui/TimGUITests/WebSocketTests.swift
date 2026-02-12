@@ -1251,6 +1251,70 @@ struct WebSocketTests {
         #expect(didDisconnect, "Expected disconnect event after RSV bit rejection")
     }
 
+    @Test("Frame with RSV2 bit set is rejected with close 1002")
+    func rsv2BitRejection() async throws {
+        let disconnected = LockIsolated(false)
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            if case .disconnected = event {
+                disconnected.withLock { $0 = true }
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send a text frame with RSV2 bit set: FIN=1, RSV2=1, opcode=0x1 → byte0 = 0xA1
+        try await Self.sendRawFrameWithByte0(
+            byte0: 0xA1, payload: Data("hello".utf8), on: connection)
+
+        let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+        #expect(closeFrame.opcode == 0x8, "Expected close opcode for RSV2 bit rejection")
+        #expect(closeFrame.payload.count >= 2, "Close frame must contain status code")
+        if closeFrame.payload.count >= 2 {
+            let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+            #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
+        }
+
+        try await Task.sleep(for: .milliseconds(500))
+        let didDisconnect = disconnected.withLock { $0 }
+        #expect(didDisconnect, "Expected disconnect event after RSV2 bit rejection")
+    }
+
+    @Test("Frame with RSV3 bit set is rejected with close 1002")
+    func rsv3BitRejection() async throws {
+        let disconnected = LockIsolated(false)
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            if case .disconnected = event {
+                disconnected.withLock { $0 = true }
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send a text frame with RSV3 bit set: FIN=1, RSV3=1, opcode=0x1 → byte0 = 0x91
+        try await Self.sendRawFrameWithByte0(
+            byte0: 0x91, payload: Data("hello".utf8), on: connection)
+
+        let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+        #expect(closeFrame.opcode == 0x8, "Expected close opcode for RSV3 bit rejection")
+        #expect(closeFrame.payload.count >= 2, "Close frame must contain status code")
+        if closeFrame.payload.count >= 2 {
+            let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+            #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
+        }
+
+        try await Task.sleep(for: .milliseconds(500))
+        let didDisconnect = disconnected.withLock { $0 }
+        #expect(didDisconnect, "Expected disconnect event after RSV3 bit rejection")
+    }
+
     @Test("Invalid UTF-8 text frame is rejected with close 1007")
     func invalidUtf8Rejection() async throws {
         let disconnected = LockIsolated(false)
@@ -1318,6 +1382,60 @@ struct WebSocketTests {
         try await Task.sleep(for: .milliseconds(500))
         let didDisconnect = disconnected.withLock { $0 }
         #expect(didDisconnect, "Expected disconnect event after invalid UTF-8 fragment rejection")
+    }
+
+    // MARK: - Disconnect Ordering Tests
+
+    @Test("Disconnect event fires after last output event")
+    func disconnectOrderingAfterOutput() async throws {
+        let events = LockIsolated<[String]>([])
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            switch event {
+            case .output:
+                events.withLock { $0.append("output") }
+            case .disconnected:
+                events.withLock { $0.append("disconnected") }
+            default:
+                break
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send session_info first so the connection is established
+        try await Self.sendTextFrame(
+            """
+            {"type":"session_info","command":"agent"}
+            """, on: connection)
+
+        try await Task.sleep(for: .milliseconds(100))
+
+        // Send an output message immediately followed by a close frame
+        try await Self.sendTextFrame(
+            """
+            {"type":"output","seq":1,"message":{"type":"log","args":["last message"]}}
+            """, on: connection)
+        try await Self.sendCloseFrame(on: connection)
+
+        // Wait for all events to be processed
+        try await Task.sleep(for: .milliseconds(500))
+
+        let receivedEvents = events.withLock { $0 }
+        // The output event must appear before the disconnected event
+        guard let outputIndex = receivedEvents.firstIndex(of: "output"),
+              let disconnectIndex = receivedEvents.firstIndex(of: "disconnected")
+        else {
+            Issue.record("Expected both output and disconnected events, got \(receivedEvents)")
+            return
+        }
+        #expect(
+            outputIndex < disconnectIndex,
+            "Output event must be processed before disconnect event, but got: \(receivedEvents)"
+        )
     }
 
     @Test("Oversize frame is rejected with 1009 close and disconnect")
