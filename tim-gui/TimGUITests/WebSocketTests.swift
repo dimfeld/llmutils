@@ -1514,6 +1514,42 @@ struct WebSocketTests {
         #expect(didDisconnect, "Expected disconnect event after 1-byte close payload rejection")
     }
 
+    @Test("Close frame with invalid close code is rejected with close 1002")
+    func closeInvalidCodeRangeRejection() async throws {
+        let disconnected = LockIsolated(false)
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            if case .disconnected = event {
+                disconnected.withLock { $0 = true }
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send a close frame with invalid close code 999 (not in valid ranges per RFC 6455 §7.4)
+        var payload = Data()
+        let invalidCode: UInt16 = 999
+        payload.append(UInt8((invalidCode >> 8) & 0xFF))
+        payload.append(UInt8(invalidCode & 0xFF))
+        try await Self.sendRawFrame(
+            fin: true, opcode: 0x8, payload: payload, on: connection)
+
+        let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+        #expect(closeFrame.opcode == 0x8, "Expected close opcode for invalid close code rejection")
+        #expect(closeFrame.payload.count >= 2, "Close frame must contain status code")
+        if closeFrame.payload.count >= 2 {
+            let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+            #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
+        }
+
+        try await Task.sleep(for: .milliseconds(500))
+        let didDisconnect = disconnected.withLock { $0 }
+        #expect(didDisconnect, "Expected disconnect event after invalid close code rejection")
+    }
+
     @Test("Close frame with invalid UTF-8 reason is rejected with close 1007")
     func closeInvalidUtf8ReasonRejection() async throws {
         let disconnected = LockIsolated(false)

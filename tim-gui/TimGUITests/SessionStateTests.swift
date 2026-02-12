@@ -53,6 +53,7 @@ struct SessionStateTests {
         #expect(session.planId == 42)
         #expect(session.planTitle == "My Plan")
         #expect(session.workspacePath == "/projects/test")
+        #expect(session.gitRemote == "git@github.com:user/repo.git")
         #expect(session.isActive == true)
         #expect(session.messages.isEmpty)
     }
@@ -112,6 +113,7 @@ struct SessionStateTests {
         #expect(session.planId == nil)
         #expect(session.planTitle == nil)
         #expect(session.workspacePath == nil)
+        #expect(session.gitRemote == nil)
     }
 
     // MARK: - appendMessage
