@@ -5,6 +5,30 @@ import Testing
 
 @testable import TimGUI
 
+private struct WaitTimeoutError: Error {
+    let message: String
+    init(_ message: String = "Condition not met within timeout") {
+        self.message = message
+    }
+}
+
+/// Polls a condition until it returns true or timeout is reached.
+private func waitUntil(
+    timeout: Duration = .seconds(2),
+    interval: Duration = .milliseconds(10),
+    _ message: String = "Condition not met within timeout",
+    condition: @Sendable () -> Bool
+) async throws {
+    let deadline = ContinuousClock.now + timeout
+    while ContinuousClock.now < deadline {
+        if condition() { return }
+        try await Task.sleep(for: interval)
+    }
+    if !condition() {
+        throw WaitTimeoutError(message)
+    }
+}
+
 @Suite("WebSocket Integration")
 struct WebSocketTests {
     /// Creates a raw TCP connection to the server and sends a WebSocket upgrade request.
@@ -333,8 +357,9 @@ struct WebSocketTests {
             """
         try await Self.sendTextFrame(sessionInfoJson, on: connection)
 
-        // Wait for the message to be processed
-        try await Task.sleep(for: .milliseconds(200))
+        try await waitUntil("sessionInfo event received") {
+            received.withLock { $0 } != nil
+        }
 
         let event = received.withLock { $0 }
         guard case .sessionInfo(_, let info) = event else {
@@ -372,7 +397,9 @@ struct WebSocketTests {
             """
         try await Self.sendTextFrame(outputJson, on: connection)
 
-        try await Task.sleep(for: .milliseconds(200))
+        try await waitUntil("2 events received") {
+            received.withLock { $0.count } >= 2
+        }
 
         let events = received.withLock { $0 }
         #expect(events.count == 2)
@@ -405,7 +432,12 @@ struct WebSocketTests {
         // Send close frame
         try await Self.sendCloseFrame(on: connection)
 
-        try await Task.sleep(for: .milliseconds(300))
+        try await waitUntil("disconnect event received") {
+            received.withLock { $0 }.contains { event in
+                if case .disconnected = event { return true }
+                return false
+            }
+        }
         connection.cancel()
 
         let events = received.withLock { $0 }
@@ -488,7 +520,9 @@ struct WebSocketTests {
             {"type":"replay_end"}
             """, on: connection)
 
-        try await Task.sleep(for: .milliseconds(300))
+        try await waitUntil("4 replay events received") {
+            received.withLock { $0.count } >= 4
+        }
 
         let events = received.withLock { $0 }
         #expect(events.count == 4)
@@ -542,7 +576,9 @@ struct WebSocketTests {
             {"type":"session_info","command":"review"}
             """, on: conn2)
 
-        try await Task.sleep(for: .milliseconds(300))
+        try await waitUntil("2 distinct connection IDs") {
+            connectionIds.withLock { $0.count } >= 2
+        }
 
         let ids = connectionIds.withLock { $0 }
         #expect(ids.count == 2, "Expected 2 distinct connection IDs, got \(ids.count)")
@@ -571,7 +607,9 @@ struct WebSocketTests {
             {"type":"output","seq":1,"message":{"type":"structured","message":{"type":"agent_session_start","executor":"claude","mode":"agent","timestamp":"2026-02-10T08:00:00Z"}}}
             """, on: connection)
 
-        try await Task.sleep(for: .milliseconds(200))
+        try await waitUntil("2 events received") {
+            received.withLock { $0.count } >= 2
+        }
 
         let events = received.withLock { $0 }
         #expect(events.count == 2)
@@ -614,7 +652,9 @@ struct WebSocketTests {
             {"type":"session_info","command":"agent"}
             """, on: connection)
 
-        try await Task.sleep(for: .milliseconds(100))
+        try await waitUntil("sessionInfo event received") {
+            received.withLock { $0.count } >= 1
+        }
 
         // Send a JSON message fragmented across 3 frames:
         // Frame 1: FIN=0, opcode=text (0x1) — start of fragment
@@ -639,7 +679,9 @@ struct WebSocketTests {
         try await Self.sendRawFrame(
             fin: true, opcode: 0x0, payload: Data(chunk3), on: connection)
 
-        try await Task.sleep(for: .milliseconds(300))
+        try await waitUntil("2 events after fragmented reassembly") {
+            received.withLock { $0.count } >= 2
+        }
 
         let events = received.withLock { $0 }
         // Should have sessionInfo + the reassembled output message
@@ -738,7 +780,9 @@ struct WebSocketTests {
         }
 
         // Verify disconnect event fires
-        try await Task.sleep(for: .milliseconds(300))
+        try await waitUntil("disconnect event after close handshake") {
+            disconnected.withLock { $0 }
+        }
         let didDisconnect = disconnected.withLock { $0 }
         #expect(didDisconnect, "Expected disconnect event after close handshake")
     }
@@ -784,7 +828,9 @@ struct WebSocketTests {
             // Connection may have been cancelled before we could read the close frame.
         }
 
-        try await Task.sleep(for: .milliseconds(500))
+        try await waitUntil(timeout: .seconds(5), "disconnect after oversize fragment rejection") {
+            disconnected.withLock { $0 }
+        }
         let didDisconnect = disconnected.withLock { $0 }
         #expect(didDisconnect, "Expected disconnect event after oversize fragment rejection")
     }
@@ -857,8 +903,10 @@ struct WebSocketTests {
             })
         }
 
-        // Wait for processing
-        try await Task.sleep(for: .milliseconds(500))
+        // Wait for the session_info event to be processed
+        try await waitUntil("sessionInfo from immediate frame") {
+            received.withLock { $0.count } >= 1
+        }
 
         // Verify the session_info was received despite being in the same TCP segment
         let events = received.withLock { $0 }
@@ -939,9 +987,9 @@ struct WebSocketTests {
             #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
         }
 
-        try await Task.sleep(for: .milliseconds(500))
-        let didDisconnect = disconnected.withLock { $0 }
-        #expect(didDisconnect, "Expected disconnect event after unmasked frame rejection")
+        try await waitUntil("disconnect after unmasked frame rejection") {
+            disconnected.withLock { $0 }
+        }
     }
 
     @Test("Continuation frame without prior fragment is rejected with close 1002")
@@ -972,9 +1020,9 @@ struct WebSocketTests {
             #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
         }
 
-        try await Task.sleep(for: .milliseconds(500))
-        let didDisconnect = disconnected.withLock { $0 }
-        #expect(didDisconnect, "Expected disconnect event after stray continuation rejection")
+        try await waitUntil("disconnect after stray continuation rejection") {
+            disconnected.withLock { $0 }
+        }
     }
 
     @Test("New data frame while fragmentation is active is rejected with close 1002")
@@ -1009,9 +1057,9 @@ struct WebSocketTests {
             #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
         }
 
-        try await Task.sleep(for: .milliseconds(500))
-        let didDisconnect = disconnected.withLock { $0 }
-        #expect(didDisconnect, "Expected disconnect event after interleaved data frame rejection")
+        try await waitUntil("disconnect after interleaved data frame rejection") {
+            disconnected.withLock { $0 }
+        }
     }
 
     // MARK: - RFC 6455 Compliance Tests
@@ -1043,9 +1091,9 @@ struct WebSocketTests {
             #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
         }
 
-        try await Task.sleep(for: .milliseconds(500))
-        let didDisconnect = disconnected.withLock { $0 }
-        #expect(didDisconnect, "Expected disconnect event after unknown opcode rejection")
+        try await waitUntil("disconnect after unknown opcode rejection") {
+            disconnected.withLock { $0 }
+        }
     }
 
     @Test("Binary frame is rejected with close 1003")
@@ -1075,9 +1123,9 @@ struct WebSocketTests {
             #expect(statusCode == 1003, "Expected close status 1003 (unsupported data), got \(statusCode)")
         }
 
-        try await Task.sleep(for: .milliseconds(500))
-        let didDisconnect = disconnected.withLock { $0 }
-        #expect(didDisconnect, "Expected disconnect event after binary frame rejection")
+        try await waitUntil("disconnect after binary frame rejection") {
+            disconnected.withLock { $0 }
+        }
     }
 
     @Test("Ping with FIN=0 is rejected with close 1002")
@@ -1107,9 +1155,9 @@ struct WebSocketTests {
             #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
         }
 
-        try await Task.sleep(for: .milliseconds(500))
-        let didDisconnect = disconnected.withLock { $0 }
-        #expect(didDisconnect, "Expected disconnect event after fragmented ping rejection")
+        try await waitUntil("disconnect after fragmented ping rejection") {
+            disconnected.withLock { $0 }
+        }
     }
 
     @Test("Close with FIN=0 is rejected with close 1002")
@@ -1142,9 +1190,9 @@ struct WebSocketTests {
             #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
         }
 
-        try await Task.sleep(for: .milliseconds(500))
-        let didDisconnect = disconnected.withLock { $0 }
-        #expect(didDisconnect, "Expected disconnect event after fragmented close rejection")
+        try await waitUntil("disconnect after fragmented close rejection") {
+            disconnected.withLock { $0 }
+        }
     }
 
     @Test("Ping with payload > 125 bytes is rejected with close 1002")
@@ -1175,9 +1223,9 @@ struct WebSocketTests {
             #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
         }
 
-        try await Task.sleep(for: .milliseconds(500))
-        let didDisconnect = disconnected.withLock { $0 }
-        #expect(didDisconnect, "Expected disconnect event after oversize ping rejection")
+        try await waitUntil("disconnect after oversize ping rejection") {
+            disconnected.withLock { $0 }
+        }
     }
 
     /// Sends a raw masked WebSocket frame with a custom first byte (for setting RSV bits).
@@ -1246,9 +1294,9 @@ struct WebSocketTests {
             #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
         }
 
-        try await Task.sleep(for: .milliseconds(500))
-        let didDisconnect = disconnected.withLock { $0 }
-        #expect(didDisconnect, "Expected disconnect event after RSV bit rejection")
+        try await waitUntil("disconnect after RSV bit rejection") {
+            disconnected.withLock { $0 }
+        }
     }
 
     @Test("Frame with RSV2 bit set is rejected with close 1002")
@@ -1278,9 +1326,9 @@ struct WebSocketTests {
             #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
         }
 
-        try await Task.sleep(for: .milliseconds(500))
-        let didDisconnect = disconnected.withLock { $0 }
-        #expect(didDisconnect, "Expected disconnect event after RSV2 bit rejection")
+        try await waitUntil("disconnect after RSV2 bit rejection") {
+            disconnected.withLock { $0 }
+        }
     }
 
     @Test("Frame with RSV3 bit set is rejected with close 1002")
@@ -1310,9 +1358,9 @@ struct WebSocketTests {
             #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
         }
 
-        try await Task.sleep(for: .milliseconds(500))
-        let didDisconnect = disconnected.withLock { $0 }
-        #expect(didDisconnect, "Expected disconnect event after RSV3 bit rejection")
+        try await waitUntil("disconnect after RSV3 bit rejection") {
+            disconnected.withLock { $0 }
+        }
     }
 
     @Test("Invalid UTF-8 text frame is rejected with close 1007")
@@ -1343,9 +1391,9 @@ struct WebSocketTests {
             #expect(statusCode == 1007, "Expected close status 1007 (invalid payload data), got \(statusCode)")
         }
 
-        try await Task.sleep(for: .milliseconds(500))
-        let didDisconnect = disconnected.withLock { $0 }
-        #expect(didDisconnect, "Expected disconnect event after invalid UTF-8 rejection")
+        try await waitUntil("disconnect after invalid UTF-8 rejection") {
+            disconnected.withLock { $0 }
+        }
     }
 
     @Test("Invalid UTF-8 in fragmented message is rejected with close 1007")
@@ -1379,9 +1427,9 @@ struct WebSocketTests {
             #expect(statusCode == 1007, "Expected close status 1007 (invalid payload data), got \(statusCode)")
         }
 
-        try await Task.sleep(for: .milliseconds(500))
-        let didDisconnect = disconnected.withLock { $0 }
-        #expect(didDisconnect, "Expected disconnect event after invalid UTF-8 fragment rejection")
+        try await waitUntil("disconnect after invalid UTF-8 fragment rejection") {
+            disconnected.withLock { $0 }
+        }
     }
 
     // MARK: - Disconnect Ordering Tests
@@ -1412,8 +1460,6 @@ struct WebSocketTests {
             {"type":"session_info","command":"agent"}
             """, on: connection)
 
-        try await Task.sleep(for: .milliseconds(100))
-
         // Send an output message immediately followed by a close frame
         try await Self.sendTextFrame(
             """
@@ -1421,8 +1467,11 @@ struct WebSocketTests {
             """, on: connection)
         try await Self.sendCloseFrame(on: connection)
 
-        // Wait for all events to be processed
-        try await Task.sleep(for: .milliseconds(500))
+        // Wait for both output and disconnect events to be processed
+        try await waitUntil("output and disconnect events") {
+            let e = events.withLock { $0 }
+            return e.contains("output") && e.contains("disconnected")
+        }
 
         let receivedEvents = events.withLock { $0 }
         // The output event must appear before the disconnected event
@@ -1474,9 +1523,9 @@ struct WebSocketTests {
         }
 
         // Verify disconnect event fires
-        try await Task.sleep(for: .milliseconds(500))
-        let didDisconnect = disconnected.withLock { $0 }
-        #expect(didDisconnect, "Expected disconnect event after oversize frame rejection")
+        try await waitUntil("disconnect after oversize frame rejection") {
+            disconnected.withLock { $0 }
+        }
     }
 
     // MARK: - Close Frame Validation Tests
@@ -1509,9 +1558,9 @@ struct WebSocketTests {
             #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
         }
 
-        try await Task.sleep(for: .milliseconds(500))
-        let didDisconnect = disconnected.withLock { $0 }
-        #expect(didDisconnect, "Expected disconnect event after 1-byte close payload rejection")
+        try await waitUntil("disconnect after 1-byte close payload rejection") {
+            disconnected.withLock { $0 }
+        }
     }
 
     @Test("Close frame with invalid close code is rejected with close 1002")
@@ -1545,9 +1594,9 @@ struct WebSocketTests {
             #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
         }
 
-        try await Task.sleep(for: .milliseconds(500))
-        let didDisconnect = disconnected.withLock { $0 }
-        #expect(didDisconnect, "Expected disconnect event after invalid close code rejection")
+        try await waitUntil("disconnect after invalid close code rejection") {
+            disconnected.withLock { $0 }
+        }
     }
 
     @Test("Close frame with invalid UTF-8 reason is rejected with close 1007")
@@ -1581,9 +1630,9 @@ struct WebSocketTests {
             #expect(statusCode == 1007, "Expected close status 1007 (invalid payload data), got \(statusCode)")
         }
 
-        try await Task.sleep(for: .milliseconds(500))
-        let didDisconnect = disconnected.withLock { $0 }
-        #expect(didDisconnect, "Expected disconnect event after invalid UTF-8 close reason rejection")
+        try await waitUntil("disconnect after invalid UTF-8 close reason rejection") {
+            disconnected.withLock { $0 }
+        }
     }
 }
 

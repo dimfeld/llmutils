@@ -7,7 +7,7 @@ goal: Add WebSocket server support to tim-gui so it can receive and display
 id: 169
 uuid: 85aa17d2-7d55-4d91-afbb-09821893a59a
 generatedBy: agent
-status: done
+status: in_progress
 priority: medium
 parent: 160
 references:
@@ -15,7 +15,7 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-12T03:16:10.239Z
+updatedAt: 2026-02-12T08:21:12.007Z
 tasks:
   - title: Define session data models and headless protocol types
     done: true
@@ -783,6 +783,38 @@ tasks:
 
 
       Related file: tim-gui/TimGUI/SessionsView.swift:113-116
+  - title: "Address Review Feedback: Duplicate `session_info` frames on the same
+      WebSocket connection create duplicate `SessionItem`s with the same
+      `connectionId`, which breaks lifecycle tracking."
+    done: false
+    description: >-
+      Duplicate `session_info` frames on the same WebSocket connection create
+      duplicate `SessionItem`s with the same `connectionId`, which breaks
+      lifecycle tracking. `appendMessage` and `markDisconnected` both use
+      `firstIndex(where:)`, so only the newest duplicate is updated; older
+      duplicates can remain permanently `isActive=true` and cannot be dismissed
+      (`dismissSession` blocks active sessions). This leaves stale, undeletable
+      rows and violates one-connection/one-session behavior.
+
+
+      Suggestion: Enforce a unique session per `connectionId` in `addSession`
+      (replace/update existing instead of insert), and use a direct
+      `connectionId -> SessionItem` lookup/map so message/disconnect routing
+      cannot become ambiguous.
+
+
+      Related file: tim-gui/TimGUI/SessionState.swift:16-64
+  - title: "Address Review Feedback: The new WebSocket integration tests are
+      timing-dependent (`Task.sleep(...)`) for event synchronization, which
+      makes the suite nondeterministic under slower CI/load and can mask real
+      ordering bugs."
+    done: false
+    description: |-
+      The new WebSocket integration tests are timing-dependent (`Task.sleep(...)`) for event synchronization, which makes the suite nondeterministic under slower CI/load and can mask real ordering bugs. This is especially risky because these tests are validating protocol parsing/order guarantees.
+
+      Suggestion: Replace sleeps with deterministic waits (eventually/poll helpers with timeout, async stream/continuation signaling when specific events arrive, or per-test expectation helpers that wait for exact event sequences).
+
+      Related file: tim-gui/TimGUITests/WebSocketTests.swift:337,375,408,491,545,574,642,741,787,942,975,1012,1046,1078,1110,1145,1178,1249,1281,1313,1346,1382,1425,1477,1512,1548,1584
 changedFiles:
   - src/tim/commands/review.ts
   - tim-gui/TimGUI/ContentView.swift

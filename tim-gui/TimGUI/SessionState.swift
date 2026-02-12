@@ -14,6 +14,21 @@ final class SessionState {
     }
 
     func addSession(connectionId: UUID, info: SessionInfoPayload) {
+        // If a session already exists for this connectionId, update its metadata
+        if let existing = sessions.first(where: { $0.connectionId == connectionId }) {
+            existing.command = info.command
+            existing.planId = info.planId
+            existing.planTitle = info.planTitle
+            existing.workspacePath = info.workspacePath
+            existing.gitRemote = info.gitRemote
+
+            // Flush any pending messages to the existing session
+            if let buffered = pendingMessages.removeValue(forKey: connectionId) {
+                existing.messages.append(contentsOf: buffered)
+            }
+            return
+        }
+
         let session = SessionItem(
             id: UUID(),
             connectionId: connectionId,
