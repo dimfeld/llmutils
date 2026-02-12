@@ -86,8 +86,17 @@ final class LocalHTTPServer: @unchecked Sendable {
             newListener.start(queue: .global())
         }
 
-        // Clear the startup handler so it doesn't retain the continuation.
-        newListener.stateUpdateHandler = nil
+        // Replace the startup handler with one that monitors for post-startup failures.
+        newListener.stateUpdateHandler = { state in
+            switch state {
+            case .failed(let error):
+                Self.logger.error("NWListener failed after startup: \(error)")
+            case .cancelled:
+                Self.logger.info("NWListener cancelled")
+            default:
+                break
+            }
+        }
         self.listener = newListener
     }
 
@@ -118,7 +127,7 @@ final class LocalHTTPServer: @unchecked Sendable {
             if request.method == "GET", request.path == "/tim-agent",
                 request.isWebSocketUpgrade, let wsKey = request.webSocketKey
             {
-                await handleWebSocketUpgrade(connection: connection, key: wsKey)
+                await handleWebSocketUpgrade(connection: connection, key: wsKey, leftoverData: request.leftoverData ?? Data())
                 return
             }
 
@@ -148,13 +157,14 @@ final class LocalHTTPServer: @unchecked Sendable {
 
     // MARK: - WebSocket Upgrade
 
-    private func handleWebSocketUpgrade(connection: NWConnection, key: String) async {
+    private func handleWebSocketUpgrade(connection: NWConnection, key: String, leftoverData: Data) async {
         let connectionId = UUID()
         let wsHandler = self.wsHandler
 
         let wsConnection = WebSocketConnection(
             id: connectionId,
             connection: connection,
+            initialBuffer: leftoverData,
             onMessage: { [weak self] text in
                 self?.handleWebSocketMessage(connectionId: connectionId, text: text)
             },
@@ -294,7 +304,20 @@ final class LocalHTTPServer: @unchecked Sendable {
             headers[name] = value
         }
 
-        return HTTPRequest(method: method, path: path, body: body, headers: headers)
+        // Capture leftover bytes after headers for WebSocket upgrades
+        let leftover: Data?
+        if contentLength == 0 {
+            let afterHeaders = headersEnd.upperBound
+            if afterHeaders < buffer.count {
+                leftover = Data(buffer[afterHeaders...])
+            } else {
+                leftover = nil
+            }
+        } else {
+            leftover = nil
+        }
+
+        return HTTPRequest(method: method, path: path, body: body, headers: headers, leftoverData: leftover)
     }
 
     private func receiveChunk(from connection: NWConnection) async throws -> Data {
@@ -354,12 +377,14 @@ struct HTTPRequest {
     let path: String
     let body: Data?
     let headers: [String: String]
+    let leftoverData: Data?
 
-    init(method: String, path: String, body: Data?, headers: [String: String] = [:]) {
+    init(method: String, path: String, body: Data?, headers: [String: String] = [:], leftoverData: Data? = nil) {
         self.method = method
         self.path = path
         self.body = body
         self.headers = headers
+        self.leftoverData = leftoverData
     }
 
     var isWebSocketUpgrade: Bool {

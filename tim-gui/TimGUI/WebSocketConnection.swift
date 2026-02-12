@@ -27,6 +27,9 @@ final class WebSocketConnection: @unchecked Sendable {
     private var fragmentBuffer = Data()
     private var fragmentOpcode: WSOpcode?
 
+    /// Leftover bytes from the HTTP request read buffer, consumed before issuing new receive calls.
+    private var readBuffer: Data
+
     /// Atomically transitions isClosed from false to true. Returns true if this call performed the transition.
     private nonisolated func markClosed() -> Bool {
         closeLock.lock()
@@ -39,11 +42,13 @@ final class WebSocketConnection: @unchecked Sendable {
     init(
         id: UUID,
         connection: NWConnection,
+        initialBuffer: Data = Data(),
         onMessage: @escaping @Sendable (String) -> Void,
         onDisconnect: @escaping @Sendable () -> Void
     ) {
         self.id = id
         self.connection = connection
+        self.readBuffer = initialBuffer
         self.onMessage = onMessage
         self.onDisconnect = onDisconnect
     }
@@ -205,8 +210,8 @@ final class WebSocketConnection: @unchecked Sendable {
             Task {
                 try? await sendFrame(opcode: .close, payload: Data())
                 connection.cancel()
+                onDisconnect()
             }
-            onDisconnect()
         }
     }
 
@@ -246,6 +251,12 @@ final class WebSocketConnection: @unchecked Sendable {
 
     private func readExact(count: Int) async throws -> Data {
         var buffer = Data()
+        // Consume from leftover HTTP read buffer first
+        if !readBuffer.isEmpty {
+            let toConsume = min(readBuffer.count, count)
+            buffer.append(readBuffer.prefix(toConsume))
+            readBuffer.removeFirst(toConsume)
+        }
         while buffer.count < count {
             let remaining = count - buffer.count
             let chunk = try await receiveChunk(maxLength: remaining)

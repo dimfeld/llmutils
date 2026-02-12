@@ -102,7 +102,7 @@ struct NotificationsView: View {
         let weztermPath = "/opt/homebrew/bin/wezterm"
 
         let paneId = terminal.paneId
-        Task.detached {
+        Task {
             print("[workspace-switch] Looking up pane \(paneId)")
 
             let listProcess = Process()
@@ -110,8 +110,11 @@ struct NotificationsView: View {
             listProcess.executableURL = URL(fileURLWithPath: weztermPath)
             listProcess.arguments = ["cli", "list", "--format", "json"]
             listProcess.standardOutput = listPipe
-            try? listProcess.run()
-            listProcess.waitUntilExit()
+            guard (try? listProcess.run()) != nil else {
+                print("[workspace-switch] Failed to launch wezterm cli list")
+                return
+            }
+            await waitForProcess(listProcess)
 
             let data = listPipe.fileHandleForReading.readDataToEndOfFile()
             guard let panes = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
@@ -148,8 +151,11 @@ struct NotificationsView: View {
                 "printf '\\033]1337;SetUserVar=switch-workspace=\(encodedArgs)\\007' && sleep 0.1",
             ]
             print("[workspace-switch] Running: \(sendProcess.arguments!.joined(separator: " "))")
-            try? sendProcess.run()
-            sendProcess.waitUntilExit()
+            guard (try? sendProcess.run()) != nil else {
+                print("[workspace-switch] Failed to launch wezterm cli spawn")
+                return
+            }
+            await waitForProcess(sendProcess)
             print("[workspace-switch] Exit code: \(sendProcess.terminationStatus)")
 
             let activateProcess = Process()
@@ -162,6 +168,15 @@ struct NotificationsView: View {
             "com.github.wez.wezterm").first
         {
             app.activate()
+        }
+    }
+
+    /// Waits for a Process to terminate without blocking a cooperative thread.
+    private func waitForProcess(_ process: Process) async {
+        await withCheckedContinuation { continuation in
+            process.terminationHandler = { _ in
+                continuation.resume()
+            }
         }
     }
 }
