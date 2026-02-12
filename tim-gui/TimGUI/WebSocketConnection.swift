@@ -19,7 +19,7 @@ final class WebSocketConnection: @unchecked Sendable {
     let id: UUID
     private let connection: NWConnection
     private let onMessage: @Sendable (String) async -> Void
-    private let onDisconnect: @Sendable () -> Void
+    private let onDisconnect: @Sendable () async -> Void
     private let closeLock = NSLock()
     private var _isClosed = false
 
@@ -44,7 +44,7 @@ final class WebSocketConnection: @unchecked Sendable {
         connection: NWConnection,
         initialBuffer: Data = Data(),
         onMessage: @escaping @Sendable (String) async -> Void,
-        onDisconnect: @escaping @Sendable () -> Void
+        onDisconnect: @escaping @Sendable () async -> Void
     ) {
         self.id = id
         self.connection = connection
@@ -88,7 +88,7 @@ final class WebSocketConnection: @unchecked Sendable {
             }
             if markClosed() {
                 connection.cancel()
-                onDisconnect()
+                await onDisconnect()
             }
         }
     }
@@ -108,6 +108,17 @@ final class WebSocketConnection: @unchecked Sendable {
 
             let fin = (byte0 & 0x80) != 0
             let opcodeRaw = byte0 & 0x0F
+
+            // RFC 6455 §5.2: RSV1-3 must be 0 unless an extension is negotiated
+            guard (byte0 & 0x70) == 0 else {
+                try? await sendCloseFrame(code: 1002)
+                if markClosed() {
+                    connection.cancel()
+                    await onDisconnect()
+                }
+                return
+            }
+
             let masked = (byte1 & 0x80) != 0
             var payloadLength = UInt64(byte1 & 0x7F)
 
@@ -128,7 +139,7 @@ final class WebSocketConnection: @unchecked Sendable {
                 try? await sendCloseFrame(code: 1009)
                 if markClosed() {
                     connection.cancel()
-                    onDisconnect()
+                    await onDisconnect()
                 }
                 return
             }
@@ -138,7 +149,7 @@ final class WebSocketConnection: @unchecked Sendable {
                 try? await sendCloseFrame(code: 1002)
                 if markClosed() {
                     connection.cancel()
-                    onDisconnect()
+                    await onDisconnect()
                 }
                 return
             }
@@ -163,7 +174,7 @@ final class WebSocketConnection: @unchecked Sendable {
                 try? await sendCloseFrame(code: 1002)
                 if markClosed() {
                     connection.cancel()
-                    onDisconnect()
+                    await onDisconnect()
                 }
                 return
             }
@@ -175,7 +186,7 @@ final class WebSocketConnection: @unchecked Sendable {
                     try? await sendCloseFrame(code: 1002)
                     if markClosed() {
                         connection.cancel()
-                        onDisconnect()
+                        await onDisconnect()
                     }
                     return
                 }
@@ -184,7 +195,7 @@ final class WebSocketConnection: @unchecked Sendable {
                     try? await sendCloseFrame(code: 1002)
                     if markClosed() {
                         connection.cancel()
-                        onDisconnect()
+                        await onDisconnect()
                     }
                     return
                 }
@@ -197,15 +208,22 @@ final class WebSocketConnection: @unchecked Sendable {
                     try? await sendCloseFrame(code: 1002)
                     if markClosed() {
                         connection.cancel()
-                        onDisconnect()
+                        await onDisconnect()
                     }
                     return
                 }
                 if fin {
                     // Complete single-frame message
-                    if let text = String(data: payload, encoding: .utf8) {
-                        await onMessage(text)
+                    guard let text = String(data: payload, encoding: .utf8) else {
+                        // RFC 6455 §8.1: invalid UTF-8 in text frame
+                        try? await sendCloseFrame(code: 1007)
+                        if markClosed() {
+                            connection.cancel()
+                            await onDisconnect()
+                        }
+                        return
                     }
+                    await onMessage(text)
                 } else {
                     // Start of fragmented message
                     fragmentOpcode = opcode
@@ -217,7 +235,7 @@ final class WebSocketConnection: @unchecked Sendable {
                 try? await sendCloseFrame(code: 1003)
                 if markClosed() {
                     connection.cancel()
-                    onDisconnect()
+                    await onDisconnect()
                 }
                 return
 
@@ -227,7 +245,7 @@ final class WebSocketConnection: @unchecked Sendable {
                     try? await sendCloseFrame(code: 1002)
                     if markClosed() {
                         connection.cancel()
-                        onDisconnect()
+                        await onDisconnect()
                     }
                     return
                 }
@@ -235,16 +253,25 @@ final class WebSocketConnection: @unchecked Sendable {
                     try? await sendCloseFrame(code: 1009)
                     if markClosed() {
                         connection.cancel()
-                        onDisconnect()
+                        await onDisconnect()
                     }
                     return
                 }
                 fragmentBuffer.append(payload)
                 if fin {
                     // End of fragmented message
-                    if let text = String(data: fragmentBuffer, encoding: .utf8) {
-                        await onMessage(text)
+                    guard let text = String(data: fragmentBuffer, encoding: .utf8) else {
+                        // RFC 6455 §8.1: invalid UTF-8 in reassembled text message
+                        fragmentBuffer = Data()
+                        fragmentOpcode = nil
+                        try? await sendCloseFrame(code: 1007)
+                        if markClosed() {
+                            connection.cancel()
+                            await onDisconnect()
+                        }
+                        return
                     }
+                    await onMessage(text)
                     fragmentBuffer = Data()
                     fragmentOpcode = nil
                 }
@@ -254,7 +281,7 @@ final class WebSocketConnection: @unchecked Sendable {
                 try? await sendFrame(opcode: .close, payload: payload)
                 if markClosed() {
                     connection.cancel()
-                    onDisconnect()
+                    await onDisconnect()
                 }
                 return
 
@@ -282,7 +309,7 @@ final class WebSocketConnection: @unchecked Sendable {
             Task {
                 try? await sendFrame(opcode: .close, payload: Data())
                 connection.cancel()
-                onDisconnect()
+                await onDisconnect()
             }
         }
     }

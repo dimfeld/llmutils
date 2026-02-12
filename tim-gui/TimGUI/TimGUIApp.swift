@@ -83,9 +83,9 @@ struct TimGUIApp: App {
                 }
             }
         )
-        self.server = newServer
         do {
             try await newServer.start()
+            self.server = newServer
             self.serverPort = newServer.boundPort
         } catch {
             self.startError = "Failed to start server: \(error.localizedDescription)"

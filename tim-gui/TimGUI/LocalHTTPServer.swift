@@ -170,7 +170,7 @@ final class LocalHTTPServer: @unchecked Sendable {
             },
             onDisconnect: { [weak self] in
                 self?.handleWebSocketDisconnect(connectionId: connectionId)
-                Task { @MainActor in
+                await MainActor.run {
                     wsHandler(.disconnected(connectionId))
                 }
             }
@@ -183,7 +183,7 @@ final class LocalHTTPServer: @unchecked Sendable {
             wsConnection.startReading()
         } catch {
             handleWebSocketDisconnect(connectionId: connectionId)
-            Task { @MainActor in
+            await MainActor.run {
                 wsHandler(.disconnected(connectionId))
             }
         }

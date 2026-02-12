@@ -1180,6 +1180,146 @@ struct WebSocketTests {
         #expect(didDisconnect, "Expected disconnect event after oversize ping rejection")
     }
 
+    /// Sends a raw masked WebSocket frame with a custom first byte (for setting RSV bits).
+    private static func sendRawFrameWithByte0(
+        byte0: UInt8, payload: Data, on connection: NWConnection
+    ) async throws {
+        var frame = Data()
+        frame.append(byte0)
+
+        let length = payload.count
+        if length < 126 {
+            frame.append(UInt8(length) | 0x80)
+        } else if length < 65536 {
+            frame.append(126 | 0x80)
+            frame.append(UInt8((length >> 8) & 0xFF))
+            frame.append(UInt8(length & 0xFF))
+        } else {
+            frame.append(127 | 0x80)
+            for i in stride(from: 56, through: 0, by: -8) {
+                frame.append(UInt8((length >> i) & 0xFF))
+            }
+        }
+
+        let maskKey: [UInt8] = [0x37, 0xFA, 0x21, 0x3D]
+        frame.append(contentsOf: maskKey)
+
+        for (i, byte) in payload.enumerated() {
+            frame.append(byte ^ maskKey[i % 4])
+        }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            connection.send(content: frame, completion: .contentProcessed { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            })
+        }
+    }
+
+    @Test("Frame with RSV1 bit set is rejected with close 1002")
+    func rsvBitRejection() async throws {
+        let disconnected = LockIsolated(false)
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            if case .disconnected = event {
+                disconnected.withLock { $0 = true }
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send a text frame with RSV1 bit set: FIN=1, RSV1=1, opcode=0x1 → byte0 = 0xC1
+        try await Self.sendRawFrameWithByte0(
+            byte0: 0xC1, payload: Data("hello".utf8), on: connection)
+
+        let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+        #expect(closeFrame.opcode == 0x8, "Expected close opcode for RSV bit rejection")
+        #expect(closeFrame.payload.count >= 2, "Close frame must contain status code")
+        if closeFrame.payload.count >= 2 {
+            let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+            #expect(statusCode == 1002, "Expected close status 1002 (protocol error), got \(statusCode)")
+        }
+
+        try await Task.sleep(for: .milliseconds(500))
+        let didDisconnect = disconnected.withLock { $0 }
+        #expect(didDisconnect, "Expected disconnect event after RSV bit rejection")
+    }
+
+    @Test("Invalid UTF-8 text frame is rejected with close 1007")
+    func invalidUtf8Rejection() async throws {
+        let disconnected = LockIsolated(false)
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            if case .disconnected = event {
+                disconnected.withLock { $0 = true }
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send a text frame with invalid UTF-8 bytes (0xFF 0xFE are never valid in UTF-8)
+        let invalidUtf8 = Data([0xFF, 0xFE, 0x80, 0x81])
+        try await Self.sendRawFrame(
+            fin: true, opcode: 0x1, payload: invalidUtf8, on: connection)
+
+        let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+        #expect(closeFrame.opcode == 0x8, "Expected close opcode for invalid UTF-8 rejection")
+        #expect(closeFrame.payload.count >= 2, "Close frame must contain status code")
+        if closeFrame.payload.count >= 2 {
+            let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+            #expect(statusCode == 1007, "Expected close status 1007 (invalid payload data), got \(statusCode)")
+        }
+
+        try await Task.sleep(for: .milliseconds(500))
+        let didDisconnect = disconnected.withLock { $0 }
+        #expect(didDisconnect, "Expected disconnect event after invalid UTF-8 rejection")
+    }
+
+    @Test("Invalid UTF-8 in fragmented message is rejected with close 1007")
+    func invalidUtf8FragmentedRejection() async throws {
+        let disconnected = LockIsolated(false)
+
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
+            if case .disconnected = event {
+                disconnected.withLock { $0 = true }
+            }
+        })
+        try await server.start()
+        defer { server.stop() }
+
+        let (connection, _) = try await Self.connectAndUpgrade(port: server.boundPort)
+        defer { connection.cancel() }
+
+        // Send a fragmented text message where the reassembled payload is invalid UTF-8
+        // First fragment: valid UTF-8 start
+        try await Self.sendRawFrame(
+            fin: false, opcode: 0x1, payload: Data("hello".utf8), on: connection)
+        // Final fragment: invalid UTF-8 bytes
+        try await Self.sendRawFrame(
+            fin: true, opcode: 0x0, payload: Data([0xFF, 0xFE]), on: connection)
+
+        let closeFrame = try await Self.readServerFrame(on: connection, timeout: .seconds(2))
+        #expect(closeFrame.opcode == 0x8, "Expected close opcode for invalid UTF-8 in fragments")
+        #expect(closeFrame.payload.count >= 2, "Close frame must contain status code")
+        if closeFrame.payload.count >= 2 {
+            let statusCode = UInt16(closeFrame.payload[0]) << 8 | UInt16(closeFrame.payload[1])
+            #expect(statusCode == 1007, "Expected close status 1007 (invalid payload data), got \(statusCode)")
+        }
+
+        try await Task.sleep(for: .milliseconds(500))
+        let didDisconnect = disconnected.withLock { $0 }
+        #expect(didDisconnect, "Expected disconnect event after invalid UTF-8 fragment rejection")
+    }
+
     @Test("Oversize frame is rejected with 1009 close and disconnect")
     func oversizeFrameRejection() async throws {
         let disconnected = LockIsolated(false)

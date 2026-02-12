@@ -7,7 +7,7 @@ goal: Add WebSocket server support to tim-gui so it can receive and display
 id: 169
 uuid: 85aa17d2-7d55-4d91-afbb-09821893a59a
 generatedBy: agent
-status: done
+status: in_progress
 priority: medium
 parent: 160
 references:
@@ -15,7 +15,7 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-12T02:21:24.155Z
+updatedAt: 2026-02-12T02:33:58.498Z
 tasks:
   - title: Define session data models and headless protocol types
     done: true
@@ -612,6 +612,67 @@ tasks:
 
 
       Related file: tim-gui/TimGUI/SessionModels.swift:366-370
+  - title: "Address Review Feedback: WebSocket frame validation is still incomplete
+      for RFC 6455-required invariants: RSV bits are never checked, and invalid
+      UTF-8 text payloads are silently dropped instead of closing with
+      protocol/data error."
+    done: false
+    description: >-
+      WebSocket frame validation is still incomplete for RFC 6455-required
+      invariants: RSV bits are never checked, and invalid UTF-8 text payloads
+      are silently dropped instead of closing with protocol/data error. This
+      means malformed frames can be accepted or ignored without terminating the
+      connection, which violates the plan's RFC-conformance requirement for the
+      manual parser.
+
+
+      Suggestion: Reject any frame where `(byte0 & 0x70) != 0` with close code
+      1002, and when text/continuation payload cannot decode as UTF-8, close
+      with 1007 instead of silently ignoring.
+
+
+      Related file: tim-gui/TimGUI/WebSocketConnection.swift:109
+  - title: "Address Review Feedback: WebSocket `onDisconnect` in
+      `handleWebSocketUpgrade` dispatches via fire-and-forget `Task { @MainActor
+      in }`, breaking the strict-ordering guarantee established elsewhere."
+    done: false
+    description: >-
+      WebSocket `onDisconnect` in `handleWebSocketUpgrade` dispatches via
+      fire-and-forget `Task { @MainActor in }`, breaking the strict-ordering
+      guarantee established elsewhere. The plan progress notes explicitly state
+      that `await MainActor.run` was chosen 'for strict ordering instead of
+      independent Task { @MainActor in } dispatches.' The disconnect callback
+      uses the old fire-and-forget pattern, which means a `.disconnected` event
+      could be processed before the last `.output` event if they arrive close
+      together. The same issue exists at lines 186-188 for the upgrade failure
+      path.
+
+
+      Suggestion: Change the disconnect callback to use `await MainActor.run {
+      wsHandler(.disconnected(connectionId)) }` for consistency with the message
+      handling path. Since `onDisconnect` is a synchronous closure, this
+      requires making it an async closure or restructuring the callback.
+
+
+      Related file: tim-gui/TimGUI/LocalHTTPServer.swift:173-175
+  - title: "Address Review Feedback: Server stored before start succeeds, preventing
+      retry on failure."
+    done: false
+    description: >-
+      Server stored before start succeeds, preventing retry on failure. In
+      `TimGUIApp.swift:86`, `self.server = newServer` is set before calling
+      `newServer.start()`. If `start()` throws (e.g., port 8123 is in use), the
+      `server` property is already non-nil. The guard on line 63 (`guard
+      self.server == nil else { return }`) means `startServerIfNeeded()` can
+      never retry. The only recovery is to quit and relaunch the app.
+
+
+      Suggestion: Move `self.server = newServer` into the `do` block after `try
+      await newServer.start()` succeeds, so that on failure the server remains
+      nil and a retry is possible.
+
+
+      Related file: tim-gui/TimGUI/TimGUIApp.swift:86
 changedFiles:
   - src/tim/commands/review.ts
   - tim-gui/TimGUI/ContentView.swift
