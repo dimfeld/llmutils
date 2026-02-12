@@ -15,7 +15,7 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-12T01:26:55.148Z
+updatedAt: 2026-02-12T01:39:30.882Z
 tasks:
   - title: Define session data models and headless protocol types
     done: true
@@ -433,7 +433,7 @@ tasks:
   - title: "Address Review Feedback: WebSocket client-frame validation is
       incomplete: unmasked client frames are accepted, and continuation frames
       are processed even when no fragmented message is in progress."
-    done: false
+    done: true
     description: >-
       WebSocket client-frame validation is incomplete: unmasked client frames
       are accepted, and continuation frames are processed even when no
@@ -452,7 +452,7 @@ tasks:
   - title: "Address Review Feedback: Tests still do not cover malformed-frame
       rejection paths that are currently incorrect (unmasked frames, invalid
       continuation ordering)."
-    done: false
+    done: true
     description: >-
       Tests still do not cover malformed-frame rejection paths that are
       currently incorrect (unmasked frames, invalid continuation ordering).
@@ -469,7 +469,7 @@ tasks:
       Related file: tim-gui/TimGUITests/WebSocketTests.swift:598
   - title: "Address Review Feedback: activateTerminalPane constructs a shell command
       with string interpolation of workspaceName without escaping."
-    done: false
+    done: true
     description: >-
       activateTerminalPane constructs a shell command with string interpolation
       of workspaceName without escaping. If the workspace name contains a double
@@ -484,7 +484,7 @@ tasks:
       Related file: tim-gui/TimGUI/ContentView.swift:138
   - title: "Address Review Feedback: waitForProcess has a potential double-resume if
       the process terminates synchronously before run() returns."
-    done: false
+    done: true
     description: >-
       waitForProcess has a potential double-resume if the process terminates
       synchronously before run() returns. The termination handler is set before
@@ -502,7 +502,7 @@ tasks:
   - title: "Address Review Feedback: readRequest parses headers twice — once during
       the accumulation loop (lines 249-258) to extract Content-Length, then
       again after the loop (lines 298-305) to build the headers dictionary."
-    done: false
+    done: true
     description: >-
       readRequest parses headers twice — once during the accumulation loop
       (lines 249-258) to extract Content-Length, then again after the loop
@@ -1012,18 +1012,18 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 
 ## Current Progress
 ### Current State
-- 18 of 24 tasks complete (6 core + 12 review feedback)
-- 169 tests passing
+- 23 of 24 tasks complete (6 core + 17 review feedback)
+- 172 tests passing
 ### Completed (So Far)
 - SessionModels.swift: All Decodable types for HeadlessMessage, TunnelMessage, StructuredMessagePayload (~28 types), SessionItem, SessionMessage, MessageCategory, plus MessageFormatter
-- WebSocketConnection.swift: Full RFC 6455 frame parsing/sending, upgrade handshake, fragmentation, close/ping/pong, NSLock-protected close state, 16MB frame limit, fragment buffer size limit
-- LocalHTTPServer.swift: Routes GET /tim-agent with Upgrade: websocket to WebSocket handler, POST /messages continues as HTTP, WebSocketEvent dispatch with os.Logger, leftover buffer forwarding to WebSocket, post-startup listener monitoring
+- WebSocketConnection.swift: Full RFC 6455 frame parsing/sending, upgrade handshake, fragmentation, close/ping/pong, NSLock-protected close state, 16MB frame limit, fragment buffer size limit, client-frame validation (unmasked rejection, continuation ordering)
+- LocalHTTPServer.swift: Routes GET /tim-agent with Upgrade: websocket to WebSocket handler, POST /messages continues as HTTP, WebSocketEvent dispatch with os.Logger, leftover buffer forwarding to WebSocket, post-startup listener monitoring, consolidated single-pass header parsing
 - SessionState.swift: @MainActor @Observable class with addSession, appendMessage, markDisconnected, dismissSession (guards against active sessions), auto-selection, selectedSession computed property
 - SessionsView.swift: NavigationSplitView two-pane layout — SessionListView with selection/status/dismiss, SessionDetailView with auto-scroll and monospaced message rendering, SessionMessageView with category-based coloring
-- ContentView.swift: Refactored with AppViewMode picker (Sessions/Notifications), NotificationsView extracted, accepts both appState and sessionState, dynamic port display, non-blocking Process execution
+- ContentView.swift: Refactored with AppViewMode picker (Sessions/Notifications), NotificationsView extracted, accepts both appState and sessionState, dynamic port display, non-blocking Process execution, JSONSerialization for shell escaping, ResumeGuard for double-resume prevention
 - TimGUIApp.swift: Wires WebSocket events to SessionState methods — sessionInfo→addSession, output→MessageFormatter.format→appendMessage, disconnected→markDisconnected; passes bound port to ContentView
 - All unknown message types handled gracefully with .unknown fallback cases
-- agent_step_end shows success/failure indicator (✓/✗) and uses .error category for failures
+- agent_step_end shows success/failure indicator and uses .error category for failures
 - review_result renders issue/recommendation/action-item counts and details; review_verdict renders verdict string and fix instructions
 - execution_summary properly decodes totalSteps/failedSteps from summary.metadata
 - ContentView port text is dynamic via serverPort parameter from LocalHTTPServer.boundPort
@@ -1033,24 +1033,21 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 - Task 11: WebSocket protocol tests for fragmentation, ping/pong, close handshake, oversize frame/fragment rejection, upgrade+immediate-frame
 - Task 13: stateUpdateHandler logs post-startup listener failures instead of being set to nil
 - Task 15: waitForProcess async helper with terminationHandler replaces blocking waitUntilExit
-- Task 16: prompt_answered events now render non-empty text ("Prompt answered (type) by source"); removed empty-message filter from SessionDetailView
+- Task 16: prompt_answered events now render non-empty text; removed empty-message filter from SessionDetailView
 - Task 17: LlmToolUsePayload.input and LlmToolResultPayload.result decoded via RawJSONString/AnyJSON helpers, used as fallback when inputSummary/resultSummary are nil
+- Task 19: WebSocket rejects unmasked client frames (close 1002), rejects continuation without prior fragment (close 1002), rejects new data frames during active fragmentation (close 1002)
+- Task 20: 3 integration tests for malformed-frame rejection — mandatory close 1002 assertion (not permissive do/catch)
+- Task 21: activateTerminalPane uses JSONSerialization for proper JSON construction, eliminating injection risk from special characters in workspace names
+- Task 22: ResumeGuard class with NSLock ensures waitForProcess continuation is resumed exactly once
+- Task 23: readRequest header parsing consolidated into single pass — headers dictionary built during accumulation loop
 - Task 24: PromptAnsweredPayload.value decoded via RawJSONString helper (stored but not displayed for security)
 ### Remaining
 - Task 18: SessionItem struct → class refactor for performance
-- Task 19: WebSocket client-frame validation (unmasked frames, continuation ordering)
-- Task 20: Tests for malformed-frame rejection
-- Task 21: Shell escaping in activateTerminalPane
-- Task 22: waitForProcess double-resume prevention
-- Task 23: readRequest header parsing consolidation
 ### Next Iteration Guidance
-- Performance: SessionItem is a struct with growing messages array. For high-throughput sessions, consider refactoring to class-based @Observable SessionItem or separate message storage to reduce SwiftUI re-evaluation
+- Performance: SessionItem is a struct with growing messages array. For high-throughput sessions, refactor to class-based @Observable SessionItem or separate message storage to reduce SwiftUI re-evaluation
 - Auto-scroll uses both onAppear and onChange with .id(session.id) on SessionDetailView for stable view identity
 - Lifecycle messages all render green; the plan mentioned green/blue but current implementation is acceptable for v1
 - Post-startup listener failures are logged but not surfaced to UI; consider adding a callback to update startError state
-- Headers are parsed twice in readRequest (once for Content-Length, once for dictionary); could consolidate for performance
-- Tasks 19+20 (WebSocket frame validation + tests) are a natural pair
-- Tasks 21+22 (ContentView fixes) are a natural pair
 ### Decisions / Changes
 - Used Approach A (unified TCP server) with manual WebSocket frame parsing rather than NWProtocolWebSocket
 - Types are Decodable only (not full Codable) since we only receive, never encode protocol messages
