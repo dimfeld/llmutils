@@ -1135,6 +1135,39 @@ struct StructuredMessagePayloadTests {
         #expect(p.timeoutMs == 30000)
     }
 
+    @Test("PromptChoiceConfigPayload preserves integer format for numeric values")
+    func decodesPromptChoiceIntegerCoercion() throws {
+        let json = """
+            {
+                "type": "prompt_request",
+                "requestId": "req-int",
+                "promptType": "select",
+                "promptConfig": {
+                    "message": "Pick",
+                    "choices": [
+                        {"name": "Integer", "value": 42},
+                        {"name": "Float", "value": 3.14},
+                        {"name": "Zero", "value": 0},
+                        {"name": "Bool", "value": true},
+                        {"name": "String", "value": "hello"}
+                    ]
+                },
+                "timestamp": "2026-02-10T08:00:00Z"
+            }
+            """
+        let msg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(json.utf8))
+        guard case .promptRequest(let p) = msg else {
+            Issue.record("Expected promptRequest, got \(msg)")
+            return
+        }
+        let choices = try #require(p.promptConfig.choices)
+        #expect(choices[0].value == "42")        // integer preserved as "42", not "42.0"
+        #expect(choices[1].value == "3.14")       // float kept as-is
+        #expect(choices[2].value == "0")          // zero preserved as "0", not "0.0"
+        #expect(choices[3].value == "true")       // bool coerced to string
+        #expect(choices[4].value == "hello")      // string unchanged
+    }
+
     @Test("Decodes prompt_answered without value")
     func decodesPromptAnswered() throws {
         let json = """

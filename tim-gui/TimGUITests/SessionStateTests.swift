@@ -151,7 +151,7 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages[2].text == "third")
     }
 
-    @Test("appendMessage is a no-op for unknown connectionId")
+    @Test("appendMessage buffers messages for unknown connectionId (does not affect existing sessions)")
     func appendMessageUnknownConnection() {
         let state = SessionState()
         let connId = UUID()
@@ -159,6 +159,86 @@ struct SessionStateTests {
 
         state.appendMessage(connectionId: UUID(), message: makeMessage(seq: 1, text: "orphan"))
 
+        // Existing session should not be affected
+        #expect(state.sessions[0].messages.isEmpty)
+    }
+
+    @Test("appendMessage buffers messages before session_info, addSession flushes them")
+    func appendMessageBufferingAndFlush() {
+        let state = SessionState()
+        let connId = UUID()
+
+        // Messages arrive before session_info
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "early msg 1"))
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "early msg 2"))
+
+        // No sessions exist yet
+        #expect(state.sessions.isEmpty)
+
+        // Now session_info arrives
+        state.addSession(connectionId: connId, info: makeInfo(command: "agent"))
+
+        // Buffered messages should be flushed to the new session
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].messages.count == 2)
+        #expect(state.sessions[0].messages[0].text == "early msg 1")
+        #expect(state.sessions[0].messages[1].text == "early msg 2")
+    }
+
+    @Test("appendMessage buffer is per-connection, messages go to correct sessions")
+    func appendMessageBufferingPerConnection() {
+        let state = SessionState()
+        let connId1 = UUID()
+        let connId2 = UUID()
+
+        // Buffer messages for two different connections
+        state.appendMessage(connectionId: connId1, message: makeMessage(seq: 1, text: "conn1 early"))
+        state.appendMessage(connectionId: connId2, message: makeMessage(seq: 1, text: "conn2 early"))
+
+        // Register first session
+        state.addSession(connectionId: connId1, info: makeInfo(command: "agent"))
+        #expect(state.sessions[0].messages.count == 1)
+        #expect(state.sessions[0].messages[0].text == "conn1 early")
+
+        // Register second session
+        state.addSession(connectionId: connId2, info: makeInfo(command: "review"))
+        #expect(state.sessions[0].messages.count == 1)
+        #expect(state.sessions[0].messages[0].text == "conn2 early")
+    }
+
+    @Test("appendMessage continues normally after buffered messages are flushed")
+    func appendMessageAfterFlush() {
+        let state = SessionState()
+        let connId = UUID()
+
+        // Buffer one message
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "buffered"))
+
+        // Register session (flushes buffer)
+        state.addSession(connectionId: connId, info: makeInfo())
+
+        // New messages append normally
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "live msg"))
+
+        #expect(state.sessions[0].messages.count == 2)
+        #expect(state.sessions[0].messages[0].text == "buffered")
+        #expect(state.sessions[0].messages[1].text == "live msg")
+    }
+
+    @Test("markDisconnected cleans up pending message buffer")
+    func markDisconnectedCleansPendingBuffer() {
+        let state = SessionState()
+        let connId = UUID()
+
+        // Buffer messages for a connection that never sends session_info
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "orphan"))
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "orphan 2"))
+
+        // Disconnect without ever registering the session
+        state.markDisconnected(connectionId: connId)
+
+        // Now if addSession is called (shouldn't happen but test cleanup), buffer should be empty
+        state.addSession(connectionId: connId, info: makeInfo())
         #expect(state.sessions[0].messages.isEmpty)
     }
 
