@@ -7,7 +7,7 @@ goal: Add WebSocket server support to tim-gui so it can receive and display
 id: 169
 uuid: 85aa17d2-7d55-4d91-afbb-09821893a59a
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 parent: 160
 references:
@@ -15,7 +15,7 @@ references:
 planGeneratedAt: 2026-02-10T08:16:34.734Z
 promptsGeneratedAt: 2026-02-10T08:16:34.734Z
 createdAt: 2026-02-10T03:29:43.262Z
-updatedAt: 2026-02-12T02:58:43.207Z
+updatedAt: 2026-02-12T03:16:10.239Z
 tasks:
   - title: Define session data models and headless protocol types
     done: true
@@ -675,7 +675,7 @@ tasks:
       Related file: tim-gui/TimGUI/TimGUIApp.swift:86
   - title: "Address Review Feedback: WebSocket close-frame validation is incomplete,
       so malformed close frames are accepted instead of rejected per RFC 6455."
-    done: false
+    done: true
     description: >-
       WebSocket close-frame validation is incomplete, so malformed close frames
       are accepted instead of rejected per RFC 6455. In `readLoop`,
@@ -696,7 +696,7 @@ tasks:
       Related file: tim-gui/TimGUI/WebSocketConnection.swift:182, 279
   - title: "Address Review Feedback: LocalHTTPServer.start() continuation can be
       resumed twice."
-    done: false
+    done: true
     description: >-
       LocalHTTPServer.start() continuation can be resumed twice. The
       withCheckedThrowingContinuation sets a stateUpdateHandler that resumes on
@@ -709,15 +709,16 @@ tasks:
 
 
       Suggestion: Swap the handler to nil inside the closure after the first
-      resume. Alternatively, use a local Bool flag or atomic to ensure single resumption,
-      similar to the ResumeGuard pattern used in ContentView.swift:192-210.
+      resume. Alternatively, use a local Bool flag or atomic to ensure single
+      resumption, similar to the ResumeGuard pattern used in
+      ContentView.swift:192-210.
 
 
 
       Related file: tim-gui/TimGUI/LocalHTTPServer.swift:75-87
   - title: "Address Review Feedback: WebSocket readLoop error path silently drops
       all errors."
-    done: false
+    done: true
     description: >-
       WebSocket readLoop error path silently drops all errors. The
       startReading() method catches all errors from readLoop() with an empty
@@ -736,7 +737,7 @@ tasks:
   - title: "Address Review Feedback: The WebSocket malformed-frame test suite does
       not cover invalid close payload semantics, so the parser bug above is not
       detected."
-    done: false
+    done: true
     description: >-
       The WebSocket malformed-frame test suite does not cover invalid close
       payload semantics, so the parser bug above is not detected. Existing tests
@@ -753,7 +754,7 @@ tasks:
       Related file: tim-gui/TimGUITests/WebSocketTests.swift:707
   - title: "Address Review Feedback: gitRemote field from SessionInfoPayload is
       decoded but silently discarded."
-    done: false
+    done: true
     description: >-
       gitRemote field from SessionInfoPayload is decoded but silently discarded.
       SessionInfoPayload decodes gitRemote, but SessionItem has no field to
@@ -761,13 +762,14 @@ tasks:
       The data is decoded but never preserved.
 
 
-      Suggestion: Add gitRemote to SessionItem since we will use it in the future.
+      Suggestion: Add gitRemote to SessionItem since we will use it in the
+      future.
 
 
       Related file: tim-gui/TimGUI/SessionState.swift:17-27
   - title: "Address Review Feedback: Auto-scroll in SessionDetailView forces the
       user to the bottom on every new message."
-    done: false
+    done: true
     description: >-
       Auto-scroll in SessionDetailView forces the user to the bottom on every
       new message. onChange(of: session.messages.count) scrolls to the bottom
@@ -791,6 +793,7 @@ changedFiles:
   - tim-gui/TimGUI/TimGUIApp.swift
   - tim-gui/TimGUI/WebSocketConnection.swift
   - tim-gui/TimGUI.xcodeproj/project.pbxproj
+  - tim-gui/TimGUITests/AutoScrollTests.swift
   - tim-gui/TimGUITests/LocalHTTPServerTests.swift
   - tim-gui/TimGUITests/MessageFormatterTests.swift
   - tim-gui/TimGUITests/SessionModelTests.swift
@@ -1261,47 +1264,26 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 
 ## Current Progress
 ### Current State
-- All 31 of 31 tasks complete (6 core + 25 review feedback)
-- 191 tests passing
+- All 37 of 37 tasks complete (6 core + 31 review feedback)
+- 199 tests passing
 ### Completed (So Far)
 - SessionModels.swift: All Decodable types for HeadlessMessage, TunnelMessage, StructuredMessagePayload (~28 types), SessionItem, SessionMessage, MessageCategory, plus MessageFormatter
-- WebSocketConnection.swift: Full RFC 6455 frame parsing/sending, upgrade handshake, fragmentation, close/ping/pong, NSLock-protected close state, 16MB frame limit, fragment buffer size limit, client-frame validation (unmasked rejection, continuation ordering, unknown opcode rejection, binary frame rejection, control-frame invariant enforcement, RSV bit rejection, invalid UTF-8 close 1007)
-- LocalHTTPServer.swift: Routes GET /tim-agent with Upgrade: websocket to WebSocket handler, POST /messages continues as HTTP, WebSocketEvent dispatch with os.Logger, leftover buffer forwarding to WebSocket, post-startup listener monitoring, consolidated single-pass header parsing, strict event ordering via await MainActor.run, async onDisconnect for strict ordering
-- SessionState.swift: @MainActor @Observable class with addSession, appendMessage, markDisconnected, dismissSession (guards against active sessions), auto-selection, selectedSession computed property, pending message buffering for pre-session output
-- SessionsView.swift: NavigationSplitView two-pane layout — SessionListView with selection/status/dismiss, SessionDetailView with auto-scroll and monospaced message rendering, SessionMessageView with category-based coloring
+- WebSocketConnection.swift: Full RFC 6455 frame parsing/sending, upgrade handshake, fragmentation, close/ping/pong, NSLock-protected close state, 16MB frame limit, fragment buffer size limit, client-frame validation (unmasked rejection, continuation ordering, unknown opcode rejection, binary frame rejection, control-frame invariant enforcement, RSV bit rejection, invalid UTF-8 close 1007), close-frame payload validation (1-byte reject 1002, invalid code range reject 1002, invalid UTF-8 reason reject 1007), os.Logger error logging for unexpected readLoop errors
+- LocalHTTPServer.swift: Routes GET /tim-agent with Upgrade: websocket to WebSocket handler, POST /messages continues as HTTP, WebSocketEvent dispatch with os.Logger, leftover buffer forwarding to WebSocket, post-startup listener monitoring, consolidated single-pass header parsing, strict event ordering via await MainActor.run, async onDisconnect for strict ordering, StartupResumeGuard for double-resume prevention in start()
+- SessionState.swift: @MainActor @Observable class with addSession, appendMessage, markDisconnected, dismissSession (guards against active sessions), auto-selection, selectedSession computed property, pending message buffering for pre-session output, gitRemote field preserved from SessionInfoPayload
+- SessionsView.swift: NavigationSplitView two-pane layout — SessionListView with selection/status/dismiss, SessionDetailView with smart auto-scroll (only scrolls when user is near bottom, extracted into testable shouldAutoScroll helper), monospaced message rendering, SessionMessageView with category-based coloring
 - ContentView.swift: Refactored with AppViewMode picker (Sessions/Notifications), NotificationsView extracted, accepts both appState and sessionState, dynamic port display, non-blocking Process execution, JSONSerialization for shell escaping, ResumeGuard for double-resume prevention
 - TimGUIApp.swift: Wires WebSocket events to SessionState methods — sessionInfo→addSession, output→MessageFormatter.format→appendMessage, disconnected→markDisconnected; passes bound port to ContentView; single-flight startup guard with isStartingServer flag; startError cleared on successful startup; server assigned only after successful start for retry support
 - All unknown message types handled gracefully with .unknown fallback cases
-- agent_step_end shows success/failure indicator and uses .error category for failures
-- review_result renders issue/recommendation/action-item counts and details; review_verdict renders verdict string and fix instructions
-- execution_summary properly decodes totalSteps/failedSteps from summary.metadata
-- ContentView port text is dynamic via serverPort parameter from LocalHTTPServer.boundPort
-- MessageFormatter and date formatters are @MainActor-isolated for thread safety
-- Task 8: HTTPRequest includes leftoverData, WebSocketConnection has readBuffer for pre-read bytes
-- Task 10: onDisconnect fires after close frame send and connection.cancel() inside Task block
-- Task 11: WebSocket protocol tests for fragmentation, ping/pong, close handshake, oversize frame/fragment rejection, upgrade+immediate-frame
-- Task 13: stateUpdateHandler logs post-startup listener failures instead of being set to nil
-- Task 15: waitForProcess async helper with terminationHandler replaces blocking waitUntilExit
-- Task 16: prompt_answered events now render non-empty text; removed empty-message filter from SessionDetailView
-- Task 17: LlmToolUsePayload.input and LlmToolResultPayload.result decoded via RawJSONString/AnyJSON helpers, used as fallback when inputSummary/resultSummary are nil
-- Task 18: SessionItem refactored from struct to @MainActor @Observable class for O(1) message append (no array copy). Never-mutated properties changed to `let`. 3 reference-semantics tests added.
-- Task 19: WebSocket rejects unmasked client frames (close 1002), rejects continuation without prior fragment (close 1002), rejects new data frames during active fragmentation (close 1002)
-- Task 20: 3 integration tests for malformed-frame rejection — mandatory close 1002 assertion (not permissive do/catch)
-- Task 21: activateTerminalPane uses JSONSerialization for proper JSON construction, eliminating injection risk from special characters in workspace names
-- Task 22: ResumeGuard class with NSLock ensures waitForProcess continuation is resumed exactly once
-- Task 23: readRequest header parsing consolidated into single pass — headers dictionary built during accumulation loop
-- Task 24: PromptAnsweredPayload.value decoded via RawJSONString helper (stored but not displayed for security)
-- Task 25: WebSocket events processed in strict arrival order via `await MainActor.run` (not fire-and-forget Tasks). SessionState buffers messages for unknown connectionIds and flushes on addSession. Buffer cleaned on markDisconnected.
-- Task 26: Unknown opcodes → close 1002, binary frames → close 1003, control frames validated for FIN=1 and payload ≤ 125
-- Task 27: 5 new integration tests for malformed-frame rejection (unknown opcode, binary frame, fragmented ping, fragmented close, oversize ping)
-- Task 28: PromptChoiceConfigPayload.value and PromptConfigPayload.defaultValue use integer-detection pattern (n == n.rounded()) to preserve integer fidelity
-- Task 29: RSV bit validation (close 1002 for non-zero RSV), invalid UTF-8 text payload rejection (close 1007). 6 new tests: RSV1/2/3 bit rejection, single-frame and fragmented UTF-8 rejection.
-- Task 30: onDisconnect changed from sync to async closure; both handleWebSocketUpgrade disconnect callback and upgrade failure path use await MainActor.run for strict ordering. Disconnect ordering test added.
-- Task 31: self.server assigned only after successful start(); isStartingServer flag prevents concurrent startup races; startError cleared on success
+- Task 32: Close-frame validation — 1-byte payload rejected with 1002, invalid close code range rejected with 1002, invalid UTF-8 reason bytes rejected with 1007
+- Task 33: StartupResumeGuard (NSLock-based) prevents double-resume of start() continuation
+- Task 34: WebSocket readLoop errors logged via os.Logger; WebSocketError silenced as expected disconnects
+- Task 35: 3 new close-frame validation tests (1-byte payload, invalid UTF-8 reason, invalid code range)
+- Task 36: gitRemote: String? added to SessionItem, passed through from addSession
+- Task 37: Smart auto-scroll — shouldAutoScroll pure helper tracks viewport height vs content bottom, only scrolls when near bottom (50pt threshold). 8 unit tests for auto-scroll logic.
 ### Remaining
 - None — all tasks complete
 ### Next Iteration Guidance
-- Auto-scroll uses both onAppear and onChange with .id(session.id) on SessionDetailView for stable view identity
 - Lifecycle messages all render green; the plan mentioned green/blue but current implementation is acceptable for v1
 - Post-startup listener failures are logged but not surfaced to UI; consider adding a callback to update startError state
 - WebSocketConnection.close() uses fire-and-forget Task for onDisconnect intentionally — it's only called during server shutdown via stop(), not during normal operation where ordering matters
@@ -1322,5 +1304,6 @@ Use the unified TCP server approach (Approach A from research) where a single `N
 - SessionState buffers output messages arriving before session_info, flushing them when the session is registered
 - onDisconnect is async closure for strict ordering consistency; close() is intentionally fire-and-forget for shutdown path only
 - Server startup uses single-flight guard (isStartingServer) to prevent concurrent binding races
+- Auto-scroll uses pure shouldAutoScroll helper for testability; returns nil when viewport not yet measured to retain previous state
 ### Risks / Blockers
 - None
