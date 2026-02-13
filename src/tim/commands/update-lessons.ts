@@ -20,6 +20,7 @@ import { readPlanFile, resolvePlanFile } from '../plans.js';
 interface UpdateLessonsPromptOptions {
   include?: string[];
   exclude?: string[];
+  docsPaths?: string[];
 }
 
 export async function extractLessonsLearned(planFilePath: string): Promise<string | null> {
@@ -92,7 +93,7 @@ export function buildUpdateLessonsPrompt(
   options: UpdateLessonsPromptOptions = {}
 ): string {
   const parts: string[] = [];
-  const { include, exclude } = options;
+  const { include, exclude, docsPaths } = options;
 
   parts.push(
     'You have completed a plan and recorded lessons learned during implementation and review fixes.',
@@ -111,10 +112,20 @@ export function buildUpdateLessonsPrompt(
     parts.push(`## Plan Context\n${planData.details}\n`);
   }
 
+  const docsLocation =
+    docsPaths && docsPaths.length > 0
+      ? docsPaths.map((p) => `${p}/`).join(', ')
+      : 'docs/ or similar';
+
   parts.push(
-    'Focus on documentation about process, conventions, workflows, and gotchas (for example CLAUDE.md, docs/,',
-    '.cursor/rules, and contributor guides). Do not focus on feature/API docs unless a lesson directly requires it.',
-    'Update existing docs in place when possible rather than creating duplicate guidance.'
+    'Focus on documentation about process, conventions, workflows, and gotchas.',
+    'Do not focus on feature/API docs unless a lesson directly requires it.',
+    'Update existing docs in place when possible rather than creating duplicate guidance.\n',
+    'IMPORTANT: Only add lessons to top-level documents like CLAUDE.md, AGENTS.md, or root-level contributor',
+    'guides if they are broadly applicable across the entire project. For lessons that are specific to a',
+    'particular feature, module, or area of the codebase, prefer placing them in more targeted locations such',
+    `as ${docsLocation} subdirectories, or documentation near the relevant code.`,
+    'This prevents top-level documents from becoming cluttered with narrowly-scoped guidance.'
   );
 
   if (include && include.length > 0) {
@@ -163,6 +174,7 @@ export async function runUpdateLessons(
   }
 
   const prompt = buildUpdateLessonsPrompt(planData, lessonsLearned, {
+    docsPaths: config.paths?.docs,
     include: config.updateDocs?.include,
     exclude: excludePatterns.length > 0 ? excludePatterns : undefined,
   });

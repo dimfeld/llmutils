@@ -53,7 +53,7 @@ Use this structured template (fill every heading; use "None" when empty):
 - ...
 ### Lessons Learned
 - Record surprises, unexpected issues, non-obvious solutions, workarounds, or undocumented insights.
-- Especially note what you learned while fixing review feedback and why the issue occurred.
+- Especially note what you learned while fixing review feedback and why the issue occurred, if the insights are applicable to future tasks and not just this one.
 - Update this subsection in place. Keep ongoing lessons that still matter; remove only stale lessons.
 - None
 ### Risks / Blockers
