@@ -95,6 +95,12 @@ struct SessionDetailView: View {
     let session: SessionItem
     @State private var isNearBottom = true
     @State private var viewportHeight: CGFloat = 0
+    /// Sticky auto-scroll intent, separate from geometric isNearBottom.
+    /// Only disabled when the user scrolls away while content is stable.
+    @State private var autoScrollEnabled = true
+    /// Message count the last time we confirmed we were at the bottom.
+    /// Used to distinguish "content grew" from "user scrolled away".
+    @State private var messageCountAtBottom = 0
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -122,6 +128,7 @@ struct SessionDetailView: View {
                 if !isNearBottom {
                     Button {
                         if let lastId = session.messages.last?.id {
+                            autoScrollEnabled = true
                             withAnimation {
                                 proxy.scrollTo(lastId, anchor: .bottom)
                             }
@@ -152,11 +159,21 @@ struct SessionDetailView: View {
                 }
             )
             .onPreferenceChange(ScrollOffsetPreferenceKey.self) { contentFrame in
-                if let shouldScroll = SessionDetailView.shouldAutoScroll(
+                if let nearBottom = SessionDetailView.shouldAutoScroll(
                     contentMaxY: contentFrame.maxY,
                     viewportHeight: viewportHeight
                 ) {
-                    isNearBottom = shouldScroll
+                    isNearBottom = nearBottom
+                    if nearBottom {
+                        autoScrollEnabled = true
+                        messageCountAtBottom = session.messages.count
+                    } else if session.messages.count == messageCountAtBottom {
+                        // Content didn't change but we're not near bottom:
+                        // the user scrolled away.
+                        autoScrollEnabled = false
+                    }
+                    // If messages.count != messageCountAtBottom, content grew
+                    // since we last confirmed being at bottom — don't disable.
                 }
             }
             .onAppear {
@@ -165,7 +182,7 @@ struct SessionDetailView: View {
                 }
             }
             .onChange(of: session.messages.count) {
-                if isNearBottom, let lastId = session.messages.last?.id {
+                if autoScrollEnabled, let lastId = session.messages.last?.id {
                     proxy.scrollTo(lastId, anchor: .bottom)
                 }
             }
@@ -173,6 +190,7 @@ struct SessionDetailView: View {
                 if let lastId = session.messages.last?.id {
                     proxy.scrollTo(lastId, anchor: .bottom)
                     isNearBottom = true
+                    autoScrollEnabled = true
                 }
             }
         }
