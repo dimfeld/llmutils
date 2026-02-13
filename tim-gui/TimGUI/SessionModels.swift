@@ -24,7 +24,7 @@ enum MessageContentBody: Sendable {
     case keyValuePairs([KeyValuePair])
 }
 
-struct TodoDisplayItem: Sendable {
+struct TodoDisplayItem: Sendable, Equatable {
     let label: String
     let status: TodoStatus
 }
@@ -33,7 +33,7 @@ enum TodoStatus: Sendable {
     case completed, inProgress, pending, blocked, unknown
 }
 
-struct FileChangeDisplayItem: Sendable {
+struct FileChangeDisplayItem: Sendable, Equatable {
     let path: String
     let kind: FileChangeKind
 }
@@ -42,7 +42,7 @@ enum FileChangeKind: Sendable {
     case added, updated, removed, unknown
 }
 
-struct KeyValuePair: Sendable {
+struct KeyValuePair: Sendable, Equatable {
     let key: String
     let value: String
 }

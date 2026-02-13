@@ -199,7 +199,7 @@ private struct ScrollOffsetPreferenceKey: PreferenceKey {
 
 // MARK: - SessionMessageView
 
-private let timestampFormatter: DateFormatter = {
+@MainActor private let timestampFormatter: DateFormatter = {
     let f = DateFormatter()
     f.dateFormat = "HH:mm:ss"
     return f
@@ -282,7 +282,7 @@ struct SessionMessageView: View {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
                     Text("\(pair.key): ").foregroundStyle(.secondary)
-                        + Text(pair.value).foregroundStyle(colorForCategory(message.category))
+                        + Text(pair.value).foregroundStyle(.primary)
                 }
             }
         }
