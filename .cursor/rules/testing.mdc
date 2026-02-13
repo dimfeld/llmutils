@@ -39,3 +39,9 @@ test('a test', async () => {
 ```
 
 Or for a single mock defined across the entire test file, use `afterAll(() => moduleMocker.clear())` to clear the mocks.
+
+### Database Tests
+
+- Use `openDatabase(':memory:')` from `src/tim/db/database.ts` for isolated in-memory databases — each test gets a fresh schema via auto-migration
+- Close the database in `afterEach` with `db.close(false)` — the `false` argument avoids throwing on pending transactions
+- For tests that exercise code calling the singleton `getDatabase()`, use `closeDatabaseForTesting()` in cleanup

@@ -46,6 +46,7 @@ The codebase is organized into several main modules with improved modularity and
    - Terminal interaction (`terminal.ts`)
    - Clipboard support with OSC52 (`clipboard.ts`, `osc52.ts`)
    - SSH detection (`ssh_detection.ts`) and model factory (`model_factory.ts`)
+   - Config path utilities (`config_paths.ts`) with `getTimConfigRoot()` for XDG-aware config directory resolution
    - GitHub integration utilities in `github/` subdirectory
 
 2. **tim**: Manages step-by-step project plans with LLM integration, organized by sub-commands
@@ -53,6 +54,13 @@ The codebase is organized into several main modules with improved modularity and
    - Core functionality: `add.ts`, `agent.ts`, `generate.ts`, `list.ts`, `next.ts`, `done.ts`
    - Specialized commands: `answer-pr.ts`, `cleanup.ts`, `extract.ts`, `split.ts`, `validate.ts`, `set.ts`
 
+- Database layer: `db/` directory with SQLite-backed storage for assignments, workspaces, permissions, and project metadata
+  - `database.ts`: Singleton connection with WAL mode, foreign keys, and auto-migration
+  - `migrations.ts`: Schema versioning with `schema_version` table
+  - CRUD modules: `project.ts`, `assignment.ts`, `permission.ts`, `workspace.ts`, `workspace_lock.ts`
+  - `json_import.ts`: One-time import from legacy JSON files on first DB creation
+  - All DB functions are **synchronous** (matching bun:sqlite's native API)
+  - All write transactions use `db.transaction().immediate()`
 - Workspace management: `workspace.ts` with automated isolation support
 - Shared utilities captured in purpose-built modules:
   - `plan_display.ts`: Resolves plans and assembles context summaries for both CLI output and MCP tooling

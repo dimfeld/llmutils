@@ -1,0 +1,131 @@
+import type { Database } from 'bun:sqlite';
+
+interface Migration {
+  version: number;
+  up: string;
+}
+
+const migrations: Migration[] = [
+  {
+    version: 1,
+    up: `
+      CREATE TABLE project (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        repository_id TEXT NOT NULL UNIQUE,
+        remote_url TEXT,
+        last_git_root TEXT,
+        external_config_path TEXT,
+        external_tasks_dir TEXT,
+        remote_label TEXT,
+        highest_plan_id INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE workspace (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+        task_id TEXT,
+        workspace_path TEXT NOT NULL UNIQUE,
+        original_plan_file_path TEXT,
+        branch TEXT,
+        name TEXT,
+        description TEXT,
+        plan_id TEXT,
+        plan_title TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_workspace_project_id ON workspace(project_id);
+
+      CREATE TABLE workspace_issue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        workspace_id INTEGER NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+        issue_url TEXT NOT NULL,
+        UNIQUE(workspace_id, issue_url)
+      );
+
+      CREATE TABLE workspace_lock (
+        workspace_id INTEGER NOT NULL UNIQUE REFERENCES workspace(id) ON DELETE CASCADE,
+        lock_type TEXT NOT NULL CHECK(lock_type IN ('persistent', 'pid')),
+        pid INTEGER,
+        started_at TEXT NOT NULL,
+        hostname TEXT NOT NULL,
+        command TEXT NOT NULL
+      );
+
+      CREATE TABLE permission (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+        permission_type TEXT NOT NULL CHECK(permission_type IN ('allow', 'deny')),
+        pattern TEXT NOT NULL
+      );
+      CREATE INDEX idx_permission_project_id ON permission(project_id);
+
+      CREATE TABLE assignment (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+        plan_uuid TEXT NOT NULL,
+        plan_id INTEGER,
+        workspace_id INTEGER REFERENCES workspace(id) ON DELETE SET NULL,
+        claimed_by_user TEXT,
+        status TEXT,
+        assigned_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(project_id, plan_uuid)
+      );
+      CREATE INDEX idx_assignment_workspace_id ON assignment(workspace_id);
+    `,
+  },
+];
+
+function getCurrentVersion(db: Database): number {
+  const row = db
+    .prepare('SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1')
+    .get() as { version?: number } | null;
+  return row?.version ?? 0;
+}
+
+export function runMigrations(db: Database): void {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS schema_version (
+      version INTEGER NOT NULL DEFAULT 0,
+      import_completed INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+  const schemaVersionColumns = db.prepare("PRAGMA table_info('schema_version')").all() as Array<{
+    name: string;
+  }>;
+  const hasImportCompleted = schemaVersionColumns.some(
+    (column) => column.name === 'import_completed'
+  );
+  if (!hasImportCompleted) {
+    db.run('ALTER TABLE schema_version ADD COLUMN import_completed INTEGER NOT NULL DEFAULT 0');
+  }
+
+  db.transaction(() => {
+    let currentVersion = getCurrentVersion(db);
+    const importCompletedRow = db
+      .prepare('SELECT import_completed FROM schema_version ORDER BY rowid DESC LIMIT 1')
+      .get() as { import_completed?: number } | null;
+    const importCompleted = importCompletedRow?.import_completed ?? 0;
+
+    for (const migration of migrations) {
+      if (migration.version <= currentVersion) {
+        continue;
+      }
+
+      db.run(migration.up);
+      db.run('DELETE FROM schema_version');
+      db.prepare('INSERT INTO schema_version (version, import_completed) VALUES (?, ?)').run(
+        migration.version,
+        importCompleted
+      );
+      currentVersion = migration.version;
+    }
+
+    if (currentVersion === 0) {
+      db.prepare('INSERT INTO schema_version (version, import_completed) VALUES (0, 0)').run();
+    }
+  }).immediate();
+}

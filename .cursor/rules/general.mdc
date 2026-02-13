@@ -16,6 +16,10 @@ type: rules
 - **Let TypeScript guide you**: Use compilation errors to find all call sites that need updates
 - **Maintain backward compatibility when possible**: Add optional parameters before making them required
 
+### SQL / Database
+
+- Always use parameterized queries (`?` placeholders), even for values already validated as integers or other safe types, to maintain consistent security patterns.
+
 ### General Tips
 
 - When reading and writing from the clipboard, use the read and write functions in 'src/common/clipboard.ts'.

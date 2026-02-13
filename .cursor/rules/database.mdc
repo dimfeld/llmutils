@@ -1,0 +1,32 @@
+---
+description: Database Layer Conventions
+globs: src/tim/db/**/*.ts
+type: rules
+---
+
+### bun:sqlite Transaction Patterns
+
+- All DB functions are **synchronous** (matching bun:sqlite's native API)
+- `db.transaction()` returns an object with `.immediate()`, `.deferred()`, `.exclusive()` methods — it does NOT return a function directly
+- Use `.immediate()` for all write transactions consistently: `db.transaction().immediate(() => { ... })`
+- Inner `db.transaction().immediate()` calls within an existing transaction automatically use savepoints — no special handling needed for nesting
+- Single-statement DELETEs (and other single-statement writes) don't need transaction wrappers since individual SQL statements are already atomic in SQLite
+
+### SQL Security
+
+- Always use parameterized queries (`?` placeholders), even for values that have been validated as integers or other safe types. This maintains consistent security patterns and prevents accidental injection if validation is later removed.
+
+### Data Import / Migration
+
+- Import functions should preserve legacy field values (status, timestamps, etc.) rather than applying defaults that lose data
+- The `shouldRunImport`/`markImportCompleted` pattern uses a persistent `import_completed` flag in `schema_version`, not record counts, to prevent redundant filesystem scans on subsequent opens
+
+### Workspace Lock Design
+
+- Stale lock detection requires both PID liveness check AND age-based timeout (24h default) to handle PID recycling edge cases — checking only PID liveness is insufficient
+
+### Testing
+
+- Use `openDatabase(':memory:')` for isolated test databases
+- Call `db.close(false)` in `afterEach` to clean up — the `false` parameter skips throwing on pending transactions
+- The singleton `closeDatabaseForTesting()` is for tests that exercise code calling `getDatabase()`
