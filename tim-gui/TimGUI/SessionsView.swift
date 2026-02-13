@@ -102,6 +102,7 @@ struct SessionDetailView: View {
     /// Message count when the bottom anchor was last visible.
     /// Used to distinguish "content grew" from "user scrolled away".
     @State private var messageCountAtBottom = 0
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -154,8 +155,11 @@ struct SessionDetailView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: isNearBottom)
+            .focusable()
+            .focused($isFocused)
             .onAppear {
                 proxy.scrollTo(SessionDetailView.bottomAnchorID, anchor: .bottom)
+                isFocused = true
             }
             .onChange(of: session.messages.count) {
                 if autoScrollEnabled {
