@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../schema/rmplan-config-schema.json
+# yaml-language-server: $schema=../../schema/tim-config-schema.json
 
 paths:
   tasks: tasks
@@ -8,6 +8,9 @@ postApplyCommands:
     command: bun run format
     allowFailure: true
     hideOutputOnSuccess: true
+updateDocs:
+  mode: after-iteration
+  applyLessons: true
 workspaceCreation:
   cloneLocation: ..
   cloneMethod: mac-cow
