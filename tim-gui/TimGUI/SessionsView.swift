@@ -167,6 +167,17 @@ struct SessionDetailView: View {
                 isNearBottom = true
                 autoScrollEnabled = true
             }
+            .onKeyPress(.home) {
+                if let firstId = session.messages.first?.id {
+                    proxy.scrollTo(firstId, anchor: .top)
+                }
+                return .handled
+            }
+            .onKeyPress(.end) {
+                autoScrollEnabled = true
+                proxy.scrollTo(SessionDetailView.bottomAnchorID, anchor: .bottom)
+                return .handled
+            }
         }
     }
 
