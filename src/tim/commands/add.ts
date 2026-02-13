@@ -13,6 +13,7 @@ import { prioritySchema, statusSchema, type PlanSchema } from '../planSchema.js'
 import { needArrayOrUndefined } from '../../common/cli.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
+import { ensureReferences, writePlansWithGeneratedUuids } from '../utils/references.js';
 
 export async function handleAddCommand(title: string[], options: any, command: any) {
   const globalOpts = command.parent.opts();
@@ -198,6 +199,9 @@ export async function handleAddCommand(title: string[], options: any, command: a
     plan.details = await openEditorForInput('Enter plan details (markdown):');
   }
 
+  // Insert the new plan into allPlans so ensureReferences can find its UUID
+  allPlans.set(planId, { ...plan, filename: filePath });
+
   // Update parent plan dependencies - handles both regular parent and cleanup cases
   const parentPlanId = referencedPlan ? referencedPlan.id : options.parent;
   if (parentPlanId !== undefined) {
@@ -219,14 +223,21 @@ export async function handleAddCommand(title: string[], options: any, command: a
         log(chalk.yellow(`  Parent plan "${parentPlan.title}" marked as in_progress`));
       }
 
-      // Write the updated parent plan
-      await writePlanFile(parentPlan.filename, parentPlan);
+      // Ensure references are populated on the parent plan
+      const { updatedPlan: updatedParent, plansWithGeneratedUuids } = ensureReferences(
+        parentPlan,
+        allPlans
+      );
+      await writePlanFile(parentPlan.filename, updatedParent);
+      await writePlansWithGeneratedUuids(plansWithGeneratedUuids, allPlans);
       log(chalk.gray(`  Updated parent plan ${parentPlan.id} to include dependency on ${planId}`));
     }
   }
 
-  // Write the plan to the new file
-  await writePlanFile(filePath, plan);
+  // Ensure references are populated on the new plan
+  const { updatedPlan: updatedNewPlan, plansWithGeneratedUuids } = ensureReferences(plan, allPlans);
+  await writePlanFile(filePath, updatedNewPlan);
+  await writePlansWithGeneratedUuids(plansWithGeneratedUuids, allPlans);
 
   // Log success message
   log(chalk.green('\u2713 Created plan stub:'), filePath, 'for ID', chalk.green(planId));

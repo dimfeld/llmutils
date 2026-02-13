@@ -11,6 +11,7 @@ import { checkAndMarkParentDone } from './agent/parent_plans.js';
 import { removeAssignment } from '../assignments/assignments_io.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import type { PlanSchema, Priority } from '../planSchema.js';
+import { ensureReferences, writePlansWithGeneratedUuids } from '../utils/references.js';
 
 type Status = 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred';
 
@@ -48,8 +49,10 @@ export async function handleSetCommand(
   options.planFile = resolvedPlanFile;
   const plan = await readPlanFile(options.planFile);
   let modified = false;
+  let needsReferenceUpdate = false;
   let shouldRemoveAssignment = false;
   let cachedConfig: TimConfig | undefined;
+  let allPlans: Map<number, PlanSchema & { filename: string }> | undefined;
 
   const getConfig = async (): Promise<TimConfig> => {
     if (!cachedConfig) {
@@ -114,6 +117,7 @@ export async function handleSetCommand(
       if (!plan.dependencies.includes(dep)) {
         plan.dependencies.push(dep);
         modified = true;
+        needsReferenceUpdate = true;
         log(`Added dependency: ${dep}`);
       } else {
         log(`Dependency already exists: ${dep}`);
@@ -128,6 +132,7 @@ export async function handleSetCommand(
       plan.dependencies = plan.dependencies.filter((dep) => !options.noDependsOn!.includes(dep));
       if (plan.dependencies.length < originalLength) {
         modified = true;
+        needsReferenceUpdate = true;
         log(`Removed ${originalLength - plan.dependencies.length} dependencies`);
       }
     }
@@ -138,7 +143,7 @@ export async function handleSetCommand(
     // Load all plans once for both operations
     const config = await getConfig();
     const planDir = await resolveTasksDir(config);
-    const { plans: allPlans } = await readAllPlans(planDir);
+    ({ plans: allPlans } = await readAllPlans(planDir, false));
 
     const currentPlanId = plan.id;
     if (!currentPlanId) {
@@ -168,7 +173,12 @@ export async function handleSetCommand(
           );
           if (oldParentPlan.dependencies.length < originalLength) {
             oldParentPlan.updatedAt = new Date().toISOString();
-            await writePlanFile(oldParentPlan.filename, oldParentPlan);
+            const { updatedPlan: updatedOldParent, plansWithGeneratedUuids } = ensureReferences(
+              oldParentPlan,
+              allPlans
+            );
+            await writePlanFile(oldParentPlan.filename, updatedOldParent);
+            await writePlansWithGeneratedUuids(plansWithGeneratedUuids, allPlans);
             log(`Removed ${currentPlanId} from old parent ${oldParentId}'s dependencies`);
           }
         }
@@ -182,13 +192,19 @@ export async function handleSetCommand(
         parentPlan.dependencies.push(currentPlanId);
         parentPlan.updatedAt = new Date().toISOString();
 
-        // Write the updated parent plan
-        await writePlanFile(parentPlan.filename, parentPlan);
+        // Write the updated parent plan with references
+        const { updatedPlan: updatedParent, plansWithGeneratedUuids } = ensureReferences(
+          parentPlan,
+          allPlans
+        );
+        await writePlanFile(parentPlan.filename, updatedParent);
+        await writePlansWithGeneratedUuids(plansWithGeneratedUuids, allPlans);
         log(`Updated parent plan ${options.parent} to include dependency on ${currentPlanId}`);
       }
 
       plan.parent = options.parent;
       modified = true;
+      needsReferenceUpdate = true;
       log(`Set parent to ${options.parent}`);
     }
 
@@ -206,13 +222,19 @@ export async function handleSetCommand(
           );
           if (oldParentPlan.dependencies.length < originalLength) {
             oldParentPlan.updatedAt = new Date().toISOString();
-            await writePlanFile(oldParentPlan.filename, oldParentPlan);
+            const { updatedPlan: updatedOldParent, plansWithGeneratedUuids } = ensureReferences(
+              oldParentPlan,
+              allPlans
+            );
+            await writePlanFile(oldParentPlan.filename, updatedOldParent);
+            await writePlansWithGeneratedUuids(plansWithGeneratedUuids, allPlans);
             log(`Removed ${currentPlanId} from parent ${oldParentId}'s dependencies`);
           }
         }
 
         delete plan.parent;
         modified = true;
+        needsReferenceUpdate = true;
         log('Removed parent');
       } else {
         log('No parent to remove');
@@ -224,11 +246,13 @@ export async function handleSetCommand(
   if (options.discoveredFrom !== undefined) {
     plan.discoveredFrom = options.discoveredFrom;
     modified = true;
+    needsReferenceUpdate = true;
     log(`Set discoveredFrom to ${options.discoveredFrom}`);
   } else if (options.noDiscoveredFrom) {
     if (plan.discoveredFrom !== undefined) {
       delete plan.discoveredFrom;
       modified = true;
+      needsReferenceUpdate = true;
       log('Removed discoveredFrom');
     } else {
       log('No discoveredFrom to remove');
@@ -311,7 +335,22 @@ export async function handleSetCommand(
 
   if (modified) {
     plan.updatedAt = new Date().toISOString();
-    await writePlanFile(options.planFile, plan);
+
+    if (needsReferenceUpdate) {
+      // Load allPlans if not already loaded (parent block loads it)
+      if (!allPlans) {
+        const config = await getConfig();
+        const planDir = await resolveTasksDir(config);
+        ({ plans: allPlans } = await readAllPlans(planDir, false));
+      }
+
+      const { updatedPlan, plansWithGeneratedUuids } = ensureReferences(plan, allPlans);
+      await writePlanFile(options.planFile, updatedPlan);
+      await writePlansWithGeneratedUuids(plansWithGeneratedUuids, allPlans);
+    } else {
+      await writePlanFile(options.planFile, plan);
+    }
+
     log(`Plan ${options.planFile} updated successfully`);
 
     if (shouldRemoveAssignment) {

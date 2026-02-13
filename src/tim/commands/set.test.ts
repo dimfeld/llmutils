@@ -9,6 +9,8 @@ import type { PlanSchema } from '../planSchema.js';
 import type { TimConfig } from '../configSchema.js';
 import { ModuleMocker, clearAllTimCaches, stringifyPlanWithFrontmatter } from '../../testing.js';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 const moduleMocker = new ModuleMocker(import.meta);
 const logSpy = mock(() => {});
 const warnSpy = mock(() => {});
@@ -683,11 +685,19 @@ describe('tim set command', () => {
     // Verify child has parent field set
     const updatedChild = await readPlanFile(childPlanPath);
     expect(updatedChild.parent).toBe(200);
+    // Child should have a reference to its parent
+    expect(updatedChild.references).toBeDefined();
+    expect(updatedChild.references![200]).toMatch(UUID_REGEX);
 
     // Verify parent has child in dependencies array
     const updatedParent = await readPlanFile(parentPlanPath);
     expect(updatedParent.dependencies).toEqual([201]);
     expect(updatedParent.updatedAt).toBeDefined();
+    // Parent should have a reference to the child
+    expect(updatedParent.references).toBeDefined();
+    expect(updatedParent.references![201]).toMatch(UUID_REGEX);
+    // Parent's UUID should match child's reference
+    expect(updatedChild.references![200]).toBe(updatedParent.uuid);
   });
 
   test('should remove child from parent dependencies when removing parent', async () => {
@@ -1104,5 +1114,180 @@ describe('tim set command', () => {
 
     updatedPlan = await readPlanFile(planPath);
     expect(updatedPlan.epic).toBe(false);
+  });
+
+  test('should populate references when adding dependsOn', async () => {
+    const depPlanPath = await createTestPlan(400);
+    const planPath = await createTestPlan(401);
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        dependsOn: [400],
+      },
+      globalOpts
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.dependencies).toEqual([400]);
+    expect(updatedPlan.references).toBeDefined();
+    expect(updatedPlan.references![400]).toMatch(UUID_REGEX);
+
+    // Dependency plan should have a UUID generated
+    const depPlan = await readPlanFile(depPlanPath);
+    expect(depPlan.uuid).toMatch(UUID_REGEX);
+    expect(updatedPlan.references![400]).toBe(depPlan.uuid);
+  });
+
+  test('should populate references when setting discoveredFrom', async () => {
+    const sourcePlanPath = await createTestPlan(410);
+    const planPath = await createTestPlan(411);
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        discoveredFrom: 410,
+      },
+      globalOpts
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.discoveredFrom).toBe(410);
+    expect(updatedPlan.references).toBeDefined();
+    expect(updatedPlan.references![410]).toMatch(UUID_REGEX);
+
+    // Source plan should have a UUID generated
+    const sourcePlan = await readPlanFile(sourcePlanPath);
+    expect(sourcePlan.uuid).toMatch(UUID_REGEX);
+    expect(updatedPlan.references![410]).toBe(sourcePlan.uuid);
+  });
+
+  test('should clean up stale references when removing dependency', async () => {
+    const dep1Path = await createTestPlan(420);
+    const dep2Path = await createTestPlan(421);
+    const planPath = await createTestPlan(422);
+
+    // Add two dependencies
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        dependsOn: [420, 421],
+      },
+      globalOpts
+    );
+
+    let updatedPlan = await readPlanFile(planPath);
+    expect(Object.keys(updatedPlan.references!)).toHaveLength(2);
+
+    // Remove one dependency
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        noDependsOn: [420],
+      },
+      globalOpts
+    );
+
+    updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.dependencies).toEqual([421]);
+    // Only the remaining dependency's reference should exist
+    expect(updatedPlan.references![421]).toMatch(UUID_REGEX);
+    expect(updatedPlan.references![420]).toBeUndefined();
+  });
+
+  test('should clean up references when removing parent', async () => {
+    const parentPlanPath = await createTestPlan(430);
+    const childPlanPath = await createTestPlan(431);
+
+    // Set parent
+    await handleSetCommand(
+      childPlanPath,
+      {
+        planFile: childPlanPath,
+        parent: 430,
+      },
+      globalOpts
+    );
+
+    let updatedChild = await readPlanFile(childPlanPath);
+    expect(updatedChild.references![430]).toMatch(UUID_REGEX);
+
+    // Remove parent
+    await handleSetCommand(
+      childPlanPath,
+      {
+        planFile: childPlanPath,
+        noParent: true,
+      },
+      globalOpts
+    );
+
+    updatedChild = await readPlanFile(childPlanPath);
+    expect(updatedChild.parent).toBeUndefined();
+    // References should be cleaned up (empty or undefined since no references remain)
+    expect(
+      updatedChild.references === undefined || Object.keys(updatedChild.references).length === 0
+    ).toBe(true);
+  });
+
+  test('should clean up references when removing discoveredFrom', async () => {
+    const sourcePlanPath = await createTestPlan(440);
+    const planPath = await createTestPlan(441);
+
+    // Set discoveredFrom
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        discoveredFrom: 440,
+      },
+      globalOpts
+    );
+
+    let updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.references![440]).toMatch(UUID_REGEX);
+
+    // Remove discoveredFrom
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        noDiscoveredFrom: true,
+      },
+      globalOpts
+    );
+
+    updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.discoveredFrom).toBeUndefined();
+    // References should be cleaned up (empty or undefined since no references remain)
+    expect(
+      updatedPlan.references === undefined || Object.keys(updatedPlan.references).length === 0
+    ).toBe(true);
+  });
+
+  test('should preserve existing UUID when generating references', async () => {
+    const existingUuid = crypto.randomUUID();
+    const depPlanPath = await createTestPlan(450, { uuid: existingUuid });
+    const planPath = await createTestPlan(451);
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        dependsOn: [450],
+      },
+      globalOpts
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.references![450]).toBe(existingUuid);
+
+    // The dependency plan's UUID should not have changed
+    const depPlan = await readPlanFile(depPlanPath);
+    expect(depPlan.uuid).toBe(existingUuid);
   });
 });
