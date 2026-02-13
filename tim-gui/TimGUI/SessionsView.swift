@@ -93,12 +93,13 @@ struct SessionRowView: View {
 
 struct SessionDetailView: View {
     let session: SessionItem
+    /// Whether the bottom anchor is currently visible in the scroll view.
     @State private var isNearBottom = true
-    @State private var viewportHeight: CGFloat = 0
-    /// Sticky auto-scroll intent, separate from geometric isNearBottom.
-    /// Only disabled when the user scrolls away while content is stable.
+    /// Sticky auto-scroll intent, separate from isNearBottom.
+    /// Only disabled when the user scrolls the bottom anchor out of view
+    /// while content is stable (i.e. not due to new messages arriving).
     @State private var autoScrollEnabled = true
-    /// Message count the last time we confirmed we were at the bottom.
+    /// Message count when the bottom anchor was last visible.
     /// Used to distinguish "content grew" from "user scrolled away".
     @State private var messageCountAtBottom = 0
 
@@ -114,20 +115,24 @@ struct SessionDetailView: View {
                     Color.clear
                         .frame(height: 1)
                         .id(SessionDetailView.bottomAnchorID)
+                        .onAppear {
+                            isNearBottom = true
+                            autoScrollEnabled = true
+                            messageCountAtBottom = session.messages.count
+                        }
+                        .onDisappear {
+                            isNearBottom = false
+                            // Only disable auto-scroll if content hasn't changed,
+                            // meaning the user scrolled away rather than new
+                            // messages pushing the bottom out of view.
+                            if session.messages.count == messageCountAtBottom {
+                                autoScrollEnabled = false
+                            }
+                        }
                 }
                 .padding(12)
                 .padding(.bottom, 20)
-                .background(
-                    GeometryReader { contentGeometry in
-                        Color.clear
-                            .preference(
-                                key: ScrollOffsetPreferenceKey.self,
-                                value: contentGeometry.frame(in: .named("sessionScroll"))
-                            )
-                    }
-                )
             }
-            .coordinateSpace(name: "sessionScroll")
             .overlay(alignment: .bottomTrailing) {
                 if !isNearBottom {
                     Button {
@@ -149,35 +154,6 @@ struct SessionDetailView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: isNearBottom)
-            .background(
-                GeometryReader { viewportGeometry in
-                    Color.clear
-                        .onChange(of: viewportGeometry.size.height) { _, newHeight in
-                            viewportHeight = newHeight
-                        }
-                        .onAppear {
-                            viewportHeight = viewportGeometry.size.height
-                        }
-                }
-            )
-            .onPreferenceChange(ScrollOffsetPreferenceKey.self) { contentFrame in
-                if let nearBottom = SessionDetailView.shouldAutoScroll(
-                    contentMaxY: contentFrame.maxY,
-                    viewportHeight: viewportHeight
-                ) {
-                    isNearBottom = nearBottom
-                    if nearBottom {
-                        autoScrollEnabled = true
-                        messageCountAtBottom = session.messages.count
-                    } else if session.messages.count == messageCountAtBottom {
-                        // Content didn't change but we're not near bottom:
-                        // the user scrolled away.
-                        autoScrollEnabled = false
-                    }
-                    // If messages.count != messageCountAtBottom, content grew
-                    // since we last confirmed being at bottom — don't disable.
-                }
-            }
             .onAppear {
                 proxy.scrollTo(SessionDetailView.bottomAnchorID, anchor: .bottom)
             }
@@ -195,25 +171,6 @@ struct SessionDetailView: View {
     }
 
     static let bottomAnchorID = "session-bottom-anchor"
-
-    /// Returns whether the scroll view should auto-scroll to the bottom.
-    /// Returns nil when viewportHeight hasn't been measured yet, meaning the caller
-    /// should retain the previous value.
-    static func shouldAutoScroll(
-        contentMaxY: CGFloat,
-        viewportHeight: CGFloat,
-        threshold: CGFloat = 50
-    ) -> Bool? {
-        guard viewportHeight > 0 else { return nil }
-        return contentMaxY - viewportHeight <= threshold
-    }
-}
-
-private struct ScrollOffsetPreferenceKey: PreferenceKey {
-    nonisolated(unsafe) static var defaultValue: CGRect = .zero
-    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
-        value = nextValue()
-    }
 }
 
 // MARK: - SessionMessageView
