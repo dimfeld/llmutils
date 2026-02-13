@@ -2048,6 +2048,9 @@ tim set ID --parent PARENT --priority LEVEL --status STATUS [--tag TAG...] [--no
 tim add-task ID --title "Title" --description "Desc" [--files FILE]
 tim remove-task ID --title "Title"
 
+# Remove plans and clean references (use --force if dependents exist)
+tim remove ID_OR_PATH [MORE_IDS_OR_PATHS...] [--force]
+
 # Import from issues
 tim import [--issue NUM] [--output FILE]
 tim import  # interactive multi-select

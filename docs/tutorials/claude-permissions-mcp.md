@@ -82,7 +82,10 @@ interface PermissionResponseData {
 }
 
 // Send a request to the parent process and wait for response
-async function requestPermissionFromParent(tool_name: string, input: any): Promise<PermissionResponseData> {
+async function requestPermissionFromParent(
+  tool_name: string,
+  input: any
+): Promise<PermissionResponseData> {
   if (!parentSocket) {
     throw new Error('Not connected to parent process');
   }
@@ -433,7 +436,9 @@ async function handleAskUserQuestion(
   const questions = Array.isArray(message.input?.questions) ? message.input.questions : [];
 
   if (questions.length === 0) {
-    socket.write(JSON.stringify({ type: 'permission_response', requestId, approved: false }) + '\n');
+    socket.write(
+      JSON.stringify({ type: 'permission_response', requestId, approved: false }) + '\n'
+    );
     return;
   }
 
@@ -482,6 +487,7 @@ async function handleAskUserQuestion(
 The response protocol uses the `updatedInput` field to carry the answers back through the MCP server. The MCP server's `approval_prompt` handler returns `updatedInput` to Claude as part of the `allow` response, so Claude receives the user's answers in the expected format.
 
 **Key points:**
+
 - Empty or malformed question arrays are denied rather than silently approved
 - Timeout and prompt errors result in a deny response
 - Multi-select answers are joined with `", "` (e.g., `"Option A, Option B"`)

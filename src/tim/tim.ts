@@ -869,6 +869,15 @@ program
   });
 
 program
+  .command('remove <planFiles...>')
+  .description('Remove one or more plan files and clean up references')
+  .option('-f, --force', 'Force removal even if other plans depend on this one')
+  .action(async (planFiles, options, command) => {
+    const { handleRemoveCommand } = await import('./commands/remove.js');
+    await handleRemoveCommand(planFiles, options, command).catch(handleCommandError);
+  });
+
+program
   .command('remove-task <plan>')
   .description('Remove a task from a plan (file path or plan ID)')
   .option('--index <index>', 'Task index (1-based)', (val: string) => {
