@@ -452,6 +452,18 @@ program
   });
 
 program
+  .command('update-lessons [planFile]')
+  .description(
+    'Update documentation based on lessons learned from a completed plan. Can be a file path or plan ID.'
+  )
+  .option('-x, --executor <name>', 'The executor to use for lessons learned documentation updates')
+  .option('-m, --model <model>', 'Model to use for the executor')
+  .action(async (planFile, options, command) => {
+    const { handleUpdateLessonsCommand } = await import('./commands/update-lessons.js');
+    await handleUpdateLessonsCommand(planFile, options, command).catch(handleCommandError);
+  });
+
+program
   .command('set-task-done <planFile>')
   .description('Mark a specific task as done by title or index. Can be a file path or plan ID.')
   .option('--title <title>', 'Task title to mark as done')
@@ -581,6 +593,7 @@ function createAgentCommand(command: Command, description: string) {
       '--update-docs <mode>',
       'Override when to update documentation: never, after-iteration, after-completion'
     )
+    .option('--apply-lessons', 'Apply lessons learned to documentation after plan completion')
     .allowExcessArguments(true)
     .allowUnknownOption(true)
     .action(async (planFile, options, command) => {

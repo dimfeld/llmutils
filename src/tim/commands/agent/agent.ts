@@ -57,6 +57,7 @@ import { SummaryCollector } from '../../summary/collector.js';
 import { writeOrDisplaySummary } from '../../summary/display.js';
 import { autoClaimPlan, isAutoClaimEnabled } from '../../assignments/auto_claim.js';
 import { runUpdateDocs } from '../update-docs.js';
+import { runUpdateLessons } from '../update-lessons.js';
 import { handleReviewCommand } from '../review.js';
 import { ensureUuidsAndReferences } from '../../utils/references.js';
 import { sendNotification } from '../../notifications.js';
@@ -601,6 +602,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
             maxSteps,
             executionMode,
             updateDocsMode,
+            applyLessons: options.applyLessons,
             finalReview: options.finalReview,
             configPath: globalCliOptions.config,
           },
@@ -838,6 +840,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
               const shouldSkipFinalReview =
                 options.finalReview === false ||
                 (initialCompletedTaskCount === 0 && stepCount === 1);
+              let planStillCompleteAfterReview = true;
               if (!shouldSkipFinalReview) {
                 sendStructured({
                   type: 'workflow_progress',
@@ -867,11 +870,38 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                     if (shouldContinue) {
                       continue; // Continue the loop to process new tasks
                     }
+
+                    // New tasks were appended but execution is not continuing,
+                    // so the plan is no longer complete.
+                    planStillCompleteAfterReview = false;
                   }
                 } catch (err) {
                   warn(`Final review failed: ${err as Error}`);
                   // Don't fail the agent - plan execution succeeded
                 }
+              }
+
+              if (
+                planStillCompleteAfterReview &&
+                (config.updateDocs?.applyLessons || options.applyLessons)
+              ) {
+                try {
+                  await runUpdateLessons(currentPlanFile, config, {
+                    executor: config.updateDocs?.executor,
+                    model: config.updateDocs?.model,
+                    baseDir: currentBaseDir,
+                  });
+                } catch (err) {
+                  error('Failed to apply lessons learned:', err as Error);
+                  // Don't stop execution for lessons update failures
+                }
+              } else if (
+                !planStillCompleteAfterReview &&
+                (config.updateDocs?.applyLessons || options.applyLessons)
+              ) {
+                log(
+                  'Skipping lessons-learned documentation update because review added new tasks.'
+                );
               }
 
               break;
@@ -1140,6 +1170,19 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
               } catch (err) {
                 error('Failed to update documentation:', err);
                 // Don't stop execution for documentation update failures
+              }
+            }
+
+            if (config.updateDocs?.applyLessons || options.applyLessons) {
+              try {
+                await runUpdateLessons(currentPlanFile, config, {
+                  executor: config.updateDocs?.executor,
+                  model: config.updateDocs?.model,
+                  baseDir: currentBaseDir,
+                });
+              } catch (err) {
+                error('Failed to apply lessons learned:', err as Error);
+                // Don't stop execution for lessons update failures
               }
             }
 

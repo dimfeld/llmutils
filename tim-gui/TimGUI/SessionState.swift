@@ -103,4 +103,13 @@ final class SessionState {
             selectedSessionId = sessions.first?.id
         }
     }
+
+    func dismissAllDisconnected() {
+        let disconnectedIds = Set(sessions.filter { !$0.isActive }.map { $0.id })
+        guard !disconnectedIds.isEmpty else { return }
+        sessions.removeAll { disconnectedIds.contains($0.id) }
+        if let selectedId = selectedSessionId, disconnectedIds.contains(selectedId) {
+            selectedSessionId = sessions.first?.id
+        }
+    }
 }

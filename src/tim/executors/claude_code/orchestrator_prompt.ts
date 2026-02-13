@@ -36,6 +36,7 @@ After each successful iteration (and again at the end of the run), update the pl
 - No timestamps anywhere in the section.
 - Focus on what changed, why it changed, and what's next. Omit testing/review info, focus on what's useful to remember when starting the next task.
 - Only remove information if it no longer applies. For example, decisions from previous tasks should remain unless they have been changed. 
+- In \`### Lessons Learned\`, capture surprises, gotchas, non-obvious fixes, and what was learned from review feedback or review-fix iterations.
 
 Use this structured template (fill every heading; use "None" when empty):
 
@@ -50,6 +51,11 @@ Use this structured template (fill every heading; use "None" when empty):
 - ...
 ### Decisions / Changes
 - ...
+### Lessons Learned
+- Record surprises, unexpected issues, non-obvious solutions, workarounds, or undocumented insights.
+- Especially note what you learned while fixing review feedback and why the issue occurred.
+- Update this subsection in place. Keep ongoing lessons that still matter; remove only stale lessons.
+- None
 ### Risks / Blockers
 - None
 `;

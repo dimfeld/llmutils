@@ -29,6 +29,10 @@ struct SessionsView: View {
 struct SessionListView: View {
     @Bindable var sessionState: SessionState
 
+    private var hasDisconnectedSessions: Bool {
+        sessionState.sessions.contains { !$0.isActive }
+    }
+
     var body: some View {
         if sessionState.sessions.isEmpty {
             ContentUnavailableView(
@@ -42,6 +46,16 @@ struct SessionListView: View {
                     session: session,
                     onDismiss: { sessionState.dismissSession(id: session.id) }
                 )
+            }
+            .toolbar {
+                ToolbarItem(placement: .automatic) {
+                    if hasDisconnectedSessions {
+                        Button(action: { sessionState.dismissAllDisconnected() }) {
+                            Label("Clear Disconnected", systemImage: "xmark.circle")
+                        }
+                        .help("Remove all disconnected sessions")
+                    }
+                }
             }
         }
     }

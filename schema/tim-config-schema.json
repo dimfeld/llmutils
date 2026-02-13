@@ -641,6 +641,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "applyLessons": {
+          "description": "Whether to apply lessons learned to documentation after plan completion",
+          "type": "boolean"
         }
       },
       "additionalProperties": false

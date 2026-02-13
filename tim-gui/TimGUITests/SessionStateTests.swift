@@ -536,6 +536,76 @@ struct SessionStateTests {
         #expect(state.selectedSessionId == nil)
     }
 
+    // MARK: - dismissAllDisconnected
+
+    @Test("dismissAllDisconnected removes all inactive sessions and keeps active ones")
+    func dismissAllDisconnectedRemovesInactive() {
+        let state = SessionState()
+        let connId1 = UUID()
+        let connId2 = UUID()
+        let connId3 = UUID()
+        state.addSession(connectionId: connId1, info: makeInfo(command: "first"))
+        state.addSession(connectionId: connId2, info: makeInfo(command: "second"))
+        state.addSession(connectionId: connId3, info: makeInfo(command: "third"))
+
+        state.markDisconnected(connectionId: connId1)
+        state.markDisconnected(connectionId: connId3)
+
+        state.dismissAllDisconnected()
+
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].connectionId == connId2)
+        #expect(state.sessions[0].isActive == true)
+    }
+
+    @Test("dismissAllDisconnected reselects when selected session is removed")
+    func dismissAllDisconnectedReselects() {
+        let state = SessionState()
+        let connId1 = UUID()
+        let connId2 = UUID()
+        state.addSession(connectionId: connId1, info: makeInfo(command: "first"))
+        state.addSession(connectionId: connId2, info: makeInfo(command: "second"))
+
+        // connId1 was auto-selected
+        #expect(state.selectedSession?.connectionId == connId1)
+
+        state.markDisconnected(connectionId: connId1)
+        state.dismissAllDisconnected()
+
+        #expect(state.sessions.count == 1)
+        #expect(state.selectedSessionId == state.sessions[0].id)
+        #expect(state.selectedSession?.connectionId == connId2)
+    }
+
+    @Test("dismissAllDisconnected sets selection to nil when all sessions removed")
+    func dismissAllDisconnectedAllRemoved() {
+        let state = SessionState()
+        let connId1 = UUID()
+        let connId2 = UUID()
+        state.addSession(connectionId: connId1, info: makeInfo(command: "first"))
+        state.addSession(connectionId: connId2, info: makeInfo(command: "second"))
+
+        state.markDisconnected(connectionId: connId1)
+        state.markDisconnected(connectionId: connId2)
+
+        state.dismissAllDisconnected()
+
+        #expect(state.sessions.isEmpty)
+        #expect(state.selectedSessionId == nil)
+    }
+
+    @Test("dismissAllDisconnected is a no-op when no disconnected sessions exist")
+    func dismissAllDisconnectedNoop() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo(command: "agent"))
+
+        state.dismissAllDisconnected()
+
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].connectionId == connId)
+    }
+
     @Test("dismissSession is a no-op for unknown session ID")
     func dismissSessionUnknownId() {
         let state = SessionState()

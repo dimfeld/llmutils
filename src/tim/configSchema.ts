@@ -434,6 +434,11 @@ export const timConfigSchema = z
           .describe(
             'Descriptions of files or patterns to exclude - these files should never be edited during doc updates'
           ),
+        /** Whether to apply lessons learned to documentation after plan completion */
+        applyLessons: z
+          .boolean()
+          .optional()
+          .describe('Whether to apply lessons learned to documentation after plan completion'),
       })
       .strict()
       .optional()

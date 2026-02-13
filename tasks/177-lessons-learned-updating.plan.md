@@ -7,15 +7,15 @@ goal: Add a "Lessons Learned" section to the Current Progress template and
 id: 177
 uuid: 7c5c38ac-0141-4e04-8ee5-b821d578b3e4
 generatedBy: agent
-status: pending
+status: done
 priority: medium
 planGeneratedAt: 2026-02-13T07:05:17.973Z
 promptsGeneratedAt: 2026-02-13T07:05:17.973Z
 createdAt: 2026-02-13T06:33:50.144Z
-updatedAt: 2026-02-13T07:05:17.973Z
+updatedAt: 2026-02-13T08:28:56.826Z
 tasks:
   - title: Add Lessons Learned subsection to Current Progress template
-    done: false
+    done: true
     description: Modify the `progressSectionGuidance()` function in
       `src/tim/executors/claude_code/orchestrator_prompt.ts` to add a `###
       Lessons Learned` subsection to the template. Place it after `### Decisions
@@ -26,14 +26,14 @@ tasks:
       bullet list format consistent with other subsections. Default to "None"
       when empty.
   - title: Add applyLessons flag to updateDocs config
-    done: false
+    done: true
     description: 'In `src/tim/configSchema.ts`, add an `applyLessons:
       z.boolean().optional()` field to the existing `updateDocs` configuration
       object, with a description like "Whether to apply lessons learned to
       documentation after plan completion". Update the JSON schema in
       `schema/tim-plan-schema.json` if needed.'
   - title: Create update-lessons command module
-    done: false
+    done: true
     description: 'Create `src/tim/commands/update-lessons.ts` modeled on
       `update-docs.ts`. Implement: (1) `extractLessonsLearned(planFilePath)`
       that reads the raw plan file, finds `### Lessons Learned` under `##
@@ -49,24 +49,28 @@ tasks:
       `config.updateDocs` settings, and executes. (4)
       `handleUpdateLessonsCommand(planFile, options, command)` CLI handler.'
   - title: Register update-lessons CLI command
-    done: false
+    done: true
     description: In `src/tim/tim.ts`, register a new `update-lessons [planFile]`
       command with options for `--executor` and `--model`, similar to the
       `update-docs` command registration. Import and call
       `handleUpdateLessonsCommand`.
   - title: Integrate update-lessons into agent flow
-    done: false
+    done: true
     description: In `src/tim/commands/agent/agent.ts` and
       `src/tim/commands/agent/batch_mode.ts`, add a call to `runUpdateLessons()`
       at each plan completion point (where `updateDocsMode === after-completion`
       checks exist). The lessons phase should run after the update-docs phase
-      and only on plan completion, never after iterations. Check
+      and only on plan completion, never after iterations. Importantly, for
+      agent commands that run a final review, the lessons learned updating must
+      take place after the final review loop has fully completed (i.e. when
+      `shouldContinue` is false and we exit the review loop), not before. This
+      ensures any lessons from fixing review issues are captured. Check
       `config.updateDocs?.applyLessons || options.applyLessons` to determine if
       it should run. Add a `--apply-lessons` boolean CLI flag to the agent
       command. Follow the existing non-blocking error pattern (try/catch, log
       error, continue).
   - title: Write tests for update-lessons
-    done: false
+    done: true
     description: 'Create `src/tim/commands/update-lessons.test.ts` modeled on
       `update-docs.test.ts`. Test: (1) `extractLessonsLearned()` with a plan
       file containing lessons, with "None" content, without the Lessons Learned
@@ -74,6 +78,18 @@ tasks:
       `buildUpdateLessonsPrompt()` verifying the prompt includes lessons text,
       plan context, and proper instructions about process docs. (3)
       `handleUpdateLessonsCommand()` requiring a plan file argument.'
+changedFiles:
+  - schema/tim-config-schema.json
+  - src/tim/commands/agent/agent.ts
+  - src/tim/commands/agent/batch_mode.ts
+  - src/tim/commands/update-lessons.test.ts
+  - src/tim/commands/update-lessons.ts
+  - src/tim/configSchema.ts
+  - src/tim/executors/claude_code/orchestrator_prompt.ts
+  - src/tim/tim.ts
+  - tim-gui/TimGUI/SessionState.swift
+  - tim-gui/TimGUI/SessionsView.swift
+  - tim-gui/TimGUITests/SessionStateTests.swift
 tags: []
 ---
 
@@ -305,6 +321,8 @@ if (config.updateDocs?.applyLessons || options.applyLessons) {
 
 This should always run after the update-docs phase (if enabled) so that lessons-based doc updates can build on any feature doc updates. It only runs on plan completion, never after individual iterations.
 
+**Important timing for commands with a final review**: For agent commands that run a final review (where the review may add new tasks and loop back), the `runUpdateLessons()` call must be placed *after* the review loop has fully exited — i.e., after `shouldContinue` is false and we break out of the loop. This ensures that any lessons learned during review fix iterations are captured before the documentation update runs. Do not place it inside the loop or before the review phase.
+
 Also add a CLI flag `--apply-lessons` (boolean) to the agent command to enable/override this behavior per-run.
 
 ### Part 6: Tests
@@ -345,3 +363,26 @@ Model the tests on `src/tim/commands/update-docs.test.ts`.
 
 - **Dependencies**: Relies on existing executor infrastructure, `progressSectionGuidance()` function, and the update-docs pattern
 - **Technical Constraints**: Must handle plan files that were created before this feature (no `### Lessons Learned` section) gracefully
+
+## Current Progress
+### Current State
+- All 6 tasks are implemented, tested, and reviewed.
+### Completed (So Far)
+- Task 1: Added `### Lessons Learned` subsection to `progressSectionGuidance()` template in `orchestrator_prompt.ts`
+- Task 2: Added `applyLessons` boolean flag to `updateDocs` config in `configSchema.ts` and JSON schema
+- Task 3: Created `src/tim/commands/update-lessons.ts` with `extractLessonsLearned()`, `buildUpdateLessonsPrompt()`, `runUpdateLessons()`, and `handleUpdateLessonsCommand()`
+- Task 4: Registered `tim update-lessons [planFile]` CLI command in `tim.ts` using dynamic import pattern
+- Task 5: Integrated `runUpdateLessons()` into agent flow in `agent.ts` and `batch_mode.ts`, with `--apply-lessons` CLI flag. Runs only on plan completion, after update-docs, after final review exits. Gated with `planStillCompleteAfterReview` flag to skip if review appended unhandled tasks.
+- Task 6: Created `update-lessons.test.ts` with 10 tests covering extraction, prompt building, include/exclude options, skip behavior, and CLI validation
+### Remaining
+- None
+### Next Iteration Guidance
+- None
+### Decisions / Changes
+- `runUpdateLessons()` returns a boolean (true if it ran, false if skipped) so callers can provide appropriate feedback
+- `extractLessonsLearned()` strips YAML frontmatter before searching for `## Current Progress` for robustness
+- Added `planStillCompleteAfterReview` flag in agent flow to prevent lessons update when review appends tasks that aren't completed
+### Lessons Learned
+- None
+### Risks / Blockers
+- None

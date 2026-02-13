@@ -12,6 +12,7 @@ import { checkAndMarkParentDone, markParentInProgress } from './parent_plans.js'
 import { sendFailureReport, timestamp } from './agent_helpers.js';
 import type { SummaryCollector } from '../../summary/collector.js';
 import { runUpdateDocs } from '../update-docs.js';
+import { runUpdateLessons } from '../update-lessons.js';
 import { handleReviewCommand } from '../review.js';
 
 export async function executeBatchMode(
@@ -25,6 +26,7 @@ export async function executeBatchMode(
     executorName,
     executionMode = 'normal',
     updateDocsMode = 'never',
+    applyLessons = false,
     finalReview,
     configPath,
   }: {
@@ -37,6 +39,7 @@ export async function executeBatchMode(
     executorName?: string;
     executionMode?: 'normal' | 'simple' | 'tdd';
     updateDocsMode?: 'never' | 'after-iteration' | 'after-completion';
+    applyLessons?: boolean;
     finalReview?: boolean;
     configPath?: string;
   },
@@ -301,6 +304,7 @@ Available tasks:\n\n${taskDescriptions}`,
         // Skip if we started with no completed tasks and finished in a single iteration
         const shouldSkipFinalReview =
           finalReview === false || (initialCompletedTaskCount === 0 && iteration === 1);
+        let planStillCompleteAfterReview = true;
         if (!shouldSkipFinalReview) {
           sendStructured({
             type: 'workflow_progress',
@@ -328,11 +332,33 @@ Available tasks:\n\n${taskDescriptions}`,
               if (shouldContinue) {
                 continue; // Continue the loop to process new tasks
               }
+
+              // New tasks were appended but execution is not continuing,
+              // so the plan is no longer complete.
+              planStillCompleteAfterReview = false;
             }
           } catch (err) {
             warn(`Final review failed: ${err as Error}`);
             // Don't fail the agent - plan execution succeeded
           }
+        }
+
+        if (planStillCompleteAfterReview && (config.updateDocs?.applyLessons || applyLessons)) {
+          try {
+            await runUpdateLessons(currentPlanFile, config, {
+              executor: config.updateDocs?.executor,
+              model: config.updateDocs?.model,
+              baseDir,
+            });
+          } catch (err) {
+            error('Failed to apply lessons learned:', err as Error);
+            // Don't stop execution for lessons update failures
+          }
+        } else if (
+          !planStillCompleteAfterReview &&
+          (config.updateDocs?.applyLessons || applyLessons)
+        ) {
+          log('Skipping lessons-learned documentation update because review added new tasks.');
         }
 
         // Handle parent plan updates similar to existing logic
