@@ -7,15 +7,15 @@ goal: "Replace flat text message rendering with structured GUI components: bold
 id: 176
 uuid: 5cfb64ed-3cd8-46a3-8c04-c7cb795cfe61
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 planGeneratedAt: 2026-02-13T00:32:16.920Z
 promptsGeneratedAt: 2026-02-13T00:32:16.920Z
 createdAt: 2026-02-13T00:20:32.866Z
-updatedAt: 2026-02-13T00:39:04.691Z
+updatedAt: 2026-02-13T01:50:10.318Z
 tasks:
   - title: Define MessageContentBody structured model and supporting types
-    done: false
+    done: true
     description: "In SessionModels.swift, add the MessageContentBody enum (text,
       monospaced, todoList, fileChanges, keyValuePairs), TodoDisplayItem struct
       with TodoStatus enum, and FileChangeDisplayItem struct with FileChangeKind
@@ -24,7 +24,7 @@ tasks:
       `timestamp`, and `category` fields. Ensure all new types conform to
       Sendable."
   - title: Update MessageFormatter to produce structured SessionMessage values
-    done: false
+    done: true
     description: "Refactor MessageFormatter.formatStructured() to return
       SessionMessage directly with the new structured fields instead of a
       (String, MessageCategory) tuple. Headers become the `title` field (plain
@@ -39,7 +39,7 @@ tasks:
       Update the format() method to construct SessionMessage with the new
       fields."
   - title: Rewrite SessionMessageView for rich GUI rendering
-    done: false
+    done: true
     description: "Replace the single Text(message.text) in SessionMessageView with a
       VStack-based layout. Add a headerView that renders the title in bold
       .headline proportional font with category color, and a right-aligned
@@ -57,7 +57,7 @@ tasks:
       .infinity, alignment: .leading). Keep the existing colorForCategory helper
       for category-based colors."
   - title: Update MessageFormatterTests for structured content model
-    done: false
+    done: true
     description: "Rewrite all tests in MessageFormatterTests.swift to test the new
       structured SessionMessage fields. Replace text.contains assertions with
       direct field checks: msg.title == expected title, msg.body pattern
@@ -69,13 +69,16 @@ tasks:
       category assignments remain correct. Test timestamp parsing produces
       correct Date? values. Run tests with ./scripts/test.sh."
   - title: Update SwiftUI preview with rich message examples
-    done: false
+    done: true
     description: "Update the #Preview in SessionsView.swift to showcase the new
       rendering. Add preview messages for: todoUpdate with mixed statuses,
       fileChangeSummary with added/updated/removed files, llmResponse with
       multi-line prose text, commandResult with monospaced output,
       agentSessionStart with key-value details. This provides a quick way to
       visually verify the rendering without connecting a live session."
+changedFiles:
+  - tim-gui/TimGUI/SessionModels.swift
+  - tim-gui/TimGUITests/MessageFormatterTests.swift
 tags: []
 ---
 
@@ -313,3 +316,22 @@ Update the `#Preview` in `SessionsView.swift` to include a richer set of message
 - **Text selection**: SwiftUI's `.textSelection(.enabled)` on a `VStack` propagates to child `Text` views. However, it does not allow selecting across multiple `Text` views in a single drag. This is a known SwiftUI limitation. The current behavior (selecting within a single `Text`) already has this limitation since each message is a separate view. The new approach maintains the same behavior.
 - **Performance**: `LazyVStack` ensures only visible messages are rendered. The slightly richer per-message layout (VStack with 2-3 children instead of 1 Text) should have negligible performance impact.
 - **Backwards compatibility**: Messages with `title: nil` and `.text` body cover cases like `workflowProgress` that don't have a header pattern.
+
+## Current Progress
+### Current State
+- All 5 tasks are complete. The plan is done.
+### Completed (So Far)
+- Task 1: Defined `MessageContentBody` enum, `TodoDisplayItem`, `TodoStatus`, `FileChangeDisplayItem`, `FileChangeKind`, `KeyValuePair` types. Updated `SessionMessage` to use `title: String?` and `body: MessageContentBody?` instead of flat `text: String`.
+- Task 2: Refactored `MessageFormatter.formatStructured()` to return `SessionMessage` directly with structured fields. All message types produce proper body types (`.text`, `.monospaced`, `.todoList`, `.fileChanges`, `.keyValuePairs`). Timestamp parsing moved into formatter using `parseTimestamp()`.
+- Task 3: Rewrote `SessionMessageView` with VStack layout, `headerView` (bold headline + right-aligned timestamp), `bodyView` switching on `MessageContentBody`. SF Symbol icons for todo statuses, colored file change indicators, key-value pair rendering with Text concatenation.
+- Task 4: Rewrote tests to use structured assertions (`msg.title ==`, pattern matching on `msg.body`). Refactored to use `Equatable` `==` comparisons. Added new tests for `agentStepStart`, `llmStatus`, `reviewStart`, `promptRequest`. Added `PromptConfigPayload` memberwise init for test construction.
+- Task 5: Updated preview in `SessionsView.swift` with rich examples: `agentSessionStart` with key-value pairs, `llmResponse` with prose, `llmToolUse` with monospaced body, `commandResult`, `todoUpdate` with mixed statuses, `fileChangeSummary` with various change kinds.
+### Remaining
+- None
+### Next Iteration Guidance
+- None — all tasks complete
+### Decisions / Changes
+- Key-value pair values render with `.primary` color rather than category color — intentional design decision for readability
+- `SessionMessage.text` computed property preserved as backward-compatibility helper for test assertions
+### Risks / Blockers
+- None
