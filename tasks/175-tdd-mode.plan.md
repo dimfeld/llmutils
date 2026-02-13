@@ -4,11 +4,121 @@ title: tdd mode
 goal: ""
 id: 175
 uuid: 81bfa931-f9bc-4b5e-9ead-d7ab1a847137
+generatedBy: agent
 status: pending
 priority: medium
+planGeneratedAt: 2026-02-13T02:09:33.802Z
+promptsGeneratedAt: 2026-02-13T02:09:33.802Z
 createdAt: 2026-02-12T22:51:53.004Z
-updatedAt: 2026-02-12T22:51:53.004Z
-tasks: []
+updatedAt: 2026-02-13T02:09:33.803Z
+tasks:
+  - title: Add tdd field to plan schema
+    done: false
+    description: "Add `tdd: z.boolean().optional()` to the plan schema in
+      `src/tim/planSchema.ts`, right next to the existing `simple` field. This
+      allows plans to declare TDD mode in their YAML frontmatter."
+  - title: Add tdd-tests to SubagentType and register CLI command
+    done: false
+    description: >-
+      In `src/tim/commands/subagent.ts`: Update `SubagentType` union to include
+      `tdd-tests`. Add a `case tdd-tests` in `buildAgentDefinition()` that calls
+      the new `getTddTestsPrompt()` function. Map tdd-tests to tddTests for
+      custom instructions loading.
+
+
+      In `src/tim/tim.ts`: Update the subagent registration loop to include
+      `tdd-tests` in the array.
+  - title: Create the TDD tests agent prompt
+    done: false
+    description: "Add a new `getTddTestsPrompt()` function in
+      `src/tim/executors/claude_code/agent_prompts.ts` following the pattern of
+      `getTesterPrompt()`. The prompt should instruct the agent to: (1) Read and
+      understand task specs, (2) Analyze existing test patterns, (3) Write
+      comprehensive tests defining expected behavior, (4) Create minimal
+      stubs/scaffolding so tests can compile and import correctly, (5) Run tests
+      and verify they fail for correct reasons (not syntax/import errors), (6)
+      Fix any tests that fail for wrong reasons, (7) Report a summary of tests
+      written and behavior defined."
+  - title: Add --tdd CLI option and thread through agent command
+    done: false
+    description: >-
+      In `src/tim/tim.ts` `createAgentCommand()`: Add `.option("--tdd", "Use TDD
+      mode: write tests first, then implement to make them pass")` alongside the
+      existing `--simple` option.
+
+
+      In `src/tim/executors/types.ts`: Add `tdd` to
+      `ExecutePlanInfo.executionMode` union type.
+
+
+      In `src/tim/commands/agent/agent.ts`: Follow the exact pattern used for
+      `--simple` (lines 476-505). Check for explicit `--tdd` flag, fall back to
+      `planData.tdd`, determine executionMode as `tdd` when enabled. TDD mode
+      takes priority over simple mode for execution mode selection, but
+      simpleMode is still tracked separately and passed through.
+
+
+      In `src/tim/commands/agent/batch_mode.ts`: Update the `executionMode` type
+      to include `tdd`.
+  - title: Create TDD orchestrator prompt
+    done: false
+    description: >-
+      Add `wrapWithOrchestrationTdd()` in
+      `src/tim/executors/claude_code/orchestrator_prompt.ts`. Add `simpleMode?:
+      boolean` to the `OrchestrationOptions` interface.
+
+
+      TDD Normal (simpleMode=false): Available agents are tdd-tests +
+      implementer + tester. Workflow: tdd-tests -> implementer -> tester ->
+      review -> notes -> iteration.
+
+
+      TDD Simple (simpleMode=true): Available agents are tdd-tests + implementer
+      + verifier. Workflow: tdd-tests -> implementer -> verifier -> notes ->
+      iteration.
+
+
+      Both variants share TDD-specific instructions telling the orchestrator: we
+      are using TDD, the tdd-tests agent writes and runs tests first verifying
+      they fail for correct reasons, pass TDD test output to the implementer
+      instructing it to make those tests pass.
+  - title: Wire up TDD mode in the Claude Code executor
+    done: false
+    description: "In `src/tim/executors/claude_code.ts` `execute()` method (around
+      line 937-953): Add a branch for `planInfo.executionMode === tdd` that
+      calls `wrapWithOrchestrationTdd()`, passing `simpleMode:
+      this.sharedOptions.simpleMode` along with the other options (batchMode,
+      planFilePath, reviewExecutor, subagentExecutor,
+      dynamicSubagentInstructions)."
+  - title: Add custom instructions support for tdd-tests agent
+    done: false
+    description: >-
+      In `src/tim/configSchema.ts`: Add a `tddTests` entry to the `agents`
+      config schema alongside `implementer`, `tester`, and `reviewer`.
+
+
+      In `src/tim/executors/codex_cli/agent_helpers.ts`: Update
+      `loadAgentInstructionsFor()` to accept `tddTests` as an agent type.
+  - title: Write tests for TDD mode
+    done: false
+    description: >-
+      Add tests covering:
+
+
+      1. Agent command tests (src/tim/commands/agent/agent.test.ts): --tdd flag
+      sets executionMode to tdd. Plan YAML tdd: true enables TDD mode. CLI --tdd
+      overrides plan YAML. TDD mode passes correct orchestration wrapper.
+
+
+      2. Orchestrator prompt tests: wrapWithOrchestrationTdd() output includes
+      tdd-tests agent in available agents. Workflow instructions include TDD
+      test phase before implementation. Both simpleMode=true and
+      simpleMode=false variants work. Batch mode and non-batch mode variants
+      work. Dynamic executor guidance is included when appropriate.
+
+
+      3. Subagent tests: tdd-tests is accepted as a valid subagent type and
+      dispatches to the correct prompt builder.
 tags: []
 ---
 
@@ -62,8 +172,10 @@ Small-medium feature. The infrastructure is well-established; the work is primar
 - [ ] `tim agent <plan> --tdd` enables TDD mode
 - [ ] `tdd: true` in plan YAML enables TDD mode (CLI flag overrides)
 - [ ] `tim subagent tdd-tests <planId>` works as a standalone command
-- [ ] The orchestrator workflow in TDD mode runs: tdd-tests → implementer → tester → reviewer
-- [ ] The TDD tests subagent prompt instructs it to write failing tests based on task specs
+- [ ] TDD normal mode workflow: tdd-tests → implementer → tester → reviewer
+- [ ] TDD simple mode workflow (`--tdd --simple`): tdd-tests → implementer → verifier
+- [ ] The TDD tests subagent writes tests, creates minimal stubs, runs tests, and verifies they fail for correct reasons
+- [ ] The orchestrator passes TDD test output to the implementer as context
 - [ ] All new code paths are covered by tests
 
 ## Dependencies & Constraints
@@ -190,8 +302,9 @@ Add a new `getTddTestsPrompt()` function following the pattern of `getTesterProm
   2. Analyze existing test patterns in the codebase
   3. Write comprehensive tests that define the expected behavior
   4. Run the tests and verify they fail for the correct reasons (not syntax errors, missing imports, or other unrelated issues)
-  5. Fix any tests that fail for wrong reasons (e.g., fix imports, create stub files/functions if needed so the test can at least compile and run)
-  6. Focus on defining the interface/API/behavior that the implementation should satisfy
+  5. Create minimal stubs/scaffolding (empty exported functions, types, module files) so tests can compile and import correctly — tests should fail on assertions, not on import/compile errors
+  6. Fix any tests that fail for wrong reasons (e.g., fix imports, correct test syntax)
+  7. Focus on defining the interface/API/behavior that the implementation should satisfy
 - **Guidelines**:
   - Write tests that are clear about what behavior they expect
   - Structure tests so they can guide implementation
