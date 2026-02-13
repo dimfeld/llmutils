@@ -110,6 +110,10 @@ struct SessionDetailView: View {
                         SessionMessageView(message: message)
                             .id(message.id)
                     }
+
+                    Color.clear
+                        .frame(height: 1)
+                        .id(SessionDetailView.bottomAnchorID)
                 }
                 .padding(12)
                 .padding(.bottom, 20)
@@ -127,11 +131,9 @@ struct SessionDetailView: View {
             .overlay(alignment: .bottomTrailing) {
                 if !isNearBottom {
                     Button {
-                        if let lastId = session.messages.last?.id {
-                            autoScrollEnabled = true
-                            withAnimation {
-                                proxy.scrollTo(lastId, anchor: .bottom)
-                            }
+                        autoScrollEnabled = true
+                        withAnimation {
+                            proxy.scrollTo(SessionDetailView.bottomAnchorID, anchor: .bottom)
                         }
                     } label: {
                         Image(systemName: "chevron.down.circle.fill")
@@ -177,24 +179,22 @@ struct SessionDetailView: View {
                 }
             }
             .onAppear {
-                if let lastId = session.messages.last?.id {
-                    proxy.scrollTo(lastId, anchor: .bottom)
-                }
+                proxy.scrollTo(SessionDetailView.bottomAnchorID, anchor: .bottom)
             }
             .onChange(of: session.messages.count) {
-                if autoScrollEnabled, let lastId = session.messages.last?.id {
-                    proxy.scrollTo(lastId, anchor: .bottom)
+                if autoScrollEnabled {
+                    proxy.scrollTo(SessionDetailView.bottomAnchorID, anchor: .bottom)
                 }
             }
             .onChange(of: session.forceScrollToBottomVersion) {
-                if let lastId = session.messages.last?.id {
-                    proxy.scrollTo(lastId, anchor: .bottom)
-                    isNearBottom = true
-                    autoScrollEnabled = true
-                }
+                proxy.scrollTo(SessionDetailView.bottomAnchorID, anchor: .bottom)
+                isNearBottom = true
+                autoScrollEnabled = true
             }
         }
     }
+
+    static let bottomAnchorID = "session-bottom-anchor"
 
     /// Returns whether the scroll view should auto-scroll to the bottom.
     /// Returns nil when viewportHeight hasn't been measured yet, meaning the caller
