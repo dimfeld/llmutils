@@ -149,6 +149,7 @@ export async function runClaudeCodeGeneration(
     const planningResult = await spawnAndLogOutput(planningArgs, {
       env: {
         ...process.env,
+        CLAUDECODE: '',
         TIM_NOTIFY_SUPPRESS: '1',
         ...tunnelEnv,
         ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
@@ -198,6 +199,7 @@ export async function runClaudeCodeGeneration(
         const researchResult = await spawnAndLogOutput(researchArgs, {
           env: {
             ...process.env,
+            CLAUDECODE: '',
             TIM_NOTIFY_SUPPRESS: '1',
             ...tunnelEnv,
             ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
@@ -252,6 +254,7 @@ export async function runClaudeCodeGeneration(
     const generationResult = await spawnAndLogOutput(generationArgs, {
       env: {
         ...process.env,
+        CLAUDECODE: '',
         TIM_NOTIFY_SUPPRESS: '1',
         ...tunnelEnv,
         ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',

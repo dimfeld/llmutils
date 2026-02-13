@@ -1,17 +1,347 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: lessons learned updating
-goal: ""
+goal: Add a "Lessons Learned" section to the Current Progress template and
+  create a post-completion phase that extracts those lessons to update relevant
+  project documentation.
 id: 177
 uuid: 7c5c38ac-0141-4e04-8ee5-b821d578b3e4
+generatedBy: agent
 status: pending
 priority: medium
+planGeneratedAt: 2026-02-13T07:05:17.973Z
+promptsGeneratedAt: 2026-02-13T07:05:17.973Z
 createdAt: 2026-02-13T06:33:50.144Z
-updatedAt: 2026-02-13T06:33:50.144Z
-tasks: []
+updatedAt: 2026-02-13T07:05:17.973Z
+tasks:
+  - title: Add Lessons Learned subsection to Current Progress template
+    done: false
+    description: Modify the `progressSectionGuidance()` function in
+      `src/tim/executors/claude_code/orchestrator_prompt.ts` to add a `###
+      Lessons Learned` subsection to the template. Place it after `### Decisions
+      / Changes` and before `### Risks / Blockers`. Add guidance in the
+      instructions above the template explaining that the LLM should record
+      unexpected behaviors, gotchas, surprises, workarounds, non-obvious
+      solutions, and especially insights from fixing review issues. Use a flat
+      bullet list format consistent with other subsections. Default to "None"
+      when empty.
+  - title: Add applyLessons flag to updateDocs config
+    done: false
+    description: 'In `src/tim/configSchema.ts`, add an `applyLessons:
+      z.boolean().optional()` field to the existing `updateDocs` configuration
+      object, with a description like "Whether to apply lessons learned to
+      documentation after plan completion". Update the JSON schema in
+      `schema/tim-plan-schema.json` if needed.'
+  - title: Create update-lessons command module
+    done: false
+    description: 'Create `src/tim/commands/update-lessons.ts` modeled on
+      `update-docs.ts`. Implement: (1) `extractLessonsLearned(planFilePath)`
+      that reads the raw plan file, finds `### Lessons Learned` under `##
+      Current Progress`, extracts the content, and returns null if not
+      found/empty/"None". Use simple string parsing. (2)
+      `buildUpdateLessonsPrompt(planData, lessonsText, options)` that builds a
+      prompt explaining the LLM completed a plan and should update process
+      documentation (CLAUDE.md, docs/, .cursor/rules) based on lessons learned -
+      emphasizing this is about process/conventions, not feature docs. Include
+      the same include/exclude pattern support as update-docs. (3)
+      `runUpdateLessons(planFilePath, config, options)` that extracts lessons,
+      skips if none found, builds the prompt, creates an executor using
+      `config.updateDocs` settings, and executes. (4)
+      `handleUpdateLessonsCommand(planFile, options, command)` CLI handler.'
+  - title: Register update-lessons CLI command
+    done: false
+    description: In `src/tim/tim.ts`, register a new `update-lessons [planFile]`
+      command with options for `--executor` and `--model`, similar to the
+      `update-docs` command registration. Import and call
+      `handleUpdateLessonsCommand`.
+  - title: Integrate update-lessons into agent flow
+    done: false
+    description: In `src/tim/commands/agent/agent.ts` and
+      `src/tim/commands/agent/batch_mode.ts`, add a call to `runUpdateLessons()`
+      at each plan completion point (where `updateDocsMode === after-completion`
+      checks exist). The lessons phase should run after the update-docs phase
+      and only on plan completion, never after iterations. Check
+      `config.updateDocs?.applyLessons || options.applyLessons` to determine if
+      it should run. Add a `--apply-lessons` boolean CLI flag to the agent
+      command. Follow the existing non-blocking error pattern (try/catch, log
+      error, continue).
+  - title: Write tests for update-lessons
+    done: false
+    description: 'Create `src/tim/commands/update-lessons.test.ts` modeled on
+      `update-docs.test.ts`. Test: (1) `extractLessonsLearned()` with a plan
+      file containing lessons, with "None" content, without the Lessons Learned
+      section, and without a Current Progress section at all. (2)
+      `buildUpdateLessonsPrompt()` verifying the prompt includes lessons text,
+      plan context, and proper instructions about process docs. (3)
+      `handleUpdateLessonsCommand()` requiring a plan file argument.'
 tags: []
 ---
 
 In the "Current Progress" updates, also have it add lessons learned and things that took it by surprise. This is especially relevant when fixing review issues.
 
 Then when a plan is done, run a phase similar to update-docs but that just look at those lessons learned and updates relevant documentation with that.
+
+## Research
+
+### Overview
+
+This feature adds two capabilities to the tim agent system:
+
+1. **Capturing lessons learned during execution**: Extend the existing "Current Progress" section template (generated by `progressSectionGuidance()`) to include a "Lessons Learned" subsection where the LLM records surprises, unexpected issues, workarounds, and insights gained during implementation.
+
+2. **Applying lessons to documentation after completion**: Create a new post-completion phase (similar to `update-docs`) that reads the accumulated lessons learned from the plan file and uses an LLM to update relevant project documentation (CLAUDE.md, docs/, etc.) with those insights.
+
+### Key Files and Systems Analyzed
+
+#### Current Progress System
+
+The progress tracking is driven entirely by prompt guidance. The function `progressSectionGuidance()` in `src/tim/executors/claude_code/orchestrator_prompt.ts` (lines 19-56) generates instructions that are injected into all LLM prompts. It tells the LLM to maintain a `## Current Progress` section at the end of the plan file with these subsections:
+
+- `### Current State`
+- `### Completed (So Far)`
+- `### Remaining`
+- `### Next Iteration Guidance`
+- `### Decisions / Changes`
+- `### Risks / Blockers`
+
+This function is used in three places:
+1. `orchestrator_prompt.ts` (for Claude Code orchestration modes: normal, simple, TDD)
+2. `src/tim/executors/codex_cli/prompt.ts` (for Codex CLI executor)
+3. Both use it identically - it returns a string block that gets embedded in the prompt
+
+The "Current Progress" section is a freeform Markdown section in the plan file - it's not parsed by any code, just maintained by the LLM and persisted in the plan file's Markdown body (outside the YAML frontmatter).
+
+#### Update-Docs System
+
+The `update-docs` system in `src/tim/commands/update-docs.ts` provides the closest architectural pattern for the lessons-learned-to-documentation phase:
+
+- **`buildUpdateDocsPrompt()`** constructs a prompt with plan context and completed tasks
+- **`runUpdateDocs()`** reads the plan, builds the prompt, creates an executor, and runs it
+- **`handleUpdateDocsCommand()`** is the CLI handler for `tim update-docs [planFile]`
+
+It's integrated into the agent flow via these trigger points in `agent.ts` and `batch_mode.ts`:
+- `updateDocsMode === 'after-iteration'`: runs after each task completion
+- `updateDocsMode === 'after-completion'`: runs only when the entire plan is done
+
+Configuration is in `configSchema.ts` under `updateDocs`:
+```typescript
+updateDocs: z.object({
+  mode: z.enum(['never', 'after-iteration', 'after-completion']).optional(),
+  model: z.string().optional(),
+  executor: z.string().optional(),
+  include: z.array(z.string()).optional(),
+  exclude: z.array(z.string()).optional(),
+})
+```
+
+Key design patterns:
+- Non-blocking failures (try/catch, log error, continue)
+- Executor and model selection: CLI option → config → defaults
+- Automatically excludes the tasks directory from files the LLM can edit
+- Separates "just completed" vs "previously completed" tasks for context
+- Uses `executionMode: 'bare'` and `captureOutput: 'none'`
+
+#### CLI Registration
+
+Commands are registered in `src/tim/tim.ts`. The `update-docs` command is at line 445:
+```typescript
+program
+  .command('update-docs [planFile]')
+  .description('Update documentation based on completed plan work.')
+  .option('-x, --executor <name>', ...)
+  .option('-m, --model <model>', ...)
+  .action(async (planFile, options, command) => { ... });
+```
+
+The agent command has an `--update-docs <mode>` flag at line 581.
+
+#### Agent Flow Integration Points
+
+In `agent.ts`, the update-docs mode is determined at line 518-520:
+```typescript
+const updateDocsMode = options.updateDocs || config.updateDocs?.mode || 'never';
+```
+
+There are 4 call sites for `runUpdateDocs()` in `agent.ts` (lines 790, 825, 1102, 1135) and 2 in `batch_mode.ts` (lines 263, 289). Each follows the same pattern.
+
+#### Plan File Structure
+
+Plans are YAML-frontmatter + Markdown files. The YAML frontmatter contains structured data (tasks, metadata), while the Markdown body below contains freeform content including the `## Current Progress` section. The plan schema does NOT parse or validate the Markdown body - it only validates the YAML frontmatter.
+
+### Architectural Considerations
+
+1. **Lessons are captured in freeform Markdown**: Like "Current Progress", the "Lessons Learned" subsection will be maintained by the LLM via prompt guidance. No schema changes are needed for the plan file itself.
+
+2. **Extracting lessons for the documentation phase**: The `update-lessons` (or equivalent) phase will need to read the plan file's Markdown body, find the `### Lessons Learned` subsection under `## Current Progress`, and include it in the prompt sent to the documentation-updating LLM.
+
+3. **Timing**: The lessons-to-docs phase should run `after-completion` only, since lessons accumulate over time and are most useful as a batch update when the plan is done.
+
+4. **Separation from update-docs**: The lessons phase runs as a separate executor invocation from update-docs. The update-docs phase focuses on documenting new features/APIs. The lessons-learned phase focuses on updating process docs, gotchas, and institutional knowledge.
+
+5. **Configuration**: Shares configuration with `updateDocs` via an `applyLessons` boolean flag. Uses the same executor, model, and include/exclude settings. Always runs only after plan completion.
+
+### Existing Utilities and Patterns
+
+- `readPlanFile()` from `src/tim/plans.ts` reads plan files and returns parsed YAML
+- Plan file Markdown body is accessible by reading the raw file and extracting content after the YAML frontmatter
+- `buildExecutorAndLog()` from `src/tim/executors/index.ts` creates executors
+- `DEFAULT_EXECUTOR` and `defaultModelForExecutor()` for fallback executor/model selection
+- `resolvePlanFile()` resolves plan IDs or paths to file paths
+- The existing `update-docs.ts` provides an excellent template for the new command
+
+### Edge Cases
+
+- Plan files with no `## Current Progress` section or no `### Lessons Learned` subsection - the phase should gracefully skip
+- Plan files where lessons are empty ("None") - should also skip
+- Multiple iterations may update/refine lessons - the prompt should tell the LLM to update in place
+- Review fix iterations are highlighted as especially important for lessons - the prompt should emphasize capturing why a review issue occurred and what the agent learned
+
+## Implementation Guide
+
+### Part 1: Add "Lessons Learned" to the Current Progress Template
+
+**File**: `src/tim/executors/claude_code/orchestrator_prompt.ts`
+
+Modify the `progressSectionGuidance()` function to add a `### Lessons Learned` subsection to the template. This subsection should appear after `### Decisions / Changes` and before `### Risks / Blockers`. The prompt guidance should instruct the LLM to:
+
+- Record unexpected behaviors, gotchas, or surprises encountered
+- Note workarounds or non-obvious solutions
+- Capture insights about the codebase that weren't documented
+- Especially note what was learned when fixing review issues
+- Update in place like other subsections (don't just append)
+- Use "None" when empty
+
+The template section to add:
+```
+### Lessons Learned
+- Record surprises, unexpected issues, non-obvious solutions, or insights about the codebase.
+- Especially note what you learned when fixing review issues.
+- ...
+```
+
+Also add a line in the guidance instructions above the template explaining when and what to record in this section.
+
+**Why**: This is the simplest change - it just extends the existing template. All executors that use `progressSectionGuidance()` (Claude Code orchestrator and Codex CLI) will automatically pick up the new subsection.
+
+### Part 2: Create the `update-lessons` Command Module
+
+**New file**: `src/tim/commands/update-lessons.ts`
+
+Model this closely on `src/tim/commands/update-docs.ts`. The key differences:
+
+1. **`extractLessonsLearned(planFilePath: string): Promise<string | null>`**: A utility function that reads the raw plan file, finds the `## Current Progress` section, extracts the `### Lessons Learned` subsection content, and returns it. Returns `null` if not found or if the content is just "None" or empty. Use simple string parsing (find the header, read until the next `###` header or `##` header).
+
+2. **`buildUpdateLessonsPrompt(planData, lessonsText, options)`**: Build a prompt that:
+   - Explains the LLM has completed a plan and recorded lessons learned
+   - Includes the lessons learned text
+   - Includes the plan title and goal for context
+   - Instructs the LLM to find and update relevant documentation files (CLAUDE.md, docs/, .cursor/rules, etc.)
+   - Emphasizes updating process docs, gotchas, coding patterns, and conventions
+   - Differentiates from feature docs - this is about how to work, not what was built
+   - Includes the same include/exclude pattern support as update-docs
+
+3. **`runUpdateLessons(planFilePath, config, options)`**: Core execution function similar to `runUpdateDocs()` but:
+   - First calls `extractLessonsLearned()` and skips if no lessons found
+   - Uses executor/model from `config.updateDocs` (shared configuration)
+   - Logs that it's skipping if no lessons are found
+
+4. **`handleUpdateLessonsCommand(planFile, options, command)`**: CLI handler for `tim update-lessons [planFile]`
+
+**Why this approach**: Keeping it as a separate module from `update-docs` maintains single responsibility. The prompt content is fundamentally different - update-docs focuses on feature documentation while update-lessons focuses on process/convention documentation.
+
+### Part 3: Add Configuration
+
+**File**: `src/tim/configSchema.ts`
+
+Add an `applyLessons` boolean flag to the existing `updateDocs` configuration object:
+
+```typescript
+updateDocs: z.object({
+  // ... existing fields ...
+  applyLessons: z.boolean().optional()
+    .describe('Whether to apply lessons learned to documentation after plan completion'),
+})
+```
+
+When `applyLessons` is true and the plan completes, the lessons phase runs using the same executor, model, and include/exclude settings from `updateDocs`. The lessons phase always runs only after completion (never after-iteration), regardless of the `updateDocs.mode` setting.
+
+### Part 4: Register the CLI Command
+
+**File**: `src/tim/tim.ts`
+
+Register the `update-lessons` command similar to `update-docs`:
+```typescript
+program
+  .command('update-lessons [planFile]')
+  .description('Update documentation based on lessons learned from a completed plan.')
+  .option('-x, --executor <name>', 'The executor to use')
+  .option('-m, --model <model>', 'Model to use')
+  .action(async (planFile, options, command) => {
+    const { handleUpdateLessonsCommand } = await import('./commands/update-lessons.js');
+    await handleUpdateLessonsCommand(planFile, options, command).catch(handleCommandError);
+  });
+```
+
+### Part 5: Integrate into the Agent Flow
+
+**Files**: `src/tim/commands/agent/agent.ts` and `src/tim/commands/agent/batch_mode.ts`
+
+At each location where plan completion is detected (where `updateDocsMode === 'after-completion'` checks already exist), add a block for `runUpdateLessons()` that runs after the update-docs phase:
+
+```typescript
+// Apply lessons learned if configured
+if (config.updateDocs?.applyLessons || options.applyLessons) {
+  try {
+    await runUpdateLessons(currentPlanFile, config, {
+      executor: config.updateDocs?.executor,
+      model: config.updateDocs?.model,
+      baseDir: currentBaseDir,
+    });
+  } catch (err) {
+    error('Failed to apply lessons learned:', err);
+  }
+}
+```
+
+This should always run after the update-docs phase (if enabled) so that lessons-based doc updates can build on any feature doc updates. It only runs on plan completion, never after individual iterations.
+
+Also add a CLI flag `--apply-lessons` (boolean) to the agent command to enable/override this behavior per-run.
+
+### Part 6: Tests
+
+**New file**: `src/tim/commands/update-lessons.test.ts`
+
+Test:
+- `extractLessonsLearned()`: with a plan file that has lessons, one with "None", one without the section at all, one without a Current Progress section at all
+- `buildUpdateLessonsPrompt()`: verify the prompt includes lessons text, plan context, and proper instructions
+- `handleUpdateLessonsCommand()`: verify it requires a plan file
+
+Model the tests on `src/tim/commands/update-docs.test.ts`.
+
+### Manual Testing Steps
+
+1. Create a test plan, run the agent on it, and verify the `## Current Progress` section now includes `### Lessons Learned`
+2. Run `tim update-lessons <planId>` on a completed plan with lessons and verify it updates documentation
+3. Test the agent flow with `--apply-lessons` and verify it runs the lessons phase after completion
+4. Test edge cases: plan with no lessons, plan with "None" lessons, plan with no Current Progress section
+
+### Rationale
+
+- **Separate executor invocation, shared config**: The lessons phase runs as a separate LLM call from update-docs because the prompts have different goals (feature docs vs process/convention docs). Configuration is shared under `updateDocs` to keep the config surface area small.
+- **Freeform Markdown over structured data**: Lessons are inherently unstructured narrative text. Storing them in the existing freeform `## Current Progress` section avoids schema changes and leverages the existing update-in-place pattern.
+- **String parsing for extraction**: Since the section is Markdown, simple string-based extraction (find header, read until next header) is sufficient and avoids over-engineering with a Markdown parser.
+
+### Acceptance Criteria
+
+- [ ] The `progressSectionGuidance()` template includes a `### Lessons Learned` subsection with clear guidance on what to record
+- [ ] A new `tim update-lessons [planFile]` CLI command exists that extracts lessons and uses an LLM to update documentation
+- [ ] The `extractLessonsLearned()` function correctly parses the lessons section from plan files and returns null when empty/missing
+- [ ] Configuration supports `updateDocs.applyLessons` boolean flag
+- [ ] The agent flow automatically runs `update-lessons` after plan completion when `updateDocs.applyLessons` is true
+- [ ] The command gracefully skips when no lessons are found
+- [ ] All new code paths are covered by tests
+
+### Dependencies & Constraints
+
+- **Dependencies**: Relies on existing executor infrastructure, `progressSectionGuidance()` function, and the update-docs pattern
+- **Technical Constraints**: Must handle plan files that were created before this feature (no `### Lessons Learned` section) gracefully

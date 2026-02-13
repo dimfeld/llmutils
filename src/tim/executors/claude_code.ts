@@ -653,6 +653,7 @@ export class ClaudeCodeExecutor implements Executor {
       const result = await spawnAndLogOutput(args, {
         env: {
           ...process.env,
+          CLAUDECODE: '',
           TIM_EXECUTOR: 'claude',
           TIM_NOTIFY_SUPPRESS: '1',
           ...(tunnelServer ? { [TIM_OUTPUT_SOCKET]: tunnelSocketPath } : {}),
@@ -1156,6 +1157,7 @@ export class ClaudeCodeExecutor implements Executor {
       const result = await spawnAndLogOutput(args, {
         env: {
           ...process.env,
+          CLAUDECODE: '',
           TIM_EXECUTOR: 'claude',
           TIM_NOTIFY_SUPPRESS: '1',
           ...(tunnelServer ? { [TIM_OUTPUT_SOCKET]: tunnelSocketPath } : {}),

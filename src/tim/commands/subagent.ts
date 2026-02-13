@@ -456,6 +456,7 @@ async function executeWithClaude(
     const result = await spawnAndLogOutput(args, {
       env: {
         ...process.env,
+        CLAUDECODE: '',
         TIM_EXECUTOR: 'claude',
         TIM_NOTIFY_SUPPRESS: '1',
         ...(tunnelServer && tunnelSocketPath ? { [TIM_OUTPUT_SOCKET]: tunnelSocketPath } : {}),
