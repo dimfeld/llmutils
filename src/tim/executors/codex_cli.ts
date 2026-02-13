@@ -41,6 +41,8 @@ export class CodexCliExecutor implements Executor {
   }
 
   async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | ExecutorOutput> {
+    const simpleModeEnabled = this.sharedOptions.simpleMode || this.options.simpleMode;
+
     if (planInfo.executionMode === 'review') {
       return executeReviewMode(
         contextContent,
@@ -63,10 +65,31 @@ export class CodexCliExecutor implements Executor {
       );
     }
 
+    if (planInfo.executionMode === 'tdd') {
+      if (simpleModeEnabled) {
+        return executeSimpleMode(
+          contextContent,
+          planInfo,
+          this.sharedOptions.baseDir,
+          this.sharedOptions.model,
+          this.timConfig,
+          this.sharedOptions.reviewExecutor
+        );
+      }
+
+      return executeNormalMode(
+        contextContent,
+        planInfo,
+        this.sharedOptions.baseDir,
+        this.sharedOptions.model,
+        this.timConfig,
+        this.sharedOptions.reviewExecutor
+      );
+    }
+
     if (
       planInfo.executionMode === 'simple' ||
-      (planInfo.executionMode === 'normal' &&
-        (this.sharedOptions.simpleMode || this.options.simpleMode))
+      (planInfo.executionMode === 'normal' && simpleModeEnabled)
     ) {
       return executeSimpleMode(
         contextContent,

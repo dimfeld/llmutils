@@ -299,7 +299,9 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
       }));
 
       await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+        wrapWithOrchestration: mock((_content: string) => 'WRAPPED_NORMAL'),
         wrapWithOrchestrationSimple: wrapSimple,
+        wrapWithOrchestrationTdd: mock((_content: string) => 'WRAPPED_TDD'),
       }));
 
       await moduleMocker.mock('./claude_code/format.ts', () => ({
@@ -780,6 +782,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
     await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
       wrapWithOrchestration: wrapNormal,
       wrapWithOrchestrationSimple: wrapSimple,
+      wrapWithOrchestrationTdd: mock((_content: string) => 'WRAPPED_TDD'),
     }));
 
     const buildAgents = options.buildAgentsSpy ?? mock(() => '{"agents":[]}');
@@ -822,6 +825,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
     await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
       wrapWithOrchestration: mock((_content: string) => 'WRAPPED'),
       wrapWithOrchestrationSimple: mock((_content: string) => 'WRAPPED'),
+      wrapWithOrchestrationTdd: mock((_content: string) => 'WRAPPED'),
     }));
 
     await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
@@ -883,6 +887,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
     await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
       wrapWithOrchestration: mock((_content: string) => 'WRAPPED'),
       wrapWithOrchestrationSimple: mock((_content: string) => 'WRAPPED'),
+      wrapWithOrchestrationTdd: mock((_content: string) => 'WRAPPED'),
     }));
 
     await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
@@ -945,6 +950,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
     await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
       wrapWithOrchestration: wrapNormalSpy,
       wrapWithOrchestrationSimple: mock((_content: string) => 'WRAPPED'),
+      wrapWithOrchestrationTdd: mock((_content: string) => 'WRAPPED'),
     }));
 
     await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
@@ -1009,6 +1015,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
     await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
       wrapWithOrchestration: mock((_content: string) => 'WRAPPED'),
       wrapWithOrchestrationSimple: wrapSimpleSpy,
+      wrapWithOrchestrationTdd: mock((_content: string) => 'WRAPPED'),
     }));
 
     await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
@@ -1038,6 +1045,71 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
     const [, , options] = wrapSimpleSpy.mock.calls[0];
     expect(options.subagentExecutor).toBe('dynamic');
     expect(options.dynamicSubagentInstructions).toBe('Prefer claude for UI.');
+  });
+
+  test('routes tdd execution mode to TDD orchestration wrapper with simpleMode context', async () => {
+    const wrapTddSpy = mock((_content: string, _planId: string, _options: any) => 'WRAPPED_TDD');
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+        if (opts && typeof opts.formatStdout === 'function') {
+          opts.formatStdout('{}\n');
+        }
+        return { exitCode: 0 };
+      }),
+      createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock(() => ({
+        type: 'assistant',
+        message: 'Output',
+        rawMessage: 'Output',
+      })),
+      extractStructuredMessages: mock(() => []),
+      resetToolUseCache: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+      wrapWithOrchestration: mock((_content: string) => 'WRAPPED'),
+      wrapWithOrchestrationSimple: mock((_content: string) => 'WRAPPED'),
+      wrapWithOrchestrationTdd: wrapTddSpy,
+    }));
+
+    await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
+      buildAgentsArgument: mock(() => '{}'),
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      {
+        baseDir: tempDir,
+        simpleMode: true,
+        subagentExecutor: 'codex-cli',
+        dynamicSubagentInstructions: 'TDD dynamic instructions.',
+      },
+      {} as any
+    );
+
+    await exec.execute('CTX', {
+      planId: 'p1',
+      planTitle: 'Plan',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'tdd',
+    });
+
+    expect(wrapTddSpy).toHaveBeenCalledTimes(1);
+    const [, , options] = wrapTddSpy.mock.calls[0];
+    expect(options.simpleMode).toBe(true);
+    expect(options.subagentExecutor).toBe('codex-cli');
+    expect(options.dynamicSubagentInstructions).toBe('TDD dynamic instructions.');
   });
 
   test('skips --agents flag for each valid subagentExecutor value', async () => {
@@ -1075,6 +1147,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
         wrapWithOrchestration: mock((_content: string) => 'WRAPPED'),
         wrapWithOrchestrationSimple: mock((_content: string) => 'WRAPPED'),
+        wrapWithOrchestrationTdd: mock((_content: string) => 'WRAPPED'),
       }));
 
       await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({

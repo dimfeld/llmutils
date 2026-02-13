@@ -737,6 +737,71 @@ describe('CodexCliExecutor - failure detection across agents', () => {
   });
 });
 
+describe('CodexCliExecutor - tdd execution mode routing', () => {
+  let moduleMocker: ModuleMocker;
+  const tempDir = '/tmp/codex-routing-test';
+
+  beforeEach(() => {
+    moduleMocker = new ModuleMocker(import.meta);
+  });
+
+  afterEach(() => {
+    moduleMocker.clear();
+  });
+
+  test('routes tdd mode to normal workflow when simple mode is disabled', async () => {
+    const executeNormalModeMock = mock(async () => ({ content: 'normal tdd flow' }));
+    const executeSimpleModeMock = mock(async () => ({ content: 'simple tdd flow' }));
+
+    await moduleMocker.mock('./codex_cli/normal_mode.ts', () => ({
+      executeNormalMode: executeNormalModeMock,
+    }));
+    await moduleMocker.mock('./codex_cli/simple_mode.ts', () => ({
+      executeSimpleMode: executeSimpleModeMock,
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.ts');
+    const executor = new CodexCliExecutor({}, { baseDir: tempDir, simpleMode: false }, {} as any);
+
+    const result = await executor.execute('CTX', {
+      planId: '175',
+      planTitle: 'TDD Plan',
+      planFilePath: `${tempDir}/plan.md`,
+      executionMode: 'tdd',
+    });
+
+    expect(executeNormalModeMock).toHaveBeenCalledTimes(1);
+    expect(executeSimpleModeMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ content: 'normal tdd flow' });
+  });
+
+  test('routes tdd mode to simple workflow when simple mode is enabled', async () => {
+    const executeNormalModeMock = mock(async () => ({ content: 'normal tdd flow' }));
+    const executeSimpleModeMock = mock(async () => ({ content: 'simple tdd flow' }));
+
+    await moduleMocker.mock('./codex_cli/normal_mode.ts', () => ({
+      executeNormalMode: executeNormalModeMock,
+    }));
+    await moduleMocker.mock('./codex_cli/simple_mode.ts', () => ({
+      executeSimpleMode: executeSimpleModeMock,
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.ts');
+    const executor = new CodexCliExecutor({}, { baseDir: tempDir, simpleMode: true }, {} as any);
+
+    const result = await executor.execute('CTX', {
+      planId: '175',
+      planTitle: 'TDD Plan',
+      planFilePath: `${tempDir}/plan.md`,
+      executionMode: 'tdd',
+    });
+
+    expect(executeSimpleModeMock).toHaveBeenCalledTimes(1);
+    expect(executeNormalModeMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ content: 'simple tdd flow' });
+  });
+});
+
 test('CodexCliExecutor - parseReviewerVerdict', async () => {
   const { parseReviewerVerdict } = await import('./codex_cli.ts');
   const testCases = [

@@ -633,6 +633,55 @@ describe('timAgent - simple mode flag plumbing', () => {
     });
   });
 
+  test('sets executionMode to tdd when --tdd is provided', async () => {
+    await timAgent(simplePlanFile, { log: false, tdd: true } as any, {});
+
+    expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
+    const [batchOptions] = executeBatchModeSpy.mock.calls[0];
+    expect(batchOptions).toMatchObject({
+      executor: testExecutor,
+      executionMode: 'tdd',
+    });
+  });
+
+  test('enables tdd mode from plan frontmatter when CLI flag is not provided', async () => {
+    const plan = await readPlanFile(simplePlanFile);
+    (plan as any).tdd = true;
+    await writePlanFile(simplePlanFile, plan);
+    clearPlanCache();
+
+    await timAgent(simplePlanFile, { log: false } as any, {});
+
+    expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
+    const [batchOptions] = executeBatchModeSpy.mock.calls[0];
+    expect(batchOptions).toMatchObject({ executionMode: 'tdd' });
+  });
+
+  test('CLI --tdd takes precedence over simple mode execution mode selection', async () => {
+    await timAgent(simplePlanFile, { log: false, tdd: true, simple: true } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(sharedOptions).toMatchObject({ simpleMode: true });
+
+    expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
+    const [batchOptions] = executeBatchModeSpy.mock.calls[0];
+    expect(batchOptions).toMatchObject({ executionMode: 'tdd' });
+  });
+
+  test('explicit --no-tdd overrides plan tdd: true', async () => {
+    const plan = await readPlanFile(simplePlanFile);
+    (plan as any).tdd = true;
+    await writePlanFile(simplePlanFile, plan);
+    clearPlanCache();
+
+    await timAgent(simplePlanFile, { log: false, tdd: false } as any, {});
+
+    expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
+    const [batchOptions] = executeBatchModeSpy.mock.calls[0];
+    expect(batchOptions).toMatchObject({ executionMode: 'normal' });
+  });
+
   test('serial task execution forwards simple mode to executor calls', async () => {
     serialFindNextActionableItemSpy
       .mockReturnValueOnce({

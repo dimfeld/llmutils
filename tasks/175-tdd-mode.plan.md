@@ -5,20 +5,20 @@ goal: ""
 id: 175
 uuid: 81bfa931-f9bc-4b5e-9ead-d7ab1a847137
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 planGeneratedAt: 2026-02-13T02:09:33.802Z
 promptsGeneratedAt: 2026-02-13T02:09:33.802Z
 createdAt: 2026-02-12T22:51:53.004Z
-updatedAt: 2026-02-13T03:03:23.504Z
+updatedAt: 2026-02-13T03:20:08.900Z
 tasks:
   - title: Add tdd field to plan schema
-    done: false
+    done: true
     description: "Add `tdd: z.boolean().optional()` to the plan schema in
       `src/tim/planSchema.ts`, right next to the existing `simple` field. This
       allows plans to declare TDD mode in their YAML frontmatter."
   - title: Add tdd-tests to SubagentType and register CLI command
-    done: false
+    done: true
     description: >-
       In `src/tim/commands/subagent.ts`: Update `SubagentType` union to include
       `tdd-tests`. Add a `case tdd-tests` in `buildAgentDefinition()` that calls
@@ -29,7 +29,7 @@ tasks:
       In `src/tim/tim.ts`: Update the subagent registration loop to include
       `tdd-tests` in the array.
   - title: Create the TDD tests agent prompt
-    done: false
+    done: true
     description: "Add a new `getTddTestsPrompt()` function in
       `src/tim/executors/claude_code/agent_prompts.ts` following the pattern of
       `getTesterPrompt()`. The prompt should instruct the agent to: (1) Read and
@@ -40,7 +40,7 @@ tasks:
       Fix any tests that fail for wrong reasons, (7) Report a summary of tests
       written and behavior defined."
   - title: Add --tdd CLI option and thread through agent command
-    done: false
+    done: true
     description: >-
       In `src/tim/tim.ts` `createAgentCommand()`: Add `.option("--tdd", "Use TDD
       mode: write tests first, then implement to make them pass")` alongside the
@@ -61,7 +61,7 @@ tasks:
       In `src/tim/commands/agent/batch_mode.ts`: Update the `executionMode` type
       to include `tdd`.
   - title: Create TDD orchestrator prompt
-    done: false
+    done: true
     description: >-
       Add `wrapWithOrchestrationTdd()` in
       `src/tim/executors/claude_code/orchestrator_prompt.ts`. Add `simpleMode?:
@@ -83,7 +83,7 @@ tasks:
       they fail for correct reasons, pass TDD test output to the implementer
       instructing it to make those tests pass.
   - title: Wire up TDD mode in the Claude Code executor
-    done: false
+    done: true
     description: "In `src/tim/executors/claude_code.ts` `execute()` method (around
       line 937-953): Add a branch for `planInfo.executionMode === tdd` that
       calls `wrapWithOrchestrationTdd()`, passing `simpleMode:
@@ -91,7 +91,7 @@ tasks:
       planFilePath, reviewExecutor, subagentExecutor,
       dynamicSubagentInstructions)."
   - title: Add custom instructions support for tdd-tests agent
-    done: false
+    done: true
     description: >-
       In `src/tim/configSchema.ts`: Add a `tddTests` entry to the `agents`
       config schema alongside `implementer`, `tester`, and `reviewer`.
@@ -100,7 +100,7 @@ tasks:
       In `src/tim/executors/codex_cli/agent_helpers.ts`: Update
       `loadAgentInstructionsFor()` to accept `tddTests` as an agent type.
   - title: Write tests for TDD mode
-    done: false
+    done: true
     description: >-
       Add tests covering:
 
@@ -119,6 +119,29 @@ tasks:
 
       3. Subagent tests: tdd-tests is accepted as a valid subagent type and
       dispatches to the correct prompt builder.
+changedFiles:
+  - README.md
+  - src/tim/batch_mode_integration.test.ts
+  - src/tim/commands/agent/agent.test.ts
+  - src/tim/commands/agent/agent.ts
+  - src/tim/commands/agent/batch_mode.ts
+  - src/tim/commands/agent/stub_plan.ts
+  - src/tim/commands/subagent.test.ts
+  - src/tim/commands/subagent.ts
+  - src/tim/configSchema.ts
+  - src/tim/executors/claude_code/agent_prompts.test.ts
+  - src/tim/executors/claude_code/agent_prompts.ts
+  - src/tim/executors/claude_code/orchestrator_prompt.test.ts
+  - src/tim/executors/claude_code/orchestrator_prompt.ts
+  - src/tim/executors/claude_code.test.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/codex_cli/agent_helpers.ts
+  - src/tim/executors/codex_cli.test.ts
+  - src/tim/executors/codex_cli.ts
+  - src/tim/executors/types.ts
+  - src/tim/planSchema.ts
+  - src/tim/tim.ts
+  - tim-gui/TimGUI/SessionsView.swift
 tags: []
 ---
 
@@ -420,3 +443,27 @@ Update `loadAgentInstructionsFor()` to accept `'tddTests'` as an agent type.
 2. Run `tim agent <plan> --tdd --dry-run` and verify the generated prompt includes TDD workflow
 3. Run `tim subagent tdd-tests <planId> --input "Write tests for X"` and verify it executes
 4. Run a full TDD cycle with a real plan to verify end-to-end behavior
+
+## Current Progress
+### Current State
+- All 8 tasks are implemented and tested. TDD mode is fully functional.
+### Completed (So Far)
+- Plan schema: `tdd: z.boolean().optional()` added
+- SubagentType union includes `tdd-tests`, registered in CLI loop
+- `getTddTestsPrompt()` agent prompt created with TDD-specific instructions
+- `--tdd` CLI option threaded through agent command, types, and batch mode
+- `wrapWithOrchestrationTdd()` orchestrator prompt created with both normal and simple TDD variants
+- Claude Code executor wired up with `executionMode === 'tdd'` branch
+- Codex CLI executor also handles TDD mode (routes to normal/simple based on simpleMode)
+- Custom instructions support added for `tddTests` agent in config schema and agent_helpers
+- Comprehensive tests across agent command, subagent, agent prompts, orchestrator prompt, Claude Code executor, and Codex CLI executor
+- README updated with TDD mode documentation
+### Remaining
+- None — all tasks complete
+### Next Iteration Guidance
+- None
+### Decisions / Changes
+- TDD mode takes priority over simple mode for execution mode selection, but simpleMode is still tracked separately and passed through to the orchestrator prompt
+- Codex executor routes TDD mode to executeNormalMode or executeSimpleMode based on simpleMode flag (same pattern as the existing normal/simple routing)
+### Risks / Blockers
+- None

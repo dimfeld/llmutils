@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'bun:test';
 import {
   getImplementerPrompt,
+  getTddTestsPrompt,
   getTesterPrompt,
   getReviewerPrompt,
   getVerifierAgentPrompt,
@@ -23,6 +24,14 @@ describe('agent_prompts failure protocol integration', () => {
     const def = getTesterPrompt(context);
     expect(def.prompt).toContain('FAILED:');
     expect(def.prompt).toContain('Failure Protocol');
+  });
+
+  it('includes TDD-first guidance in tdd-tests prompt', () => {
+    const def = getTddTestsPrompt(context);
+    expect(def.prompt).toContain('TDD test-writing agent');
+    expect(def.prompt).toContain('tests should initially FAIL');
+    expect(def.prompt).toContain('verify they fail for the correct reasons');
+    expect(def.prompt).toContain('Progress Reporting');
   });
 
   it('includes FAILED protocol in reviewer prompt', () => {

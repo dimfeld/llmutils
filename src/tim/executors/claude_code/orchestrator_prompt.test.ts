@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'bun:test';
-import { wrapWithOrchestration, wrapWithOrchestrationSimple } from './orchestrator_prompt.ts';
+import {
+  wrapWithOrchestration,
+  wrapWithOrchestrationSimple,
+  wrapWithOrchestrationTdd,
+} from './orchestrator_prompt.ts';
 
 describe('orchestrator_prompt failure protocol', () => {
   it('includes failure protocol with FAILED detection and propagation', () => {
@@ -222,6 +226,56 @@ describe('orchestrator_prompt subagent commands', () => {
       // The commands should NOT have a fixed -x flag embedded
       expect(out).not.toContain('tim subagent implementer 55 -x codex-cli');
       expect(out).not.toContain('tim subagent implementer 55 -x claude-code');
+    });
+  });
+
+  describe('tdd mode (wrapWithOrchestrationTdd)', () => {
+    it('includes tdd-tests before implementer and tester in normal TDD mode', () => {
+      const out = wrapWithOrchestrationTdd('Context', '71', {
+        batchMode: false,
+        simpleMode: false,
+      });
+      expect(out).toContain('tim subagent tdd-tests 71');
+      expect(out).toContain('tim subagent implementer 71');
+      expect(out).toContain('tim subagent tester 71');
+      expect(out).toContain('1. **TDD Test Phase**');
+      expect(out).toContain('2. **Implementation Phase**');
+      expect(out).toContain('3. **Testing Phase**');
+      expect(out).toContain('4. **Review Phase**');
+      expect(out).toContain('pass the TDD tests output');
+    });
+
+    it('uses verifier in TDD simple mode', () => {
+      const out = wrapWithOrchestrationTdd('Context', '72', { batchMode: false, simpleMode: true });
+      expect(out).toContain('tim subagent tdd-tests 72');
+      expect(out).toContain('tim subagent implementer 72');
+      expect(out).toContain('tim subagent verifier 72');
+      expect(out).not.toContain('tim subagent tester 72');
+      expect(out).toContain('3. **Verification Phase**');
+      expect(out).not.toContain('Review Phase');
+    });
+
+    it('includes dynamic executor guidance for TDD mode when subagent executor is dynamic', () => {
+      const out = wrapWithOrchestrationTdd('Context', '73', {
+        batchMode: true,
+        simpleMode: false,
+        subagentExecutor: 'dynamic',
+        dynamicSubagentInstructions: 'Use codex-cli for tests.',
+      });
+      expect(out).toContain('Subagent Executor Selection');
+      expect(out).toContain('Use codex-cli for tests.');
+      expect(out).toContain('1. **Task Selection Phase**');
+      expect(out).toContain('2. **TDD Test Phase**');
+    });
+
+    it('includes fixed -x flag in TDD mode when subagent executor is fixed', () => {
+      const out = wrapWithOrchestrationTdd('Context', '74', {
+        batchMode: false,
+        subagentExecutor: 'claude-code',
+      });
+      expect(out).toContain('tim subagent tdd-tests 74 -x claude-code');
+      expect(out).toContain('tim subagent implementer 74 -x claude-code');
+      expect(out).not.toContain('Subagent Executor Selection');
     });
   });
 

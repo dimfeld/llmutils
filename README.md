@@ -151,6 +151,7 @@ uuid: abc-def-123                # Stable unique identifier
 status: in_progress              # pending|in_progress|done|cancelled|deferred
 priority: high                   # low|medium|high|urgent|maybe
 simple: false                    # If true, skip research phase
+tdd: false                       # If true, use TDD mode in tim agent/run
 
 # Relationships
 parent: 100                      # Parent plan ID
@@ -345,6 +346,14 @@ tim agent 123 --simple
 # Flow: implement → verify (type check, lint, test)
 # Instead of: implement → test → review
 
+# TDD mode - write tests first, then implement
+tim agent 123 --tdd
+# Flow: tdd-tests → implement → test → review
+
+# TDD + simple mode
+tim agent 123 --tdd --simple
+# Flow: tdd-tests → implement → verify
+
 # Limit execution to N steps
 tim agent 123 --steps 3
 ```
@@ -498,9 +507,12 @@ tim subagent tester 123 -x codex-cli --input "Write tests for the auth module"
 
 # Run the verifier subagent (used in simple mode)
 tim subagent verifier 123 --input "Verify type checks, linting, and tests pass"
+
+# Run the TDD tests subagent (used in TDD mode)
+tim subagent tdd-tests 123 --input "Write failing tests for task 1 and validate failure reasons"
 ```
 
-Available subagent types: `implementer`, `tester`, `verifier`. The `-x` flag accepts `codex-cli` or `claude-code` (default: `claude-code`).
+Available subagent types: `implementer`, `tester`, `tdd-tests`, `verifier`. The `-x` flag accepts `codex-cli` or `claude-code` (default: `claude-code`).
 
 ---
 
@@ -1980,7 +1992,7 @@ tim generate [--issue NUM | --plan FILE | --plan-editor] -- [RMFILTER_ARGS]
 tim generate ID -- [RMFILTER_ARGS]
 
 # Execute plan
-tim agent ID [--orchestrator NAME] [-x codex-cli|claude-code|dynamic] [--dynamic-instructions TEXT]
+tim agent ID [--orchestrator NAME] [-x codex-cli|claude-code|dynamic] [--dynamic-instructions TEXT] [--simple] [--tdd]
 tim agent ID [--workspace ID] [--steps N]
 tim run ID  # alias for agent
 tim run-prompt [PROMPT] [-x claude|claude-code|codex|codex-cli] [--model MODEL] [--reasoning-level LEVEL]
@@ -1989,6 +2001,7 @@ tim run-prompt [PROMPT] [--json-schema JSON_OR_@FILE] [--prompt-file FILE] [-q]
 # Run subagents (used by orchestrator, can also be run standalone)
 tim subagent implementer PLAN [-x codex-cli|claude-code] [--input TEXT] [-m MODEL]
 tim subagent tester PLAN [-x codex-cli|claude-code] [--input TEXT] [-m MODEL]
+tim subagent tdd-tests PLAN [-x codex-cli|claude-code] [--input TEXT] [-m MODEL]
 tim subagent verifier PLAN [-x codex-cli|claude-code] [--input TEXT] [-m MODEL]
 
 # Track progress

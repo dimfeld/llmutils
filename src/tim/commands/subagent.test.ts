@@ -7,6 +7,7 @@ import { clearPlanCache, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
   getImplementerPrompt,
+  getTddTestsPrompt,
   getTesterPrompt,
   getVerifierAgentPrompt,
 } from '../executors/claude_code/agent_prompts.js';
@@ -311,6 +312,19 @@ describe('subagent command - prompt construction and executor delegation', () =>
     );
   });
 
+  test('builds tdd-tests prompt with correct context and mode: report', async () => {
+    const { handleSubagentCommand } = await import('./subagent.js');
+
+    await handleSubagentCommand('tdd-tests', planFilePath, { executor: 'codex-cli' }, {});
+
+    expect(capturedCodexPrompt).toBeDefined();
+    expect(capturedCodexPrompt!).toContain('TDD test-writing agent');
+    expect(capturedCodexPrompt!).toContain('tests should initially FAIL');
+    expect(capturedCodexPrompt!).toContain(
+      'Report progress, decisions, and blockers to the orchestrator'
+    );
+  });
+
   test('includes orchestrator --input in the prompt as custom instructions', async () => {
     const { handleSubagentCommand } = await import('./subagent.js');
 
@@ -459,6 +473,19 @@ describe('subagent command - prompt construction and executor delegation', () =>
     await handleSubagentCommand('tester', planFilePath, { executor: 'codex-cli' }, {});
 
     expect(agentInstructionRequests).toEqual(['tester']);
+  });
+
+  test('tdd-tests loads tddTests instructions key', async () => {
+    const tddInstructions = 'TDD: Prefer behavior-driven tests.';
+    customInstructionsMap['tddTests'] = tddInstructions;
+
+    const { handleSubagentCommand } = await import('./subagent.js');
+
+    await handleSubagentCommand('tdd-tests', planFilePath, { executor: 'codex-cli' }, {});
+
+    expect(agentInstructionRequests).toEqual(['tddTests']);
+    expect(capturedCodexPrompt).toBeDefined();
+    expect(capturedCodexPrompt!).toContain(tddInstructions);
   });
 
   test('prints final message to stdout for codex executor', async () => {
@@ -683,6 +710,18 @@ describe('subagent prompt function correctness', () => {
     expect(result.prompt).toContain('Report progress, decisions, and blockers to the orchestrator');
   });
 
+  test('getTddTestsPrompt with mode: report includes TDD-first guidance', () => {
+    const result = getTddTestsPrompt('test context', '42', 'custom instructions', undefined, {
+      mode: 'report',
+    });
+
+    expect(result.name).toBe('tdd-tests');
+    expect(result.prompt).toContain('test context');
+    expect(result.prompt).toContain('custom instructions');
+    expect(result.prompt).toContain('tests should initially FAIL');
+    expect(result.prompt).toContain('Report progress, decisions, and blockers to the orchestrator');
+  });
+
   test('getVerifierAgentPrompt with mode: report includes progress reporting', () => {
     const result = getVerifierAgentPrompt(
       'test context',
@@ -772,12 +811,14 @@ describe('subagent prompt function correctness', () => {
 
   test('all prompt functions produce skills with using-tim', () => {
     const impl = getImplementerPrompt('ctx', '1', undefined, undefined, { mode: 'report' });
+    const tdd = getTddTestsPrompt('ctx', '1', undefined, undefined, { mode: 'report' });
     const tester = getTesterPrompt('ctx', '1', undefined, undefined, { mode: 'report' });
     const verifier = getVerifierAgentPrompt('ctx', '1', undefined, undefined, false, false, {
       mode: 'report',
     });
 
     expect(impl.skills).toContain('using-tim');
+    expect(tdd.skills).toContain('using-tim');
     expect(tester.skills).toContain('using-tim');
     expect(verifier.skills).toContain('using-tim');
   });
@@ -809,7 +850,7 @@ describe('allowed tools in ClaudeCodeExecutor', () => {
 });
 
 describe('subagent command registration in tim.ts', () => {
-  test('registers subagent command with all three subcommands', async () => {
+  test('registers subagent command with all four subcommands', async () => {
     const sourceFile = path.join(import.meta.dirname, '..', 'tim.ts');
     const source = await fs.readFile(sourceFile, 'utf-8');
 
@@ -817,9 +858,10 @@ describe('subagent command registration in tim.ts', () => {
     expect(source).toContain("command('subagent')");
     expect(source).toContain('Run a subagent for the orchestrator');
 
-    // Verify all three subcommand types are registered via the loop
+    // Verify all subcommand types are registered via the loop
     expect(source).toContain("'implementer'");
     expect(source).toContain("'tester'");
+    expect(source).toContain("'tdd-tests'");
     expect(source).toContain("'verifier'");
   });
 
