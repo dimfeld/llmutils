@@ -4,7 +4,7 @@ title: claude code streaming json input
 goal: ""
 id: 178
 uuid: 8970382a-14d8-40e2-9fda-206b952d2591
-status: in_progress
+status: done
 priority: medium
 epic: true
 dependencies:
@@ -14,8 +14,19 @@ references:
   "186": 06ad50ff-d486-47c2-ab95-d0e0366de585
   "187": 91e2545c-751f-4ab1-a4cc-6511191d7498
 createdAt: 2026-02-13T06:35:03.721Z
-updatedAt: 2026-02-13T09:09:25.551Z
+updatedAt: 2026-02-13T18:58:01.199Z
 tasks: []
+changedFiles:
+  - src/common/process.test.ts
+  - src/common/process.ts
+  - src/tim/commands/subagent.test.ts
+  - src/tim/commands/subagent.ts
+  - src/tim/executors/claude_code.test.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/executors/claude_code_model_test.ts
+  - src/tim/executors/claude_code/permissions_mcp.ts
+  - src/tim/executors/claude_code/permissions_mcp_setup.test.ts
+  - src/tim/executors/claude_code/permissions_mcp_setup.ts
 tags: []
 ---
 

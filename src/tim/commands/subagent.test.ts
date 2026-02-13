@@ -910,17 +910,15 @@ describe('subagent prompt function correctness', () => {
 
 describe('allowed tools in getDefaultAllowedTools', () => {
   test('Bash(tim subagent:*) is in the default allowed tools list', async () => {
-    const { getDefaultAllowedTools } = await import(
-      '../executors/claude_code/run_claude_subprocess.ts'
-    );
+    const { getDefaultAllowedTools } =
+      await import('../executors/claude_code/run_claude_subprocess.ts');
     const tools = getDefaultAllowedTools();
     expect(tools).toContain('Bash(tim subagent:*)');
   });
 
   test('Bash(tim subagent:*) coexists with other tim tools', async () => {
-    const { getDefaultAllowedTools } = await import(
-      '../executors/claude_code/run_claude_subprocess.ts'
-    );
+    const { getDefaultAllowedTools } =
+      await import('../executors/claude_code/run_claude_subprocess.ts');
     const tools = getDefaultAllowedTools();
 
     expect(tools).toContain('Bash(tim add:*)');

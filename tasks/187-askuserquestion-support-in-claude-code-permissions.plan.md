@@ -5,7 +5,7 @@ goal: ""
 id: 187
 uuid: 91e2545c-751f-4ab1-a4cc-6511191d7498
 generatedBy: agent
-status: pending
+status: done
 priority: medium
 parent: 178
 references:
@@ -13,10 +13,10 @@ references:
 planGeneratedAt: 2026-02-13T09:06:48.293Z
 promptsGeneratedAt: 2026-02-13T09:06:48.293Z
 createdAt: 2026-02-13T08:54:00.234Z
-updatedAt: 2026-02-13T09:06:48.294Z
+updatedAt: 2026-02-13T19:00:50.791Z
 tasks:
   - title: Extend permissions_mcp.ts to handle updatedInput in responses
-    done: false
+    done: true
     description: "In src/tim/executors/claude_code/permissions_mcp.ts: Change
       handleParentResponse() to resolve with {approved, updatedInput?} instead
       of just boolean. Update requestPermissionFromParent() return type
@@ -24,7 +24,7 @@ tasks:
       response.updatedInput when present (falling back to original input). This
       is backwards compatible for regular permission requests."
   - title: Implement AskUserQuestion handler in permissions_mcp_setup.ts
-    done: false
+    done: true
     description: 'In src/tim/executors/claude_code/permissions_mcp_setup.ts: Create
       handleAskUserQuestion() function. Detect tool_name === "AskUserQuestion"
       early in handlePermissionLine() and route to this handler. For each
@@ -35,7 +35,7 @@ tasks:
       approved:true and updatedInput:{questions, answers}. Include timeout
       handling and bell alert.'
   - title: Write tests for AskUserQuestion handling
-    done: false
+    done: true
     description: "Add tests in
       src/tim/executors/claude_code/permissions_mcp_setup.test.ts (or a new test
       file): Test single-select question handling, multi-select handling, free
@@ -43,6 +43,11 @@ tasks:
       socket protocol. Mock promptSelect/promptCheckbox/promptInput from
       src/common/input.ts. Verify the permission_response includes updatedInput
       with correct questions and answers structure."
+changedFiles:
+  - src/tim/commands/subagent.test.ts
+  - src/tim/executors/claude_code/permissions_mcp.ts
+  - src/tim/executors/claude_code/permissions_mcp_setup.test.ts
+  - src/tim/executors/claude_code/permissions_mcp_setup.ts
 tags: []
 ---
 
@@ -276,3 +281,27 @@ Add tests for AskUserQuestion handling. The test approach:
 4. Test multi-select: select with space, submit with enter
 5. Test "Free text": select it, type custom response, press enter
 6. Verify Claude receives the answers and continues appropriately
+
+## Current Progress
+### Current State
+- All 3 tasks complete: implementation, handler, and tests
+### Completed (So Far)
+- Task 1: Extended permissions_mcp.ts with PermissionResponseData interface, handleParentResponse resolves with {approved, updatedInput?}, requestPermissionFromParent returns the full object, approval_prompt tool uses response.updatedInput ?? input
+- Task 2: Added handleAskUserQuestion() in permissions_mcp_setup.ts with promptSelect/promptCheckbox/promptInput support, Free text option, timeout handling, and early detection in handlePermissionLine()
+- Task 3: 11 tests covering single-select, multi-select, free text, multiple questions, timeout, empty questions denial, and Free text choice presence verification
+### Remaining
+- None — all tasks complete
+### Next Iteration Guidance
+- Manual testing recommended: run `tim agent <planId>` with a plan likely to trigger AskUserQuestion
+### Decisions / Changes
+- handleAskUserQuestion uses narrowed Pick<PermissionsMcpOptions, 'timeout'> instead of the full options type
+- Empty/malformed questions arrays are denied (approved: false) rather than silently approved
+- handlePermissionLine has a top-level try/catch that sends deny responses on unexpected errors
+- Removed redundant requestId validation from handleAskUserQuestion since handlePermissionLine already validates
+- Non-timeout errors use log() instead of debugLog() for visibility
+### Lessons Learned
+- The socket handler needed `void ... .catch()` because handlePermissionLine is async but the socket data callback is sync — without it, unhandled rejections would crash the process
+- Review caught that empty questions array silently approving was a real bug — always validate boundary inputs even for internal protocols
+- The permissions_mcp.ts MCP server side is hard to unit test directly (requires full FastMCP setup), so testing through the socket protocol from the setup side provides the most practical coverage
+### Risks / Blockers
+- None

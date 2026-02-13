@@ -28,6 +28,11 @@ let parentSocket: net.Socket | null = null;
 const pendingRequests = new Map<string, (value: any) => void>();
 let requestCounter = 0;
 
+export interface PermissionResponseData {
+  approved: boolean;
+  updatedInput?: any;
+}
+
 // Generate a unique request ID
 function generateRequestId(): string {
   return `req_${Date.now()}_${++requestCounter}`;
@@ -185,15 +190,21 @@ function handleParentResponse(message: any) {
   pendingRequests.delete(message.requestId);
 
   if (message.type === 'permission_response') {
-    resolver(message.approved);
+    resolver({
+      approved: message.approved,
+      updatedInput: message.updatedInput,
+    });
   } else {
     console.error('Unknown response type:', message.type);
-    resolver(null);
+    resolver({ approved: false });
   }
 }
 
 // Send a request to the parent process and wait for response
-async function requestPermissionFromParent(tool_name: string, input: any): Promise<boolean> {
+async function requestPermissionFromParent(
+  tool_name: string,
+  input: any
+): Promise<PermissionResponseData> {
   if (!parentSocket) {
     throw new Error('Not connected to parent process');
   }
@@ -242,7 +253,7 @@ server.addTool({
   execute: async ({ tool_name, input }) => {
     try {
       // Request permission from the parent process
-      const approved = await requestPermissionFromParent(tool_name, input);
+      const response = await requestPermissionFromParent(tool_name, input);
 
       // Return the response based on user's decision
       return {
@@ -250,10 +261,10 @@ server.addTool({
           {
             type: 'text',
             text: JSON.stringify(
-              approved
+              response.approved
                 ? {
                     behavior: 'allow',
-                    updatedInput: input,
+                    updatedInput: response.updatedInput ?? input,
                   }
                 : {
                     behavior: 'deny',

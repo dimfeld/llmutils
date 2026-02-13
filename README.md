@@ -1524,7 +1524,7 @@ executors:
     model: anthropic/claude-3.5-sonnet
     simpleMode: false # Use --simple mode by default
     permissionsMcp:
-      enabled: false # Interactive permission system
+      enabled: false # Interactive permission system (also handles AskUserQuestion)
       autoApproveCreatedFileDeletion: false
 
   codex-cli:

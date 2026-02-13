@@ -76,8 +76,13 @@ function connectToParent(socketPath: string) {
   });
 }
 
+interface PermissionResponseData {
+  approved: boolean;
+  updatedInput?: any;
+}
+
 // Send a request to the parent process and wait for response
-async function requestPermissionFromParent(tool_name: string, input: any): Promise<boolean> {
+async function requestPermissionFromParent(tool_name: string, input: any): Promise<PermissionResponseData> {
   if (!parentSocket) {
     throw new Error('Not connected to parent process');
   }
@@ -95,7 +100,10 @@ async function requestPermissionFromParent(tool_name: string, input: any): Promi
         const response = JSON.parse(data.toString());
         if (response.type === 'permission_response') {
           parentSocket!.off('data', responseHandler);
-          resolve(response.approved);
+          resolve({
+            approved: response.approved,
+            updatedInput: response.updatedInput,
+          });
         }
       } catch (err) {
         reject(err);
@@ -117,18 +125,19 @@ server.addTool({
   execute: async ({ tool_name, input }) => {
     try {
       // Request permission from the parent process
-      const approved = await requestPermissionFromParent(tool_name, input);
+      const response = await requestPermissionFromParent(tool_name, input);
 
       // Return the response based on user's decision
+      // When updatedInput is present (e.g. from AskUserQuestion), use it instead of original input
       return {
         content: [
           {
             type: 'text',
             text: JSON.stringify(
-              approved
+              response.approved
                 ? {
                     behavior: 'allow',
-                    updatedInput: input,
+                    updatedInput: response.updatedInput ?? input,
                   }
                 : {
                     behavior: 'deny',
@@ -363,7 +372,7 @@ server.addTool({
 
 ## Step 9: How the Parent Process Handles Permission Requests
 
-The parent process (Claude Code executor) creates a Unix socket server to handle permission requests:
+The parent process (Claude Code executor) creates a Unix socket server to handle permission requests. It routes `AskUserQuestion` requests to a dedicated handler (see Step 10), while standard tool permission requests go through the normal allow/deny flow:
 
 ```typescript
 import * as net from 'net';
@@ -375,7 +384,13 @@ const server = net.createServer((socket) => {
     const message = JSON.parse(data.toString());
 
     if (message.type === 'permission_request') {
-      const { tool_name, input } = message;
+      const { tool_name, input, requestId } = message;
+
+      // Route AskUserQuestion to a dedicated handler
+      if (tool_name === 'AskUserQuestion') {
+        await handleAskUserQuestion(message, socket);
+        return;
+      }
 
       // Prompt the user for confirmation
       const approved = await confirm({
@@ -386,6 +401,7 @@ const server = net.createServer((socket) => {
       socket.write(
         JSON.stringify({
           type: 'permission_response',
+          requestId,
           approved,
         }) + '\n'
       );
@@ -398,6 +414,102 @@ server.listen(socketPath);
 
 This creates an interactive prompt for the user to approve or deny tool usage.
 
+## Step 10: Handling AskUserQuestion Requests
+
+When Claude calls `AskUserQuestion`, the request flows through the same `approval_prompt` MCP tool but the parent process handles it differently. Instead of a simple allow/deny prompt, it presents each question interactively and sends the user's answers back via `updatedInput`.
+
+The `AskUserQuestion` input contains a `questions` array with 1-4 questions, each having 2-4 options. Questions can be single-select or multi-select. A "Free text" option is added to allow custom answers.
+
+```typescript
+import { select, checkbox, input } from '@inquirer/prompts';
+
+const FREE_TEXT_VALUE = '__free_text__';
+
+async function handleAskUserQuestion(
+  message: { requestId?: string; input?: any },
+  socket: net.Socket
+): Promise<void> {
+  const requestId = message.requestId!;
+  const questions = Array.isArray(message.input?.questions) ? message.input.questions : [];
+
+  if (questions.length === 0) {
+    socket.write(JSON.stringify({ type: 'permission_response', requestId, approved: false }) + '\n');
+    return;
+  }
+
+  const answers: Record<string, string> = {};
+
+  for (const question of questions) {
+    const questionText = question.question ?? 'Question';
+    const choices = (question.options ?? []).map((opt: any) => ({
+      name: opt.label,
+      value: opt.label,
+      description: opt.description,
+    }));
+    choices.push({ name: 'Free text', value: FREE_TEXT_VALUE });
+
+    if (question.multiSelect) {
+      // Multi-select: user picks one or more options
+      const selected = await checkbox({ message: questionText, choices });
+      const selectedAnswers = selected.filter((v) => v !== FREE_TEXT_VALUE);
+      if (selected.includes(FREE_TEXT_VALUE)) {
+        selectedAnswers.push(await input({ message: 'Enter custom answer' }));
+      }
+      answers[questionText] = selectedAnswers.join(', ');
+    } else {
+      // Single-select: user picks exactly one option
+      const selected = await select({ message: questionText, choices });
+      if (selected === FREE_TEXT_VALUE) {
+        answers[questionText] = await input({ message: 'Enter custom answer' });
+      } else {
+        answers[questionText] = selected;
+      }
+    }
+  }
+
+  // Send answers back with updatedInput
+  socket.write(
+    JSON.stringify({
+      type: 'permission_response',
+      requestId,
+      approved: true,
+      updatedInput: { questions, answers },
+    }) + '\n'
+  );
+}
+```
+
+The response protocol uses the `updatedInput` field to carry the answers back through the MCP server. The MCP server's `approval_prompt` handler returns `updatedInput` to Claude as part of the `allow` response, so Claude receives the user's answers in the expected format.
+
+**Key points:**
+- Empty or malformed question arrays are denied rather than silently approved
+- Timeout and prompt errors result in a deny response
+- Multi-select answers are joined with `", "` (e.g., `"Option A, Option B"`)
+- The "Free text" option allows users to type a custom answer not in the predefined choices
+
+## Development Notes
+
+### Async Socket Handlers Require `void ... .catch()`
+
+When the socket `data` callback dispatches to an async handler (like `handlePermissionLine`), wrap the call in `void ... .catch()`. The `data` callback is synchronous — without this pattern, unhandled promise rejections from the async handler will crash the process:
+
+```typescript
+socket.on('data', (data) => {
+  const lines = splitLines(data.toString());
+  for (const line of lines) {
+    if (!line) continue;
+    // CORRECT: fire-and-forget with error handling
+    void handlePermissionLine(line, socket, allowedToolsMap, options).catch((err) => {
+      debugLog('Permission handler failed:', err);
+    });
+  }
+});
+```
+
+### Testing the MCP Server
+
+The `permissions_mcp.ts` MCP server side is hard to unit test directly because it requires a full FastMCP setup. The most practical coverage comes from testing through the Unix socket protocol on the `permissions_mcp_setup.ts` side — mock the prompt functions, send messages through the socket, and verify the response messages. This validates the full request/response flow without needing to stand up the MCP transport.
+
 ## Conclusion
 
 You've implemented a permissions MCP server for the Claude Code SDK using FastMCP in TypeScript with stdio transport. FastMCP simplifies development with its intuitive APIs and built-in best practices, while stdio transport enables direct communication with Claude Code. The Unix socket approach avoids HTTP timeout issues and provides reliable communication for interactive permission prompts.
@@ -408,5 +520,6 @@ This architecture allows:
 - No timeout issues when users take time to respond
 - Direct integration with Claude Code's MCP system
 - Secure communication between processes
+- Interactive question handling via AskUserQuestion
 
 For more details, refer to the [FastMCP GitHub repository](https://github.com/punkpeye/fastmcp) and the [Claude Code SDK documentation](https://docs.anthropic.com/en/docs/claude-code/sdk).
