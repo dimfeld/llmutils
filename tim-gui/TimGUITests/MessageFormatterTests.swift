@@ -14,7 +14,12 @@ struct MessageFormatterTests {
             tunnelMessage: .args(type: "log", args: ["Starting", "build", "process"]),
             seq: 1
         )
-        #expect(msg.text == "Starting build process")
+        #expect(msg.title == nil)
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "Starting build process")
         #expect(msg.category == .log)
         #expect(msg.seq == 1)
     }
@@ -25,7 +30,12 @@ struct MessageFormatterTests {
             tunnelMessage: .args(type: "error", args: ["Something", "failed"]),
             seq: 2
         )
-        #expect(msg.text == "Something failed")
+        #expect(msg.title == nil)
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "Something failed")
         #expect(msg.category == .error)
     }
 
@@ -35,7 +45,11 @@ struct MessageFormatterTests {
             tunnelMessage: .args(type: "warn", args: ["Watch out"]),
             seq: 3
         )
-        #expect(msg.text == "Watch out")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "Watch out")
         #expect(msg.category == .error)
     }
 
@@ -45,7 +59,11 @@ struct MessageFormatterTests {
             tunnelMessage: .args(type: "debug", args: ["debug info"]),
             seq: 4
         )
-        #expect(msg.text == "debug info")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "debug info")
         #expect(msg.category == .log)
     }
 
@@ -57,7 +75,12 @@ struct MessageFormatterTests {
             tunnelMessage: .data(type: "stdout", data: "hello output"),
             seq: 5
         )
-        #expect(msg.text == "hello output")
+        #expect(msg.title == nil)
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "hello output")
         #expect(msg.category == .log)
     }
 
@@ -67,13 +90,17 @@ struct MessageFormatterTests {
             tunnelMessage: .data(type: "stderr", data: "error output"),
             seq: 6
         )
-        #expect(msg.text == "error output")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "error output")
         #expect(msg.category == .error)
     }
 
     // MARK: - Structured messages
 
-    @Test("Formats agent_session_start as lifecycle")
+    @Test("Formats agent_session_start as lifecycle with key-value pairs")
     func formatsAgentSessionStart() {
         let payload = AgentSessionStartPayload(
             executor: "claude", mode: "agent", planId: 42,
@@ -83,13 +110,35 @@ struct MessageFormatterTests {
             seq: 10
         )
         #expect(msg.category == .lifecycle)
-        #expect(msg.text.contains("Starting"))
-        #expect(msg.text.contains("Executor: claude"))
-        #expect(msg.text.contains("Mode: agent"))
-        #expect(msg.text.contains("Plan: 42"))
+        #expect(msg.title == "Starting")
+        #expect(msg.timestamp == nil)
+        guard case .keyValuePairs(let pairs) = msg.body else {
+            Issue.record("Expected .keyValuePairs body")
+            return
+        }
+        #expect(pairs.count == 3)
+        #expect(pairs[0].key == "Executor")
+        #expect(pairs[0].value == "claude")
+        #expect(pairs[1].key == "Mode")
+        #expect(pairs[1].value == "agent")
+        #expect(pairs[2].key == "Plan")
+        #expect(pairs[2].value == "42")
     }
 
-    @Test("Formats agent_session_end as lifecycle")
+    @Test("Formats agent_session_start with nil fields omits those pairs")
+    func formatsAgentSessionStartNilFields() {
+        let payload = AgentSessionStartPayload(
+            executor: nil, mode: nil, planId: nil,
+            sessionId: nil, threadId: nil, tools: nil, mcpServers: nil, timestamp: nil)
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .agentSessionStart(payload)),
+            seq: 10
+        )
+        #expect(msg.title == "Starting")
+        #expect(msg.body == nil)
+    }
+
+    @Test("Formats agent_session_end as lifecycle with key-value pairs")
     func formatsAgentSessionEnd() {
         let payload = AgentSessionEndPayload(
             success: true, sessionId: nil, threadId: nil,
@@ -99,10 +148,16 @@ struct MessageFormatterTests {
             seq: 11
         )
         #expect(msg.category == .lifecycle)
-        #expect(msg.text.contains("Done"))
-        #expect(msg.text.contains("Success: yes"))
-        #expect(msg.text.contains("Duration: 45s"))
-        #expect(msg.text.contains("Cost: $1.25"))
+        #expect(msg.title == "Done")
+        guard case .keyValuePairs(let pairs) = msg.body else {
+            Issue.record("Expected .keyValuePairs body")
+            return
+        }
+        let pairDict = Dictionary(uniqueKeysWithValues: pairs.map { ($0.key, $0.value) })
+        #expect(pairDict["Success"] == "yes")
+        #expect(pairDict["Duration"] == "45s")
+        #expect(pairDict["Cost"] == "$1.25")
+        #expect(pairDict["Turns"] == "12")
     }
 
     @Test("Formats agent_session_end failure")
@@ -114,10 +169,17 @@ struct MessageFormatterTests {
             tunnelMessage: .structured(message: .agentSessionEnd(payload)),
             seq: 12
         )
-        #expect(msg.text.contains("Success: no"))
+        #expect(msg.title == "Done")
+        guard case .keyValuePairs(let pairs) = msg.body else {
+            Issue.record("Expected .keyValuePairs body")
+            return
+        }
+        #expect(pairs.count == 1)
+        #expect(pairs[0].key == "Success")
+        #expect(pairs[0].value == "no")
     }
 
-    @Test("Formats llm_tool_use as toolUse")
+    @Test("Formats llm_tool_use as toolUse with monospaced body")
     func formatsLlmToolUse() {
         let payload = LlmToolUsePayload(
             toolName: "Read", inputSummary: "Reading file.ts", input: nil, timestamp: nil)
@@ -126,11 +188,15 @@ struct MessageFormatterTests {
             seq: 20
         )
         #expect(msg.category == .toolUse)
-        #expect(msg.text.contains("Invoke Tool: Read"))
-        #expect(msg.text.contains("Reading file.ts"))
+        #expect(msg.title == "Invoke Tool: Read")
+        guard case .monospaced(let body) = msg.body else {
+            Issue.record("Expected .monospaced body")
+            return
+        }
+        #expect(body == "Reading file.ts")
     }
 
-    @Test("Formats llm_tool_result as toolUse")
+    @Test("Formats llm_tool_result as toolUse with monospaced body")
     func formatsLlmToolResult() {
         let payload = LlmToolResultPayload(
             toolName: "Read", resultSummary: "File contents here", result: nil, timestamp: nil)
@@ -139,8 +205,12 @@ struct MessageFormatterTests {
             seq: 21
         )
         #expect(msg.category == .toolUse)
-        #expect(msg.text.contains("Tool Result: Read"))
-        #expect(msg.text.contains("File contents here"))
+        #expect(msg.title == "Tool Result: Read")
+        guard case .monospaced(let body) = msg.body else {
+            Issue.record("Expected .monospaced body")
+            return
+        }
+        #expect(body == "File contents here")
     }
 
     @Test("Formats llm_tool_use falls back to input when inputSummary is nil")
@@ -152,8 +222,12 @@ struct MessageFormatterTests {
             seq: 22
         )
         #expect(msg.category == .toolUse)
-        #expect(msg.text.contains("Invoke Tool: Bash"))
-        #expect(msg.text.contains("npm test"))
+        #expect(msg.title == "Invoke Tool: Bash")
+        guard case .monospaced(let body) = msg.body else {
+            Issue.record("Expected .monospaced body")
+            return
+        }
+        #expect(body == "npm test")
     }
 
     @Test("Formats llm_tool_use prefers inputSummary over input")
@@ -164,8 +238,12 @@ struct MessageFormatterTests {
             tunnelMessage: .structured(message: .llmToolUse(payload)),
             seq: 23
         )
-        #expect(msg.text.contains("Reading file.ts"))
-        #expect(!msg.text.contains("src/file.ts"))
+        guard case .monospaced(let body) = msg.body else {
+            Issue.record("Expected .monospaced body")
+            return
+        }
+        #expect(body == "Reading file.ts")
+        #expect(!body.contains("src/file.ts"))
     }
 
     @Test("Formats llm_tool_result falls back to result when resultSummary is nil")
@@ -177,23 +255,32 @@ struct MessageFormatterTests {
             seq: 24
         )
         #expect(msg.category == .toolUse)
-        #expect(msg.text.contains("Tool Result: Bash"))
-        #expect(msg.text.contains("All tests passed"))
+        #expect(msg.title == "Tool Result: Bash")
+        guard case .monospaced(let body) = msg.body else {
+            Issue.record("Expected .monospaced body")
+            return
+        }
+        #expect(body == "All tests passed")
     }
 
     @Test("Formats llm_tool_result prefers resultSummary over result")
     func formatsLlmToolResultSummaryPreferred() {
         let payload = LlmToolResultPayload(
-            toolName: "Read", resultSummary: "File contents here", result: "full raw output", timestamp: nil)
+            toolName: "Read", resultSummary: "File contents here", result: "full raw output",
+            timestamp: nil)
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .llmToolResult(payload)),
             seq: 25
         )
-        #expect(msg.text.contains("File contents here"))
-        #expect(!msg.text.contains("full raw output"))
+        guard case .monospaced(let body) = msg.body else {
+            Issue.record("Expected .monospaced body")
+            return
+        }
+        #expect(body == "File contents here")
+        #expect(!body.contains("full raw output"))
     }
 
-    @Test("Formats llm_tool_use with neither inputSummary nor input shows just header")
+    @Test("Formats llm_tool_use with neither inputSummary nor input has nil body")
     func formatsLlmToolUseNoInput() {
         let payload = LlmToolUsePayload(
             toolName: "Bash", inputSummary: nil, input: nil, timestamp: nil)
@@ -202,10 +289,11 @@ struct MessageFormatterTests {
             seq: 26
         )
         #expect(msg.category == .toolUse)
-        #expect(msg.text.contains("Invoke Tool: Bash"))
+        #expect(msg.title == "Invoke Tool: Bash")
+        #expect(msg.body == nil)
     }
 
-    @Test("Formats llm_tool_result with neither resultSummary nor result shows just header")
+    @Test("Formats llm_tool_result with neither resultSummary nor result has nil body")
     func formatsLlmToolResultNoResult() {
         let payload = LlmToolResultPayload(
             toolName: "Write", resultSummary: nil, result: nil, timestamp: nil)
@@ -214,10 +302,11 @@ struct MessageFormatterTests {
             seq: 27
         )
         #expect(msg.category == .toolUse)
-        #expect(msg.text.contains("Tool Result: Write"))
+        #expect(msg.title == "Tool Result: Write")
+        #expect(msg.body == nil)
     }
 
-    @Test("Formats file_write as fileChange")
+    @Test("Formats file_write as fileChange with monospaced body")
     func formatsFileWrite() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .fileWrite(
@@ -225,12 +314,16 @@ struct MessageFormatterTests {
             seq: 30
         )
         #expect(msg.category == .fileChange)
-        #expect(msg.text.contains("Write"))
-        #expect(msg.text.contains("/tmp/project/new.ts"))
-        #expect(msg.text.contains("42 lines"))
+        #expect(msg.title == "Invoke Tool: Write")
+        guard case .monospaced(let body) = msg.body else {
+            Issue.record("Expected .monospaced body")
+            return
+        }
+        #expect(body.contains("/tmp/project/new.ts"))
+        #expect(body.contains("42 lines"))
     }
 
-    @Test("Formats file_edit as fileChange")
+    @Test("Formats file_edit as fileChange with monospaced body")
     func formatsFileEdit() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .fileEdit(
@@ -238,12 +331,16 @@ struct MessageFormatterTests {
             seq: 31
         )
         #expect(msg.category == .fileChange)
-        #expect(msg.text.contains("Edit"))
-        #expect(msg.text.contains("src/main.ts"))
-        #expect(msg.text.contains("+new line"))
+        #expect(msg.title == "Invoke Tool: Edit")
+        guard case .monospaced(let body) = msg.body else {
+            Issue.record("Expected .monospaced body")
+            return
+        }
+        #expect(body.contains("src/main.ts"))
+        #expect(body.contains("+new line"))
     }
 
-    @Test("Formats command_exec as command")
+    @Test("Formats command_exec as command with monospaced body")
     func formatsCommandExec() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .commandExec(
@@ -251,11 +348,16 @@ struct MessageFormatterTests {
             seq: 40
         )
         #expect(msg.category == .command)
-        #expect(msg.text.contains("Exec Begin"))
-        #expect(msg.text.contains("npm test"))
+        #expect(msg.title == "Exec Begin")
+        guard case .monospaced(let body) = msg.body else {
+            Issue.record("Expected .monospaced body")
+            return
+        }
+        #expect(body.contains("npm test"))
+        #expect(body.contains("/tmp/project"))
     }
 
-    @Test("Formats command_result as command")
+    @Test("Formats command_result as command with monospaced body")
     func formatsCommandResult() {
         let payload = CommandResultPayload(
             command: "npm test", cwd: nil, exitCode: 0, stdout: "All passed",
@@ -265,8 +367,12 @@ struct MessageFormatterTests {
             seq: 41
         )
         #expect(msg.category == .command)
-        #expect(msg.text.contains("Exec Finished"))
-        #expect(msg.text.contains("All passed"))
+        #expect(msg.title == "Exec Finished")
+        guard case .monospaced(let body) = msg.body else {
+            Issue.record("Expected .monospaced body")
+            return
+        }
+        #expect(body.contains("All passed"))
     }
 
     @Test("Formats command_result with nonzero exit code")
@@ -278,11 +384,15 @@ struct MessageFormatterTests {
             tunnelMessage: .structured(message: .commandResult(payload)),
             seq: 42
         )
-        #expect(msg.text.contains("Exit Code: 1"))
-        #expect(msg.text.contains("Test failed"))
+        guard case .monospaced(let body) = msg.body else {
+            Issue.record("Expected .monospaced body")
+            return
+        }
+        #expect(body.contains("Exit Code: 1"))
+        #expect(body.contains("Test failed"))
     }
 
-    @Test("Formats workflow_progress as progress")
+    @Test("Formats workflow_progress as progress with text body and no title")
     func formatsWorkflowProgress() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .workflowProgress(
@@ -290,8 +400,13 @@ struct MessageFormatterTests {
             seq: 50
         )
         #expect(msg.category == .progress)
-        #expect(msg.text.contains("[build]"))
-        #expect(msg.text.contains("Building project"))
+        #expect(msg.title == nil)
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body.contains("[build]"))
+        #expect(body.contains("Building project"))
     }
 
     @Test("Formats workflow_progress without phase")
@@ -301,10 +416,15 @@ struct MessageFormatterTests {
                 message: "Building project", phase: nil, timestamp: nil)),
             seq: 51
         )
-        #expect(msg.text == "Building project")
+        #expect(msg.title == nil)
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "Building project")
     }
 
-    @Test("Formats failure_report as error")
+    @Test("Formats failure_report as error with text body and no title")
     func formatsFailureReport() {
         let payload = FailureReportPayload(
             summary: "Build failed", requirements: "Must compile",
@@ -315,13 +435,18 @@ struct MessageFormatterTests {
             seq: 60
         )
         #expect(msg.category == .error)
-        #expect(msg.text.contains("FAILED: Build failed"))
-        #expect(msg.text.contains("Requirements:"))
-        #expect(msg.text.contains("Problems:"))
-        #expect(msg.text.contains("Possible solutions:"))
+        #expect(msg.title == nil)
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body.contains("FAILED: Build failed"))
+        #expect(body.contains("Requirements:"))
+        #expect(body.contains("Problems:"))
+        #expect(body.contains("Possible solutions:"))
     }
 
-    @Test("Formats token_usage as log")
+    @Test("Formats token_usage as log with text body")
     func formatsTokenUsage() {
         let payload = TokenUsagePayload(
             inputTokens: 1000, cachedInputTokens: 500, outputTokens: 200,
@@ -331,10 +456,16 @@ struct MessageFormatterTests {
             seq: 70
         )
         #expect(msg.category == .log)
-        #expect(msg.text.contains("input=1000"))
-        #expect(msg.text.contains("cached=500"))
-        #expect(msg.text.contains("output=200"))
-        #expect(msg.text.contains("total=1200"))
+        #expect(msg.title == "Usage")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body.contains("input=1000"))
+        #expect(body.contains("cached=500"))
+        #expect(body.contains("output=200"))
+        #expect(body.contains("total=1200"))
+        #expect(!body.contains("reasoning="))
     }
 
     @Test("Formats input_required as progress")
@@ -345,10 +476,15 @@ struct MessageFormatterTests {
             seq: 80
         )
         #expect(msg.category == .progress)
-        #expect(msg.text.contains("Input required: Enter your key"))
+        #expect(msg.title == "Input Required")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "Input required: Enter your key")
     }
 
-    @Test("Formats task_completion as lifecycle")
+    @Test("Formats task_completion as lifecycle with text body")
     func formatsTaskCompletion() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .taskCompletion(
@@ -356,11 +492,16 @@ struct MessageFormatterTests {
             seq: 90
         )
         #expect(msg.category == .lifecycle)
-        #expect(msg.text.contains("Task complete: Add tests"))
-        #expect(msg.text.contains("plan complete"))
+        #expect(msg.title == nil)
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body.contains("Task complete: Add tests"))
+        #expect(body.contains("plan complete"))
     }
 
-    @Test("Formats prompt_answered as log with non-empty text")
+    @Test("Formats prompt_answered as log with text body and no title")
     func formatsPromptAnswered() {
         let payload = PromptAnsweredPayload(
             requestId: "req-001", promptType: "select", source: "terminal",
@@ -370,10 +511,14 @@ struct MessageFormatterTests {
             seq: 95
         )
         #expect(msg.category == .log)
-        #expect(!msg.text.isEmpty)
-        #expect(msg.text.contains("Prompt answered"))
-        #expect(msg.text.contains("select"))
-        #expect(msg.text.contains("terminal"))
+        #expect(msg.title == nil)
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body.contains("Prompt answered"))
+        #expect(body.contains("select"))
+        #expect(body.contains("terminal"))
     }
 
     @Test("Formats prompt_answered with value does not display the value")
@@ -386,11 +531,15 @@ struct MessageFormatterTests {
             seq: 96
         )
         #expect(msg.category == .log)
-        #expect(msg.text == "Prompt answered (input) by gui")
-        #expect(!msg.text.contains("user response"))
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "Prompt answered (input) by gui")
+        #expect(!body.contains("user response"))
     }
 
-    @Test("Formats plan_discovery as lifecycle")
+    @Test("Formats plan_discovery as lifecycle with text body")
     func formatsPlanDiscovery() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .planDiscovery(
@@ -398,30 +547,45 @@ struct MessageFormatterTests {
             seq: 100
         )
         #expect(msg.category == .lifecycle)
-        #expect(msg.text.contains("Found ready plan: 169 - WebSocket support"))
+        #expect(msg.title == "Plan Discovery")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "Found ready plan: 169 - WebSocket support")
     }
 
-    @Test("Formats unknown as log")
+    @Test("Formats unknown as log with text body")
     func formatsUnknown() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .unknown(type: "future_type")),
             seq: 110
         )
         #expect(msg.category == .log)
-        #expect(msg.text.contains("Unknown message type: future_type"))
+        #expect(msg.title == nil)
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "Unknown message type: future_type")
     }
 
-    @Test("Formats unknown tunnel message as log")
+    @Test("Formats unknown tunnel message as log with text body")
     func formatsUnknownTunnel() {
         let msg = MessageFormatter.format(
             tunnelMessage: .unknown(type: "future_tunnel_type"),
             seq: 111
         )
         #expect(msg.category == .log)
-        #expect(msg.text.contains("Unknown message type: future_tunnel_type"))
+        #expect(msg.title == nil)
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "Unknown message type: future_tunnel_type")
     }
 
-    @Test("Formats todo_update as progress with status indicators")
+    @Test("Formats todo_update as progress with todoList body")
     func formatsTodoUpdate() {
         let items = [
             TodoUpdateItem(label: "Done task", status: "completed"),
@@ -434,13 +598,41 @@ struct MessageFormatterTests {
             seq: 120
         )
         #expect(msg.category == .progress)
-        #expect(msg.text.contains("[x] Done task"))
-        #expect(msg.text.contains("[>] Current task"))
-        #expect(msg.text.contains("[ ] Waiting task"))
-        #expect(msg.text.contains("[!] Stuck task"))
+        #expect(msg.title == "Todo Update")
+        guard case .todoList(let displayItems) = msg.body else {
+            Issue.record("Expected .todoList body")
+            return
+        }
+        #expect(displayItems.count == 4)
+        #expect(displayItems[0].label == "Done task")
+        #expect(displayItems[0].status == .completed)
+        #expect(displayItems[1].label == "Current task")
+        #expect(displayItems[1].status == .inProgress)
+        #expect(displayItems[2].label == "Waiting task")
+        #expect(displayItems[2].status == .pending)
+        #expect(displayItems[3].label == "Stuck task")
+        #expect(displayItems[3].status == .blocked)
     }
 
-    @Test("Formats llm_thinking as llmOutput")
+    @Test("Formats todo_update with unknown status")
+    func formatsTodoUpdateUnknownStatus() {
+        let items = [
+            TodoUpdateItem(label: "Mystery task", status: "some_future_status"),
+        ]
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .todoUpdate(items: items, timestamp: nil)),
+            seq: 121
+        )
+        guard case .todoList(let displayItems) = msg.body else {
+            Issue.record("Expected .todoList body")
+            return
+        }
+        #expect(displayItems.count == 1)
+        #expect(displayItems[0].label == "Mystery task")
+        #expect(displayItems[0].status == .unknown)
+    }
+
+    @Test("Formats llm_thinking as llmOutput with text body")
     func formatsLlmThinking() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .llmThinking(
@@ -448,11 +640,15 @@ struct MessageFormatterTests {
             seq: 130
         )
         #expect(msg.category == .llmOutput)
-        #expect(msg.text.contains("Thinking"))
-        #expect(msg.text.contains("Let me think about this..."))
+        #expect(msg.title == "Thinking")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "Let me think about this...")
     }
 
-    @Test("Formats llm_response as llmOutput")
+    @Test("Formats llm_response as llmOutput with text body")
     func formatsLlmResponse() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .llmResponse(
@@ -460,22 +656,25 @@ struct MessageFormatterTests {
             seq: 131
         )
         #expect(msg.category == .llmOutput)
-        #expect(msg.text.contains("Model Response"))
-        #expect(msg.text.contains("Here is my answer"))
+        #expect(msg.title == "Model Response")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "Here is my answer")
     }
 
-    @Test("Formats llm_response with isUserRequest as User header")
+    @Test("Formats llm_response with isUserRequest as User title")
     func formatsLlmResponseUserRequest() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .llmResponse(
                 text: "User said something", isUserRequest: true, timestamp: nil)),
             seq: 132
         )
-        #expect(msg.text.contains("User"))
-        #expect(!msg.text.contains("Model Response"))
+        #expect(msg.title == "User")
     }
 
-    @Test("Formats file_change_summary with indicators")
+    @Test("Formats file_change_summary with fileChanges body")
     func formatsFileChangeSummary() {
         let changes = [
             FileChangeItem(path: "src/new.ts", kind: "added"),
@@ -488,12 +687,40 @@ struct MessageFormatterTests {
             seq: 140
         )
         #expect(msg.category == .fileChange)
-        #expect(msg.text.contains("+ src/new.ts"))
-        #expect(msg.text.contains("~ src/main.ts"))
-        #expect(msg.text.contains("- src/old.ts"))
+        #expect(msg.title == "File Changes")
+        guard case .fileChanges(let displayItems) = msg.body else {
+            Issue.record("Expected .fileChanges body")
+            return
+        }
+        #expect(displayItems.count == 3)
+        #expect(displayItems[0].path == "src/new.ts")
+        #expect(displayItems[0].kind == .added)
+        #expect(displayItems[1].path == "src/main.ts")
+        #expect(displayItems[1].kind == .updated)
+        #expect(displayItems[2].path == "src/old.ts")
+        #expect(displayItems[2].kind == .removed)
     }
 
-    @Test("Formats agent_iteration_start")
+    @Test("Formats file_change_summary with unknown kind")
+    func formatsFileChangeSummaryUnknownKind() {
+        let changes = [
+            FileChangeItem(path: "src/weird.ts", kind: "some_future_kind"),
+        ]
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .fileChangeSummary(
+                changes: changes, timestamp: nil)),
+            seq: 141
+        )
+        guard case .fileChanges(let displayItems) = msg.body else {
+            Issue.record("Expected .fileChanges body")
+            return
+        }
+        #expect(displayItems.count == 1)
+        #expect(displayItems[0].path == "src/weird.ts")
+        #expect(displayItems[0].kind == .unknown)
+    }
+
+    @Test("Formats agent_iteration_start with text body")
     func formatsAgentIterationStart() {
         let payload = AgentIterationStartPayload(
             iterationNumber: 3, taskTitle: "Build feature",
@@ -503,11 +730,15 @@ struct MessageFormatterTests {
             seq: 150
         )
         #expect(msg.category == .lifecycle)
-        #expect(msg.text.contains("Iteration 3"))
-        #expect(msg.text.contains("Build feature"))
+        #expect(msg.title == "Iteration 3")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "Build feature")
     }
 
-    @Test("Formats agent_step_end success as lifecycle with checkmark")
+    @Test("Formats agent_step_end success as lifecycle")
     func formatsAgentStepEndSuccess() {
         let payload = AgentStepEndPayload(
             phase: "implement", success: true, summary: "Completed successfully", timestamp: nil)
@@ -516,11 +747,15 @@ struct MessageFormatterTests {
             seq: 155
         )
         #expect(msg.category == .lifecycle)
-        #expect(msg.text.contains("Step End: implement ✓"))
-        #expect(msg.text.contains("Completed successfully"))
+        #expect(msg.title == "Step End: implement ✓")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "Completed successfully")
     }
 
-    @Test("Formats agent_step_end failure as error with X mark")
+    @Test("Formats agent_step_end failure as error")
     func formatsAgentStepEndFailure() {
         let payload = AgentStepEndPayload(
             phase: "review", success: false, summary: "Tests failed", timestamp: nil)
@@ -529,11 +764,15 @@ struct MessageFormatterTests {
             seq: 156
         )
         #expect(msg.category == .error)
-        #expect(msg.text.contains("Step End: review ✗"))
-        #expect(msg.text.contains("Tests failed"))
+        #expect(msg.title == "Step End: review ✗")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "Tests failed")
     }
 
-    @Test("Formats workspace_info as log")
+    @Test("Formats workspace_info as log with key-value pairs")
     func formatsWorkspaceInfo() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .workspaceInfo(
@@ -542,13 +781,21 @@ struct MessageFormatterTests {
             seq: 160
         )
         #expect(msg.category == .log)
-        #expect(msg.text.contains("/tmp/project"))
-        #expect(msg.text.contains("Plan: tasks/42.plan.md"))
+        #expect(msg.title == "Workspace")
+        guard case .keyValuePairs(let pairs) = msg.body else {
+            Issue.record("Expected .keyValuePairs body")
+            return
+        }
+        #expect(pairs.count == 2)
+        #expect(pairs[0].key == "Path")
+        #expect(pairs[0].value == "/tmp/project")
+        #expect(pairs[1].key == "Plan")
+        #expect(pairs[1].value == "tasks/42.plan.md")
     }
 
-    // MARK: - Review messages (Task 7)
+    // MARK: - Review messages
 
-    @Test("Formats review_result with issues as lifecycle with non-empty text")
+    @Test("Formats review_result with issues as lifecycle with text body")
     func formatsReviewResult() {
         let payload = ReviewResultPayload(
             issues: [
@@ -569,16 +816,19 @@ struct MessageFormatterTests {
             seq: 200
         )
         #expect(msg.category == .lifecycle)
-        #expect(!msg.text.isEmpty)
-        #expect(msg.text.contains("Review Result"))
-        #expect(msg.text.contains("Issues: 2"))
-        #expect(msg.text.contains("Recommendations: 1"))
-        #expect(msg.text.contains("Action items: 1"))
-        #expect(msg.text.contains("[critical]"))
-        #expect(msg.text.contains("SQL injection risk"))
-        #expect(msg.text.contains("(src/user.ts:42)"))
-        #expect(msg.text.contains("[warning]"))
-        #expect(msg.text.contains("N+1 query"))
+        #expect(msg.title == "Review Result")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body.contains("Issues: 2"))
+        #expect(body.contains("Recommendations: 1"))
+        #expect(body.contains("Action items: 1"))
+        #expect(body.contains("[critical]"))
+        #expect(body.contains("SQL injection risk"))
+        #expect(body.contains("(src/user.ts:42)"))
+        #expect(body.contains("[warning]"))
+        #expect(body.contains("N+1 query"))
     }
 
     @Test("Formats review_result with no issues")
@@ -590,9 +840,12 @@ struct MessageFormatterTests {
             seq: 201
         )
         #expect(msg.category == .lifecycle)
-        #expect(!msg.text.isEmpty)
-        #expect(msg.text.contains("Review Result"))
-        #expect(msg.text.contains("Issues: 0"))
+        #expect(msg.title == "Review Result")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body.contains("Issues: 0"))
     }
 
     @Test("Formats review_verdict ACCEPTABLE")
@@ -603,9 +856,12 @@ struct MessageFormatterTests {
             seq: 202
         )
         #expect(msg.category == .lifecycle)
-        #expect(!msg.text.isEmpty)
-        #expect(msg.text.contains("Review Verdict"))
-        #expect(msg.text.contains("Verdict: ACCEPTABLE"))
+        #expect(msg.title == "Review Verdict")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body.contains("Verdict: ACCEPTABLE"))
     }
 
     @Test("Formats review_verdict NEEDS_FIXES with instructions")
@@ -618,15 +874,18 @@ struct MessageFormatterTests {
             seq: 203
         )
         #expect(msg.category == .lifecycle)
-        #expect(!msg.text.isEmpty)
-        #expect(msg.text.contains("Review Verdict"))
-        #expect(msg.text.contains("Verdict: NEEDS_FIXES"))
-        #expect(msg.text.contains("Fix the SQL injection vulnerability"))
+        #expect(msg.title == "Review Verdict")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body.contains("Verdict: NEEDS_FIXES"))
+        #expect(body.contains("Fix the SQL injection vulnerability"))
     }
 
-    // MARK: - Execution summary with steps (Task 9)
+    // MARK: - Execution summary with key-value pairs
 
-    @Test("Formats execution_summary with totalSteps and failedSteps")
+    @Test("Formats execution_summary with key-value pairs")
     func formatsExecutionSummaryWithSteps() {
         let payload = ExecutionSummaryPayload(
             planId: "42", planTitle: "Add feature", mode: "agent",
@@ -637,15 +896,22 @@ struct MessageFormatterTests {
             seq: 210
         )
         #expect(msg.category == .lifecycle)
-        #expect(msg.text.contains("Execution Summary"))
-        #expect(msg.text.contains("Plan: 42"))
-        #expect(msg.text.contains("Title: Add feature"))
-        #expect(msg.text.contains("Steps: 5"))
-        #expect(msg.text.contains("Failed: 1"))
-        #expect(msg.text.contains("Duration: 120s"))
+        #expect(msg.title == "Execution Summary")
+        guard case .keyValuePairs(let pairs) = msg.body else {
+            Issue.record("Expected .keyValuePairs body")
+            return
+        }
+        let pairDict = Dictionary(uniqueKeysWithValues: pairs.map { ($0.key, $0.value) })
+        #expect(pairDict["Plan"] == "42")
+        #expect(pairDict["Title"] == "Add feature")
+        #expect(pairDict["Mode"] == "agent")
+        #expect(pairDict["Duration"] == "120s")
+        #expect(pairDict["Steps"] == "5")
+        #expect(pairDict["Failed"] == "1")
+        #expect(pairDict["Changed files"] == "src/main.ts")
     }
 
-    @Test("Formats execution_summary without steps (nil)")
+    @Test("Formats execution_summary without optional fields")
     func formatsExecutionSummaryWithoutSteps() {
         let payload = ExecutionSummaryPayload(
             planId: "42", planTitle: nil, mode: nil,
@@ -656,13 +922,17 @@ struct MessageFormatterTests {
             seq: 211
         )
         #expect(msg.category == .lifecycle)
-        #expect(msg.text.contains("Execution Summary"))
-        #expect(msg.text.contains("Plan: 42"))
-        #expect(!msg.text.contains("Steps:"))
-        #expect(!msg.text.contains("Failed:"))
+        #expect(msg.title == "Execution Summary")
+        guard case .keyValuePairs(let pairs) = msg.body else {
+            Issue.record("Expected .keyValuePairs body")
+            return
+        }
+        #expect(pairs.count == 1)
+        #expect(pairs[0].key == "Plan")
+        #expect(pairs[0].value == "42")
     }
 
-    @Test("Formats execution_summary with zero failedSteps omits Failed line")
+    @Test("Formats execution_summary with zero failedSteps omits Failed pair")
     func formatsExecutionSummaryZeroFailed() {
         let payload = ExecutionSummaryPayload(
             planId: nil, planTitle: nil, mode: nil,
@@ -672,7 +942,88 @@ struct MessageFormatterTests {
             tunnelMessage: .structured(message: .executionSummary(payload)),
             seq: 212
         )
-        #expect(msg.text.contains("Steps: 3"))
-        #expect(!msg.text.contains("Failed:"))
+        guard case .keyValuePairs(let pairs) = msg.body else {
+            Issue.record("Expected .keyValuePairs body")
+            return
+        }
+        let keys = pairs.map(\.key)
+        #expect(keys.contains("Steps"))
+        #expect(!keys.contains("Failed"))
+    }
+
+    // MARK: - Timestamp parsing
+
+    @Test("Parses ISO8601 timestamp with fractional seconds")
+    func parsesTimestampWithFractions() {
+        let payload = AgentSessionStartPayload(
+            executor: "claude", mode: "agent", planId: nil,
+            sessionId: nil, threadId: nil, tools: nil, mcpServers: nil,
+            timestamp: "2025-01-15T10:30:00.123Z")
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .agentSessionStart(payload)),
+            seq: 300
+        )
+        #expect(msg.timestamp != nil)
+        let calendar = Calendar(identifier: .gregorian)
+        let components = calendar.dateComponents(in: TimeZone(identifier: "UTC")!, from: msg.timestamp!)
+        #expect(components.year == 2025)
+        #expect(components.month == 1)
+        #expect(components.day == 15)
+        #expect(components.hour == 10)
+        #expect(components.minute == 30)
+    }
+
+    @Test("Parses ISO8601 timestamp without fractional seconds")
+    func parsesTimestampWithoutFractions() {
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .llmThinking(
+                text: "thinking", timestamp: "2025-06-20T14:00:00Z")),
+            seq: 301
+        )
+        #expect(msg.timestamp != nil)
+        let calendar = Calendar(identifier: .gregorian)
+        let components = calendar.dateComponents(in: TimeZone(identifier: "UTC")!, from: msg.timestamp!)
+        #expect(components.year == 2025)
+        #expect(components.month == 6)
+        #expect(components.day == 20)
+        #expect(components.hour == 14)
+    }
+
+    @Test("Returns nil timestamp when timestamp string is nil")
+    func returnsNilTimestampWhenNil() {
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .llmThinking(
+                text: "thinking", timestamp: nil)),
+            seq: 302
+        )
+        #expect(msg.timestamp == nil)
+    }
+
+    @Test("Returns nil timestamp when timestamp string is invalid")
+    func returnsNilTimestampWhenInvalid() {
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .llmThinking(
+                text: "thinking", timestamp: "not-a-date")),
+            seq: 303
+        )
+        #expect(msg.timestamp == nil)
+    }
+
+    // MARK: - Backward-compatible text property
+
+    @Test("Backward-compatible text property reconstructs from structured fields")
+    func backwardCompatibleText() {
+        let items = [
+            TodoUpdateItem(label: "Done", status: "completed"),
+            TodoUpdateItem(label: "Pending", status: "pending"),
+        ]
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .todoUpdate(items: items, timestamp: nil)),
+            seq: 400
+        )
+        // The text property should reconstruct from title + body
+        #expect(msg.text.contains("Todo Update"))
+        #expect(msg.text.contains("[x] Done"))
+        #expect(msg.text.contains("[ ] Pending"))
     }
 }
