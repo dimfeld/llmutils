@@ -908,28 +908,25 @@ describe('subagent prompt function correctness', () => {
   });
 });
 
-describe('allowed tools in ClaudeCodeExecutor', () => {
+describe('allowed tools in getDefaultAllowedTools', () => {
   test('Bash(tim subagent:*) is in the default allowed tools list', async () => {
-    const sourceFile = path.join(import.meta.dirname, '..', 'executors', 'claude_code.ts');
-    const source = await fs.readFile(sourceFile, 'utf-8');
-
-    // Verify 'Bash(tim subagent:*)' appears in the allowed tools list
-    const subagentToolPattern = "'Bash(tim subagent:*)'";
-    const occurrences = source.split(subagentToolPattern).length - 1;
-
-    // It should appear in both executeReviewMode and execute methods
-    expect(occurrences).toBeGreaterThanOrEqual(2);
+    const { getDefaultAllowedTools } = await import(
+      '../executors/claude_code/run_claude_subprocess.ts'
+    );
+    const tools = getDefaultAllowedTools();
+    expect(tools).toContain('Bash(tim subagent:*)');
   });
 
   test('Bash(tim subagent:*) coexists with other tim tools', async () => {
-    const sourceFile = path.join(import.meta.dirname, '..', 'executors', 'claude_code.ts');
-    const source = await fs.readFile(sourceFile, 'utf-8');
+    const { getDefaultAllowedTools } = await import(
+      '../executors/claude_code/run_claude_subprocess.ts'
+    );
+    const tools = getDefaultAllowedTools();
 
-    // The allowed tools list should also contain other tim tools
-    expect(source).toContain("'Bash(tim add:*)'");
-    expect(source).toContain("'Bash(tim review:*)'");
-    expect(source).toContain("'Bash(tim set-task-done:*)'");
-    expect(source).toContain("'Bash(tim subagent:*)'");
+    expect(tools).toContain('Bash(tim add:*)');
+    expect(tools).toContain('Bash(tim review:*)');
+    expect(tools).toContain('Bash(tim set-task-done:*)');
+    expect(tools).toContain('Bash(tim subagent:*)');
   });
 });
 

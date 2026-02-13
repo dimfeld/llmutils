@@ -41,6 +41,7 @@ import { createTunnelServer, type TunnelServer } from '../../logging/tunnel_serv
 import { createPromptRequestHandler } from '../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
 import { setupPermissionsMcp } from './claude_code/permissions_mcp_setup.js';
+import { runClaudeSubprocess, buildAllowedToolsList } from './claude_code/run_claude_subprocess.js';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -483,257 +484,78 @@ export class ClaudeCodeExecutor implements Executor {
 
     log('Running Claude in review mode with JSON schema output...');
 
-    // Determine if permissions MCP should be enabled
-    let { allowAllTools, mcpConfigFile } = this.options;
-
-    let isPermissionsMcpEnabled = this.options.permissionsMcp?.enabled === true;
-    if (process.env.CLAUDE_CODE_MCP) {
-      isPermissionsMcpEnabled = process.env.CLAUDE_CODE_MCP === 'true';
-    }
-
-    if (allowAllTools == null) {
-      const allowAllToolsValue = process.env.ALLOW_ALL_TOOLS ?? 'false';
-      const envAllowAllTools = ['true', '1'].includes(allowAllToolsValue.toLowerCase());
-      allowAllTools = envAllowAllTools;
-    }
-
-    if (allowAllTools || this.sharedOptions.noninteractive) {
-      // permissions MCP doesn't make sense in noninteractive mode, or when we want to allow all tools
-      isPermissionsMcpEnabled = false;
-    }
-
-    // Parse allowedTools for permissions system
-    const jsTaskRunners = ['npm', 'pnpm', 'yarn', 'bun'];
-    const defaultAllowedTools =
-      (this.options.includeDefaultTools ?? true)
-        ? [
-            `Edit`,
-            'MultiEdit',
-            `Write`,
-            'WebFetch',
-            'WebSearch',
-            `Bash(cat:*)`,
-            `Bash(cd:*)`,
-            'Bash(cp:*)',
-            'Bash(find:*)',
-            'Bash(grep:*)',
-            'Bash(ls:*)',
-            'Bash(mkdir:*)',
-            'Bash(mv:*)',
-            'Bash(pwd)',
-            'Bash(rg:*)',
-            'Bash(sed:*)',
-            'Bash(awk:*)',
-            'Bash(rm test-:*)',
-            'Bash(rm -f test-:*)',
-            'Bash(git diff:*)',
-            'Bash(git status:*)',
-            'Bash(git log:*)',
-            'Bash(git commit:*)',
-            'Bash(git add:*)',
-            'Bash(jj diff:*)',
-            'Bash(jj status)',
-            'Bash(jj log:*)',
-            'Bash(jj commit:*)',
-            'Bash(jj bookmark move:*)',
-            ...jsTaskRunners.flatMap((name) => [
-              `Bash(${name} test:*)`,
-              `Bash(${name} run build:*)`,
-              `Bash(${name} run check:*)`,
-              `Bash(${name} run typecheck:*)`,
-              `Bash(${name} run lint:*)`,
-              `Bash(${name} install)`,
-              `Bash(${name} add:*)`,
-            ]),
-            'Bash(cargo add:*)',
-            'Bash(cargo build)',
-            'Bash(cargo test:*)',
-            'Bash(tim add:*)',
-            'Bash(tim review:*)',
-            'Bash(tim set-task-done:*)',
-            'Bash(tim subagent:*)',
-          ]
-        : [];
-
-    // Load shared permissions from cross-worktree storage
-    const sharedPermissions = await this.loadSharedPermissions();
-
-    let allowedTools = [
-      ...defaultAllowedTools,
-      ...(this.options.allowedTools ?? []),
-      ...sharedPermissions,
-    ];
-    if (this.options.disallowedTools) {
-      allowedTools = allowedTools.filter((t) => !this.options.disallowedTools?.includes(t));
-    }
-
     // Parse allowedTools into efficient lookup structure for auto-approval
+    const sharedPermissions = await this.loadSharedPermissions();
+    const allowedTools = buildAllowedToolsList({
+      includeDefaultTools: this.options.includeDefaultTools,
+      configAllowedTools: this.options.allowedTools,
+      disallowedTools: this.options.disallowedTools,
+      sharedPermissions,
+    });
     this.parseAllowedTools(allowedTools);
 
-    // Setup permissions MCP if enabled
-    let tempMcpConfigDir: string | undefined = undefined;
-    let dynamicMcpConfigFile: string | undefined;
-    let permissionsMcpCleanup: (() => Promise<void>) | undefined;
+    const jsonSchema = getReviewOutputJsonSchemaString();
+    let capturedOutput: object | undefined;
 
-    if (isPermissionsMcpEnabled) {
-      const result = await setupPermissionsMcp({
-        allowedTools,
-        defaultResponse: this.options.permissionsMcp?.defaultResponse,
-        timeout: this.options.permissionsMcp?.timeout,
-        autoApproveCreatedFileDeletion: this.options.permissionsMcp?.autoApproveCreatedFileDeletion,
-        trackedFiles: this.trackedFiles,
-        workingDirectory: gitRoot,
-        createSocketServer: (socketPath) => this.createPermissionSocketServer(socketPath),
-      });
-      tempMcpConfigDir = result.tempDir;
-      dynamicMcpConfigFile = result.mcpConfigFile;
-      permissionsMcpCleanup = result.cleanup;
-    }
-
-    // Create tunnel server for output forwarding from child processes
-    let tunnelServer: TunnelServer | undefined;
-    const tunnelTempDir =
-      tempMcpConfigDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-')));
-    const tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
-    if (!isTunnelActive()) {
-      try {
-        const promptHandler = createPromptRequestHandler();
-        tunnelServer = await createTunnelServer(tunnelSocketPath, {
-          onPromptRequest: promptHandler,
-        });
-      } catch (err) {
-        debugLog('Could not create tunnel server for output forwarding:', err);
-      }
-    }
-
-    try {
-      // Build args for review mode - simpler than full orchestration
-      const args = ['claude', '--no-session-persistence'];
-
-      // Add MCP config if enabled
-      if (isPermissionsMcpEnabled && dynamicMcpConfigFile) {
-        args.push('--mcp-config', dynamicMcpConfigFile);
-        args.push('--permission-prompt-tool', 'mcp__permissions__approval_prompt');
-      } else if (mcpConfigFile) {
-        args.push('--mcp-config', mcpConfigFile);
-      }
-
-      // Add model selection
-      let modelToUse = this.sharedOptions.model;
-      if (
-        modelToUse?.includes('haiku') ||
-        modelToUse?.includes('sonnet') ||
-        modelToUse?.includes('opus')
-      ) {
-        log(`Using model: ${modelToUse}\n`);
-        args.push('--model', modelToUse);
-      } else {
-        log(`Using default model: ${DEFAULT_CLAUDE_MODEL}\n`);
-        args.push('--model', DEFAULT_CLAUDE_MODEL);
-      }
-
-      // Get the JSON schema for structured output
-      const jsonSchema = getReviewOutputJsonSchemaString();
-
-      // Use streaming JSON output format with schema for structured parsing
-      args.push('--verbose', '--output-format', 'stream-json', '--input-format', 'stream-json');
-      args.push('--json-schema', jsonSchema);
-
-      let splitter = createLineSplitter();
-      let capturedOutput: object | undefined;
-      let seenResultMessage = false;
-
-      log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
-      const reviewTimeoutMs = 30 * 60 * 1000; // 30 minutes
-      let killedByTimeout = false;
-      resetToolUseCache();
-      const streaming = await spawnWithStreamingIO(args, {
-        env: {
-          ...process.env,
-          CLAUDECODE: '',
-          TIM_EXECUTOR: 'claude',
-          TIM_NOTIFY_SUPPRESS: '1',
-          ...(tunnelServer ? { [TIM_OUTPUT_SOCKET]: tunnelSocketPath } : {}),
-          ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
-          CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
-        },
-        cwd: gitRoot,
-        inactivityTimeoutMs: reviewTimeoutMs,
-        initialInactivityTimeoutMs: 2 * 60 * 1000, // 2 minutes to start
-        onInactivityKill: () => {
-          killedByTimeout = true;
-          log(
-            `Claude review timed out after ${Math.round(reviewTimeoutMs / 60000)} minutes; terminating.`
-          );
-        },
-        formatStdout: (output) => {
-          let lines = splitter(output);
-          const formattedResults = lines.map(formatJsonMessage);
-          const structuredMessages = extractStructuredMessages(formattedResults);
-
-          for (const result of formattedResults) {
-            if (result.type === 'result') {
-              seenResultMessage = true;
-            }
-            if (result.structuredOutput) {
-              if (typeof result.structuredOutput === 'string') {
-                capturedOutput = JSON.parse(result.structuredOutput);
-              } else {
-                capturedOutput = result.structuredOutput;
-              }
+    const reviewTimeoutMs = 30 * 60 * 1000; // 30 minutes
+    const result = await runClaudeSubprocess({
+      prompt: contextContent + '\n\nBe sure to provide the structured output with your response',
+      cwd: gitRoot,
+      claudeCodeOptions: this.options,
+      noninteractive: this.sharedOptions.noninteractive ?? false,
+      model: this.sharedOptions.model,
+      label: 'review',
+      inactivityTimeoutMs: reviewTimeoutMs,
+      extraArgs: ['--json-schema', jsonSchema],
+      extraAccessDirs:
+        this.timConfig.isUsingExternalStorage && this.timConfig.externalRepositoryConfigDir
+          ? [this.timConfig.externalRepositoryConfigDir]
+          : undefined,
+      trackedFiles: this.trackedFiles,
+      createPermissionSocketServer: (socketPath) => this.createPermissionSocketServer(socketPath),
+      logModelSelection: true,
+      processFormattedMessages: (messages) => {
+        for (const r of messages) {
+          if (r.structuredOutput) {
+            if (typeof r.structuredOutput === 'string') {
+              capturedOutput = JSON.parse(r.structuredOutput);
+            } else {
+              capturedOutput = r.structuredOutput as object;
             }
           }
+        }
+      },
+    });
 
-          return structuredMessages.length > 0 ? structuredMessages : '';
-        },
-      });
-      const reviewPrompt =
-        contextContent + '\n\nBe sure to provide the structured output with your response';
-      const result = await sendSinglePromptAndWait(streaming, reviewPrompt);
-
-      if ((killedByTimeout || result.killedByInactivity) && !seenResultMessage) {
-        throw new Error(
-          `Claude review timed out after ${Math.round(reviewTimeoutMs / 60000)} minutes`
-        );
-      }
-
-      if ((killedByTimeout || result.killedByInactivity) && seenResultMessage) {
-        log(
-          `Claude review was killed by inactivity timeout, but completed successfully (result message seen)`
-        );
-      }
-
-      if (result.exitCode !== 0 && !seenResultMessage) {
-        throw new Error(`Claude review exited with non-zero exit code: ${result.exitCode}`);
-      }
-
-      if (result.exitCode !== 0 && seenResultMessage) {
-        log(
-          `Claude review exited with code ${result.exitCode}, but completed successfully (result message seen)`
-        );
-      } else {
-        log('Claude review output captured.');
-      }
-
-      // Return the captured final message - parsing will happen in createReviewResult()
-      return {
-        content: '',
-        structuredOutput: capturedOutput,
-        metadata: { phase: 'review', jsonOutput: true },
-      };
-    } finally {
-      // Close the tunnel server if it was created
-      tunnelServer?.close();
-
-      if (permissionsMcpCleanup) {
-        await permissionsMcpCleanup();
-      }
-
-      // Clean up tunnel temp directory if we created a separate one
-      if (!tempMcpConfigDir) {
-        await fs.rm(tunnelTempDir, { recursive: true, force: true });
-      }
+    if ((result.killedByTimeout || result.killedByInactivity) && !result.seenResultMessage) {
+      throw new Error(
+        `Claude review timed out after ${Math.round(reviewTimeoutMs / 60000)} minutes`
+      );
     }
+
+    if ((result.killedByTimeout || result.killedByInactivity) && result.seenResultMessage) {
+      log(
+        `Claude review was killed by inactivity timeout, but completed successfully (result message seen)`
+      );
+    }
+
+    if (result.exitCode !== 0 && !result.seenResultMessage) {
+      throw new Error(`Claude review exited with non-zero exit code: ${result.exitCode}`);
+    }
+
+    if (result.exitCode !== 0 && result.seenResultMessage) {
+      log(
+        `Claude review exited with code ${result.exitCode}, but completed successfully (result message seen)`
+      );
+    } else {
+      log('Claude review output captured.');
+    }
+
+    return {
+      content: '',
+      structuredOutput: capturedOutput,
+      metadata: { phase: 'review', jsonOutput: true },
+    };
   }
 
   /**
@@ -989,63 +811,15 @@ export class ClaudeCodeExecutor implements Executor {
     let dynamicMcpConfigFile: string | undefined;
     let permissionsMcpCleanup: (() => Promise<void>) | undefined;
 
-    const jsTaskRunners = ['npm', 'pnpm', 'yarn', 'bun'];
-
-    const defaultAllowedTools =
-      (this.options.includeDefaultTools ?? true)
-        ? [
-            `Edit`,
-            'MultiEdit',
-            `Write`,
-            'WebFetch',
-            'WebSearch',
-            `Bash(cat:*)`,
-            `Bash(cd:*)`,
-            'Bash(cp:*)',
-            'Bash(find:*)',
-            'Bash(grep:*)',
-            'Bash(ls:*)',
-            'Bash(mkdir:*)',
-            'Bash(mv:*)',
-            'Bash(pwd)',
-            'Bash(rg:*)',
-            'Bash(sed:*)',
-            // Allow Claude to delete its own test scripts
-            'Bash(rm test-:*)',
-            'Bash(rm -f test-:*)',
-            'Bash(jj status)',
-            'Bash(jj log:*)',
-            'Bash(jj commit:*)',
-            ...jsTaskRunners.flatMap((name) => [
-              `Bash(${name} test:*)`,
-              `Bash(${name} run build:*)`,
-              `Bash(${name} run check:*)`,
-              `Bash(${name} run typecheck:*)`,
-              `Bash(${name} run lint:*)`,
-              `Bash(${name} install)`,
-              `Bash(${name} add:*)`,
-            ]),
-            'Bash(cargo add:*)',
-            'Bash(cargo build)',
-            'Bash(cargo test:*)',
-            'Bash(tim add:*)',
-            'Bash(tim review:*)',
-            'Bash(tim set-task-done:*)',
-            'Bash(tim subagent:*)',
-          ]
-        : [];
-
     // Load shared permissions from cross-worktree storage
     const sharedPermissions = await this.loadSharedPermissions();
 
-    let allowedTools = [
-      ...defaultAllowedTools,
-      ...(this.options.allowedTools ?? []),
-      ...sharedPermissions,
-    ];
-    if (disallowedTools) {
-      allowedTools = allowedTools.filter((t) => !disallowedTools?.includes(t));
-    }
+    let allowedTools = buildAllowedToolsList({
+      includeDefaultTools: this.options.includeDefaultTools,
+      configAllowedTools: this.options.allowedTools,
+      disallowedTools,
+      sharedPermissions,
+    });
 
     // Parse allowedTools into efficient lookup structure for auto-approval
     this.parseAllowedTools(allowedTools);
