@@ -14,21 +14,101 @@ enum MessageCategory: Sendable {
     case log
 }
 
+// MARK: - MessageContentBody
+
+enum MessageContentBody: Sendable {
+    case text(String)
+    case monospaced(String)
+    case todoList([TodoDisplayItem])
+    case fileChanges([FileChangeDisplayItem])
+    case keyValuePairs([KeyValuePair])
+}
+
+struct TodoDisplayItem: Sendable {
+    let label: String
+    let status: TodoStatus
+}
+
+enum TodoStatus: Sendable {
+    case completed, inProgress, pending, blocked, unknown
+}
+
+struct FileChangeDisplayItem: Sendable {
+    let path: String
+    let kind: FileChangeKind
+}
+
+enum FileChangeKind: Sendable {
+    case added, updated, removed, unknown
+}
+
+struct KeyValuePair: Sendable {
+    let key: String
+    let value: String
+}
+
 // MARK: - SessionMessage
 
 struct SessionMessage: Identifiable, Sendable {
     let id: UUID
     let seq: Int
-    let text: String
+    let title: String?
+    let body: MessageContentBody?
     let category: MessageCategory
     let timestamp: Date?
 
-    init(seq: Int, text: String, category: MessageCategory, timestamp: Date? = nil) {
+    init(seq: Int, title: String?, body: MessageContentBody?, category: MessageCategory, timestamp: Date? = nil) {
         self.id = UUID()
         self.seq = seq
-        self.text = text
+        self.title = title
+        self.body = body
         self.category = category
         self.timestamp = timestamp
+    }
+
+    /// Convenience initializer for backward compatibility (tests, previews).
+    init(seq: Int, text: String, category: MessageCategory, timestamp: Date? = nil) {
+        self.init(seq: seq, title: nil, body: .text(text), category: category, timestamp: timestamp)
+    }
+
+    /// Flat text representation for backward-compatible test assertions.
+    var text: String {
+        var parts: [String] = []
+        if let title { parts.append(title) }
+        if let body {
+            switch body {
+            case .text(let s), .monospaced(let s):
+                parts.append(s)
+            case .todoList(let items):
+                for item in items {
+                    let indicator: String
+                    switch item.status {
+                    case .completed: indicator = "[x]"
+                    case .inProgress: indicator = "[>]"
+                    case .blocked: indicator = "[!]"
+                    case .pending: indicator = "[ ]"
+                    case .unknown: indicator = "[?]"
+                    }
+                    parts.append("\(indicator) \(item.label)")
+                }
+            case .fileChanges(let items):
+                for item in items {
+                    let indicator: String
+                    switch item.kind {
+                    case .added: indicator = "+"
+                    case .updated: indicator = "~"
+                    case .removed: indicator = "-"
+                    case .unknown: indicator = "?"
+                    }
+                    parts.append("\(indicator) \(item.path)")
+                }
+            case .keyValuePairs(let pairs):
+                for pair in pairs {
+                    parts.append("\(pair.key): \(pair.value)")
+                }
+            }
+        }
+        return parts.joined(separator: "\n")
     }
 }
 
@@ -817,24 +897,11 @@ private func truncateLines(_ text: String) -> String {
     return f
 }()
 
-@MainActor private let timeFormatter: DateFormatter = {
-    let f = DateFormatter()
-    f.dateFormat = "HH:mm:ss"
-    return f
-}()
-
 @MainActor
-private func formatTimestamp(_ ts: String?) -> String {
-    guard let ts else { return "" }
-    let date = isoFormatterWithFractions.date(from: ts)
+private func parseTimestamp(_ ts: String?) -> Date? {
+    guard let ts else { return nil }
+    return isoFormatterWithFractions.date(from: ts)
         ?? isoFormatterWithoutFractions.date(from: ts)
-    guard let date else { return "" }
-    return " [\(timeFormatter.string(from: date))]"
-}
-
-@MainActor
-private func header(_ title: String, timestamp: String?) -> String {
-    "### \(title)\(formatTimestamp(timestamp))"
 }
 
 @MainActor
@@ -844,140 +911,177 @@ enum MessageFormatter {
         case .args(let type, let args):
             let text = args.joined(separator: " ")
             let category: MessageCategory = (type == "error" || type == "warn") ? .error : .log
-            return SessionMessage(seq: seq, text: text, category: category)
+            return SessionMessage(seq: seq, title: nil, body: .text(text), category: category)
 
         case .data(let type, let data):
             let category: MessageCategory = type == "stderr" ? .error : .log
-            return SessionMessage(seq: seq, text: data, category: category)
+            return SessionMessage(seq: seq, title: nil, body: .text(data), category: category)
 
         case .structured(let message):
-            let (text, category) = formatStructured(message)
-            return SessionMessage(seq: seq, text: text, category: category)
+            return formatStructured(message, seq: seq)
 
         case .unknown(let type):
-            return SessionMessage(seq: seq, text: "Unknown message type: \(type)", category: .log)
+            return SessionMessage(seq: seq, title: nil, body: .text("Unknown message type: \(type)"), category: .log)
         }
     }
 
-    private static func formatStructured(_ msg: StructuredMessagePayload) -> (String, MessageCategory) {
+    private static func formatStructured(_ msg: StructuredMessagePayload, seq: Int) -> SessionMessage {
         switch msg {
         case .agentSessionStart(let p):
-            let details = [
-                p.executor.map { "Executor: \($0)" },
-                p.mode.map { "Mode: \($0)" },
-                p.planId.map { "Plan: \($0)" },
+            let pairs = [
+                p.executor.map { KeyValuePair(key: "Executor", value: $0) },
+                p.mode.map { KeyValuePair(key: "Mode", value: $0) },
+                p.planId.map { KeyValuePair(key: "Plan", value: "\($0)") },
             ].compactMap { $0 }
-            let text = ([header("Starting", timestamp: p.timestamp)] + details).joined(separator: "\n")
-            return (text, .lifecycle)
+            return SessionMessage(
+                seq: seq, title: "Starting",
+                body: pairs.isEmpty ? nil : .keyValuePairs(pairs),
+                category: .lifecycle, timestamp: parseTimestamp(p.timestamp))
 
         case .agentSessionEnd(let p):
-            var lines = [header("Done", timestamp: p.timestamp)]
-            var info: [String] = []
-            info.append("Success: \(p.success ? "yes" : "no")")
-            if let d = p.durationMs { info.append("Duration: \(Int(d / 1000))s") }
-            if let c = p.costUsd { info.append("Cost: $\(String(format: "%.2f", c))") }
-            if let t = p.turns { info.append("Turns: \(t)") }
-            lines.append(info.joined(separator: ", "))
-            if let s = p.summary { lines.append(s) }
-            return (lines.joined(separator: "\n"), .lifecycle)
+            var pairs = [KeyValuePair(key: "Success", value: p.success ? "yes" : "no")]
+            if let d = p.durationMs { pairs.append(KeyValuePair(key: "Duration", value: "\(Int(d / 1000))s")) }
+            if let c = p.costUsd { pairs.append(KeyValuePair(key: "Cost", value: "$\(String(format: "%.2f", c))")) }
+            if let t = p.turns { pairs.append(KeyValuePair(key: "Turns", value: "\(t)")) }
+            if let s = p.summary { pairs.append(KeyValuePair(key: "Summary", value: s)) }
+            return SessionMessage(
+                seq: seq, title: "Done",
+                body: .keyValuePairs(pairs),
+                category: .lifecycle, timestamp: parseTimestamp(p.timestamp))
 
         case .agentIterationStart(let p):
-            var lines = ["### Iteration \(p.iterationNumber)"]
-            if let t = p.taskTitle { lines.append(t) }
-            if let d = p.taskDescription { lines.append(d) }
-            return (lines.joined(separator: "\n"), .lifecycle)
+            var bodyParts: [String] = []
+            if let t = p.taskTitle { bodyParts.append(t) }
+            if let d = p.taskDescription { bodyParts.append(d) }
+            return SessionMessage(
+                seq: seq, title: "Iteration \(p.iterationNumber)",
+                body: bodyParts.isEmpty ? nil : .text(bodyParts.joined(separator: "\n")),
+                category: .lifecycle, timestamp: parseTimestamp(p.timestamp))
 
         case .agentStepStart(let p):
-            let phase = "Step Start: \(p.phase)"
-            var lines = [header(phase, timestamp: p.timestamp)]
-            if let m = p.message { lines.append(m) }
-            return (lines.joined(separator: "\n"), .lifecycle)
+            return SessionMessage(
+                seq: seq, title: "Step Start: \(p.phase)",
+                body: p.message.map { .text($0) },
+                category: .lifecycle, timestamp: parseTimestamp(p.timestamp))
 
         case .agentStepEnd(let p):
             let status = p.success ? "✓" : "✗"
-            let phase = "Step End: \(p.phase) \(status)"
-            var lines = [header(phase, timestamp: p.timestamp)]
-            if let s = p.summary { lines.append(s) }
-            return (lines.joined(separator: "\n"), p.success ? .lifecycle : .error)
+            return SessionMessage(
+                seq: seq, title: "Step End: \(p.phase) \(status)",
+                body: p.summary.map { .text($0) },
+                category: p.success ? .lifecycle : .error, timestamp: parseTimestamp(p.timestamp))
 
         case .llmThinking(let text, let ts):
-            return ("\(header("Thinking", timestamp: ts))\n\(text)", .llmOutput)
+            return SessionMessage(
+                seq: seq, title: "Thinking",
+                body: .text(text),
+                category: .llmOutput, timestamp: parseTimestamp(ts))
 
         case .llmResponse(let text, let isUserRequest, let ts):
             let title = (isUserRequest == true) ? "User" : "Model Response"
-            return ("\(header(title, timestamp: ts))\n\(text)", .llmOutput)
+            return SessionMessage(
+                seq: seq, title: title,
+                body: .text(text),
+                category: .llmOutput, timestamp: parseTimestamp(ts))
 
         case .llmToolUse(let p):
-            var lines = [header("Invoke Tool: \(p.toolName)", timestamp: p.timestamp)]
-            if let s = p.inputSummary ?? p.input { lines.append(s) }
-            return (lines.joined(separator: "\n"), .toolUse)
+            let body: MessageContentBody? = (p.inputSummary ?? p.input).map { .monospaced($0) }
+            return SessionMessage(
+                seq: seq, title: "Invoke Tool: \(p.toolName)",
+                body: body,
+                category: .toolUse, timestamp: parseTimestamp(p.timestamp))
 
         case .llmToolResult(let p):
-            var lines = [header("Tool Result: \(p.toolName)", timestamp: p.timestamp)]
-            if let s = p.resultSummary ?? p.result {
-                lines.append(p.toolName == "Task" ? s : truncateLines(s))
+            let content = p.resultSummary ?? p.result
+            let body: MessageContentBody? = content.map {
+                .monospaced(p.toolName == "Task" ? $0 : truncateLines($0))
             }
-            return (lines.joined(separator: "\n"), .toolUse)
+            return SessionMessage(
+                seq: seq, title: "Tool Result: \(p.toolName)",
+                body: body,
+                category: .toolUse, timestamp: parseTimestamp(p.timestamp))
 
         case .llmStatus(let status, let detail, let ts):
-            var lines = [header("Status", timestamp: ts), status]
-            if let d = detail { lines.append(d) }
-            return (lines.joined(separator: "\n"), .log)
+            var text = status
+            if let d = detail { text += "\n\(d)" }
+            return SessionMessage(
+                seq: seq, title: "Status",
+                body: .text(text),
+                category: .log, timestamp: parseTimestamp(ts))
 
         case .todoUpdate(let items, let ts):
-            var lines = [header("Todo Update", timestamp: ts)]
-            for item in items {
-                let indicator: String
+            let displayItems = items.map { item in
+                let status: TodoStatus
                 switch item.status {
-                case "completed": indicator = "[x]"
-                case "in_progress": indicator = "[>]"
-                case "blocked": indicator = "[!]"
-                case "pending": indicator = "[ ]"
-                default: indicator = "[?]"
+                case "completed": status = .completed
+                case "in_progress": status = .inProgress
+                case "blocked": status = .blocked
+                case "pending": status = .pending
+                default: status = .unknown
                 }
-                lines.append("\(indicator) \(item.label)")
+                return TodoDisplayItem(label: item.label, status: status)
             }
-            return (lines.joined(separator: "\n"), .progress)
+            return SessionMessage(
+                seq: seq, title: "Todo Update",
+                body: .todoList(displayItems),
+                category: .progress, timestamp: parseTimestamp(ts))
 
         case .fileWrite(let path, let lineCount, let ts):
-            return ("\(header("Invoke Tool: Write", timestamp: ts))\n\(path) (\(lineCount) lines)", .fileChange)
+            return SessionMessage(
+                seq: seq, title: "Invoke Tool: Write",
+                body: .monospaced("\(path) (\(lineCount) lines)"),
+                category: .fileChange, timestamp: parseTimestamp(ts))
 
         case .fileEdit(let path, let diff, let ts):
-            return ("\(header("Invoke Tool: Edit", timestamp: ts))\n\(path)\n\(diff)", .fileChange)
+            return SessionMessage(
+                seq: seq, title: "Invoke Tool: Edit",
+                body: .monospaced("\(path)\n\(diff)"),
+                category: .fileChange, timestamp: parseTimestamp(ts))
 
         case .fileChangeSummary(let changes, let ts):
-            var lines = [header("File Changes", timestamp: ts)]
-            for change in changes {
-                let indicator: String
+            let displayItems = changes.map { change in
+                let kind: FileChangeKind
                 switch change.kind {
-                case "added": indicator = "+"
-                case "updated": indicator = "~"
-                case "removed": indicator = "-"
-                default: indicator = "?"
+                case "added": kind = .added
+                case "updated": kind = .updated
+                case "removed": kind = .removed
+                default: kind = .unknown
                 }
-                lines.append("\(indicator) \(change.path)")
+                return FileChangeDisplayItem(path: change.path, kind: kind)
             }
-            return (lines.joined(separator: "\n"), .fileChange)
+            return SessionMessage(
+                seq: seq, title: "File Changes",
+                body: .fileChanges(displayItems),
+                category: .fileChange, timestamp: parseTimestamp(ts))
 
         case .commandExec(let command, let cwd, let ts):
-            var text = "\(header("Exec Begin", timestamp: ts))\n\(command)"
+            var text = command
             if let cwd { text += "\n\(cwd)" }
-            return (text, .command)
+            return SessionMessage(
+                seq: seq, title: "Exec Begin",
+                body: .monospaced(text),
+                category: .command, timestamp: parseTimestamp(ts))
 
         case .commandResult(let p):
-            var lines = ["\(header("Exec Finished", timestamp: p.timestamp))\n\(p.command ?? "")"]
+            var lines: [String] = []
+            if let cmd = p.command { lines.append(cmd) }
             if let cwd = p.cwd { lines.append(cwd) }
             if p.exitCode != 0 { lines.append("Exit Code: \(p.exitCode)") }
             if let out = p.stdout { lines.append(truncateLines(out)) }
             if let err = p.stderr { lines.append(truncateLines(err)) }
-            return (lines.joined(separator: "\n"), .command)
+            return SessionMessage(
+                seq: seq, title: "Exec Finished",
+                body: lines.isEmpty ? nil : .monospaced(lines.joined(separator: "\n")),
+                category: .command, timestamp: parseTimestamp(p.timestamp))
 
         case .reviewStart(let executor, _, let ts):
-            return ("\(header("Executing Review", timestamp: ts))\n\(executor ?? "unknown executor")", .lifecycle)
+            return SessionMessage(
+                seq: seq, title: "Executing Review",
+                body: .text(executor ?? "unknown executor"),
+                category: .lifecycle, timestamp: parseTimestamp(ts))
 
         case .reviewResult(let p):
-            var lines = [header("Review Result", timestamp: p.timestamp)]
-            lines.append("Issues: \(p.issues.count)")
+            var lines = ["Issues: \(p.issues.count)"]
             if !p.recommendations.isEmpty {
                 lines.append("Recommendations: \(p.recommendations.count)")
             }
@@ -995,19 +1099,27 @@ enum MessageFormatter {
                 }
                 lines.append(issueLine)
             }
-            return (lines.joined(separator: "\n"), .lifecycle)
+            return SessionMessage(
+                seq: seq, title: "Review Result",
+                body: .text(lines.joined(separator: "\n")),
+                category: .lifecycle, timestamp: parseTimestamp(p.timestamp))
 
         case .reviewVerdict(let verdict, let fixInstructions, let ts):
-            var lines = [header("Review Verdict", timestamp: ts)]
-            lines.append("Verdict: \(verdict)")
+            var text = "Verdict: \(verdict)"
             if let instructions = fixInstructions {
-                lines.append(instructions)
+                text += "\n\(instructions)"
             }
-            return (lines.joined(separator: "\n"), .lifecycle)
+            return SessionMessage(
+                seq: seq, title: "Review Verdict",
+                body: .text(text),
+                category: .lifecycle, timestamp: parseTimestamp(ts))
 
-        case .workflowProgress(let message, let phase, _):
+        case .workflowProgress(let message, let phase, let ts):
             let text = phase.map { "[\($0)] \(message)" } ?? message
-            return (text, .progress)
+            return SessionMessage(
+                seq: seq, title: nil,
+                body: .text(text),
+                category: .progress, timestamp: parseTimestamp(ts))
 
         case .failureReport(let p):
             var lines = ["FAILED: \(p.summary)"]
@@ -1015,30 +1127,39 @@ enum MessageFormatter {
             if let pr = p.problems { lines.append("Problems:\n\(pr)") }
             if let s = p.solutions { lines.append("Possible solutions:\n\(s)") }
             if let a = p.sourceAgent { lines.append("Source: \(a)") }
-            return (lines.joined(separator: "\n"), .error)
+            return SessionMessage(
+                seq: seq, title: nil,
+                body: .text(lines.joined(separator: "\n")),
+                category: .error, timestamp: parseTimestamp(p.timestamp))
 
-        case .taskCompletion(let taskTitle, let planComplete, _):
+        case .taskCompletion(let taskTitle, let planComplete, let ts):
             let title = taskTitle ?? ""
             let text = planComplete
                 ? "Task complete: \(title) (plan complete)".trimmingCharacters(in: .whitespaces)
                 : "Task complete: \(title)".trimmingCharacters(in: .whitespaces)
-            return (text, .lifecycle)
+            return SessionMessage(
+                seq: seq, title: nil,
+                body: .text(text),
+                category: .lifecycle, timestamp: parseTimestamp(ts))
 
         case .executionSummary(let p):
-            var lines = [header("Execution Summary", timestamp: p.timestamp)]
-            if let id = p.planId { lines.append("Plan: \(id)") }
-            if let title = p.planTitle { lines.append("Title: \(title)") }
-            if let mode = p.mode { lines.append("Mode: \(mode)") }
-            if let d = p.durationMs { lines.append("Duration: \(Int(d / 1000))s") }
-            if let t = p.totalSteps { lines.append("Steps: \(t)") }
-            if let f = p.failedSteps, f > 0 { lines.append("Failed: \(f)") }
+            var pairs: [KeyValuePair] = []
+            if let id = p.planId { pairs.append(KeyValuePair(key: "Plan", value: id)) }
+            if let title = p.planTitle { pairs.append(KeyValuePair(key: "Title", value: title)) }
+            if let mode = p.mode { pairs.append(KeyValuePair(key: "Mode", value: mode)) }
+            if let d = p.durationMs { pairs.append(KeyValuePair(key: "Duration", value: "\(Int(d / 1000))s")) }
+            if let t = p.totalSteps { pairs.append(KeyValuePair(key: "Steps", value: "\(t)")) }
+            if let f = p.failedSteps, f > 0 { pairs.append(KeyValuePair(key: "Failed", value: "\(f)")) }
             if let files = p.changedFiles, !files.isEmpty {
-                lines.append("Changed files: \(files.joined(separator: ", "))")
+                pairs.append(KeyValuePair(key: "Changed files", value: files.joined(separator: ", ")))
             }
             if let errors = p.errors, !errors.isEmpty {
-                lines.append("Errors: \(errors.joined(separator: "; "))")
+                pairs.append(KeyValuePair(key: "Errors", value: errors.joined(separator: "; ")))
             }
-            return (lines.joined(separator: "\n"), .lifecycle)
+            return SessionMessage(
+                seq: seq, title: "Execution Summary",
+                body: pairs.isEmpty ? nil : .keyValuePairs(pairs),
+                category: .lifecycle, timestamp: parseTimestamp(p.timestamp))
 
         case .tokenUsage(let p):
             let parts = [
@@ -1048,31 +1169,49 @@ enum MessageFormatter {
                 p.reasoningTokens.map { "reasoning=\($0)" },
                 p.totalTokens.map { "total=\($0)" },
             ].compactMap { $0 }
-            let text = parts.isEmpty
-                ? header("Usage", timestamp: p.timestamp)
-                : "\(header("Usage", timestamp: p.timestamp))\n\(parts.joined(separator: " "))"
-            return (text, .log)
+            return SessionMessage(
+                seq: seq, title: "Usage",
+                body: parts.isEmpty ? nil : .text(parts.joined(separator: " ")),
+                category: .log, timestamp: parseTimestamp(p.timestamp))
 
         case .inputRequired(let prompt, let ts):
             let text = prompt.map { "Input required: \($0)" } ?? "Input required"
-            return ("\(header("Input Required", timestamp: ts))\n\(text)", .progress)
+            return SessionMessage(
+                seq: seq, title: "Input Required",
+                body: .text(text),
+                category: .progress, timestamp: parseTimestamp(ts))
 
         case .promptRequest(let p):
-            return ("Prompt (\(p.promptType)): \(p.promptConfig.message)", .progress)
+            return SessionMessage(
+                seq: seq, title: nil,
+                body: .text("Prompt (\(p.promptType)): \(p.promptConfig.message)"),
+                category: .progress, timestamp: parseTimestamp(p.timestamp))
 
         case .promptAnswered(let p):
-            return ("Prompt answered (\(p.promptType)) by \(p.source)", .log)
+            return SessionMessage(
+                seq: seq, title: nil,
+                body: .text("Prompt answered (\(p.promptType)) by \(p.source)"),
+                category: .log, timestamp: parseTimestamp(p.timestamp))
 
         case .planDiscovery(let planId, let title, let ts):
-            return ("\(header("Plan Discovery", timestamp: ts))\nFound ready plan: \(planId) - \(title)", .lifecycle)
+            return SessionMessage(
+                seq: seq, title: "Plan Discovery",
+                body: .text("Found ready plan: \(planId) - \(title)"),
+                category: .lifecycle, timestamp: parseTimestamp(ts))
 
         case .workspaceInfo(let path, let planFile, _, let ts):
-            var text = "\(header("Workspace", timestamp: ts))\n\(path)"
-            if let pf = planFile { text += "\nPlan: \(pf)" }
-            return (text, .log)
+            var pairs = [KeyValuePair(key: "Path", value: path)]
+            if let pf = planFile { pairs.append(KeyValuePair(key: "Plan", value: pf)) }
+            return SessionMessage(
+                seq: seq, title: "Workspace",
+                body: .keyValuePairs(pairs),
+                category: .log, timestamp: parseTimestamp(ts))
 
         case .unknown(let type):
-            return ("Unknown message type: \(type)", .log)
+            return SessionMessage(
+                seq: seq, title: nil,
+                body: .text("Unknown message type: \(type)"),
+                category: .log)
         }
     }
 }

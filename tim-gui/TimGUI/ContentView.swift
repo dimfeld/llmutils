@@ -249,8 +249,12 @@ final class ThrowingResumeGuard: @unchecked Sendable {
                 workspacePath: "/tmp/workspace",
                 gitRemote: nil))
             if let connId = state.sessions.first?.connectionId {
-                state.appendMessage(connectionId: connId, message: SessionMessage(
-                    seq: 1, text: "### Starting\nExecutor: claude-code", category: .lifecycle))
+                state.appendMessage(connectionId: connId, message: MessageFormatter.format(
+                    tunnelMessage: .structured(message: .agentSessionStart(AgentSessionStartPayload(
+                        executor: "claude-code", mode: nil, planId: nil,
+                        sessionId: nil, threadId: nil, tools: nil,
+                        mcpServers: nil, timestamp: nil))),
+                    seq: 1))
                 state.appendMessage(connectionId: connId, message: SessionMessage(
                     seq: 2, text: "Working on task...", category: .progress))
             }

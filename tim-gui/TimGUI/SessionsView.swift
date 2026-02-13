@@ -199,16 +199,93 @@ private struct ScrollOffsetPreferenceKey: PreferenceKey {
 
 // MARK: - SessionMessageView
 
+private let timestampFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "HH:mm:ss"
+    return f
+}()
+
 struct SessionMessageView: View {
     let message: SessionMessage
 
     var body: some View {
-        Text(message.text)
-            .font(.system(.body, design: .monospaced))
-            .foregroundStyle(colorForCategory(message.category))
-            .fontWeight(weightForCategory(message.category))
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 4) {
+            if let title = message.title {
+                headerView(title)
+            }
+            if let body = message.body {
+                bodyView(body)
+            }
+        }
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func headerView(_ title: String) -> some View {
+        HStack {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(colorForCategory(message.category))
+            Spacer()
+            if let ts = message.timestamp {
+                Text(timestampFormatter.string(from: ts))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func bodyView(_ body: MessageContentBody) -> some View {
+        switch body {
+        case .text(let text):
+            Text(text)
+                .font(.body)
+                .foregroundStyle(colorForCategory(message.category))
+
+        case .monospaced(let text):
+            Text(text)
+                .font(.system(.body, design: .monospaced))
+                .foregroundStyle(colorForCategory(message.category))
+
+        case .todoList(let items):
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    HStack(spacing: 6) {
+                        Image(systemName: iconForTodoStatus(item.status))
+                            .foregroundStyle(colorForTodoStatus(item.status))
+                            .font(.body)
+                        Text(item.label)
+                            .font(.body)
+                            .foregroundStyle(colorForCategory(message.category))
+                    }
+                }
+            }
+
+        case .fileChanges(let items):
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    HStack(spacing: 6) {
+                        Text(indicatorForFileChange(item.kind))
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundStyle(colorForFileChange(item.kind))
+                            .frame(width: 14, alignment: .center)
+                        Text(item.path)
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundStyle(colorForCategory(message.category))
+                    }
+                }
+            }
+
+        case .keyValuePairs(let pairs):
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
+                    Text("\(pair.key): ").foregroundStyle(.secondary)
+                        + Text(pair.value).foregroundStyle(colorForCategory(message.category))
+                }
+            }
+        }
     }
 
     private func colorForCategory(_ category: MessageCategory) -> Color {
@@ -224,10 +301,41 @@ struct SessionMessageView: View {
         }
     }
 
-    private func weightForCategory(_ category: MessageCategory) -> Font.Weight {
-        switch category {
-        case .lifecycle: .bold
-        default: .regular
+    private func iconForTodoStatus(_ status: TodoStatus) -> String {
+        switch status {
+        case .completed: "checkmark.circle.fill"
+        case .inProgress: "play.circle.fill"
+        case .pending: "circle"
+        case .blocked: "exclamationmark.circle.fill"
+        case .unknown: "questionmark.circle"
+        }
+    }
+
+    private func colorForTodoStatus(_ status: TodoStatus) -> Color {
+        switch status {
+        case .completed: .green
+        case .inProgress: .blue
+        case .pending: .secondary
+        case .blocked: .orange
+        case .unknown: .secondary
+        }
+    }
+
+    private func indicatorForFileChange(_ kind: FileChangeKind) -> String {
+        switch kind {
+        case .added: "+"
+        case .updated: "~"
+        case .removed: "-"
+        case .unknown: "?"
+        }
+    }
+
+    private func colorForFileChange(_ kind: FileChangeKind) -> Color {
+        switch kind {
+        case .added: .green
+        case .updated: .yellow
+        case .removed: .red
+        case .unknown: .secondary
         }
     }
 }
@@ -249,6 +357,10 @@ struct SessionMessageView: View {
                 )
             )
             if let connId = state.sessions.first?.connectionId {
+                let ts = "2026-02-13T00:30:00.000Z"
+                var seq = 0
+                func nextSeq() -> Int { seq += 1; return seq }
+
                 state.appendMessage(
                     connectionId: connId,
                     message: MessageFormatter.format(
@@ -256,17 +368,22 @@ struct SessionMessageView: View {
                             message: .agentSessionStart(AgentSessionStartPayload(
                                 executor: "claude", mode: "agent", planId: 169,
                                 sessionId: nil, threadId: nil, tools: nil,
-                                mcpServers: nil, timestamp: nil
+                                mcpServers: nil, timestamp: ts
                             ))
                         ),
-                        seq: 1
+                        seq: nextSeq()
                     )
                 )
                 state.appendMessage(
                     connectionId: connId,
                     message: MessageFormatter.format(
-                        tunnelMessage: .args(type: "log", args: ["Starting agent run..."]),
-                        seq: 2
+                        tunnelMessage: .structured(
+                            message: .llmResponse(
+                                text: "I'll start by reading the project structure to understand how the WebSocket module should integrate with the existing codebase.",
+                                isUserRequest: false, timestamp: ts
+                            )
+                        ),
+                        seq: nextSeq()
                     )
                 )
                 state.appendMessage(
@@ -275,10 +392,52 @@ struct SessionMessageView: View {
                         tunnelMessage: .structured(
                             message: .llmToolUse(LlmToolUsePayload(
                                 toolName: "Read", inputSummary: "src/main.ts",
-                                input: nil, timestamp: nil
+                                input: nil, timestamp: ts
                             ))
                         ),
-                        seq: 3
+                        seq: nextSeq()
+                    )
+                )
+                state.appendMessage(
+                    connectionId: connId,
+                    message: MessageFormatter.format(
+                        tunnelMessage: .structured(
+                            message: .commandResult(CommandResultPayload(
+                                command: "npm test", cwd: "/Users/dev/projects/myapp",
+                                exitCode: 0, stdout: "All 42 tests passed\nTest Suites: 8 passed",
+                                stderr: nil, timestamp: ts
+                            ))
+                        ),
+                        seq: nextSeq()
+                    )
+                )
+                state.appendMessage(
+                    connectionId: connId,
+                    message: MessageFormatter.format(
+                        tunnelMessage: .structured(
+                            message: .todoUpdate(items: [
+                                TodoUpdateItem(label: "Set up WebSocket server", status: "completed"),
+                                TodoUpdateItem(label: "Implement message handlers", status: "in_progress"),
+                                TodoUpdateItem(label: "Add reconnection logic", status: "pending"),
+                                TodoUpdateItem(label: "Write integration tests", status: "pending"),
+                                TodoUpdateItem(label: "Deploy to staging", status: "blocked"),
+                            ], timestamp: ts)
+                        ),
+                        seq: nextSeq()
+                    )
+                )
+                state.appendMessage(
+                    connectionId: connId,
+                    message: MessageFormatter.format(
+                        tunnelMessage: .structured(
+                            message: .fileChangeSummary(changes: [
+                                FileChangeItem(path: "src/websocket/server.ts", kind: "added"),
+                                FileChangeItem(path: "src/websocket/handlers.ts", kind: "added"),
+                                FileChangeItem(path: "src/main.ts", kind: "updated"),
+                                FileChangeItem(path: "src/old-polling.ts", kind: "removed"),
+                            ], timestamp: ts)
+                        ),
+                        seq: nextSeq()
                     )
                 )
             }
