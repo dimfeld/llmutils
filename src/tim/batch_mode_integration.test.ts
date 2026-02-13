@@ -61,6 +61,8 @@ describe('Batch Mode Integration Tests', () => {
 
     await moduleMocker.mock('./executors/claude_code/orchestrator_prompt.ts', () => ({
       wrapWithOrchestration: mockWrapWithOrchestration,
+      wrapWithOrchestrationSimple: mock((content: string) => content),
+      wrapWithOrchestrationTdd: mock((content: string) => content),
     }));
 
     // Create executor
@@ -325,6 +327,8 @@ tasks:
 
     await moduleMocker.mock('./executors/claude_code/orchestrator_prompt.ts', () => ({
       wrapWithOrchestration: mockWrapWithOrchestration,
+      wrapWithOrchestrationSimple: mock((content: string) => content),
+      wrapWithOrchestrationTdd: mock((content: string) => content),
     }));
 
     const executor = new ClaudeCodeExecutor(

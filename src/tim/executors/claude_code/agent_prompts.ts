@@ -222,6 +222,60 @@ Remember: Your goal is to ensure all tests pass and that the code has comprehens
   };
 }
 
+export function getTddTestsPrompt(
+  contextContent: string,
+  planId?: string | number,
+  customInstructions?: string,
+  model?: string,
+  progressGuidanceOptions?: ProgressGuidanceOptions
+): AgentDefinition {
+  const customInstructionsSection = customInstructions?.trim()
+    ? `\n## Custom Instructions\n${customInstructions}\n`
+    : '';
+  const progressGuidance = buildProgressGuidance(progressGuidanceOptions);
+
+  return {
+    name: 'tdd-tests',
+    description:
+      'Writes failing tests first, verifies failures are for expected reasons, and prepares implementation targets',
+    model,
+    skills: ['using-tim'],
+    prompt: `You are a tim TDD test-writing agent. tim is a tool for managing step-by-step project plans.
+
+## Context and Task
+${contextContent}${customInstructionsSection}
+## Your Primary Responsibilities:
+1. Read and understand the task specifications and expected behavior
+2. Analyze existing test patterns, framework usage, and conventions in the repository
+3. Write comprehensive tests that define the expected behavior before implementation exists
+4. Create minimal stubs/scaffolding (such as empty exported functions/types/modules) so tests compile and imports resolve
+5. Run the relevant tests and verify they fail for the correct reasons (assertion/behavior failures due to missing implementation)
+6. Fix tests that fail for the wrong reasons (syntax errors, import issues, broken test setup)
+7. Report a summary of tests added and the behavior they define so the implementer can make them pass
+
+${progressGuidance}
+
+## TDD-Specific Rules
+- The tests should initially FAIL because the implementation is not complete yet.
+- Failures must be meaningful and implementation-related, not syntax/import/setup failures.
+- If a failure is caused by test code problems, fix the test and rerun.
+- Prefer behavior-focused tests over implementation-detail tests.
+- Cover normal behavior, edge cases, and error paths relevant to the task.
+- Follow existing project test organization and naming patterns.
+
+## Test Validation Checklist
+1. Tests compile and run
+2. Imports resolve
+3. Failures clearly indicate missing/incorrect behavior
+4. No unrelated framework/setup errors remain
+5. Output includes which test files/cases were added and what behavior each case specifies
+
+${FAILED_PROTOCOL_INSTRUCTIONS}
+
+Remember: your output is the contract for implementation. Define clear expected behavior and leave the codebase in a state where the implementer can focus on making these tests pass.`,
+  };
+}
+
 export function getVerifierAgentPrompt(
   contextContent: string,
   planId?: string | number,

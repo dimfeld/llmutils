@@ -60,7 +60,7 @@ struct SessionRowView: View {
                 .frame(width: 8, height: 8)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(session.workspacePath ?? "Unknown workspace")
+                Text(SessionRowView.shortenedPath(session.workspacePath) ?? "Unknown workspace")
                     .font(.headline)
                     .lineLimit(1)
 
@@ -86,6 +86,15 @@ struct SessionRowView: View {
             }
         }
         .padding(.vertical, 2)
+    }
+
+    static func shortenedPath(_ path: String?) -> String? {
+        guard let path else { return nil }
+        let components = path.split(separator: "/", omittingEmptySubsequences: true)
+        if components.count <= 2 {
+            return path
+        }
+        return components.suffix(2).joined(separator: "/")
     }
 }
 

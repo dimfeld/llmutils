@@ -28,7 +28,7 @@ export async function executeStubPlan({
   executor: Executor;
   commit: boolean;
   dryRun?: boolean;
-  executionMode?: 'normal' | 'simple';
+  executionMode?: 'normal' | 'simple' | 'tdd';
   finalReview?: boolean;
   configPath?: string;
 }) {

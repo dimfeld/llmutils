@@ -1,7 +1,7 @@
 /**
  * @fileoverview Implementation of the `tim subagent` command.
  *
- * This command runs a subagent (implementer, tester, or verifier) for the orchestrator.
+ * This command runs a subagent (implementer, tester, tdd-tests, or verifier) for the orchestrator.
  * It loads plan context, builds the appropriate agent prompt, and executes using either
  * claude-code or codex-cli. Intermediate output goes through the tunnel to the terminal,
  * while the final agent message is printed to stdout for the orchestrator to capture.
@@ -16,6 +16,7 @@ import { getAllIncompleteTasks } from '../plans/find_next.js';
 import { buildExecutionPromptWithoutSteps } from '../prompt_builder.js';
 import {
   getImplementerPrompt,
+  getTddTestsPrompt,
   getTesterPrompt,
   getVerifierAgentPrompt,
 } from '../executors/claude_code/agent_prompts.js';
@@ -39,7 +40,7 @@ import { setupPermissionsMcp } from '../executors/claude_code/permissions_mcp_se
 import type { TimConfig } from '../configSchema.js';
 import type { Executor } from '../executors/types.js';
 
-export type SubagentType = 'implementer' | 'tester' | 'verifier';
+export type SubagentType = 'implementer' | 'tester' | 'tdd-tests' | 'verifier';
 
 const DEFAULT_CLAUDE_MODEL = 'opus';
 
@@ -113,8 +114,8 @@ export async function handleSubagentCommand(
   });
 
   // Load custom agent instructions
-  const agentInstructionsType: 'implementer' | 'tester' | 'reviewer' =
-    agentType === 'verifier' ? 'tester' : agentType;
+  const agentInstructionsType: 'implementer' | 'tester' | 'tddTests' | 'reviewer' =
+    agentType === 'verifier' ? 'tester' : agentType === 'tdd-tests' ? 'tddTests' : agentType;
   const customInstructions = await loadAgentInstructionsFor(agentInstructionsType, gitRoot, config);
 
   // For verifier, also load reviewer instructions and combine them
@@ -226,6 +227,10 @@ function buildAgentDefinition(
       });
     case 'tester':
       return getTesterPrompt(contextContent, planId, customInstructions, model, {
+        mode: 'report',
+      });
+    case 'tdd-tests':
+      return getTddTestsPrompt(contextContent, planId, customInstructions, model, {
         mode: 'report',
       });
     case 'verifier':

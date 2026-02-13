@@ -2,6 +2,7 @@ interface OrchestrationOptions {
   batchMode?: boolean;
   planFilePath?: string;
   reviewExecutor?: string;
+  simpleMode?: boolean;
   /**
    * Which executor to use for subagents: 'codex-cli', 'claude-code', or 'dynamic'.
    * When 'dynamic', the orchestrator decides per-task based on dynamicSubagentInstructions.
@@ -432,6 +433,199 @@ ${progressSection}`;
   const footer = `## Task Context
 
 Below is the original task context to execute with this workflow:
+
+---
+
+${contextContent}`;
+
+  return `${header}
+
+${batchModeInstructions}${availableAgents}
+
+${dynamicGuidance}${workflowInstructions}
+
+${failureProtocol}
+
+${guidance}
+
+${footer}`;
+}
+
+/**
+ * Wraps context content with TDD orchestration instructions.
+ * - TDD normal: tdd-tests -> implementer -> tester -> review
+ * - TDD simple: tdd-tests -> implementer -> verifier
+ */
+export function wrapWithOrchestrationTdd(
+  contextContent: string,
+  planId: string,
+  options: OrchestrationOptions = {}
+): string {
+  const batchModeInstructions = buildBatchModeInstructions(options);
+  const progressSection = progressSectionGuidance(options.planFilePath);
+  const executorFlag = buildSubagentExecutorFlag(options);
+  const dynamicGuidance = buildDynamicExecutorGuidance(options);
+  const isSimpleTdd = options.simpleMode === true;
+
+  const header = `# TDD Orchestration Instructions
+
+You are coordinating a tim Test-Driven Development workflow for the tasks below. tim is a tool for managing step-by-step project plans.
+
+You MUST enforce TDD order:
+1. Write and run tests first (expecting failing tests for unimplemented behavior)
+2. Implement to make those tests pass
+3. Verify and review according to the selected workflow`;
+
+  const availableAgents = isSimpleTdd
+    ? `## Available Agents
+
+You have three specialized subagents that you MUST invoke via the Bash tool:
+- **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
+- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
+- **Verifier**: Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
+
+Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.`
+    : `## Available Agents
+
+You have three specialized subagents that you MUST invoke via the Bash tool:
+- **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
+- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
+- **Tester**: Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
+
+Code reviews are performed by running \`tim review\` (not a subagent).
+
+Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.`;
+
+  const taskSelectionPhase = options.batchMode
+    ? `1. **Task Selection Phase**
+   - Review all provided tasks and select a focused subset for this run
+   - Document which tasks you chose and why before proceeding
+   - Keep the batch manageable for a full TDD cycle
+
+2. **TDD Test Phase**`
+    : `1. **TDD Test Phase**`;
+
+  const dynamicNote =
+    !options.subagentExecutor || options.subagentExecutor === 'dynamic'
+      ? `\n   - Choose the appropriate executor (\`-x claude-code\` or \`-x codex-cli\`) based on the executor selection guidance above.`
+      : '';
+
+  const implementationPhaseNumber = options.batchMode ? '3' : '2';
+  const verificationPhaseNumber = options.batchMode ? '4' : '3';
+  const notesPhaseNumber = isSimpleTdd
+    ? options.batchMode
+      ? '5'
+      : '4'
+    : options.batchMode
+      ? '6'
+      : '5';
+  const iterationPhaseNumber = isSimpleTdd
+    ? options.batchMode
+      ? '6'
+      : '5'
+    : options.batchMode
+      ? '7'
+      : '6';
+
+  const reviewCommand = buildReviewCommand(planId, options);
+  const reviewExecutorGuidance = options.reviewExecutor
+    ? `   - Use the review executor override provided: \`--executor ${options.reviewExecutor}\`.`
+    : '';
+
+  const verificationPhase = isSimpleTdd
+    ? `${verificationPhaseNumber}. **Verification Phase**
+   - Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - In the input (\`--input\` or \`--input-file\`), include:
+     - TDD tests output and implementation summary
+     - Which tasks are in scope
+     - Required quality gates (\`bun run check\`, \`bun run lint\`, \`bun test\`)
+   - Instruct verifier to confirm the implementation satisfies the previously written tests and report gaps`
+    : `${verificationPhaseNumber}. **Testing Phase**
+   - Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - In the input (\`--input\` or \`--input-file\`), include:
+     - TDD tests output and implementer output
+     - Which tasks are in scope
+     - Direction to ensure tests target real implementation code
+   - Instruct tester to run tests and fix failures, then report remaining gaps
+
+${options.batchMode ? '5' : '4'}. **Review Phase**
+   - Run \`${reviewCommand}\` using the Bash tool.
+   - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
+${reviewExecutorGuidance}
+   - The review command may take up to 15 minutes; use a long timeout.`;
+
+  const workflowInstructions = `## Workflow Instructions
+
+You MUST follow this TDD process:
+
+${taskSelectionPhase}
+   - Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - In the input (\`--input\` or \`--input-file\`), specify in-scope tasks and expected behavior to define
+   - Explicitly instruct the TDD tests agent to:
+     - Write tests first
+     - Run tests
+     - Verify failures are for expected behavioral reasons (not syntax/import/setup errors)
+   - Capture and preserve this output for downstream phases
+
+${implementationPhaseNumber}. **Implementation Phase**
+   - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - In the input, include the TDD tests output and direct the implementer to make those tests pass
+   - Emphasize that implementation should be driven by existing TDD tests, not by adding unrelated new behavior
+   - Wait for the subagent to complete and review its output
+
+${verificationPhase}
+
+${notesPhaseNumber}. **Notes Phase**
+${progressSection}
+
+${iterationPhaseNumber}. **Iteration**
+- If verification/review identifies issues or tests fail:
+- Return to step ${options.batchMode ? '2' : '1'} and continue the loop
+- Keep TDD order intact for each iteration`;
+
+  const failureProtocol = `
+## Failure Protocol (Conflicting/Impossible Requirements)
+
+- Monitor all subagent outputs for a line starting with "FAILED:".
+- If any subagent emits a FAILED line, stop immediately.
+- Output a concise failure message and propagate details:
+  - First line: FAILED: <agent> reported a failure — <1-sentence summary>
+    - <agent> must be one of: tdd-tests | implementer | tester | verifier | review | orchestrator
+  - Then include the subagent's detailed report verbatim.
+- Do NOT continue to other phases or mark tasks done when a failure occurs.
+- You may add brief context (e.g. which tasks were active) if helpful.`;
+
+  const reviewCommandGuidance = isSimpleTdd
+    ? ''
+    : `- Do NOT review code directly. Always run \`${reviewCommand}\` for code quality assessment.`;
+  const testingGuidance = isSimpleTdd
+    ? '- Do NOT verify code directly. Always delegate verification to \`tim subagent verifier\`.'
+    : '- Do NOT write or run tests directly. Always delegate testing to \`tim subagent tester\`.';
+
+  const guidance = `## Important Guidelines
+
+- Do NOT implement code directly. Always delegate implementation via \`tim subagent implementer\`.
+${testingGuidance}
+${reviewCommandGuidance}
+- We are using Test-Driven Development. The \`tdd-tests\` subagent must run before implementation.
+- Always pass the TDD tests output into the implementer invocation.
+- Do not skip the TDD test phase, even if implementation seems straightforward.
+- If input is large (roughly over 50KB), write it to a temporary file and pass \`--input-file <path>\` instead of \`--input\`.
+- You can also pipe input to stdin and use \`--input-file -\`.
+- When subagents can see all pending tasks, explicitly state which task titles are in scope for this run.${
+    options.batchMode
+      ? `
+- Subagents can read all pending tasks; explicitly tell them which ones are in scope for this batch.`
+      : ''
+  }
+
+${markTasksDoneGuidance(planId)}
+
+${progressSection}`;
+
+  const footer = `## Task Context
+
+Below is the original task context to execute with this TDD workflow:
 
 ---
 

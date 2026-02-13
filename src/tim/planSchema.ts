@@ -33,6 +33,7 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
     uuid: z.guid().optional(),
     generatedBy: z.enum(['agent', 'oneshot']).optional(),
     simple: z.boolean().optional(),
+    tdd: z.boolean().optional(),
     status: z.preprocess((s) => {
       if (typeof s === 'string') {
         // common synonyms

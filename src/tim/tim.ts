@@ -576,6 +576,7 @@ function createAgentCommand(command: Command, description: string) {
       'Disable batch task execution mode and process tasks one at a time (default is batch mode)'
     )
     .option('--simple', 'Use streamlined two-phase execution mode (implement then verify)')
+    .option('--tdd', 'Use TDD mode: write tests first, then implement to make them pass')
     .option(
       '--update-docs <mode>',
       'Override when to update documentation: never, after-iteration, after-completion'
@@ -1195,12 +1196,12 @@ storageCommand
     await handleStorageCleanCommand(names, options).catch(handleCommandError);
   });
 
-// Register the subagent command with implementer, tester, and verifier subcommands
+// Register the subagent command with implementer, tester, tdd-tests, and verifier subcommands
 const subagentCommand = program
   .command('subagent')
   .description('Run a subagent for the orchestrator');
 
-for (const agentType of ['implementer', 'tester', 'verifier'] as const) {
+for (const agentType of ['implementer', 'tester', 'tdd-tests', 'verifier'] as const) {
   subagentCommand
     .command(`${agentType} <planFile>`)
     .description(`Run the ${agentType} subagent`)

@@ -479,6 +479,12 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     if (!hasExplicitSimpleFlag && planData.simple === true) {
       options.simple = true;
     }
+    // Check if plan has tdd field set and respect it
+    // CLI flags take precedence: explicit --tdd or --no-tdd override plan field
+    const hasExplicitTddFlag = 'tdd' in options && options.tdd !== undefined;
+    if (!hasExplicitTddFlag && planData.tdd === true) {
+      options.tdd = true;
+    }
 
     const executorConfigEntry =
       config.executors && executorName in config.executors
@@ -489,6 +495,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
         ? (executorConfigEntry as { simpleMode?: unknown }).simpleMode
         : undefined;
     const simpleModeEnabled = options.simple === true || configSimpleMode === true;
+    const tddModeEnabled = options.tdd === true;
 
     const sharedExecutorOptions: ExecutorCommonOptions = {
       baseDir: currentBaseDir,
@@ -502,7 +509,11 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     const executor = options.simple
       ? buildExecutorAndLog(executorName, sharedExecutorOptions, config, { simpleMode: true })
       : buildExecutorAndLog(executorName, sharedExecutorOptions, config);
-    const executionMode: 'normal' | 'simple' = simpleModeEnabled ? 'simple' : 'normal';
+    const executionMode: 'normal' | 'simple' | 'tdd' = tddModeEnabled
+      ? 'tdd'
+      : simpleModeEnabled
+        ? 'simple'
+        : 'normal';
 
     // Determine updateDocs mode: CLI option overrides config
     const updateDocsMode: 'never' | 'after-iteration' | 'after-completion' =

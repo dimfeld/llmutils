@@ -312,6 +312,14 @@ export const timConfigSchema = z
               .describe('Path to custom instructions file for the tester agent'),
           })
           .optional(),
+        tddTests: z
+          .object({
+            instructions: z
+              .string()
+              .optional()
+              .describe('Path to custom instructions file for the tdd-tests agent'),
+          })
+          .optional(),
         reviewer: z
           .object({
             instructions: z
@@ -323,7 +331,7 @@ export const timConfigSchema = z
       })
       .strict()
       .optional()
-      .describe('Custom instructions for implementer, tester, and reviewer agents'),
+      .describe('Custom instructions for implementer, tester, tdd-tests, and reviewer agents'),
     /** Review-specific configuration options */
     review: z
       .object({

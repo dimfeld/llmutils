@@ -53,11 +53,12 @@ export interface ExecutePlanInfo {
    * Execution mode for the executor.
    * - 'normal': Full multi-agent orchestration (implementer → tester → reviewer)
    * - 'simple': Streamlined orchestration (implementer → verifier)
+   * - 'tdd': TDD orchestration (tdd-tests → implementer → tester/reviewer or verifier in simple mode)
    * - 'review': Review-only with JSON schema output for structured results
    * - 'planning': Single-shot execution for planning operations (no orchestration)
    * - 'bare': Single-shot execution for any operation (no orchestration, no workflow)
    */
-  executionMode: 'normal' | 'simple' | 'review' | 'planning' | 'bare';
+  executionMode: 'normal' | 'simple' | 'tdd' | 'review' | 'planning' | 'bare';
   /** When true, this review is scoped to specific tasks (not the full plan) */
   isTaskScoped?: boolean;
 }

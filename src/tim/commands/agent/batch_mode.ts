@@ -35,7 +35,7 @@ export async function executeBatchMode(
     dryRun?: boolean;
     maxSteps?: number;
     executorName?: string;
-    executionMode?: 'normal' | 'simple';
+    executionMode?: 'normal' | 'simple' | 'tdd';
     updateDocsMode?: 'never' | 'after-iteration' | 'after-completion';
     finalReview?: boolean;
     configPath?: string;

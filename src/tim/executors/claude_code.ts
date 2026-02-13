@@ -24,6 +24,7 @@ import { prefixPrompt } from './claude_code/prefix_prompt.ts';
 import {
   wrapWithOrchestration,
   wrapWithOrchestrationSimple,
+  wrapWithOrchestrationTdd,
 } from './claude_code/orchestrator_prompt.ts';
 import {
   parseFailedReport,
@@ -947,6 +948,15 @@ export class ClaudeCodeExecutor implements Executor {
         contextContent = wrapWithOrchestrationSimple(contextContent, planId, {
           batchMode: planInfo.batchMode,
           planFilePath,
+          subagentExecutor: this.sharedOptions.subagentExecutor,
+          dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
+        });
+      } else if (planInfo.executionMode === 'tdd') {
+        contextContent = wrapWithOrchestrationTdd(contextContent, planId, {
+          batchMode: planInfo.batchMode,
+          planFilePath,
+          simpleMode: this.sharedOptions.simpleMode,
+          reviewExecutor: this.sharedOptions.reviewExecutor,
           subagentExecutor: this.sharedOptions.subagentExecutor,
           dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
         });

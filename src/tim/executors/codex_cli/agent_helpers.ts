@@ -4,7 +4,7 @@ import { log } from '../../../logging';
 
 /** Load agent instructions if configured in timConfig */
 export async function loadAgentInstructionsFor(
-  agent: 'implementer' | 'tester' | 'reviewer',
+  agent: 'implementer' | 'tester' | 'tddTests' | 'reviewer',
   gitRoot: string,
   timConfig: TimConfig
 ): Promise<string | undefined> {
