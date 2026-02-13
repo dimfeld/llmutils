@@ -4,6 +4,45 @@ import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 import { ModuleMocker } from '../../testing.js';
 
+function createStreamingProcessMock(overrides?: {
+  exitCode?: number;
+  stdout?: string;
+  stderr?: string;
+  signal?: NodeJS.Signals | null;
+  killedByInactivity?: boolean;
+  stdin?: { write: (...args: any[]) => any; end: (...args: any[]) => any };
+}) {
+  return {
+    stdin:
+      overrides?.stdin ??
+      ({
+        write: mock((_value: string) => {}),
+        end: mock(async () => {}),
+      } as const),
+    result: Promise.resolve({
+      exitCode: overrides?.exitCode ?? 0,
+      stdout: overrides?.stdout ?? '',
+      stderr: overrides?.stderr ?? '',
+      signal: overrides?.signal ?? null,
+      killedByInactivity: overrides?.killedByInactivity ?? false,
+    }),
+    kill: mock(() => {}),
+  };
+}
+
+async function sendSinglePromptAndWaitForTest(streamingProcess: any, content: string) {
+  const inputMessage = JSON.stringify({
+    type: 'user',
+    message: {
+      role: 'user',
+      content,
+    },
+  });
+  streamingProcess.stdin.write(`${inputMessage}\n`);
+  await streamingProcess.stdin.end();
+  return streamingProcess.result;
+}
+
 describe('ClaudeCodeExecutor - failure detection integration', () => {
   const moduleMocker = new ModuleMocker(import.meta);
   let tempDir = '/tmp/claude-failure-test';
@@ -24,14 +63,15 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
 
     // Make spawn call succeed and invoke the provided formatter once
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
           // Feed any line; formatJsonMessage is mocked below
           opts.formatStdout('{}\n');
         }
-        return { exitCode: 0 };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n'),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -82,13 +122,14 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
 
     // Make spawn call succeed and invoke the provided formatter once
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
         }
-        return { exitCode: 0 };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n'),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -130,13 +171,14 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
         }
-        return { exitCode: 0 };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n'),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -178,13 +220,14 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
         }
-        return { exitCode: 0 };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n'),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -225,13 +268,14 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('line-1\nline-2\n');
         }
-        return { exitCode: 0 };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -287,14 +331,15 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
       }));
 
       await moduleMocker.mock('../../common/process.ts', () => ({
-        spawnAndLogOutput: mock(async (args: string[], opts: any) => {
+        spawnWithStreamingIO: mock(async (args: string[], opts: any) => {
           recordedArgs.push(args);
           if (opts && typeof opts.formatStdout === 'function') {
             opts.formatStdout('{}\n');
           }
-          return { exitCode: 0 };
+          return createStreamingProcessMock();
         }),
         createLineSplitter: mock(() => (input: string) => (input ? input.split('\n') : [])),
+        sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
         debug: false,
       }));
 
@@ -334,7 +379,9 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
       expect(wrapSimple).toHaveBeenCalledTimes(1);
       expect(recordedArgs.length).toBeGreaterThan(0);
       const args = recordedArgs[0];
-      expect(args).toContain('WRAPPED_SIMPLE');
+      expect(args).toContain('--input-format');
+      const inputFormatIndex = args.indexOf('--input-format');
+      expect(args[inputFormatIndex + 1]).toBe('stream-json');
     } finally {
       await fs.rm(planRoot, { recursive: true, force: true });
     }
@@ -349,14 +396,15 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (args: string[], opts: any) => {
         recordedArgs.push(args);
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
         }
-        return { exitCode: 0 };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (_s: string) => [],
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -396,14 +444,15 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (args: string[], opts: any) => {
         recordedArgs.push(args);
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
         }
-        return { exitCode: 0 };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (_s: string) => [],
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -455,18 +504,12 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (args: string[]) => {
+      spawnWithStreamingIO: mock(async (args: string[]) => {
         recordedArgs.push(args);
-        return {
-          exitCode: 0,
-          stdout: JSON.stringify({
-            issues: [],
-            recommendations: [],
-            actionItems: [],
-          }),
-        };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n'),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -534,14 +577,15 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
         // Simulate formatStdout callback processing
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}');
         }
-        return { exitCode: 0 };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n'),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -573,11 +617,9 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async () => ({
-        exitCode: 1,
-        stdout: '',
-      })),
+      spawnWithStreamingIO: mock(async () => createStreamingProcessMock({ exitCode: 1 })),
       createLineSplitter: () => (s: string) => s.split('\n'),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -607,14 +649,12 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (args: string[]) => {
+      spawnWithStreamingIO: mock(async (args: string[]) => {
         recordedArgs.push(args);
-        return {
-          exitCode: 0,
-          stdout: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
-        };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n'),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -648,14 +688,12 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (args: string[]) => {
+      spawnWithStreamingIO: mock(async (args: string[]) => {
         recordedArgs.push(args);
-        return {
-          exitCode: 0,
-          stdout: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
-        };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n'),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -682,12 +720,10 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
     expect(args).not.toContain('--permission-prompt-tool');
     expect(args).not.toContain('--mcp-config');
 
-    // Should use --print with the context content and structured output instruction
-    expect(args).toContain('--print');
-    const printIndex = args.indexOf('--print');
-    expect(args[printIndex + 1]).toBe(
-      'REVIEW CONTEXT\n\nBe sure to provide the structured output with your response'
-    );
+    // Should accept streamed JSON input on stdin
+    expect(args).toContain('--input-format');
+    const inputFormatIndex = args.indexOf('--input-format');
+    expect(args[inputFormatIndex + 1]).toBe('stream-json');
   });
 
   test('sets notification suppression env on Claude subprocess', async () => {
@@ -698,11 +734,12 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
         capturedEnv = opts?.env;
-        return { exitCode: 0, stdout: '', stderr: '', signal: null, killedByInactivity: false };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => s.split('\n'),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -732,6 +769,117 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
 
     expect(capturedEnv?.TIM_NOTIFY_SUPPRESS).toBe('1');
   });
+
+  test('writes normal-mode prompt to stdin as stream-json line and closes stdin', async () => {
+    const stdinWrite = mock((_value: string) => {});
+    const stdinEnd = mock(async () => {});
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: mock(async () => ({
+        ...createStreamingProcessMock(),
+        stdin: { write: stdinWrite, end: stdinEnd },
+      })),
+      createLineSplitter: () => (s: string) => s.split('\n'),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
+      debug: false,
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock(() => ({
+        type: 'assistant',
+        message: '',
+        rawMessage: '',
+        failed: false,
+      })),
+      extractStructuredMessages: mock(() => []),
+      resetToolUseCache: mock(() => {}),
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir },
+      {} as any
+    );
+
+    await exec.execute('CTX', {
+      planId: 'p1',
+      planTitle: 'Plan',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'normal',
+    });
+
+    expect(stdinWrite).toHaveBeenCalledTimes(1);
+    const sentLine = stdinWrite.mock.calls[0]?.[0];
+    expect(typeof sentLine).toBe('string');
+    expect(sentLine.endsWith('\n')).toBeTrue();
+    const parsed = JSON.parse(sentLine.trim());
+    expect(parsed.type).toBe('user');
+    expect(parsed.message?.role).toBe('user');
+    expect(parsed.message?.content).toContain('CTX');
+    expect(stdinEnd).toHaveBeenCalledTimes(1);
+  });
+
+  test('writes review-mode prompt to stdin as stream-json line and closes stdin', async () => {
+    const stdinWrite = mock((_value: string) => {});
+    const stdinEnd = mock(async () => {});
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: mock(async () => ({
+        ...createStreamingProcessMock(),
+        stdin: { write: stdinWrite, end: stdinEnd },
+      })),
+      createLineSplitter: () => (s: string) => s.split('\n'),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
+      debug: false,
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock(() => ({
+        type: 'assistant',
+        message: '',
+        rawMessage: '',
+      })),
+      extractStructuredMessages: mock(() => []),
+      resetToolUseCache: mock(() => {}),
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir },
+      {} as any
+    );
+
+    await exec.execute('REVIEW CONTEXT', {
+      planId: 'review-plan',
+      planTitle: 'Review Plan',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'review',
+    });
+
+    expect(stdinWrite).toHaveBeenCalledTimes(1);
+    expect(stdinWrite.mock.calls[0]?.[0]).toBe(
+      JSON.stringify({
+        type: 'user',
+        message: {
+          role: 'user',
+          content: 'REVIEW CONTEXT\n\nBe sure to provide the structured output with your response',
+        },
+      }) + '\n'
+    );
+    expect(stdinEnd).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () => {
@@ -756,13 +904,14 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
         }
-        return { exitCode: 0 };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -801,14 +950,15 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (args: string[], opts: any) => {
         recordedArgs.push([...args]);
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
         }
-        return { exitCode: 0 };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -863,14 +1013,15 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (args: string[], opts: any) => {
         recordedArgs.push([...args]);
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
         }
-        return { exitCode: 0 };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -927,13 +1078,14 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
         }
-        return { exitCode: 0 };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -992,13 +1144,14 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
         }
-        return { exitCode: 0 };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -1055,13 +1208,14 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
         }
-        return { exitCode: 0 };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -1123,14 +1277,15 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       }));
 
       await moduleMocker.mock('../../common/process.ts', () => ({
-        spawnAndLogOutput: mock(async (args: string[], opts: any) => {
+        spawnWithStreamingIO: mock(async (args: string[], opts: any) => {
           recordedArgs.push([...args]);
           if (opts && typeof opts.formatStdout === 'function') {
             opts.formatStdout('{}\n');
           }
-          return { exitCode: 0 };
+          return createStreamingProcessMock();
         }),
         createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
+        sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
         debug: false,
       }));
 
@@ -1196,13 +1351,14 @@ describe('ClaudeCodeExecutor - tunnel prompt handler wiring', () => {
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
         }
-        return { exitCode: 0 };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
@@ -1252,11 +1408,9 @@ describe('ClaudeCodeExecutor - tunnel prompt handler wiring', () => {
     }));
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock(async () => ({
-        exitCode: 0,
-        stdout: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
-      })),
+      spawnWithStreamingIO: mock(async () => createStreamingProcessMock()),
       createLineSplitter: () => (s: string) => s.split('\n'),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 

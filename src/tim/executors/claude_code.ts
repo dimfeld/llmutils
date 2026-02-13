@@ -4,7 +4,8 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { debugLog, log } from '../../logging.ts';
-import { createLineSplitter, debug, spawnAndLogOutput } from '../../common/process.ts';
+import { createLineSplitter, debug, spawnWithStreamingIO } from '../../common/process.ts';
+import { sendSinglePromptAndWait } from './claude_code/streaming_input.ts';
 import { getGitRoot } from '../../common/git.ts';
 import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
 import type { TimConfig } from '../configSchema.ts';
@@ -635,12 +636,8 @@ export class ClaudeCodeExecutor implements Executor {
       const jsonSchema = getReviewOutputJsonSchemaString();
 
       // Use streaming JSON output format with schema for structured parsing
-      args.push('--verbose', '--output-format', 'stream-json');
+      args.push('--verbose', '--output-format', 'stream-json', '--input-format', 'stream-json');
       args.push('--json-schema', jsonSchema);
-      args.push(
-        '--print',
-        contextContent + '\n\nBe sure to provide the structured output with your response'
-      );
 
       let splitter = createLineSplitter();
       let capturedOutput: object | undefined;
@@ -650,7 +647,7 @@ export class ClaudeCodeExecutor implements Executor {
       const reviewTimeoutMs = 30 * 60 * 1000; // 30 minutes
       let killedByTimeout = false;
       resetToolUseCache();
-      const result = await spawnAndLogOutput(args, {
+      const streaming = await spawnWithStreamingIO(args, {
         env: {
           ...process.env,
           CLAUDECODE: '',
@@ -690,6 +687,9 @@ export class ClaudeCodeExecutor implements Executor {
           return structuredMessages.length > 0 ? structuredMessages : '';
         },
       });
+      const reviewPrompt =
+        contextContent + '\n\nBe sure to provide the structured output with your response';
+      const result = await sendSinglePromptAndWait(streaming, reviewPrompt);
 
       if ((killedByTimeout || result.killedByInactivity) && !seenResultMessage) {
         throw new Error(
@@ -1142,7 +1142,7 @@ export class ClaudeCodeExecutor implements Executor {
         args.push('--debug');
       }
 
-      args.push('--verbose', '--output-format', 'stream-json', '--print', contextContent);
+      args.push('--verbose', '--output-format', 'stream-json', '--input-format', 'stream-json');
       let splitter = createLineSplitter();
       let capturedOutputLines: string[] = [];
       let lastAssistantRaw: string | undefined;
@@ -1154,7 +1154,7 @@ export class ClaudeCodeExecutor implements Executor {
       const executionTimeoutMs = 60 * 60 * 1000; // 60 minutes
       let killedByTimeout = false;
       resetToolUseCache();
-      const result = await spawnAndLogOutput(args, {
+      const streaming = await spawnWithStreamingIO(args, {
         env: {
           ...process.env,
           CLAUDECODE: '',
@@ -1219,6 +1219,7 @@ export class ClaudeCodeExecutor implements Executor {
           return structuredMessages.length > 0 ? structuredMessages : '';
         },
       });
+      const result = await sendSinglePromptAndWait(streaming, contextContent);
 
       if ((killedByTimeout || result.killedByInactivity) && !seenResultMessage) {
         throw new Error(

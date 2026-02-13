@@ -14,6 +14,45 @@ import {
 
 const moduleMocker = new ModuleMocker(import.meta);
 
+function createStreamingProcessMock(overrides?: {
+  exitCode?: number;
+  stdout?: string;
+  stderr?: string;
+  signal?: NodeJS.Signals | null;
+  killedByInactivity?: boolean;
+  stdin?: { write: (...args: any[]) => any; end: (...args: any[]) => any };
+}) {
+  return {
+    stdin:
+      overrides?.stdin ??
+      ({
+        write: mock((_value: string) => {}),
+        end: mock(async () => {}),
+      } as const),
+    result: Promise.resolve({
+      exitCode: overrides?.exitCode ?? 0,
+      stdout: overrides?.stdout ?? '',
+      stderr: overrides?.stderr ?? '',
+      signal: overrides?.signal ?? null,
+      killedByInactivity: overrides?.killedByInactivity ?? false,
+    }),
+    kill: mock(() => {}),
+  };
+}
+
+async function sendSinglePromptAndWaitForTest(streamingProcess: any, content: string) {
+  const inputMessage = JSON.stringify({
+    type: 'user',
+    message: {
+      role: 'user',
+      content,
+    },
+  });
+  streamingProcess.stdin.write(`${inputMessage}\n`);
+  await streamingProcess.stdin.end();
+  return streamingProcess.result;
+}
+
 /**
  * Tests for the `tim subagent` command (tasks 4 and 5 from plan 162).
  *
@@ -168,7 +207,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
 
     // Mock the process spawning for claude-code path
     await moduleMocker.mock('../../common/process.js', () => ({
-      spawnAndLogOutput: mock(async (args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (args: string[], opts: any) => {
         capturedClaudeSpawnArgs = args;
         // Simulate a result message so the code can extract it
         if (opts?.formatStdout) {
@@ -179,9 +218,10 @@ describe('subagent command - prompt construction and executor delegation', () =>
           });
           opts.formatStdout(resultJson + '\n');
         }
-        return { exitCode: 0, killedByInactivity: false };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (input: string) => input.split('\n').filter(Boolean),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
     }));
 
     // Mock the format module to properly extract result text
@@ -606,14 +646,58 @@ describe('subagent command - prompt construction and executor delegation', () =>
     expect(capturedClaudeSpawnArgs![fmtIdx + 1]).toBe('stream-json');
   });
 
-  test('claude-code path includes --verbose and --print flags', async () => {
+  test('claude-code path includes --verbose and --input-format stream-json flags', async () => {
     const { handleSubagentCommand } = await import('./subagent.js');
 
     await handleSubagentCommand('implementer', planFilePath, { executor: 'claude-code' }, {});
 
     expect(capturedClaudeSpawnArgs).toBeDefined();
     expect(capturedClaudeSpawnArgs!).toContain('--verbose');
-    expect(capturedClaudeSpawnArgs!).toContain('--print');
+    expect(capturedClaudeSpawnArgs!).toContain('--input-format');
+    const inputFormatIndex = capturedClaudeSpawnArgs!.indexOf('--input-format');
+    expect(capturedClaudeSpawnArgs![inputFormatIndex + 1]).toBe('stream-json');
+  });
+
+  test('claude-code path writes prompt to stdin as stream-json line and closes stdin', async () => {
+    const stdinWrite = mock((_value: string) => {});
+    const stdinEnd = mock(async () => {});
+
+    await moduleMocker.mock('../../common/process.js', () => ({
+      spawnWithStreamingIO: mock(async (args: string[], opts: any) => {
+        capturedClaudeSpawnArgs = args;
+        if (opts?.formatStdout) {
+          const resultJson = JSON.stringify({
+            type: 'result',
+            subtype: 'success',
+            result: 'Claude execution complete.',
+          });
+          opts.formatStdout(resultJson + '\n');
+        }
+        return {
+          ...createStreamingProcessMock(),
+          stdin: { write: stdinWrite, end: stdinEnd },
+        };
+      }),
+      createLineSplitter: () => (input: string) => input.split('\n').filter(Boolean),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
+    }));
+
+    const { handleSubagentCommand } = await import('./subagent.js');
+
+    await handleSubagentCommand('implementer', planFilePath, { executor: 'claude-code' }, {});
+
+    expect(stdinWrite).toHaveBeenCalledTimes(1);
+    const sentLine = stdinWrite.mock.calls[0]?.[0];
+    expect(typeof sentLine).toBe('string');
+    expect(sentLine.endsWith('\n')).toBeTrue();
+    expect(JSON.parse(sentLine.trim())).toEqual({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: expect.any(String),
+      },
+    });
+    expect(stdinEnd).toHaveBeenCalledTimes(1);
   });
 
   test('claude-code path includes --no-session-persistence', async () => {
@@ -1011,7 +1095,7 @@ describe('subagent command - permissions MCP integration', () => {
     }));
 
     await moduleMocker.mock('../../common/process.js', () => ({
-      spawnAndLogOutput: mock(async (args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (args: string[], opts: any) => {
         capturedClaudeSpawnArgs = args;
         if (opts?.formatStdout) {
           const resultJson = JSON.stringify({
@@ -1021,9 +1105,10 @@ describe('subagent command - permissions MCP integration', () => {
           });
           opts.formatStdout(resultJson + '\n');
         }
-        return { exitCode: 0, killedByInactivity: false };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (input: string) => input.split('\n').filter(Boolean),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
     }));
   });
 
@@ -1215,11 +1300,12 @@ describe('subagent command - permissions MCP integration', () => {
     }));
 
     await moduleMocker.mock('../../common/process.js', () => ({
-      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
         opts.formatStdout?.('FILEPATH_EVENT\nRESULT_EVENT\n');
-        return { exitCode: 0, killedByInactivity: false };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (input: string) => input.split('\n').filter(Boolean),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
     }));
 
     const { handleSubagentCommand } = await import('./subagent.js');
@@ -1367,11 +1453,12 @@ describe('subagent command - executeWithClaude error scenarios', () => {
   test('throws error on non-zero exit code with no result message', async () => {
     // spawnAndLogOutput returns non-zero exit code without producing any result message
     await moduleMocker.mock('../../common/process.js', () => ({
-      spawnAndLogOutput: mock(async (_args: string[], _opts: any) => {
+      spawnWithStreamingIO: mock(async (_args: string[], _opts: any) => {
         // Do NOT call formatStdout - no output at all
-        return { exitCode: 1, killedByInactivity: false };
+        return createStreamingProcessMock({ exitCode: 1 });
       }),
       createLineSplitter: () => (input: string) => input.split('\n').filter(Boolean),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
     }));
 
     const { handleSubagentCommand } = await import('./subagent.js');
@@ -1384,7 +1471,7 @@ describe('subagent command - executeWithClaude error scenarios', () => {
   test('non-zero exit code is tolerated when a result message was received', async () => {
     // spawnAndLogOutput returns non-zero exit code but DID produce a result message
     await moduleMocker.mock('../../common/process.js', () => ({
-      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
         if (opts?.formatStdout) {
           const resultJson = JSON.stringify({
             type: 'result',
@@ -1393,9 +1480,10 @@ describe('subagent command - executeWithClaude error scenarios', () => {
           });
           opts.formatStdout(resultJson + '\n');
         }
-        return { exitCode: 1, killedByInactivity: false };
+        return createStreamingProcessMock({ exitCode: 1 });
       }),
       createLineSplitter: () => (input: string) => input.split('\n').filter(Boolean),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
     }));
 
     const { handleSubagentCommand } = await import('./subagent.js');
@@ -1408,11 +1496,12 @@ describe('subagent command - executeWithClaude error scenarios', () => {
 
   test('throws error on timeout (killedByInactivity) with no result message', async () => {
     await moduleMocker.mock('../../common/process.js', () => ({
-      spawnAndLogOutput: mock(async (_args: string[], _opts: any) => {
+      spawnWithStreamingIO: mock(async (_args: string[], _opts: any) => {
         // Simulate timeout - no output, killed by inactivity
-        return { exitCode: 0, killedByInactivity: true };
+        return createStreamingProcessMock({ killedByInactivity: true });
       }),
       createLineSplitter: () => (input: string) => input.split('\n').filter(Boolean),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
     }));
 
     const { handleSubagentCommand } = await import('./subagent.js');
@@ -1424,7 +1513,7 @@ describe('subagent command - executeWithClaude error scenarios', () => {
 
   test('timeout is tolerated when a result message was received', async () => {
     await moduleMocker.mock('../../common/process.js', () => ({
-      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
         if (opts?.formatStdout) {
           const resultJson = JSON.stringify({
             type: 'result',
@@ -1433,9 +1522,10 @@ describe('subagent command - executeWithClaude error scenarios', () => {
           });
           opts.formatStdout(resultJson + '\n');
         }
-        return { exitCode: 0, killedByInactivity: true };
+        return createStreamingProcessMock({ killedByInactivity: true });
       }),
       createLineSplitter: () => (input: string) => input.split('\n').filter(Boolean),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
     }));
 
     const { handleSubagentCommand } = await import('./subagent.js');
@@ -1449,15 +1539,16 @@ describe('subagent command - executeWithClaude error scenarios', () => {
   test('throws error when no final message found in output', async () => {
     // spawnAndLogOutput succeeds (exit code 0) but output has no result or assistant message
     await moduleMocker.mock('../../common/process.js', () => ({
-      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
         if (opts?.formatStdout) {
           // Send only a non-result, non-assistant message
           const logJson = JSON.stringify({ type: 'system', message: 'Starting...' });
           opts.formatStdout(logJson + '\n');
         }
-        return { exitCode: 0, killedByInactivity: false };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (input: string) => input.split('\n').filter(Boolean),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
     }));
 
     const { handleSubagentCommand } = await import('./subagent.js');
@@ -1470,7 +1561,7 @@ describe('subagent command - executeWithClaude error scenarios', () => {
   test('uses last assistant raw message when no result text is available', async () => {
     // spawnAndLogOutput produces an assistant message but no result message
     await moduleMocker.mock('../../common/process.js', () => ({
-      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
         if (opts?.formatStdout) {
           const assistantJson = JSON.stringify({
             type: 'assistant',
@@ -1478,9 +1569,10 @@ describe('subagent command - executeWithClaude error scenarios', () => {
           });
           opts.formatStdout(assistantJson + '\n');
         }
-        return { exitCode: 0, killedByInactivity: false };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (input: string) => input.split('\n').filter(Boolean),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
     }));
 
     const { handleSubagentCommand } = await import('./subagent.js');
@@ -1493,10 +1585,11 @@ describe('subagent command - executeWithClaude error scenarios', () => {
   test('model flag is silently ignored for codex-cli executor', async () => {
     // Need process mock for this test since it runs codex path
     await moduleMocker.mock('../../common/process.js', () => ({
-      spawnAndLogOutput: mock(async () => {
-        return { exitCode: 0, killedByInactivity: false };
+      spawnWithStreamingIO: mock(async () => {
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (input: string) => input.split('\n').filter(Boolean),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
     }));
 
     const { handleSubagentCommand } = await import('./subagent.js');
@@ -1639,7 +1732,7 @@ describe('subagent command - tunnel behavior', () => {
     }));
 
     await moduleMocker.mock('../../common/process.js', () => ({
-      spawnAndLogOutput: mock(async (_args: string[], opts: any) => {
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
         capturedSpawnEnv = opts?.env;
         if (opts?.formatStdout) {
           const resultJson = JSON.stringify({
@@ -1649,9 +1742,10 @@ describe('subagent command - tunnel behavior', () => {
           });
           opts.formatStdout(resultJson + '\n');
         }
-        return { exitCode: 0, killedByInactivity: false };
+        return createStreamingProcessMock();
       }),
       createLineSplitter: () => (input: string) => input.split('\n').filter(Boolean),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
     }));
   }
 
@@ -1795,10 +1889,11 @@ describe('subagent command - tunnel behavior', () => {
 
     // Simulate a non-zero exit code with no result message to trigger an error
     await moduleMocker.mock('../../common/process.js', () => ({
-      spawnAndLogOutput: mock(async () => {
-        return { exitCode: 1, killedByInactivity: false };
+      spawnWithStreamingIO: mock(async () => {
+        return createStreamingProcessMock({ exitCode: 1 });
       }),
       createLineSplitter: () => (input: string) => input.split('\n').filter(Boolean),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
     }));
 
     const { handleSubagentCommand } = await import('./subagent.js');

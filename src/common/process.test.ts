@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import {
   logSpawn,
   spawnAndLogOutput,
+  spawnWithStreamingIO,
   setDebug,
   setQuiet,
   debug,
@@ -209,6 +210,16 @@ describe('process utilities', () => {
       expect(result.stdout).toBe('test input');
     });
 
+    it('works without stdin option for processes that do not read stdin', async () => {
+      const result = await spawnAndLogOutput(['sh', '-c', 'echo no-stdin-needed'], {
+        quiet: true,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout.trim()).toBe('no-stdin-needed');
+      expect(result.stderr).toBe('');
+    });
+
     it('should handle cwd option', async () => {
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'test-spawn-'));
 
@@ -306,6 +317,38 @@ describe('process utilities', () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('start');
       expect(result.stdout).toContain('end');
+    });
+  });
+
+  describe('spawnWithStreamingIO', () => {
+    it('returns writable stdin and resolves result when stdin is closed', async () => {
+      const proc = await spawnWithStreamingIO(['cat'], { quiet: true });
+
+      proc.stdin.write('streamed input');
+      await proc.stdin.end();
+
+      const result = await proc.result;
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe('streamed input');
+      expect(result.stderr).toBe('');
+    });
+
+    it('supports inactivity timeout while streaming', async () => {
+      const start = Date.now();
+      const proc = await spawnWithStreamingIO(['node', '-e', 'setTimeout(() => {}, 5000)'], {
+        inactivityTimeoutMs: 50,
+        quiet: true,
+      });
+
+      await proc.stdin.end();
+      const result = await proc.result;
+      const duration = Date.now() - start;
+
+      expect(result.killedByInactivity).toBeTrue();
+      expect(
+        result.signal === 'SIGTERM' || result.exitCode === 143 || result.exitCode === 137
+      ).toBeTrue();
+      expect(duration).toBeLessThan(2000);
     });
   });
 

@@ -42,7 +42,8 @@ The codebase is organized into several main modules with improved modularity and
 
 1. **common**: Centralized shared utilities and infrastructure
    - CLI utilities (`cli.ts`), file system operations (`fs.ts`), Git integration (`git.ts`)
-   - Process management (`process.ts`), terminal interaction (`terminal.ts`)
+   - Process management (`process.ts`) with `spawnAndLogOutput()` for fire-and-forget execution and `spawnWithStreamingIO()` for processes that need writable stdin during execution
+   - Terminal interaction (`terminal.ts`)
    - Clipboard support with OSC52 (`clipboard.ts`, `osc52.ts`)
    - SSH detection (`ssh_detection.ts`) and model factory (`model_factory.ts`)
    - GitHub integration utilities in `github/` subdirectory
@@ -135,6 +136,7 @@ See @.cursor/rules/testing.mdc for testing strategy
 - **Use todo lists**: Break complex changes into trackable items for systematic progress
 - **Run type checks frequently**: Catch signature mismatches early in the refactoring process
 - **Make incremental commits**: Each commit should focus on a single logical change
+- **Consolidate shared utilities early**: When multiple modules need the same helper function, put it in `src/common/` from the start rather than duplicating it across callers and consolidating later
 
 ## Personal Workflow Notes
 

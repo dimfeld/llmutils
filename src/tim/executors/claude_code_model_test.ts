@@ -117,9 +117,22 @@ describe('ClaudeCodeExecutor model selection', () => {
     let capturedArgs: string[] = [];
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock((args: string[]) => {
+      spawnWithStreamingIO: mock((args: string[]) => {
         capturedArgs = args;
-        return Promise.resolve({ exitCode: 0 });
+        return Promise.resolve({
+          stdin: {
+            write: (_value: string) => {},
+            end: async () => {},
+          },
+          result: Promise.resolve({
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            signal: null,
+            killedByInactivity: false,
+          }),
+          kill: (_signal?: NodeJS.Signals) => {},
+        });
       }),
       createLineSplitter: mock(() => (output: string) => output.split('\n')),
       debug: false,
@@ -167,12 +180,21 @@ describe('ClaudeCodeExecutor model selection', () => {
     let capturedArgs: string[] = [];
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock((args: string[]) => {
+      spawnWithStreamingIO: mock((args: string[]) => {
         capturedArgs = args;
-        // Return stdout with valid JSON for review mode
         return Promise.resolve({
-          exitCode: 0,
-          stdout: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+          stdin: {
+            write: (_value: string) => {},
+            end: async () => {},
+          },
+          result: Promise.resolve({
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            signal: null,
+            killedByInactivity: false,
+          }),
+          kill: (_signal?: NodeJS.Signals) => {},
         });
       }),
       createLineSplitter: mock(() => (output: string) => output.split('\n')),
@@ -217,9 +239,22 @@ describe('ClaudeCodeExecutor model selection', () => {
     let capturedArgs: string[] = [];
 
     await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock((args: string[]) => {
+      spawnWithStreamingIO: mock((args: string[]) => {
         capturedArgs = args;
-        return Promise.resolve({ exitCode: 0 });
+        return Promise.resolve({
+          stdin: {
+            write: (_value: string) => {},
+            end: async () => {},
+          },
+          result: Promise.resolve({
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            signal: null,
+            killedByInactivity: false,
+          }),
+          kill: (_signal?: NodeJS.Signals) => {},
+        });
       }),
       createLineSplitter: mock(() => (output: string) => output.split('\n')),
       debug: false,

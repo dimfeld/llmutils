@@ -23,7 +23,8 @@ import {
 import { loadAgentInstructionsFor } from '../executors/codex_cli/agent_helpers.js';
 import { executeCodexStep } from '../executors/codex_cli/codex_runner.js';
 import { getGitRoot } from '../../common/git.js';
-import { createLineSplitter, spawnAndLogOutput } from '../../common/process.js';
+import { createLineSplitter, spawnWithStreamingIO } from '../../common/process.js';
+import { sendSinglePromptAndWait } from '../executors/claude_code/streaming_input.js';
 import { debugLog, error } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { createTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
@@ -441,8 +442,7 @@ async function executeWithClaude(
     }
 
     // Use streaming JSON output for structured parsing
-    args.push('--verbose', '--output-format', 'stream-json');
-    args.push('--print', prompt);
+    args.push('--verbose', '--output-format', 'stream-json', '--input-format', 'stream-json');
 
     const splitter = createLineSplitter();
     let lastResultText: string | undefined;
@@ -453,7 +453,7 @@ async function executeWithClaude(
     let killedByTimeout = false;
     resetToolUseCache();
 
-    const result = await spawnAndLogOutput(args, {
+    const streaming = await spawnWithStreamingIO(args, {
       env: {
         ...process.env,
         CLAUDECODE: '',
@@ -500,6 +500,7 @@ async function executeWithClaude(
         return structuredMessages.length > 0 ? structuredMessages : '';
       },
     });
+    const result = await sendSinglePromptAndWait(streaming, prompt);
 
     if ((killedByTimeout || result.killedByInactivity) && !seenResultMessage) {
       throw new Error(`Claude subagent timed out after ${Math.round(timeoutMs / 60000)} minutes`);

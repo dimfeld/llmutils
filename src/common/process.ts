@@ -15,7 +15,7 @@
  * - Promise caching utilities for expensive operations
  */
 
-import type { SpawnOptions } from 'bun';
+import type { FileSink, SpawnOptions } from 'bun';
 import { debugLog, log, sendStructured, writeStderr, writeStdout } from '../logging.js';
 import { getUsingJj, hasUncommittedChanges } from './git.js';
 import type { StructuredMessage } from '../logging/structured_messages.js';
@@ -135,41 +135,55 @@ export function logSpawn<
  * @param options.formatStderr - Optional formatter function for stderr chunks
  * @returns Promise resolving to exit code and captured stdout/stderr
  */
-export async function spawnAndLogOutput(
-  cmd: string[],
-  options?: {
-    cwd?: string;
-    env?: Record<string, string>;
-    quiet?: boolean;
-    stdin?: string;
-    formatStdout?: (output: string) => StructuredMessage | StructuredMessage[] | string;
-    formatStderr?: (output: string) => string;
-    /**
-     * Kill the process if neither stdout nor stderr produce output for this many milliseconds.
-     * This is primarily used by Codex runs to avoid hanging indefinitely on silent processes.
-     */
-    inactivityTimeoutMs?: number;
-    /**
-     * Kill the process if neither stdout nor stderr produce output for this many milliseconds
-     * before the first output is seen. If omitted, uses inactivityTimeoutMs for the initial period.
-     * This is useful for processes that may take longer to start up but should produce output
-     * relatively quickly once started.
-     */
-    initialInactivityTimeoutMs?: number;
-    /** Callback invoked when the process is killed due to inactivity. */
-    onInactivityKill?: (signal: NodeJS.Signals) => void;
-    /** When true, the SIGTSTP handler will not re-send SIGTSTP to actually suspend the process.
-     * Used in tests to avoid suspending the test runner. */
-    _skipSelfSuspend?: boolean;
-  }
-) {
-  debugLog('Running', cmd, options);
-  const proc = Bun.spawn(cmd, {
-    cwd: options?.cwd,
-    env: options?.env,
-    stdio: [options?.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
-  });
+export type SpawnAndLogOutputOptions = {
+  cwd?: string;
+  env?: Record<string, string>;
+  quiet?: boolean;
+  stdin?: string;
+  formatStdout?: (output: string) => StructuredMessage | StructuredMessage[] | string;
+  formatStderr?: (output: string) => string;
+  /**
+   * Kill the process if neither stdout nor stderr produce output for this many milliseconds.
+   * This is primarily used by Codex runs to avoid hanging indefinitely on silent processes.
+   */
+  inactivityTimeoutMs?: number;
+  /**
+   * Kill the process if neither stdout nor stderr produce output for this many milliseconds
+   * before the first output is seen. If omitted, uses inactivityTimeoutMs for the initial period.
+   * This is useful for processes that may take longer to start up but should produce output
+   * relatively quickly once started.
+   */
+  initialInactivityTimeoutMs?: number;
+  /** Callback invoked when the process is killed due to inactivity. */
+  onInactivityKill?: (signal: NodeJS.Signals) => void;
+  /** When true, the SIGTSTP handler will not re-send SIGTSTP to actually suspend the process.
+   * Used in tests to avoid suspending the test runner. */
+  _skipSelfSuspend?: boolean;
+};
 
+export type SpawnAndLogOutputResult = {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  signal: NodeJS.Signals | null;
+  killedByInactivity: boolean;
+};
+
+export type StreamingProcess = {
+  stdin: FileSink;
+  result: Promise<SpawnAndLogOutputResult>;
+  kill: (signal?: NodeJS.Signals) => void;
+};
+
+type SpawnOutputProcessingState = {
+  result: Promise<SpawnAndLogOutputResult>;
+  kill: (signal?: NodeJS.Signals) => void;
+};
+
+function setupOutputProcessing(
+  proc: Bun.Subprocess<SpawnOptions.Writable, 'pipe', 'pipe'>,
+  options?: SpawnAndLogOutputOptions
+): SpawnOutputProcessingState {
   const inactivityTimeoutMs = options?.inactivityTimeoutMs;
   const initialInactivityTimeoutMs = options?.initialInactivityTimeoutMs ?? inactivityTimeoutMs;
   const inactivitySignal: NodeJS.Signals = 'SIGTERM';
@@ -229,94 +243,141 @@ export async function spawnAndLogOutput(
   // Start the inactivity timer immediately in case the child never writes output
   resetInactivityTimer();
 
-  if (options?.stdin) {
-    proc.stdin!.write(options.stdin);
-    await proc.stdin!.end();
-  }
+  const result = (async (): Promise<SpawnAndLogOutputResult> => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
 
-  let stdout: string[] = [];
-  let stderr: string[] = [];
+    async function readStdout() {
+      const stdoutDecoder = new TextDecoder();
+      for await (const value of proc.stdout) {
+        const rawOutput = stdoutDecoder.decode(value, { stream: true });
 
-  async function readStdout() {
-    const stdoutDecoder = new TextDecoder();
-    for await (const value of proc.stdout) {
-      const rawOutput = stdoutDecoder.decode(value, { stream: true });
-
-      if (options?.formatStdout) {
-        const formatted = options.formatStdout(rawOutput);
-        if (typeof formatted === 'string') {
-          stdout.push(formatted);
-          if (!options?.quiet) {
-            writeStdout(formatted);
-          }
-        } else {
-          const messages = Array.isArray(formatted) ? formatted : [formatted];
-          // Keep returned stdout as raw process output for downstream parsers.
-          stdout.push(rawOutput);
-          for (const message of messages) {
+        if (options?.formatStdout) {
+          const formatted = options.formatStdout(rawOutput);
+          if (typeof formatted === 'string') {
+            stdout.push(formatted);
             if (!options?.quiet) {
-              sendStructured(message);
+              writeStdout(formatted);
+            }
+          } else {
+            const messages = Array.isArray(formatted) ? formatted : [formatted];
+            // Keep returned stdout as raw process output for downstream parsers.
+            stdout.push(rawOutput);
+            for (const message of messages) {
+              if (!options?.quiet) {
+                sendStructured(message);
+              }
             }
           }
+        } else {
+          stdout.push(rawOutput);
+          if (!options?.quiet) {
+            writeStdout(rawOutput);
+          }
         }
-      } else {
-        stdout.push(rawOutput);
+
+        // Activity observed; mark output seen and reset inactivity timer
+        hasSeenOutput = true;
+        resetInactivityTimer();
+      }
+    }
+
+    async function readStderr() {
+      const stderrDecoder = new TextDecoder();
+      for await (const value of proc.stderr) {
+        let output = stderrDecoder.decode(value, { stream: true });
+
+        if (options?.formatStderr) {
+          output = options.formatStderr(output);
+        }
+
+        stderr.push(output);
         if (!options?.quiet) {
-          writeStdout(rawOutput);
+          writeStderr(output);
         }
-      }
 
-      // Activity observed; mark output seen and reset inactivity timer
-      hasSeenOutput = true;
-      resetInactivityTimer();
+        // Activity observed; mark output seen and reset inactivity timer
+        hasSeenOutput = true;
+        resetInactivityTimer();
+      }
     }
-  }
 
-  async function readStderr() {
-    const stderrDecoder = new TextDecoder();
-    for await (const value of proc.stderr) {
-      let output = stderrDecoder.decode(value, { stream: true });
+    try {
+      await Promise.all([readStdout(), readStderr()]);
+      debugLog('finished reading output');
 
-      if (options?.formatStderr) {
-        output = options.formatStderr(output);
+      const exitCode = await proc.exited;
+      const signal = proc.signalCode;
+      debugLog('exit code', exitCode, 'signal', signal);
+
+      return {
+        exitCode,
+        stdout: stdout.join(''),
+        stderr: stderr.join(''),
+        signal,
+        killedByInactivity,
+      };
+    } finally {
+      clearInactivityTimer();
+
+      // Clean up signal listeners
+      if (inactivityTimeoutMs) {
+        process.off('SIGTSTP', handleSuspend);
+        process.off('SIGCONT', handleResume);
       }
-
-      stderr.push(output);
-      if (!options?.quiet) {
-        writeStderr(output);
-      }
-
-      // Activity observed; mark output seen and reset inactivity timer
-      hasSeenOutput = true;
-      resetInactivityTimer();
     }
-  }
-
-  await Promise.all([readStdout(), readStderr()]);
-  debugLog('finished reading output');
-
-  const exitCode = await proc.exited;
-  const signal = proc.signalCode;
-  debugLog('exit code', exitCode, 'signal', signal);
-
-  if (inactivityTimer) {
-    clearTimeout(inactivityTimer);
-    inactivityTimer = undefined;
-  }
-
-  // Clean up signal listeners
-  if (inactivityTimeoutMs) {
-    process.off('SIGTSTP', handleSuspend);
-    process.off('SIGCONT', handleResume);
-  }
+  })();
 
   return {
-    exitCode,
-    stdout: stdout.join(''),
-    stderr: stderr.join(''),
-    signal,
-    killedByInactivity,
+    result,
+    kill: (signal?: NodeJS.Signals) => {
+      proc.kill(signal);
+    },
   };
+}
+
+export async function spawnWithStreamingIO(
+  cmd: string[],
+  options?: SpawnAndLogOutputOptions
+): Promise<StreamingProcess> {
+  debugLog('Running', cmd, options);
+  const proc = Bun.spawn(cmd, {
+    cwd: options?.cwd,
+    env: options?.env,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+
+  if (!proc.stdin) {
+    throw new Error('Failed to create stdin pipe for spawned process');
+  }
+  const outputProcessing = setupOutputProcessing(proc, options);
+
+  return {
+    stdin: proc.stdin,
+    result: outputProcessing.result,
+    kill: outputProcessing.kill,
+  };
+}
+
+export async function spawnAndLogOutput(
+  cmd: string[],
+  options?: SpawnAndLogOutputOptions
+): Promise<SpawnAndLogOutputResult> {
+  if (options?.stdin !== undefined) {
+    const streaming = await spawnWithStreamingIO(cmd, options);
+    streaming.stdin.write(options.stdin);
+    await streaming.stdin.end();
+    return streaming.result;
+  }
+
+  debugLog('Running', cmd, options);
+  const proc = Bun.spawn(cmd, {
+    cwd: options?.cwd,
+    env: options?.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  return setupOutputProcessing(proc, options).result;
 }
 
 /**
