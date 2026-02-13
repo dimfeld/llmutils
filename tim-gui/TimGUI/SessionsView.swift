@@ -106,6 +106,7 @@ struct SessionDetailView: View {
                     }
                 }
                 .padding(12)
+                .padding(.bottom, 20)
                 .background(
                     GeometryReader { contentGeometry in
                         Color.clear
