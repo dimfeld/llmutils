@@ -10,9 +10,9 @@ MAC_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$MAC_DIR/build"
 
 if [ -n "${AGENT:-}" ]; then
-  BUILD_DIR="$BUILD_DIR/test-$AGENT"
+  BUILD_DIR="$BUILD_DIR/test-codex"
 elif [ -n "${CLAUDE:-}" ]; then
-  BUILD_DIR="$BUILD_DIR/test-$CLAUDE"
+  BUILD_DIR="$BUILD_DIR/test-claude"
 fi
 
 cd "$MAC_DIR"

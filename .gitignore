@@ -5,6 +5,7 @@ node_modules
 out
 dist
 build
+tim-gui/build-*
 *.tgz
 
 # code coverage

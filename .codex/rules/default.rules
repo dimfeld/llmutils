@@ -1,0 +1,6 @@
+prefix_rule(pattern=["xcodebuild"], decision="allow")
+prefix_rule(pattern=["tim-gui/scripts/build.sh"], decision="allow")
+prefix_rule(pattern=["tim-gui/scripts/test.sh"], decision="allow")
+prefix_rule(pattern=["scripts/build.sh"], decision="allow")
+prefix_rule(pattern=["scripts/test.sh"], decision="allow")
+
