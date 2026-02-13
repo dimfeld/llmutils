@@ -116,13 +116,11 @@ struct MessageFormatterTests {
             Issue.record("Expected .keyValuePairs body")
             return
         }
-        #expect(pairs.count == 3)
-        #expect(pairs[0].key == "Executor")
-        #expect(pairs[0].value == "claude")
-        #expect(pairs[1].key == "Mode")
-        #expect(pairs[1].value == "agent")
-        #expect(pairs[2].key == "Plan")
-        #expect(pairs[2].value == "42")
+        #expect(pairs == [
+            KeyValuePair(key: "Executor", value: "claude"),
+            KeyValuePair(key: "Mode", value: "agent"),
+            KeyValuePair(key: "Plan", value: "42"),
+        ])
     }
 
     @Test("Formats agent_session_start with nil fields omits those pairs")
@@ -174,9 +172,7 @@ struct MessageFormatterTests {
             Issue.record("Expected .keyValuePairs body")
             return
         }
-        #expect(pairs.count == 1)
-        #expect(pairs[0].key == "Success")
-        #expect(pairs[0].value == "no")
+        #expect(pairs == [KeyValuePair(key: "Success", value: "no")])
     }
 
     @Test("Formats llm_tool_use as toolUse with monospaced body")
@@ -603,15 +599,12 @@ struct MessageFormatterTests {
             Issue.record("Expected .todoList body")
             return
         }
-        #expect(displayItems.count == 4)
-        #expect(displayItems[0].label == "Done task")
-        #expect(displayItems[0].status == .completed)
-        #expect(displayItems[1].label == "Current task")
-        #expect(displayItems[1].status == .inProgress)
-        #expect(displayItems[2].label == "Waiting task")
-        #expect(displayItems[2].status == .pending)
-        #expect(displayItems[3].label == "Stuck task")
-        #expect(displayItems[3].status == .blocked)
+        #expect(displayItems == [
+            TodoDisplayItem(label: "Done task", status: .completed),
+            TodoDisplayItem(label: "Current task", status: .inProgress),
+            TodoDisplayItem(label: "Waiting task", status: .pending),
+            TodoDisplayItem(label: "Stuck task", status: .blocked),
+        ])
     }
 
     @Test("Formats todo_update with unknown status")
@@ -627,9 +620,7 @@ struct MessageFormatterTests {
             Issue.record("Expected .todoList body")
             return
         }
-        #expect(displayItems.count == 1)
-        #expect(displayItems[0].label == "Mystery task")
-        #expect(displayItems[0].status == .unknown)
+        #expect(displayItems == [TodoDisplayItem(label: "Mystery task", status: .unknown)])
     }
 
     @Test("Formats llm_thinking as llmOutput with text body")
@@ -692,13 +683,11 @@ struct MessageFormatterTests {
             Issue.record("Expected .fileChanges body")
             return
         }
-        #expect(displayItems.count == 3)
-        #expect(displayItems[0].path == "src/new.ts")
-        #expect(displayItems[0].kind == .added)
-        #expect(displayItems[1].path == "src/main.ts")
-        #expect(displayItems[1].kind == .updated)
-        #expect(displayItems[2].path == "src/old.ts")
-        #expect(displayItems[2].kind == .removed)
+        #expect(displayItems == [
+            FileChangeDisplayItem(path: "src/new.ts", kind: .added),
+            FileChangeDisplayItem(path: "src/main.ts", kind: .updated),
+            FileChangeDisplayItem(path: "src/old.ts", kind: .removed),
+        ])
     }
 
     @Test("Formats file_change_summary with unknown kind")
@@ -715,9 +704,7 @@ struct MessageFormatterTests {
             Issue.record("Expected .fileChanges body")
             return
         }
-        #expect(displayItems.count == 1)
-        #expect(displayItems[0].path == "src/weird.ts")
-        #expect(displayItems[0].kind == .unknown)
+        #expect(displayItems == [FileChangeDisplayItem(path: "src/weird.ts", kind: .unknown)])
     }
 
     @Test("Formats agent_iteration_start with text body")
@@ -786,11 +773,142 @@ struct MessageFormatterTests {
             Issue.record("Expected .keyValuePairs body")
             return
         }
-        #expect(pairs.count == 2)
-        #expect(pairs[0].key == "Path")
-        #expect(pairs[0].value == "/tmp/project")
-        #expect(pairs[1].key == "Plan")
-        #expect(pairs[1].value == "tasks/42.plan.md")
+        #expect(pairs == [
+            KeyValuePair(key: "Path", value: "/tmp/project"),
+            KeyValuePair(key: "Plan", value: "tasks/42.plan.md"),
+        ])
+    }
+
+    // MARK: - Agent step start
+
+    @Test("Formats agent_step_start as lifecycle with text body")
+    func formatsAgentStepStart() {
+        let payload = AgentStepStartPayload(
+            phase: "implement", executor: "claude", stepNumber: 2,
+            attempt: 1, message: "Starting implementation",
+            timestamp: "2025-03-10T08:00:00.000Z")
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .agentStepStart(payload)),
+            seq: 153
+        )
+        #expect(msg.category == .lifecycle)
+        #expect(msg.title == "Step Start: implement")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "Starting implementation")
+        #expect(msg.timestamp != nil)
+    }
+
+    @Test("Formats agent_step_start without message has nil body")
+    func formatsAgentStepStartNoMessage() {
+        let payload = AgentStepStartPayload(
+            phase: "review", executor: nil, stepNumber: nil,
+            attempt: nil, message: nil, timestamp: nil)
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .agentStepStart(payload)),
+            seq: 154
+        )
+        #expect(msg.category == .lifecycle)
+        #expect(msg.title == "Step Start: review")
+        #expect(msg.body == nil)
+        #expect(msg.timestamp == nil)
+    }
+
+    // MARK: - LLM status
+
+    @Test("Formats llm_status as log with text body")
+    func formatsLlmStatus() {
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .llmStatus(
+                status: "streaming", detail: "Generating response",
+                timestamp: "2025-04-01T12:00:00Z")),
+            seq: 170
+        )
+        #expect(msg.category == .log)
+        #expect(msg.title == "Status")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "streaming\nGenerating response")
+        #expect(msg.timestamp != nil)
+    }
+
+    @Test("Formats llm_status without detail")
+    func formatsLlmStatusNoDetail() {
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .llmStatus(
+                status: "idle", detail: nil, timestamp: nil)),
+            seq: 171
+        )
+        #expect(msg.category == .log)
+        #expect(msg.title == "Status")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "idle")
+    }
+
+    // MARK: - Review start
+
+    @Test("Formats review_start as lifecycle with text body")
+    func formatsReviewStart() {
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .reviewStart(
+                executor: "claude", planId: 42,
+                timestamp: "2025-05-01T09:30:00Z")),
+            seq: 180
+        )
+        #expect(msg.category == .lifecycle)
+        #expect(msg.title == "Executing Review")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "claude")
+        #expect(msg.timestamp != nil)
+    }
+
+    @Test("Formats review_start without executor uses fallback")
+    func formatsReviewStartNoExecutor() {
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .reviewStart(
+                executor: nil, planId: nil, timestamp: nil)),
+            seq: 181
+        )
+        #expect(msg.category == .lifecycle)
+        #expect(msg.title == "Executing Review")
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "unknown executor")
+    }
+
+    // MARK: - Prompt request
+
+    @Test("Formats prompt_request as progress with text body")
+    func formatsPromptRequest() {
+        let config = PromptConfigPayload(message: "Choose an option", choices: nil)
+        let payload = PromptRequestPayload(
+            requestId: "req-100", promptType: "select",
+            promptConfig: config, timeoutMs: 30000,
+            timestamp: "2025-06-15T16:00:00.500Z")
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .promptRequest(payload)),
+            seq: 190
+        )
+        #expect(msg.category == .progress)
+        #expect(msg.title == nil)
+        guard case .text(let body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "Prompt (select): Choose an option")
+        #expect(msg.timestamp != nil)
     }
 
     // MARK: - Review messages
@@ -927,9 +1045,7 @@ struct MessageFormatterTests {
             Issue.record("Expected .keyValuePairs body")
             return
         }
-        #expect(pairs.count == 1)
-        #expect(pairs[0].key == "Plan")
-        #expect(pairs[0].value == "42")
+        #expect(pairs == [KeyValuePair(key: "Plan", value: "42")])
     }
 
     @Test("Formats execution_summary with zero failedSteps omits Failed pair")

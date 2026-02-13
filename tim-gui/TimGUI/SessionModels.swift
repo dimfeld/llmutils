@@ -482,6 +482,14 @@ struct PromptConfigPayload: Sendable, Decodable {
         case validationHint
     }
 
+    init(message: String, defaultValue: String? = nil, choices: [PromptChoiceConfigPayload]? = nil, pageSize: Int? = nil, validationHint: String? = nil) {
+        self.message = message
+        self.defaultValue = defaultValue
+        self.choices = choices
+        self.pageSize = pageSize
+        self.validationHint = validationHint
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.message = try container.decode(String.self, forKey: .message)
