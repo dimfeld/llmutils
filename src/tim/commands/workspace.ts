@@ -11,6 +11,7 @@ import {
   getCurrentCommitHash,
   getCurrentJujutsuBranch,
   getGitRoot,
+  getUsingJj,
   hasUncommittedChanges,
   isInGitRepository,
 } from '../../common/git.js';
@@ -40,6 +41,7 @@ import { readAllPlans } from '../plans.js';
 import { parseIssueInput, type ParsedIssueInput } from '../issue_utils.js';
 import { spawnAndLogOutput } from '../../common/process.js';
 import {
+  findPrimaryWorkspaceForRepository,
   findWorkspaceInfosByRepositoryId,
   findWorkspaceInfosByTaskId,
   getWorkspaceInfoByPath,
@@ -48,6 +50,8 @@ import {
   type WorkspaceInfo,
   type WorkspaceMetadataPatch,
 } from '../workspace/workspace_info.js';
+
+const PRIMARY_REMOTE_NAME = 'primary';
 
 export type WorkspaceListFormat = 'table' | 'tsv' | 'json';
 
@@ -1130,6 +1134,49 @@ export async function handleWorkspaceUnlockCommand(
   console.log(workspace.workspacePath);
 }
 
+export async function handleWorkspacePushCommand(
+  workspaceIdentifier: string | undefined,
+  _options: any,
+  _command: Command
+) {
+  const workspace = await resolveWorkspaceIdentifier(workspaceIdentifier);
+  const workspacePath = workspace.workspacePath;
+  const repositoryId = workspace.repositoryId ?? (await determineRepositoryId(workspacePath));
+  const primaryWorkspace = findPrimaryWorkspaceForRepository(repositoryId);
+
+  if (!primaryWorkspace) {
+    throw new Error(
+      'No primary workspace is configured for this repository. Mark one with: tim workspace update --primary'
+    );
+  }
+
+  if (path.resolve(workspacePath) === path.resolve(primaryWorkspace.workspacePath)) {
+    throw new Error(
+      'The current workspace is already the primary workspace. Run this command from a secondary workspace.'
+    );
+  }
+
+  const branch = (await getCurrentBranchName(workspacePath)) ?? workspace.branch;
+  if (!branch) {
+    throw new Error(
+      `No current branch/bookmark detected for workspace ${workspacePath}. Check out or create a branch before pushing.`
+    );
+  }
+
+  const isJj = await getUsingJj(workspacePath);
+  if (isJj) {
+    await ensurePrimaryJjRemote(workspacePath, primaryWorkspace.workspacePath);
+    await pushJjBookmarkToPrimary(workspacePath, branch);
+  } else {
+    await pushGitBranchToPrimary(workspacePath, primaryWorkspace.workspacePath, branch);
+  }
+
+  log(chalk.green('✓ Workspace branch/bookmark pushed to primary workspace'));
+  log(`  Source: ${workspacePath}`);
+  log(`  Primary: ${primaryWorkspace.workspacePath}`);
+  log(`  Ref: ${branch}`);
+}
+
 async function resolveWorkspaceIdentifier(identifier: string | undefined): Promise<WorkspaceInfo> {
   if (identifier) {
     const asPath = path.resolve(process.cwd(), identifier);
@@ -1234,6 +1281,81 @@ function buildLockCommandLabel(
   }
 
   return parts.join(' ');
+}
+
+async function ensurePrimaryJjRemote(
+  workspacePath: string,
+  primaryWorkspacePath: string
+): Promise<void> {
+  const listResult = await spawnAndLogOutput(['jj', 'git', 'remote', 'list'], {
+    cwd: workspacePath,
+    quiet: true,
+  });
+  if (listResult.exitCode !== 0) {
+    throw new Error(`Failed to list jj remotes: ${listResult.stderr}`);
+  }
+
+  const remoteLines = listResult.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const primaryRemoteLine = remoteLines.find(
+    (line) => line.split(/\s+/, 1)[0] === PRIMARY_REMOTE_NAME
+  );
+
+  if (!primaryRemoteLine) {
+    const addRemoteResult = await spawnAndLogOutput(
+      ['jj', 'git', 'remote', 'add', PRIMARY_REMOTE_NAME, primaryWorkspacePath],
+      { cwd: workspacePath }
+    );
+    if (addRemoteResult.exitCode !== 0) {
+      throw new Error(
+        `Failed to add jj remote "${PRIMARY_REMOTE_NAME}": ${addRemoteResult.stderr}`
+      );
+    }
+    return;
+  }
+
+  const existingUrl = primaryRemoteLine.split(/\s+/).slice(1).join(' ').trim();
+  if (existingUrl === primaryWorkspacePath) {
+    return;
+  }
+
+  const setUrlResult = await spawnAndLogOutput(
+    ['jj', 'git', 'remote', 'set-url', PRIMARY_REMOTE_NAME, primaryWorkspacePath],
+    { cwd: workspacePath }
+  );
+  if (setUrlResult.exitCode !== 0) {
+    throw new Error(`Failed to update jj remote "${PRIMARY_REMOTE_NAME}": ${setUrlResult.stderr}`);
+  }
+}
+
+async function pushGitBranchToPrimary(
+  workspacePath: string,
+  primaryWorkspacePath: string,
+  branch: string
+): Promise<void> {
+  const fetchResult = await spawnAndLogOutput(
+    ['git', 'fetch', '--update-head-ok', workspacePath, `${branch}:${branch}`],
+    { cwd: primaryWorkspacePath }
+  );
+  if (fetchResult.exitCode !== 0) {
+    throw new Error(
+      `Failed to fetch branch "${branch}" into primary workspace: ${fetchResult.stderr}`
+    );
+  }
+}
+
+async function pushJjBookmarkToPrimary(workspacePath: string, bookmark: string): Promise<void> {
+  const pushResult = await spawnAndLogOutput(
+    ['jj', 'git', 'push', '--remote', PRIMARY_REMOTE_NAME, '--bookmark', bookmark],
+    { cwd: workspacePath }
+  );
+  if (pushResult.exitCode !== 0) {
+    throw new Error(
+      `Failed to push bookmark "${bookmark}" to ${PRIMARY_REMOTE_NAME}: ${pushResult.stderr}`
+    );
+  }
 }
 
 async function determineRepositoryId(cwd?: string): Promise<string> {

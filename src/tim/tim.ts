@@ -1190,6 +1190,16 @@ workspaceCommand
     );
   });
 
+workspaceCommand
+  .command('push [workspaceIdentifier]')
+  .description('Push current branch/bookmark to the primary workspace')
+  .action(async (workspaceIdentifier, options, command) => {
+    const { handleWorkspacePushCommand } = await import('./commands/workspace.js');
+    await handleWorkspacePushCommand(workspaceIdentifier, options, command).catch(
+      handleCommandError
+    );
+  });
+
 program
   .command('shell-integration')
   .description('Print a shell function for interactive workspace switching using fzf')

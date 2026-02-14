@@ -243,6 +243,18 @@ tim workspace list
 tim workspace list --repo https://github.com/user/repo.git
 ```
 
+### tim workspace push
+
+Push the current branch (git) or bookmark (jj) to the primary workspace.
+
+```bash
+tim workspace push
+tim workspace push task-123           # Push a specific tracked workspace
+tim workspace push /path/to/workspace # Push by path
+```
+
+Requires a primary workspace to be configured via `tim workspace update /path --primary`.
+
 ## Assignment Commands
 
 ### tim claim

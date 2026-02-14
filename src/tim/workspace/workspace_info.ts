@@ -95,6 +95,12 @@ export function findWorkspaceInfosByRepositoryId(repositoryId: string): Workspac
   );
 }
 
+export function findPrimaryWorkspaceForRepository(repositoryId: string): WorkspaceInfo | null {
+  return (
+    findWorkspaceInfosByRepositoryId(repositoryId).find((workspace) => workspace.isPrimary) ?? null
+  );
+}
+
 export function listAllWorkspaceInfos(): WorkspaceInfo[] {
   const db = getDatabase();
   return listAllWorkspaces(db).map((row) => workspaceRowToInfo(row, db));
