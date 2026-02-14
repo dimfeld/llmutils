@@ -1218,7 +1218,23 @@ tim workspace update task-123 --description "Updated description"
 # Seed description from a plan (extracts issue number and title)
 tim workspace update --from-plan 456
 # Sets description to "#456 Plan Title"
+
+# Mark workspace as primary (excluded from auto-selection)
+tim workspace update --primary
+
+# Remove primary designation
+tim workspace update --no-primary
 ```
+
+**Primary workspaces:**
+
+Mark a workspace as "primary" to prevent it from being auto-selected by `tim agent --auto-workspace`, workspace reuse (`--reuse`/`--try-reuse`), or `workspace lock --available`. This is useful for your main development workspace that you don't want agents to use:
+
+```bash
+tim workspace update /path/to/main-workspace --primary
+```
+
+Primary workspaces are shown with a "Primary" status in `tim workspace list`. They can still be used manually with `--workspace`.
 
 **Interactive workspace switching:**
 
@@ -2058,6 +2074,8 @@ tim workspace list [--repo URL] [--format table|tsv|json] [--all] [--no-header]
 # Update workspace metadata
 tim workspace update [WORKSPACE] --name NAME --description DESC
 tim workspace update --from-plan PLAN_ID
+tim workspace update [WORKSPACE] --primary    # Mark as primary (excluded from auto-selection)
+tim workspace update [WORKSPACE] --no-primary # Remove primary designation
 
 # Shell integration (interactive workspace switching with fzf)
 tim shell-integration --shell bash|zsh

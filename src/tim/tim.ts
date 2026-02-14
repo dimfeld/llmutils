@@ -1177,6 +1177,8 @@ workspaceCommand
     '--from-plan <planId>',
     'Seed description from plan (plan ID or file path). Only sets description, not name.'
   )
+  .option('--primary', 'Mark this workspace as primary (excluded from auto-selection)')
+  .option('--no-primary', 'Remove primary designation from this workspace')
   .action(async (workspaceIdentifier, options, command) => {
     const { handleWorkspaceUpdateCommand } = await import('./commands/workspace.js');
     await handleWorkspaceUpdateCommand(workspaceIdentifier, options, command).catch(

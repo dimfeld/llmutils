@@ -12,6 +12,7 @@ export interface WorkspaceRow {
   description: string | null;
   plan_id: string | null;
   plan_title: string | null;
+  is_primary: number;
   created_at: string;
   updated_at: string;
 }
@@ -36,6 +37,7 @@ export interface PatchWorkspaceInput {
   branch?: string | null;
   repositoryId?: string;
   taskId?: string;
+  isPrimary?: boolean;
 }
 
 export function recordWorkspace(db: Database, input: RecordWorkspaceInput): WorkspaceRow {
@@ -163,6 +165,10 @@ export function patchWorkspace(
       if ('taskId' in nextPatch) {
         fields.push('task_id = ?');
         values.push(nextPatch.taskId ?? null);
+      }
+      if ('isPrimary' in nextPatch) {
+        fields.push('is_primary = ?');
+        values.push(nextPatch.isPrimary ? 1 : 0);
       }
       if ('repositoryId' in nextPatch) {
         if (nextPatch.repositoryId === undefined) {

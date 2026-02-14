@@ -63,6 +63,7 @@ interface WorkspaceListEntry {
   issueUrls?: string[];
   repositoryId?: string;
   lockedBy?: WorkspaceInfo['lockedBy'];
+  isPrimary?: boolean;
   createdAt: string;
   updatedAt?: string;
 }
@@ -131,6 +132,7 @@ async function buildWorkspaceListEntries(
       issueUrls: workspace.issueUrls,
       repositoryId: workspace.repositoryId,
       lockedBy: workspace.lockedBy,
+      isPrimary: workspace.isPrimary,
       createdAt: workspace.createdAt,
       updatedAt: workspace.updatedAt,
     });
@@ -239,7 +241,9 @@ function outputWorkspaceTable(entries: WorkspaceListEntry[], showHeader: boolean
     const branch = entry.branch || '-';
 
     let status: string;
-    if (entry.lockedBy) {
+    if (entry.isPrimary) {
+      status = chalk.blue('Primary');
+    } else if (entry.lockedBy) {
       const lockType = entry.lockedBy.type;
       status = chalk.red(`Locked (${lockType})`);
     } else {
@@ -603,7 +607,9 @@ async function tryReuseExistingWorkspace(
   const workspacesWithStatus = await updateWorkspaceLockStatus(workspaces);
 
   // Filter to only unlocked workspaces
-  const unlockedWorkspaces = workspacesWithStatus.filter((workspace) => !workspace.lockedBy);
+  const unlockedWorkspaces = workspacesWithStatus.filter(
+    (workspace) => !workspace.lockedBy && !workspace.isPrimary
+  );
 
   if (unlockedWorkspaces.length === 0) {
     log('No unlocked workspaces found for reuse');
@@ -1172,7 +1178,9 @@ async function lockAvailableWorkspace(
 
   const workspaces = findWorkspaceInfosByRepositoryId(repositoryId);
   const workspacesWithStatus = await updateWorkspaceLockStatus(workspaces);
-  const available = workspacesWithStatus.find((workspace) => !workspace.lockedBy);
+  const available = workspacesWithStatus.find(
+    (workspace) => !workspace.lockedBy && !workspace.isPrimary
+  );
 
   if (available) {
     await WorkspaceLock.acquireLock(
@@ -1239,14 +1247,21 @@ function getDefaultLockOwner(): string | undefined {
 
 export async function handleWorkspaceUpdateCommand(
   target: string | undefined,
-  options: { name?: string; description?: string; fromPlan?: string },
+  options: { name?: string; description?: string; fromPlan?: string; primary?: boolean },
   command: Command
 ) {
   const globalOpts = command.parent!.parent!.opts();
 
   // Validate that at least one update option is provided
-  if (options.name === undefined && options.description === undefined && !options.fromPlan) {
-    throw new Error('At least one of --name, --description, or --from-plan must be provided.');
+  if (
+    options.name === undefined &&
+    options.description === undefined &&
+    !options.fromPlan &&
+    options.primary === undefined
+  ) {
+    throw new Error(
+      'At least one of --name, --description, --from-plan, or --primary/--no-primary must be provided.'
+    );
   }
 
   // Resolve workspace path - either from identifier or current directory
@@ -1307,6 +1322,9 @@ export async function handleWorkspaceUpdateCommand(
   } else if (options.description !== undefined) {
     patch.description = options.description;
   }
+  if (options.primary !== undefined) {
+    patch.isPrimary = options.primary;
+  }
 
   if (!existingMetadata?.repositoryId) {
     patch.repositoryId = await determineRepositoryId(workspacePath);
@@ -1326,5 +1344,8 @@ export async function handleWorkspaceUpdateCommand(
   }
   if (updated.planId) {
     log(`  Plan ID: ${updated.planId}`);
+  }
+  if (updated.isPrimary) {
+    log(`  Primary: yes`);
   }
 }

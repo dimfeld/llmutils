@@ -266,6 +266,7 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 - When invoking subagents, provide clear, specific instructions in \`--input\` (or \`--input-file\`) about what needs to be done in addition to referencing the task titles.
 - Include relevant context from previous subagent responses when invoking the next subagent.
 - If input is large (roughly over 50KB), write it to a temporary file and pass \`--input-file <path>\` instead of \`--input\`.
+- If using --input-file, include the plan ID or other random string in the file name to avoid conflicts with other agents and preexisting files.
 - You can also pipe input to stdin and use \`--input-file -\`.`;
 
   const failureProtocol = `

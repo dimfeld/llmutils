@@ -47,3 +47,5 @@ rmplan-*
 .*.bun-build
 
 *.xcuserstate
+
+tim-*-failure.yml

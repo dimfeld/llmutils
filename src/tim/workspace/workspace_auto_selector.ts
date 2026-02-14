@@ -81,9 +81,9 @@ export class WorkspaceAutoSelector {
     }
 
     // Find existing workspaces for this repository (newest first)
-    const workspaces = findWorkspaceInfosByRepositoryId(repositoryId).sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+    const workspaces = findWorkspaceInfosByRepositoryId(repositoryId)
+      .filter((workspace) => !workspace.isPrimary)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     const lockedCandidates: LockedWorkspaceCandidate[] = [];
     for (const workspace of workspaces) {

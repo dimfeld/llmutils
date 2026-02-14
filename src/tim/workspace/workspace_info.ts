@@ -32,6 +32,7 @@ export interface WorkspaceInfo {
   planId?: string;
   planTitle?: string;
   issueUrls?: string[];
+  isPrimary?: boolean;
   updatedAt?: string;
 }
 
@@ -43,6 +44,7 @@ export interface WorkspaceMetadataPatch {
   issueUrls?: string[];
   repositoryId?: string;
   branch?: string;
+  isPrimary?: boolean;
 }
 
 export function workspaceRowToInfo(
@@ -65,6 +67,7 @@ export function workspaceRowToInfo(
     planId: row.plan_id ?? undefined,
     planTitle: row.plan_title ?? undefined,
     issueUrls: issueUrls.length > 0 ? issueUrls : undefined,
+    isPrimary: row.is_primary === 1 ? true : undefined,
     updatedAt: row.updated_at,
   };
 }
@@ -122,6 +125,9 @@ export function patchWorkspaceInfo(
   if (patch.repositoryId !== undefined && patch.repositoryId !== '') {
     getOrCreateProject(db, patch.repositoryId);
     patchInput.repositoryId = patch.repositoryId;
+  }
+  if (patch.isPrimary !== undefined) {
+    patchInput.isPrimary = patch.isPrimary;
   }
 
   const updated = patchWorkspace(db, workspacePath, patchInput);

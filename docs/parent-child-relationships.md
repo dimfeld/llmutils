@@ -26,7 +26,7 @@ All tim commands work together to maintain consistency:
 
 When all child plans of a parent reach a terminal state (`done` or `cancelled`), the parent plan is automatically marked as `done`. This applies consistently across both the CLI (`tim done`) and agent execution paths. A cancelled parent is preserved — completing the last child will not overwrite a parent that was explicitly cancelled.
 
-**Implementation note**: Parent completion checks must run *after* writing the child's updated status to the plan file. If the check runs before the write, it reads stale data and may not detect that all children are now complete.
+**Implementation note**: Parent completion checks must run _after_ writing the child's updated status to the plan file. If the check runs before the write, it reads stale data and may not detect that all children are now complete.
 
 ### Circular Dependency Prevention
 

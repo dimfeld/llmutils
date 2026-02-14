@@ -252,4 +252,57 @@ describe('WorkspaceAutoSelector', () => {
     expect(getRepositoryIdentitySpy).toHaveBeenCalled();
     expect(result?.workspace.taskId).toBe('task-1');
   });
+
+  test('selectWorkspace skips primary workspace during auto-selection', async () => {
+    const standardPath = path.join(testDir, 'workspace-standard');
+    const primaryPath = path.join(testDir, 'workspace-primary');
+    await fs.mkdir(standardPath, { recursive: true });
+    await fs.mkdir(primaryPath, { recursive: true });
+
+    await seedWorkspace('github.com/test/repo', standardPath, 'task-standard', 'task-standard');
+    await seedWorkspace('github.com/test/repo', primaryPath, 'task-primary', 'task-primary');
+
+    const db = getDatabase();
+    db.prepare('UPDATE workspace SET is_primary = 1 WHERE workspace_path = ?').run(primaryPath);
+
+    const result = await selector.selectWorkspace('task-next', '/test/plan-next.yml', {
+      interactive: false,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.workspace.workspacePath).toBe(standardPath);
+    expect(result?.workspace.taskId).toBe('task-standard');
+    expect(result?.isNew).toBe(false);
+  });
+
+  test('selectWorkspace still skips primary when all non-primary workspaces are locked', async () => {
+    const primaryPath = path.join(testDir, 'workspace-primary-unlocked');
+    const lockedPath = path.join(testDir, 'workspace-non-primary-locked');
+    await fs.mkdir(primaryPath, { recursive: true });
+    await fs.mkdir(lockedPath, { recursive: true });
+
+    await seedWorkspace('github.com/test/repo', primaryPath, 'task-primary', 'task-primary');
+    await seedWorkspace('github.com/test/repo', lockedPath, 'task-locked', 'task-locked');
+
+    const db = getDatabase();
+    db.prepare('UPDATE workspace SET is_primary = 1 WHERE workspace_path = ?').run(primaryPath);
+    await WorkspaceLock.acquireLock(lockedPath, 'tim agent');
+
+    const createWorkspaceSpy = spyOn(
+      await import('./workspace_manager.js'),
+      'createWorkspace'
+    ).mockResolvedValue(null);
+
+    const result = await selector.selectWorkspace('task-new', '/test/plan-new.yml', {
+      interactive: false,
+    });
+
+    expect(result).toBeNull();
+    expect(createWorkspaceSpy).toHaveBeenCalledWith(
+      testDir,
+      'task-new',
+      '/test/plan-new.yml',
+      config
+    );
+  });
 });
