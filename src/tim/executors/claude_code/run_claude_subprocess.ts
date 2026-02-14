@@ -13,15 +13,15 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import type * as net from 'net';
-import { debugLog, error, log } from '../../../logging.js';
+import { debugLog, error, log, sendStructured } from '../../../logging.js';
 import { createLineSplitter, spawnWithStreamingIO } from '../../../common/process.js';
-import { sendSinglePromptAndWait } from './streaming_input.js';
 import {
   extractStructuredMessages,
   formatJsonMessage,
   resetToolUseCache,
   type FormattedClaudeMessage,
 } from './format.js';
+import { executeWithTerminalInput } from './terminal_input_lifecycle.js';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { createTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../../logging/tunnel_prompt_handler.js';
@@ -146,6 +146,9 @@ export interface RunClaudeSubprocessOptions {
   /** Whether the caller is running in non-interactive mode */
   noninteractive: boolean;
 
+  /** Whether to enable live terminal input forwarding to the subprocess */
+  terminalInput?: boolean;
+
   /** Model to use (e.g., 'opus', 'sonnet') */
   model?: string;
 
@@ -233,6 +236,7 @@ export async function runClaudeSubprocess(
     cwd,
     claudeCodeOptions,
     noninteractive,
+    terminalInput,
     model,
     label,
     extraArgs,
@@ -315,6 +319,7 @@ export async function runClaudeSubprocess(
 
   let seenResultMessage = false;
   let killedByTimeout = false;
+  let terminalInputResult: ReturnType<typeof executeWithTerminalInput> | undefined;
 
   try {
     const args = ['claude', '--no-session-persistence'];
@@ -408,6 +413,7 @@ export async function runClaudeSubprocess(
         for (const formatted of formattedResults) {
           if (formatted.type === 'result') {
             seenResultMessage = true;
+            terminalInputResult?.onResultMessage();
           }
           if (formatted.filePaths) {
             for (const filePath of formatted.filePaths) {
@@ -426,7 +432,20 @@ export async function runClaudeSubprocess(
       },
     });
 
-    const result = await sendSinglePromptAndWait(streaming, prompt);
+    terminalInputResult = executeWithTerminalInput({
+      streaming,
+      prompt,
+      sendStructured,
+      debugLog,
+      errorLog: error,
+      log,
+      label,
+      tunnelServer,
+      terminalInputEnabled: terminalInput === true,
+      tunnelForwardingEnabled: isTunnelActive(),
+    });
+
+    const result = await terminalInputResult.resultPromise;
 
     return {
       seenResultMessage,
@@ -435,6 +454,7 @@ export async function runClaudeSubprocess(
       killedByInactivity: result.killedByInactivity ?? false,
     };
   } finally {
+    terminalInputResult?.cleanup();
     tunnelServer?.close();
     // Clean up tunnel temp dir if we created a separate one (not reusing permissions MCP dir)
     if (!permissionsMcpTempDir) {

@@ -715,6 +715,42 @@ describe('createTunnelServer', () => {
     expect(calls[0]).toEqual({ method: 'log', args: ['valid'] });
   });
 
+  it('should validate user_terminal_input structured messages', async () => {
+    const sp = uniqueSocketPath();
+    const { adapter, calls } = createRecordingAdapter();
+
+    await runWithLogger(adapter, async () => {
+      tunnelServer = await createTunnelServer(sp);
+
+      await connectAndSend(sp, [
+        {
+          type: 'structured',
+          message: {
+            type: 'user_terminal_input',
+            timestamp: '2026-02-08T00:00:00.000Z',
+          } as unknown as Record<string, unknown>,
+        },
+        {
+          type: 'structured',
+          message: {
+            type: 'user_terminal_input',
+            timestamp: '2026-02-08T00:00:00.000Z',
+            content: 'Please add tests',
+          },
+        },
+      ]);
+
+      await waitForCalls(calls, 1);
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('sendStructured');
+    expect(calls[0].args[0]).toMatchObject({
+      type: 'user_terminal_input',
+      content: 'Please add tests',
+    });
+  });
+
   it('should handle messages split across TCP chunks', async () => {
     const sp = uniqueSocketPath();
     const { adapter, calls } = createRecordingAdapter();

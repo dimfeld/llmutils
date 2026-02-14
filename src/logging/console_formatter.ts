@@ -203,6 +203,8 @@ export function formatStructuredMessage(message: StructuredMessage): string {
       // For now, intentionally silent without a prompt for local console output, since inquirer already prompts.
       // Transport adapters still forward the structured event for UI state tracking.
       return message.prompt ? chalk.yellow(`Input required: ${message.prompt}`) : '';
+    case 'user_terminal_input':
+      return chalk.cyan(`→ You: ${message.content}`);
     case 'prompt_request':
       // Display the prompt message for local console visibility.
       // The actual prompt rendering is handled by the prompt wrapper or tunnel handler.

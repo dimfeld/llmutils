@@ -791,4 +791,75 @@ describe('tunnel integration', () => {
       });
     });
   });
+
+  describe('server to client user_input flow', () => {
+    it('forwards user_input from server to a single client callback', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter } = createRecordingAdapter();
+      const received: string[] = [];
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+        clientAdapter = await createTunnelAdapter(sp);
+        clientAdapter.setUserInputHandler((content) => {
+          received.push(content);
+        });
+
+        tunnelServer.sendUserInput('test message');
+
+        const start = Date.now();
+        while (received.length < 1 && Date.now() - start < 1000) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      });
+
+      expect(received).toEqual(['test message']);
+    });
+
+    it('broadcasts user_input to multiple connected clients', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter } = createRecordingAdapter();
+      const receivedA: string[] = [];
+      const receivedB: string[] = [];
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+        const clientA = await createTunnelAdapter(sp);
+        const clientB = await createTunnelAdapter(sp);
+
+        clientA.setUserInputHandler((content) => {
+          receivedA.push(content);
+        });
+        clientB.setUserInputHandler((content) => {
+          receivedB.push(content);
+        });
+
+        tunnelServer.sendUserInput('broadcast');
+
+        const start = Date.now();
+        while ((receivedA.length < 1 || receivedB.length < 1) && Date.now() - start < 1000) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+
+        await clientA.destroy();
+        await clientB.destroy();
+      });
+
+      expect(receivedA).toEqual(['broadcast']);
+      expect(receivedB).toEqual(['broadcast']);
+    });
+
+    it('silently ignores user_input when no callback is registered', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+        clientAdapter = await createTunnelAdapter(sp);
+
+        expect(() => tunnelServer.sendUserInput('ignored message')).not.toThrow();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+    });
+  });
 });

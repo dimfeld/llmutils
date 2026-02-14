@@ -21,4 +21,13 @@ describe('Commander negated options mapping', () => {
     const opts = cmd.opts();
     expect(opts.log).toBe(false);
   });
+
+  test('--no-terminal-input sets options.terminalInput === false', () => {
+    const cmd = new Command();
+    cmd.option('--no-terminal-input', 'Disable terminal input').allowUnknownOption(true);
+
+    cmd.parse(['--no-terminal-input'], { from: 'user' });
+    const opts = cmd.opts();
+    expect(opts.terminalInput).toBe(false);
+  });
 });

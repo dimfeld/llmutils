@@ -569,6 +569,10 @@ function createAgentCommand(command: Command, description: string) {
       'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
     )
     .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
+    .option(
+      '--no-terminal-input',
+      'Disable terminal input forwarding to Claude Code during tim agent execution'
+    )
     .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
     .option('--next', 'Execute the next plan that is ready to be implemented')
     .option('--current', 'Execute the current plan (in_progress or next ready plan)')

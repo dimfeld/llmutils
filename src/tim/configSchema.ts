@@ -229,6 +229,11 @@ export const timConfigSchema = z
       .string()
       .optional()
       .describe('Default orchestrator to use for the agent command main loop'),
+    /** Whether terminal input is enabled during Claude Code execution in tim agent */
+    terminalInput: z
+      .boolean()
+      .optional()
+      .describe('Whether terminal input is enabled during Claude Code execution in tim agent'),
     /** Default executor to use for subagents in the agent command */
     defaultSubagentExecutor: z
       .enum(['codex-cli', 'claude-code', 'dynamic'])

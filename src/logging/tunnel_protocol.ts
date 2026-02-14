@@ -50,10 +50,19 @@ export interface TunnelPromptResponseMessage {
 }
 
 /**
+ * A server-to-client message carrying user terminal input to forward
+ * to a running child agent process.
+ */
+export interface TunnelUserInputMessage {
+  type: 'user_input';
+  content: string;
+}
+
+/**
  * Union type for all messages sent from server to client over the tunnel socket as JSONL.
  * Separate from TunnelMessage (client->server) to maintain clear protocol directionality.
  */
-export type ServerTunnelMessage = TunnelPromptResponseMessage;
+export type ServerTunnelMessage = TunnelPromptResponseMessage | TunnelUserInputMessage;
 
 export function isStructuredTunnelMessage(
   message: TunnelMessage

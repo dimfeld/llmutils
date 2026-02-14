@@ -46,6 +46,8 @@ function isValidServerTunnelMessage(message: unknown): message is ServerTunnelMe
         typeof msg.requestId === 'string' &&
         (msg.error === undefined || typeof msg.error === 'string')
       );
+    case 'user_input':
+      return typeof msg.content === 'string';
     default:
       return false;
   }
@@ -70,6 +72,7 @@ export class TunnelAdapter implements LoggerAdapter {
   private socket: net.Socket;
   private connected: boolean = true;
   private pendingPrompts: Map<string, PendingPromptRequest> = new Map();
+  private userInputHandler?: (content: string) => void;
 
   constructor(socket: net.Socket) {
     this.socket = socket;
@@ -124,7 +127,22 @@ export class TunnelAdapter implements LoggerAdapter {
         }
         break;
       }
+      case 'user_input':
+        try {
+          this.userInputHandler?.(message.content);
+        } catch (err) {
+          writeToLogFile(`[tunnel] User input handler error: ${err as Error}\n`);
+        }
+        break;
     }
+  }
+
+  /**
+   * Registers the single active user-input handler.
+   * Calling this again replaces the previous handler.
+   */
+  setUserInputHandler(callback: ((content: string) => void) | undefined): void {
+    this.userInputHandler = callback;
   }
 
   /**

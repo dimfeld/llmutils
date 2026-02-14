@@ -206,6 +206,11 @@ export interface InputRequiredMessage extends StructuredMessageBase {
   prompt?: string;
 }
 
+export interface UserTerminalInputMessage extends StructuredMessageBase {
+  type: 'user_terminal_input';
+  content: string;
+}
+
 export type PromptType = 'input' | 'confirm' | 'select' | 'checkbox';
 
 export interface PromptChoiceConfig {
@@ -279,6 +284,7 @@ export type StructuredMessage =
   | ExecutionSummaryMessage
   | TokenUsageMessage
   | InputRequiredMessage
+  | UserTerminalInputMessage
   | PromptRequestMessage
   | PromptAnsweredMessage
   | PlanDiscoveryMessage
@@ -310,6 +316,7 @@ export const structuredMessageTypeList = [
   'execution_summary',
   'token_usage',
   'input_required',
+  'user_terminal_input',
   'prompt_request',
   'prompt_answered',
   'plan_discovery',

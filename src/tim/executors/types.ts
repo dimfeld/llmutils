@@ -10,6 +10,8 @@ export interface ExecutorCommonOptions {
   model?: string;
   /** When true, executor should avoid any user prompts (e.g., permissions MCP) */
   noninteractive?: boolean;
+  /** When true, Claude Code executor accepts terminal follow-up input during execution */
+  terminalInput?: boolean;
   /**
    * When true, executors should run in the streamlined implement → verify flow.
    */

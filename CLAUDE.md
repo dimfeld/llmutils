@@ -47,6 +47,7 @@ The codebase is organized into several main modules with improved modularity and
    - Clipboard support with OSC52 (`clipboard.ts`, `osc52.ts`)
    - SSH detection (`ssh_detection.ts`) and model factory (`model_factory.ts`)
    - Config path utilities (`config_paths.ts`) with `getTimConfigRoot()` for XDG-aware config directory resolution
+   - Input pause registry (`input_pause_registry.ts`): `PausableInputSource` interface and getter/setter for coordinating stdin between terminal input readers and inquirer prompts without coupling `common` to feature modules
    - GitHub integration utilities in `github/` subdirectory
 
 2. **tim**: Manages step-by-step project plans with LLM integration, organized by sub-commands
@@ -74,6 +75,9 @@ The codebase is organized into several main modules with improved modularity and
   - `utils/task_operations.ts`: Centralizes task prompting helpers (interactive input, title search, selection menus) used by both CLI commands and MCP tools for task management
 - MCP server (`mcp/generate_mode.ts`) now focuses on registering prompts and delegates tool handlers to the relevant command modules
 - Executor system in `executors/` for different LLM integration approaches
+  - `claude_code/streaming_input.ts`: Builds and sends stream-json messages to Claude Code's stdin; supports both single-prompt (`sendSinglePromptAndWait`) and multi-message (`sendInitialPrompt`, `sendFollowUpMessage`, `closeStdinAndWait`) patterns
+  - `claude_code/terminal_input.ts`: `TerminalInputReader` class for reading interactive user input during agent execution; manages readline lifecycle with pause/resume support for prompt coordination
+  - `claude_code/terminal_input_lifecycle.ts`: Shared lifecycle helper (`setupTerminalInput()` / `awaitAndCleanup()`) and `executeWithTerminalInput()` which encapsulates the full three-path branching (terminal input / tunnel forwarding / single prompt); used by both the main executor and `run_claude_subprocess.ts`
 - **Automatic Parent-Child Relationship Maintenance**: All commands (`add`, `set`, `validate`) work together to ensure bidirectional consistency in the dependency graph, automatically updating parent plans when child relationships are created, modified, or removed
 
 There are other directories as well but they are mostly inactive.
@@ -154,6 +158,10 @@ See @.cursor/rules/testing.mdc for testing strategy
 - **Audit all call sites when unifying behavior**: When making multiple code paths accept the same input (e.g., treating 'cancelled' as a terminal state), check all guards that control entry into the unified function — not just the function body
 - **Watch for dead code paths after data model changes**: When migrating from multi-value structures (e.g., arrays) to single-value (e.g., FK), warning/conflict logic that assumed multiple values may become permanently false — remove it rather than leaving dead branches
 - **Consider all terminal states**: When a status check uses early-return for terminal states, ensure all terminal states (e.g., both `done` and `cancelled`) are handled to prevent one from being overwritten by another
+- **Emit audit/log messages before side effects**: Structured audit messages should be emitted before attempting write operations, not after — otherwise audit trails have gaps when writes fail
+- **Pick one authoritative layer for defensive checks**: Redundant defensive checks across multiple layers (e.g., command, executor, utility) create confusion about which layer owns the decision. Resolve the value once and trust it downstream
+- **Keep dependency-inversion abstractions minimal**: When introducing a common abstraction to break a dependency cycle (e.g., `common` must not import from `tim`), keep it to just an interface and a getter/setter. The feature module registers itself; the common module only knows the interface
+- **Watch for dual state tracking when extracting shared helpers**: If both the inner helper and the outer function track the same state (e.g., a `closed` flag), explicitly synchronize them to avoid misleading guards or double-cleanup
 
 ## Personal Workflow Notes
 
@@ -173,3 +181,5 @@ See @.cursor/rules/testing.mdc for testing strategy
 - When printing an error message in a template string in a catch block, use `${err as Error}` to avoid eslint complaining
 
 - Don't use `await import('module')` for regular imports. Just put a normal import at the top of the file
+
+- `Promise.resolve(fn()).catch(...)` does NOT catch synchronous throws from `fn()` — the throw occurs before `Promise.resolve` wraps the result. Use Promise.try(() => fn()) for functions that may throw synchronously.

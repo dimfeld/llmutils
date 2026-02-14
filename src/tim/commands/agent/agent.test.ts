@@ -437,6 +437,7 @@ describe('timAgent - simple mode flag plumbing', () => {
     executors: {},
     models: {},
     postApplyCommands: [],
+    terminalInput: undefined as boolean | undefined,
   };
   const serialFindNextActionableItemSpy = mock(() => null);
   const serialPrepareNextStepSpy = mock(async () => null);
@@ -575,6 +576,74 @@ describe('timAgent - simple mode flag plumbing', () => {
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
     const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
     expect(sharedOptions).toMatchObject({ reviewExecutor: 'claude-code' });
+  });
+
+  test('uses config terminalInput value when CLI flag is not provided', async () => {
+    defaultConfig.terminalInput = false;
+
+    await timAgent(simplePlanFile, { log: false } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(sharedOptions).toMatchObject({ terminalInput: false });
+  });
+
+  test('defaults terminalInput to process.stdin.isTTY when config and CLI do not set it', async () => {
+    delete defaultConfig.terminalInput;
+    const originalIsTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    try {
+      await timAgent(simplePlanFile, { log: false } as any, {});
+    } finally {
+      Object.defineProperty(process.stdin, 'isTTY', {
+        value: originalIsTTY,
+        configurable: true,
+      });
+    }
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(sharedOptions).toMatchObject({ terminalInput: true });
+  });
+
+  test('CLI --no-terminal-input overrides config terminalInput', async () => {
+    defaultConfig.terminalInput = true;
+
+    await timAgent(simplePlanFile, { log: false, terminalInput: false } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(sharedOptions).toMatchObject({ terminalInput: false });
+  });
+
+  test('TTY is required for terminalInput even when config enables it', async () => {
+    defaultConfig.terminalInput = true;
+    const originalIsTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+
+    try {
+      await timAgent(simplePlanFile, { log: false } as any, {});
+    } finally {
+      Object.defineProperty(process.stdin, 'isTTY', {
+        value: originalIsTTY,
+        configurable: true,
+      });
+    }
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(sharedOptions).toMatchObject({ terminalInput: false });
+  });
+
+  test('non-interactive mode always disables terminalInput', async () => {
+    defaultConfig.terminalInput = true;
+
+    await timAgent(simplePlanFile, { log: false, nonInteractive: true } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(sharedOptions).toMatchObject({ noninteractive: true, terminalInput: false });
   });
 
   test('passes simpleMode flag through to executor builder', async () => {

@@ -827,6 +827,74 @@ describe('TunnelAdapter bidirectional transport', () => {
 
     await expect(resultPromise).rejects.toThrow(/destroyed/i);
   });
+
+  it('invokes setUserInputHandler callback for server user_input messages', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+    const received: string[] = [];
+
+    adapter.setUserInputHandler((content) => {
+      received.push(content);
+    });
+
+    const startWait = Date.now();
+    while (testServer.getSockets().length < 1 && Date.now() - startWait < 1000) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const sockets = testServer.getSockets();
+    sockets[0].write(JSON.stringify({ type: 'user_input', content: 'follow up' }) + '\n');
+
+    const start = Date.now();
+    while (received.length < 1 && Date.now() - start < 1000) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    expect(received).toEqual(['follow up']);
+  });
+
+  it('ignores server user_input when no setUserInputHandler callback is registered', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    const startWait = Date.now();
+    while (testServer.getSockets().length < 1 && Date.now() - startWait < 1000) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const sockets = testServer.getSockets();
+    expect(() =>
+      sockets[0].write(JSON.stringify({ type: 'user_input', content: 'ignored' }) + '\n')
+    ).not.toThrow();
+  });
+
+  it('keeps tunnel connection stable when setUserInputHandler callback throws', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    adapter.setUserInputHandler(() => {
+      throw new Error('handler boom');
+    });
+
+    const startWait = Date.now();
+    while (testServer.getSockets().length < 1 && Date.now() - startWait < 1000) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const sockets = testServer.getSockets();
+
+    const promptMsg = makePromptRequest('req-after-user-input-throw');
+    const resultPromise = adapter.sendPromptRequest(promptMsg);
+    await waitForMessages(testServer.getMessages, 1);
+
+    sockets[0].write(JSON.stringify({ type: 'user_input', content: 'follow up' }) + '\n');
+    sockets[0].write(
+      JSON.stringify({
+        type: 'prompt_response',
+        requestId: 'req-after-user-input-throw',
+        value: 'ok',
+      }) + '\n'
+    );
+
+    await expect(resultPromise).resolves.toBe('ok');
+  });
 });
 
 describe('isTunnelActive', () => {

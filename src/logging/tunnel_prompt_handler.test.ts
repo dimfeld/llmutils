@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach, afterAll, mock } from 'bun:test';
+import { describe, it, expect, beforeEach, afterAll, afterEach, mock } from 'bun:test';
 import type { PromptRequestMessage } from './structured_messages.ts';
 import type { TunnelPromptResponseMessage } from './tunnel_protocol.ts';
 import { ModuleMocker } from '../testing.js';
+import { setActiveInputSource, type PausableInputSource } from '../common/input_pause_registry.js';
 
 // Mock the @inquirer/prompts module so tests don't require a TTY.
 // Uses ModuleMocker to preserve all original exports (e.g. `search`) and
@@ -67,6 +68,13 @@ describe('tunnel_prompt_handler', () => {
     mockSelect.mockImplementation(() => Promise.resolve('selected'));
     mockInput.mockImplementation(() => Promise.resolve('typed'));
     mockCheckbox.mockImplementation(() => Promise.resolve(['a', 'b']));
+
+    // Clear registry between tests
+    setActiveInputSource(undefined);
+  });
+
+  afterEach(() => {
+    setActiveInputSource(undefined);
   });
 
   describe('prompt type mapping', () => {
@@ -379,6 +387,130 @@ describe('tunnel_prompt_handler', () => {
 
       expect(response.requestId).toBe(msg.requestId);
       expect(response.type).toBe('prompt_response');
+    });
+  });
+
+  describe('input source pause/resume', () => {
+    it('pauses the active input source before prompt and resumes after', async () => {
+      const pauseSpy = mock(() => {});
+      const resumeSpy = mock(() => {});
+      const source: PausableInputSource = { pause: pauseSpy, resume: resumeSpy };
+      setActiveInputSource(source);
+
+      const handler = createPromptRequestHandler();
+      const { promise, respond } = collectResponse();
+
+      const msg = makePromptRequest({
+        promptType: 'confirm',
+        promptConfig: { message: 'Continue?' },
+      });
+
+      handler(msg, respond);
+      const response = await promise;
+
+      expect(response.value).toBe(true);
+      expect(pauseSpy).toHaveBeenCalledTimes(1);
+      expect(resumeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('resumes the same input source instance after prompt completes', async () => {
+      const pauseSpy = mock(() => {});
+      const resumeSpy = mock(() => {});
+      const source: PausableInputSource = { pause: pauseSpy, resume: resumeSpy };
+      setActiveInputSource(source);
+
+      // Register a different source after pause but before resume to verify
+      // the handler resumes the original captured instance
+      let promptCalled = false;
+      mockInput.mockImplementation(() => {
+        promptCalled = true;
+        // Simulate the input source changing during the prompt
+        const otherResume = mock(() => {});
+        setActiveInputSource({ pause: mock(() => {}), resume: otherResume });
+        return Promise.resolve('answer');
+      });
+
+      const handler = createPromptRequestHandler();
+      const { promise, respond } = collectResponse();
+
+      const msg = makePromptRequest({
+        promptType: 'input',
+        promptConfig: { message: 'Enter:' },
+      });
+
+      handler(msg, respond);
+      await promise;
+
+      expect(promptCalled).toBe(true);
+      // The original source's resume should be called, not the new one's
+      expect(resumeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('resumes the input source when the prompt throws', async () => {
+      const pauseSpy = mock(() => {});
+      const resumeSpy = mock(() => {});
+      const source: PausableInputSource = { pause: pauseSpy, resume: resumeSpy };
+      setActiveInputSource(source);
+
+      mockSelect.mockImplementation(() => Promise.reject(new Error('prompt failed')));
+
+      const handler = createPromptRequestHandler();
+      const { promise, respond } = collectResponse();
+
+      const msg = makePromptRequest({
+        promptType: 'select',
+        promptConfig: {
+          message: 'Choose:',
+          choices: [{ name: 'A', value: 'a' }],
+        },
+      });
+
+      handler(msg, respond);
+      const response = await promise;
+
+      expect(response.error).toContain('prompt failed');
+      expect(pauseSpy).toHaveBeenCalledTimes(1);
+      expect(resumeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('works normally when no active input source is registered', async () => {
+      // No input source set — getActiveInputSource() returns undefined
+      const handler = createPromptRequestHandler();
+      const { promise, respond } = collectResponse();
+
+      const msg = makePromptRequest({
+        promptType: 'confirm',
+        promptConfig: { message: 'Continue?' },
+      });
+
+      handler(msg, respond);
+      const response = await promise;
+
+      expect(response.value).toBe(true);
+      expect(response.error).toBeUndefined();
+    });
+
+    it('resumes the input source even for unsupported prompt types', async () => {
+      const pauseSpy = mock(() => {});
+      const resumeSpy = mock(() => {});
+      const source: PausableInputSource = { pause: pauseSpy, resume: resumeSpy };
+      setActiveInputSource(source);
+
+      const handler = createPromptRequestHandler();
+      const { promise, respond } = collectResponse();
+
+      const msg = makePromptRequest({
+        promptType: 'editor' as PromptRequestMessage['promptType'],
+        promptConfig: { message: 'Edit:' },
+      });
+
+      handler(msg, respond);
+      const response = await promise;
+
+      expect(response.error).toContain('Unsupported prompt type');
+      // The return is inside the try block, so finally still executes
+      expect(pauseSpy).toHaveBeenCalledTimes(1);
+      expect(resumeSpy).toHaveBeenCalledTimes(1);
     });
   });
 });

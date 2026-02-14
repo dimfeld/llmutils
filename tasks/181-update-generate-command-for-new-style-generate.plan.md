@@ -20,3 +20,6 @@ tags: []
 
 We want to update the `tim generate` command to run the new generate prompt that works interactively. Once we have support for the
 AskUserQuestion tool and input we can properly support this.
+
+Like the `agent` command, running this command should assign the plan to the workspace in which it is run. We should support
+the various workspace selection options from `agent` as well.

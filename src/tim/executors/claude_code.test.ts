@@ -1445,3 +1445,514 @@ describe('ClaudeCodeExecutor - tunnel prompt handler wiring', () => {
     expect(typeof capturedTunnelServerOptions[0].onPromptRequest).toBe('function');
   });
 });
+
+describe('ClaudeCodeExecutor - terminal input integration', () => {
+  const moduleMocker = new ModuleMocker(import.meta);
+  let tempDir = '/tmp/claude-terminal-input-test';
+
+  beforeEach(async () => {
+    await (await import('node:fs/promises')).mkdir(tempDir, { recursive: true }).catch(() => {});
+  });
+
+  afterEach(() => {
+    moduleMocker.clear();
+  });
+
+  test('uses multi-message streaming path when terminal input is enabled', async () => {
+    const awaitAndCleanupSpy = mock(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    }));
+    const setupTerminalInputSpy = mock(() => ({
+      started: true,
+      onResultMessage: mock(() => {}),
+      awaitAndCleanup: awaitAndCleanupSpy,
+    }));
+    const sendSinglePromptAndWaitSpy = mock(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    }));
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: mock(async () => createStreamingProcessMock()),
+      createLineSplitter: () => (s: string) => s.split('\n'),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('./claude_code/streaming_input.ts', () => ({
+      sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
+    }));
+
+    await moduleMocker.mock('./claude_code/terminal_input_lifecycle.ts', () => ({
+      setupTerminalInput: setupTerminalInputSpy,
+    }));
+
+    const originalIsTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    try {
+      const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+      const exec = new ClaudeCodeExecutor(
+        { permissionsMcp: { enabled: false } } as any,
+        { baseDir: tempDir, terminalInput: true } as any,
+        {} as any
+      );
+
+      await exec.execute('CTX', {
+        planId: 'p1',
+        planTitle: 'T',
+        planFilePath: `${tempDir}/plan.yml`,
+        executionMode: 'normal',
+      });
+    } finally {
+      Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
+    }
+
+    expect(setupTerminalInputSpy).toHaveBeenCalledTimes(1);
+    expect(awaitAndCleanupSpy).toHaveBeenCalledTimes(1);
+    expect(sendSinglePromptAndWaitSpy).toHaveBeenCalledTimes(0);
+  });
+
+  test('logs terminal input hint when lifecycle controller reports started', async () => {
+    const awaitAndCleanupSpy = mock(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    }));
+    const setupTerminalInputSpy = mock(() => ({
+      started: true,
+      onResultMessage: mock(() => {}),
+      awaitAndCleanup: awaitAndCleanupSpy,
+    }));
+    const sendSinglePromptAndWaitSpy = mock(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    }));
+    const logSpy = mock(() => {});
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: mock(async () => createStreamingProcessMock()),
+      createLineSplitter: () => (s: string) => s.split('\n'),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('../../logging.ts', () => ({
+      debugLog: mock(() => {}),
+      log: logSpy,
+      sendStructured: mock(() => {}),
+      error: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('./claude_code/streaming_input.ts', () => ({
+      sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
+    }));
+
+    await moduleMocker.mock('./claude_code/terminal_input_lifecycle.ts', () => ({
+      setupTerminalInput: setupTerminalInputSpy,
+    }));
+
+    const originalIsTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    try {
+      const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+      const exec = new ClaudeCodeExecutor(
+        { permissionsMcp: { enabled: false } } as any,
+        { baseDir: tempDir, terminalInput: true } as any,
+        {} as any
+      );
+
+      await exec.execute('CTX', {
+        planId: 'p1',
+        planTitle: 'T',
+        planFilePath: `${tempDir}/plan.yml`,
+        executionMode: 'normal',
+      });
+    } finally {
+      Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
+    }
+
+    expect(setupTerminalInputSpy).toHaveBeenCalledTimes(1);
+    expect(awaitAndCleanupSpy).toHaveBeenCalledTimes(1);
+    expect(sendSinglePromptAndWaitSpy).toHaveBeenCalledTimes(0);
+    expect(
+      logSpy.mock.calls.some((call) =>
+        call.some(
+          (arg) =>
+            typeof arg === 'string' && arg.includes('Type a message and press Enter to send input')
+        )
+      )
+    ).toBe(true);
+  });
+
+  test('emits user_terminal_input structured message even when follow-up send throws', async () => {
+    const sendStructuredSpy = mock(() => {});
+    const sendFollowUpMessageSpy = mock(() => {
+      throw new Error('write failed');
+    });
+    const sendSinglePromptAndWaitSpy = mock(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    }));
+    const debugLogSpy = mock(() => {});
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: mock(async () => createStreamingProcessMock()),
+      createLineSplitter: () => (s: string) => s.split('\n'),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('../../logging.ts', () => ({
+      debugLog: debugLogSpy,
+      log: mock(() => {}),
+      sendStructured: sendStructuredSpy,
+      error: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('./claude_code/streaming_input.ts', () => ({
+      sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
+      sendInitialPrompt: mock(() => {}),
+      sendFollowUpMessage: sendFollowUpMessageSpy,
+    }));
+
+    await moduleMocker.mock('./claude_code/terminal_input.ts', () => ({
+      TerminalInputReader: class {
+        private readonly onLine: (line: string) => void;
+
+        constructor(options: { onLine: (line: string) => void }) {
+          this.onLine = options.onLine;
+        }
+
+        start() {
+          this.onLine('follow-up');
+          return true;
+        }
+
+        stop() {}
+      },
+    }));
+
+    const originalIsTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    try {
+      const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+      const exec = new ClaudeCodeExecutor(
+        { permissionsMcp: { enabled: false } } as any,
+        { baseDir: tempDir, terminalInput: true } as any,
+        {} as any
+      );
+
+      await exec.execute('CTX', {
+        planId: 'p1',
+        planTitle: 'T',
+        planFilePath: `${tempDir}/plan.yml`,
+        executionMode: 'normal',
+      });
+    } finally {
+      Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
+    }
+
+    expect(sendFollowUpMessageSpy).toHaveBeenCalledTimes(1);
+    expect(sendSinglePromptAndWaitSpy).toHaveBeenCalledTimes(0);
+    expect(
+      sendStructuredSpy.mock.calls.some(
+        (call) => call[0] && typeof call[0] === 'object' && call[0].type === 'user_terminal_input'
+      )
+    ).toBe(true);
+    expect(debugLogSpy).toHaveBeenCalled();
+  });
+
+  test('closes stdin on result message so streaming result can resolve in terminal input mode', async () => {
+    const onResultMessageSpy = mock(() => {});
+    const awaitAndCleanupSpy = mock(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    }));
+    const setupTerminalInputSpy = mock(() => ({
+      started: true,
+      onResultMessage: onResultMessageSpy,
+      awaitAndCleanup: awaitAndCleanupSpy,
+    }));
+    const sendSinglePromptAndWaitSpy = mock(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    }));
+    const resultLine =
+      '{"type":"result","subtype":"success","total_cost_usd":0,"duration_ms":1,"duration_api_ms":1,"is_error":false,"num_turns":1,"result":"done","session_id":"session"}';
+    let formatStdout: ((output: string) => unknown) | undefined;
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+        formatStdout = opts.formatStdout;
+        return {
+          ...createStreamingProcessMock(),
+          kill: mock(() => {}),
+        };
+      }),
+      createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('./claude_code/streaming_input.ts', () => ({
+      sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
+    }));
+
+    await moduleMocker.mock('./claude_code/terminal_input_lifecycle.ts', () => ({
+      setupTerminalInput: setupTerminalInputSpy,
+    }));
+
+    const originalIsTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    try {
+      const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+      const exec = new ClaudeCodeExecutor(
+        { permissionsMcp: { enabled: false } } as any,
+        { baseDir: tempDir, terminalInput: true } as any,
+        {} as any
+      );
+
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('executor did not resolve')), 250);
+      });
+      await Promise.race([
+        exec.execute('CTX', {
+          planId: 'p1',
+          planTitle: 'T',
+          planFilePath: `${tempDir}/plan.yml`,
+          executionMode: 'normal',
+        }),
+        timeoutPromise,
+      ]);
+    } finally {
+      Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
+    }
+
+    formatStdout?.(`${resultLine}\n`);
+    expect(onResultMessageSpy).toHaveBeenCalledTimes(1);
+    expect(sendSinglePromptAndWaitSpy).toHaveBeenCalledTimes(0);
+  });
+
+  test('uses multi-message path for tunnel-forwarded input when terminal input is disabled', async () => {
+    const sendInitialPromptSpy = mock(() => {});
+    const sendFollowUpMessageSpy = mock(() => {});
+    const sendSinglePromptAndWaitSpy = mock(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    }));
+    const resultLine =
+      '{"type":"result","subtype":"success","total_cost_usd":0,"duration_ms":1,"duration_api_ms":1,"is_error":false,"num_turns":1,"result":"done","session_id":"session"}';
+    let formatStdout: ((output: string) => unknown) | undefined;
+    let resolveResult:
+      | ((value: {
+          exitCode: number;
+          stdout: string;
+          stderr: string;
+          signal: null;
+          killedByInactivity: boolean;
+        }) => void)
+      | undefined;
+
+    class TestTunnelAdapter {
+      private callback: ((content: string) => void) | undefined;
+
+      log(): void {}
+      error(): void {}
+      warn(): void {}
+      debug(): void {}
+      debugLog(): void {}
+      sendStructured(): void {}
+      writeStdout(): void {}
+      writeStderr(): void {}
+      flush?(): void {}
+      destroySync?(): void {}
+      destroy?(): Promise<void> {
+        return Promise.resolve();
+      }
+
+      setUserInputHandler(callback: ((content: string) => void) | undefined): void {
+        this.callback = callback;
+      }
+
+      emitUserInput(content: string): void {
+        this.callback?.(content);
+      }
+    }
+
+    const adapter = new TestTunnelAdapter();
+    const stdin = {
+      write: mock(() => {}),
+      end: mock(async () => {}),
+    };
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+        formatStdout = opts.formatStdout;
+        return {
+          stdin,
+          result: new Promise((resolve) => {
+            resolveResult = resolve;
+          }),
+          kill: mock(() => {}),
+        };
+      }),
+      createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('../../logging/adapter.js', () => ({
+      getLoggerAdapter: () => adapter,
+    }));
+
+    await moduleMocker.mock('../../logging/tunnel_client.js', () => ({
+      isTunnelActive: () => true,
+      TunnelAdapter: TestTunnelAdapter,
+    }));
+
+    await moduleMocker.mock('./claude_code/streaming_input.ts', () => ({
+      sendInitialPrompt: sendInitialPromptSpy,
+      sendFollowUpMessage: sendFollowUpMessageSpy,
+      sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
+    }));
+
+    const originalIsTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+
+    try {
+      const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+      const exec = new ClaudeCodeExecutor(
+        { permissionsMcp: { enabled: false } } as any,
+        { baseDir: tempDir, terminalInput: false } as any,
+        {} as any
+      );
+
+      const executePromise = exec.execute('CTX', {
+        planId: 'p1',
+        planTitle: 'T',
+        planFilePath: `${tempDir}/plan.yml`,
+        executionMode: 'normal',
+      });
+
+      const setupStart = Date.now();
+      while (!resolveResult && Date.now() - setupStart < 1000) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      adapter.emitUserInput('forward this');
+      formatStdout?.(`${resultLine}\n`);
+      adapter.emitUserInput('ignored after result');
+      resolveResult?.({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        signal: null,
+        killedByInactivity: false,
+      });
+      await executePromise;
+    } finally {
+      Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
+    }
+
+    expect(sendInitialPromptSpy).toHaveBeenCalledTimes(1);
+    expect(sendSinglePromptAndWaitSpy).toHaveBeenCalledTimes(0);
+    expect(sendFollowUpMessageSpy).toHaveBeenCalledTimes(1);
+    expect(sendFollowUpMessageSpy).toHaveBeenCalledWith(stdin, 'forward this');
+
+    adapter.emitUserInput('ignored after cleanup');
+    expect(sendFollowUpMessageSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('falls back to single-message path when terminal input option is disabled', async () => {
+    const sendSinglePromptAndWaitSpy = mock(async () => ({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    }));
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: mock(async () => createStreamingProcessMock()),
+      createLineSplitter: () => (s: string) => s.split('\n'),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('./claude_code/streaming_input.ts', () => ({
+      sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
+    }));
+    await moduleMocker.mock('../../logging/tunnel_client.js', () => ({
+      isTunnelActive: () => false,
+      TunnelAdapter: class {},
+    }));
+
+    const originalIsTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+
+    try {
+      const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+      const exec = new ClaudeCodeExecutor(
+        { permissionsMcp: { enabled: false } } as any,
+        { baseDir: tempDir, terminalInput: false } as any,
+        {} as any
+      );
+
+      await exec.execute('CTX', {
+        planId: 'p1',
+        planTitle: 'T',
+        planFilePath: `${tempDir}/plan.yml`,
+        executionMode: 'normal',
+      });
+    } finally {
+      Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
+    }
+
+    expect(sendSinglePromptAndWaitSpy).toHaveBeenCalledTimes(1);
+  });
+});

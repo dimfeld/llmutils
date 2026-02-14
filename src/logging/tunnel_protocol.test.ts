@@ -9,6 +9,7 @@ import {
   type TunnelArgsMessage,
   type TunnelDataMessage,
   type StructuredTunnelMessage,
+  type ServerTunnelMessage,
 } from './tunnel_protocol.ts';
 
 describe('tunnel_protocol', () => {
@@ -159,6 +160,15 @@ describe('tunnel_protocol', () => {
     it('isStructuredTunnelMessage returns false for non-structured messages', () => {
       const logMessage: TunnelMessage = { type: 'log', args: ['hello'] };
       expect(isStructuredTunnelMessage(logMessage)).toBe(false);
+    });
+
+    it('should roundtrip server user_input message through JSON', () => {
+      const message: ServerTunnelMessage = {
+        type: 'user_input',
+        content: 'follow up',
+      };
+      const parsed = JSON.parse(JSON.stringify(message)) as ServerTunnelMessage;
+      expect(parsed).toEqual(message);
     });
   });
 });

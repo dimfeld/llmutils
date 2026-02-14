@@ -9,6 +9,7 @@
 - Never manually create mocks by just replacing and restoring functions yourself.
 - Prefer to use real code to test things, and if you need to emulate a filesystem or Git repository you can set up a temporary directory and clean it up after the test.
 - **Mock return shapes must match production types exactly**: If production code returns a `StreamingProcess` (or any structured type), the mock must return that same shape — not a flattened version. When production code has type-guard fallbacks that accept both old and new shapes, wrong-shaped mocks can silently pass while hiding real bugs. Fix the mocks to match the real type and remove dead fallback paths instead.
+- **Mocks must reproduce real event behavior**: When mocking objects like readline interfaces, ensure methods emit the same events as the real implementation. For example, readline's `close()` fires the `close` event synchronously — if the mock omits this, tests pass while hiding real bugs where close handlers interact with other state (like saved partial input).
 - **Validate boundary inputs even for internal protocols**: Always test empty, missing, or malformed inputs at protocol boundaries — even between trusted internal components. For example, an empty array being silently treated as success can mask real bugs. Deny or error on invalid inputs rather than letting them fall through to a default "approved" path.
 
 Bun's module mocking does not work properly. If you need to mock a module, use the ModuleMocker class from src/testing.ts instead. For example:

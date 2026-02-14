@@ -493,10 +493,18 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
         : undefined;
     const simpleModeEnabled = options.simple === true || configSimpleMode === true;
     const tddModeEnabled = options.tdd === true;
+    const noninteractive = options.nonInteractive === true;
+    const terminalInputEnabled =
+      !noninteractive &&
+      process.stdin.isTTY === true &&
+      options.terminalInput !== false &&
+      config.terminalInput !== false;
 
     const sharedExecutorOptions: ExecutorCommonOptions = {
       baseDir: currentBaseDir,
       model: agentExecutionModel,
+      noninteractive: noninteractive ? true : undefined,
+      terminalInput: terminalInputEnabled,
       simpleMode: simpleModeEnabled ? true : undefined,
       reviewExecutor: options.reviewExecutor,
       subagentExecutor,

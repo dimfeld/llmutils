@@ -10,7 +10,11 @@ import {
   sendStructured,
 } from '../logging.js';
 import { CleanupRegistry } from '../common/cleanup_registry.js';
-import type { TunnelMessage, TunnelPromptResponseMessage } from './tunnel_protocol.js';
+import type {
+  TunnelMessage,
+  TunnelPromptResponseMessage,
+  TunnelUserInputMessage,
+} from './tunnel_protocol.js';
 import { isStructuredTunnelMessage } from './tunnel_protocol.js';
 import {
   structuredMessageTypeList,
@@ -214,6 +218,8 @@ function isValidStructuredMessagePayload(message: unknown): message is Structure
     case 'review_start':
     case 'input_required':
       return true;
+    case 'user_terminal_input':
+      return typeof structured.content === 'string';
     case 'token_usage':
       return (
         isOptionalNumberField(structured, 'inputTokens') &&
@@ -458,6 +464,8 @@ export interface TunnelServerOptions {
 export interface TunnelServer {
   /** The underlying net.Server instance */
   server: net.Server;
+  /** Broadcasts user terminal input to all connected clients */
+  sendUserInput: (content: string) => void;
   /** Closes the server and removes the socket file */
   close: () => void;
 }
@@ -491,7 +499,28 @@ export function createTunnelServer(
       // File doesn't exist, that's fine
     }
 
+    const clients = new Set<net.Socket>();
+
+    const sendUserInput = (content: string): void => {
+      const message: TunnelUserInputMessage = { type: 'user_input', content };
+      const serialized = JSON.stringify(message) + '\n';
+
+      for (const client of clients) {
+        if (client.destroyed) {
+          clients.delete(client);
+          continue;
+        }
+        try {
+          client.write(serialized);
+        } catch {
+          // Socket write failed - drop this client
+          clients.delete(client);
+        }
+      }
+    };
+
     const server = net.createServer((socket) => {
+      clients.add(socket);
       const splitLines = createLineSplitter();
 
       /**
@@ -566,6 +595,9 @@ export function createTunnelServer(
       socket.on('error', () => {
         // Client disconnected or errored - nothing to do
       });
+      socket.on('close', () => {
+        clients.delete(socket);
+      });
     });
 
     // Register cleanup to ensure socket is removed on process exit.
@@ -606,7 +638,7 @@ export function createTunnelServer(
 
     server.listen(socketPath, () => {
       listening = true;
-      resolve({ server, close });
+      resolve({ server, close, sendUserInput });
     });
   });
 }

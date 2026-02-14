@@ -3,9 +3,8 @@ import * as clipboard from '../../common/clipboard.ts';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { debugLog, log } from '../../logging.ts';
+import { debugLog, log, sendStructured, error } from '../../logging.ts';
 import { createLineSplitter, debug, spawnWithStreamingIO } from '../../common/process.ts';
-import { sendSinglePromptAndWait } from './claude_code/streaming_input.ts';
 import { getGitRoot } from '../../common/git.ts';
 import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
 import type { TimConfig } from '../configSchema.ts';
@@ -44,6 +43,7 @@ import { createPromptRequestHandler } from '../../logging/tunnel_prompt_handler.
 import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
 import { setupPermissionsMcp } from './claude_code/permissions_mcp_setup.js';
 import { runClaudeSubprocess, buildAllowedToolsList } from './claude_code/run_claude_subprocess.js';
+import { executeWithTerminalInput } from './claude_code/terminal_input_lifecycle.ts';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -507,6 +507,7 @@ export class ClaudeCodeExecutor implements Executor {
       cwd: gitRoot,
       claudeCodeOptions: this.options,
       noninteractive: this.sharedOptions.noninteractive ?? false,
+      terminalInput: this.sharedOptions.terminalInput,
       model: this.sharedOptions.model,
       label: 'review',
       inactivityTimeoutMs: reviewTimeoutMs,
@@ -863,6 +864,7 @@ export class ClaudeCodeExecutor implements Executor {
     // The orchestrator prompt references `tim subagent` Bash commands instead.
     // Other modes (bare, planning, review) also don't use agent definitions.
 
+    let terminalInputResult: ReturnType<typeof executeWithTerminalInput> | undefined;
     try {
       const args = ['claude'];
 
@@ -962,6 +964,7 @@ export class ClaudeCodeExecutor implements Executor {
           for (const result of formattedResults) {
             if (result.type === 'result') {
               seenResultMessage = true;
+              terminalInputResult?.onResultMessage();
             }
             if (result.filePaths) {
               for (const filePath of result.filePaths) {
@@ -997,7 +1000,21 @@ export class ClaudeCodeExecutor implements Executor {
           return structuredMessages.length > 0 ? structuredMessages : '';
         },
       });
-      const result = await sendSinglePromptAndWait(streaming, contextContent);
+
+      terminalInputResult = executeWithTerminalInput({
+        streaming,
+        prompt: contextContent,
+        sendStructured,
+        debugLog,
+        errorLog: error,
+        log,
+        label: 'execution',
+        tunnelServer,
+        terminalInputEnabled: this.sharedOptions.terminalInput === true,
+        tunnelForwardingEnabled: isTunnelActive(),
+      });
+
+      const result = await terminalInputResult.resultPromise;
 
       if ((killedByTimeout || result.killedByInactivity) && !seenResultMessage) {
         throw new Error(
@@ -1061,6 +1078,8 @@ export class ClaudeCodeExecutor implements Executor {
 
       return; // Explicitly return void for 'none' or undefined captureOutput
     } finally {
+      terminalInputResult?.cleanup();
+
       // Close the tunnel server if it was created
       tunnelServer?.close();
 

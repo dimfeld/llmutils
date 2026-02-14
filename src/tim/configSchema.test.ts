@@ -817,6 +817,23 @@ describe('configSchema', () => {
       expect(result.dynamicSubagentInstructions).toBe('Prefer codex for backend.');
       expect(result.defaultExecutor).toBe('codex-cli');
     });
+
+    test('accepts terminalInput as an optional boolean', () => {
+      const enabled = timConfigSchema.parse({ terminalInput: true });
+      const disabled = timConfigSchema.parse({ terminalInput: false });
+
+      expect(enabled.terminalInput).toBe(true);
+      expect(disabled.terminalInput).toBe(false);
+    });
+
+    test('terminalInput is undefined when not specified', () => {
+      const result = timConfigSchema.parse({});
+      expect(result.terminalInput).toBeUndefined();
+    });
+
+    test('rejects non-boolean terminalInput values', () => {
+      expect(() => timConfigSchema.parse({ terminalInput: 'yes' })).toThrow();
+    });
   });
 
   describe('resolveTasksDir', () => {

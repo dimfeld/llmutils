@@ -412,6 +412,21 @@ Stops on:
 - Post-apply command failure (unless `allowFailure: true`)
 - All tasks complete
 
+**Terminal input:**
+
+While the agent is executing, you can type a message and press Enter to send it as a follow-up instruction to the running Claude Code subprocess. This is useful for steering the agent mid-execution (e.g., "also add tests", "stop and fix the type error", "use the existing helper instead").
+
+- Enabled by default when running in an interactive terminal (`stdin.isTTY`)
+- Input is echoed visually as `→ You: <message>` in the output stream
+- Automatically paused during permission prompts and resumed after
+- Forwarded through the tunnel to nested subagents when running in workspace mode
+- Disable with `--no-terminal-input` or `terminalInput: false` in config
+
+```bash
+# Disable terminal input
+tim agent 123 --no-terminal-input
+```
+
 **Execution summaries:**
 
 Enabled by default, shows:
@@ -1346,6 +1361,9 @@ defaultSubagentExecutor: dynamic # codex-cli, claude-code, or dynamic
 # Instructions for dynamic subagent executor selection
 dynamicSubagentInstructions: 'Use claude-code for UI components, codex-cli for data layer'
 
+# Allow typing messages to the agent during execution (default: true when TTY)
+terminalInput: true
+
 # Default executor for review command
 review:
   defaultExecutor: claude-code # or codex-cli, both
@@ -1989,7 +2007,7 @@ tim generate ID -- [RMFILTER_ARGS]
 
 # Execute plan
 tim agent ID [--orchestrator NAME] [-x codex-cli|claude-code|dynamic] [--dynamic-instructions TEXT] [--simple] [--tdd]
-tim agent ID [--workspace ID] [--steps N]
+tim agent ID [--workspace ID] [--steps N] [--no-terminal-input]
 tim run ID  # alias for agent
 tim run-prompt [PROMPT] [-x claude|claude-code|codex|codex-cli] [--model MODEL] [--reasoning-level LEVEL]
 tim run-prompt [PROMPT] [--json-schema JSON_OR_@FILE] [--prompt-file FILE] [-q]

@@ -2,6 +2,7 @@ import { confirm, select, input, checkbox } from '@inquirer/prompts';
 import type { PromptRequestMessage } from './structured_messages.js';
 import type { PromptRequestHandler } from './tunnel_server.js';
 import type { TunnelPromptResponseMessage } from './tunnel_protocol.js';
+import { getActiveInputSource } from '../common/input_pause_registry.js';
 
 /**
  * Creates a PromptRequestHandler that renders inquirer prompts on behalf of
@@ -31,6 +32,10 @@ export function createPromptRequestHandler(): PromptRequestHandler {
     }
 
     const signal = controller?.signal;
+
+    // Pause terminal input reader to avoid stdin contention with inquirer
+    const inputSource = getActiveInputSource();
+    inputSource?.pause();
 
     try {
       let value: unknown;
@@ -118,6 +123,7 @@ export function createPromptRequestHandler(): PromptRequestHandler {
         error: err instanceof Error ? err.message : String(err),
       });
     } finally {
+      inputSource?.resume();
       if (timer) {
         clearTimeout(timer);
       }

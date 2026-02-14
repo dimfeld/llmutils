@@ -21,12 +21,24 @@ const mockConfirm = mock(() => Promise.resolve(true));
 const mockSelect = mock(() => Promise.resolve('selected'));
 const mockInput = mock(() => Promise.resolve('typed'));
 const mockCheckbox = mock(() => Promise.resolve(['a', 'b']));
+const pauseSpy = mock(() => {});
+const resumeSpy = mock(() => {});
+let activeTerminalReader:
+  | {
+      pause: () => void;
+      resume: () => void;
+    }
+  | undefined;
 
 await moduleMocker.mock('@inquirer/prompts', () => ({
   confirm: mockConfirm,
   select: mockSelect,
   input: mockInput,
   checkbox: mockCheckbox,
+}));
+
+await moduleMocker.mock('./input_pause_registry.js', () => ({
+  getActiveInputSource: () => activeTerminalReader,
 }));
 
 // Import the wrapper AFTER mock setup.
@@ -49,6 +61,9 @@ describe('prompt wrappers', () => {
     mockSelect.mockReset();
     mockInput.mockReset();
     mockCheckbox.mockReset();
+    pauseSpy.mockReset();
+    resumeSpy.mockReset();
+    activeTerminalReader = undefined;
 
     mockConfirm.mockImplementation(() => Promise.resolve(true));
     mockSelect.mockImplementation(() => Promise.resolve('selected'));
@@ -85,6 +100,94 @@ describe('prompt wrappers', () => {
         value: false,
         source: 'terminal',
       });
+    });
+
+    it('pauses and resumes active terminal input reader around inquirer prompts', async () => {
+      activeTerminalReader = { pause: pauseSpy, resume: resumeSpy };
+
+      await runWithLogger(createRecordingAdapter().adapter, () =>
+        promptConfirm({ message: 'Continue?' })
+      );
+
+      expect(pauseSpy).toHaveBeenCalledTimes(1);
+      expect(resumeSpy).toHaveBeenCalledTimes(1);
+      expect(pauseSpy.mock.invocationCallOrder[0]).toBeLessThan(
+        resumeSpy.mock.invocationCallOrder[0]
+      );
+    });
+
+    it('resumes terminal input reader when inquirer prompt throws', async () => {
+      activeTerminalReader = { pause: pauseSpy, resume: resumeSpy };
+      mockConfirm.mockImplementation(() => Promise.reject(new Error('prompt failed')));
+
+      await expect(
+        runWithLogger(createRecordingAdapter().adapter, () =>
+          promptConfirm({ message: 'Continue?' })
+        )
+      ).rejects.toThrow('prompt failed');
+
+      expect(pauseSpy).toHaveBeenCalledTimes(1);
+      expect(resumeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('resumes the paused reader reference even if the active reader is cleared', async () => {
+      activeTerminalReader = { pause: pauseSpy, resume: resumeSpy };
+      mockConfirm.mockImplementation(async () => {
+        activeTerminalReader = undefined;
+        return true;
+      });
+
+      await runWithLogger(createRecordingAdapter().adapter, () =>
+        promptConfirm({ message: 'Continue?' })
+      );
+
+      expect(pauseSpy).toHaveBeenCalledTimes(1);
+      expect(resumeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('pauses and resumes active terminal input reader around select prompts', async () => {
+      activeTerminalReader = { pause: pauseSpy, resume: resumeSpy };
+
+      await runWithLogger(createRecordingAdapter().adapter, () =>
+        promptSelect({
+          message: 'Choose:',
+          choices: [
+            { name: 'Allow', value: 'allow' },
+            { name: 'Deny', value: 'deny' },
+          ],
+        })
+      );
+
+      expect(pauseSpy).toHaveBeenCalledTimes(1);
+      expect(resumeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('pauses and resumes active terminal input reader around input prompts', async () => {
+      activeTerminalReader = { pause: pauseSpy, resume: resumeSpy };
+
+      await runWithLogger(createRecordingAdapter().adapter, () =>
+        promptInput({ message: 'Name:' })
+      );
+
+      expect(pauseSpy).toHaveBeenCalledTimes(1);
+      expect(resumeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('pauses and resumes active terminal input reader around checkbox prompts', async () => {
+      activeTerminalReader = { pause: pauseSpy, resume: resumeSpy };
+
+      await runWithLogger(createRecordingAdapter().adapter, () =>
+        promptCheckbox({
+          message: 'Select:',
+          choices: [
+            { name: 'A', value: 'a' },
+            { name: 'B', value: 'b' },
+          ],
+        })
+      );
+
+      expect(pauseSpy).toHaveBeenCalledTimes(1);
+      expect(resumeSpy).toHaveBeenCalledTimes(1);
     });
 
     it('promptConfirm passes default value', async () => {

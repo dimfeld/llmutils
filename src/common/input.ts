@@ -9,6 +9,7 @@ import { getLoggerAdapter } from '../logging/adapter.js';
 import { HeadlessAdapter } from '../logging/headless_adapter.js';
 import { TunnelAdapter } from '../logging/tunnel_client.js';
 import { sendStructured } from '../logging.js';
+import { getActiveInputSource } from './input_pause_registry.js';
 import type {
   PromptRequestMessage,
   PromptChoiceConfig,
@@ -93,6 +94,16 @@ function createTimeoutSignal(timeoutMs: number): {
 function getHeadlessAdapter(): HeadlessAdapter | undefined {
   const adapter = getLoggerAdapter();
   return adapter instanceof HeadlessAdapter ? adapter : undefined;
+}
+
+async function withTerminalInputPaused<T>(fn: () => Promise<T>): Promise<T> {
+  const inputSource = getActiveInputSource();
+  inputSource?.pause();
+  try {
+    return await fn();
+  } finally {
+    inputSource?.resume();
+  }
 }
 
 /**
@@ -205,7 +216,10 @@ export async function promptConfirm(options: {
     return raceWithWebSocket(
       headlessAdapter,
       promptMessage,
-      (signal) => inquirerConfirm({ message, default: defaultValue }, { signal }),
+      (signal) =>
+        withTerminalInputPaused(() =>
+          inquirerConfirm({ message, default: defaultValue }, { signal })
+        ),
       timeoutMs
     );
   }
@@ -216,9 +230,11 @@ export async function promptConfirm(options: {
   }
 
   try {
-    const value = await inquirerConfirm(
-      { message, default: defaultValue },
-      timeout ? { signal: timeout.signal } : undefined
+    const value = await withTerminalInputPaused(() =>
+      inquirerConfirm(
+        { message, default: defaultValue },
+        timeout ? { signal: timeout.signal } : undefined
+      )
     );
     sendPromptAnswered(promptMessage, value, 'terminal');
     return value;
@@ -270,7 +286,9 @@ export async function promptSelect<Value extends string | number | boolean>(opti
       headlessAdapter,
       promptMessage,
       (signal) =>
-        inquirerSelect<Value>({ message, choices, default: defaultValue, pageSize }, { signal }),
+        withTerminalInputPaused(() =>
+          inquirerSelect<Value>({ message, choices, default: defaultValue, pageSize }, { signal })
+        ),
       timeoutMs
     );
   }
@@ -281,9 +299,11 @@ export async function promptSelect<Value extends string | number | boolean>(opti
   }
 
   try {
-    const value = await inquirerSelect<Value>(
-      { message, choices, default: defaultValue, pageSize },
-      timeout ? { signal: timeout.signal } : undefined
+    const value = await withTerminalInputPaused(() =>
+      inquirerSelect<Value>(
+        { message, choices, default: defaultValue, pageSize },
+        timeout ? { signal: timeout.signal } : undefined
+      )
     );
     sendPromptAnswered(promptMessage, value, 'terminal');
     return value;
@@ -328,7 +348,10 @@ export async function promptInput(options: {
     return raceWithWebSocket(
       headlessAdapter,
       promptMessage,
-      (signal) => inquirerInput({ message, default: defaultValue }, { signal }),
+      (signal) =>
+        withTerminalInputPaused(() =>
+          inquirerInput({ message, default: defaultValue }, { signal })
+        ),
       timeoutMs
     );
   }
@@ -339,9 +362,11 @@ export async function promptInput(options: {
   }
 
   try {
-    const value = await inquirerInput(
-      { message, default: defaultValue },
-      timeout ? { signal: timeout.signal } : undefined
+    const value = await withTerminalInputPaused(() =>
+      inquirerInput(
+        { message, default: defaultValue },
+        timeout ? { signal: timeout.signal } : undefined
+      )
     );
     sendPromptAnswered(promptMessage, value, 'terminal');
     return value;
@@ -391,7 +416,10 @@ export async function promptCheckbox<Value extends string | number | boolean>(op
     return raceWithWebSocket(
       headlessAdapter,
       promptMessage,
-      (signal) => inquirerCheckbox<Value>({ message, choices, pageSize }, { signal }),
+      (signal) =>
+        withTerminalInputPaused(() =>
+          inquirerCheckbox<Value>({ message, choices, pageSize }, { signal })
+        ),
       timeoutMs
     );
   }
@@ -402,9 +430,11 @@ export async function promptCheckbox<Value extends string | number | boolean>(op
   }
 
   try {
-    const value = await inquirerCheckbox<Value>(
-      { message, choices, pageSize },
-      timeout ? { signal: timeout.signal } : undefined
+    const value = await withTerminalInputPaused(() =>
+      inquirerCheckbox<Value>(
+        { message, choices, pageSize },
+        timeout ? { signal: timeout.signal } : undefined
+      )
     );
     sendPromptAnswered(promptMessage, value, 'terminal');
     return value;
