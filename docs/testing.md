@@ -1,9 +1,3 @@
----
-description: Testing Strategies
-globs: *.test.ts
-type: rules
----
-
 - Tests use Bun test.
 - **Prefer real filesystem operations**: Use `fs.mkdtemp()` for temporary directories instead of mocking filesystem calls
 - **Hybrid mocking approach**:

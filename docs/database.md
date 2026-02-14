@@ -1,9 +1,3 @@
----
-description: Database Layer Conventions
-globs: src/tim/db/**/*.ts
-type: rules
----
-
 ### bun:sqlite Transaction Patterns
 
 - All DB functions are **synchronous** (matching bun:sqlite's native API)
