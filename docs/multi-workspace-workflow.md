@@ -159,12 +159,20 @@ tim workspace list --format tsv --no-header  # For scripts
 tim workspace list --format json              # For programmatic use
 ```
 
+## Workspace Push Design Notes
+
+The `workspace push` command transfers branches between workspaces using different strategies for git and jj:
+
+- **Git mode** uses `git fetch` from the primary workspace side (rather than `git push` from the secondary). This avoids `receive.denyCurrentBranch` errors that occur when pushing to a non-bare repo where the target branch is checked out.
+- **jj mode** adds a git remote pointing to the primary workspace and uses `jj git push`. No `jj bookmark track` step is needed — tracking is for the fetch direction only, and `jj git push` creates refs on the remote without prior tracking.
+
 ## Related Commands
 
 - `tim claim <plan>` - manually claim a plan
 - `tim release <plan>` - remove the current workspace/user from a claim
 - `tim workspace list` - list workspaces with status, name, and description
 - `tim workspace update` - update workspace name and description
+- `tim workspace push` - push current branch/bookmark to the primary workspace
 - `tim shell-integration` - generate shell function for workspace switching
 - `tim assignments list` - inspect all assignments for the repository
 - `tim assignments clean-stale` - remove claims older than the configured timeout

@@ -1251,6 +1251,24 @@ tim workspace update /path/to/main-workspace --primary
 
 Primary workspaces are shown with a "Primary" status in `tim workspace list`. They can still be used manually with `--workspace`.
 
+**Push to primary workspace:**
+
+From a secondary workspace, push your current branch (git) or bookmark (jj) to the primary workspace directory:
+
+```bash
+tim workspace push
+
+# Push a specific tracked workspace by task ID or path
+tim workspace push task-123
+tim workspace push /path/to/secondary-workspace
+```
+
+If no primary workspace is configured, set one first:
+
+```bash
+tim workspace update /path/to/main-workspace --primary
+```
+
 **Interactive workspace switching:**
 
 Set up a shell function for fast workspace navigation with `fzf`:
@@ -2094,6 +2112,9 @@ tim workspace update [WORKSPACE] --name NAME --description DESC
 tim workspace update --from-plan PLAN_ID
 tim workspace update [WORKSPACE] --primary    # Mark as primary (excluded from auto-selection)
 tim workspace update [WORKSPACE] --no-primary # Remove primary designation
+
+# Push current branch/bookmark from a secondary workspace to the primary workspace
+tim workspace push [WORKSPACE]
 
 # Shell integration (interactive workspace switching with fzf)
 tim shell-integration --shell bash|zsh
