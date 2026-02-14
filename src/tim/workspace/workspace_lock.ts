@@ -1,12 +1,16 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import * as os from 'node:os';
-import * as crypto from 'node:crypto';
-import { promisify } from 'node:util';
-import { exec } from 'node:child_process';
-import { debugLog } from '../../logging.ts';
-
-const execAsync = promisify(exec);
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { getDatabase } from '../db/database.js';
+import {
+  acquireWorkspaceLock,
+  getWorkspaceLock,
+  isProcessAlive,
+  releaseSpecificWorkspaceLock,
+  releaseWorkspaceLock,
+  type WorkspaceLockRow,
+} from '../db/workspace_lock.js';
+import { getOrCreateProject } from '../db/project.js';
+import { getWorkspaceByPath, recordWorkspace } from '../db/workspace.js';
 
 export type LockType = 'persistent' | 'pid';
 
@@ -32,15 +36,13 @@ export interface ReleaseLockOptions {
 }
 
 export class WorkspaceLock {
-  private static readonly LOCK_FILE_NAME = '.tim.lock';
   private static readonly LOCK_VERSION = 2;
   private static readonly STALE_LOCK_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
 
   // Allow overriding process.pid for testing
   public static pid = process.pid;
 
-  // Allow overriding lock directory for testing
-  private static testLockDirectory: string | undefined;
+  private static readonly cleanupHandlersByWorkspace = new Map<string, () => void>();
 
   /**
    * Set a custom PID for testing purposes
@@ -50,43 +52,45 @@ export class WorkspaceLock {
     this.pid = pid ?? process.pid;
   }
 
-  /**
-   * Set a custom lock directory for testing purposes
-   * @param dir The directory to use for locks (pass undefined to reset to default)
-   */
-  public static setTestLockDirectory(dir: string | undefined): void {
-    this.testLockDirectory = dir;
-  }
-
-  private static readonly registeredCleanupHandlers = new Set<string>();
-
-  /**
-   * Gets the directory where lock files are stored
-   * @returns The path to the locks directory
-   */
-  private static getLockDirectory(): string {
-    if (this.testLockDirectory) {
-      return this.testLockDirectory;
+  private static async getOrCreateWorkspaceId(workspacePath: string): Promise<number> {
+    const db = getDatabase();
+    const existing = getWorkspaceByPath(db, workspacePath);
+    if (existing) {
+      return existing.id;
     }
-    return path.join(os.homedir(), '.config', 'tim', 'locks');
+
+    let repositoryId = `workspace:${workspacePath}`;
+    let remoteUrl: string | null = null;
+    let gitRoot = workspacePath;
+
+    try {
+      const identity = await getRepositoryIdentity({ cwd: workspacePath });
+      repositoryId = identity.repositoryId;
+      remoteUrl = identity.remoteUrl;
+      gitRoot = identity.gitRoot;
+    } catch {
+      // Some tests lock arbitrary directories that are not repositories.
+    }
+
+    const project = getOrCreateProject(db, repositoryId, {
+      remoteUrl,
+      lastGitRoot: gitRoot,
+    });
+
+    const created = recordWorkspace(db, {
+      projectId: project.id,
+      workspacePath,
+      taskId: undefined,
+      originalPlanFilePath: undefined,
+    });
+
+    return created.id;
   }
 
-  /**
-   * Generates a unique lock filename from a workspace path using a hash
-   * @param workspacePath The workspace path to hash
-   * @returns The lock filename (without directory)
-   */
-  private static getLockFileName(workspacePath: string): string {
-    // Normalize the path to ensure consistent hashing
-    const normalizedPath = path.resolve(workspacePath);
-    // Create a hash of the workspace path
-    const hash = crypto.createHash('sha256').update(normalizedPath).digest('hex');
-    // Use first 16 chars of hash to keep filename reasonable while avoiding collisions
-    return `${hash.substring(0, 16)}.lock`;
-  }
-
-  static getLockFilePath(workspacePath: string): string {
-    return path.join(this.getLockDirectory(), this.getLockFileName(workspacePath));
+  private static getWorkspaceId(workspacePath: string): number | null {
+    const db = getDatabase();
+    const workspace = getWorkspaceByPath(db, workspacePath);
+    return workspace?.id ?? null;
   }
 
   static async acquireLock(
@@ -94,120 +98,95 @@ export class WorkspaceLock {
     command: string,
     options: AcquireLockOptions = {}
   ): Promise<LockInfo> {
-    const lockFilePath = this.getLockFilePath(workspacePath);
-
-    // Ensure the lock directory exists
-    await fs.promises.mkdir(this.getLockDirectory(), { recursive: true });
+    const db = getDatabase();
+    const workspaceId = await this.getOrCreateWorkspaceId(workspacePath);
 
     const lockType: LockType = options.type ?? 'persistent';
-    const existingLock = await this.getLockInfo(workspacePath);
+    const lockCommand = options.owner ? `${command} (owner: ${options.owner})` : command;
 
-    if (existingLock) {
-      if (existingLock.type === 'pid') {
-        if (await this.isLockStale(existingLock)) {
-          await this.clearStaleLock(workspacePath);
-        } else {
-          const pidInfo = existingLock.pid ? ` process ${existingLock.pid}` : '';
-          throw new Error(`Workspace is already locked by${pidInfo}`);
-        }
-      } else {
-        throw new Error('Workspace is already locked with a persistent lock');
-      }
-    }
-
-    const lockInfo: LockInfo = {
-      type: lockType,
+    const created = acquireWorkspaceLock(db, workspaceId, {
+      lockType,
       pid: this.pid,
-      command,
-      startedAt: new Date().toISOString(),
       hostname: os.hostname(),
-      version: this.LOCK_VERSION,
-    };
+      command: lockCommand,
+    });
 
-    if (options.owner) {
-      // Store owner in command metadata to avoid schema changes while still surfacing info
-      lockInfo.command = `${command} (owner: ${options.owner})`;
-    }
-
-    // Write lock file atomically
-    const tempFile = `${lockFilePath}.${this.pid}.tmp`;
-    try {
-      await fs.promises.writeFile(tempFile, JSON.stringify(lockInfo, null, 2), { flag: 'wx' });
-      await fs.promises.rename(tempFile, lockFilePath);
-    } catch (error) {
-      // Clean up temp file if it exists
-      try {
-        await fs.promises.unlink(tempFile);
-      } catch {
-        // ignore
-      }
-
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-        throw new Error('Lock file already exists');
-      }
-      throw error;
-    }
-
-    return lockInfo;
+    return this.rowToLockInfo(created);
   }
 
   static async releaseLock(
     workspacePath: string,
     options: ReleaseLockOptions = {}
   ): Promise<boolean> {
-    const lockFilePath = this.getLockFilePath(workspacePath);
-    const lockInfo = await this.getLockInfo(workspacePath);
+    const db = getDatabase();
+    const workspaceId = this.getWorkspaceId(workspacePath);
 
-    if (!lockInfo) {
+    if (!workspaceId) {
       return false;
     }
 
-    const force = options.force === true;
+    const released = releaseWorkspaceLock(db, workspaceId, {
+      force: options.force,
+      pid: this.pid,
+    });
 
-    if (lockInfo.type === 'persistent') {
-      if (!force) {
-        return false;
-      }
-    } else if (!force && lockInfo.pid !== this.pid) {
-      return false;
+    if (released) {
+      this.unregisterCleanupHandlers(workspacePath);
     }
 
-    try {
-      await fs.promises.unlink(lockFilePath);
-      this.registeredCleanupHandlers.delete(workspacePath);
-      return true;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return false;
-      }
-      throw error;
+    return released;
+  }
+
+  private static async getLockInfoInternal(
+    workspacePath: string,
+    cleanupStale: boolean
+  ): Promise<LockInfo | null> {
+    const existing = this.getExistingLock(workspacePath);
+    if (!existing) {
+      return null;
     }
+
+    if (cleanupStale) {
+      const staleLockRemoved = await this.tryReleaseStaleLock(
+        workspacePath,
+        existing.workspaceId,
+        existing.lock
+      );
+      if (staleLockRemoved) {
+        return null;
+      }
+
+      const currentLock = getWorkspaceLock(getDatabase(), existing.workspaceId);
+      return currentLock ? this.rowToLockInfo(currentLock) : null;
+    }
+
+    return this.rowToLockInfo(existing.lock);
   }
 
   static async getLockInfo(workspacePath: string): Promise<LockInfo | null> {
-    const lockFilePath = this.getLockFilePath(workspacePath);
+    return this.getLockInfoInternal(workspacePath, true);
+  }
 
-    try {
-      const content = await fs.promises.readFile(lockFilePath, 'utf-8');
-      const parsed = JSON.parse(content) as Partial<LockInfo> & { type?: LockType };
-      return this.normalizeLockInfo(parsed);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return null;
-      }
-      throw error;
-    }
+  static async getLockInfoIncludingStale(workspacePath: string): Promise<LockInfo | null> {
+    return this.getLockInfoInternal(workspacePath, false);
   }
 
   static async isLocked(workspacePath: string): Promise<boolean> {
-    const lockInfo = await this.getLockInfo(workspacePath);
-    if (!lockInfo) return false;
-
-    if (lockInfo.type === 'persistent') {
-      return true;
+    const existing = this.getExistingLock(workspacePath);
+    if (!existing) {
+      return false;
     }
 
-    return !(await this.isLockStale(lockInfo));
+    const staleLockRemoved = await this.tryReleaseStaleLock(
+      workspacePath,
+      existing.workspaceId,
+      existing.lock
+    );
+    if (staleLockRemoved) {
+      return false;
+    }
+
+    return true;
   }
 
   static async isLockStale(lockInfo: LockInfo): Promise<boolean> {
@@ -217,32 +196,29 @@ export class WorkspaceLock {
 
     // Check if lock is too old
     const lockAge = Date.now() - new Date(lockInfo.startedAt).getTime();
+    if (!Number.isFinite(lockAge)) {
+      return true;
+    }
+
     if (lockAge > this.STALE_LOCK_TIMEOUT_MS) {
       return true;
     }
 
     // Check if process is still alive
-    if (!lockInfo.pid || !(await this.isProcessAlive(lockInfo.pid))) {
+    if (!lockInfo.pid || !isProcessAlive(lockInfo.pid)) {
       return true;
     }
 
     return false;
   }
 
-  static async isProcessAlive(pid: number): Promise<boolean> {
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   static async clearStaleLock(workspacePath: string): Promise<void> {
-    const lockInfo = await this.getLockInfo(workspacePath);
-    if (lockInfo?.type === 'pid' && (await this.isLockStale(lockInfo))) {
-      await fs.promises.unlink(this.getLockFilePath(workspacePath));
+    const existing = this.getExistingLock(workspacePath);
+    if (!existing) {
+      return;
     }
+
+    await this.tryReleaseStaleLock(workspacePath, existing.workspaceId, existing.lock);
   }
 
   static setupCleanupHandlers(workspacePath: string, type: LockType): void {
@@ -250,25 +226,30 @@ export class WorkspaceLock {
       return;
     }
 
-    if (this.registeredCleanupHandlers.has(workspacePath)) {
+    if (this.cleanupHandlersByWorkspace.has(workspacePath)) {
       return;
     }
 
-    this.registeredCleanupHandlers.add(workspacePath);
-
     const cleanup = () => {
       try {
-        // Use sync version in exit handlers
-        const lockFilePath = this.getLockFilePath(workspacePath);
-        const raw = fs.readFileSync(lockFilePath, 'utf-8');
-        const lockInfo = this.normalizeLockInfo(JSON.parse(raw)) ?? undefined;
-        if (lockInfo?.type === 'pid' && lockInfo.pid === this.pid) {
-          fs.unlinkSync(lockFilePath);
+        const db = getDatabase();
+        const workspaceId = this.getWorkspaceId(workspacePath);
+        if (!workspaceId) {
+          return;
+        }
+
+        const lock = getWorkspaceLock(db, workspaceId);
+        if (lock?.lock_type === 'pid' && lock.pid === this.pid) {
+          releaseWorkspaceLock(db, workspaceId, { force: false, pid: this.pid });
         }
       } catch {
         // Ignore errors during cleanup
+      } finally {
+        this.unregisterCleanupHandlers(workspacePath);
       }
     };
+
+    this.cleanupHandlersByWorkspace.set(workspacePath, cleanup);
 
     process.on('exit', cleanup);
     process.on('SIGINT', cleanup);
@@ -276,22 +257,72 @@ export class WorkspaceLock {
     process.on('SIGHUP', cleanup);
   }
 
-  private static normalizeLockInfo(data: Partial<LockInfo> & { type?: LockType }): LockInfo | null {
-    if (!data) {
+  private static unregisterCleanupHandlers(workspacePath: string): void {
+    const cleanup = this.cleanupHandlersByWorkspace.get(workspacePath);
+    if (!cleanup) {
+      return;
+    }
+
+    process.off('exit', cleanup);
+    process.off('SIGINT', cleanup);
+    process.off('SIGTERM', cleanup);
+    process.off('SIGHUP', cleanup);
+    this.cleanupHandlersByWorkspace.delete(workspacePath);
+  }
+
+  private static getExistingLock(
+    workspacePath: string
+  ): { workspaceId: number; lock: WorkspaceLockRow } | null {
+    const db = getDatabase();
+    const workspaceId = this.getWorkspaceId(workspacePath);
+
+    if (!workspaceId) {
       return null;
     }
 
-    const startedAt = data.startedAt ?? new Date().toISOString();
-    const type: LockType =
-      data.type === 'pid' || data.type === 'persistent' ? data.type : 'persistent';
+    const lock = getWorkspaceLock(db, workspaceId);
+    if (!lock) {
+      return null;
+    }
 
+    return { workspaceId, lock };
+  }
+
+  private static async tryReleaseStaleLock(
+    workspacePath: string,
+    workspaceId: number,
+    lock: WorkspaceLockRow
+  ): Promise<boolean> {
+    if (lock.lock_type !== 'pid') {
+      return false;
+    }
+
+    const lockInfo = this.rowToLockInfo(lock);
+    if (!(await this.isLockStale(lockInfo))) {
+      return false;
+    }
+
+    const removed = releaseSpecificWorkspaceLock(
+      getDatabase(),
+      workspaceId,
+      lock.pid,
+      lock.started_at
+    );
+    if (removed) {
+      this.unregisterCleanupHandlers(workspacePath);
+    }
+
+    return removed;
+  }
+
+  private static rowToLockInfo(row: WorkspaceLockRow): LockInfo {
     return {
-      type,
-      pid: data.pid,
-      command: data.command ?? 'unknown',
-      startedAt,
-      hostname: data.hostname ?? os.hostname(),
-      version: data.version ?? this.LOCK_VERSION,
+      type: row.lock_type,
+      pid: row.pid ?? undefined,
+      command: row.command,
+      startedAt: row.started_at,
+      hostname: row.hostname,
+      version: this.LOCK_VERSION,
     };
   }
 }

@@ -4,7 +4,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { ModuleMocker } from '../../testing.js';
-import { readAssignments } from '../assignments/assignments_io.js';
+import { getAssignment } from '../db/assignment.js';
+import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { getOrCreateProject } from '../db/project.js';
+import { recordWorkspace } from '../db/workspace.js';
 import { clearPlanCache, writePlanFile } from '../plans.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
@@ -25,6 +28,22 @@ describe('handleClaimCommand', () => {
   let handleClaimCommand: (planArg: string, options: any, command: any) => Promise<void>;
 
   const repositoryId = 'multi-user-demo';
+
+  function getAssignmentRow(uuid: string) {
+    const db = getDatabase();
+    const project = getOrCreateProject(db, repositoryId);
+    return getAssignment(db, project.id, uuid);
+  }
+
+  function ensureWorkspace(workspacePath: string) {
+    const db = getDatabase();
+    const project = getOrCreateProject(db, repositoryId);
+    recordWorkspace(db, {
+      projectId: project.id,
+      workspacePath,
+      taskId: `task-${workspacePath}`,
+    });
+  }
 
   beforeEach(async () => {
     clearPlanCache();
@@ -109,6 +128,7 @@ describe('handleClaimCommand', () => {
   afterEach(async () => {
     moduleMocker.clear();
     clearPlanCache();
+    closeDatabaseForTesting();
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;
     } else {
@@ -125,25 +145,33 @@ describe('handleClaimCommand', () => {
   });
 
   test('claims an unassigned plan and records workspace/user', async () => {
+    ensureWorkspace(currentWorkspacePath);
     const command = { parent: { opts: () => ({}) } };
     await handleClaimCommand('1', {}, command);
 
-    const assignments = await readAssignments({ repositoryId });
-    const entry = assignments.assignments['11111111-1111-4111-8111-111111111111'];
-
+    const entry = getAssignmentRow('11111111-1111-4111-8111-111111111111');
     expect(entry).toBeDefined();
-    expect(entry.planId).toBe(1);
-    expect(entry.workspacePaths).toEqual([currentWorkspacePath]);
-    expect(entry.users).toEqual(['alice']);
-    expect(assignments.version).toBe(1);
+    expect(entry?.plan_id).toBe(1);
+    expect(entry?.claimed_by_user).toBe('alice');
 
     expect(mockWarn).not.toHaveBeenCalled();
     expect(mockLog).toHaveBeenCalledWith(
-      `✓ Claimed plan 1 in workspace ${currentWorkspacePath} (created assignment, added user ${currentUser})`
+      `✓ Claimed plan 1 in workspace ${currentWorkspacePath} (created assignment)`
     );
   });
 
+  test('creates workspace row when claiming from an untracked workspace', async () => {
+    const command = { parent: { opts: () => ({}) } };
+    await handleClaimCommand('1', {}, command);
+
+    const entry = getAssignmentRow('11111111-1111-4111-8111-111111111111');
+    expect(entry).toBeDefined();
+    expect(entry?.workspace_id).not.toBeNull();
+    expect(entry?.claimed_by_user).toBe('alice');
+  });
+
   test('re-claiming from same workspace is a no-op', async () => {
+    ensureWorkspace(currentWorkspacePath);
     const command = { parent: { opts: () => ({}) } };
     await handleClaimCommand('1', {}, command);
 
@@ -152,17 +180,16 @@ describe('handleClaimCommand', () => {
 
     await handleClaimCommand('1', {}, command);
 
-    const assignments = await readAssignments({ repositoryId });
-    expect(assignments.version).toBe(1);
-    expect(assignments.assignments['11111111-1111-4111-8111-111111111111'].workspacePaths).toEqual([
-      currentWorkspacePath,
-    ]);
+    const entry = getAssignmentRow('11111111-1111-4111-8111-111111111111');
+    expect(entry).toBeDefined();
+    expect(entry?.claimed_by_user).toBe('alice');
 
     expect(mockWarn).not.toHaveBeenCalled();
     expect(mockLog).not.toHaveBeenCalled();
   });
 
-  test('claiming from a different workspace warns about conflicts', async () => {
+  test('claiming from a different workspace warns about reassignment', async () => {
+    ensureWorkspace(currentWorkspacePath);
     const command = { parent: { opts: () => ({}) } };
     await handleClaimCommand('1', {}, command);
 
@@ -171,24 +198,23 @@ describe('handleClaimCommand', () => {
 
     currentWorkspacePath = path.join(tempRoot, 'workspace-b');
     await fs.mkdir(currentWorkspacePath, { recursive: true });
+    ensureWorkspace(currentWorkspacePath);
 
     await handleClaimCommand('1', {}, command);
 
-    const assignments = await readAssignments({ repositoryId });
-    const entry = assignments.assignments['11111111-1111-4111-8111-111111111111'];
-
-    expect(assignments.version).toBe(2);
-    expect(entry.workspacePaths.sort()).toEqual([currentWorkspacePath, repoDir].sort());
+    const entry = getAssignmentRow('11111111-1111-4111-8111-111111111111');
+    expect(entry).toBeDefined();
 
     expect(mockWarn).toHaveBeenCalledWith(
-      `⚠ Plan is already claimed in other workspaces: ${repoDir}`
+      `⚠ Plan was previously claimed in workspace ${repoDir} by user alice; reassigning to workspace ${currentWorkspacePath}`
     );
     expect(mockLog).toHaveBeenCalledWith(
       `✓ Claimed plan 1 in workspace ${currentWorkspacePath} (added workspace)`
     );
   });
 
-  test('claiming from a different user warns about conflicts', async () => {
+  test('claiming from a different user warns about reassignment', async () => {
+    ensureWorkspace(currentWorkspacePath);
     const command = { parent: { opts: () => ({}) } };
     await handleClaimCommand('1', {}, command);
 
@@ -199,30 +225,28 @@ describe('handleClaimCommand', () => {
 
     await handleClaimCommand('1', {}, command);
 
-    const assignments = await readAssignments({ repositoryId });
-    const entry = assignments.assignments['11111111-1111-4111-8111-111111111111'];
+    const entry = getAssignmentRow('11111111-1111-4111-8111-111111111111');
+    expect(entry).toBeDefined();
+    expect(entry?.claimed_by_user).toBe('bob');
 
-    expect(assignments.version).toBe(2);
-    expect(entry.workspacePaths).toEqual([currentWorkspacePath]);
-    expect(entry.users?.sort()).toEqual(['alice', 'bob']);
-
-    expect(mockWarn).toHaveBeenCalledWith(`⚠ Plan is already claimed by other users: alice`);
+    expect(mockWarn).toHaveBeenCalledWith(
+      '⚠ Plan was previously claimed by user alice; reassigning to bob'
+    );
     expect(mockLog).toHaveBeenCalledWith(
       `✓ Claimed plan 1 in workspace ${currentWorkspacePath} (added user bob)`
     );
   });
 
   test('claiming when user identity is unavailable omits user assignment', async () => {
+    ensureWorkspace(currentWorkspacePath);
     currentUser = null;
     const command = { parent: { opts: () => ({}) } };
 
     await handleClaimCommand('1', {}, command);
 
-    const assignments = await readAssignments({ repositoryId });
-    const entry = assignments.assignments['11111111-1111-4111-8111-111111111111'];
-
+    const entry = getAssignmentRow('11111111-1111-4111-8111-111111111111');
     expect(entry).toBeDefined();
-    expect(entry.users).toEqual([]);
+    expect(entry?.claimed_by_user).toBeNull();
 
     expect(mockWarn).not.toHaveBeenCalled();
     expect(mockLog).toHaveBeenCalledWith(
@@ -230,7 +254,23 @@ describe('handleClaimCommand', () => {
     );
   });
 
+  test('claiming from same workspace with null user does not emit reassignment warning', async () => {
+    ensureWorkspace(currentWorkspacePath);
+    const command = { parent: { opts: () => ({}) } };
+    await handleClaimCommand('1', {}, command);
+
+    mockLog.mockClear();
+    mockWarn.mockClear();
+    currentUser = null;
+
+    await handleClaimCommand('1', {}, command);
+
+    expect(mockWarn).not.toHaveBeenCalled();
+    expect(mockLog).not.toHaveBeenCalled();
+  });
+
   test('claiming a plan without a numeric ID persists assignment with UUID label', async () => {
+    ensureWorkspace(currentWorkspacePath);
     const planUuid = '22222222-2222-4222-8222-222222222222';
     const planFilename = 'no-id.plan.md';
 
@@ -245,17 +285,14 @@ describe('handleClaimCommand', () => {
     const command = { parent: { opts: () => ({}) } };
     await handleClaimCommand(planFilename, {}, command);
 
-    const assignments = await readAssignments({ repositoryId });
-    const entry = assignments.assignments[planUuid];
-
+    const entry = getAssignmentRow(planUuid);
     expect(entry).toBeDefined();
-    expect(entry.planId).toBeUndefined();
-    expect(entry.workspacePaths).toEqual([currentWorkspacePath]);
-    expect(entry.users).toEqual(['alice']);
+    expect(entry?.plan_id).toBeNull();
+    expect(entry?.claimed_by_user).toBe('alice');
 
     expect(mockWarn).not.toHaveBeenCalled();
     expect(mockLog).toHaveBeenCalledWith(
-      `✓ Claimed plan ${planUuid} in workspace ${currentWorkspacePath} (created assignment, added user ${currentUser})`
+      `✓ Claimed plan ${planUuid} in workspace ${currentWorkspacePath} (created assignment)`
     );
   });
 });

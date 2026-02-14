@@ -1,4 +1,4 @@
-import type { AssignmentEntry } from './assignments_schema.js';
+import type { AssignmentEntry } from '../db/assignment.js';
 import type { TimConfig } from '../configSchema.js';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;

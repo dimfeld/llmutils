@@ -1,3 +1,21 @@
+# February 13, 2026
+
+- Migrated all tim data storage from JSON files to SQLite database (`~/.config/tim/tim.db`)
+  - Assignments, permissions, workspaces, workspace locks, and project metadata now use SQLite
+  - Legacy JSON files are automatically imported on first database creation
+  - Removed deprecated JSON I/O modules (assignments_io, permissions_io, workspace_tracker)
+  - WorkspaceLock now uses DB internally while keeping the same API
+  - Stale locks are cleaned up on read (getLockInfo, isLocked), not just on acquisition
+  - External storage base directory now uses XDG-aware config paths via `getTimConfigRoot()`
+- Fixed TOCTOU race conditions in workspace lock cleanup (both `cleanStaleLocks` and stale-lock-on-read paths use targeted deletes matching workspace_id + pid + started_at)
+- Fixed phantom entries in `tim storage list` when repository paths no longer exist on disk
+- Fixed `isLockStale` treating invalid date strings as not-stale (now treats them as stale, matching DB layer)
+- Fixed redundant `updateProject` call in JSON import that could overwrite valid metadata with nulls
+- Fixed extra `}` in parent completion commit message template
+- Extracted `SQL_NOW_ISO_UTC` into shared `src/tim/db/sql_utils.ts` to eliminate duplication across DB modules
+- Extracted shared `removePlanAssignment` helper into `src/tim/assignments/remove_plan_assignment.ts`
+- Unified parent completion logic to accept both 'done' and 'cancelled' as complete states across all code paths
+
 # May 28, 2025
 
 - prepareNextStep includes docs references in non-rmfilter mode

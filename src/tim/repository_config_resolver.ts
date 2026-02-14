@@ -9,11 +9,9 @@ import {
   parseGitRemoteUrl,
 } from '../common/git_url_parser.js';
 import { debugLog } from '../logging.js';
-import {
-  describeRemoteForLogging,
-  getExternalStorageBaseDir,
-  writeRepositoryStorageMetadata,
-} from './external_storage_utils.js';
+import { describeRemoteForLogging, getExternalStorageBaseDir } from './external_storage_utils.js';
+import { getDatabase } from './db/database.js';
+import { getOrCreateProject, updateProject } from './db/project.js';
 
 export interface RepositoryConfigResolution {
   configPath: string | null;
@@ -106,13 +104,31 @@ export class RepositoryConfigResolver {
     debugLog(`Using external tim storage at ${repositoryConfigDir}`);
 
     try {
-      await writeRepositoryStorageMetadata(repositoryConfigDir, {
-        repositoryName,
-        remoteLabel: remoteUrl ? describeRemoteForLogging(remoteUrl) : null,
+      const db = getDatabase();
+      const remoteLabel = remoteUrl ? describeRemoteForLogging(remoteUrl) : null;
+      const project = getOrCreateProject(db, repositoryName, {
+        remoteUrl,
+        remoteLabel,
         lastGitRoot: gitRoot,
         externalConfigPath,
         externalTasksDir,
       });
+      const shouldUpdateProject =
+        project.remote_url !== (remoteUrl ?? null) ||
+        project.remote_label !== (remoteLabel ?? null) ||
+        project.last_git_root !== gitRoot ||
+        project.external_config_path !== externalConfigPath ||
+        project.external_tasks_dir !== externalTasksDir;
+
+      if (shouldUpdateProject) {
+        updateProject(db, project.id, {
+          remoteUrl,
+          remoteLabel,
+          lastGitRoot: gitRoot,
+          externalConfigPath,
+          externalTasksDir,
+        });
+      }
     } catch (metadataError) {
       debugLog(
         `Failed to update external storage metadata for ${repositoryConfigDir}: ${metadataError as Error}`

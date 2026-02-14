@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
 interface Migration {
   version: number;
@@ -18,8 +19,8 @@ const migrations: Migration[] = [
         external_tasks_dir TEXT,
         remote_label TEXT,
         highest_plan_id INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
       );
 
       CREATE TABLE workspace (
@@ -33,8 +34,9 @@ const migrations: Migration[] = [
         description TEXT,
         plan_id TEXT,
         plan_title TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        is_primary INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
       );
       CREATE INDEX idx_workspace_project_id ON workspace(project_id);
 
@@ -70,8 +72,8 @@ const migrations: Migration[] = [
         workspace_id INTEGER REFERENCES workspace(id) ON DELETE SET NULL,
         claimed_by_user TEXT,
         status TEXT,
-        assigned_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        assigned_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
         UNIQUE(project_id, plan_uuid)
       );
       CREATE INDEX idx_assignment_workspace_id ON assignment(workspace_id);

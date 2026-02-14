@@ -2,7 +2,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'yaml';
-import { reserveNextPlanId } from '../assignments/assignments_io.js';
+import { getDatabase } from '../db/database.js';
+import { reserveNextPlanId } from '../db/project.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { NoFrontmatterError, readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
@@ -1374,12 +1375,14 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
     let nextIdStart: number;
     try {
       const repoIdentity = await getRepositoryIdentity({ cwd: gitRoot });
-      const result = await reserveNextPlanId({
-        repositoryId: repoIdentity.repositoryId,
-        repositoryRemoteUrl: repoIdentity.remoteUrl,
-        localMaxId: maxNumericId,
-        count: plansToRenumber.length,
-      });
+      const db = getDatabase();
+      const result = reserveNextPlanId(
+        db,
+        repoIdentity.repositoryId,
+        maxNumericId,
+        plansToRenumber.length,
+        repoIdentity.remoteUrl
+      );
       nextIdStart = result.startId;
     } catch {
       // Fall back to local-only behavior if shared storage unavailable

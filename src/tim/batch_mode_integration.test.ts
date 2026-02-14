@@ -8,10 +8,12 @@ import type { ExecutePlanInfo, ExecutorCommonOptions } from './executors/types.t
 import type { PlanSchema } from './planSchema.ts';
 import type { TimConfig } from './configSchema.ts';
 import { ModuleMocker } from '../testing.js';
+import { closeDatabaseForTesting } from './db/database.js';
 
 describe('Batch Mode Integration Tests', () => {
   let tempDir: string;
   let moduleMocker: ModuleMocker;
+  let originalXdgConfigHome: string | undefined;
 
   const mockSharedOptions: ExecutorCommonOptions = {
     baseDir: '/test/base',
@@ -26,7 +28,10 @@ describe('Batch Mode Integration Tests', () => {
   };
 
   beforeEach(async () => {
+    closeDatabaseForTesting();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'batch-mode-integration-test-'));
+    originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = path.join(tempDir, '.config');
     // Create a .git directory to make it a git repo
     await fs.mkdir(path.join(tempDir, '.git'), { recursive: true });
     await fs.mkdir(path.join(tempDir, 'tasks'), { recursive: true });
@@ -35,6 +40,12 @@ describe('Batch Mode Integration Tests', () => {
   });
 
   afterEach(async () => {
+    closeDatabaseForTesting();
+    if (originalXdgConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+    }
     await fs.rm(tempDir, { recursive: true, force: true });
     moduleMocker.clear();
   });
@@ -42,8 +53,27 @@ describe('Batch Mode Integration Tests', () => {
   test('end-to-end batch mode functionality', async () => {
     // Set up mocks for executor dependencies
     await moduleMocker.mock('../common/process.ts', () => ({
-      spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
-      createLineSplitter: mock(() => (output: string) => output.split('\n')),
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+        // Invoke formatStdout to simulate output processing
+        if (opts && typeof opts.formatStdout === 'function') {
+          opts.formatStdout('{}\n');
+        }
+        return {
+          stdin: {
+            write: mock((_value: string) => {}),
+            end: mock(async () => {}),
+          },
+          result: Promise.resolve({
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            signal: null,
+            killedByInactivity: false,
+          }),
+          kill: mock(() => {}),
+        };
+      }),
+      createLineSplitter: () => (s: string) => s.split('\n'),
       debug: false,
     }));
 
@@ -52,7 +82,12 @@ describe('Batch Mode Integration Tests', () => {
     }));
 
     await moduleMocker.mock('./executors/claude_code/format.ts', () => ({
-      formatJsonMessage: mock((line: string) => line),
+      formatJsonMessage: mock((_line: string) => ({
+        type: 'result',
+        message: '',
+      })),
+      extractStructuredMessages: mock(() => []),
+      resetToolUseCache: mock(() => {}),
     }));
 
     const mockWrapWithOrchestration = mock((content: string, planId: string, options: any) => {
@@ -143,10 +178,10 @@ tasks:
     expect(mockWrapWithOrchestration).toHaveBeenCalledWith(
       expect.stringContaining(`@${planFilePath}\n\n`),
       'batch-123',
-      {
+      expect.objectContaining({
         batchMode: true,
         planFilePath,
-      }
+      })
     );
 
     // Verify the content passed to orchestration includes the plan file reference
@@ -308,8 +343,26 @@ tasks:
   test('batch mode state isolation between executions', async () => {
     // Set up mocks for executor
     await moduleMocker.mock('../common/process.ts', () => ({
-      spawnAndLogOutput: mock(() => Promise.resolve({ exitCode: 0 })),
-      createLineSplitter: mock(() => (output: string) => output.split('\n')),
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+        if (opts && typeof opts.formatStdout === 'function') {
+          opts.formatStdout('{}\n');
+        }
+        return {
+          stdin: {
+            write: mock((_value: string) => {}),
+            end: mock(async () => {}),
+          },
+          result: Promise.resolve({
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            signal: null,
+            killedByInactivity: false,
+          }),
+          kill: mock(() => {}),
+        };
+      }),
+      createLineSplitter: () => (s: string) => s.split('\n'),
       debug: false,
     }));
 
@@ -318,7 +371,12 @@ tasks:
     }));
 
     await moduleMocker.mock('./executors/claude_code/format.ts', () => ({
-      formatJsonMessage: mock((line: string) => line),
+      formatJsonMessage: mock((_line: string) => ({
+        type: 'result',
+        message: '',
+      })),
+      extractStructuredMessages: mock(() => []),
+      resetToolUseCache: mock(() => {}),
     }));
 
     const mockWrapWithOrchestration = mock((content: string, planId: string, options: any) => {

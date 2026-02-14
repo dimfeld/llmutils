@@ -29,6 +29,7 @@ import yaml from 'yaml';
 // Test state
 let tempDir: string;
 let fakeHomeDir: string;
+let originalXdgConfigHome: string | undefined;
 let logSpy: ReturnType<typeof mock>;
 
 // Helper function to create a temporary directory structure for testing
@@ -83,6 +84,8 @@ describe('configLoader', () => {
     configDir = path.join(testDir, '.rmfilter', 'config');
 
     fakeHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-home-'));
+    originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = path.join(fakeHomeDir, '.config');
 
     const realOs = await import('node:os');
     await moduleMocker.mock('node:os', () => ({
@@ -104,6 +107,11 @@ describe('configLoader', () => {
     await fs.rm(testDir, { recursive: true, force: true });
     if (fakeHomeDir) {
       await fs.rm(fakeHomeDir, { recursive: true, force: true });
+    }
+    if (originalXdgConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
     }
     // Clear mocks after each test
     moduleMocker.clear();

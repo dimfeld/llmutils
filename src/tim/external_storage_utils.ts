@@ -1,10 +1,9 @@
-import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { getTimConfigRoot } from '../common/config_paths.js';
 import { parseGitRemoteUrl } from '../common/git_url_parser.js';
-
-export const STORAGE_METADATA_FILENAME = 'metadata.json';
+import { getDatabase } from './db/database.js';
+import { getOrCreateProject, getProject, updateProject } from './db/project.js';
 
 export interface RepositoryStorageMetadata {
   repositoryName: string;
@@ -25,7 +24,7 @@ export interface RepositoryStorageMetadataInput {
 }
 
 export function getExternalStorageBaseDir(): string {
-  return path.join(os.homedir(), '.config', 'tim', 'repositories');
+  return path.join(getTimConfigRoot(), 'repositories');
 }
 
 export function trimQueryAndFragment(value: string): string {
@@ -77,68 +76,72 @@ export function describeRemoteForLogging(remoteUrl?: string | null): string {
   return trimQueryAndFragment(stripRemoteCredentials(remoteUrl));
 }
 
-function normaliseUpdatedValue<T>(
-  value: T | null | undefined,
-  fallback: T | undefined
-): T | undefined {
-  if (value === null) {
-    return undefined;
-  }
-  return value === undefined ? fallback : value;
-}
-
 export async function readRepositoryStorageMetadata(
   repositoryDir: string
 ): Promise<RepositoryStorageMetadata | null> {
-  const metadataPath = path.join(repositoryDir, STORAGE_METADATA_FILENAME);
-  try {
-    const content = await fs.readFile(metadataPath, 'utf8');
-    const parsed = JSON.parse(content) as Partial<RepositoryStorageMetadata>;
-    if (!parsed.repositoryName || !parsed.createdAt || !parsed.updatedAt) {
-      return null;
-    }
-
-    return {
-      repositoryName: parsed.repositoryName,
-      createdAt: parsed.createdAt,
-      updatedAt: parsed.updatedAt,
-      remoteLabel: parsed.remoteLabel,
-      lastGitRoot: parsed.lastGitRoot,
-      externalConfigPath: parsed.externalConfigPath,
-      externalTasksDir: parsed.externalTasksDir,
-    };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return null;
-    }
-
+  const repositoryName = path.basename(repositoryDir);
+  const db = getDatabase();
+  const project = getProject(db, repositoryName);
+  if (!project) {
     return null;
   }
+
+  return {
+    repositoryName,
+    createdAt: project.created_at,
+    updatedAt: project.updated_at,
+    remoteLabel: project.remote_label ?? undefined,
+    lastGitRoot: project.last_git_root ?? undefined,
+    externalConfigPath: project.external_config_path ?? undefined,
+    externalTasksDir: project.external_tasks_dir ?? undefined,
+  };
 }
 
 export async function writeRepositoryStorageMetadata(
   repositoryDir: string,
   update: RepositoryStorageMetadataInput
 ): Promise<RepositoryStorageMetadata> {
-  const metadataPath = path.join(repositoryDir, STORAGE_METADATA_FILENAME);
-  const existing = await readRepositoryStorageMetadata(repositoryDir);
-  const now = new Date().toISOString();
+  const repositoryName = update.repositoryName || path.basename(repositoryDir);
+  const db = getDatabase();
+  const existing = getProject(db, repositoryName);
+  const project =
+    existing ??
+    getOrCreateProject(db, repositoryName, {
+      remoteLabel: update.remoteLabel ?? null,
+      lastGitRoot: update.lastGitRoot ?? null,
+      externalConfigPath: update.externalConfigPath ?? null,
+      externalTasksDir: update.externalTasksDir ?? null,
+    });
 
-  const metadata: RepositoryStorageMetadata = {
-    repositoryName:
-      update.repositoryName || existing?.repositoryName || path.basename(repositoryDir),
-    remoteLabel: normaliseUpdatedValue(update.remoteLabel, existing?.remoteLabel),
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-    lastGitRoot: normaliseUpdatedValue(update.lastGitRoot, existing?.lastGitRoot),
-    externalConfigPath: normaliseUpdatedValue(
-      update.externalConfigPath,
-      existing?.externalConfigPath
-    ),
-    externalTasksDir: normaliseUpdatedValue(update.externalTasksDir, existing?.externalTasksDir),
+  const updates: {
+    remoteLabel?: string | null;
+    lastGitRoot?: string | null;
+    externalConfigPath?: string | null;
+    externalTasksDir?: string | null;
+  } = {};
+  if ('remoteLabel' in update) {
+    updates.remoteLabel = update.remoteLabel ?? null;
+  }
+  if ('lastGitRoot' in update) {
+    updates.lastGitRoot = update.lastGitRoot ?? null;
+  }
+  if ('externalConfigPath' in update) {
+    updates.externalConfigPath = update.externalConfigPath ?? null;
+  }
+  if ('externalTasksDir' in update) {
+    updates.externalTasksDir = update.externalTasksDir ?? null;
+  }
+
+  const persisted =
+    Object.keys(updates).length > 0 ? (updateProject(db, project.id, updates) ?? project) : project;
+
+  return {
+    repositoryName,
+    createdAt: persisted.created_at,
+    updatedAt: persisted.updated_at,
+    remoteLabel: persisted.remote_label ?? undefined,
+    lastGitRoot: persisted.last_git_root ?? undefined,
+    externalConfigPath: persisted.external_config_path ?? undefined,
+    externalTasksDir: persisted.external_tasks_dir ?? undefined,
   };
-
-  const serialised = JSON.stringify(metadata, null, 2);
-  await fs.writeFile(metadataPath, `${serialised}\n`, 'utf8');
-  return metadata;
 }

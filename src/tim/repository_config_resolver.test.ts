@@ -15,16 +15,21 @@ import {
   describeRemoteForLogging,
   readRepositoryStorageMetadata,
 } from './external_storage_utils.js';
+import { closeDatabaseForTesting } from './db/database.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
 describe('RepositoryConfigResolver', () => {
   let gitRoot: string;
   let fakeHomeDir: string;
+  let originalXdgConfigHome: string | undefined;
 
   beforeEach(async () => {
+    closeDatabaseForTesting();
     gitRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'repo-config-resolver-'));
     fakeHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'resolver-home-'));
+    originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = path.join(fakeHomeDir, '.config');
 
     const realOs = await import('node:os');
     await moduleMocker.mock('node:os', () => ({
@@ -38,6 +43,12 @@ describe('RepositoryConfigResolver', () => {
   });
 
   afterEach(async () => {
+    closeDatabaseForTesting();
+    if (originalXdgConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+    }
     moduleMocker.clear();
     await fs.rm(gitRoot, { recursive: true, force: true });
     await fs.rm(fakeHomeDir, { recursive: true, force: true });
@@ -127,6 +138,26 @@ describe('RepositoryConfigResolver', () => {
       path.join(expectedRepositoryDir, '.rmfilter', 'config', 'tim.yml')
     );
     expect(metadata?.externalTasksDir).toBe(path.join(expectedRepositoryDir, 'tasks'));
+  });
+
+  test('does not update project metadata when resolved values are unchanged', async () => {
+    const resolver = await RepositoryConfigResolver.create();
+    const firstResolution = await resolver.resolve();
+    const repositoryConfigDir = firstResolution.repositoryConfigDir;
+    if (!repositoryConfigDir) {
+      throw new Error('Expected repositoryConfigDir for external storage resolution');
+    }
+
+    const firstMetadata = await readRepositoryStorageMetadata(repositoryConfigDir);
+    expect(firstMetadata).not.toBeNull();
+
+    await Bun.sleep(20);
+    const secondResolution = await resolver.resolve();
+    expect(secondResolution.repositoryConfigDir).toBe(repositoryConfigDir);
+
+    const secondMetadata = await readRepositoryStorageMetadata(repositoryConfigDir);
+    expect(secondMetadata).not.toBeNull();
+    expect(secondMetadata?.updatedAt).toBe(firstMetadata?.updatedAt);
   });
 
   test('sanitizes credentials and query fragments when constructing repository directories', async () => {

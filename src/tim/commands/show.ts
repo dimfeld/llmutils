@@ -15,9 +15,10 @@ import {
   getCombinedTitle,
   getCombinedTitleFromSummary,
 } from '../display_utils.js';
-import { AssignmentsFileParseError, readAssignments } from '../assignments/assignments_io.js';
-import type { AssignmentEntry } from '../assignments/assignments_schema.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { getAssignmentEntriesByProject, type AssignmentEntry } from '../db/assignment.js';
+import { getDatabase } from '../db/database.js';
+import { getProject } from '../db/project.js';
 import {
   findNextPlan,
   getBlockedPlans,
@@ -671,22 +672,15 @@ export async function handleShowCommand(planFile: string | undefined, options: a
   const resolvedTasksDir = tasksDir;
 
   const repository = await getRepositoryIdentity({ cwd: path.dirname(resolvedPlanFile) });
+  const db = getDatabase();
 
   const fetchAssignments = async (): Promise<Record<string, AssignmentEntry>> => {
-    try {
-      const assignmentsFile = await readAssignments({
-        repositoryId: repository.repositoryId,
-        repositoryRemoteUrl: repository.remoteUrl,
-      });
-      return assignmentsFile.assignments;
-    } catch (error) {
-      if (error instanceof AssignmentsFileParseError) {
-        warn(`${chalk.yellow('⚠')} ${error.message}`);
-        return {};
-      }
-
-      throw error;
+    const project = getProject(db, repository.repositoryId);
+    if (!project) {
+      return {};
     }
+
+    return getAssignmentEntriesByProject(db, project.id);
   };
 
   let assignmentEntries = await fetchAssignments();

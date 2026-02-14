@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { slugify, timestamp } from './id_utils.js';
+import { closeDatabaseForTesting } from './db/database.js';
 import { ModuleMocker, stringifyPlanWithFrontmatter } from '../testing.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
@@ -14,6 +15,7 @@ describe('generateNumericPlanId with shared storage', () => {
   const originalEnv: Partial<Record<string, string>> = {};
 
   beforeEach(async () => {
+    closeDatabaseForTesting();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-id-utils-test-'));
     fakeConfigDir = path.join(tempDir, 'config');
     await fs.mkdir(fakeConfigDir, { recursive: true });
@@ -32,6 +34,7 @@ describe('generateNumericPlanId with shared storage', () => {
   });
 
   afterEach(async () => {
+    closeDatabaseForTesting();
     moduleMocker.clear();
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;

@@ -7,7 +7,7 @@ import { getAssignment } from './assignment.js';
 import { openDatabase } from './database.js';
 import { importFromJsonFiles, markImportCompleted, shouldRunImport } from './json_import.js';
 import { getPermissions } from './permission.js';
-import { getProject } from './project.js';
+import { getOrCreateProject, getProject, updateProject } from './project.js';
 import { getWorkspaceByPath, getWorkspaceIssues } from './workspace.js';
 
 async function createTempDir(prefix: string): Promise<string> {
@@ -416,6 +416,36 @@ describe('tim db/json_import', () => {
     expect(projectCount?.count).toBe(0);
     expect(assignmentCount?.count).toBe(0);
     expect(shouldRunImport(db)).toBe(false);
+
+    db.close(false);
+  });
+
+  test('workspace-only import does not clear existing project metadata', async () => {
+    await writeJson(path.join(tempDir, 'workspaces.json'), {
+      '/tmp/workspaces/repo-meta-keep': {
+        taskId: 'task-meta',
+        repositoryId: 'repo-meta-keep',
+        workspacePath: '/tmp/workspaces/repo-meta-keep',
+        createdAt: '2025-01-01T00:00:00.000Z',
+      },
+    });
+
+    const db = openDatabase(dbPath);
+    const existingProject = getOrCreateProject(db, 'repo-meta-keep');
+    updateProject(db, existingProject.id, {
+      lastGitRoot: '/existing/root',
+      externalConfigPath: '/existing/config/tim.yml',
+      externalTasksDir: '/existing/tasks',
+      remoteLabel: 'existing/label',
+    });
+
+    importFromJsonFiles(db, tempDir);
+
+    const project = getProject(db, 'repo-meta-keep');
+    expect(project?.last_git_root).toBe('/existing/root');
+    expect(project?.external_config_path).toBe('/existing/config/tim.yml');
+    expect(project?.external_tasks_dir).toBe('/existing/tasks');
+    expect(project?.remote_label).toBe('existing/label');
 
     db.close(false);
   });

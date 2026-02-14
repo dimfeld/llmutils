@@ -105,3 +105,15 @@ export function isValidPlanStatus(status: string): status is PlanStatus {
   const result = statusSchema.safeParse(status);
   return result.success;
 }
+
+/**
+ * Converts nullable/untrusted status text into a valid plan status.
+ * @param status - Status value from persisted assignment/workspace records
+ * @returns Valid PlanStatus when recognized; otherwise undefined
+ */
+export function normalizePlanStatus(status: string | null): PlanStatus | undefined {
+  if (!status) {
+    return undefined;
+  }
+  return isValidPlanStatus(status) ? status : undefined;
+}

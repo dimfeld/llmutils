@@ -4,6 +4,10 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { ModuleMocker } from '../../testing.js';
+import { claimAssignment } from '../db/assignment.js';
+import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { getOrCreateProject } from '../db/project.js';
+import { recordWorkspace } from '../db/workspace.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -26,8 +30,10 @@ describe('handleReadyCommand', () => {
   let tempDir: string;
   let tasksDir: string;
   let repoDir: string;
+  let configDir: string;
   let repositoryId: string;
   let assignmentsData: Record<string, any>;
+  let originalEnv: Partial<Record<string, string>>;
 
   beforeEach(async () => {
     // Clear mocks
@@ -43,7 +49,16 @@ describe('handleReadyCommand', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-ready-test-'));
     repoDir = path.join(tempDir, 'repo');
     tasksDir = path.join(repoDir, 'tasks');
+    configDir = path.join(tempDir, 'config');
     await fs.mkdir(tasksDir, { recursive: true });
+    await fs.mkdir(configDir, { recursive: true });
+    originalEnv = {
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      APPDATA: process.env.APPDATA,
+    };
+    process.env.XDG_CONFIG_HOME = configDir;
+    delete process.env.APPDATA;
+    closeDatabaseForTesting();
     repositoryId = 'ready-tests';
     assignmentsData = {};
 
@@ -101,18 +116,20 @@ describe('handleReadyCommand', () => {
         gitRoot: repoDir,
       }),
     }));
-
-    await moduleMocker.mock('../assignments/assignments_io.js', () => ({
-      readAssignments: async () => ({
-        repositoryId,
-        repositoryRemoteUrl: 'https://example.com/repo.git',
-        version: 0,
-        assignments: assignmentsData,
-      }),
-    }));
   });
 
   afterEach(async () => {
+    closeDatabaseForTesting();
+    if (originalEnv.XDG_CONFIG_HOME === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalEnv.XDG_CONFIG_HOME;
+    }
+    if (originalEnv.APPDATA === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalEnv.APPDATA;
+    }
     // Clean up filesystem
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -134,6 +151,45 @@ describe('handleReadyCommand', () => {
   async function createPlan(plan: PlanSchema) {
     const filename = path.join(tasksDir, `${plan.id}-test.yml`);
     await fs.writeFile(filename, `---\n${yaml.stringify(plan)}---\n`);
+  }
+
+  function syncAssignmentsDataToDb() {
+    const db = getDatabase();
+    const project = getOrCreateProject(db, repositoryId, {
+      remoteUrl: 'https://example.com/repo.git',
+    });
+
+    for (const [planUuid, entry] of Object.entries(assignmentsData)) {
+      const workspacePath = entry.workspacePaths?.[0] ?? null;
+      const user = entry.users?.[0] ?? null;
+      const workspaceId = workspacePath
+        ? recordWorkspace(db, {
+            projectId: project.id,
+            workspacePath,
+            taskId: `task-${workspacePath}`,
+          }).id
+        : null;
+
+      claimAssignment(db, project.id, planUuid, entry.planId ?? null, workspaceId, user);
+      db.prepare(
+        `
+        UPDATE assignment
+        SET status = ?, assigned_at = ?, updated_at = ?
+        WHERE project_id = ? AND plan_uuid = ?
+      `
+      ).run(
+        entry.status ?? 'claimed',
+        entry.assignedAt ?? new Date().toISOString(),
+        entry.updatedAt ?? new Date().toISOString(),
+        project.id,
+        planUuid
+      );
+    }
+  }
+
+  async function runReady(options: any, command: any) {
+    syncAssignmentsDataToDb();
+    await handleReadyCommand(options, command);
   }
 
   // Test 1: Shows all ready pending plans
@@ -162,7 +218,7 @@ describe('handleReadyCommand', () => {
     const options = {};
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     // Verify both plans appear in output
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
@@ -190,7 +246,7 @@ describe('handleReadyCommand', () => {
     const options = {};
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
@@ -226,7 +282,7 @@ describe('handleReadyCommand', () => {
     const options = { pendingOnly: true };
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
@@ -263,7 +319,7 @@ describe('handleReadyCommand', () => {
     const options = {};
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     expect(mockLog).toHaveBeenCalledWith('No plans are currently ready to execute.');
   });
@@ -303,7 +359,7 @@ describe('handleReadyCommand', () => {
     const options = { priority: 'high' };
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
@@ -359,7 +415,7 @@ describe('handleReadyCommand', () => {
     const options = {};
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
@@ -411,7 +467,7 @@ describe('handleReadyCommand', () => {
     const options = { sort: 'id' };
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
@@ -458,7 +514,7 @@ describe('handleReadyCommand', () => {
     const options = { sort: 'title' };
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
@@ -496,7 +552,7 @@ describe('handleReadyCommand', () => {
     const options = { sort: 'priority', reverse: true };
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
@@ -533,7 +589,7 @@ describe('handleReadyCommand', () => {
     const options = {};
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
@@ -572,7 +628,7 @@ describe('handleReadyCommand', () => {
     const options = {};
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
@@ -620,7 +676,7 @@ describe('handleReadyCommand', () => {
     const options = {};
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
@@ -651,7 +707,7 @@ describe('handleReadyCommand', () => {
     const options = { format: 'table' };
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     expect(mockTable).toHaveBeenCalled();
     const tableData = mockTable.mock.calls[0][0];
@@ -698,7 +754,7 @@ describe('handleReadyCommand', () => {
     const options = { format: 'json' };
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     // Get the logged output
     const logCalls = mockLog.mock.calls;
@@ -744,7 +800,7 @@ describe('handleReadyCommand', () => {
     const options = { verbose: true };
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
@@ -777,7 +833,7 @@ describe('handleReadyCommand', () => {
     const options = {};
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
@@ -803,7 +859,7 @@ describe('handleReadyCommand', () => {
     const options = {};
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
@@ -828,7 +884,7 @@ describe('handleReadyCommand', () => {
     const options = {};
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
@@ -863,7 +919,7 @@ describe('handleReadyCommand', () => {
     const command = createCommand();
 
     // Should not crash
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
@@ -898,7 +954,7 @@ describe('handleReadyCommand', () => {
     const options = {};
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
@@ -963,7 +1019,7 @@ describe('handleReadyCommand', () => {
     const options = {};
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logOutput = mockLog.mock.calls.map((call) => call[0]).join('\n');
 
@@ -1000,7 +1056,7 @@ describe('handleReadyCommand', () => {
     const options = { all: true };
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logOutput = mockLog.mock.calls.map((call) => call[0]).join('\n');
 
@@ -1044,7 +1100,7 @@ describe('handleReadyCommand', () => {
     const options = { unassigned: true };
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logOutput = mockLog.mock.calls.map((call) => call[0]).join('\n');
 
@@ -1097,7 +1153,7 @@ describe('handleReadyCommand', () => {
     const options = { user: 'alice' };
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logOutput = mockLog.mock.calls.map((call) => call[0]).join('\n');
 
@@ -1133,7 +1189,7 @@ describe('handleReadyCommand', () => {
     const options = { user: 'alice' };
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logOutput = mockLog.mock.calls.map((call) => call[0]).join('\n');
 
@@ -1186,7 +1242,7 @@ describe('handleReadyCommand', () => {
     const options = { user: 'ALICE' };
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logOutput = mockLog.mock.calls.map((call) => call[0]).join('\n');
 
@@ -1194,7 +1250,7 @@ describe('handleReadyCommand', () => {
     expect(logOutput).not.toContain('Case Bob Plan');
   });
 
-  test('warns when a plan is claimed in multiple workspaces', async () => {
+  test('does not emit multi-workspace warning with normalized DB assignments', async () => {
     const now = new Date().toISOString();
 
     await createPlan({
@@ -1210,8 +1266,8 @@ describe('handleReadyCommand', () => {
     assignmentsData = {
       '03030303-0303-4030-8030-030303030303': {
         planId: 1,
-        workspacePaths: [repoDir, path.join(tempDir, 'teammate-workspace')],
-        users: ['alice', 'bob'],
+        workspacePaths: [repoDir],
+        users: ['alice'],
         status: 'pending',
         assignedAt: now,
         updatedAt: now,
@@ -1221,11 +1277,9 @@ describe('handleReadyCommand', () => {
     const options = {};
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
-    expect(mockWarn).toHaveBeenCalled();
-    const warningOutput = mockWarn.mock.calls.map((call) => call[0]).join('\n');
-    expect(warningOutput).toContain('Plan 1 is claimed in multiple workspaces');
+    expect(mockWarn).not.toHaveBeenCalled();
   });
 
   test('assignment status overrides plan file status', async () => {
@@ -1255,7 +1309,7 @@ describe('handleReadyCommand', () => {
     const options = {};
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const logOutput = mockLog.mock.calls.map((call) => call[0]).join('\n');
 
@@ -1292,7 +1346,7 @@ describe('handleReadyCommand', () => {
     const options = { format: 'json' };
     const command = createCommand();
 
-    await handleReadyCommand(options, command);
+    await runReady(options, command);
 
     const jsonOutput = mockLog.mock.calls[0][0];
     const result = JSON.parse(jsonOutput);
@@ -1323,7 +1377,7 @@ describe('handleReadyCommand', () => {
     });
 
     mockLog.mockClear();
-    await handleReadyCommand({ tag: ['frontend'] }, createCommand());
+    await runReady({ tag: ['frontend'] }, createCommand());
 
     const output = mockLog.mock.calls.map((call) => call[0]).join('\n');
     expect(output).toContain('Frontend Ready');
@@ -1357,7 +1411,7 @@ describe('handleReadyCommand', () => {
     });
 
     mockLog.mockClear();
-    await handleReadyCommand({ tag: ['backend', 'frontend'] }, createCommand());
+    await runReady({ tag: ['backend', 'frontend'] }, createCommand());
 
     const output = mockLog.mock.calls.map((call) => call[0]).join('\n');
     expect(output).toContain('Frontend Ready');
@@ -1383,7 +1437,7 @@ describe('handleReadyCommand', () => {
     });
 
     mockLog.mockClear();
-    await handleReadyCommand({ tag: ['design'] }, createCommand());
+    await runReady({ tag: ['design'] }, createCommand());
 
     const output = mockLog.mock.calls.map((call) => call[0]).join('\n');
     expect(output).toContain('Design Review');
@@ -1424,7 +1478,7 @@ describe('handleReadyCommand', () => {
     });
 
     mockLog.mockClear();
-    await handleReadyCommand({ epic: 20 }, createCommand());
+    await runReady({ epic: 20 }, createCommand());
 
     const output = mockLog.mock.calls.map((call) => call[0]).join('\n');
     expect(output).toContain('Epic Plan');
@@ -1444,7 +1498,7 @@ describe('handleReadyCommand', () => {
     });
 
     mockLog.mockClear();
-    await handleReadyCommand({}, createCommand());
+    await runReady({}, createCommand());
 
     const output = mockLog.mock.calls.map((call) => call[0]).join('\n');
     expect(output).toMatch(/Tags:\s+frontend, urgent/);
@@ -1461,7 +1515,7 @@ describe('handleReadyCommand', () => {
     });
 
     mockTable.mockClear();
-    await handleReadyCommand({ format: 'table' }, createCommand());
+    await runReady({ format: 'table' }, createCommand());
 
     const tableData = mockTable.mock.calls[0][0];
     const headers = tableData[0];
@@ -1481,7 +1535,7 @@ describe('handleReadyCommand', () => {
     });
 
     mockLog.mockClear();
-    await handleReadyCommand({ format: 'json' }, createCommand());
+    await runReady({ format: 'json' }, createCommand());
 
     const jsonOutput = mockLog.mock.calls.at(-1)?.[0] ?? '';
     const parsed = JSON.parse(jsonOutput);

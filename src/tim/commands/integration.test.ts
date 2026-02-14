@@ -4,8 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import type { PlanSchema } from '../planSchema.js';
-import yaml from 'yaml';
-import { clearPlanCache } from '../plans.js';
+import { clearPlanCache, writePlanFile } from '../plans.js';
 
 describe('findNextReadyDependency integration tests', () => {
   let tempDir: string;
@@ -26,7 +25,10 @@ describe('findNextReadyDependency integration tests', () => {
   });
 
   async function createPlanFile(plan: PlanSchema & { filename: string }) {
-    const filePath = path.join(tasksDir, plan.filename);
+    const normalizedFilename = plan.filename.endsWith('.plan.md')
+      ? plan.filename
+      : `${plan.filename.replace(/\.(ya?ml|md)$/, '')}.plan.md`;
+    const filePath = path.join(tasksDir, normalizedFilename);
 
     // Create a proper plan object according to the schema
     const planData: any = {
@@ -48,9 +50,11 @@ describe('findNextReadyDependency integration tests', () => {
       planData.priority = plan.priority;
     }
 
-    // Write as YAML
-    const yamlContent = yaml.stringify(planData);
-    await fs.writeFile(filePath, yamlContent, 'utf-8');
+    // Write using the real plan-file serializer so integration tests match runtime parsing.
+    await writePlanFile(filePath, {
+      ...planData,
+      details: '',
+    });
   }
 
   test('multi-phase project with complex interdependencies', async () => {

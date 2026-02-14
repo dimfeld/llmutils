@@ -4,17 +4,25 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { ModuleMocker, stringifyPlanWithFrontmatter } from '../../testing.js';
-import type { WorkspaceInfo } from '../workspace/workspace_tracker.js';
 import type { PlanSchema } from '../planSchema.js';
 import { readAllPlans } from '../plans.js';
 import { clearAllGitCaches } from '../../common/git.js';
+import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { getOrCreateProject, getProjectById, listProjects } from '../db/project.js';
+import {
+  findWorkspacesByProjectId,
+  getWorkspaceIssues,
+  recordWorkspace,
+  setWorkspaceIssues,
+  type WorkspaceRow,
+} from '../db/workspace.js';
 
 let moduleMocker: ModuleMocker;
 let tempDir: string;
-let trackingFile: string;
 let clonesDir: string;
 let mainRepoDir: string;
 let originalHome: string | undefined;
+let originalEnv: { XDG_CONFIG_HOME?: string; APPDATA?: string };
 
 const logSpy = mock(() => {});
 const warnSpy = mock(() => {});
@@ -76,17 +84,70 @@ async function getCurrentBranch(dir: string): Promise<string> {
   return result.stdout.trim();
 }
 
+interface WorkspaceInfo {
+  taskId: string;
+  workspacePath: string;
+  repositoryId?: string;
+  originalPlanFilePath?: string;
+  branch?: string;
+  createdAt?: string;
+  name?: string;
+  description?: string;
+  planId?: string;
+  planTitle?: string;
+  issueUrls?: string[];
+  updatedAt?: string;
+}
+
 async function writeTrackingData(data: Record<string, WorkspaceInfo>) {
-  await fs.writeFile(trackingFile, JSON.stringify(data, null, 2));
+  const db = getDatabase();
+  for (const workspace of Object.values(data)) {
+    const project = getOrCreateProject(db, workspace.repositoryId ?? 'test-repo-id');
+    const row = recordWorkspace(db, {
+      projectId: project.id,
+      taskId: workspace.taskId,
+      workspacePath: workspace.workspacePath,
+      originalPlanFilePath: workspace.originalPlanFilePath,
+      branch: workspace.branch,
+      name: workspace.name,
+      description: workspace.description,
+      planId: workspace.planId,
+      planTitle: workspace.planTitle,
+    });
+    setWorkspaceIssues(db, row.id, workspace.issueUrls ?? []);
+  }
+}
+
+function rowToWorkspaceInfo(db: ReturnType<typeof getDatabase>, row: WorkspaceRow): WorkspaceInfo {
+  const project = getProjectById(db, row.project_id);
+  const issueUrls = getWorkspaceIssues(db, row.id);
+  return {
+    taskId: row.task_id ?? path.basename(row.workspace_path),
+    workspacePath: row.workspace_path,
+    repositoryId: project?.repository_id,
+    originalPlanFilePath: row.original_plan_file_path ?? undefined,
+    branch: row.branch ?? undefined,
+    createdAt: row.created_at,
+    name: row.name ?? undefined,
+    description: row.description ?? undefined,
+    planId: row.plan_id ?? undefined,
+    planTitle: row.plan_title ?? undefined,
+    issueUrls: issueUrls.length ? issueUrls : undefined,
+    updatedAt: row.updated_at,
+  };
 }
 
 async function readTrackingData(): Promise<Record<string, WorkspaceInfo>> {
-  try {
-    const content = await fs.readFile(trackingFile, 'utf-8');
-    return JSON.parse(content);
-  } catch {
-    return {};
+  const db = getDatabase();
+  const map: Record<string, WorkspaceInfo> = {};
+  for (const project of listProjects(db)) {
+    const rows = findWorkspacesByProjectId(db, project.id);
+    for (const row of rows) {
+      const info = rowToWorkspaceInfo(db, row);
+      map[info.workspacePath] = info;
+    }
   }
+  return map;
 }
 
 /**
@@ -127,12 +188,18 @@ describe('workspace add --reuse and --try-reuse', () => {
     clearAllGitCaches();
     moduleMocker = new ModuleMocker(import.meta);
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-reuse-test-'));
-    trackingFile = path.join(tempDir, 'workspaces.json');
     clonesDir = path.join(tempDir, 'clones');
     mainRepoDir = path.join(tempDir, 'main-repo');
     bareRemoteDir = path.join(tempDir, 'bare-remote');
     originalHome = process.env.HOME;
+    originalEnv = {
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      APPDATA: process.env.APPDATA,
+    };
     process.env.HOME = tempDir;
+    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'config');
+    delete process.env.APPDATA;
+    closeDatabaseForTesting();
 
     // Set up directories
     await fs.mkdir(clonesDir, { recursive: true });
@@ -142,11 +209,6 @@ describe('workspace add --reuse and --try-reuse', () => {
     // Set up a bare remote and a main repo
     await initBareRepository(bareRemoteDir);
     await initGitRepository(mainRepoDir, bareRemoteDir);
-
-    // Set test lock directory to use the temp directory
-    const lockDir = path.join(tempDir, 'locks');
-    await fs.mkdir(lockDir, { recursive: true });
-    WorkspaceLock.setTestLockDirectory(lockDir);
 
     // Create a tasks directory in the main repo
     await fs.mkdir(path.join(mainRepoDir, 'tasks'), { recursive: true });
@@ -159,7 +221,6 @@ describe('workspace add --reuse and --try-reuse', () => {
     await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
         paths: {
-          trackingFile,
           tasks: 'tasks',
         },
         workspaceCreation: {
@@ -215,7 +276,20 @@ describe('workspace add --reuse and --try-reuse', () => {
     }
     clearAllGitCaches();
     moduleMocker.clear();
-    WorkspaceLock.setTestLockDirectory(undefined);
+    closeDatabaseForTesting();
+
+    if (originalEnv.XDG_CONFIG_HOME === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalEnv.XDG_CONFIG_HOME;
+    }
+
+    if (originalEnv.APPDATA === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalEnv.APPDATA;
+    }
+
     await fs.rm(tempDir, { recursive: true, force: true });
     logSpy.mockClear();
     warnSpy.mockClear();
@@ -668,15 +742,17 @@ describe('workspace add --reuse and --try-reuse', () => {
     } as any);
 
     const trackingData = await readTrackingData();
-    const workspacePath = Object.keys(trackingData)[0];
+    const workspacePath = Object.values(trackingData).find(
+      (entry) => entry.taskId === 'task-60'
+    )?.workspacePath;
     expect(workspacePath).toBeDefined();
 
-    const headCommit = (await runGit(workspacePath, ['rev-parse', 'HEAD'])).stdout.trim();
+    const headCommit = (await runGit(workspacePath!, ['rev-parse', 'HEAD'])).stdout.trim();
     expect(headCommit).toBe(developCommit);
     expect(headCommit).not.toBe(mainCommit);
-    expect(await getCurrentBranch(workspacePath)).toBe('task-60');
+    expect(await getCurrentBranch(workspacePath!)).toBe('task-60');
 
-    await WorkspaceLock.releaseLock(workspacePath, { force: true });
+    await WorkspaceLock.releaseLock(workspacePath!, { force: true });
   });
 
   test('copies plan file to reused workspace', async () => {

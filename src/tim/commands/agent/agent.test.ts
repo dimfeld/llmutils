@@ -281,8 +281,8 @@ describe.skip('timAgent - Direct Execution Flow', () => {
       },
     }));
 
-    await moduleMocker.mock('../../workspace/workspace_tracker.js', () => ({
-      findWorkspacesByTaskId: mock(async () => []),
+    await moduleMocker.mock('../../workspace/workspace_info.js', () => ({
+      findWorkspaceInfosByTaskId: mock(() => []),
     }));
 
     await moduleMocker.mock('../../prompt_builder.js', () => ({
@@ -1654,8 +1654,8 @@ describe('timAgent - Batch Tasks Mode', () => {
       },
     }));
 
-    await moduleMocker.mock('../../workspace/workspace_tracker.js', () => ({
-      findWorkspacesByTaskId: mock(async () => []),
+    await moduleMocker.mock('../../workspace/workspace_info.js', () => ({
+      findWorkspaceInfosByTaskId: mock(() => []),
     }));
   });
 
@@ -1873,8 +1873,8 @@ describe('timAgent - Batch Tasks Mode Integration', () => {
       },
     }));
 
-    await moduleMocker.mock('../../workspace/workspace_tracker.js', () => ({
-      findWorkspacesByTaskId: mock(async () => []),
+    await moduleMocker.mock('../../workspace/workspace_info.js', () => ({
+      findWorkspaceInfosByTaskId: mock(() => []),
     }));
 
     // Mock clipboard and terminal operations for the copy-only executor

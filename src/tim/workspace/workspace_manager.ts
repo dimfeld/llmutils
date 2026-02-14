@@ -9,7 +9,9 @@ import { getTrunkBranch } from '../../common/git.js';
 import { executePostApplyCommand } from '../actions.js';
 import type { PostApplyCommand, TimConfig } from '../configSchema.js';
 import { WorkspaceLock } from './workspace_lock.js';
-import { getDefaultTrackingFilePath, recordWorkspace } from './workspace_tracker.js';
+import { getDatabase } from '../db/database.js';
+import { getOrCreateProject } from '../db/project.js';
+import { recordWorkspace, setWorkspaceIssues } from '../db/workspace.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { buildDescriptionFromPlan } from '../display_utils.js';
 import type { PlanSchema } from '../planSchema.js';
@@ -799,11 +801,12 @@ export async function createWorkspace(
   };
 
   // Record the workspace info for tracking
-  const trackingFilePath = config.paths?.trackingFile || getDefaultTrackingFilePath();
   let repositoryId: string | undefined;
+  let repositoryRemoteUrl: string | null = null;
   try {
     const identity = await getRepositoryIdentity({ cwd: targetClonePath });
     repositoryId = identity.repositoryId;
+    repositoryRemoteUrl = identity.remoteUrl;
   } catch (error) {
     log(`Warning: Failed to resolve repository identity for workspace: ${String(error)}`);
   }
@@ -811,19 +814,23 @@ export async function createWorkspace(
   // Build description from plan data if available
   const description = options?.planData ? buildDescriptionFromPlan(options.planData) : undefined;
 
-  await recordWorkspace(
-    {
-      taskId,
-      originalPlanFilePath,
-      repositoryId,
-      workspacePath: targetClonePath,
-      name: taskId,
-      description,
-      branch: shouldCreateBranch ? branchName : undefined,
-      createdAt: new Date().toISOString(),
-    },
-    trackingFilePath
-  );
+  const db = getDatabase();
+  const project = getOrCreateProject(db, repositoryId ?? `workspace:${targetClonePath}`, {
+    remoteUrl: repositoryRemoteUrl,
+    lastGitRoot: targetClonePath,
+  });
+  const workspaceRow = recordWorkspace(db, {
+    projectId: project.id,
+    taskId,
+    originalPlanFilePath,
+    workspacePath: targetClonePath,
+    name: taskId,
+    description,
+    branch: shouldCreateBranch ? branchName : undefined,
+    planId: options?.planData?.id ? String(options.planData.id) : null,
+    planTitle: options?.planData?.title || options?.planData?.goal || null,
+  });
+  setWorkspaceIssues(db, workspaceRow.id, options?.planData?.issue ?? []);
 
   // Acquire lock for the workspace
   try {

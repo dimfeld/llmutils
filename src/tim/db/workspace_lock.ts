@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
 export interface WorkspaceLockRow {
   workspace_id: number;
@@ -23,7 +24,7 @@ export interface ReleaseLockOptions {
 
 const STALE_LOCK_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
-function isProcessAlive(pid: number): boolean {
+export function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
@@ -79,7 +80,7 @@ export function acquireWorkspaceLock(
           started_at,
           hostname,
           command
-        ) VALUES (?, ?, ?, datetime('now'), ?, ?)
+        ) VALUES (?, ?, ?, ${SQL_NOW_ISO_UTC}, ?, ?)
       `
       ).run(
         nextWorkspaceId,
@@ -134,6 +135,24 @@ export function releaseWorkspaceLock(
   return releaseInTransaction.immediate(workspaceId, options);
 }
 
+export function releaseSpecificWorkspaceLock(
+  db: Database,
+  workspaceId: number,
+  pid: number | null,
+  startedAt: string
+): boolean {
+  const result = db
+    .prepare(
+      `
+      DELETE FROM workspace_lock
+      WHERE workspace_id = ? AND pid IS ? AND started_at = ?
+    `
+    )
+    .run(workspaceId, pid, startedAt);
+
+  return result.changes > 0;
+}
+
 export function getWorkspaceLock(db: Database, workspaceId: number): WorkspaceLockRow | null {
   return (
     (db
@@ -153,21 +172,23 @@ export function cleanStaleLocks(db: Database): number {
     )
     .all() as WorkspaceLockRow[];
 
-  const staleWorkspaceIds = pidLocks.filter(isLockStale).map((lock) => lock.workspace_id);
+  const staleLocks = pidLocks.filter(isLockStale);
 
-  if (staleWorkspaceIds.length === 0) {
+  if (staleLocks.length === 0) {
     return 0;
   }
 
-  const deleteInTransaction = db.transaction((workspaceIds: number[]): number => {
-    const removeLock = db.prepare('DELETE FROM workspace_lock WHERE workspace_id = ?');
+  const deleteInTransaction = db.transaction((locks: WorkspaceLockRow[]): number => {
+    const removeLock = db.prepare(
+      'DELETE FROM workspace_lock WHERE workspace_id = ? AND pid = ? AND started_at = ?'
+    );
     let removed = 0;
-    for (const nextWorkspaceId of workspaceIds) {
-      const result = removeLock.run(nextWorkspaceId);
+    for (const lock of locks) {
+      const result = removeLock.run(lock.workspace_id, lock.pid, lock.started_at);
       removed += result.changes;
     }
     return removed;
   });
 
-  return deleteInTransaction.immediate(staleWorkspaceIds);
+  return deleteInTransaction.immediate(staleLocks);
 }

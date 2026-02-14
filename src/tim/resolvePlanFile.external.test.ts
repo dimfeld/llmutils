@@ -33,6 +33,7 @@ const assertPathWithinFakeHome = (targetPath: string, fakeHome: string | undefin
 describe('resolvePlanFile external storage integration', () => {
   let repoRoot: string;
   let fakeHomeDir: string;
+  let originalXdgConfigHome: string | undefined;
   let originalCwd: string;
   let externalRepositoryDir: string;
   let externalConfigPath: string | null;
@@ -47,6 +48,8 @@ describe('resolvePlanFile external storage integration', () => {
     await $`git init`.cwd(repoRoot).quiet();
 
     fakeHomeDir = await mkdtemp(join(tmpdir(), 'tim-fake-home-'));
+    originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = join(fakeHomeDir, '.config');
     const realOs = await import('node:os');
     await moduleMocker.mock('node:os', () => ({
       ...realOs,
@@ -59,6 +62,11 @@ describe('resolvePlanFile external storage integration', () => {
   afterAll(async () => {
     process.chdir(originalCwd);
     moduleMocker.clear();
+    if (originalXdgConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+    }
     await rm(repoRoot, { recursive: true, force: true });
     await rm(fakeHomeDir, { recursive: true, force: true });
     clearPlanCache();

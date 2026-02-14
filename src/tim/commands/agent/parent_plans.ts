@@ -1,32 +1,8 @@
 import { sendStructured, warn } from '../../../logging.js';
+import { removePlanAssignment } from '../../assignments/remove_plan_assignment.js';
 import { resolveTasksDir, type TimConfig } from '../../configSchema.js';
 import { clearPlanCache, readAllPlans, writePlanFile } from '../../plans.js';
-import { removeAssignment } from '../../assignments/assignments_io.js';
-import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
-import type { PlanSchema } from '../../planSchema.js';
 import { timestamp } from './agent_helpers.js';
-
-async function removePlanAssignment(plan: PlanSchema, baseDir?: string): Promise<void> {
-  if (!plan.uuid) {
-    return;
-  }
-
-  try {
-    const repository = await getRepositoryIdentity({ cwd: baseDir });
-    await removeAssignment({
-      repositoryId: repository.repositoryId,
-      repositoryRemoteUrl: repository.remoteUrl,
-      uuid: plan.uuid,
-    });
-  } catch (error) {
-    const planLabel = plan.id !== undefined ? `plan ${plan.id}` : `plan ${plan.uuid}`;
-    warn(
-      `Failed to remove assignment for ${planLabel}: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    );
-  }
-}
 
 /**
  * Marks a parent plan as in_progress if it's currently pending.
@@ -85,8 +61,8 @@ export async function checkAndMarkParentDone(
     return;
   }
 
-  // If parent is already done, nothing to do
-  if (parentPlan.status === 'done') {
+  // If parent is already complete, nothing to do
+  if (parentPlan.status === 'done' || parentPlan.status === 'cancelled') {
     return;
   }
 
@@ -94,7 +70,9 @@ export async function checkAndMarkParentDone(
   const children = Array.from(allPlans.values()).filter((plan) => plan.parent === parentId);
 
   // Check if all children are done
-  const allChildrenDone = children.every((child) => child.status === 'done');
+  const allChildrenDone = children.every(
+    (child) => child.status === 'done' || child.status === 'cancelled'
+  );
 
   if (allChildrenDone && children.length > 0 && parentPlan.epic) {
     // Mark parent as done

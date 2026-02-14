@@ -1264,27 +1264,7 @@ tim agent 123 --workspace task-123
 
 **Workspace tracking:**
 
-Workspaces are tracked in `~/.config/tim/workspaces.json`:
-
-```json
-{
-  "workspaces": [
-    {
-      "id": "task-123",
-      "path": "/home/user/workspaces/task-123",
-      "taskId": "123",
-      "repositoryUrl": "https://github.com/user/repo.git",
-      "createdAt": "2025-01-15T10:00:00Z",
-      "branch": "task-123",
-      "lock": {
-        "pid": 12345,
-        "hostname": "dev-machine",
-        "startedAt": "2025-01-15T14:00:00Z"
-      }
-    }
-  ]
-}
-```
+Workspaces, assignments, and permissions are tracked in tim's SQLite database at `~/.config/tim/tim.db`.
 
 **Lock management:**
 
@@ -1672,7 +1652,7 @@ Track plan ownership across multiple repository checkouts.
 
 **Configuration:**
 
-Assignments stored in: `~/.config/tim/shared/<repo-id>/assignments.json`
+Assignments stored in: `~/.config/tim/tim.db` (SQLite database)
 
 **Commands:**
 
@@ -1689,7 +1669,7 @@ tim release 123 --reset-status
 # List assignments
 tim assignments list
 
-# Show conflicts (same plan claimed multiple times)
+# Show conflict info (single-workspace model — conflicts no longer occur)
 tim assignments show-conflicts
 
 # Clean stale assignments (deleted workspaces, old claims)

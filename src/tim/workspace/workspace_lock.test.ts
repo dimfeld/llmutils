@@ -1,292 +1,252 @@
 import { test, expect, describe, beforeEach, afterEach } from 'bun:test';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
-import { WorkspaceLock, type LockInfo } from './workspace_lock';
+import * as path from 'node:path';
+import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { getOrCreateProject } from '../db/project.js';
+import { isProcessAlive } from '../db/workspace_lock.js';
+import { recordWorkspace } from '../db/workspace.js';
+import { WorkspaceLock } from './workspace_lock';
 
 describe('WorkspaceLock', () => {
-  let testDir: string;
+  let tempDir: string;
+  let originalXdgConfigHome: string | undefined;
+  const workspacePath = '/tmp/workspace-lock-db-1';
+  const staleWorkspacePath = '/tmp/workspace-lock-db-stale';
+  const cleanupWorkspacePath = '/tmp/workspace-lock-db-cleanup';
 
   beforeEach(async () => {
-    // Create a unique test directory with timestamp and random suffix to avoid conflicts
-    testDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), `workspace-lock-test-`));
-    // Set test lock directory to use the temp directory
-    const lockDir = path.join(testDir, 'locks');
-    await fs.promises.mkdir(lockDir, { recursive: true });
-    WorkspaceLock.setTestLockDirectory(lockDir);
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-lock-db-test-'));
+    originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = tempDir;
+    closeDatabaseForTesting();
+    WorkspaceLock.setTestPid(undefined);
+
+    const db = getDatabase();
+    const project = getOrCreateProject(db, 'workspace-lock-db-test-repo');
+    recordWorkspace(db, {
+      projectId: project.id,
+      workspacePath,
+      taskId: 'task-1',
+    });
+    recordWorkspace(db, {
+      projectId: project.id,
+      workspacePath: staleWorkspacePath,
+      taskId: 'task-2',
+    });
+    recordWorkspace(db, {
+      projectId: project.id,
+      workspacePath: cleanupWorkspacePath,
+      taskId: 'task-3',
+    });
   });
 
   afterEach(async () => {
-    // Reset test PID and lock directory
     WorkspaceLock.setTestPid(undefined);
-    WorkspaceLock.setTestLockDirectory(undefined);
+    closeDatabaseForTesting();
 
-    try {
-      await fs.promises.rm(testDir, { recursive: true, force: true });
-    } catch (error) {
-      // Ignore cleanup errors
+    if (originalXdgConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
     }
+
+    await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  test('acquireLock creates persistent lock by default', async () => {
-    const command = 'tim agent --workspace test-123';
-    // Use a subdirectory to ensure no conflicts
-    const lockDir = path.join(testDir, 'lock-test-1');
-    await fs.promises.mkdir(lockDir, { recursive: true });
-    const lockInfo = await WorkspaceLock.acquireLock(lockDir, command);
+  test('acquireLock/getLockInfo/isLocked/releaseLock roundtrip', async () => {
+    const lockInfo = await WorkspaceLock.acquireLock(workspacePath, 'tim agent run', {
+      type: 'pid',
+    });
 
-    expect(lockInfo.type).toBe('persistent');
+    expect(lockInfo.type).toBe('pid');
     expect(lockInfo.pid).toBe(process.pid);
-    expect(lockInfo.command).toBe(command);
-    expect(lockInfo.hostname).toBe(os.hostname());
-    expect(lockInfo.version).toBeGreaterThanOrEqual(1);
-    expect(new Date(lockInfo.startedAt).getTime()).toBeCloseTo(Date.now(), -2);
+    expect(await WorkspaceLock.isLocked(workspacePath)).toBe(true);
+    expect(await WorkspaceLock.getLockInfo(workspacePath)).not.toBeNull();
 
-    // Verify file exists
-    const lockFilePath = WorkspaceLock.getLockFilePath(lockDir);
-    const fileContent = await fs.promises.readFile(lockFilePath, 'utf-8');
-    const fileLockInfo = JSON.parse(fileContent);
-    expect(fileLockInfo).toEqual(lockInfo);
+    const released = await WorkspaceLock.releaseLock(workspacePath);
+    expect(released).toBe(true);
+    expect(await WorkspaceLock.getLockInfo(workspacePath)).toBeNull();
+    expect(await WorkspaceLock.isLocked(workspacePath)).toBe(false);
   });
 
-  test('acquireLock fails when persistent lock already exists', async () => {
-    const lockDir = path.join(testDir, 'lock-test-2');
-    await fs.promises.mkdir(lockDir, { recursive: true });
-
-    const lockInfo: LockInfo = {
-      type: 'persistent',
-      pid: process.pid,
-      command: 'first command',
-      startedAt: new Date().toISOString(),
-      hostname: 'different-host', // Different hostname prevents isTimProcess check
-      version: 1,
-    };
-
-    const lockFilePath = WorkspaceLock.getLockFilePath(lockDir);
-    await fs.promises.writeFile(lockFilePath, JSON.stringify(lockInfo, null, 2));
-
-    await expect(WorkspaceLock.acquireLock(lockDir, 'second command')).rejects.toThrow(
-      'Workspace is already locked with a persistent lock'
+  test('acquireLock fails when a persistent lock already exists', async () => {
+    await WorkspaceLock.acquireLock(workspacePath, 'initial');
+    await expect(WorkspaceLock.acquireLock(workspacePath, 'second')).rejects.toThrow(
+      'already locked'
     );
   });
 
-  test('releaseLock removes pid lock when owned by current process', async () => {
-    const lockDir = path.join(testDir, 'lock-test-3');
-    await fs.promises.mkdir(lockDir, { recursive: true });
-
-    await WorkspaceLock.acquireLock(lockDir, 'test command', { type: 'pid' });
-    const lockFilePath = WorkspaceLock.getLockFilePath(lockDir);
-
-    expect(
-      await fs.promises
-        .access(lockFilePath)
-        .then(() => true)
-        .catch(() => false)
-    ).toBe(true);
-
-    const released = await WorkspaceLock.releaseLock(lockDir);
-    expect(released).toBe(true);
-
-    expect(
-      await fs.promises
-        .access(lockFilePath)
-        .then(() => true)
-        .catch(() => false)
-    ).toBe(false);
-  });
-
-  test('releaseLock does not remove pid lock owned by different process', async () => {
-    const lockDir = path.join(testDir, 'lock-test-4');
-    await fs.promises.mkdir(lockDir, { recursive: true });
-
-    const lockInfo: LockInfo = {
-      type: 'pid',
-      pid: process.pid + 1,
-      command: 'other command',
-      startedAt: new Date().toISOString(),
-      hostname: os.hostname(),
-      version: 1,
-    };
-
-    const lockFilePath = WorkspaceLock.getLockFilePath(lockDir);
-    await fs.promises.writeFile(lockFilePath, JSON.stringify(lockInfo));
-
-    const released = await WorkspaceLock.releaseLock(lockDir);
-    expect(released).toBe(false);
-
-    // Lock should still exist
-    expect(
-      await fs.promises
-        .access(lockFilePath)
-        .then(() => true)
-        .catch(() => false)
-    ).toBe(true);
-  });
-
   test('releaseLock does not remove persistent lock without force', async () => {
-    const lockDir = path.join(testDir, 'lock-test-5');
-    await fs.promises.mkdir(lockDir, { recursive: true });
+    await WorkspaceLock.acquireLock(workspacePath, 'persistent');
 
-    await WorkspaceLock.acquireLock(lockDir, 'persistent command');
-
-    const released = await WorkspaceLock.releaseLock(lockDir);
+    const released = await WorkspaceLock.releaseLock(workspacePath);
     expect(released).toBe(false);
+    expect(await WorkspaceLock.isLocked(workspacePath)).toBe(true);
 
-    const lockExists = await fs.promises
-      .access(WorkspaceLock.getLockFilePath(lockDir))
-      .then(() => true)
-      .catch(() => false);
-    expect(lockExists).toBe(true);
+    await WorkspaceLock.releaseLock(workspacePath, { force: true });
   });
 
-  test('releaseLock force removes persistent lock', async () => {
-    const lockDir = path.join(testDir, 'lock-test-6');
-    await fs.promises.mkdir(lockDir, { recursive: true });
+  test('getLockInfo cleans stale DB lock and returns null', async () => {
+    await WorkspaceLock.acquireLock(staleWorkspacePath, 'tim agent run', { type: 'pid' });
+    const db = getDatabase();
+    const staleWorkspace = db
+      .prepare('SELECT id FROM workspace WHERE workspace_path = ?')
+      .get(staleWorkspacePath) as { id: number };
+    db.prepare(
+      "UPDATE workspace_lock SET started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-25 hours') WHERE workspace_id = ?"
+    ).run(staleWorkspace.id);
 
-    await WorkspaceLock.acquireLock(lockDir, 'persistent command');
-
-    const released = await WorkspaceLock.releaseLock(lockDir, { force: true });
-    expect(released).toBe(true);
-
-    const lockExists = await fs.promises
-      .access(WorkspaceLock.getLockFilePath(lockDir))
-      .then(() => true)
-      .catch(() => false);
-    expect(lockExists).toBe(false);
+    expect(await WorkspaceLock.getLockInfo(staleWorkspacePath)).toBeNull();
+    expect(
+      db.prepare('SELECT 1 FROM workspace_lock WHERE workspace_id = ?').get(staleWorkspace.id)
+    ).toBeNull();
   });
 
-  test('getLockInfo returns null when no lock exists', async () => {
-    const lockDir = path.join(testDir, 'lock-test-7');
-    await fs.promises.mkdir(lockDir, { recursive: true });
+  test('clearStaleLock removes stale pid lock', async () => {
+    await WorkspaceLock.acquireLock(staleWorkspacePath, 'tim agent run', { type: 'pid' });
+    const db = getDatabase();
+    const staleWorkspace = db
+      .prepare('SELECT id FROM workspace WHERE workspace_path = ?')
+      .get(staleWorkspacePath) as { id: number };
+    db.prepare(
+      "UPDATE workspace_lock SET started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-25 hours') WHERE workspace_id = ?"
+    ).run(staleWorkspace.id);
 
-    const lockInfo = await WorkspaceLock.getLockInfo(lockDir);
-    expect(lockInfo).toBeNull();
+    await WorkspaceLock.clearStaleLock(staleWorkspacePath);
+    expect(await WorkspaceLock.getLockInfo(staleWorkspacePath)).toBeNull();
   });
 
-  test('getLockInfo returns lock information when lock exists', async () => {
-    const lockDir = path.join(testDir, 'lock-test-8');
-    await fs.promises.mkdir(lockDir, { recursive: true });
+  test('getLockInfo stale cleanup preserves a lock replaced during cleanup', async () => {
+    await WorkspaceLock.acquireLock(staleWorkspacePath, 'tim agent run', { type: 'pid' });
+    const db = getDatabase();
+    const staleWorkspace = db
+      .prepare('SELECT id FROM workspace WHERE workspace_path = ?')
+      .get(staleWorkspacePath) as { id: number };
 
-    const originalLockInfo = await WorkspaceLock.acquireLock(lockDir, 'test command');
-    const retrievedLockInfo = await WorkspaceLock.getLockInfo(lockDir);
+    db.prepare(
+      "UPDATE workspace_lock SET pid = ?, started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-25 hours') WHERE workspace_id = ?"
+    ).run(999_999, staleWorkspace.id);
 
-    expect(retrievedLockInfo).toEqual(originalLockInfo);
+    const originalIsLockStale = WorkspaceLock.isLockStale;
+    let replaced = false;
+
+    WorkspaceLock.isLockStale = async (lockInfo) => {
+      if (!replaced) {
+        db.prepare(
+          "UPDATE workspace_lock SET pid = ?, started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), hostname = ?, command = ? WHERE workspace_id = ?"
+        ).run(process.pid, 'replacement-host', 'replacement-command', staleWorkspace.id);
+        replaced = true;
+      }
+
+      return originalIsLockStale.call(WorkspaceLock, lockInfo);
+    };
+
+    try {
+      await WorkspaceLock.getLockInfo(staleWorkspacePath);
+    } finally {
+      WorkspaceLock.isLockStale = originalIsLockStale;
+    }
+
+    const lockRow = db
+      .prepare('SELECT pid, command FROM workspace_lock WHERE workspace_id = ?')
+      .get(staleWorkspace.id) as { pid: number; command: string } | null;
+    expect(lockRow).not.toBeNull();
+    expect(lockRow?.pid).toBe(process.pid);
+    expect(lockRow?.command).toBe('replacement-command');
   });
 
-  test('isLocked returns correct status', async () => {
-    const lockDir = path.join(testDir, 'lock-test-9');
-    await fs.promises.mkdir(lockDir, { recursive: true });
+  test('isLocked stale cleanup preserves a lock replaced during cleanup', async () => {
+    await WorkspaceLock.acquireLock(staleWorkspacePath, 'tim agent run', { type: 'pid' });
+    const db = getDatabase();
+    const staleWorkspace = db
+      .prepare('SELECT id FROM workspace WHERE workspace_path = ?')
+      .get(staleWorkspacePath) as { id: number };
 
-    expect(await WorkspaceLock.isLocked(lockDir)).toBe(false);
+    db.prepare(
+      "UPDATE workspace_lock SET pid = ?, started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-25 hours') WHERE workspace_id = ?"
+    ).run(999_999, staleWorkspace.id);
 
-    await WorkspaceLock.acquireLock(lockDir, 'test command');
-    expect(await WorkspaceLock.isLocked(lockDir)).toBe(true);
+    const originalIsLockStale = WorkspaceLock.isLockStale;
+    let replaced = false;
 
-    const released = await WorkspaceLock.releaseLock(lockDir, { force: true });
-    expect(released).toBe(true);
-    expect(await WorkspaceLock.isLocked(lockDir)).toBe(false);
+    WorkspaceLock.isLockStale = async (lockInfo) => {
+      if (!replaced) {
+        db.prepare(
+          "UPDATE workspace_lock SET pid = ?, started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), hostname = ?, command = ? WHERE workspace_id = ?"
+        ).run(process.pid, 'replacement-host', 'replacement-command', staleWorkspace.id);
+        replaced = true;
+      }
+
+      return originalIsLockStale.call(WorkspaceLock, lockInfo);
+    };
+
+    try {
+      expect(await WorkspaceLock.isLocked(staleWorkspacePath)).toBe(true);
+    } finally {
+      WorkspaceLock.isLockStale = originalIsLockStale;
+    }
+
+    const lockRow = db
+      .prepare('SELECT pid, command FROM workspace_lock WHERE workspace_id = ?')
+      .get(staleWorkspace.id) as { pid: number; command: string } | null;
+    expect(lockRow).not.toBeNull();
+    expect(lockRow?.pid).toBe(process.pid);
+    expect(lockRow?.command).toBe('replacement-command');
   });
 
-  test('isProcessAlive correctly detects running process', async () => {
-    expect(await WorkspaceLock.isProcessAlive(process.pid)).toBe(true);
-    expect(await WorkspaceLock.isProcessAlive(999999)).toBe(false);
-  });
-
-  test('isLockStale detects old pid locks', async () => {
-    const oldLockInfo: LockInfo = {
+  test('isLockStale treats invalid startedAt as stale for pid locks', async () => {
+    const stale = await WorkspaceLock.isLockStale({
       type: 'pid',
       pid: process.pid,
-      command: 'old command',
-      startedAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(), // 25 hours ago
-      hostname: os.hostname(),
-      version: 1,
-    };
+      command: 'tim agent run',
+      startedAt: 'not-a-date',
+      hostname: 'localhost',
+      version: 2,
+    });
 
-    expect(await WorkspaceLock.isLockStale(oldLockInfo)).toBe(true);
+    expect(stale).toBe(true);
   });
 
-  test('isLockStale detects dead pid process', async () => {
-    const deadProcessLock: LockInfo = {
-      type: 'pid',
-      pid: 999999,
-      command: 'dead command',
-      startedAt: new Date().toISOString(),
-      hostname: os.hostname(),
-      version: 1,
-    };
+  test('setupCleanupHandlers releases pid lock through DB cleanup path', async () => {
+    await WorkspaceLock.acquireLock(cleanupWorkspacePath, 'tim agent run', { type: 'pid' });
 
-    expect(await WorkspaceLock.isLockStale(deadProcessLock)).toBe(true);
+    const before = process.listeners('exit').length;
+    WorkspaceLock.setupCleanupHandlers(cleanupWorkspacePath, 'pid');
+    const afterListeners = process.listeners('exit');
+    expect(afterListeners.length).toBe(before + 1);
+
+    const cleanup = afterListeners[afterListeners.length - 1];
+    cleanup();
+
+    expect(await WorkspaceLock.getLockInfo(cleanupWorkspacePath)).toBeNull();
+    process.off('exit', cleanup);
   });
 
-  test('isLockStale returns false for persistent locks regardless of age', async () => {
-    const persistentLock: LockInfo = {
-      type: 'persistent',
-      pid: process.pid,
-      command: 'persistent command',
-      startedAt: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
-      hostname: os.hostname(),
-      version: 1,
-    };
+  test('releaseLock removes registered cleanup listeners for all events', async () => {
+    await WorkspaceLock.acquireLock(cleanupWorkspacePath, 'tim agent run', { type: 'pid' });
 
-    expect(await WorkspaceLock.isLockStale(persistentLock)).toBe(false);
+    const signals = ['exit', 'SIGINT', 'SIGTERM', 'SIGHUP'] as const;
+    const beforeCounts = Object.fromEntries(
+      signals.map((signal) => [signal, process.listeners(signal).length])
+    );
+
+    WorkspaceLock.setupCleanupHandlers(cleanupWorkspacePath, 'pid');
+
+    for (const signal of signals) {
+      expect(process.listeners(signal).length).toBe(beforeCounts[signal] + 1);
+    }
+
+    const released = await WorkspaceLock.releaseLock(cleanupWorkspacePath);
+    expect(released).toBe(true);
+
+    for (const signal of signals) {
+      expect(process.listeners(signal).length).toBe(beforeCounts[signal]);
+    }
   });
 
-  test('clearStaleLock removes only stale pid locks', async () => {
-    const lockDir = path.join(testDir, 'lock-test-10');
-    await fs.promises.mkdir(lockDir, { recursive: true });
-
-    // Create a stale lock
-    const staleLockInfo: LockInfo = {
-      type: 'pid',
-      pid: 999999,
-      command: 'stale command',
-      startedAt: new Date().toISOString(),
-      hostname: os.hostname(),
-      version: 1,
-    };
-
-    const lockFilePath = WorkspaceLock.getLockFilePath(lockDir);
-    await fs.promises.writeFile(lockFilePath, JSON.stringify(staleLockInfo));
-
-    await WorkspaceLock.clearStaleLock(lockDir);
-    expect(
-      await fs.promises
-        .access(lockFilePath)
-        .then(() => true)
-        .catch(() => false)
-    ).toBe(false);
-
-    // Create a fresh lock
-    await WorkspaceLock.acquireLock(lockDir, 'fresh command', { type: 'pid' });
-    await WorkspaceLock.clearStaleLock(lockDir);
-    expect(
-      await fs.promises
-        .access(lockFilePath)
-        .then(() => true)
-        .catch(() => false)
-    ).toBe(true);
-  });
-
-  test('acquireLock replaces stale lock', async () => {
-    const lockDir = path.join(testDir, 'lock-test-11');
-    await fs.promises.mkdir(lockDir, { recursive: true });
-
-    // Create a stale lock
-    const staleLockInfo: LockInfo = {
-      type: 'pid',
-      pid: 999999,
-      command: 'stale command',
-      startedAt: new Date().toISOString(),
-      hostname: os.hostname(),
-      version: 1,
-    };
-
-    const lockFilePath = WorkspaceLock.getLockFilePath(lockDir);
-    await fs.promises.writeFile(lockFilePath, JSON.stringify(staleLockInfo));
-
-    // Should succeed in acquiring lock
-    const newLockInfo = await WorkspaceLock.acquireLock(lockDir, 'new command', { type: 'pid' });
-    expect(newLockInfo.pid).toBe(process.pid);
-    expect(newLockInfo.command).toBe('new command');
+  test('isProcessAlive correctly detects running process', () => {
+    expect(isProcessAlive(process.pid)).toBe(true);
+    expect(isProcessAlive(999999)).toBe(false);
   });
 });

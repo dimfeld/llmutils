@@ -4,33 +4,37 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { ModuleMocker } from '../../testing.js';
+import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { getOrCreateProject } from '../db/project.js';
+import { recordWorkspace } from '../db/workspace.js';
 
 let moduleMocker: ModuleMocker;
 let tempDir: string;
-let trackingFile: string;
 let originalCwd: string;
 let originalHome: string | undefined;
 
 const logSpy = mock(() => {});
 const warnSpy = mock(() => {});
 
-async function writeTrackingData(data: Record<string, unknown>) {
-  await fs.writeFile(trackingFile, JSON.stringify(data, null, 2));
+function seedWorkspace(workspacePath: string, taskId: string, repositoryId: string): void {
+  const db = getDatabase();
+  const project = getOrCreateProject(db, repositoryId);
+  recordWorkspace(db, {
+    projectId: project.id,
+    workspacePath,
+    taskId,
+    branch: `llmutils-task/${taskId}`,
+  });
 }
 
 describe('workspace lock/unlock commands', () => {
   beforeEach(async () => {
     moduleMocker = new ModuleMocker(import.meta);
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-lock-cmd-test-'));
-    trackingFile = path.join(tempDir, 'workspaces.json');
     originalCwd = process.cwd();
     originalHome = process.env.HOME;
     process.env.HOME = tempDir;
-
-    // Set test lock directory to use the temp directory
-    const lockDir = path.join(tempDir, 'locks');
-    await fs.mkdir(lockDir, { recursive: true });
-    WorkspaceLock.setTestLockDirectory(lockDir);
+    closeDatabaseForTesting();
 
     await moduleMocker.mock('../../logging.js', () => ({
       log: logSpy,
@@ -39,9 +43,6 @@ describe('workspace lock/unlock commands', () => {
 
     await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
-        paths: {
-          trackingFile,
-        },
         workspaceCreation: {
           repositoryUrl: 'https://example.com/repo.git',
           cloneLocation: path.join(tempDir, 'clones'),
@@ -71,7 +72,7 @@ describe('workspace lock/unlock commands', () => {
       process.env.HOME = originalHome;
     }
     moduleMocker.clear();
-    WorkspaceLock.setTestLockDirectory(undefined);
+    closeDatabaseForTesting();
     await fs.rm(tempDir, { recursive: true, force: true });
     logSpy.mockClear();
     warnSpy.mockClear();
@@ -81,21 +82,7 @@ describe('workspace lock/unlock commands', () => {
     const workspaceDir = path.join(tempDir, 'workspace-current');
     await fs.mkdir(workspaceDir, { recursive: true });
 
-    const workspaceEntry = {
-      taskId: 'task-current',
-      workspacePath: workspaceDir,
-      branch: 'llmutils-task/task-current',
-      createdAt: new Date().toISOString(),
-      repositoryId: 'example-repo',
-    };
-
-    await writeTrackingData({
-      [workspaceDir]: workspaceEntry,
-    });
-
-    const { getWorkspaceMetadata } = await import('../workspace/workspace_tracker.js');
-    const metadataBefore = await getWorkspaceMetadata(workspaceDir, trackingFile);
-    expect(metadataBefore).not.toBeNull();
+    seedWorkspace(workspaceDir, 'task-current', 'example-repo');
 
     const { handleWorkspaceLockCommand } = await import('./workspace.js');
 
@@ -118,21 +105,7 @@ describe('workspace lock/unlock commands', () => {
     const workspaceDir = path.join(tempDir, 'workspace-unlock');
     await fs.mkdir(workspaceDir, { recursive: true });
 
-    const workspaceEntry = {
-      taskId: 'task-unlock',
-      workspacePath: workspaceDir,
-      branch: 'llmutils-task/task-unlock',
-      createdAt: new Date().toISOString(),
-      repositoryId: 'example-repo',
-    };
-
-    await writeTrackingData({
-      [workspaceDir]: workspaceEntry,
-    });
-
-    const { getWorkspaceMetadata } = await import('../workspace/workspace_tracker.js');
-    const metadataBefore = await getWorkspaceMetadata(workspaceDir, trackingFile);
-    expect(metadataBefore).not.toBeNull();
+    seedWorkspace(workspaceDir, 'task-unlock', 'example-repo');
 
     await WorkspaceLock.acquireLock(workspaceDir, 'manual lock');
 
@@ -156,38 +129,10 @@ describe('workspace lock/unlock commands', () => {
     await fs.mkdir(lockedWorkspace, { recursive: true });
     await fs.mkdir(availableWorkspace, { recursive: true });
 
-    const lockedEntry = {
-      taskId: 'task-locked',
-      workspacePath: lockedWorkspace,
-      branch: 'llmutils-task/task-locked',
-      createdAt: new Date().toISOString(),
-      repositoryId: 'example-repo',
-    };
+    seedWorkspace(lockedWorkspace, 'task-locked', 'example-repo');
+    seedWorkspace(availableWorkspace, 'task-available', 'example-repo');
 
-    const availableEntry = {
-      taskId: 'task-available',
-      workspacePath: availableWorkspace,
-      branch: 'llmutils-task/task-available',
-      createdAt: new Date().toISOString(),
-      repositoryId: 'example-repo',
-    };
-
-    await writeTrackingData({
-      [lockedWorkspace]: lockedEntry,
-      [availableWorkspace]: availableEntry,
-    });
-
-    const staleLock = {
-      type: 'persistent' as const,
-      pid: process.pid,
-      command: 'manual lock',
-      startedAt: new Date().toISOString(),
-      hostname: os.hostname(),
-      version: 2,
-    };
-    const lockFilePath = WorkspaceLock.getLockFilePath(lockedWorkspace);
-    await fs.mkdir(path.dirname(lockFilePath), { recursive: true });
-    await fs.writeFile(lockFilePath, JSON.stringify(staleLock, null, 2));
+    await WorkspaceLock.acquireLock(lockedWorkspace, 'manual lock');
 
     const { handleWorkspaceLockCommand } = await import('./workspace.js');
 
@@ -213,9 +158,6 @@ describe('workspace lock/unlock commands', () => {
 
     await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
-        paths: {
-          trackingFile,
-        },
         workspaceCreation: {
           cloneLocation: path.join(tempDir, 'clones'),
         },
@@ -231,17 +173,7 @@ describe('workspace lock/unlock commands', () => {
       getUserIdentity: () => 'tester',
     }));
 
-    const availableEntry = {
-      taskId: 'task-local',
-      workspacePath: availableWorkspace,
-      branch: 'llmutils-task/task-local',
-      createdAt: new Date().toISOString(),
-      repositoryId: 'local-repo',
-    };
-
-    await writeTrackingData({
-      [availableWorkspace]: availableEntry,
-    });
+    seedWorkspace(availableWorkspace, 'task-local', 'local-repo');
 
     const { handleWorkspaceLockCommand } = await import('./workspace.js');
 

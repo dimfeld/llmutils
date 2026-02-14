@@ -1,5 +1,13 @@
-import type { AssignmentEntry } from './assignments_schema.js';
-import { readAssignments, writeAssignments } from './assignments_io.js';
+import { getDatabase } from '../db/database.js';
+import { getProject } from '../db/project.js';
+import {
+  getAssignment,
+  getAssignmentEntry,
+  releaseAssignment,
+  type AssignmentEntry,
+} from '../db/assignment.js';
+import { getWorkspaceById, getWorkspaceByPath } from '../db/workspace.js';
+import { normalizePlanStatus } from '../plans/plan_state_utils.js';
 
 export interface ReleasePlanContext {
   uuid: string;
@@ -7,7 +15,6 @@ export interface ReleasePlanContext {
   repositoryRemoteUrl: string | null;
   workspacePath: string;
   user: string | null;
-  now?: Date;
 }
 
 export interface ReleasePlanResult {
@@ -20,26 +27,24 @@ export interface ReleasePlanResult {
   remainingEntry?: AssignmentEntry;
 }
 
-function cloneAssignmentEntry(entry: AssignmentEntry): AssignmentEntry {
-  return {
-    ...entry,
-    workspacePaths: [...(entry.workspacePaths ?? [])],
-    users: [...(entry.users ?? [])],
-    workspaceOwners: entry.workspaceOwners ? { ...entry.workspaceOwners } : undefined,
-  };
-}
-
 export async function releasePlan(
   planId: number | undefined,
   context: ReleasePlanContext
 ): Promise<ReleasePlanResult> {
-  const assignments = await readAssignments({
-    repositoryId: context.repositoryId,
-    repositoryRemoteUrl: context.repositoryRemoteUrl,
-  });
+  const db = getDatabase();
+  const project = getProject(db, context.repositoryId);
+  if (!project) {
+    return {
+      existed: false,
+      removedWorkspace: false,
+      removedUser: false,
+      entryRemoved: false,
+      persisted: false,
+      warnings: [],
+    };
+  }
 
-  const existing = assignments.assignments[context.uuid];
-
+  const existing = getAssignment(db, project.id, context.uuid);
   if (!existing) {
     return {
       existed: false,
@@ -51,135 +56,80 @@ export async function releasePlan(
     };
   }
 
-  const entry = cloneAssignmentEntry(existing);
-  const timestamp = (context.now ?? new Date()).toISOString();
-
-  let removedWorkspace = false;
-  let removedUser = false;
-  let modified = false;
-
-  const originalWorkspaceCount = entry.workspacePaths?.length ?? 0;
-  entry.workspacePaths = (entry.workspacePaths ?? []).filter(
-    (workspace) => workspace !== context.workspacePath
+  const workspace = getWorkspaceByPath(db, context.workspacePath);
+  const released = releaseAssignment(
+    db,
+    project.id,
+    context.uuid,
+    context.workspacePath,
+    context.user
   );
-  removedWorkspace = entry.workspacePaths.length !== originalWorkspaceCount;
-  if (removedWorkspace) {
-    modified = true;
-  }
 
-  let workspaceOwnersChanged = false;
-  if (removedWorkspace && entry.workspaceOwners) {
-    if (Object.prototype.hasOwnProperty.call(entry.workspaceOwners, context.workspacePath)) {
-      delete entry.workspaceOwners[context.workspacePath];
-      workspaceOwnersChanged = true;
-    }
-
-    if (Object.keys(entry.workspaceOwners).length === 0) {
-      delete entry.workspaceOwners;
-      workspaceOwnersChanged = true;
-    }
-  }
-
-  if (workspaceOwnersChanged) {
-    modified = true;
-  }
-
-  if (context.user) {
-    let userHasRemainingWorkspace = true;
-
-    if (removedWorkspace) {
-      const ownerEntries =
-        entry.workspaceOwners !== undefined
-          ? Object.entries(entry.workspaceOwners)
-          : existing.workspaceOwners !== undefined
-            ? Object.entries(existing.workspaceOwners).filter(
-                ([workspace]) => workspace !== context.workspacePath
-              )
-            : [];
-
-      if (ownerEntries.length > 0) {
-        userHasRemainingWorkspace = ownerEntries.some(([, owner]) => owner === context.user);
-      } else {
-        const remainingWorkspaces = entry.workspacePaths.length;
-        const otherUsers = (entry.users ?? []).filter((candidate) => candidate !== context.user);
-
-        if (otherUsers.length === 0) {
-          userHasRemainingWorkspace = remainingWorkspaces > 0;
-        } else {
-          userHasRemainingWorkspace = remainingWorkspaces > otherUsers.length;
-        }
-      }
-    }
-
-    if (!userHasRemainingWorkspace) {
-      const originalUserCount = entry.users?.length ?? 0;
-      entry.users = (entry.users ?? []).filter((candidate) => candidate !== context.user);
-      removedUser = entry.users.length !== originalUserCount;
-      if (removedUser) {
-        modified = true;
-      }
-    }
-  }
-
-  const entryRemoved =
-    (entry.workspacePaths?.length ?? 0) === 0 && (entry.users?.length ?? 0) === 0;
-
-  if (!modified && planId !== undefined && planId !== null && existing.planId !== planId) {
-    entry.planId = planId;
-    modified = true;
-  }
-
-  if (!modified) {
+  if (!released.removed && !released.clearedWorkspace && !released.clearedUser) {
     return {
       existed: true,
-      removedWorkspace,
-      removedUser,
+      removedWorkspace: false,
+      removedUser: false,
       entryRemoved: false,
       persisted: false,
       warnings: [],
-      remainingEntry: existing,
+      remainingEntry:
+        getAssignmentEntry(db, project.id, context.uuid) ??
+        assignmentToEntry(existing, workspace?.workspace_path ?? context.workspacePath),
     };
   }
 
+  const remaining = getAssignment(db, project.id, context.uuid);
   const warnings: string[] = [];
   let remainingEntry: AssignmentEntry | undefined;
-
-  const nextAssignments = {
-    ...assignments,
-    version: assignments.version + 1,
-    assignments: {
-      ...assignments.assignments,
-    },
-  };
-
-  if (entryRemoved) {
-    delete nextAssignments.assignments[context.uuid];
-  } else {
-    entry.updatedAt = timestamp;
-    if (planId !== undefined && planId !== null) {
-      entry.planId = planId;
+  if (remaining) {
+    const remainingWorkspace = remaining.workspace_id
+      ? getWorkspaceById(db, remaining.workspace_id)
+      : null;
+    const workspacePath = remainingWorkspace?.workspace_path ?? '';
+    remainingEntry = assignmentToEntry(remaining, workspacePath);
+    if (remainingEntry.workspacePaths.length > 0) {
+      warnings.push(
+        `Plan remains claimed in other workspaces: ${remainingEntry.workspacePaths.join(', ')}`
+      );
     }
-    remainingEntry = entry;
-    nextAssignments.assignments[context.uuid] = entry;
-
-    if (entry.workspacePaths.length > 0) {
-      warnings.push(`Plan remains claimed in other workspaces: ${entry.workspacePaths.join(', ')}`);
-    }
-
-    if (entry.users.length > 0) {
-      warnings.push(`Plan remains claimed by other users: ${entry.users.join(', ')}`);
+    if (remainingEntry.users.length > 0) {
+      warnings.push(`Plan remains claimed by other users: ${remainingEntry.users.join(', ')}`);
     }
   }
 
-  await writeAssignments(nextAssignments, { expectedVersion: assignments.version });
-
   return {
     existed: true,
-    removedWorkspace,
-    removedUser,
-    entryRemoved,
+    removedWorkspace: released.clearedWorkspace,
+    removedUser: released.clearedUser,
+    entryRemoved: released.removed,
     persisted: true,
     warnings,
     remainingEntry,
+  };
+}
+
+function assignmentToEntry(
+  assignment: {
+    plan_id: number | null;
+    claimed_by_user: string | null;
+    status: string | null;
+    assigned_at: string;
+    updated_at: string;
+  },
+  workspacePath: string
+): AssignmentEntry {
+  const users = assignment.claimed_by_user ? [assignment.claimed_by_user] : [];
+  return {
+    planId: assignment.plan_id ?? undefined,
+    workspacePaths: workspacePath ? [workspacePath] : [],
+    users,
+    workspaceOwners:
+      assignment.claimed_by_user && workspacePath
+        ? { [workspacePath]: assignment.claimed_by_user }
+        : undefined,
+    status: normalizePlanStatus(assignment.status),
+    assignedAt: assignment.assigned_at,
+    updatedAt: assignment.updated_at,
   };
 }

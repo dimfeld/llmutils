@@ -15,7 +15,7 @@ const moduleMocker = new ModuleMocker(import.meta);
 const logSpy = mock(() => {});
 const warnSpy = mock(() => {});
 const errorSpy = mock(() => {});
-const removeAssignmentSpy = mock(async () => true);
+const removeAssignmentSpy = mock(() => true);
 const getRepositoryIdentitySpy = mock(async () => ({
   repositoryId: 'test-repo',
   remoteUrl: null,
@@ -63,7 +63,15 @@ describe('tim set command', () => {
       error: errorSpy,
     }));
 
-    await moduleMocker.mock('../assignments/assignments_io.js', () => ({
+    await moduleMocker.mock('../db/database.js', () => ({
+      getDatabase: () => ({}) as any,
+    }));
+
+    await moduleMocker.mock('../db/project.js', () => ({
+      getProject: () => ({ id: 1 }),
+    }));
+
+    await moduleMocker.mock('../db/assignment.js', () => ({
       removeAssignment: removeAssignmentSpy,
     }));
 
@@ -150,7 +158,7 @@ describe('tim set command', () => {
     expect(updatedPlan.status).toBe('done');
     expect(removeAssignmentSpy).toHaveBeenCalledTimes(1);
     const [callArgs] = removeAssignmentSpy.mock.calls;
-    expect(callArgs[0].uuid).toBe(updatedPlan.uuid);
+    expect(callArgs[2]).toBe(updatedPlan.uuid);
   });
 
   test('removes assignments when status set to cancelled', async () => {
@@ -169,12 +177,12 @@ describe('tim set command', () => {
     expect(updatedPlan.status).toBe('cancelled');
     expect(removeAssignmentSpy).toHaveBeenCalledTimes(1);
     const [callArgs] = removeAssignmentSpy.mock.calls;
-    expect(callArgs[0].uuid).toBe(updatedPlan.uuid);
+    expect(callArgs[2]).toBe(updatedPlan.uuid);
   });
 
   test('logs warning when assignment removal fails', async () => {
     const planPath = await createTestPlan(113);
-    removeAssignmentSpy.mockImplementationOnce(async () => {
+    removeAssignmentSpy.mockImplementationOnce(() => {
       throw new Error('lock failure');
     });
 
@@ -193,6 +201,38 @@ describe('tim set command', () => {
         message.includes('Failed to remove assignment for plan 113: lock failure')
       )
     ).toBe(true);
+  });
+
+  test('marks epic parent done when last incomplete child is set to cancelled', async () => {
+    const parentPlanPath = await createTestPlan(114, {
+      epic: true,
+      status: 'in_progress',
+    });
+    const doneChildPath = await createTestPlan(115, {
+      parent: 114,
+      status: 'done',
+    });
+    const lastChildPath = await createTestPlan(116, {
+      parent: 114,
+      status: 'in_progress',
+    });
+
+    await handleSetCommand(
+      lastChildPath,
+      {
+        planFile: lastChildPath,
+        status: 'cancelled',
+      },
+      globalOpts
+    );
+
+    const updatedLastChild = await readPlanFile(lastChildPath);
+    const updatedParent = await readPlanFile(parentPlanPath);
+    const doneChild = await readPlanFile(doneChildPath);
+
+    expect(updatedLastChild.status).toBe('cancelled');
+    expect(doneChild.status).toBe('done');
+    expect(updatedParent.status).toBe('done');
   });
 
   test('should add dependencies', async () => {

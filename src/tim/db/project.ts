@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
 export interface Project {
   id: number;
@@ -42,6 +43,15 @@ export function getProject(db: Database, repositoryId: string): Project | null {
   return mapRowToProject(row);
 }
 
+export function getProjectById(db: Database, projectId: number): Project | null {
+  const row = db.prepare('SELECT * FROM project WHERE id = ?').get(projectId) as Record<
+    string,
+    unknown
+  > | null;
+
+  return mapRowToProject(row);
+}
+
 export function getOrCreateProject(
   db: Database,
   repositoryId: string,
@@ -59,8 +69,10 @@ export function getOrCreateProject(
           external_config_path,
           external_tasks_dir,
           remote_label,
-          highest_plan_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          highest_plan_id,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
       `
       ).run(
         repoId,
@@ -116,7 +128,7 @@ export function updateProject(
       }
 
       if (fields.length > 0) {
-        fields.push("updated_at = datetime('now')");
+        fields.push(`updated_at = ${SQL_NOW_ISO_UTC}`);
         db.prepare(`UPDATE project SET ${fields.join(', ')} WHERE id = ?`).run(...values, id);
       }
 
@@ -135,7 +147,8 @@ export function reserveNextPlanId(
   db: Database,
   repositoryId: string,
   localMaxId: number,
-  count = 1
+  count = 1,
+  remoteUrl?: string | null
 ): { startId: number; endId: number } {
   if (!Number.isInteger(count) || count <= 0) {
     throw new Error(`count must be a positive integer, received: ${count}`);
@@ -145,16 +158,21 @@ export function reserveNextPlanId(
     (
       repoId: string,
       localMax: number,
-      reservationCount: number
+      reservationCount: number,
+      remoteUrlValue?: string | null
     ): { startId: number; endId: number } => {
-      getOrCreateProject(db, repoId);
+      getOrCreateProject(
+        db,
+        repoId,
+        remoteUrlValue !== undefined ? { remoteUrl: remoteUrlValue } : {}
+      );
 
       db.prepare(
         `
         UPDATE project
         SET
           highest_plan_id = max(highest_plan_id, ?) + ?,
-          updated_at = datetime('now')
+          updated_at = ${SQL_NOW_ISO_UTC}
         WHERE repository_id = ?
       `
       ).run(localMax, reservationCount, repoId);
@@ -173,9 +191,16 @@ export function reserveNextPlanId(
     }
   );
 
-  return reserveInTransaction.immediate(repositoryId, localMaxId, count);
+  return reserveInTransaction.immediate(repositoryId, localMaxId, count, remoteUrl);
 }
 
 export function listProjects(db: Database): Project[] {
   return db.prepare('SELECT * FROM project ORDER BY repository_id').all() as Project[];
+}
+
+export function clearExternalStoragePaths(db: Database, projectId: number): Project | null {
+  return updateProject(db, projectId, {
+    externalConfigPath: null,
+    externalTasksDir: null,
+  });
 }

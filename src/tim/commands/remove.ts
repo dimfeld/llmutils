@@ -1,12 +1,11 @@
 import * as fs from 'node:fs/promises';
+import path from 'node:path';
 import chalk from 'chalk';
 import { log, warn } from '../../logging.js';
-import { removeAssignment } from '../assignments/assignments_io.js';
-import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
 import { readAllPlans, readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
-import type { PlanSchema } from '../planSchema.js';
 
 interface RemoveCommandOptions {
   force?: boolean;
@@ -140,32 +139,8 @@ export async function handleRemoveCommand(
   }
 
   for (const target of resolvedTargets) {
-    await removeAssignmentForPlan(target.plan);
-
-    // TODO: Remove from SQLite database when supported
+    await removePlanAssignment(target.plan, path.dirname(target.file));
     await fs.unlink(target.file);
     log(chalk.green('Removed'), `${target.file}`);
-  }
-}
-
-async function removeAssignmentForPlan(plan: PlanSchema): Promise<void> {
-  if (!plan.uuid) {
-    return;
-  }
-
-  try {
-    const repository = await getRepositoryIdentity();
-    await removeAssignment({
-      repositoryId: repository.repositoryId,
-      repositoryRemoteUrl: repository.remoteUrl,
-      uuid: plan.uuid,
-    });
-  } catch (error) {
-    const planLabel = plan.id !== undefined ? `plan ${plan.id}` : `plan ${plan.uuid}`;
-    warn(
-      `Failed to remove assignment for ${planLabel}: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    );
   }
 }

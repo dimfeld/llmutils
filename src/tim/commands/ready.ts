@@ -5,12 +5,13 @@ import chalk from 'chalk';
 import * as path from 'path';
 import { table, type TableUserConfig } from 'table';
 
-import { log, warn } from '../../logging.js';
+import { log } from '../../logging.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
-import { AssignmentsFileParseError, readAssignments } from '../assignments/assignments_io.js';
-import type { AssignmentEntry } from '../assignments/assignments_schema.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
+import { getAssignmentEntriesByProject, type AssignmentEntry } from '../db/assignment.js';
+import { getDatabase } from '../db/database.js';
+import { getProject } from '../db/project.js';
 import {
   formatTagsSummary,
   formatWorkspacePath,
@@ -364,34 +365,6 @@ async function displayJsonFormat(plans: ReadyPlan[], context: ReadyDisplayContex
   log(JSON.stringify(result, null, 2));
 }
 
-function emitMultiWorkspaceWarnings(plans: ReadyPlan[], context: ReadyDisplayContext): void {
-  for (const plan of plans) {
-    const entry = plan.assignmentEntry;
-    if (!entry) {
-      continue;
-    }
-
-    const uniqueWorkspaces = Array.from(new Set(entry.workspacePaths ?? []));
-    if (uniqueWorkspaces.length <= 1) {
-      continue;
-    }
-
-    const currentWorkspace = context.currentWorkspace;
-    const formatted = uniqueWorkspaces
-      .map((workspace) => {
-        const display = currentWorkspace
-          ? formatWorkspacePath(workspace, { currentWorkspace })
-          : formatWorkspacePath(workspace);
-        const isCurrent = currentWorkspace !== null && workspace === currentWorkspace;
-        return isCurrent ? chalk.green(display) : display;
-      })
-      .join(', ');
-
-    const label = plan.id ?? plan.uuid ?? 'unknown';
-    warn(`${chalk.yellow('⚠')} Plan ${label} is claimed in multiple workspaces: ${formatted}`);
-  }
-}
-
 export async function handleReadyCommand(options: ReadyCommandOptions, command: any) {
   if (options.format && !VALID_FORMATS.includes(options.format as any)) {
     throw new Error(
@@ -436,38 +409,19 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
 
   const repository = await getRepositoryIdentity();
 
-  let assignmentsLookup: Record<string, AssignmentEntry> = {};
-  try {
-    const assignmentsFile = await readAssignments({
-      repositoryId: repository.repositoryId,
-      repositoryRemoteUrl: repository.remoteUrl,
-    });
-    assignmentsLookup = assignmentsFile.assignments;
-  } catch (error) {
-    if (error instanceof AssignmentsFileParseError) {
-      warn(`${chalk.yellow('⚠')} ${error.message}`);
-    } else {
-      throw error;
-    }
-  }
+  const assignmentsLookup = loadAssignmentsLookup(repository.repositoryId);
 
   const enrichedPlans = new Map<number, ReadyPlan>();
   for (const [planId, plan] of rawPlans.entries()) {
     const assignmentEntry = plan.uuid ? assignmentsLookup[plan.uuid] : undefined;
-    const assignedWorkspaces = Array.from(
-      new Set(
-        (assignmentEntry?.workspacePaths ?? []).filter((workspace): workspace is string =>
-          Boolean(workspace && workspace.trim())
-        )
-      )
+    const assignedWorkspace = assignmentEntry?.workspacePaths.find(
+      (workspace): workspace is string => Boolean(workspace && workspace.trim())
     );
-    const assignedUsers = Array.from(
-      new Set(
-        (assignmentEntry?.users ?? []).filter((candidate): candidate is string =>
-          Boolean(candidate && candidate.trim())
-        )
-      )
+    const assignedWorkspaces = assignedWorkspace ? [assignedWorkspace] : [];
+    const assignedUser = assignmentEntry?.users.find((candidate): candidate is string =>
+      Boolean(candidate && candidate.trim())
     );
+    const assignedUsers = assignedUser ? [assignedUser] : [];
 
     const effectiveStatus = assignmentEntry?.status ?? plan.status ?? 'pending';
 
@@ -592,8 +546,6 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
     currentWorkspace: repository.gitRoot,
   };
 
-  emitMultiWorkspaceWarnings(readyPlans, context);
-
   const format = options.format || 'list';
   switch (format) {
     case 'table':
@@ -607,6 +559,15 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
       displayListFormat(readyPlans, enrichedPlans, options.verbose || false, context);
       break;
   }
+}
+
+function loadAssignmentsLookup(repositoryId: string): Record<string, AssignmentEntry> {
+  const db = getDatabase();
+  const project = getProject(db, repositoryId);
+  if (!project) {
+    return {};
+  }
+  return getAssignmentEntriesByProject(db, project.id);
 }
 
 export async function mcpListReadyPlans(

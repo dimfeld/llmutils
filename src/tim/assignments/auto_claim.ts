@@ -14,7 +14,6 @@ export interface AutoClaimPlanInput {
 
 export interface AutoClaimOptions {
   cwdForIdentity?: string;
-  now?: Date;
   quiet?: boolean;
 }
 
@@ -76,7 +75,6 @@ export async function autoClaimPlan(
     repositoryRemoteUrl: repository.remoteUrl,
     workspacePath: repository.gitRoot,
     user,
-    now: options.now,
   });
 
   logClaimOutcome(result, {

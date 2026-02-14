@@ -22,6 +22,12 @@ All tim commands work together to maintain consistency:
 - **`set` command**: When modifying parent relationships, updates all affected plans
 - **`validate` command**: Detects and fixes any inconsistencies in existing plan relationships
 
+### Automatic Parent Completion
+
+When all child plans of a parent reach a terminal state (`done` or `cancelled`), the parent plan is automatically marked as `done`. This applies consistently across both the CLI (`tim done`) and agent execution paths. A cancelled parent is preserved — completing the last child will not overwrite a parent that was explicitly cancelled.
+
+**Implementation note**: Parent completion checks must run *after* writing the child's updated status to the plan file. If the check runs before the write, it reads stale data and may not detect that all children are now complete.
+
 ### Circular Dependency Prevention
 
 The system prevents circular dependencies by checking the entire dependency chain before making any changes.

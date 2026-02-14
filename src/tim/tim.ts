@@ -793,7 +793,7 @@ assignmentsCommand
 
 assignmentsCommand
   .command('show-conflicts')
-  .description('List plans claimed by multiple workspaces')
+  .description('Explain assignment conflict behavior in the single-workspace model')
   .action(async (options, command) => {
     const { handleAssignmentsShowConflictsCommand } = await import('./commands/assignments.js');
     await handleAssignmentsShowConflictsCommand(options, command).catch(handleCommandError);

@@ -64,13 +64,14 @@ describe('handleShowCommand', () => {
       }),
     }));
 
-    await moduleMocker.mock('../assignments/assignments_io.js', () => ({
-      readAssignments: async () => ({
-        repositoryId,
-        repositoryRemoteUrl: 'https://example.com/repo.git',
-        version: 0,
-        assignments: assignmentsData,
-      }),
+    await moduleMocker.mock('../db/database.js', () => ({
+      getDatabase: () => ({}) as any,
+    }));
+    await moduleMocker.mock('../db/project.js', () => ({
+      getProject: () => ({ id: 1 }),
+    }));
+    await moduleMocker.mock('../db/assignment.js', () => ({
+      getAssignmentEntriesByProject: () => assignmentsData,
     }));
   });
 
@@ -725,13 +726,14 @@ describe('inverse relationships', () => {
       }),
     }));
 
-    await moduleMocker.mock('../assignments/assignments_io.js', () => ({
-      readAssignments: async () => ({
-        repositoryId: 'test-repo',
-        repositoryRemoteUrl: 'https://example.com/repo.git',
-        version: 0,
-        assignments: {},
-      }),
+    await moduleMocker.mock('../db/database.js', () => ({
+      getDatabase: () => ({}) as any,
+    }));
+    await moduleMocker.mock('../db/project.js', () => ({
+      getProject: () => ({ id: 1 }),
+    }));
+    await moduleMocker.mock('../db/assignment.js', () => ({
+      getAssignmentEntriesByProject: () => ({}),
     }));
   });
 

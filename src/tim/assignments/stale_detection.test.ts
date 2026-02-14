@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { AssignmentEntry } from './assignments_schema.js';
+import type { AssignmentEntry } from '../db/assignment.js';
 import {
   DEFAULT_ASSIGNMENT_STALE_TIMEOUT_DAYS,
   getConfiguredStaleTimeoutDays,

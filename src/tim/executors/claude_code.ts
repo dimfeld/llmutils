@@ -35,7 +35,9 @@ import {
 } from './failure_detection.ts';
 import { getReviewOutputJsonSchemaString } from '../formatters/review_output_schema.ts';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
-import { readSharedPermissions, addSharedPermission } from '../assignments/permissions_io.js';
+import { addPermission, getPermissions } from '../db/permission.js';
+import { getDatabase } from '../db/database.js';
+import { getOrCreateProject } from '../db/project.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { createTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../logging/tunnel_prompt_handler.js';
@@ -434,11 +436,11 @@ export class ClaudeCodeExecutor implements Executor {
       // Also save to shared permissions for cross-worktree sharing
       try {
         const identity = await getRepositoryIdentity();
-        await addSharedPermission({
-          repositoryId: identity.repositoryId,
-          permission: newRule,
-          type: 'allow',
+        const db = getDatabase();
+        const project = getOrCreateProject(db, identity.repositoryId, {
+          remoteUrl: identity.remoteUrl,
         });
+        addPermission(db, project.id, 'allow', newRule);
       } catch (sharedErr) {
         debugLog('Could not save permission to shared storage:', sharedErr);
       }
@@ -461,10 +463,12 @@ export class ClaudeCodeExecutor implements Executor {
   private async loadSharedPermissions(): Promise<string[]> {
     try {
       const identity = await getRepositoryIdentity();
-      const shared = await readSharedPermissions({
-        repositoryId: identity.repositoryId,
+      const db = getDatabase();
+      const project = getOrCreateProject(db, identity.repositoryId, {
+        remoteUrl: identity.remoteUrl,
       });
-      return shared.permissions.allow;
+      const permissions = getPermissions(db, project.id);
+      return permissions.allow;
     } catch (err) {
       debugLog('Could not load shared permissions:', err);
       return [];

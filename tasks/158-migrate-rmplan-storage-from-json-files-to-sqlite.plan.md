@@ -8,7 +8,7 @@ goal: Replace JSON file storage in ~/.config/tim (assignments, permissions,
 id: 158
 uuid: e17331a4-1827-49ea-88e6-82de91f993df
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 epic: true
 dependencies:
@@ -20,7 +20,7 @@ references:
 planGeneratedAt: 2026-02-13T23:07:50.121Z
 promptsGeneratedAt: 2026-02-13T23:07:50.121Z
 createdAt: 2026-01-02T17:08:05.033Z
-updatedAt: 2026-02-13T23:10:21.669Z
+updatedAt: 2026-02-14T02:57:19.399Z
 tasks:
   - title: "Create child plan 191: SQLite database layer with CRUD operations,
       migration, and JSON import"
@@ -34,6 +34,91 @@ tasks:
     description: Plan 192 covers migrating all existing callers from JSON file I/O
       to the SQLite database, updating tests, and removing deprecated code.
       Depends on plan 191.
+changedFiles:
+  - src/common/config_paths.test.ts
+  - src/common/config_paths.ts
+  - src/tim/db/assignment.test.ts
+  - src/tim/db/assignment.ts
+  - src/tim/db/database.test.ts
+  - src/tim/db/database.ts
+  - src/tim/db/json_import.test.ts
+  - src/tim/db/json_import.ts
+  - src/tim/db/migrations.ts
+  - src/tim/db/permission.test.ts
+  - src/tim/db/permission.ts
+  - src/tim/db/project.test.ts
+  - src/tim/db/project.ts
+  - src/tim/db/workspace.test.ts
+  - src/tim/db/workspace.ts
+  - src/tim/db/workspace_lock.test.ts
+  - src/tim/db/workspace_lock.ts
+  - CLAUDE.md
+  - README.md
+  - docs/database.md
+  - docs/multi-workspace-workflow.md
+  - docs/testing.md
+  - src/tim/assignments/auto_claim.test.ts
+  - src/tim/assignments/auto_claim.ts
+  - src/tim/assignments/claim_plan.ts
+  - src/tim/assignments/release_plan.ts
+  - src/tim/assignments/stale_detection.test.ts
+  - src/tim/assignments/stale_detection.ts
+  - src/tim/commands/add.test.ts
+  - src/tim/commands/agent/agent.test.ts
+  - src/tim/commands/agent/agent.ts
+  - src/tim/commands/agent/agent.workspace_description.test.ts
+  - src/tim/commands/agent/parent_completion.test.ts
+  - src/tim/commands/agent/parent_plans.ts
+  - src/tim/commands/assignments.test.ts
+  - src/tim/commands/assignments.ts
+  - src/tim/commands/claim.test.ts
+  - src/tim/commands/import/import.ts
+  - src/tim/commands/integration.test.ts
+  - src/tim/commands/list.test.ts
+  - src/tim/commands/list.ts
+  - src/tim/commands/ready.test.ts
+  - src/tim/commands/ready.ts
+  - src/tim/commands/release.test.ts
+  - src/tim/commands/remove.ts
+  - src/tim/commands/renumber.ts
+  - src/tim/commands/set.test.ts
+  - src/tim/commands/set.ts
+  - src/tim/commands/show.test.ts
+  - src/tim/commands/show.ts
+  - src/tim/commands/storage.test.ts
+  - src/tim/commands/storage.ts
+  - src/tim/commands/subagent.test.ts
+  - src/tim/commands/task-management.integration.test.ts
+  - src/tim/commands/workspace.claim.test.ts
+  - src/tim/commands/workspace.list.test.ts
+  - src/tim/commands/workspace.lock.test.ts
+  - src/tim/commands/workspace.reuse.test.ts
+  - src/tim/commands/workspace.ts
+  - src/tim/commands/workspace.update.test.ts
+  - src/tim/configLoader.test.ts
+  - src/tim/executors/claude_code/run_claude_subprocess.permissions_db.test.ts
+  - src/tim/executors/claude_code/run_claude_subprocess.ts
+  - src/tim/executors/claude_code.ts
+  - src/tim/external_storage_utils.ts
+  - src/tim/id_utils.test.ts
+  - src/tim/id_utils.ts
+  - src/tim/plans/mark_done.ts
+  - src/tim/plans/plan_state_utils.test.ts
+  - src/tim/plans/plan_state_utils.ts
+  - src/tim/repository_config_resolver.test.ts
+  - src/tim/repository_config_resolver.ts
+  - src/tim/resolvePlanFile.external.test.ts
+  - src/tim/storage/storage_manager.test.ts
+  - src/tim/storage/storage_manager.ts
+  - src/tim/tags.integration.test.ts
+  - src/tim/tim.ts
+  - src/tim/workspace/workspace_auto_selector.test.ts
+  - src/tim/workspace/workspace_auto_selector.ts
+  - src/tim/workspace/workspace_info.ts
+  - src/tim/workspace/workspace_lock.test.ts
+  - src/tim/workspace/workspace_lock.ts
+  - src/tim/workspace/workspace_manager.test.ts
+  - src/tim/workspace/workspace_manager.ts
 tags: []
 ---
 

@@ -729,6 +729,8 @@ describe('tim add command', () => {
     const fakeHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-add-home-'));
     const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-add-repo-'));
     const originalCwd = process.cwd();
+    const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = path.join(fakeHomeDir, '.config');
 
     const remote =
       'https://user:super-secret-token@github.example.com/Owner/Repo.git?token=abc#frag';
@@ -786,6 +788,11 @@ describe('tim add command', () => {
         false
       );
     } finally {
+      if (originalXdgConfigHome === undefined) {
+        delete process.env.XDG_CONFIG_HOME;
+      } else {
+        process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+      }
       process.chdir(originalCwd);
       await fs.rm(repoDir, { recursive: true, force: true });
       await fs.rm(fakeHomeDir, { recursive: true, force: true });

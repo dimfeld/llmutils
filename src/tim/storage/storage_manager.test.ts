@@ -4,6 +4,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { ModuleMocker } from '../../testing.js';
+import { getDatabase } from '../db/database.js';
+import { getOrCreateProject } from '../db/project.js';
 import {
   collectExternalStorageDirectories,
   formatByteSize,
@@ -11,6 +13,7 @@ import {
   removeStorageDirectory,
 } from './storage_manager.js';
 import { writeRepositoryStorageMetadata } from '../external_storage_utils.js';
+import { closeDatabaseForTesting } from '../db/database.js';
 
 const STORAGE_BASE_SUBPATH = path.join('.config', 'tim', 'repositories');
 
@@ -47,9 +50,13 @@ async function createStorageRepository(
 describe('storage manager', () => {
   const moduleMocker = new ModuleMocker(import.meta);
   let fakeHomeDir: string;
+  let originalXdgConfigHome: string | undefined;
 
   beforeEach(async () => {
+    closeDatabaseForTesting();
     fakeHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-storage-manager-'));
+    originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = path.join(fakeHomeDir, '.config');
 
     const realOs = await import('node:os');
     await moduleMocker.mock('node:os', () => ({
@@ -59,6 +66,12 @@ describe('storage manager', () => {
   });
 
   afterEach(async () => {
+    closeDatabaseForTesting();
+    if (originalXdgConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+    }
     moduleMocker.clear();
     await fs.rm(fakeHomeDir, { recursive: true, force: true });
   });
@@ -108,6 +121,41 @@ describe('storage manager', () => {
     const customEntry = entries.find((entry) => entry.repositoryName === repositoryName);
     expect(customEntry?.planCount).toBe(1);
     expect(customEntry?.tasksPath).toBe(customTasksDir);
+  });
+
+  test('collectExternalStorageDirectories excludes projects without external storage paths', async () => {
+    const db = getDatabase();
+    getOrCreateProject(db, 'workspace-only-repo', {
+      lastGitRoot: '/tmp/project-root',
+      externalConfigPath: null,
+      externalTasksDir: null,
+    });
+
+    const entries = await collectExternalStorageDirectories();
+    expect(entries.find((value) => value.repositoryName === 'workspace-only-repo')).toBeUndefined();
+  });
+
+  test('collectExternalStorageDirectories includes projects with external storage paths', async () => {
+    await createStorageRepository(fakeHomeDir, 'external-repo', {
+      plans: 1,
+    });
+
+    const entries = await collectExternalStorageDirectories();
+    const entry = entries.find((value) => value.repositoryName === 'external-repo');
+    expect(entry).toBeDefined();
+    expect(entry?.tasksPath).toContain(path.join('external-repo', 'tasks'));
+    expect(entry?.planCount).toBe(1);
+  });
+
+  test('collectExternalStorageDirectories skips projects whose repository directory is missing', async () => {
+    const db = getDatabase();
+    getOrCreateProject(db, 'missing-repo', {
+      externalConfigPath: '/tmp/missing-repo/.rmfilter/config/tim.yml',
+      externalTasksDir: '/tmp/missing-repo/tasks',
+    });
+
+    const entries = await collectExternalStorageDirectories();
+    expect(entries.find((value) => value.repositoryName === 'missing-repo')).toBeUndefined();
   });
 
   test('matchStorageDirectory recognises repository metadata fields', () => {

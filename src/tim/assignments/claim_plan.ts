@@ -1,5 +1,8 @@
-import type { AssignmentEntry } from './assignments_schema.js';
-import { readAssignments, writeAssignments } from './assignments_io.js';
+import { getDatabase } from '../db/database.js';
+import { claimAssignment, getAssignmentEntry, type AssignmentEntry } from '../db/assignment.js';
+import { getOrCreateProject } from '../db/project.js';
+import { getWorkspaceByPath, recordWorkspace } from '../db/workspace.js';
+import { normalizePlanStatus } from '../plans/plan_state_utils.js';
 
 export interface ClaimPlanContext {
   uuid: string;
@@ -7,7 +10,6 @@ export interface ClaimPlanContext {
   repositoryRemoteUrl: string | null;
   workspacePath: string;
   user: string | null;
-  now?: Date;
 }
 
 export interface ClaimPlanResult {
@@ -19,141 +21,113 @@ export interface ClaimPlanResult {
   persisted: boolean;
 }
 
-function cloneAssignmentEntry(entry: AssignmentEntry): AssignmentEntry {
-  return {
-    ...entry,
-    workspacePaths: [...(entry.workspacePaths ?? [])],
-    users: [...(entry.users ?? [])],
-    workspaceOwners: entry.workspaceOwners ? { ...entry.workspaceOwners } : undefined,
-  };
-}
-
 export async function claimPlan(
   planId: number | undefined,
   context: ClaimPlanContext
 ): Promise<ClaimPlanResult> {
-  const assignments = await readAssignments({
-    repositoryId: context.repositoryId,
-    repositoryRemoteUrl: context.repositoryRemoteUrl,
+  const db = getDatabase();
+  const project = getOrCreateProject(db, context.repositoryId, {
+    remoteUrl: context.repositoryRemoteUrl,
   });
+  const existing = getAssignmentEntry(db, project.id, context.uuid);
+  const previousWorkspace = existing?.workspacePaths?.[0];
+  const previousUser = existing?.users?.[0];
 
-  const existing = assignments.assignments[context.uuid];
-  const now = context.now ?? new Date();
-  const timestamp = now.toISOString();
-
-  const warnings: string[] = [];
-  const otherWorkspaces =
-    existing?.workspacePaths?.filter((path) => path !== context.workspacePath) ?? [];
-  const otherUsers =
-    existing?.users?.filter((candidate) => candidate !== context.user && candidate !== undefined) ??
-    [];
-
-  if (otherWorkspaces.length > 0) {
-    warnings.push(
-      `Plan is already claimed in other workspaces: ${otherWorkspaces
-        .map((workspace) => workspace)
-        .join(', ')}`
-    );
-  }
-
-  if (otherUsers.length > 0) {
-    warnings.push(`Plan is already claimed by other users: ${otherUsers.join(', ')}`);
-  }
-
-  let entry: AssignmentEntry;
-  let created = false;
-  let modified = false;
-  let addedWorkspace = false;
-  let addedUser = false;
-
-  if (existing) {
-    entry = cloneAssignmentEntry(existing);
-  } else {
-    created = true;
-    modified = true;
-    entry = {
-      planId,
-      workspacePaths: [],
-      users: [],
-      assignedAt: timestamp,
-      updatedAt: timestamp,
-    };
-  }
-
-  const workspaceOwners = { ...(entry.workspaceOwners ?? {}) };
-  let workspaceOwnersModified = false;
-
-  if (planId !== undefined && planId !== null && entry.planId !== planId) {
-    entry.planId = planId;
-    modified = true;
-  }
-
-  if (!entry.workspacePaths.includes(context.workspacePath)) {
-    entry.workspacePaths.push(context.workspacePath);
-    addedWorkspace = true;
-    modified = true;
-  }
-
-  if (context.user) {
-    if (!entry.users.includes(context.user)) {
-      entry.users.push(context.user);
-      addedUser = true;
-      modified = true;
-    }
-  }
-
-  const previousOwner = workspaceOwners[context.workspacePath];
-  if (context.user) {
-    if (previousOwner !== context.user) {
-      workspaceOwners[context.workspacePath] = context.user;
-      workspaceOwnersModified = true;
-    }
-  } else if (previousOwner !== undefined) {
-    delete workspaceOwners[context.workspacePath];
-    workspaceOwnersModified = true;
-  }
-
-  if (workspaceOwnersModified) {
-    if (Object.keys(workspaceOwners).length > 0) {
-      entry.workspaceOwners = workspaceOwners;
-    } else {
-      delete entry.workspaceOwners;
-    }
-    modified = true;
-  }
-
-  if (modified) {
-    entry.updatedAt = timestamp;
-  }
-
-  if (!modified && existing) {
+  if (
+    existing &&
+    existing.planId === planId &&
+    existing.workspacePaths.includes(context.workspacePath) &&
+    (context.user ? existing.users.includes(context.user) : true)
+  ) {
     return {
       entry: existing,
-      created,
-      addedWorkspace,
-      addedUser,
-      warnings,
+      created: false,
+      addedWorkspace: false,
+      addedUser: false,
+      warnings: [],
       persisted: false,
     };
   }
 
-  const nextAssignments = {
-    ...assignments,
-    version: assignments.version + 1,
-    assignments: {
-      ...assignments.assignments,
-      [context.uuid]: entry,
-    },
-  };
+  if (!getWorkspaceByPath(db, context.workspacePath)) {
+    recordWorkspace(db, {
+      projectId: project.id,
+      workspacePath: context.workspacePath,
+    });
+  }
 
-  await writeAssignments(nextAssignments, { expectedVersion: assignments.version });
+  const workspace = getWorkspaceByPath(db, context.workspacePath);
+  if (!workspace) {
+    throw new Error(`Failed to resolve workspace row for ${context.workspacePath}`);
+  }
+  const claimed = claimAssignment(
+    db,
+    project.id,
+    context.uuid,
+    planId ?? null,
+    workspace.id,
+    context.user
+  );
+  const entry = assignmentEntryFromClaim(
+    workspace.workspace_path,
+    context.user,
+    claimed.assignment.plan_id,
+    claimed.assignment.status,
+    claimed.assignment.assigned_at,
+    claimed.assignment.updated_at
+  );
+  const warnings: string[] = [];
+
+  if (
+    claimed.updatedWorkspace &&
+    previousWorkspace &&
+    previousWorkspace !== context.workspacePath
+  ) {
+    if (previousUser) {
+      warnings.push(
+        `Plan was previously claimed in workspace ${previousWorkspace} by user ${previousUser}; reassigning to workspace ${context.workspacePath}`
+      );
+    } else {
+      warnings.push(
+        `Plan was previously claimed in workspace ${previousWorkspace}; reassigning to workspace ${context.workspacePath}`
+      );
+    }
+  }
+
+  if (claimed.updatedUser && previousUser && previousUser !== context.user) {
+    warnings.push(
+      `Plan was previously claimed by user ${previousUser}; reassigning to ${
+        context.user ?? 'an unowned claim'
+      }`
+    );
+  }
 
   return {
     entry,
-    created,
-    addedWorkspace,
-    addedUser,
+    created: claimed.created,
+    addedWorkspace: claimed.updatedWorkspace,
+    addedUser: claimed.updatedUser,
     warnings,
     persisted: true,
+  };
+}
+
+function assignmentEntryFromClaim(
+  workspacePath: string,
+  user: string | null,
+  planId: number | null,
+  status: string | null,
+  assignedAt: string,
+  updatedAt: string
+): AssignmentEntry {
+  const users = user ? [user] : [];
+  return {
+    planId: planId ?? undefined,
+    workspacePaths: [workspacePath],
+    users,
+    workspaceOwners: user ? { [workspacePath]: user } : undefined,
+    status: normalizePlanStatus(status),
+    assignedAt,
+    updatedAt,
   };
 }

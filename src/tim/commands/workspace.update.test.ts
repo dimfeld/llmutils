@@ -3,34 +3,103 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { ModuleMocker } from '../../testing.js';
-import type { WorkspaceInfo } from '../workspace/workspace_tracker.js';
+import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { getOrCreateProject, getProjectById, listProjects } from '../db/project.js';
+import {
+  findWorkspacesByProjectId,
+  getWorkspaceIssues,
+  recordWorkspace,
+  setWorkspaceIssues,
+  type WorkspaceRow,
+} from '../db/workspace.js';
 
 let moduleMocker: ModuleMocker;
 let tempDir: string;
-let trackingFile: string;
 let tasksDir: string;
 let originalCwd: string;
+let originalEnv: { XDG_CONFIG_HOME?: string; APPDATA?: string };
 
 const logSpy = mock(() => {});
 const warnSpy = mock(() => {});
 
+interface WorkspaceInfo {
+  taskId: string;
+  workspacePath: string;
+  repositoryId?: string;
+  originalPlanFilePath?: string;
+  branch?: string;
+  createdAt?: string;
+  name?: string;
+  description?: string;
+  planId?: string;
+  planTitle?: string;
+  issueUrls?: string[];
+}
+
 async function writeTrackingData(data: Record<string, WorkspaceInfo>) {
-  await fs.writeFile(trackingFile, JSON.stringify(data, null, 2));
+  const db = getDatabase();
+  for (const workspace of Object.values(data)) {
+    const project = getOrCreateProject(db, workspace.repositoryId ?? 'example-repo');
+    const row = recordWorkspace(db, {
+      projectId: project.id,
+      taskId: workspace.taskId,
+      workspacePath: workspace.workspacePath,
+      originalPlanFilePath: workspace.originalPlanFilePath,
+      branch: workspace.branch,
+      name: workspace.name,
+      description: workspace.description,
+      planId: workspace.planId,
+      planTitle: workspace.planTitle,
+    });
+    setWorkspaceIssues(db, row.id, workspace.issueUrls ?? []);
+  }
 }
 
 async function readTrackingData(): Promise<Record<string, WorkspaceInfo>> {
-  const content = await fs.readFile(trackingFile, 'utf-8');
-  return JSON.parse(content);
+  const db = getDatabase();
+  const result: Record<string, WorkspaceInfo> = {};
+  for (const project of listProjects(db)) {
+    const rows = findWorkspacesByProjectId(db, project.id);
+    for (const row of rows) {
+      const info = rowToWorkspaceInfo(db, row);
+      result[info.workspacePath] = info;
+    }
+  }
+  return result;
+}
+
+function rowToWorkspaceInfo(db: ReturnType<typeof getDatabase>, row: WorkspaceRow): WorkspaceInfo {
+  const project = getProjectById(db, row.project_id);
+  const issueUrls = getWorkspaceIssues(db, row.id);
+  return {
+    taskId: row.task_id ?? path.basename(row.workspace_path),
+    workspacePath: row.workspace_path,
+    repositoryId: project?.repository_id,
+    originalPlanFilePath: row.original_plan_file_path ?? undefined,
+    branch: row.branch ?? undefined,
+    name: row.name ?? undefined,
+    description: row.description ?? undefined,
+    planId: row.plan_id ?? undefined,
+    planTitle: row.plan_title ?? undefined,
+    issueUrls: issueUrls.length ? issueUrls : undefined,
+    createdAt: row.created_at,
+  };
 }
 
 describe('workspace update command', () => {
   beforeEach(async () => {
     moduleMocker = new ModuleMocker(import.meta);
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-update-test-'));
-    trackingFile = path.join(tempDir, 'workspaces.json');
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
     originalCwd = process.cwd();
+    originalEnv = {
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      APPDATA: process.env.APPDATA,
+    };
+    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'config');
+    delete process.env.APPDATA;
+    closeDatabaseForTesting();
 
     await moduleMocker.mock('../../logging.js', () => ({
       log: logSpy,
@@ -40,7 +109,6 @@ describe('workspace update command', () => {
     await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
         paths: {
-          trackingFile,
           tasksDir,
         },
       }),
@@ -72,6 +140,17 @@ describe('workspace update command', () => {
   afterEach(async () => {
     process.chdir(originalCwd);
     moduleMocker.clear();
+    closeDatabaseForTesting();
+    if (originalEnv.XDG_CONFIG_HOME === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalEnv.XDG_CONFIG_HOME;
+    }
+    if (originalEnv.APPDATA === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalEnv.APPDATA;
+    }
     await fs.rm(tempDir, { recursive: true, force: true });
     logSpy.mockClear();
     warnSpy.mockClear();
@@ -141,8 +220,9 @@ describe('workspace update command', () => {
   });
 
   test('updates current workspace when no identifier provided', async () => {
-    const workspaceDir = path.join(tempDir, 'current-workspace');
-    await fs.mkdir(workspaceDir, { recursive: true });
+    const workspaceDirRaw = path.join(tempDir, 'current-workspace');
+    await fs.mkdir(workspaceDirRaw, { recursive: true });
+    const workspaceDir = await fs.realpath(workspaceDirRaw);
 
     const workspaceEntry: WorkspaceInfo = {
       taskId: 'task-current',
@@ -180,7 +260,7 @@ describe('workspace update command', () => {
     expect(data[currentDir].description).toBe('Updated current workspace');
   });
 
-  test('creates new entry for untracked workspace directory', async () => {
+  test('errors for untracked workspace directory', async () => {
     const workspaceDir = path.join(tempDir, 'untracked-workspace');
     await fs.mkdir(workspaceDir, { recursive: true });
 
@@ -189,24 +269,19 @@ describe('workspace update command', () => {
 
     const { handleWorkspaceUpdateCommand } = await import('./workspace.js');
 
-    await handleWorkspaceUpdateCommand(
-      workspaceDir,
-      { name: 'New Workspace', description: 'Newly tracked workspace' },
-      {
-        parent: {
+    await expect(
+      handleWorkspaceUpdateCommand(
+        workspaceDir,
+        { name: 'New Workspace', description: 'Newly tracked workspace' },
+        {
           parent: {
-            opts: () => ({ config: undefined }),
+            parent: {
+              opts: () => ({ config: undefined }),
+            },
           },
-        },
-      } as any
-    );
-
-    const data = await readTrackingData();
-    expect(data[workspaceDir]).toBeDefined();
-    expect(data[workspaceDir].name).toBe('New Workspace');
-    expect(data[workspaceDir].description).toBe('Newly tracked workspace');
-    expect(data[workspaceDir].workspacePath).toBe(workspaceDir);
-    expect(data[workspaceDir].repositoryId).toBe('example-repo');
+        } as any
+      )
+    ).rejects.toThrow(`Workspace not found: ${workspaceDir}`);
   });
 
   test('clears name with empty string', async () => {
@@ -437,53 +512,59 @@ Authentication implementation plan
 });
 
 describe('extractIssueNumber helper', () => {
-  // We need to test the extractIssueNumber function directly
-  // Since it's not exported, we test it indirectly through buildDescriptionFromPlan
-
-  test('extracts GitHub issue numbers correctly', async () => {
-    const moduleMocker = new ModuleMocker(import.meta);
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'extract-issue-test-'));
-    const trackingFile = path.join(tempDir, 'workspaces.json');
-    const workspaceDir = path.join(tempDir, 'workspace');
+  async function runExtractCase(plan: Record<string, unknown>) {
+    const localModuleMocker = new ModuleMocker(import.meta);
+    const localTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'extract-issue-test-'));
+    const workspaceDir = path.join(localTempDir, 'workspace');
     await fs.mkdir(workspaceDir, { recursive: true });
-    await fs.writeFile(trackingFile, '{}');
 
-    await moduleMocker.mock('../../logging.js', () => ({
+    const originalEnv = {
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      APPDATA: process.env.APPDATA,
+    };
+    process.env.XDG_CONFIG_HOME = path.join(localTempDir, 'config');
+    delete process.env.APPDATA;
+    closeDatabaseForTesting();
+
+    await writeTrackingData({
+      [workspaceDir]: {
+        taskId: 'task-extract',
+        workspacePath: workspaceDir,
+        repositoryId: 'example-repo',
+      },
+    });
+
+    await localModuleMocker.mock('../../logging.js', () => ({
       log: mock(() => {}),
       warn: mock(() => {}),
     }));
 
-    await moduleMocker.mock('../configLoader.js', () => ({
+    await localModuleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
-        paths: { trackingFile },
+        paths: {},
       }),
     }));
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
+    await localModuleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => localTempDir,
     }));
 
-    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
+    await localModuleMocker.mock('../assignments/workspace_identifier.js', () => ({
       getRepositoryIdentity: async () => ({
         repositoryId: 'example-repo',
         remoteUrl: 'https://example.com/repo.git',
-        gitRoot: tempDir,
+        gitRoot: localTempDir,
       }),
       getUserIdentity: () => 'tester',
     }));
 
-    await moduleMocker.mock('../plans.js', () => ({
+    await localModuleMocker.mock('../plans.js', () => ({
       resolvePlanFile: async () => '/fake/plan.md',
-      readPlanFile: async () => ({
-        id: 123,
-        title: 'Fix Bug',
-        issue: ['https://github.com/owner/repo/issues/123'],
-      }),
+      readPlanFile: async () => plan,
     }));
 
     const { handleWorkspaceUpdateCommand } = await import('./workspace.js');
-
-    await handleWorkspaceUpdateCommand(workspaceDir, { fromPlan: '123' }, {
+    await handleWorkspaceUpdateCommand(workspaceDir, { fromPlan: 'id' }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -491,268 +572,79 @@ describe('extractIssueNumber helper', () => {
       },
     } as any);
 
-    const data = JSON.parse(await fs.readFile(trackingFile, 'utf-8'));
-    expect(data[workspaceDir].description).toBe('#123 Fix Bug');
+    const data = await readTrackingData();
+    const updated = data[workspaceDir];
 
-    moduleMocker.clear();
-    await fs.rm(tempDir, { recursive: true, force: true });
+    localModuleMocker.clear();
+    closeDatabaseForTesting();
+
+    if (originalEnv.XDG_CONFIG_HOME === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalEnv.XDG_CONFIG_HOME;
+    }
+    if (originalEnv.APPDATA === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalEnv.APPDATA;
+    }
+
+    await fs.rm(localTempDir, { recursive: true, force: true });
+    return updated;
+  }
+
+  test('extracts GitHub issue numbers correctly', async () => {
+    const updated = await runExtractCase({
+      id: 123,
+      title: 'Fix Bug',
+      issue: ['https://github.com/owner/repo/issues/123'],
+    });
+    expect(updated.description).toBe('#123 Fix Bug');
   });
 
   test('extracts GitLab issue numbers correctly', async () => {
-    const moduleMocker = new ModuleMocker(import.meta);
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'extract-gitlab-test-'));
-    const trackingFile = path.join(tempDir, 'workspaces.json');
-    const workspaceDir = path.join(tempDir, 'workspace');
-    await fs.mkdir(workspaceDir, { recursive: true });
-    await fs.writeFile(trackingFile, '{}');
-
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: mock(() => {}),
-      warn: mock(() => {}),
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: { trackingFile },
-      }),
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
-    }));
-
-    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId: 'example-repo',
-        remoteUrl: 'https://example.com/repo.git',
-        gitRoot: tempDir,
-      }),
-      getUserIdentity: () => 'tester',
-    }));
-
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => '/fake/plan.md',
-      readPlanFile: async () => ({
-        id: 456,
-        title: 'Add Feature',
-        issue: ['https://gitlab.com/group/project/-/issues/456'],
-      }),
-    }));
-
-    const { handleWorkspaceUpdateCommand } = await import('./workspace.js');
-
-    await handleWorkspaceUpdateCommand(workspaceDir, { fromPlan: '456' }, {
-      parent: {
-        parent: {
-          opts: () => ({ config: undefined }),
-        },
-      },
-    } as any);
-
-    const data = JSON.parse(await fs.readFile(trackingFile, 'utf-8'));
-    expect(data[workspaceDir].description).toBe('#456 Add Feature');
-
-    moduleMocker.clear();
-    await fs.rm(tempDir, { recursive: true, force: true });
+    const updated = await runExtractCase({
+      id: 456,
+      title: 'Add Feature',
+      issue: ['https://gitlab.com/group/project/-/issues/456'],
+    });
+    expect(updated.description).toBe('#456 Add Feature');
   });
 
   test('extracts Linear issue IDs correctly', async () => {
-    const moduleMocker = new ModuleMocker(import.meta);
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'extract-linear-test-'));
-    const trackingFile = path.join(tempDir, 'workspaces.json');
-    const workspaceDir = path.join(tempDir, 'workspace');
-    await fs.mkdir(workspaceDir, { recursive: true });
-    await fs.writeFile(trackingFile, '{}');
-
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: mock(() => {}),
-      warn: mock(() => {}),
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: { trackingFile },
-      }),
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
-    }));
-
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => '/fake/plan.md',
-      readPlanFile: async () => ({
-        id: 789,
-        title: 'Implement Feature',
-        issue: ['https://linear.app/team/issue/PROJ-123/implement-feature'],
-      }),
-    }));
-
-    const { handleWorkspaceUpdateCommand } = await import('./workspace.js');
-
-    await handleWorkspaceUpdateCommand(workspaceDir, { fromPlan: '789' }, {
-      parent: {
-        parent: {
-          opts: () => ({ config: undefined }),
-        },
-      },
-    } as any);
-
-    const data = JSON.parse(await fs.readFile(trackingFile, 'utf-8'));
-    expect(data[workspaceDir].description).toBe('PROJ-123 Implement Feature');
-
-    moduleMocker.clear();
-    await fs.rm(tempDir, { recursive: true, force: true });
+    const updated = await runExtractCase({
+      id: 789,
+      title: 'Implement Feature',
+      issue: ['https://linear.app/team/issue/PROJ-123/implement-feature'],
+    });
+    expect(updated.description).toBe('PROJ-123 Implement Feature');
   });
 
   test('extracts Jira issue IDs correctly', async () => {
-    const moduleMocker = new ModuleMocker(import.meta);
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'extract-jira-test-'));
-    const trackingFile = path.join(tempDir, 'workspaces.json');
-    const workspaceDir = path.join(tempDir, 'workspace');
-    await fs.mkdir(workspaceDir, { recursive: true });
-    await fs.writeFile(trackingFile, '{}');
-
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: mock(() => {}),
-      warn: mock(() => {}),
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: { trackingFile },
-      }),
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
-    }));
-
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => '/fake/plan.md',
-      readPlanFile: async () => ({
-        id: 101,
-        title: 'Bug Fix',
-        issue: ['https://company.atlassian.net/browse/PROJ-456'],
-      }),
-    }));
-
-    const { handleWorkspaceUpdateCommand } = await import('./workspace.js');
-
-    await handleWorkspaceUpdateCommand(workspaceDir, { fromPlan: '101' }, {
-      parent: {
-        parent: {
-          opts: () => ({ config: undefined }),
-        },
-      },
-    } as any);
-
-    const data = JSON.parse(await fs.readFile(trackingFile, 'utf-8'));
-    expect(data[workspaceDir].description).toBe('PROJ-456 Bug Fix');
-
-    moduleMocker.clear();
-    await fs.rm(tempDir, { recursive: true, force: true });
+    const updated = await runExtractCase({
+      id: 101,
+      title: 'Bug Fix',
+      issue: ['https://company.atlassian.net/browse/PROJ-456'],
+    });
+    expect(updated.description).toBe('PROJ-456 Bug Fix');
   });
 
   test('falls back to title only when no issue URL', async () => {
-    const moduleMocker = new ModuleMocker(import.meta);
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'extract-no-issue-test-'));
-    const trackingFile = path.join(tempDir, 'workspaces.json');
-    const workspaceDir = path.join(tempDir, 'workspace');
-    await fs.mkdir(workspaceDir, { recursive: true });
-    await fs.writeFile(trackingFile, '{}');
-
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: mock(() => {}),
-      warn: mock(() => {}),
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: { trackingFile },
-      }),
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
-    }));
-
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => '/fake/plan.md',
-      readPlanFile: async () => ({
-        id: 999,
-        title: 'Standalone Task',
-        goal: 'Some goal',
-        // No issue field
-      }),
-    }));
-
-    const { handleWorkspaceUpdateCommand } = await import('./workspace.js');
-
-    await handleWorkspaceUpdateCommand(workspaceDir, { fromPlan: '999' }, {
-      parent: {
-        parent: {
-          opts: () => ({ config: undefined }),
-        },
-      },
-    } as any);
-
-    const data = JSON.parse(await fs.readFile(trackingFile, 'utf-8'));
-    expect(data[workspaceDir].description).toBe('Standalone Task');
-
-    moduleMocker.clear();
-    await fs.rm(tempDir, { recursive: true, force: true });
+    const updated = await runExtractCase({
+      id: 999,
+      title: 'Standalone Task',
+      goal: 'Some goal',
+    });
+    expect(updated.description).toBe('Standalone Task');
   });
 
   test('handles unrecognized issue URL format gracefully', async () => {
-    const moduleMocker = new ModuleMocker(import.meta);
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'extract-unknown-test-'));
-    const trackingFile = path.join(tempDir, 'workspaces.json');
-    const workspaceDir = path.join(tempDir, 'workspace');
-    await fs.mkdir(workspaceDir, { recursive: true });
-    await fs.writeFile(trackingFile, '{}');
-
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: mock(() => {}),
-      warn: mock(() => {}),
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: { trackingFile },
-      }),
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
-    }));
-
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => '/fake/plan.md',
-      readPlanFile: async () => ({
-        id: 888,
-        title: 'Custom Tracker Task',
-        issue: ['https://custom-tracker.com/task/abc-xyz'],
-      }),
-    }));
-
-    const { handleWorkspaceUpdateCommand } = await import('./workspace.js');
-
-    await handleWorkspaceUpdateCommand(workspaceDir, { fromPlan: '888' }, {
-      parent: {
-        parent: {
-          opts: () => ({ config: undefined }),
-        },
-      },
-    } as any);
-
-    const data = JSON.parse(await fs.readFile(trackingFile, 'utf-8'));
-    // Should fall back to just title since issue URL format not recognized
-    expect(data[workspaceDir].description).toBe('Custom Tracker Task');
-    // But issue URL should still be stored
-    expect(data[workspaceDir].issueUrls).toEqual(['https://custom-tracker.com/task/abc-xyz']);
-
-    moduleMocker.clear();
-    await fs.rm(tempDir, { recursive: true, force: true });
+    const updated = await runExtractCase({
+      id: 888,
+      title: 'Custom Tracker Task',
+      issue: ['https://custom-tracker.com/task/abc-xyz'],
+    });
+    expect(updated.description).toBe('Custom Tracker Task');
+    expect(updated.issueUrls).toEqual(['https://custom-tracker.com/task/abc-xyz']);
   });
 });

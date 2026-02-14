@@ -1681,8 +1681,7 @@ describe('createWorkspace', () => {
   });
 
   test('createWorkspace sets workspace name to taskId', async () => {
-    // Import the getWorkspaceMetadata function to read the tracking data
-    const { getWorkspaceMetadata } = await import('./workspace_tracker.js');
+    const { getWorkspaceInfoByPath } = await import('./workspace_info.js');
 
     const taskId = 'task-name-test';
     const repositoryUrl = 'https://github.com/example/repo.git';
@@ -1725,14 +1724,14 @@ describe('createWorkspace', () => {
     expect(result!.taskId).toBe(taskId);
 
     // Read the tracking data to verify the name field
-    const workspaceInfo = await getWorkspaceMetadata(targetClonePath, trackingFilePath);
+    const workspaceInfo = getWorkspaceInfoByPath(targetClonePath);
     expect(workspaceInfo).not.toBeNull();
     expect(workspaceInfo!.name).toBe(taskId);
     expect(workspaceInfo!.taskId).toBe(taskId);
   });
 
   test('createWorkspace sets name correctly for different taskId formats', async () => {
-    const { getWorkspaceMetadata } = await import('./workspace_tracker.js');
+    const { getWorkspaceInfoByPath } = await import('./workspace_info.js');
 
     const testCases = [
       { taskId: 'task-123', description: 'plan-based taskId' },
@@ -1778,14 +1777,14 @@ describe('createWorkspace', () => {
 
       // Verify
       expect(result).not.toBeNull();
-      const workspaceInfo = await getWorkspaceMetadata(targetClonePath, trackingFilePath);
+      const workspaceInfo = getWorkspaceInfoByPath(targetClonePath);
       expect(workspaceInfo).not.toBeNull();
       expect(workspaceInfo!.name).toBe(taskId);
     }
   });
 
   test('createWorkspace sets name with git clone method', async () => {
-    const { getWorkspaceMetadata } = await import('./workspace_tracker.js');
+    const { getWorkspaceInfoByPath } = await import('./workspace_info.js');
 
     const taskId = 'task-git-name-test';
     const repositoryUrl = 'https://github.com/example/repo.git';
@@ -1819,13 +1818,13 @@ describe('createWorkspace', () => {
 
     // Verify
     expect(result).not.toBeNull();
-    const workspaceInfo = await getWorkspaceMetadata(targetClonePath, trackingFilePath);
+    const workspaceInfo = getWorkspaceInfoByPath(targetClonePath);
     expect(workspaceInfo).not.toBeNull();
     expect(workspaceInfo!.name).toBe(taskId);
   });
 
   test('createWorkspace sets description from plan data', async () => {
-    const { getWorkspaceMetadata } = await import('./workspace_tracker.js');
+    const { getWorkspaceInfoByPath } = await import('./workspace_info.js');
     const { PlanSchema } = await import('../planSchema.js');
 
     const taskId = 'task-with-description';
@@ -1869,7 +1868,7 @@ describe('createWorkspace', () => {
 
     // Verify
     expect(result).not.toBeNull();
-    const workspaceInfo = await getWorkspaceMetadata(targetClonePath, trackingFilePath);
+    const workspaceInfo = getWorkspaceInfoByPath(targetClonePath);
     expect(workspaceInfo).not.toBeNull();
     expect(workspaceInfo!.description).toBe('#456 Implement New Feature');
   });

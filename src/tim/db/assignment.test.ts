@@ -37,12 +37,12 @@ describe('tim db/assignment', () => {
     const claimed = claimAssignment(db, projectId, 'uuid-1', 10, null, 'alice');
 
     expect(claimed.created).toBe(true);
-    expect(claimed.updatedWorkspace).toBe(true);
-    expect(claimed.updatedUser).toBe(true);
+    expect(claimed.updatedWorkspace).toBe(false);
+    expect(claimed.updatedUser).toBe(false);
     expect(claimed.assignment.plan_uuid).toBe('uuid-1');
     expect(claimed.assignment.plan_id).toBe(10);
     expect(claimed.assignment.claimed_by_user).toBe('alice');
-    expect(claimed.assignment.status).toBe('claimed');
+    expect(claimed.assignment.status).toBe('in_progress');
   });
 
   test('claimAssignment stores optional workspace and user fields', () => {
@@ -55,8 +55,8 @@ describe('tim db/assignment', () => {
     const claimed = claimAssignment(db, projectId, 'uuid-optional', 12, workspace.id, 'carol');
 
     expect(claimed.created).toBe(true);
-    expect(claimed.updatedWorkspace).toBe(true);
-    expect(claimed.updatedUser).toBe(true);
+    expect(claimed.updatedWorkspace).toBe(false);
+    expect(claimed.updatedUser).toBe(false);
     expect(claimed.assignment.workspace_id).toBe(workspace.id);
     expect(claimed.assignment.claimed_by_user).toBe('carol');
   });
@@ -77,6 +77,18 @@ describe('tim db/assignment', () => {
     expect(updated.assignment.plan_id).toBe(11);
     expect(updated.assignment.workspace_id).toBe(workspace.id);
     expect(updated.assignment.claimed_by_user).toBe('bob');
+  });
+
+  test('claimAssignment preserves existing assignment status on re-claim', () => {
+    claimAssignment(db, projectId, 'uuid-1', 10, null, 'alice');
+    db.prepare("UPDATE assignment SET status = 'done' WHERE project_id = ? AND plan_uuid = ?").run(
+      projectId,
+      'uuid-1'
+    );
+
+    const updated = claimAssignment(db, projectId, 'uuid-1', 11, null, 'bob');
+    expect(updated.created).toBe(false);
+    expect(updated.assignment.status).toBe('done');
   });
 
   test('releaseAssignment returns false when assignment does not exist', () => {
@@ -149,6 +161,48 @@ describe('tim db/assignment', () => {
     expect(assignment?.claimed_by_user).toBe('alice');
   });
 
+  test('releaseAssignment does not clear user when workspace filter mismatches', () => {
+    const workspace = recordWorkspace(db, {
+      projectId,
+      taskId: 'task-1',
+      workspacePath: '/tmp/workspace-1',
+    });
+    claimAssignment(db, projectId, 'uuid-1', 10, workspace.id, 'alice');
+
+    const result = releaseAssignment(db, projectId, 'uuid-1', '/tmp/other-workspace', 'alice');
+    expect(result).toEqual({
+      existed: true,
+      removed: false,
+      clearedWorkspace: false,
+      clearedUser: false,
+    });
+
+    const assignment = getAssignment(db, projectId, 'uuid-1');
+    expect(assignment?.workspace_id).toBe(workspace.id);
+    expect(assignment?.claimed_by_user).toBe('alice');
+  });
+
+  test('releaseAssignment clears user on global release even when workspace remains', () => {
+    const workspace = recordWorkspace(db, {
+      projectId,
+      taskId: 'task-1',
+      workspacePath: '/tmp/workspace-1',
+    });
+    claimAssignment(db, projectId, 'uuid-1', 10, workspace.id, 'alice');
+
+    const result = releaseAssignment(db, projectId, 'uuid-1', undefined, 'alice');
+    expect(result).toEqual({
+      existed: true,
+      removed: false,
+      clearedWorkspace: false,
+      clearedUser: true,
+    });
+
+    const assignment = getAssignment(db, projectId, 'uuid-1');
+    expect(assignment?.workspace_id).toBe(workspace.id);
+    expect(assignment?.claimed_by_user).toBeNull();
+  });
+
   test('releaseAssignment with no workspacePath and no user deletes assignment', () => {
     const workspace = recordWorkspace(db, {
       projectId,
@@ -194,7 +248,7 @@ describe('tim db/assignment', () => {
     claimAssignment(db, projectId, 'uuid-new', 2, null, 'bob');
 
     db.prepare(
-      "UPDATE assignment SET updated_at = datetime('now', '-5 days') WHERE plan_uuid = ?"
+      "UPDATE assignment SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-5 days') WHERE plan_uuid = ?"
     ).run('uuid-old');
 
     const removed = cleanStaleAssignments(db, projectId, 3);

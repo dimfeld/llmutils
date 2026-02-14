@@ -11,7 +11,6 @@
 - **Mock return shapes must match production types exactly**: If production code returns a `StreamingProcess` (or any structured type), the mock must return that same shape — not a flattened version. When production code has type-guard fallbacks that accept both old and new shapes, wrong-shaped mocks can silently pass while hiding real bugs. Fix the mocks to match the real type and remove dead fallback paths instead.
 - **Validate boundary inputs even for internal protocols**: Always test empty, missing, or malformed inputs at protocol boundaries — even between trusted internal components. For example, an empty array being silently treated as success can mask real bugs. Deny or error on invalid inputs rather than letting them fall through to a default "approved" path.
 
-
 Bun's module mocking does not work properly. If you need to mock a module, use the ModuleMocker class from src/testing.ts instead. For example:
 
 ```
@@ -39,3 +38,4 @@ Or for a single mock defined across the entire test file, use `afterAll(() => mo
 - Use `openDatabase(':memory:')` from `src/tim/db/database.ts` for isolated in-memory databases — each test gets a fresh schema via auto-migration
 - Close the database in `afterEach` with `db.close(false)` — the `false` argument avoids throwing on pending transactions
 - For tests that exercise code calling the singleton `getDatabase()`, use `closeDatabaseForTesting()` in cleanup
+- Tests using module mocking that touch DB-dependent code paths need `closeDatabaseForTesting()` and `XDG_CONFIG_HOME` isolation even when the test itself doesn't directly use the DB — transitive calls (e.g., `loadSharedPermissions` via an executor) can initialize the singleton and leak state to subsequent test files

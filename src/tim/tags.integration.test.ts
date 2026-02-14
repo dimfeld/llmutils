@@ -47,17 +47,6 @@ describe('tag workflows across CLI and MCP', () => {
       getGitRoot: async () => tempDir,
     }));
 
-    await moduleMocker.mock('./assignments/assignments_io.js', () => ({
-      readAssignments: async () => ({
-        repositoryId: 'test-repo',
-        repositoryRemoteUrl: null,
-        version: 0,
-        assignments: {},
-      }),
-      removeAssignment: async () => {},
-      AssignmentsFileParseError: class extends Error {},
-    }));
-
     await moduleMocker.mock('./assignments/workspace_identifier.js', () => ({
       getRepositoryIdentity: async () => ({
         repositoryId: 'test-repo',

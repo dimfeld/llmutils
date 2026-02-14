@@ -4,8 +4,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { ModuleMocker } from '../../testing.js';
-import { readAssignments } from '../assignments/assignments_io.js';
 import { claimPlan } from '../assignments/claim_plan.js';
+import { getAssignment } from '../db/assignment.js';
+import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { getOrCreateProject } from '../db/project.js';
+import { recordWorkspace } from '../db/workspace.js';
 import { clearPlanCache, readPlanFile, writePlanFile } from '../plans.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
@@ -30,6 +33,22 @@ describe('handleReleaseCommand', () => {
   const planUuid = '33333333-3333-4333-8333-333333333333';
   const repositoryRemoteUrl = 'https://example.com/repo.git';
   const uuidOnlyPlanUuid = '44444444-4444-4444-8444-444444444444';
+
+  function getAssignmentRow(uuid: string) {
+    const db = getDatabase();
+    const project = getOrCreateProject(db, repositoryId);
+    return getAssignment(db, project.id, uuid);
+  }
+
+  function ensureWorkspace(workspacePath: string) {
+    const db = getDatabase();
+    const project = getOrCreateProject(db, repositoryId);
+    recordWorkspace(db, {
+      projectId: project.id,
+      workspacePath,
+      taskId: `task-${workspacePath}`,
+    });
+  }
 
   beforeEach(async () => {
     clearPlanCache();
@@ -116,6 +135,7 @@ describe('handleReleaseCommand', () => {
   afterEach(async () => {
     moduleMocker.clear();
     clearPlanCache();
+    closeDatabaseForTesting();
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;
     } else {
@@ -132,13 +152,13 @@ describe('handleReleaseCommand', () => {
   });
 
   async function seedClaim(workspacePath: string, user: string | null = 'alice') {
+    ensureWorkspace(workspacePath);
     await claimPlan(1, {
       uuid: planUuid,
       repositoryId,
       repositoryRemoteUrl,
       workspacePath,
       user,
-      now: new Date('2024-01-01T00:00:00.000Z'),
     });
   }
 
@@ -148,9 +168,7 @@ describe('handleReleaseCommand', () => {
     const command = { parent: { opts: () => ({}) } };
     await handleReleaseCommand('1', {}, command);
 
-    const assignments = await readAssignments({ repositoryId });
-    expect(assignments.version).toBe(2);
-    expect(assignments.assignments[planUuid]).toBeUndefined();
+    expect(getAssignmentRow(planUuid)).toBeNull();
 
     expect(mockWarn).not.toHaveBeenCalled();
     expect(mockLog).toHaveBeenCalledWith(
@@ -162,59 +180,43 @@ describe('handleReleaseCommand', () => {
     const command = { parent: { opts: () => ({}) } };
     await handleReleaseCommand('1', {}, command);
 
-    const assignments = await readAssignments({ repositoryId });
-    expect(assignments.version).toBe(0);
+    expect(getAssignmentRow(planUuid)).toBeNull();
 
     expect(mockWarn).not.toHaveBeenCalled();
     expect(mockLog).toHaveBeenCalledWith('• Plan 1 has no assignments to release');
   });
 
-  test('partial release retains other workspace assignments and warns', async () => {
+  test('releasing from non-owning workspace keeps assignment unchanged', async () => {
     await seedClaim(currentWorkspacePath, currentUser);
     await seedClaim(otherWorkspaceDir, 'bob');
 
     const command = { parent: { opts: () => ({}) } };
     await handleReleaseCommand('1', {}, command);
 
-    const assignments = await readAssignments({ repositoryId });
-    const entry = assignments.assignments[planUuid];
-
-    expect(assignments.version).toBe(3);
+    const entry = getAssignmentRow(planUuid);
     expect(entry).toBeDefined();
-    expect(entry?.workspacePaths).toEqual([otherWorkspaceDir]);
-    expect(entry?.users).toEqual(['bob']);
+    expect(entry?.claimed_by_user).toBe('bob');
 
-    expect(mockWarn).toHaveBeenCalledWith(
-      `⚠ Plan remains claimed in other workspaces: ${otherWorkspaceDir}`
-    );
-    expect(mockWarn).toHaveBeenCalledWith(`⚠ Plan remains claimed by other users: bob`);
+    expect(mockWarn).not.toHaveBeenCalled();
     expect(mockLog).toHaveBeenCalledWith(
-      `✓ Updated assignment for plan 1 in workspace ${currentWorkspacePath} (removed workspace, removed user ${currentUser})`
+      `• Plan 1 is not claimed in workspace ${currentWorkspacePath}`
     );
   });
 
-  test('keeps user assigned when they still have another claimed workspace', async () => {
+  test('release does not clear user when workspace does not match', async () => {
     await seedClaim(currentWorkspacePath, currentUser);
     await seedClaim(otherWorkspaceDir, currentUser);
 
     const command = { parent: { opts: () => ({}) } };
     await handleReleaseCommand('1', {}, command);
 
-    const assignments = await readAssignments({ repositoryId });
-    const entry = assignments.assignments[planUuid];
-
-    expect(assignments.version).toBe(3);
+    const entry = getAssignmentRow(planUuid);
     expect(entry).toBeDefined();
-    expect(entry?.workspacePaths).toEqual([otherWorkspaceDir]);
-    expect(entry?.workspaceOwners).toEqual({ [otherWorkspaceDir]: currentUser });
-    expect(entry?.users).toEqual([currentUser]);
+    expect(entry?.claimed_by_user).toBe(currentUser);
 
-    expect(mockWarn).toHaveBeenCalledWith(
-      `⚠ Plan remains claimed in other workspaces: ${otherWorkspaceDir}`
-    );
-    expect(mockWarn).toHaveBeenCalledWith(`⚠ Plan remains claimed by other users: ${currentUser}`);
+    expect(mockWarn).not.toHaveBeenCalled();
     expect(mockLog).toHaveBeenCalledWith(
-      `✓ Updated assignment for plan 1 in workspace ${currentWorkspacePath} (removed workspace)`
+      `• Plan 1 is not claimed in workspace ${currentWorkspacePath}`
     );
   });
 
@@ -224,16 +226,31 @@ describe('handleReleaseCommand', () => {
     const command = { parent: { opts: () => ({}) } };
     await handleReleaseCommand('1', {}, command);
 
-    const assignments = await readAssignments({ repositoryId });
-    const entry = assignments.assignments[planUuid];
-
-    expect(assignments.version).toBe(1);
-    expect(entry?.workspacePaths).toEqual([otherWorkspaceDir]);
-    expect(entry?.users).toEqual(['bob']);
+    const entry = getAssignmentRow(planUuid);
+    expect(entry).toBeDefined();
+    expect(entry?.claimed_by_user).toBe('bob');
 
     expect(mockWarn).not.toHaveBeenCalled();
     expect(mockLog).toHaveBeenCalledWith(
       `• Plan 1 is not claimed in workspace ${currentWorkspacePath}`
+    );
+  });
+
+  test('does not warn about other workspaces when remaining claim has no workspace', async () => {
+    await seedClaim(currentWorkspacePath, 'bob');
+    currentUser = 'alice';
+
+    const command = { parent: { opts: () => ({}) } };
+    await handleReleaseCommand('1', {}, command);
+
+    const entry = getAssignmentRow(planUuid);
+    expect(entry).toBeDefined();
+    expect(entry?.workspace_id).toBeNull();
+    expect(entry?.claimed_by_user).toBe('bob');
+
+    expect(mockWarn).toHaveBeenCalledWith(`⚠ Plan remains claimed by other users: bob`);
+    expect(mockLog).toHaveBeenCalledWith(
+      `✓ Updated assignment for plan 1 in workspace ${currentWorkspacePath} (removed workspace)`
     );
   });
 
@@ -260,20 +277,19 @@ describe('handleReleaseCommand', () => {
       tasks: [],
     });
 
+    ensureWorkspace(currentWorkspacePath);
     await claimPlan(undefined, {
       uuid: uuidOnlyPlanUuid,
       repositoryId,
       repositoryRemoteUrl,
       workspacePath: currentWorkspacePath,
       user: currentUser,
-      now: new Date('2024-01-02T00:00:00.000Z'),
     });
 
     const command = { parent: { opts: () => ({}) } };
     await handleReleaseCommand('uuid-only.plan.md', { resetStatus: true }, command);
 
-    const assignments = await readAssignments({ repositoryId });
-    expect(assignments.assignments[uuidOnlyPlanUuid]).toBeUndefined();
+    expect(getAssignmentRow(uuidOnlyPlanUuid)).toBeNull();
 
     expect(mockLog).toHaveBeenCalledWith(
       `✓ Released plan ${uuidOnlyPlanUuid} from workspace ${currentWorkspacePath} (removed workspace, removed user ${currentUser})`

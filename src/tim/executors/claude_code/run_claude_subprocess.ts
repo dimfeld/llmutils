@@ -26,8 +26,10 @@ import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { createTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../../logging/tunnel_protocol.js';
-import { readSharedPermissions } from '../../assignments/permissions_io.js';
 import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
+import { getDatabase } from '../../db/database.js';
+import { getPermissions } from '../../db/permission.js';
+import { getOrCreateProject } from '../../db/project.js';
 import { setupPermissionsMcp } from './permissions_mcp_setup.js';
 
 const DEFAULT_CLAUDE_MODEL = 'opus';
@@ -208,11 +210,13 @@ export interface RunClaudeSubprocessResult {
 async function loadSharedPermissions(): Promise<string[]> {
   try {
     const identity = await getRepositoryIdentity();
-    const shared = await readSharedPermissions({
-      repositoryId: identity.repositoryId,
+    const db = getDatabase();
+    const project = getOrCreateProject(db, identity.repositoryId, {
+      remoteUrl: identity.remoteUrl,
     });
-    return shared.permissions.allow;
-  } catch {
+    return getPermissions(db, project.id).allow;
+  } catch (err) {
+    debugLog('Could not load shared permissions:', err);
     return [];
   }
 }

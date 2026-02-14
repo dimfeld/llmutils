@@ -1,17 +1,16 @@
 import type { Database } from 'bun:sqlite';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { z } from 'zod/v4';
 
-import { assignmentsFileSchema, type AssignmentsFile } from '../assignments/assignments_schema.js';
-import {
-  sharedPermissionsFileSchema,
-  type SharedPermissionsFile,
-} from '../assignments/permissions_schema.js';
+import type { AssignmentsFile } from './assignment.js';
 import type { RepositoryStorageMetadata } from '../external_storage_utils.js';
-import type { WorkspaceInfo } from '../workspace/workspace_tracker.js';
+import { statusSchema } from '../planSchema.js';
+import type { WorkspaceInfo } from '../workspace/workspace_info.js';
 import { importAssignment } from './assignment.js';
 import { setPermissions } from './permission.js';
 import { getOrCreateProject, updateProject } from './project.js';
+import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 import { getWorkspaceByPath, recordWorkspace, setWorkspaceIssues } from './workspace.js';
 
 interface RepositoryImportData {
@@ -19,6 +18,51 @@ interface RepositoryImportData {
   permissions?: SharedPermissionsFile;
   metadata?: RepositoryStorageMetadata;
 }
+
+const nonEmptyString = z
+  .string()
+  .min(1, { message: 'Value must not be empty' })
+  .trim()
+  .describe('Non-empty string value');
+
+const assignmentEntrySchema = z
+  .object({
+    planId: z
+      .union([z.number().int().positive(), z.string().regex(/^[1-9]\d*$/)])
+      .transform((value) => (typeof value === 'string' ? Number(value) : value))
+      .optional(),
+    workspacePaths: z.array(nonEmptyString).default([]),
+    workspaceOwners: z.record(nonEmptyString, nonEmptyString).optional(),
+    users: z.array(nonEmptyString).default([]),
+    status: statusSchema.optional(),
+    assignedAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .passthrough();
+
+const assignmentsFileSchema = z
+  .object({
+    repositoryId: nonEmptyString,
+    repositoryRemoteUrl: z.string().min(1).optional().nullable(),
+    version: z.number().int().nonnegative(),
+    assignments: z.record(z.guid(), assignmentEntrySchema),
+    highestPlanId: z.number().int().nonnegative().optional(),
+  })
+  .passthrough();
+
+const sharedPermissionsFileSchema = z
+  .object({
+    repositoryId: nonEmptyString,
+    version: z.number().int().nonnegative(),
+    permissions: z.object({
+      allow: z.array(z.string()).default([]),
+      deny: z.array(z.string()).default([]),
+    }),
+    updatedAt: z.string().datetime().optional(),
+  })
+  .passthrough();
+
+type SharedPermissionsFile = z.output<typeof sharedPermissionsFileSchema>;
 
 function readJsonFile(filePath: string): unknown | null {
   if (!fs.existsSync(filePath)) {
@@ -179,7 +223,7 @@ function updateHighestPlanId(db: Database, projectId: number, highestPlanId: num
       UPDATE project
       SET
         highest_plan_id = max(highest_plan_id, ?),
-        updated_at = datetime('now')
+        updated_at = ${SQL_NOW_ISO_UTC}
       WHERE id = ?
     `
   ).run(highestPlanId, projectId);
@@ -259,13 +303,6 @@ export function importFromJsonFiles(db: Database, configRoot: string): void {
       });
 
       projectIds.set(repositoryId, project.id);
-
-      updateProject(db, project.id, {
-        lastGitRoot: repositoryData?.metadata?.lastGitRoot ?? null,
-        externalConfigPath: repositoryData?.metadata?.externalConfigPath ?? null,
-        externalTasksDir: repositoryData?.metadata?.externalTasksDir ?? null,
-        remoteLabel: repositoryData?.metadata?.remoteLabel ?? null,
-      });
 
       const recordedWorkspace = recordWorkspace(db, {
         projectId: project.id,

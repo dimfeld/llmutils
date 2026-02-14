@@ -9,6 +9,7 @@ import {
   isPlanComplete,
   getStatusDisplayName,
   isValidPlanStatus,
+  normalizePlanStatus,
 } from './plan_state_utils.js';
 import type { PlanSchema } from '../planSchema.js';
 
@@ -281,6 +282,22 @@ describe('plan state utilities', () => {
       for (const status of invalidStatuses) {
         expect(isValidPlanStatus(status)).toBe(false);
       }
+    });
+  });
+
+  describe('normalizePlanStatus', () => {
+    test('returns undefined for null/empty status', () => {
+      expect(normalizePlanStatus(null)).toBeUndefined();
+      expect(normalizePlanStatus('')).toBeUndefined();
+    });
+
+    test('returns status for valid values', () => {
+      expect(normalizePlanStatus('pending')).toBe('pending');
+      expect(normalizePlanStatus('in_progress')).toBe('in_progress');
+    });
+
+    test('returns undefined for invalid values', () => {
+      expect(normalizePlanStatus('claimed')).toBeUndefined();
     });
   });
 });

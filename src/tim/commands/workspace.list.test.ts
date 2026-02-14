@@ -4,13 +4,21 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { ModuleMocker } from '../../testing.js';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
-import type { WorkspaceInfo } from '../workspace/workspace_tracker.js';
+import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { getOrCreateProject, getProjectById, listProjects } from '../db/project.js';
+import {
+  findWorkspacesByProjectId,
+  getWorkspaceIssues,
+  recordWorkspace,
+  setWorkspaceIssues,
+  type WorkspaceRow,
+} from '../db/workspace.js';
 
 let moduleMocker: ModuleMocker;
 let tempDir: string;
-let trackingFile: string;
 let originalCwd: string;
 let originalHome: string | undefined;
+let originalEnv: { XDG_CONFIG_HOME?: string; APPDATA?: string };
 
 const logSpy = mock(() => {});
 const warnSpy = mock(() => {});
@@ -19,24 +27,85 @@ const warnSpy = mock(() => {});
 let consoleOutput: string[] = [];
 const originalConsoleLog = console.log;
 
+interface WorkspaceInfo {
+  taskId: string;
+  workspacePath: string;
+  repositoryId?: string;
+  originalPlanFilePath?: string;
+  branch?: string;
+  createdAt?: string;
+  name?: string;
+  description?: string;
+  planId?: string;
+  planTitle?: string;
+  issueUrls?: string[];
+}
+
 async function writeTrackingData(data: Record<string, WorkspaceInfo>) {
-  await fs.writeFile(trackingFile, JSON.stringify(data, null, 2));
+  const db = getDatabase();
+  for (const workspace of Object.values(data)) {
+    const project = getOrCreateProject(db, workspace.repositoryId ?? 'github.com/test/repo');
+    const row = recordWorkspace(db, {
+      projectId: project.id,
+      taskId: workspace.taskId,
+      workspacePath: workspace.workspacePath,
+      originalPlanFilePath: workspace.originalPlanFilePath,
+      branch: workspace.branch,
+      name: workspace.name,
+      description: workspace.description,
+      planId: workspace.planId,
+      planTitle: workspace.planTitle,
+    });
+    setWorkspaceIssues(db, row.id, workspace.issueUrls ?? []);
+  }
+}
+
+function rowToWorkspaceInfo(db: ReturnType<typeof getDatabase>, row: WorkspaceRow): WorkspaceInfo {
+  const project = getProjectById(db, row.project_id);
+  const issueUrls = getWorkspaceIssues(db, row.id);
+  return {
+    taskId: row.task_id ?? path.basename(row.workspace_path),
+    workspacePath: row.workspace_path,
+    repositoryId: project?.repository_id,
+    originalPlanFilePath: row.original_plan_file_path ?? undefined,
+    branch: row.branch ?? undefined,
+    createdAt: row.created_at,
+    name: row.name ?? undefined,
+    description: row.description ?? undefined,
+    planId: row.plan_id ?? undefined,
+    planTitle: row.plan_title ?? undefined,
+    issueUrls: issueUrls.length ? issueUrls : undefined,
+  };
+}
+
+function readTrackingData(): Record<string, WorkspaceInfo> {
+  const db = getDatabase();
+  const data: Record<string, WorkspaceInfo> = {};
+  for (const project of listProjects(db)) {
+    const rows = findWorkspacesByProjectId(db, project.id);
+    for (const row of rows) {
+      const info = rowToWorkspaceInfo(db, row);
+      data[info.workspacePath] = info;
+    }
+  }
+  return data;
 }
 
 describe('workspace list command', () => {
   beforeEach(async () => {
     moduleMocker = new ModuleMocker(import.meta);
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-list-test-'));
-    trackingFile = path.join(tempDir, 'workspaces.json');
     originalCwd = process.cwd();
     originalHome = process.env.HOME;
+    originalEnv = {
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      APPDATA: process.env.APPDATA,
+    };
     process.env.HOME = tempDir;
+    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'config');
+    delete process.env.APPDATA;
+    closeDatabaseForTesting();
     consoleOutput = [];
-
-    // Set test lock directory to use the temp directory
-    const lockDir = path.join(tempDir, 'locks');
-    await fs.mkdir(lockDir, { recursive: true });
-    WorkspaceLock.setTestLockDirectory(lockDir);
 
     // Capture console.log output
     console.log = (...args: any[]) => {
@@ -50,9 +119,7 @@ describe('workspace list command', () => {
 
     await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
-        paths: {
-          trackingFile,
-        },
+        paths: {},
       }),
     }));
 
@@ -81,7 +148,17 @@ describe('workspace list command', () => {
     }
     console.log = originalConsoleLog;
     moduleMocker.clear();
-    WorkspaceLock.setTestLockDirectory(undefined);
+    closeDatabaseForTesting();
+    if (originalEnv.XDG_CONFIG_HOME === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalEnv.XDG_CONFIG_HOME;
+    }
+    if (originalEnv.APPDATA === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalEnv.APPDATA;
+    }
     await fs.rm(tempDir, { recursive: true, force: true });
     logSpy.mockClear();
     warnSpy.mockClear();
@@ -177,8 +254,8 @@ describe('workspace list command', () => {
     expect(output[0].planTitle).toBe('Feature Implementation');
     expect(output[0].issueUrls).toEqual(['https://github.com/test/repo/issues/123']);
     // Verify all WorkspaceListEntry fields are present
-    expect(output[0].createdAt).toBe('2024-01-01T00:00:00.000Z');
-    expect(output[0].updatedAt).toBe('2024-01-02T00:00:00.000Z');
+    expect(output[0].createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(output[0].updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(output[0].repositoryId).toBe('github.com/test/repo');
     // branch is computed live, so it gets the mocked value
     expect(output[0].branch).toBe('main');
@@ -602,7 +679,7 @@ describe('workspace list command', () => {
       },
     } as any);
 
-    const trackingContent = JSON.parse(await fs.readFile(trackingFile, 'utf-8'));
+    const trackingContent = readTrackingData();
     expect(trackingContent[protectedDir]).toBeDefined();
     expect(warnSpy).toHaveBeenCalled();
   });
@@ -643,7 +720,7 @@ describe('workspace list command', () => {
     } as any);
 
     // Verify the stale entry was removed from the tracking file
-    const trackingContent = JSON.parse(await fs.readFile(trackingFile, 'utf-8'));
+    const trackingContent = readTrackingData();
     expect(Object.keys(trackingContent)).toHaveLength(1);
     expect(trackingContent[existingDir]).toBeDefined();
     expect(trackingContent[deletedDir]).toBeUndefined();
@@ -783,7 +860,7 @@ describe('formatWorkspaceDescription', () => {
 describe('workspace list outside git repository', () => {
   let moduleMockerOutsideRepo: ModuleMocker;
   let tempDirOutsideRepo: string;
-  let trackingFileOutsideRepo: string;
+  let outsideEnv: { XDG_CONFIG_HOME?: string; APPDATA?: string };
   let consoleOutputOutsideRepo: string[] = [];
   let logSpyOutsideRepo = mock(() => {});
   let warnSpyOutsideRepo = mock(() => {});
@@ -791,13 +868,14 @@ describe('workspace list outside git repository', () => {
   beforeEach(async () => {
     moduleMockerOutsideRepo = new ModuleMocker(import.meta);
     tempDirOutsideRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-outside-repo-test-'));
-    trackingFileOutsideRepo = path.join(tempDirOutsideRepo, 'workspaces.json');
+    outsideEnv = {
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      APPDATA: process.env.APPDATA,
+    };
+    process.env.XDG_CONFIG_HOME = path.join(tempDirOutsideRepo, 'config');
+    delete process.env.APPDATA;
+    closeDatabaseForTesting();
     consoleOutputOutsideRepo = [];
-
-    // Set test lock directory
-    const lockDir = path.join(tempDirOutsideRepo, 'locks');
-    await fs.mkdir(lockDir, { recursive: true });
-    WorkspaceLock.setTestLockDirectory(lockDir);
 
     // Capture console.log output
     console.log = (...args: any[]) => {
@@ -813,7 +891,17 @@ describe('workspace list outside git repository', () => {
   afterEach(async () => {
     console.log = originalConsoleLog;
     moduleMockerOutsideRepo.clear();
-    WorkspaceLock.setTestLockDirectory(undefined);
+    closeDatabaseForTesting();
+    if (outsideEnv.XDG_CONFIG_HOME === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = outsideEnv.XDG_CONFIG_HOME;
+    }
+    if (outsideEnv.APPDATA === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = outsideEnv.APPDATA;
+    }
     await fs.rm(tempDirOutsideRepo, { recursive: true, force: true });
     logSpyOutsideRepo.mockClear();
     warnSpyOutsideRepo.mockClear();
@@ -840,17 +928,10 @@ describe('workspace list outside git repository', () => {
       repositoryId: 'github.com/other/repo2',
     };
 
-    await fs.writeFile(
-      trackingFileOutsideRepo,
-      JSON.stringify(
-        {
-          [workspaceDir1]: workspaceEntry1,
-          [workspaceDir2]: workspaceEntry2,
-        },
-        null,
-        2
-      )
-    );
+    await writeTrackingData({
+      [workspaceDir1]: workspaceEntry1,
+      [workspaceDir2]: workspaceEntry2,
+    });
 
     // Mock isInGitRepository to return false (simulating being outside a git repo)
     await moduleMockerOutsideRepo.mock('../../common/git.js', () => ({
@@ -866,9 +947,7 @@ describe('workspace list outside git repository', () => {
           throw new Error('Expected quiet: true when outside git repository');
         }
         return {
-          paths: {
-            trackingFile: trackingFileOutsideRepo,
-          },
+          paths: {},
         };
       },
     }));
@@ -897,21 +976,14 @@ describe('workspace list outside git repository', () => {
     const workspaceDir = path.join(tempDirOutsideRepo, 'workspace-1');
     await fs.mkdir(workspaceDir, { recursive: true });
 
-    await fs.writeFile(
-      trackingFileOutsideRepo,
-      JSON.stringify(
-        {
-          [workspaceDir]: {
-            taskId: 'task-1',
-            workspacePath: workspaceDir,
-            createdAt: '2024-01-01T00:00:00.000Z',
-            repositoryId: 'github.com/test/repo',
-          },
-        },
-        null,
-        2
-      )
-    );
+    await writeTrackingData({
+      [workspaceDir]: {
+        taskId: 'task-1',
+        workspacePath: workspaceDir,
+        createdAt: '2024-01-01T00:00:00.000Z',
+        repositoryId: 'github.com/test/repo',
+      },
+    });
 
     let loadEffectiveConfigCalled = false;
 
@@ -927,9 +999,7 @@ describe('workspace list outside git repository', () => {
         // The quiet option should be true when outside git repo
         expect(options?.quiet).toBe(true);
         return {
-          paths: {
-            trackingFile: trackingFileOutsideRepo,
-          },
+          paths: {},
         };
       },
     }));
@@ -974,17 +1044,10 @@ describe('workspace list outside git repository', () => {
       repositoryId: 'github.com/other/repo2',
     };
 
-    await fs.writeFile(
-      trackingFileOutsideRepo,
-      JSON.stringify(
-        {
-          [workspaceDir1]: workspaceEntry1,
-          [workspaceDir2]: workspaceEntry2,
-        },
-        null,
-        2
-      )
-    );
+    await writeTrackingData({
+      [workspaceDir1]: workspaceEntry1,
+      [workspaceDir2]: workspaceEntry2,
+    });
 
     // Mock isInGitRepository to return true (inside a git repo)
     await moduleMockerOutsideRepo.mock('../../common/git.js', () => ({
@@ -998,9 +1061,7 @@ describe('workspace list outside git repository', () => {
         // When inside git repo, quiet should be false (or undefined)
         expect(options?.quiet).toBeFalsy();
         return {
-          paths: {
-            trackingFile: trackingFileOutsideRepo,
-          },
+          paths: {},
         };
       },
     }));
@@ -1052,17 +1113,10 @@ describe('workspace list outside git repository', () => {
       repositoryId: 'github.com/other/repo2',
     };
 
-    await fs.writeFile(
-      trackingFileOutsideRepo,
-      JSON.stringify(
-        {
-          [workspaceDir1]: workspaceEntry1,
-          [workspaceDir2]: workspaceEntry2,
-        },
-        null,
-        2
-      )
-    );
+    await writeTrackingData({
+      [workspaceDir1]: workspaceEntry1,
+      [workspaceDir2]: workspaceEntry2,
+    });
 
     // Mock isInGitRepository to return true (inside a git repo)
     await moduleMockerOutsideRepo.mock('../../common/git.js', () => ({
@@ -1073,9 +1127,7 @@ describe('workspace list outside git repository', () => {
 
     await moduleMockerOutsideRepo.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
-        paths: {
-          trackingFile: trackingFileOutsideRepo,
-        },
+        paths: {},
       }),
     }));
 

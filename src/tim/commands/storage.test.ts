@@ -5,6 +5,9 @@ import * as path from 'node:path';
 
 import { ModuleMocker } from '../../testing.js';
 import { writeRepositoryStorageMetadata } from '../external_storage_utils.js';
+import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { getProject } from '../db/project.js';
+import { collectExternalStorageDirectories } from '../storage/storage_manager.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -43,12 +46,16 @@ async function createStorageRepository(
 
 describe('storage commands', () => {
   let fakeHomeDir: string;
+  let originalXdgConfigHome: string | undefined;
 
   beforeEach(async () => {
+    closeDatabaseForTesting();
     mockLog.mockClear();
     mockWarn.mockClear();
 
     fakeHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-storage-cmd-'));
+    originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = path.join(fakeHomeDir, '.config');
 
     const realOs = await import('node:os');
     await moduleMocker.mock('node:os', () => ({
@@ -64,6 +71,12 @@ describe('storage commands', () => {
   });
 
   afterEach(async () => {
+    closeDatabaseForTesting();
+    if (originalXdgConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+    }
     moduleMocker.clear();
     await fs.rm(fakeHomeDir, { recursive: true, force: true });
   });
@@ -201,6 +214,22 @@ describe('storage commands', () => {
         (call) => typeof call[0] === 'string' && call[0].includes('Removed ')
       )
     ).toHaveLength(2);
+  });
+
+  test('handleStorageCleanCommand clears external storage metadata after removal', async () => {
+    await createStorageRepository(fakeHomeDir, 'alpha-repo');
+
+    const { handleStorageCleanCommand } = await import('./storage.js');
+    await handleStorageCleanCommand(['alpha-repo'], { force: true });
+
+    const db = getDatabase();
+    const project = getProject(db, 'alpha-repo');
+    expect(project).not.toBeNull();
+    expect(project?.external_config_path).toBeNull();
+    expect(project?.external_tasks_dir).toBeNull();
+
+    const listed = await collectExternalStorageDirectories();
+    expect(listed.find((entry) => entry.repositoryName === 'alpha-repo')).toBeUndefined();
   });
 
   test('handleStorageCleanCommand matches remote labels and warns for unknown names', async () => {

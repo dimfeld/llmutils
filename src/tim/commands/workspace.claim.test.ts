@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { ModuleMocker } from '../../testing.js';
-import { readAssignments } from '../assignments/assignments_io.js';
+import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanCache, writePlanFile } from '../plans.js';
 import type { TimConfig } from '../configSchema.js';
 import type { WorkspaceCreationResult } from '../workspace/workspace_manager.js';
@@ -159,7 +159,7 @@ describe('handleWorkspaceAddCommand - plan claiming', () => {
     }));
 
     // Mock workspace identifier to return the created workspace path
-    await moduleMocker.mock('../assignments/workspace_identifier.ts', () => ({
+    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
       getRepositoryIdentity: async (options?: { cwd?: string }) => {
         const workspacePath = options?.cwd ?? createdWorkspacePath;
         return {
@@ -189,6 +189,7 @@ describe('handleWorkspaceAddCommand - plan claiming', () => {
   afterEach(async () => {
     moduleMocker.clear();
     clearPlanCache();
+    closeDatabaseForTesting();
 
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;
@@ -247,17 +248,9 @@ describe('handleWorkspaceAddCommand - plan claiming', () => {
   });
 
   test('warns but continues if plan claiming fails', async () => {
-    // Replace the claimPlan mock with one that throws
-    const failingClaimPlan = mock(async () => {
+    mockClaimPlan.mockImplementationOnce(async () => {
       throw new Error('Test claim error');
     });
-
-    await moduleMocker.mock('../assignments/claim_plan.js', () => ({
-      claimPlan: failingClaimPlan,
-    }));
-
-    // Re-import to get the mocked version
-    const { handleWorkspaceAddCommand: mockedCommand } = await import('./workspace.js');
 
     const command = {
       parent: {
@@ -268,7 +261,7 @@ describe('handleWorkspaceAddCommand - plan claiming', () => {
     };
 
     // Should not throw - should just warn
-    await mockedCommand('1', {}, command);
+    await handleWorkspaceAddCommand('1', {}, command);
 
     expect(mockWarn).toHaveBeenCalledWith(
       expect.stringContaining('Failed to claim plan in workspace')

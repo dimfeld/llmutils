@@ -1,13 +1,11 @@
 import { Glob } from 'bun';
-import type { Dirent } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-import {
-  getExternalStorageBaseDir,
-  readRepositoryStorageMetadata,
-} from '../external_storage_utils.js';
+import { getExternalStorageBaseDir } from '../external_storage_utils.js';
 import type { RepositoryStorageMetadata } from '../external_storage_utils.js';
+import { getDatabase } from '../db/database.js';
+import { listProjects } from '../db/project.js';
 
 export interface ExternalStorageDirectoryInfo {
   repositoryName: string;
@@ -99,25 +97,34 @@ export async function collectExternalStorageDirectories(
   options: CollectStorageOptions = {}
 ): Promise<ExternalStorageDirectoryInfo[]> {
   const baseDir = getExternalStorageBaseDir();
-  let dirEntries: Dirent[];
-  try {
-    dirEntries = await fs.readdir(baseDir, { withFileTypes: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return [];
-    }
-    throw error;
-  }
-
-  const directories = dirEntries.filter((entry) => entry.isDirectory());
+  const db = getDatabase();
+  const projects = listProjects(db).filter(
+    (project) => project.external_config_path !== null || project.external_tasks_dir !== null
+  );
   const results: ExternalStorageDirectoryInfo[] = [];
 
-  for (const directory of directories) {
-    const repositoryPath = path.join(baseDir, directory.name);
-    const metadata = await readRepositoryStorageMetadata(repositoryPath);
+  for (const project of projects) {
+    const repositoryName = project.repository_id;
+    const repositoryPath = path.join(baseDir, repositoryName);
+    if (!(await directoryExists(repositoryPath))) {
+      continue;
+    }
+
+    const metadata: RepositoryStorageMetadata = {
+      repositoryName,
+      createdAt: project.created_at,
+      updatedAt: project.updated_at,
+      remoteLabel: project.remote_label ?? undefined,
+      lastGitRoot: project.last_git_root ?? undefined,
+      externalConfigPath: project.external_config_path ?? undefined,
+      externalTasksDir: project.external_tasks_dir ?? undefined,
+    };
+
     let configPath: string;
     if (metadata?.externalConfigPath) {
-      configPath = path.resolve(repositoryPath, metadata.externalConfigPath);
+      configPath = path.isAbsolute(metadata.externalConfigPath)
+        ? metadata.externalConfigPath
+        : path.resolve(repositoryPath, metadata.externalConfigPath);
     } else {
       // Check for tim.yml first, then fall back to the old rmplan.yml name
       const configDir = path.join(repositoryPath, '.rmfilter', 'config');
@@ -125,38 +132,24 @@ export async function collectExternalStorageDirectories(
       const rmplanPath = path.join(configDir, 'rmplan.yml');
       configPath = (await Bun.file(timPath).exists()) ? timPath : rmplanPath;
     }
-    const tasksPath = metadata?.externalTasksDir
-      ? path.resolve(repositoryPath, metadata.externalTasksDir)
+    const tasksPath = metadata.externalTasksDir
+      ? path.isAbsolute(metadata.externalTasksDir)
+        ? metadata.externalTasksDir
+        : path.resolve(repositoryPath, metadata.externalTasksDir)
       : path.join(repositoryPath, 'tasks');
     const planCount = await countPlanFiles(tasksPath);
     const totalSizeBytes = options.includeSize ? await calculateDirectorySize(repositoryPath) : 0;
 
-    let updatedAt: string | undefined;
-    let createdAt: string | undefined;
-
-    if (metadata) {
-      updatedAt = metadata.updatedAt;
-      createdAt = metadata.createdAt;
-    } else {
-      try {
-        const stats = await fs.stat(repositoryPath);
-        updatedAt = stats.mtime.toISOString();
-        createdAt = stats.ctime.toISOString();
-      } catch {
-        // Ignore errors determining timestamps when metadata is missing.
-      }
-    }
-
     results.push({
-      repositoryName: directory.name,
+      repositoryName,
       repositoryPath,
       configPath,
       tasksPath,
       metadata,
       planCount,
       totalSizeBytes,
-      updatedAt,
-      createdAt,
+      updatedAt: metadata.updatedAt,
+      createdAt: metadata.createdAt,
       remoteLabel: metadata?.remoteLabel,
     });
   }

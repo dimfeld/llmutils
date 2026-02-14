@@ -15,7 +15,7 @@ describe('Parent Plan Completion', () => {
   let tasksDir: string;
   let config: TimConfig;
   const moduleMocker = new ModuleMocker(import.meta);
-  const removeAssignmentSpy = mock(async () => true);
+  const removeAssignmentSpy = mock(() => true);
   const getRepositoryIdentitySpy = mock(async () => ({
     repositoryId: 'test-repo',
     remoteUrl: null,
@@ -45,7 +45,13 @@ describe('Parent Plan Completion', () => {
       gitRoot: tempDir,
     });
 
-    await moduleMocker.mock('../../assignments/assignments_io.js', () => ({
+    await moduleMocker.mock('../../db/database.js', () => ({
+      getDatabase: () => ({}) as any,
+    }));
+    await moduleMocker.mock('../../db/project.js', () => ({
+      getProject: () => ({ id: 1 }),
+    }));
+    await moduleMocker.mock('../../db/assignment.js', () => ({
       removeAssignment: removeAssignmentSpy,
     }));
 
@@ -178,8 +184,107 @@ describe('Parent Plan Completion', () => {
     const parent = await readPlanFile(parentPath);
     expect(parent.status).toBe('done');
 
-    const removalUuids = removeAssignmentSpy.mock.calls.map(([args]) => args.uuid);
+    const removalUuids = removeAssignmentSpy.mock.calls.map((args) => args[2]);
     expect(removalUuids).toContain(parent.uuid);
+  });
+
+  test('agent check treats cancelled children as complete for parent completion', async () => {
+    const parentPlan: PlanSchema = {
+      id: 1,
+      title: 'Parent Plan',
+      goal: 'Parent goal',
+      details: 'Parent details',
+      status: 'in_progress',
+      tasks: [],
+      epic: true,
+      updatedAt: new Date().toISOString(),
+    };
+    const parentPath = path.join(tasksDir, 'parent-cancelled.yaml');
+    await writePlanFile(parentPath, parentPlan);
+
+    const doneChild: PlanSchemaInput = {
+      id: 2,
+      title: 'Done Child',
+      goal: 'Done child goal',
+      details: 'Done child details',
+      status: 'done',
+      parent: 1,
+      tasks: [],
+      updatedAt: new Date().toISOString(),
+    };
+    await writePlanFile(path.join(tasksDir, 'done-child.yaml'), doneChild);
+
+    const cancelledChild: PlanSchemaInput = {
+      id: 3,
+      title: 'Cancelled Child',
+      goal: 'Cancelled child goal',
+      details: 'Cancelled child details',
+      status: 'cancelled',
+      parent: 1,
+      tasks: [],
+      updatedAt: new Date().toISOString(),
+    };
+    await writePlanFile(path.join(tasksDir, 'cancelled-child.yaml'), cancelledChild);
+
+    removeAssignmentSpy.mockClear();
+
+    await agentCheckAndMarkParentDone(1, config, tempDir);
+
+    const parent = await readPlanFile(parentPath);
+    expect(parent.status).toBe('done');
+
+    const removalUuids = removeAssignmentSpy.mock.calls.map((args) => args[2]);
+    expect(removalUuids).toContain(parent.uuid);
+  });
+
+  test('agent check keeps cancelled parent cancelled when all children are complete', async () => {
+    const parentPlan: PlanSchema = {
+      id: 1,
+      title: 'Cancelled Parent Plan',
+      goal: 'Parent goal',
+      details: 'Parent details',
+      status: 'cancelled',
+      tasks: [],
+      epic: true,
+      updatedAt: new Date().toISOString(),
+    };
+    const parentPath = path.join(tasksDir, 'cancelled-parent.yaml');
+    await writePlanFile(parentPath, parentPlan);
+
+    const doneChild: PlanSchemaInput = {
+      id: 2,
+      title: 'Done Child',
+      goal: 'Done child goal',
+      details: 'Done child details',
+      status: 'done',
+      parent: 1,
+      tasks: [],
+      updatedAt: new Date().toISOString(),
+    };
+    await writePlanFile(path.join(tasksDir, 'done-child-cancelled-parent.yaml'), doneChild);
+
+    const cancelledChild: PlanSchemaInput = {
+      id: 3,
+      title: 'Cancelled Child',
+      goal: 'Cancelled child goal',
+      details: 'Cancelled child details',
+      status: 'cancelled',
+      parent: 1,
+      tasks: [],
+      updatedAt: new Date().toISOString(),
+    };
+    await writePlanFile(
+      path.join(tasksDir, 'cancelled-child-cancelled-parent.yaml'),
+      cancelledChild
+    );
+
+    removeAssignmentSpy.mockClear();
+
+    await agentCheckAndMarkParentDone(1, config, tempDir);
+
+    const parent = await readPlanFile(parentPath);
+    expect(parent.status).toBe('cancelled');
+    expect(removeAssignmentSpy).not.toHaveBeenCalled();
   });
 
   test('does not mark non-epic parent as done even when children complete', async () => {

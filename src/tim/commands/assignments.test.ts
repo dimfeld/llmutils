@@ -4,11 +4,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { ModuleMocker } from '../../testing.js';
-import {
-  readAssignments,
-  writeAssignments,
-  getAssignmentsFilePath,
-} from '../assignments/assignments_io.js';
+import { claimAssignment, getAssignment } from '../db/assignment.js';
+import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { getOrCreateProject } from '../db/project.js';
+import { recordWorkspace } from '../db/workspace.js';
 import { clearPlanCache, writePlanFile } from '../plans.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
@@ -39,13 +38,47 @@ describe('assignments command handlers', () => {
     return { parent: { parent: { opts: () => ({}) } } };
   }
 
-  async function seedAssignments(entries: Record<string, any>, version = 1): Promise<void> {
-    await writeAssignments({
-      repositoryId,
-      repositoryRemoteUrl,
-      version,
-      assignments: entries,
-    });
+  function getProjectId(): number {
+    const db = getDatabase();
+    const project = getOrCreateProject(db, repositoryId, { remoteUrl: repositoryRemoteUrl });
+    return project.id;
+  }
+
+  function getAssignmentRow(uuid: string) {
+    const db = getDatabase();
+    return getAssignment(db, getProjectId(), uuid);
+  }
+
+  async function seedAssignments(entries: Record<string, any>): Promise<void> {
+    const db = getDatabase();
+    const projectId = getProjectId();
+
+    for (const [uuid, entry] of Object.entries(entries)) {
+      const workspacePath = entry.workspacePaths?.[0] ?? null;
+      const user = entry.users?.[0] ?? null;
+      const workspaceId = workspacePath
+        ? recordWorkspace(db, {
+            projectId,
+            workspacePath,
+            taskId: `task-${workspacePath}`,
+          }).id
+        : null;
+
+      claimAssignment(db, projectId, uuid, entry.planId ?? null, workspaceId, user);
+      db.prepare(
+        `
+        UPDATE assignment
+        SET status = ?, assigned_at = ?, updated_at = ?
+        WHERE project_id = ? AND plan_uuid = ?
+      `
+      ).run(
+        entry.status ?? 'claimed',
+        entry.assignedAt ?? new Date().toISOString(),
+        entry.updatedAt ?? new Date().toISOString(),
+        projectId,
+        uuid
+      );
+    }
   }
 
   beforeEach(async () => {
@@ -129,6 +162,7 @@ describe('assignments command handlers', () => {
   afterEach(async () => {
     moduleMocker.clear();
     clearPlanCache();
+    closeDatabaseForTesting();
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;
     } else {
@@ -193,13 +227,7 @@ describe('assignments command handlers', () => {
     const command = buildCommandChain();
     await handleAssignmentsCleanStaleCommand({}, command);
 
-    const assignments = await readAssignments({
-      repositoryId,
-      repositoryRemoteUrl,
-    });
-
-    expect(assignments.assignments).not.toHaveProperty(planUuid);
-    expect(assignments.version).toBe(2);
+    expect(getAssignmentRow(planUuid)).toBeNull();
     expect(
       logMock.mock.calls.some(([message]) => (message as string).includes('Removed assignment'))
     ).toBe(true);
@@ -223,12 +251,7 @@ describe('assignments command handlers', () => {
     const command = buildCommandChain();
     await handleAssignmentsCleanStaleCommand({}, command);
 
-    const assignments = await readAssignments({
-      repositoryId,
-      repositoryRemoteUrl,
-    });
-
-    expect(assignments.assignments).toHaveProperty(planUuid);
+    expect(getAssignmentRow(planUuid)).not.toBeNull();
     expect(warnMock).toHaveBeenCalledWith('Aborted stale assignment cleanup.');
   });
 
@@ -254,18 +277,12 @@ describe('assignments command handlers', () => {
     expect(logMock).toHaveBeenLastCalledWith('No stale assignments found (threshold 3 days).');
   });
 
-  test('show-conflicts lists assignments claimed by multiple workspaces', async () => {
-    const otherWorkspace = '/work/demo-copy';
-
+  test('show-conflicts explains that conflicts are obsolete in single-workspace model', async () => {
     await seedAssignments({
       [planUuid]: {
         planId: 1,
-        workspacePaths: [currentWorkspace, otherWorkspace],
-        workspaceOwners: {
-          [currentWorkspace]: 'alice',
-          [otherWorkspace]: 'bob',
-        },
-        users: ['alice', 'bob'],
+        workspacePaths: [currentWorkspace],
+        users: ['alice'],
         status: 'in_progress',
         assignedAt: '2025-01-01T00:00:00.000Z',
         updatedAt: '2025-01-03T00:00:00.000Z',
@@ -275,10 +292,9 @@ describe('assignments command handlers', () => {
     const command = buildCommandChain();
     await handleAssignmentsShowConflictsCommand({}, command);
 
-    const tableOutput = logMock.mock.calls[0][0] as string;
-    expect(tableOutput).toContain('this workspace');
-    expect(tableOutput).toContain('bob');
-    expect(logMock).toHaveBeenLastCalledWith('Conflicting assignments: 1');
+    expect(logMock).toHaveBeenLastCalledWith(
+      'Assignment conflicts are not possible in the single-workspace assignment model.'
+    );
   });
 
   test('clean-stale skips confirmation when --yes flag provided', async () => {
@@ -299,15 +315,10 @@ describe('assignments command handlers', () => {
 
     expect(confirmMock).not.toHaveBeenCalled();
 
-    const assignments = await readAssignments({
-      repositoryId,
-      repositoryRemoteUrl,
-    });
-
-    expect(assignments.assignments).not.toHaveProperty(planUuid);
+    expect(getAssignmentRow(planUuid)).toBeNull();
   });
 
-  test('clean-stale warns when assignments file changes during cleanup', async () => {
+  test('clean-stale does not emit file-change warnings with DB-backed storage', async () => {
     await seedAssignments({
       [planUuid]: {
         planId: 1,
@@ -321,22 +332,6 @@ describe('assignments command handlers', () => {
     });
 
     confirmMock.mockImplementationOnce(async () => {
-      await writeAssignments({
-        repositoryId,
-        repositoryRemoteUrl,
-        version: 2,
-        assignments: {
-          [planUuid]: {
-            planId: 1,
-            workspacePaths: [currentWorkspace],
-            workspaceOwners: { [currentWorkspace]: 'alice' },
-            users: ['alice'],
-            status: 'in_progress',
-            assignedAt: '2000-01-01T00:00:00.000Z',
-            updatedAt: '2000-01-03T00:00:00.000Z',
-          },
-        },
-      });
       return true;
     });
 
@@ -347,36 +342,27 @@ describe('assignments command handlers', () => {
       warnMock.mock.calls.some(([message]) =>
         typeof message === 'string' ? message.includes('Assignments changed while cleaning') : false
       )
-    ).toBe(true);
-
-    const assignments = await readAssignments({
-      repositoryId,
-      repositoryRemoteUrl,
-    });
-
-    expect(assignments.version).toBe(2);
-    expect(assignments.assignments).toHaveProperty(planUuid);
+    ).toBe(false);
+    expect(getAssignmentRow(planUuid)).toBeNull();
   });
 
-  test('handleAssignmentsListCommand surfaces parse errors from assignments file', async () => {
-    const assignmentsPath = getAssignmentsFilePath(repositoryId);
-    await fs.mkdir(path.dirname(assignmentsPath), { recursive: true });
-    await fs.writeFile(assignmentsPath, '{invalid json', 'utf-8');
+  test('handleAssignmentsListCommand ignores legacy assignments json files', async () => {
+    const legacyAssignmentsPath = path.join(
+      configDir,
+      'tim',
+      'shared',
+      repositoryId,
+      'assignments.json'
+    );
+    await fs.mkdir(path.dirname(legacyAssignmentsPath), { recursive: true });
+    await fs.writeFile(legacyAssignmentsPath, '{invalid json', 'utf-8');
 
     const command = buildCommandChain();
-
-    await expect(handleAssignmentsListCommand({}, command)).rejects.toThrow(
-      /Failed to parse assignments file/
-    );
-
-    expect(
-      warnMock.mock.calls.some(([message]) =>
-        typeof message === 'string' ? message.includes('⚠') : false
-      )
-    ).toBe(true);
+    await handleAssignmentsListCommand({}, command);
+    expect(logMock).toHaveBeenLastCalledWith('No assignments recorded for this repository.');
   });
 
-  test('show-conflicts reports when no conflicts exist', async () => {
+  test('show-conflicts always reports obsolete conflict behavior', async () => {
     await seedAssignments({
       [planUuid]: {
         planId: 1,
@@ -392,6 +378,8 @@ describe('assignments command handlers', () => {
     const command = buildCommandChain();
     await handleAssignmentsShowConflictsCommand({}, command);
 
-    expect(logMock).toHaveBeenLastCalledWith('No conflicting assignments found.');
+    expect(logMock).toHaveBeenLastCalledWith(
+      'Assignment conflicts are not possible in the single-workspace assignment model.'
+    );
   });
 });

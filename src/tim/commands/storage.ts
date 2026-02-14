@@ -1,6 +1,8 @@
 import { checkbox } from '@inquirer/prompts';
 
 import { log, warn } from '../../logging.js';
+import { getDatabase } from '../db/database.js';
+import { clearExternalStoragePaths, getProject } from '../db/project.js';
 import {
   collectExternalStorageDirectories,
   formatByteSize,
@@ -78,6 +80,7 @@ export async function handleStorageCleanCommand(
   names: string[] | undefined,
   options: StorageCleanOptions = {}
 ) {
+  const db = getDatabase();
   const directories = await collectExternalStorageDirectories({ includeSize: true });
   if (directories.length === 0) {
     log('No external tim storage directories found.');
@@ -143,6 +146,10 @@ export async function handleStorageCleanCommand(
 
     try {
       await removeStorageDirectory(entry.repositoryPath);
+      const project = getProject(db, entry.repositoryName);
+      if (project) {
+        clearExternalStoragePaths(db, project.id);
+      }
       log(`Removed ${entry.repositoryName} (${entry.repositoryPath})`);
     } catch (error) {
       warn(`Failed to remove ${entry.repositoryName}: ${error as Error}`);

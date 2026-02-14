@@ -4,12 +4,11 @@ import { table, type TableUserConfig } from 'table';
 
 import { log, warn } from '../../logging.js';
 import {
-  AssignmentsFileParseError,
-  AssignmentsVersionConflictError,
-  readAssignments,
-  writeAssignments,
-} from '../assignments/assignments_io.js';
-import type { AssignmentEntry, AssignmentsFile } from '../assignments/assignments_schema.js';
+  cleanStaleAssignments,
+  getAssignmentEntriesByProject,
+  type AssignmentEntry,
+  type AssignmentsFile,
+} from '../db/assignment.js';
 import {
   getConfiguredStaleTimeoutDays,
   isStaleAssignment,
@@ -17,6 +16,8 @@ import {
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
+import { getDatabase } from '../db/database.js';
+import { getProject } from '../db/project.js';
 import { formatWorkspacePath, getCombinedTitleFromSummary } from '../display_utils.js';
 import type { PlanSchema } from '../planSchema.js';
 import { readAllPlans } from '../plans.js';
@@ -44,7 +45,6 @@ interface AssignmentDisplay {
   updatedAtDisplay: string;
   updatedAtTimestamp: number;
   isStale: boolean;
-  conflictCount: number;
   entry: AssignmentEntry;
 }
 
@@ -65,19 +65,7 @@ async function loadAssignmentsContext(command: any): Promise<AssignmentsContext>
 
   const repository = await getRepositoryIdentity();
 
-  let assignments: AssignmentsFile;
-  try {
-    assignments = await readAssignments({
-      repositoryId: repository.repositoryId,
-      repositoryRemoteUrl: repository.remoteUrl,
-    });
-  } catch (error) {
-    if (error instanceof AssignmentsFileParseError) {
-      warn(`${chalk.yellow('⚠')} ${error.message}`);
-      throw error;
-    }
-    throw error;
-  }
+  const assignments = loadAssignmentsFromDb(repository.repositoryId, repository.remoteUrl);
 
   const { plans } = await readAllPlans(tasksDir);
   const planLookup = new Map<string, PlanWithFilename>();
@@ -96,6 +84,31 @@ async function loadAssignmentsContext(command: any): Promise<AssignmentsContext>
     repositoryId: repository.repositoryId,
     repositoryRemoteUrl: repository.remoteUrl,
     staleTimeoutDays,
+  };
+}
+
+function loadAssignmentsFromDb(
+  repositoryId: string,
+  repositoryRemoteUrl: string | null
+): AssignmentsFile {
+  const db = getDatabase();
+  const project = getProject(db, repositoryId);
+  if (!project) {
+    return {
+      repositoryId,
+      repositoryRemoteUrl,
+      version: 0,
+      assignments: {},
+      highestPlanId: 0,
+    };
+  }
+
+  return {
+    repositoryId,
+    repositoryRemoteUrl,
+    version: 0,
+    assignments: getAssignmentEntriesByProject(db, project.id),
+    highestPlanId: project.highest_plan_id,
   };
 }
 
@@ -176,7 +189,6 @@ function buildAssignmentDisplays(
       updatedAtDisplay: updatedAt.display,
       updatedAtTimestamp: updatedAt.timestamp,
       isStale: isStaleAssignment(entry, staleTimeoutDays, referenceDate),
-      conflictCount: rawWorkspaces.length,
       entry,
     });
   }
@@ -232,35 +244,8 @@ function renderListTable(
 }
 
 function renderConflictsTable(displays: AssignmentDisplay[]): void {
-  if (displays.length === 0) {
-    log('No conflicting assignments found.');
-    return;
-  }
-
-  const header = ['Plan', 'UUID', 'Workspaces', 'Users', 'Updated'];
-  const rows = displays.map((display) => [
-    display.planLabel,
-    display.uuid,
-    display.workspaceSummaries.join('\n'),
-    display.users.join('\n'),
-    display.updatedAtDisplay,
-  ]);
-
-  const tableConfig: TableUserConfig = {
-    columnDefault: {
-      wrapWord: true,
-      paddingLeft: 1,
-      paddingRight: 1,
-    },
-    columns: {
-      0: { width: Math.min(Math.max(24, Math.floor((process.stdout.columns ?? 120) * 0.3)), 56) },
-      2: { width: 32 },
-      3: { width: 24 },
-    },
-  };
-
-  log(table([header, ...rows], tableConfig));
-  log(`Conflicting assignments: ${displays.length}`);
+  void displays;
+  log('Assignment conflicts are not possible in the single-workspace assignment model.');
 }
 
 interface CleanStaleOptions {
@@ -282,15 +267,9 @@ export async function handleAssignmentsShowConflictsCommand(
   options: any,
   command: any
 ): Promise<void> {
-  const context = await loadAssignmentsContext(command);
-  const displays = buildAssignmentDisplays(
-    context.assignments,
-    context.planLookup,
-    context.currentWorkspace,
-    context.staleTimeoutDays
-  ).filter((display) => display.conflictCount > 1);
-
-  renderConflictsTable(displays);
+  void options;
+  void command;
+  renderConflictsTable([]);
 }
 
 export async function handleAssignmentsCleanStaleCommand(
@@ -340,35 +319,17 @@ export async function handleAssignmentsCleanStaleCommand(
     return;
   }
 
-  const nextAssignments: AssignmentsFile = {
-    ...context.assignments,
-    version: context.assignments.version + 1,
-    assignments: { ...context.assignments.assignments },
-  };
-
-  for (const display of staleDisplays) {
-    delete nextAssignments.assignments[display.uuid];
+  const db = getDatabase();
+  const project = getProject(db, context.repositoryId);
+  if (!project) {
+    warn(`${chalk.yellow('⚠')} No project row found for repository ${context.repositoryId}.`);
+    return;
   }
-
-  try {
-    await writeAssignments(nextAssignments, { expectedVersion: context.assignments.version });
-  } catch (error) {
-    if (error instanceof AssignmentsVersionConflictError) {
-      warn(
-        `${chalk.yellow('⚠')} Assignments changed while cleaning. Re-run the command to retry the cleanup.`
-      );
-      return;
-    }
-    throw error;
-  }
+  const removedCount = cleanStaleAssignments(db, project.id, context.staleTimeoutDays);
 
   for (const display of staleDisplays) {
     log(`${chalk.green('✓')} Removed assignment for ${display.planLabel} (${display.uuid})`);
   }
 
-  log(
-    `Removed ${staleDisplays.length} stale assignment${
-      staleDisplays.length === 1 ? '' : 's'
-    }. New version: ${nextAssignments.version}.`
-  );
+  log(`Removed ${removedCount} stale assignment${removedCount === 1 ? '' : 's'}.`);
 }

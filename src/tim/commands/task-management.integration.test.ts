@@ -52,14 +52,14 @@ describe('task management integration workflows', () => {
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => tempDir,
     }));
-    await moduleMocker.mock('../assignments/assignments_io.js', () => ({
-      readAssignments: async () => ({
-        repositoryId: 'test-repo',
-        repositoryRemoteUrl: null,
-        version: 0,
-        assignments: {},
-      }),
-      AssignmentsFileParseError: class extends Error {},
+    await moduleMocker.mock('../db/database.js', () => ({
+      getDatabase: () => ({}) as any,
+    }));
+    await moduleMocker.mock('../db/project.js', () => ({
+      getProject: () => ({ id: 1 }),
+    }));
+    await moduleMocker.mock('../db/assignment.js', () => ({
+      getAssignmentEntriesByProject: () => ({}),
     }));
     await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
       getRepositoryIdentity: async () => ({

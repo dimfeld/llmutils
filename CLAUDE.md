@@ -58,10 +58,15 @@ The codebase is organized into several main modules with improved modularity and
   - `database.ts`: Singleton connection with WAL mode, foreign keys, and auto-migration
   - `migrations.ts`: Schema versioning with `schema_version` table
   - CRUD modules: `project.ts`, `assignment.ts`, `permission.ts`, `workspace.ts`, `workspace_lock.ts`
+  - `sql_utils.ts`: Shared SQL helpers (e.g. `SQL_NOW_ISO_UTC` for ISO-8601 UTC timestamps)
   - `json_import.ts`: One-time import from legacy JSON files on first DB creation
   - All DB functions are **synchronous** (matching bun:sqlite's native API)
   - All write transactions use `db.transaction().immediate()`
 - Workspace management: `workspace.ts` with automated isolation support
+- Workspace types and helpers: `workspace_info.ts` provides `WorkspaceInfo`, `WorkspaceMetadataPatch`, `workspaceRowToInfo()`, and workspace lookup helpers
+- Workspace locking: `workspace_lock.ts` (`WorkspaceLock` class) uses DB internally while exposing the same static API (`acquireLock`, `releaseLock`, `getLockInfo`, `isLocked`)
+- Assignment helpers: `assignments/remove_plan_assignment.ts` for shared plan-unassignment logic, `assignments/claim_plan.ts` and `assignments/release_plan.ts` for workspace claim management
+- Plan state utilities: `plans/plan_state_utils.ts` centralizes `normalizePlanStatus()` and status classification helpers used across commands
 - Shared utilities captured in purpose-built modules:
   - `plan_display.ts`: Resolves plans and assembles context summaries for both CLI output and MCP tooling
   - `plan_merge.ts`: Handles delimiter-aware plan detail updates and task merging while preserving metadata
@@ -145,6 +150,10 @@ See @.cursor/rules/testing.mdc for testing strategy
 - **Run type checks frequently**: Catch signature mismatches early in the refactoring process
 - **Make incremental commits**: Each commit should focus on a single logical change
 - **Consolidate shared utilities early**: When multiple modules need the same helper function, put it in `src/common/` from the start rather than duplicating it across callers and consolidating later
+- **Migrate types to their new canonical location first**: When a schema file exports types used by many callers, move types to the new module and update all importers before removing the old file
+- **Audit all call sites when unifying behavior**: When making multiple code paths accept the same input (e.g., treating 'cancelled' as a terminal state), check all guards that control entry into the unified function — not just the function body
+- **Watch for dead code paths after data model changes**: When migrating from multi-value structures (e.g., arrays) to single-value (e.g., FK), warning/conflict logic that assumed multiple values may become permanently false — remove it rather than leaving dead branches
+- **Consider all terminal states**: When a status check uses early-return for terminal states, ensure all terminal states (e.g., both `done` and `cancelled`) are handled to prevent one from being overwritten by another
 
 ## Personal Workflow Notes
 

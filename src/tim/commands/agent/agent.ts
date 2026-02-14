@@ -42,11 +42,6 @@ import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
 import { WorkspaceAutoSelector } from '../../workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from '../../workspace/workspace_lock.js';
 import { createWorkspace } from '../../workspace/workspace_manager.js';
-import {
-  findWorkspacesByTaskId,
-  getWorkspaceMetadata,
-  patchWorkspaceMetadata,
-} from '../../workspace/workspace_tracker.js';
 import { buildDescriptionFromPlan } from '../../display_utils.js';
 import { findNextReadyDependency } from '../find_next_dependency.js';
 import { executeBatchMode } from './batch_mode.js';
@@ -63,6 +58,11 @@ import { ensureUuidsAndReferences } from '../../utils/references.js';
 import { sendNotification } from '../../notifications.js';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { runWithHeadlessAdapterIfEnabled, type HeadlessPlanSummary } from '../../headless.js';
+import {
+  findWorkspaceInfosByTaskId,
+  getWorkspaceInfoByPath,
+  patchWorkspaceInfo,
+} from '../../workspace/workspace_info.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -336,11 +336,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
         }
       } else {
         // Manual workspace handling - check if workspace exists first
-        const trackingFilePath = config.paths?.trackingFile;
-        const existingWorkspaces = await findWorkspacesByTaskId(
-          options.workspace,
-          trackingFilePath
-        );
+        const existingWorkspaces = findWorkspaceInfosByTaskId(options.workspace);
 
         if (existingWorkspaces.length > 0) {
           // Find the first available workspace (not locked)
@@ -1265,13 +1261,11 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
 async function updateWorkspaceDescriptionFromPlan(
   baseDir: string,
   planData: PlanSchema,
-  config: { paths?: { trackingFile?: string } }
+  _config: { paths?: { trackingFile?: string } }
 ): Promise<void> {
   try {
-    const trackingFilePath = config.paths?.trackingFile;
-
     // Check if the current directory is a tracked workspace
-    const workspaceMetadata = await getWorkspaceMetadata(baseDir, trackingFilePath);
+    const workspaceMetadata = getWorkspaceInfoByPath(baseDir);
     if (!workspaceMetadata) {
       // Not a tracked workspace, skip silently
       return;
@@ -1282,16 +1276,12 @@ async function updateWorkspaceDescriptionFromPlan(
     const planTitle = getCombinedTitleFromSummary(planData);
 
     // Update workspace metadata
-    await patchWorkspaceMetadata(
-      baseDir,
-      {
-        description,
-        planId: planData.id ? String(planData.id) : '',
-        planTitle: planTitle || '',
-        issueUrls: planData.issue && planData.issue.length > 0 ? [...planData.issue] : [],
-      },
-      trackingFilePath
-    );
+    patchWorkspaceInfo(baseDir, {
+      description,
+      planId: planData.id ? String(planData.id) : '',
+      planTitle: planTitle || '',
+      issueUrls: planData.issue && planData.issue.length > 0 ? [...planData.issue] : [],
+    });
   } catch (err) {
     // Warn but do not abort
     warn(`Failed to update workspace description: ${err as Error}`);

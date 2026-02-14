@@ -70,7 +70,7 @@ describe('tim db/project', () => {
       remoteUrl: 'https://example.com/old.git',
       remoteLabel: 'old-label',
     });
-    db.prepare("UPDATE project SET updated_at = '2000-01-01 00:00:00' WHERE id = ?").run(
+    db.prepare("UPDATE project SET updated_at = '2000-01-01T00:00:00.000Z' WHERE id = ?").run(
       created.id
     );
 
@@ -82,7 +82,7 @@ describe('tim db/project', () => {
     expect(updated).not.toBeNull();
     expect(updated?.remote_url).toBe('https://example.com/new.git');
     expect(updated?.remote_label).toBeNull();
-    expect(updated?.updated_at).not.toBe('2000-01-01 00:00:00');
+    expect(updated?.updated_at).not.toBe('2000-01-01T00:00:00.000Z');
   });
 
   test('updateProject returns current row when no fields provided', () => {
@@ -150,6 +150,12 @@ describe('tim db/project', () => {
     const project = getProject(db, 'repo-new');
     expect(project).not.toBeNull();
     expect(project?.highest_plan_id).toBe(5);
+  });
+
+  test('reserveNextPlanId propagates remote URL when creating project', () => {
+    reserveNextPlanId(db, 'repo-with-remote', 0, 1, 'https://example.com/repo.git');
+    const project = getProject(db, 'repo-with-remote');
+    expect(project?.remote_url).toBe('https://example.com/repo.git');
   });
 
   test('reserveNextPlanId validates count', () => {

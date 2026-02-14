@@ -4,20 +4,25 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { ModuleMocker } from '../../../testing.js';
-import {
-  readTrackingData,
-  writeTrackingData,
-  type WorkspaceInfo,
-} from '../../workspace/workspace_tracker.js';
 import { clearPlanCache } from '../../plans.js';
+import { closeDatabaseForTesting, getDatabase } from '../../db/database.js';
+import { getOrCreateProject } from '../../db/project.js';
+import {
+  deleteWorkspace,
+  getWorkspaceByPath,
+  getWorkspaceIssues,
+  patchWorkspace,
+  recordWorkspace,
+  setWorkspaceIssues,
+} from '../../db/workspace.js';
 
 describe('Agent workspace description auto-update', () => {
   let moduleMocker: ModuleMocker;
   let tempDir: string;
   let tasksDir: string;
-  let trackingFile: string;
   let planFile: string;
   let workspaceDir: string;
+  let originalEnv: { XDG_CONFIG_HOME?: string; APPDATA?: string };
 
   const logSpy = mock(() => {});
   const warnSpy = mock(() => {});
@@ -44,11 +49,18 @@ describe('Agent workspace description auto-update', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-ws-desc-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     workspaceDir = path.join(tempDir, 'workspace');
-    trackingFile = path.join(tempDir, 'workspaces.json');
     planFile = path.join(tasksDir, '123-test-plan.yml');
 
     await fs.mkdir(tasksDir, { recursive: true });
     await fs.mkdir(workspaceDir, { recursive: true });
+
+    originalEnv = {
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      APPDATA: process.env.APPDATA,
+    };
+    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'config');
+    delete process.env.APPDATA;
+    closeDatabaseForTesting();
 
     // Create a plan file
     const planContent = {
@@ -68,14 +80,13 @@ describe('Agent workspace description auto-update', () => {
     };
     await fs.writeFile(planFile, `---\n${yaml.stringify(planContent)}---\n`);
 
-    // Create workspace entry in tracking file
-    const workspaceEntry: WorkspaceInfo = {
+    const db = getDatabase();
+    const project = getOrCreateProject(db, 'github.com/example/repo');
+    recordWorkspace(db, {
+      projectId: project.id,
       taskId: 'task-123',
       workspacePath: workspaceDir,
-      createdAt: new Date().toISOString(),
-      repositoryId: 'github.com/example/repo',
-    };
-    await fs.writeFile(trackingFile, JSON.stringify({ [workspaceDir]: workspaceEntry }, null, 2));
+    });
 
     // Mock dependencies
     await moduleMocker.mock('../../../logging.js', () => ({
@@ -91,7 +102,6 @@ describe('Agent workspace description auto-update', () => {
       loadEffectiveConfig: mock(async () => ({
         paths: {
           tasks: tasksDir,
-          trackingFile,
         },
         models: {},
         postApplyCommands: [],
@@ -163,6 +173,17 @@ describe('Agent workspace description auto-update', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
+    closeDatabaseForTesting();
+    if (originalEnv.XDG_CONFIG_HOME === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalEnv.XDG_CONFIG_HOME;
+    }
+    if (originalEnv.APPDATA === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalEnv.APPDATA;
+    }
     await fs.rm(tempDir, { recursive: true, force: true });
     logSpy.mockClear();
     warnSpy.mockClear();
@@ -174,16 +195,18 @@ describe('Agent workspace description auto-update', () => {
 
     await timAgent(planFile, { log: false } as any, {});
 
-    // Verify workspace metadata was updated
-    const trackingData = JSON.parse(await fs.readFile(trackingFile, 'utf-8'));
-    const workspaceMetadata = trackingData[workspaceDir];
+    const db = getDatabase();
+    const workspaceMetadata = getWorkspaceByPath(db, workspaceDir);
+    expect(workspaceMetadata).toBeDefined();
 
     // Description should be in format "#issueNumber planTitle"
-    expect(workspaceMetadata.description).toBe('#456 Implement Feature X');
-    expect(workspaceMetadata.planId).toBe('123');
-    expect(workspaceMetadata.planTitle).toBe('Implement Feature X');
-    expect(workspaceMetadata.issueUrls).toEqual(['https://github.com/example/repo/issues/456']);
-    expect(workspaceMetadata.updatedAt).toBeDefined();
+    expect(workspaceMetadata!.description).toBe('#456 Implement Feature X');
+    expect(workspaceMetadata!.plan_id).toBe('123');
+    expect(workspaceMetadata!.plan_title).toBe('Implement Feature X');
+    expect(getWorkspaceIssues(db, workspaceMetadata!.id)).toEqual([
+      'https://github.com/example/repo/issues/456',
+    ]);
+    expect(workspaceMetadata!.updated_at).toBeDefined();
   });
 
   test('updates workspace description without issue URL in plan', async () => {
@@ -210,15 +233,15 @@ describe('Agent workspace description auto-update', () => {
 
     await timAgent(planFile, { log: false } as any, {});
 
-    // Verify workspace metadata was updated
-    const trackingData = JSON.parse(await fs.readFile(trackingFile, 'utf-8'));
-    const workspaceMetadata = trackingData[workspaceDir];
+    const db = getDatabase();
+    const workspaceMetadata = getWorkspaceByPath(db, workspaceDir);
+    expect(workspaceMetadata).toBeDefined();
 
     // Description should be just the title (no issue number)
-    expect(workspaceMetadata.description).toBe('Refactor Module');
-    expect(workspaceMetadata.planId).toBe('789');
-    expect(workspaceMetadata.planTitle).toBe('Refactor Module');
-    expect(workspaceMetadata.issueUrls).toBeUndefined();
+    expect(workspaceMetadata!.description).toBe('Refactor Module');
+    expect(workspaceMetadata!.plan_id).toBe('789');
+    expect(workspaceMetadata!.plan_title).toBe('Refactor Module');
+    expect(getWorkspaceIssues(db, workspaceMetadata!.id)).toEqual([]);
   });
 
   test('clears stale plan metadata when plan omits id and issue', async () => {
@@ -239,31 +262,36 @@ describe('Agent workspace description auto-update', () => {
     await fs.writeFile(planFile, `---\n${yaml.stringify(planContent)}---\n`);
     clearPlanCache();
 
-    const trackingData = await readTrackingData(trackingFile);
-    trackingData[workspaceDir] = {
-      ...trackingData[workspaceDir],
+    const db = getDatabase();
+    patchWorkspace(db, workspaceDir, {
       planId: '999',
       planTitle: 'Old Title',
-      issueUrls: ['https://github.com/example/repo/issues/999'],
-    };
-    await writeTrackingData(trackingData, trackingFile);
+      description: 'Old Description',
+    });
+    const workspace = getWorkspaceByPath(db, workspaceDir);
+    expect(workspace).toBeDefined();
+    if (workspace) {
+      setWorkspaceIssues(db, workspace.id, ['https://github.com/example/repo/issues/999']);
+    }
 
     const { timAgent } = await import('./agent.js');
 
     await timAgent(planFile, { log: false } as any, {});
 
-    const updatedTracking = JSON.parse(await fs.readFile(trackingFile, 'utf-8'));
-    const workspaceMetadata = updatedTracking[workspaceDir];
+    const updatedWorkspace = getWorkspaceByPath(db, workspaceDir);
+    expect(updatedWorkspace).toBeDefined();
 
-    expect(workspaceMetadata.description).toBe('Maintenance');
-    expect(workspaceMetadata.planTitle).toBe('Maintenance');
-    expect(workspaceMetadata.planId).toBeUndefined();
-    expect(workspaceMetadata.issueUrls).toBeUndefined();
+    expect(updatedWorkspace!.description).toBe('Maintenance');
+    expect(updatedWorkspace!.plan_title).toBe('Maintenance');
+    expect(updatedWorkspace!.plan_id).toBeNull();
+    expect(getWorkspaceIssues(db, updatedWorkspace!.id)).toEqual([]);
   });
 
   test('does not error when workspace is not tracked', async () => {
-    // Remove the workspace from tracking
-    await fs.writeFile(trackingFile, '{}');
+    const db = getDatabase();
+    const existing = getWorkspaceByPath(db, workspaceDir);
+    expect(existing).toBeDefined();
+    if (existing) deleteWorkspace(db, workspaceDir);
 
     const { timAgent } = await import('./agent.js');
 
@@ -271,23 +299,15 @@ describe('Agent workspace description auto-update', () => {
     await timAgent(planFile, { log: false } as any, {});
 
     // Verify no workspace entry was created (since it's not tracked)
-    const trackingData = JSON.parse(await fs.readFile(trackingFile, 'utf-8'));
-    expect(trackingData[workspaceDir]).toBeUndefined();
+    expect(getWorkspaceByPath(db, workspaceDir)).toBeNull();
 
     // Verify no warning was issued (silent skip)
     expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('workspace'));
   });
 
   test('warns but does not fail when workspace update fails', async () => {
-    // Mock patchWorkspaceMetadata to throw an error
-    await moduleMocker.mock('../../workspace/workspace_tracker.js', () => ({
-      findWorkspacesByTaskId: mock(async () => []),
-      getWorkspaceMetadata: mock(async () => ({
-        taskId: 'task-123',
-        workspacePath: workspaceDir,
-        createdAt: new Date().toISOString(),
-      })),
-      patchWorkspaceMetadata: mock(async () => {
+    await moduleMocker.mock('../../db/workspace.js', () => ({
+      patchWorkspace: mock(() => {
         throw new Error('Simulated write failure');
       }),
     }));
@@ -331,11 +351,12 @@ describe('Agent workspace description auto-update', () => {
     await timAgent(planFile, { log: false } as any, {});
 
     // Verify workspace metadata includes combined title
-    const trackingData = JSON.parse(await fs.readFile(trackingFile, 'utf-8'));
-    const workspaceMetadata = trackingData[workspaceDir];
+    const db = getDatabase();
+    const workspaceMetadata = getWorkspaceByPath(db, workspaceDir);
+    expect(workspaceMetadata).toBeDefined();
 
     // Description should include project title
-    expect(workspaceMetadata.description).toBe('#111 Project X - Phase 1');
-    expect(workspaceMetadata.planTitle).toBe('Project X - Phase 1');
+    expect(workspaceMetadata!.description).toBe('#111 Project X - Phase 1');
+    expect(workspaceMetadata!.plan_title).toBe('Project X - Phase 1');
   });
 });

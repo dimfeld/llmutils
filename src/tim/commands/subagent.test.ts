@@ -188,8 +188,15 @@ describe('subagent command - prompt construction and executor delegation', () =>
     }));
 
     // Mock shared permissions
-    await moduleMocker.mock('../assignments/permissions_io.js', () => ({
-      readSharedPermissions: mock(async () => ({ permissions: { allow: [] } })),
+    await moduleMocker.mock('../db/database.js', () => ({
+      getDatabase: mock(() => ({}) as any),
+    }));
+    await moduleMocker.mock('../db/project.js', () => ({
+      getOrCreateProject: mock(() => ({ id: 1 })),
+    }));
+    await moduleMocker.mock('../db/permission.js', () => ({
+      getPermissions: mock(() => ({ allow: [], deny: [] })),
+      addPermission: mock(() => true),
     }));
     await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
       getRepositoryIdentity: mock(async () => ({ repositoryId: 'test-repo' })),
@@ -1059,8 +1066,15 @@ describe('subagent command - permissions MCP integration', () => {
       loadAgentInstructionsFor: mock(async () => undefined),
     }));
 
-    await moduleMocker.mock('../assignments/permissions_io.js', () => ({
-      readSharedPermissions: mock(async () => ({ permissions: { allow: [] } })),
+    await moduleMocker.mock('../db/database.js', () => ({
+      getDatabase: mock(() => ({}) as any),
+    }));
+    await moduleMocker.mock('../db/project.js', () => ({
+      getOrCreateProject: mock(() => ({ id: 1 })),
+    }));
+    await moduleMocker.mock('../db/permission.js', () => ({
+      getPermissions: mock(() => ({ allow: [], deny: [] })),
+      addPermission: mock(() => true),
     }));
     await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
       getRepositoryIdentity: mock(async () => ({ repositoryId: 'test-repo' })),
@@ -1399,8 +1413,15 @@ describe('subagent command - executeWithClaude error scenarios', () => {
       loadAgentInstructionsFor: mock(async () => undefined),
     }));
 
-    await moduleMocker.mock('../assignments/permissions_io.js', () => ({
-      readSharedPermissions: mock(async () => ({ permissions: { allow: [] } })),
+    await moduleMocker.mock('../db/database.js', () => ({
+      getDatabase: mock(() => ({}) as any),
+    }));
+    await moduleMocker.mock('../db/project.js', () => ({
+      getOrCreateProject: mock(() => ({ id: 1 })),
+    }));
+    await moduleMocker.mock('../db/permission.js', () => ({
+      getPermissions: mock(() => ({ allow: [], deny: [] })),
+      addPermission: mock(() => true),
     }));
     await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
       getRepositoryIdentity: mock(async () => ({ repositoryId: 'test-repo' })),
@@ -1687,8 +1708,15 @@ describe('subagent command - tunnel behavior', () => {
       loadAgentInstructionsFor: mock(async () => undefined),
     }));
 
-    await moduleMocker.mock('../assignments/permissions_io.js', () => ({
-      readSharedPermissions: mock(async () => ({ permissions: { allow: [] } })),
+    await moduleMocker.mock('../db/database.js', () => ({
+      getDatabase: mock(() => ({}) as any),
+    }));
+    await moduleMocker.mock('../db/project.js', () => ({
+      getOrCreateProject: mock(() => ({ id: 1 })),
+    }));
+    await moduleMocker.mock('../db/permission.js', () => ({
+      getPermissions: mock(() => ({ allow: [], deny: [] })),
+      addPermission: mock(() => true),
     }));
     await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
       getRepositoryIdentity: mock(async () => ({ repositoryId: 'test-repo' })),
@@ -1862,8 +1890,15 @@ describe('subagent command - tunnel behavior', () => {
     await moduleMocker.mock('../executors/codex_cli/agent_helpers.js', () => ({
       loadAgentInstructionsFor: mock(async () => undefined),
     }));
-    await moduleMocker.mock('../assignments/permissions_io.js', () => ({
-      readSharedPermissions: mock(async () => ({ permissions: { allow: [] } })),
+    await moduleMocker.mock('../db/database.js', () => ({
+      getDatabase: mock(() => ({}) as any),
+    }));
+    await moduleMocker.mock('../db/project.js', () => ({
+      getOrCreateProject: mock(() => ({ id: 1 })),
+    }));
+    await moduleMocker.mock('../db/permission.js', () => ({
+      getPermissions: mock(() => ({ allow: [], deny: [] })),
+      addPermission: mock(() => true),
     }));
     await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
       getRepositoryIdentity: mock(async () => ({ repositoryId: 'test-repo' })),

@@ -11,6 +11,8 @@ postApplyCommands:
 updateDocs:
   mode: after-iteration
   applyLessons: true
+  exclude: 
+  - CHANGELOG and similar documents
 workspaceCreation:
   cloneLocation: ..
   cloneMethod: mac-cow

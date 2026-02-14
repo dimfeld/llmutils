@@ -8,8 +8,7 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import { wouldCreateCircularDependency } from './validate.js';
 import { checkAndMarkParentDone } from './agent/parent_plans.js';
-import { removeAssignment } from '../assignments/assignments_io.js';
-import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
 import type { PlanSchema, Priority } from '../planSchema.js';
 import { ensureReferences, writePlansWithGeneratedUuids } from '../utils/references.js';
 
@@ -51,6 +50,7 @@ export async function handleSetCommand(
   let modified = false;
   let needsReferenceUpdate = false;
   let shouldRemoveAssignment = false;
+  let shouldCheckParentCompletion = false;
   let cachedConfig: TimConfig | undefined;
   let allPlans: Map<number, PlanSchema & { filename: string }> | undefined;
 
@@ -80,9 +80,8 @@ export async function handleSetCommand(
       log('Cleared status description (status changed)');
     }
 
-    if (plan.parent && plan.status === 'done') {
-      const config = await getConfig();
-      await checkAndMarkParentDone(plan.parent, config);
+    if (plan.parent && (plan.status === 'done' || plan.status === 'cancelled')) {
+      shouldCheckParentCompletion = true;
     }
 
     if (plan.uuid && (plan.status === 'done' || plan.status === 'cancelled')) {
@@ -354,31 +353,14 @@ export async function handleSetCommand(
     log(`Plan ${options.planFile} updated successfully`);
 
     if (shouldRemoveAssignment) {
-      await removeAssignmentsForPlan(plan);
+      await removePlanAssignment(plan, path.dirname(options.planFile));
+    }
+
+    if (shouldCheckParentCompletion && plan.parent) {
+      const config = await getConfig();
+      await checkAndMarkParentDone(plan.parent, config, path.dirname(options.planFile));
     }
   } else {
     log('No changes made');
-  }
-}
-
-async function removeAssignmentsForPlan(plan: PlanSchema): Promise<void> {
-  if (!plan.uuid) {
-    return;
-  }
-
-  try {
-    const repository = await getRepositoryIdentity();
-    await removeAssignment({
-      repositoryId: repository.repositoryId,
-      repositoryRemoteUrl: repository.remoteUrl,
-      uuid: plan.uuid,
-    });
-  } catch (error) {
-    const planLabel = plan.id !== undefined ? `plan ${plan.id}` : `plan ${plan.uuid}`;
-    warn(
-      `Failed to remove assignment for ${planLabel}: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    );
   }
 }

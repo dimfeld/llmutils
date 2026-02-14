@@ -12,6 +12,7 @@ import {
   findWorkspacesByProjectId,
   findWorkspacesByTaskId,
   getWorkspaceByPath,
+  getWorkspaceById,
   getWorkspaceIssues,
   patchWorkspace,
   recordWorkspace,
@@ -74,8 +75,45 @@ describe('tim db/workspace', () => {
     expect(updated.description).toBe('Updated');
   });
 
+  test('recordWorkspace preserves existing non-null fields when upsert input omits them', () => {
+    recordWorkspace(db, {
+      projectId,
+      taskId: 'task-1',
+      workspacePath: '/tmp/workspace-preserve',
+      branch: 'feature/keep',
+      name: 'Keep Name',
+      description: 'Keep Description',
+      planId: '99',
+      planTitle: 'Keep Title',
+    });
+
+    const updated = recordWorkspace(db, {
+      projectId: otherProjectId,
+      workspacePath: '/tmp/workspace-preserve',
+    });
+
+    expect(updated.project_id).toBe(otherProjectId);
+    expect(updated.task_id).toBe('task-1');
+    expect(updated.branch).toBe('feature/keep');
+    expect(updated.name).toBe('Keep Name');
+    expect(updated.description).toBe('Keep Description');
+    expect(updated.plan_id).toBe('99');
+    expect(updated.plan_title).toBe('Keep Title');
+  });
+
   test('getWorkspaceByPath returns null for missing workspace', () => {
     expect(getWorkspaceByPath(db, '/tmp/missing')).toBeNull();
+  });
+
+  test('getWorkspaceById returns workspace row by id', () => {
+    const workspace = recordWorkspace(db, {
+      projectId,
+      taskId: 'task-by-id',
+      workspacePath: '/tmp/workspace-by-id',
+    });
+
+    expect(getWorkspaceById(db, workspace.id)?.workspace_path).toBe('/tmp/workspace-by-id');
+    expect(getWorkspaceById(db, 999999)).toBeNull();
   });
 
   test('findWorkspacesByTaskId and findWorkspacesByProjectId filter correctly', () => {

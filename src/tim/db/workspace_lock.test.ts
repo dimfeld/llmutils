@@ -77,7 +77,7 @@ describe('tim db/workspace_lock', () => {
       command: 'stale-command',
     });
     db.prepare(
-      "UPDATE workspace_lock SET started_at = datetime('now', '-25 hours') WHERE workspace_id = ?"
+      "UPDATE workspace_lock SET started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-25 hours') WHERE workspace_id = ?"
     ).run(workspaceId);
 
     const lock = acquireWorkspaceLock(db, workspaceId, {
@@ -171,7 +171,7 @@ describe('tim db/workspace_lock', () => {
       command: 'old-lock',
     });
     db.prepare(
-      "UPDATE workspace_lock SET started_at = datetime('now', '-25 hours') WHERE workspace_id = ?"
+      "UPDATE workspace_lock SET started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-25 hours') WHERE workspace_id = ?"
     ).run(workspaceId);
 
     acquireWorkspaceLock(db, workspace2Id, {
@@ -185,6 +185,48 @@ describe('tim db/workspace_lock', () => {
     expect(cleaned).toBe(1);
     expect(getWorkspaceLock(db, workspaceId)).toBeNull();
     expect(getWorkspaceLock(db, workspace2Id)).not.toBeNull();
+  });
+
+  test('cleanStaleLocks does not delete a lock replaced after stale check', () => {
+    const stalePid = 999999;
+
+    acquireWorkspaceLock(db, workspaceId, {
+      lockType: 'pid',
+      pid: stalePid,
+      hostname: 'stale-host',
+      command: 'stale-command',
+    });
+
+    const originalKill = process.kill;
+    let replaced = false;
+
+    process.kill = ((pid: number, signal?: number | NodeJS.Signals) => {
+      if (!replaced && pid === stalePid && signal === 0) {
+        replaced = true;
+        db.prepare('DELETE FROM workspace_lock WHERE workspace_id = ?').run(workspaceId);
+        db.prepare(
+          "INSERT INTO workspace_lock (workspace_id, lock_type, pid, started_at, hostname, command) VALUES (?, 'pid', ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?, ?)"
+        ).run(workspaceId, process.pid, 'new-host', 'new-command');
+
+        const err = new Error('No such process') as NodeJS.ErrnoException;
+        err.code = 'ESRCH';
+        throw err;
+      }
+
+      return originalKill(pid, signal as number | NodeJS.Signals);
+    }) as typeof process.kill;
+
+    try {
+      const cleaned = cleanStaleLocks(db);
+      expect(cleaned).toBe(0);
+    } finally {
+      process.kill = originalKill;
+    }
+
+    const lock = getWorkspaceLock(db, workspaceId);
+    expect(lock).not.toBeNull();
+    expect(lock?.pid).toBe(process.pid);
+    expect(lock?.hostname).toBe('new-host');
   });
 
   test('cleanStaleLocks preserves persistent locks', () => {

@@ -6,11 +6,12 @@ import * as path from 'path';
 import { table } from 'table';
 
 import { log, warn } from '../../logging.js';
-import { AssignmentsFileParseError, readAssignments } from '../assignments/assignments_io.js';
-import type { AssignmentEntry } from '../assignments/assignments_schema.js';
 import { getRepositoryIdentity, getUserIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
+import { getAssignmentEntriesByProject, type AssignmentEntry } from '../db/assignment.js';
+import { getDatabase } from '../db/database.js';
+import { getProject } from '../db/project.js';
 import {
   formatTagsSummary,
   formatWorkspacePath,
@@ -56,19 +57,11 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
   const repository = await getRepositoryIdentity({ cwd: searchDir });
 
+  const db = getDatabase();
   let assignmentsLookup: Record<string, AssignmentEntry> = {};
-  try {
-    const assignmentsFile = await readAssignments({
-      repositoryId: repository.repositoryId,
-      repositoryRemoteUrl: repository.remoteUrl,
-    });
-    assignmentsLookup = assignmentsFile.assignments;
-  } catch (error) {
-    if (error instanceof AssignmentsFileParseError) {
-      warn(`${chalk.yellow('⚠')} ${error.message}`);
-    } else {
-      throw error;
-    }
+  const project = getProject(db, repository.repositoryId);
+  if (project) {
+    assignmentsLookup = getAssignmentEntriesByProject(db, project.id);
   }
 
   const enrichedPlans = new Map<number, ListPlan>();

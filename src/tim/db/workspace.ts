@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
 export interface WorkspaceRow {
   id: number;
@@ -17,7 +18,7 @@ export interface WorkspaceRow {
 
 export interface RecordWorkspaceInput {
   projectId: number;
-  taskId: string;
+  taskId?: string | null;
   workspacePath: string;
   originalPlanFilePath?: string | null;
   branch?: string | null;
@@ -50,22 +51,27 @@ export function recordWorkspace(db: Database, input: RecordWorkspaceInput): Work
         name,
         description,
         plan_id,
-        plan_title
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        plan_title,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
       ON CONFLICT(workspace_path) DO UPDATE SET
         project_id = excluded.project_id,
-        task_id = excluded.task_id,
-        original_plan_file_path = excluded.original_plan_file_path,
-        branch = excluded.branch,
-        name = excluded.name,
-        description = excluded.description,
-        plan_id = excluded.plan_id,
-        plan_title = excluded.plan_title,
-        updated_at = datetime('now')
+        task_id = COALESCE(excluded.task_id, workspace.task_id),
+        original_plan_file_path = COALESCE(
+          excluded.original_plan_file_path,
+          workspace.original_plan_file_path
+        ),
+        branch = COALESCE(excluded.branch, workspace.branch),
+        name = COALESCE(excluded.name, workspace.name),
+        description = COALESCE(excluded.description, workspace.description),
+        plan_id = COALESCE(excluded.plan_id, workspace.plan_id),
+        plan_title = COALESCE(excluded.plan_title, workspace.plan_title),
+        updated_at = ${SQL_NOW_ISO_UTC}
     `
     ).run(
       nextInput.projectId,
-      nextInput.taskId,
+      nextInput.taskId ?? null,
       nextInput.workspacePath,
       nextInput.originalPlanFilePath ?? null,
       nextInput.branch ?? null,
@@ -94,6 +100,13 @@ export function getWorkspaceByPath(db: Database, workspacePath: string): Workspa
   );
 }
 
+export function getWorkspaceById(db: Database, workspaceId: number): WorkspaceRow | null {
+  return (
+    (db.prepare('SELECT * FROM workspace WHERE id = ?').get(workspaceId) as WorkspaceRow | null) ??
+    null
+  );
+}
+
 export function findWorkspacesByTaskId(db: Database, taskId: string): WorkspaceRow[] {
   return db
     .prepare('SELECT * FROM workspace WHERE task_id = ? ORDER BY created_at DESC, id DESC')
@@ -104,6 +117,12 @@ export function findWorkspacesByProjectId(db: Database, projectId: number): Work
   return db
     .prepare('SELECT * FROM workspace WHERE project_id = ? ORDER BY created_at DESC, id DESC')
     .all(projectId) as WorkspaceRow[];
+}
+
+export function listAllWorkspaces(db: Database): WorkspaceRow[] {
+  return db
+    .prepare('SELECT * FROM workspace ORDER BY created_at DESC, id DESC')
+    .all() as WorkspaceRow[];
 }
 
 export function patchWorkspace(
@@ -167,7 +186,7 @@ export function patchWorkspace(
         return existing;
       }
 
-      fields.push("updated_at = datetime('now')");
+      fields.push(`updated_at = ${SQL_NOW_ISO_UTC}`);
       db.prepare(`UPDATE workspace SET ${fields.join(', ')} WHERE workspace_path = ?`).run(
         ...values,
         nextWorkspacePath

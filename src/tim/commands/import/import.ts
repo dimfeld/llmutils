@@ -7,8 +7,9 @@ import chalk from 'chalk';
 import { error, log, warn } from '../../../logging.js';
 import { getIssueTracker } from '../../../common/issue_tracker/factory.js';
 import type { IssueWithComments, IssueTrackerClient } from '../../../common/issue_tracker/types.js';
-import { reserveNextPlanId } from '../../assignments/assignments_io.js';
 import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
+import { getDatabase } from '../../db/database.js';
+import { reserveNextPlanId } from '../../db/project.js';
 import {
   readAllPlans,
   writePlanFile,
@@ -305,12 +306,14 @@ async function importHierarchicalIssue(
   if (newPlansCount > 0) {
     try {
       const repoIdentity = await getRepositoryIdentity();
-      const result = await reserveNextPlanId({
-        repositoryId: repoIdentity.repositoryId,
-        repositoryRemoteUrl: repoIdentity.remoteUrl,
+      const db = getDatabase();
+      const result = reserveNextPlanId(
+        db,
+        repoIdentity.repositoryId,
         localMaxId,
-        count: newPlansCount,
-      });
+        newPlansCount,
+        repoIdentity.remoteUrl
+      );
       startId = result.startId;
     } catch {
       // Fall back to local-only behavior if shared storage unavailable
@@ -664,11 +667,14 @@ export async function importSingleIssue(
   let newId: number;
   try {
     const repoIdentity = await getRepositoryIdentity();
-    const result = await reserveNextPlanId({
-      repositoryId: repoIdentity.repositoryId,
-      repositoryRemoteUrl: repoIdentity.remoteUrl,
+    const db = getDatabase();
+    const result = reserveNextPlanId(
+      db,
+      repoIdentity.repositoryId,
       localMaxId,
-    });
+      1,
+      repoIdentity.remoteUrl
+    );
     newId = result.startId;
   } catch {
     // Fall back to local-only behavior if shared storage unavailable

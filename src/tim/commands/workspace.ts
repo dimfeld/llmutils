@@ -19,19 +19,8 @@ import { resolvePlanFile, readPlanFile, setPlanStatus } from '../plans.js';
 import { generateAlphanumericId } from '../id_utils.js';
 import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
 import { createWorkspace, prepareExistingWorkspace } from '../workspace/workspace_manager.js';
-import {
-  buildWorkspaceListEntries,
-  findWorkspacesByRepositoryId,
-  findWorkspacesByTaskId,
-  getWorkspaceMetadata,
-  patchWorkspaceMetadata,
-  readTrackingData,
-  updateWorkspaceLockStatus,
-  writeTrackingData,
-  type WorkspaceInfo,
-  type WorkspaceListEntry,
-  type WorkspaceMetadataPatch,
-} from '../workspace/workspace_tracker.js';
+import { deleteWorkspace } from '../db/workspace.js';
+import { getDatabase } from '../db/database.js';
 import {
   formatWorkspacePath,
   getCombinedTitleFromSummary,
@@ -50,14 +39,104 @@ import { importSingleIssue } from './import/import.js';
 import { readAllPlans } from '../plans.js';
 import { parseIssueInput, type ParsedIssueInput } from '../issue_utils.js';
 import { spawnAndLogOutput } from '../../common/process.js';
+import {
+  findWorkspaceInfosByRepositoryId,
+  findWorkspaceInfosByTaskId,
+  getWorkspaceInfoByPath,
+  listAllWorkspaceInfos,
+  patchWorkspaceInfo,
+  type WorkspaceInfo,
+  type WorkspaceMetadataPatch,
+} from '../workspace/workspace_info.js';
 
 export type WorkspaceListFormat = 'table' | 'tsv' | 'json';
+
+interface WorkspaceListEntry {
+  fullPath: string;
+  basename: string;
+  name?: string;
+  description?: string;
+  branch?: string;
+  taskId: string;
+  planTitle?: string;
+  planId?: string;
+  issueUrls?: string[];
+  repositoryId?: string;
+  lockedBy?: WorkspaceInfo['lockedBy'];
+  createdAt: string;
+  updatedAt?: string;
+}
 
 export interface WorkspaceListOptions {
   repo?: string;
   format?: WorkspaceListFormat;
   header?: boolean;
   all?: boolean;
+}
+
+async function updateWorkspaceLockStatus(workspaces: WorkspaceInfo[]): Promise<WorkspaceInfo[]> {
+  return Promise.all(
+    workspaces.map(async (workspace) => {
+      const lockInfo = await WorkspaceLock.getLockInfo(workspace.workspacePath);
+      if (lockInfo && !(await WorkspaceLock.isLockStale(lockInfo))) {
+        return {
+          ...workspace,
+          lockedBy: {
+            type: lockInfo.type,
+            pid: lockInfo.pid,
+            startedAt: lockInfo.startedAt,
+            hostname: lockInfo.hostname,
+            command: lockInfo.command,
+          },
+        };
+      }
+
+      const { lockedBy, ...workspaceWithoutLock } = workspace;
+      return workspaceWithoutLock;
+    })
+  );
+}
+
+async function buildWorkspaceListEntries(
+  workspaces: WorkspaceInfo[]
+): Promise<WorkspaceListEntry[]> {
+  const entries: WorkspaceListEntry[] = [];
+
+  for (const workspace of workspaces) {
+    try {
+      const stats = await fs.stat(workspace.workspacePath);
+      if (!stats.isDirectory()) {
+        continue;
+      }
+    } catch {
+      continue;
+    }
+
+    let branch: string | undefined;
+    try {
+      branch = (await getCurrentBranchName(workspace.workspacePath)) ?? undefined;
+    } catch {
+      // Keep metadata branch fallback below.
+    }
+
+    entries.push({
+      fullPath: workspace.workspacePath,
+      basename: path.basename(workspace.workspacePath),
+      name: workspace.name,
+      description: workspace.description,
+      branch: branch ?? workspace.branch,
+      taskId: workspace.taskId,
+      planTitle: workspace.planTitle,
+      planId: workspace.planId,
+      issueUrls: workspace.issueUrls,
+      repositoryId: workspace.repositoryId,
+      lockedBy: workspace.lockedBy,
+      createdAt: workspace.createdAt,
+      updatedAt: workspace.updatedAt,
+    });
+  }
+
+  return entries;
 }
 
 export async function handleWorkspaceListCommand(options: WorkspaceListOptions, command: Command) {
@@ -68,7 +147,6 @@ export async function handleWorkspaceListCommand(options: WorkspaceListOptions, 
 
   // If not in a git repo, suppress the external storage message
   const config = await loadEffectiveConfig(globalOpts.config, { quiet: !inGitRepo });
-  const trackingFilePath = config.paths?.trackingFile;
 
   const format: WorkspaceListFormat = options.format ?? 'table';
   const showHeader = options.header ?? true;
@@ -82,19 +160,18 @@ export async function handleWorkspaceListCommand(options: WorkspaceListOptions, 
   // Get workspaces based on whether we're filtering by repo
   let workspaces: WorkspaceInfo[];
   if (repositoryId) {
-    const removedWorkspaces = await removeMissingWorkspaceEntries(repositoryId, trackingFilePath);
+    const removedWorkspaces = await removeMissingWorkspaceEntries(repositoryId);
     for (const workspacePath of removedWorkspaces) {
       warn(`Removed deleted workspace directory: ${workspacePath}`);
     }
-    workspaces = await findWorkspacesByRepositoryId(repositoryId, trackingFilePath);
+    workspaces = findWorkspaceInfosByRepositoryId(repositoryId);
   } else {
     // --all: get all workspaces from tracking file, also cleaning up stale entries
-    const removedWorkspaces = await removeAllMissingWorkspaceEntries(trackingFilePath);
+    const removedWorkspaces = await removeAllMissingWorkspaceEntries();
     for (const workspacePath of removedWorkspaces) {
       warn(`Removed deleted workspace directory: ${workspacePath}`);
     }
-    const trackingData = await readTrackingData(trackingFilePath);
-    workspaces = Object.values(trackingData);
+    workspaces = listAllWorkspaceInfos();
   }
 
   // Update lock status for all workspaces
@@ -290,27 +367,17 @@ function outputWorkspaceJson(entries: WorkspaceListEntry[]): void {
   console.log(JSON.stringify(sanitizedEntries, null, 2));
 }
 
-async function removeMissingWorkspaceEntries(
-  repositoryId: string,
-  trackingFilePath?: string
-): Promise<string[]> {
-  const [trackingData, workspaces] = await Promise.all([
-    readTrackingData(trackingFilePath),
-    findWorkspacesByRepositoryId(repositoryId, trackingFilePath),
-  ]);
-
+async function removeMissingWorkspaceEntries(repositoryId: string): Promise<string[]> {
+  const workspaces = findWorkspaceInfosByRepositoryId(repositoryId);
   const removed: string[] = [];
+  const db = getDatabase();
 
   for (const workspace of workspaces) {
     const status = await getWorkspaceDirectoryStatus(workspace.workspacePath);
-    if (status === 'missing' && trackingData[workspace.workspacePath]) {
-      delete trackingData[workspace.workspacePath];
+    if (status === 'missing') {
+      deleteWorkspace(db, workspace.workspacePath);
       removed.push(workspace.workspacePath);
     }
-  }
-
-  if (removed.length > 0) {
-    await writeTrackingData(trackingData, trackingFilePath);
   }
 
   return removed;
@@ -320,20 +387,17 @@ async function removeMissingWorkspaceEntries(
  * Removes workspace entries whose directories no longer exist across all repositories.
  * Used by --all flag to ensure stale entries are cleaned up globally.
  */
-async function removeAllMissingWorkspaceEntries(trackingFilePath?: string): Promise<string[]> {
-  const trackingData = await readTrackingData(trackingFilePath);
+async function removeAllMissingWorkspaceEntries(): Promise<string[]> {
+  const workspaces = listAllWorkspaceInfos();
   const removed: string[] = [];
+  const db = getDatabase();
 
-  for (const workspacePath of Object.keys(trackingData)) {
-    const status = await getWorkspaceDirectoryStatus(workspacePath);
+  for (const workspace of workspaces) {
+    const status = await getWorkspaceDirectoryStatus(workspace.workspacePath);
     if (status === 'missing') {
-      delete trackingData[workspacePath];
-      removed.push(workspacePath);
+      deleteWorkspace(db, workspace.workspacePath);
+      removed.push(workspace.workspacePath);
     }
-  }
-
-  if (removed.length > 0) {
-    await writeTrackingData(trackingData, trackingFilePath);
   }
 
   return removed;
@@ -516,7 +580,7 @@ async function cleanupCopiedPlanPath(
  */
 async function tryReuseExistingWorkspace(
   config: TimConfig,
-  trackingFilePath: string | undefined,
+  _trackingFilePath: string | undefined,
   options: {
     fromBranch?: string;
     createBranch?: boolean;
@@ -532,10 +596,10 @@ async function tryReuseExistingWorkspace(
   const repositoryId = await determineRepositoryId();
 
   // Clean up missing workspace entries
-  await removeMissingWorkspaceEntries(repositoryId, trackingFilePath);
+  await removeMissingWorkspaceEntries(repositoryId);
 
   // Find all workspaces for this repository
-  const workspaces = await findWorkspacesByRepositoryId(repositoryId, trackingFilePath);
+  const workspaces = findWorkspaceInfosByRepositoryId(repositoryId);
   const workspacesWithStatus = await updateWorkspaceLockStatus(workspaces);
 
   // Filter to only unlocked workspaces
@@ -671,7 +735,7 @@ async function tryReuseExistingWorkspace(
         metadataPatch.issueUrls = options.issueUrls;
       }
 
-      await patchWorkspaceMetadata(workspace.workspacePath, metadataPatch, trackingFilePath);
+      patchWorkspaceInfo(workspace.workspacePath, metadataPatch);
 
       return {
         success: true,
@@ -917,11 +981,7 @@ export async function handleWorkspaceAddCommand(
       issueUrls: importedPlan.issue?.length ? [...importedPlan.issue] : [],
     };
 
-    await patchWorkspaceMetadata(
-      workspace.path,
-      metadataPatch,
-      effectiveConfig.paths?.trackingFile
-    );
+    patchWorkspaceInfo(workspace.path, metadataPatch);
   }
 
   // Update plan status in the new workspace if plan was copied
@@ -1000,18 +1060,17 @@ export async function handleWorkspaceLockCommand(
 ) {
   const globalOpts = command.parent!.parent!.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
-  const trackingFilePath = config.paths?.trackingFile;
 
   if (options.available && target) {
     throw new Error('Cannot specify a workspace identifier when using --available');
   }
 
   if (options.available) {
-    await lockAvailableWorkspace(config, trackingFilePath, options);
+    await lockAvailableWorkspace(config, options);
     return;
   }
 
-  const workspace = await resolveWorkspaceIdentifier(target, trackingFilePath);
+  const workspace = await resolveWorkspaceIdentifier(target);
 
   if (!(await workspaceDirectoryExists(workspace.workspacePath))) {
     throw new Error(`Workspace directory does not exist: ${workspace.workspacePath}`);
@@ -1046,11 +1105,7 @@ export async function handleWorkspaceUnlockCommand(
   _options: any,
   command: Command
 ) {
-  const globalOpts = command.parent!.parent!.opts();
-  const config = await loadEffectiveConfig(globalOpts.config);
-  const trackingFilePath = config.paths?.trackingFile;
-
-  const workspace = await resolveWorkspaceIdentifier(target, trackingFilePath);
+  const workspace = await resolveWorkspaceIdentifier(target);
 
   if (!(await workspaceDirectoryExists(workspace.workspacePath))) {
     throw new Error(`Workspace directory does not exist: ${workspace.workspacePath}`);
@@ -1071,14 +1126,11 @@ export async function handleWorkspaceUnlockCommand(
   console.log(workspace.workspacePath);
 }
 
-async function resolveWorkspaceIdentifier(
-  identifier: string | undefined,
-  trackingFilePath?: string
-): Promise<WorkspaceInfo> {
+async function resolveWorkspaceIdentifier(identifier: string | undefined): Promise<WorkspaceInfo> {
   if (identifier) {
     const asPath = path.resolve(process.cwd(), identifier);
     if (await workspaceDirectoryExists(asPath)) {
-      const metadata = await getWorkspaceMetadata(asPath, trackingFilePath);
+      const metadata = getWorkspaceInfoByPath(asPath);
       if (!metadata) {
         throw new Error(
           `Directory ${asPath} is not a tracked workspace. Run tim workspace list to see known workspaces.`
@@ -1087,7 +1139,7 @@ async function resolveWorkspaceIdentifier(
       return metadata;
     }
 
-    const matches = await findWorkspacesByTaskId(identifier, trackingFilePath);
+    const matches = findWorkspaceInfosByTaskId(identifier);
 
     if (matches.length === 0) {
       throw new Error(`No workspace found for task ID: ${identifier}`);
@@ -1103,7 +1155,7 @@ async function resolveWorkspaceIdentifier(
   }
 
   const currentDir = process.cwd();
-  const metadata = await getWorkspaceMetadata(currentDir, trackingFilePath);
+  const metadata = getWorkspaceInfoByPath(currentDir);
   if (!metadata) {
     throw new Error(
       'The current directory is not a tracked workspace. Provide a task ID or workspace path to lock/unlock.'
@@ -1115,13 +1167,12 @@ async function resolveWorkspaceIdentifier(
 
 async function lockAvailableWorkspace(
   config: TimConfig,
-  trackingFilePath: string | undefined,
   options: { create?: boolean }
 ): Promise<void> {
   const repositoryId = await determineRepositoryId();
-  await removeMissingWorkspaceEntries(repositoryId, trackingFilePath);
+  await removeMissingWorkspaceEntries(repositoryId);
 
-  const workspaces = await findWorkspacesByRepositoryId(repositoryId, trackingFilePath);
+  const workspaces = findWorkspaceInfosByRepositoryId(repositoryId);
   const workspacesWithStatus = await updateWorkspaceLockStatus(workspaces);
   const available = workspacesWithStatus.find((workspace) => !workspace.lockedBy);
 
@@ -1194,8 +1245,6 @@ export async function handleWorkspaceUpdateCommand(
   command: Command
 ) {
   const globalOpts = command.parent!.parent!.opts();
-  const config = await loadEffectiveConfig(globalOpts.config);
-  const trackingFilePath = config.paths?.trackingFile;
 
   // Validate that at least one update option is provided
   if (options.name === undefined && options.description === undefined && !options.fromPlan) {
@@ -1212,7 +1261,7 @@ export async function handleWorkspaceUpdateCommand(
       workspacePath = asPath;
     } else {
       // Try to resolve as task ID
-      const matches = await findWorkspacesByTaskId(target, trackingFilePath);
+      const matches = findWorkspaceInfosByTaskId(target);
       if (matches.length === 0) {
         throw new Error(`No workspace found for task ID: ${target}`);
       }
@@ -1235,7 +1284,7 @@ export async function handleWorkspaceUpdateCommand(
 
   // Build the patch object
   const patch: WorkspaceMetadataPatch = {};
-  const existingMetadata = await getWorkspaceMetadata(workspacePath, trackingFilePath);
+  const existingMetadata = getWorkspaceInfoByPath(workspacePath);
 
   // Handle name
   if (options.name !== undefined) {
@@ -1266,7 +1315,7 @@ export async function handleWorkspaceUpdateCommand(
   }
 
   // Apply the patch
-  const updated = await patchWorkspaceMetadata(workspacePath, patch, trackingFilePath);
+  const updated = patchWorkspaceInfo(workspacePath, patch);
 
   // Display result
   log(chalk.green('Workspace metadata updated'));

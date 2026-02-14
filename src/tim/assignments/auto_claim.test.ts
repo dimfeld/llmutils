@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { ModuleMocker } from '../../testing.js';
-import { readAssignments } from './assignments_io.js';
+import { closeDatabaseForTesting } from '../db/database.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -55,6 +55,7 @@ describe('autoClaimPlan', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
+    closeDatabaseForTesting();
 
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;
@@ -91,9 +92,6 @@ describe('autoClaimPlan', () => {
 
     expect(result).toBeNull();
     expect(isAutoClaimEnabled()).toBe(false);
-
-    const assignments = await readAssignments({ repositoryId });
-    expect(Object.keys(assignments.assignments)).toHaveLength(0);
   });
 
   test('persists assignment when enabled', async () => {
@@ -120,19 +118,15 @@ describe('autoClaimPlan', () => {
         },
         uuid,
       },
-      { cwdForIdentity: repoDir, now: new Date('2025-02-01T12:00:00Z') }
+      { cwdForIdentity: repoDir }
     );
 
     expect(result).not.toBeNull();
     expect(result?.user).toBe(userName);
-
-    const assignments = await readAssignments({ repositoryId });
-    const entry = assignments.assignments[uuid];
-    expect(entry).toBeDefined();
-    expect(entry?.planId).toBe(1);
-    expect(entry?.workspacePaths).toEqual([repoDir]);
-    expect(entry?.users).toEqual([userName]);
-    expect(assignments.version).toBe(1);
+    expect(result?.result.persisted).toBe(true);
+    expect(result?.result.entry.planId).toBe(1);
+    expect(result?.result.entry.users).toEqual([userName]);
+    expect(result?.result.entry.workspacePaths).toEqual([repoDir]);
 
     disableAutoClaim();
     expect(isAutoClaimEnabled()).toBe(false);
