@@ -159,7 +159,7 @@ function buildAssignmentDisplays(
 
   for (const [uuid, entry] of Object.entries(assignments.assignments)) {
     const plan = planLookup.get(uuid);
-    const planId = entry.planId ?? (typeof plan?.id === 'number' ? plan.id : null);
+    const planId = entry.planId ?? plan?.id ?? null;
     const planTitle = plan ? getCombinedTitleFromSummary(plan) : 'Unknown plan';
     const planLabel = planId ? `#${planId} ${planTitle}` : planTitle;
 

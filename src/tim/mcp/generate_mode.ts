@@ -110,7 +110,7 @@ export async function loadResearchPrompt(
   const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
 
   const allowMultiplePlans = parseBooleanOption(args.allowMultiplePlans, true);
-  const parentPlanId = typeof plan.id === 'number' ? plan.id : undefined;
+  const parentPlanId = plan.id;
 
   // If plan has simple: true, skip research and use simple generation flow
   if (plan.simple) {
@@ -251,7 +251,7 @@ export async function loadGeneratePrompt(
   if (args.plan) {
     const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
     contextBlock = buildPlanContext(plan, planPath, context);
-    parentPlanId = typeof plan.id === 'number' ? plan.id : undefined;
+    parentPlanId = plan.id;
   }
 
   const allowMultiplePlans = parseBooleanOption(args.allowMultiplePlans, true);
@@ -693,10 +693,9 @@ export function registerGenerateMode(
       });
 
       const enrichedPlans = readyPlans.map((plan) => {
-        const planId = typeof plan.id === 'number' ? plan.id : 0;
         return {
           ...plan,
-          filename: plans.get(planId)?.filename || '',
+          filename: plans.get(plan.id)?.filename || '',
         };
       });
 

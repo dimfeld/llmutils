@@ -959,7 +959,7 @@ export async function handleWorkspaceAddCommand(
         // Find the imported plan file to show in success message
         const { plans: updatedPlans } = await readAllPlans(tasksDir, false);
         for (const [_, plan] of updatedPlans) {
-          if (plan.issue?.some((url: string) => url.includes(issueInfo!.identifier))) {
+          if (plan.issue?.some((url: string) => url.includes(issueInfo.identifier))) {
             importedPlanFile = plan.filename;
             importedPlan = plan;
             break;
@@ -999,11 +999,9 @@ export async function handleWorkspaceAddCommand(
     try {
       const repository = await getRepositoryIdentity({ cwd: workspace.path });
       const user = getUserIdentity();
-      const planId =
-        typeof planData.id === 'number' && !Number.isNaN(planData.id) ? planData.id : undefined;
-      const planLabel = planId !== undefined ? String(planId) : planData.uuid;
+      const planLabel = String(planData.id);
 
-      const claimResult = await claimPlan(planId, {
+      const claimResult = await claimPlan(planData.id, {
         uuid: planData.uuid,
         repositoryId: repository.repositoryId,
         repositoryRemoteUrl: repository.remoteUrl,

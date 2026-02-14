@@ -300,7 +300,7 @@ export async function handleMergeCommand(planFile: string, options: MergeOptions
 
   // Prepare ID sets for pruning dependencies and grandchildren updates
   const childIds = new Set(childrenToMerge.map((c) => c.id).filter(Boolean));
-  const childIdsNumbers = new Set<number>(Array.from(childIds) as number[]);
+  const childIdsNumbers = new Set<number>(Array.from(childIds));
   const remainingPlanIds = new Set<number>(
     Array.from(plans.values())
       .map((p) => p.id)

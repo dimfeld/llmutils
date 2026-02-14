@@ -107,7 +107,7 @@ function getStatusColor(status?: string): (text: string) => string {
  * Format dependency list with status indicators
  */
 function formatDependencies(
-  dependencies: (string | number)[] | undefined,
+  dependencies: number[] | undefined,
   allPlans: Map<number, ReadyPlan>
 ): string {
   if (!dependencies || dependencies.length === 0) {
@@ -121,7 +121,7 @@ function formatDependencies(
       let dep = allPlans.get(numericId);
 
       // Try alternate lookup if not found
-      if (!dep && typeof id === 'number') {
+      if (!dep) {
         dep = allPlans.get(id);
       }
 

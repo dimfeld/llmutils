@@ -89,24 +89,6 @@ export function isReadyPlan<T extends PlanSchema>(
   });
 }
 
-function compareIds(aId: PlanSchema['id'], bId: PlanSchema['id']): number {
-  if (typeof aId === 'number' && typeof bId === 'number') {
-    return aId - bId;
-  }
-
-  if (typeof aId === 'number') {
-    return -1;
-  }
-
-  if (typeof bId === 'number') {
-    return 1;
-  }
-
-  const aSafe = aId ?? '';
-  const bSafe = bId ?? '';
-  return aSafe.localeCompare(bSafe);
-}
-
 function comparePriority(a: PlanSchema, b: PlanSchema): number {
   const aPriority = a.priority ? (PRIORITY_ORDER[a.priority] ?? 0) : 0;
   const bPriority = b.priority ? (PRIORITY_ORDER[b.priority] ?? 0) : 0;
@@ -129,7 +111,7 @@ function comparePlans<T extends PlanSchema>(
       break;
     }
     case 'id': {
-      comparison = compareIds(a.id, b.id);
+      comparison = a.id - b.id;
       break;
     }
     case 'created': {
@@ -137,7 +119,7 @@ function comparePlans<T extends PlanSchema>(
       const bValue = b.createdAt ?? '';
       comparison = aValue.localeCompare(bValue);
       if (comparison === 0) {
-        comparison = compareIds(a.id, b.id);
+        comparison = a.id - b.id;
       }
       break;
     }
@@ -146,7 +128,7 @@ function comparePlans<T extends PlanSchema>(
       const bValue = b.updatedAt ?? '';
       comparison = aValue.localeCompare(bValue);
       if (comparison === 0) {
-        comparison = compareIds(a.id, b.id);
+        comparison = a.id - b.id;
       }
       break;
     }
@@ -158,7 +140,7 @@ function comparePlans<T extends PlanSchema>(
       } else {
         comparison = (a.createdAt ?? '').localeCompare(b.createdAt ?? '');
         if (comparison === 0) {
-          comparison = compareIds(a.id, b.id);
+          comparison = a.id - b.id;
         }
       }
       break;

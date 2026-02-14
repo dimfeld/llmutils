@@ -2378,10 +2378,9 @@ describe('MCP Resources', () => {
       });
 
       const enrichedPlans = readyPlans.map((plan) => {
-        const planId = typeof plan.id === 'number' ? plan.id : 0;
         return {
           ...plan,
-          filename: plans.get(planId)?.filename || '',
+          filename: plans.get(plan.id)?.filename || '',
         };
       });
 

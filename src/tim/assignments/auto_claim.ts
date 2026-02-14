@@ -65,8 +65,7 @@ export async function autoClaimPlan(
   const repository = await getRepositoryIdentity({ cwd: options.cwdForIdentity });
   const user = getUserIdentity();
 
-  const planId =
-    typeof input.plan.id === 'number' && !Number.isNaN(input.plan.id) ? input.plan.id : undefined;
+  const planId = input.plan.id;
   const planLabel = planId !== undefined ? String(planId) : input.uuid;
 
   const result = await claimPlan(planId, {

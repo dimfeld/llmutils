@@ -54,12 +54,10 @@ export function verifyPlanIdCache(
     return null;
   }
 
-  const numericId = typeof located.id === 'number' ? located.id : Number(located.id);
-
   return {
     plan: located,
-    planId: numericId,
-    cacheUpdated: cachedPlanId !== numericId,
+    planId: located.id,
+    cacheUpdated: cachedPlanId !== located.id,
   };
 }
 

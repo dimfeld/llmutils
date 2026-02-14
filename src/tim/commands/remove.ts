@@ -33,11 +33,7 @@ export async function handleRemoveCommand(
     })
   );
 
-  const targetIds = new Set<number>(
-    resolvedTargets
-      .map((target) => target.plan.id)
-      .filter((id): id is number => typeof id === 'number' && Number.isInteger(id))
-  );
+  const targetIds = new Set<number>(resolvedTargets.map((target) => target.plan.id));
   const targetUuids = new Set<string>(
     resolvedTargets
       .map((target) => target.plan.uuid)

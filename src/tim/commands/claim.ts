@@ -24,10 +24,9 @@ export async function handleClaimCommand(
   const repository = await getRepositoryIdentity();
   const user = getUserIdentity();
 
-  const planId = typeof plan.id === 'number' && !Number.isNaN(plan.id) ? plan.id : undefined;
-  const planLabel = planId !== undefined ? String(planId) : uuid;
+  const planLabel = String(plan.id);
 
-  const result = await claimPlan(planId, {
+  const result = await claimPlan(plan.id, {
     uuid,
     repositoryId: repository.repositoryId,
     repositoryRemoteUrl: repository.remoteUrl,

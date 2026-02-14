@@ -107,24 +107,10 @@ export async function readAllPlans(
       debugLog(`Successfully parsed plan with ID: ${plan.id} from ${fullPath}`);
 
       // Determine if the ID is numeric
-      let idKey: number = plan.id;
-      let summaryId: number = plan.id;
-
-      if (typeof plan.id === 'number') {
-        // ID is already a number
-        idKey = plan.id;
-        summaryId = plan.id;
-        if (plan.id > maxNumericId) {
-          maxNumericId = plan.id;
-        }
-      } else if (typeof plan.id === 'string' && /^\d+$/.test(plan.id)) {
-        // ID is a string that represents a number
-        const numericId = parseInt(plan.id, 10);
-        idKey = numericId;
-        summaryId = numericId;
-        if (numericId > maxNumericId) {
-          maxNumericId = numericId;
-        }
+      let idKey = plan.id;
+      let summaryId = plan.id;
+      if (plan.id > maxNumericId) {
+        maxNumericId = plan.id;
       }
 
       // Track all files for each ID
@@ -419,19 +405,7 @@ export async function findNextPlan(
     }
 
     // If priorities are the same, sort by ID ascending
-    const aId = a.id || '';
-    const bId = b.id || '';
-
-    // Handle both string and numeric IDs
-    if (typeof aId === 'number' && typeof bId === 'number') {
-      return aId - bId;
-    } else if (typeof aId === 'number') {
-      return -1; // Numeric IDs come before string IDs
-    } else if (typeof bId === 'number') {
-      return 1; // Numeric IDs come before string IDs
-    } else {
-      return aId.localeCompare(bId);
-    }
+    return a.id - b.id;
   });
 
   return readyCandidates[0];
@@ -1036,18 +1010,7 @@ export async function findBranchSpecificPlan(
     }
 
     // If createdAt is equal or both missing, compare by ID
-    const aId = a.id || 0;
-    const bId = b.id || 0;
-
-    if (typeof aId === 'number' && typeof bId === 'number') {
-      return aId - bId;
-    } else if (typeof aId === 'number') {
-      return -1; // Numeric IDs come before string IDs
-    } else if (typeof bId === 'number') {
-      return 1; // Numeric IDs come before string IDs
-    } else {
-      return String(aId).localeCompare(String(bId));
-    }
+    return a.id - b.id;
   });
 
   return planCandidates[0];

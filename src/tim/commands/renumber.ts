@@ -207,9 +207,7 @@ function ensureReferencesForAllPlans(
 ): number {
   const plansByIdMap = new Map<number, PlanSchema>();
   for (const [, plan] of allPlans) {
-    if (typeof plan.id === 'number' && !Number.isNaN(plan.id)) {
-      plansByIdMap.set(plan.id, plan as PlanSchema);
-    }
+    plansByIdMap.set(plan.id, plan as PlanSchema);
   }
 
   let updatedCount = 0;
@@ -1326,7 +1324,7 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
       for (const { filePath, plan } of plansToKeepAndRenumber) {
         plansToRenumber.push({
           filePath,
-          currentId: plan.id!,
+          currentId: plan.id,
           plan,
           reason: 'conflict',
           conflictsWith: id,

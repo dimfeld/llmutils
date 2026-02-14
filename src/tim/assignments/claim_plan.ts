@@ -22,7 +22,7 @@ export interface ClaimPlanResult {
 }
 
 export async function claimPlan(
-  planId: number | undefined,
+  planId: number,
   context: ClaimPlanContext
 ): Promise<ClaimPlanResult> {
   const db = getDatabase();

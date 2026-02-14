@@ -90,7 +90,7 @@ export async function buildHeadlessSessionInfo(
 
   return {
     command,
-    planId: typeof plan?.id === 'number' ? plan.id : undefined,
+    planId: plan?.id,
     planTitle: plan?.title,
     workspacePath,
     gitRemote,

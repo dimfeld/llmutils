@@ -56,17 +56,7 @@ export function isUnderEpic<T extends PlanSchema>(
   }
 
   const parentChain = getParentChain(plan, allPlans);
-  return parentChain.some((parent) => {
-    if (typeof parent.id === 'number') {
-      return parent.id === epicId;
-    }
-
-    if (typeof parent.id === 'string' && /^\d+$/.test(parent.id)) {
-      return Number.parseInt(parent.id, 10) === epicId;
-    }
-
-    return false;
-  });
+  return parentChain.some((parent) => parent.id === epicId);
 }
 
 /**

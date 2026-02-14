@@ -29,7 +29,7 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
       .string()
       .optional()
       .describe('Plan details. This can also be in markdown content after the YAML'),
-    id: z.coerce.number().int().positive().optional(),
+    id: z.number().int().positive(),
     uuid: z.guid().optional(),
     generatedBy: z.enum(['agent', 'oneshot']).optional(),
     simple: z.boolean().optional(),
@@ -58,11 +58,11 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
       .optional()
       .describe('A temporary plan that should be deleted after completion'),
     dependencies: z
-      .array(z.coerce.number().int().positive())
+      .array(z.number().int().positive())
       .default(() => [])
       .optional(),
-    parent: z.coerce.number().int().positive().optional(),
-    discoveredFrom: z.coerce
+    parent: z.number().int().positive().optional(),
+    discoveredFrom: z
       .number()
       .int()
       .positive()
