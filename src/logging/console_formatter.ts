@@ -66,11 +66,10 @@ export function formatStructuredMessage(message: StructuredMessage): string {
         message.mode ? `Mode: ${message.mode}` : undefined,
         message.planId ? `Plan: ${message.planId}` : undefined,
       ].filter(Boolean);
-      return [formatHeader(chalk.bold.green, 'Starting', message.timestamp), ...details].join('\n');
+      const suffix = details.length > 0 ? ` - ${details.join(', ')}` : '';
+      return formatHeader(chalk.bold.green, 'Starting', message.timestamp) + suffix;
     }
     case 'agent_session_end': {
-      const lines = [formatHeader(chalk.bold.green, 'Done', message.timestamp)];
-
       const info: string[] = [];
 
       info.push(`Success: ${message.success ? chalk.green('yes') : chalk.red('no')}`);
@@ -79,10 +78,10 @@ export function formatStructuredMessage(message: StructuredMessage): string {
       if (message.costUsd != null) info.push(`Cost: $${message.costUsd.toFixed(2)}`);
       if (message.turns != null) info.push(`Turns: ${message.turns}`);
 
-      lines.push(info.join(', '));
+      const line = formatHeader(chalk.bold.green, 'Done', message.timestamp) + ' - ' + info.join(', ');
 
-      if (message.summary) lines.push(message.summary);
-      return lines.join('\n');
+      if (message.summary) return line + '\n' + message.summary;
+      return line;
     }
     case 'agent_iteration_start':
       return [
