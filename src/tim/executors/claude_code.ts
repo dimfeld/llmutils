@@ -1012,6 +1012,7 @@ export class ClaudeCodeExecutor implements Executor {
         tunnelServer,
         terminalInputEnabled: this.sharedOptions.terminalInput === true,
         tunnelForwardingEnabled: isTunnelActive(),
+        closeOnResultMessage: this.sharedOptions.closeTerminalInputOnResult ?? true,
       });
 
       const result = await terminalInputResult.resultPromise;

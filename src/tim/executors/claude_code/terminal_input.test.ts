@@ -222,7 +222,8 @@ describe('TerminalInputReader', () => {
 
   it('transitions to stopped when readline closes externally', () => {
     setTTY(true);
-    const reader = new TerminalInputReader({ onLine: () => {} });
+    const onCloseWhileActive = mock(() => {});
+    const reader = new TerminalInputReader({ onLine: () => {}, onCloseWhileActive });
     reader.start();
 
     expect(getActiveTerminalInputReader()).toBe(reader);
@@ -230,6 +231,20 @@ describe('TerminalInputReader', () => {
 
     expect(reader.getState()).toBe('stopped');
     expect(getActiveTerminalInputReader()).toBeUndefined();
+    expect(onCloseWhileActive).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not invoke onCloseWhileActive during explicit stop or pause', () => {
+    setTTY(true);
+    const onCloseWhileActive = mock(() => {});
+    const reader = new TerminalInputReader({ onLine: () => {}, onCloseWhileActive });
+    reader.start();
+
+    reader.pause();
+    reader.resume();
+    reader.stop();
+
+    expect(onCloseWhileActive).toHaveBeenCalledTimes(0);
   });
 
   it('stop is safe when never started and pause/resume are no-ops while stopped', () => {

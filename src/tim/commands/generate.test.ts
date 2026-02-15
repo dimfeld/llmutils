@@ -555,6 +555,21 @@ describe('handleGenerateCommand', () => {
     const executorOpts = buildExecutorAndLogSpy.mock.calls[0][1];
     expect(executorOpts.terminalInput).toBe(false);
   });
+
+  test('keeps terminal input open until EOF by default', async () => {
+    const planPath = await createStubPlan(119);
+
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [{ title: 'Task 1', description: 'Description', done: false }];
+      await writePlanFile(planPath, plan);
+    });
+
+    await handleGenerateCommand(undefined, { plan: planPath }, buildCommand());
+
+    const executorOpts = buildExecutorAndLogSpy.mock.calls[0][1];
+    expect(executorOpts.closeTerminalInputOnResult).toBe(false);
+  });
 });
 
 describe('handleGenerateCommand with --next-ready flag', () => {

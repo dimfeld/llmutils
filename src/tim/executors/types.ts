@@ -13,6 +13,11 @@ export interface ExecutorCommonOptions {
   /** When true, Claude Code executor accepts terminal follow-up input during execution */
   terminalInput?: boolean;
   /**
+   * When false, keep terminal input open after the first Claude "result" message
+   * and only close stdin when the user sends EOF (Ctrl+D) or process exit cleanup runs.
+   */
+  closeTerminalInputOnResult?: boolean;
+  /**
    * When true, executors should run in the streamlined implement → verify flow.
    */
   simpleMode?: boolean;

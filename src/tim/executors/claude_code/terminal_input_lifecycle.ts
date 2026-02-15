@@ -90,6 +90,9 @@ export function setupTerminalInput(
         debugLog('Failed to forward terminal input through tunnel: %s', err as Error);
       }
     },
+    onCloseWhileActive: () => {
+      stdinGuard.close();
+    },
     onError: onReaderError,
   });
 
@@ -126,6 +129,8 @@ export interface ExecuteWithTerminalInputOptions {
   tunnelServer?: TunnelServer;
   terminalInputEnabled: boolean;
   tunnelForwardingEnabled: boolean;
+  /** When false, ignore result messages for stdin closing behavior. */
+  closeOnResultMessage?: boolean;
 }
 
 export interface ExecuteWithTerminalInputResult {
@@ -158,6 +163,7 @@ export function executeWithTerminalInput(
     tunnelServer,
     terminalInputEnabled,
     tunnelForwardingEnabled,
+    closeOnResultMessage = true,
   } = options;
 
   // Single shared guard for stdin lifecycle, used across all three paths
@@ -188,6 +194,9 @@ export function executeWithTerminalInput(
   // onResultMessage is called by the formatStdout callback when a result message is detected
   let terminalInputController: TerminalInputController | undefined;
   const onResultMessage = (): void => {
+    if (!closeOnResultMessage) {
+      return;
+    }
     clearTunnelUserInputHandler();
     if (terminalInputController) {
       terminalInputController.onResultMessage();

@@ -215,6 +215,7 @@ export async function handleGenerateCommand(
     model: config.models?.stepGeneration,
     noninteractive: noninteractive ? true : undefined,
     terminalInput: terminalInputEnabled,
+    closeTerminalInputOnResult: false,
   };
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
 

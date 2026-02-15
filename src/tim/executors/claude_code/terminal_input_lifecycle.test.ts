@@ -148,6 +148,56 @@ describe('terminal_input_lifecycle', () => {
     }
   });
 
+  it('closes subprocess stdin when terminal reader closes while active (Ctrl+D)', async () => {
+    const stdinEndSpy = mock(async () => {});
+
+    await moduleMocker.mock('./streaming_input.ts', () => ({
+      sendInitialPrompt: mock(() => {}),
+      sendFollowUpMessage: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('./terminal_input.ts', () => ({
+      TerminalInputReader: class {
+        private readonly onCloseWhileActive?: () => void;
+
+        constructor(options: { onCloseWhileActive?: () => void }) {
+          this.onCloseWhileActive = options.onCloseWhileActive;
+        }
+
+        start() {
+          this.onCloseWhileActive?.();
+          return true;
+        }
+
+        stop() {}
+      },
+    }));
+
+    const { setupTerminalInput } = await import('./terminal_input_lifecycle.ts');
+    setupTerminalInput({
+      streaming: {
+        stdin: {
+          write: mock(() => 0),
+          end: stdinEndSpy,
+        },
+        result: Promise.resolve({
+          exitCode: 0,
+          stdout: '',
+          stderr: '',
+          signal: null,
+          killedByInactivity: false,
+        }),
+        kill: mock(() => {}),
+      } as unknown as StreamingProcess,
+      prompt: 'initial prompt',
+      sendStructured: mock(() => {}),
+      debugLog: mock(() => {}),
+      onReaderError: mock(() => {}),
+    });
+
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('logs debug output when closing stdin fails', async () => {
     const debugLogSpy = mock(() => {});
 
@@ -799,6 +849,63 @@ describe('executeWithTerminalInput', () => {
 
     result.onResultMessage();
 
+    expect(safeEndStdinSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('onResultMessage does not close stdin when closeOnResultMessage is false', async () => {
+    const safeEndStdinSpy = mock(() => {});
+    const stopSpy = mock(() => {});
+
+    await moduleMocker.mock('./streaming_input.ts', () => ({
+      sendInitialPrompt: mock(() => {}),
+      sendFollowUpMessage: mock(() => {}),
+      safeEndStdin: safeEndStdinSpy,
+      sendSinglePromptAndWait: mock(() => Promise.resolve()),
+    }));
+
+    await moduleMocker.mock('./terminal_input.ts', () => ({
+      TerminalInputReader: class {
+        start() {
+          return true;
+        }
+        stop() {
+          stopSpy();
+        }
+      },
+    }));
+
+    await moduleMocker.mock('../../../logging/adapter.js', () => ({
+      getLoggerAdapter: mock(() => undefined),
+    }));
+
+    await moduleMocker.mock('../../../logging/tunnel_client.js', () => ({
+      TunnelAdapter: class {},
+      isTunnelActive: mock(() => false),
+    }));
+
+    const { executeWithTerminalInput } = await import('./terminal_input_lifecycle.ts');
+    const streaming = makeStreamingProcess();
+
+    const result = executeWithTerminalInput({
+      streaming,
+      prompt: 'task prompt',
+      sendStructured: mock(() => {}),
+      debugLog: mock(() => {}),
+      errorLog: mock(() => {}),
+      log: mock(() => {}),
+      label: 'test',
+      terminalInputEnabled: true,
+      tunnelForwardingEnabled: false,
+      closeOnResultMessage: false,
+    });
+
+    result.onResultMessage();
+
+    expect(stopSpy).toHaveBeenCalledTimes(0);
+    expect(safeEndStdinSpy).toHaveBeenCalledTimes(0);
+
+    await result.resultPromise;
+    expect(stopSpy).toHaveBeenCalledTimes(1);
     expect(safeEndStdinSpy).toHaveBeenCalledTimes(1);
   });
 

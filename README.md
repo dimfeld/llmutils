@@ -298,6 +298,8 @@ The generate command enables terminal input by default, allowing you to interact
 - Ask questions to refine the approach
 - Generate structured tasks based on the discussion
 
+`tim generate` keeps stdin open while terminal input is enabled, so you can keep chatting after Claude emits a `result` message and exit with `Ctrl+D`.
+
 Skip research with `--simple` when:
 
 - Making trivial changes

@@ -6,6 +6,7 @@ export type TerminalInputReaderState = 'active' | 'paused' | 'stopped';
 interface TerminalInputReaderOptions {
   onLine: (line: string) => void | Promise<void>;
   onError?: (error: unknown) => void;
+  onCloseWhileActive?: () => void;
 }
 
 interface TerminalInputReaderStopOptions {
@@ -34,6 +35,7 @@ function logTerminalInputReaderError(error: unknown): void {
 export class TerminalInputReader {
   private readonly onLine: (line: string) => void | Promise<void>;
   private readonly onError: (error: unknown) => void;
+  private readonly onCloseWhileActive: () => void;
   private readline: Interface | undefined;
   private state: TerminalInputReaderState = 'stopped';
   private partialInput = '';
@@ -41,6 +43,7 @@ export class TerminalInputReader {
   constructor(options: TerminalInputReaderOptions) {
     this.onLine = options.onLine;
     this.onError = options.onError ?? logTerminalInputReaderError;
+    this.onCloseWhileActive = options.onCloseWhileActive ?? (() => {});
   }
 
   getState(): TerminalInputReaderState {
@@ -168,10 +171,16 @@ export class TerminalInputReader {
 
     this.readline.on('close', () => {
       this.readline = undefined;
-      if (this.state === 'active') {
+      const closedWhileActive = this.state === 'active';
+      if (closedWhileActive) {
         // External/unexpected close while active should fully tear down reader state.
         this.partialInput = '';
         this.state = 'stopped';
+        try {
+          this.onCloseWhileActive();
+        } catch (error: unknown) {
+          this.onError(error);
+        }
       }
       if (activeTerminalInputReader === this && this.state !== 'paused') {
         setActiveTerminalInputReader(undefined);
