@@ -4,6 +4,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'path';
 import { getGitRoot } from '../../common/git.js';
+import { promptCheckbox } from '../../common/input.js';
 import { boldMarkdownHeaders, log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import type { TimConfig } from '../configSchema.js';
@@ -72,6 +73,14 @@ export async function extractLessonsLearned(planFilePath: string): Promise<strin
   }
 
   return trimmedLessons;
+}
+
+/** Parse a lessons learned markdown text into individual lesson items. */
+export function parseLessonItems(lessonsText: string): string[] {
+  return lessonsText
+    .split('\n')
+    .map((line) => line.replace(/^\s*[-*]\s*/, '').trim())
+    .filter((line) => line.length > 0);
 }
 
 function stripYamlFrontmatter(content: string): string {
@@ -156,10 +165,29 @@ export async function runUpdateLessons(
     baseDir?: string;
   }
 ): Promise<boolean> {
-  const lessonsLearned = await extractLessonsLearned(planFilePath);
+  let lessonsLearned = await extractLessonsLearned(planFilePath);
   if (!lessonsLearned) {
     log('No lessons learned found in Current Progress. Skipping lessons documentation update.');
     return false;
+  }
+
+  const items = parseLessonItems(lessonsLearned);
+  if (items.length > 0) {
+    const selected = await promptCheckbox({
+      message: 'Select lessons to apply:',
+      choices: items.map((item) => ({
+        name: item,
+        value: item,
+        checked: true,
+      })),
+    });
+
+    if (selected.length === 0) {
+      log('No lessons selected. Skipping lessons documentation update.');
+      return false;
+    }
+
+    lessonsLearned = selected.map((item) => `- ${item}`).join('\n');
   }
 
   const planData = await readPlanFile(planFilePath);
