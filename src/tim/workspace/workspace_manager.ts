@@ -14,6 +14,7 @@ import { getOrCreateProject } from '../db/project.js';
 import { recordWorkspace, setWorkspaceIssues } from '../db/workspace.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { buildDescriptionFromPlan } from '../display_utils.js';
+import { findPrimaryWorkspaceForRepository } from './workspace_info.js';
 import type { PlanSchema } from '../planSchema.js';
 
 /**
@@ -526,10 +527,24 @@ export async function createWorkspace(
       }
     }
   } else if (cloneMethod === 'cp' || cloneMethod === 'mac-cow') {
-    // For cp and mac-cow methods, default to mainRepoRoot if source directory not specified
+    // For cp and mac-cow methods, default to primary workspace or mainRepoRoot if source directory not specified
     if (!sourceDirectory) {
-      sourceDirectory = mainRepoRoot;
-      log(`Using main repository root as source directory: ${sourceDirectory}`);
+      // Check if there's a primary workspace for this repository we can use as the source
+      try {
+        const identity = await getRepositoryIdentity({ cwd: mainRepoRoot });
+        const primaryWorkspace = findPrimaryWorkspaceForRepository(identity.repositoryId);
+        if (primaryWorkspace) {
+          sourceDirectory = primaryWorkspace.workspacePath;
+          log(`Using primary workspace as source directory: ${sourceDirectory}`);
+        }
+      } catch {
+        // Failed to resolve repository identity, fall through to mainRepoRoot
+      }
+
+      if (!sourceDirectory) {
+        sourceDirectory = mainRepoRoot;
+        log(`Using main repository root as source directory: ${sourceDirectory}`);
+      }
     } else {
       // Resolve source directory path if one was explicitly provided
       if (!path.isAbsolute(sourceDirectory)) {

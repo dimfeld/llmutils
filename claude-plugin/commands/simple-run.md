@@ -8,7 +8,7 @@ This is a tim plan that you should work on now:
 
 !`tim show --full $ARGUMENTS`
 
-When the plan is done, run `tim set -s done <planId>` to update the plan's status.  
+When the plan is done, run `tim set -s done <planId>` (before committing) to update the plan's status.
 
 Setting to in_progress now: !`tim set -s in_progress $ARGUMENTS`
 

@@ -4,10 +4,10 @@ title: look for primary workspace when cloning
 goal: ""
 id: 197
 uuid: 53a61dd1-64ef-4999-a96f-04a51ec30e14
-status: pending
+status: done
 priority: medium
 createdAt: 2026-02-15T08:38:59.485Z
-updatedAt: 2026-02-15T08:38:59.486Z
+updatedAt: 2026-02-15T08:57:18.691Z
 tasks: []
 tags: []
 ---

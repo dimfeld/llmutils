@@ -138,7 +138,7 @@ You can check if compilation works using `bun run check`
 ## Code Quality Best Practices
 
 - Use prompts from src/common/input.ts for asking questions to the user. These are wrappers around @inquirer/prompts
-that work with the various remote control methods as well as local terminal input.
+  that work with the various remote control methods as well as local terminal input.
 
 ### Testing Strategies
 
