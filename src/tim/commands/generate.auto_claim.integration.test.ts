@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { ModuleMocker } from '../../testing.js';
+import { clearPlanCache, writePlanFile } from '../plans.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -13,19 +14,19 @@ describe('handleGenerateCommand auto-claim integration', () => {
   let planPath: string;
 
   const autoClaimPlanSpy = mock(async () => ({ result: { persisted: true } }));
-  const resolvePlanWithUuidSpy = mock(async () => ({
-    plan: {
-      id: 42,
-      uuid: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
-      title: 'Auto-claim plan',
-      goal: 'Demonstrate auto-claim',
-      details: '',
-      status: 'pending',
-      tasks: [],
-      filename: planPath,
-    },
-    uuid: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
-  }));
+
+  // Mock executor - writes tasks to the plan file to simulate generation
+  const mockExecutorExecute = mock(async () => {
+    const { readPlanFile } = await import('../plans.js');
+    const plan = await readPlanFile(planPath);
+    plan.tasks = [{ title: 'Generated task', description: 'Auto-generated', done: false }];
+    await writePlanFile(planPath, plan);
+    clearPlanCache();
+  });
+  const mockExecutor = {
+    execute: mockExecutorExecute,
+    filePathPrefix: '',
+  };
 
   let handleGenerateCommand: typeof import('./generate.js').handleGenerateCommand;
   let enableAutoClaim: () => void;
@@ -37,13 +38,20 @@ describe('handleGenerateCommand auto-claim integration', () => {
     await fs.mkdir(tasksDir, { recursive: true });
 
     planPath = path.join(tasksDir, '42-auto.plan.md');
-    await fs.writeFile(
-      planPath,
-      `id: 42\nstatus: pending\ntitle: Auto-claim plan\ngoal: Demo\ntasks: []\n`
-    );
+    // Write a stub plan (empty tasks) that the generate command will process
+    await writePlanFile(planPath, {
+      id: 42,
+      uuid: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      status: 'pending',
+      title: 'Auto-claim plan',
+      goal: 'Demo',
+      tasks: [],
+    });
+
+    clearPlanCache();
 
     autoClaimPlanSpy.mockClear();
-    resolvePlanWithUuidSpy.mockClear();
+    mockExecutorExecute.mockClear();
 
     await moduleMocker.mock('../../logging.js', () => ({
       log: mock(() => {}),
@@ -56,9 +64,7 @@ describe('handleGenerateCommand auto-claim integration', () => {
         paths: {
           tasks: tasksDir,
         },
-        models: {
-          planning: 'test-model',
-        },
+        models: {},
       }),
     }));
 
@@ -82,29 +88,31 @@ describe('handleGenerateCommand auto-claim integration', () => {
       };
     });
 
-    await moduleMocker.mock('../assignments/uuid_lookup.ts', () => ({
-      resolvePlanWithUuid: resolvePlanWithUuidSpy,
-    }));
-
-    await moduleMocker.mock('../process_markdown.ts', () => ({
-      extractMarkdownToYaml: mock(async () => {}),
-    }));
-
     await moduleMocker.mock('../../common/process.js', () => ({
-      logSpawn: mock(() => ({ exited: Promise.resolve(0) })),
+      commitAll: mock(async () => 0),
     }));
 
-    await moduleMocker.mock('../../common/terminal.js', () => ({
-      waitForEnter: mock(async () => 'id: 42\ntasks: []'),
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: mock(async () => tempRoot),
     }));
 
-    await moduleMocker.mock('../../common/clipboard.js', () => ({
-      write: mock(async () => {}),
-      read: mock(async () => ''),
+    await moduleMocker.mock('../workspace/workspace_setup.js', () => ({
+      setupWorkspace: mock(async (_options: any, baseDir: string, planFile: string) => ({
+        baseDir,
+        planFile,
+      })),
     }));
 
-    await moduleMocker.mock('../../common/run_and_apply.js', () => ({
-      runStreamingPrompt: mock(async () => ({ text: 'generated-plan' })),
+    await moduleMocker.mock('./prompts.js', () => ({
+      buildPromptText: mock(async () => 'Generated prompt text'),
+      findMostRecentlyUpdatedPlan: mock(async () => null),
+      getPlanTimestamp: mock(async () => 0),
+      parseIsoTimestamp: mock(() => undefined),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: mock(() => mockExecutor),
+      DEFAULT_EXECUTOR: 'claude_code',
     }));
 
     ({ handleGenerateCommand } = await import('./generate.js'));
@@ -122,15 +130,9 @@ describe('handleGenerateCommand auto-claim integration', () => {
 
     const options = {
       plan: planPath,
-      extract: true,
-      claude: false,
-      parent: {
-        opts: () => ({}),
-      },
     };
 
     const command = {
-      args: [],
       parent: {
         opts: () => ({}),
       },
@@ -141,6 +143,5 @@ describe('handleGenerateCommand auto-claim integration', () => {
     expect(autoClaimPlanSpy).toHaveBeenCalledTimes(1);
     const callArgs = autoClaimPlanSpy.mock.calls[0]?.[0];
     expect(callArgs?.uuid).toBe('aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee');
-    expect(resolvePlanWithUuidSpy).toHaveBeenCalled();
   });
 });

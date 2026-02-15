@@ -39,9 +39,6 @@ import { findNextActionableItem } from '../../plans/find_next.js';
 import { markStepDone, markTaskDone } from '../../plans/mark_done.js';
 import { prepareNextStep } from '../../plans/prepare_step.js';
 import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
-import { WorkspaceAutoSelector } from '../../workspace/workspace_auto_selector.js';
-import { WorkspaceLock } from '../../workspace/workspace_lock.js';
-import { createWorkspace } from '../../workspace/workspace_manager.js';
 import { buildDescriptionFromPlan } from '../../display_utils.js';
 import { findNextReadyDependency } from '../find_next_dependency.js';
 import { executeBatchMode } from './batch_mode.js';
@@ -58,11 +55,8 @@ import { ensureUuidsAndReferences } from '../../utils/references.js';
 import { sendNotification } from '../../notifications.js';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { runWithHeadlessAdapterIfEnabled, type HeadlessPlanSummary } from '../../headless.js';
-import {
-  findWorkspaceInfosByTaskId,
-  getWorkspaceInfoByPath,
-  patchWorkspaceInfo,
-} from '../../workspace/workspace_info.js';
+import { getWorkspaceInfoByPath, patchWorkspaceInfo } from '../../workspace/workspace_info.js';
+import { setupWorkspace } from '../../workspace/workspace_setup.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -300,165 +294,22 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     // Determine the base directory for operations
     currentBaseDir = await getGitRoot();
 
-    // Handle workspace creation or auto-selection
-    if (options.workspace || options.autoWorkspace) {
-      let workspace;
-      let selectedWorkspace;
+    const workspaceResult = await setupWorkspace(
+      {
+        workspace: options.workspace,
+        autoWorkspace: options.autoWorkspace,
+        newWorkspace: options.newWorkspace,
+        nonInteractive: options.nonInteractive,
+        requireWorkspace: options.requireWorkspace,
+      },
+      currentBaseDir,
+      currentPlanFile,
+      config,
+      'tim agent'
+    );
 
-      if (options.autoWorkspace) {
-        // Use auto-selector to find or create a workspace
-        log('Auto-selecting workspace...');
-        const selector = new WorkspaceAutoSelector(currentBaseDir, config);
-        const taskId =
-          options.workspace ||
-          `${path.parse(currentBaseDir).dir.split(path.sep).pop()}-${Date.now()}`;
-
-        selectedWorkspace = await selector.selectWorkspace(taskId, currentPlanFile, {
-          interactive: !options.nonInteractive,
-          preferNewWorkspace: options.newWorkspace,
-        });
-
-        if (selectedWorkspace) {
-          workspace = {
-            path: selectedWorkspace.workspace.workspacePath,
-            originalPlanFilePath: selectedWorkspace.workspace.originalPlanFilePath,
-            taskId: selectedWorkspace.workspace.taskId,
-          };
-
-          if (selectedWorkspace.isNew) {
-            log(`Created new workspace for task: ${workspace.taskId}`);
-          } else {
-            log(`Selected existing workspace for task: ${selectedWorkspace.workspace.taskId}`);
-            if (selectedWorkspace.clearedStaleLock) {
-              log('(Cleared stale lock)');
-            }
-          }
-        }
-      } else {
-        // Manual workspace handling - check if workspace exists first
-        const existingWorkspaces = findWorkspaceInfosByTaskId(options.workspace);
-
-        if (existingWorkspaces.length > 0) {
-          // Find the first available workspace (not locked)
-          let availableWorkspace = null;
-          for (const ws of existingWorkspaces) {
-            const lockInfo = await WorkspaceLock.getLockInfo(ws.workspacePath);
-            if (!lockInfo || (await WorkspaceLock.isLockStale(lockInfo))) {
-              availableWorkspace = ws;
-              break;
-            }
-          }
-
-          if (availableWorkspace) {
-            log(`Using existing workspace for task: ${options.workspace}`);
-            workspace = {
-              path: availableWorkspace.workspacePath,
-              originalPlanFilePath: availableWorkspace.originalPlanFilePath,
-              taskId: availableWorkspace.taskId,
-            };
-          } else {
-            throw new Error(
-              `Workspace with task ID '${options.workspace}' exists but is locked, and --new-workspace was not specified. Cannot proceed.`
-            );
-          }
-        } else if (options.newWorkspace) {
-          // No existing workspace, create a new one
-          log(`Creating workspace for task: ${options.workspace}`);
-          workspace = await createWorkspace(
-            currentBaseDir,
-            options.workspace,
-            currentPlanFile,
-            config
-          );
-        } else {
-          throw new Error(
-            `No workspace found for task ID '${options.workspace}' and --new-workspace was not specified. Cannot proceed.`
-          );
-        }
-      }
-
-      if (workspace) {
-        // Validate that the workspace is properly initialized
-        try {
-          const gitStatus = logSpawn(['git', 'status'], {
-            cwd: workspace.path,
-            stdio: ['pipe', 'pipe', 'pipe'],
-          });
-
-          if (gitStatus.exitCode !== 0) {
-            warn(
-              `Workspace at ${workspace.path} may not be properly initialized. Git operations failed.`
-            );
-          }
-        } catch (err) {
-          warn(`Error validating workspace: ${err as Error}`);
-        }
-
-        // Copy the plan file to the workspace
-        // Copy the plan file into the workspace root with the same filename
-        const workspacePlanFile = path.join(workspace.path, path.basename(currentPlanFile));
-        try {
-          log(`Copying plan file to workspace: ${workspacePlanFile}`);
-          const srcContent = await fs.readFile(currentPlanFile, 'utf8');
-          await fs.writeFile(workspacePlanFile, srcContent, 'utf8');
-
-          // Update the planFile to use the copy in the workspace
-          currentPlanFile = workspacePlanFile;
-          log(`Using plan file in workspace: ${currentPlanFile}`);
-        } catch (err) {
-          error(`Failed to copy plan file to workspace: ${err as Error}`);
-          error('Continuing with original plan file.');
-        }
-
-        // Use the workspace path as the base directory for operations
-        currentBaseDir = workspace.path;
-        sendStructured({
-          type: 'workspace_info',
-          timestamp: timestamp(),
-          workspaceId: workspace.taskId,
-          path: workspace.path,
-          planFile: currentPlanFile,
-        });
-
-        // Acquire lock for existing workspaces. New workspaces created by
-        // createWorkspace() or the auto-selector already hold a lock.
-        const isNewWorkspace = selectedWorkspace?.isNew;
-        if (!isNewWorkspace) {
-          try {
-            const lockInfo = await WorkspaceLock.acquireLock(
-              workspace.path,
-              `tim agent --workspace ${workspace.taskId}`,
-              { type: 'pid' }
-            );
-            WorkspaceLock.setupCleanupHandlers(workspace.path, lockInfo.type);
-          } catch (error) {
-            log(`Warning: Failed to acquire workspace lock: ${error as Error}`);
-          }
-        }
-
-        log('---');
-      } else {
-        error('Failed to create workspace. Continuing in the current directory.');
-        // If workspace creation is explicitly required, exit
-        if (options.requireWorkspace) {
-          throw new Error('Workspace creation was required but failed. Exiting.');
-        }
-      }
-    }
-
-    // Acquire a workspace lock on the current base directory.
-    // The workspace block above handles locking for explicit workspace scenarios;
-    // this covers the common case of running in the current directory.
-    if (!options.workspace && !options.autoWorkspace) {
-      try {
-        const lockInfo = await WorkspaceLock.acquireLock(currentBaseDir, `tim agent`, {
-          type: 'pid',
-        });
-        WorkspaceLock.setupCleanupHandlers(currentBaseDir, lockInfo.type);
-      } catch (err) {
-        warn(`Failed to acquire workspace lock: ${err as Error}`);
-      }
-    }
+    currentBaseDir = workspaceResult.baseDir;
+    currentPlanFile = workspaceResult.planFile;
 
     // Use orchestrator from CLI options, fallback to config defaultOrchestrator, or fallback to DEFAULT_EXECUTOR
     // Note: defaultOrchestrator and defaultExecutor are independent - agent command uses defaultOrchestrator

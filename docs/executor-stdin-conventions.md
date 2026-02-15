@@ -1,6 +1,6 @@
-# Claude Code Executor & Stdin Conventions
+# Claude Code Executor & Execution Conventions
 
-Conventions and gotchas for the Claude Code executor's stdin management, terminal input, and tunnel forwarding.
+Conventions and gotchas for the Claude Code executor's stdin management, terminal input, tunnel forwarding, and pre-execution setup.
 
 ## Stdin Lifecycle with `--input-format stream-json`
 
@@ -51,3 +51,15 @@ The shared helper in `terminal_input_lifecycle.ts` handles three distinct modes:
 3. **Neither**: Single-shot `sendSinglePromptAndWait()`
 
 Both `claude_code.ts` and `run_claude_subprocess.ts` delegate to this helper to avoid duplicating the branching logic.
+
+## `logSpawn()` and Exit Codes
+
+The `logSpawn()` function returns a Bun `Subprocess` where `exitCode` may be `null` before the process finishes. Always `await subprocess.exited` before checking `exitCode`.
+
+## Workspace Locking Conventions
+
+Both `tim agent` and `tim generate` use `setupWorkspace()` from `workspace_setup.ts` for workspace selection and locking. Key invariants and gotchas:
+
+- **Execution must always hold a lock.** Even when no workspace flags are provided and the command falls back to cwd, it must acquire a PID lock on cwd before returning. Early returns from the workspace selection branches must not skip this.
+- **`createWorkspace()` acquires persistent locks, not PID locks.** Persistent locks are not released by signal handlers. For signal-based cleanup to work, the persistent lock must be released and re-acquired as a PID lock after workspace creation. This is handled inside `setupWorkspace()`.
+- **Auto-claim should happen before executor execution** (after workspace setup), so the plan is assigned even if the executor fails or is interrupted. This matches the ordering in both `agent` and `generate` commands.

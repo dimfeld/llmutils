@@ -22,4 +22,3 @@ was with a button that will activate the wezterm pane if we have one.
 - Add a blue dot for sessions like we have for notifications now, when there is an unhandled notification
 - Match up notifications to existing sessions by WEZTERM_PANE value or working directory if there isn't one..
 - For notifications not linked to an existing session, just create a new session for it.
-

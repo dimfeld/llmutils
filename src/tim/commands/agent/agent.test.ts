@@ -275,7 +275,7 @@ describe.skip('timAgent - Direct Execution Flow', () => {
       WorkspaceLock: {
         getLockInfo: mock(async () => null),
         isLockStale: mock(async () => false),
-        acquireLock: mock(async () => {}),
+        acquireLock: mock(async () => ({ type: 'pid' })),
         setupCleanupHandlers: mock(() => {}),
         releaseLock: mock(async () => {}),
       },
@@ -1717,7 +1717,7 @@ describe('timAgent - Batch Tasks Mode', () => {
       WorkspaceLock: {
         getLockInfo: mock(async () => null),
         isLockStale: mock(async () => false),
-        acquireLock: mock(async () => {}),
+        acquireLock: mock(async () => ({ type: 'pid' })),
         setupCleanupHandlers: mock(() => {}),
         releaseLock: mock(async () => {}),
       },
@@ -1936,7 +1936,7 @@ describe('timAgent - Batch Tasks Mode Integration', () => {
       WorkspaceLock: {
         getLockInfo: mock(async () => null),
         isLockStale: mock(async () => false),
-        acquireLock: mock(async () => {}),
+        acquireLock: mock(async () => ({ type: 'pid' })),
         setupCleanupHandlers: mock(() => {}),
         releaseLock: mock(async () => {}),
       },

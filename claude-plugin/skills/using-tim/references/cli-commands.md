@@ -33,30 +33,30 @@ tim add "Plan title" --output tasks/custom-name.yml
 
 ### tim generate
 
-Generate detailed tasks for a plan.
+Generate detailed tasks for a plan interactively using Claude Code.
 
 ```bash
 # From existing stub plan
-tim generate 123 -- src/**/*.ts
+tim generate 123
 
-# From GitHub issue
-tim generate --issue 123 -- src/**/*.ts
+# From plan file
+tim generate --plan tasks/description.md
 
-# From text file
-tim generate --plan tasks/description.md -- src/**/*.ts
-
-# From editor
-tim generate --plan-editor -- src/**/*.ts
-
-# Generation modes
-tim generate 123 --claude -- src/**/*.ts        # Claude Code (default)
-tim generate 123 --simple -- src/**/*.ts        # Skip research
-tim generate 123 --direct -- src/**/*.ts        # Direct API
+# Simple mode (skip research)
+tim generate 123 --simple
 
 # Advanced
-tim generate 123 --with-blocking-subissues      # Discover prerequisites
 tim generate 123 --commit                       # Auto-commit result
-tim generate --next-ready 100 -- src/**/*.ts    # Next child of plan 100
+tim generate --next-ready 100                   # Next child of plan 100
+tim generate --latest                           # Latest plan
+
+# Workspace integration
+tim generate 123 --auto-workspace               # Auto-select/create workspace
+tim generate 123 --workspace feature-xyz        # Manual workspace
+tim generate 123 --new-workspace --workspace x  # Force new workspace
+tim generate 123 --require-workspace            # Fail if workspace creation fails
+tim generate 123 --no-terminal-input            # Disable interactive Q&A
+tim generate 123 --non-interactive              # Skip interactive prompts
 ```
 
 ### tim agent / tim run

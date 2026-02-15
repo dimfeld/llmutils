@@ -103,17 +103,15 @@ tim import
 
 ### Plan Generation
 
-Generate detailed implementation plans from Linear issues:
+Import Linear issues and generate detailed implementation plans:
 
 ```bash
-# Generate a plan from a Linear issue
-tim generate --issue TEAM-456 -- src/**/*.ts
+# Import a Linear issue to create a plan stub
+tim import TEAM-456
 
-# Generate and commit the resulting plan file
-tim generate --issue TEAM-789 --commit -- src/api/**/*.ts
-
-# Use with rmfilter options for better context
-tim generate --issue TEAM-123 -- src/**/*.ts --grep auth --with-imports
+# Then generate detailed tasks interactively
+tim generate 456
+tim generate 456 --commit
 ```
 
 ### Comment Integration
@@ -149,18 +147,17 @@ tim import TEAM-123
 ### Advanced Planning Workflow
 
 ```bash
-# 1. Generate a detailed plan from a Linear issue with full context
-tim generate --issue TEAM-456 --rmfilter -- \
-  src/**/*.ts \
-  --grep authentication \
-  --with-imports \
-  --with-tests
+# 1. Import a Linear issue
+tim import TEAM-456
 
-# 2. Execute the plan automatically
-tim agent tasks/team-456-implement-oauth.yml
+# 2. Generate a detailed plan interactively
+tim generate 456
 
-# 3. Or mark steps as completed manually and commit changes
-tim done tasks/team-456-implement-oauth.yml --commit
+# 3. Execute the plan automatically
+tim agent 456
+
+# 4. Or mark steps as completed manually and commit changes
+tim done 456 --commit
 ```
 
 ### Multi-Issue Project Planning

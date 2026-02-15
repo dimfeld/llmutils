@@ -66,6 +66,7 @@ The codebase is organized into several main modules with improved modularity and
 - Workspace management: `workspace.ts` with automated isolation support
 - Workspace types and helpers: `workspace_info.ts` provides `WorkspaceInfo`, `WorkspaceMetadataPatch`, `workspaceRowToInfo()`, and workspace lookup helpers
 - Workspace locking: `workspace_lock.ts` (`WorkspaceLock` class) uses DB internally while exposing the same static API (`acquireLock`, `releaseLock`, `getLockInfo`, `isLocked`)
+- Workspace setup: `workspace_setup.ts` provides `setupWorkspace()`, a shared helper used by both `agent` and `generate` commands. Encapsulates workspace selection (auto/manual/new), lock acquisition, plan file copying, cleanup handler registration, and fallback-to-cwd behavior
 - Assignment helpers: `assignments/remove_plan_assignment.ts` for shared plan-unassignment logic, `assignments/claim_plan.ts` and `assignments/release_plan.ts` for workspace claim management
 - Plan state utilities: `plans/plan_state_utils.ts` centralizes `normalizePlanStatus()` and status classification helpers used across commands
 - Shared utilities captured in purpose-built modules:
@@ -158,6 +159,8 @@ See docs/testing.md for testing strategy
 - **Pick one authoritative layer for defensive checks**: Redundant defensive checks across multiple layers (e.g., command, executor, utility) create confusion about which layer owns the decision. Resolve the value once and trust it downstream
 - **Keep dependency-inversion abstractions minimal**: When introducing a common abstraction to break a dependency cycle (e.g., `common` must not import from `tim`), keep it to just an interface and a getter/setter. The feature module registers itself; the common module only knows the interface
 - **Watch for dual state tracking when extracting shared helpers**: If both the inner helper and the outer function track the same state (e.g., a `closed` flag), explicitly synchronize them to avoid misleading guards or double-cleanup
+- **Blanket try-catch in shared helpers can change error semantics**: When extracting error-handling logic into a shared helper, explicit throws that were previously unhandled can get caught by a new outer catch, silently converting hard errors into soft fallbacks. Only catch specific expected failure modes (e.g., null returns), not all exceptions
+- **Remove dead CLI options instead of leaving no-ops**: When a new system doesn't support a flag, remove the flag rather than keeping it as a no-op. Dead CLI options mislead users into thinking they have an effect
 
 ## Personal Workflow Notes
 

@@ -95,11 +95,13 @@ tim init
 # Choose tasks directory, executor, and other preferences
 # Use --yes for defaults or --minimal for minimal config
 
-# 1. Generate a plan from a GitHub issue
-tim generate --issue 123 -- src/api/**/*.ts
-# Claude Code analyzes the issue, researches the codebase, and creates a detailed plan
+# 1. Create a plan stub and generate tasks interactively
+tim add "Implement user authentication" --priority high
+# Creates tasks/123-implement-user-authentication.yml
+
+tim generate 123
+# Claude Code researches the codebase, collaborates with you, and generates tasks
 # Research findings are saved to the plan's ## Research section
-# Plan saved to tasks/123-feature-name.yml
 
 # 2. Review the generated plan
 tim show 123
@@ -229,80 +231,72 @@ This plan implements user authentication using JWT tokens...
 
 ### generate - Create Plans
 
-Generate detailed implementation plans from various sources.
+Generate detailed implementation plans interactively using Claude Code. The generate command uses the same interactive prompt as `tim prompts generate-plan`, enabling collaborative refinement during planning.
 
 **Basic usage:**
 
 ```bash
-# From a GitHub issue (automatically fetches issue details)
-tim generate --issue 123 -- src/**/*.ts
+# Generate plan for an existing stub
+tim generate 123
 
-# From a text file describing the feature
-tim generate --plan tasks/feature-description.md -- src/api/**/*.ts
+# Generate by plan file path
+tim generate --plan tasks/feature.yml
 
-# Using your editor to write the description
-tim generate --plan-editor -- src/**/*.ts
+# Generate for next ready dependency of a parent plan
+tim generate --next-ready 100
 
-# From a Linear issue (requires issueTracker: 'linear' in config)
-tim generate --issue TEAM-456 -- src/**/*.ts
-
-# Generate for existing stub plan
-tim generate 123 -- src/**/*.ts
+# Generate the latest plan
+tim generate --latest
 ```
 
-**Generation modes:**
+**Workspace integration:**
 
 ```bash
-# Claude Code mode (default - best results)
-tim generate --issue 123 --claude -- src/**/*.ts
-# Three-phase process:
-# 1. Planning: Claude analyzes and drafts approach
-# 2. Research: Captures findings to ## Research section
-# 3. Generation: Produces structured tasks
+# Auto workspace (finds or creates)
+tim generate 123 --auto-workspace
 
+# Manual workspace selection
+tim generate 123 --workspace feature-xyz
+
+# Force new workspace
+tim generate 123 --new-workspace --workspace feature-xyz
+
+# Require workspace (fail if creation fails)
+tim generate 123 --auto-workspace --require-workspace
+```
+
+**Options:**
+
+```bash
 # Simple mode (skip research for quick fixes)
-tim generate --issue 123 --simple -- src/**/*.ts
-
-# Direct API mode (uses configured LLM directly)
-tim generate --issue 123 --direct -- src/**/*.ts
-```
-
-**Advanced features:**
-
-```bash
-# Discover and create blocking subissues first
-tim generate 42 --claude --with-blocking-subissues
-# Creates prerequisite plans automatically
-# Sets up proper parent/dependency relationships
-# Example output:
-# ✓ Created 2 blocking plans: #143 Auth infrastructure, #144 Rate limiting
-
-# Generate for next ready dependency
-tim generate --next-ready 100 -- src/**/*.ts
-# Finds next actionable child plan of plan 100
+tim generate 123 --simple
 
 # Auto-commit the generated plan
-tim generate --issue 123 --commit -- src/**/*.ts
+tim generate 123 --commit
+
+# Disable terminal input (no interactive Q&A)
+tim generate 123 --no-terminal-input
+
+# Non-interactive mode (skip interactive prompts)
+tim generate 123 --non-interactive
 ```
 
 **How it works:**
 
-1. Loads issue/description and any existing plan stub
-2. If needed, runs `rmfilter` with provided arguments to gather code context. Claude Code and Codex modes skip this
-   step.
-3. Calls LLM (via executor: Claude Code, Codex, direct API, or clipboard)
-4. Extracts YAML plan from response
-5. Writes plan file to configured tasks directory
-6. Optionally commits changes
+1. Resolves plan from ID, path, `--next-ready`, or `--latest`
+2. Optionally sets up a workspace (lock, plan file copy)
+3. Runs the interactive planning prompt via Claude Code executor
+4. Claude researches the codebase, collaborates with you to refine the plan, and generates structured tasks
+5. Optionally commits changes
 
-**Research Phase:**
+**Interactive planning:**
 
-In Claude Code mode (default), the research phase:
+The generate command enables terminal input by default, allowing you to interact with Claude during the planning process. Claude will:
 
-- Investigates the codebase structure
-- Identifies relevant patterns and dependencies
-- Documents findings in the plan's `## Research` section
-- Provides context for task generation
+- Investigate the codebase structure
+- Document findings in the plan's `## Research` section
+- Ask questions to refine the approach
+- Generate structured tasks based on the discussion
 
 Skip research with `--simple` when:
 
@@ -1291,14 +1285,18 @@ The shell function:
 - Provides a preview window with full path and details
 - Handles cancellation gracefully
 
-**Using workspaces with agent:**
+**Using workspaces with agent and generate:**
+
+Both `tim agent` and `tim generate` support workspace isolation with the same options:
 
 ```bash
 # Auto workspace (finds unlocked or creates new)
 tim agent 123 --auto-workspace
+tim generate 123 --auto-workspace
 
 # Manual workspace
 tim agent 123 --workspace task-123
+tim generate 123 --workspace task-123
 
 # Auto workspace handles:
 # 1. Search for existing workspaces
@@ -1392,11 +1390,6 @@ workspaceCreation:
   cloneLocation: /path/to/workspaces
   sourceDirectory: /path/to/source
   # ... (see workspace section for full config)
-
-# Planning configuration
-planning:
-  direct_mode: false # Use LLM API directly instead of clipboard
-  claude_mode: true # Use Claude Code for generation (default)
 
 # Post-apply commands (run after each step)
 postApplyCommands:
@@ -2019,9 +2012,10 @@ rmfind src/**/*.ts --grep getUserData --whole-word
 # Create stub
 tim add "Feature name" [--output FILE] [--parent ID] [--priority LEVEL] [--tag TAG...]
 
-# Generate detailed tasks
-tim generate [--issue NUM | --plan FILE | --plan-editor] -- [RMFILTER_ARGS]
-tim generate ID -- [RMFILTER_ARGS]
+# Generate detailed tasks (interactive planning with Claude Code)
+tim generate ID [--plan FILE] [--latest] [--next-ready PARENT_ID] [--simple] [--commit]
+tim generate ID [--workspace ID] [--auto-workspace] [--new-workspace] [--non-interactive]
+tim generate ID [--no-terminal-input] [--require-workspace]
 
 # Execute plan
 tim agent ID [--orchestrator NAME] [-x codex-cli|claude-code|dynamic] [--dynamic-instructions TEXT] [--simple] [--tdd]

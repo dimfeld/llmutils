@@ -164,7 +164,7 @@ describe('Agent workspace description auto-update', () => {
       WorkspaceLock: {
         getLockInfo: mock(async () => null),
         isLockStale: mock(async () => false),
-        acquireLock: mock(async () => {}),
+        acquireLock: mock(async () => ({ type: 'pid' })),
         setupCleanupHandlers: mock(() => {}),
         releaseLock: mock(async () => {}),
       },
@@ -244,8 +244,9 @@ describe('Agent workspace description auto-update', () => {
     expect(getWorkspaceIssues(db, workspaceMetadata!.id)).toEqual([]);
   });
 
-  test('clears stale plan metadata when plan omits id and issue', async () => {
+  test('clears stale issue metadata when plan omits issue', async () => {
     const planContent = {
+      id: 321,
       title: 'Maintenance',
       goal: 'Routine cleanup',
       status: 'pending',
@@ -283,7 +284,7 @@ describe('Agent workspace description auto-update', () => {
 
     expect(updatedWorkspace!.description).toBe('Maintenance');
     expect(updatedWorkspace!.plan_title).toBe('Maintenance');
-    expect(updatedWorkspace!.plan_id).toBeNull();
+    expect(updatedWorkspace!.plan_id).toBe('321');
     expect(getWorkspaceIssues(db, updatedWorkspace!.id)).toEqual([]);
   });
 

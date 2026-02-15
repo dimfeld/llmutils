@@ -63,7 +63,10 @@ describe('tim agent integration (execution summaries)', () => {
 
     // Prevent interactive prompts and workspace handling from interfering
     await moduleMocker.mock('../../workspace/workspace_lock.js', () => ({
-      WorkspaceLock: { acquireLock: mock(async () => {}), setupCleanupHandlers: mock(() => {}) },
+      WorkspaceLock: {
+        acquireLock: mock(async () => ({ type: 'pid' })),
+        setupCleanupHandlers: mock(() => {}),
+      },
     }));
 
     // Mock prepareNextStep to return a direct prompt (no rmfilter)

@@ -277,38 +277,34 @@ program
 
 program
   .command('generate [plan]')
-  .description('Generate planning prompt and context for a task')
+  .description('Generate a plan using interactive Claude Code executor')
   .option('--plan <plan>', 'Plan to use')
   .option('--latest', 'Use the most recently updated plan')
-  .option('--plan-editor', 'Open plan in editor')
-  .option('--issue <url|number>', 'Issue URL or number to use for the plan text')
   .option(
     '--simple',
     'For simpler tasks, generate a single-phase plan that already includes the prompts'
   )
-  .option('--autofind', 'Automatically find relevant files based on plan')
-  .option('--quiet', 'Suppress informational output')
-  .option(
-    '--no-extract',
-    'Do not automatically run the extract command after generating the prompt'
-  )
   .option('--commit', 'Commit changes to jj/git after successful plan generation')
-  .option('--use-yaml <yaml_file>', 'Skip generation and use existing YAML file as LLM output')
-  .option('--direct', 'Call LLM directly instead of copying prompt to clipboard')
-  .option('--no-direct', 'Use clipboard mode even if direct mode is configured')
-  .option('--claude', 'Use Claude Code for two-step planning and generation')
-  .option('--no-claude', 'Use traditional copy/paste mode instead of Claude Code')
   .option('-x, --executor <name>', 'The executor to use for generation (e.g., claude_code, codex)')
-  .option(
-    '--with-blocking-subissues',
-    'Prompt LLM to identify and create blocking prerequisite plans'
-  )
   .option(
     '--next-ready <planIdOrPath>',
     'Find and operate on the next ready dependency of the specified parent plan (accepts plan ID or file path)'
   )
-  .allowExcessArguments(true)
-  .allowUnknownOption(true)
+  .option(
+    '--workspace <id>',
+    'ID for the task, used for workspace naming and tracking. If provided, a new workspace will be created.'
+  )
+  .option('--auto-workspace', 'Automatically select an available workspace or create a new one')
+  .option(
+    '--new-workspace',
+    'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
+  )
+  .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
+  .option(
+    '--no-terminal-input',
+    'Disable terminal input forwarding to Claude Code during plan generation'
+  )
+  .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
   .action(async (planArg, options, command) => {
     const { handleGenerateCommand } = await import('./commands/generate.js');
     await handleGenerateCommand(planArg, options, command).catch(handleCommandError);

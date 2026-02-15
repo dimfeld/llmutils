@@ -66,25 +66,13 @@ Generates a planning prompt for the next ready dependency instead of the specifi
 
 ```bash
 # Generate a plan for the next ready dependency of plan 100
-tim generate --next-ready 100 -- src/**/*.ts
+tim generate --next-ready 100
 
 # Works with other generate options
-tim generate --next-ready parent-plan --direct --commit
+tim generate --next-ready parent-plan --commit
 ```
 
-### 2. `tim prepare --next-ready <parentPlanId>`
-
-Prepares detailed implementation steps for the next ready dependency.
-
-```bash
-# Prepare the next ready dependency with detailed steps
-tim prepare --next-ready 100
-
-# Use direct mode to call LLM automatically
-tim prepare --next-ready parent-plan --direct
-```
-
-### 3. `tim agent --next-ready <parentPlanId>` / `tim run --next-ready <parentPlanId>`
+### 2. `tim agent --next-ready <parentPlanId>` / `tim run --next-ready <parentPlanId>`
 
 Automatically executes the next ready dependency using the agent system.
 
@@ -99,7 +87,7 @@ tim run --next-ready parent-plan --steps 3 --dry-run
 tim agent --next-ready 100 --executor claude-code
 ```
 
-### 4. `tim show --next-ready <parentPlanId>`
+### 3. `tim show --next-ready <parentPlanId>`
 
 Displays information about the next ready dependency without executing it.
 
@@ -125,7 +113,7 @@ tim show --next-ready 100
 # Output: Found ready plan: Database Schema Setup (ID: 101)
 
 # Generate detailed steps for that dependency
-tim generate --next-ready 100 -- src/database/**/*.ts
+tim generate --next-ready 100
 # Works on plan 101 (Database Schema Setup)
 
 # Execute the ready dependency
@@ -143,11 +131,11 @@ tim show --next-ready 100
 The `--next-ready` flag works seamlessly with all existing tim options:
 
 ```bash
-# Generate with file context and auto-commit
-tim generate --next-ready 100 --commit -- src/**/*.ts --grep auth
+# Generate with auto-commit
+tim generate --next-ready 100 --commit
 
-# Prepare with Claude Code
-tim prepare --next-ready 100 --claude
+# Generate in a workspace
+tim generate --next-ready 100 --auto-workspace
 
 # Execute with workspace isolation
 tim agent --next-ready 100 --workspace feature-work
@@ -282,8 +270,8 @@ fi
 ### Team Coordination
 
 ```bash
-# Team lead sets up parent plan with dependencies
-tim generate --plan "Sprint 1 - User Profile Feature"
+# Team lead creates parent plan with dependencies
+tim add "Sprint 1 - User Profile Feature"
 
 # Developers can independently find their next tasks
 tim agent --next-ready sprint-1-plan --workspace $(whoami)
@@ -291,14 +279,14 @@ tim agent --next-ready sprint-1-plan --workspace $(whoami)
 # Progress automatically enables downstream dependencies
 ```
 
-### Multi-Repository Projects
+### Multi-Workspace Projects
 
 ```bash
-# Parent plan coordinates work across repositories
-# Each dependency can specify different rmfilter targets
-tim generate --next-ready infra-plan -- infrastructure/**/*.tf
-tim generate --next-ready app-plan -- src/**/*.ts
-tim generate --next-ready docs-plan -- docs/**/*.md
+# Generate plans for dependencies in isolated workspaces
+tim generate --next-ready parent-plan --auto-workspace
+
+# Execute the next ready dependency
+tim agent --next-ready parent-plan --auto-workspace
 ```
 
 This dependency-based approach transforms project management from manual coordination into automated workflow orchestration, allowing teams to focus on implementation while tim handles the coordination complexity.
