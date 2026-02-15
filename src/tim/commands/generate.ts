@@ -17,6 +17,8 @@ import { autoClaimPlan, isAutoClaimEnabled } from '../assignments/auto_claim.js'
 import { setupWorkspace } from '../workspace/workspace_setup.js';
 import { buildPromptText, findMostRecentlyUpdatedPlan } from './prompts.js';
 import type { GenerateModeRegistrationContext } from '../mcp/generate_mode.js';
+import { isTunnelActive } from '../../logging/tunnel_client.js';
+import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 
 export async function handleGenerateCommand(
   planArg: string | undefined,
@@ -219,51 +221,62 @@ export async function handleGenerateCommand(
   };
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
 
-  log(chalk.blue('🤖 Running plan generation with executor...'));
+  await runWithHeadlessAdapterIfEnabled({
+    enabled: !isTunnelActive(),
+    command: 'generate',
+    config,
+    plan: {
+      id: parsedPlan.id,
+      title: parsedPlan.title,
+    },
+    callback: async () => {
+      log(chalk.blue('🤖 Running plan generation with executor...'));
 
-  // Execute the prompt
-  await executor.execute(singlePrompt, {
-    planId: String(currentPlanId ?? 'generate'),
-    planTitle: parsedPlan.title || 'Generate Plan',
-    planFilePath: currentPlanFile,
-    executionMode: 'planning',
+      // Execute the prompt
+      await executor.execute(singlePrompt, {
+        planId: String(currentPlanId ?? 'generate'),
+        planTitle: parsedPlan.title || 'Generate Plan',
+        planFilePath: currentPlanFile,
+        executionMode: 'planning',
+      });
+
+      // Check if tasks were created, run follow-up if not
+      const updatedPlan = await readPlanFile(currentPlanFile);
+      const hasTasks = updatedPlan.tasks && updatedPlan.tasks.length > 0;
+
+      if (!hasTasks) {
+        log(chalk.yellow('⚠️  No tasks were created. Attempting follow-up prompt...'));
+
+        const followUpPrompt = generateTaskCreationFollowUpPrompt(currentPlanFile, currentPlanId);
+
+        await executor.execute(followUpPrompt, {
+          planId: String(currentPlanId ?? 'generate'),
+          planTitle: parsedPlan.title || 'Generate Plan',
+          planFilePath: currentPlanFile,
+          executionMode: 'planning',
+        });
+
+        const finalPlan = await readPlanFile(currentPlanFile);
+        if (!finalPlan.tasks || finalPlan.tasks.length === 0) {
+          warn(
+            chalk.yellow(
+              '⚠️  Tasks were still not created after follow-up. Please add tasks manually using `tim tools update-plan-tasks` as described in the using-tim skill'
+            )
+          );
+        } else {
+          log(chalk.green(`✓ Created ${finalPlan.tasks.length} tasks after follow-up prompt`));
+        }
+      } else {
+        log(chalk.green(`✓ Plan generated with ${updatedPlan.tasks.length} tasks`));
+      }
+
+      // Handle --commit option
+      if (options.commit) {
+        const planTitle = parsedPlan.title || parsedPlan.goal || 'plan';
+        const commitMessage = `Add plan: ${planTitle}`;
+        await commitAll(commitMessage, currentBaseDir);
+        log(chalk.green('✓ Committed changes'));
+      }
+    },
   });
-
-  // Check if tasks were created, run follow-up if not
-  const updatedPlan = await readPlanFile(currentPlanFile);
-  const hasTasks = updatedPlan.tasks && updatedPlan.tasks.length > 0;
-
-  if (!hasTasks) {
-    log(chalk.yellow('⚠️  No tasks were created. Attempting follow-up prompt...'));
-
-    const followUpPrompt = generateTaskCreationFollowUpPrompt(currentPlanFile, currentPlanId);
-
-    await executor.execute(followUpPrompt, {
-      planId: String(currentPlanId ?? 'generate'),
-      planTitle: parsedPlan.title || 'Generate Plan',
-      planFilePath: currentPlanFile,
-      executionMode: 'planning',
-    });
-
-    const finalPlan = await readPlanFile(currentPlanFile);
-    if (!finalPlan.tasks || finalPlan.tasks.length === 0) {
-      warn(
-        chalk.yellow(
-          '⚠️  Tasks were still not created after follow-up. Please add tasks manually using `tim tools update-plan-tasks` as described in the using-tim skill'
-        )
-      );
-    } else {
-      log(chalk.green(`✓ Created ${finalPlan.tasks.length} tasks after follow-up prompt`));
-    }
-  } else {
-    log(chalk.green(`✓ Plan generated with ${updatedPlan.tasks.length} tasks`));
-  }
-
-  // Handle --commit option
-  if (options.commit) {
-    const planTitle = parsedPlan.title || parsedPlan.goal || 'plan';
-    const commitMessage = `Add plan: ${planTitle}`;
-    await commitAll(commitMessage, currentBaseDir);
-    log(chalk.green('✓ Committed changes'));
-  }
 }

@@ -20,14 +20,14 @@ export interface HeadlessPlanSummary {
 
 interface RunWithHeadlessOptions<T> {
   enabled: boolean;
-  command: 'agent' | 'review' | 'run-prompt';
+  command: 'agent' | 'review' | 'run-prompt' | 'generate';
   config: Pick<TimConfig, 'headless'>;
   plan?: HeadlessPlanSummary;
   callback: () => Promise<T>;
 }
 
 interface CreateHeadlessAdapterOptions {
-  command: 'agent' | 'review' | 'run-prompt';
+  command: 'agent' | 'review' | 'run-prompt' | 'generate';
   config: Pick<TimConfig, 'headless'>;
   plan?: HeadlessPlanSummary;
 }
@@ -74,7 +74,7 @@ function warnIfInvalidHeadlessUrl(url: string): void {
 }
 
 export async function buildHeadlessSessionInfo(
-  command: 'agent' | 'review' | 'run-prompt',
+  command: 'agent' | 'review' | 'run-prompt' | 'generate',
   plan?: HeadlessPlanSummary
 ): Promise<HeadlessSessionInfo> {
   let workspacePath: string | undefined;

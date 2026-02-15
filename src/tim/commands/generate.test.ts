@@ -12,6 +12,8 @@ import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
+const isTunnelActiveSpy = mock(() => false);
+const runWithHeadlessAdapterIfEnabledSpy = mock(async (options: any) => options.callback());
 
 describe('handleGenerateCommand', () => {
   let tempDir: string;
@@ -56,6 +58,8 @@ describe('handleGenerateCommand', () => {
     isAutoClaimEnabledSpy.mockClear();
     autoClaimPlanSpy.mockClear();
     commitAllSpy.mockClear();
+    isTunnelActiveSpy.mockClear();
+    runWithHeadlessAdapterIfEnabledSpy.mockClear();
 
     clearPlanCache();
 
@@ -103,6 +107,14 @@ describe('handleGenerateCommand', () => {
 
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => tempDir,
+    }));
+
+    await moduleMocker.mock('../../logging/tunnel_client.js', () => ({
+      isTunnelActive: isTunnelActiveSpy,
+    }));
+
+    await moduleMocker.mock('../headless.js', () => ({
+      runWithHeadlessAdapterIfEnabled: runWithHeadlessAdapterIfEnabledSpy,
     }));
   });
 
@@ -570,6 +582,44 @@ describe('handleGenerateCommand', () => {
     const executorOpts = buildExecutorAndLogSpy.mock.calls[0][1];
     expect(executorOpts.closeTerminalInputOnResult).toBe(false);
   });
+
+  test('wraps generation in headless adapter when tunnel is not active', async () => {
+    const planPath = await createStubPlan(121);
+
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [{ title: 'Task 1', description: 'Description', done: false }];
+      await writePlanFile(planPath, plan);
+    });
+
+    await handleGenerateCommand(undefined, { plan: planPath }, buildCommand());
+
+    expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledTimes(1);
+    expect(runWithHeadlessAdapterIfEnabledSpy.mock.calls[0][0]).toMatchObject({
+      enabled: true,
+      command: 'generate',
+      plan: { id: 121, title: 'Test Plan' },
+    });
+  });
+
+  test('disables headless adapter when tunnel is active', async () => {
+    const planPath = await createStubPlan(122);
+    isTunnelActiveSpy.mockReturnValueOnce(true);
+
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [{ title: 'Task 1', description: 'Description', done: false }];
+      await writePlanFile(planPath, plan);
+    });
+
+    await handleGenerateCommand(undefined, { plan: planPath }, buildCommand());
+
+    expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledTimes(1);
+    expect(runWithHeadlessAdapterIfEnabledSpy.mock.calls[0][0]).toMatchObject({
+      enabled: false,
+      command: 'generate',
+    });
+  });
 });
 
 describe('handleGenerateCommand with --next-ready flag', () => {
@@ -601,6 +651,8 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     readPlanFileSpy.mockClear();
     mockExecutorExecute.mockClear();
     buildExecutorAndLogSpy.mockClear();
+    isTunnelActiveSpy.mockClear();
+    runWithHeadlessAdapterIfEnabledSpy.mockClear();
 
     clearPlanCache();
 
@@ -662,6 +714,14 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 
     await moduleMocker.mock('../../common/process.js', () => ({
       commitAll: mock(async () => 0),
+    }));
+
+    await moduleMocker.mock('../../logging/tunnel_client.js', () => ({
+      isTunnelActive: isTunnelActiveSpy,
+    }));
+
+    await moduleMocker.mock('../headless.js', () => ({
+      runWithHeadlessAdapterIfEnabled: runWithHeadlessAdapterIfEnabledSpy,
     }));
   });
 
