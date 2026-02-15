@@ -538,5 +538,4 @@ Errors include descriptive messages that can be shown to users or logged for deb
 ## Related Documentation
 
 - [tim CLI Commands](../../README.md) - Command-line interface documentation
-- [Plan File Format](.cursor/rules/plan_files.mdc) - Structure and schema of .plan.md files
 - [MCP Protocol](https://modelcontextprotocol.io/) - Model Context Protocol specification

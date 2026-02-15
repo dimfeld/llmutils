@@ -134,18 +134,14 @@ TypeScript is used throughout the codebase with strict type checking:
 
 You can check if compilation works using `bun run check`
 
-## Writing Code
-
-See @.cursor/rules/general.mdc for coding guidelines and patterns
-See .cursor/rules/plan_files.mdc for tips on working with plan files in tim commands
-
 ## Code Quality Best Practices
 
-- Use @inquirer/prompts for asking questions to the user
+- Use prompts from src/common/input.ts for asking questions to the user. These are wrappers around @inquirer/prompts
+that work with the various remote control methods as well as local terminal input.
 
 ### Testing Strategies
 
-See @.cursor/rules/testing.mdc for testing strategy
+See docs/testing.md for testing strategy
 
 ### Refactoring Approach
 
