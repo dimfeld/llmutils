@@ -45,6 +45,7 @@ Clear tunnel `userInputHandler` callbacks both on result message detection **and
 ## `executeWithTerminalInput()` Three-Path Branching
 
 The shared helper in `terminal_input_lifecycle.ts` handles three distinct modes:
+
 1. **Terminal input enabled**: Full readline lifecycle with `setupTerminalInput()` / `awaitAndCleanup()`
 2. **Tunnel active, no terminal**: Multi-message lifecycle (`sendInitialPrompt` + `closeStdinAndWait`) to keep stdin open for tunnel-forwarded input
 3. **Neither**: Single-shot `sendSinglePromptAndWait()`

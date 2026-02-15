@@ -420,12 +420,15 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
           planFile: currentPlanFile,
         });
 
-        // Acquire lock if we didn't already (auto-selector doesn't create new workspaces)
-        if (selectedWorkspace && !selectedWorkspace.isNew) {
+        // Acquire lock for existing workspaces. New workspaces created by
+        // createWorkspace() or the auto-selector already hold a lock.
+        const isNewWorkspace = selectedWorkspace?.isNew;
+        if (!isNewWorkspace) {
           try {
             const lockInfo = await WorkspaceLock.acquireLock(
               workspace.path,
-              `tim agent --workspace ${workspace.taskId}`
+              `tim agent --workspace ${workspace.taskId}`,
+              { type: 'pid' }
             );
             WorkspaceLock.setupCleanupHandlers(workspace.path, lockInfo.type);
           } catch (error) {
@@ -440,6 +443,20 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
         if (options.requireWorkspace) {
           throw new Error('Workspace creation was required but failed. Exiting.');
         }
+      }
+    }
+
+    // Acquire a workspace lock on the current base directory.
+    // The workspace block above handles locking for explicit workspace scenarios;
+    // this covers the common case of running in the current directory.
+    if (!options.workspace && !options.autoWorkspace) {
+      try {
+        const lockInfo = await WorkspaceLock.acquireLock(currentBaseDir, `tim agent`, {
+          type: 'pid',
+        });
+        WorkspaceLock.setupCleanupHandlers(currentBaseDir, lockInfo.type);
+      } catch (err) {
+        warn(`Failed to acquire workspace lock: ${err as Error}`);
       }
     }
 

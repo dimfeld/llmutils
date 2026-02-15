@@ -298,11 +298,8 @@ describe('Agent workspace description auto-update', () => {
     // Should not throw
     await timAgent(planFile, { log: false } as any, {});
 
-    // Verify no workspace entry was created (since it's not tracked)
-    expect(getWorkspaceByPath(db, workspaceDir)).toBeNull();
-
-    // Verify no warning was issued (silent skip)
-    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('workspace'));
+    // Verify no workspace description warning was issued (silent skip)
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('workspace description'));
   });
 
   test('warns but does not fail when workspace update fails', async () => {
