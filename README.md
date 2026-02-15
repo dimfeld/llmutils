@@ -30,6 +30,7 @@ These tools are deprecated as coding agents have largely replaced them, but sill
   - [generate - Create Plans](#generate---create-plans)
   - [agent/run - Execute Plans](#agentrun---execute-plans)
   - [run-prompt - One-Shot Prompts](#run-prompt---one-shot-prompts)
+  - [chat - Interactive Sessions](#chat---interactive-sessions)
   - [subagent - Run Subagents](#subagent---run-subagents)
   - [add - Create Plan Stubs](#add---create-plan-stubs)
   - [show - View Plan Details](#show---view-plan-details)
@@ -502,6 +503,39 @@ tim run-prompt "summarize this" > result.txt
 # Suppress execution log output on stderr
 tim run-prompt -q "question" > answer.txt
 ```
+
+---
+
+### chat - Interactive Sessions
+
+Start an interactive LLM session without a plan. This launches Claude Code (default) or Codex as a persistent session where you provide all input directly.
+
+```bash
+# Start interactive session (no initial prompt)
+tim chat
+
+# Start with an initial prompt
+tim chat "Help me refactor the auth module"
+
+# Read initial prompt from a file
+tim chat --prompt-file context.md
+
+# Pipe context as the initial prompt
+echo "Explain this codebase" | tim chat
+
+# Use a specific model
+tim chat -m claude-sonnet-4-5-20250929 "Help me debug this"
+
+# Use Codex (single-prompt only, no interactive input)
+tim chat -x codex "Summarize this repository"
+
+# Non-interactive mode (single prompt, then exit)
+tim chat --non-interactive "What does this function do?"
+```
+
+The session stays open after each response, allowing multi-turn conversation. Press Ctrl+D or Ctrl+C to end. Works with Tim-GUI via the headless adapter for remote sessions.
+
+Codex CLI does not currently support interactive input, so it can only be used with an explicit prompt.
 
 ---
 
@@ -2026,6 +2060,10 @@ tim agent ID [--workspace ID] [--steps N] [--no-terminal-input]
 tim run ID  # alias for agent
 tim run-prompt [PROMPT] [-x claude|claude-code|codex|codex-cli] [--model MODEL] [--reasoning-level LEVEL]
 tim run-prompt [PROMPT] [--json-schema JSON_OR_@FILE] [--prompt-file FILE] [-q]
+
+# Interactive chat session
+tim chat [PROMPT] [-x claude-code|codex-cli] [-m MODEL] [--prompt-file FILE]
+tim chat [PROMPT] [--non-interactive] [--no-terminal-input]
 
 # Run subagents (used by orchestrator, can also be run standalone)
 tim subagent implementer PLAN [-x codex-cli|claude-code] [--input TEXT] [-m MODEL]

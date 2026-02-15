@@ -49,7 +49,14 @@ export class CopyPasteExecutor implements Executor {
     return options;
   }
 
-  async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | ExecutorOutput> {
+  async execute(
+    contextContent: string | undefined,
+    planInfo: ExecutePlanInfo
+  ): Promise<void | ExecutorOutput> {
+    if (contextContent == null) {
+      throw new Error('Prompt content is required for copy-paste executor');
+    }
+
     // Handle output capture mode for review
     if (planInfo.captureOutput) {
       // In capture mode, we can't interact with the user, so we just return the context content

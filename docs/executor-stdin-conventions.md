@@ -52,6 +52,17 @@ The shared helper in `terminal_input_lifecycle.ts` handles three distinct modes:
 
 Both `claude_code.ts` and `run_claude_subprocess.ts` delegate to this helper to avoid duplicating the branching logic.
 
+### Tunnel Forwarding as an Interactive Input Source
+
+Tunnel forwarding is an interactive input source alongside terminal input. When writing validation guards (e.g., "is this session interactive?"), check for **both** `terminalInputEnabled` and tunnel-active state — not just terminal input. For example, a command that requires user interaction to function (like chat with no initial prompt) must allow execution when either the terminal or the tunnel can provide input. Checking only `terminalInputEnabled` would break Tim-GUI integration where input arrives via the tunnel.
+
+### Optional Initial Prompt
+
+The `prompt` parameter in `executeWithTerminalInput()` is optional. When no prompt is provided:
+
+- **Terminal input / tunnel paths**: The subprocess spawns but nothing is written to stdin until the user sends their first message (via terminal readline or tunnel). The first message uses `sendFollowUpMessage()`.
+- **Single-prompt path**: A prompt is required — if none is provided and neither terminal input nor tunnel is active, this is an error. The caller should validate this before reaching the executor.
+
 ## `logSpawn()` and Exit Codes
 
 The `logSpawn()` function returns a Bun `Subprocess` where `exitCode` may be `null` before the process finishes. Always `await subprocess.exited` before checking `exitCode`.

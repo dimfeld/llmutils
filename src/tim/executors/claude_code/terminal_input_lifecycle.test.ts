@@ -148,6 +148,50 @@ describe('terminal_input_lifecycle', () => {
     }
   });
 
+  it('does not send an initial prompt when none is provided', async () => {
+    const sendInitialPromptSpy = mock(() => {});
+
+    await moduleMocker.mock('./streaming_input.ts', () => ({
+      sendInitialPrompt: sendInitialPromptSpy,
+      sendFollowUpMessage: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('./terminal_input.ts', () => ({
+      TerminalInputReader: class {
+        start() {
+          return true;
+        }
+
+        stop() {}
+      },
+    }));
+
+    const { setupTerminalInput } = await import('./terminal_input_lifecycle.ts');
+    const controller = setupTerminalInput({
+      streaming: {
+        stdin: {
+          write: mock(() => 0),
+          end: mock(async () => {}),
+        },
+        result: Promise.resolve({
+          exitCode: 0,
+          stdout: '',
+          stderr: '',
+          signal: null,
+          killedByInactivity: false,
+        }),
+        kill: mock(() => {}),
+      } as unknown as StreamingProcess,
+      sendStructured: mock(() => {}),
+      debugLog: mock(() => {}),
+      onReaderError: mock(() => {}),
+    });
+
+    await controller.awaitAndCleanup();
+
+    expect(sendInitialPromptSpy).toHaveBeenCalledTimes(0);
+  });
+
   it('closes subprocess stdin when terminal reader closes while active (Ctrl+D)', async () => {
     const stdinEndSpy = mock(async () => {});
 
@@ -588,6 +632,53 @@ describe('executeWithTerminalInput', () => {
     );
   });
 
+  it('skips initial prompt in terminal input path when no prompt is provided', async () => {
+    const sendInitialPromptSpy = mock(() => {});
+
+    await moduleMocker.mock('./streaming_input.ts', () => ({
+      sendInitialPrompt: sendInitialPromptSpy,
+      sendFollowUpMessage: mock(() => {}),
+      safeEndStdin: mock(() => {}),
+      sendSinglePromptAndWait: mock(() => Promise.resolve()),
+    }));
+
+    await moduleMocker.mock('./terminal_input.ts', () => ({
+      TerminalInputReader: class {
+        start() {
+          return true;
+        }
+        stop() {}
+      },
+    }));
+
+    await moduleMocker.mock('../../../logging/adapter.js', () => ({
+      getLoggerAdapter: mock(() => undefined),
+    }));
+
+    await moduleMocker.mock('../../../logging/tunnel_client.js', () => ({
+      TunnelAdapter: class {},
+      isTunnelActive: mock(() => false),
+    }));
+
+    const { executeWithTerminalInput } = await import('./terminal_input_lifecycle.ts');
+    const streaming = makeStreamingProcess();
+
+    const result = executeWithTerminalInput({
+      streaming,
+      sendStructured: mock(() => {}),
+      debugLog: mock(() => {}),
+      errorLog: mock(() => {}),
+      log: mock(() => {}),
+      label: 'test',
+      terminalInputEnabled: true,
+      tunnelForwardingEnabled: false,
+    });
+
+    await result.resultPromise;
+
+    expect(sendInitialPromptSpy).toHaveBeenCalledTimes(0);
+  });
+
   it('does not log hint when reader fails to start', async () => {
     const sendInitialPromptSpy = mock(() => {});
 
@@ -692,6 +783,55 @@ describe('executeWithTerminalInput', () => {
     expect(safeEndStdinSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('skips initial prompt in tunnel forwarding path when no prompt is provided', async () => {
+    const sendInitialPromptSpy = mock(() => {});
+    const safeEndStdinSpy = mock(() => {});
+
+    await moduleMocker.mock('./streaming_input.ts', () => ({
+      sendInitialPrompt: sendInitialPromptSpy,
+      sendFollowUpMessage: mock(() => {}),
+      safeEndStdin: safeEndStdinSpy,
+      sendSinglePromptAndWait: mock(() => Promise.resolve()),
+    }));
+
+    await moduleMocker.mock('./terminal_input.ts', () => ({
+      TerminalInputReader: class {
+        start() {
+          return true;
+        }
+        stop() {}
+      },
+    }));
+
+    await moduleMocker.mock('../../../logging/adapter.js', () => ({
+      getLoggerAdapter: mock(() => undefined),
+    }));
+
+    await moduleMocker.mock('../../../logging/tunnel_client.js', () => ({
+      TunnelAdapter: class {},
+      isTunnelActive: mock(() => false),
+    }));
+
+    const { executeWithTerminalInput } = await import('./terminal_input_lifecycle.ts');
+    const streaming = makeStreamingProcess();
+
+    const result = executeWithTerminalInput({
+      streaming,
+      sendStructured: mock(() => {}),
+      debugLog: mock(() => {}),
+      errorLog: mock(() => {}),
+      log: mock(() => {}),
+      label: 'test',
+      terminalInputEnabled: false,
+      tunnelForwardingEnabled: true,
+    });
+
+    await result.resultPromise;
+
+    expect(sendInitialPromptSpy).toHaveBeenCalledTimes(0);
+    expect(safeEndStdinSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('uses single prompt path when both flags are false', async () => {
     const sendInitialPromptSpy = mock(() => {});
     const sendSinglePromptAndWaitSpy = mock(
@@ -749,6 +889,49 @@ describe('executeWithTerminalInput', () => {
 
     expect(sendSinglePromptAndWaitSpy).toHaveBeenCalledTimes(1);
     expect(sendInitialPromptSpy).not.toHaveBeenCalled();
+  });
+
+  it('throws when no prompt is provided and both forwarding modes are disabled', async () => {
+    await moduleMocker.mock('./streaming_input.ts', () => ({
+      sendInitialPrompt: mock(() => {}),
+      sendFollowUpMessage: mock(() => {}),
+      safeEndStdin: mock(() => {}),
+      sendSinglePromptAndWait: mock(() => Promise.resolve()),
+    }));
+
+    await moduleMocker.mock('./terminal_input.ts', () => ({
+      TerminalInputReader: class {
+        start() {
+          return true;
+        }
+        stop() {}
+      },
+    }));
+
+    await moduleMocker.mock('../../../logging/adapter.js', () => ({
+      getLoggerAdapter: mock(() => undefined),
+    }));
+
+    await moduleMocker.mock('../../../logging/tunnel_client.js', () => ({
+      TunnelAdapter: class {},
+      isTunnelActive: mock(() => false),
+    }));
+
+    const { executeWithTerminalInput } = await import('./terminal_input_lifecycle.ts');
+    const streaming = makeStreamingProcess();
+
+    expect(() =>
+      executeWithTerminalInput({
+        streaming,
+        sendStructured: mock(() => {}),
+        debugLog: mock(() => {}),
+        errorLog: mock(() => {}),
+        log: mock(() => {}),
+        label: 'test',
+        terminalInputEnabled: false,
+        tunnelForwardingEnabled: false,
+      })
+    ).toThrow('Prompt is required when terminal input forwarding is disabled');
   });
 
   it('onResultMessage clears tunnel handler and closes stdin for terminal input path', async () => {

@@ -738,7 +738,7 @@ export class ClaudeCodeExecutor implements Executor {
   }
 
   async execute(
-    contextContent: string,
+    contextContent: string | undefined,
     planInfo: ExecutePlanInfo
   ): Promise<void | import('./types').ExecutorOutput> {
     // Clear tracked files set for proper state isolation between runs
@@ -749,23 +749,28 @@ export class ClaudeCodeExecutor implements Executor {
 
     // Handle review mode with dedicated JSON schema execution path
     if (planInfo.executionMode === 'review') {
+      if (contextContent == null) {
+        throw new Error('Prompt content is required for review mode');
+      }
       return this.executeReviewMode(contextContent, planInfo);
     }
+
+    let promptContent = contextContent;
 
     const planId = planInfo.planId;
     const planFilePath = planInfo.planFilePath;
     const planContextAvailable = planId.trim().length > 0 && planFilePath.trim().length > 0;
 
     // In batch mode, prepend the plan file with @ prefix to make it accessible to Edit tool
-    if (planInfo && planInfo.batchMode && planInfo.planFilePath) {
+    if (planInfo && planInfo.batchMode && planInfo.planFilePath && promptContent != null) {
       const planFileReference = `${this.filePathPrefix}${planInfo.planFilePath}`;
-      contextContent = `${planFileReference}\n\n${contextContent}`;
+      promptContent = `${planFileReference}\n\n${promptContent}`;
     }
 
     // Apply orchestration wrapper when plan information is provided and in normal mode
-    if (planContextAvailable) {
+    if (planContextAvailable && promptContent != null) {
       if (planInfo.executionMode === 'normal') {
-        contextContent = wrapWithOrchestration(contextContent, planId, {
+        promptContent = wrapWithOrchestration(promptContent, planId, {
           batchMode: planInfo.batchMode,
           planFilePath,
           reviewExecutor: this.sharedOptions.reviewExecutor,
@@ -773,14 +778,14 @@ export class ClaudeCodeExecutor implements Executor {
           dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
         });
       } else if (planInfo.executionMode === 'simple') {
-        contextContent = wrapWithOrchestrationSimple(contextContent, planId, {
+        promptContent = wrapWithOrchestrationSimple(promptContent, planId, {
           batchMode: planInfo.batchMode,
           planFilePath,
           subagentExecutor: this.sharedOptions.subagentExecutor,
           dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
         });
       } else if (planInfo.executionMode === 'tdd') {
-        contextContent = wrapWithOrchestrationTdd(contextContent, planId, {
+        promptContent = wrapWithOrchestrationTdd(promptContent, planId, {
           batchMode: planInfo.batchMode,
           planFilePath,
           simpleMode: this.sharedOptions.simpleMode,
@@ -931,6 +936,7 @@ export class ClaudeCodeExecutor implements Executor {
       let seenResultMessage = false;
 
       log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
+      const disableInactivityTimeout = this.sharedOptions.disableInactivityTimeout === true;
       const executionTimeoutMs = 60 * 60 * 1000; // 60 minutes
       let killedByTimeout = false;
       resetToolUseCache();
@@ -945,8 +951,8 @@ export class ClaudeCodeExecutor implements Executor {
           CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
         },
         cwd: gitRoot,
-        inactivityTimeoutMs: executionTimeoutMs,
-        initialInactivityTimeoutMs: 2 * 60 * 1000, // 2 minutes to start
+        inactivityTimeoutMs: disableInactivityTimeout ? undefined : executionTimeoutMs,
+        initialInactivityTimeoutMs: disableInactivityTimeout ? undefined : 2 * 60 * 1000,
         onInactivityKill: () => {
           killedByTimeout = true;
           log(
@@ -1003,7 +1009,7 @@ export class ClaudeCodeExecutor implements Executor {
 
       terminalInputResult = executeWithTerminalInput({
         streaming,
-        prompt: contextContent,
+        prompt: promptContent,
         sendStructured,
         debugLog,
         errorLog: error,

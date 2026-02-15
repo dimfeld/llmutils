@@ -31,7 +31,14 @@ export class CopyOnlyExecutor implements Executor {
     return { rmfilter: false };
   }
 
-  async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | ExecutorOutput> {
+  async execute(
+    contextContent: string | undefined,
+    planInfo: ExecutePlanInfo
+  ): Promise<void | ExecutorOutput> {
+    if (contextContent == null) {
+      throw new Error('Prompt content is required for copy-only executor');
+    }
+
     // Handle output capture mode for review
     if (planInfo.captureOutput) {
       // In capture mode, we just return the context content as the "output"

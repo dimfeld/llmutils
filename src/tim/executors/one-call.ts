@@ -54,7 +54,14 @@ export class OneCallExecutor implements Executor {
     return options;
   }
 
-  async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | ExecutorOutput> {
+  async execute(
+    contextContent: string | undefined,
+    planInfo: ExecutePlanInfo
+  ): Promise<void | ExecutorOutput> {
+    if (contextContent == null) {
+      throw new Error('Prompt content is required for direct-call executor');
+    }
+
     const retryRequester = createRetryRequester(this.executionModel);
     const { text: llmOutput } = await runStreamingPrompt({
       input: contextContent,

@@ -615,6 +615,19 @@ createAgentCommand(
 );
 
 program
+  .command('chat [prompt]')
+  .description('Start an interactive LLM session without a plan')
+  .option('-x, --executor <name>', 'Executor to use (claude-code or codex-cli)')
+  .option('-m, --model <model>', 'Model to use')
+  .option('--prompt-file <path>', 'Read initial prompt from a file')
+  .option('--non-interactive', 'Disable interactive terminal input')
+  .option('--no-terminal-input', 'Disable terminal input forwarding')
+  .action(async (prompt, options, command) => {
+    const { handleChatCommand } = await import('./commands/chat.js');
+    await handleChatCommand(prompt, options, command.parent.opts()).catch(handleCommandError);
+  });
+
+program
   .command('run-prompt [prompt]')
   .description(
     'Run a one-shot prompt through Claude Code or Codex CLI. Result is printed to stdout.'

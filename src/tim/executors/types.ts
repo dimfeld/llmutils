@@ -35,6 +35,11 @@ export interface ExecutorCommonOptions {
    * for subagent execution in dynamic mode.
    */
   dynamicSubagentInstructions?: string;
+  /**
+   * When true, disable all inactivity timers on the subprocess. Used for interactive
+   * chat sessions where the user controls the pace of interaction.
+   */
+  disableInactivityTimeout?: boolean;
 }
 
 /**
@@ -142,8 +147,12 @@ export interface Executor {
   /**
    * The asynchronous function that executes the generated context.
    * @param contextContent - The string content for execution (output from `rmfilter` or direct prompt).
+   * Can be undefined for interactive bare-mode sessions that start without an initial message.
    * @param planInfo - Plan information containing planId, planTitle, and planFilePath.
    * @returns Promise<void> for normal execution, or Promise<ExecutorOutput> when captureOutput is 'all' or 'result'.
    */
-  execute: (contextContent: string, planInfo: ExecutePlanInfo) => Promise<ExecutorOutput | void>;
+  execute: (
+    contextContent: string | undefined,
+    planInfo: ExecutePlanInfo
+  ) => Promise<ExecutorOutput | void>;
 }

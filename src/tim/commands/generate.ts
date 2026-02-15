@@ -218,6 +218,7 @@ export async function handleGenerateCommand(
     noninteractive: noninteractive ? true : undefined,
     terminalInput: terminalInputEnabled,
     closeTerminalInputOnResult: false,
+    disableInactivityTimeout: true,
   };
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
 

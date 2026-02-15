@@ -39,7 +39,7 @@ export function createStdinGuard(
 
 export interface TerminalInputLifecycleOptions {
   streaming: StreamingProcess;
-  prompt: string;
+  prompt?: string;
   sendStructured: (message: UserTerminalInputMessage) => void;
   debugLog: (...args: unknown[]) => void;
   onReaderError: (error: unknown) => void;
@@ -60,7 +60,9 @@ export function setupTerminalInput(
   const { streaming, prompt, sendStructured, debugLog, onReaderError, tunnelServer } = options;
   const stdinGuard = options.stdinGuard ?? createStdinGuard(streaming.stdin, debugLog);
 
-  sendInitialPrompt(streaming, prompt);
+  if (prompt != null) {
+    sendInitialPrompt(streaming, prompt);
+  }
 
   const reader = new TerminalInputReader({
     onLine: (line) => {
@@ -120,7 +122,7 @@ export function setupTerminalInput(
 
 export interface ExecuteWithTerminalInputOptions {
   streaming: StreamingProcess;
-  prompt: string;
+  prompt?: string;
   sendStructured: (message: UserTerminalInputMessage | WorkflowProgressMessage) => void;
   debugLog: (...args: unknown[]) => void;
   errorLog: (...args: unknown[]) => void;
@@ -230,11 +232,16 @@ export function executeWithTerminalInput(
     }
     resultPromise = terminalInputController.awaitAndCleanup();
   } else if (tunnelForwardingEnabled) {
-    sendInitialPrompt(streaming, prompt);
+    if (prompt != null) {
+      sendInitialPrompt(streaming, prompt);
+    }
     resultPromise = streaming.result.finally(() => {
       stdinGuard.close();
     });
   } else {
+    if (prompt == null) {
+      throw new Error('Prompt is required when terminal input forwarding is disabled');
+    }
     resultPromise = sendSinglePromptAndWait(streaming, prompt);
   }
 

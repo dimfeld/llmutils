@@ -52,7 +52,7 @@ The codebase is organized into several main modules with improved modularity and
 
 2. **tim**: Manages step-by-step project plans with LLM integration, organized by sub-commands
    - Modular command structure in `commands/` directory with separate files per sub-command
-   - Core functionality: `add.ts`, `agent.ts`, `generate.ts`, `list.ts`, `next.ts`, `done.ts`
+   - Core functionality: `add.ts`, `agent.ts`, `chat.ts`, `generate.ts`, `list.ts`, `next.ts`, `done.ts`
    - Specialized commands: `answer-pr.ts`, `cleanup.ts`, `extract.ts`, `split.ts`, `validate.ts`, `set.ts`
 
 - Database layer: `db/` directory with SQLite-backed storage for assignments, workspaces, permissions, and project metadata

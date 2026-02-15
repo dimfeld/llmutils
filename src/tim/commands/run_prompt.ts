@@ -18,6 +18,7 @@ import {
 } from '../executors/claude_code/format.js';
 import { createCodexStdoutFormatter } from '../executors/codex_cli/format.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
+import { resolveOptionalPromptInput } from './prompt_input.js';
 
 type ExecutorAlias = 'claude' | 'codex';
 const RUN_PROMPT_INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
@@ -32,14 +33,14 @@ export interface RunPromptCommandOptions {
   quiet?: boolean;
 }
 
-type PromptResolverDeps = {
-  readFile?: (filePath: string) => Promise<string>;
-  readStdin?: () => Promise<string>;
-};
-
 type SchemaResolverDeps = {
   cwd?: string;
   readFile?: (filePath: string) => Promise<string>;
+};
+
+type PromptResolverDeps = {
+  readFile?: (filePath: string) => Promise<string>;
+  readStdin?: () => Promise<string>;
 };
 
 const runPromptStderrLogger: LoggerAdapter = {
@@ -144,21 +145,17 @@ export async function resolvePromptText(
   options: { promptFile?: string; stdinIsTTY?: boolean },
   deps: PromptResolverDeps = {}
 ): Promise<string> {
-  const readFile = deps.readFile ?? ((filePath: string) => Bun.file(filePath).text());
-  const readStdin = deps.readStdin ?? (() => Bun.stdin.text());
-  const stdinIsTTY = options.stdinIsTTY ?? process.stdin.isTTY;
-
-  let resolvedPrompt: string | undefined;
-
-  if (options.promptFile) {
-    resolvedPrompt = await readFile(options.promptFile);
-  } else if (!stdinIsTTY) {
-    resolvedPrompt = await readStdin();
-  } else if (typeof promptText === 'string') {
-    resolvedPrompt = promptText;
-  }
-
-  if (!resolvedPrompt || resolvedPrompt.trim().length === 0) {
+  const resolvedPrompt = await resolveOptionalPromptInput(
+    {
+      promptText,
+      promptFile: options.promptFile,
+      stdinIsTTY: options.stdinIsTTY,
+      readStdinWhenNotTTY: true,
+      preferPositionalPrompt: false,
+    },
+    deps
+  );
+  if (!resolvedPrompt) {
     throw new Error(
       'Prompt is required. Provide it as a positional argument, via --prompt-file, or pipe it through stdin.'
     );

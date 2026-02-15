@@ -40,7 +40,14 @@ export class CodexCliExecutor implements Executor {
     } satisfies Partial<PrepareNextStepOptions>;
   }
 
-  async execute(contextContent: string, planInfo: ExecutePlanInfo): Promise<void | ExecutorOutput> {
+  async execute(
+    contextContent: string | undefined,
+    planInfo: ExecutePlanInfo
+  ): Promise<void | ExecutorOutput> {
+    if (contextContent == null) {
+      throw new Error('Prompt content is required for codex-cli executor');
+    }
+
     const simpleModeEnabled = this.sharedOptions.simpleMode || this.options.simpleMode;
 
     if (planInfo.executionMode === 'review') {

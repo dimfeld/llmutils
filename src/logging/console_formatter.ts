@@ -78,7 +78,8 @@ export function formatStructuredMessage(message: StructuredMessage): string {
       if (message.costUsd != null) info.push(`Cost: $${message.costUsd.toFixed(2)}`);
       if (message.turns != null) info.push(`Turns: ${message.turns}`);
 
-      const line = formatHeader(chalk.bold.green, 'Done', message.timestamp) + ' - ' + info.join(', ');
+      const line =
+        formatHeader(chalk.bold.green, 'Done', message.timestamp) + ' - ' + info.join(', ');
 
       if (message.summary) return line + '\n' + message.summary;
       return line;
