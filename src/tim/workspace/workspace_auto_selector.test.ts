@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 
 import { ModuleMocker } from '../../testing.js';
+import { claimAssignment } from '../db/assignment.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { recordWorkspace } from '../db/workspace.js';
@@ -36,6 +37,24 @@ describe('WorkspaceAutoSelector', () => {
       taskId,
       branch,
     });
+  }
+
+  async function seedAssignmentForPlan(
+    repositoryId: string,
+    planUuid: string,
+    planId: number,
+    workspacePath: string
+  ) {
+    const db = getDatabase();
+    const project = getOrCreateProject(db, repositoryId);
+    const workspace = db
+      .prepare('SELECT id FROM workspace WHERE workspace_path = ?')
+      .get(workspacePath) as { id: number } | null;
+    if (!workspace) {
+      throw new Error(`Missing workspace for assignment seed: ${workspacePath}`);
+    }
+
+    claimAssignment(db, project.id, planUuid, planId, workspace.id, 'test-user');
   }
 
   beforeEach(async () => {
@@ -304,5 +323,60 @@ describe('WorkspaceAutoSelector', () => {
       '/test/plan-new.yml',
       config
     );
+  });
+
+  test('selectWorkspace prefers assigned workspace for current plan when unlocked', async () => {
+    const assignedPath = path.join(testDir, 'workspace-assigned');
+    const otherPath = path.join(testDir, 'workspace-other');
+    await fs.mkdir(assignedPath, { recursive: true });
+    await fs.mkdir(otherPath, { recursive: true });
+
+    await seedWorkspace('github.com/test/repo', assignedPath, 'task-assigned', 'task-assigned');
+    await seedWorkspace('github.com/test/repo', otherPath, 'task-other', 'task-other');
+    await seedAssignmentForPlan(
+      'github.com/test/repo',
+      '11111111-1111-4111-8111-111111111111',
+      1,
+      assignedPath
+    );
+
+    const result = await selector.selectWorkspace('task-next', '/test/plan-next.yml', {
+      interactive: false,
+      preferredPlanUuid: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.workspace.workspacePath).toBe(assignedPath);
+    expect(result?.workspace.taskId).toBe('task-assigned');
+    expect(result?.isNew).toBe(false);
+    expect(result?.clearedStaleLock).toBe(false);
+  });
+
+  test('selectWorkspace skips assigned workspace when locked and uses another unlocked workspace', async () => {
+    const assignedPath = path.join(testDir, 'workspace-assigned-locked');
+    const otherPath = path.join(testDir, 'workspace-fallback-unlocked');
+    await fs.mkdir(assignedPath, { recursive: true });
+    await fs.mkdir(otherPath, { recursive: true });
+
+    await seedWorkspace('github.com/test/repo', assignedPath, 'task-assigned', 'task-assigned');
+    await seedWorkspace('github.com/test/repo', otherPath, 'task-other', 'task-other');
+    await seedAssignmentForPlan(
+      'github.com/test/repo',
+      '22222222-2222-4222-8222-222222222222',
+      2,
+      assignedPath
+    );
+    await WorkspaceLock.acquireLock(assignedPath, 'tim agent');
+
+    const result = await selector.selectWorkspace('task-next', '/test/plan-next.yml', {
+      interactive: false,
+      preferredPlanUuid: '22222222-2222-4222-8222-222222222222',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.workspace.workspacePath).toBe(otherPath);
+    expect(result?.workspace.taskId).toBe('task-other');
+    expect(result?.isNew).toBe(false);
+    expect(result?.clearedStaleLock).toBe(false);
   });
 });

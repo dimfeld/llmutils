@@ -152,6 +152,7 @@ export async function handleGenerateCommand(
       newWorkspace: options.newWorkspace,
       nonInteractive: options.nonInteractive,
       requireWorkspace: options.requireWorkspace,
+      planUuid: parsedPlan.uuid,
     },
     currentBaseDir,
     currentPlanFile,

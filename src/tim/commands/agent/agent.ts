@@ -293,6 +293,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
 
     // Determine the base directory for operations
     currentBaseDir = await getGitRoot();
+    const initialPlanData = await readPlanFile(currentPlanFile);
 
     const workspaceResult = await setupWorkspace(
       {
@@ -301,6 +302,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
         newWorkspace: options.newWorkspace,
         nonInteractive: options.nonInteractive,
         requireWorkspace: options.requireWorkspace,
+        planUuid: initialPlanData.uuid,
       },
       currentBaseDir,
       currentPlanFile,

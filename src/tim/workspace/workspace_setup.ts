@@ -14,6 +14,7 @@ export interface WorkspaceSetupOptions {
   newWorkspace?: boolean;
   nonInteractive?: boolean;
   requireWorkspace?: boolean;
+  planUuid?: string;
 }
 
 export interface WorkspaceSetupResult {
@@ -54,6 +55,7 @@ export async function setupWorkspace(
       selectedWorkspace = await selector.selectWorkspace(taskId, planFile, {
         interactive: !options.nonInteractive,
         preferNewWorkspace: options.newWorkspace,
+        ...(options.planUuid ? { preferredPlanUuid: options.planUuid } : {}),
       });
 
       if (selectedWorkspace) {

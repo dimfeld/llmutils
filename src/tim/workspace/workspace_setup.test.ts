@@ -113,6 +113,43 @@ describe('setupWorkspace', () => {
     expect(await fs.readFile(result.planFile, 'utf8')).toContain('Plan details');
   });
 
+  test('passes plan UUID to auto-workspace selector when provided', async () => {
+    const autoWorkspacePath = path.join(tempDir, 'workspace-auto-plan-uuid');
+    await fs.mkdir(autoWorkspacePath, { recursive: true });
+
+    const selectWorkspaceSpy = spyOn(
+      WorkspaceAutoSelector.prototype,
+      'selectWorkspace'
+    ).mockResolvedValue({
+      workspace: {
+        taskId: 'task-auto-plan-uuid',
+        workspacePath: autoWorkspacePath,
+        originalPlanFilePath: planFile,
+        createdAt: new Date().toISOString(),
+      },
+      isNew: false,
+      clearedStaleLock: false,
+    });
+
+    await setupWorkspace(
+      {
+        autoWorkspace: true,
+        workspace: 'task-auto-plan-uuid',
+        planUuid: '11111111-1111-4111-8111-111111111111',
+      },
+      baseDir,
+      planFile,
+      config,
+      'tim generate'
+    );
+
+    expect(selectWorkspaceSpy).toHaveBeenCalledWith('task-auto-plan-uuid', planFile, {
+      interactive: true,
+      preferNewWorkspace: undefined,
+      preferredPlanUuid: '11111111-1111-4111-8111-111111111111',
+    });
+  });
+
   test('falls back to current directory when auto-workspace selector returns null and requireWorkspace is false', async () => {
     const selectWorkspaceSpy = spyOn(
       WorkspaceAutoSelector.prototype,

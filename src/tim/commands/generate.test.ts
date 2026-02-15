@@ -261,7 +261,9 @@ describe('handleGenerateCommand', () => {
   });
 
   test('passes workspace options to setupWorkspace', async () => {
-    const planPath = await createStubPlan(108);
+    const planPath = await createStubPlan(108, {
+      uuid: '11111111-1111-4111-8111-111111111111',
+    });
 
     mockExecutorExecute.mockImplementationOnce(async () => {
       const plan = await readPlanFile(planPath);
@@ -290,6 +292,7 @@ describe('handleGenerateCommand', () => {
       newWorkspace: true,
       nonInteractive: true,
       requireWorkspace: true,
+      planUuid: '11111111-1111-4111-8111-111111111111',
     });
   });
 

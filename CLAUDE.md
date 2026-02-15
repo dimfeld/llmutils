@@ -67,6 +67,7 @@ The codebase is organized into several main modules with improved modularity and
 - Workspace types and helpers: `workspace_info.ts` provides `WorkspaceInfo`, `WorkspaceMetadataPatch`, `workspaceRowToInfo()`, and workspace lookup helpers
 - Workspace locking: `workspace_lock.ts` (`WorkspaceLock` class) uses DB internally while exposing the same static API (`acquireLock`, `releaseLock`, `getLockInfo`, `isLocked`)
 - Workspace setup: `workspace_setup.ts` provides `setupWorkspace()`, a shared helper used by both `agent` and `generate` commands. Encapsulates workspace selection (auto/manual/new), lock acquisition, plan file copying, cleanup handler registration, and fallback-to-cwd behavior
+- Auto workspace selection: `workspace_auto_selector.ts` can prefer the workspace assigned to the current plan UUID when running `--auto-workspace`, as long as that workspace is not locked
 - Assignment helpers: `assignments/remove_plan_assignment.ts` for shared plan-unassignment logic, `assignments/claim_plan.ts` and `assignments/release_plan.ts` for workspace claim management
 - Plan state utilities: `plans/plan_state_utils.ts` centralizes `normalizePlanStatus()` and status classification helpers used across commands
 - Shared utilities captured in purpose-built modules:

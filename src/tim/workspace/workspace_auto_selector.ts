@@ -1,6 +1,9 @@
 import chalk from 'chalk';
 import { promptConfirm } from '../../common/input.js';
 import { log } from '../../logging.js';
+import { getAssignmentEntry } from '../db/assignment.js';
+import { getDatabase } from '../db/database.js';
+import { getProject } from '../db/project.js';
 import { WorkspaceLock, type LockInfo } from './workspace_lock.js';
 import { createWorkspace } from './workspace_manager.js';
 import type { TimConfig } from '../configSchema.js';
@@ -18,6 +21,8 @@ export interface AutoSelectOptions {
   staleLockTimeout?: number;
   /** Whether to prefer creating new workspace over clearing stale locks */
   preferNewWorkspace?: boolean;
+  /** Current plan UUID for assignment-aware workspace preference */
+  preferredPlanUuid?: string;
 }
 
 export interface SelectedWorkspace {
@@ -60,7 +65,7 @@ export class WorkspaceAutoSelector {
     planFilePath: string,
     options: AutoSelectOptions = {}
   ): Promise<SelectedWorkspace | null> {
-    const { interactive = true, preferNewWorkspace = false } = options;
+    const { interactive = true, preferNewWorkspace = false, preferredPlanUuid } = options;
 
     // Get repository ID from current git repo
     let repositoryId: string;
@@ -81,9 +86,44 @@ export class WorkspaceAutoSelector {
     }
 
     // Find existing workspaces for this repository (newest first)
-    const workspaces = findWorkspaceInfosByRepositoryId(repositoryId)
-      .filter((workspace) => !workspace.isPrimary)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const allWorkspaces = findWorkspaceInfosByRepositoryId(repositoryId).sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    const workspaces = allWorkspaces.filter((workspace) => !workspace.isPrimary);
+
+    if (preferredPlanUuid) {
+      const preferredWorkspacePath = getPreferredAssignedWorkspacePath(
+        repositoryId,
+        preferredPlanUuid
+      );
+
+      if (preferredWorkspacePath) {
+        const preferredWorkspace = allWorkspaces.find(
+          (workspace) => workspace.workspacePath === preferredWorkspacePath
+        );
+
+        if (preferredWorkspace) {
+          const preferredLock = await WorkspaceLock.getLockInfoIncludingStale(
+            preferredWorkspace.workspacePath
+          );
+          if (!preferredLock) {
+            log(
+              `Selected assigned workspace for plan ${preferredPlanUuid}: ${preferredWorkspace.workspacePath}`
+            );
+            const { lockedBy, ...workspaceWithoutLock } = preferredWorkspace;
+            return {
+              workspace: workspaceWithoutLock,
+              isNew: false,
+              clearedStaleLock: false,
+            };
+          }
+
+          log(
+            `Assigned workspace for plan ${preferredPlanUuid} is locked, continuing auto-selection: ${preferredWorkspace.workspacePath}`
+          );
+        }
+      }
+    }
 
     const lockedCandidates: LockedWorkspaceCandidate[] = [];
     for (const workspace of workspaces) {
@@ -202,6 +242,19 @@ export class WorkspaceAutoSelector {
       }
     }
   }
+}
+
+function getPreferredAssignedWorkspacePath(
+  repositoryId: string,
+  planUuid: string
+): string | undefined {
+  const db = getDatabase();
+  const project = getProject(db, repositoryId);
+  if (!project) {
+    return undefined;
+  }
+
+  return getAssignmentEntry(db, project.id, planUuid)?.workspacePaths[0];
 }
 
 async function maybeClearStaleLock(

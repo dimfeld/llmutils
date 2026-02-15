@@ -1300,13 +1300,14 @@ tim generate 123 --workspace task-123
 
 # Auto workspace handles:
 # 1. Search for existing workspaces
-# 2. Check lock status
-# 3. Detect and clear stale locks (prompts for confirmation)
-# 4. Create new workspace if all are locked
-# 5. Acquire lock
-# 6. Copy plan file to workspace
-# 7. Execute
-# 8. Release lock on completion
+# 2. Prefer the workspace currently assigned to this plan (if unlocked)
+# 3. Check lock status
+# 4. Detect and clear stale locks (prompts for confirmation)
+# 5. Create new workspace if all are locked
+# 6. Acquire lock
+# 7. Copy plan file to workspace
+# 8. Execute
+# 9. Release lock on completion
 ```
 
 **Workspace tracking:**
