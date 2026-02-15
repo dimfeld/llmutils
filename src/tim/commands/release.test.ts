@@ -32,7 +32,6 @@ describe('handleReleaseCommand', () => {
   const repositoryId = 'multi-user-demo';
   const planUuid = '33333333-3333-4333-8333-333333333333';
   const repositoryRemoteUrl = 'https://example.com/repo.git';
-  const uuidOnlyPlanUuid = '44444444-4444-4444-8444-444444444444';
 
   function getAssignmentRow(uuid: string) {
     const db = getDatabase();
@@ -264,36 +263,5 @@ describe('handleReleaseCommand', () => {
     expect(refreshedPlan.status).toBe('pending');
 
     expect(mockLog).toHaveBeenCalledWith(`✓ Reset status for plan 1 to pending`);
-  });
-
-  test('releases plans without numeric IDs and logs pending reset skip', async () => {
-    const planFilename = path.join(tasksDir, 'uuid-only.plan.md');
-    await writePlanFile(planFilename, {
-      uuid: uuidOnlyPlanUuid,
-      title: 'UUID-only Plan',
-      goal: 'Cover UUID release branch',
-      status: 'pending',
-      details: '',
-      tasks: [],
-    });
-
-    ensureWorkspace(currentWorkspacePath);
-    await claimPlan(undefined, {
-      uuid: uuidOnlyPlanUuid,
-      repositoryId,
-      repositoryRemoteUrl,
-      workspacePath: currentWorkspacePath,
-      user: currentUser,
-    });
-
-    const command = { parent: { opts: () => ({}) } };
-    await handleReleaseCommand('uuid-only.plan.md', { resetStatus: true }, command);
-
-    expect(getAssignmentRow(uuidOnlyPlanUuid)).toBeNull();
-
-    expect(mockLog).toHaveBeenCalledWith(
-      `✓ Released plan ${uuidOnlyPlanUuid} from workspace ${currentWorkspacePath} (removed workspace, removed user ${currentUser})`
-    );
-    expect(mockLog).toHaveBeenCalledWith(`• Plan ${uuidOnlyPlanUuid} is already pending`);
   });
 });

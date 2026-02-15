@@ -86,7 +86,7 @@ describe('handleShowCommand', () => {
   test('shows plan details when given valid plan ID', async () => {
     // Create a test plan
     const plan = {
-      id: '1',
+      id: 1,
       title: 'Test Plan',
       goal: 'Test goal',
       details: 'Test details',
@@ -135,7 +135,7 @@ describe('handleShowCommand', () => {
 
   test('displays tags when present', async () => {
     const plan = {
-      id: '50',
+      id: 50,
       title: 'Tagged Plan',
       goal: 'Check tags',
       status: 'pending',
@@ -153,7 +153,7 @@ describe('handleShowCommand', () => {
 
   test('shows placeholder when no tags exist', async () => {
     const plan = {
-      id: '51',
+      id: 51,
       title: 'Untagged Plan',
       goal: 'Check empty tags',
       status: 'pending',
@@ -170,21 +170,21 @@ describe('handleShowCommand', () => {
 
   test('shows epic chain when epic is an indirect parent', async () => {
     const epic = {
-      id: '1',
+      id: 1,
       title: 'Epic Plan',
       status: 'pending',
       epic: true,
       tasks: [],
     };
     const phase = {
-      id: '2',
+      id: 2,
       title: 'Phase Plan',
       status: 'pending',
       parent: 1,
       tasks: [],
     };
     const child = {
-      id: '3',
+      id: 3,
       title: 'Child Plan',
       status: 'pending',
       parent: 2,
@@ -203,7 +203,7 @@ describe('handleShowCommand', () => {
 
   test('shows condensed summary with --short', async () => {
     const plan = {
-      id: '2',
+      id: 2,
       title: 'Condensed Plan',
       goal: 'Should be hidden in short view',
       details: 'This detail text should not appear in short mode.',
@@ -260,7 +260,7 @@ describe('handleShowCommand', () => {
 
     // Create a simple pending plan with no dependencies
     const plan = {
-      id: '1',
+      id: 1,
       title: 'Ready Plan',
       goal: 'Ready to start',
       details: 'Details',
@@ -307,7 +307,7 @@ describe('handleShowCommand', () => {
     // Create plans
     const plans = [
       {
-        id: '1',
+        id: 1,
         title: 'In Progress Plan',
         goal: 'Currently working on',
         details: 'Details',
@@ -321,7 +321,7 @@ describe('handleShowCommand', () => {
         ],
       },
       {
-        id: '2',
+        id: 2,
         title: 'Pending Plan',
         goal: 'Not started',
         details: 'Details',
@@ -369,7 +369,7 @@ describe('handleShowCommand', () => {
 
     const plans = [
       {
-        id: '10',
+        id: 10,
         title: 'Older Plan',
         goal: 'Earlier work',
         details: 'Older details',
@@ -378,7 +378,7 @@ describe('handleShowCommand', () => {
         tasks: [],
       },
       {
-        id: '11',
+        id: 11,
         title: 'Latest Plan',
         goal: 'Newest goal',
         details: 'Latest details',
@@ -419,7 +419,7 @@ describe('handleShowCommand', () => {
 
     const plans = [
       {
-        id: '12',
+        id: 12,
         title: 'Plan Without UpdatedAt',
         goal: 'No update timestamp',
         details: 'Should be ignored',
@@ -428,7 +428,7 @@ describe('handleShowCommand', () => {
         tasks: [],
       },
       {
-        id: '13',
+        id: 13,
         title: 'Plan With UpdatedAt',
         goal: 'Has update timestamp',
         details: 'Should be selected',
@@ -466,7 +466,7 @@ describe('handleShowCommand', () => {
 
   test('shows message when no plans with updatedAt field found', async () => {
     const plan = {
-      id: '14',
+      id: 14,
       title: 'Plan Without UpdatedAt',
       goal: 'No update timestamp',
       details: 'Only has createdAt',
@@ -494,12 +494,12 @@ describe('handleShowCommand', () => {
   test('shows message when no ready plans found', async () => {
     // Create only blocked plans
     const plan = {
-      id: '1',
+      id: 1,
       title: 'Blocked Plan',
       goal: 'Blocked by dependencies',
       details: 'Details',
       status: 'pending',
-      dependencies: ['nonexistent'],
+      dependencies: [999],
       tasks: [
         {
           title: 'Task 1',
@@ -543,7 +543,7 @@ describe('handleShowCommand', () => {
   test('displays workspace and user assignments when present', async () => {
     const now = new Date().toISOString();
     const plan = {
-      id: '8',
+      id: 8,
       uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       title: 'Assignment Plan',
       goal: 'Show assignment info',
@@ -581,7 +581,7 @@ describe('handleShowCommand', () => {
 
   test('warns when a plan is claimed in multiple workspaces', async () => {
     const plan = {
-      id: '9',
+      id: 9,
       uuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
       title: 'Conflicted Plan',
       goal: 'Warn on conflicts',
@@ -616,7 +616,7 @@ describe('handleShowCommand', () => {
 
   test('falls back to assignedTo when no shared assignment exists', async () => {
     const plan = {
-      id: '10',
+      id: 10,
       title: 'Legacy Assignment Plan',
       goal: 'Check assignedTo fallback',
       status: 'pending',
@@ -745,26 +745,26 @@ describe('inverse relationships', () => {
   test('displays blocked plans in full mode', async () => {
     const plans = [
       {
-        id: '100',
+        id: 100,
         title: 'Parent Plan',
         goal: 'Base plan',
         status: 'done',
         tasks: [],
       },
       {
-        id: '101',
+        id: 101,
         title: 'Dependent Plan 1',
         goal: 'Depends on 100',
         status: 'in_progress',
-        dependencies: ['100'],
+        dependencies: [100],
         tasks: [],
       },
       {
-        id: '102',
+        id: 102,
         title: 'Dependent Plan 2',
         goal: 'Also depends on 100',
         status: 'pending',
-        dependencies: ['100'],
+        dependencies: [100],
         tasks: [],
       },
     ];
@@ -789,26 +789,26 @@ describe('inverse relationships', () => {
   test('displays child plans in full mode', async () => {
     const plans = [
       {
-        id: '200',
+        id: 200,
         title: 'Parent Plan',
         goal: 'Has children',
         status: 'in_progress',
         tasks: [],
       },
       {
-        id: '201',
+        id: 201,
         title: 'Child Plan 1',
         goal: 'Child of 200',
         status: 'done',
-        parent: '200',
+        parent: 200,
         tasks: [],
       },
       {
-        id: '202',
+        id: 202,
         title: 'Child Plan 2',
         goal: 'Also child of 200',
         status: 'pending',
-        parent: '200',
+        parent: 200,
         tasks: [],
       },
     ];
@@ -833,26 +833,26 @@ describe('inverse relationships', () => {
   test('displays discovered plans in full mode', async () => {
     const plans = [
       {
-        id: '300',
+        id: 300,
         title: 'Source Plan',
         goal: 'Discovered others during research',
         status: 'done',
         tasks: [],
       },
       {
-        id: '301',
+        id: 301,
         title: 'Discovered Plan 1',
         goal: 'Found during plan 300',
         status: 'pending',
-        discoveredFrom: '300',
+        discoveredFrom: 300,
         tasks: [],
       },
       {
-        id: '302',
+        id: 302,
         title: 'Discovered Plan 2',
         goal: 'Also found during plan 300',
         status: 'pending',
-        discoveredFrom: '300',
+        discoveredFrom: 300,
         tasks: [],
       },
     ];
@@ -878,37 +878,37 @@ describe('inverse relationships', () => {
   test('displays status icons correctly for different plan statuses', async () => {
     const plans = [
       {
-        id: '350',
+        id: 350,
         title: 'Parent Plan',
         goal: 'Main plan',
         status: 'pending',
         tasks: [],
       },
       {
-        id: '351',
+        id: 351,
         title: 'Pending Plan',
         goal: 'Not started',
         status: 'pending',
-        dependencies: ['350'],
-        discoveredFrom: '350',
+        dependencies: [350],
+        discoveredFrom: 350,
         tasks: [],
       },
       {
-        id: '352',
+        id: 352,
         title: 'In Progress Plan',
         goal: 'Currently working',
         status: 'in_progress',
-        dependencies: ['350'],
-        discoveredFrom: '350',
+        dependencies: [350],
+        discoveredFrom: 350,
         tasks: [],
       },
       {
-        id: '353',
+        id: 353,
         title: 'Done Plan',
         goal: 'Completed',
         status: 'done',
-        dependencies: ['350'],
-        discoveredFrom: '350',
+        dependencies: [350],
+        discoveredFrom: 350,
         tasks: [],
       },
     ];
@@ -934,18 +934,18 @@ describe('inverse relationships', () => {
   test('displays discovered from source in full mode', async () => {
     const plans = [
       {
-        id: '400',
+        id: 400,
         title: 'Source Plan',
         goal: 'Original plan',
         status: 'done',
         tasks: [],
       },
       {
-        id: '401',
+        id: 401,
         title: 'Discovered Plan',
         goal: 'Found during research',
         status: 'pending',
-        discoveredFrom: '400',
+        discoveredFrom: 400,
         tasks: [],
       },
     ];
@@ -968,11 +968,11 @@ describe('inverse relationships', () => {
 
   test('handles missing inverse relationship references gracefully', async () => {
     const plan = {
-      id: '500',
+      id: 500,
       title: 'Orphan Plan',
       goal: 'References non-existent source',
       status: 'pending',
-      discoveredFrom: '999',
+      discoveredFrom: 999,
       tasks: [],
     };
 
@@ -991,18 +991,18 @@ describe('inverse relationships', () => {
   test('does not show inverse relationship sections in short mode', async () => {
     const plans = [
       {
-        id: '600',
+        id: 600,
         title: 'Parent Plan',
         goal: 'Has relationships',
         status: 'done',
         tasks: [],
       },
       {
-        id: '601',
+        id: 601,
         title: 'Child Plan',
         goal: 'Child of 600',
         status: 'pending',
-        parent: '600',
+        parent: 600,
         tasks: [],
       },
     ];
@@ -1028,7 +1028,7 @@ describe('inverse relationships', () => {
     const longDetails = Array.from({ length: 30 }, (_, i) => `Line ${i + 1} of details`).join('\n');
 
     const plan = {
-      id: '700',
+      id: 700,
       title: 'Long Details Plan',
       goal: 'Test details display',
       status: 'pending',

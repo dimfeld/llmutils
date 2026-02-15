@@ -268,31 +268,4 @@ describe('handleClaimCommand', () => {
     expect(mockWarn).not.toHaveBeenCalled();
     expect(mockLog).not.toHaveBeenCalled();
   });
-
-  test('claiming a plan without a numeric ID persists assignment with UUID label', async () => {
-    ensureWorkspace(currentWorkspacePath);
-    const planUuid = '22222222-2222-4222-8222-222222222222';
-    const planFilename = 'no-id.plan.md';
-
-    await writePlanFile(path.join(tasksDir, planFilename), {
-      uuid: planUuid,
-      title: 'UUID-only plan',
-      goal: 'Allow claims without numeric IDs',
-      details: '',
-      tasks: [],
-    });
-
-    const command = { parent: { opts: () => ({}) } };
-    await handleClaimCommand(planFilename, {}, command);
-
-    const entry = getAssignmentRow(planUuid);
-    expect(entry).toBeDefined();
-    expect(entry?.plan_id).toBeNull();
-    expect(entry?.claimed_by_user).toBe('alice');
-
-    expect(mockWarn).not.toHaveBeenCalled();
-    expect(mockLog).toHaveBeenCalledWith(
-      `✓ Claimed plan ${planUuid} in workspace ${currentWorkspacePath} (created assignment)`
-    );
-  });
 });

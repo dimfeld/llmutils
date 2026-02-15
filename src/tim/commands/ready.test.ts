@@ -928,7 +928,7 @@ describe('handleReadyCommand', () => {
     expect(logOutput).toContain('No plans are currently ready to execute');
   });
 
-  test('handles mixed numeric and string dependency IDs', async () => {
+  test('handles numeric dependency IDs', async () => {
     // Create a done plan
     await createPlan({
       id: 1,
@@ -940,14 +940,14 @@ describe('handleReadyCommand', () => {
       createdAt: new Date().toISOString(),
     });
 
-    // Create a plan with string dependency ID
+    // Create a plan with a numeric dependency ID
     await createPlan({
       id: 2,
-      goal: 'Plan with string dependency',
+      goal: 'Plan with numeric dependency',
       status: 'pending',
       priority: 'medium',
       tasks: [{ title: 'Task 1', description: 'Do task', done: false }],
-      dependencies: ['1' as any], // String ID
+      dependencies: [1],
       createdAt: new Date().toISOString(),
     });
 
@@ -959,9 +959,9 @@ describe('handleReadyCommand', () => {
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
 
-    // Plan should be shown as ready because string '1' should resolve to numeric 1
+    // Plan should be shown as ready because dependency 1 is done
     expect(logOutput).toContain('Ready Plans (1)');
-    expect(logOutput).toContain('Plan with string dependency');
+    expect(logOutput).toContain('Plan with numeric dependency');
   });
 
   test('defaults to showing current workspace assignments and unassigned plans', async () => {

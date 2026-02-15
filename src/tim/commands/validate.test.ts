@@ -23,6 +23,7 @@ describe('validate command', () => {
   describe('valid plan files', () => {
     test('should pass validation for a valid basic plan file', async () => {
       const validPlan = `---
+id: 1
 goal: Implement user authentication
 details: Add login and signup functionality
 tasks:
@@ -70,6 +71,7 @@ Additional plan details in markdown format.
 
     test('should pass validation for a valid YAML-only plan file', async () => {
       const validPlan = `---
+id: 1
 goal: Implement feature X
 details: This is a test plan
 tasks:
@@ -113,6 +115,7 @@ tasks:
   describe('invalid plan files with unknown keys', () => {
     test('should detect unknown keys at root level', async () => {
       const invalidPlan = `---
+id: 1
 goal: Test plan
 details: Test details
 unknownRootKey: invalid
@@ -153,6 +156,7 @@ tasks: []
 
     test('should detect unknown keys in tasks array', async () => {
       const invalidPlan = `---
+id: 1
 goal: Test plan
 details: Test details
 tasks:
@@ -195,6 +199,7 @@ tasks:
 
     test('should detect removed fields (steps, files) as invalid', async () => {
       const invalidPlan = `---
+id: 1
 goal: Test plan
 details: Test details
 tasks:
@@ -233,13 +238,14 @@ tasks:
         process.exit = originalExit;
       }
 
-      expect(exitCode).toBe(1); // Should exit with error
-      expect(logOutput.join('\\n')).toContain('✗ 1 invalid');
-      expect(logOutput.join('\\n')).toContain('Unknown keys: tasks.0.files, tasks.0.steps');
+      expect(exitCode).toBeUndefined(); // Obsolete fields should be auto-fixed
+      expect(logOutput.join('\\n')).toContain('✓ 1 valid');
+      expect(logOutput.join('\\n')).toContain('Removed 2 obsolete keys from 1 plan');
     });
 
     test('should detect unknown keys in project section', async () => {
       const invalidPlan = `---
+id: 1
 goal: Phase goal
 details: Phase details
 project:
@@ -284,6 +290,7 @@ tasks: []
 
     test('should detect multiple unknown keys at different levels', async () => {
       const invalidPlan = `---
+id: 1
 goal: Test plan
 details: Test details
 unknownRoot1: invalid
@@ -335,8 +342,6 @@ project:
       expect(output).toContain('unknownRoot1');
       expect(output).toContain('unknownRoot2');
       expect(output).toContain('tasks.0.unknownTask');
-      expect(output).toContain('tasks.0.files');
-      expect(output).toContain('tasks.0.steps');
       expect(output).toContain('project.unknownProject');
     });
   });
@@ -344,6 +349,7 @@ project:
   describe('frontmatter format validation', () => {
     test('should validate frontmatter format files correctly', async () => {
       const frontmatterPlan = `---
+id: 1
 goal: Implement user authentication
 details: Add login and signup functionality
 tasks:
@@ -389,6 +395,7 @@ This is additional content that should be merged with the details field.
 
     test('should detect unknown keys in frontmatter format files', async () => {
       const invalidFrontmatterPlan = `---
+id: 1
 goal: Test plan
 details: Test details
 unknownKey: invalid
@@ -433,6 +440,7 @@ tasks: []
   describe('verbose mode', () => {
     test('should show valid files in verbose mode', async () => {
       const validPlan = `---
+id: 1
 goal: Test plan
 details: Test details
 tasks: []
@@ -479,6 +487,7 @@ tasks: []
     test('should correctly report both valid and invalid files', async () => {
       // Create a valid file
       const validPlan = `---
+id: 1
 goal: Valid plan
 details: Valid details
 tasks: []
@@ -488,6 +497,7 @@ tasks: []
 
       // Create an invalid file
       const invalidPlan = `---
+id: 1
 goal: Invalid plan
 details: Invalid details
 unknownKey: invalid

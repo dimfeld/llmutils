@@ -47,7 +47,8 @@ describe('extractMarkdownToYaml container normalization', () => {
     };
 
     const outputPath = path.join(tasksDir, '1.plan.md');
-    const inputYaml = `title: Updated Plan
+    const inputYaml = `id: 1
+title: Updated Plan
 goal: Updated goal
 container: true
 tasks:

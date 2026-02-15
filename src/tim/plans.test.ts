@@ -2071,25 +2071,16 @@ tasks: []
     expect(typeof validatedPlan.id).toBe('number');
   });
 
-  it('should accept plans without IDs', () => {
-    const planWithoutId: PlanSchema = {
+  it('should reject plans without IDs', () => {
+    const planWithoutId = {
       title: 'Test Plan without ID',
-      goal: 'Test optional ID',
+      goal: 'Test required ID',
       details: 'This plan has no ID',
       status: 'pending',
       tasks: [],
     };
 
-    const yamlString = yaml.stringify(planWithoutId);
-
-    // Verify the YAML doesn't contain an ID field
-    expect(yamlString).not.toContain('id:');
-
-    // Parse it back and verify
-    const parsed = yaml.parse(yamlString);
-    const validatedPlan = planSchema.parse(parsed);
-
-    expect(validatedPlan.id).toBeUndefined();
+    expect(() => planSchema.parse(planWithoutId)).toThrow();
   });
 
   it('should reject invalid numeric IDs', () => {
@@ -2104,16 +2095,16 @@ tasks: []
     }
   });
 
-  it('should handle mixed ID types in a plan collection', () => {
+  it('should reject non-numeric ID variants in a plan collection', () => {
     const plans = [
       { id: 100, title: 'Numeric ID Plan', goal: 'Test', details: 'Test', tasks: [] },
+      { id: '101', title: 'String ID Plan', goal: 'Test', details: 'Test', tasks: [] },
       { title: 'No ID Plan', goal: 'Test', details: 'Test', tasks: [] },
     ];
 
-    // All should be valid
-    for (const plan of plans) {
-      expect(() => planSchema.parse(plan)).not.toThrow();
-    }
+    expect(() => planSchema.parse(plans[0])).not.toThrow();
+    expect(() => planSchema.parse(plans[1])).toThrow();
+    expect(() => planSchema.parse(plans[2])).toThrow();
   });
 
   it('should accept valid discoveredFrom values', () => {

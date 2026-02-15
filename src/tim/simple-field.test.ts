@@ -10,6 +10,7 @@ import { stringifyPlanWithFrontmatter } from '../testing.js';
 describe('simple field schema validation', () => {
   test('accepts plan with simple: true', () => {
     const plan = {
+      id: 1,
       title: 'Simple Test Plan',
       goal: 'Do a simple thing',
       details: 'Some details',
@@ -23,6 +24,7 @@ describe('simple field schema validation', () => {
 
   test('accepts plan with simple: false', () => {
     const plan = {
+      id: 2,
       title: 'Complex Test Plan',
       goal: 'Do a complex thing',
       details: 'Some details',
@@ -36,6 +38,7 @@ describe('simple field schema validation', () => {
 
   test('defaults simple to false when not provided', () => {
     const plan = {
+      id: 3,
       title: 'Test Plan',
       goal: 'Do a thing',
       details: 'Some details',
@@ -49,6 +52,7 @@ describe('simple field schema validation', () => {
 
   test('backward compatibility - existing plans without simple field work correctly', () => {
     const plan = {
+      id: 4,
       title: 'Legacy Plan',
       goal: 'Old plan without simple field',
       details: 'This plan was created before simple field existed',
@@ -62,6 +66,7 @@ describe('simple field schema validation', () => {
 
   test('rejects non-boolean simple values', () => {
     const plan = {
+      id: 5,
       title: 'Test Plan',
       goal: 'Do a thing',
       details: 'Some details',
@@ -96,6 +101,7 @@ describe('simple field schema validation', () => {
 
   test('schema preserves simple field through parse-serialize cycle', () => {
     const plan = {
+      id: 6,
       title: 'Serialize Test',
       goal: 'Test serialization',
       simple: true,

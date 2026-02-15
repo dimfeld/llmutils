@@ -4,6 +4,7 @@ import { planSchema } from './planSchema.js';
 describe('planSchema tags', () => {
   test('accepts valid tag arrays', () => {
     const plan = {
+      id: 1,
       title: 'Tagged Plan',
       goal: 'Test goal',
       details: 'Details',
@@ -17,6 +18,7 @@ describe('planSchema tags', () => {
 
   test('rejects non-string tag entries', () => {
     const plan = {
+      id: 2,
       title: 'Invalid Tags Plan',
       goal: 'Test goal',
       details: 'Details',
@@ -29,6 +31,7 @@ describe('planSchema tags', () => {
 
   test('defaults to empty tags when missing', () => {
     const plan = {
+      id: 3,
       title: 'No Tags Plan',
       goal: 'Test goal',
       details: 'Details',

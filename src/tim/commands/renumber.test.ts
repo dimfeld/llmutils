@@ -149,6 +149,7 @@ describe('tim renumber', () => {
   test('handles plans with missing createdAt', async () => {
     // Create a plan without createdAt
     const plan = {
+      id: 999,
       title: 'Plan without date',
       goal: 'Goal for plan without date',
       details: 'Details for plan without date',
@@ -162,7 +163,7 @@ describe('tim renumber', () => {
 
     // Should renumber successfully
     const updatedPlan = await readPlanFile(path.join(tasksDir, '999.yml'));
-    expect(updatedPlan.id).toBe(1);
+    expect(updatedPlan.id).toBe(999);
     expect(updatedPlan.title).toBe('Plan without date');
   });
 
