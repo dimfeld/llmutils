@@ -1,6 +1,6 @@
-import * as os from 'node:os';
 import * as path from 'node:path';
 import * as yaml from 'js-yaml';
+import { getTimConfigRoot } from '../common/config_paths.js';
 import { quiet } from '../common/process.js';
 import { debugLog, error, log, warn } from '../logging.js';
 import { describeRemoteForLogging } from './external_storage_utils.js';
@@ -106,7 +106,7 @@ export async function findConfigPath(overridePath?: string): Promise<string | nu
 }
 
 /**
- * Finds the path to the global tim configuration file in ~/.config/tim/config.yml.
+ * Finds the path to the global tim configuration file in <tim-config-root>/config.yml.
  * Skips loading if TIM_LOAD_GLOBAL_CONFIG env var is '0' or 'false'.
  */
 export async function findGlobalConfigPath(): Promise<string | null> {
@@ -116,7 +116,7 @@ export async function findGlobalConfigPath(): Promise<string | null> {
     return null;
   }
 
-  const configPath = path.join(os.homedir(), '.config', 'tim', 'config.yml');
+  const configPath = path.join(getTimConfigRoot(), 'config.yml');
   const fileExists = await Bun.file(configPath).exists();
 
   if (fileExists) {

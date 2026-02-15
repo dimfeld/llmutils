@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import {
   findConfigPath,
+  findGlobalConfigPath,
   loadConfig,
   findLocalConfigPath,
   loadEffectiveConfig,
@@ -125,6 +126,30 @@ describe('configLoader', () => {
 
     const result = await findConfigPath();
     expect(result).toBe(defaultConfigPath);
+  });
+
+  test('findGlobalConfigPath uses XDG_CONFIG_HOME-derived config root', async () => {
+    const originalLoadGlobal = process.env.TIM_LOAD_GLOBAL_CONFIG;
+    delete process.env.TIM_LOAD_GLOBAL_CONFIG;
+
+    try {
+      const globalConfigPath = path.join(fakeHomeDir, '.config', 'tim', 'config.yml');
+      await fs.mkdir(path.dirname(globalConfigPath), { recursive: true });
+      await fs.writeFile(
+        globalConfigPath,
+        yaml.stringify({ defaultExecutor: 'copy-only' }),
+        'utf-8'
+      );
+
+      const result = await findGlobalConfigPath();
+      expect(result).toBe(globalConfigPath);
+    } finally {
+      if (originalLoadGlobal === undefined) {
+        delete process.env.TIM_LOAD_GLOBAL_CONFIG;
+      } else {
+        process.env.TIM_LOAD_GLOBAL_CONFIG = originalLoadGlobal;
+      }
+    }
   });
 
   test('loadEffectiveConfig returns default config using external storage when repository lacks config', async () => {
