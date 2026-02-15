@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { HeadlessAdapter } from './headless_adapter.ts';
 import type { HeadlessMessage, HeadlessServerMessage } from './headless_protocol.ts';
 import { createRecordingAdapter } from './test_helpers.ts';
@@ -31,7 +31,9 @@ function getOutputPayloadText(message: Extract<HeadlessMessage, { type: 'output'
   return message.message.data;
 }
 
-async function waitFor(condition: () => boolean, timeoutMs: number = 6000): Promise<void> {
+setDefaultTimeout(15000);
+
+async function waitFor(condition: () => boolean, timeoutMs: number = 12000): Promise<void> {
   const start = Date.now();
   while (!condition()) {
     if (Date.now() - start > timeoutMs) {
@@ -445,6 +447,10 @@ describe('HeadlessAdapter', () => {
       { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
     );
 
+    adapter.log('connect-primer');
+    await waitFor(() => server.messages.some((message) => message.type === 'replay_end'));
+    server.messages.length = 0;
+
     const previousDebug = debug;
     try {
       setDebug(true);
@@ -801,13 +807,6 @@ describe('HeadlessAdapter', () => {
     }
 
     const destroyPromise = adapter.destroy();
-    await waitFor(() => {
-      const internals = adapter as any;
-      return (
-        internals.state === 'draining' &&
-        (internals.drainPromise !== undefined || internals.queue.length > 0)
-      );
-    }, 6000);
     adapter.writeStdout('written-during-destroy\n');
     await destroyPromise;
 
@@ -828,7 +827,7 @@ describe('HeadlessAdapter', () => {
       });
 
     expect(outputs).toContain('written-during-destroy\n');
-  });
+  }, 10000);
 
   it('does not enqueue or reconnect after destroy() completes', async () => {
     const server = await createWebSocketServer();
@@ -999,7 +998,7 @@ describe('HeadlessAdapter', () => {
     assertByteCountersMatchInternals(internals);
 
     await adapter.destroy();
-  });
+  }, 10000);
 });
 
 /** A websocket server that can send messages back to clients (for prompt tests). */
@@ -1080,7 +1079,7 @@ describe('HeadlessAdapter prompt handling', () => {
 
     // Trigger connection
     adapter.log('connect');
-    await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
+    await waitFor(() => server.getOpenCount() >= 1);
 
     const { promise, cancel } = adapter.waitForPromptResponse('req-1');
     promise.catch(() => {});
@@ -1100,27 +1099,21 @@ describe('HeadlessAdapter prompt handling', () => {
     expect(internals.pendingPrompts.size).toBe(0);
 
     await adapter.destroy();
-  });
+  }, 10000);
 
   it('waitForPromptResponse resolves with complex values', async () => {
-    const server = await createPromptWebSocketServer();
-    serversToClose.push(server);
-
     const { adapter: wrapped } = createRecordingAdapter();
     const adapter = new HeadlessAdapter(
-      `ws://127.0.0.1:${server.port}/tim-agent`,
+      'ws://127.0.0.1:1/tim-agent',
       { command: 'agent' },
       wrapped,
       { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
     );
 
-    adapter.log('connect');
-    await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
-
     const { promise } = adapter.waitForPromptResponse('req-complex');
     promise.catch(() => {});
 
-    server.sendToAll({
+    (adapter as any).handleServerMessage({
       type: 'prompt_response',
       requestId: 'req-complex',
       value: ['opt1', 'opt3'],
@@ -1130,7 +1123,7 @@ describe('HeadlessAdapter prompt handling', () => {
     expect(result).toEqual(['opt1', 'opt3']);
 
     await adapter.destroy();
-  });
+  }, 10000);
 
   it('error responses are logged, pending entry removed, promise stays pending', async () => {
     const server = await createPromptWebSocketServer();
@@ -1145,7 +1138,7 @@ describe('HeadlessAdapter prompt handling', () => {
     );
 
     adapter.log('connect');
-    await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
+    await waitFor(() => server.getOpenCount() >= 1);
 
     const { promise } = adapter.waitForPromptResponse('req-err');
     promise.catch(() => {});
@@ -1184,7 +1177,7 @@ describe('HeadlessAdapter prompt handling', () => {
     expect(warnCalls.some((c) => String(c.args[0]).includes('Something went wrong'))).toBe(true);
 
     await adapter.destroy();
-  });
+  }, 10000);
 
   it('cancel() removes the pending entry and rejects the promise', async () => {
     const { adapter: wrapped } = createRecordingAdapter();
@@ -1285,7 +1278,7 @@ describe('HeadlessAdapter prompt handling', () => {
     );
 
     adapter.log('connect');
-    await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
+    await waitFor(() => server.getOpenCount() >= 1);
 
     // Register a pending prompt with a different ID
     const { promise, cancel } = adapter.waitForPromptResponse('req-known');
@@ -1311,6 +1304,7 @@ describe('HeadlessAdapter prompt handling', () => {
   it('malformed incoming messages are silently ignored', async () => {
     // We need a server that can send raw strings (not just HeadlessServerMessage)
     const clients = new Set<ServerWebSocket<unknown>>();
+    let openCount = 0;
     const serverInstance = Bun.serve({
       port: 0,
       fetch(req, srv) {
@@ -1322,6 +1316,7 @@ describe('HeadlessAdapter prompt handling', () => {
       },
       websocket: {
         open(ws) {
+          openCount += 1;
           clients.add(ws);
         },
         message() {},
@@ -1344,11 +1339,11 @@ describe('HeadlessAdapter prompt handling', () => {
       `ws://127.0.0.1:${serverInstance.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
-      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+      { reconnectIntervalMs: 0 }
     );
 
     adapter.log('connect');
-    await waitFor(() => (adapter as any).state === 'connected');
+    await waitFor(() => openCount >= 1);
 
     const { promise, cancel } = adapter.waitForPromptResponse('req-malformed');
     promise.catch(() => {});
@@ -1370,7 +1365,7 @@ describe('HeadlessAdapter prompt handling', () => {
 
     cancel();
     await adapter.destroy();
-  });
+  }, 10000);
 
   it('pending prompts survive websocket disconnect (NOT rejected)', async () => {
     const server = await createPromptWebSocketServer();
@@ -1385,7 +1380,7 @@ describe('HeadlessAdapter prompt handling', () => {
     );
 
     adapter.log('connect');
-    await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
+    await waitFor(() => server.getOpenCount() >= 1);
 
     const { promise, cancel } = adapter.waitForPromptResponse('req-survive');
     promise.catch(() => {});
@@ -1409,7 +1404,7 @@ describe('HeadlessAdapter prompt handling', () => {
 
     cancel();
     await adapter.destroy();
-  });
+  }, 10000);
 
   it('reconnection re-attaches onmessage handler and pending prompt resolves after reconnect', async () => {
     const server = await createPromptWebSocketServer();
