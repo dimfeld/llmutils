@@ -1579,6 +1579,43 @@ struct SessionStateTests {
         #expect(oldSession.isActive == false)
     }
 
+    @Test("Reconciliation does not match notification-only session when pane IDs differ")
+    func reconcileDoesNotMatchMismatchedPaneId() {
+        let state = SessionState()
+
+        // Create a notification-only session with pane 10
+        state.ingestNotification(payload: MessagePayload(
+            message: "Alert from pane 10",
+            workspacePath: "/project",
+            terminal: TerminalPayload(type: "wezterm", paneId: "10")
+        ))
+        #expect(state.sessions.count == 1)
+        let notifSessionId = state.sessions[0].id
+
+        // session_info arrives with same workspace but different pane ID (12)
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo(
+            command: "agent",
+            workspacePath: "/project",
+            terminal: TerminalPayload(type: "wezterm", paneId: "12")
+        ))
+
+        // Should NOT reconcile — pane IDs differ and the incoming session has a pane ID,
+        // so workspace fallback is skipped. A new session should be created.
+        #expect(state.sessions.count == 2)
+        // The notification-only session should remain unchanged
+        let notifSession = state.sessions.first { $0.id == notifSessionId }!
+        #expect(notifSession.command == "")
+        #expect(notifSession.isActive == false)
+        #expect(notifSession.hasUnreadNotification == true)
+        #expect(notifSession.terminal?.paneId == "10")
+        // The new session should be a real session
+        let newSession = state.sessions.first { $0.connectionId == connId }!
+        #expect(newSession.command == "agent")
+        #expect(newSession.isActive == true)
+        #expect(newSession.terminal?.paneId == "12")
+    }
+
     @Test("Reconciliation does not match notification-only session with empty workspace by workspace path")
     func reconcileDoesNotMatchEmptyWorkspace() {
         let state = SessionState()

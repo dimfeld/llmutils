@@ -80,11 +80,10 @@ struct SessionRowView: View {
                 .fill(session.isActive ? .green : .gray)
                 .frame(width: 8, height: 8)
 
-            if session.hasUnreadNotification {
-                Circle()
-                    .fill(.blue)
-                    .frame(width: 8, height: 8)
-            }
+            Circle()
+                .fill(.blue)
+                .frame(width: 8, height: 8)
+                .opacity(session.hasUnreadNotification ? 1 : 0)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(SessionRowView.shortenedPath(session.workspacePath) ?? "Unknown workspace")
@@ -110,7 +109,7 @@ struct SessionRowView: View {
 
             Spacer()
 
-            if session.terminal != nil {
+            if session.terminal?.type == "wezterm" {
                 Button(action: { activateTerminalPane(session.terminal!) }) {
                     Image(systemName: "terminal")
                         .foregroundStyle(.secondary)

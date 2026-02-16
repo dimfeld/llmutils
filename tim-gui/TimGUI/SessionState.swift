@@ -83,14 +83,15 @@ final class SessionState {
     private func findNotificationOnlySession(info: SessionInfoPayload) -> SessionItem? {
         // Match by terminal pane ID first
         if let paneId = info.terminal?.paneId {
-            if let match = sessions.first(where: {
+            // If the incoming session has a pane ID, only match by pane ID.
+            // Do NOT fall back to workspace matching — that could incorrectly
+            // reconcile with a notification-only session from a different pane.
+            return sessions.first {
                 $0.command.isEmpty && $0.terminal?.paneId == paneId
-            }) {
-                return match
             }
         }
 
-        // Fall back to workspace path match
+        // Only fall back to workspace path match when the incoming session has NO pane ID
         if let workspacePath = info.workspacePath, !workspacePath.isEmpty {
             return sessions.first { $0.command.isEmpty && $0.workspacePath == workspacePath }
         }
