@@ -112,6 +112,37 @@ final class SessionState {
         self.sessions[index].messages.append(message)
     }
 
+    func ingestSessionMetadata(connectionId: UUID, tunnelMessage: TunnelMessage) {
+        guard let index = sessions.firstIndex(where: { $0.connectionId == connectionId }) else {
+            return
+        }
+
+        guard case let .structured(message) = tunnelMessage else {
+            return
+        }
+
+        let extractedTitle: String?
+        switch message {
+        case let .planDiscovery(_, title, _):
+            extractedTitle = title
+        case let .executionSummary(payload):
+            extractedTitle = payload.planTitle
+        default:
+            extractedTitle = nil
+        }
+
+        guard let extractedTitle else {
+            return
+        }
+
+        let trimmedTitle = extractedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else {
+            return
+        }
+
+        self.sessions[index].planTitle = trimmedTitle
+    }
+
     func startReplay(connectionId: UUID) {
         self.replayingConnections.insert(connectionId)
     }

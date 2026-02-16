@@ -129,6 +129,13 @@ final class SessionItem: Identifiable {
     var terminal: TerminalPayload?
     var hasUnreadNotification: Bool
     var notificationMessage: String?
+    var displayTitle: String {
+        let trimmedTitle = self.planTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmedTitle, !trimmedTitle.isEmpty {
+            return trimmedTitle
+        }
+        return self.command
+    }
 
     init(
         id: UUID,

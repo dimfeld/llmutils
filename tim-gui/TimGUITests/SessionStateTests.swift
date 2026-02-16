@@ -335,6 +335,62 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages[1].text == "live msg")
     }
 
+    @Test("ingestSessionMetadata updates planTitle from plan_discovery")
+    func ingestSessionMetadataFromPlanDiscovery() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        #expect(state.sessions[0].planTitle == nil)
+
+        state.ingestSessionMetadata(
+            connectionId: connId,
+            tunnelMessage: .structured(message: .planDiscovery(
+                planId: 42,
+                title: "New Plan Title",
+                timestamp: nil)))
+
+        #expect(state.sessions[0].planTitle == "New Plan Title")
+    }
+
+    @Test("ingestSessionMetadata updates planTitle from execution_summary")
+    func ingestSessionMetadataFromExecutionSummary() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        #expect(state.sessions[0].planTitle == nil)
+
+        state.ingestSessionMetadata(
+            connectionId: connId,
+            tunnelMessage: .structured(message: .executionSummary(ExecutionSummaryPayload(
+                planId: "42",
+                planTitle: "Execution Summary Title",
+                mode: "agent",
+                durationMs: nil,
+                totalSteps: nil,
+                failedSteps: nil,
+                changedFiles: nil,
+                errors: nil,
+                timestamp: nil))))
+
+        #expect(state.sessions[0].planTitle == "Execution Summary Title")
+    }
+
+    @Test("ingestSessionMetadata ignores empty titles")
+    func ingestSessionMetadataIgnoresEmptyTitles() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent", planTitle: "Existing"))
+
+        state.ingestSessionMetadata(
+            connectionId: connId,
+            tunnelMessage: .structured(message: .planDiscovery(
+                planId: 42,
+                title: "   ",
+                timestamp: nil)))
+
+        #expect(state.sessions[0].planTitle == "Existing")
+    }
+
     @Test("replay buffers messages and flushes them only on replay_end")
     func replayBuffersUntilEnd() {
         let state = SessionState()

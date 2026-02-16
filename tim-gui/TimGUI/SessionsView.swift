@@ -94,7 +94,7 @@ struct SessionRowView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 } else {
-                    Text(self.session.planTitle ?? self.session.command)
+                    Text(self.session.displayTitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
