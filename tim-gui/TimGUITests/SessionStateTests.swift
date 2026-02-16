@@ -1343,4 +1343,96 @@ struct SessionStateTests {
         // Should create a new notification-only session, not match the existing one
         #expect(state.sessions.count == 2)
     }
+
+    @Test("ingestNotification matches a disconnected session")
+    func ingestNotificationMatchesDisconnectedSession() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo(
+            command: "agent",
+            workspacePath: "/project"
+        ))
+        state.markDisconnected(connectionId: connId)
+        #expect(state.sessions[0].isActive == false)
+
+        state.ingestNotification(payload: MessagePayload(
+            message: "Post-disconnect alert",
+            workspacePath: "/project",
+            terminal: nil
+        ))
+
+        // Should match the disconnected session, not create a new one
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].hasUnreadNotification == true)
+        #expect(state.sessions[0].notificationMessage == "Post-disconnect alert")
+    }
+
+    @Test("Second notification to notification-only session matches by pane ID")
+    func ingestNotificationUpdatesNotificationOnlyByPaneId() {
+        let state = SessionState()
+        let terminal = TerminalPayload(type: "wezterm", paneId: "33")
+
+        state.ingestNotification(payload: MessagePayload(
+            message: "First",
+            workspacePath: "/project",
+            terminal: terminal
+        ))
+        #expect(state.sessions.count == 1)
+
+        // Second notification with same pane ID should match the existing notification-only session
+        state.ingestNotification(payload: MessagePayload(
+            message: "Second",
+            workspacePath: "/project",
+            terminal: terminal
+        ))
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].notificationMessage == "Second")
+    }
+
+    @Test("Reconciliation auto-selects when nothing is selected")
+    func reconcileAutoSelects() {
+        let state = SessionState()
+        #expect(state.selectedSessionId == nil)
+
+        state.ingestNotification(payload: MessagePayload(
+            message: "Alert",
+            workspacePath: "/project",
+            terminal: nil
+        ))
+        // Notification-only session is inserted but selectedSessionId is not set
+        // (ingestNotification does not auto-select)
+        #expect(state.selectedSessionId == nil)
+
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo(
+            command: "agent",
+            workspacePath: "/project"
+        ))
+
+        // After reconciliation, selectedSessionId should be set since nothing was selected
+        #expect(state.selectedSessionId == state.sessions[0].id)
+        #expect(state.selectedSession?.command == "agent")
+    }
+
+    @Test("Reconciliation does not match notification-only session with empty workspace by workspace path")
+    func reconcileDoesNotMatchEmptyWorkspace() {
+        let state = SessionState()
+
+        // Create a notification-only session with no workspace
+        state.ingestNotification(payload: MessagePayload(
+            message: "Alert",
+            workspacePath: "",
+            terminal: nil
+        ))
+        #expect(state.sessions.count == 1)
+
+        // WebSocket session with empty workspace should NOT reconcile
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "agent",
+            workspacePath: ""
+        ))
+
+        // Should create a new session (no reconciliation)
+        #expect(state.sessions.count == 2)
+    }
 }
