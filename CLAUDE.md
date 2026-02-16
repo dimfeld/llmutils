@@ -165,6 +165,8 @@ See docs/testing.md for testing strategy
 - **Watch for dual state tracking when extracting shared helpers**: If both the inner helper and the outer function track the same state (e.g., a `closed` flag), explicitly synchronize them to avoid misleading guards or double-cleanup
 - **Blanket try-catch in shared helpers can change error semantics**: When extracting error-handling logic into a shared helper, explicit throws that were previously unhandled can get caught by a new outer catch, silently converting hard errors into soft fallbacks. Only catch specific expected failure modes (e.g., null returns), not all exceptions
 - **Remove dead CLI options instead of leaving no-ops**: When a new system doesn't support a flag, remove the flag rather than keeping it as a no-op. Dead CLI options mislead users into thinking they have an effect
+- **Use spread in serialization layers to avoid silently dropping new fields**: When building protocol messages or API payloads from typed objects, use spread (`{ type: 'msg', ...obj }`) rather than manually listing fields. Manual field listing silently drops any newly-added fields. Always check the serialization layer (e.g., adapter handshake) when adding fields to a protocol type, not just the builder
+- **Preserve sync/async boundaries when extracting code**: When extracting a function that mixes sync and async operations (e.g., a sync OS call followed by an async shell command), keep the sync/async split in the same place as the original. Moving a sync call into an async context (or vice versa) can cause behavioral regressions like delayed execution or missed error handling
 
 ## Personal Workflow Notes
 
