@@ -946,6 +946,95 @@ struct SessionStateTests {
         #expect(state.sessions[0].hasUnreadNotification == false)
     }
 
+    @Test("markNotificationRead only clears targeted session, not others")
+    func markNotificationReadTargeted() {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "agent",
+            workspacePath: "/project/a"
+        ))
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "review",
+            workspacePath: "/project/b"
+        ))
+
+        // Send notifications to both sessions
+        state.ingestNotification(payload: MessagePayload(
+            message: "Alert A",
+            workspacePath: "/project/a",
+            terminal: nil
+        ))
+        state.ingestNotification(payload: MessagePayload(
+            message: "Alert B",
+            workspacePath: "/project/b",
+            terminal: nil
+        ))
+
+        // Both should have notifications
+        let sessionA = state.sessions.first { $0.workspacePath == "/project/a" }!
+        let sessionB = state.sessions.first { $0.workspacePath == "/project/b" }!
+        #expect(sessionA.hasUnreadNotification == true)
+        #expect(sessionB.hasUnreadNotification == true)
+
+        // Clear only session A
+        state.markNotificationRead(sessionId: sessionA.id)
+
+        #expect(sessionA.hasUnreadNotification == false)
+        #expect(sessionA.notificationMessage == nil)
+        // Session B should still have its notification
+        #expect(sessionB.hasUnreadNotification == true)
+        #expect(sessionB.notificationMessage == "Alert B")
+    }
+
+    @Test("Second notification to notification-only session updates it rather than creating another")
+    func ingestNotificationUpdatesNotificationOnlySession() {
+        let state = SessionState()
+
+        // First notification creates a notification-only session
+        state.ingestNotification(payload: MessagePayload(
+            message: "First alert",
+            workspacePath: "/orphan/project",
+            terminal: nil
+        ))
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].notificationMessage == "First alert")
+
+        // Second notification to same workspace should update, not create new
+        state.ingestNotification(payload: MessagePayload(
+            message: "Second alert",
+            workspacePath: "/orphan/project",
+            terminal: nil
+        ))
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].notificationMessage == "Second alert")
+        #expect(state.sessions[0].hasUnreadNotification == true)
+    }
+
+    @Test("Notification-only session has nil planId, planTitle, gitRemote and empty command")
+    func notificationOnlySessionProperties() {
+        let state = SessionState()
+        let terminal = TerminalPayload(type: "wezterm", paneId: "55")
+        state.ingestNotification(payload: MessagePayload(
+            message: "Notification",
+            workspacePath: "/some/path",
+            terminal: terminal
+        ))
+
+        #expect(state.sessions.count == 1)
+        let session = state.sessions[0]
+        #expect(session.command == "")
+        #expect(session.planId == nil)
+        #expect(session.planTitle == nil)
+        #expect(session.gitRemote == nil)
+        #expect(session.workspacePath == "/some/path")
+        #expect(session.terminal?.type == "wezterm")
+        #expect(session.terminal?.paneId == "55")
+        #expect(session.isActive == false)
+        #expect(session.hasUnreadNotification == true)
+        #expect(session.notificationMessage == "Notification")
+        #expect(session.messages.isEmpty)
+    }
+
     @Test("dismissAllDisconnected removes notification-only sessions")
     func dismissAllDisconnectedRemovesNotificationOnlySessions() {
         let state = SessionState()
