@@ -1,10 +1,12 @@
-import { describe, test, expect, afterEach, beforeEach, mock } from 'bun:test';
+import { describe, test, expect, afterEach, beforeEach, beforeAll, afterAll, mock } from 'bun:test';
 import * as net from 'net';
 import * as path from 'path';
+import { ModuleMocker } from '../../../testing.js';
 
 const selectResponses: Array<string | Error> = [];
 const checkboxResponses: Array<string[] | Error> = [];
 const inputResponses: Array<string | Error> = [];
+const prefixPromptResponses: Array<{ exact: boolean; command: string } | Error> = [];
 
 const mockPromptSelect = mock(async () => {
   const next = selectResponses.shift();
@@ -39,16 +41,39 @@ const mockPromptInput = mock(async () => {
   return next;
 });
 
-mock.module('../../../common/input.js', () => ({
-  promptSelect: mockPromptSelect,
-  promptCheckbox: mockPromptCheckbox,
-  promptInput: mockPromptInput,
-  isPromptTimeoutError: (err: unknown) =>
-    err instanceof Error &&
-    (err.name === 'AbortPromptError' || err.message.startsWith('Prompt request timed out')),
-}));
+const mockPrefixPrompt = mock(async () => {
+  const next = prefixPromptResponses.shift();
+  if (next instanceof Error) {
+    throw next;
+  }
+  if (!next) {
+    throw new Error('No queued prefix prompt response');
+  }
+  return next;
+});
 
-const { setupPermissionsMcp } = await import('./permissions_mcp_setup.js');
+const moduleMocker = new ModuleMocker(import.meta);
+let setupPermissionsMcp: typeof import('./permissions_mcp_setup.js').setupPermissionsMcp;
+
+beforeAll(async () => {
+  await moduleMocker.mock('../../../common/input.js', () => ({
+    promptSelect: mockPromptSelect,
+    promptCheckbox: mockPromptCheckbox,
+    promptInput: mockPromptInput,
+    isPromptTimeoutError: (err: unknown) =>
+      err instanceof Error &&
+      (err.name === 'AbortPromptError' || err.message.startsWith('Prompt request timed out')),
+  }));
+  await moduleMocker.mock('./prefix_prompt.js', () => ({
+    prefixPrompt: mockPrefixPrompt,
+  }));
+
+  ({ setupPermissionsMcp } = await import('./permissions_mcp_setup.js'));
+});
+
+afterAll(() => {
+  moduleMocker.clear();
+});
 
 describe('permissions socket server line buffering', () => {
   let cleanups: (() => Promise<void>)[] = [];
@@ -57,6 +82,9 @@ describe('permissions socket server line buffering', () => {
     selectResponses.length = 0;
     checkboxResponses.length = 0;
     inputResponses.length = 0;
+    prefixPromptResponses.length = 0;
+    mockPrefixPrompt.mockClear();
+    mockPromptSelect.mockClear();
   });
 
   afterEach(async () => {
@@ -241,6 +269,9 @@ describe('permissions socket server AskUserQuestion handling', () => {
     selectResponses.length = 0;
     checkboxResponses.length = 0;
     inputResponses.length = 0;
+    prefixPromptResponses.length = 0;
+    mockPrefixPrompt.mockClear();
+    mockPromptSelect.mockClear();
   });
 
   afterEach(async () => {
@@ -533,5 +564,160 @@ describe('permissions socket server AskUserQuestion handling', () => {
       requestId: 'ask-7',
       approved: false,
     });
+  });
+});
+
+describe('permissions socket server allowlist persistence behavior', () => {
+  let cleanups: (() => Promise<void>)[] = [];
+
+  beforeEach(() => {
+    selectResponses.length = 0;
+    checkboxResponses.length = 0;
+    inputResponses.length = 0;
+    prefixPromptResponses.length = 0;
+    mockPrefixPrompt.mockClear();
+    mockPromptSelect.mockClear();
+  });
+
+  afterEach(async () => {
+    for (const cleanup of cleanups) {
+      await cleanup();
+    }
+    cleanups = [];
+  });
+
+  function sendAndReceive(socketPath: string, request: Record<string, unknown>): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const client = net.createConnection(socketPath, () => {
+        client.write(JSON.stringify(request) + '\n');
+      });
+
+      let buffer = '';
+      client.on('data', (data) => {
+        buffer += data.toString();
+        const newlineIdx = buffer.indexOf('\n');
+        if (newlineIdx !== -1) {
+          const msg = buffer.slice(0, newlineIdx);
+          client.end();
+          resolve(JSON.parse(msg));
+        }
+      });
+
+      client.on('error', reject);
+      setTimeout(() => {
+        client.end();
+        reject(new Error('Timed out waiting for response'));
+      }, 5000);
+    });
+  }
+
+  test('always allow persists non-Bash tool and auto-approves subsequent request', async () => {
+    selectResponses.push('always_allow');
+
+    const result = await setupPermissionsMcp({
+      allowedTools: [],
+    });
+    cleanups.push(result.cleanup);
+    const socketPath = path.join(result.tempDir, 'permissions.sock');
+
+    const firstResponse = await sendAndReceive(socketPath, {
+      type: 'permission_request',
+      requestId: 'persist-1',
+      tool_name: 'Read',
+      input: {},
+    });
+    expect(firstResponse).toEqual({
+      type: 'permission_response',
+      requestId: 'persist-1',
+      approved: true,
+    });
+    expect(mockPromptSelect).toHaveBeenCalledTimes(1);
+
+    const secondResponse = await sendAndReceive(socketPath, {
+      type: 'permission_request',
+      requestId: 'persist-2',
+      tool_name: 'Read',
+      input: {},
+    });
+    expect(secondResponse).toEqual({
+      type: 'permission_response',
+      requestId: 'persist-2',
+      approved: true,
+    });
+    expect(mockPromptSelect).toHaveBeenCalledTimes(1);
+  });
+
+  test('always allow for Bash uses prefixPrompt and persists selected prefix', async () => {
+    selectResponses.push('always_allow');
+    prefixPromptResponses.push({ exact: false, command: 'git status' });
+
+    const result = await setupPermissionsMcp({
+      allowedTools: [],
+    });
+    cleanups.push(result.cleanup);
+    const socketPath = path.join(result.tempDir, 'permissions.sock');
+
+    const firstResponse = await sendAndReceive(socketPath, {
+      type: 'permission_request',
+      requestId: 'bash-persist-1',
+      tool_name: 'Bash',
+      input: { command: 'git status --short' },
+    });
+    expect(firstResponse).toEqual({
+      type: 'permission_response',
+      requestId: 'bash-persist-1',
+      approved: true,
+    });
+    expect(mockPrefixPrompt).toHaveBeenCalledTimes(1);
+
+    const secondResponse = await sendAndReceive(socketPath, {
+      type: 'permission_request',
+      requestId: 'bash-persist-2',
+      tool_name: 'Bash',
+      input: { command: 'git status --porcelain' },
+    });
+    expect(secondResponse).toEqual({
+      type: 'permission_response',
+      requestId: 'bash-persist-2',
+      approved: true,
+    });
+    expect(mockPromptSelect).toHaveBeenCalledTimes(1);
+  });
+
+  test('session allow for Bash uses prefixPrompt without persistence', async () => {
+    selectResponses.push('session_allow');
+    prefixPromptResponses.push({ exact: false, command: 'jj status' });
+
+    const result = await setupPermissionsMcp({
+      allowedTools: [],
+    });
+    cleanups.push(result.cleanup);
+    const socketPath = path.join(result.tempDir, 'permissions.sock');
+
+    const firstResponse = await sendAndReceive(socketPath, {
+      type: 'permission_request',
+      requestId: 'bash-session-1',
+      tool_name: 'Bash',
+      input: { command: 'jj status -v' },
+    });
+    expect(firstResponse).toEqual({
+      type: 'permission_response',
+      requestId: 'bash-session-1',
+      approved: true,
+    });
+    expect(mockPrefixPrompt).toHaveBeenCalledTimes(1);
+
+    const secondResponse = await sendAndReceive(socketPath, {
+      type: 'permission_request',
+      requestId: 'bash-session-2',
+      tool_name: 'Bash',
+      input: { command: 'jj status --summary' },
+    });
+    expect(secondResponse).toEqual({
+      type: 'permission_response',
+      requestId: 'bash-session-2',
+      approved: true,
+    });
+    expect(mockPromptSelect).toHaveBeenCalledTimes(1);
   });
 });

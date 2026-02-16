@@ -21,11 +21,21 @@ import {
   promptInput,
   isPromptTimeoutError,
 } from '../../../common/input.js';
+import { getGitRoot } from '../../../common/git.js';
 import { debugLog, log } from '../../../logging.js';
 import { createLineSplitter } from '../../../common/process.js';
+import { prefixPrompt } from './prefix_prompt.js';
+import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
+import { getDatabase } from '../../db/database.js';
+import { getOrCreateProject } from '../../db/project.js';
+import { addPermission } from '../../db/permission.js';
 
 const BASH_TOOL_NAME = 'Bash';
 const FREE_TEXT_VALUE = '__free_text__';
+const USER_CHOICE_ALLOW = 'allow';
+const USER_CHOICE_ALWAYS_ALLOW = 'always_allow';
+const USER_CHOICE_SESSION_ALLOW = 'session_allow';
+const USER_CHOICE_DISALLOW = 'disallow';
 
 interface PermissionsMcpSetupResult {
   /** Path to the generated MCP config file */
@@ -188,6 +198,121 @@ export function parseAllowedToolsList(allowedTools: string[]): Map<string, true 
   }
 
   return result;
+}
+
+function addBashPrefixSafely(
+  allowedToolsMap: Map<string, true | string[]>,
+  prefix: string
+): boolean {
+  const existingValue = allowedToolsMap.get(BASH_TOOL_NAME);
+
+  if (existingValue !== undefined && !Array.isArray(existingValue) && existingValue !== true) {
+    debugLog(
+      `Warning: Unexpected value type for ${BASH_TOOL_NAME} in allowedToolsMap: ${typeof existingValue}`
+    );
+    allowedToolsMap.set(BASH_TOOL_NAME, [prefix]);
+    return true;
+  }
+
+  if (Array.isArray(existingValue)) {
+    if (!existingValue.includes(prefix)) {
+      existingValue.push(prefix);
+      return true;
+    }
+    return false;
+  }
+
+  if (existingValue === undefined) {
+    allowedToolsMap.set(BASH_TOOL_NAME, [prefix]);
+    return true;
+  }
+
+  // existingValue === true means all Bash is already allowed.
+  return false;
+}
+
+async function addPermissionToFile(
+  toolName: string,
+  argument?: { exact: boolean; command?: string }
+): Promise<void> {
+  try {
+    const gitRoot = await getGitRoot();
+    const settingsPath = path.join(gitRoot, '.claude', 'settings.local.json');
+
+    let settings: any = {};
+    try {
+      const settingsContent = await fs.readFile(settingsPath, 'utf-8');
+      settings = JSON.parse(settingsContent);
+    } catch {
+      settings = {
+        permissions: {
+          allow: [],
+          deny: [],
+        },
+      };
+    }
+
+    settings.permissions ??= { allow: [], deny: [] };
+    settings.permissions.allow ??= [];
+
+    let newRule: string;
+    if (toolName === BASH_TOOL_NAME && argument) {
+      if (argument.exact) {
+        newRule = `${BASH_TOOL_NAME}(${argument.command})`;
+      } else {
+        newRule = `${BASH_TOOL_NAME}(${argument.command}:*)`;
+      }
+    } else {
+      newRule = toolName;
+    }
+
+    if (!settings.permissions.allow.includes(newRule)) {
+      settings.permissions.allow.push(newRule);
+      await fs.mkdir(path.dirname(settingsPath), { recursive: true });
+      await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
+    }
+
+    try {
+      const identity = await getRepositoryIdentity();
+      const db = getDatabase();
+      const project = getOrCreateProject(db, identity.repositoryId, {
+        remoteUrl: identity.remoteUrl,
+      });
+      addPermission(db, project.id, 'allow', newRule);
+    } catch (sharedErr) {
+      debugLog('Could not save permission to shared storage:', sharedErr);
+    }
+  } catch (err) {
+    debugLog('Could not save permission to Claude settings:', err);
+  }
+}
+
+async function handleBashPrefixApproval(
+  input: any,
+  allowedToolsMap: Map<string, true | string[]>,
+  isPersistent: boolean,
+  sessionMessage: string,
+  persistentMessage: string
+): Promise<void> {
+  const command = input.command as string;
+  const selectedPrefix = await prefixPrompt({
+    message: isPersistent
+      ? 'Select the command prefix to always allow:'
+      : 'Select the command prefix to allow for this session:',
+    command,
+  });
+
+  const wasAdded = addBashPrefixSafely(allowedToolsMap, selectedPrefix.command);
+  if (wasAdded) {
+    const message = isPersistent ? persistentMessage : sessionMessage;
+    log(chalk.blue(message.replace('{prefix}', selectedPrefix.command)));
+  } else {
+    log(chalk.yellow(`Bash prefix "${selectedPrefix.command}" was already in the allowed list`));
+  }
+
+  if (isPersistent) {
+    await addPermissionToFile(BASH_TOOL_NAME, selectedPrefix);
+  }
 }
 
 async function handleAskUserQuestion(
@@ -410,29 +535,47 @@ async function handlePermissionLine(
       const userChoice = await promptSelect({
         message: `Claude wants to run a tool:\n\nTool: ${chalk.blue(tool_name)}\nInput:\n${chalk.white(formattedInput)}\n\nAllow this tool to run?`,
         choices: [
-          { name: 'Allow', value: 'allow' as const },
-          { name: 'Allow for Session', value: 'session_allow' as const },
-          { name: 'Disallow', value: 'disallow' as const },
+          { name: 'Allow', value: USER_CHOICE_ALLOW },
+          { name: 'Allow for Session', value: USER_CHOICE_SESSION_ALLOW },
+          { name: 'Always Allow', value: USER_CHOICE_ALWAYS_ALLOW },
+          { name: 'Disallow', value: USER_CHOICE_DISALLOW },
         ],
         timeoutMs: options.timeout,
       });
 
-      approved = userChoice === 'allow' || userChoice === 'session_allow';
+      approved =
+        userChoice === USER_CHOICE_ALLOW ||
+        userChoice === USER_CHOICE_SESSION_ALLOW ||
+        userChoice === USER_CHOICE_ALWAYS_ALLOW;
 
-      // For session allow, add to the allowed map for future requests
-      if (userChoice === 'session_allow') {
+      if (userChoice === USER_CHOICE_ALWAYS_ALLOW) {
         if (tool_name === BASH_TOOL_NAME && typeof input.command === 'string') {
-          const existing = allowedToolsMap.get(BASH_TOOL_NAME);
-          const prefix = input.command.split(' ')[0];
-          if (Array.isArray(existing)) {
-            if (!existing.includes(prefix)) {
-              existing.push(prefix);
-            }
-          } else {
-            allowedToolsMap.set(BASH_TOOL_NAME, [prefix]);
-          }
+          await handleBashPrefixApproval(
+            input,
+            allowedToolsMap,
+            true,
+            '',
+            `${BASH_TOOL_NAME} prefix "{prefix}" added to always allowed list`
+          );
         } else {
           allowedToolsMap.set(tool_name, true);
+          log(chalk.blue(`Tool ${tool_name} added to always allowed list`));
+          await addPermissionToFile(tool_name);
+        }
+      }
+
+      if (userChoice === USER_CHOICE_SESSION_ALLOW) {
+        if (tool_name === BASH_TOOL_NAME && typeof input.command === 'string') {
+          await handleBashPrefixApproval(
+            input,
+            allowedToolsMap,
+            false,
+            `${BASH_TOOL_NAME} prefix "{prefix}" added to allowed list for current session only`,
+            ''
+          );
+        } else {
+          allowedToolsMap.set(tool_name, true);
+          log(chalk.blue(`Tool ${tool_name} added to allowed list for current session only`));
         }
       }
     } catch (err) {
