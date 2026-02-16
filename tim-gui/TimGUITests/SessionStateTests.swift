@@ -1600,4 +1600,73 @@ struct SessionStateTests {
         // Should create a new session (no reconciliation)
         #expect(state.sessions.count == 2)
     }
+
+    // MARK: - Notification-only session dismiss and selection edge cases
+
+    @Test("dismissSession removes a notification-only session")
+    func dismissNotificationOnlySession() {
+        let state = SessionState()
+        state.ingestNotification(payload: MessagePayload(
+            message: "Alert",
+            workspacePath: "/orphan",
+            terminal: TerminalPayload(type: "wezterm", paneId: "99")
+        ))
+        #expect(state.sessions.count == 1)
+        let sessionId = state.sessions[0].id
+        #expect(state.sessions[0].isActive == false)
+
+        state.dismissSession(id: sessionId)
+
+        #expect(state.sessions.isEmpty)
+        #expect(state.selectedSessionId == nil)
+    }
+
+    @Test("Second notification to auto-selected notification-only session does not set unread flag")
+    func notificationOnlyAutoSelectedThenSecondNotification() {
+        let state = SessionState()
+        #expect(state.selectedSessionId == nil)
+
+        // First notification creates a notification-only session and auto-selects it
+        state.ingestNotification(payload: MessagePayload(
+            message: "First",
+            workspacePath: "/orphan",
+            terminal: nil
+        ))
+        #expect(state.sessions.count == 1)
+        let sessionId = state.sessions[0].id
+        #expect(state.selectedSessionId == sessionId)
+
+        // Second notification to the same session — it's already selected
+        state.ingestNotification(payload: MessagePayload(
+            message: "Second",
+            workspacePath: "/orphan",
+            terminal: nil
+        ))
+
+        // The session is still selected so hasUnreadNotification should be false
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].notificationMessage == "Second")
+        #expect(state.sessions[0].hasUnreadNotification == false)
+    }
+
+    @Test("Notification-only session does not auto-select when another session is already selected")
+    func notificationOnlyNoAutoSelectWhenOtherSelected() {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "agent",
+            workspacePath: "/project/a"
+        ))
+        let existingSessionId = state.selectedSessionId!
+
+        // Create a notification-only session (no match)
+        state.ingestNotification(payload: MessagePayload(
+            message: "Alert",
+            workspacePath: "/orphan",
+            terminal: nil
+        ))
+
+        // The existing session should still be selected
+        #expect(state.selectedSessionId == existingSessionId)
+        #expect(state.sessions.count == 2)
+    }
 }
