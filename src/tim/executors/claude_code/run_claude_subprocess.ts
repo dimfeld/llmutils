@@ -12,7 +12,6 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import type * as net from 'net';
 import { debugLog, error, log, sendStructured } from '../../../logging.js';
 import { createLineSplitter, spawnWithStreamingIO } from '../../../common/process.js';
 import {
@@ -181,13 +180,6 @@ export interface RunClaudeSubprocessOptions {
   trackedFiles?: Set<string>;
 
   /**
-   * Optional override for creating the permission socket server.
-   * When provided, the executor's interactive handler is used instead of the
-   * standalone one from permissions_mcp_setup.
-   */
-  createPermissionSocketServer?: (socketPath: string) => Promise<net.Server>;
-
-  /**
    * Callback to process each batch of formatted stdout messages.
    * Called with the array of FormattedClaudeMessage from each stdout chunk.
    * Callers use this to extract their specific output data.
@@ -291,7 +283,6 @@ export async function runClaudeSubprocess(
           claudeCodeOptions.permissionsMcp?.autoApproveCreatedFileDeletion,
         trackedFiles,
         workingDirectory: cwd,
-        createSocketServer: options.createPermissionSocketServer,
       });
       permissionsMcpConfigFile = result.mcpConfigFile;
       permissionsMcpTempDir = result.tempDir;

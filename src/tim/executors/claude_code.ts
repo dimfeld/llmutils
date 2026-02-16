@@ -16,9 +16,7 @@ import {
 } from './claude_code/format.ts';
 import { claudeCodeOptionsSchema, ClaudeCodeExecutorName } from './schemas.js';
 import chalk from 'chalk';
-import * as net from 'net';
-import { promptSelect, promptPrefixSelect, isPromptTimeoutError } from '../../common/input.ts';
-import { stringify } from 'yaml';
+import { promptPrefixSelect } from '../../common/input.ts';
 import stripAnsi from 'strip-ansi';
 import {
   wrapWithOrchestration,
@@ -48,11 +46,6 @@ export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
 // Constants for magic strings
 const BASH_TOOL_NAME = 'Bash';
-const USER_CHOICE_ALLOW = 'allow';
-const USER_CHOICE_ALWAYS_ALLOW = 'always_allow';
-const USER_CHOICE_SESSION_ALLOW = 'session_allow';
-const USER_CHOICE_DISALLOW = 'disallow';
-
 const DEFAULT_CLAUDE_MODEL = 'opus';
 
 export class ClaudeCodeExecutor implements Executor {
@@ -517,7 +510,6 @@ export class ClaudeCodeExecutor implements Executor {
           ? [this.timConfig.externalRepositoryConfigDir]
           : undefined,
       trackedFiles: this.trackedFiles,
-      createPermissionSocketServer: (socketPath) => this.createPermissionSocketServer(socketPath),
       logModelSelection: true,
       processFormattedMessages: (messages) => {
         for (const r of messages) {
@@ -561,180 +553,6 @@ export class ClaudeCodeExecutor implements Executor {
       structuredOutput: capturedOutput,
       metadata: { phase: 'review', jsonOutput: true },
     };
-  }
-
-  /**
-   * Creates a Unix socket server to handle permission requests from the MCP server
-   */
-  private async handlePermissionMessage(line: string, socket: net.Socket): Promise<void> {
-    try {
-      const message = JSON.parse(line);
-
-      if (message.type !== 'permission_request') {
-        return;
-      }
-
-      const { requestId, tool_name, input } = message;
-
-      // Check if this tool is already in the always allowed set
-      const allowedValue = this.alwaysAllowedTools.get(tool_name);
-      if (allowedValue !== undefined) {
-        // For Bash tools, check if the command matches any allowed prefix
-        if (tool_name === BASH_TOOL_NAME && Array.isArray(allowedValue)) {
-          // Safely validate input.command is a string before using string methods
-          if (typeof input.command === 'string') {
-            const command = input.command;
-            const isAllowed = allowedValue.some((prefix) => command.startsWith(prefix));
-
-            if (isAllowed) {
-              const approvalSource = this.configAllowedTools.has(BASH_TOOL_NAME)
-                ? 'configured in allowlist'
-                : 'always allowed (session)';
-              log(
-                chalk.green(`${BASH_TOOL_NAME} command automatically approved (${approvalSource})`)
-              );
-              socket.write(
-                JSON.stringify({ type: 'permission_response', requestId, approved: true }) + '\n'
-              );
-              return;
-            }
-          }
-          // If input.command is not a string or doesn't match any allowed prefix,
-          // fall through to normal permission prompt
-        } else if (allowedValue === true) {
-          const approvalSource = this.configAllowedTools.has(tool_name)
-            ? 'configured in allowlist'
-            : 'always allowed (session)';
-          log(chalk.green(`Tool ${tool_name} automatically approved (${approvalSource})`));
-          socket.write(
-            JSON.stringify({ type: 'permission_response', requestId, approved: true }) + '\n'
-          );
-          return;
-        }
-      }
-
-      // Check for auto-approval of tracked file deletions
-      if (
-        this.options.permissionsMcp?.autoApproveCreatedFileDeletion === true &&
-        tool_name === BASH_TOOL_NAME &&
-        typeof input.command === 'string'
-      ) {
-        const filePaths = this.parseRmCommand(input.command);
-
-        if (filePaths.length > 0) {
-          const allFilesTracked = filePaths.every((filePath) => this.trackedFiles.has(filePath));
-
-          if (allFilesTracked) {
-            log(
-              chalk.green(`Auto-approving rm command for tracked file(s): ${filePaths.join(', ')}`)
-            );
-            socket.write(
-              JSON.stringify({ type: 'permission_response', requestId, approved: true }) + '\n'
-            );
-            return;
-          }
-        }
-      }
-
-      // Format the input as human-readable YAML
-      let formattedInput = stringify(input);
-      if (formattedInput.length > 500) {
-        formattedInput = formattedInput.substring(0, 500) + '...';
-      }
-
-      // Alert the user
-      process.stdout.write('\x07');
-
-      let approved: boolean;
-      try {
-        const userChoice = await promptSelect({
-          message: `Claude wants to run a tool:\n\nTool: ${chalk.blue(tool_name)}\nInput:\n${chalk.white(formattedInput)}\n\nAllow this tool to run?`,
-          choices: [
-            { name: 'Allow', value: USER_CHOICE_ALLOW },
-            { name: 'Allow for Session', value: USER_CHOICE_SESSION_ALLOW },
-            { name: 'Always Allow', value: USER_CHOICE_ALWAYS_ALLOW },
-            { name: 'Disallow', value: USER_CHOICE_DISALLOW },
-          ],
-          timeoutMs: this.options.permissionsMcp?.timeout,
-        });
-
-        approved =
-          userChoice === USER_CHOICE_ALLOW ||
-          userChoice === USER_CHOICE_ALWAYS_ALLOW ||
-          userChoice === USER_CHOICE_SESSION_ALLOW;
-
-        // If user chose "Always Allow", add the tool to the always allowed set
-        if (userChoice === USER_CHOICE_ALWAYS_ALLOW) {
-          if (tool_name === BASH_TOOL_NAME) {
-            await this.handleBashPrefixApproval(
-              input,
-              true, // isPersistent
-              '', // sessionMessage (not used for persistent)
-              `${BASH_TOOL_NAME} prefix "{prefix}" added to always allowed list`
-            );
-          } else {
-            this.alwaysAllowedTools.set(tool_name, true);
-            log(chalk.blue(`Tool ${tool_name} added to always allowed list`));
-            await this.addPermissionToFile(tool_name);
-          }
-        }
-
-        // If user chose "Allow for Session", add the tool to the always allowed set without persistence
-        if (userChoice === USER_CHOICE_SESSION_ALLOW) {
-          if (tool_name === BASH_TOOL_NAME) {
-            await this.handleBashPrefixApproval(
-              input,
-              false, // isPersistent (session-only)
-              `${BASH_TOOL_NAME} prefix "{prefix}" added to allowed list for current session only`,
-              '' // persistentMessage (not used for session)
-            );
-          } else {
-            this.alwaysAllowedTools.set(tool_name, true);
-            log(chalk.blue(`Tool ${tool_name} added to allowed list for current session only`));
-          }
-        }
-      } catch (err) {
-        if (isPromptTimeoutError(err)) {
-          const defaultResp = this.options.permissionsMcp?.defaultResponse ?? 'no';
-          approved = defaultResp === 'yes';
-          log(`\nPermission prompt timed out, using default: ${defaultResp}`);
-        } else {
-          // Transport error, tunnel disconnect, or unexpected failure - deny for safety
-          approved = false;
-          debugLog('Permission prompt failed with non-timeout error:', err);
-        }
-      }
-
-      socket.write(JSON.stringify({ type: 'permission_response', requestId, approved }) + '\n');
-    } catch (err) {
-      debugLog('Error handling permission request:', err);
-    }
-  }
-
-  /**
-   * Creates a Unix socket server to handle permission requests from the MCP server
-   */
-  private async createPermissionSocketServer(socketPath: string): Promise<net.Server> {
-    const server = net.createServer((socket) => {
-      const splitLines = createLineSplitter();
-
-      socket.on('data', (data) => {
-        const lines = splitLines(data.toString());
-        for (const line of lines) {
-          if (!line) continue;
-          void this.handlePermissionMessage(line, socket);
-        }
-      });
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      server.listen(socketPath, () => {
-        resolve();
-      });
-      server.on('error', reject);
-    });
-
-    return server;
   }
 
   async execute(
@@ -842,7 +660,6 @@ export class ClaudeCodeExecutor implements Executor {
         autoApproveCreatedFileDeletion: this.options.permissionsMcp?.autoApproveCreatedFileDeletion,
         trackedFiles: this.trackedFiles,
         workingDirectory: gitRoot,
-        createSocketServer: (socketPath) => this.createPermissionSocketServer(socketPath),
       });
       tempMcpConfigDir = result.tempDir;
       dynamicMcpConfigFile = result.mcpConfigFile;

@@ -61,8 +61,6 @@ interface PermissionsMcpOptions {
   trackedFiles?: Set<string>;
   /** Base directory used to resolve relative paths in rm commands */
   workingDirectory?: string;
-  /** Optional override for custom permission prompt behavior */
-  createSocketServer?: (socketPath: string) => Promise<net.Server>;
 }
 
 function parseCommandTokens(command: string): string[] {
@@ -668,15 +666,13 @@ export async function setupPermissionsMcp(
   const socketPath = path.join(tempDir, 'permissions.sock');
 
   // Create the socket server
-  const socketServer = options.createSocketServer
-    ? await options.createSocketServer(socketPath)
-    : await createPermissionSocketServer(socketPath, allowedToolsMap, {
-        defaultResponse: options.defaultResponse,
-        timeout: options.timeout,
-        autoApproveCreatedFileDeletion: options.autoApproveCreatedFileDeletion,
-        trackedFiles: options.trackedFiles,
-        workingDirectory: options.workingDirectory,
-      });
+  const socketServer = await createPermissionSocketServer(socketPath, allowedToolsMap, {
+    defaultResponse: options.defaultResponse,
+    timeout: options.timeout,
+    autoApproveCreatedFileDeletion: options.autoApproveCreatedFileDeletion,
+    trackedFiles: options.trackedFiles,
+    workingDirectory: options.workingDirectory,
+  });
 
   // Resolve the path to the permissions MCP script
   // Try .ts first (development), fall back to .js (compiled)
