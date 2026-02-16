@@ -1544,6 +1544,95 @@ describe('handleAgentCommand - --next-ready flag', () => {
   });
 });
 
+describe('handleAgentCommand - headless metadata for direct plan argument', () => {
+  let tempDir: string;
+  let tasksDir: string;
+  let planPath: string;
+
+  const timAgentSpy = mock(async () => {});
+  const runWithHeadlessAdapterIfEnabledSpy = mock(async (options: any) => options.callback());
+  const resolvePlanFileSpy = mock(async (_planRef: string) => planPath);
+  const readPlanFileSpy = mock(async (filePath: string) => {
+    if (filePath !== planPath) {
+      throw new Error(`Unexpected readPlanFile path: ${filePath}`);
+    }
+
+    const content = await fs.readFile(filePath, 'utf-8');
+    return yaml.parse(content) as PlanSchema;
+  });
+
+  beforeEach(async () => {
+    moduleMocker.clear();
+    timAgentSpy.mockClear();
+    runWithHeadlessAdapterIfEnabledSpy.mockClear();
+    resolvePlanFileSpy.mockClear();
+    readPlanFileSpy.mockClear();
+
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-agent-headless-direct-'));
+    tasksDir = path.join(tempDir, 'tasks');
+    await fs.mkdir(tasksDir, { recursive: true });
+    planPath = path.join(tasksDir, '123-direct-plan.yml');
+
+    const directPlan: PlanSchemaInputWithFilename = {
+      id: 123,
+      title: 'Direct Plan',
+      goal: 'Test direct plan metadata',
+      details: 'Ensure headless receives plan metadata',
+      status: 'pending',
+      tasks: [{ title: 'Task', description: 'Task description', steps: [] }],
+      filename: planPath,
+    };
+    await fs.writeFile(planPath, yaml.stringify(directPlan));
+
+    await moduleMocker.mock('../../configLoader.js', () => ({
+      loadEffectiveConfig: mock(async () => ({
+        paths: { tasks: tasksDir },
+        models: {},
+        postApplyCommands: [],
+      })),
+    }));
+
+    await moduleMocker.mock('../../plans.js', () => ({
+      resolvePlanFile: resolvePlanFileSpy,
+      readPlanFile: readPlanFileSpy,
+    }));
+
+    await moduleMocker.mock('../../headless.js', () => ({
+      runWithHeadlessAdapterIfEnabled: runWithHeadlessAdapterIfEnabledSpy,
+    }));
+
+    await moduleMocker.mock('../../../logging/tunnel_client.js', () => ({
+      isTunnelActive: () => false,
+    }));
+
+    await moduleMocker.mock('./agent.js', () => ({
+      timAgent: timAgentSpy,
+      handleAgentCommand,
+    }));
+  });
+
+  afterEach(async () => {
+    moduleMocker.clear();
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('resolves direct plan argument before constructing headless plan summary', async () => {
+    await handleAgentCommand('123', {}, {});
+
+    expect(resolvePlanFileSpy).toHaveBeenCalledWith('123', undefined);
+    expect(readPlanFileSpy).toHaveBeenCalledWith(planPath);
+
+    expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: 'agent',
+        plan: { id: 123, title: 'Direct Plan' },
+      })
+    );
+
+    expect(timAgentSpy).toHaveBeenCalledWith(planPath, {}, {});
+  });
+});
+
 // Test executor that actually modifies plan files for testing batch execution
 class TestBatchExecutor {
   public executeCalls: number = 0;

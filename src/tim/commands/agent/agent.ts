@@ -221,7 +221,7 @@ export async function handleAgentCommand(
           'Plan file is required, or use --next/--current/--next-ready/--latest to find a plan'
         );
       }
-      resolvedPlanFile = planFile;
+      resolvedPlanFile = await resolvePlanFile(planFile, globalCliOptions.config);
     }
 
     if (!resolvedPlanFile) {
