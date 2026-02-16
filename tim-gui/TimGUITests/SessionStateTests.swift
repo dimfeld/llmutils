@@ -1458,8 +1458,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].notificationMessage == "Second")
     }
 
-    @Test("Notification-only session auto-selects when nothing is selected")
-    func notificationOnlyAutoSelects() {
+    @Test("Notification-only session does NOT auto-select when nothing is selected")
+    func notificationOnlyDoesNotAutoSelect() {
         let state = SessionState()
         #expect(state.selectedSessionId == nil)
 
@@ -1468,12 +1468,14 @@ struct SessionStateTests {
             workspacePath: "/project",
             terminal: nil
         ))
-        // Notification-only session should be auto-selected when nothing was selected
-        #expect(state.selectedSessionId == state.sessions[0].id)
+        // Notification-only sessions should NOT be auto-selected
+        #expect(state.selectedSessionId == nil)
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].hasUnreadNotification == true)
     }
 
-    @Test("Reconciliation preserves selection after notification-only auto-select")
-    func reconcilePreservesAutoSelect() {
+    @Test("Reconciliation auto-selects when nothing was selected")
+    func reconcileAutoSelectsWhenNothingSelected() {
         let state = SessionState()
         #expect(state.selectedSessionId == nil)
 
@@ -1483,7 +1485,8 @@ struct SessionStateTests {
             terminal: nil
         ))
         let notifSessionId = state.sessions[0].id
-        #expect(state.selectedSessionId == notifSessionId)
+        // Notification-only sessions do not auto-select
+        #expect(state.selectedSessionId == nil)
 
         let connId = UUID()
         state.addSession(connectionId: connId, info: makeInfo(
@@ -1491,7 +1494,7 @@ struct SessionStateTests {
             workspacePath: "/project"
         ))
 
-        // After reconciliation, the same session should still be selected
+        // After reconciliation, addSession auto-selects because nothing was selected
         #expect(state.selectedSessionId == notifSessionId)
         #expect(state.selectedSession?.command == "agent")
     }
@@ -1658,32 +1661,31 @@ struct SessionStateTests {
         #expect(state.selectedSessionId == nil)
     }
 
-    @Test("Second notification to auto-selected notification-only session does not set unread flag")
-    func notificationOnlyAutoSelectedThenSecondNotification() {
+    @Test("Second notification to unselected notification-only session keeps unread flag")
+    func notificationOnlySecondNotificationKeepsUnread() {
         let state = SessionState()
         #expect(state.selectedSessionId == nil)
 
-        // First notification creates a notification-only session and auto-selects it
+        // First notification creates a notification-only session (not auto-selected)
         state.ingestNotification(payload: MessagePayload(
             message: "First",
             workspacePath: "/orphan",
             terminal: nil
         ))
         #expect(state.sessions.count == 1)
-        let sessionId = state.sessions[0].id
-        #expect(state.selectedSessionId == sessionId)
+        #expect(state.selectedSessionId == nil)
 
-        // Second notification to the same session — it's already selected
+        // Second notification to the same session — still not selected
         state.ingestNotification(payload: MessagePayload(
             message: "Second",
             workspacePath: "/orphan",
             terminal: nil
         ))
 
-        // The session is still selected so hasUnreadNotification should be false
+        // The session is not selected so hasUnreadNotification should be true
         #expect(state.sessions.count == 1)
         #expect(state.sessions[0].notificationMessage == "Second")
-        #expect(state.sessions[0].hasUnreadNotification == false)
+        #expect(state.sessions[0].hasUnreadNotification == true)
     }
 
     @Test("Notification-only session does not auto-select when another session is already selected")

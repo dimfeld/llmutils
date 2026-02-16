@@ -74,12 +74,13 @@ func activateTerminalPane(_ terminal: TerminalPayload) {
         activateProcess.executableURL = URL(fileURLWithPath: weztermPath)
         activateProcess.arguments = ["cli", "activate-pane", "--pane-id", terminal.paneId]
         try? activateProcess.run()
+    }
 
-        if let app = NSRunningApplication.runningApplications(withBundleIdentifier:
-            "com.github.wez.wezterm").first
-        {
-            app.activate()
-        }
+    // Bring WezTerm to the front immediately, before the async workspace switch completes
+    if let app = NSRunningApplication.runningApplications(withBundleIdentifier:
+        "com.github.wez.wezterm").first
+    {
+        app.activate()
     }
 }
 

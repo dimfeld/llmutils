@@ -207,9 +207,6 @@ final class SessionState {
                 notificationMessage: payload.message
             )
             sessions.insert(session, at: 0)
-            if selectedSessionId == nil {
-                selectedSessionId = session.id
-            }
         }
 
         // Trigger macOS system notification
