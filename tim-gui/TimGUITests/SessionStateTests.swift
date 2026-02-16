@@ -1170,4 +1170,177 @@ struct SessionStateTests {
         #expect(session.messages.count == 6)
         #expect(session.messages[5].text == "msg 6")
     }
+
+    // MARK: - Notification-session reconciliation (race condition)
+
+    @Test("Notification arrives first, then session_info with matching pane ID reconciles into one session")
+    func reconcileNotificationThenSessionByPaneId() {
+        let state = SessionState()
+        let terminal = TerminalPayload(type: "wezterm", paneId: "42")
+
+        // Notification arrives first (no WebSocket session yet)
+        state.ingestNotification(payload: MessagePayload(
+            message: "Task completed",
+            workspacePath: "/project/a",
+            terminal: terminal
+        ))
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].command == "")
+        #expect(state.sessions[0].isActive == false)
+        #expect(state.sessions[0].hasUnreadNotification == true)
+        #expect(state.sessions[0].notificationMessage == "Task completed")
+        let originalSessionId = state.sessions[0].id
+
+        // Now WebSocket session_info arrives with matching pane ID
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo(
+            command: "agent",
+            planId: 10,
+            planTitle: "My Plan",
+            workspacePath: "/project/a",
+            terminal: terminal
+        ))
+
+        // Should reconcile into a single session, not create a duplicate
+        #expect(state.sessions.count == 1)
+        let session = state.sessions[0]
+        #expect(session.id == originalSessionId)
+        #expect(session.connectionId == connId)
+        #expect(session.command == "agent")
+        #expect(session.planId == 10)
+        #expect(session.planTitle == "My Plan")
+        #expect(session.workspacePath == "/project/a")
+        #expect(session.isActive == true)
+        // Notification state preserved
+        #expect(session.hasUnreadNotification == true)
+        #expect(session.notificationMessage == "Task completed")
+        #expect(session.terminal?.paneId == "42")
+    }
+
+    @Test("Notification arrives first, then session_info with matching workspace reconciles into one session")
+    func reconcileNotificationThenSessionByWorkspace() {
+        let state = SessionState()
+
+        // Notification arrives first (no terminal info)
+        state.ingestNotification(payload: MessagePayload(
+            message: "Done",
+            workspacePath: "/project/b",
+            terminal: nil
+        ))
+        #expect(state.sessions.count == 1)
+        let originalSessionId = state.sessions[0].id
+
+        // WebSocket session_info arrives with matching workspace (no terminal)
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo(
+            command: "review",
+            workspacePath: "/project/b"
+        ))
+
+        // Should reconcile into one session
+        #expect(state.sessions.count == 1)
+        let session = state.sessions[0]
+        #expect(session.id == originalSessionId)
+        #expect(session.connectionId == connId)
+        #expect(session.command == "review")
+        #expect(session.isActive == true)
+        #expect(session.hasUnreadNotification == true)
+        #expect(session.notificationMessage == "Done")
+    }
+
+    @Test("After reconciliation, messages route correctly to the reconciled session")
+    func reconcileSessionReceivesMessages() {
+        let state = SessionState()
+        let terminal = TerminalPayload(type: "wezterm", paneId: "7")
+
+        state.ingestNotification(payload: MessagePayload(
+            message: "Alert",
+            workspacePath: "/project",
+            terminal: terminal
+        ))
+
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo(
+            command: "agent",
+            workspacePath: "/project",
+            terminal: terminal
+        ))
+
+        // Messages should route to the reconciled session
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "hello"))
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].messages.count == 1)
+        #expect(state.sessions[0].messages[0].text == "hello")
+    }
+
+    @Test("Reconciliation flushes buffered messages to the notification-only session")
+    func reconcileFlushesBufferedMessages() {
+        let state = SessionState()
+
+        state.ingestNotification(payload: MessagePayload(
+            message: "Alert",
+            workspacePath: "/project",
+            terminal: nil
+        ))
+
+        let connId = UUID()
+        // Messages arrive before session_info
+        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "early msg"))
+
+        // session_info reconciles with the notification-only session
+        state.addSession(connectionId: connId, info: makeInfo(
+            command: "agent",
+            workspacePath: "/project"
+        ))
+
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].messages.count == 1)
+        #expect(state.sessions[0].messages[0].text == "early msg")
+        #expect(state.sessions[0].hasUnreadNotification == true)
+    }
+
+    @Test("Reconciliation does not match a real session (non-empty command)")
+    func reconcileDoesNotMatchRealSession() {
+        let state = SessionState()
+        let terminal = TerminalPayload(type: "wezterm", paneId: "42")
+
+        // Create a real session (not notification-only)
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "agent",
+            workspacePath: "/project",
+            terminal: terminal
+        ))
+
+        // A different WebSocket connection arrives with the same terminal
+        let connId2 = UUID()
+        state.addSession(connectionId: connId2, info: makeInfo(
+            command: "review",
+            workspacePath: "/project",
+            terminal: terminal
+        ))
+
+        // Should create a second session (no reconciliation since the first isn't notification-only)
+        #expect(state.sessions.count == 2)
+    }
+
+    // MARK: - Empty workspace path guard
+
+    @Test("ingestNotification with empty workspacePath does not match sessions by workspace")
+    func ingestNotificationEmptyWorkspaceNoMatch() {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "agent",
+            workspacePath: ""
+        ))
+
+        // Notification with empty workspacePath should NOT match the session with empty workspace
+        state.ingestNotification(payload: MessagePayload(
+            message: "Alert",
+            workspacePath: "",
+            terminal: nil
+        ))
+
+        // Should create a new notification-only session, not match the existing one
+        #expect(state.sessions.count == 2)
+    }
 }

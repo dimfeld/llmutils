@@ -118,7 +118,7 @@ struct SessionMessage: Identifiable, Sendable {
 @Observable
 final class SessionItem: Identifiable {
     let id: UUID
-    let connectionId: UUID
+    var connectionId: UUID
     var command: String
     var planId: Int?
     var planTitle: String?

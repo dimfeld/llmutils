@@ -28,6 +28,30 @@ final class SessionState {
             return
         }
 
+        // Try to reconcile with a notification-only session (one created by ingestNotification
+        // before the WebSocket session_info arrived). Notification-only sessions have an empty
+        // command since real WebSocket sessions always provide one.
+        if let notificationOnly = findNotificationOnlySession(info: info) {
+            notificationOnly.connectionId = connectionId
+            notificationOnly.command = info.command
+            notificationOnly.planId = info.planId
+            notificationOnly.planTitle = info.planTitle
+            notificationOnly.workspacePath = info.workspacePath
+            notificationOnly.gitRemote = info.gitRemote
+            notificationOnly.terminal = info.terminal
+            notificationOnly.isActive = true
+
+            // Flush any messages that arrived before session_info
+            if let buffered = pendingMessages.removeValue(forKey: connectionId) {
+                notificationOnly.messages = buffered
+            }
+
+            if selectedSessionId == nil {
+                selectedSessionId = notificationOnly.id
+            }
+            return
+        }
+
         let session = SessionItem(
             id: UUID(),
             connectionId: connectionId,
@@ -51,6 +75,27 @@ final class SessionState {
         if selectedSessionId == nil {
             selectedSessionId = session.id
         }
+    }
+
+    /// Find a notification-only session that matches the incoming session info.
+    /// A notification-only session is identified by having an empty command (real WebSocket
+    /// sessions always have a command from session_info).
+    private func findNotificationOnlySession(info: SessionInfoPayload) -> SessionItem? {
+        // Match by terminal pane ID first
+        if let paneId = info.terminal?.paneId {
+            if let match = sessions.first(where: {
+                $0.command.isEmpty && $0.terminal?.paneId == paneId
+            }) {
+                return match
+            }
+        }
+
+        // Fall back to workspace path match
+        if let workspacePath = info.workspacePath, !workspacePath.isEmpty {
+            return sessions.first { $0.command.isEmpty && $0.workspacePath == workspacePath }
+        }
+
+        return nil
     }
 
     func appendMessage(connectionId: UUID, message: SessionMessage) {
@@ -126,7 +171,7 @@ final class SessionState {
         }
 
         // Fall back to workspace path match (first match wins, sessions are newest-first)
-        if matchedSession == nil {
+        if matchedSession == nil && !payload.workspacePath.isEmpty {
             matchedSession = sessions.first { session in
                 session.workspacePath == payload.workspacePath
             }
