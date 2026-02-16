@@ -1475,7 +1475,8 @@ Behavior:
 - Note: headless streaming is not active in `tim review --print` mode, which installs a separate
   output adapter for executor capture.
 - WebSocket messages use an envelope with `session_info`, `replay_start`, `output`, and
-  `replay_end` message types.
+  `replay_end` message types. The `session_info` message includes optional `terminalPaneId` and
+  `terminalType` fields (populated from `WEZTERM_PANE` env var) for terminal pane matching in tim-gui.
 - For `tim agent` and `tim review`, major lifecycle events are emitted as structured `output`
   payloads (for example: plan discovery, iteration/step lifecycle, failure reports, review
   start/result/verdict, and `input_required` before interactive prompts). Other commands continue
@@ -2196,16 +2197,24 @@ tim extract [--input FILE] [--output FILE]
 
 ### tim-gui (macOS)
 
-`tim-gui` is a small macOS SwiftUI app that listens for local HTTP messages and shows them in a list.
+`tim-gui` is a macOS SwiftUI app that provides a unified session view for monitoring tim agent executions and notifications.
+
+**Features:**
+
+- **Session monitoring**: Connects via WebSocket (`ws://localhost:8123/tim-agent`) to display live agent sessions with streaming output
+- **Notification integration**: Incoming HTTP notifications are matched to existing sessions by terminal pane ID (WezTerm) or working directory. Unmatched notifications create standalone session entries.
+- **Unread indicators**: Sessions with unread notifications show a blue dot; selecting the session clears it
+- **Terminal pane activation**: Sessions with terminal info show a button to activate the associated WezTerm pane
+- **macOS system notifications**: Fires native notifications for all incoming messages
 
 ```bash
 # Open in Xcode
 open tim-gui/TimGUI.xcodeproj
 
-# Example request
+# Send a notification (matched to sessions by pane ID or workspace path)
 curl -X POST http://127.0.0.1:8123/messages \\
   -H 'Content-Type: application/json' \\
-  -d '{\"message\":\"Hello\",\"workspacePath\":\"/tmp/example\"}'
+  -d '{\"message\":\"Agent done\",\"workspacePath\":\"/path/to/repo\",\"terminal\":{\"type\":\"wezterm\",\"paneId\":\"42\"}}'
 ```
 
 ---
