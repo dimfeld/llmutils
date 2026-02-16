@@ -177,11 +177,7 @@ final class SessionState {
 
         let notificationText = "Agent session disconnected"
         session.notificationMessage = notificationText
-        if session.id == self.selectedSessionId {
-            session.hasUnreadNotification = false
-        } else {
-            session.hasUnreadNotification = true
-        }
+        session.hasUnreadNotification = true
 
         let content = UNMutableNotificationContent()
         content.title = "Tim"
@@ -229,12 +225,7 @@ final class SessionState {
 
         if let session = matchedSession {
             session.notificationMessage = payload.message
-            // If this session is already selected, don't show the unread dot
-            if session.id == self.selectedSessionId {
-                session.hasUnreadNotification = false
-            } else {
-                session.hasUnreadNotification = true
-            }
+            session.hasUnreadNotification = true
         } else {
             // Create a notification-only session
             let session = SessionItem(
@@ -271,11 +262,7 @@ final class SessionState {
         guard let session = sessions.first(where: { $0.connectionId == connectionId }) else { return }
 
         session.notificationMessage = notificationText
-        if session.id == self.selectedSessionId {
-            session.hasUnreadNotification = false
-        } else {
-            session.hasUnreadNotification = true
-        }
+        session.hasUnreadNotification = true
 
         let content = UNMutableNotificationContent()
         content.title = "Tim"
@@ -291,6 +278,22 @@ final class SessionState {
     func markNotificationRead(sessionId: UUID) {
         guard let session = sessions.first(where: { $0.id == sessionId }) else { return }
         session.hasUnreadNotification = false
+    }
+
+    func handleSessionListItemTap(sessionId: UUID) {
+        guard let session = sessions.first(where: { $0.id == sessionId }) else { return }
+
+        if self.selectedSessionId == sessionId {
+            if session.hasUnreadNotification {
+                self.markNotificationRead(sessionId: sessionId)
+            }
+            return
+        }
+
+        self.selectedSessionId = sessionId
+        if session.hasUnreadNotification {
+            self.markNotificationRead(sessionId: sessionId)
+        }
     }
 
     private func notificationText(for tunnelMessage: TunnelMessage) -> String? {

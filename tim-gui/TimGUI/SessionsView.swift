@@ -42,6 +42,7 @@ struct SessionListView: View {
             List(self.sessionState.sessions, selection: self.$sessionState.selectedSessionId) { session in
                 SessionRowView(
                     session: session,
+                    onTap: { self.sessionState.handleSessionListItemTap(sessionId: session.id) },
                     onDismiss: { self.sessionState.dismissSession(id: session.id) })
             }
             .toolbar {
@@ -54,14 +55,6 @@ struct SessionListView: View {
                     }
                 }
             }
-            .onChange(of: self.sessionState.selectedSessionId) { _, newId in
-                if let newId,
-                   let session = sessionState.sessions.first(where: { $0.id == newId }),
-                   session.hasUnreadNotification
-                {
-                    self.sessionState.markNotificationRead(sessionId: newId)
-                }
-            }
         }
     }
 }
@@ -70,6 +63,7 @@ struct SessionListView: View {
 
 struct SessionRowView: View {
     let session: SessionItem
+    let onTap: () -> Void
     let onDismiss: () -> Void
 
     var body: some View {
@@ -117,6 +111,8 @@ struct SessionRowView: View {
             }
         }
         .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: self.onTap)
         .contextMenu(self.session.isActive ? nil : ContextMenu(menuItems: {
             Button("Dismiss", action: self.onDismiss)
         }))

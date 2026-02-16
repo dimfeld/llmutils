@@ -490,8 +490,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].notificationMessage == "Agent session disconnected")
     }
 
-    @Test("markDisconnected keeps unread notification false for selected session")
-    func markDisconnectedSelectedSessionNoUnread() {
+    @Test("markDisconnected sets unread notification for selected session")
+    func markDisconnectedSelectedSessionUnread() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo())
@@ -499,7 +499,7 @@ struct SessionStateTests {
 
         state.markDisconnected(connectionId: connId)
 
-        #expect(state.sessions[0].hasUnreadNotification == false)
+        #expect(state.sessions[0].hasUnreadNotification == true)
         #expect(state.sessions[0].notificationMessage == "Agent session disconnected")
     }
 
@@ -1010,7 +1010,7 @@ struct SessionStateTests {
         #expect(state.sessions[0].notificationMessage == nil)
     }
 
-    @Test("input_required structured output updates selected session without unread badge")
+    @Test("input_required structured output updates selected session with unread badge")
     func ingestStructuredInputRequiredNotificationSelectedSession() {
         let state = SessionState()
         let connId = UUID()
@@ -1026,7 +1026,7 @@ struct SessionStateTests {
                 timestamp: nil)))
 
         #expect(state.sessions[0].notificationMessage == "Input required: Choose how to proceed")
-        #expect(state.sessions[0].hasUnreadNotification == false)
+        #expect(state.sessions[0].hasUnreadNotification == true)
     }
 
     @Test("structured messages other than input_required are ignored")
@@ -1125,8 +1125,53 @@ struct SessionStateTests {
         #expect(sessionB.notificationMessage == "Alert B")
     }
 
-    @Test("Notification for already-selected session does not set unread flag")
-    func ingestNotificationForSelectedSessionClearsFlag() {
+    @Test("handleSessionListItemTap clears unread when tapping already-selected session")
+    func handleSessionListItemTapClearsSelectedUnread() {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
+            command: "agent",
+            workspacePath: "/project"))
+        let sessionId = state.sessions[0].id
+        state.selectedSessionId = sessionId
+        state.ingestNotification(payload: MessagePayload(
+            message: "Done",
+            workspacePath: "/project",
+            terminal: nil))
+        #expect(state.sessions[0].hasUnreadNotification == true)
+
+        state.handleSessionListItemTap(sessionId: sessionId)
+
+        #expect(state.sessions[0].hasUnreadNotification == false)
+    }
+
+    @Test("handleSessionListItemTap selects and clears unread for non-selected session")
+    func handleSessionListItemTapSelectsAndClearsUnread() throws {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
+            command: "agent",
+            workspacePath: "/project/a"))
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
+            command: "review",
+            workspacePath: "/project/b"))
+        let initiallySelected = try #require(state.selectedSessionId)
+
+        state.ingestNotification(payload: MessagePayload(
+            message: "Alert A",
+            workspacePath: "/project/a",
+            terminal: nil))
+
+        let sessionA = try #require(state.sessions.first { $0.workspacePath == "/project/a" })
+        #expect(sessionA.hasUnreadNotification == true)
+        #expect(state.selectedSessionId == initiallySelected)
+
+        state.handleSessionListItemTap(sessionId: sessionA.id)
+
+        #expect(state.selectedSessionId == sessionA.id)
+        #expect(sessionA.hasUnreadNotification == false)
+    }
+
+    @Test("Notification for already-selected session sets unread flag")
+    func ingestNotificationForSelectedSessionSetsFlag() {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
@@ -1140,9 +1185,9 @@ struct SessionStateTests {
             workspacePath: "/project",
             terminal: nil))
 
-        // Message should be stored but unread flag should not be set
+        // Message should be stored and unread should remain set until explicitly cleared.
         #expect(state.sessions[0].notificationMessage == "Done")
-        #expect(state.sessions[0].hasUnreadNotification == false)
+        #expect(state.sessions[0].hasUnreadNotification == true)
     }
 
     @Test("Notification for non-selected session sets unread flag")
