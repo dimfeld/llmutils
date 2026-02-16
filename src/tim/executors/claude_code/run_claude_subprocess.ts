@@ -45,6 +45,8 @@ export function getDefaultAllowedTools(): string[] {
     'Edit',
     'MultiEdit',
     'Write',
+    'Glob',
+    'Grep',
     'WebFetch',
     'WebSearch',
     'Bash(cat:*)',
