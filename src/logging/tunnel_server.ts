@@ -38,7 +38,7 @@ const reviewCategories = new Set([
 const reviewVerdicts = new Set(['ACCEPTABLE', 'NEEDS_FIXES', 'UNKNOWN']);
 const executionSummaryModes = new Set(['serial', 'batch']);
 const todoStatuses = new Set(['pending', 'in_progress', 'completed', 'blocked', 'unknown']);
-const promptTypes = new Set(['input', 'confirm', 'select', 'checkbox']);
+const promptTypes = new Set(['input', 'confirm', 'select', 'checkbox', 'prefix_select']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

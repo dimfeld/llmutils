@@ -12,12 +12,16 @@ const mockConfirm = mock(() => Promise.resolve(true));
 const mockSelect = mock(() => Promise.resolve('selected'));
 const mockInput = mock(() => Promise.resolve('typed'));
 const mockCheckbox = mock(() => Promise.resolve(['a', 'b']));
+const mockRunPrefixPrompt = mock(() => Promise.resolve({ exact: false, command: 'git status' }));
 
 await moduleMocker.mock('@inquirer/prompts', () => ({
   confirm: mockConfirm,
   select: mockSelect,
   input: mockInput,
   checkbox: mockCheckbox,
+}));
+await moduleMocker.mock('../common/prefix_prompt.js', () => ({
+  runPrefixPrompt: mockRunPrefixPrompt,
 }));
 
 // Import the handler AFTER the mock is set up so it picks up the mocked module.
@@ -62,12 +66,16 @@ describe('tunnel_prompt_handler', () => {
     mockSelect.mockReset();
     mockInput.mockReset();
     mockCheckbox.mockReset();
+    mockRunPrefixPrompt.mockReset();
 
     // Restore default mock implementations
     mockConfirm.mockImplementation(() => Promise.resolve(true));
     mockSelect.mockImplementation(() => Promise.resolve('selected'));
     mockInput.mockImplementation(() => Promise.resolve('typed'));
     mockCheckbox.mockImplementation(() => Promise.resolve(['a', 'b']));
+    mockRunPrefixPrompt.mockImplementation(() =>
+      Promise.resolve({ exact: false, command: 'git status' })
+    );
 
     // Clear registry between tests
     setActiveInputSource(undefined);
@@ -208,6 +216,35 @@ describe('tunnel_prompt_handler', () => {
         value: 'opt3',
         checked: false,
         description: 'The third option',
+      });
+    });
+
+    it('handles prefix_select prompts', async () => {
+      mockRunPrefixPrompt.mockImplementation(() =>
+        Promise.resolve({ exact: true, command: 'jj status --summary' })
+      );
+
+      const handler = createPromptRequestHandler();
+      const { promise, respond } = collectResponse();
+
+      const msg = makePromptRequest({
+        promptType: 'prefix_select',
+        promptConfig: {
+          message: 'Select command prefix',
+          command: 'jj status --summary',
+        },
+      });
+
+      handler(msg, respond);
+      const response = await promise;
+
+      expect(response.value).toEqual({ exact: true, command: 'jj status --summary' });
+      expect(response.error).toBeUndefined();
+      expect(mockRunPrefixPrompt).toHaveBeenCalledTimes(1);
+      const config = callArgs(mockRunPrefixPrompt, 0)[0] as Record<string, unknown>;
+      expect(config).toMatchObject({
+        message: 'Select command prefix',
+        command: 'jj status --summary',
       });
     });
   });

@@ -19,12 +19,12 @@ import {
   promptSelect,
   promptCheckbox,
   promptInput,
+  promptPrefixSelect,
   isPromptTimeoutError,
 } from '../../../common/input.js';
 import { getGitRoot } from '../../../common/git.js';
 import { debugLog, log } from '../../../logging.js';
 import { createLineSplitter } from '../../../common/process.js';
-import { prefixPrompt } from './prefix_prompt.js';
 import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
 import { getDatabase } from '../../db/database.js';
 import { getOrCreateProject } from '../../db/project.js';
@@ -292,14 +292,16 @@ async function handleBashPrefixApproval(
   allowedToolsMap: Map<string, true | string[]>,
   isPersistent: boolean,
   sessionMessage: string,
-  persistentMessage: string
+  persistentMessage: string,
+  timeout?: number
 ): Promise<void> {
   const command = input.command as string;
-  const selectedPrefix = await prefixPrompt({
+  const selectedPrefix = await promptPrefixSelect({
     message: isPersistent
       ? 'Select the command prefix to always allow:'
       : 'Select the command prefix to allow for this session:',
     command,
+    timeoutMs: timeout,
   });
 
   const wasAdded = addBashPrefixSafely(allowedToolsMap, selectedPrefix.command);
@@ -555,7 +557,8 @@ async function handlePermissionLine(
             allowedToolsMap,
             true,
             '',
-            `${BASH_TOOL_NAME} prefix "{prefix}" added to always allowed list`
+            `${BASH_TOOL_NAME} prefix "{prefix}" added to always allowed list`,
+            options.timeout
           );
         } else {
           allowedToolsMap.set(tool_name, true);
@@ -571,7 +574,8 @@ async function handlePermissionLine(
             allowedToolsMap,
             false,
             `${BASH_TOOL_NAME} prefix "{prefix}" added to allowed list for current session only`,
-            ''
+            '',
+            options.timeout
           );
         } else {
           allowedToolsMap.set(tool_name, true);

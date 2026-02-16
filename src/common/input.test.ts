@@ -21,6 +21,7 @@ const mockConfirm = mock(() => Promise.resolve(true));
 const mockSelect = mock(() => Promise.resolve('selected'));
 const mockInput = mock(() => Promise.resolve('typed'));
 const mockCheckbox = mock(() => Promise.resolve(['a', 'b']));
+const mockRunPrefixPrompt = mock(() => Promise.resolve({ exact: false, command: 'git status' }));
 const pauseSpy = mock(() => {});
 const resumeSpy = mock(() => {});
 let activeTerminalReader:
@@ -40,9 +41,13 @@ await moduleMocker.mock('@inquirer/prompts', () => ({
 await moduleMocker.mock('./input_pause_registry.js', () => ({
   getActiveInputSource: () => activeTerminalReader,
 }));
+await moduleMocker.mock('./prefix_prompt.js', () => ({
+  runPrefixPrompt: mockRunPrefixPrompt,
+}));
 
 // Import the wrapper AFTER mock setup.
-const { promptConfirm, promptSelect, promptInput, promptCheckbox } = await import('./input.ts');
+const { promptConfirm, promptSelect, promptInput, promptCheckbox, promptPrefixSelect } =
+  await import('./input.ts');
 
 afterAll(() => {
   moduleMocker.clear();
@@ -61,6 +66,7 @@ describe('prompt wrappers', () => {
     mockSelect.mockReset();
     mockInput.mockReset();
     mockCheckbox.mockReset();
+    mockRunPrefixPrompt.mockReset();
     pauseSpy.mockReset();
     resumeSpy.mockReset();
     activeTerminalReader = undefined;
@@ -69,6 +75,9 @@ describe('prompt wrappers', () => {
     mockSelect.mockImplementation(() => Promise.resolve('selected'));
     mockInput.mockImplementation(() => Promise.resolve('typed'));
     mockCheckbox.mockImplementation(() => Promise.resolve(['a', 'b']));
+    mockRunPrefixPrompt.mockImplementation(() =>
+      Promise.resolve({ exact: false, command: 'git status' })
+    );
   });
 
   describe('non-tunneled path (direct inquirer calls)', () => {
@@ -299,6 +308,40 @@ describe('prompt wrappers', () => {
       });
     });
 
+    it('promptPrefixSelect calls prefix prompt helper and sends structured message', async () => {
+      mockRunPrefixPrompt.mockImplementation(() =>
+        Promise.resolve({ exact: true, command: 'jj status --summary' })
+      );
+
+      const { adapter, calls } = createRecordingAdapter();
+      const result = await runWithLogger(adapter, () =>
+        promptPrefixSelect({
+          message: 'Select prefix',
+          command: 'jj status --summary',
+        })
+      );
+
+      expect(result).toEqual({ exact: true, command: 'jj status --summary' });
+      expect(mockRunPrefixPrompt).toHaveBeenCalledTimes(1);
+      const [config] = callArgs(mockRunPrefixPrompt, 0);
+      expect(config).toMatchObject({
+        message: 'Select prefix',
+        command: 'jj status --summary',
+      });
+
+      const structured = calls.filter((c) => c.method === 'sendStructured');
+      expect(structured).toHaveLength(2);
+      expect(structured[0].args[0]).toMatchObject({
+        type: 'prompt_request',
+        promptType: 'prefix_select',
+      });
+      expect(structured[1].args[0]).toMatchObject({
+        type: 'prompt_answered',
+        promptType: 'prefix_select',
+        source: 'terminal',
+      });
+    });
+
     it('promptConfirm with timeoutMs passes abort signal to inquirer', async () => {
       const { adapter } = createRecordingAdapter();
 
@@ -472,6 +515,36 @@ describe('prompt wrappers', () => {
 
       expect(result).toEqual(['opt1', 'opt3']);
       expect(mockCheckbox).not.toHaveBeenCalled();
+    });
+
+    it('promptPrefixSelect sends prompt through tunnel and returns object response', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter: serverAdapter } = createRecordingAdapter();
+
+      const onPromptRequest: PromptRequestHandler = (message, respond) => {
+        expect(message.promptType).toBe('prefix_select');
+        expect(message.promptConfig.command).toBe('git status --short');
+        respond({
+          type: 'prompt_response',
+          requestId: message.requestId,
+          value: { exact: false, command: 'git status' },
+        });
+      };
+
+      const result = await runWithLogger(serverAdapter, async () => {
+        tunnelServer = await createTunnelServer(sp, { onPromptRequest });
+        clientAdapter = await createTunnelAdapter(sp);
+
+        return runWithLogger(clientAdapter, () =>
+          promptPrefixSelect({
+            message: 'Select prefix',
+            command: 'git status --short',
+          })
+        );
+      });
+
+      expect(result).toEqual({ exact: false, command: 'git status' });
+      expect(mockRunPrefixPrompt).not.toHaveBeenCalled();
     });
 
     it('tunneled prompt with error from server rejects the promise', async () => {

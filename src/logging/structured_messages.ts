@@ -211,7 +211,7 @@ export interface UserTerminalInputMessage extends StructuredMessageBase {
   content: string;
 }
 
-export type PromptType = 'input' | 'confirm' | 'select' | 'checkbox';
+export type PromptType = 'input' | 'confirm' | 'select' | 'checkbox' | 'prefix_select';
 
 export interface PromptChoiceConfig {
   name: string;
@@ -225,6 +225,8 @@ export interface PromptConfig {
   default?: string | number | boolean;
   choices?: PromptChoiceConfig[];
   pageSize?: number;
+  /** Raw command shown by prefix-select prompts */
+  command?: string;
   /** Human-readable description of validation rules (validation runs on the receiving end) */
   validationHint?: string;
 }

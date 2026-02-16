@@ -17,10 +17,9 @@ import {
 import { claudeCodeOptionsSchema, ClaudeCodeExecutorName } from './schemas.js';
 import chalk from 'chalk';
 import * as net from 'net';
-import { promptSelect, isPromptTimeoutError } from '../../common/input.ts';
+import { promptSelect, promptPrefixSelect, isPromptTimeoutError } from '../../common/input.ts';
 import { stringify } from 'yaml';
 import stripAnsi from 'strip-ansi';
-import { prefixPrompt } from './claude_code/prefix_prompt.ts';
 import {
   wrapWithOrchestration,
   wrapWithOrchestrationSimple,
@@ -349,11 +348,12 @@ export class ClaudeCodeExecutor implements Executor {
   ): Promise<void> {
     try {
       const command = input.command as string;
-      const selectedPrefix = await prefixPrompt({
+      const selectedPrefix = await promptPrefixSelect({
         message: isPersistent
           ? 'Select the command prefix to always allow:'
           : 'Select the command prefix to allow for this session:',
         command: command,
+        timeoutMs: this.options.permissionsMcp?.timeout,
       });
 
       // Add the prefix using the safe method

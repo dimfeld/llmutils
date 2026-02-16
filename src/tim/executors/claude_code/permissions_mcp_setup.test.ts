@@ -41,7 +41,7 @@ const mockPromptInput = mock(async () => {
   return next;
 });
 
-const mockPrefixPrompt = mock(async () => {
+const mockPromptPrefixSelect = mock(async () => {
   const next = prefixPromptResponses.shift();
   if (next instanceof Error) {
     throw next;
@@ -60,12 +60,10 @@ beforeAll(async () => {
     promptSelect: mockPromptSelect,
     promptCheckbox: mockPromptCheckbox,
     promptInput: mockPromptInput,
+    promptPrefixSelect: mockPromptPrefixSelect,
     isPromptTimeoutError: (err: unknown) =>
       err instanceof Error &&
       (err.name === 'AbortPromptError' || err.message.startsWith('Prompt request timed out')),
-  }));
-  await moduleMocker.mock('./prefix_prompt.js', () => ({
-    prefixPrompt: mockPrefixPrompt,
   }));
 
   ({ setupPermissionsMcp } = await import('./permissions_mcp_setup.js'));
@@ -83,7 +81,7 @@ describe('permissions socket server line buffering', () => {
     checkboxResponses.length = 0;
     inputResponses.length = 0;
     prefixPromptResponses.length = 0;
-    mockPrefixPrompt.mockClear();
+    mockPromptPrefixSelect.mockClear();
     mockPromptSelect.mockClear();
   });
 
@@ -270,7 +268,7 @@ describe('permissions socket server AskUserQuestion handling', () => {
     checkboxResponses.length = 0;
     inputResponses.length = 0;
     prefixPromptResponses.length = 0;
-    mockPrefixPrompt.mockClear();
+    mockPromptPrefixSelect.mockClear();
     mockPromptSelect.mockClear();
   });
 
@@ -575,7 +573,7 @@ describe('permissions socket server allowlist persistence behavior', () => {
     checkboxResponses.length = 0;
     inputResponses.length = 0;
     prefixPromptResponses.length = 0;
-    mockPrefixPrompt.mockClear();
+    mockPromptPrefixSelect.mockClear();
     mockPromptSelect.mockClear();
   });
 
@@ -668,7 +666,7 @@ describe('permissions socket server allowlist persistence behavior', () => {
       requestId: 'bash-persist-1',
       approved: true,
     });
-    expect(mockPrefixPrompt).toHaveBeenCalledTimes(1);
+    expect(mockPromptPrefixSelect).toHaveBeenCalledTimes(1);
 
     const secondResponse = await sendAndReceive(socketPath, {
       type: 'permission_request',
@@ -705,7 +703,7 @@ describe('permissions socket server allowlist persistence behavior', () => {
       requestId: 'bash-session-1',
       approved: true,
     });
-    expect(mockPrefixPrompt).toHaveBeenCalledTimes(1);
+    expect(mockPromptPrefixSelect).toHaveBeenCalledTimes(1);
 
     const secondResponse = await sendAndReceive(socketPath, {
       type: 'permission_request',

@@ -10,6 +10,7 @@ import { HeadlessAdapter } from '../logging/headless_adapter.js';
 import { TunnelAdapter } from '../logging/tunnel_client.js';
 import { sendStructured } from '../logging.js';
 import { getActiveInputSource } from './input_pause_registry.js';
+import { runPrefixPrompt, type PrefixPromptResult } from './prefix_prompt.js';
 import type {
   PromptRequestMessage,
   PromptChoiceConfig,
@@ -435,6 +436,61 @@ export async function promptCheckbox<Value extends string | number | boolean>(op
         { message, choices, pageSize },
         timeout ? { signal: timeout.signal } : undefined
       )
+    );
+    sendPromptAnswered(promptMessage, value, 'terminal');
+    return value;
+  } finally {
+    timeout?.cleanup();
+  }
+}
+
+/**
+ * Prompts the user to choose a Bash command prefix (or exact command).
+ *
+ * When running inside a tunnel (subagent), the prompt is transparently forwarded
+ * to the orchestrator. When running normally, uses the custom prefix prompt.
+ */
+export async function promptPrefixSelect(options: {
+  message: string;
+  command: string;
+  timeoutMs?: number;
+}): Promise<PrefixPromptResult> {
+  const { message, command, timeoutMs } = options;
+  const tunnelAdapter = getTunnelAdapter();
+
+  const promptMessage = buildPromptRequest(
+    'prefix_select',
+    {
+      message,
+      command,
+    },
+    timeoutMs
+  );
+
+  if (tunnelAdapter) {
+    return (await tunnelAdapter.sendPromptRequest(promptMessage, timeoutMs)) as PrefixPromptResult;
+  }
+
+  sendStructured(promptMessage);
+
+  const headlessAdapter = getHeadlessAdapter();
+  if (headlessAdapter) {
+    return raceWithWebSocket(
+      headlessAdapter,
+      promptMessage,
+      (signal) => withTerminalInputPaused(() => runPrefixPrompt({ message, command }, { signal })),
+      timeoutMs
+    );
+  }
+
+  let timeout: { signal: AbortSignal; cleanup: () => void } | undefined;
+  if (timeoutMs != null && timeoutMs > 0) {
+    timeout = createTimeoutSignal(timeoutMs);
+  }
+
+  try {
+    const value = await withTerminalInputPaused(() =>
+      runPrefixPrompt({ message, command }, timeout ? { signal: timeout.signal } : undefined)
     );
     sendPromptAnswered(promptMessage, value, 'terminal');
     return value;

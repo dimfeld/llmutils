@@ -3,6 +3,7 @@ import type { PromptRequestMessage } from './structured_messages.js';
 import type { PromptRequestHandler } from './tunnel_server.js';
 import type { TunnelPromptResponseMessage } from './tunnel_protocol.js';
 import { getActiveInputSource } from '../common/input_pause_registry.js';
+import { runPrefixPrompt } from '../common/prefix_prompt.js';
 
 /**
  * Creates a PromptRequestHandler that renders inquirer prompts on behalf of
@@ -95,6 +96,17 @@ export function createPromptRequestHandler(): PromptRequestHandler {
               message: promptConfig.message,
               choices,
               pageSize: promptConfig.pageSize,
+            },
+            signal ? { signal } : undefined
+          );
+          break;
+        }
+
+        case 'prefix_select': {
+          value = await runPrefixPrompt(
+            {
+              message: promptConfig.message,
+              command: typeof promptConfig.command === 'string' ? promptConfig.command : '',
             },
             signal ? { signal } : undefined
           );

@@ -417,6 +417,7 @@ While the agent is executing, you can type a message and press Enter to send it 
 - Input is echoed visually as `→ You: <message>` in the output stream
 - Automatically paused during permission prompts and resumed after
 - Forwarded through the tunnel to nested subagents when running in workspace mode
+- Custom permission prompts (including Bash prefix selection for "Always Allow"/session allow) are tunneled to the orchestrator
 - Disable with `--no-terminal-input` or `terminalInput: false` in config
 
 ```bash
