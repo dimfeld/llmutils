@@ -170,6 +170,5 @@ final class SessionState {
     func markNotificationRead(sessionId: UUID) {
         guard let session = sessions.first(where: { $0.id == sessionId }) else { return }
         session.hasUnreadNotification = false
-        session.notificationMessage = nil
     }
 }

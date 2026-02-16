@@ -932,7 +932,7 @@ struct SessionStateTests {
         state.markNotificationRead(sessionId: sessionId)
 
         #expect(state.sessions[0].hasUnreadNotification == false)
-        #expect(state.sessions[0].notificationMessage == nil)
+        #expect(state.sessions[0].notificationMessage == "Alert")
     }
 
     @Test("markNotificationRead is a no-op for unknown session ID")
@@ -980,7 +980,7 @@ struct SessionStateTests {
         state.markNotificationRead(sessionId: sessionA.id)
 
         #expect(sessionA.hasUnreadNotification == false)
-        #expect(sessionA.notificationMessage == nil)
+        #expect(sessionA.notificationMessage == "Alert A")
         // Session B should still have its notification
         #expect(sessionB.hasUnreadNotification == true)
         #expect(sessionB.notificationMessage == "Alert B")
