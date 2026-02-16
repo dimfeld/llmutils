@@ -36,6 +36,7 @@ beforeAll(async () => {
 afterEach(() => {
   getRepositoryIdentitySpy.mockClear();
   delete process.env.TIM_HEADLESS_URL;
+  delete process.env.WEZTERM_PANE;
   resetHeadlessWarningStateForTests();
 });
 
@@ -97,6 +98,8 @@ describe('buildHeadlessSessionInfo', () => {
       planTitle: 'headless mode',
       workspacePath: '/tmp/repo',
       gitRemote: 'github.com/owner/repo',
+      terminalPaneId: undefined,
+      terminalType: undefined,
     });
   });
 
@@ -115,6 +118,8 @@ describe('buildHeadlessSessionInfo', () => {
     expect(info.gitRemote).toBe('github.com/owner/repo');
     expect(info.gitRemote).not.toContain('token');
     expect(info.gitRemote).not.toContain('user');
+    expect(info.terminalPaneId).toBeUndefined();
+    expect(info.terminalType).toBeUndefined();
   });
 
   test('silently handles repository lookup failures', async () => {
@@ -133,7 +138,31 @@ describe('buildHeadlessSessionInfo', () => {
       planTitle: 'review plan',
       workspacePath: undefined,
       gitRemote: undefined,
+      terminalPaneId: undefined,
+      terminalType: undefined,
     });
+  });
+
+  test('includes terminal metadata when WEZTERM_PANE is set', async () => {
+    process.env.WEZTERM_PANE = '12';
+
+    const info = await buildHeadlessSessionInfo('agent', {
+      id: 99,
+      title: 'pane test',
+    });
+
+    expect(info.terminalPaneId).toBe('12');
+    expect(info.terminalType).toBe('wezterm');
+  });
+
+  test('omits terminal metadata when WEZTERM_PANE is unset', async () => {
+    const info = await buildHeadlessSessionInfo('agent', {
+      id: 99,
+      title: 'pane test',
+    });
+
+    expect(info.terminalPaneId).toBeUndefined();
+    expect(info.terminalType).toBeUndefined();
   });
 });
 

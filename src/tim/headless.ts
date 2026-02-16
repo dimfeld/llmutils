@@ -79,6 +79,7 @@ export async function buildHeadlessSessionInfo(
 ): Promise<HeadlessSessionInfo> {
   let workspacePath: string | undefined;
   let gitRemote: string | undefined;
+  const weztermPaneId = process.env.WEZTERM_PANE?.trim();
 
   try {
     const repository = await getRepositoryIdentity();
@@ -94,6 +95,8 @@ export async function buildHeadlessSessionInfo(
     planTitle: plan?.title,
     workspacePath,
     gitRemote,
+    terminalPaneId: weztermPaneId || undefined,
+    terminalType: weztermPaneId ? 'wezterm' : undefined,
   };
 }
 

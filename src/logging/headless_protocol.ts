@@ -6,6 +6,8 @@ export interface HeadlessSessionInfo {
   planTitle?: string;
   workspacePath?: string;
   gitRemote?: string;
+  terminalPaneId?: string;
+  terminalType?: string;
 }
 
 export interface HeadlessSessionInfoMessage {
@@ -15,6 +17,8 @@ export interface HeadlessSessionInfoMessage {
   planTitle?: string;
   workspacePath?: string;
   gitRemote?: string;
+  terminalPaneId?: string;
+  terminalType?: string;
 }
 
 export interface HeadlessOutputMessage {
