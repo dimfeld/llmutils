@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UserNotifications
 
 @MainActor
 @Observable
@@ -23,6 +24,7 @@ final class SessionState {
             existing.planTitle = info.planTitle
             existing.workspacePath = info.workspacePath
             existing.gitRemote = info.gitRemote
+            existing.terminal = info.terminal
             return
         }
 
@@ -36,7 +38,8 @@ final class SessionState {
             gitRemote: info.gitRemote,
             connectedAt: Date(),
             isActive: true,
-            messages: []
+            messages: [],
+            terminal: info.terminal
         )
 
         // Flush any messages that arrived before session_info
@@ -111,5 +114,62 @@ final class SessionState {
         if let selectedId = selectedSessionId, disconnectedIds.contains(selectedId) {
             selectedSessionId = sessions.first?.id
         }
+    }
+
+    func ingestNotification(payload: MessagePayload) {
+        // Try to match by terminal pane ID first
+        var matchedSession: SessionItem?
+        if let notificationPaneId = payload.terminal?.paneId {
+            matchedSession = sessions.first { session in
+                session.terminal?.paneId == notificationPaneId
+            }
+        }
+
+        // Fall back to workspace path match (first match wins, sessions are newest-first)
+        if matchedSession == nil {
+            matchedSession = sessions.first { session in
+                session.workspacePath == payload.workspacePath
+            }
+        }
+
+        if let session = matchedSession {
+            session.hasUnreadNotification = true
+            session.notificationMessage = payload.message
+        } else {
+            // Create a notification-only session
+            let session = SessionItem(
+                id: UUID(),
+                connectionId: UUID(),
+                command: "",
+                planId: nil,
+                planTitle: nil,
+                workspacePath: payload.workspacePath,
+                gitRemote: nil,
+                connectedAt: Date(),
+                isActive: false,
+                messages: [],
+                terminal: payload.terminal,
+                hasUnreadNotification: true,
+                notificationMessage: payload.message
+            )
+            sessions.insert(session, at: 0)
+        }
+
+        // Trigger macOS system notification
+        let content = UNMutableNotificationContent()
+        content.title = "Tim"
+        content.body = payload.message
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil)
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    func markNotificationRead(sessionId: UUID) {
+        guard let session = sessions.first(where: { $0.id == sessionId }) else { return }
+        session.hasUnreadNotification = false
+        session.notificationMessage = nil
     }
 }

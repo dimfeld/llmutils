@@ -27,6 +27,7 @@ struct HeadlessMessageTests {
         #expect(info.planTitle == "Add dark mode")
         #expect(info.workspacePath == "/tmp/project")
         #expect(info.gitRemote == "git@github.com:user/repo.git")
+        #expect(info.terminal == nil)
     }
 
     @Test("Decodes session_info with minimal fields")
@@ -47,6 +48,66 @@ struct HeadlessMessageTests {
         #expect(info.planTitle == nil)
         #expect(info.workspacePath == nil)
         #expect(info.gitRemote == nil)
+        #expect(info.terminal == nil)
+    }
+
+    @Test("Decodes session_info with terminal pane info")
+    func decodesSessionInfoWithTerminal() throws {
+        let json = """
+            {
+                "type": "session_info",
+                "command": "agent",
+                "planId": 42,
+                "planTitle": "Add dark mode",
+                "workspacePath": "/tmp/project",
+                "gitRemote": "git@github.com:user/repo.git",
+                "terminalPaneId": "7",
+                "terminalType": "wezterm"
+            }
+            """
+        let msg = try JSONDecoder().decode(HeadlessMessage.self, from: Data(json.utf8))
+        guard case .sessionInfo(let info) = msg else {
+            Issue.record("Expected sessionInfo, got \(msg)")
+            return
+        }
+        #expect(info.command == "agent")
+        #expect(info.terminal?.type == "wezterm")
+        #expect(info.terminal?.paneId == "7")
+    }
+
+    @Test("Decodes session_info with terminalPaneId but no terminalType defaults to unknown")
+    func decodesSessionInfoWithTerminalPaneIdOnly() throws {
+        let json = """
+            {
+                "type": "session_info",
+                "command": "agent",
+                "terminalPaneId": "12"
+            }
+            """
+        let msg = try JSONDecoder().decode(HeadlessMessage.self, from: Data(json.utf8))
+        guard case .sessionInfo(let info) = msg else {
+            Issue.record("Expected sessionInfo, got \(msg)")
+            return
+        }
+        #expect(info.terminal?.type == "unknown")
+        #expect(info.terminal?.paneId == "12")
+    }
+
+    @Test("Decodes session_info with terminalType but no terminalPaneId has no terminal")
+    func decodesSessionInfoWithTerminalTypeOnly() throws {
+        let json = """
+            {
+                "type": "session_info",
+                "command": "agent",
+                "terminalType": "wezterm"
+            }
+            """
+        let msg = try JSONDecoder().decode(HeadlessMessage.self, from: Data(json.utf8))
+        guard case .sessionInfo(let info) = msg else {
+            Issue.record("Expected sessionInfo, got \(msg)")
+            return
+        }
+        #expect(info.terminal == nil)
     }
 
     @Test("Decodes output with args tunnel message")

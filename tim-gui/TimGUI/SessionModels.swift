@@ -128,6 +128,9 @@ final class SessionItem: Identifiable {
     var isActive: Bool
     var messages: [SessionMessage]
     var forceScrollToBottomVersion: Int
+    var terminal: TerminalPayload?
+    var hasUnreadNotification: Bool
+    var notificationMessage: String?
 
     init(
         id: UUID,
@@ -140,7 +143,10 @@ final class SessionItem: Identifiable {
         connectedAt: Date,
         isActive: Bool,
         messages: [SessionMessage],
-        forceScrollToBottomVersion: Int = 0
+        forceScrollToBottomVersion: Int = 0,
+        terminal: TerminalPayload? = nil,
+        hasUnreadNotification: Bool = false,
+        notificationMessage: String? = nil
     ) {
         self.id = id
         self.connectionId = connectionId
@@ -153,6 +159,9 @@ final class SessionItem: Identifiable {
         self.isActive = isActive
         self.messages = messages
         self.forceScrollToBottomVersion = forceScrollToBottomVersion
+        self.terminal = terminal
+        self.hasUnreadNotification = hasUnreadNotification
+        self.notificationMessage = notificationMessage
     }
 }
 
@@ -172,6 +181,7 @@ struct SessionInfoPayload: Sendable {
     let planTitle: String?
     let workspacePath: String?
     let gitRemote: String?
+    let terminal: TerminalPayload?
 }
 
 extension HeadlessMessage: Decodable {
@@ -184,6 +194,8 @@ extension HeadlessMessage: Decodable {
         case planTitle
         case workspacePath
         case gitRemote
+        case terminalPaneId
+        case terminalType
     }
 
     init(from decoder: Decoder) throws {
@@ -197,9 +209,15 @@ extension HeadlessMessage: Decodable {
             let planTitle = try container.decodeIfPresent(String.self, forKey: .planTitle)
             let workspacePath = try container.decodeIfPresent(String.self, forKey: .workspacePath)
             let gitRemote = try container.decodeIfPresent(String.self, forKey: .gitRemote)
+            let terminalPaneId = try container.decodeIfPresent(String.self, forKey: .terminalPaneId)
+            let terminalType = try container.decodeIfPresent(String.self, forKey: .terminalType)
+            let terminal: TerminalPayload? = terminalPaneId.map { paneId in
+                TerminalPayload(type: terminalType ?? "unknown", paneId: paneId)
+            }
             self = .sessionInfo(SessionInfoPayload(
                 command: command, planId: planId, planTitle: planTitle,
-                workspacePath: workspacePath, gitRemote: gitRemote))
+                workspacePath: workspacePath, gitRemote: gitRemote,
+                terminal: terminal))
         case "output":
             let seq = try container.decode(Int.self, forKey: .seq)
             let message = try container.decode(TunnelMessage.self, forKey: .message)

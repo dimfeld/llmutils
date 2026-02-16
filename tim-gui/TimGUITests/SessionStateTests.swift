@@ -13,14 +13,16 @@ struct SessionStateTests {
         planId: Int? = nil,
         planTitle: String? = nil,
         workspacePath: String? = nil,
-        gitRemote: String? = nil
+        gitRemote: String? = nil,
+        terminal: TerminalPayload? = nil
     ) -> SessionInfoPayload {
         SessionInfoPayload(
             command: command,
             planId: planId,
             planTitle: planTitle,
             workspacePath: workspacePath,
-            gitRemote: gitRemote
+            gitRemote: gitRemote,
+            terminal: terminal
         )
     }
 
@@ -664,6 +666,301 @@ struct SessionStateTests {
         // Switch selection to second session
         state.selectedSessionId = state.sessions[0].id
         #expect(state.selectedSession?.connectionId == connId2)
+    }
+
+    // MARK: - Terminal info
+
+    @Test("addSession populates terminal field from SessionInfoPayload")
+    func addSessionPopulatesTerminal() {
+        let state = SessionState()
+        let connId = UUID()
+        let terminal = TerminalPayload(type: "wezterm", paneId: "42")
+        let info = makeInfo(
+            command: "agent",
+            workspacePath: "/tmp/project",
+            terminal: terminal
+        )
+
+        state.addSession(connectionId: connId, info: info)
+
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].terminal?.type == "wezterm")
+        #expect(state.sessions[0].terminal?.paneId == "42")
+    }
+
+    @Test("addSession with nil terminal sets terminal to nil")
+    func addSessionNilTerminal() {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: makeInfo(command: "agent"))
+
+        #expect(state.sessions[0].terminal == nil)
+    }
+
+    @Test("Duplicate session_info updates terminal field")
+    func duplicateSessionInfoUpdatesTerminal() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: makeInfo(command: "agent"))
+        #expect(state.sessions[0].terminal == nil)
+
+        let terminal = TerminalPayload(type: "wezterm", paneId: "5")
+        state.addSession(connectionId: connId, info: makeInfo(command: "agent", terminal: terminal))
+
+        #expect(state.sessions[0].terminal?.type == "wezterm")
+        #expect(state.sessions[0].terminal?.paneId == "5")
+    }
+
+    // MARK: - Notification properties
+
+    @Test("SessionItem defaults hasUnreadNotification to false and notificationMessage to nil")
+    func sessionItemNotificationDefaults() {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: makeInfo(command: "agent"))
+
+        #expect(state.sessions[0].hasUnreadNotification == false)
+        #expect(state.sessions[0].notificationMessage == nil)
+    }
+
+    // MARK: - ingestNotification
+
+    @Test("ingestNotification matches session by pane ID")
+    func ingestNotificationMatchesByPaneId() {
+        let state = SessionState()
+        let terminal = TerminalPayload(type: "wezterm", paneId: "42")
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "agent",
+            workspacePath: "/project/a",
+            terminal: terminal
+        ))
+
+        let payload = MessagePayload(
+            message: "Task completed",
+            workspacePath: "/project/a",
+            terminal: TerminalPayload(type: "wezterm", paneId: "42")
+        )
+        state.ingestNotification(payload: payload)
+
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].hasUnreadNotification == true)
+        #expect(state.sessions[0].notificationMessage == "Task completed")
+    }
+
+    @Test("ingestNotification matches session by workspace path when no pane match")
+    func ingestNotificationMatchesByWorkspace() {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "agent",
+            workspacePath: "/project/b"
+        ))
+
+        let payload = MessagePayload(
+            message: "Done",
+            workspacePath: "/project/b",
+            terminal: nil
+        )
+        state.ingestNotification(payload: payload)
+
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].hasUnreadNotification == true)
+        #expect(state.sessions[0].notificationMessage == "Done")
+    }
+
+    @Test("ingestNotification creates new session when no match found")
+    func ingestNotificationCreatesNewSession() {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "agent",
+            workspacePath: "/project/a"
+        ))
+
+        let payload = MessagePayload(
+            message: "Hello from unknown",
+            workspacePath: "/project/c",
+            terminal: TerminalPayload(type: "wezterm", paneId: "99")
+        )
+        state.ingestNotification(payload: payload)
+
+        #expect(state.sessions.count == 2)
+        // New session inserted at front
+        let newSession = state.sessions[0]
+        #expect(newSession.hasUnreadNotification == true)
+        #expect(newSession.notificationMessage == "Hello from unknown")
+        #expect(newSession.workspacePath == "/project/c")
+        #expect(newSession.terminal?.paneId == "99")
+        #expect(newSession.isActive == false)
+        #expect(newSession.command == "")
+    }
+
+    @Test("ingestNotification with multiple sessions same workspace matches most recent (first)")
+    func ingestNotificationMatchesMostRecent() {
+        let state = SessionState()
+        // Add two sessions with same workspace - second added is at index 0 (most recent)
+        let connId1 = UUID()
+        let connId2 = UUID()
+        state.addSession(connectionId: connId1, info: makeInfo(
+            command: "agent",
+            workspacePath: "/shared/project"
+        ))
+        state.addSession(connectionId: connId2, info: makeInfo(
+            command: "review",
+            workspacePath: "/shared/project"
+        ))
+
+        let payload = MessagePayload(
+            message: "Notification",
+            workspacePath: "/shared/project",
+            terminal: nil
+        )
+        state.ingestNotification(payload: payload)
+
+        // Should match the most recent (index 0, connId2)
+        #expect(state.sessions[0].hasUnreadNotification == true)
+        #expect(state.sessions[0].connectionId == connId2)
+        // Older session should not be affected
+        #expect(state.sessions[1].hasUnreadNotification == false)
+    }
+
+    @Test("ingestNotification prefers pane ID match over workspace match")
+    func ingestNotificationPrefersPaneIdMatch() {
+        let state = SessionState()
+        // Session with matching workspace but no terminal
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "agent",
+            workspacePath: "/project"
+        ))
+        // Session with matching pane ID but different workspace
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "review",
+            workspacePath: "/other",
+            terminal: TerminalPayload(type: "wezterm", paneId: "7")
+        ))
+
+        let payload = MessagePayload(
+            message: "Matched by pane",
+            workspacePath: "/project",
+            terminal: TerminalPayload(type: "wezterm", paneId: "7")
+        )
+        state.ingestNotification(payload: payload)
+
+        // Pane ID match (index 0, the review session) should be matched
+        #expect(state.sessions[0].hasUnreadNotification == true)
+        #expect(state.sessions[0].notificationMessage == "Matched by pane")
+        // Workspace match session should not be affected
+        #expect(state.sessions[1].hasUnreadNotification == false)
+    }
+
+    @Test("ingestNotification sets hasUnreadNotification on matched session")
+    func ingestNotificationSetsFlag() {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "agent",
+            workspacePath: "/project"
+        ))
+        #expect(state.sessions[0].hasUnreadNotification == false)
+
+        state.ingestNotification(payload: MessagePayload(
+            message: "Alert",
+            workspacePath: "/project",
+            terminal: nil
+        ))
+
+        #expect(state.sessions[0].hasUnreadNotification == true)
+    }
+
+    @Test("Second notification replaces message on same session")
+    func ingestNotificationReplacesMessage() {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "agent",
+            workspacePath: "/project"
+        ))
+
+        state.ingestNotification(payload: MessagePayload(
+            message: "First notification",
+            workspacePath: "/project",
+            terminal: nil
+        ))
+        #expect(state.sessions[0].notificationMessage == "First notification")
+
+        state.ingestNotification(payload: MessagePayload(
+            message: "Second notification",
+            workspacePath: "/project",
+            terminal: nil
+        ))
+        #expect(state.sessions[0].notificationMessage == "Second notification")
+        #expect(state.sessions[0].hasUnreadNotification == true)
+    }
+
+    @Test("ingestNotification with no terminal info matches by workspace only")
+    func ingestNotificationNoTerminalMatchesByWorkspace() {
+        let state = SessionState()
+        let terminal = TerminalPayload(type: "wezterm", paneId: "5")
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "agent",
+            workspacePath: "/project/x",
+            terminal: terminal
+        ))
+
+        // Notification has no terminal info - should still match by workspace
+        state.ingestNotification(payload: MessagePayload(
+            message: "Done",
+            workspacePath: "/project/x",
+            terminal: nil
+        ))
+
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].hasUnreadNotification == true)
+    }
+
+    // MARK: - markNotificationRead
+
+    @Test("markNotificationRead clears notification on session")
+    func markNotificationReadClears() {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "agent",
+            workspacePath: "/project"
+        ))
+        state.ingestNotification(payload: MessagePayload(
+            message: "Alert",
+            workspacePath: "/project",
+            terminal: nil
+        ))
+        let sessionId = state.sessions[0].id
+        #expect(state.sessions[0].hasUnreadNotification == true)
+
+        state.markNotificationRead(sessionId: sessionId)
+
+        #expect(state.sessions[0].hasUnreadNotification == false)
+        #expect(state.sessions[0].notificationMessage == nil)
+    }
+
+    @Test("markNotificationRead is a no-op for unknown session ID")
+    func markNotificationReadUnknownId() {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: makeInfo(command: "agent"))
+
+        // Should not crash or affect anything
+        state.markNotificationRead(sessionId: UUID())
+
+        #expect(state.sessions[0].hasUnreadNotification == false)
+    }
+
+    @Test("dismissAllDisconnected removes notification-only sessions")
+    func dismissAllDisconnectedRemovesNotificationOnlySessions() {
+        let state = SessionState()
+        // Create a notification-only session (no matching session)
+        state.ingestNotification(payload: MessagePayload(
+            message: "Orphan notification",
+            workspacePath: "/orphan",
+            terminal: nil
+        ))
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].isActive == false)
+
+        state.dismissAllDisconnected()
+
+        #expect(state.sessions.isEmpty)
     }
 
     // MARK: - Integration scenarios

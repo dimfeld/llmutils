@@ -247,7 +247,8 @@ final class ThrowingResumeGuard: @unchecked Sendable {
                 planId: 42,
                 planTitle: "Example plan",
                 workspacePath: "/tmp/workspace",
-                gitRemote: nil))
+                gitRemote: nil,
+                terminal: nil))
             if let connId = state.sessions.first?.connectionId {
                 state.appendMessage(connectionId: connId, message: MessageFormatter.format(
                     tunnelMessage: .structured(message: .agentSessionStart(AgentSessionStartPayload(

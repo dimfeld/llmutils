@@ -64,12 +64,11 @@ struct TimGUIApp: App {
         guard self.server == nil, !self.isStartingServer else { return }
         self.isStartingServer = true
         defer { self.isStartingServer = false }
-        let appState = self.appState
         let sessionState = self.sessionState
         let newServer = LocalHTTPServer(
             port: 8123,
             handler: { payload in
-                appState.ingest(payload)
+                sessionState.ingestNotification(payload: payload)
             },
             wsHandler: { event in
                 switch event {

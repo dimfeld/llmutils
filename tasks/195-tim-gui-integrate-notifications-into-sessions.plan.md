@@ -7,12 +7,12 @@ goal: "Unify notifications and sessions into a single view: notifications match
 id: 195
 uuid: a2d40d96-fa91-4a18-a761-2c5ef235975b
 generatedBy: agent
-status: pending
+status: in_progress
 priority: medium
 planGeneratedAt: 2026-02-16T03:35:13.313Z
 promptsGeneratedAt: 2026-02-16T03:35:13.313Z
 createdAt: 2026-02-15T04:05:01.637Z
-updatedAt: 2026-02-16T03:35:13.313Z
+updatedAt: 2026-02-16T04:11:37.536Z
 tasks:
   - title: Add terminal info to TypeScript headless protocol
     done: false

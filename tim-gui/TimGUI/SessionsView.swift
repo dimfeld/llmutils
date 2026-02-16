@@ -367,7 +367,8 @@ struct SessionMessageView: View {
                     planId: 169,
                     planTitle: "Add WebSocket support",
                     workspacePath: "/Users/dev/projects/myapp",
-                    gitRemote: nil
+                    gitRemote: nil,
+                    terminal: nil
                 )
             )
             if let connId = state.sessions.first?.connectionId {
