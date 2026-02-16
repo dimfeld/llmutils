@@ -12,10 +12,10 @@ priority: medium
 planGeneratedAt: 2026-02-16T03:35:13.313Z
 promptsGeneratedAt: 2026-02-16T03:35:13.313Z
 createdAt: 2026-02-15T04:05:01.637Z
-updatedAt: 2026-02-16T04:11:37.536Z
+updatedAt: 2026-02-16T04:56:32.982Z
 tasks:
   - title: Add terminal info to TypeScript headless protocol
-    done: false
+    done: true
     description: "Add `terminalPaneId?: string` and `terminalType?: string` to
       `HeadlessSessionInfo` and `HeadlessSessionInfoMessage` in
       `src/logging/headless_protocol.ts`. In `src/tim/headless.ts`, update
@@ -25,7 +25,7 @@ tasks:
       omitted when not."
   - title: Decode terminal info in Swift session models and add notification
       properties
-    done: false
+    done: true
     description: "In `SessionModels.swift`: add `terminal: TerminalPayload?` to
       `SessionInfoPayload`; add `terminalPaneId` and `terminalType` to
       `HeadlessMessage.CodingKeys`; in the `session_info` decoding case, decode
@@ -38,7 +38,7 @@ tasks:
       and a test in `SessionStateTests.swift` that `addSession` populates the
       terminal field."
   - title: Implement notification matching in SessionState
-    done: false
+    done: true
     description: "Add `ingestNotification(payload: MessagePayload)` to
       `SessionState.swift`. Match logic: (1) find session by matching
       `terminal.paneId` if both notification and session have one, (2) fall back
@@ -90,6 +90,19 @@ tasks:
       var appState`; remove `appState` from `ContentView` instantiation. Update
       the preview at the bottom of `ContentView.swift` to match the new
       signature. Delete `AppStateTests.swift` since `AppState` is removed."
+changedFiles:
+  - src/logging/headless_adapter.test.ts
+  - src/logging/headless_adapter.ts
+  - src/logging/headless_protocol.ts
+  - src/tim/headless.test.ts
+  - src/tim/headless.ts
+  - tim-gui/TimGUI/ContentView.swift
+  - tim-gui/TimGUI/SessionModels.swift
+  - tim-gui/TimGUI/SessionState.swift
+  - tim-gui/TimGUI/SessionsView.swift
+  - tim-gui/TimGUI/TimGUIApp.swift
+  - tim-gui/TimGUITests/SessionModelTests.swift
+  - tim-gui/TimGUITests/SessionStateTests.swift
 tags: []
 ---
 
@@ -389,3 +402,39 @@ The `HeadlessAdapter` in `src/logging/headless_adapter.ts` connects via WebSocke
 6. Right-click a defunct session and verify the "Dismiss" option appears.
 7. Click the pane activation button and verify WezTerm switches to the correct pane.
 8. Click "Clear Disconnected" and verify all defunct sessions are removed.
+
+## Current Progress
+### Current State
+- Tasks 1-3 are complete (protocol, models, notification matching logic). The backend and data layer are done.
+- Tasks 4-6 (UI changes) remain: blue dot indicator, pane button, context menu, tab removal.
+- AppState is still instantiated in TimGUIApp but notifications now route through SessionState. The notifications tab shows stale data (expected intermediate state until Task 6 removes it).
+
+### Completed (So Far)
+- Task 1: TypeScript headless protocol includes `terminalPaneId`/`terminalType` from `WEZTERM_PANE` env var. `HeadlessSessionInfoMessage` now extends `HeadlessSessionInfo` to prevent field sync bugs. Spread used in adapter handshake.
+- Task 2: Swift `SessionInfoPayload` and `SessionItem` have `terminal: TerminalPayload?`, `hasUnreadNotification`, `notificationMessage`. Decoding constructs `TerminalPayload` from flat `terminalPaneId`/`terminalType` fields.
+- Task 3: `SessionState.ingestNotification(payload:)` matches by pane ID first, workspace path fallback (only when no pane ID). `markNotificationRead` clears flag but preserves message. `addSession` reconciles notification-only sessions. macOS system notifications triggered via `UNNotificationRequest`.
+
+### Remaining
+- Task 4: Blue dot indicator in SessionRowView, notification subtitle for notification-only sessions, auto-clear on selection
+- Task 5: Extract `activateTerminalPane` to shared utility, pane activation button, context menu for dismiss
+- Task 6: Remove notifications tab, AppViewMode, NotificationsView, AppState, delete AppStateTests.swift
+
+### Next Iteration Guidance
+- Tasks 4-6 are all UI/SwiftUI changes and can likely be done together since they all modify SessionsView.swift and ContentView.swift.
+- Task 5 needs to extract `activateTerminalPane` from `NotificationsView` before Task 6 deletes it.
+- Task 6 should be done last since it removes code that Tasks 4-5 reference.
+
+### Decisions / Changes
+- `HeadlessSessionInfoMessage` extends `HeadlessSessionInfo` (instead of duplicating fields) to prevent field-addition bugs.
+- `markNotificationRead` only clears `hasUnreadNotification`, NOT `notificationMessage` - notification-only sessions need to keep their message as display text.
+- When notification has a pane ID but no pane match exists, a notification-only session is created (no workspace fallback) to enable correct reconciliation when the real session arrives.
+- `SessionItem.connectionId` was changed from `let` to `var` to support reconciliation.
+- Notification-only sessions are identified by empty `command` field.
+
+### Lessons Learned
+- `HeadlessAdapter.prependHandshakeMessages()` manually listed fields instead of spreading - new protocol fields were silently dropped. Using spread (`{ type: 'session_info', ...this.sessionInfo }`) prevents this. Always check the serialization layer, not just the builder.
+- Race condition handling: when notifications have pane IDs, workspace fallback can bind to the wrong session. Pane-identified notifications should create notification-only sessions for reconciliation rather than falling back to workspace matching.
+- Clearing notification message on read would break notification-only sessions that use the message as their display subtitle.
+
+### Risks / Blockers
+- Pre-existing flaky `WebSocketTests/rsvBitRejection` test fails intermittently - unrelated to this work but leaves test suite not fully green.
