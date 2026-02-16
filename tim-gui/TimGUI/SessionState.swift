@@ -296,6 +296,13 @@ final class SessionState {
         }
     }
 
+    func handleTerminalIconTap(sessionId: UUID) {
+        guard let session = sessions.first(where: { $0.id == sessionId }) else { return }
+        if session.hasUnreadNotification {
+            self.markNotificationRead(sessionId: sessionId)
+        }
+    }
+
     private func notificationText(for tunnelMessage: TunnelMessage) -> String? {
         guard case let .structured(message) = tunnelMessage else { return nil }
 

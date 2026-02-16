@@ -1170,6 +1170,52 @@ struct SessionStateTests {
         #expect(sessionA.hasUnreadNotification == false)
     }
 
+    @Test("handleTerminalIconTap clears unread without changing selection")
+    func handleTerminalIconTapClearsUnread() throws {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
+            command: "agent",
+            workspacePath: "/project/a",
+            terminal: TerminalPayload(type: "wezterm", paneId: "1")))
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
+            command: "review",
+            workspacePath: "/project/b",
+            terminal: TerminalPayload(type: "wezterm", paneId: "2")))
+
+        let selectedBeforeTap = try #require(state.selectedSessionId)
+        state.ingestNotification(payload: MessagePayload(
+            message: "Alert A",
+            workspacePath: "/project/a",
+            terminal: nil))
+
+        let sessionA = try #require(state.sessions.first { $0.workspacePath == "/project/a" })
+        #expect(sessionA.hasUnreadNotification == true)
+
+        state.handleTerminalIconTap(sessionId: sessionA.id)
+
+        #expect(sessionA.hasUnreadNotification == false)
+        #expect(state.selectedSessionId == selectedBeforeTap)
+    }
+
+    @Test("handleTerminalIconTap is a no-op for unknown session ID")
+    func handleTerminalIconTapUnknownId() {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
+            command: "agent",
+            workspacePath: "/project",
+            terminal: TerminalPayload(type: "wezterm", paneId: "1")))
+
+        state.ingestNotification(payload: MessagePayload(
+            message: "Alert",
+            workspacePath: "/project",
+            terminal: nil))
+        #expect(state.sessions[0].hasUnreadNotification == true)
+
+        state.handleTerminalIconTap(sessionId: UUID())
+
+        #expect(state.sessions[0].hasUnreadNotification == true)
+    }
+
     @Test("Notification for already-selected session sets unread flag")
     func ingestNotificationForSelectedSessionSetsFlag() {
         let state = SessionState()

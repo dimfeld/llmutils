@@ -43,6 +43,7 @@ struct SessionListView: View {
                 SessionRowView(
                     session: session,
                     onTap: { self.sessionState.handleSessionListItemTap(sessionId: session.id) },
+                    onTerminalTap: { self.sessionState.handleTerminalIconTap(sessionId: session.id) },
                     onDismiss: { self.sessionState.dismissSession(id: session.id) })
             }
             .toolbar {
@@ -64,6 +65,7 @@ struct SessionListView: View {
 struct SessionRowView: View {
     let session: SessionItem
     let onTap: () -> Void
+    let onTerminalTap: () -> Void
     let onDismiss: () -> Void
 
     var body: some View {
@@ -102,7 +104,10 @@ struct SessionRowView: View {
             Spacer()
 
             if self.session.terminal?.type == "wezterm" {
-                Button(action: { activateTerminalPane(self.session.terminal!) }) {
+                Button(action: {
+                    self.onTerminalTap()
+                    activateTerminalPane(self.session.terminal!)
+                }) {
                     Image(systemName: "terminal")
                         .foregroundStyle(.secondary)
                 }
