@@ -293,6 +293,72 @@ describe('HeadlessAdapter', () => {
     await adapter.destroy();
   }, 10000);
 
+  it('includes terminal metadata in websocket session_info handshake when provided', async () => {
+    const server = await createWebSocketServer();
+    serversToClose.push(server);
+
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      `ws://127.0.0.1:${server.port}/tim-agent`,
+      {
+        command: 'agent',
+        terminalPaneId: '9',
+        terminalType: 'wezterm',
+      },
+      wrapped,
+      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+    );
+
+    adapter.log('connect-primer');
+    await waitFor(() => server.messages.some((message) => message.type === 'session_info'));
+
+    const sessionInfo = server.messages.find(
+      (message): message is Extract<HeadlessMessage, { type: 'session_info' }> =>
+        message.type === 'session_info'
+    );
+    expect(sessionInfo).toBeDefined();
+    expect(sessionInfo).toMatchObject({
+      type: 'session_info',
+      command: 'agent',
+      terminalPaneId: '9',
+      terminalType: 'wezterm',
+    });
+
+    await adapter.destroy();
+  });
+
+  it('omits terminal metadata in websocket session_info handshake when not provided', async () => {
+    const server = await createWebSocketServer();
+    serversToClose.push(server);
+
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      `ws://127.0.0.1:${server.port}/tim-agent`,
+      {
+        command: 'agent',
+      },
+      wrapped,
+      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+    );
+
+    adapter.log('connect-primer');
+    await waitFor(() => server.messages.some((message) => message.type === 'session_info'));
+
+    const sessionInfo = server.messages.find(
+      (message): message is Extract<HeadlessMessage, { type: 'session_info' }> =>
+        message.type === 'session_info'
+    );
+    expect(sessionInfo).toBeDefined();
+    expect(sessionInfo).toMatchObject({
+      type: 'session_info',
+      command: 'agent',
+    });
+    expect(sessionInfo).not.toHaveProperty('terminalPaneId');
+    expect(sessionInfo).not.toHaveProperty('terminalType');
+
+    await adapter.destroy();
+  });
+
   it('streams structured messages over websocket output envelopes', async () => {
     const server = await createWebSocketServer();
     serversToClose.push(server);

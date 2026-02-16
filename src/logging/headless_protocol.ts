@@ -10,15 +10,8 @@ export interface HeadlessSessionInfo {
   terminalType?: string;
 }
 
-export interface HeadlessSessionInfoMessage {
+export interface HeadlessSessionInfoMessage extends HeadlessSessionInfo {
   type: 'session_info';
-  command: string;
-  planId?: number;
-  planTitle?: string;
-  workspacePath?: string;
-  gitRemote?: string;
-  terminalPaneId?: string;
-  terminalType?: string;
 }
 
 export interface HeadlessOutputMessage {

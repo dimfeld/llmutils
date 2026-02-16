@@ -387,11 +387,7 @@ export class HeadlessAdapter implements LoggerAdapter {
 
     const sessionMessage: HeadlessSessionInfoMessage = {
       type: 'session_info',
-      command: this.sessionInfo.command,
-      planId: this.sessionInfo.planId,
-      planTitle: this.sessionInfo.planTitle,
-      workspacePath: this.sessionInfo.workspacePath,
-      gitRemote: this.sessionInfo.gitRemote,
+      ...this.sessionInfo,
     };
 
     this.queue = [];
