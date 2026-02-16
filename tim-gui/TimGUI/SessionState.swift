@@ -163,19 +163,16 @@ final class SessionState {
     }
 
     func ingestNotification(payload: MessagePayload) {
-        // Try to match by terminal pane ID first
+        // Try to match by terminal pane ID first, then fall back to workspace.
         var matchedSession: SessionItem?
         if let notificationPaneId = payload.terminal?.paneId {
             matchedSession = sessions.first { session in
                 session.terminal?.paneId == notificationPaneId
             }
-            // When the notification has a pane ID but no existing session matches it,
-            // skip workspace fallback and create a notification-only session. This avoids
-            // incorrectly attaching to an older session for the same workspace path.
-            // The notification-only session will be reconciled later when the real
-            // session_info arrives with the matching pane ID via addSession().
-        } else if !payload.workspacePath.isEmpty {
-            // Only fall back to workspace path match when there is NO pane ID
+        }
+
+        if matchedSession == nil, !payload.workspacePath.isEmpty {
+            // Fall back to workspace path when pane lookup does not find a match.
             matchedSession = sessions.first { session in
                 session.workspacePath == payload.workspacePath
             }
