@@ -2,7 +2,6 @@ import CryptoKit
 import Foundation
 import Network
 import Testing
-
 @testable import TimGUI
 
 private struct WaitTimeoutError: Error {
@@ -17,8 +16,8 @@ private func waitUntil(
     timeout: Duration = .seconds(2),
     interval: Duration = .milliseconds(10),
     _ message: String = "Condition not met within timeout",
-    condition: @Sendable () -> Bool
-) async throws {
+    condition: @Sendable () -> Bool) async throws
+{
     let deadline = ContinuousClock.now + timeout
     while ContinuousClock.now < deadline {
         if condition() { return }
@@ -37,15 +36,14 @@ struct WebSocketTests {
         let connection = NWConnection(
             host: "127.0.0.1",
             port: NWEndpoint.Port(rawValue: port)!,
-            using: .tcp
-        )
+            using: .tcp)
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
                     continuation.resume()
-                case .failed(let error):
+                case let .failed(error):
                     continuation.resume(throwing: error)
                 default:
                     break
@@ -56,7 +54,7 @@ struct WebSocketTests {
         connection.stateUpdateHandler = nil
 
         // Send WebSocket upgrade request
-        let key = "dGhlIHNhbXBsZSBub25jZQ=="  // standard test key
+        let key = "dGhlIHNhbXBsZSBub25jZQ==" // standard test key
         let upgradeRequest = [
             "GET /tim-agent HTTP/1.1",
             "Host: 127.0.0.1:\(port)",
@@ -97,8 +95,8 @@ struct WebSocketTests {
 
     /// Sends a masked WebSocket text frame (client -> server frames must be masked per RFC 6455).
     private static func sendTextFrame(
-        _ text: String, on connection: NWConnection
-    ) async throws {
+        _ text: String, on connection: NWConnection) async throws
+    {
         let payload = Data(text.utf8)
         var frame = Data()
 
@@ -163,8 +161,8 @@ struct WebSocketTests {
 
     /// Sends a raw masked WebSocket frame with the given FIN bit, opcode, and payload.
     private static func sendRawFrame(
-        fin: Bool, opcode: UInt8, payload: Data, on connection: NWConnection
-    ) async throws {
+        fin: Bool, opcode: UInt8, payload: Data, on connection: NWConnection) async throws
+    {
         var frame = Data()
 
         // Byte 0: FIN bit + opcode
@@ -208,8 +206,8 @@ struct WebSocketTests {
     /// Sends a raw masked WebSocket frame header that claims a large payload length,
     /// but without actually sending that much data. Used for oversize frame rejection tests.
     private static func sendOversizeFrameHeader(
-        opcode: UInt8, claimedLength: UInt64, on connection: NWConnection
-    ) async throws {
+        opcode: UInt8, claimedLength: UInt64, on connection: NWConnection) async throws
+    {
         var frame = Data()
 
         // Byte 0: FIN=1 + opcode
@@ -246,8 +244,8 @@ struct WebSocketTests {
 
     /// Reads and parses a single WebSocket frame sent by the server (unmasked).
     private static func readServerFrame(
-        on connection: NWConnection, timeout: Duration = .seconds(2)
-    ) async throws -> ServerFrame {
+        on connection: NWConnection, timeout: Duration = .seconds(2)) async throws -> ServerFrame
+    {
         try await withThrowingTaskGroup(of: ServerFrame.self) { group in
             group.addTask {
                 // Read 2-byte header
@@ -274,8 +272,8 @@ struct WebSocketTests {
                 // Server frames are NOT masked (mask bit should be 0)
                 let payload =
                     payloadLength > 0
-                    ? try await readBytes(count: Int(payloadLength), on: connection)
-                    : Data()
+                        ? try await readBytes(count: Int(payloadLength), on: connection)
+                        : Data()
 
                 return ServerFrame(fin: fin, opcode: opcode, payload: payload)
             }
@@ -353,8 +351,8 @@ struct WebSocketTests {
         defer { connection.cancel() }
 
         let sessionInfoJson = """
-            {"type":"session_info","command":"agent","planId":42,"planTitle":"Test Plan","workspacePath":"/tmp/ws"}
-            """
+        {"type":"session_info","command":"agent","planId":42,"planTitle":"Test Plan","workspacePath":"/tmp/ws"}
+        """
         try await Self.sendTextFrame(sessionInfoJson, on: connection)
 
         try await waitUntil("sessionInfo event received") {
@@ -362,7 +360,7 @@ struct WebSocketTests {
         }
 
         let event = received.withLock { $0 }
-        guard case .sessionInfo(_, let info) = event else {
+        guard case let .sessionInfo(_, info) = event else {
             Issue.record("Expected sessionInfo event, got \(String(describing: event))")
             return
         }
@@ -393,8 +391,8 @@ struct WebSocketTests {
 
         // Then send an output message
         let outputJson = """
-            {"type":"output","seq":1,"message":{"type":"log","args":["hello","world"]}}
-            """
+        {"type":"output","seq":1,"message":{"type":"log","args":["hello","world"]}}
+        """
         try await Self.sendTextFrame(outputJson, on: connection)
 
         try await waitUntil("2 events received") {
@@ -404,12 +402,12 @@ struct WebSocketTests {
         let events = received.withLock { $0 }
         #expect(events.count == 2)
 
-        guard case .output(_, let seq, let tunnelMsg) = events[1] else {
+        guard case let .output(_, seq, tunnelMsg) = events[1] else {
             Issue.record("Expected output event, got \(events[1])")
             return
         }
         #expect(seq == 1)
-        guard case .args(let type, let args) = tunnelMsg else {
+        guard case let .args(type, args) = tunnelMsg else {
             Issue.record("Expected args tunnel message")
             return
         }
@@ -457,8 +455,7 @@ struct WebSocketTests {
             handler: { @MainActor payload in
                 httpReceived.withLock { $0 = payload }
             },
-            wsHandler: { _ in }
-        )
+            wsHandler: { _ in })
         try await server.start()
         defer { server.stop() }
 
@@ -467,13 +464,13 @@ struct WebSocketTests {
         defer { wsConnection.cancel() }
 
         // Now make an HTTP POST request
-        let url = URL(string: "http://127.0.0.1:\(server.boundPort)/messages")!
+        let url = try #require(URL(string: "http://127.0.0.1:\(server.boundPort)/messages"))
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = Data("""
-            {"message":"test notification","workspacePath":"/tmp/project"}
-            """.utf8)
+        {"message":"test notification","workspacePath":"/tmp/project"}
+        """.utf8)
 
         let (data, response) = try await URLSession.shared.data(for: request)
         let httpResponse = try #require(response as? HTTPURLResponse)
@@ -551,7 +548,7 @@ struct WebSocketTests {
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
             switch event {
-            case .sessionInfo(let id, _):
+            case let .sessionInfo(id, _):
                 connectionIds.withLock { $0.insert(id) }
             default:
                 break
@@ -614,16 +611,16 @@ struct WebSocketTests {
         let events = received.withLock { $0 }
         #expect(events.count == 2)
 
-        guard case .output(_, let seq, let tunnelMsg) = events[1] else {
+        guard case let .output(_, seq, tunnelMsg) = events[1] else {
             Issue.record("Expected output event")
             return
         }
         #expect(seq == 1)
-        guard case .structured(let structured) = tunnelMsg else {
+        guard case let .structured(structured) = tunnelMsg else {
             Issue.record("Expected structured tunnel message")
             return
         }
-        guard case .agentSessionStart(let p) = structured else {
+        guard case let .agentSessionStart(p) = structured else {
             Issue.record("Expected agentSessionStart, got \(structured)")
             return
         }
@@ -661,8 +658,8 @@ struct WebSocketTests {
         // Frame 2: FIN=0, opcode=continuation (0x0)
         // Frame 3: FIN=1, opcode=continuation (0x0) — end of fragment
         let fullMessage = """
-            {"type":"output","seq":1,"message":{"type":"log","args":["fragmented","message"]}}
-            """
+        {"type":"output","seq":1,"message":{"type":"log","args":["fragmented","message"]}}
+        """
         let messageBytes = Data(fullMessage.utf8)
         let chunkSize = messageBytes.count / 3
         let chunk1 = messageBytes[0..<chunkSize]
@@ -687,12 +684,12 @@ struct WebSocketTests {
         // Should have sessionInfo + the reassembled output message
         #expect(events.count == 2, "Expected 2 events (sessionInfo + output), got \(events.count)")
 
-        guard case .output(_, let seq, let tunnelMsg) = events[1] else {
+        guard case let .output(_, seq, tunnelMsg) = events[1] else {
             Issue.record("Expected output event, got \(events[1])")
             return
         }
         #expect(seq == 1)
-        guard case .args(let type, let args) = tunnelMsg else {
+        guard case let .args(type, args) = tunnelMsg else {
             Issue.record("Expected args tunnel message")
             return
         }
@@ -848,16 +845,15 @@ struct WebSocketTests {
         defer { server.stop() }
 
         // Connect raw TCP
-        let connection = NWConnection(
+        let connection = try NWConnection(
             host: "127.0.0.1",
-            port: NWEndpoint.Port(rawValue: server.boundPort)!,
-            using: .tcp
-        )
+            port: #require(NWEndpoint.Port(rawValue: server.boundPort)),
+            using: .tcp)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.stateUpdateHandler = { state in
                 switch state {
                 case .ready: continuation.resume()
-                case .failed(let error): continuation.resume(throwing: error)
+                case let .failed(error): continuation.resume(throwing: error)
                 default: break
                 }
             }
@@ -880,12 +876,12 @@ struct WebSocketTests {
 
         // Build a masked text frame with a session_info message
         let sessionInfoJson = """
-            {"type":"session_info","command":"agent","planId":99,"planTitle":"Leftover Test"}
-            """
+        {"type":"session_info","command":"agent","planId":99,"planTitle":"Leftover Test"}
+        """
         let payload = Data(sessionInfoJson.utf8)
         var frame = Data()
-        frame.append(0x81)  // FIN=1, opcode=text
-        frame.append(UInt8(payload.count) | 0x80)  // MASK=1 + length
+        frame.append(0x81) // FIN=1, opcode=text
+        frame.append(UInt8(payload.count) | 0x80) // MASK=1 + length
         let maskKey: [UInt8] = [0x37, 0xFA, 0x21, 0x3D]
         frame.append(contentsOf: maskKey)
         for (i, byte) in payload.enumerated() {
@@ -898,8 +894,7 @@ struct WebSocketTests {
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.send(content: combined, completion: .contentProcessed { error in
-                if let error { continuation.resume(throwing: error) }
-                else { continuation.resume() }
+                if let error { continuation.resume(throwing: error) } else { continuation.resume() }
             })
         }
 
@@ -910,7 +905,7 @@ struct WebSocketTests {
 
         // Verify the session_info was received despite being in the same TCP segment
         let events = received.withLock { $0 }
-        guard case .sessionInfo(_, let info) = events.first else {
+        guard case let .sessionInfo(_, info) = events.first else {
             Issue.record("Expected sessionInfo event from immediate frame, got \(events)")
             return
         }
@@ -922,8 +917,8 @@ struct WebSocketTests {
 
     /// Sends a raw UNMASKED WebSocket frame (violates RFC 6455 for client frames).
     private static func sendUnmaskedFrame(
-        fin: Bool, opcode: UInt8, payload: Data, on connection: NWConnection
-    ) async throws {
+        fin: Bool, opcode: UInt8, payload: Data, on connection: NWConnection) async throws
+    {
         var frame = Data()
 
         // Byte 0: FIN bit + opcode
@@ -1230,8 +1225,8 @@ struct WebSocketTests {
 
     /// Sends a raw masked WebSocket frame with a custom first byte (for setting RSV bits).
     private static func sendRawFrameWithByte0(
-        byte0: UInt8, payload: Data, on connection: NWConnection
-    ) async throws {
+        byte0: UInt8, payload: Data, on connection: NWConnection) async throws
+    {
         var frame = Data()
         frame.append(byte0)
 
@@ -1483,8 +1478,7 @@ struct WebSocketTests {
         }
         #expect(
             outputIndex < disconnectIndex,
-            "Output event must be processed before disconnect event, but got: \(receivedEvents)"
-        )
+            "Output event must be processed before disconnect event, but got: \(receivedEvents)")
     }
 
     @Test("Oversize frame is rejected with 1009 close and disconnect")
@@ -1616,9 +1610,9 @@ struct WebSocketTests {
 
         // Send a close frame with valid close code (1000) but invalid UTF-8 reason bytes
         var payload = Data()
-        payload.append(UInt8((1000 >> 8) & 0xFF))  // close code high byte
-        payload.append(UInt8(1000 & 0xFF))          // close code low byte
-        payload.append(contentsOf: [0xFF, 0xFE] as [UInt8])  // invalid UTF-8 reason
+        payload.append(UInt8((1000 >> 8) & 0xFF)) // close code high byte
+        payload.append(UInt8(1000 & 0xFF)) // close code low byte
+        payload.append(contentsOf: [0xFF, 0xFE] as [UInt8]) // invalid UTF-8 reason
         try await Self.sendRawFrame(
             fin: true, opcode: 0x8, payload: payload, on: connection)
 
@@ -1777,16 +1771,16 @@ struct ProcessLaunchTests {
 extension WebSocketEvent: @retroactive Equatable {
     public static func == (lhs: WebSocketEvent, rhs: WebSocketEvent) -> Bool {
         switch (lhs, rhs) {
-        case (.disconnected(let a), .disconnected(let b)):
-            return a == b
-        case (.sessionInfo(let a, _), .sessionInfo(let b, _)):
-            return a == b
-        case (.replayStart(let a), .replayStart(let b)):
-            return a == b
-        case (.replayEnd(let a), .replayEnd(let b)):
-            return a == b
+        case let (.disconnected(a), .disconnected(b)):
+            a == b
+        case let (.sessionInfo(a, _), .sessionInfo(b, _)):
+            a == b
+        case let (.replayStart(a), .replayStart(b)):
+            a == b
+        case let (.replayEnd(a), .replayEnd(b)):
+            a == b
         default:
-            return false
+            false
         }
     }
 }

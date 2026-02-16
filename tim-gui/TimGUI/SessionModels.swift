@@ -77,32 +77,30 @@ struct SessionMessage: Identifiable, Sendable {
         if let title { parts.append(title) }
         if let body {
             switch body {
-            case .text(let s), .monospaced(let s):
+            case let .text(s), let .monospaced(s):
                 parts.append(s)
-            case .todoList(let items):
+            case let .todoList(items):
                 for item in items {
-                    let indicator: String
-                    switch item.status {
-                    case .completed: indicator = "[x]"
-                    case .inProgress: indicator = "[>]"
-                    case .blocked: indicator = "[!]"
-                    case .pending: indicator = "[ ]"
-                    case .unknown: indicator = "[?]"
+                    let indicator = switch item.status {
+                    case .completed: "[x]"
+                    case .inProgress: "[>]"
+                    case .blocked: "[!]"
+                    case .pending: "[ ]"
+                    case .unknown: "[?]"
                     }
                     parts.append("\(indicator) \(item.label)")
                 }
-            case .fileChanges(let items):
+            case let .fileChanges(items):
                 for item in items {
-                    let indicator: String
-                    switch item.kind {
-                    case .added: indicator = "+"
-                    case .updated: indicator = "~"
-                    case .removed: indicator = "-"
-                    case .unknown: indicator = "?"
+                    let indicator = switch item.kind {
+                    case .added: "+"
+                    case .updated: "~"
+                    case .removed: "-"
+                    case .unknown: "?"
                     }
                     parts.append("\(indicator) \(item.path)")
                 }
-            case .keyValuePairs(let pairs):
+            case let .keyValuePairs(pairs):
                 for pair in pairs {
                     parts.append("\(pair.key): \(pair.value)")
                 }
@@ -146,8 +144,8 @@ final class SessionItem: Identifiable {
         forceScrollToBottomVersion: Int = 0,
         terminal: TerminalPayload? = nil,
         hasUnreadNotification: Bool = false,
-        notificationMessage: String? = nil
-    ) {
+        notificationMessage: String? = nil)
+    {
         self.id = id
         self.connectionId = connectionId
         self.command = command
@@ -470,7 +468,7 @@ struct PromptChoiceConfigPayload: Sendable, Decodable {
         if let s = try? container.decode(String.self, forKey: .value) {
             self.value = s
         } else if let n = try? container.decode(Double.self, forKey: .value) {
-            if n == n.rounded() && abs(n) < 1e15 {
+            if n == n.rounded(), abs(n) < 1e15 {
                 self.value = String(Int(n))
             } else {
                 self.value = String(n)
@@ -500,7 +498,13 @@ struct PromptConfigPayload: Sendable, Decodable {
         case validationHint
     }
 
-    init(message: String, defaultValue: String? = nil, choices: [PromptChoiceConfigPayload]? = nil, pageSize: Int? = nil, validationHint: String? = nil) {
+    init(
+        message: String,
+        defaultValue: String? = nil,
+        choices: [PromptChoiceConfigPayload]? = nil,
+        pageSize: Int? = nil,
+        validationHint: String? = nil)
+    {
         self.message = message
         self.defaultValue = defaultValue
         self.choices = choices
@@ -515,7 +519,7 @@ struct PromptConfigPayload: Sendable, Decodable {
         if let s = try? container.decode(String.self, forKey: .defaultValue) {
             self.defaultValue = s
         } else if let n = try? container.decode(Double.self, forKey: .defaultValue) {
-            if n == n.rounded() && abs(n) < 1e15 {
+            if n == n.rounded(), abs(n) < 1e15 {
                 self.defaultValue = String(Int(n))
             } else {
                 self.defaultValue = String(n)
@@ -556,17 +560,17 @@ private struct AnyJSON: Decodable {
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         if container.decodeNil() {
-            value = NSNull()
+            self.value = NSNull()
         } else if let b = try? container.decode(Bool.self) {
-            value = b
+            self.value = b
         } else if let n = try? container.decode(Double.self) {
-            value = n
+            self.value = n
         } else if let s = try? container.decode(String.self) {
-            value = s
+            self.value = s
         } else if let arr = try? container.decode([AnyJSON].self) {
-            value = arr.map { $0.value }
+            self.value = arr.map(\.value)
         } else if let dict = try? container.decode([String: AnyJSON].self) {
-            value = dict.mapValues { $0.value }
+            self.value = dict.mapValues { $0.value }
         } else {
             throw DecodingError.typeMismatch(
                 Any.self,
@@ -584,15 +588,15 @@ private struct RawJSONString: Decodable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         if let s = try? container.decode(String.self) {
-            stringValue = s
+            self.stringValue = s
         } else if let n = try? container.decode(Double.self) {
-            if n == n.rounded() && abs(n) < 1e15 {
-                stringValue = String(Int(n))
+            if n == n.rounded(), abs(n) < 1e15 {
+                self.stringValue = String(Int(n))
             } else {
-                stringValue = String(n)
+                self.stringValue = String(n)
             }
         } else if let b = try? container.decode(Bool.self) {
-            stringValue = String(b)
+            self.stringValue = String(b)
         } else {
             // Re-decode as AnyJSON and serialize to JSON string
             let anyValue = try AnyJSON(from: decoder)
@@ -600,9 +604,9 @@ private struct RawJSONString: Decodable, Sendable {
                 withJSONObject: anyValue.value, options: [.sortedKeys]),
                 let str = String(data: data, encoding: .utf8)
             {
-                stringValue = str
+                self.stringValue = str
             } else {
-                stringValue = "<unserializable>"
+                self.stringValue = "<unserializable>"
             }
         }
     }
@@ -622,49 +626,49 @@ extension StructuredMessagePayload: Decodable {
     private enum CodingKeys: String, CodingKey {
         case type
         case timestamp
-        // agent_session_start
+        /// agent_session_start
         case executor, mode, planId, sessionId, threadId, tools, mcpServers
-        // agent_session_end
+        /// agent_session_end
         case success, durationMs, costUsd, turns, summary
-        // agent_iteration_start
+        /// agent_iteration_start
         case iterationNumber, taskTitle, taskDescription
-        // agent_step_start/end
+        /// agent_step_start/end
         case phase, stepNumber, attempt, message
-        // llm_thinking/response
+        /// llm_thinking/response
         case text, isUserRequest
-        // llm_tool_use/result
+        /// llm_tool_use/result
         case toolName, inputSummary, resultSummary, input, result
-        // todo_update
+        /// todo_update
         case items
-        // file_write/edit
+        /// file_write/edit
         case path, lineCount, diff
-        // file_change_summary
+        /// file_change_summary
         case changes
-        // command_exec/result
+        /// command_exec/result
         case command, cwd, exitCode, stdout, stderr
         // review
         case issues, recommendations, actionItems
         case verdict, fixInstructions
-        // workflow
-        // failure_report
+        /// workflow
+        /// failure_report
         case requirements, problems, solutions, sourceAgent
-        // task_completion
+        /// task_completion
         case planComplete
-        // execution_summary
+        /// execution_summary
         case planTitle
-        // token_usage
+        /// token_usage
         case inputTokens, cachedInputTokens, outputTokens, reasoningTokens, totalTokens
-        // input_required
+        /// input_required
         case prompt
-        // prompt_request
+        /// prompt_request
         case requestId, promptType, promptConfig, timeoutMs
-        // prompt_answered
+        /// prompt_answered
         case source, value
-        // plan_discovery
+        /// plan_discovery
         case title
-        // workspace_info
+        /// workspace_info
         case workspaceId, planFile
-        // llm_status
+        /// llm_status
         case status, detail
     }
 
@@ -675,122 +679,122 @@ extension StructuredMessagePayload: Decodable {
 
         switch type {
         case "agent_session_start":
-            self = .agentSessionStart(AgentSessionStartPayload(
-                executor: try container.decodeIfPresent(String.self, forKey: .executor),
-                mode: try container.decodeIfPresent(String.self, forKey: .mode),
-                planId: try container.decodeIfPresent(Int.self, forKey: .planId),
-                sessionId: try container.decodeIfPresent(String.self, forKey: .sessionId),
-                threadId: try container.decodeIfPresent(String.self, forKey: .threadId),
-                tools: try container.decodeIfPresent([String].self, forKey: .tools),
-                mcpServers: try container.decodeIfPresent([String].self, forKey: .mcpServers),
+            self = try .agentSessionStart(AgentSessionStartPayload(
+                executor: container.decodeIfPresent(String.self, forKey: .executor),
+                mode: container.decodeIfPresent(String.self, forKey: .mode),
+                planId: container.decodeIfPresent(Int.self, forKey: .planId),
+                sessionId: container.decodeIfPresent(String.self, forKey: .sessionId),
+                threadId: container.decodeIfPresent(String.self, forKey: .threadId),
+                tools: container.decodeIfPresent([String].self, forKey: .tools),
+                mcpServers: container.decodeIfPresent([String].self, forKey: .mcpServers),
                 timestamp: timestamp))
 
         case "agent_session_end":
-            self = .agentSessionEnd(AgentSessionEndPayload(
-                success: try container.decode(Bool.self, forKey: .success),
-                sessionId: try container.decodeIfPresent(String.self, forKey: .sessionId),
-                threadId: try container.decodeIfPresent(String.self, forKey: .threadId),
-                durationMs: try container.decodeIfPresent(Double.self, forKey: .durationMs),
-                costUsd: try container.decodeIfPresent(Double.self, forKey: .costUsd),
-                turns: try container.decodeIfPresent(Int.self, forKey: .turns),
-                summary: try container.decodeIfPresent(String.self, forKey: .summary),
+            self = try .agentSessionEnd(AgentSessionEndPayload(
+                success: container.decode(Bool.self, forKey: .success),
+                sessionId: container.decodeIfPresent(String.self, forKey: .sessionId),
+                threadId: container.decodeIfPresent(String.self, forKey: .threadId),
+                durationMs: container.decodeIfPresent(Double.self, forKey: .durationMs),
+                costUsd: container.decodeIfPresent(Double.self, forKey: .costUsd),
+                turns: container.decodeIfPresent(Int.self, forKey: .turns),
+                summary: container.decodeIfPresent(String.self, forKey: .summary),
                 timestamp: timestamp))
 
         case "agent_iteration_start":
-            self = .agentIterationStart(AgentIterationStartPayload(
-                iterationNumber: try container.decode(Int.self, forKey: .iterationNumber),
-                taskTitle: try container.decodeIfPresent(String.self, forKey: .taskTitle),
-                taskDescription: try container.decodeIfPresent(String.self, forKey: .taskDescription),
+            self = try .agentIterationStart(AgentIterationStartPayload(
+                iterationNumber: container.decode(Int.self, forKey: .iterationNumber),
+                taskTitle: container.decodeIfPresent(String.self, forKey: .taskTitle),
+                taskDescription: container.decodeIfPresent(String.self, forKey: .taskDescription),
                 timestamp: timestamp))
 
         case "agent_step_start":
-            self = .agentStepStart(AgentStepStartPayload(
-                phase: try container.decode(String.self, forKey: .phase),
-                executor: try container.decodeIfPresent(String.self, forKey: .executor),
-                stepNumber: try container.decodeIfPresent(Int.self, forKey: .stepNumber),
-                attempt: try container.decodeIfPresent(Int.self, forKey: .attempt),
-                message: try container.decodeIfPresent(String.self, forKey: .message),
+            self = try .agentStepStart(AgentStepStartPayload(
+                phase: container.decode(String.self, forKey: .phase),
+                executor: container.decodeIfPresent(String.self, forKey: .executor),
+                stepNumber: container.decodeIfPresent(Int.self, forKey: .stepNumber),
+                attempt: container.decodeIfPresent(Int.self, forKey: .attempt),
+                message: container.decodeIfPresent(String.self, forKey: .message),
                 timestamp: timestamp))
 
         case "agent_step_end":
-            self = .agentStepEnd(AgentStepEndPayload(
-                phase: try container.decode(String.self, forKey: .phase),
-                success: try container.decode(Bool.self, forKey: .success),
-                summary: try container.decodeIfPresent(String.self, forKey: .summary),
+            self = try .agentStepEnd(AgentStepEndPayload(
+                phase: container.decode(String.self, forKey: .phase),
+                success: container.decode(Bool.self, forKey: .success),
+                summary: container.decodeIfPresent(String.self, forKey: .summary),
                 timestamp: timestamp))
 
         case "llm_thinking":
-            self = .llmThinking(
-                text: try container.decode(String.self, forKey: .text),
+            self = try .llmThinking(
+                text: container.decode(String.self, forKey: .text),
                 timestamp: timestamp)
 
         case "llm_response":
-            self = .llmResponse(
-                text: try container.decode(String.self, forKey: .text),
-                isUserRequest: try container.decodeIfPresent(Bool.self, forKey: .isUserRequest),
+            self = try .llmResponse(
+                text: container.decode(String.self, forKey: .text),
+                isUserRequest: container.decodeIfPresent(Bool.self, forKey: .isUserRequest),
                 timestamp: timestamp)
 
         case "llm_tool_use":
-            self = .llmToolUse(LlmToolUsePayload(
-                toolName: try container.decode(String.self, forKey: .toolName),
-                inputSummary: try container.decodeIfPresent(String.self, forKey: .inputSummary),
+            self = try .llmToolUse(LlmToolUsePayload(
+                toolName: container.decode(String.self, forKey: .toolName),
+                inputSummary: container.decodeIfPresent(String.self, forKey: .inputSummary),
                 input: (try? container.decodeIfPresent(RawJSONString.self, forKey: .input))?.stringValue,
                 timestamp: timestamp))
 
         case "llm_tool_result":
-            self = .llmToolResult(LlmToolResultPayload(
-                toolName: try container.decode(String.self, forKey: .toolName),
-                resultSummary: try container.decodeIfPresent(String.self, forKey: .resultSummary),
+            self = try .llmToolResult(LlmToolResultPayload(
+                toolName: container.decode(String.self, forKey: .toolName),
+                resultSummary: container.decodeIfPresent(String.self, forKey: .resultSummary),
                 result: (try? container.decodeIfPresent(RawJSONString.self, forKey: .result))?.stringValue,
                 timestamp: timestamp))
 
         case "llm_status":
-            self = .llmStatus(
-                status: try container.decode(String.self, forKey: .status),
-                detail: try container.decodeIfPresent(String.self, forKey: .detail),
+            self = try .llmStatus(
+                status: container.decode(String.self, forKey: .status),
+                detail: container.decodeIfPresent(String.self, forKey: .detail),
                 timestamp: timestamp)
 
         case "todo_update":
-            self = .todoUpdate(
-                items: try container.decode([TodoUpdateItem].self, forKey: .items),
+            self = try .todoUpdate(
+                items: container.decode([TodoUpdateItem].self, forKey: .items),
                 timestamp: timestamp)
 
         case "file_write":
-            self = .fileWrite(
-                path: try container.decode(String.self, forKey: .path),
-                lineCount: try container.decode(Int.self, forKey: .lineCount),
+            self = try .fileWrite(
+                path: container.decode(String.self, forKey: .path),
+                lineCount: container.decode(Int.self, forKey: .lineCount),
                 timestamp: timestamp)
 
         case "file_edit":
-            self = .fileEdit(
-                path: try container.decode(String.self, forKey: .path),
-                diff: try container.decode(String.self, forKey: .diff),
+            self = try .fileEdit(
+                path: container.decode(String.self, forKey: .path),
+                diff: container.decode(String.self, forKey: .diff),
                 timestamp: timestamp)
 
         case "file_change_summary":
-            self = .fileChangeSummary(
-                changes: try container.decode([FileChangeItem].self, forKey: .changes),
+            self = try .fileChangeSummary(
+                changes: container.decode([FileChangeItem].self, forKey: .changes),
                 timestamp: timestamp)
 
         case "command_exec":
-            self = .commandExec(
-                command: try container.decode(String.self, forKey: .command),
-                cwd: try container.decodeIfPresent(String.self, forKey: .cwd),
+            self = try .commandExec(
+                command: container.decode(String.self, forKey: .command),
+                cwd: container.decodeIfPresent(String.self, forKey: .cwd),
                 timestamp: timestamp)
 
         case "command_result":
-            self = .commandResult(CommandResultPayload(
-                command: try container.decodeIfPresent(String.self, forKey: .command),
-                cwd: try container.decodeIfPresent(String.self, forKey: .cwd),
-                exitCode: try container.decode(Int.self, forKey: .exitCode),
-                stdout: try container.decodeIfPresent(String.self, forKey: .stdout),
-                stderr: try container.decodeIfPresent(String.self, forKey: .stderr),
+            self = try .commandResult(CommandResultPayload(
+                command: container.decodeIfPresent(String.self, forKey: .command),
+                cwd: container.decodeIfPresent(String.self, forKey: .cwd),
+                exitCode: container.decode(Int.self, forKey: .exitCode),
+                stdout: container.decodeIfPresent(String.self, forKey: .stdout),
+                stderr: container.decodeIfPresent(String.self, forKey: .stderr),
                 timestamp: timestamp))
 
         case "review_start":
-            self = .reviewStart(
-                executor: try container.decodeIfPresent(String.self, forKey: .executor),
-                planId: try container.decodeIfPresent(Int.self, forKey: .planId),
+            self = try .reviewStart(
+                executor: container.decodeIfPresent(String.self, forKey: .executor),
+                planId: container.decodeIfPresent(Int.self, forKey: .planId),
                 timestamp: timestamp)
 
         case "review_result":
@@ -801,30 +805,30 @@ extension StructuredMessagePayload: Decodable {
                 timestamp: timestamp))
 
         case "review_verdict":
-            self = .reviewVerdict(
-                verdict: try container.decode(String.self, forKey: .verdict),
-                fixInstructions: try container.decodeIfPresent(String.self, forKey: .fixInstructions),
+            self = try .reviewVerdict(
+                verdict: container.decode(String.self, forKey: .verdict),
+                fixInstructions: container.decodeIfPresent(String.self, forKey: .fixInstructions),
                 timestamp: timestamp)
 
         case "workflow_progress":
-            self = .workflowProgress(
-                message: try container.decode(String.self, forKey: .message),
-                phase: try container.decodeIfPresent(String.self, forKey: .phase),
+            self = try .workflowProgress(
+                message: container.decode(String.self, forKey: .message),
+                phase: container.decodeIfPresent(String.self, forKey: .phase),
                 timestamp: timestamp)
 
         case "failure_report":
-            self = .failureReport(FailureReportPayload(
-                summary: try container.decode(String.self, forKey: .summary),
-                requirements: try container.decodeIfPresent(String.self, forKey: .requirements),
-                problems: try container.decodeIfPresent(String.self, forKey: .problems),
-                solutions: try container.decodeIfPresent(String.self, forKey: .solutions),
-                sourceAgent: try container.decodeIfPresent(String.self, forKey: .sourceAgent),
+            self = try .failureReport(FailureReportPayload(
+                summary: container.decode(String.self, forKey: .summary),
+                requirements: container.decodeIfPresent(String.self, forKey: .requirements),
+                problems: container.decodeIfPresent(String.self, forKey: .problems),
+                solutions: container.decodeIfPresent(String.self, forKey: .solutions),
+                sourceAgent: container.decodeIfPresent(String.self, forKey: .sourceAgent),
                 timestamp: timestamp))
 
         case "task_completion":
-            self = .taskCompletion(
-                taskTitle: try container.decodeIfPresent(String.self, forKey: .taskTitle),
-                planComplete: try container.decode(Bool.self, forKey: .planComplete),
+            self = try .taskCompletion(
+                taskTitle: container.decodeIfPresent(String.self, forKey: .taskTitle),
+                planComplete: container.decode(Bool.self, forKey: .planComplete),
                 timestamp: timestamp)
 
         case "execution_summary":
@@ -840,58 +844,58 @@ extension StructuredMessagePayload: Decodable {
                 totalSteps = try metadataContainer.decodeIfPresent(Int.self, forKey: .totalSteps)
                 failedSteps = try metadataContainer.decodeIfPresent(Int.self, forKey: .failedSteps)
             }
-            self = .executionSummary(ExecutionSummaryPayload(
-                planId: try summaryContainer.decodeIfPresent(String.self, forKey: .planId),
-                planTitle: try summaryContainer.decodeIfPresent(String.self, forKey: .planTitle),
-                mode: try summaryContainer.decodeIfPresent(String.self, forKey: .mode),
-                durationMs: try summaryContainer.decodeIfPresent(Double.self, forKey: .durationMs),
+            self = try .executionSummary(ExecutionSummaryPayload(
+                planId: summaryContainer.decodeIfPresent(String.self, forKey: .planId),
+                planTitle: summaryContainer.decodeIfPresent(String.self, forKey: .planTitle),
+                mode: summaryContainer.decodeIfPresent(String.self, forKey: .mode),
+                durationMs: summaryContainer.decodeIfPresent(Double.self, forKey: .durationMs),
                 totalSteps: totalSteps,
                 failedSteps: failedSteps,
-                changedFiles: try summaryContainer.decodeIfPresent([String].self, forKey: .changedFiles),
-                errors: try summaryContainer.decodeIfPresent([String].self, forKey: .errors),
+                changedFiles: summaryContainer.decodeIfPresent([String].self, forKey: .changedFiles),
+                errors: summaryContainer.decodeIfPresent([String].self, forKey: .errors),
                 timestamp: timestamp))
 
         case "token_usage":
-            self = .tokenUsage(TokenUsagePayload(
-                inputTokens: try container.decodeIfPresent(Int.self, forKey: .inputTokens),
-                cachedInputTokens: try container.decodeIfPresent(Int.self, forKey: .cachedInputTokens),
-                outputTokens: try container.decodeIfPresent(Int.self, forKey: .outputTokens),
-                reasoningTokens: try container.decodeIfPresent(Int.self, forKey: .reasoningTokens),
-                totalTokens: try container.decodeIfPresent(Int.self, forKey: .totalTokens),
+            self = try .tokenUsage(TokenUsagePayload(
+                inputTokens: container.decodeIfPresent(Int.self, forKey: .inputTokens),
+                cachedInputTokens: container.decodeIfPresent(Int.self, forKey: .cachedInputTokens),
+                outputTokens: container.decodeIfPresent(Int.self, forKey: .outputTokens),
+                reasoningTokens: container.decodeIfPresent(Int.self, forKey: .reasoningTokens),
+                totalTokens: container.decodeIfPresent(Int.self, forKey: .totalTokens),
                 timestamp: timestamp))
 
         case "input_required":
-            self = .inputRequired(
-                prompt: try container.decodeIfPresent(String.self, forKey: .prompt),
+            self = try .inputRequired(
+                prompt: container.decodeIfPresent(String.self, forKey: .prompt),
                 timestamp: timestamp)
 
         case "prompt_request":
-            self = .promptRequest(PromptRequestPayload(
-                requestId: try container.decode(String.self, forKey: .requestId),
-                promptType: try container.decode(String.self, forKey: .promptType),
-                promptConfig: try container.decode(PromptConfigPayload.self, forKey: .promptConfig),
-                timeoutMs: try container.decodeIfPresent(Int.self, forKey: .timeoutMs),
+            self = try .promptRequest(PromptRequestPayload(
+                requestId: container.decode(String.self, forKey: .requestId),
+                promptType: container.decode(String.self, forKey: .promptType),
+                promptConfig: container.decode(PromptConfigPayload.self, forKey: .promptConfig),
+                timeoutMs: container.decodeIfPresent(Int.self, forKey: .timeoutMs),
                 timestamp: timestamp))
 
         case "prompt_answered":
-            self = .promptAnswered(PromptAnsweredPayload(
-                requestId: try container.decode(String.self, forKey: .requestId),
-                promptType: try container.decode(String.self, forKey: .promptType),
-                source: try container.decode(String.self, forKey: .source),
+            self = try .promptAnswered(PromptAnsweredPayload(
+                requestId: container.decode(String.self, forKey: .requestId),
+                promptType: container.decode(String.self, forKey: .promptType),
+                source: container.decode(String.self, forKey: .source),
                 value: (try? container.decodeIfPresent(RawJSONString.self, forKey: .value))?.stringValue,
                 timestamp: timestamp))
 
         case "plan_discovery":
-            self = .planDiscovery(
-                planId: try container.decode(Int.self, forKey: .planId),
-                title: try container.decode(String.self, forKey: .title),
+            self = try .planDiscovery(
+                planId: container.decode(Int.self, forKey: .planId),
+                title: container.decode(String.self, forKey: .title),
                 timestamp: timestamp)
 
         case "workspace_info":
-            self = .workspaceInfo(
-                path: try container.decode(String.self, forKey: .path),
-                planFile: try container.decodeIfPresent(String.self, forKey: .planFile),
-                workspaceId: try container.decodeIfPresent(String.self, forKey: .workspaceId),
+            self = try .workspaceInfo(
+                path: container.decode(String.self, forKey: .path),
+                planFile: container.decodeIfPresent(String.self, forKey: .planFile),
+                workspaceId: container.decodeIfPresent(String.self, forKey: .workspaceId),
                 timestamp: timestamp)
 
         default:
@@ -934,37 +938,37 @@ private func parseTimestamp(_ ts: String?) -> Date? {
 enum MessageFormatter {
     static func format(tunnelMessage: TunnelMessage, seq: Int) -> SessionMessage {
         switch tunnelMessage {
-        case .args(let type, let args):
+        case let .args(type, args):
             let text = args.joined(separator: " ")
             let category: MessageCategory = (type == "error" || type == "warn") ? .error : .log
             return SessionMessage(seq: seq, title: nil, body: .text(text), category: category)
 
-        case .data(let type, let data):
+        case let .data(type, data):
             let category: MessageCategory = type == "stderr" ? .error : .log
             return SessionMessage(seq: seq, title: nil, body: .text(data), category: category)
 
-        case .structured(let message):
-            return formatStructured(message, seq: seq)
+        case let .structured(message):
+            return self.formatStructured(message, seq: seq)
 
-        case .unknown(let type):
+        case let .unknown(type):
             return SessionMessage(seq: seq, title: nil, body: .text("Unknown message type: \(type)"), category: .log)
         }
     }
 
     private static func formatStructured(_ msg: StructuredMessagePayload, seq: Int) -> SessionMessage {
         switch msg {
-        case .agentSessionStart(let p):
+        case let .agentSessionStart(p):
             let pairs = [
                 p.executor.map { KeyValuePair(key: "Executor", value: $0) },
                 p.mode.map { KeyValuePair(key: "Mode", value: $0) },
                 p.planId.map { KeyValuePair(key: "Plan", value: "\($0)") },
-            ].compactMap { $0 }
+            ].compactMap(\.self)
             return SessionMessage(
                 seq: seq, title: "Starting",
                 body: pairs.isEmpty ? nil : .keyValuePairs(pairs),
                 category: .lifecycle, timestamp: parseTimestamp(p.timestamp))
 
-        case .agentSessionEnd(let p):
+        case let .agentSessionEnd(p):
             var pairs = [KeyValuePair(key: "Success", value: p.success ? "yes" : "no")]
             if let d = p.durationMs { pairs.append(KeyValuePair(key: "Duration", value: "\(Int(d / 1000))s")) }
             if let c = p.costUsd { pairs.append(KeyValuePair(key: "Cost", value: "$\(String(format: "%.2f", c))")) }
@@ -975,7 +979,7 @@ enum MessageFormatter {
                 body: .keyValuePairs(pairs),
                 category: .lifecycle, timestamp: parseTimestamp(p.timestamp))
 
-        case .agentIterationStart(let p):
+        case let .agentIterationStart(p):
             var bodyParts: [String] = []
             if let t = p.taskTitle { bodyParts.append(t) }
             if let d = p.taskDescription { bodyParts.append(d) }
@@ -984,40 +988,40 @@ enum MessageFormatter {
                 body: bodyParts.isEmpty ? nil : .text(bodyParts.joined(separator: "\n")),
                 category: .lifecycle, timestamp: parseTimestamp(p.timestamp))
 
-        case .agentStepStart(let p):
+        case let .agentStepStart(p):
             return SessionMessage(
                 seq: seq, title: "Step Start: \(p.phase)",
                 body: p.message.map { .text($0) },
                 category: .lifecycle, timestamp: parseTimestamp(p.timestamp))
 
-        case .agentStepEnd(let p):
+        case let .agentStepEnd(p):
             let status = p.success ? "✓" : "✗"
             return SessionMessage(
                 seq: seq, title: "Step End: \(p.phase) \(status)",
                 body: p.summary.map { .text($0) },
                 category: p.success ? .lifecycle : .error, timestamp: parseTimestamp(p.timestamp))
 
-        case .llmThinking(let text, let ts):
+        case let .llmThinking(text, ts):
             return SessionMessage(
                 seq: seq, title: "Thinking",
                 body: .text(text),
                 category: .llmOutput, timestamp: parseTimestamp(ts))
 
-        case .llmResponse(let text, let isUserRequest, let ts):
+        case let .llmResponse(text, isUserRequest, ts):
             let title = (isUserRequest == true) ? "User" : "Model Response"
             return SessionMessage(
                 seq: seq, title: title,
                 body: .text(text),
                 category: .llmOutput, timestamp: parseTimestamp(ts))
 
-        case .llmToolUse(let p):
+        case let .llmToolUse(p):
             let body: MessageContentBody? = (p.inputSummary ?? p.input).map { .monospaced($0) }
             return SessionMessage(
                 seq: seq, title: "Invoke Tool: \(p.toolName)",
                 body: body,
                 category: .toolUse, timestamp: parseTimestamp(p.timestamp))
 
-        case .llmToolResult(let p):
+        case let .llmToolResult(p):
             let content = p.resultSummary ?? p.result
             let body: MessageContentBody? = content.map {
                 .monospaced(p.toolName == "Task" ? $0 : truncateLines($0))
@@ -1027,7 +1031,7 @@ enum MessageFormatter {
                 body: body,
                 category: .toolUse, timestamp: parseTimestamp(p.timestamp))
 
-        case .llmStatus(let status, let detail, let ts):
+        case let .llmStatus(status, detail, ts):
             var text = status
             if let d = detail { text += "\n\(d)" }
             return SessionMessage(
@@ -1035,15 +1039,14 @@ enum MessageFormatter {
                 body: .text(text),
                 category: .log, timestamp: parseTimestamp(ts))
 
-        case .todoUpdate(let items, let ts):
+        case let .todoUpdate(items, ts):
             let displayItems = items.map { item in
-                let status: TodoStatus
-                switch item.status {
-                case "completed": status = .completed
-                case "in_progress": status = .inProgress
-                case "blocked": status = .blocked
-                case "pending": status = .pending
-                default: status = .unknown
+                let status: TodoStatus = switch item.status {
+                case "completed": .completed
+                case "in_progress": .inProgress
+                case "blocked": .blocked
+                case "pending": .pending
+                default: .unknown
                 }
                 return TodoDisplayItem(label: item.label, status: status)
             }
@@ -1052,26 +1055,25 @@ enum MessageFormatter {
                 body: .todoList(displayItems),
                 category: .progress, timestamp: parseTimestamp(ts))
 
-        case .fileWrite(let path, let lineCount, let ts):
+        case let .fileWrite(path, lineCount, ts):
             return SessionMessage(
                 seq: seq, title: "Invoke Tool: Write",
                 body: .monospaced("\(path) (\(lineCount) lines)"),
                 category: .fileChange, timestamp: parseTimestamp(ts))
 
-        case .fileEdit(let path, let diff, let ts):
+        case let .fileEdit(path, diff, ts):
             return SessionMessage(
                 seq: seq, title: "Invoke Tool: Edit",
                 body: .monospaced("\(path)\n\(diff)"),
                 category: .fileChange, timestamp: parseTimestamp(ts))
 
-        case .fileChangeSummary(let changes, let ts):
+        case let .fileChangeSummary(changes, ts):
             let displayItems = changes.map { change in
-                let kind: FileChangeKind
-                switch change.kind {
-                case "added": kind = .added
-                case "updated": kind = .updated
-                case "removed": kind = .removed
-                default: kind = .unknown
+                let kind: FileChangeKind = switch change.kind {
+                case "added": .added
+                case "updated": .updated
+                case "removed": .removed
+                default: .unknown
                 }
                 return FileChangeDisplayItem(path: change.path, kind: kind)
             }
@@ -1080,7 +1082,7 @@ enum MessageFormatter {
                 body: .fileChanges(displayItems),
                 category: .fileChange, timestamp: parseTimestamp(ts))
 
-        case .commandExec(let command, let cwd, let ts):
+        case let .commandExec(command, cwd, ts):
             var text = command
             if let cwd { text += "\n\(cwd)" }
             return SessionMessage(
@@ -1088,7 +1090,7 @@ enum MessageFormatter {
                 body: .monospaced(text),
                 category: .command, timestamp: parseTimestamp(ts))
 
-        case .commandResult(let p):
+        case let .commandResult(p):
             var lines: [String] = []
             if let cmd = p.command { lines.append(cmd) }
             if let cwd = p.cwd { lines.append(cwd) }
@@ -1100,13 +1102,13 @@ enum MessageFormatter {
                 body: lines.isEmpty ? nil : .monospaced(lines.joined(separator: "\n")),
                 category: .command, timestamp: parseTimestamp(p.timestamp))
 
-        case .reviewStart(let executor, _, let ts):
+        case let .reviewStart(executor, _, ts):
             return SessionMessage(
                 seq: seq, title: "Executing Review",
                 body: .text(executor ?? "unknown executor"),
                 category: .lifecycle, timestamp: parseTimestamp(ts))
 
-        case .reviewResult(let p):
+        case let .reviewResult(p):
             var lines = ["Issues: \(p.issues.count)"]
             if !p.recommendations.isEmpty {
                 lines.append("Recommendations: \(p.recommendations.count)")
@@ -1130,7 +1132,7 @@ enum MessageFormatter {
                 body: .text(lines.joined(separator: "\n")),
                 category: .lifecycle, timestamp: parseTimestamp(p.timestamp))
 
-        case .reviewVerdict(let verdict, let fixInstructions, let ts):
+        case let .reviewVerdict(verdict, fixInstructions, ts):
             var text = "Verdict: \(verdict)"
             if let instructions = fixInstructions {
                 text += "\n\(instructions)"
@@ -1140,14 +1142,14 @@ enum MessageFormatter {
                 body: .text(text),
                 category: .lifecycle, timestamp: parseTimestamp(ts))
 
-        case .workflowProgress(let message, let phase, let ts):
+        case let .workflowProgress(message, phase, ts):
             let text = phase.map { "[\($0)] \(message)" } ?? message
             return SessionMessage(
                 seq: seq, title: nil,
                 body: .text(text),
                 category: .progress, timestamp: parseTimestamp(ts))
 
-        case .failureReport(let p):
+        case let .failureReport(p):
             var lines = ["FAILED: \(p.summary)"]
             if let r = p.requirements { lines.append("Requirements:\n\(r)") }
             if let pr = p.problems { lines.append("Problems:\n\(pr)") }
@@ -1158,7 +1160,7 @@ enum MessageFormatter {
                 body: .text(lines.joined(separator: "\n")),
                 category: .error, timestamp: parseTimestamp(p.timestamp))
 
-        case .taskCompletion(let taskTitle, let planComplete, let ts):
+        case let .taskCompletion(taskTitle, planComplete, ts):
             let title = taskTitle ?? ""
             let text = planComplete
                 ? "Task complete: \(title) (plan complete)".trimmingCharacters(in: .whitespaces)
@@ -1168,7 +1170,7 @@ enum MessageFormatter {
                 body: .text(text),
                 category: .lifecycle, timestamp: parseTimestamp(ts))
 
-        case .executionSummary(let p):
+        case let .executionSummary(p):
             var pairs: [KeyValuePair] = []
             if let id = p.planId { pairs.append(KeyValuePair(key: "Plan", value: id)) }
             if let title = p.planTitle { pairs.append(KeyValuePair(key: "Title", value: title)) }
@@ -1187,45 +1189,45 @@ enum MessageFormatter {
                 body: pairs.isEmpty ? nil : .keyValuePairs(pairs),
                 category: .lifecycle, timestamp: parseTimestamp(p.timestamp))
 
-        case .tokenUsage(let p):
+        case let .tokenUsage(p):
             let parts = [
                 p.inputTokens.map { "input=\($0)" },
                 p.cachedInputTokens.map { "cached=\($0)" },
                 p.outputTokens.map { "output=\($0)" },
                 p.reasoningTokens.map { "reasoning=\($0)" },
                 p.totalTokens.map { "total=\($0)" },
-            ].compactMap { $0 }
+            ].compactMap(\.self)
             return SessionMessage(
                 seq: seq, title: "Usage",
                 body: parts.isEmpty ? nil : .text(parts.joined(separator: " ")),
                 category: .log, timestamp: parseTimestamp(p.timestamp))
 
-        case .inputRequired(let prompt, let ts):
+        case let .inputRequired(prompt, ts):
             let text = prompt.map { "Input required: \($0)" } ?? "Input required"
             return SessionMessage(
                 seq: seq, title: "Input Required",
                 body: .text(text),
                 category: .progress, timestamp: parseTimestamp(ts))
 
-        case .promptRequest(let p):
+        case let .promptRequest(p):
             return SessionMessage(
                 seq: seq, title: nil,
                 body: .text("Prompt (\(p.promptType)): \(p.promptConfig.message)"),
                 category: .progress, timestamp: parseTimestamp(p.timestamp))
 
-        case .promptAnswered(let p):
+        case let .promptAnswered(p):
             return SessionMessage(
                 seq: seq, title: nil,
                 body: .text("Prompt answered (\(p.promptType)) by \(p.source)"),
                 category: .log, timestamp: parseTimestamp(p.timestamp))
 
-        case .planDiscovery(let planId, let title, let ts):
+        case let .planDiscovery(planId, title, ts):
             return SessionMessage(
                 seq: seq, title: "Plan Discovery",
                 body: .text("Found ready plan: \(planId) - \(title)"),
                 category: .lifecycle, timestamp: parseTimestamp(ts))
 
-        case .workspaceInfo(let path, let planFile, _, let ts):
+        case let .workspaceInfo(path, planFile, _, ts):
             var pairs = [KeyValuePair(key: "Path", value: path)]
             if let pf = planFile { pairs.append(KeyValuePair(key: "Plan", value: pf)) }
             return SessionMessage(
@@ -1233,7 +1235,7 @@ enum MessageFormatter {
                 body: .keyValuePairs(pairs),
                 category: .log, timestamp: parseTimestamp(ts))
 
-        case .unknown(let type):
+        case let .unknown(type):
             return SessionMessage(
                 seq: seq, title: nil,
                 body: .text("Unknown message type: \(type)"),

@@ -1,6 +1,5 @@
 import Foundation
 import Testing
-
 @testable import TimGUI
 
 @Suite("SessionState", .serialized)
@@ -14,16 +13,15 @@ struct SessionStateTests {
         planTitle: String? = nil,
         workspacePath: String? = nil,
         gitRemote: String? = nil,
-        terminal: TerminalPayload? = nil
-    ) -> SessionInfoPayload {
+        terminal: TerminalPayload? = nil) -> SessionInfoPayload
+    {
         SessionInfoPayload(
             command: command,
             planId: planId,
             planTitle: planTitle,
             workspacePath: workspacePath,
             gitRemote: gitRemote,
-            terminal: terminal
-        )
+            terminal: terminal)
     }
 
     private func makeMessage(seq: Int = 1, text: String = "hello", category: MessageCategory = .log)
@@ -38,13 +36,12 @@ struct SessionStateTests {
     func addSessionProperties() {
         let state = SessionState()
         let connId = UUID()
-        let info = makeInfo(
+        let info = self.makeInfo(
             command: "agent",
             planId: 42,
             planTitle: "My Plan",
             workspacePath: "/projects/test",
-            gitRemote: "git@github.com:user/repo.git"
-        )
+            gitRemote: "git@github.com:user/repo.git")
 
         state.addSession(connectionId: connId, info: info)
 
@@ -66,8 +63,8 @@ struct SessionStateTests {
         let connId1 = UUID()
         let connId2 = UUID()
 
-        state.addSession(connectionId: connId1, info: makeInfo(command: "agent"))
-        state.addSession(connectionId: connId2, info: makeInfo(command: "review"))
+        state.addSession(connectionId: connId1, info: self.makeInfo(command: "agent"))
+        state.addSession(connectionId: connId2, info: self.makeInfo(command: "review"))
 
         #expect(state.sessions.count == 2)
         #expect(state.sessions[0].connectionId == connId2)
@@ -82,20 +79,20 @@ struct SessionStateTests {
         #expect(state.selectedSessionId == nil)
 
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo())
+        state.addSession(connectionId: connId, info: self.makeInfo())
 
         #expect(state.selectedSessionId == state.sessions[0].id)
     }
 
     @Test("addSession does NOT change selection if something is already selected")
-    func addSessionPreservesSelection() {
+    func addSessionPreservesSelection() throws {
         let state = SessionState()
         let connId1 = UUID()
-        state.addSession(connectionId: connId1, info: makeInfo(command: "agent"))
-        let firstSessionId = state.selectedSessionId!
+        state.addSession(connectionId: connId1, info: self.makeInfo(command: "agent"))
+        let firstSessionId = try #require(state.selectedSessionId)
 
         let connId2 = UUID()
-        state.addSession(connectionId: connId2, info: makeInfo(command: "review"))
+        state.addSession(connectionId: connId2, info: self.makeInfo(command: "review"))
 
         #expect(state.selectedSessionId == firstSessionId)
         // Verify the first session is still selected, not the newly added one
@@ -106,7 +103,7 @@ struct SessionStateTests {
     @Test("addSession with minimal info sets optional fields to nil")
     func addSessionMinimalInfo() {
         let state = SessionState()
-        let info = makeInfo(command: "review")
+        let info = self.makeInfo(command: "review")
 
         state.addSession(connectionId: UUID(), info: info)
 
@@ -126,25 +123,23 @@ struct SessionStateTests {
         let connId = UUID()
 
         // First session_info
-        state.addSession(connectionId: connId, info: makeInfo(
+        state.addSession(connectionId: connId, info: self.makeInfo(
             command: "agent",
             planId: 10,
             planTitle: "Original Plan",
             workspacePath: "/original/path",
-            gitRemote: "git@github.com:user/repo.git"
-        ))
+            gitRemote: "git@github.com:user/repo.git"))
         #expect(state.sessions.count == 1)
         let originalId = state.sessions[0].id
         let originalConnectedAt = state.sessions[0].connectedAt
 
         // Duplicate session_info with updated metadata
-        state.addSession(connectionId: connId, info: makeInfo(
+        state.addSession(connectionId: connId, info: self.makeInfo(
             command: "review",
             planId: 20,
             planTitle: "Updated Plan",
             workspacePath: "/updated/path",
-            gitRemote: "git@github.com:user/other.git"
-        ))
+            gitRemote: "git@github.com:user/other.git"))
 
         // Should still be one session, not two
         #expect(state.sessions.count == 1)
@@ -166,12 +161,12 @@ struct SessionStateTests {
         let state = SessionState()
         let connId = UUID()
 
-        state.addSession(connectionId: connId, info: makeInfo(command: "agent"))
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "msg1"))
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "msg2"))
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 1, text: "msg1"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 2, text: "msg2"))
 
         // Duplicate session_info
-        state.addSession(connectionId: connId, info: makeInfo(command: "review"))
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "review"))
 
         #expect(state.sessions.count == 1)
         #expect(state.sessions[0].messages.count == 2)
@@ -180,36 +175,36 @@ struct SessionStateTests {
     }
 
     @Test("Duplicate session_info does not change selection")
-    func duplicateSessionInfoPreservesSelection() {
+    func duplicateSessionInfoPreservesSelection() throws {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
 
-        state.addSession(connectionId: connId1, info: makeInfo(command: "agent"))
-        let selectedId = state.selectedSessionId!
+        state.addSession(connectionId: connId1, info: self.makeInfo(command: "agent"))
+        let selectedId = try #require(state.selectedSessionId)
 
-        state.addSession(connectionId: connId2, info: makeInfo(command: "review"))
+        state.addSession(connectionId: connId2, info: self.makeInfo(command: "review"))
 
         // Duplicate session_info for connId1 — should not affect selection
-        state.addSession(connectionId: connId1, info: makeInfo(command: "updated"))
+        state.addSession(connectionId: connId1, info: self.makeInfo(command: "updated"))
 
         #expect(state.selectedSessionId == selectedId)
         #expect(state.sessions.count == 2)
     }
 
     @Test("Duplicate session_info preserves existing messages")
-    func duplicateSessionInfoPreservesExistingMessages() {
+    func duplicateSessionInfoPreservesExistingMessages() throws {
         let state = SessionState()
         let connId = UUID()
 
-        state.addSession(connectionId: connId, info: makeInfo(command: "agent"))
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "msg1"))
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "msg2"))
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 1, text: "msg1"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 2, text: "msg2"))
 
         // Duplicate session_info should not affect accumulated messages
-        state.addSession(connectionId: connId, info: makeInfo(command: "review"))
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "review"))
 
-        let session = state.sessions.first { $0.connectionId == connId }!
+        let session = try #require(state.sessions.first { $0.connectionId == connId })
         #expect(session.messages.count == 2)
         #expect(session.messages[0].text == "msg1")
         #expect(session.messages[1].text == "msg2")
@@ -221,11 +216,11 @@ struct SessionStateTests {
         let state = SessionState()
         let connId = UUID()
 
-        state.addSession(connectionId: connId, info: makeInfo(command: "agent"))
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
         #expect(state.sessions[0].isActive == true)
 
         // Duplicate session_info should not change isActive
-        state.addSession(connectionId: connId, info: makeInfo(command: "review"))
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "review"))
         #expect(state.sessions[0].isActive == true)
     }
 
@@ -236,10 +231,10 @@ struct SessionStateTests {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
-        state.addSession(connectionId: connId1, info: makeInfo(command: "first"))
-        state.addSession(connectionId: connId2, info: makeInfo(command: "second"))
+        state.addSession(connectionId: connId1, info: self.makeInfo(command: "first"))
+        state.addSession(connectionId: connId2, info: self.makeInfo(command: "second"))
 
-        let msg = makeMessage(seq: 1, text: "hello world", category: .llmOutput)
+        let msg = self.makeMessage(seq: 1, text: "hello world", category: .llmOutput)
         state.appendMessage(connectionId: connId1, message: msg)
 
         // connId2 is at index 0 (newest first), connId1 is at index 1
@@ -254,11 +249,11 @@ struct SessionStateTests {
     func appendMessageOrder() {
         let state = SessionState()
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo())
+        state.addSession(connectionId: connId, info: self.makeInfo())
 
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "first"))
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "second"))
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 3, text: "third"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 1, text: "first"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 2, text: "second"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 3, text: "third"))
 
         #expect(state.sessions[0].messages.count == 3)
         #expect(state.sessions[0].messages[0].text == "first")
@@ -270,9 +265,9 @@ struct SessionStateTests {
     func appendMessageUnknownConnection() {
         let state = SessionState()
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo())
+        state.addSession(connectionId: connId, info: self.makeInfo())
 
-        state.appendMessage(connectionId: UUID(), message: makeMessage(seq: 1, text: "orphan"))
+        state.appendMessage(connectionId: UUID(), message: self.makeMessage(seq: 1, text: "orphan"))
 
         // Existing session should not be affected
         #expect(state.sessions[0].messages.isEmpty)
@@ -284,14 +279,14 @@ struct SessionStateTests {
         let connId = UUID()
 
         // Messages arrive before session_info
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "early msg 1"))
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "early msg 2"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 1, text: "early msg 1"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 2, text: "early msg 2"))
 
         // No sessions exist yet
         #expect(state.sessions.isEmpty)
 
         // Now session_info arrives
-        state.addSession(connectionId: connId, info: makeInfo(command: "agent"))
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
 
         // Buffered messages should be flushed to the new session
         #expect(state.sessions.count == 1)
@@ -307,16 +302,16 @@ struct SessionStateTests {
         let connId2 = UUID()
 
         // Buffer messages for two different connections
-        state.appendMessage(connectionId: connId1, message: makeMessage(seq: 1, text: "conn1 early"))
-        state.appendMessage(connectionId: connId2, message: makeMessage(seq: 1, text: "conn2 early"))
+        state.appendMessage(connectionId: connId1, message: self.makeMessage(seq: 1, text: "conn1 early"))
+        state.appendMessage(connectionId: connId2, message: self.makeMessage(seq: 1, text: "conn2 early"))
 
         // Register first session
-        state.addSession(connectionId: connId1, info: makeInfo(command: "agent"))
+        state.addSession(connectionId: connId1, info: self.makeInfo(command: "agent"))
         #expect(state.sessions[0].messages.count == 1)
         #expect(state.sessions[0].messages[0].text == "conn1 early")
 
         // Register second session
-        state.addSession(connectionId: connId2, info: makeInfo(command: "review"))
+        state.addSession(connectionId: connId2, info: self.makeInfo(command: "review"))
         #expect(state.sessions[0].messages.count == 1)
         #expect(state.sessions[0].messages[0].text == "conn2 early")
     }
@@ -327,13 +322,13 @@ struct SessionStateTests {
         let connId = UUID()
 
         // Buffer one message
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "buffered"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 1, text: "buffered"))
 
         // Register session (flushes buffer)
-        state.addSession(connectionId: connId, info: makeInfo())
+        state.addSession(connectionId: connId, info: self.makeInfo())
 
         // New messages append normally
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "live msg"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 2, text: "live msg"))
 
         #expect(state.sessions[0].messages.count == 2)
         #expect(state.sessions[0].messages[0].text == "buffered")
@@ -344,11 +339,11 @@ struct SessionStateTests {
     func replayBuffersUntilEnd() {
         let state = SessionState()
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo())
+        state.addSession(connectionId: connId, info: self.makeInfo())
 
         state.startReplay(connectionId: connId)
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "replay 1"))
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "replay 2"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 1, text: "replay 1"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 2, text: "replay 2"))
 
         // Messages should not be visible during replay.
         #expect(state.sessions[0].messages.isEmpty)
@@ -366,13 +361,13 @@ struct SessionStateTests {
     func replayThenLiveMessages() {
         let state = SessionState()
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo())
+        state.addSession(connectionId: connId, info: self.makeInfo())
 
         state.startReplay(connectionId: connId)
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "replay"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 1, text: "replay"))
         state.endReplay(connectionId: connId)
 
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "live"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 2, text: "live"))
 
         #expect(state.sessions[0].messages.count == 2)
         #expect(state.sessions[0].messages[0].text == "replay")
@@ -386,10 +381,10 @@ struct SessionStateTests {
         let connId = UUID()
 
         state.startReplay(connectionId: connId)
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "replay orphan"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 1, text: "replay orphan"))
 
         state.markDisconnected(connectionId: connId)
-        state.addSession(connectionId: connId, info: makeInfo())
+        state.addSession(connectionId: connId, info: self.makeInfo())
         state.endReplay(connectionId: connId)
 
         #expect(state.sessions[0].messages.isEmpty)
@@ -401,14 +396,14 @@ struct SessionStateTests {
         let connId = UUID()
 
         // Buffer messages for a connection that never sends session_info
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "orphan"))
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 2, text: "orphan 2"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 1, text: "orphan"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 2, text: "orphan 2"))
 
         // Disconnect without ever registering the session
         state.markDisconnected(connectionId: connId)
 
         // Now if addSession is called (shouldn't happen but test cleanup), buffer should be empty
-        state.addSession(connectionId: connId, info: makeInfo())
+        state.addSession(connectionId: connId, info: self.makeInfo())
         #expect(state.sessions[0].messages.isEmpty)
     }
 
@@ -418,7 +413,7 @@ struct SessionStateTests {
     func markDisconnectedSetsInactive() {
         let state = SessionState()
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo())
+        state.addSession(connectionId: connId, info: self.makeInfo())
         #expect(state.sessions[0].isActive == true)
 
         state.markDisconnected(connectionId: connId)
@@ -431,8 +426,8 @@ struct SessionStateTests {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
-        state.addSession(connectionId: connId1, info: makeInfo())
-        state.addSession(connectionId: connId2, info: makeInfo())
+        state.addSession(connectionId: connId1, info: self.makeInfo())
+        state.addSession(connectionId: connId2, info: self.makeInfo())
 
         state.markDisconnected(connectionId: connId1)
 
@@ -445,7 +440,7 @@ struct SessionStateTests {
     func markDisconnectedUnknownConnection() {
         let state = SessionState()
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo())
+        state.addSession(connectionId: connId, info: self.makeInfo())
 
         state.markDisconnected(connectionId: UUID())
 
@@ -458,7 +453,7 @@ struct SessionStateTests {
     func dismissSessionRemoves() {
         let state = SessionState()
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo())
+        state.addSession(connectionId: connId, info: self.makeInfo())
         let sessionId = state.sessions[0].id
         state.markDisconnected(connectionId: connId)
 
@@ -471,7 +466,7 @@ struct SessionStateTests {
     func dismissSessionActiveSessionNoop() {
         let state = SessionState()
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo())
+        state.addSession(connectionId: connId, info: self.makeInfo())
         let sessionId = state.sessions[0].id
         #expect(state.sessions[0].isActive == true)
 
@@ -482,15 +477,15 @@ struct SessionStateTests {
     }
 
     @Test("dismissSession reselects first session if dismissed session was selected")
-    func dismissSessionReselects() {
+    func dismissSessionReselects() throws {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
-        state.addSession(connectionId: connId1, info: makeInfo(command: "first"))
-        state.addSession(connectionId: connId2, info: makeInfo(command: "second"))
+        state.addSession(connectionId: connId1, info: self.makeInfo(command: "first"))
+        state.addSession(connectionId: connId2, info: self.makeInfo(command: "second"))
 
         // First session added was auto-selected; it's now at index 1
-        let selectedId = state.selectedSessionId!
+        let selectedId = try #require(state.selectedSessionId)
         #expect(state.sessions[1].id == selectedId)
 
         // Mark disconnected before dismissing
@@ -503,14 +498,14 @@ struct SessionStateTests {
     }
 
     @Test("dismissSession does not change selection if a different session was dismissed")
-    func dismissSessionPreservesSelection() {
+    func dismissSessionPreservesSelection() throws {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
-        state.addSession(connectionId: connId1, info: makeInfo(command: "first"))
-        let firstSessionId = state.selectedSessionId!
+        state.addSession(connectionId: connId1, info: self.makeInfo(command: "first"))
+        let firstSessionId = try #require(state.selectedSessionId)
 
-        state.addSession(connectionId: connId2, info: makeInfo(command: "second"))
+        state.addSession(connectionId: connId2, info: self.makeInfo(command: "second"))
         let secondSessionId = state.sessions[0].id
 
         // First session is still selected
@@ -528,7 +523,7 @@ struct SessionStateTests {
     func dismissSessionLastSession() {
         let state = SessionState()
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo())
+        state.addSession(connectionId: connId, info: self.makeInfo())
         let sessionId = state.sessions[0].id
         state.markDisconnected(connectionId: connId)
 
@@ -546,9 +541,9 @@ struct SessionStateTests {
         let connId1 = UUID()
         let connId2 = UUID()
         let connId3 = UUID()
-        state.addSession(connectionId: connId1, info: makeInfo(command: "first"))
-        state.addSession(connectionId: connId2, info: makeInfo(command: "second"))
-        state.addSession(connectionId: connId3, info: makeInfo(command: "third"))
+        state.addSession(connectionId: connId1, info: self.makeInfo(command: "first"))
+        state.addSession(connectionId: connId2, info: self.makeInfo(command: "second"))
+        state.addSession(connectionId: connId3, info: self.makeInfo(command: "third"))
 
         state.markDisconnected(connectionId: connId1)
         state.markDisconnected(connectionId: connId3)
@@ -565,8 +560,8 @@ struct SessionStateTests {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
-        state.addSession(connectionId: connId1, info: makeInfo(command: "first"))
-        state.addSession(connectionId: connId2, info: makeInfo(command: "second"))
+        state.addSession(connectionId: connId1, info: self.makeInfo(command: "first"))
+        state.addSession(connectionId: connId2, info: self.makeInfo(command: "second"))
 
         // connId1 was auto-selected
         #expect(state.selectedSession?.connectionId == connId1)
@@ -584,8 +579,8 @@ struct SessionStateTests {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
-        state.addSession(connectionId: connId1, info: makeInfo(command: "first"))
-        state.addSession(connectionId: connId2, info: makeInfo(command: "second"))
+        state.addSession(connectionId: connId1, info: self.makeInfo(command: "first"))
+        state.addSession(connectionId: connId2, info: self.makeInfo(command: "second"))
 
         state.markDisconnected(connectionId: connId1)
         state.markDisconnected(connectionId: connId2)
@@ -600,7 +595,7 @@ struct SessionStateTests {
     func dismissAllDisconnectedNoop() {
         let state = SessionState()
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo(command: "agent"))
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
 
         state.dismissAllDisconnected()
 
@@ -611,7 +606,7 @@ struct SessionStateTests {
     @Test("dismissSession is a no-op for unknown session ID")
     func dismissSessionUnknownId() {
         let state = SessionState()
-        state.addSession(connectionId: UUID(), info: makeInfo())
+        state.addSession(connectionId: UUID(), info: self.makeInfo())
         let originalCount = state.sessions.count
 
         state.dismissSession(id: UUID())
@@ -626,8 +621,8 @@ struct SessionStateTests {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
-        state.addSession(connectionId: connId1, info: makeInfo(command: "first"))
-        state.addSession(connectionId: connId2, info: makeInfo(command: "second"))
+        state.addSession(connectionId: connId1, info: self.makeInfo(command: "first"))
+        state.addSession(connectionId: connId2, info: self.makeInfo(command: "second"))
 
         // First session was auto-selected
         let selected = state.selectedSession
@@ -646,8 +641,8 @@ struct SessionStateTests {
     @Test("selectedSession returns nil after selectedSessionId is set to an invalid ID")
     func selectedSessionInvalidId() {
         let state = SessionState()
-        state.addSession(connectionId: UUID(), info: makeInfo())
-        state.selectedSessionId = UUID()  // Set to a non-existent session ID
+        state.addSession(connectionId: UUID(), info: self.makeInfo())
+        state.selectedSessionId = UUID() // Set to a non-existent session ID
 
         #expect(state.selectedSession == nil)
     }
@@ -657,8 +652,8 @@ struct SessionStateTests {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
-        state.addSession(connectionId: connId1, info: makeInfo(command: "first"))
-        state.addSession(connectionId: connId2, info: makeInfo(command: "second"))
+        state.addSession(connectionId: connId1, info: self.makeInfo(command: "first"))
+        state.addSession(connectionId: connId2, info: self.makeInfo(command: "second"))
 
         // Initially first session is selected
         #expect(state.selectedSession?.connectionId == connId1)
@@ -675,11 +670,10 @@ struct SessionStateTests {
         let state = SessionState()
         let connId = UUID()
         let terminal = TerminalPayload(type: "wezterm", paneId: "42")
-        let info = makeInfo(
+        let info = self.makeInfo(
             command: "agent",
             workspacePath: "/tmp/project",
-            terminal: terminal
-        )
+            terminal: terminal)
 
         state.addSession(connectionId: connId, info: info)
 
@@ -691,7 +685,7 @@ struct SessionStateTests {
     @Test("addSession with nil terminal sets terminal to nil")
     func addSessionNilTerminal() {
         let state = SessionState()
-        state.addSession(connectionId: UUID(), info: makeInfo(command: "agent"))
+        state.addSession(connectionId: UUID(), info: self.makeInfo(command: "agent"))
 
         #expect(state.sessions[0].terminal == nil)
     }
@@ -700,11 +694,11 @@ struct SessionStateTests {
     func duplicateSessionInfoUpdatesTerminal() {
         let state = SessionState()
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo(command: "agent"))
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
         #expect(state.sessions[0].terminal == nil)
 
         let terminal = TerminalPayload(type: "wezterm", paneId: "5")
-        state.addSession(connectionId: connId, info: makeInfo(command: "agent", terminal: terminal))
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent", terminal: terminal))
 
         #expect(state.sessions[0].terminal?.type == "wezterm")
         #expect(state.sessions[0].terminal?.paneId == "5")
@@ -715,7 +709,7 @@ struct SessionStateTests {
     @Test("SessionItem defaults hasUnreadNotification to false and notificationMessage to nil")
     func sessionItemNotificationDefaults() {
         let state = SessionState()
-        state.addSession(connectionId: UUID(), info: makeInfo(command: "agent"))
+        state.addSession(connectionId: UUID(), info: self.makeInfo(command: "agent"))
 
         #expect(state.sessions[0].hasUnreadNotification == false)
         #expect(state.sessions[0].notificationMessage == nil)
@@ -727,19 +721,17 @@ struct SessionStateTests {
     func ingestNotificationMatchesByPaneId() {
         let state = SessionState()
         let terminal = TerminalPayload(type: "wezterm", paneId: "42")
-        state.addSession(connectionId: UUID(), info: makeInfo(
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
             workspacePath: "/project/a",
-            terminal: terminal
-        ))
+            terminal: terminal))
         // Deselect so we can verify the unread flag is set
         state.selectedSessionId = nil
 
         let payload = MessagePayload(
             message: "Task completed",
             workspacePath: "/project/a",
-            terminal: TerminalPayload(type: "wezterm", paneId: "42")
-        )
+            terminal: TerminalPayload(type: "wezterm", paneId: "42"))
         state.ingestNotification(payload: payload)
 
         #expect(state.sessions.count == 1)
@@ -750,18 +742,16 @@ struct SessionStateTests {
     @Test("ingestNotification matches session by workspace path when no pane match")
     func ingestNotificationMatchesByWorkspace() {
         let state = SessionState()
-        state.addSession(connectionId: UUID(), info: makeInfo(
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
-            workspacePath: "/project/b"
-        ))
+            workspacePath: "/project/b"))
         // Deselect so we can verify the unread flag is set
         state.selectedSessionId = nil
 
         let payload = MessagePayload(
             message: "Done",
             workspacePath: "/project/b",
-            terminal: nil
-        )
+            terminal: nil)
         state.ingestNotification(payload: payload)
 
         #expect(state.sessions.count == 1)
@@ -772,16 +762,14 @@ struct SessionStateTests {
     @Test("ingestNotification creates new session when no match found")
     func ingestNotificationCreatesNewSession() {
         let state = SessionState()
-        state.addSession(connectionId: UUID(), info: makeInfo(
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
-            workspacePath: "/project/a"
-        ))
+            workspacePath: "/project/a"))
 
         let payload = MessagePayload(
             message: "Hello from unknown",
             workspacePath: "/project/c",
-            terminal: TerminalPayload(type: "wezterm", paneId: "99")
-        )
+            terminal: TerminalPayload(type: "wezterm", paneId: "99"))
         state.ingestNotification(payload: payload)
 
         #expect(state.sessions.count == 2)
@@ -801,20 +789,17 @@ struct SessionStateTests {
         // Add two sessions with same workspace - second added is at index 0 (most recent)
         let connId1 = UUID()
         let connId2 = UUID()
-        state.addSession(connectionId: connId1, info: makeInfo(
+        state.addSession(connectionId: connId1, info: self.makeInfo(
             command: "agent",
-            workspacePath: "/shared/project"
-        ))
-        state.addSession(connectionId: connId2, info: makeInfo(
+            workspacePath: "/shared/project"))
+        state.addSession(connectionId: connId2, info: self.makeInfo(
             command: "review",
-            workspacePath: "/shared/project"
-        ))
+            workspacePath: "/shared/project"))
 
         let payload = MessagePayload(
             message: "Notification",
             workspacePath: "/shared/project",
-            terminal: nil
-        )
+            terminal: nil)
         state.ingestNotification(payload: payload)
 
         // Should match the most recent (index 0, connId2)
@@ -828,22 +813,19 @@ struct SessionStateTests {
     func ingestNotificationPrefersPaneIdMatch() {
         let state = SessionState()
         // Session with matching workspace but no terminal
-        state.addSession(connectionId: UUID(), info: makeInfo(
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
-            workspacePath: "/project"
-        ))
+            workspacePath: "/project"))
         // Session with matching pane ID but different workspace
-        state.addSession(connectionId: UUID(), info: makeInfo(
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "review",
             workspacePath: "/other",
-            terminal: TerminalPayload(type: "wezterm", paneId: "7")
-        ))
+            terminal: TerminalPayload(type: "wezterm", paneId: "7")))
 
         let payload = MessagePayload(
             message: "Matched by pane",
             workspacePath: "/project",
-            terminal: TerminalPayload(type: "wezterm", paneId: "7")
-        )
+            terminal: TerminalPayload(type: "wezterm", paneId: "7"))
         state.ingestNotification(payload: payload)
 
         // Pane ID match (index 0, the review session) should be matched
@@ -854,26 +836,23 @@ struct SessionStateTests {
     }
 
     @Test("ingestNotification sets hasUnreadNotification on non-selected matched session")
-    func ingestNotificationSetsFlag() {
+    func ingestNotificationSetsFlag() throws {
         let state = SessionState()
-        state.addSession(connectionId: UUID(), info: makeInfo(
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
-            workspacePath: "/project"
-        ))
+            workspacePath: "/project"))
         // Add a second session and select it so /project is not selected
-        state.addSession(connectionId: UUID(), info: makeInfo(
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "review",
-            workspacePath: "/other"
-        ))
-        state.selectedSessionId = state.sessions[0].id  // select /other
-        let projectSession = state.sessions.first { $0.workspacePath == "/project" }!
+            workspacePath: "/other"))
+        state.selectedSessionId = state.sessions[0].id // select /other
+        let projectSession = try #require(state.sessions.first { $0.workspacePath == "/project" })
         #expect(projectSession.hasUnreadNotification == false)
 
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "/project",
-            terminal: nil
-        ))
+            terminal: nil))
 
         #expect(projectSession.hasUnreadNotification == true)
     }
@@ -881,25 +860,22 @@ struct SessionStateTests {
     @Test("Second notification replaces message on same session")
     func ingestNotificationReplacesMessage() {
         let state = SessionState()
-        state.addSession(connectionId: UUID(), info: makeInfo(
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
-            workspacePath: "/project"
-        ))
+            workspacePath: "/project"))
         // Deselect so we can verify the unread flag is set
         state.selectedSessionId = nil
 
         state.ingestNotification(payload: MessagePayload(
             message: "First notification",
             workspacePath: "/project",
-            terminal: nil
-        ))
+            terminal: nil))
         #expect(state.sessions[0].notificationMessage == "First notification")
 
         state.ingestNotification(payload: MessagePayload(
             message: "Second notification",
             workspacePath: "/project",
-            terminal: nil
-        ))
+            terminal: nil))
         #expect(state.sessions[0].notificationMessage == "Second notification")
         #expect(state.sessions[0].hasUnreadNotification == true)
     }
@@ -908,11 +884,10 @@ struct SessionStateTests {
     func ingestNotificationNoTerminalMatchesByWorkspace() {
         let state = SessionState()
         let terminal = TerminalPayload(type: "wezterm", paneId: "5")
-        state.addSession(connectionId: UUID(), info: makeInfo(
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
             workspacePath: "/project/x",
-            terminal: terminal
-        ))
+            terminal: terminal))
         // Deselect so we can verify the unread flag is set
         state.selectedSessionId = nil
 
@@ -920,8 +895,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Done",
             workspacePath: "/project/x",
-            terminal: nil
-        ))
+            terminal: nil))
 
         #expect(state.sessions.count == 1)
         #expect(state.sessions[0].hasUnreadNotification == true)
@@ -1002,17 +976,15 @@ struct SessionStateTests {
     @Test("markNotificationRead clears notification on session")
     func markNotificationReadClears() {
         let state = SessionState()
-        state.addSession(connectionId: UUID(), info: makeInfo(
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
-            workspacePath: "/project"
-        ))
+            workspacePath: "/project"))
         // Deselect so the notification flag gets set
         state.selectedSessionId = nil
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "/project",
-            terminal: nil
-        ))
+            terminal: nil))
         let sessionId = state.sessions[0].id
         #expect(state.sessions[0].hasUnreadNotification == true)
 
@@ -1025,7 +997,7 @@ struct SessionStateTests {
     @Test("markNotificationRead is a no-op for unknown session ID")
     func markNotificationReadUnknownId() {
         let state = SessionState()
-        state.addSession(connectionId: UUID(), info: makeInfo(command: "agent"))
+        state.addSession(connectionId: UUID(), info: self.makeInfo(command: "agent"))
 
         // Should not crash or affect anything
         state.markNotificationRead(sessionId: UUID())
@@ -1034,16 +1006,14 @@ struct SessionStateTests {
     }
 
     @Test("markNotificationRead only clears targeted session, not others")
-    func markNotificationReadTargeted() {
+    func markNotificationReadTargeted() throws {
         let state = SessionState()
-        state.addSession(connectionId: UUID(), info: makeInfo(
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
-            workspacePath: "/project/a"
-        ))
-        state.addSession(connectionId: UUID(), info: makeInfo(
+            workspacePath: "/project/a"))
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "review",
-            workspacePath: "/project/b"
-        ))
+            workspacePath: "/project/b"))
         // Deselect so both notifications set the unread flag
         state.selectedSessionId = nil
 
@@ -1051,17 +1021,15 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert A",
             workspacePath: "/project/a",
-            terminal: nil
-        ))
+            terminal: nil))
         state.ingestNotification(payload: MessagePayload(
             message: "Alert B",
             workspacePath: "/project/b",
-            terminal: nil
-        ))
+            terminal: nil))
 
         // Both should have notifications
-        let sessionA = state.sessions.first { $0.workspacePath == "/project/a" }!
-        let sessionB = state.sessions.first { $0.workspacePath == "/project/b" }!
+        let sessionA = try #require(state.sessions.first { $0.workspacePath == "/project/a" })
+        let sessionB = try #require(state.sessions.first { $0.workspacePath == "/project/b" })
         #expect(sessionA.hasUnreadNotification == true)
         #expect(sessionB.hasUnreadNotification == true)
 
@@ -1078,10 +1046,9 @@ struct SessionStateTests {
     @Test("Notification for already-selected session does not set unread flag")
     func ingestNotificationForSelectedSessionClearsFlag() {
         let state = SessionState()
-        state.addSession(connectionId: UUID(), info: makeInfo(
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
-            workspacePath: "/project"
-        ))
+            workspacePath: "/project"))
         // First session is auto-selected
         let sessionId = state.sessions[0].id
         #expect(state.selectedSessionId == sessionId)
@@ -1089,8 +1056,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Done",
             workspacePath: "/project",
-            terminal: nil
-        ))
+            terminal: nil))
 
         // Message should be stored but unread flag should not be set
         #expect(state.sessions[0].notificationMessage == "Done")
@@ -1098,25 +1064,22 @@ struct SessionStateTests {
     }
 
     @Test("Notification for non-selected session sets unread flag")
-    func ingestNotificationForNonSelectedSession() {
+    func ingestNotificationForNonSelectedSession() throws {
         let state = SessionState()
-        state.addSession(connectionId: UUID(), info: makeInfo(
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
-            workspacePath: "/project/a"
-        ))
-        state.addSession(connectionId: UUID(), info: makeInfo(
+            workspacePath: "/project/a"))
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "review",
-            workspacePath: "/project/b"
-        ))
+            workspacePath: "/project/b"))
         // First added session (project/a) is auto-selected, project/b is not
 
         state.ingestNotification(payload: MessagePayload(
             message: "Alert B",
             workspacePath: "/project/b",
-            terminal: nil
-        ))
+            terminal: nil))
 
-        let sessionB = state.sessions.first { $0.workspacePath == "/project/b" }!
+        let sessionB = try #require(state.sessions.first { $0.workspacePath == "/project/b" })
         #expect(sessionB.hasUnreadNotification == true)
         #expect(sessionB.notificationMessage == "Alert B")
     }
@@ -1129,8 +1092,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "First alert",
             workspacePath: "/orphan/project",
-            terminal: nil
-        ))
+            terminal: nil))
         #expect(state.sessions.count == 1)
         #expect(state.sessions[0].notificationMessage == "First alert")
         // Deselect so the second notification sets the unread flag
@@ -1140,8 +1102,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Second alert",
             workspacePath: "/orphan/project",
-            terminal: nil
-        ))
+            terminal: nil))
         #expect(state.sessions.count == 1)
         #expect(state.sessions[0].notificationMessage == "Second alert")
         #expect(state.sessions[0].hasUnreadNotification == true)
@@ -1154,8 +1115,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Notification",
             workspacePath: "/some/path",
-            terminal: terminal
-        ))
+            terminal: terminal))
 
         #expect(state.sessions.count == 1)
         let session = state.sessions[0]
@@ -1179,8 +1139,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Orphan notification",
             workspacePath: "/orphan",
-            terminal: nil
-        ))
+            terminal: nil))
         #expect(state.sessions.count == 1)
         #expect(state.sessions[0].isActive == false)
 
@@ -1195,7 +1154,7 @@ struct SessionStateTests {
     func fullLifecycle() {
         let state = SessionState()
         let connId = UUID()
-        let info = makeInfo(
+        let info = self.makeInfo(
             command: "agent", planId: 10, planTitle: "Build feature",
             workspacePath: "/home/user/project")
 
@@ -1206,19 +1165,19 @@ struct SessionStateTests {
 
         // Receive messages
         state.appendMessage(
-            connectionId: connId, message: makeMessage(seq: 1, text: "Starting...", category: .lifecycle))
+            connectionId: connId, message: self.makeMessage(seq: 1, text: "Starting...", category: .lifecycle))
         state.appendMessage(
             connectionId: connId,
-            message: makeMessage(seq: 2, text: "Thinking about the problem", category: .llmOutput))
+            message: self.makeMessage(seq: 2, text: "Thinking about the problem", category: .llmOutput))
         state.appendMessage(
             connectionId: connId,
-            message: makeMessage(seq: 3, text: "Edit: main.swift", category: .fileChange))
+            message: self.makeMessage(seq: 3, text: "Edit: main.swift", category: .fileChange))
         #expect(state.sessions[0].messages.count == 3)
 
         // Disconnect
         state.markDisconnected(connectionId: connId)
         #expect(state.sessions[0].isActive == false)
-        #expect(state.sessions[0].messages.count == 3)  // Messages preserved
+        #expect(state.sessions[0].messages.count == 3) // Messages preserved
 
         // Dismiss
         let sessionId = state.sessions[0].id
@@ -1233,14 +1192,14 @@ struct SessionStateTests {
         let connId1 = UUID()
         let connId2 = UUID()
         let connId3 = UUID()
-        state.addSession(connectionId: connId1, info: makeInfo(command: "agent"))
-        state.addSession(connectionId: connId2, info: makeInfo(command: "review"))
-        state.addSession(connectionId: connId3, info: makeInfo(command: "codex"))
+        state.addSession(connectionId: connId1, info: self.makeInfo(command: "agent"))
+        state.addSession(connectionId: connId2, info: self.makeInfo(command: "review"))
+        state.addSession(connectionId: connId3, info: self.makeInfo(command: "codex"))
 
-        state.appendMessage(connectionId: connId2, message: makeMessage(seq: 1, text: "review msg"))
-        state.appendMessage(connectionId: connId1, message: makeMessage(seq: 1, text: "agent msg"))
-        state.appendMessage(connectionId: connId3, message: makeMessage(seq: 1, text: "codex msg"))
-        state.appendMessage(connectionId: connId2, message: makeMessage(seq: 2, text: "review msg 2"))
+        state.appendMessage(connectionId: connId2, message: self.makeMessage(seq: 1, text: "review msg"))
+        state.appendMessage(connectionId: connId1, message: self.makeMessage(seq: 1, text: "agent msg"))
+        state.appendMessage(connectionId: connId3, message: self.makeMessage(seq: 1, text: "codex msg"))
+        state.appendMessage(connectionId: connId2, message: self.makeMessage(seq: 2, text: "review msg 2"))
 
         // Sessions are in reverse order: connId3 at 0, connId2 at 1, connId1 at 2
         #expect(state.sessions[2].messages.count == 1)
@@ -1258,7 +1217,7 @@ struct SessionStateTests {
     func referenceSemanticsMutations() {
         let state = SessionState()
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo(command: "agent", planTitle: "Test Plan"))
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent", planTitle: "Test Plan"))
 
         // Hold a reference to the session
         let sessionRef = state.sessions[0]
@@ -1266,7 +1225,7 @@ struct SessionStateTests {
         #expect(sessionRef.messages.isEmpty)
 
         // Mutate through SessionState methods
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "msg1"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 1, text: "msg1"))
         state.markDisconnected(connectionId: connId)
 
         // The held reference should reflect the changes (class semantics)
@@ -1279,7 +1238,7 @@ struct SessionStateTests {
     func selectedSessionIdentity() {
         let state = SessionState()
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo(command: "agent"))
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
 
         let fromArray = state.sessions[0]
         let fromSelected = state.selectedSession
@@ -1289,21 +1248,21 @@ struct SessionStateTests {
     }
 
     @Test("Appending messages to SessionItem via reference is visible through SessionState")
-    func referenceMessageAppend() {
+    func referenceMessageAppend() throws {
         let state = SessionState()
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo())
+        state.addSession(connectionId: connId, info: self.makeInfo())
 
         // Append multiple messages and verify the reference stays consistent
         for i in 1...5 {
-            state.appendMessage(connectionId: connId, message: makeMessage(seq: i, text: "msg \(i)"))
+            state.appendMessage(connectionId: connId, message: self.makeMessage(seq: i, text: "msg \(i)"))
         }
 
-        let session = state.selectedSession!
+        let session = try #require(state.selectedSession)
         #expect(session.messages.count == 5)
 
         // Append more after getting the reference
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 6, text: "msg 6"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 6, text: "msg 6"))
         #expect(session.messages.count == 6)
         #expect(session.messages[5].text == "msg 6")
     }
@@ -1319,8 +1278,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Task completed",
             workspacePath: "/project/a",
-            terminal: terminal
-        ))
+            terminal: terminal))
         #expect(state.sessions.count == 1)
         #expect(state.sessions[0].command == "")
         #expect(state.sessions[0].isActive == false)
@@ -1330,13 +1288,12 @@ struct SessionStateTests {
 
         // Now WebSocket session_info arrives with matching pane ID
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo(
+        state.addSession(connectionId: connId, info: self.makeInfo(
             command: "agent",
             planId: 10,
             planTitle: "My Plan",
             workspacePath: "/project/a",
-            terminal: terminal
-        ))
+            terminal: terminal))
 
         // Should reconcile into a single session, not create a duplicate
         #expect(state.sessions.count == 1)
@@ -1362,17 +1319,15 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Done",
             workspacePath: "/project/b",
-            terminal: nil
-        ))
+            terminal: nil))
         #expect(state.sessions.count == 1)
         let originalSessionId = state.sessions[0].id
 
         // WebSocket session_info arrives with matching workspace (no terminal)
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo(
+        state.addSession(connectionId: connId, info: self.makeInfo(
             command: "review",
-            workspacePath: "/project/b"
-        ))
+            workspacePath: "/project/b"))
 
         // Should reconcile into one session
         #expect(state.sessions.count == 1)
@@ -1393,18 +1348,16 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "/project",
-            terminal: terminal
-        ))
+            terminal: terminal))
 
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo(
+        state.addSession(connectionId: connId, info: self.makeInfo(
             command: "agent",
             workspacePath: "/project",
-            terminal: terminal
-        ))
+            terminal: terminal))
 
         // Messages should route to the reconciled session
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "hello"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 1, text: "hello"))
         #expect(state.sessions.count == 1)
         #expect(state.sessions[0].messages.count == 1)
         #expect(state.sessions[0].messages[0].text == "hello")
@@ -1417,18 +1370,16 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "/project",
-            terminal: nil
-        ))
+            terminal: nil))
 
         let connId = UUID()
         // Messages arrive before session_info
-        state.appendMessage(connectionId: connId, message: makeMessage(seq: 1, text: "early msg"))
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 1, text: "early msg"))
 
         // session_info reconciles with the notification-only session
-        state.addSession(connectionId: connId, info: makeInfo(
+        state.addSession(connectionId: connId, info: self.makeInfo(
             command: "agent",
-            workspacePath: "/project"
-        ))
+            workspacePath: "/project"))
 
         #expect(state.sessions.count == 1)
         #expect(state.sessions[0].messages.count == 1)
@@ -1442,19 +1393,17 @@ struct SessionStateTests {
         let terminal = TerminalPayload(type: "wezterm", paneId: "42")
 
         // Create a real session (not notification-only)
-        state.addSession(connectionId: UUID(), info: makeInfo(
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
             workspacePath: "/project",
-            terminal: terminal
-        ))
+            terminal: terminal))
 
         // A different WebSocket connection arrives with the same terminal
         let connId2 = UUID()
-        state.addSession(connectionId: connId2, info: makeInfo(
+        state.addSession(connectionId: connId2, info: self.makeInfo(
             command: "review",
             workspacePath: "/project",
-            terminal: terminal
-        ))
+            terminal: terminal))
 
         // Should create a second session (no reconciliation since the first isn't notification-only)
         #expect(state.sessions.count == 2)
@@ -1465,17 +1414,15 @@ struct SessionStateTests {
     @Test("ingestNotification with empty workspacePath does not match sessions by workspace")
     func ingestNotificationEmptyWorkspaceNoMatch() {
         let state = SessionState()
-        state.addSession(connectionId: UUID(), info: makeInfo(
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
-            workspacePath: ""
-        ))
+            workspacePath: ""))
 
         // Notification with empty workspacePath should NOT match the session with empty workspace
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "",
-            terminal: nil
-        ))
+            terminal: nil))
 
         // Should create a new notification-only session, not match the existing one
         #expect(state.sessions.count == 2)
@@ -1485,10 +1432,9 @@ struct SessionStateTests {
     func ingestNotificationMatchesDisconnectedSession() {
         let state = SessionState()
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo(
+        state.addSession(connectionId: connId, info: self.makeInfo(
             command: "agent",
-            workspacePath: "/project"
-        ))
+            workspacePath: "/project"))
         state.markDisconnected(connectionId: connId)
         #expect(state.sessions[0].isActive == false)
         // Deselect so the notification flag gets set
@@ -1497,8 +1443,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Post-disconnect alert",
             workspacePath: "/project",
-            terminal: nil
-        ))
+            terminal: nil))
 
         // Should match the disconnected session, not create a new one
         #expect(state.sessions.count == 1)
@@ -1514,16 +1459,14 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "First",
             workspacePath: "/project",
-            terminal: terminal
-        ))
+            terminal: terminal))
         #expect(state.sessions.count == 1)
 
         // Second notification with same pane ID should match the existing notification-only session
         state.ingestNotification(payload: MessagePayload(
             message: "Second",
             workspacePath: "/project",
-            terminal: terminal
-        ))
+            terminal: terminal))
         #expect(state.sessions.count == 1)
         #expect(state.sessions[0].notificationMessage == "Second")
     }
@@ -1536,8 +1479,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "/project",
-            terminal: nil
-        ))
+            terminal: nil))
         // Notification-only sessions should NOT be auto-selected
         #expect(state.selectedSessionId == nil)
         #expect(state.sessions.count == 1)
@@ -1552,17 +1494,15 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "/project",
-            terminal: nil
-        ))
+            terminal: nil))
         let notifSessionId = state.sessions[0].id
         // Notification-only sessions do not auto-select
         #expect(state.selectedSessionId == nil)
 
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo(
+        state.addSession(connectionId: connId, info: self.makeInfo(
             command: "agent",
-            workspacePath: "/project"
-        ))
+            workspacePath: "/project"))
 
         // After reconciliation, addSession auto-selects because nothing was selected
         #expect(state.selectedSessionId == notifSessionId)
@@ -1574,11 +1514,10 @@ struct SessionStateTests {
         let state = SessionState()
 
         // An older session exists for the same workspace but with a different (or no) pane ID
-        state.addSession(connectionId: UUID(), info: makeInfo(
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
             workspacePath: "/project/a",
-            terminal: TerminalPayload(type: "wezterm", paneId: "10")
-        ))
+            terminal: TerminalPayload(type: "wezterm", paneId: "10")))
         // Deselect so we can verify unread gets set on the matched session.
         state.selectedSessionId = nil
 
@@ -1587,8 +1526,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Task done",
             workspacePath: "/project/a",
-            terminal: TerminalPayload(type: "wezterm", paneId: "42")
-        ))
+            terminal: TerminalPayload(type: "wezterm", paneId: "42")))
 
         // Pane lookup misses, so it should attach to the existing workspace session.
         #expect(state.sessions.count == 1)
@@ -1600,16 +1538,15 @@ struct SessionStateTests {
     }
 
     @Test("Pane-miss workspace fallback attaches notification before later session_info")
-    func ingestNotificationPaneIdFallbackBeforeLaterSessionInfo() {
+    func ingestNotificationPaneIdFallbackBeforeLaterSessionInfo() throws {
         let state = SessionState()
 
         // An older session exists for the same workspace
         let oldConnId = UUID()
-        state.addSession(connectionId: oldConnId, info: makeInfo(
+        state.addSession(connectionId: oldConnId, info: self.makeInfo(
             command: "agent",
             workspacePath: "/project/a",
-            terminal: TerminalPayload(type: "wezterm", paneId: "10")
-        ))
+            terminal: TerminalPayload(type: "wezterm", paneId: "10")))
         state.markDisconnected(connectionId: oldConnId)
         // Deselect so we can verify unread gets set on the matched session.
         state.selectedSessionId = nil
@@ -1619,8 +1556,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "New run done",
             workspacePath: "/project/a",
-            terminal: TerminalPayload(type: "wezterm", paneId: newPaneId)
-        ))
+            terminal: TerminalPayload(type: "wezterm", paneId: newPaneId)))
 
         // Pane lookup misses, so the existing session is used via workspace fallback.
         #expect(state.sessions.count == 1)
@@ -1630,58 +1566,55 @@ struct SessionStateTests {
 
         // Now the real session_info arrives with the matching pane ID
         let newConnId = UUID()
-        state.addSession(connectionId: newConnId, info: makeInfo(
+        state.addSession(connectionId: newConnId, info: self.makeInfo(
             command: "review",
             workspacePath: "/project/a",
-            terminal: TerminalPayload(type: "wezterm", paneId: newPaneId)
-        ))
+            terminal: TerminalPayload(type: "wezterm", paneId: newPaneId)))
 
         // No notification-only session exists to reconcile, so a new session is created.
         #expect(state.sessions.count == 2)
-        let oldSession = state.sessions.first { $0.id == oldSessionId }!
+        let oldSession = try #require(state.sessions.first { $0.id == oldSessionId })
         #expect(oldSession.connectionId == oldConnId)
         #expect(oldSession.hasUnreadNotification == true)
         #expect(oldSession.notificationMessage == "New run done")
         #expect(oldSession.isActive == false)
 
-        let newSession = state.sessions.first { $0.connectionId == newConnId }!
+        let newSession = try #require(state.sessions.first { $0.connectionId == newConnId })
         #expect(newSession.command == "review")
         #expect(newSession.isActive == true)
         #expect(newSession.terminal?.paneId == newPaneId)
     }
 
     @Test("Reconciliation does not match notification-only session when pane IDs differ")
-    func reconcileDoesNotMatchMismatchedPaneId() {
+    func reconcileDoesNotMatchMismatchedPaneId() throws {
         let state = SessionState()
 
         // Create a notification-only session with pane 10
         state.ingestNotification(payload: MessagePayload(
             message: "Alert from pane 10",
             workspacePath: "/project",
-            terminal: TerminalPayload(type: "wezterm", paneId: "10")
-        ))
+            terminal: TerminalPayload(type: "wezterm", paneId: "10")))
         #expect(state.sessions.count == 1)
         let notifSessionId = state.sessions[0].id
 
         // session_info arrives with same workspace but different pane ID (12)
         let connId = UUID()
-        state.addSession(connectionId: connId, info: makeInfo(
+        state.addSession(connectionId: connId, info: self.makeInfo(
             command: "agent",
             workspacePath: "/project",
-            terminal: TerminalPayload(type: "wezterm", paneId: "12")
-        ))
+            terminal: TerminalPayload(type: "wezterm", paneId: "12")))
 
         // Should NOT reconcile — pane IDs differ and the incoming session has a pane ID,
         // so workspace fallback is skipped. A new session should be created.
         #expect(state.sessions.count == 2)
         // The notification-only session should remain unchanged
-        let notifSession = state.sessions.first { $0.id == notifSessionId }!
+        let notifSession = try #require(state.sessions.first { $0.id == notifSessionId })
         #expect(notifSession.command == "")
         #expect(notifSession.isActive == false)
         #expect(notifSession.hasUnreadNotification == true)
         #expect(notifSession.terminal?.paneId == "10")
         // The new session should be a real session
-        let newSession = state.sessions.first { $0.connectionId == connId }!
+        let newSession = try #require(state.sessions.first { $0.connectionId == connId })
         #expect(newSession.command == "agent")
         #expect(newSession.isActive == true)
         #expect(newSession.terminal?.paneId == "12")
@@ -1695,15 +1628,13 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "",
-            terminal: nil
-        ))
+            terminal: nil))
         #expect(state.sessions.count == 1)
 
         // WebSocket session with empty workspace should NOT reconcile
-        state.addSession(connectionId: UUID(), info: makeInfo(
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
-            workspacePath: ""
-        ))
+            workspacePath: ""))
 
         // Should create a new session (no reconciliation)
         #expect(state.sessions.count == 2)
@@ -1717,8 +1648,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "/orphan",
-            terminal: TerminalPayload(type: "wezterm", paneId: "99")
-        ))
+            terminal: TerminalPayload(type: "wezterm", paneId: "99")))
         #expect(state.sessions.count == 1)
         let sessionId = state.sessions[0].id
         #expect(state.sessions[0].isActive == false)
@@ -1738,8 +1668,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "First",
             workspacePath: "/orphan",
-            terminal: nil
-        ))
+            terminal: nil))
         #expect(state.sessions.count == 1)
         #expect(state.selectedSessionId == nil)
 
@@ -1747,8 +1676,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Second",
             workspacePath: "/orphan",
-            terminal: nil
-        ))
+            terminal: nil))
 
         // The session is not selected so hasUnreadNotification should be true
         #expect(state.sessions.count == 1)
@@ -1757,20 +1685,18 @@ struct SessionStateTests {
     }
 
     @Test("Notification-only session does not auto-select when another session is already selected")
-    func notificationOnlyNoAutoSelectWhenOtherSelected() {
+    func notificationOnlyNoAutoSelectWhenOtherSelected() throws {
         let state = SessionState()
-        state.addSession(connectionId: UUID(), info: makeInfo(
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
-            workspacePath: "/project/a"
-        ))
-        let existingSessionId = state.selectedSessionId!
+            workspacePath: "/project/a"))
+        let existingSessionId = try #require(state.selectedSessionId)
 
         // Create a notification-only session (no match)
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "/orphan",
-            terminal: nil
-        ))
+            terminal: nil))
 
         // The existing session should still be selected
         #expect(state.selectedSessionId == existingSessionId)

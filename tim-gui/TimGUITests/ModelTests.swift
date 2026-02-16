@@ -1,6 +1,5 @@
 import Foundation
 import Testing
-
 @testable import TimGUI
 
 @Suite("Model decoding")
@@ -10,15 +9,15 @@ struct ModelTests {
     @Test("Decodes full payload with terminal info")
     func decodesFullPayload() throws {
         let json = """
-            {
-                "message": "Build complete",
-                "workspacePath": "/tmp/project",
-                "terminal": {
-                    "type": "wezterm",
-                    "pane_id": "42"
-                }
+        {
+            "message": "Build complete",
+            "workspacePath": "/tmp/project",
+            "terminal": {
+                "type": "wezterm",
+                "pane_id": "42"
             }
-            """
+        }
+        """
         let data = Data(json.utf8)
         let payload = try JSONDecoder().decode(MessagePayload.self, from: data)
 
@@ -32,11 +31,11 @@ struct ModelTests {
     @Test("Decodes payload without terminal info")
     func decodesPayloadWithoutTerminal() throws {
         let json = """
-            {
-                "message": "Done",
-                "workspacePath": "/tmp/other"
-            }
-            """
+        {
+            "message": "Done",
+            "workspacePath": "/tmp/other"
+        }
+        """
         let data = Data(json.utf8)
         let payload = try JSONDecoder().decode(MessagePayload.self, from: data)
 
@@ -48,8 +47,8 @@ struct ModelTests {
     @Test("Rejects payload missing required fields")
     func rejectsMissingFields() {
         let json = """
-            { "message": "Hello" }
-            """
+        { "message": "Hello" }
+        """
         let data = Data(json.utf8)
         #expect(throws: DecodingError.self) {
             try JSONDecoder().decode(MessagePayload.self, from: data)
@@ -61,13 +60,12 @@ struct ModelTests {
     @Test("Decodes terminal payload with snake_case pane_id")
     func decodesTerminalPayload() throws {
         let json = """
-            { "type": "wezterm", "pane_id": "7" }
-            """
+        { "type": "wezterm", "pane_id": "7" }
+        """
         let data = Data(json.utf8)
         let terminal = try JSONDecoder().decode(TerminalPayload.self, from: data)
 
         #expect(terminal.type == "wezterm")
         #expect(terminal.paneId == "7")
     }
-
 }

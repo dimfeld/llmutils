@@ -15,7 +15,7 @@ private enum WSOpcode: UInt8 {
 
 /// Manages a single WebSocket connection after the HTTP upgrade handshake.
 final class WebSocketConnection: @unchecked Sendable {
-    private static let maxFrameSize: UInt64 = 16 * 1024 * 1024  // 16 MB max
+    private static let maxFrameSize: UInt64 = 16 * 1024 * 1024 // 16 MB max
 
     let id: UUID
     private let connection: NWConnection
@@ -33,10 +33,10 @@ final class WebSocketConnection: @unchecked Sendable {
 
     /// Atomically transitions isClosed from false to true. Returns true if this call performed the transition.
     private nonisolated func markClosed() -> Bool {
-        closeLock.lock()
+        self.closeLock.lock()
         defer { closeLock.unlock() }
-        if _isClosed { return false }
-        _isClosed = true
+        if self._isClosed { return false }
+        self._isClosed = true
         return true
     }
 
@@ -45,8 +45,8 @@ final class WebSocketConnection: @unchecked Sendable {
         connection: NWConnection,
         initialBuffer: Data = Data(),
         onMessage: @escaping @Sendable (String) async -> Void,
-        onDisconnect: @escaping @Sendable () async -> Void
-    ) {
+        onDisconnect: @escaping @Sendable () async -> Void)
+    {
         self.id = id
         self.connection = connection
         self.readBuffer = initialBuffer
@@ -58,7 +58,7 @@ final class WebSocketConnection: @unchecked Sendable {
 
     /// Performs the WebSocket upgrade handshake by sending the 101 response.
     func performUpgrade(key: String) async throws {
-        let acceptKey = computeAcceptKey(key)
+        let acceptKey = self.computeAcceptKey(key)
         let response = [
             "HTTP/1.1 101 Switching Protocols",
             "Upgrade: websocket",
@@ -67,7 +67,7 @@ final class WebSocketConnection: @unchecked Sendable {
             "", "",
         ].joined(separator: "\r\n")
 
-        try await send(data: Data(response.utf8))
+        try await self.send(data: Data(response.utf8))
     }
 
     private func computeAcceptKey(_ key: String) -> String {
@@ -85,27 +85,27 @@ final class WebSocketConnection: @unchecked Sendable {
     func startReading() {
         Task {
             do {
-                try await readLoop()
+                try await self.readLoop()
             } catch is WebSocketError {
                 // Expected disconnection — no logging needed
             } catch {
                 Self.logger.error("WebSocket readLoop error on connection \(self.id): \(error)")
             }
-            if markClosed() {
-                connection.cancel()
-                await onDisconnect()
+            if self.markClosed() {
+                self.connection.cancel()
+                await self.onDisconnect()
             }
         }
     }
 
     private nonisolated var isClosedSafe: Bool {
-        closeLock.lock()
+        self.closeLock.lock()
         defer { closeLock.unlock() }
-        return _isClosed
+        return self._isClosed
     }
 
     private func readLoop() async throws {
-        while !isClosedSafe {
+        while !self.isClosedSafe {
             // Read the 2-byte header
             let headerBytes = try await readExact(count: 2)
             let byte0 = headerBytes[0]
@@ -116,10 +116,10 @@ final class WebSocketConnection: @unchecked Sendable {
 
             // RFC 6455 §5.2: RSV1-3 must be 0 unless an extension is negotiated
             guard (byte0 & 0x70) == 0 else {
-                try? await sendCloseFrame(code: 1002)
-                if markClosed() {
-                    connection.cancel()
-                    await onDisconnect()
+                try? await self.sendCloseFrame(code: 1002)
+                if self.markClosed() {
+                    self.connection.cancel()
+                    await self.onDisconnect()
                 }
                 return
             }
@@ -141,20 +141,20 @@ final class WebSocketConnection: @unchecked Sendable {
 
             // Validate payload length before allocating memory
             guard payloadLength <= WebSocketConnection.maxFrameSize else {
-                try? await sendCloseFrame(code: 1009)
-                if markClosed() {
-                    connection.cancel()
-                    await onDisconnect()
+                try? await self.sendCloseFrame(code: 1009)
+                if self.markClosed() {
+                    self.connection.cancel()
+                    await self.onDisconnect()
                 }
                 return
             }
 
             // RFC 6455 requires client frames to be masked
             guard masked else {
-                try? await sendCloseFrame(code: 1002)
-                if markClosed() {
-                    connection.cancel()
-                    await onDisconnect()
+                try? await self.sendCloseFrame(code: 1002)
+                if self.markClosed() {
+                    self.connection.cancel()
+                    await self.onDisconnect()
                 }
                 return
             }
@@ -176,10 +176,10 @@ final class WebSocketConnection: @unchecked Sendable {
 
             guard let opcode = WSOpcode(rawValue: opcodeRaw) else {
                 // Unknown opcode: close with 1002 per RFC 6455
-                try? await sendCloseFrame(code: 1002)
-                if markClosed() {
-                    connection.cancel()
-                    await onDisconnect()
+                try? await self.sendCloseFrame(code: 1002)
+                if self.markClosed() {
+                    self.connection.cancel()
+                    await self.onDisconnect()
                 }
                 return
             }
@@ -188,19 +188,19 @@ final class WebSocketConnection: @unchecked Sendable {
             if opcodeRaw >= 0x8 {
                 guard fin else {
                     // Control frames must not be fragmented
-                    try? await sendCloseFrame(code: 1002)
-                    if markClosed() {
-                        connection.cancel()
-                        await onDisconnect()
+                    try? await self.sendCloseFrame(code: 1002)
+                    if self.markClosed() {
+                        self.connection.cancel()
+                        await self.onDisconnect()
                     }
                     return
                 }
                 guard payloadLength <= 125 else {
                     // Control frame payload must be 125 bytes or less
-                    try? await sendCloseFrame(code: 1002)
-                    if markClosed() {
-                        connection.cancel()
-                        await onDisconnect()
+                    try? await self.sendCloseFrame(code: 1002)
+                    if self.markClosed() {
+                        self.connection.cancel()
+                        await self.onDisconnect()
                     }
                     return
                 }
@@ -209,11 +209,11 @@ final class WebSocketConnection: @unchecked Sendable {
             switch opcode {
             case .text:
                 // Reject new data frame while fragmentation is in progress
-                if fragmentOpcode != nil {
-                    try? await sendCloseFrame(code: 1002)
-                    if markClosed() {
-                        connection.cancel()
-                        await onDisconnect()
+                if self.fragmentOpcode != nil {
+                    try? await self.sendCloseFrame(code: 1002)
+                    if self.markClosed() {
+                        self.connection.cancel()
+                        await self.onDisconnect()
                     }
                     return
                 }
@@ -221,74 +221,75 @@ final class WebSocketConnection: @unchecked Sendable {
                     // Complete single-frame message
                     guard let text = String(data: payload, encoding: .utf8) else {
                         // RFC 6455 §8.1: invalid UTF-8 in text frame
-                        try? await sendCloseFrame(code: 1007)
-                        if markClosed() {
-                            connection.cancel()
-                            await onDisconnect()
+                        try? await self.sendCloseFrame(code: 1007)
+                        if self.markClosed() {
+                            self.connection.cancel()
+                            await self.onDisconnect()
                         }
                         return
                     }
-                    await onMessage(text)
+                    await self.onMessage(text)
                 } else {
                     // Start of fragmented message
-                    fragmentOpcode = opcode
-                    fragmentBuffer = payload
+                    self.fragmentOpcode = opcode
+                    self.fragmentBuffer = payload
                 }
 
             case .binary:
                 // Binary frames are not supported; close with 1003 (unsupported data)
-                try? await sendCloseFrame(code: 1003)
-                if markClosed() {
-                    connection.cancel()
-                    await onDisconnect()
+                try? await self.sendCloseFrame(code: 1003)
+                if self.markClosed() {
+                    self.connection.cancel()
+                    await self.onDisconnect()
                 }
                 return
 
             case .continuation:
                 // Reject continuation when no fragmented message is in progress
-                guard fragmentOpcode != nil else {
-                    try? await sendCloseFrame(code: 1002)
-                    if markClosed() {
-                        connection.cancel()
-                        await onDisconnect()
+                guard self.fragmentOpcode != nil else {
+                    try? await self.sendCloseFrame(code: 1002)
+                    if self.markClosed() {
+                        self.connection.cancel()
+                        await self.onDisconnect()
                     }
                     return
                 }
-                guard UInt64(fragmentBuffer.count) + UInt64(payload.count) <= WebSocketConnection.maxFrameSize else {
-                    try? await sendCloseFrame(code: 1009)
-                    if markClosed() {
-                        connection.cancel()
-                        await onDisconnect()
+                guard UInt64(self.fragmentBuffer.count) + UInt64(payload.count) <= WebSocketConnection.maxFrameSize
+                else {
+                    try? await self.sendCloseFrame(code: 1009)
+                    if self.markClosed() {
+                        self.connection.cancel()
+                        await self.onDisconnect()
                     }
                     return
                 }
-                fragmentBuffer.append(payload)
+                self.fragmentBuffer.append(payload)
                 if fin {
                     // End of fragmented message
                     guard let text = String(data: fragmentBuffer, encoding: .utf8) else {
                         // RFC 6455 §8.1: invalid UTF-8 in reassembled text message
-                        fragmentBuffer = Data()
-                        fragmentOpcode = nil
-                        try? await sendCloseFrame(code: 1007)
-                        if markClosed() {
-                            connection.cancel()
-                            await onDisconnect()
+                        self.fragmentBuffer = Data()
+                        self.fragmentOpcode = nil
+                        try? await self.sendCloseFrame(code: 1007)
+                        if self.markClosed() {
+                            self.connection.cancel()
+                            await self.onDisconnect()
                         }
                         return
                     }
-                    await onMessage(text)
-                    fragmentBuffer = Data()
-                    fragmentOpcode = nil
+                    await self.onMessage(text)
+                    self.fragmentBuffer = Data()
+                    self.fragmentOpcode = nil
                 }
 
             case .close:
                 // RFC 6455 §5.5.1: Close frame payload validation
                 if payload.count == 1 {
                     // Payload of exactly 1 byte is invalid
-                    try? await sendCloseFrame(code: 1002)
-                    if markClosed() {
-                        connection.cancel()
-                        await onDisconnect()
+                    try? await self.sendCloseFrame(code: 1002)
+                    if self.markClosed() {
+                        self.connection.cancel()
+                        await self.onDisconnect()
                     }
                     return
                 }
@@ -299,10 +300,10 @@ final class WebSocketConnection: @unchecked Sendable {
                         || (1007...1014).contains(code)
                         || (3000...4999).contains(code)
                     if !validRanges {
-                        try? await sendCloseFrame(code: 1002)
-                        if markClosed() {
-                            connection.cancel()
-                            await onDisconnect()
+                        try? await self.sendCloseFrame(code: 1002)
+                        if self.markClosed() {
+                            self.connection.cancel()
+                            await self.onDisconnect()
                         }
                         return
                     }
@@ -310,26 +311,26 @@ final class WebSocketConnection: @unchecked Sendable {
                     if payload.count > 2 {
                         let reasonBytes = payload[2...]
                         if String(data: Data(reasonBytes), encoding: .utf8) == nil {
-                            try? await sendCloseFrame(code: 1007)
-                            if markClosed() {
-                                connection.cancel()
-                                await onDisconnect()
+                            try? await self.sendCloseFrame(code: 1007)
+                            if self.markClosed() {
+                                self.connection.cancel()
+                                await self.onDisconnect()
                             }
                             return
                         }
                     }
                 }
                 // Valid close frame — echo it back
-                try? await sendFrame(opcode: .close, payload: payload)
-                if markClosed() {
-                    connection.cancel()
-                    await onDisconnect()
+                try? await self.sendFrame(opcode: .close, payload: payload)
+                if self.markClosed() {
+                    self.connection.cancel()
+                    await self.onDisconnect()
                 }
                 return
 
             case .ping:
                 // Respond with pong
-                try? await sendFrame(opcode: .pong, payload: payload)
+                try? await self.sendFrame(opcode: .pong, payload: payload)
 
             case .pong:
                 // Ignore
@@ -342,18 +343,18 @@ final class WebSocketConnection: @unchecked Sendable {
 
     /// Sends a text frame to the client.
     func sendText(_ text: String) async throws {
-        try await sendFrame(opcode: .text, payload: Data(text.utf8))
+        try await self.sendFrame(opcode: .text, payload: Data(text.utf8))
     }
 
     /// Sends a close frame and cancels the connection.
     /// Uses fire-and-forget Task intentionally: close() is only called during server shutdown
     /// (from stop()), not during normal operation where strict event ordering matters.
     func close() {
-        if markClosed() {
+        if self.markClosed() {
             Task {
-                try? await sendFrame(opcode: .close, payload: Data())
-                connection.cancel()
-                await onDisconnect()
+                try? await self.sendFrame(opcode: .close, payload: Data())
+                self.connection.cancel()
+                await self.onDisconnect()
             }
         }
     }
@@ -362,7 +363,7 @@ final class WebSocketConnection: @unchecked Sendable {
         var payload = Data()
         payload.append(UInt8((code >> 8) & 0xFF))
         payload.append(UInt8(code & 0xFF))
-        try await sendFrame(opcode: .close, payload: payload)
+        try await self.sendFrame(opcode: .close, payload: payload)
     }
 
     private func sendFrame(opcode: WSOpcode, payload: Data) async throws {
@@ -387,7 +388,7 @@ final class WebSocketConnection: @unchecked Sendable {
         }
 
         frame.append(payload)
-        try await send(data: frame)
+        try await self.send(data: frame)
     }
 
     // MARK: - Low-level IO
@@ -395,10 +396,10 @@ final class WebSocketConnection: @unchecked Sendable {
     private func readExact(count: Int) async throws -> Data {
         var buffer = Data()
         // Consume from leftover HTTP read buffer first
-        if !readBuffer.isEmpty {
+        if !self.readBuffer.isEmpty {
             let toConsume = min(readBuffer.count, count)
-            buffer.append(readBuffer.prefix(toConsume))
-            readBuffer.removeFirst(toConsume)
+            buffer.append(self.readBuffer.prefix(toConsume))
+            self.readBuffer.removeFirst(toConsume)
         }
         while buffer.count < count {
             let remaining = count - buffer.count
@@ -413,7 +414,7 @@ final class WebSocketConnection: @unchecked Sendable {
 
     private func receiveChunk(maxLength: Int) async throws -> Data {
         try await withCheckedThrowingContinuation { continuation in
-            connection.receive(minimumIncompleteLength: 1, maximumLength: maxLength) {
+            self.connection.receive(minimumIncompleteLength: 1, maximumLength: maxLength) {
                 data, _, _, error in
                 if let error {
                     continuation.resume(throwing: error)
@@ -426,7 +427,7 @@ final class WebSocketConnection: @unchecked Sendable {
 
     private func send(data: Data) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            connection.send(content: data, completion: .contentProcessed { error in
+            self.connection.send(content: data, completion: .contentProcessed { error in
                 if let error {
                     continuation.resume(throwing: error)
                 } else {

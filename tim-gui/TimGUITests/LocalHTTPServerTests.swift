@@ -1,6 +1,5 @@
 import Foundation
 import Testing
-
 @testable import TimGUI
 
 @Suite("LocalHTTPServer")
@@ -21,13 +20,13 @@ struct LocalHTTPServerTests {
         }, wsHandler: { _ in })
         try await server.start()
 
-        let url = URL(string: "http://127.0.0.1:\(server.boundPort)/messages")!
+        let url = try #require(URL(string: "http://127.0.0.1:\(server.boundPort)/messages"))
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = Data("""
-            {"message":"hi","workspacePath":"/tmp"}
-            """.utf8)
+        {"message":"hi","workspacePath":"/tmp"}
+        """.utf8)
 
         let (data, response) = try await URLSession.shared.data(for: request)
         let httpResponse = try #require(response as? HTTPURLResponse)
@@ -49,7 +48,7 @@ struct LocalHTTPServerTests {
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { _ in })
         try await server.start()
 
-        let url = URL(string: "http://127.0.0.1:\(server.boundPort)/unknown")!
+        let url = try #require(URL(string: "http://127.0.0.1:\(server.boundPort)/unknown"))
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
 
@@ -65,7 +64,7 @@ struct LocalHTTPServerTests {
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { _ in })
         try await server.start()
 
-        let url = URL(string: "http://127.0.0.1:\(server.boundPort)/messages")!
+        let url = try #require(URL(string: "http://127.0.0.1:\(server.boundPort)/messages"))
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

@@ -4,10 +4,15 @@ paths:
   tasks: tasks
 defaultExecutor: claude-code
 postApplyCommands:
-  - title: Format
+  - title: Format JS
     command: bun run format
     allowFailure: true
     hideOutputOnSuccess: true
+  - title: Format Swift
+    command: scripts/lint.sh
+    workingDirectory: tim-gui
+    hideOutputOnSuccess:: true
+    allowFailure: true
 updateDocs:
   mode: after-iteration
   applyLessons: true

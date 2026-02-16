@@ -40,21 +40,21 @@ final class LocalHTTPServer: @unchecked Sendable {
 
     /// The port the server is actually listening on. Only valid after `start()` returns.
     var boundPort: UInt16 {
-        listener?.port?.rawValue ?? 0
+        self.listener?.port?.rawValue ?? 0
     }
 
     init(
         port: UInt16,
         handler: @escaping @MainActor (MessagePayload) -> Void,
-        wsHandler: @escaping @MainActor (WebSocketEvent) -> Void
-    ) {
+        wsHandler: @escaping @MainActor (WebSocketEvent) -> Void)
+    {
         self.port = NWEndpoint.Port(rawValue: port) ?? 8123
         self.handler = handler
         self.wsHandler = wsHandler
     }
 
     func start() async throws {
-        guard listener == nil else { return }
+        guard self.listener == nil else { return }
         let parameters = NWParameters.tcp
         parameters.requiredInterfaceType = .loopback
         parameters.allowLocalEndpointReuse = true
@@ -71,7 +71,7 @@ final class LocalHTTPServer: @unchecked Sendable {
                     if resumeGuard.tryResume() {
                         continuation.resume()
                     }
-                case .failed(let error):
+                case let .failed(error):
                     if resumeGuard.tryResume() {
                         continuation.resume(throwing: error)
                     }
@@ -85,7 +85,7 @@ final class LocalHTTPServer: @unchecked Sendable {
         // Replace the startup handler with one that monitors for post-startup failures.
         newListener.stateUpdateHandler = { state in
             switch state {
-            case .failed(let error):
+            case let .failed(error):
                 Self.logger.error("NWListener failed after startup: \(error)")
             case .cancelled:
                 Self.logger.info("NWListener cancelled")
@@ -99,10 +99,10 @@ final class LocalHTTPServer: @unchecked Sendable {
     func stop() {
         self.listener?.cancel()
         self.listener = nil
-        connectionsLock.lock()
-        let connections = wsConnections
-        wsConnections.removeAll()
-        connectionsLock.unlock()
+        self.connectionsLock.lock()
+        let connections = self.wsConnections
+        self.wsConnections.removeAll()
+        self.connectionsLock.unlock()
         for (_, conn) in connections {
             conn.close()
         }
@@ -121,9 +121,12 @@ final class LocalHTTPServer: @unchecked Sendable {
 
             // Check for WebSocket upgrade
             if request.method == "GET", request.path == "/tim-agent",
-                request.isWebSocketUpgrade, let wsKey = request.webSocketKey
+               request.isWebSocketUpgrade, let wsKey = request.webSocketKey
             {
-                await handleWebSocketUpgrade(connection: connection, key: wsKey, leftoverData: request.leftoverData ?? Data())
+                await self.handleWebSocketUpgrade(
+                    connection: connection,
+                    key: wsKey,
+                    leftoverData: request.leftoverData ?? Data())
                 return
             }
 
@@ -169,16 +172,15 @@ final class LocalHTTPServer: @unchecked Sendable {
                 await MainActor.run {
                     wsHandler(.disconnected(connectionId))
                 }
-            }
-        )
+            })
 
-        addConnection(connectionId, wsConnection)
+        self.addConnection(connectionId, wsConnection)
 
         do {
             try await wsConnection.performUpgrade(key: key)
             wsConnection.startReading()
         } catch {
-            handleWebSocketDisconnect(connectionId: connectionId)
+            self.handleWebSocketDisconnect(connectionId: connectionId)
             await MainActor.run {
                 wsHandler(.disconnected(connectionId))
             }
@@ -186,9 +188,9 @@ final class LocalHTTPServer: @unchecked Sendable {
     }
 
     private nonisolated func addConnection(_ id: UUID, _ connection: WebSocketConnection) {
-        connectionsLock.lock()
-        wsConnections[id] = connection
-        connectionsLock.unlock()
+        self.connectionsLock.lock()
+        self.wsConnections[id] = connection
+        self.connectionsLock.unlock()
     }
 
     private static let logger = Logger(subsystem: "com.timgui", category: "WebSocket")
@@ -201,15 +203,15 @@ final class LocalHTTPServer: @unchecked Sendable {
             let message = try JSONDecoder().decode(HeadlessMessage.self, from: data)
             await MainActor.run {
                 switch message {
-                case .sessionInfo(let info):
+                case let .sessionInfo(info):
                     wsHandler(.sessionInfo(connectionId, info))
-                case .output(let seq, let tunnelMessage):
+                case let .output(seq, tunnelMessage):
                     wsHandler(.output(connectionId, seq, tunnelMessage))
                 case .replayStart:
                     wsHandler(.replayStart(connectionId))
                 case .replayEnd:
                     wsHandler(.replayEnd(connectionId))
-                case .unknown(let type):
+                case let .unknown(type):
                     Self.logger.warning("Received unknown HeadlessMessage type: \(type)")
                 }
             }
@@ -219,9 +221,9 @@ final class LocalHTTPServer: @unchecked Sendable {
     }
 
     private func handleWebSocketDisconnect(connectionId: UUID) {
-        connectionsLock.lock()
-        wsConnections.removeValue(forKey: connectionId)
-        connectionsLock.unlock()
+        self.connectionsLock.lock()
+        self.wsConnections.removeValue(forKey: connectionId)
+        self.connectionsLock.unlock()
     }
 
     // MARK: - HTTP Request Parsing
@@ -321,8 +323,8 @@ final class LocalHTTPServer: @unchecked Sendable {
     private func sendResponse(
         _ connection: NWConnection,
         status: Int,
-        jsonBody: [String: String]
-    ) async throws {
+        jsonBody: [String: String]) async throws
+    {
         let bodyData = try JSONSerialization.data(withJSONObject: jsonBody, options: [])
         let statusLine = "HTTP/1.1 \(status) \(statusText(for: status))"
         let headers = [
@@ -373,11 +375,11 @@ struct HTTPRequest {
     }
 
     var isWebSocketUpgrade: Bool {
-        headers["upgrade"]?.caseInsensitiveCompare("websocket") == .orderedSame
+        self.headers["upgrade"]?.caseInsensitiveCompare("websocket") == .orderedSame
     }
 
     var webSocketKey: String? {
-        headers["sec-websocket-key"]
+        self.headers["sec-websocket-key"]
     }
 }
 
@@ -392,10 +394,10 @@ private final class StartupResumeGuard: @unchecked Sendable {
 
     /// Returns true if this call is the first to claim the resume. Subsequent calls return false.
     func tryResume() -> Bool {
-        lock.lock()
-        let alreadyResumed = resumed
-        resumed = true
-        lock.unlock()
+        self.lock.lock()
+        let alreadyResumed = self.resumed
+        self.resumed = true
+        self.lock.unlock()
         return !alreadyResumed
     }
 }

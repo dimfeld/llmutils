@@ -13,7 +13,7 @@ final class SessionState {
 
     var selectedSession: SessionItem? {
         guard let id = selectedSessionId else { return nil }
-        return sessions.first { $0.id == id }
+        return self.sessions.first { $0.id == id }
     }
 
     func addSession(connectionId: UUID, info: SessionInfoPayload) {
@@ -46,8 +46,8 @@ final class SessionState {
                 notificationOnly.messages = buffered
             }
 
-            if selectedSessionId == nil {
-                selectedSessionId = notificationOnly.id
+            if self.selectedSessionId == nil {
+                self.selectedSessionId = notificationOnly.id
             }
             return
         }
@@ -63,17 +63,16 @@ final class SessionState {
             connectedAt: Date(),
             isActive: true,
             messages: [],
-            terminal: info.terminal
-        )
+            terminal: info.terminal)
 
         // Flush any messages that arrived before session_info
         if let buffered = pendingMessages.removeValue(forKey: connectionId) {
             session.messages = buffered
         }
 
-        sessions.insert(session, at: 0)
-        if selectedSessionId == nil {
-            selectedSessionId = session.id
+        self.sessions.insert(session, at: 0)
+        if self.selectedSessionId == nil {
+            self.selectedSessionId = session.id
         }
     }
 
@@ -86,79 +85,80 @@ final class SessionState {
             // If the incoming session has a pane ID, only match by pane ID.
             // Do NOT fall back to workspace matching — that could incorrectly
             // reconcile with a notification-only session from a different pane.
-            return sessions.first {
+            return self.sessions.first {
                 $0.command.isEmpty && $0.terminal?.paneId == paneId
             }
         }
 
         // Only fall back to workspace path match when the incoming session has NO pane ID
         if let workspacePath = info.workspacePath, !workspacePath.isEmpty {
-            return sessions.first { $0.command.isEmpty && $0.workspacePath == workspacePath }
+            return self.sessions.first { $0.command.isEmpty && $0.workspacePath == workspacePath }
         }
 
         return nil
     }
 
     func appendMessage(connectionId: UUID, message: SessionMessage) {
-        if replayingConnections.contains(connectionId) {
-            replayMessages[connectionId, default: []].append(message)
+        if self.replayingConnections.contains(connectionId) {
+            self.replayMessages[connectionId, default: []].append(message)
             return
         }
 
         guard let index = sessions.firstIndex(where: { $0.connectionId == connectionId }) else {
             // Buffer messages that arrive before session_info
-            pendingMessages[connectionId, default: []].append(message)
+            self.pendingMessages[connectionId, default: []].append(message)
             return
         }
-        sessions[index].messages.append(message)
+        self.sessions[index].messages.append(message)
     }
 
     func startReplay(connectionId: UUID) {
-        replayingConnections.insert(connectionId)
+        self.replayingConnections.insert(connectionId)
     }
 
     func endReplay(connectionId: UUID) {
-        replayingConnections.remove(connectionId)
+        self.replayingConnections.remove(connectionId)
 
         guard let bufferedReplayMessages = replayMessages.removeValue(forKey: connectionId),
-              !bufferedReplayMessages.isEmpty else {
+              !bufferedReplayMessages.isEmpty
+        else {
             return
         }
 
         guard let index = sessions.firstIndex(where: { $0.connectionId == connectionId }) else {
-            pendingMessages[connectionId, default: []].append(contentsOf: bufferedReplayMessages)
+            self.pendingMessages[connectionId, default: []].append(contentsOf: bufferedReplayMessages)
             return
         }
 
-        sessions[index].messages.append(contentsOf: bufferedReplayMessages)
-        sessions[index].forceScrollToBottomVersion += 1
+        self.sessions[index].messages.append(contentsOf: bufferedReplayMessages)
+        self.sessions[index].forceScrollToBottomVersion += 1
     }
 
     func markDisconnected(connectionId: UUID) {
         // Clean up any pending messages for this connection
-        pendingMessages.removeValue(forKey: connectionId)
-        replayingConnections.remove(connectionId)
-        replayMessages.removeValue(forKey: connectionId)
+        self.pendingMessages.removeValue(forKey: connectionId)
+        self.replayingConnections.remove(connectionId)
+        self.replayMessages.removeValue(forKey: connectionId)
         guard let index = sessions.firstIndex(where: { $0.connectionId == connectionId }) else {
             return
         }
-        sessions[index].isActive = false
+        self.sessions[index].isActive = false
     }
 
     func dismissSession(id: UUID) {
         guard let session = sessions.first(where: { $0.id == id }), !session.isActive else { return }
-        sessions.removeAll { $0.id == id }
-        if selectedSessionId == id {
-            selectedSessionId = sessions.first?.id
+        self.sessions.removeAll { $0.id == id }
+        if self.selectedSessionId == id {
+            self.selectedSessionId = self.sessions.first?.id
         }
     }
 
     func dismissAllDisconnected() {
-        let disconnectedIds = Set(sessions.filter { !$0.isActive }.map { $0.id })
+        let disconnectedIds = Set(sessions.filter { !$0.isActive }.map(\.id))
         guard !disconnectedIds.isEmpty else { return }
-        sessions.removeAll { disconnectedIds.contains($0.id) }
+        self.sessions.removeAll { disconnectedIds.contains($0.id) }
         if let selectedId = selectedSessionId, disconnectedIds.contains(selectedId) {
-            selectedSessionId = sessions.first?.id
+            self.selectedSessionId = self.sessions.first?.id
         }
     }
 
@@ -166,14 +166,14 @@ final class SessionState {
         // Try to match by terminal pane ID first, then fall back to workspace.
         var matchedSession: SessionItem?
         if let notificationPaneId = payload.terminal?.paneId {
-            matchedSession = sessions.first { session in
+            matchedSession = self.sessions.first { session in
                 session.terminal?.paneId == notificationPaneId
             }
         }
 
         if matchedSession == nil, !payload.workspacePath.isEmpty {
             // Fall back to workspace path when pane lookup does not find a match.
-            matchedSession = sessions.first { session in
+            matchedSession = self.sessions.first { session in
                 session.workspacePath == payload.workspacePath
             }
         }
@@ -181,7 +181,7 @@ final class SessionState {
         if let session = matchedSession {
             session.notificationMessage = payload.message
             // If this session is already selected, don't show the unread dot
-            if session.id == selectedSessionId {
+            if session.id == self.selectedSessionId {
                 session.hasUnreadNotification = false
             } else {
                 session.hasUnreadNotification = true
@@ -201,9 +201,8 @@ final class SessionState {
                 messages: [],
                 terminal: payload.terminal,
                 hasUnreadNotification: true,
-                notificationMessage: payload.message
-            )
-            sessions.insert(session, at: 0)
+                notificationMessage: payload.message)
+            self.sessions.insert(session, at: 0)
         }
 
         // Trigger macOS system notification

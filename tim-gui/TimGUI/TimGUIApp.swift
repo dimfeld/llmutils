@@ -14,13 +14,12 @@ struct TimGUIApp: App {
             ContentView(
                 sessionState: self.sessionState,
                 startError: self.startError,
-                serverPort: self.serverPort
-            )
-            .task {
-                UNUserNotificationCenter.current().requestAuthorization(
-                    options: [.alert, .sound]) { _, _ in }
-                await self.startServerIfNeeded()
-            }
+                serverPort: self.serverPort)
+                .task {
+                    UNUserNotificationCenter.current().requestAuthorization(
+                        options: [.alert, .sound]) { _, _ in }
+                    await self.startServerIfNeeded()
+                }
         }
     }
 
@@ -37,22 +36,21 @@ struct TimGUIApp: App {
             },
             wsHandler: { event in
                 switch event {
-                case .sessionInfo(let connId, let info):
+                case let .sessionInfo(connId, info):
                     sessionState.addSession(connectionId: connId, info: info)
-                case .output(let connId, let seq, let tunnelMessage):
+                case let .output(connId, seq, tunnelMessage):
                     sessionState.ingestNotification(connectionId: connId, tunnelMessage: tunnelMessage)
                     let message = MessageFormatter.format(
                         tunnelMessage: tunnelMessage, seq: seq)
                     sessionState.appendMessage(connectionId: connId, message: message)
-                case .replayStart(let connId):
+                case let .replayStart(connId):
                     sessionState.startReplay(connectionId: connId)
-                case .replayEnd(let connId):
+                case let .replayEnd(connId):
                     sessionState.endReplay(connectionId: connId)
-                case .disconnected(let connId):
+                case let .disconnected(connId):
                     sessionState.markDisconnected(connectionId: connId)
                 }
-            }
-        )
+            })
         do {
             try await newServer.start()
             self.startError = nil

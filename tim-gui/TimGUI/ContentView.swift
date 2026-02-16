@@ -24,7 +24,7 @@ struct ContentView: View {
                     .padding(.horizontal, 16)
             }
 
-            SessionsView(sessionState: sessionState)
+            SessionsView(sessionState: self.sessionState)
         }
         .frame(minWidth: 800, minHeight: 400)
     }

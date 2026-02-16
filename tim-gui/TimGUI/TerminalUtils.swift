@@ -45,14 +45,14 @@ func activateTerminalPane(_ terminal: TerminalPayload) {
 
         guard let workspaceName = pane["workspace"] as? String, !workspaceName.isEmpty else {
             print(
-                "[workspace-switch] No workspace for pane \(paneId): \(pane["workspace"] ?? "nil")"
-            )
+                "[workspace-switch] No workspace for pane \(paneId): \(pane["workspace"] ?? "nil")")
             return
         }
 
         let argsObj: [String: String] = ["workspace": workspaceName]
         guard let argsData = try? JSONSerialization.data(withJSONObject: argsObj),
-              let args = String(data: argsData, encoding: .utf8) else {
+              let args = String(data: argsData, encoding: .utf8)
+        else {
             print("[workspace-switch] Failed to serialize workspace JSON")
             return
         }
@@ -116,22 +116,22 @@ final class ThrowingResumeGuard: @unchecked Sendable {
     }
 
     func resumeOnce() {
-        lock.lock()
-        let alreadyResumed = resumed
-        resumed = true
-        lock.unlock()
+        self.lock.lock()
+        let alreadyResumed = self.resumed
+        self.resumed = true
+        self.lock.unlock()
         if !alreadyResumed {
-            continuation.resume()
+            self.continuation.resume()
         }
     }
 
     func resumeOnce(throwing error: Error) {
-        lock.lock()
-        let alreadyResumed = resumed
-        resumed = true
-        lock.unlock()
+        self.lock.lock()
+        let alreadyResumed = self.resumed
+        self.resumed = true
+        self.lock.unlock()
         if !alreadyResumed {
-            continuation.resume(throwing: error)
+            self.continuation.resume(throwing: error)
         }
     }
 }

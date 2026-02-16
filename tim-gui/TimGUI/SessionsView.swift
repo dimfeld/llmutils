@@ -7,7 +7,7 @@ struct SessionsView: View {
 
     var body: some View {
         NavigationSplitView {
-            SessionListView(sessionState: sessionState)
+            SessionListView(sessionState: self.sessionState)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 280, max: 400)
         } detail: {
             if let session = sessionState.selectedSession {
@@ -17,8 +17,7 @@ struct SessionsView: View {
                 ContentUnavailableView(
                     "No Session Selected",
                     systemImage: "rectangle.split.2x1",
-                    description: Text("Select a session from the sidebar to view its output.")
-                )
+                    description: Text("Select a session from the sidebar to view its output."))
             }
         }
     }
@@ -30,38 +29,37 @@ struct SessionListView: View {
     @Bindable var sessionState: SessionState
 
     private var hasDisconnectedSessions: Bool {
-        sessionState.sessions.contains { !$0.isActive }
+        self.sessionState.sessions.contains { !$0.isActive }
     }
 
     var body: some View {
-        if sessionState.sessions.isEmpty {
+        if self.sessionState.sessions.isEmpty {
             ContentUnavailableView(
                 "No Sessions",
                 systemImage: "antenna.radiowaves.left.and.right",
-                description: Text("Sessions will appear here when tim processes connect.")
-            )
+                description: Text("Sessions will appear here when tim processes connect."))
         } else {
-            List(sessionState.sessions, selection: $sessionState.selectedSessionId) { session in
+            List(self.sessionState.sessions, selection: self.$sessionState.selectedSessionId) { session in
                 SessionRowView(
                     session: session,
-                    onDismiss: { sessionState.dismissSession(id: session.id) }
-                )
+                    onDismiss: { self.sessionState.dismissSession(id: session.id) })
             }
             .toolbar {
                 ToolbarItem(placement: .automatic) {
-                    if hasDisconnectedSessions {
-                        Button(action: { sessionState.dismissAllDisconnected() }) {
+                    if self.hasDisconnectedSessions {
+                        Button(action: { self.sessionState.dismissAllDisconnected() }) {
                             Label("Clear Disconnected", systemImage: "xmark.circle")
                         }
                         .help("Remove all disconnected sessions")
                     }
                 }
             }
-            .onChange(of: sessionState.selectedSessionId) { _, newId in
+            .onChange(of: self.sessionState.selectedSessionId) { _, newId in
                 if let newId,
                    let session = sessionState.sessions.first(where: { $0.id == newId }),
-                   session.hasUnreadNotification {
-                    sessionState.markNotificationRead(sessionId: newId)
+                   session.hasUnreadNotification
+                {
+                    self.sessionState.markNotificationRead(sessionId: newId)
                 }
             }
         }
@@ -77,40 +75,40 @@ struct SessionRowView: View {
     var body: some View {
         HStack(spacing: 8) {
             Circle()
-                .fill(session.isActive ? .green : .gray)
+                .fill(self.session.isActive ? .green : .gray)
                 .frame(width: 8, height: 8)
 
             Circle()
                 .fill(.blue)
                 .frame(width: 8, height: 8)
-                .opacity(session.hasUnreadNotification ? 1 : 0)
+                .opacity(self.session.hasUnreadNotification ? 1 : 0)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(SessionRowView.shortenedPath(session.workspacePath) ?? "Unknown workspace")
+                Text(SessionRowView.shortenedPath(self.session.workspacePath) ?? "Unknown workspace")
                     .font(.headline)
                     .lineLimit(1)
 
-                if session.command.isEmpty, let msg = session.notificationMessage {
+                if self.session.command.isEmpty, let msg = session.notificationMessage {
                     Text(msg)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 } else {
-                    Text(session.planTitle ?? session.command)
+                    Text(self.session.planTitle ?? self.session.command)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
 
-                Text(session.connectedAt, style: .time)
+                Text(self.session.connectedAt, style: .time)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Spacer()
 
-            if session.terminal?.type == "wezterm" {
-                Button(action: { activateTerminalPane(session.terminal!) }) {
+            if self.session.terminal?.type == "wezterm" {
+                Button(action: { activateTerminalPane(self.session.terminal!) }) {
                     Image(systemName: "terminal")
                         .foregroundStyle(.secondary)
                 }
@@ -119,8 +117,8 @@ struct SessionRowView: View {
             }
         }
         .padding(.vertical, 2)
-        .contextMenu(session.isActive ? nil : ContextMenu(menuItems: {
-            Button("Dismiss", action: onDismiss)
+        .contextMenu(self.session.isActive ? nil : ContextMenu(menuItems: {
+            Button("Dismiss", action: self.onDismiss)
         }))
     }
 
@@ -153,7 +151,7 @@ struct SessionDetailView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
-                    ForEach(session.messages) { message in
+                    ForEach(self.session.messages) { message in
                         SessionMessageView(message: message)
                             .id(message.id)
                     }
@@ -162,17 +160,17 @@ struct SessionDetailView: View {
                         .frame(height: 1)
                         .id(SessionDetailView.bottomAnchorID)
                         .onAppear {
-                            isNearBottom = true
-                            autoScrollEnabled = true
-                            messageCountAtBottom = session.messages.count
+                            self.isNearBottom = true
+                            self.autoScrollEnabled = true
+                            self.messageCountAtBottom = self.session.messages.count
                         }
                         .onDisappear {
-                            isNearBottom = false
+                            self.isNearBottom = false
                             // Only disable auto-scroll if content hasn't changed,
                             // meaning the user scrolled away rather than new
                             // messages pushing the bottom out of view.
-                            if session.messages.count == messageCountAtBottom {
-                                autoScrollEnabled = false
+                            if self.session.messages.count == self.messageCountAtBottom {
+                                self.autoScrollEnabled = false
                             }
                         }
                 }
@@ -180,9 +178,9 @@ struct SessionDetailView: View {
                 .padding(.bottom, 20)
             }
             .overlay(alignment: .bottomTrailing) {
-                if !isNearBottom {
+                if !self.isNearBottom {
                     Button {
-                        autoScrollEnabled = true
+                        self.autoScrollEnabled = true
                         withAnimation {
                             proxy.scrollTo(SessionDetailView.bottomAnchorID, anchor: .bottom)
                         }
@@ -199,22 +197,22 @@ struct SessionDetailView: View {
                     .padding(16)
                 }
             }
-            .animation(.easeInOut(duration: 0.2), value: isNearBottom)
+            .animation(.easeInOut(duration: 0.2), value: self.isNearBottom)
             .focusable()
-            .focused($isFocused)
+            .focused(self.$isFocused)
             .onAppear {
                 proxy.scrollTo(SessionDetailView.bottomAnchorID, anchor: .bottom)
-                isFocused = true
+                self.isFocused = true
             }
-            .onChange(of: session.messages.count) {
-                if autoScrollEnabled {
+            .onChange(of: self.session.messages.count) {
+                if self.autoScrollEnabled {
                     proxy.scrollTo(SessionDetailView.bottomAnchorID, anchor: .bottom)
                 }
             }
-            .onChange(of: session.forceScrollToBottomVersion) {
+            .onChange(of: self.session.forceScrollToBottomVersion) {
                 proxy.scrollTo(SessionDetailView.bottomAnchorID, anchor: .bottom)
-                isNearBottom = true
-                autoScrollEnabled = true
+                self.isNearBottom = true
+                self.autoScrollEnabled = true
             }
             .onKeyPress(.home) {
                 if let firstId = session.messages.first?.id {
@@ -223,7 +221,7 @@ struct SessionDetailView: View {
                 return .handled
             }
             .onKeyPress(.end) {
-                autoScrollEnabled = true
+                self.autoScrollEnabled = true
                 proxy.scrollTo(SessionDetailView.bottomAnchorID, anchor: .bottom)
                 return .handled
             }
@@ -247,22 +245,21 @@ struct SessionMessageView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if let title = message.title {
-                headerView(title)
+                self.headerView(title)
             }
             if let body = message.body {
-                bodyView(body)
+                self.bodyView(body)
             }
         }
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    @ViewBuilder
     private func headerView(_ title: String) -> some View {
         HStack {
             Text(title)
                 .font(.headline)
-                .foregroundStyle(colorForCategory(message.category))
+                .foregroundStyle(self.colorForCategory(self.message.category))
             Spacer()
             if let ts = message.timestamp {
                 Text(timestampFormatter.string(from: ts))
@@ -275,46 +272,46 @@ struct SessionMessageView: View {
     @ViewBuilder
     private func bodyView(_ body: MessageContentBody) -> some View {
         switch body {
-        case .text(let text):
+        case let .text(text):
             Text(text)
                 .font(.body)
-                .foregroundStyle(colorForCategory(message.category))
+                .foregroundStyle(self.colorForCategory(self.message.category))
 
-        case .monospaced(let text):
+        case let .monospaced(text):
             Text(text)
                 .font(.system(.body, design: .monospaced))
-                .foregroundStyle(colorForCategory(message.category))
+                .foregroundStyle(self.colorForCategory(self.message.category))
 
-        case .todoList(let items):
+        case let .todoList(items):
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                     HStack(spacing: 6) {
-                        Image(systemName: iconForTodoStatus(item.status))
-                            .foregroundStyle(colorForTodoStatus(item.status))
+                        Image(systemName: self.iconForTodoStatus(item.status))
+                            .foregroundStyle(self.colorForTodoStatus(item.status))
                             .font(.body)
                         Text(item.label)
                             .font(.body)
-                            .foregroundStyle(colorForCategory(message.category))
+                            .foregroundStyle(self.colorForCategory(self.message.category))
                     }
                 }
             }
 
-        case .fileChanges(let items):
+        case let .fileChanges(items):
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                     HStack(spacing: 6) {
-                        Text(indicatorForFileChange(item.kind))
+                        Text(self.indicatorForFileChange(item.kind))
                             .font(.system(.body, design: .monospaced))
-                            .foregroundStyle(colorForFileChange(item.kind))
+                            .foregroundStyle(self.colorForFileChange(item.kind))
                             .frame(width: 14, alignment: .center)
                         Text(item.path)
                             .font(.system(.body, design: .monospaced))
-                            .foregroundStyle(colorForCategory(message.category))
+                            .foregroundStyle(self.colorForCategory(self.message.category))
                     }
                 }
             }
 
-        case .keyValuePairs(let pairs):
+        case let .keyValuePairs(pairs):
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
                     Text("\(pair.key): ").foregroundStyle(.secondary)
@@ -390,13 +387,13 @@ struct SessionMessageView: View {
                     planTitle: "Add WebSocket support",
                     workspacePath: "/Users/dev/projects/myapp",
                     gitRemote: nil,
-                    terminal: nil
-                )
-            )
+                    terminal: nil))
             if let connId = state.sessions.first?.connectionId {
                 let ts = "2026-02-13T00:30:00.000Z"
                 var seq = 0
-                func nextSeq() -> Int { seq += 1; return seq }
+                func nextSeq() -> Int {
+                    seq += 1; return seq
+                }
 
                 state.appendMessage(
                     connectionId: connId,
@@ -405,36 +402,24 @@ struct SessionMessageView: View {
                             message: .agentSessionStart(AgentSessionStartPayload(
                                 executor: "claude", mode: "agent", planId: 169,
                                 sessionId: nil, threadId: nil, tools: nil,
-                                mcpServers: nil, timestamp: ts
-                            ))
-                        ),
-                        seq: nextSeq()
-                    )
-                )
+                                mcpServers: nil, timestamp: ts))),
+                        seq: nextSeq()))
                 state.appendMessage(
                     connectionId: connId,
                     message: MessageFormatter.format(
                         tunnelMessage: .structured(
                             message: .llmResponse(
                                 text: "I'll start by reading the project structure to understand how the WebSocket module should integrate with the existing codebase.",
-                                isUserRequest: false, timestamp: ts
-                            )
-                        ),
-                        seq: nextSeq()
-                    )
-                )
+                                isUserRequest: false, timestamp: ts)),
+                        seq: nextSeq()))
                 state.appendMessage(
                     connectionId: connId,
                     message: MessageFormatter.format(
                         tunnelMessage: .structured(
                             message: .llmToolUse(LlmToolUsePayload(
                                 toolName: "Read", inputSummary: "src/main.ts",
-                                input: nil, timestamp: ts
-                            ))
-                        ),
-                        seq: nextSeq()
-                    )
-                )
+                                input: nil, timestamp: ts))),
+                        seq: nextSeq()))
                 state.appendMessage(
                     connectionId: connId,
                     message: MessageFormatter.format(
@@ -442,12 +427,8 @@ struct SessionMessageView: View {
                             message: .commandResult(CommandResultPayload(
                                 command: "npm test", cwd: "/Users/dev/projects/myapp",
                                 exitCode: 0, stdout: "All 42 tests passed\nTest Suites: 8 passed",
-                                stderr: nil, timestamp: ts
-                            ))
-                        ),
-                        seq: nextSeq()
-                    )
-                )
+                                stderr: nil, timestamp: ts))),
+                        seq: nextSeq()))
                 state.appendMessage(
                     connectionId: connId,
                     message: MessageFormatter.format(
@@ -458,11 +439,8 @@ struct SessionMessageView: View {
                                 TodoUpdateItem(label: "Add reconnection logic", status: "pending"),
                                 TodoUpdateItem(label: "Write integration tests", status: "pending"),
                                 TodoUpdateItem(label: "Deploy to staging", status: "blocked"),
-                            ], timestamp: ts)
-                        ),
-                        seq: nextSeq()
-                    )
-                )
+                            ], timestamp: ts)),
+                        seq: nextSeq()))
                 state.appendMessage(
                     connectionId: connId,
                     message: MessageFormatter.format(
@@ -472,13 +450,9 @@ struct SessionMessageView: View {
                                 FileChangeItem(path: "src/websocket/handlers.ts", kind: "added"),
                                 FileChangeItem(path: "src/main.ts", kind: "updated"),
                                 FileChangeItem(path: "src/old-polling.ts", kind: "removed"),
-                            ], timestamp: ts)
-                        ),
-                        seq: nextSeq()
-                    )
-                )
+                            ], timestamp: ts)),
+                        seq: nextSeq()))
             }
             return state
-        }()
-    )
+        }())
 }
