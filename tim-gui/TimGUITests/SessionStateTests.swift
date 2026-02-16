@@ -1414,6 +1414,89 @@ struct SessionStateTests {
         #expect(state.selectedSession?.command == "agent")
     }
 
+    @Test("Notification with pane ID skips workspace fallback when older session has same workspace")
+    func ingestNotificationPaneIdSkipsWorkspaceFallback() {
+        let state = SessionState()
+
+        // An older session exists for the same workspace but with a different (or no) pane ID
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "agent",
+            workspacePath: "/project/a",
+            terminal: TerminalPayload(type: "wezterm", paneId: "10")
+        ))
+
+        // Notification arrives with a NEW pane ID (e.g., a new run in a different pane)
+        // No session has pane ID "42" yet
+        state.ingestNotification(payload: MessagePayload(
+            message: "Task done",
+            workspacePath: "/project/a",
+            terminal: TerminalPayload(type: "wezterm", paneId: "42")
+        ))
+
+        // Should create a notification-only session, NOT attach to the old session
+        #expect(state.sessions.count == 2)
+        let notificationSession = state.sessions[0]  // newest-first
+        #expect(notificationSession.command == "")
+        #expect(notificationSession.hasUnreadNotification == true)
+        #expect(notificationSession.notificationMessage == "Task done")
+        #expect(notificationSession.terminal?.paneId == "42")
+        // The old session should NOT have the notification
+        #expect(state.sessions[1].hasUnreadNotification == false)
+        #expect(state.sessions[1].terminal?.paneId == "10")
+    }
+
+    @Test("Notification with pane ID creates notification-only session that reconciles with later session_info")
+    func ingestNotificationPaneIdReconcilationAfterRaceCondition() {
+        let state = SessionState()
+
+        // An older session exists for the same workspace
+        let oldConnId = UUID()
+        state.addSession(connectionId: oldConnId, info: makeInfo(
+            command: "agent",
+            workspacePath: "/project/a",
+            terminal: TerminalPayload(type: "wezterm", paneId: "10")
+        ))
+        state.markDisconnected(connectionId: oldConnId)
+
+        // Notification for a new run arrives before its session_info
+        let newPaneId = "42"
+        state.ingestNotification(payload: MessagePayload(
+            message: "New run done",
+            workspacePath: "/project/a",
+            terminal: TerminalPayload(type: "wezterm", paneId: newPaneId)
+        ))
+
+        // A notification-only session was created
+        #expect(state.sessions.count == 2)
+        let notifSession = state.sessions[0]
+        #expect(notifSession.command == "")
+        #expect(notifSession.hasUnreadNotification == true)
+        let notifSessionId = notifSession.id
+
+        // Now the real session_info arrives with the matching pane ID
+        let newConnId = UUID()
+        state.addSession(connectionId: newConnId, info: makeInfo(
+            command: "review",
+            workspacePath: "/project/a",
+            terminal: TerminalPayload(type: "wezterm", paneId: newPaneId)
+        ))
+
+        // Should reconcile: still 2 sessions (old + reconciled), not 3
+        #expect(state.sessions.count == 2)
+        // The notification-only session should have been reconciled
+        let reconciledSession = state.sessions.first { $0.id == notifSessionId }!
+        #expect(reconciledSession.connectionId == newConnId)
+        #expect(reconciledSession.command == "review")
+        #expect(reconciledSession.isActive == true)
+        #expect(reconciledSession.hasUnreadNotification == true)
+        #expect(reconciledSession.notificationMessage == "New run done")
+        #expect(reconciledSession.terminal?.paneId == newPaneId)
+        // Old session should be unaffected
+        let oldSession = state.sessions.first { $0.terminal?.paneId == "10" }!
+        #expect(oldSession.hasUnreadNotification == false)
+        #expect(oldSession.isActive == false)
+    }
+
     @Test("Reconciliation does not match notification-only session with empty workspace by workspace path")
     func reconcileDoesNotMatchEmptyWorkspace() {
         let state = SessionState()

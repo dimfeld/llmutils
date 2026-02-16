@@ -168,10 +168,13 @@ final class SessionState {
             matchedSession = sessions.first { session in
                 session.terminal?.paneId == notificationPaneId
             }
-        }
-
-        // Fall back to workspace path match (first match wins, sessions are newest-first)
-        if matchedSession == nil && !payload.workspacePath.isEmpty {
+            // When the notification has a pane ID but no existing session matches it,
+            // skip workspace fallback and create a notification-only session. This avoids
+            // incorrectly attaching to an older session for the same workspace path.
+            // The notification-only session will be reconciled later when the real
+            // session_info arrives with the matching pane ID via addSession().
+        } else if !payload.workspacePath.isEmpty {
+            // Only fall back to workspace path match when there is NO pane ID
             matchedSession = sessions.first { session in
                 session.workspacePath == payload.workspacePath
             }
