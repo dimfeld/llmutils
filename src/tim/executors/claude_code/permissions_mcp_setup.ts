@@ -317,8 +317,7 @@ async function handleBashPrefixApproval(
 
 async function handleAskUserQuestion(
   message: { requestId?: string; tool_name?: string; input?: any },
-  socket: net.Socket,
-  options: Pick<PermissionsMcpOptions, 'timeout'>
+  socket: net.Socket
 ): Promise<void> {
   const requestId = message.requestId!;
   const questions = Array.isArray(message.input?.questions) ? message.input.questions : [];
@@ -372,14 +371,12 @@ async function handleAskUserQuestion(
         const selectedValues = await promptCheckbox<string>({
           message: 'Select one or more answers',
           choices,
-          timeoutMs: options.timeout,
         });
 
         const selectedAnswers = selectedValues.filter((value) => value !== FREE_TEXT_VALUE);
         if (selectedValues.includes(FREE_TEXT_VALUE)) {
           const freeTextValue = await promptInput({
             message: 'Enter custom answer',
-            timeoutMs: options.timeout,
           });
           selectedAnswers.push(freeTextValue);
         }
@@ -389,13 +386,11 @@ async function handleAskUserQuestion(
         const selectedValue = await promptSelect<string>({
           message: 'Select an answer',
           choices,
-          timeoutMs: options.timeout,
         });
 
         if (selectedValue === FREE_TEXT_VALUE) {
           answers[promptQuestion] = await promptInput({
             message: 'Enter custom answer',
-            timeoutMs: options.timeout,
           });
         } else {
           answers[promptQuestion] = selectedValue;
@@ -464,9 +459,8 @@ async function handlePermissionLine(
 
   try {
     if (tool_name === 'AskUserQuestion') {
-      await handleAskUserQuestion(message, socket, {
-        timeout: options.timeout,
-      });
+      // AskUserQuestion must always wait for explicit user input and never auto-timeout.
+      await handleAskUserQuestion(message, socket);
       return;
     }
 

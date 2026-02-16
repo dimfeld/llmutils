@@ -348,6 +348,52 @@ describe('permissions socket server AskUserQuestion handling', () => {
     );
   });
 
+  test('ignores configured timeout for AskUserQuestion prompts', async () => {
+    selectResponses.push('Summary');
+
+    const result = await setupPermissionsMcp({
+      allowedTools: [],
+      timeout: 1,
+    });
+    cleanups.push(result.cleanup);
+
+    const response = await sendAndReceive(path.join(result.tempDir, 'permissions.sock'), {
+      type: 'permission_request',
+      requestId: 'ask-timeout-ignore',
+      tool_name: 'AskUserQuestion',
+      input: {
+        questions: [
+          {
+            question: 'How should I format the output?',
+            header: 'Format',
+            options: [{ label: 'Summary', description: 'Brief overview' }],
+            multiSelect: false,
+          },
+        ],
+      },
+    });
+
+    expect(response).toEqual({
+      type: 'permission_response',
+      requestId: 'ask-timeout-ignore',
+      approved: true,
+      updatedInput: {
+        questions: [
+          {
+            question: 'How should I format the output?',
+            header: 'Format',
+            options: [{ label: 'Summary', description: 'Brief overview' }],
+            multiSelect: false,
+          },
+        ],
+        answers: {
+          'How should I format the output?': 'Summary',
+        },
+      },
+    });
+    expect(mockPromptSelect.mock.calls[0]?.[0]?.timeoutMs).toBeUndefined();
+  });
+
   test('handles multi-select questions and joins selected labels', async () => {
     checkboxResponses.push(['Introduction', 'Conclusion']);
 
