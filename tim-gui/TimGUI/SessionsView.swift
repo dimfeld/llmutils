@@ -57,6 +57,13 @@ struct SessionListView: View {
                     }
                 }
             }
+            .onChange(of: sessionState.selectedSessionId) { _, newId in
+                if let newId,
+                   let session = sessionState.sessions.first(where: { $0.id == newId }),
+                   session.hasUnreadNotification {
+                    sessionState.markNotificationRead(sessionId: newId)
+                }
+            }
         }
     }
 }
@@ -73,15 +80,28 @@ struct SessionRowView: View {
                 .fill(session.isActive ? .green : .gray)
                 .frame(width: 8, height: 8)
 
+            if session.hasUnreadNotification {
+                Circle()
+                    .fill(.blue)
+                    .frame(width: 8, height: 8)
+            }
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(SessionRowView.shortenedPath(session.workspacePath) ?? "Unknown workspace")
                     .font(.headline)
                     .lineLimit(1)
 
-                Text(session.planTitle ?? session.command)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                if session.command.isEmpty, let msg = session.notificationMessage {
+                    Text(msg)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else {
+                    Text(session.planTitle ?? session.command)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
 
                 Text(session.connectedAt, style: .time)
                     .font(.caption)
@@ -90,16 +110,21 @@ struct SessionRowView: View {
 
             Spacer()
 
-            if !session.isActive {
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark.circle.fill")
+            if session.terminal != nil {
+                Button(action: { activateTerminalPane(session.terminal!) }) {
+                    Image(systemName: "terminal")
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Dismiss session")
+                .help("Activate terminal pane")
             }
         }
         .padding(.vertical, 2)
+        .contextMenu {
+            if !session.isActive {
+                Button("Dismiss", action: onDismiss)
+            }
+        }
     }
 
     static func shortenedPath(_ path: String?) -> String? {
