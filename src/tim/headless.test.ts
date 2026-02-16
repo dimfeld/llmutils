@@ -164,6 +164,42 @@ describe('buildHeadlessSessionInfo', () => {
     expect(info.terminalPaneId).toBeUndefined();
     expect(info.terminalType).toBeUndefined();
   });
+
+  test('omits terminal metadata when WEZTERM_PANE is empty string', async () => {
+    process.env.WEZTERM_PANE = '';
+
+    const info = await buildHeadlessSessionInfo('agent', {
+      id: 99,
+      title: 'empty pane test',
+    });
+
+    expect(info.terminalPaneId).toBeUndefined();
+    expect(info.terminalType).toBeUndefined();
+  });
+
+  test('omits terminal metadata when WEZTERM_PANE is whitespace only', async () => {
+    process.env.WEZTERM_PANE = '  ';
+
+    const info = await buildHeadlessSessionInfo('agent', {
+      id: 99,
+      title: 'whitespace pane test',
+    });
+
+    expect(info.terminalPaneId).toBeUndefined();
+    expect(info.terminalType).toBeUndefined();
+  });
+
+  test('trims whitespace from WEZTERM_PANE value', async () => {
+    process.env.WEZTERM_PANE = '  42  ';
+
+    const info = await buildHeadlessSessionInfo('agent', {
+      id: 99,
+      title: 'trim test',
+    });
+
+    expect(info.terminalPaneId).toBe('42');
+    expect(info.terminalType).toBe('wezterm');
+  });
 });
 
 describe('runWithHeadlessAdapterIfEnabled', () => {
