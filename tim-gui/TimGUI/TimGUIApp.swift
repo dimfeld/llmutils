@@ -40,6 +40,7 @@ struct TimGUIApp: App {
                 case .sessionInfo(let connId, let info):
                     sessionState.addSession(connectionId: connId, info: info)
                 case .output(let connId, let seq, let tunnelMessage):
+                    sessionState.ingestNotification(connectionId: connId, tunnelMessage: tunnelMessage)
                     let message = MessageFormatter.format(
                         tunnelMessage: tunnelMessage, seq: seq)
                     sessionState.appendMessage(connectionId: connId, message: message)

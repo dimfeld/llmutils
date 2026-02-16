@@ -927,6 +927,76 @@ struct SessionStateTests {
         #expect(state.sessions[0].hasUnreadNotification == true)
     }
 
+    // MARK: - ingestNotification(connectionId:tunnelMessage:)
+
+    @Test("agent_session_end structured output updates notification state for that session")
+    func ingestStructuredAgentSessionEndNotification() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(
+            command: "agent",
+            workspacePath: "/project/x"))
+        state.selectedSessionId = nil
+
+        state.ingestNotification(
+            connectionId: connId,
+            tunnelMessage: .structured(message: .agentSessionEnd(AgentSessionEndPayload(
+                success: true,
+                sessionId: nil,
+                threadId: nil,
+                durationMs: nil,
+                costUsd: nil,
+                turns: nil,
+                summary: "All tasks complete",
+                timestamp: nil))))
+
+        #expect(state.sessions[0].hasUnreadNotification == true)
+        #expect(state.sessions[0].notificationMessage == "Agent session finished: All tasks complete")
+    }
+
+    @Test("input_required structured output updates selected session without unread badge")
+    func ingestStructuredInputRequiredNotificationSelectedSession() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(
+            command: "review",
+            workspacePath: "/project/x"))
+        state.selectedSessionId = state.sessions[0].id
+
+        state.ingestNotification(
+            connectionId: connId,
+            tunnelMessage: .structured(message: .inputRequired(
+                prompt: "Choose how to proceed",
+                timestamp: nil)))
+
+        #expect(state.sessions[0].notificationMessage == "Input required: Choose how to proceed")
+        #expect(state.sessions[0].hasUnreadNotification == false)
+    }
+
+    @Test("structured messages other than agent_session_end and input_required are ignored")
+    func ingestStructuredNotificationIgnoresOtherMessages() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(
+            command: "agent",
+            workspacePath: "/project/x"))
+
+        state.ingestNotification(
+            connectionId: connId,
+            tunnelMessage: .structured(message: .agentSessionStart(AgentSessionStartPayload(
+                executor: "claude",
+                mode: "agent",
+                planId: nil,
+                sessionId: nil,
+                threadId: nil,
+                tools: nil,
+                mcpServers: nil,
+                timestamp: nil))))
+
+        #expect(state.sessions[0].notificationMessage == nil)
+        #expect(state.sessions[0].hasUnreadNotification == false)
+    }
+
     // MARK: - markNotificationRead
 
     @Test("markNotificationRead clears notification on session")

@@ -218,8 +218,52 @@ final class SessionState {
         UNUserNotificationCenter.current().add(request)
     }
 
+    func ingestNotification(connectionId: UUID, tunnelMessage: TunnelMessage) {
+        guard let notificationText = notificationText(for: tunnelMessage) else { return }
+        guard let session = sessions.first(where: { $0.connectionId == connectionId }) else { return }
+
+        session.notificationMessage = notificationText
+        if session.id == self.selectedSessionId {
+            session.hasUnreadNotification = false
+        } else {
+            session.hasUnreadNotification = true
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Tim"
+        content.body = notificationText
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil)
+        UNUserNotificationCenter.current().add(request)
+    }
+
     func markNotificationRead(sessionId: UUID) {
         guard let session = sessions.first(where: { $0.id == sessionId }) else { return }
         session.hasUnreadNotification = false
+    }
+
+    private func notificationText(for tunnelMessage: TunnelMessage) -> String? {
+        guard case let .structured(message) = tunnelMessage else { return nil }
+
+        switch message {
+        case let .agentSessionEnd(payload):
+            let base = payload.success ? "Agent session finished" : "Agent session failed"
+            if let summary = payload.summary?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !summary.isEmpty
+            {
+                return "\(base): \(summary)"
+            }
+            return base
+        case let .inputRequired(prompt, _):
+            if let prompt = prompt?.trimmingCharacters(in: .whitespacesAndNewlines), !prompt.isEmpty {
+                return "Input required: \(prompt)"
+            }
+            return "Input required"
+        default:
+            return nil
+        }
     }
 }
