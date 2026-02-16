@@ -70,22 +70,4 @@ struct ModelTests {
         #expect(terminal.paneId == "7")
     }
 
-    // MARK: - MessageItem
-
-    @Test("MessageItem defaults to unread")
-    func messageItemDefaultsUnread() {
-        let item = MessageItem(
-            message: "test",
-            workspacePath: "/tmp",
-            terminal: nil,
-            receivedAt: Date())
-        #expect(!item.isRead)
-    }
-
-    @Test("MessageItem generates unique IDs")
-    func messageItemUniqueIDs() {
-        let a = MessageItem(message: "a", workspacePath: "/a", terminal: nil, receivedAt: Date())
-        let b = MessageItem(message: "b", workspacePath: "/b", terminal: nil, receivedAt: Date())
-        #expect(a.id != b.id)
-    }
 }

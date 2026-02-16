@@ -732,6 +732,8 @@ struct SessionStateTests {
             workspacePath: "/project/a",
             terminal: terminal
         ))
+        // Deselect so we can verify the unread flag is set
+        state.selectedSessionId = nil
 
         let payload = MessagePayload(
             message: "Task completed",
@@ -752,6 +754,8 @@ struct SessionStateTests {
             command: "agent",
             workspacePath: "/project/b"
         ))
+        // Deselect so we can verify the unread flag is set
+        state.selectedSessionId = nil
 
         let payload = MessagePayload(
             message: "Done",
@@ -849,14 +853,21 @@ struct SessionStateTests {
         #expect(state.sessions[1].hasUnreadNotification == false)
     }
 
-    @Test("ingestNotification sets hasUnreadNotification on matched session")
+    @Test("ingestNotification sets hasUnreadNotification on non-selected matched session")
     func ingestNotificationSetsFlag() {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: makeInfo(
             command: "agent",
             workspacePath: "/project"
         ))
-        #expect(state.sessions[0].hasUnreadNotification == false)
+        // Add a second session and select it so /project is not selected
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "review",
+            workspacePath: "/other"
+        ))
+        state.selectedSessionId = state.sessions[0].id  // select /other
+        let projectSession = state.sessions.first { $0.workspacePath == "/project" }!
+        #expect(projectSession.hasUnreadNotification == false)
 
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
@@ -864,7 +875,7 @@ struct SessionStateTests {
             terminal: nil
         ))
 
-        #expect(state.sessions[0].hasUnreadNotification == true)
+        #expect(projectSession.hasUnreadNotification == true)
     }
 
     @Test("Second notification replaces message on same session")
@@ -874,6 +885,8 @@ struct SessionStateTests {
             command: "agent",
             workspacePath: "/project"
         ))
+        // Deselect so we can verify the unread flag is set
+        state.selectedSessionId = nil
 
         state.ingestNotification(payload: MessagePayload(
             message: "First notification",
@@ -900,6 +913,8 @@ struct SessionStateTests {
             workspacePath: "/project/x",
             terminal: terminal
         ))
+        // Deselect so we can verify the unread flag is set
+        state.selectedSessionId = nil
 
         // Notification has no terminal info - should still match by workspace
         state.ingestNotification(payload: MessagePayload(
@@ -921,6 +936,8 @@ struct SessionStateTests {
             command: "agent",
             workspacePath: "/project"
         ))
+        // Deselect so the notification flag gets set
+        state.selectedSessionId = nil
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "/project",
@@ -957,6 +974,8 @@ struct SessionStateTests {
             command: "review",
             workspacePath: "/project/b"
         ))
+        // Deselect so both notifications set the unread flag
+        state.selectedSessionId = nil
 
         // Send notifications to both sessions
         state.ingestNotification(payload: MessagePayload(
@@ -986,6 +1005,52 @@ struct SessionStateTests {
         #expect(sessionB.notificationMessage == "Alert B")
     }
 
+    @Test("Notification for already-selected session does not set unread flag")
+    func ingestNotificationForSelectedSessionClearsFlag() {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "agent",
+            workspacePath: "/project"
+        ))
+        // First session is auto-selected
+        let sessionId = state.sessions[0].id
+        #expect(state.selectedSessionId == sessionId)
+
+        state.ingestNotification(payload: MessagePayload(
+            message: "Done",
+            workspacePath: "/project",
+            terminal: nil
+        ))
+
+        // Message should be stored but unread flag should not be set
+        #expect(state.sessions[0].notificationMessage == "Done")
+        #expect(state.sessions[0].hasUnreadNotification == false)
+    }
+
+    @Test("Notification for non-selected session sets unread flag")
+    func ingestNotificationForNonSelectedSession() {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "agent",
+            workspacePath: "/project/a"
+        ))
+        state.addSession(connectionId: UUID(), info: makeInfo(
+            command: "review",
+            workspacePath: "/project/b"
+        ))
+        // First added session (project/a) is auto-selected, project/b is not
+
+        state.ingestNotification(payload: MessagePayload(
+            message: "Alert B",
+            workspacePath: "/project/b",
+            terminal: nil
+        ))
+
+        let sessionB = state.sessions.first { $0.workspacePath == "/project/b" }!
+        #expect(sessionB.hasUnreadNotification == true)
+        #expect(sessionB.notificationMessage == "Alert B")
+    }
+
     @Test("Second notification to notification-only session updates it rather than creating another")
     func ingestNotificationUpdatesNotificationOnlySession() {
         let state = SessionState()
@@ -998,6 +1063,8 @@ struct SessionStateTests {
         ))
         #expect(state.sessions.count == 1)
         #expect(state.sessions[0].notificationMessage == "First alert")
+        // Deselect so the second notification sets the unread flag
+        state.selectedSessionId = nil
 
         // Second notification to same workspace should update, not create new
         state.ingestNotification(payload: MessagePayload(
@@ -1354,6 +1421,8 @@ struct SessionStateTests {
         ))
         state.markDisconnected(connectionId: connId)
         #expect(state.sessions[0].isActive == false)
+        // Deselect so the notification flag gets set
+        state.selectedSessionId = nil
 
         state.ingestNotification(payload: MessagePayload(
             message: "Post-disconnect alert",
@@ -1389,8 +1458,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].notificationMessage == "Second")
     }
 
-    @Test("Reconciliation auto-selects when nothing is selected")
-    func reconcileAutoSelects() {
+    @Test("Notification-only session auto-selects when nothing is selected")
+    func notificationOnlyAutoSelects() {
         let state = SessionState()
         #expect(state.selectedSessionId == nil)
 
@@ -1399,9 +1468,22 @@ struct SessionStateTests {
             workspacePath: "/project",
             terminal: nil
         ))
-        // Notification-only session is inserted but selectedSessionId is not set
-        // (ingestNotification does not auto-select)
+        // Notification-only session should be auto-selected when nothing was selected
+        #expect(state.selectedSessionId == state.sessions[0].id)
+    }
+
+    @Test("Reconciliation preserves selection after notification-only auto-select")
+    func reconcilePreservesAutoSelect() {
+        let state = SessionState()
         #expect(state.selectedSessionId == nil)
+
+        state.ingestNotification(payload: MessagePayload(
+            message: "Alert",
+            workspacePath: "/project",
+            terminal: nil
+        ))
+        let notifSessionId = state.sessions[0].id
+        #expect(state.selectedSessionId == notifSessionId)
 
         let connId = UUID()
         state.addSession(connectionId: connId, info: makeInfo(
@@ -1409,8 +1491,8 @@ struct SessionStateTests {
             workspacePath: "/project"
         ))
 
-        // After reconciliation, selectedSessionId should be set since nothing was selected
-        #expect(state.selectedSessionId == state.sessions[0].id)
+        // After reconciliation, the same session should still be selected
+        #expect(state.selectedSessionId == notifSessionId)
         #expect(state.selectedSession?.command == "agent")
     }
 

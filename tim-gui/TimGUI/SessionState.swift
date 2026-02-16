@@ -181,8 +181,13 @@ final class SessionState {
         }
 
         if let session = matchedSession {
-            session.hasUnreadNotification = true
             session.notificationMessage = payload.message
+            // If this session is already selected, don't show the unread dot
+            if session.id == selectedSessionId {
+                session.hasUnreadNotification = false
+            } else {
+                session.hasUnreadNotification = true
+            }
         } else {
             // Create a notification-only session
             let session = SessionItem(
@@ -201,6 +206,9 @@ final class SessionState {
                 notificationMessage: payload.message
             )
             sessions.insert(session, at: 0)
+            if selectedSessionId == nil {
+                selectedSessionId = session.id
+            }
         }
 
         // Trigger macOS system notification

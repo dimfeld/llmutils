@@ -120,11 +120,9 @@ struct SessionRowView: View {
             }
         }
         .padding(.vertical, 2)
-        .contextMenu {
-            if !session.isActive {
-                Button("Dismiss", action: onDismiss)
-            }
-        }
+        .contextMenu(session.isActive ? nil : ContextMenu(menuItems: {
+            Button("Dismiss", action: onDismiss)
+        }))
     }
 
     static func shortenedPath(_ path: String?) -> String? {

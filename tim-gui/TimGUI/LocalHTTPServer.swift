@@ -18,15 +18,6 @@ struct MessagePayload: Codable {
     let terminal: TerminalPayload?
 }
 
-struct MessageItem: Identifiable {
-    let id = UUID()
-    let message: String
-    let workspacePath: String
-    let terminal: TerminalPayload?
-    let receivedAt: Date
-    var isRead: Bool = false
-}
-
 // MARK: - WebSocket Event
 
 enum WebSocketEvent: Sendable {
