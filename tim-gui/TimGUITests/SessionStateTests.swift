@@ -477,6 +477,32 @@ struct SessionStateTests {
         #expect(state.sessions[0].isActive == false)
     }
 
+    @Test("markDisconnected updates notification state for that session")
+    func markDisconnectedSetsNotification() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo())
+        state.selectedSessionId = nil
+
+        state.markDisconnected(connectionId: connId)
+
+        #expect(state.sessions[0].hasUnreadNotification == true)
+        #expect(state.sessions[0].notificationMessage == "Agent session disconnected")
+    }
+
+    @Test("markDisconnected keeps unread notification false for selected session")
+    func markDisconnectedSelectedSessionNoUnread() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo())
+        state.selectedSessionId = state.sessions[0].id
+
+        state.markDisconnected(connectionId: connId)
+
+        #expect(state.sessions[0].hasUnreadNotification == false)
+        #expect(state.sessions[0].notificationMessage == "Agent session disconnected")
+    }
+
     @Test("markDisconnected only affects the targeted session")
     func markDisconnectedTargeted() {
         let state = SessionState()
@@ -959,8 +985,8 @@ struct SessionStateTests {
 
     // MARK: - ingestNotification(connectionId:tunnelMessage:)
 
-    @Test("agent_session_end structured output updates notification state for that session")
-    func ingestStructuredAgentSessionEndNotification() {
+    @Test("agent_session_end structured output is ignored")
+    func ingestStructuredAgentSessionEndNotificationIgnored() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(
@@ -980,8 +1006,8 @@ struct SessionStateTests {
                 summary: "All tasks complete",
                 timestamp: nil))))
 
-        #expect(state.sessions[0].hasUnreadNotification == true)
-        #expect(state.sessions[0].notificationMessage == "Agent session finished: All tasks complete")
+        #expect(state.sessions[0].hasUnreadNotification == false)
+        #expect(state.sessions[0].notificationMessage == nil)
     }
 
     @Test("input_required structured output updates selected session without unread badge")
@@ -1003,7 +1029,7 @@ struct SessionStateTests {
         #expect(state.sessions[0].hasUnreadNotification == false)
     }
 
-    @Test("structured messages other than agent_session_end and input_required are ignored")
+    @Test("structured messages other than input_required are ignored")
     func ingestStructuredNotificationIgnoresOtherMessages() {
         let state = SessionState()
         let connId = UUID()

@@ -121,14 +121,13 @@ final class SessionState {
             return
         }
 
-        let extractedTitle: String?
-        switch message {
+        let extractedTitle: String? = switch message {
         case let .planDiscovery(_, title, _):
-            extractedTitle = title
+            title
         case let .executionSummary(payload):
-            extractedTitle = payload.planTitle
+            payload.planTitle
         default:
-            extractedTitle = nil
+            nil
         }
 
         guard let extractedTitle else {
@@ -173,7 +172,26 @@ final class SessionState {
         guard let index = sessions.firstIndex(where: { $0.connectionId == connectionId }) else {
             return
         }
-        self.sessions[index].isActive = false
+        let session = self.sessions[index]
+        session.isActive = false
+
+        let notificationText = "Agent session disconnected"
+        session.notificationMessage = notificationText
+        if session.id == self.selectedSessionId {
+            session.hasUnreadNotification = false
+        } else {
+            session.hasUnreadNotification = true
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Tim"
+        content.body = notificationText
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil)
+        UNUserNotificationCenter.current().add(request)
     }
 
     func dismissSession(id: UUID) {
@@ -279,14 +297,6 @@ final class SessionState {
         guard case let .structured(message) = tunnelMessage else { return nil }
 
         switch message {
-        case let .agentSessionEnd(payload):
-            let base = payload.success ? "Agent session finished" : "Agent session failed"
-            if let summary = payload.summary?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !summary.isEmpty
-            {
-                return "\(base): \(summary)"
-            }
-            return base
         case let .inputRequired(prompt, _):
             if let prompt = prompt?.trimmingCharacters(in: .whitespacesAndNewlines), !prompt.isEmpty {
                 return "Input required: \(prompt)"
