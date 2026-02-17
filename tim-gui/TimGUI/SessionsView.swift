@@ -107,6 +107,34 @@ struct SessionRowView: View {
     let onTerminalTap: () -> Void
     let onDismiss: () -> Void
 
+    private var isNotificationOnly: Bool {
+        self.session.command.isEmpty
+    }
+
+    private var statusLabel: String {
+        if self.isNotificationOnly {
+            return "One-off"
+        }
+        return self.session.isActive ? "Active" : "Offline"
+    }
+
+    private var statusSystemImage: String {
+        if self.isNotificationOnly {
+            return "bell.badge"
+        }
+        return self.session.isActive ? "dot.radiowaves.left.and.right" : "pause.circle"
+    }
+
+    private var statusStyle: AnyShapeStyle {
+        if self.isNotificationOnly {
+            AnyShapeStyle(.secondary)
+        } else if self.session.isActive {
+            AnyShapeStyle(.green)
+        } else {
+            AnyShapeStyle(.secondary)
+        }
+    }
+
     private var rowBackgroundStyle: AnyShapeStyle {
         if self.isSelected {
             AnyShapeStyle(Color.accentColor.opacity(0.18))
@@ -144,10 +172,10 @@ struct SessionRowView: View {
 
                 HStack(spacing: 8) {
                     Label(
-                        self.session.isActive ? "Active" : "Offline",
-                        systemImage: self.session.isActive ? "dot.radiowaves.left.and.right" : "pause.circle")
+                        self.statusLabel,
+                        systemImage: self.statusSystemImage)
                         .font(.caption2.weight(.medium))
-                        .foregroundStyle(self.session.isActive ? .green : .secondary)
+                        .foregroundStyle(self.statusStyle)
 
                     Text(self.session.connectedAt, style: .time)
                         .font(.caption2.monospacedDigit())
