@@ -200,7 +200,9 @@ struct SessionRowView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .padding(6)
-                        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
+                        .background(
+                            .quaternary.opacity(0.35),
+                            in: RoundedRectangle(cornerRadius: nestedRectangleCornerRadius))
                 }
                 .buttonStyle(.plain)
                 .help("Activate terminal pane")
@@ -209,13 +211,13 @@ struct SessionRowView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: nestedRectangleCornerRadius)
                 .fill(self.rowBackgroundStyle))
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: nestedRectangleCornerRadius)
                 .stroke(self.rowBorderStyle, lineWidth: 1))
         .padding(.vertical, 3)
-        .contentShape(Rectangle())
+        .contentShape(RoundedRectangle(cornerRadius: nestedRectangleCornerRadius))
         .onTapGesture(perform: self.onTap)
         .contextMenu(self.session.isActive ? nil : ContextMenu(menuItems: {
             Button("Dismiss", action: self.onDismiss)

@@ -1,5 +1,7 @@
 import SwiftUI
 
+let nestedRectangleCornerRadius: CGFloat = 6
+
 struct ContentView: View {
     @Bindable var sessionState: SessionState
     let startError: String?
@@ -24,7 +26,7 @@ struct ContentView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+                    .background(.red.opacity(0.1), in: RoundedRectangle(cornerRadius: nestedRectangleCornerRadius))
                     .padding(12)
                 }
 
