@@ -278,7 +278,7 @@ struct SessionDetailView: View {
                 .padding(.bottom, 20)
             }
             .overlay(alignment: .bottomTrailing) {
-                if !self.isNearBottom {
+                if !self.isNearBottom, !self.autoScrollEnabled {
                     Button {
                         self.autoScrollEnabled = true
                         self.jumpToBottom(proxy)
