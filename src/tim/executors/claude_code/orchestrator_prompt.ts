@@ -36,7 +36,7 @@ After each successful iteration (and again at the end of the run), update the pl
 - No timestamps anywhere in the section.
 - Focus on what changed, why it changed, and what's next. Omit testing/review info, focus on what's useful to remember when starting the next task.
 - Only remove information if it no longer applies. For example, decisions from previous tasks should remain unless they have been changed. 
-- In \`### Lessons Learned\`, capture surprises, gotchas, non-obvious fixes, and what was learned from review feedback or review-fix iterations.
+- In \`### Lessons Learned\`, capture surprises, gotchas, non-obvious fixes, and what was learned from review feedback or review-fix iterations. Only include lessons that will actually be useful in the future, not things that are just specific only to the work just performed in this plan.
 
 Use this structured template (fill every heading; use "None" when empty):
 
