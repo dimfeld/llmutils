@@ -188,6 +188,36 @@ notes: |
       expect(prompt).toContain('- README.md');
       expect(prompt).toContain('- .github/**');
     });
+
+    test('removes lessons-learned subsection from plan context', () => {
+      const planData: PlanSchema = {
+        id: 177,
+        title: 'lessons learned updating',
+        status: 'done',
+        details: `## Current Progress
+### Current State
+- Working on docs
+
+### Lessons Learned
+- Keep tests small
+- Prefer stable interfaces
+
+### Risks / Blockers
+- None
+
+## Implementation Notes
+- Preserve useful context`,
+      };
+
+      const prompt = buildUpdateLessonsPrompt(planData, '- Keep tests small');
+
+      expect(prompt).toContain('## Plan Context');
+      expect(prompt).toContain('### Current State');
+      expect(prompt).toContain('### Risks / Blockers');
+      expect(prompt).toContain('## Implementation Notes');
+      expect(prompt).not.toContain('### Lessons Learned');
+      expect(prompt).not.toContain('Prefer stable interfaces');
+    });
   });
 
   describe('handleUpdateLessonsCommand', () => {

@@ -117,8 +117,9 @@ export function buildUpdateLessonsPrompt(
 
   parts.push(`## Lessons Learned\n${lessonsText}\n`);
 
-  if (planData.details) {
-    parts.push(`## Plan Context\n${planData.details}\n`);
+  const planContext = planData.details ? stripLessonsFromPlanContext(planData.details) : undefined;
+  if (planContext) {
+    parts.push(`## Plan Context\n${planContext}\n`);
   }
 
   const docsLocation =
@@ -154,6 +155,36 @@ export function buildUpdateLessonsPrompt(
   }
 
   return parts.join('\n');
+}
+
+function stripLessonsFromPlanContext(details: string): string {
+  const currentProgressMatch = /^## Current Progress\s*$/m.exec(details);
+  if (!currentProgressMatch) {
+    return details;
+  }
+
+  const currentProgressStart = currentProgressMatch.index + currentProgressMatch[0].length;
+  const detailsAfterCurrentProgress = details.slice(currentProgressStart);
+  const nextH2Match = /\n##\s+/m.exec(detailsAfterCurrentProgress);
+  const currentProgressEnd = nextH2Match
+    ? currentProgressStart + nextH2Match.index
+    : details.length;
+
+  const currentProgressSection = details.slice(currentProgressStart, currentProgressEnd);
+  const lessonsHeaderMatch = /^### Lessons Learned\s*$/m.exec(currentProgressSection);
+  if (!lessonsHeaderMatch) {
+    return details;
+  }
+
+  const lessonsStart = currentProgressStart + lessonsHeaderMatch.index;
+  const lessonsBodyStart = lessonsStart + lessonsHeaderMatch[0].length;
+  const lessonsBody = details.slice(lessonsBodyStart, currentProgressEnd);
+  const nextH3Match = /\n###\s+/m.exec(lessonsBody);
+  const lessonsEnd = nextH3Match ? lessonsBodyStart + nextH3Match.index : currentProgressEnd;
+
+  return (details.slice(0, lessonsStart) + details.slice(lessonsEnd))
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 export async function runUpdateLessons(
