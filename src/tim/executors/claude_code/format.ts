@@ -78,6 +78,17 @@ export type Message =
       session_id: string;
     }
 
+  // Notification about a background task starting
+  | {
+      type: 'system';
+      subtype: 'task_started';
+      task_id: string;
+      description: string;
+      task_type: string;
+      uuid: string;
+      session_id: string;
+    }
+
   // Status update (e.g., compacting)
   | {
       type: 'system';
@@ -229,6 +240,16 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
         timestamp: timestamp(),
         phase: 'task_notification',
         message: `Task ${message.task_id}: ${message.status}\n${message.summary}`,
+      },
+    });
+  } else if (message.type === 'system' && message.subtype === 'task_started') {
+    return withMessage({
+      type: message.type,
+      structured: {
+        type: 'workflow_progress',
+        timestamp: timestamp(),
+        phase: 'task_started',
+        message: `Task ${message.task_id} (${message.task_type}): ${message.description}`,
       },
     });
   } else if (message.type === 'system' && message.subtype === 'status') {

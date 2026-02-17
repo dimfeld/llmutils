@@ -1481,6 +1481,8 @@ Behavior:
   payloads (for example: plan discovery, iteration/step lifecycle, failure reports, review
   start/result/verdict, and `input_required` before interactive prompts). Other commands continue
   emitting plain log output.
+- Claude Code stream-json `system` events such as `task_started` and `task_notification` are
+  normalized into `workflow_progress` structured output messages.
 
 For local testing, run a simple listener that accepts `/tim-agent` and prints every received
 message:

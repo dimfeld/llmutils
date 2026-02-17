@@ -79,6 +79,7 @@ The codebase is organized into several main modules with improved modularity and
 - MCP server (`mcp/generate_mode.ts`) now focuses on registering prompts and delegates tool handlers to the relevant command modules
 - Executor system in `executors/` for different LLM integration approaches
   - `claude_code/streaming_input.ts`: Builds and sends stream-json messages to Claude Code's stdin; supports both single-prompt (`sendSinglePromptAndWait`) and multi-message (`sendInitialPrompt`, `sendFollowUpMessage`, `closeStdinAndWait`) patterns
+  - `claude_code/format.ts`: Parses Claude Code stream-json output, including system lifecycle events like `init`, `task_started`, `task_notification`, `status`, and `compact_boundary`
   - `claude_code/terminal_input.ts`: `TerminalInputReader` class for reading interactive user input during agent execution; manages readline lifecycle with pause/resume support for prompt coordination
   - `claude_code/terminal_input_lifecycle.ts`: Shared lifecycle helper (`setupTerminalInput()` / `awaitAndCleanup()`) and `executeWithTerminalInput()` which encapsulates the full three-path branching (terminal input / tunnel forwarding / single prompt); used by both the main executor and `run_claude_subprocess.ts`
 - **Automatic Parent-Child Relationship Maintenance**: All commands (`add`, `set`, `validate`) work together to ensure bidirectional consistency in the dependency graph, automatically updating parent plans when child relationships are created, modified, or removed

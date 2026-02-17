@@ -454,6 +454,32 @@ describe('formatJsonMessage', () => {
   });
 
   describe('system message handling', () => {
+    test('handles task_started messages', () => {
+      const taskStartedMessage = JSON.stringify({
+        type: 'system',
+        subtype: 'task_started',
+        task_id: 'a6cca53',
+        description: 'Research bill-only form and patient MRN',
+        task_type: 'local_agent',
+        uuid: 'af684846-7e5a-441f-a834-72c716d2cf9a',
+        session_id: '6bd8de2f-7245-42c6-a6ce-3370154ce8c3',
+      });
+
+      const result = formatJsonMessage(taskStartedMessage);
+      expect(result.type).toBe('system');
+      expect(result.message).toContain('task_started');
+      expect(result.message).toContain('a6cca53');
+      expect(result.message).toContain('local_agent');
+      expect(result.message).toContain('Research bill-only form and patient MRN');
+      expect(result.structured).toEqual(
+        expect.objectContaining({
+          type: 'workflow_progress',
+          phase: 'task_started',
+          message: expect.stringContaining('a6cca53'),
+        })
+      );
+    });
+
     test('handles task_notification messages', () => {
       const taskNotificationMessage = JSON.stringify({
         type: 'system',
