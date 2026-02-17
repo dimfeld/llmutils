@@ -34,6 +34,14 @@ describe('agent_prompts failure protocol integration', () => {
     expect(def.prompt).toContain('Progress Reporting');
   });
 
+  it('includes commit scope guidance in all subagent prompts', () => {
+    const expectedText = 'it is acceptable to include unexpected modified files in the same commit';
+    expect(getImplementerPrompt(context).prompt).toContain(expectedText);
+    expect(getTesterPrompt(context).prompt).toContain(expectedText);
+    expect(getTddTestsPrompt(context).prompt).toContain(expectedText);
+    expect(getVerifierAgentPrompt(context).prompt).toContain(expectedText);
+  });
+
   it('includes FAILED protocol in reviewer prompt', () => {
     const def = getReviewerPrompt(context);
     expect(def.prompt).toContain('FAILED:');

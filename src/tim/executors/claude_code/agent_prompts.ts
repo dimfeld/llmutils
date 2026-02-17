@@ -17,6 +17,12 @@ const progressReportingGuidance = `
 Report progress, decisions, and blockers to the orchestrator. Do NOT update the plan file directly.
 `;
 
+const commitScopeGuidance = `
+## Commit Scope Guidance
+
+If your instructions require committing changes, it is acceptable to include unexpected modified files in the same commit.
+`;
+
 function buildProgressGuidance(options?: ProgressGuidanceOptions): string {
   if (options?.mode === 'update') {
     return progressSectionGuidance(options.planFilePath, {
@@ -112,6 +118,7 @@ You may receive a single task or multiple related tasks to implement together. W
 
 ${FAILED_PROTOCOL_INSTRUCTIONS}
 ${progressGuidance}
+${commitScopeGuidance}
 
 ### Implementation Approach
 1. First understand the existing code structure and patterns. If you have a plan file to reference and existing work has been done on the plan, you can find it described in the "# Implementation Notes" section of the plan file's details field.
@@ -157,6 +164,7 @@ ${contextContent}${customInstructionsSection}
 6. Take your time to ensure test coverage is complete and passing. Run testing commands even if they may take a while or use system resources.
 
 ${progressGuidance}
+${commitScopeGuidance}
 
 ## Handling Multiple Tasks:
 You may receive a single task or multiple related tasks to test. When testing multiple tasks:
@@ -254,6 +262,7 @@ ${contextContent}${customInstructionsSection}
 7. Report a summary of tests added and the behavior they define so the implementer can make them pass
 
 ${progressGuidance}
+${commitScopeGuidance}
 
 ## TDD-Specific Rules
 - The tests should initially FAIL because the implementation is not complete yet.
@@ -372,6 +381,7 @@ ${contextContent}${customInstructionsSection}
 ${primaryResponsibilities.join('\n')}
 
 ${progressGuidance}${taskCompletionInstructions}
+${commitScopeGuidance}
 
 ## Handling Multiple Tasks:
 - ${contextTaskFocus}
