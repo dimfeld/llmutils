@@ -98,6 +98,12 @@ final class SessionState {
         return nil
     }
 
+    private func findWorkspaceSessionWithoutPaneId(workspacePath: String) -> SessionItem? {
+        self.sessions.first { session in
+            session.workspacePath == workspacePath && session.terminal?.paneId == nil
+        }
+    }
+
     func appendMessage(connectionId: UUID, message: SessionMessage) {
         if self.replayingConnections.contains(connectionId) {
             self.replayMessages[connectionId, default: []].append(message)
@@ -208,16 +214,14 @@ final class SessionState {
     }
 
     func ingestNotification(payload: MessagePayload) {
-        // Try to match by terminal pane ID first, then fall back to workspace.
+        // If the notification has a pane ID, only match sessions for that same pane.
+        // Otherwise (no pane ID), match by workspace path.
         var matchedSession: SessionItem?
         if let notificationPaneId = payload.terminal?.paneId {
             matchedSession = self.sessions.first { session in
                 session.terminal?.paneId == notificationPaneId
             }
-        }
-
-        if matchedSession == nil, !payload.workspacePath.isEmpty {
-            // Fall back to workspace path when pane lookup does not find a match.
+        } else if !payload.workspacePath.isEmpty {
             matchedSession = self.sessions.first { session in
                 session.workspacePath == payload.workspacePath
             }
@@ -227,15 +231,19 @@ final class SessionState {
             session.notificationMessage = payload.message
             session.hasUnreadNotification = true
         } else {
+            let workspaceTemplate = payload.workspacePath.isEmpty
+                ? nil
+                : findWorkspaceSessionWithoutPaneId(workspacePath: payload.workspacePath)
+
             // Create a notification-only session
             let session = SessionItem(
                 id: UUID(),
                 connectionId: UUID(),
                 command: "",
-                planId: nil,
-                planTitle: nil,
+                planId: workspaceTemplate?.planId,
+                planTitle: workspaceTemplate?.planTitle,
                 workspacePath: payload.workspacePath,
-                gitRemote: nil,
+                gitRemote: workspaceTemplate?.gitRemote,
                 connectedAt: Date(),
                 isActive: false,
                 messages: [],

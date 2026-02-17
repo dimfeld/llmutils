@@ -1682,8 +1682,8 @@ struct SessionStateTests {
         #expect(state.selectedSession?.command == "agent")
     }
 
-    @Test("Notification with pane ID falls back to workspace when pane match is not found")
-    func ingestNotificationPaneIdFallsBackToWorkspace() {
+    @Test("Notification with pane ID does not fall back to workspace when pane match is not found")
+    func ingestNotificationPaneIdNoWorkspaceFallback() {
         let state = SessionState()
 
         // An older session exists for the same workspace but with a different (or no) pane ID
@@ -1701,17 +1701,23 @@ struct SessionStateTests {
             workspacePath: "/project/a",
             terminal: TerminalPayload(type: "wezterm", paneId: "42")))
 
-        // Pane lookup misses, so it should attach to the existing workspace session.
-        #expect(state.sessions.count == 1)
-        let session = state.sessions[0]
-        #expect(session.command == "agent")
-        #expect(session.hasUnreadNotification == true)
-        #expect(session.notificationMessage == "Task done")
-        #expect(session.terminal?.paneId == "10")
+        // Pane lookup misses, so a new notification-only session is created.
+        #expect(state.sessions.count == 2)
+        let notificationSession = state.sessions[0]
+        #expect(notificationSession.command == "")
+        #expect(notificationSession.hasUnreadNotification == true)
+        #expect(notificationSession.notificationMessage == "Task done")
+        #expect(notificationSession.terminal?.paneId == "42")
+
+        // Existing session should remain unchanged.
+        let existingSession = state.sessions[1]
+        #expect(existingSession.command == "agent")
+        #expect(existingSession.hasUnreadNotification == false)
+        #expect(existingSession.terminal?.paneId == "10")
     }
 
-    @Test("Pane-miss workspace fallback attaches notification before later session_info")
-    func ingestNotificationPaneIdFallbackBeforeLaterSessionInfo() throws {
+    @Test("Pane-miss creates notification-only session before later session_info")
+    func ingestNotificationPaneIdMissBeforeLaterSessionInfo() throws {
         let state = SessionState()
 
         // An older session exists for the same workspace
@@ -1731,11 +1737,14 @@ struct SessionStateTests {
             workspacePath: "/project/a",
             terminal: TerminalPayload(type: "wezterm", paneId: newPaneId)))
 
-        // Pane lookup misses, so the existing session is used via workspace fallback.
-        #expect(state.sessions.count == 1)
-        let oldSessionId = state.sessions[0].id
-        #expect(state.sessions[0].connectionId == oldConnId)
+        // Pane lookup misses, so a notification-only session is created.
+        #expect(state.sessions.count == 2)
+        let oldSessionId = state.sessions[1].id
+        let notificationSessionId = state.sessions[0].id
+        #expect(state.sessions[0].connectionId != oldConnId)
         #expect(state.sessions[0].hasUnreadNotification == true)
+        #expect(state.sessions[0].command == "")
+        #expect(state.sessions[0].terminal?.paneId == newPaneId)
 
         // Now the real session_info arrives with the matching pane ID
         let newConnId = UUID()
@@ -1744,18 +1753,45 @@ struct SessionStateTests {
             workspacePath: "/project/a",
             terminal: TerminalPayload(type: "wezterm", paneId: newPaneId)))
 
-        // No notification-only session exists to reconcile, so a new session is created.
+        // The notification-only session should reconcile with the incoming pane.
         #expect(state.sessions.count == 2)
         let oldSession = try #require(state.sessions.first { $0.id == oldSessionId })
         #expect(oldSession.connectionId == oldConnId)
-        #expect(oldSession.hasUnreadNotification == true)
-        #expect(oldSession.notificationMessage == "New run done")
         #expect(oldSession.isActive == false)
 
         let newSession = try #require(state.sessions.first { $0.connectionId == newConnId })
+        #expect(newSession.id == notificationSessionId)
         #expect(newSession.command == "review")
         #expect(newSession.isActive == true)
         #expect(newSession.terminal?.paneId == newPaneId)
+        #expect(newSession.notificationMessage == "New run done")
+        #expect(newSession.hasUnreadNotification == true)
+    }
+
+    @Test("Pane-miss notification copies metadata from same workspace row without pane ID")
+    func ingestNotificationPaneIdMissCopiesMetadataFromNoPaneRow() throws {
+        let state = SessionState()
+
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
+            command: "agent",
+            planId: 77,
+            planTitle: "Shared Plan",
+            workspacePath: "/project/a",
+            gitRemote: "git@github.com:dimfeld/example.git",
+            terminal: nil))
+
+        state.ingestNotification(payload: MessagePayload(
+            message: "Task done",
+            workspacePath: "/project/a",
+            terminal: TerminalPayload(type: "wezterm", paneId: "42")))
+
+        #expect(state.sessions.count == 2)
+        let notificationSession = state.sessions[0]
+        #expect(notificationSession.command == "")
+        #expect(notificationSession.planId == 77)
+        #expect(notificationSession.planTitle == "Shared Plan")
+        #expect(notificationSession.gitRemote == "git@github.com:dimfeld/example.git")
+        #expect(notificationSession.terminal?.paneId == "42")
     }
 
     @Test("Reconciliation does not match notification-only session when pane IDs differ")
