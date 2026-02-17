@@ -126,6 +126,18 @@ describe('handleChatCommand', () => {
     });
   });
 
+  test('forces headless adapter wrapping when tunnel is active and --headless-adapter is set', async () => {
+    const { handleChatCommand } = await import('./chat.js');
+    isTunnelActiveSpy.mockImplementation(() => true);
+
+    await handleChatCommand('hello', { headlessAdapter: true }, {});
+
+    expect(runWithHeadlessAdapterIfEnabledSpy.mock.calls[0][0]).toMatchObject({
+      enabled: true,
+      command: 'chat',
+    });
+  });
+
   test('throws when there is no prompt and non-interactive mode is enabled', async () => {
     const { handleChatCommand } = await import('./chat.js');
 

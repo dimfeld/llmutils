@@ -14,6 +14,7 @@ export interface ChatCommandOptions {
   promptFile?: string;
   nonInteractive?: boolean;
   terminalInput?: boolean;
+  headlessAdapter?: boolean;
 }
 
 export interface ChatGlobalOptions {
@@ -101,7 +102,7 @@ export async function handleChatCommand(
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
 
   await runWithHeadlessAdapterIfEnabled({
-    enabled: !tunnelActive,
+    enabled: options.headlessAdapter === true || !tunnelActive,
     command: 'chat',
     config,
     callback: async () => {

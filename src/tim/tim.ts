@@ -622,6 +622,10 @@ program
   .option('--prompt-file <path>', 'Read initial prompt from a file')
   .option('--non-interactive', 'Disable interactive terminal input')
   .option('--no-terminal-input', 'Disable terminal input forwarding')
+  .option(
+    '--headless-adapter',
+    'Wrap chat output in a headless adapter even when tunnel forwarding is active'
+  )
   .action(async (prompt, options, command) => {
     const { handleChatCommand } = await import('./commands/chat.js');
     await handleChatCommand(prompt, options, command.parent.opts()).catch(handleCommandError);
