@@ -3,28 +3,33 @@ import SwiftUI
 struct ContentView: View {
     @Bindable var sessionState: SessionState
     let startError: String?
-    let serverPort: UInt16?
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Spacer()
+        ZStack {
+            LinearGradient(
+                colors: [Color.black.opacity(0.08), Color.black.opacity(0.02)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing)
+                .ignoresSafeArea()
 
-                if let port = serverPort, startError == nil {
-                    Text("Listening on port \(String(port))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(12)
-
-            if let startError {
-                Text(startError)
+            VStack(spacing: 0) {
+                if let startError {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                        Text(startError)
+                            .lineLimit(2)
+                    }
+                    .font(.caption)
                     .foregroundStyle(.red)
-                    .padding(.horizontal, 16)
-            }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+                    .padding(12)
+                }
 
-            SessionsView(sessionState: self.sessionState)
+                SessionsView(sessionState: self.sessionState)
+            }
         }
         .frame(minWidth: 800, minHeight: 400)
     }
@@ -53,6 +58,5 @@ struct ContentView: View {
             }
             return state
         }(),
-        startError: nil,
-        serverPort: 8123)
+        startError: nil)
 }

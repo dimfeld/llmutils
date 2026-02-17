@@ -9,15 +9,18 @@ struct SessionsView: View {
         NavigationSplitView {
             SessionListView(sessionState: self.sessionState)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 280, max: 400)
+                .background(.ultraThinMaterial)
         } detail: {
             if let session = sessionState.selectedSession {
                 SessionDetailView(session: session)
                     .id(session.id)
+                    .background(.thinMaterial)
             } else {
-                ContentUnavailableView(
-                    "No Session Selected",
-                    systemImage: "rectangle.split.2x1",
-                    description: Text("Select a session from the sidebar to view its output."))
+                EmptyStateView(
+                    title: "No Session Selected",
+                    subtitle: "Select a session from the sidebar to view its output.",
+                    icon: "rectangle.split.2x1")
+                    .background(.thinMaterial)
             }
         }
     }
@@ -34,18 +37,21 @@ struct SessionListView: View {
 
     var body: some View {
         if self.sessionState.sessions.isEmpty {
-            ContentUnavailableView(
-                "No Sessions",
-                systemImage: "antenna.radiowaves.left.and.right",
-                description: Text("Sessions will appear here when tim processes connect."))
+            EmptyStateView(
+                title: "No Sessions",
+                subtitle: "Sessions will appear here when tim processes connect.",
+                icon: "antenna.radiowaves.left.and.right")
+                .padding(.horizontal, 12)
         } else {
             List(self.sessionState.sessions, selection: self.$sessionState.selectedSessionId) { session in
                 SessionRowView(
                     session: session,
+                    isSelected: session.id == self.sessionState.selectedSessionId,
                     onTap: { self.sessionState.handleSessionListItemTap(sessionId: session.id) },
                     onTerminalTap: { self.sessionState.handleTerminalIconTap(sessionId: session.id) },
                     onDismiss: { self.sessionState.dismissSession(id: session.id) })
             }
+            .listStyle(.sidebar)
             .toolbar {
                 ToolbarItem(placement: .automatic) {
                     if self.hasDisconnectedSessions {
@@ -60,48 +66,102 @@ struct SessionListView: View {
     }
 }
 
+// MARK: - EmptyStateView
+
+private struct EmptyStateView: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+
+    var body: some View {
+        VStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(.quaternary.opacity(0.25))
+                    .frame(width: 56, height: 56)
+                Image(systemName: self.icon)
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 4) {
+                Text(self.title)
+                    .font(.title3.weight(.semibold))
+                Text(self.subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(20)
+    }
+}
+
 // MARK: - SessionRowView
 
 struct SessionRowView: View {
     let session: SessionItem
+    let isSelected: Bool
     let onTap: () -> Void
     let onTerminalTap: () -> Void
     let onDismiss: () -> Void
 
+    private var rowBackgroundStyle: AnyShapeStyle {
+        if self.isSelected {
+            AnyShapeStyle(Color.accentColor.opacity(0.18))
+        } else {
+            AnyShapeStyle(.quaternary.opacity(0.08))
+        }
+    }
+
+    private var rowBorderStyle: AnyShapeStyle {
+        if self.isSelected {
+            AnyShapeStyle(Color.accentColor.opacity(0.45))
+        } else {
+            AnyShapeStyle(Color.clear)
+        }
+    }
+
     var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(self.session.isActive ? .green : .gray)
-                .frame(width: 8, height: 8)
-
-            Circle()
-                .fill(.blue)
-                .frame(width: 8, height: 8)
-                .opacity(self.session.hasUnreadNotification ? 1 : 0)
-
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(SessionRowView.shortenedPath(self.session.workspacePath) ?? "Unknown workspace")
-                    .font(.headline)
+                    .font(.callout.weight(.semibold))
                     .lineLimit(1)
 
                 if self.session.command.isEmpty, let msg = session.notificationMessage {
                     Text(msg)
-                        .font(.subheadline)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 } else {
                     Text(self.session.displayTitle)
-                        .font(.subheadline)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
 
-                Text(self.session.connectedAt, style: .time)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    Label(
+                        self.session.isActive ? "Active" : "Offline",
+                        systemImage: self.session.isActive ? "dot.radiowaves.left.and.right" : "pause.circle")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(self.session.isActive ? .green : .secondary)
+
+                    Text(self.session.connectedAt, style: .time)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Spacer()
+
+            if self.session.hasUnreadNotification {
+                Circle()
+                    .fill(.blue)
+                    .frame(width: 8, height: 8)
+            }
 
             if self.session.terminal?.type == "wezterm" {
                 Button(action: {
@@ -109,13 +169,24 @@ struct SessionRowView: View {
                     activateTerminalPane(self.session.terminal!)
                 }) {
                     Image(systemName: "terminal")
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
+                        .padding(6)
+                        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
                 }
                 .buttonStyle(.plain)
                 .help("Activate terminal pane")
             }
         }
-        .padding(.vertical, 2)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(self.rowBackgroundStyle))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(self.rowBorderStyle, lineWidth: 1))
+        .padding(.vertical, 3)
         .contentShape(Rectangle())
         .onTapGesture(perform: self.onTap)
         .contextMenu(self.session.isActive ? nil : ContextMenu(menuItems: {
