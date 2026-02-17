@@ -360,6 +360,7 @@ struct SessionMessageView: View {
             }
         }
         .textSelection(.enabled)
+        .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
