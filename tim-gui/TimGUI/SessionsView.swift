@@ -253,9 +253,7 @@ struct SessionDetailView: View {
                 if !self.isNearBottom {
                     Button {
                         self.autoScrollEnabled = true
-                        withAnimation {
-                            proxy.scrollTo(SessionDetailView.bottomAnchorID, anchor: .bottom)
-                        }
+                        self.jumpToBottom(proxy)
                     } label: {
                         Image(systemName: "chevron.down.circle.fill")
                             .font(.system(size: 32))
@@ -273,16 +271,16 @@ struct SessionDetailView: View {
             .focusable()
             .focused(self.$isFocused)
             .onAppear {
-                proxy.scrollTo(SessionDetailView.bottomAnchorID, anchor: .bottom)
+                self.jumpToBottom(proxy)
                 self.isFocused = true
             }
             .onChange(of: self.session.messages.count) {
                 if self.autoScrollEnabled {
-                    proxy.scrollTo(SessionDetailView.bottomAnchorID, anchor: .bottom)
+                    self.jumpToBottom(proxy)
                 }
             }
             .onChange(of: self.session.forceScrollToBottomVersion) {
-                proxy.scrollTo(SessionDetailView.bottomAnchorID, anchor: .bottom)
+                self.jumpToBottom(proxy)
                 self.isNearBottom = true
                 self.autoScrollEnabled = true
             }
@@ -294,9 +292,17 @@ struct SessionDetailView: View {
             }
             .onKeyPress(.end) {
                 self.autoScrollEnabled = true
-                proxy.scrollTo(SessionDetailView.bottomAnchorID, anchor: .bottom)
+                self.jumpToBottom(proxy)
                 return .handled
             }
+        }
+    }
+
+    private func jumpToBottom(_ proxy: ScrollViewProxy) {
+        var transaction = Transaction()
+        transaction.animation = nil
+        withTransaction(transaction) {
+            proxy.scrollTo(SessionDetailView.bottomAnchorID, anchor: .bottom)
         }
     }
 
