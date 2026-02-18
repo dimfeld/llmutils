@@ -46,6 +46,8 @@ function isValidHeadlessServerMessage(message: unknown): message is HeadlessServ
         typeof msg.requestId === 'string' &&
         (msg.error === undefined || typeof msg.error === 'string')
       );
+    case 'user_input':
+      return typeof msg.content === 'string';
     default:
       return false;
   }
@@ -73,6 +75,7 @@ export class HeadlessAdapter implements LoggerAdapter {
   private destroyed = false;
   private nextOutputSequence = 1;
   private pendingPrompts: Map<string, PendingPromptRequest> = new Map();
+  private userInputHandler?: (content: string) => void;
 
   constructor(
     url: string,
@@ -206,7 +209,22 @@ export class HeadlessAdapter implements LoggerAdapter {
         pending.resolve(message.value);
         break;
       }
+      case 'user_input':
+        try {
+          this.userInputHandler?.(message.content);
+        } catch (err) {
+          this.wrappedAdapter.warn(`Headless user input handler error: ${err as Error}`);
+        }
+        break;
     }
+  }
+
+  /**
+   * Registers the single active user-input handler.
+   * Calling this again replaces the previous handler.
+   */
+  setUserInputHandler(callback: ((content: string) => void) | undefined): void {
+    this.userInputHandler = callback;
   }
 
   /**

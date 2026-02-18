@@ -2,11 +2,26 @@ import Foundation
 import Observation
 import UserNotifications
 
+enum SendError: Error, LocalizedError {
+    case noHandler
+    case noServer
+
+    var errorDescription: String? {
+        switch self {
+        case .noHandler:
+            "No message handler available"
+        case .noServer:
+            "Server is not available"
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class SessionState {
     var sessions: [SessionItem] = []
     var selectedSessionId: UUID?
+    var sendMessageHandler: ((UUID, OutgoingMessage) async throws -> Void)?
     private var pendingMessages: [UUID: [SessionMessage]] = [:]
     private var replayingConnections: Set<UUID> = []
     private var replayMessages: [UUID: [SessionMessage]] = [:]
@@ -211,6 +226,22 @@ final class SessionState {
         if let selectedId = selectedSessionId, disconnectedIds.contains(selectedId) {
             self.selectedSessionId = self.sessions.first?.id
         }
+    }
+
+    func sendUserInput(sessionId: UUID, content: String) async throws {
+        guard let session = sessions.first(where: { $0.id == sessionId }) else { return }
+        guard session.isActive else { return }
+        guard let handler = self.sendMessageHandler else {
+            throw SendError.noHandler
+        }
+        try await handler(session.connectionId, .userInput(content: content))
+        let message = SessionMessage(
+            seq: session.messages.count + 1,
+            title: "You",
+            body: .text(content),
+            category: .userInput,
+            timestamp: Date())
+        session.messages.append(message)
     }
 
     func ingestNotification(payload: MessagePayload) {

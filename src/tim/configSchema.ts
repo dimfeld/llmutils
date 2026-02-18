@@ -34,6 +34,17 @@ export const postApplyCommandSchema = z.object({
   hideOutputOnSuccess: z.boolean().optional().default(false),
 });
 
+export const lifecycleCommandSchema = z.object({
+  title: z.string(),
+  command: z.string(),
+  mode: z.enum(['run', 'daemon']).optional(),
+  check: z.string().optional(),
+  shutdown: z.string().optional(),
+  workingDirectory: z.string().optional(),
+  env: z.record(z.string(), z.string()).optional(),
+  allowFailure: z.boolean().optional(),
+});
+
 /**
  * Schema for notification command configuration.
  */
@@ -115,6 +126,12 @@ export const timConfigSchema = z
     notifications: notificationCommandSchema
       .optional()
       .describe('Configuration for notification hooks when agent/review commands finish'),
+    lifecycle: z
+      .object({
+        commands: z.array(lifecycleCommandSchema).optional(),
+      })
+      .optional()
+      .describe('Lifecycle commands to run before and after tim run/tim agent execution'),
     headless: z
       .object({
         url: z.string().optional().describe('WebSocket URL for headless output streaming'),
@@ -466,6 +483,7 @@ export interface TimRuntimeConfigMetadata {
 export type TimConfig = z.output<typeof timConfigSchema> & TimRuntimeConfigMetadata;
 export type TimConfigInput = z.input<typeof timConfigSchema>;
 export type PostApplyCommand = z.output<typeof postApplyCommandSchema>;
+export type LifecycleCommand = z.infer<typeof lifecycleCommandSchema>;
 export type NotificationCommand = z.output<typeof notificationCommandSchema>;
 
 /**

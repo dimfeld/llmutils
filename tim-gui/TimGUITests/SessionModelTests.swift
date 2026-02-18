@@ -1478,4 +1478,58 @@ struct StructuredMessagePayloadTests {
         }
         #expect(type == "some_future_message_type")
     }
+
+    @Test("Decodes user_terminal_input")
+    func decodesUserTerminalInput() throws {
+        let json = """
+        {
+            "type": "user_terminal_input",
+            "content": "hello from gui",
+            "source": "gui",
+            "timestamp": "2026-02-10T08:00:00Z"
+        }
+        """
+        let msg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(json.utf8))
+        guard case let .userTerminalInput(content, source, timestamp) = msg else {
+            Issue.record("Expected userTerminalInput, got \(msg)")
+            return
+        }
+        #expect(content == "hello from gui")
+        #expect(source == .gui)
+        #expect(timestamp == "2026-02-10T08:00:00Z")
+    }
+}
+
+@Suite("OutgoingMessage encoding")
+struct OutgoingMessageTests {
+    @Test("userInput encodes to correct JSON structure")
+    func userInputEncoding() throws {
+        let message = OutgoingMessage.userInput(content: "hello world")
+        let data = try JSONEncoder().encode(message)
+        let dict = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: String])
+        #expect(dict["type"] == "user_input")
+        #expect(dict["content"] == "hello world")
+        #expect(dict.count == 2)
+    }
+
+    @Test("userInput handles special characters in content")
+    func userInputSpecialChars() throws {
+        let message = OutgoingMessage.userInput(content: "line1\nline2\ttab \"quoted\"")
+        let data = try JSONEncoder().encode(message)
+        let dict = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: String])
+        #expect(dict["type"] == "user_input")
+        #expect(dict["content"] == "line1\nline2\ttab \"quoted\"")
+    }
+
+    @Test("userInput handles empty content")
+    func userInputEmptyContent() throws {
+        let message = OutgoingMessage.userInput(content: "")
+        let data = try JSONEncoder().encode(message)
+        let dict = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: String])
+        #expect(dict["type"] == "user_input")
+        #expect(dict["content"] == "")
+    }
 }

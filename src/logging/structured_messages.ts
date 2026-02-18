@@ -209,6 +209,7 @@ export interface InputRequiredMessage extends StructuredMessageBase {
 export interface UserTerminalInputMessage extends StructuredMessageBase {
   type: 'user_terminal_input';
   content: string;
+  source?: 'terminal' | 'gui';
 }
 
 export type PromptType = 'input' | 'confirm' | 'select' | 'checkbox' | 'prefix_select';

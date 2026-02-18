@@ -59,6 +59,18 @@ struct LocalHTTPServerTests {
         server.stop()
     }
 
+    @Test("sendMessage throws connectionNotFound for unknown connection ID")
+    func sendMessageUnknownConnection() async throws {
+        let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { _ in })
+        try await server.start()
+
+        await #expect(throws: LocalHTTPServer.SendMessageError.self) {
+            try await server.sendMessage(to: UUID(), text: "hello")
+        }
+
+        server.stop()
+    }
+
     @Test("Server returns 400 for POST /messages with invalid JSON")
     func invalidJSON() async throws {
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { _ in })

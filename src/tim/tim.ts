@@ -1292,17 +1292,17 @@ async function run() {
 
   process.on('SIGINT', () => {
     cleanupRegistry.executeAll();
-    process.exit(130); // Unix convention for SIGINT
+    process.exit(130);
   });
 
   process.on('SIGTERM', () => {
     cleanupRegistry.executeAll();
-    process.exit();
+    process.exit(143);
   });
 
   process.on('SIGHUP', () => {
     cleanupRegistry.executeAll();
-    process.exit();
+    process.exit(129);
   });
 
   // If TIM_OUTPUT_SOCKET is set, install the tunnel adapter to forward all
@@ -1327,7 +1327,9 @@ async function run() {
   }
 }
 
-run().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+if (import.meta.main) {
+  run().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

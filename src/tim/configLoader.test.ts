@@ -672,6 +672,93 @@ autoexamples:
       expect(config.models?.convert_yaml).toBe('claude-3-haiku'); // from local
     });
 
+    test('loadConfig parses lifecycle commands', async () => {
+      const configPath = path.join(configDir, 'tim.yml');
+      await fs.writeFile(
+        configPath,
+        yaml.stringify({
+          lifecycle: {
+            commands: [
+              { title: 'start', command: 'echo start' },
+              {
+                title: 'docker',
+                command: 'docker compose up -d',
+                mode: 'daemon',
+                check: 'docker compose ps',
+                shutdown: 'docker compose down',
+                allowFailure: true,
+              },
+            ],
+          },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadConfig(configPath);
+
+      expect(config.lifecycle?.commands).toHaveLength(2);
+      expect(config.lifecycle?.commands?.[1]).toMatchObject({
+        title: 'docker',
+        mode: 'daemon',
+        check: 'docker compose ps',
+        shutdown: 'docker compose down',
+        allowFailure: true,
+      });
+    });
+
+    test('loadEffectiveConfig concatenates lifecycle commands across global/repo/local', async () => {
+      const originalEnv = process.env.TIM_LOAD_GLOBAL_CONFIG;
+      delete process.env.TIM_LOAD_GLOBAL_CONFIG;
+
+      try {
+        const globalConfigPath = path.join(fakeHomeDir, '.config', 'tim', 'config.yml');
+        await fs.mkdir(path.dirname(globalConfigPath), { recursive: true });
+        await fs.writeFile(
+          globalConfigPath,
+          yaml.stringify({
+            lifecycle: {
+              commands: [{ title: 'global', command: 'echo global' }],
+            },
+          }),
+          'utf-8'
+        );
+
+        const mainConfigPath = path.join(configDir, 'tim.yml');
+        await fs.writeFile(
+          mainConfigPath,
+          yaml.stringify({
+            lifecycle: {
+              commands: [{ title: 'repo', command: 'echo repo' }],
+            },
+          }),
+          'utf-8'
+        );
+
+        const localConfigPath = path.join(configDir, 'tim.local.yml');
+        await fs.writeFile(
+          localConfigPath,
+          yaml.stringify({
+            lifecycle: {
+              commands: [{ title: 'local', command: 'echo local' }],
+            },
+          }),
+          'utf-8'
+        );
+
+        const config = await loadEffectiveConfig();
+
+        expect(config.lifecycle?.commands?.map((command) => command.title)).toEqual([
+          'global',
+          'repo',
+          'local',
+        ]);
+      } finally {
+        if (originalEnv !== undefined) {
+          process.env.TIM_LOAD_GLOBAL_CONFIG = originalEnv;
+        }
+      }
+    });
+
     test('loadEffectiveConfig merges executors field correctly', async () => {
       const mainConfigPath = path.join(configDir, 'tim.yml');
       const localConfigPath = path.join(configDir, 'tim.local.yml');

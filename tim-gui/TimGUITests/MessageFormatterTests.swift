@@ -259,6 +259,28 @@ struct MessageFormatterTests {
         #expect(!body.contains("full raw output"))
     }
 
+    @Test("Formats user_terminal_input as user message instead of unknown")
+    func formatsUserTerminalInput() {
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(
+                message: .userTerminalInput(
+                    content: "hello from gui",
+                    source: .gui,
+                    timestamp: "2026-02-10T08:00:00Z")),
+            seq: 26)
+
+        #expect(msg.title == "You")
+        #expect(msg.seq == 26)
+        #expect(!msg.text.contains("Unknown message type"))
+        #expect(msg.category == .userInput)
+
+        guard case let .text(body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body == "hello from gui")
+    }
+
     @Test("Formats llm_tool_use with neither inputSummary nor input has nil body")
     func formatsLlmToolUseNoInput() {
         let payload = LlmToolUsePayload(

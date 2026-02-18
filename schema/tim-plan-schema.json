@@ -33,6 +33,9 @@
     "simple": {
       "type": "boolean"
     },
+    "tdd": {
+      "type": "boolean"
+    },
     "status": {
       "default": "pending",
       "type": "string",
@@ -223,6 +226,7 @@
     }
   },
   "required": [
+    "id",
     "status",
     "tasks"
   ],

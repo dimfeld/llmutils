@@ -12,6 +12,27 @@ enum MessageCategory: Sendable {
     case progress
     case error
     case log
+    case userInput
+}
+
+// MARK: - OutgoingMessage
+
+enum OutgoingMessage: Encodable {
+    case userInput(content: String)
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case content
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case let .userInput(content):
+            try container.encode("user_input", forKey: .type)
+            try container.encode(content, forKey: .content)
+        }
+    }
 }
 
 // MARK: - MessageContentBody
@@ -305,11 +326,17 @@ enum StructuredMessagePayload: Sendable {
     case promptRequest(PromptRequestPayload)
     case promptAnswered(PromptAnsweredPayload)
     case planDiscovery(planId: Int, title: String, timestamp: String?)
+    case userTerminalInput(content: String, source: UserTerminalInputSource?, timestamp: String?)
     case workspaceInfo(path: String, planFile: String?, workspaceId: String?, timestamp: String?)
     case unknown(type: String)
 }
 
 // MARK: - Structured Message Payload Structs
+
+enum UserTerminalInputSource: String, Sendable, Decodable {
+    case terminal
+    case gui
+}
 
 struct AgentSessionStartPayload: Sendable {
     let executor: String?
@@ -677,6 +704,8 @@ extension StructuredMessagePayload: Decodable {
         case workspaceId, planFile
         /// llm_status
         case status, detail
+        /// user_terminal_input
+        case content
     }
 
     init(from decoder: Decoder) throws {
@@ -903,6 +932,12 @@ extension StructuredMessagePayload: Decodable {
                 path: container.decode(String.self, forKey: .path),
                 planFile: container.decodeIfPresent(String.self, forKey: .planFile),
                 workspaceId: container.decodeIfPresent(String.self, forKey: .workspaceId),
+                timestamp: timestamp)
+
+        case "user_terminal_input":
+            self = try .userTerminalInput(
+                content: container.decode(String.self, forKey: .content),
+                source: container.decodeIfPresent(UserTerminalInputSource.self, forKey: .source),
                 timestamp: timestamp)
 
         default:
@@ -1241,6 +1276,12 @@ enum MessageFormatter {
                 seq: seq, title: "Workspace",
                 body: .keyValuePairs(pairs),
                 category: .log, timestamp: parseTimestamp(ts))
+
+        case let .userTerminalInput(content, _, ts):
+            return SessionMessage(
+                seq: seq, title: "You",
+                body: .text(content),
+                category: .userInput, timestamp: parseTimestamp(ts))
 
         case let .unknown(type):
             return SessionMessage(

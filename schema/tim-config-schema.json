@@ -74,6 +74,58 @@
       },
       "additionalProperties": false
     },
+    "lifecycle": {
+      "description": "Lifecycle commands to run before and after tim run/tim agent execution",
+      "type": "object",
+      "properties": {
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "run",
+                  "daemon"
+                ]
+              },
+              "check": {
+                "type": "string"
+              },
+              "shutdown": {
+                "type": "string"
+              },
+              "workingDirectory": {
+                "type": "string"
+              },
+              "env": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "allowFailure": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "title",
+              "command"
+            ]
+          }
+        }
+      }
+    },
     "headless": {
       "description": "Configuration for headless output streaming",
       "type": "object",
@@ -231,6 +283,27 @@
       "description": "Default executor to use for plan execution",
       "type": "string"
     },
+    "defaultOrchestrator": {
+      "description": "Default orchestrator to use for the agent command main loop",
+      "type": "string"
+    },
+    "terminalInput": {
+      "description": "Whether terminal input is enabled during Claude Code execution in tim agent",
+      "type": "boolean"
+    },
+    "defaultSubagentExecutor": {
+      "description": "Default executor to use for subagents in the agent command (codex-cli, claude-code, or dynamic)",
+      "type": "string",
+      "enum": [
+        "codex-cli",
+        "claude-code",
+        "dynamic"
+      ]
+    },
+    "dynamicSubagentInstructions": {
+      "description": "Instructions for the orchestrator when choosing between claude-code and codex-cli for subagent execution in dynamic mode",
+      "type": "string"
+    },
     "workspaceCreation": {
       "type": "object",
       "properties": {
@@ -350,7 +423,7 @@
       }
     },
     "agents": {
-      "description": "Custom instructions for implementer, tester, and reviewer agents",
+      "description": "Custom instructions for implementer, tester, tdd-tests, and reviewer agents",
       "type": "object",
       "properties": {
         "implementer": {
@@ -367,6 +440,15 @@
           "properties": {
             "instructions": {
               "description": "Path to custom instructions file for the tester agent",
+              "type": "string"
+            }
+          }
+        },
+        "tddTests": {
+          "type": "object",
+          "properties": {
+            "instructions": {
+              "description": "Path to custom instructions file for the tdd-tests agent",
               "type": "string"
             }
           }

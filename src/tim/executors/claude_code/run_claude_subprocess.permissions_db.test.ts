@@ -495,7 +495,11 @@ describe('runClaudeSubprocess shared permissions DB integration', () => {
     expect(sendSinglePromptAndWaitSpy).toHaveBeenCalledTimes(0);
     expect(
       sendStructuredSpy.mock.calls.some(
-        (call) => call[0] && typeof call[0] === 'object' && call[0].type === 'user_terminal_input'
+        (call) =>
+          call[0] &&
+          typeof call[0] === 'object' &&
+          call[0].type === 'user_terminal_input' &&
+          call[0].source === 'terminal'
       )
     ).toBe(true);
     expect(debugLogSpy).toHaveBeenCalled();

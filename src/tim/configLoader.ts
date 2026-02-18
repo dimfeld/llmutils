@@ -85,6 +85,25 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
     }
   }
 
+  // Handle lifecycle.commands: concatenate command arrays while shallow-merging lifecycle object fields
+  if (localConfig.lifecycle !== undefined) {
+    if (mainConfig.lifecycle && localConfig.lifecycle) {
+      const mergedLifecycle: NonNullable<TimConfig['lifecycle']> = {
+        ...mainConfig.lifecycle,
+        ...localConfig.lifecycle,
+      };
+      if (mainConfig.lifecycle.commands || localConfig.lifecycle.commands) {
+        mergedLifecycle.commands = [
+          ...(mainConfig.lifecycle.commands ?? []),
+          ...(localConfig.lifecycle.commands ?? []),
+        ];
+      }
+      merged.lifecycle = mergedLifecycle;
+    } else {
+      merged.lifecycle = localConfig.lifecycle;
+    }
+  }
+
   return merged;
 }
 

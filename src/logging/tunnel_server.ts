@@ -198,6 +198,10 @@ function isOptionalNumberField(message: Record<string, unknown>, key: string): b
   return message[key] == null || typeof message[key] === 'number';
 }
 
+function isUserTerminalInputSource(value: unknown): value is 'terminal' | 'gui' {
+  return value === 'terminal' || value === 'gui';
+}
+
 function isValidStructuredMessagePayload(message: unknown): message is StructuredMessage {
   if (!isRecord(message)) {
     return false;
@@ -219,7 +223,10 @@ function isValidStructuredMessagePayload(message: unknown): message is Structure
     case 'input_required':
       return true;
     case 'user_terminal_input':
-      return typeof structured.content === 'string';
+      return (
+        typeof structured.content === 'string' &&
+        (structured.source == null || isUserTerminalInputSource(structured.source))
+      );
     case 'token_usage':
       return (
         isOptionalNumberField(structured, 'inputTokens') &&

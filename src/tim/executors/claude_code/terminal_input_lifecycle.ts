@@ -5,6 +5,7 @@ import type {
 } from '../../../logging/structured_messages.ts';
 import type { TunnelServer } from '../../../logging/tunnel_server.ts';
 import { getLoggerAdapter } from '../../../logging/adapter.js';
+import { HeadlessAdapter } from '../../../logging/headless_adapter.js';
 import { TunnelAdapter } from '../../../logging/tunnel_client.js';
 import {
   safeEndStdin,
@@ -73,6 +74,7 @@ export function setupTerminalInput(
       sendStructured({
         type: 'user_terminal_input',
         content: line,
+        source: 'terminal',
         timestamp: new Date().toISOString(),
       });
 
@@ -144,8 +146,8 @@ export interface ExecuteWithTerminalInputResult {
  *
  * Handles:
  * - `closeStdin` with guard
- * - Tunnel user input handler wiring (setUserInputHandler)
- * - Three-path branching: terminal input / tunnel forwarding / single prompt
+ * - Tunnel/headless user input handler wiring (setUserInputHandler)
+ * - Four-path branching: terminal input / tunnel or headless forwarding / single prompt
  * - "Type a message..." log hint
  */
 export function executeWithTerminalInput(
@@ -190,6 +192,49 @@ export function executeWithTerminalInput(
     };
   }
 
+  // Wire headless user input handler if running via headless websocket.
+  let clearHeadlessUserInputHandler = (): void => {};
+  if (loggerAdapter instanceof HeadlessAdapter) {
+    let headlessHandlerActive = true;
+    loggerAdapter.setUserInputHandler((content) => {
+      if (!headlessHandlerActive || stdinGuard.isClosed) {
+        return;
+      }
+
+      try {
+        sendFollowUpMessage(streaming.stdin, content);
+      } catch (err) {
+        debugLog('Failed to forward headless user input to subprocess: %s', err as Error);
+      }
+
+      try {
+        tunnelServer?.sendUserInput(content);
+      } catch (err) {
+        debugLog('Failed to forward headless user input through tunnel: %s', err as Error);
+      }
+
+      try {
+        sendStructured({
+          type: 'user_terminal_input',
+          content,
+          source: 'gui',
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err) {
+        debugLog('Failed to send structured message for headless user input: %s', err as Error);
+      }
+    });
+
+    clearHeadlessUserInputHandler = () => {
+      headlessHandlerActive = false;
+      loggerAdapter.setUserInputHandler(undefined);
+    };
+  }
+
+  // When a HeadlessAdapter is present (tim-gui use case), it acts as an interactive
+  // input source just like tunnel forwarding — stdin must stay open for follow-up messages.
+  const headlessForwardingEnabled = loggerAdapter instanceof HeadlessAdapter;
+
   // onResultMessage is called by the formatStdout callback when a result message is detected
   let terminalInputController: TerminalInputController | undefined;
   const onResultMessage = (): void => {
@@ -197,14 +242,15 @@ export function executeWithTerminalInput(
       return;
     }
     clearTunnelUserInputHandler();
+    clearHeadlessUserInputHandler();
     if (terminalInputController) {
       terminalInputController.onResultMessage();
-    } else if (tunnelForwardingEnabled) {
+    } else if (tunnelForwardingEnabled || headlessForwardingEnabled) {
       stdinGuard.close();
     }
   };
 
-  // Three-path branching: terminal input / tunnel forwarding / single prompt
+  // Four-path branching: terminal input / tunnel or headless forwarding / single prompt
   let resultPromise: Promise<SpawnAndLogOutputResult>;
   if (terminalInputEnabled) {
     terminalInputController = setupTerminalInput({
@@ -228,7 +274,9 @@ export function executeWithTerminalInput(
       log('Type a message and press Enter to send input to the agent');
     }
     resultPromise = terminalInputController.awaitAndCleanup();
-  } else if (tunnelForwardingEnabled) {
+  } else if (tunnelForwardingEnabled || headlessForwardingEnabled) {
+    // Tunnel forwarding or headless adapter: send initial prompt but keep stdin open
+    // for follow-up messages from tunnel clients or the headless GUI.
     if (prompt != null) {
       sendInitialPrompt(streaming, prompt);
     }
@@ -247,6 +295,7 @@ export function executeWithTerminalInput(
     onResultMessage,
     cleanup: () => {
       clearTunnelUserInputHandler();
+      clearHeadlessUserInputHandler();
     },
   };
 }

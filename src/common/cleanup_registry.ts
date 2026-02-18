@@ -1,6 +1,6 @@
 import { debugLog } from '../logging.ts';
 
-type CleanupHandler = () => void;
+type CleanupHandler = () => void | Promise<void>;
 
 export class CleanupRegistry {
   private static instance: CleanupRegistry | undefined;
@@ -37,17 +37,36 @@ export class CleanupRegistry {
    * After execution, all handlers are cleared from the registry.
    */
   public executeAll(): void {
-    // Execute all handlers
     for (const [id, handler] of this.handlers) {
       try {
-        handler();
+        const result = handler();
+        if (result instanceof Promise) {
+          result.catch((error) => {
+            debugLog(`Error during async cleanup handler execution (id: ${id}):`, error);
+          });
+        }
       } catch (error) {
-        // Handle errors gracefully during cleanup
         debugLog(`Error during cleanup handler execution (id: ${id}):`, error);
       }
     }
 
-    // Clear all handlers after execution
+    this.handlers.clear();
+  }
+
+  /**
+   * Execute all registered cleanup handlers and await async handlers.
+   * Errors during cleanup are caught and logged but do not prevent other handlers from running.
+   * After execution, all handlers are cleared from the registry.
+   */
+  public async executeAllAsync(): Promise<void> {
+    for (const [id, handler] of this.handlers) {
+      try {
+        await handler();
+      } catch (error) {
+        debugLog(`Error during cleanup handler execution (id: ${id}):`, error);
+      }
+    }
+
     this.handlers.clear();
   }
 

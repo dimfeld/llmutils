@@ -1911,4 +1911,156 @@ struct SessionStateTests {
         #expect(state.selectedSessionId == existingSessionId)
         #expect(state.sessions.count == 2)
     }
+
+    // MARK: - sendUserInput
+
+    @Test("sendUserInput adds a local message with .userInput category")
+    func sendUserInputAddsLocalMessage() async throws {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        let sessionId = state.sessions[0].id
+
+        var handlerCalled = false
+        state.sendMessageHandler = { _, _ in handlerCalled = true }
+
+        try await state.sendUserInput(sessionId: sessionId, content: "hello")
+
+        #expect(handlerCalled == true)
+        #expect(state.sessions[0].messages.count == 1)
+        let msg = state.sessions[0].messages[0]
+        #expect(msg.title == "You")
+        #expect(msg.category == .userInput)
+        #expect(msg.text == "You\nhello")
+        #expect(msg.timestamp != nil)
+    }
+
+    @Test("sendUserInput calls handler with correct connectionId and message")
+    func sendUserInputCallsHandler() async throws {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        let sessionId = state.sessions[0].id
+
+        var receivedConnectionId: UUID?
+        var receivedMessage: OutgoingMessage?
+        state.sendMessageHandler = { cId, msg in
+            receivedConnectionId = cId
+            receivedMessage = msg
+        }
+
+        try await state.sendUserInput(sessionId: sessionId, content: "test message")
+
+        #expect(receivedConnectionId == connId)
+        // Verify the message encodes correctly
+        let data = try JSONEncoder().encode(#require(receivedMessage))
+        let dict = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: String])
+        #expect(dict["type"] == "user_input")
+        #expect(dict["content"] == "test message")
+    }
+
+    @Test("sendUserInput is a no-op for inactive session")
+    func sendUserInputInactiveSession() async throws {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        let sessionId = state.sessions[0].id
+        state.markDisconnected(connectionId: connId)
+
+        var handlerCalled = false
+        state.sendMessageHandler = { _, _ in handlerCalled = true }
+
+        try await state.sendUserInput(sessionId: sessionId, content: "hello")
+
+        #expect(handlerCalled == false)
+        // No message should be added (only the disconnect notification is present via markDisconnected side effects)
+        // The messages array should be empty since we didn't add any output messages
+        #expect(state.sessions[0].messages.isEmpty)
+    }
+
+    @Test("sendUserInput is a no-op for unknown session ID")
+    func sendUserInputUnknownSession() async throws {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: self.makeInfo(command: "agent"))
+
+        var handlerCalled = false
+        state.sendMessageHandler = { _, _ in handlerCalled = true }
+
+        try await state.sendUserInput(sessionId: UUID(), content: "hello")
+
+        #expect(handlerCalled == false)
+        #expect(state.sessions[0].messages.isEmpty)
+    }
+
+    @Test("sendUserInput throws when handler is nil")
+    func sendUserInputWithoutHandler() async throws {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        let sessionId = state.sessions[0].id
+
+        // No handler set — should throw
+        await #expect(throws: SendError.self) {
+            try await state.sendUserInput(sessionId: sessionId, content: "hello")
+        }
+
+        // No local message should be added
+        #expect(state.sessions[0].messages.isEmpty)
+    }
+
+    @Test("sendUserInput propagates handler error and does not add local message")
+    func sendUserInputHandlerError() async throws {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        let sessionId = state.sessions[0].id
+
+        struct SendError: Error {}
+        state.sendMessageHandler = { _, _ in throw SendError() }
+
+        await #expect(throws: SendError.self) {
+            try await state.sendUserInput(sessionId: sessionId, content: "should not appear")
+        }
+
+        // No local message should be added when the handler fails
+        #expect(state.sessions[0].messages.isEmpty)
+    }
+
+    @Test("sendUserInput propagates noServer error and does not add local message")
+    func sendUserInputNoServerError() async throws {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        let sessionId = state.sessions[0].id
+
+        // Simulate the wiring pattern from TimGUIApp where server is nil
+        state.sendMessageHandler = { _, _ in throw SendError.noServer }
+
+        await #expect(throws: SendError.self) {
+            try await state.sendUserInput(sessionId: sessionId, content: "should not appear")
+        }
+
+        // No local message should be added when the server is unavailable
+        #expect(state.sessions[0].messages.isEmpty)
+    }
+
+    @Test("sendUserInput assigns sequential seq numbers")
+    func sendUserInputSequentialSeq() async throws {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        let sessionId = state.sessions[0].id
+        state.sendMessageHandler = { _, _ in }
+
+        // Add an existing message first
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 1, text: "from agent"))
+
+        try await state.sendUserInput(sessionId: sessionId, content: "first")
+        try await state.sendUserInput(sessionId: sessionId, content: "second")
+
+        #expect(state.sessions[0].messages.count == 3)
+        #expect(state.sessions[0].messages[1].seq == 2)
+        #expect(state.sessions[0].messages[2].seq == 3)
+    }
 }

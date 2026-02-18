@@ -32,36 +32,47 @@ When inquirer prompts are active, the terminal input reader must be fully paused
 
 The `withTerminalInputPaused()` helper captures the input source reference at function entry and resumes the **same instance** in the finally block, preventing asymmetric pause/resume if the active source changes during the prompt.
 
-## Tunnel Forwarding
+## Tunnel and Headless Forwarding
 
 ### Error Isolation
 
-Tunnel broadcast errors must be isolated from local subprocess stdin writes. A failure to send input through the tunnel should not prevent the local Claude Code subprocess from receiving input, and vice versa.
+Tunnel and headless broadcast errors must be isolated from local subprocess stdin writes. A failure to send input through the tunnel or headless adapter should not prevent the local Claude Code subprocess from receiving input, and vice versa.
 
 ### Callback Cleanup
 
-Clear tunnel `userInputHandler` callbacks both on result message detection **and** in finally blocks. There's a window between result detection and process exit where stale handlers can fire and attempt writes to closed stdin.
+Clear tunnel and headless `userInputHandler` callbacks both on result message detection **and** in finally blocks. There's a window between result detection and process exit where stale handlers can fire and attempt writes to closed stdin.
 
-## `executeWithTerminalInput()` Three-Path Branching
+### Headless Adapter User Input
+
+The `HeadlessAdapter` supports a `setUserInputHandler()` callback, mirroring the tunnel's `setUserInputHandler()`. When `executeWithTerminalInput()` detects the logger adapter is a `HeadlessAdapter`, it wires a handler that:
+
+1. Checks `stdinGuard.isClosed` before writing
+2. Calls `sendFollowUpMessage()` to forward input to the Claude Code subprocess
+3. Broadcasts via `tunnelServer?.sendUserInput()` (if a tunnel is also active)
+4. Emits a `user_terminal_input` structured message for logging/display
+
+This enables tim-gui to send user messages to running agent sessions via the headless WebSocket connection.
+
+## `executeWithTerminalInput()` Branching
 
 The shared helper in `terminal_input_lifecycle.ts` handles three distinct modes:
 
 1. **Terminal input enabled**: Full readline lifecycle with `setupTerminalInput()` / `awaitAndCleanup()`
-2. **Tunnel active, no terminal**: Multi-message lifecycle (`sendInitialPrompt` + `closeStdinAndWait`) to keep stdin open for tunnel-forwarded input
+2. **Tunnel or headless forwarding active, no terminal**: Multi-message lifecycle (`sendInitialPrompt` + `closeStdinAndWait`) to keep stdin open for forwarded input. A `headlessForwardingEnabled` boolean is computed from `loggerAdapter instanceof HeadlessAdapter` — this ensures the headless adapter (tim-gui) keeps stdin open for follow-up messages, just like tunnel forwarding does.
 3. **Neither**: Single-shot `sendSinglePromptAndWait()`
 
 Both `claude_code.ts` and `run_claude_subprocess.ts` delegate to this helper to avoid duplicating the branching logic.
 
-### Tunnel Forwarding as an Interactive Input Source
+### Tunnel and Headless Forwarding as Interactive Input Sources
 
-Tunnel forwarding is an interactive input source alongside terminal input. When writing validation guards (e.g., "is this session interactive?"), check for **both** `terminalInputEnabled` and tunnel-active state — not just terminal input. For example, a command that requires user interaction to function (like chat with no initial prompt) must allow execution when either the terminal or the tunnel can provide input. Checking only `terminalInputEnabled` would break Tim-GUI integration where input arrives via the tunnel.
+Tunnel and headless forwarding are interactive input sources alongside terminal input. When writing validation guards (e.g., "is this session interactive?"), check for **all** of `terminalInputEnabled`, tunnel-active state, and headless adapter presence — not just terminal input. For example, a command that requires user interaction to function (like chat with no initial prompt) must allow execution when any of these can provide input. Checking only `terminalInputEnabled` would break Tim-GUI integration where input arrives via the tunnel or the headless WebSocket.
 
 ### Optional Initial Prompt
 
 The `prompt` parameter in `executeWithTerminalInput()` is optional. When no prompt is provided:
 
-- **Terminal input / tunnel paths**: The subprocess spawns but nothing is written to stdin until the user sends their first message (via terminal readline or tunnel). The first message uses `sendFollowUpMessage()`.
-- **Single-prompt path**: A prompt is required — if none is provided and neither terminal input nor tunnel is active, this is an error. The caller should validate this before reaching the executor.
+- **Terminal input / tunnel / headless paths**: The subprocess spawns but nothing is written to stdin until the user sends their first message (via terminal readline, tunnel, or headless GUI). The first message uses `sendFollowUpMessage()`.
+- **Single-prompt path**: A prompt is required — if none is provided and neither terminal input, tunnel, nor headless forwarding is active, this is an error. The caller should validate this before reaching the executor.
 
 ## `logSpawn()` and Exit Codes
 

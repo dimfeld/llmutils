@@ -66,7 +66,7 @@ describe('structured_messages', () => {
       { type: 'execution_summary', timestamp, summary: summaryFixture },
       { type: 'token_usage', timestamp, totalTokens: 123 },
       { type: 'input_required', timestamp, prompt: 'Confirm' },
-      { type: 'user_terminal_input', timestamp, content: 'Please add tests' },
+      { type: 'user_terminal_input', timestamp, content: 'Please add tests', source: 'terminal' },
       {
         type: 'prompt_request',
         timestamp,
@@ -124,10 +124,12 @@ describe('structured_messages', () => {
       type: 'user_terminal_input',
       timestamp: '2026-02-08T00:00:00.000Z',
       content: 'Also fix the type error',
+      source: 'gui',
     };
 
     const asStructured: StructuredMessage = message;
     expect(asStructured.type).toBe('user_terminal_input');
     expect((asStructured as UserTerminalInputMessage).content).toBe('Also fix the type error');
+    expect((asStructured as UserTerminalInputMessage).source).toBe('gui');
   });
 });

@@ -154,4 +154,34 @@ describe('CleanupRegistry', () => {
 
     expect(completed).toBe(true);
   });
+
+  test('executeAllAsync should await async handlers', async () => {
+    const registry = CleanupRegistry.getInstance();
+    const executionOrder: string[] = [];
+
+    registry.register(() => {
+      executionOrder.push('sync');
+    });
+    registry.register(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      executionOrder.push('async');
+    });
+
+    await registry.executeAllAsync();
+
+    expect(executionOrder).toEqual(['sync', 'async']);
+  });
+
+  test('executeAllAsync should continue when a handler throws', async () => {
+    const registry = CleanupRegistry.getInstance();
+    const successHandler = mock(() => {});
+
+    registry.register(async () => {
+      throw new Error('failure');
+    });
+    registry.register(successHandler);
+
+    await expect(registry.executeAllAsync()).resolves.toBeUndefined();
+    expect(successHandler).toHaveBeenCalledTimes(1);
+  });
 });

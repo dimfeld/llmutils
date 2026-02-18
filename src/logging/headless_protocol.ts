@@ -42,5 +42,13 @@ export interface HeadlessPromptResponseServerMessage {
   error?: string;
 }
 
+/** Server→client message: free-form user input from the GUI. */
+export interface HeadlessUserInputServerMessage {
+  type: 'user_input';
+  content: string;
+}
+
 /** Discriminated union of all server→client messages over the headless websocket. */
-export type HeadlessServerMessage = HeadlessPromptResponseServerMessage;
+export type HeadlessServerMessage =
+  | HeadlessPromptResponseServerMessage
+  | HeadlessUserInputServerMessage;

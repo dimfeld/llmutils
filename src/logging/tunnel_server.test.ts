@@ -735,7 +735,17 @@ describe('createTunnelServer', () => {
           message: {
             type: 'user_terminal_input',
             timestamp: '2026-02-08T00:00:00.000Z',
+            source: 'web',
+            content: 'invalid source',
+          } as unknown as Record<string, unknown>,
+        },
+        {
+          type: 'structured',
+          message: {
+            type: 'user_terminal_input',
+            timestamp: '2026-02-08T00:00:00.000Z',
             content: 'Please add tests',
+            source: 'terminal',
           },
         },
       ]);
@@ -748,6 +758,7 @@ describe('createTunnelServer', () => {
     expect(calls[0].args[0]).toMatchObject({
       type: 'user_terminal_input',
       content: 'Please add tests',
+      source: 'terminal',
     });
   });
 

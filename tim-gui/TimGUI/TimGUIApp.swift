@@ -39,6 +39,11 @@ struct TimGUIApp: App {
                 case let .output(connId, seq, tunnelMessage):
                     sessionState.ingestNotification(connectionId: connId, tunnelMessage: tunnelMessage)
                     sessionState.ingestSessionMetadata(connectionId: connId, tunnelMessage: tunnelMessage)
+                    // Suppress only GUI-originated user_terminal_input echo because
+                    // sendUserInput() already appends a local "You" message.
+                    if case .structured(message: .userTerminalInput(_, .gui?, _)) = tunnelMessage {
+                        break
+                    }
                     let message = MessageFormatter.format(
                         tunnelMessage: tunnelMessage, seq: seq)
                     sessionState.appendMessage(connectionId: connId, message: message)
@@ -54,6 +59,12 @@ struct TimGUIApp: App {
             try await newServer.start()
             self.startError = nil
             self.server = newServer
+            sessionState.sendMessageHandler = { [weak newServer] connectionId, message in
+                guard let server = newServer else { throw SendError.noServer }
+                let data = try JSONEncoder().encode(message)
+                let text = String(data: data, encoding: .utf8)!
+                try await server.sendMessage(to: connectionId, text: text)
+            }
         } catch {
             self.startError = "Failed to start server: \(error.localizedDescription)"
         }

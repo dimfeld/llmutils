@@ -76,7 +76,11 @@ describe('terminal_input_lifecycle', () => {
     expect(sendFollowUpMessageSpy).toHaveBeenCalledTimes(1);
     expect(
       sendStructuredSpy.mock.calls.some(
-        (call) => call[0] && typeof call[0] === 'object' && call[0].type === 'user_terminal_input'
+        (call) =>
+          call[0] &&
+          typeof call[0] === 'object' &&
+          call[0].type === 'user_terminal_input' &&
+          call[0].source === 'terminal'
       )
     ).toBe(true);
     expect(stopSpy).toHaveBeenCalled();
@@ -410,7 +414,11 @@ describe('terminal_input_lifecycle', () => {
     expect(debugLogSpy).toHaveBeenCalled();
     expect(
       sendStructuredSpy.mock.calls.some(
-        (call) => call[0] && typeof call[0] === 'object' && call[0].type === 'user_terminal_input'
+        (call) =>
+          call[0] &&
+          typeof call[0] === 'object' &&
+          call[0].type === 'user_terminal_input' &&
+          call[0].source === 'terminal'
       )
     ).toBe(true);
   });
@@ -879,6 +887,91 @@ describe('executeWithTerminalInput', () => {
     expect(sendInitialPromptSpy).not.toHaveBeenCalled();
   });
 
+  it('uses headless forwarding path when both flags are false and logger adapter is headless', async () => {
+    const sendInitialPromptSpy = mock(() => {});
+    const sendSinglePromptAndWaitSpy = mock(
+      () =>
+        Promise.resolve({
+          exitCode: 0,
+          stdout: '',
+          stderr: '',
+          signal: null,
+          killedByInactivity: false,
+        }) as Promise<SpawnAndLogOutputResult>
+    );
+    const safeEndStdinSpy = mock(() => {});
+    const setUserInputHandlerSpy = mock(() => {});
+
+    class MockHeadlessAdapter {
+      setUserInputHandler = setUserInputHandlerSpy;
+    }
+
+    const mockAdapterInstance = new MockHeadlessAdapter();
+    let resolveResult: ((value: SpawnAndLogOutputResult) => void) | undefined;
+    const streamingResult = new Promise<SpawnAndLogOutputResult>((resolve) => {
+      resolveResult = resolve;
+    });
+
+    await moduleMocker.mock('./streaming_input.ts', () => ({
+      sendInitialPrompt: sendInitialPromptSpy,
+      sendFollowUpMessage: mock(() => {}),
+      safeEndStdin: safeEndStdinSpy,
+      sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
+    }));
+
+    await moduleMocker.mock('./terminal_input.ts', () => ({
+      TerminalInputReader: class {
+        start() {
+          return true;
+        }
+        stop() {}
+      },
+    }));
+
+    await moduleMocker.mock('../../../logging/adapter.js', () => ({
+      getLoggerAdapter: mock(() => mockAdapterInstance),
+    }));
+
+    await moduleMocker.mock('../../../logging/headless_adapter.js', () => ({
+      HeadlessAdapter: MockHeadlessAdapter,
+    }));
+
+    await moduleMocker.mock('../../../logging/tunnel_client.js', () => ({
+      TunnelAdapter: class {},
+      isTunnelActive: mock(() => false),
+    }));
+
+    const { executeWithTerminalInput } = await import('./terminal_input_lifecycle.ts');
+    const streaming = makeStreamingProcess({ result: streamingResult });
+
+    const result = executeWithTerminalInput({
+      streaming,
+      prompt: 'task prompt',
+      sendStructured: mock(() => {}),
+      debugLog: mock(() => {}),
+      errorLog: mock(() => {}),
+      log: mock(() => {}),
+      label: 'test',
+      terminalInputEnabled: false,
+      tunnelForwardingEnabled: false,
+    });
+
+    expect(sendInitialPromptSpy).toHaveBeenCalledTimes(1);
+    expect(sendSinglePromptAndWaitSpy).not.toHaveBeenCalled();
+    expect(setUserInputHandlerSpy).toHaveBeenCalledTimes(1);
+    expect(safeEndStdinSpy).toHaveBeenCalledTimes(0);
+
+    resolveResult?.({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    });
+    await result.resultPromise;
+    expect(safeEndStdinSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('throws when no prompt is provided and both forwarding modes are disabled', async () => {
     await moduleMocker.mock('./streaming_input.ts', () => ({
       sendInitialPrompt: mock(() => {}),
@@ -1021,6 +1114,66 @@ describe('executeWithTerminalInput', () => {
     result.onResultMessage();
 
     expect(safeEndStdinSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('onResultMessage closes stdin for headless forwarding path when both flags are false', async () => {
+    const safeEndStdinSpy = mock(() => {});
+    const setUserInputHandlerSpy = mock(() => {});
+
+    class MockHeadlessAdapter {
+      setUserInputHandler = setUserInputHandlerSpy;
+    }
+
+    const mockAdapterInstance = new MockHeadlessAdapter();
+
+    await moduleMocker.mock('./streaming_input.ts', () => ({
+      sendInitialPrompt: mock(() => {}),
+      sendFollowUpMessage: mock(() => {}),
+      safeEndStdin: safeEndStdinSpy,
+      sendSinglePromptAndWait: mock(() => Promise.resolve()),
+    }));
+
+    await moduleMocker.mock('./terminal_input.ts', () => ({
+      TerminalInputReader: class {
+        start() {
+          return true;
+        }
+        stop() {}
+      },
+    }));
+
+    await moduleMocker.mock('../../../logging/adapter.js', () => ({
+      getLoggerAdapter: mock(() => mockAdapterInstance),
+    }));
+
+    await moduleMocker.mock('../../../logging/headless_adapter.js', () => ({
+      HeadlessAdapter: MockHeadlessAdapter,
+    }));
+
+    await moduleMocker.mock('../../../logging/tunnel_client.js', () => ({
+      TunnelAdapter: class {},
+      isTunnelActive: mock(() => false),
+    }));
+
+    const { executeWithTerminalInput } = await import('./terminal_input_lifecycle.ts');
+    const streaming = makeStreamingProcess();
+
+    const result = executeWithTerminalInput({
+      streaming,
+      prompt: 'task prompt',
+      sendStructured: mock(() => {}),
+      debugLog: mock(() => {}),
+      errorLog: mock(() => {}),
+      log: mock(() => {}),
+      label: 'test',
+      terminalInputEnabled: false,
+      tunnelForwardingEnabled: false,
+    });
+
+    result.onResultMessage();
+    expect(safeEndStdinSpy).toHaveBeenCalledTimes(1);
+
+    await result.resultPromise;
   });
 
   it('onResultMessage does not close stdin when closeOnResultMessage is false', async () => {
@@ -1218,6 +1371,401 @@ describe('executeWithTerminalInput', () => {
     // Second call should clear the handler (pass undefined)
     expect(setUserInputHandlerSpy).toHaveBeenCalledTimes(2);
     expect(setUserInputHandlerSpy.mock.calls[1][0]).toBeUndefined();
+
+    await result.resultPromise;
+  });
+
+  it('wires headless user input handler and forwards input to subprocess, tunnel, and structured log', async () => {
+    const sendFollowUpMessageSpy = mock(() => {});
+    const sendStructuredSpy = mock(() => {});
+    const sendUserInputSpy = mock(() => {});
+    const setUserInputHandlerSpy = mock(() => {});
+
+    class MockHeadlessAdapter {
+      setUserInputHandler = setUserInputHandlerSpy;
+    }
+
+    const mockAdapterInstance = new MockHeadlessAdapter();
+
+    await moduleMocker.mock('./streaming_input.ts', () => ({
+      sendInitialPrompt: mock(() => {}),
+      sendFollowUpMessage: sendFollowUpMessageSpy,
+      safeEndStdin: mock(() => {}),
+      sendSinglePromptAndWait: mock(
+        () =>
+          Promise.resolve({
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            signal: null,
+            killedByInactivity: false,
+          }) as Promise<SpawnAndLogOutputResult>
+      ),
+    }));
+
+    await moduleMocker.mock('./terminal_input.ts', () => ({
+      TerminalInputReader: class {
+        start() {
+          return true;
+        }
+        stop() {}
+      },
+    }));
+
+    await moduleMocker.mock('../../../logging/adapter.js', () => ({
+      getLoggerAdapter: mock(() => mockAdapterInstance),
+    }));
+
+    await moduleMocker.mock('../../../logging/headless_adapter.js', () => ({
+      HeadlessAdapter: MockHeadlessAdapter,
+    }));
+
+    await moduleMocker.mock('../../../logging/tunnel_client.js', () => ({
+      TunnelAdapter: class {},
+      isTunnelActive: mock(() => false),
+    }));
+
+    const { executeWithTerminalInput } = await import('./terminal_input_lifecycle.ts');
+    const streaming = makeStreamingProcess();
+
+    const result = executeWithTerminalInput({
+      streaming,
+      prompt: 'task prompt',
+      sendStructured: sendStructuredSpy,
+      debugLog: mock(() => {}),
+      errorLog: mock(() => {}),
+      log: mock(() => {}),
+      label: 'test',
+      tunnelServer: {
+        server: {} as unknown as import('node:net').Server,
+        close: mock(() => {}),
+        sendUserInput: sendUserInputSpy,
+      },
+      terminalInputEnabled: false,
+      tunnelForwardingEnabled: true,
+    });
+
+    expect(setUserInputHandlerSpy).toHaveBeenCalledTimes(1);
+    const handler = setUserInputHandlerSpy.mock.calls[0][0] as (content: string) => void;
+    handler('from headless');
+
+    expect(sendFollowUpMessageSpy).toHaveBeenCalledTimes(1);
+    expect(sendFollowUpMessageSpy.mock.calls[0][1]).toBe('from headless');
+    expect(sendUserInputSpy).toHaveBeenCalledTimes(1);
+    expect(sendUserInputSpy).toHaveBeenCalledWith('from headless');
+    expect(
+      sendStructuredSpy.mock.calls.some(
+        (call) =>
+          call[0] &&
+          typeof call[0] === 'object' &&
+          call[0].type === 'user_terminal_input' &&
+          call[0].content === 'from headless' &&
+          call[0].source === 'gui'
+      )
+    ).toBe(true);
+
+    await result.resultPromise;
+  });
+
+  it('headless handler forwards input after initial prompt when both flags are false', async () => {
+    const sendInitialPromptSpy = mock(() => {});
+    const sendFollowUpMessageSpy = mock(() => {});
+    const setUserInputHandlerSpy = mock(() => {});
+
+    class MockHeadlessAdapter {
+      setUserInputHandler = setUserInputHandlerSpy;
+    }
+
+    const mockAdapterInstance = new MockHeadlessAdapter();
+
+    await moduleMocker.mock('./streaming_input.ts', () => ({
+      sendInitialPrompt: sendInitialPromptSpy,
+      sendFollowUpMessage: sendFollowUpMessageSpy,
+      safeEndStdin: mock(() => {}),
+      sendSinglePromptAndWait: mock(() => Promise.resolve()),
+    }));
+
+    await moduleMocker.mock('./terminal_input.ts', () => ({
+      TerminalInputReader: class {
+        start() {
+          return true;
+        }
+        stop() {}
+      },
+    }));
+
+    await moduleMocker.mock('../../../logging/adapter.js', () => ({
+      getLoggerAdapter: mock(() => mockAdapterInstance),
+    }));
+
+    await moduleMocker.mock('../../../logging/headless_adapter.js', () => ({
+      HeadlessAdapter: MockHeadlessAdapter,
+    }));
+
+    await moduleMocker.mock('../../../logging/tunnel_client.js', () => ({
+      TunnelAdapter: class {},
+      isTunnelActive: mock(() => false),
+    }));
+
+    const { executeWithTerminalInput } = await import('./terminal_input_lifecycle.ts');
+    const streaming = makeStreamingProcess();
+
+    const result = executeWithTerminalInput({
+      streaming,
+      prompt: 'task prompt',
+      sendStructured: mock(() => {}),
+      debugLog: mock(() => {}),
+      errorLog: mock(() => {}),
+      log: mock(() => {}),
+      label: 'test',
+      terminalInputEnabled: false,
+      tunnelForwardingEnabled: false,
+    });
+
+    expect(sendInitialPromptSpy).toHaveBeenCalledTimes(1);
+    const handler = setUserInputHandlerSpy.mock.calls[0][0] as (content: string) => void;
+    handler('headless follow-up');
+    expect(sendFollowUpMessageSpy).toHaveBeenCalledTimes(1);
+    expect(sendFollowUpMessageSpy.mock.calls[0][1]).toBe('headless follow-up');
+
+    await result.resultPromise;
+  });
+
+  it('headless user input handler ignores writes once stdin is closed', async () => {
+    const sendFollowUpMessageSpy = mock(() => {});
+    const sendStructuredSpy = mock(() => {});
+    const sendUserInputSpy = mock(() => {});
+    const setUserInputHandlerSpy = mock(() => {});
+
+    class MockHeadlessAdapter {
+      setUserInputHandler = setUserInputHandlerSpy;
+    }
+
+    const mockAdapterInstance = new MockHeadlessAdapter();
+
+    await moduleMocker.mock('./streaming_input.ts', () => ({
+      sendInitialPrompt: mock(() => {}),
+      sendFollowUpMessage: sendFollowUpMessageSpy,
+      safeEndStdin: mock(() => {}),
+      sendSinglePromptAndWait: mock(() => Promise.resolve()),
+    }));
+
+    await moduleMocker.mock('./terminal_input.ts', () => ({
+      TerminalInputReader: class {
+        start() {
+          return true;
+        }
+        stop() {}
+      },
+    }));
+
+    await moduleMocker.mock('../../../logging/adapter.js', () => ({
+      getLoggerAdapter: mock(() => mockAdapterInstance),
+    }));
+
+    await moduleMocker.mock('../../../logging/headless_adapter.js', () => ({
+      HeadlessAdapter: MockHeadlessAdapter,
+    }));
+
+    await moduleMocker.mock('../../../logging/tunnel_client.js', () => ({
+      TunnelAdapter: class {},
+      isTunnelActive: mock(() => false),
+    }));
+
+    const { executeWithTerminalInput } = await import('./terminal_input_lifecycle.ts');
+    const streaming = makeStreamingProcess();
+
+    const result = executeWithTerminalInput({
+      streaming,
+      prompt: 'task prompt',
+      sendStructured: sendStructuredSpy,
+      debugLog: mock(() => {}),
+      errorLog: mock(() => {}),
+      log: mock(() => {}),
+      label: 'test',
+      tunnelServer: {
+        server: {} as unknown as import('node:net').Server,
+        close: mock(() => {}),
+        sendUserInput: sendUserInputSpy,
+      },
+      terminalInputEnabled: false,
+      tunnelForwardingEnabled: true,
+    });
+
+    const handler = setUserInputHandlerSpy.mock.calls[0][0] as (content: string) => void;
+    result.onResultMessage();
+    handler('late headless input');
+
+    expect(sendStructuredSpy).not.toHaveBeenCalled();
+    expect(sendFollowUpMessageSpy).not.toHaveBeenCalled();
+    expect(sendUserInputSpy).not.toHaveBeenCalled();
+
+    await result.resultPromise;
+  });
+
+  it('cleanup clears the headless user input handler', async () => {
+    const sendFollowUpMessageSpy = mock(() => {});
+    const setUserInputHandlerSpy = mock(() => {});
+
+    class MockHeadlessAdapter {
+      setUserInputHandler = setUserInputHandlerSpy;
+    }
+
+    const mockAdapterInstance = new MockHeadlessAdapter();
+
+    await moduleMocker.mock('./streaming_input.ts', () => ({
+      sendInitialPrompt: mock(() => {}),
+      sendFollowUpMessage: sendFollowUpMessageSpy,
+      safeEndStdin: mock(() => {}),
+      sendSinglePromptAndWait: mock(
+        () =>
+          Promise.resolve({
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            signal: null,
+            killedByInactivity: false,
+          }) as Promise<SpawnAndLogOutputResult>
+      ),
+    }));
+
+    await moduleMocker.mock('./terminal_input.ts', () => ({
+      TerminalInputReader: class {
+        start() {
+          return true;
+        }
+        stop() {}
+      },
+    }));
+
+    await moduleMocker.mock('../../../logging/adapter.js', () => ({
+      getLoggerAdapter: mock(() => mockAdapterInstance),
+    }));
+
+    await moduleMocker.mock('../../../logging/headless_adapter.js', () => ({
+      HeadlessAdapter: MockHeadlessAdapter,
+    }));
+
+    await moduleMocker.mock('../../../logging/tunnel_client.js', () => ({
+      TunnelAdapter: class {},
+      isTunnelActive: mock(() => false),
+    }));
+
+    const { executeWithTerminalInput } = await import('./terminal_input_lifecycle.ts');
+    const streaming = makeStreamingProcess();
+
+    const result = executeWithTerminalInput({
+      streaming,
+      prompt: 'task prompt',
+      sendStructured: mock(() => {}),
+      debugLog: mock(() => {}),
+      errorLog: mock(() => {}),
+      log: mock(() => {}),
+      label: 'test',
+      terminalInputEnabled: false,
+      tunnelForwardingEnabled: true,
+    });
+
+    expect(setUserInputHandlerSpy).toHaveBeenCalledTimes(1);
+    const handler = setUserInputHandlerSpy.mock.calls[0][0] as (content: string) => void;
+
+    result.cleanup();
+
+    expect(setUserInputHandlerSpy).toHaveBeenCalledTimes(2);
+    expect(setUserInputHandlerSpy.mock.calls[1][0]).toBeUndefined();
+
+    handler('after cleanup');
+    expect(sendFollowUpMessageSpy).not.toHaveBeenCalled();
+
+    await result.resultPromise;
+  });
+
+  it('headless handler still forwards input when sendStructured throws', async () => {
+    const sendFollowUpMessageSpy = mock(() => {});
+    const sendStructuredSpy = mock(() => {
+      throw new Error('structured logging failed');
+    });
+    const sendUserInputSpy = mock(() => {});
+    const setUserInputHandlerSpy = mock(() => {});
+    const debugLogSpy = mock(() => {});
+
+    class MockHeadlessAdapter {
+      setUserInputHandler = setUserInputHandlerSpy;
+    }
+
+    const mockAdapterInstance = new MockHeadlessAdapter();
+
+    await moduleMocker.mock('./streaming_input.ts', () => ({
+      sendInitialPrompt: mock(() => {}),
+      sendFollowUpMessage: sendFollowUpMessageSpy,
+      safeEndStdin: mock(() => {}),
+      sendSinglePromptAndWait: mock(
+        () =>
+          Promise.resolve({
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            signal: null,
+            killedByInactivity: false,
+          }) as Promise<SpawnAndLogOutputResult>
+      ),
+    }));
+
+    await moduleMocker.mock('./terminal_input.ts', () => ({
+      TerminalInputReader: class {
+        start() {
+          return true;
+        }
+        stop() {}
+      },
+    }));
+
+    await moduleMocker.mock('../../../logging/adapter.js', () => ({
+      getLoggerAdapter: mock(() => mockAdapterInstance),
+    }));
+
+    await moduleMocker.mock('../../../logging/headless_adapter.js', () => ({
+      HeadlessAdapter: MockHeadlessAdapter,
+    }));
+
+    await moduleMocker.mock('../../../logging/tunnel_client.js', () => ({
+      TunnelAdapter: class {},
+      isTunnelActive: mock(() => false),
+    }));
+
+    const { executeWithTerminalInput } = await import('./terminal_input_lifecycle.ts');
+    const streaming = makeStreamingProcess();
+
+    const result = executeWithTerminalInput({
+      streaming,
+      prompt: 'task prompt',
+      sendStructured: sendStructuredSpy,
+      debugLog: debugLogSpy,
+      errorLog: mock(() => {}),
+      log: mock(() => {}),
+      label: 'test',
+      tunnelServer: {
+        server: {} as unknown as import('node:net').Server,
+        close: mock(() => {}),
+        sendUserInput: sendUserInputSpy,
+      },
+      terminalInputEnabled: false,
+      tunnelForwardingEnabled: true,
+    });
+
+    const handler = setUserInputHandlerSpy.mock.calls[0][0] as (content: string) => void;
+    handler('test input');
+
+    // sendFollowUpMessage and tunnel forwarding should still have been called
+    // even though sendStructured throws
+    expect(sendFollowUpMessageSpy).toHaveBeenCalledTimes(1);
+    expect(sendFollowUpMessageSpy.mock.calls[0][1]).toBe('test input');
+    expect(sendUserInputSpy).toHaveBeenCalledTimes(1);
+    expect(sendUserInputSpy).toHaveBeenCalledWith('test input');
+
+    // sendStructured was called and threw, debug log should capture it
+    expect(sendStructuredSpy).toHaveBeenCalledTimes(1);
+    expect(debugLogSpy).toHaveBeenCalled();
 
     await result.resultPromise;
   });

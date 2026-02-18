@@ -1546,3 +1546,103 @@ describe('HeadlessAdapter prompt handling', () => {
     await adapter.destroy();
   });
 });
+
+describe('HeadlessAdapter user input handling', () => {
+  it('accepts valid user_input messages, rejects invalid payloads, and allows extra fields', async () => {
+    const received: string[] = [];
+    const clients = new Set<ServerWebSocket<unknown>>();
+    let openCount = 0;
+    const serverInstance = Bun.serve({
+      port: 0,
+      fetch(req, srv) {
+        const url = new URL(req.url);
+        if (url.pathname === '/tim-agent' && srv.upgrade(req)) {
+          return;
+        }
+        return new Response('Not Found', { status: 404 });
+      },
+      websocket: {
+        open(ws) {
+          openCount += 1;
+          clients.add(ws);
+        },
+        message() {},
+        close(ws) {
+          clients.delete(ws);
+        },
+      },
+    });
+    serversToClose.push({
+      close: () => {
+        for (const ws of clients) {
+          ws.close();
+        }
+        serverInstance.stop(true);
+      },
+    });
+
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      `ws://127.0.0.1:${serverInstance.port}/tim-agent`,
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: 0 }
+    );
+
+    adapter.setUserInputHandler((content) => received.push(content));
+    adapter.log('connect');
+    await waitFor(() => openCount >= 1);
+
+    for (const ws of clients) {
+      ws.send(JSON.stringify({ type: 'user_input', content: 'valid-1' }));
+      ws.send(JSON.stringify({ type: 'user_input' })); // missing content
+      ws.send(JSON.stringify({ type: 'user_input', content: 123 })); // non-string content
+      ws.send(JSON.stringify({ type: 'user_input', content: 'valid-2', extra: true }));
+    }
+
+    await waitFor(() => received.length === 2);
+    expect(received).toEqual(['valid-1', 'valid-2']);
+
+    await adapter.destroy();
+  }, 10000);
+
+  it('setUserInputHandler supports set, dispatch, replace, and clear lifecycle', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      'ws://127.0.0.1:1/tim-agent',
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+    );
+
+    const received: string[] = [];
+
+    adapter.setUserInputHandler((content) => received.push(`first:${content}`));
+    (adapter as any).handleServerMessage({ type: 'user_input', content: 'alpha' });
+
+    adapter.setUserInputHandler((content) => received.push(`second:${content}`));
+    (adapter as any).handleServerMessage({ type: 'user_input', content: 'beta' });
+
+    adapter.setUserInputHandler(undefined);
+    (adapter as any).handleServerMessage({ type: 'user_input', content: 'gamma' });
+
+    expect(received).toEqual(['first:alpha', 'second:beta']);
+    await adapter.destroy();
+  });
+
+  it('silently ignores user_input messages when no handler is registered', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = new HeadlessAdapter(
+      'ws://127.0.0.1:1/tim-agent',
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+    );
+
+    expect(() =>
+      (adapter as any).handleServerMessage({ type: 'user_input', content: 'ignored' })
+    ).not.toThrow();
+
+    await adapter.destroy();
+  });
+});

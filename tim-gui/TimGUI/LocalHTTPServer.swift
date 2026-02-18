@@ -220,6 +220,31 @@ final class LocalHTTPServer: @unchecked Sendable {
         }
     }
 
+    enum SendMessageError: Error, LocalizedError {
+        case connectionNotFound
+
+        var errorDescription: String? {
+            switch self {
+            case .connectionNotFound:
+                "WebSocket connection not found"
+            }
+        }
+    }
+
+    func sendMessage(to connectionId: UUID, text: String) async throws {
+        guard let connection = self.getConnection(connectionId) else {
+            throw SendMessageError.connectionNotFound
+        }
+        try await connection.sendText(text)
+    }
+
+    private nonisolated func getConnection(_ connectionId: UUID) -> WebSocketConnection? {
+        self.connectionsLock.lock()
+        let connection = self.wsConnections[connectionId]
+        self.connectionsLock.unlock()
+        return connection
+    }
+
     private func handleWebSocketDisconnect(connectionId: UUID) {
         self.connectionsLock.lock()
         self.wsConnections.removeValue(forKey: connectionId)
