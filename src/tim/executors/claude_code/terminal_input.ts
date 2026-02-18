@@ -9,23 +9,11 @@ interface TerminalInputReaderOptions {
   onCloseWhileActive?: () => void;
 }
 
-interface TerminalInputReaderStopOptions {
-  unref?: boolean;
-}
-
 let activeTerminalInputReader: TerminalInputReader | undefined;
 
 function setActiveTerminalInputReader(reader: TerminalInputReader | undefined): void {
   activeTerminalInputReader = reader;
   setActiveInputSource(reader);
-}
-
-function supportsUnref(stream: unknown): stream is { unref: () => void } {
-  return typeof stream === 'object' && stream !== null && 'unref' in stream;
-}
-
-function supportsRef(stream: unknown): stream is { ref: () => void } {
-  return typeof stream === 'object' && stream !== null && 'ref' in stream;
 }
 
 function logTerminalInputReaderError(error: unknown): void {
@@ -69,10 +57,6 @@ export class TerminalInputReader {
       activeReader.stop();
     }
 
-    if (supportsRef(process.stdin)) {
-      process.stdin.ref();
-    }
-
     this.partialInput = '';
     this.createReadline();
     this.state = 'active';
@@ -85,8 +69,6 @@ export class TerminalInputReader {
       return;
     }
 
-    // Keep stdin referenced while prompts are active so the process does not
-    // exit mid-prompt; unref is only done during full stop/cleanup.
     this.capturePartialInput();
     this.state = 'paused';
     this.closeReadline();
@@ -100,10 +82,6 @@ export class TerminalInputReader {
     if (!process.stdin.isTTY) {
       this.stop();
       return;
-    }
-
-    if (supportsRef(process.stdin)) {
-      process.stdin.ref();
     }
 
     const partialInput = this.partialInput;
@@ -126,7 +104,7 @@ export class TerminalInputReader {
     }
   }
 
-  stop(options: TerminalInputReaderStopOptions = {}): void {
+  stop(): void {
     if (this.state === 'stopped') {
       return;
     }
@@ -134,12 +112,6 @@ export class TerminalInputReader {
     this.partialInput = '';
     this.state = 'stopped';
     this.closeReadline();
-    if (options.unref === true) {
-      process.stdin.pause();
-      if (supportsUnref(process.stdin)) {
-        process.stdin.unref();
-      }
-    }
     if (activeTerminalInputReader === this) {
       setActiveTerminalInputReader(undefined);
     }

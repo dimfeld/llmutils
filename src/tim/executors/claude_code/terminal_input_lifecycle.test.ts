@@ -84,11 +84,10 @@ describe('terminal_input_lifecycle', () => {
     expect(debugLogSpy).toHaveBeenCalled();
   });
 
-  it('always unreferences stdin in awaitAndCleanup even after onResultMessage', async () => {
+  it('awaitAndCleanup does not unreference stdin', async () => {
     const sendInitialPromptSpy = mock(() => {});
     const sendFollowUpMessageSpy = mock(() => {});
     const stopSpy = mock(() => {});
-    const unrefSpy = mock(() => {});
     const stdinEndSpy = mock(async () => {});
 
     await moduleMocker.mock('./streaming_input.ts', () => ({
@@ -108,44 +107,33 @@ describe('terminal_input_lifecycle', () => {
       },
     }));
 
-    const originalIsTTY = process.stdin.isTTY;
-    const originalUnref = (process.stdin as { unref?: () => void }).unref;
-    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
-    (process.stdin as { unref?: () => void }).unref = unrefSpy;
+    const { setupTerminalInput } = await import('./terminal_input_lifecycle.ts');
+    const controller = setupTerminalInput({
+      streaming: {
+        stdin: {
+          write: mock(() => 0),
+          end: stdinEndSpy,
+        },
+        result: Promise.resolve({
+          exitCode: 0,
+          stdout: '',
+          stderr: '',
+          signal: null,
+          killedByInactivity: false,
+        }),
+        kill: mock(() => {}),
+      } as unknown as StreamingProcess,
+      prompt: 'initial prompt',
+      sendStructured: mock(() => {}),
+      debugLog: mock(() => {}),
+      onReaderError: mock(() => {}),
+    });
 
-    try {
-      const { setupTerminalInput } = await import('./terminal_input_lifecycle.ts');
-      const controller = setupTerminalInput({
-        streaming: {
-          stdin: {
-            write: mock(() => 0),
-            end: stdinEndSpy,
-          },
-          result: Promise.resolve({
-            exitCode: 0,
-            stdout: '',
-            stderr: '',
-            signal: null,
-            killedByInactivity: false,
-          }),
-          kill: mock(() => {}),
-        } as unknown as StreamingProcess,
-        prompt: 'initial prompt',
-        sendStructured: mock(() => {}),
-        debugLog: mock(() => {}),
-        onReaderError: mock(() => {}),
-      });
+    controller.onResultMessage();
+    await controller.awaitAndCleanup();
 
-      controller.onResultMessage();
-      await controller.awaitAndCleanup();
-
-      expect(stopSpy).toHaveBeenCalledTimes(2);
-      expect(stdinEndSpy).toHaveBeenCalledTimes(1);
-      expect(unrefSpy).toHaveBeenCalledTimes(1);
-    } finally {
-      Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
-      (process.stdin as { unref?: () => void }).unref = originalUnref;
-    }
+    expect(stopSpy).toHaveBeenCalledTimes(2);
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
   });
 
   it('does not send an initial prompt when none is provided', async () => {

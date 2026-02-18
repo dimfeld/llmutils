@@ -112,9 +112,6 @@ export function setupTerminalInput(
       } finally {
         reader.stop();
         stdinGuard.close();
-        if (process.stdin.isTTY && typeof process.stdin.unref === 'function') {
-          process.stdin.unref();
-        }
       }
     },
   };

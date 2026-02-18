@@ -88,7 +88,7 @@ async function flushMicrotasks(): Promise<void> {
 
 describe('TerminalInputReader', () => {
   beforeEach(() => {
-    getActiveTerminalInputReader()?.stop({ unref: true });
+    getActiveTerminalInputReader()?.stop();
     setActiveInputSource(undefined);
     createInterfaceMock.mockClear();
     createdInterfaces.length = 0;
@@ -337,13 +337,10 @@ describe('TerminalInputReader', () => {
     }
   });
 
-  it('stop does not call stdin.unref by default', () => {
+  it('stop does not pause stdin', () => {
     setTTY(true);
-    const unrefSpy = mock(() => {});
     const pauseSpy = mock(() => {});
-    const originalUnref = (process.stdin as { unref?: () => void }).unref;
     const originalPause = process.stdin.pause;
-    (process.stdin as { unref?: () => void }).unref = unrefSpy;
     process.stdin.pause = pauseSpy as typeof process.stdin.pause;
 
     try {
@@ -352,33 +349,8 @@ describe('TerminalInputReader', () => {
 
       reader.stop();
 
-      expect(unrefSpy).not.toHaveBeenCalled();
       expect(pauseSpy).not.toHaveBeenCalled();
     } finally {
-      (process.stdin as { unref?: () => void }).unref = originalUnref;
-      process.stdin.pause = originalPause;
-    }
-  });
-
-  it('stop calls stdin.unref when explicitly requested', () => {
-    setTTY(true);
-    const unrefSpy = mock(() => {});
-    const pauseSpy = mock(() => {});
-    const originalUnref = (process.stdin as { unref?: () => void }).unref;
-    const originalPause = process.stdin.pause;
-    (process.stdin as { unref?: () => void }).unref = unrefSpy;
-    process.stdin.pause = pauseSpy as typeof process.stdin.pause;
-
-    try {
-      const reader = new TerminalInputReader({ onLine: () => {} });
-      reader.start();
-
-      reader.stop({ unref: true });
-
-      expect(unrefSpy).toHaveBeenCalledTimes(1);
-      expect(pauseSpy).toHaveBeenCalledTimes(1);
-    } finally {
-      (process.stdin as { unref?: () => void }).unref = originalUnref;
       process.stdin.pause = originalPause;
     }
   });
