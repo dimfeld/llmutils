@@ -221,6 +221,7 @@ ${options.batchMode ? '6' : '5'}. **Iteration**
 
 - If the review output identifies issues or tests fail:
 - Return to step ${options.batchMode ? '2' : '1'} with the review feedback
+- If the review still flags an issue that was supposedly just fixed, trust the review — the fix was incomplete or incorrect. Investigate the issue again rather than dismissing the feedback.
 - Continue this loop until all tests pass and the implementation is satisfactory`;
 
   return `## Workflow Instructions
@@ -405,6 +406,7 @@ ${options.batchMode ? '4' : '3'}. **Notes Phase**
 ${progressSection}
 
 ${options.batchMode ? '5' : '4'}. **Iteration**
+- If verification still flags an issue that was supposedly just fixed, trust the verification — the fix was incomplete or incorrect. Investigate the issue again rather than dismissing the feedback.
 - Repeat the implement → verify loop until verification succeeds without failures.`;
 
   const failureProtocol = `
@@ -588,6 +590,7 @@ ${progressSection}
 ${iterationPhaseNumber}. **Iteration**
 - If verification/review identifies issues or tests fail:
 - Return to step ${options.batchMode ? '2' : '1'} and continue the loop
+- If the review still flags an issue that was supposedly just fixed, trust the review — the fix was incomplete or incorrect. Investigate the issue again rather than dismissing the feedback.
 - Keep TDD order intact for each iteration`;
 
   const failureProtocol = `
