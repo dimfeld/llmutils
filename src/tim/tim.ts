@@ -37,6 +37,7 @@ import { Command, Option } from 'commander';
 import { z } from 'zod/v4';
 import { loadEnv } from '../common/env.js';
 import { setDebug } from '../common/process.js';
+import { installStdinDebugTracing } from '../common/stdin_debug.js';
 import { executors } from './executors/index.js';
 import { handleCommandError } from './utils/commands.js';
 import { prioritySchema, statusSchema } from './planSchema.js';
@@ -1276,6 +1277,7 @@ for (const agentType of ['implementer', 'tester', 'tdd-tests', 'verifier'] as co
 }
 
 async function run() {
+  installStdinDebugTracing();
   await loadEnv();
   enableAutoClaim();
 

@@ -243,6 +243,19 @@ const reviewPrintQuietLogger: LoggerAdapter = {
   sendStructured: () => {},
 };
 
+function debugStdinTrace(message: string): void {
+  if (process.env.TIM_DEBUG_STDIN !== '1') {
+    return;
+  }
+
+  const ts = new Date().toISOString();
+  try {
+    process.stderr.write(`[TIM_DEBUG_STDIN] ${ts} review ${message}\n`);
+  } catch {
+    // Best-effort debug logging only.
+  }
+}
+
 async function isCommandAvailable(command: string): Promise<boolean> {
   const result = await which(command, { nothrow: true });
   return Boolean(result);
@@ -784,19 +797,28 @@ export async function handleReviewCommand(
                 timestamp: timestamp(),
                 prompt: 'Choose how to proceed with review issues',
               });
-              action = await select({
-                message: 'Issues were found during review. What would you like to do?',
-                choices: [
-                  { name: 'Append issues to the current plan as tasks', value: 'append' },
-                  ...availableFixActions.map((option) => ({
-                    name: option.label,
-                    value: option.action,
-                  })),
-                  { name: 'Create a cleanup plan (for later execution)', value: 'cleanup' },
-                  { name: 'Exit (do nothing)', value: 'exit' },
-                ],
-                default: 'append',
-              });
+              debugStdinTrace('about to open issue-action prompt');
+              try {
+                action = await select({
+                  message: 'Issues were found during review. What would you like to do?',
+                  choices: [
+                    { name: 'Append issues to the current plan as tasks', value: 'append' },
+                    ...availableFixActions.map((option) => ({
+                      name: option.label,
+                      value: option.action,
+                    })),
+                    { name: 'Create a cleanup plan (for later execution)', value: 'cleanup' },
+                    { name: 'Exit (do nothing)', value: 'exit' },
+                  ],
+                  default: 'append',
+                });
+                debugStdinTrace(`issue-action prompt resolved with action=${action}`);
+              } catch (err) {
+                const name = err instanceof Error ? err.name : typeof err;
+                const message = err instanceof Error ? err.message : String(err);
+                debugStdinTrace(`issue-action prompt threw name=${name} message=${message}`);
+                throw err;
+              }
             } else {
               log(
                 chalk.gray('Non-interactive environment detected; skipping fix/cleanup prompts.')
