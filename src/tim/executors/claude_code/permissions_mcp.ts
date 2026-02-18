@@ -222,10 +222,13 @@ async function requestPermissionFromParent(
     pendingRequests.set(requestId, resolve);
 
     // Set up a timeout to clean up pending requests
-    const timeout = setTimeout(() => {
-      pendingRequests.delete(requestId);
-      reject(new Error('Permission request timed out'));
-    }, 600000); // 10 minute timeout
+    const timeout = setTimeout(
+      () => {
+        pendingRequests.delete(requestId);
+        reject(new Error('Permission request timed out'));
+      },
+      1000 * 60 * 600
+    ); // 600 minute timeout -- we have another timeout mechanism for normal use
 
     // Override the resolver to also clear the timeout
     const originalResolver = pendingRequests.get(requestId)!;
