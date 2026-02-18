@@ -1190,13 +1190,61 @@ struct StructuredMessagePayloadTests {
         #expect(p.promptConfig.message == "Choose an option")
         #expect(p.promptConfig.choices?.count == 2)
         #expect(p.promptConfig.choices?[0].name == "Option A")
-        #expect(p.promptConfig.choices?[0].value == "a")
-        #expect(p.promptConfig.choices?[1].value == "2") // integer number coerced to string without decimal
+        #expect(p.promptConfig.choices?[0].value == .string("a"))
+        #expect(p.promptConfig.choices?[1].value == .int(2))
         #expect(p.timeoutMs == 30000)
     }
 
-    @Test("PromptChoiceConfigPayload preserves integer format for numeric values")
-    func decodesPromptChoiceIntegerCoercion() throws {
+    @Test("Decodes prompt_request with command field for prefix_select")
+    func decodesPromptRequestPrefixSelect() throws {
+        let json = """
+        {
+            "type": "prompt_request",
+            "requestId": "req-ps-001",
+            "promptType": "prefix_select",
+            "promptConfig": {
+                "message": "Allow this command?",
+                "command": "npm install --save-dev typescript"
+            },
+            "timeoutMs": 60000,
+            "timestamp": "2026-02-10T08:00:00Z"
+        }
+        """
+        let msg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(json.utf8))
+        guard case let .promptRequest(p) = msg else {
+            Issue.record("Expected promptRequest, got \(msg)")
+            return
+        }
+        #expect(p.requestId == "req-ps-001")
+        #expect(p.promptType == "prefix_select")
+        #expect(p.promptConfig.message == "Allow this command?")
+        #expect(p.promptConfig.command == "npm install --save-dev typescript")
+        #expect(p.timeoutMs == 60000)
+    }
+
+    @Test("Decodes prompt_request with nil command when not present")
+    func decodesPromptRequestWithoutCommand() throws {
+        let json = """
+        {
+            "type": "prompt_request",
+            "requestId": "req-no-cmd",
+            "promptType": "confirm",
+            "promptConfig": {
+                "message": "Continue?"
+            },
+            "timestamp": "2026-02-10T08:00:00Z"
+        }
+        """
+        let msg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(json.utf8))
+        guard case let .promptRequest(p) = msg else {
+            Issue.record("Expected promptRequest, got \(msg)")
+            return
+        }
+        #expect(p.promptConfig.command == nil)
+    }
+
+    @Test("PromptChoiceConfigPayload preserves original JSON types for values")
+    func decodesPromptChoicePreservesTypes() throws {
         let json = """
         {
             "type": "prompt_request",
@@ -1221,11 +1269,153 @@ struct StructuredMessagePayloadTests {
             return
         }
         let choices = try #require(p.promptConfig.choices)
-        #expect(choices[0].value == "42") // integer preserved as "42", not "42.0"
-        #expect(choices[1].value == "3.14") // float kept as-is
-        #expect(choices[2].value == "0") // zero preserved as "0", not "0.0"
-        #expect(choices[3].value == "true") // bool coerced to string
-        #expect(choices[4].value == "hello") // string unchanged
+        #expect(choices[0].value == .int(42))
+        #expect(choices[1].value == .double(3.14))
+        #expect(choices[2].value == .int(0))
+        #expect(choices[3].value == .bool(true))
+        #expect(choices[4].value == .string("hello"))
+    }
+
+    @Test("PromptChoiceConfigPayload preserves bool false values")
+    func decodesPromptChoiceBoolFalse() throws {
+        let json = """
+        {
+            "type": "prompt_request",
+            "requestId": "req-bool-false",
+            "promptType": "select",
+            "promptConfig": {
+                "message": "Pick",
+                "choices": [
+                    {"name": "True", "value": true},
+                    {"name": "False", "value": false}
+                ]
+            },
+            "timestamp": "2026-02-10T08:00:00Z"
+        }
+        """
+        let msg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(json.utf8))
+        guard case let .promptRequest(p) = msg else {
+            Issue.record("Expected promptRequest, got \(msg)")
+            return
+        }
+        let choices = try #require(p.promptConfig.choices)
+        #expect(choices[0].value == .bool(true))
+        #expect(choices[1].value == .bool(false))
+    }
+
+    @Test("PromptChoiceConfigPayload with null value decodes to nil")
+    func decodesPromptChoiceNullValue() throws {
+        let json = """
+        {
+            "type": "prompt_request",
+            "requestId": "req-null",
+            "promptType": "select",
+            "promptConfig": {
+                "message": "Pick",
+                "choices": [
+                    {"name": "No value"},
+                    {"name": "Null value", "value": null}
+                ]
+            },
+            "timestamp": "2026-02-10T08:00:00Z"
+        }
+        """
+        let msg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(json.utf8))
+        guard case let .promptRequest(p) = msg else {
+            Issue.record("Expected promptRequest, got \(msg)")
+            return
+        }
+        let choices = try #require(p.promptConfig.choices)
+        #expect(choices[0].value == nil)
+        #expect(choices[1].value == nil)
+    }
+
+    @Test("PromptConfigPayload.defaultValue preserves typed values")
+    func decodesPromptConfigDefaultValueTypes() throws {
+        // Bool default
+        let boolJson = """
+        {
+            "type": "prompt_request",
+            "requestId": "req-default-bool",
+            "promptType": "confirm",
+            "promptConfig": {"message": "Continue?", "default": false},
+            "timestamp": "2026-02-10T08:00:00Z"
+        }
+        """
+        let boolMsg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(boolJson.utf8))
+        guard case let .promptRequest(bp) = boolMsg else {
+            Issue.record("Expected promptRequest")
+            return
+        }
+        #expect(bp.promptConfig.defaultValue == .bool(false))
+
+        // Int default
+        let intJson = """
+        {
+            "type": "prompt_request",
+            "requestId": "req-default-int",
+            "promptType": "select",
+            "promptConfig": {"message": "Pick", "default": 42},
+            "timestamp": "2026-02-10T08:00:00Z"
+        }
+        """
+        let intMsg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(intJson.utf8))
+        guard case let .promptRequest(ip) = intMsg else {
+            Issue.record("Expected promptRequest")
+            return
+        }
+        #expect(ip.promptConfig.defaultValue == .int(42))
+
+        // Double default
+        let doubleJson = """
+        {
+            "type": "prompt_request",
+            "requestId": "req-default-double",
+            "promptType": "select",
+            "promptConfig": {"message": "Pick", "default": 3.14},
+            "timestamp": "2026-02-10T08:00:00Z"
+        }
+        """
+        let doubleMsg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(doubleJson.utf8))
+        guard case let .promptRequest(dp) = doubleMsg else {
+            Issue.record("Expected promptRequest")
+            return
+        }
+        #expect(dp.promptConfig.defaultValue == .double(3.14))
+
+        // String default
+        let strJson = """
+        {
+            "type": "prompt_request",
+            "requestId": "req-default-string",
+            "promptType": "input",
+            "promptConfig": {"message": "Enter value", "default": "hello"},
+            "timestamp": "2026-02-10T08:00:00Z"
+        }
+        """
+        let strMsg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(strJson.utf8))
+        guard case let .promptRequest(sp) = strMsg else {
+            Issue.record("Expected promptRequest")
+            return
+        }
+        #expect(sp.promptConfig.defaultValue == .string("hello"))
+
+        // Missing default
+        let noDefaultJson = """
+        {
+            "type": "prompt_request",
+            "requestId": "req-no-default",
+            "promptType": "input",
+            "promptConfig": {"message": "Enter value"},
+            "timestamp": "2026-02-10T08:00:00Z"
+        }
+        """
+        let noDefaultMsg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(noDefaultJson.utf8))
+        guard case let .promptRequest(ndp) = noDefaultMsg else {
+            Issue.record("Expected promptRequest")
+            return
+        }
+        #expect(ndp.promptConfig.defaultValue == nil)
     }
 
     @Test("Decodes prompt_answered without value")
@@ -1531,5 +1721,135 @@ struct OutgoingMessageTests {
             try JSONSerialization.jsonObject(with: data) as? [String: String])
         #expect(dict["type"] == "user_input")
         #expect(dict["content"] == "")
+    }
+
+    // MARK: - promptResponse encoding
+
+    @Test("promptResponse with bool true encodes correctly")
+    func promptResponseBoolTrue() throws {
+        let message = OutgoingMessage.promptResponse(requestId: "req-1", value: .bool(true))
+        let data = try JSONEncoder().encode(message)
+        let dict = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(dict["type"] as? String == "prompt_response")
+        #expect(dict["requestId"] as? String == "req-1")
+        // Must be a real boolean, not a string
+        let value = try #require(dict["value"])
+        #expect(value as? Bool == true)
+        #expect(value as? String == nil) // Not a string "true"
+        #expect(dict.count == 3)
+    }
+
+    @Test("promptResponse with bool false encodes correctly")
+    func promptResponseBoolFalse() throws {
+        let message = OutgoingMessage.promptResponse(requestId: "req-2", value: .bool(false))
+        let data = try JSONEncoder().encode(message)
+        let dict = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(dict["value"] as? Bool == false)
+    }
+
+    @Test("promptResponse with string encodes correctly")
+    func promptResponseString() throws {
+        let message = OutgoingMessage.promptResponse(requestId: "req-3", value: .string("user input text"))
+        let data = try JSONEncoder().encode(message)
+        let dict = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(dict["type"] as? String == "prompt_response")
+        #expect(dict["requestId"] as? String == "req-3")
+        #expect(dict["value"] as? String == "user input text")
+        #expect(dict.count == 3)
+    }
+
+    @Test("promptResponse with int encodes as JSON number")
+    func promptResponseInt() throws {
+        let message = OutgoingMessage.promptResponse(requestId: "req-4", value: .int(42))
+        let data = try JSONEncoder().encode(message)
+        let dict = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(dict["type"] as? String == "prompt_response")
+        #expect(dict["requestId"] as? String == "req-4")
+        // Should be a numeric value, not a string
+        let value = try #require(dict["value"])
+        #expect(value as? Int == 42)
+        #expect(value as? String == nil)
+    }
+
+    @Test("promptResponse with double encodes as JSON number")
+    func promptResponseDouble() throws {
+        let message = OutgoingMessage.promptResponse(requestId: "req-5", value: .double(3.14))
+        let data = try JSONEncoder().encode(message)
+        let dict = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(dict["type"] as? String == "prompt_response")
+        #expect(dict["requestId"] as? String == "req-5")
+        let value = try #require(dict["value"] as? Double)
+        #expect(abs(value - 3.14) < 0.001)
+    }
+
+    @Test("promptResponse with array encodes as JSON array")
+    func promptResponseArray() throws {
+        let message = OutgoingMessage.promptResponse(
+            requestId: "req-6",
+            value: .array([.string("option1"), .string("option2")]))
+        let data = try JSONEncoder().encode(message)
+        let dict = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(dict["type"] as? String == "prompt_response")
+        #expect(dict["requestId"] as? String == "req-6")
+        let arr = try #require(dict["value"] as? [String])
+        #expect(arr == ["option1", "option2"])
+    }
+
+    @Test("promptResponse with object encodes as JSON object (prefix_select format)")
+    func promptResponseObject() throws {
+        let message = OutgoingMessage.promptResponse(
+            requestId: "req-7",
+            value: .object(["exact": .bool(true), "command": .string("npm install")]))
+        let data = try JSONEncoder().encode(message)
+        let dict = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(dict["type"] as? String == "prompt_response")
+        #expect(dict["requestId"] as? String == "req-7")
+        let valueObj = try #require(dict["value"] as? [String: Any])
+        #expect(valueObj["exact"] as? Bool == true)
+        #expect(valueObj["command"] as? String == "npm install")
+        #expect(valueObj.count == 2)
+    }
+
+    @Test("promptResponse with mixed-type array encodes correctly")
+    func promptResponseMixedArray() throws {
+        let message = OutgoingMessage.promptResponse(
+            requestId: "req-8",
+            value: .array([.string("a"), .int(1), .bool(true)]))
+        let data = try JSONEncoder().encode(message)
+        let dict = try #require(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let arr = try #require(dict["value"] as? [Any])
+        #expect(arr.count == 3)
+        #expect(arr[0] as? String == "a")
+        #expect(arr[1] as? Int == 1)
+        #expect(arr[2] as? Bool == true)
+    }
+}
+
+@Suite("Prefix select command normalization")
+struct PrefixSelectCommandNormalizationTests {
+    @Test("extractCommandAfterCd strips leading cd prefix")
+    func extractCommandAfterCdStripsCdPrefix() {
+        #expect(PrefixSelectCommandNormalizer.extractCommandAfterCd("cd /repo && npm test") == "npm test")
+        #expect(PrefixSelectCommandNormalizer.extractCommandAfterCd("cd ../dir && bun run check") == "bun run check")
+    }
+
+    @Test("extractCommandAfterCd handles spacing and quoted paths")
+    func extractCommandAfterCdHandlesSpacingAndQuotes() {
+        #expect(PrefixSelectCommandNormalizer.extractCommandAfterCd(#"cd "/path with spaces" && npm test"#) == "npm test")
+        #expect(PrefixSelectCommandNormalizer.extractCommandAfterCd("cd /path  &&  npm test   ") == "npm test")
+    }
+
+    @Test("extractCommandAfterCd leaves non-matching commands unchanged")
+    func extractCommandAfterCdLeavesOtherCommandsUnchanged() {
+        #expect(PrefixSelectCommandNormalizer.extractCommandAfterCd("npm test") == "npm test")
+        #expect(PrefixSelectCommandNormalizer.extractCommandAfterCd("echo cd /path && npm test") == "echo cd /path && npm test")
     }
 }

@@ -342,6 +342,15 @@ struct SessionDetailView: View {
             }
 
             if self.session.isActive {
+                if let prompt = self.session.pendingPrompt {
+                    PromptContainerView(prompt: prompt) { value in
+                        try await self.sessionState.sendPromptResponse(
+                            sessionId: self.session.id,
+                            requestId: prompt.requestId,
+                            value: value)
+                    }
+                }
+
                 MessageInputBar(inputText: self.$inputText) { text in
                     try await self.sessionState.sendUserInput(
                         sessionId: self.session.id, content: text)

@@ -15,6 +15,7 @@
 		A10000000000000000000008 /* SessionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000019 /* SessionState.swift */; };
 		A10000000000000000000009 /* SessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000001A /* SessionsView.swift */; };
 		A1000000000000000000000A /* TerminalUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000001B /* TerminalUtils.swift */; };
+		A1000000000000000000000B /* PromptViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000001C /* PromptViews.swift */; };
 		A10000000000000000000004 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000014 /* Assets.xcassets */; };
 		A10000000000000000000005 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000015 /* Preview Assets.xcassets */; };
 		A20000000000000000000001 /* ModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* ModelTests.swift */; };
@@ -48,6 +49,7 @@
 		A10000000000000000000019 /* SessionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionState.swift; sourceTree = "<group>"; };
 		A1000000000000000000001A /* SessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionsView.swift; sourceTree = "<group>"; };
 		A1000000000000000000001B /* TerminalUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalUtils.swift; sourceTree = "<group>"; };
+		A1000000000000000000001C /* PromptViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptViews.swift; sourceTree = "<group>"; };
 		A20000000000000000000010 /* TimGUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TimGUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A20000000000000000000011 /* ModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000013 /* LocalHTTPServerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHTTPServerTests.swift; sourceTree = "<group>"; };
@@ -86,6 +88,7 @@
 				A10000000000000000000019 /* SessionState.swift */,
 				A1000000000000000000001A /* SessionsView.swift */,
 				A1000000000000000000001B /* TerminalUtils.swift */,
+				A1000000000000000000001C /* PromptViews.swift */,
 				A10000000000000000000014 /* Assets.xcassets */,
 				A10000000000000000000031 /* Preview Content */,
 				A10000000000000000000016 /* Info.plist */,
@@ -232,6 +235,7 @@
 				A10000000000000000000008 /* SessionState.swift in Sources */,
 				A10000000000000000000009 /* SessionsView.swift in Sources */,
 				A1000000000000000000000A /* TerminalUtils.swift in Sources */,
+				A1000000000000000000000B /* PromptViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

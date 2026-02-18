@@ -1493,7 +1493,7 @@ Behavior:
 - WebSocket messages use an envelope with `session_info`, `replay_start`, `output`, and
   `replay_end` message types. The `session_info` message includes optional `terminalPaneId` and
   `terminalType` fields (populated from `WEZTERM_PANE` env var) for terminal pane matching in tim-gui.
-- The headless WebSocket also supports GUI→backend messages: `user_input` messages send free-form text from the GUI to the running agent's subprocess stdin, enabling interactive control from tim-gui.
+- The headless WebSocket also supports GUI→backend messages: `user_input` messages send free-form text from the GUI to the running agent's subprocess stdin, and `prompt_response` messages send structured answers to interactive prompts (confirm, select, input, checkbox, prefix_select). This enables interactive control from tim-gui.
 - For `tim agent` and `tim review`, major lifecycle events are emitted as structured `output`
   payloads (for example: plan discovery, iteration/step lifecycle, failure reports, review
   start/result/verdict, and `input_required` before interactive prompts). Other commands continue
@@ -2222,6 +2222,7 @@ tim extract [--input FILE] [--output FILE]
 
 - **Session monitoring**: Connects via WebSocket (`ws://localhost:8123/tim-agent`) to display live agent sessions with streaming output
 - **Send messages to agents**: Active sessions show a text input field at the bottom of the session view for sending messages to the running agent's subprocess stdin via the headless WebSocket protocol. Press Enter to send, Shift+Enter to insert a newline. The input field auto-grows up to 5 lines and is hidden when the session is disconnected. Sent messages appear in the message list with distinct styling.
+- **Interactive prompts**: When the backend sends a `prompt_request` (confirm, select, input, checkbox, or prefix_select), the GUI presents an interactive prompt UI. The user's response is sent back as a `prompt_response` message. Prompts auto-dismiss when answered from any source (GUI, terminal, or timeout).
 - **Notification integration**: Incoming HTTP notifications are matched to existing sessions by terminal pane ID (WezTerm) or working directory. Unmatched notifications create standalone session entries.
 - **Unread indicators**: Sessions with unread notifications show a blue dot; selecting the session clears it
 - **Terminal pane activation**: Sessions with terminal info show a button to activate the associated WezTerm pane

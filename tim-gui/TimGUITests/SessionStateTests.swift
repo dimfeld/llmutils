@@ -2063,4 +2063,251 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages[1].seq == 2)
         #expect(state.sessions[0].messages[2].seq == 3)
     }
+
+    // MARK: - setActivePrompt
+
+    private func makePromptPayload(
+        requestId: String = "prompt-1",
+        promptType: String = "confirm",
+        message: String = "Continue?") -> PromptRequestPayload
+    {
+        PromptRequestPayload(
+            requestId: requestId,
+            promptType: promptType,
+            promptConfig: PromptConfigPayload(message: message),
+            timeoutMs: nil,
+            timestamp: nil)
+    }
+
+    @Test("setActivePrompt sets prompt on correct session")
+    func setActivePromptSetsOnCorrectSession() throws {
+        let state = SessionState()
+        let connId1 = UUID()
+        let connId2 = UUID()
+        state.addSession(connectionId: connId1, info: self.makeInfo(command: "agent"))
+        state.addSession(connectionId: connId2, info: self.makeInfo(command: "review"))
+
+        let prompt = self.makePromptPayload(requestId: "req-1")
+        state.setActivePrompt(connectionId: connId1, prompt: prompt)
+
+        // Session with connId1 should have the prompt
+        let session1 = try #require(state.sessions.first { $0.connectionId == connId1 })
+        #expect(session1.pendingPrompt?.requestId == "req-1")
+
+        // Session with connId2 should NOT have the prompt
+        let session2 = try #require(state.sessions.first { $0.connectionId == connId2 })
+        #expect(session2.pendingPrompt == nil)
+    }
+
+    @Test("setActivePrompt replaces existing prompt")
+    func setActivePromptReplacesExisting() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+
+        state.setActivePrompt(connectionId: connId, prompt: self.makePromptPayload(requestId: "first"))
+        #expect(state.sessions[0].pendingPrompt?.requestId == "first")
+
+        state.setActivePrompt(connectionId: connId, prompt: self.makePromptPayload(requestId: "second"))
+        #expect(state.sessions[0].pendingPrompt?.requestId == "second")
+    }
+
+    @Test("setActivePrompt no-ops for unknown connectionId")
+    func setActivePromptUnknownConnection() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+
+        state.setActivePrompt(connectionId: UUID(), prompt: self.makePromptPayload())
+        #expect(state.sessions[0].pendingPrompt == nil)
+    }
+
+    @Test("setActivePrompt during replay is a no-op")
+    func setActivePromptDuringReplay() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        state.startReplay(connectionId: connId)
+
+        state.setActivePrompt(connectionId: connId, prompt: self.makePromptPayload())
+        #expect(state.sessions[0].pendingPrompt == nil)
+    }
+
+    // MARK: - clearActivePrompt
+
+    @Test("clearActivePrompt clears when requestId matches")
+    func clearActivePromptMatchingId() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        state.setActivePrompt(connectionId: connId, prompt: self.makePromptPayload(requestId: "req-x"))
+        #expect(state.sessions[0].pendingPrompt != nil)
+
+        state.clearActivePrompt(connectionId: connId, requestId: "req-x")
+        #expect(state.sessions[0].pendingPrompt == nil)
+    }
+
+    @Test("clearActivePrompt does not clear when requestId does not match")
+    func clearActivePromptMismatchedId() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        state.setActivePrompt(connectionId: connId, prompt: self.makePromptPayload(requestId: "req-x"))
+
+        state.clearActivePrompt(connectionId: connId, requestId: "req-y")
+        #expect(state.sessions[0].pendingPrompt?.requestId == "req-x")
+    }
+
+    @Test("clearActivePrompt no-ops when no pending prompt")
+    func clearActivePromptNoPending() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+
+        // Should not crash or have side effects
+        state.clearActivePrompt(connectionId: connId, requestId: "req-z")
+        #expect(state.sessions[0].pendingPrompt == nil)
+    }
+
+    @Test("clearActivePrompt during replay is a no-op")
+    func clearActivePromptDuringReplay() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        state.setActivePrompt(connectionId: connId, prompt: self.makePromptPayload(requestId: "req-r"))
+
+        state.startReplay(connectionId: connId)
+        state.clearActivePrompt(connectionId: connId, requestId: "req-r")
+        // Prompt should still be there because replay mode blocks the clear
+        #expect(state.sessions[0].pendingPrompt?.requestId == "req-r")
+    }
+
+    // MARK: - sendPromptResponse
+
+    @Test("sendPromptResponse sends correct OutgoingMessage and clears prompt")
+    func sendPromptResponseSendsAndClears() async throws {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        let sessionId = state.sessions[0].id
+        state.setActivePrompt(connectionId: connId, prompt: self.makePromptPayload(requestId: "req-send"))
+
+        var sentConnectionId: UUID?
+        var sentMessage: OutgoingMessage?
+        state.sendMessageHandler = { connectionId, message in
+            sentConnectionId = connectionId
+            sentMessage = message
+        }
+
+        try await state.sendPromptResponse(sessionId: sessionId, requestId: "req-send", value: .bool(true))
+
+        // Verify the handler was called with correct connection and message
+        #expect(sentConnectionId == connId)
+        if case let .promptResponse(requestId, value) = sentMessage {
+            #expect(requestId == "req-send")
+            if case let .bool(v) = value {
+                #expect(v == true)
+            } else {
+                Issue.record("Expected .bool value, got \(value)")
+            }
+        } else {
+            Issue.record("Expected .promptResponse, got \(String(describing: sentMessage))")
+        }
+
+        // Prompt should be cleared
+        #expect(state.sessions[0].pendingPrompt == nil)
+    }
+
+    @Test("sendPromptResponse is a no-op for inactive session")
+    func sendPromptResponseInactiveSession() async throws {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        let sessionId = state.sessions[0].id
+        state.setActivePrompt(connectionId: connId, prompt: self.makePromptPayload(requestId: "req-inactive"))
+        state.markDisconnected(connectionId: connId) // makes session inactive
+
+        var handlerCalled = false
+        state.sendMessageHandler = { _, _ in handlerCalled = true }
+
+        try await state.sendPromptResponse(sessionId: sessionId, requestId: "req-inactive", value: .string("test"))
+        #expect(handlerCalled == false)
+    }
+
+    @Test("sendPromptResponse is a no-op for unknown session ID")
+    func sendPromptResponseUnknownSession() async throws {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: self.makeInfo(command: "agent"))
+
+        var handlerCalled = false
+        state.sendMessageHandler = { _, _ in handlerCalled = true }
+
+        try await state.sendPromptResponse(sessionId: UUID(), requestId: "req-unknown", value: .bool(false))
+        #expect(handlerCalled == false)
+    }
+
+    @Test("sendPromptResponse throws when handler is nil")
+    func sendPromptResponseWithoutHandler() async throws {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        let sessionId = state.sessions[0].id
+
+        await #expect(throws: SendError.self) {
+            try await state.sendPromptResponse(sessionId: sessionId, requestId: "req-no-handler", value: .bool(true))
+        }
+    }
+
+    @Test("sendPromptResponse preserves prompt when handler throws")
+    func sendPromptResponseHandlerErrorPreservesPrompt() async throws {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        let sessionId = state.sessions[0].id
+        state.setActivePrompt(connectionId: connId, prompt: self.makePromptPayload(requestId: "req-err"))
+
+        struct TestSendError: Error {}
+        state.sendMessageHandler = { _, _ in throw TestSendError() }
+
+        await #expect(throws: TestSendError.self) {
+            try await state.sendPromptResponse(sessionId: sessionId, requestId: "req-err", value: .bool(true))
+        }
+
+        // Prompt should still be pending since the send failed
+        #expect(state.sessions[0].pendingPrompt?.requestId == "req-err")
+    }
+
+    @Test("sendPromptResponse does not clear a newer prompt set during send")
+    func sendPromptResponseDoesNotClearNewerPrompt() async throws {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        let sessionId = state.sessions[0].id
+        state.setActivePrompt(connectionId: connId, prompt: self.makePromptPayload(requestId: "req-old"))
+
+        // Simulate a new prompt arriving during the send by having the handler
+        // replace the pending prompt before returning.
+        state.sendMessageHandler = { _, _ in
+            state.setActivePrompt(connectionId: connId, prompt: self.makePromptPayload(requestId: "req-new"))
+        }
+
+        try await state.sendPromptResponse(sessionId: sessionId, requestId: "req-old", value: .bool(true))
+
+        // The newer prompt should NOT have been cleared
+        #expect(state.sessions[0].pendingPrompt?.requestId == "req-new")
+    }
+
+    // MARK: - markDisconnected clears pendingPrompt
+
+    @Test("markDisconnected clears pendingPrompt")
+    func markDisconnectedClearsPrompt() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
+        state.setActivePrompt(connectionId: connId, prompt: self.makePromptPayload(requestId: "req-disc"))
+        #expect(state.sessions[0].pendingPrompt != nil)
+
+        state.markDisconnected(connectionId: connId)
+        #expect(state.sessions[0].pendingPrompt == nil)
+    }
 }

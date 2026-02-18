@@ -15,14 +15,46 @@ enum MessageCategory: Sendable {
     case userInput
 }
 
+// MARK: - PromptResponseValue
+
+enum PromptResponseValue: Sendable, Encodable, Equatable {
+    case bool(Bool)
+    case string(String)
+    case int(Int)
+    case double(Double)
+    case array([PromptResponseValue])
+    case object([String: PromptResponseValue])
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case let .bool(v):
+            try container.encode(v)
+        case let .string(v):
+            try container.encode(v)
+        case let .int(v):
+            try container.encode(v)
+        case let .double(v):
+            try container.encode(v)
+        case let .array(v):
+            try container.encode(v)
+        case let .object(v):
+            try container.encode(v)
+        }
+    }
+}
+
 // MARK: - OutgoingMessage
 
 enum OutgoingMessage: Encodable {
     case userInput(content: String)
+    case promptResponse(requestId: String, value: PromptResponseValue)
 
     enum CodingKeys: String, CodingKey {
         case type
         case content
+        case requestId
+        case value
     }
 
     func encode(to encoder: Encoder) throws {
@@ -31,6 +63,10 @@ enum OutgoingMessage: Encodable {
         case let .userInput(content):
             try container.encode("user_input", forKey: .type)
             try container.encode(content, forKey: .content)
+        case let .promptResponse(requestId, value):
+            try container.encode("prompt_response", forKey: .type)
+            try container.encode(requestId, forKey: .requestId)
+            try container.encode(value, forKey: .value)
         }
     }
 }
@@ -148,6 +184,7 @@ final class SessionItem: Identifiable {
     var messages: [SessionMessage]
     var forceScrollToBottomVersion: Int
     var terminal: TerminalPayload?
+    var pendingPrompt: PromptRequestPayload?
     var hasUnreadNotification: Bool
     var notificationMessage: String?
     var displayTitle: String {
@@ -171,6 +208,7 @@ final class SessionItem: Identifiable {
         messages: [SessionMessage],
         forceScrollToBottomVersion: Int = 0,
         terminal: TerminalPayload? = nil,
+        pendingPrompt: PromptRequestPayload? = nil,
         hasUnreadNotification: Bool = false,
         notificationMessage: String? = nil)
     {
@@ -186,6 +224,7 @@ final class SessionItem: Identifiable {
         self.messages = messages
         self.forceScrollToBottomVersion = forceScrollToBottomVersion
         self.terminal = terminal
+        self.pendingPrompt = pendingPrompt
         self.hasUnreadNotification = hasUnreadNotification
         self.notificationMessage = notificationMessage
     }
@@ -484,7 +523,7 @@ struct TokenUsagePayload: Sendable {
 
 struct PromptChoiceConfigPayload: Sendable, Decodable {
     let name: String
-    let value: String?
+    let value: PromptResponseValue?
     let description: String?
     let checked: Bool?
 
@@ -495,20 +534,31 @@ struct PromptChoiceConfigPayload: Sendable, Decodable {
         case checked
     }
 
+    init(
+        name: String,
+        value: PromptResponseValue? = nil,
+        description: String? = nil,
+        checked: Bool? = nil)
+    {
+        self.name = name
+        self.value = value
+        self.description = description
+        self.checked = checked
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.name = try container.decode(String.self, forKey: .name)
-        // value can be string, number, or bool - coerce to string
-        if let s = try? container.decode(String.self, forKey: .value) {
-            self.value = s
+        // Decode value preserving its original JSON type.
+        // Try Bool first since JSON booleans can also decode as numbers.
+        if let b = try? container.decode(Bool.self, forKey: .value) {
+            self.value = .bool(b)
+        } else if let n = try? container.decode(Int.self, forKey: .value) {
+            self.value = .int(n)
         } else if let n = try? container.decode(Double.self, forKey: .value) {
-            if n == n.rounded(), abs(n) < 1e15 {
-                self.value = String(Int(n))
-            } else {
-                self.value = String(n)
-            }
-        } else if let b = try? container.decode(Bool.self, forKey: .value) {
-            self.value = String(b)
+            self.value = .double(n)
+        } else if let s = try? container.decode(String.self, forKey: .value) {
+            self.value = .string(s)
         } else {
             self.value = nil
         }
@@ -519,10 +569,11 @@ struct PromptChoiceConfigPayload: Sendable, Decodable {
 
 struct PromptConfigPayload: Sendable, Decodable {
     let message: String
-    let defaultValue: String?
+    let defaultValue: PromptResponseValue?
     let choices: [PromptChoiceConfigPayload]?
     let pageSize: Int?
     let validationHint: String?
+    let command: String?
 
     enum CodingKeys: String, CodingKey {
         case message
@@ -530,42 +581,45 @@ struct PromptConfigPayload: Sendable, Decodable {
         case choices
         case pageSize
         case validationHint
+        case command
     }
 
     init(
         message: String,
-        defaultValue: String? = nil,
+        defaultValue: PromptResponseValue? = nil,
         choices: [PromptChoiceConfigPayload]? = nil,
         pageSize: Int? = nil,
-        validationHint: String? = nil)
+        validationHint: String? = nil,
+        command: String? = nil)
     {
         self.message = message
         self.defaultValue = defaultValue
         self.choices = choices
         self.pageSize = pageSize
         self.validationHint = validationHint
+        self.command = command
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.message = try container.decode(String.self, forKey: .message)
-        // default can be string, number, or bool - coerce to string
-        if let s = try? container.decode(String.self, forKey: .defaultValue) {
-            self.defaultValue = s
+        // Decode default preserving its original JSON type.
+        // Try Bool first since JSON booleans can also decode as numbers.
+        if let b = try? container.decode(Bool.self, forKey: .defaultValue) {
+            self.defaultValue = .bool(b)
+        } else if let n = try? container.decode(Int.self, forKey: .defaultValue) {
+            self.defaultValue = .int(n)
         } else if let n = try? container.decode(Double.self, forKey: .defaultValue) {
-            if n == n.rounded(), abs(n) < 1e15 {
-                self.defaultValue = String(Int(n))
-            } else {
-                self.defaultValue = String(n)
-            }
-        } else if let b = try? container.decode(Bool.self, forKey: .defaultValue) {
-            self.defaultValue = String(b)
+            self.defaultValue = .double(n)
+        } else if let s = try? container.decode(String.self, forKey: .defaultValue) {
+            self.defaultValue = .string(s)
         } else {
             self.defaultValue = nil
         }
         self.choices = try container.decodeIfPresent([PromptChoiceConfigPayload].self, forKey: .choices)
         self.pageSize = try container.decodeIfPresent(Int.self, forKey: .pageSize)
         self.validationHint = try container.decodeIfPresent(String.self, forKey: .validationHint)
+        self.command = try container.decodeIfPresent(String.self, forKey: .command)
     }
 }
 

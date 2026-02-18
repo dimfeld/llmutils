@@ -47,6 +47,19 @@ struct TimGUIApp: App {
                     let message = MessageFormatter.format(
                         tunnelMessage: tunnelMessage, seq: seq)
                     sessionState.appendMessage(connectionId: connId, message: message)
+
+                    // Track active prompts for interactive prompt UI.
+                    // Replay safety is handled inside the SessionState methods.
+                    if case let .structured(message: structuredMsg) = tunnelMessage {
+                        switch structuredMsg {
+                        case let .promptRequest(payload):
+                            sessionState.setActivePrompt(connectionId: connId, prompt: payload)
+                        case let .promptAnswered(payload):
+                            sessionState.clearActivePrompt(connectionId: connId, requestId: payload.requestId)
+                        default:
+                            break
+                        }
+                    }
                 case let .replayStart(connId):
                     sessionState.startReplay(connectionId: connId)
                 case let .replayEnd(connId):

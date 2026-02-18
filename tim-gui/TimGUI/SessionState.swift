@@ -185,6 +185,31 @@ final class SessionState {
         self.sessions[index].forceScrollToBottomVersion += 1
     }
 
+    func setActivePrompt(connectionId: UUID, prompt: PromptRequestPayload) {
+        guard !self.replayingConnections.contains(connectionId) else { return }
+        guard let session = sessions.first(where: { $0.connectionId == connectionId }) else { return }
+        session.pendingPrompt = prompt
+    }
+
+    func clearActivePrompt(connectionId: UUID, requestId: String) {
+        guard !self.replayingConnections.contains(connectionId) else { return }
+        guard let session = sessions.first(where: { $0.connectionId == connectionId }) else { return }
+        guard session.pendingPrompt?.requestId == requestId else { return }
+        session.pendingPrompt = nil
+    }
+
+    func sendPromptResponse(sessionId: UUID, requestId: String, value: PromptResponseValue) async throws {
+        guard let session = sessions.first(where: { $0.id == sessionId }) else { return }
+        guard session.isActive else { return }
+        guard let handler = self.sendMessageHandler else {
+            throw SendError.noHandler
+        }
+        try await handler(session.connectionId, .promptResponse(requestId: requestId, value: value))
+        if session.pendingPrompt?.requestId == requestId {
+            session.pendingPrompt = nil
+        }
+    }
+
     func markDisconnected(connectionId: UUID) {
         // Clean up any pending messages for this connection
         self.pendingMessages.removeValue(forKey: connectionId)
@@ -195,6 +220,7 @@ final class SessionState {
         }
         let session = self.sessions[index]
         session.isActive = false
+        session.pendingPrompt = nil
 
         let notificationText = "Agent session disconnected"
         session.notificationMessage = notificationText
