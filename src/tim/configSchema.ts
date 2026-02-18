@@ -82,6 +82,10 @@ export const workspaceCreationConfigSchema = z.object({
    */
   postCloneCommands: z.array(postApplyCommandSchema).optional(),
   /**
+   * Array of commands to run when reusing an existing workspace after it is prepared.
+   */
+  workspaceUpdateCommands: z.array(postApplyCommandSchema).optional(),
+  /**
    * Additional glob patterns to copy when using filesystem-based clone methods.
    * Allows including files that are normally ignored by Git.
    */

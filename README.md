@@ -264,6 +264,9 @@ tim generate 123 --new-workspace --workspace feature-xyz
 
 # Require workspace (fail if creation fails)
 tim generate 123 --auto-workspace --require-workspace
+
+# Use a specific base branch or revision (e.g. for stacked diffs)
+tim generate 123 --auto-workspace --base feature-branch
 ```
 
 **Options:**
@@ -384,10 +387,14 @@ tim agent 123 --auto-workspace
 # Manual workspace selection
 tim agent 123 --workspace feature-xyz
 
+# Use a specific base branch or revision
+tim agent 123 --auto-workspace --base feature-branch
+
 # Agent command handles:
-# - Creating isolated git clone
+# - Creating isolated git clone (or preparing existing workspace)
 # - Checking out appropriate branch
 # - Running post-clone commands (npm install, etc.)
+# - Running workspace update commands on reused workspaces
 # - Locking workspace during execution
 # - Releasing lock on completion
 ```
@@ -1173,6 +1180,11 @@ workspaceCreation:
     - npm install
     - npm run build
     - cp ../.env.local .
+
+  # Commands to run when reusing an existing workspace
+  # (e.g. reinstall dependencies after pulling latest changes)
+  workspaceUpdateCommands:
+    - npm install
 ```
 
 **Clone methods:**
@@ -1341,10 +1353,14 @@ tim generate 123 --workspace task-123
 # 3. Check lock status
 # 4. Detect and clear stale locks (prompts for confirmation)
 # 5. Create new workspace if all are locked
-# 6. Acquire lock
-# 7. Copy plan file to workspace
-# 8. Execute
-# 9. Release lock on completion
+# For existing workspaces:
+#   6. Acquire lock
+#   7. Check for uncommitted changes (fails if dirty)
+#   8. Pull latest and checkout base branch (or --base ref)
+#   9. Copy plan file to workspace
+# 10. Run workspaceUpdateCommands (e.g. npm install)
+# 11. Execute
+# 12. Release lock on completion
 ```
 
 **Workspace tracking:**
@@ -2056,11 +2072,11 @@ tim add "Feature name" [--output FILE] [--parent ID] [--priority LEVEL] [--tag T
 # Generate detailed tasks (interactive planning with Claude Code)
 tim generate ID [--plan FILE] [--latest] [--next-ready PARENT_ID] [--simple] [--commit]
 tim generate ID [--workspace ID] [--auto-workspace] [--new-workspace] [--non-interactive]
-tim generate ID [--no-terminal-input] [--require-workspace]
+tim generate ID [--no-terminal-input] [--require-workspace] [--base REF]
 
 # Execute plan
 tim agent ID [--orchestrator NAME] [-x codex-cli|claude-code|dynamic] [--dynamic-instructions TEXT] [--simple] [--tdd]
-tim agent ID [--workspace ID] [--steps N] [--no-terminal-input]
+tim agent ID [--workspace ID] [--steps N] [--no-terminal-input] [--base REF]
 tim run ID  # alias for agent
 tim run-prompt [PROMPT] [-x claude|claude-code|codex|codex-cli] [--model MODEL] [--reasoning-level LEVEL]
 tim run-prompt [PROMPT] [--json-schema JSON_OR_@FILE] [--prompt-file FILE] [-q]

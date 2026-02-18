@@ -31,6 +31,46 @@ export interface Workspace {
   taskId: string;
 }
 
+/**
+ * Runs configured workspace update commands for an existing workspace.
+ */
+export async function runWorkspaceUpdateCommands(
+  workspacePath: string,
+  config: TimConfig,
+  taskId: string,
+  planFilePath?: string
+): Promise<boolean> {
+  const updateCommands = config.workspaceCreation?.workspaceUpdateCommands;
+  if (!updateCommands?.length) {
+    return true;
+  }
+
+  log('Running workspace update commands');
+
+  for (const commandConfig of updateCommands) {
+    const envVars: Record<string, string> = {
+      ...commandConfig.env,
+      LLMUTILS_TASK_ID: taskId,
+    };
+    if (planFilePath) {
+      envVars.LLMUTILS_PLAN_FILE_PATH = planFilePath;
+    }
+
+    const commandWithEnv: PostApplyCommand = {
+      ...commandConfig,
+      env: envVars,
+    };
+
+    log(`Running workspace update command: "${commandConfig.title || commandConfig.command}"`);
+    const success = await executePostApplyCommand(commandWithEnv, workspacePath, false);
+    if (!success && !commandConfig.allowFailure) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 const COPY_FILE_CLONE_FLAG = fsConstants?.COPYFILE_FICLONE;
 
 function shouldRetryWithoutClone(error: unknown): boolean {

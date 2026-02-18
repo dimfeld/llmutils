@@ -300,6 +300,7 @@ program
     '--new-workspace',
     'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
   )
+  .option('--base <ref>', 'Base branch or revision to checkout in workspace')
   .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
   .option(
     '--no-terminal-input',
@@ -565,6 +566,7 @@ function createAgentCommand(command: Command, description: string) {
       '--new-workspace',
       'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
     )
+    .option('--base <ref>', 'Base branch or revision to checkout in workspace')
     .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
     .option(
       '--no-terminal-input',

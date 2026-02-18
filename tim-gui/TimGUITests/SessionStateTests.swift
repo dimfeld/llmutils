@@ -1769,7 +1769,7 @@ struct SessionStateTests {
     }
 
     @Test("Pane-miss notification copies metadata from same workspace row without pane ID")
-    func ingestNotificationPaneIdMissCopiesMetadataFromNoPaneRow() throws {
+    func ingestNotificationPaneIdMissCopiesMetadataFromNoPaneRow() {
         let state = SessionState()
 
         state.addSession(connectionId: UUID(), info: self.makeInfo(

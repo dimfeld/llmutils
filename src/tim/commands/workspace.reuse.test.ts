@@ -798,6 +798,62 @@ describe('workspace add --reuse and --try-reuse', () => {
     await WorkspaceLock.releaseLock(existingWorkspace, { force: true });
   });
 
+  test('uses the same workspace plan path for update commands and plan copy', async () => {
+    const existingWorkspace = path.join(clonesDir, 'plan-path-dedupe-workspace');
+    await fs.mkdir(existingWorkspace, { recursive: true });
+    await initGitRepository(existingWorkspace, bareRemoteDir);
+
+    const workspaceEntry: WorkspaceInfo = {
+      taskId: 'plan-path-dedupe-task',
+      workspacePath: existingWorkspace,
+      createdAt: new Date().toISOString(),
+      repositoryId: 'test-repo-id',
+    };
+    await writeTrackingData({ [existingWorkspace]: workspaceEntry });
+
+    let updateCommandPlanPath: string | undefined;
+    let planExistedWhenUpdateRan = false;
+    await moduleMocker.mock('../workspace/workspace_manager.js', () => ({
+      prepareExistingWorkspace: async () => ({
+        success: true,
+        actualBranchName: 'main',
+      }),
+      runWorkspaceUpdateCommands: async (
+        _workspacePath: string,
+        _config: unknown,
+        _taskId: string,
+        planFilePathInWorkspace?: string
+      ) => {
+        updateCommandPlanPath = planFilePathInWorkspace;
+        if (planFilePathInWorkspace) {
+          planExistedWhenUpdateRan = await fs
+            .access(planFilePathInWorkspace)
+            .then(() => true)
+            .catch(() => false);
+        }
+        return true;
+      },
+    }));
+
+    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 62, 'Path Dedupe Test');
+
+    const { handleWorkspaceAddCommand } = await import('./workspace.js');
+    await handleWorkspaceAddCommand(planPath, { reuse: true }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    const expectedPlanPath = path.join(existingWorkspace, 'tasks', '62.plan.md');
+    expect(updateCommandPlanPath).toBe(expectedPlanPath);
+    expect(planExistedWhenUpdateRan).toBe(true);
+    expect(await fs.readFile(expectedPlanPath, 'utf-8')).toContain('Path Dedupe Test');
+
+    await WorkspaceLock.releaseLock(existingWorkspace, { force: true });
+  });
+
   test('skips branch creation when createBranch is false on reuse', async () => {
     const existingWorkspace = path.join(clonesDir, 'reuse-no-branch-workspace');
     await fs.mkdir(existingWorkspace, { recursive: true });
@@ -832,6 +888,40 @@ describe('workspace add --reuse and --try-reuse', () => {
 
     const trackingData = await readTrackingData();
     expect(trackingData[existingWorkspace].branch).toBe('main');
+
+    await WorkspaceLock.releaseLock(existingWorkspace, { force: true });
+  });
+
+  test('creates branch by default when createBranch is unset on reuse', async () => {
+    const existingWorkspace = path.join(clonesDir, 'reuse-default-branch-workspace');
+    await fs.mkdir(existingWorkspace, { recursive: true });
+    await initGitRepository(existingWorkspace, bareRemoteDir);
+
+    const workspaceEntry: WorkspaceInfo = {
+      taskId: 'reuse-default-branch-task',
+      workspacePath: existingWorkspace,
+      createdAt: new Date().toISOString(),
+      repositoryId: 'test-repo-id',
+      branch: 'old-branch',
+    };
+    await writeTrackingData({ [existingWorkspace]: workspaceEntry });
+
+    const { handleWorkspaceAddCommand } = await import('./workspace.js');
+
+    await handleWorkspaceAddCommand(undefined, { reuse: true, id: 'default-branch' }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    const branchList = await runGit(existingWorkspace, ['branch', '--list', 'default-branch']);
+    expect(branchList.stdout.trim()).toContain('default-branch');
+    expect(await getCurrentBranch(existingWorkspace)).toBe('default-branch');
+
+    const trackingData = await readTrackingData();
+    expect(trackingData[existingWorkspace].branch).toBe('default-branch');
 
     await WorkspaceLock.releaseLock(existingWorkspace, { force: true });
   });

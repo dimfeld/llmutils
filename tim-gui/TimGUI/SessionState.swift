@@ -233,7 +233,7 @@ final class SessionState {
         } else {
             let workspaceTemplate = payload.workspacePath.isEmpty
                 ? nil
-                : findWorkspaceSessionWithoutPaneId(workspacePath: payload.workspacePath)
+                : self.findWorkspaceSessionWithoutPaneId(workspacePath: payload.workspacePath)
 
             // Create a notification-only session
             let session = SessionItem(

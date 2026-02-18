@@ -303,6 +303,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
         nonInteractive: options.nonInteractive,
         requireWorkspace: options.requireWorkspace,
         planUuid: initialPlanData.uuid,
+        base: options.base,
       },
       currentBaseDir,
       currentPlanFile,

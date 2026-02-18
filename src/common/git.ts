@@ -134,14 +134,14 @@ export async function hasUncommittedChanges(cwd?: string): Promise<boolean> {
   return status.hasChanges;
 }
 
-interface WorkingCopyStatus {
+export interface WorkingCopyStatus {
   hasChanges: boolean;
   output?: string;
   checkFailed: boolean;
   diffHash?: string;
 }
 
-async function getWorkingCopyStatus(cwd: string): Promise<WorkingCopyStatus> {
+export async function getWorkingCopyStatus(cwd: string): Promise<WorkingCopyStatus> {
   const jjPath = path.join(cwd, '.jj');
   const hasJj = await Bun.file(jjPath)
     .stat()

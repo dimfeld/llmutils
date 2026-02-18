@@ -19,7 +19,11 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanFile, readPlanFile, setPlanStatus } from '../plans.js';
 import { generateAlphanumericId } from '../id_utils.js';
 import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
-import { createWorkspace, prepareExistingWorkspace } from '../workspace/workspace_manager.js';
+import {
+  createWorkspace,
+  prepareExistingWorkspace,
+  runWorkspaceUpdateCommands,
+} from '../workspace/workspace_manager.js';
 import { deleteWorkspace } from '../db/workspace.js';
 import { getDatabase } from '../db/database.js';
 import {
@@ -676,7 +680,7 @@ async function tryReuseExistingWorkspace(
       prepareResult = await prepareExistingWorkspace(workspace.workspacePath, {
         baseBranch: options.fromBranch,
         branchName: options.branchName,
-        createBranch: options.createBranch,
+        createBranch: shouldCreateBranch,
       });
 
       if (!prepareResult.success) {
@@ -688,35 +692,60 @@ async function tryReuseExistingWorkspace(
         continue;
       }
 
+      const planFilePathInWorkspace = options.resolvedPlanFilePath
+        ? path.join(
+            workspace.workspacePath,
+            path.relative(options.mainRepoRoot, options.resolvedPlanFilePath)
+          )
+        : undefined;
       // Copy plan file to workspace if provided
-      let planFilePathInWorkspace: string | undefined;
       let planFileExisted = false;
       if (options.resolvedPlanFilePath) {
+        const resolvedPlanPathInWorkspace = planFilePathInWorkspace!;
         const relativePlanPath = path.relative(options.mainRepoRoot, options.resolvedPlanFilePath);
-        planFilePathInWorkspace = path.join(workspace.workspacePath, relativePlanPath);
-        const planFileDir = path.dirname(planFilePathInWorkspace);
+        const planFileDir = path.dirname(resolvedPlanPathInWorkspace);
 
         try {
           planFileExisted = await fs
-            .access(planFilePathInWorkspace)
+            .access(resolvedPlanPathInWorkspace)
             .then(() => true)
             .catch(() => false);
           await fs.mkdir(planFileDir, { recursive: true });
           log(`Copying plan file to workspace: ${relativePlanPath}`);
-          await fs.copyFile(options.resolvedPlanFilePath, planFilePathInWorkspace);
+          await fs.copyFile(options.resolvedPlanFilePath, resolvedPlanPathInWorkspace);
         } catch (error) {
           const failureReason = `Failed to copy plan file: ${error as Error}`;
           warn(failureReason);
           lastFailureReason = failureReason;
           await cleanupCopiedPlanPath(
             workspace.workspacePath,
-            planFilePathInWorkspace,
+            resolvedPlanPathInWorkspace,
             planFileExisted
           );
           await restoreWorkspace(prepareResult.actualBranchName);
           await WorkspaceLock.releaseLock(workspace.workspacePath, { force: true });
           continue;
         }
+      }
+
+      const updateSuccess = await runWorkspaceUpdateCommands(
+        workspace.workspacePath,
+        config,
+        workspace.taskId,
+        planFilePathInWorkspace
+      );
+      if (!updateSuccess) {
+        const failureReason = 'Failed to run workspace update commands for workspace reuse';
+        warn(failureReason);
+        lastFailureReason = failureReason;
+        await cleanupCopiedPlanPath(
+          workspace.workspacePath,
+          planFilePathInWorkspace,
+          planFileExisted
+        );
+        await restoreWorkspace(prepareResult.actualBranchName);
+        await WorkspaceLock.releaseLock(workspace.workspacePath, { force: true });
+        continue;
       }
 
       // Update workspace metadata
@@ -1347,6 +1376,16 @@ async function pushGitBranchToPrimary(
 }
 
 async function pushJjBookmarkToPrimary(workspacePath: string, bookmark: string): Promise<void> {
+  const trackOutput = await spawnAndLogOutput(
+    ['jj', 'bookmark', 'track', bookmark, '--remote', PRIMARY_REMOTE_NAME],
+    { cwd: workspacePath }
+  );
+  if (trackOutput.exitCode !== 0) {
+    throw new Error(
+      `Failed to track remote bookmark "${bookmark}" to ${PRIMARY_REMOTE_NAME}: ${trackOutput.stderr}`
+    );
+  }
+
   const pushResult = await spawnAndLogOutput(
     ['jj', 'git', 'push', '--remote', PRIMARY_REMOTE_NAME, '--bookmark', bookmark],
     { cwd: workspacePath }
