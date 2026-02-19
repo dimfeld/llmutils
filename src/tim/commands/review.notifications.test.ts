@@ -111,9 +111,9 @@ beforeEach(async () => {
     sendNotification: sendNotificationSpy,
   }));
 
-  await moduleMocker.mock('@inquirer/prompts', () => ({
-    select: selectSpy,
-    checkbox: checkboxSpy,
+  await moduleMocker.mock('../../common/input.js', () => ({
+    promptSelect: selectSpy,
+    promptCheckbox: checkboxSpy,
   }));
 
   await moduleMocker.mock('../configLoader.js', () => ({
@@ -600,7 +600,7 @@ describe('review notifications', () => {
     const structuredMessages: StructuredMessage[] = [];
     const issue = { severity: 'major', category: 'bug', content: 'Autofix this', file: 'a.ts' };
 
-    checkboxSpy.mockImplementation(async () => [issue]);
+    checkboxSpy.mockImplementation(async () => [0]);
     runReviewSpy.mockImplementation(async () => ({
       reviewResult: {
         summary: { totalIssues: 1 },

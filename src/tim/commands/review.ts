@@ -2,10 +2,10 @@
 // Analyzes code changes against plan requirements using the reviewer agent
 
 import chalk from 'chalk';
-import { checkbox, select } from '@inquirer/prompts';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname, isAbsolute, resolve, relative } from 'node:path';
 import { getCurrentCommitHash, getGitRoot, getTrunkBranch, getUsingJj } from '../../common/git.js';
+import { promptCheckbox, promptSelect } from '../../common/input.js';
 import {
   findBranchSpecificPlan,
   findSingleModifiedPlanOnBranch,
@@ -799,7 +799,7 @@ export async function handleReviewCommand(
               });
               debugStdinTrace('about to open issue-action prompt');
               try {
-                action = await select({
+                action = await promptSelect({
                   message: 'Issues were found during review. What would you like to do?',
                   choices: [
                     { name: 'Append issues to the current plan as tasks', value: 'append' },
@@ -1395,7 +1395,12 @@ async function selectIssuesToFix(
   );
 
   // Create checkbox options with severity indicators
-  const options = [];
+  const options: Array<{
+    name: string;
+    description: string;
+    value: number;
+    checked: boolean;
+  }> = [];
   const severityOrder = ['critical', 'major', 'minor', 'info'] as const;
   const severityIcons: Record<string, string> = {
     critical: '!!',
@@ -1404,6 +1409,7 @@ async function selectIssuesToFix(
     info: 'i',
   };
 
+  const issueLookup: ReviewIssue[] = [];
   for (const severity of severityOrder) {
     const severityIssues = groupedIssues[severity] || [];
     for (const issue of severityIssues) {
@@ -1418,20 +1424,22 @@ async function selectIssuesToFix(
       options.push({
         name: `${severityIcons[severity]} [${severity.toUpperCase()}] ${firstLine}`,
         description: fullDesc,
-        value: issue,
+        value: issueLookup.length,
         checked: severity === 'critical' || severity === 'major', // Pre-select critical and major issues
       });
+      issueLookup.push(issue);
     }
   }
 
-  const selectedIssues = await checkbox({
+  const selectedIssueIndexes = await promptCheckbox({
     message: `Select issues to ${purpose}:`,
     choices: options,
     pageSize: 15,
-    loop: false,
   });
 
-  return selectedIssues;
+  return selectedIssueIndexes
+    .map((index) => issueLookup[index])
+    .filter((issue): issue is ReviewIssue => issue != null);
 }
 
 type PlanTask = PlanSchema['tasks'][number];
