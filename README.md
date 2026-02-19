@@ -34,6 +34,7 @@ These tools are deprecated as coding agents have largely replaced them, but sill
   - [subagent - Run Subagents](#subagent---run-subagents)
   - [add - Create Plan Stubs](#add---create-plan-stubs)
   - [show - View Plan Details](#show---view-plan-details)
+  - [branch-name - Generate Branch Names](#branch-name---generate-branch-names)
   - [ready - List Ready Plans](#ready---list-ready-plans)
 - [MCP Server](#mcp-server)
   - [Prompts](#prompts)
@@ -702,6 +703,44 @@ Docs: docs/security-policy.md
 
 Created: 2025-01-15 10:00
 Updated: 2025-01-15 14:30
+```
+
+---
+
+### branch-name - Generate Branch Names
+
+Generate a git/jj branch name from a plan.
+
+**Basic usage:**
+
+```bash
+# Generate from specific plan
+tim branch-name 123
+
+# Generate from file path
+tim branch-name tasks/feature.yml
+```
+
+**Plan discovery flags:**
+
+```bash
+# Use most recently updated plan
+tim branch-name --latest
+
+# Use next ready plan
+tim branch-name --next
+
+# Use current in-progress (or next ready) plan
+tim branch-name --current
+
+# Use next ready dependency from parent
+tim branch-name --next-ready 100
+```
+
+Output is a single branch name string, for example:
+
+```bash
+task-123-implement-user-authentication
 ```
 
 ---
@@ -2094,6 +2133,7 @@ tim subagent verifier PLAN [-x codex-cli|claude-code] [--input TEXT] [-m MODEL]
 
 # Track progress
 tim show ID [--short | --full]
+tim branch-name ID [--latest | --next | --current | --next-ready PARENT_ID]
 
 # Mark complete
 tim done ID [--commit]

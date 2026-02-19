@@ -765,6 +765,21 @@ program
   });
 
 program
+  .command('branch-name [planFile]')
+  .description('Generate a branch name from a plan. Can be a file path or plan ID.')
+  .option('--next', 'Use the next plan that is ready to be implemented')
+  .option('--current', 'Use the current plan (in_progress or next ready plan)')
+  .option(
+    '--next-ready <planIdOrPath>',
+    'Find and use the next ready dependency of the specified parent plan (accepts plan ID or file path)'
+  )
+  .option('--latest', 'Use the most recently updated plan')
+  .action(async (planFile, options, command) => {
+    const { handleBranchCommand } = await import('./commands/branch.js');
+    await handleBranchCommand(planFile, options, command).catch(handleCommandError);
+  });
+
+program
   .command('edit <planArg>')
   .description('Open a plan file in your editor. Can be a file path or plan ID.')
   .option('--editor <editor>', 'Editor to use (defaults to $EDITOR or nano)')
