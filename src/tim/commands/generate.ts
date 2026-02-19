@@ -9,7 +9,6 @@ import { resolvePlanPathContext } from '../path_resolver.js';
 import { readAllPlans, readPlanFile, resolvePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { getCombinedTitle } from '../display_utils.js';
-import { generateTaskCreationFollowUpPrompt } from '../prompt.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { findNextReadyDependency } from './find_next_dependency.js';
@@ -242,34 +241,20 @@ export async function handleGenerateCommand(
         executionMode: 'planning',
       });
 
-      // Check if tasks were created, run follow-up if not
+      // Report generation result
       const updatedPlan = await readPlanFile(currentPlanFile);
       const hasTasks = updatedPlan.tasks && updatedPlan.tasks.length > 0;
 
-      if (!hasTasks) {
-        log(chalk.yellow('⚠️  No tasks were created. Attempting follow-up prompt...'));
-
-        const followUpPrompt = generateTaskCreationFollowUpPrompt(currentPlanFile, currentPlanId);
-
-        await executor.execute(followUpPrompt, {
-          planId: String(currentPlanId ?? 'generate'),
-          planTitle: parsedPlan.title || 'Generate Plan',
-          planFilePath: currentPlanFile,
-          executionMode: 'planning',
-        });
-
-        const finalPlan = await readPlanFile(currentPlanFile);
-        if (!finalPlan.tasks || finalPlan.tasks.length === 0) {
-          warn(
-            chalk.yellow(
-              '⚠️  Tasks were still not created after follow-up. Please add tasks manually using `tim tools update-plan-tasks` as described in the using-tim skill'
-            )
-          );
-        } else {
-          log(chalk.green(`✓ Created ${finalPlan.tasks.length} tasks after follow-up prompt`));
-        }
-      } else {
+      if (hasTasks) {
         log(chalk.green(`✓ Plan generated with ${updatedPlan.tasks.length} tasks`));
+      } else if (updatedPlan.epic) {
+        log(chalk.green('✓ Plan was created as an epic'));
+      } else {
+        warn(
+          chalk.yellow(
+            '⚠️  No tasks were created. Please add tasks manually using `tim tools update-plan-tasks` as described in the using-tim skill'
+          )
+        );
       }
 
       // Handle --commit option

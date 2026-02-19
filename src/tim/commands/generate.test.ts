@@ -233,43 +233,33 @@ describe('handleGenerateCommand', () => {
     expect(warnMessages.some((msg) => msg.includes('already marked as "done"'))).toBe(true);
   });
 
-  test('runs follow-up prompt when no tasks created', async () => {
+  test('warns when no tasks are created and plan is not epic', async () => {
     const planPath = await createStubPlan(106);
 
-    // First execute does nothing, second adds tasks
-    mockExecutorExecute
-      .mockImplementationOnce(async () => {
-        // No tasks created
-      })
-      .mockImplementationOnce(async () => {
-        const plan = await readPlanFile(planPath);
-        plan.tasks = [{ title: 'Task 1', description: 'From follow-up', done: false }];
-        await writePlanFile(planPath, plan);
-      });
+    mockExecutorExecute.mockImplementationOnce(async () => {});
 
     await handleGenerateCommand(undefined, { plan: planPath }, buildCommand());
 
-    // Executor should be called twice (initial + follow-up)
-    expect(mockExecutorExecute).toHaveBeenCalledTimes(2);
-
-    const logMessages = logSpy.mock.calls.map((args) => String(args[0]));
-    expect(logMessages.some((msg) => msg.includes('No tasks were created'))).toBe(true);
-    expect(logMessages.some((msg) => msg.includes('Created 1 tasks after follow-up'))).toBe(true);
+    expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
+    const warnMessages = warnSpy.mock.calls.map((args) => String(args[0]));
+    expect(warnMessages.some((msg) => msg.includes('No tasks were created'))).toBe(true);
   });
 
-  test('warns when no tasks after follow-up', async () => {
+  test('logs epic creation when no tasks are created but plan is epic', async () => {
     const planPath = await createStubPlan(107);
 
-    // Both executions create no tasks
-    mockExecutorExecute.mockImplementation(async () => {});
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      const plan = await readPlanFile(planPath);
+      plan.epic = true;
+      await writePlanFile(planPath, plan);
+    });
 
     await handleGenerateCommand(undefined, { plan: planPath }, buildCommand());
 
-    expect(mockExecutorExecute).toHaveBeenCalledTimes(2);
-    const warnMessages = warnSpy.mock.calls.map((args) => String(args[0]));
-    expect(warnMessages.some((msg) => msg.includes('still not created after follow-up'))).toBe(
-      true
-    );
+    expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
+    const logMessages = logSpy.mock.calls.map((args) => String(args[0]));
+    expect(logMessages.some((msg) => msg.includes('Plan was created as an epic'))).toBe(true);
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 
   test('passes workspace options to setupWorkspace', async () => {
