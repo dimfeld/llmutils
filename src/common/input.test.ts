@@ -432,9 +432,13 @@ describe('prompt wrappers', () => {
     it('promptSelect sends prompt through tunnel with choices', async () => {
       const sp = uniqueSocketPath();
       const { adapter: serverAdapter } = createRecordingAdapter();
+      let capturedHeader: unknown;
+      let capturedQuestion: unknown;
 
       const onPromptRequest: PromptRequestHandler = (message, respond) => {
         // Echo back the second choice value
+        capturedHeader = message.promptConfig.header;
+        capturedQuestion = message.promptConfig.question;
         const choices = message.promptConfig.choices;
         respond({
           type: 'prompt_response',
@@ -450,6 +454,8 @@ describe('prompt wrappers', () => {
         return runWithLogger(clientAdapter, () =>
           promptSelect({
             message: 'Pick one:',
+            header: 'Format',
+            question: 'How should output be formatted?',
             choices: [
               { name: 'A', value: 'first' },
               { name: 'B', value: 'second' },
@@ -459,6 +465,8 @@ describe('prompt wrappers', () => {
       });
 
       expect(result).toBe('second');
+      expect(capturedHeader).toBe('Format');
+      expect(capturedQuestion).toBe('How should output be formatted?');
       expect(mockSelect).not.toHaveBeenCalled();
     });
 

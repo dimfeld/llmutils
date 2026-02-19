@@ -252,18 +252,30 @@ export async function promptConfirm(options: {
  */
 export async function promptSelect<Value extends string | number | boolean>(options: {
   message: string;
+  header?: string;
+  question?: string;
   choices: Array<{ name: string; value: Value; description?: string }>;
   default?: Value;
   pageSize?: number;
   timeoutMs?: number;
 }): Promise<Value> {
-  const { message, choices, default: defaultValue, pageSize, timeoutMs } = options;
+  const {
+    message,
+    header,
+    question,
+    choices,
+    default: defaultValue,
+    pageSize,
+    timeoutMs,
+  } = options;
   const tunnelAdapter = getTunnelAdapter();
 
   const promptMessage = buildPromptRequest(
     'select',
     {
       message,
+      ...(header != null ? { header } : {}),
+      ...(question != null ? { question } : {}),
       choices: choices.map((c) => ({
         name: c.name,
         value: c.value,
@@ -384,17 +396,21 @@ export async function promptInput(options: {
  */
 export async function promptCheckbox<Value extends string | number | boolean>(options: {
   message: string;
+  header?: string;
+  question?: string;
   choices: Array<{ name: string; value: Value; description?: string; checked?: boolean }>;
   pageSize?: number;
   timeoutMs?: number;
 }): Promise<Value[]> {
-  const { message, choices, pageSize, timeoutMs } = options;
+  const { message, header, question, choices, pageSize, timeoutMs } = options;
   const tunnelAdapter = getTunnelAdapter();
 
   const promptMessage = buildPromptRequest(
     'checkbox',
     {
       message,
+      ...(header != null ? { header } : {}),
+      ...(question != null ? { question } : {}),
       choices: choices.map((c) => ({
         name: c.name,
         value: c.value,

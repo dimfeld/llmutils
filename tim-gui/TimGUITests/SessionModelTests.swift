@@ -1170,6 +1170,8 @@ struct StructuredMessagePayloadTests {
             "requestId": "req-001",
             "promptType": "select",
             "promptConfig": {
+                "header": "Trigger point",
+                "question": "Where should import job creation happen?",
                 "message": "Choose an option",
                 "choices": [
                     {"name": "Option A", "value": "a", "description": "First option"},
@@ -1187,6 +1189,8 @@ struct StructuredMessagePayloadTests {
         }
         #expect(p.requestId == "req-001")
         #expect(p.promptType == "select")
+        #expect(p.promptConfig.header == "Trigger point")
+        #expect(p.promptConfig.question == "Where should import job creation happen?")
         #expect(p.promptConfig.message == "Choose an option")
         #expect(p.promptConfig.choices?.count == 2)
         #expect(p.promptConfig.choices?[0].name == "Option A")
@@ -1240,6 +1244,8 @@ struct StructuredMessagePayloadTests {
             Issue.record("Expected promptRequest, got \(msg)")
             return
         }
+        #expect(p.promptConfig.header == nil)
+        #expect(p.promptConfig.question == nil)
         #expect(p.promptConfig.command == nil)
     }
 

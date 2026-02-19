@@ -324,6 +324,8 @@ function isValidStructuredMessagePayload(message: unknown): message is Structure
       if (config.default != null && !isPrimitiveValue(config.default)) return false;
       if (config.pageSize != null && typeof config.pageSize !== 'number') return false;
       if (config.validationHint != null && typeof config.validationHint !== 'string') return false;
+      if (config.header != null && typeof config.header !== 'string') return false;
+      if (config.question != null && typeof config.question !== 'string') return false;
 
       // Validate choices array if present
       if (config.choices != null) {

@@ -370,6 +370,8 @@ async function handleAskUserQuestion(
       if (isMultiSelect) {
         const selectedValues = await promptCheckbox<string>({
           message: 'Select one or more answers',
+          header: promptHeader,
+          question: promptQuestion,
           choices,
         });
 
@@ -385,6 +387,8 @@ async function handleAskUserQuestion(
       } else {
         const selectedValue = await promptSelect<string>({
           message: 'Select an answer',
+          header: promptHeader,
+          question: promptQuestion,
           choices,
         });
 

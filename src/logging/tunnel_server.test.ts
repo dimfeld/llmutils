@@ -1278,6 +1278,80 @@ describe('createTunnelServer', () => {
       expect(calls[0]).toEqual({ method: 'log', args: ['after bad validationHint'] });
     });
 
+    it('should reject prompt_request with non-string header', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+
+        await new Promise<void>((resolve, reject) => {
+          const client = net.connect(sp, () => {
+            client.write(
+              JSON.stringify({
+                type: 'structured',
+                message: {
+                  type: 'prompt_request',
+                  timestamp: '2026-02-08T00:00:00.000Z',
+                  requestId: 'req-bad-header',
+                  promptType: 'select',
+                  promptConfig: { message: 'Choose:', header: 42 },
+                },
+              }) + '\n'
+            );
+            client.write(JSON.stringify({ type: 'log', args: ['after bad header'] }) + '\n');
+            setTimeout(() => {
+              client.end();
+              resolve();
+            }, 20);
+          });
+          client.on('error', reject);
+        });
+
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toEqual({ method: 'log', args: ['after bad header'] });
+    });
+
+    it('should reject prompt_request with non-string question', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter, calls } = createRecordingAdapter();
+
+      await runWithLogger(adapter, async () => {
+        tunnelServer = await createTunnelServer(sp);
+
+        await new Promise<void>((resolve, reject) => {
+          const client = net.connect(sp, () => {
+            client.write(
+              JSON.stringify({
+                type: 'structured',
+                message: {
+                  type: 'prompt_request',
+                  timestamp: '2026-02-08T00:00:00.000Z',
+                  requestId: 'req-bad-question',
+                  promptType: 'select',
+                  promptConfig: { message: 'Choose:', question: true },
+                },
+              }) + '\n'
+            );
+            client.write(JSON.stringify({ type: 'log', args: ['after bad question'] }) + '\n');
+            setTimeout(() => {
+              client.end();
+              resolve();
+            }, 20);
+          });
+          client.on('error', reject);
+        });
+
+        await waitForCalls(calls, 1);
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toEqual({ method: 'log', args: ['after bad question'] });
+    });
+
     it('should reject prompt_request with non-array choices', async () => {
       const sp = uniqueSocketPath();
       const { adapter, calls } = createRecordingAdapter();

@@ -223,6 +223,10 @@ export interface PromptChoiceConfig {
 
 export interface PromptConfig {
   message: string;
+  /** Optional short label for the prompt context (e.g. "Trigger point"). */
+  header?: string;
+  /** Optional detailed question text shown by rich prompt UIs. */
+  question?: string;
   default?: string | number | boolean;
   choices?: PromptChoiceConfig[];
   pageSize?: number;

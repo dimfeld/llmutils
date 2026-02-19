@@ -569,6 +569,8 @@ struct PromptChoiceConfigPayload: Sendable, Decodable {
 
 struct PromptConfigPayload: Sendable, Decodable {
     let message: String
+    let header: String?
+    let question: String?
     let defaultValue: PromptResponseValue?
     let choices: [PromptChoiceConfigPayload]?
     let pageSize: Int?
@@ -577,6 +579,8 @@ struct PromptConfigPayload: Sendable, Decodable {
 
     enum CodingKeys: String, CodingKey {
         case message
+        case header
+        case question
         case defaultValue = "default"
         case choices
         case pageSize
@@ -586,6 +590,8 @@ struct PromptConfigPayload: Sendable, Decodable {
 
     init(
         message: String,
+        header: String? = nil,
+        question: String? = nil,
         defaultValue: PromptResponseValue? = nil,
         choices: [PromptChoiceConfigPayload]? = nil,
         pageSize: Int? = nil,
@@ -593,6 +599,8 @@ struct PromptConfigPayload: Sendable, Decodable {
         command: String? = nil)
     {
         self.message = message
+        self.header = header
+        self.question = question
         self.defaultValue = defaultValue
         self.choices = choices
         self.pageSize = pageSize
@@ -603,6 +611,8 @@ struct PromptConfigPayload: Sendable, Decodable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.message = try container.decode(String.self, forKey: .message)
+        self.header = try container.decodeIfPresent(String.self, forKey: .header)
+        self.question = try container.decodeIfPresent(String.self, forKey: .question)
         // Decode default preserving its original JSON type.
         // Try Bool first since JSON booleans can also decode as numbers.
         if let b = try? container.decode(Bool.self, forKey: .defaultValue) {

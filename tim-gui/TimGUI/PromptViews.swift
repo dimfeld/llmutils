@@ -10,13 +10,32 @@ struct PromptContainerView: View {
     @State private var errorVersion = 0
 
     var body: some View {
+        let headerText = self.prompt.promptConfig.header?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let questionText = self.prompt.promptConfig.question ?? self.prompt.promptConfig.message
+        let messageText = self.prompt.promptConfig.message
+        let shouldShowMessage = self.prompt.promptConfig.question != nil && questionText != messageText
+
         VStack(spacing: 0) {
             Divider()
 
             VStack(alignment: .leading, spacing: 12) {
-                Text(self.prompt.promptConfig.message)
+                if let headerText, !headerText.isEmpty {
+                    Text(headerText)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                Text(questionText)
                     .font(.headline)
                     .frame(maxWidth: .infinity, alignment: .leading)
+
+                if shouldShowMessage {
+                    Text(messageText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
 
                 switch self.prompt.promptType {
                 case "confirm":

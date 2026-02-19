@@ -346,6 +346,10 @@ describe('permissions socket server AskUserQuestion handling', () => {
     expect(mockPromptSelect.mock.calls[0]?.[0]?.choices).toEqual(
       expect.arrayContaining([expect.objectContaining({ value: '__free_text__' })])
     );
+    expect(mockPromptSelect.mock.calls[0]?.[0]).toMatchObject({
+      header: 'Format',
+      question: 'How should I format the output?',
+    });
   });
 
   test('ignores configured timeout for AskUserQuestion prompts', async () => {
@@ -437,6 +441,10 @@ describe('permissions socket server AskUserQuestion handling', () => {
     expect(mockPromptCheckbox.mock.calls[0]?.[0]?.choices).toEqual(
       expect.arrayContaining([expect.objectContaining({ value: '__free_text__' })])
     );
+    expect(mockPromptCheckbox.mock.calls[0]?.[0]).toMatchObject({
+      header: 'Sections',
+      question: 'Which sections should be included?',
+    });
   });
 
   test('handles free-text single-select answers', async () => {
