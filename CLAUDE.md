@@ -47,11 +47,11 @@ The codebase is organized into several main modules with improved modularity and
 - Terminal interaction (`terminal.ts`)
 - Prompt transport (`common/input.ts` + structured messages): `prompt_request.promptConfig` supports optional `header` and `question` fields for richer GUI rendering in addition to `message`
 - Clipboard support with OSC52 (`clipboard.ts`, `osc52.ts`)
-   - SSH detection (`ssh_detection.ts`) and model factory (`model_factory.ts`)
-   - Config path utilities (`config_paths.ts`) with `getTimConfigRoot()` for XDG-aware config directory resolution
-   - Input pause registry (`input_pause_registry.ts`): `PausableInputSource` interface and getter/setter for coordinating stdin between terminal input readers and inquirer prompts without coupling `common` to feature modules
-   - Prefix selection prompt (`prefix_prompt.ts`): shared custom prompt + `runPrefixPrompt()` used by permissions flows
-   - GitHub integration utilities in `github/` subdirectory
+  - SSH detection (`ssh_detection.ts`) and model factory (`model_factory.ts`)
+  - Config path utilities (`config_paths.ts`) with `getTimConfigRoot()` for XDG-aware config directory resolution
+  - Input pause registry (`input_pause_registry.ts`): `PausableInputSource` interface and getter/setter for coordinating stdin between terminal input readers and inquirer prompts without coupling `common` to feature modules
+  - Prefix selection prompt (`prefix_prompt.ts`): shared custom prompt + `runPrefixPrompt()` used by permissions flows
+  - GitHub integration utilities in `github/` subdirectory
 
 2. **tim**: Manages step-by-step project plans with LLM integration, organized by sub-commands
    - Modular command structure in `commands/` directory with separate files per sub-command
