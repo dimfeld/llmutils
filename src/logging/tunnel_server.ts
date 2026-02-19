@@ -10,6 +10,9 @@ import {
   sendStructured,
 } from '../logging.js';
 import { CleanupRegistry } from '../common/cleanup_registry.js';
+import { getLoggerAdapter } from './adapter.js';
+import { ConsoleAdapter } from './console.js';
+import { indentEveryLine } from './console_formatter.js';
 import type {
   TunnelMessage,
   TunnelPromptResponseMessage,
@@ -412,35 +415,61 @@ function isValidTunnelMessage(message: unknown): message is TunnelMessage {
  * Malformed or unrecognized messages are silently dropped.
  */
 function dispatchMessage(message: TunnelMessage): void {
+  const shouldIndent = shouldIndentForTerminalOutput();
+
   if (isStructuredTunnelMessage(message)) {
-    sendStructured(message.message);
+    sendStructured(
+      shouldIndent
+        ? {
+            ...message.message,
+            transportSource: 'tunnel',
+          }
+        : message.message
+    );
     return;
   }
 
   switch (message.type) {
     case 'log':
-      log(...message.args);
+      log(...indentArgs(message.args, shouldIndent));
       break;
     case 'error':
-      error(...message.args);
+      error(...indentArgs(message.args, shouldIndent));
       break;
     case 'warn':
-      warn(...message.args);
+      warn(...indentArgs(message.args, shouldIndent));
       break;
     case 'debug':
-      debugLog(...message.args);
+      debugLog(...indentArgs(message.args, shouldIndent));
       break;
     case 'stdout':
-      writeStdout(message.data);
+      writeStdout(indentText(message.data, shouldIndent));
       break;
     case 'stderr':
-      writeStderr(message.data);
+      writeStderr(indentText(message.data, shouldIndent));
       break;
     default: {
       const _exhaustive: never = message;
       void _exhaustive;
     }
   }
+}
+
+function shouldIndentForTerminalOutput(): boolean {
+  const adapter = getLoggerAdapter();
+  return adapter === undefined || adapter instanceof ConsoleAdapter;
+}
+
+function indentText(value: string, shouldIndent: boolean): string {
+  return shouldIndent ? indentEveryLine(value) : value;
+}
+
+function indentArgs(values: string[], shouldIndent: boolean): string[] {
+  if (!shouldIndent) {
+    return values;
+  }
+
+  return values.map((value) => indentEveryLine(value));
 }
 
 /**

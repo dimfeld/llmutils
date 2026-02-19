@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { formatStructuredMessage } from './console_formatter.ts';
+import { formatStructuredMessage, indentEveryLine } from './console_formatter.ts';
 import type { StructuredMessage } from './structured_messages.ts';
 
 function format(message: StructuredMessage): string {
@@ -321,5 +321,25 @@ describe('console_formatter', () => {
     // Should show the local-time HH:MM:SS, not the full ISO string
     expect(result).not.toContain('2026-02-08');
     expect(result).toMatch(/\d{2}:\d{2}:\d{2}/);
+  });
+
+  it('indents every line for tunnel-sourced structured messages', () => {
+    const output = format({
+      type: 'llm_status',
+      timestamp,
+      status: 'Rate limit warning',
+      detail: 'Utilization: 77%\nThreshold: 75%',
+      transportSource: 'tunnel',
+    });
+
+    expect(output).toContain('\n  Utilization: 77%');
+    expect(output).toContain('\n  Threshold: 75%');
+    expect(output.startsWith('  ')).toBe(true);
+  });
+
+  it('indents each line consistently', () => {
+    expect(indentEveryLine('line1\nline2')).toBe('  line1\n  line2');
+    expect(indentEveryLine('line\n')).toBe('  line\n  ');
+    expect(indentEveryLine('')).toBe('');
   });
 });

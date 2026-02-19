@@ -3,6 +3,8 @@ import type { ExecutionSummary } from '../tim/summary/types.js';
 
 export interface StructuredMessageBase {
   timestamp: string;
+  /** Transport-level source marker used for terminal rendering behavior. */
+  transportSource?: 'tunnel';
 }
 
 /**
