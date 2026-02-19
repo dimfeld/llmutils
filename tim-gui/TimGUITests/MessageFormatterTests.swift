@@ -824,6 +824,25 @@ struct MessageFormatterTests {
         #expect(body == "idle")
     }
 
+    @Test("Formats Claude rate-limit status details")
+    func formatsClaudeRateLimitStatus() {
+        let msg = MessageFormatter.format(
+            tunnelMessage: .structured(message: .llmStatus(
+                status: "Rate limit warning (seven_day)",
+                detail: "Utilization: 77%\nThreshold: 75%\nUsing overage: no\nResets at: 2026-02-20T22:00:00.000Z",
+                timestamp: "2026-02-20T21:00:00Z")),
+            seq: 172)
+        #expect(msg.category == .log)
+        #expect(msg.title == "Status")
+        guard case let .text(body) = msg.body else {
+            Issue.record("Expected .text body")
+            return
+        }
+        #expect(body.contains("Rate limit warning (seven_day)"))
+        #expect(body.contains("Utilization: 77%"))
+        #expect(body.contains("Resets at: 2026-02-20T22:00:00.000Z"))
+    }
+
     // MARK: - Review start
 
     @Test("Formats review_start as lifecycle with text body")

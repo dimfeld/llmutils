@@ -710,5 +710,35 @@ describe('formatJsonMessage', () => {
         ])
       );
     });
+
+    test('maps rate_limit_event to llm_status with detail for terminal/gui rendering', () => {
+      const resetsAt = 1771610400;
+      const expectedReset = new Date(resetsAt * 1000).toISOString();
+      const message = JSON.stringify({
+        type: 'rate_limit_event',
+        rate_limit_info: {
+          status: 'allowed_warning',
+          resetsAt,
+          rateLimitType: 'seven_day',
+          utilization: 0.77,
+          isUsingOverage: false,
+          surpassedThreshold: 0.75,
+        },
+        uuid: '045982af-eea2-41db-a761-1592a815f4ad',
+        session_id: '54763212-5931-4d65-8aff-f01184d95d87',
+      });
+
+      const result = formatJsonMessage(message);
+      expect(result.type).toBe('rate_limit_event');
+      expect(result.structured).toEqual({
+        type: 'llm_status',
+        timestamp: expect.any(String),
+        source: 'claude',
+        status: 'Rate limit warning (seven_day)',
+        detail: `Utilization: 77%\nThreshold: 75%\nUsing overage: no\nResets at: ${expectedReset}`,
+      });
+      expect(result.message).toContain('Rate limit warning (seven_day)');
+      expect(result.message).toContain('Utilization: 77%');
+    });
   });
 });

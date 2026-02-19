@@ -106,6 +106,21 @@ export type Message =
         trigger: string;
         pre_tokens: number;
       };
+    }
+
+  // Rate limit warning/info event
+  | {
+      type: 'rate_limit_event';
+      rate_limit_info: {
+        status: string;
+        resetsAt?: number;
+        rateLimitType?: string;
+        utilization?: number;
+        isUsingOverage?: boolean;
+        surpassedThreshold?: number;
+      };
+      uuid: string;
+      session_id: string;
     };
 
 export interface FormattedClaudeMessage {
@@ -140,6 +155,23 @@ function truncateString(result: string, maxLines = 15): string {
   }
 
   return lines.join('\n');
+}
+
+function formatPercent(value: number): string {
+  return `${(value * 100).toFixed(1).replace(/\.0$/, '')}%`;
+}
+
+function formatResetAtUnix(seconds: number): string | undefined {
+  if (!Number.isFinite(seconds)) {
+    return undefined;
+  }
+
+  const date = new Date(seconds * 1000);
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+
+  return date.toISOString();
 }
 
 function formatValue(value: unknown): string {
@@ -274,6 +306,34 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
         timestamp: timestamp(),
         status: `Compacting (${message.compact_metadata.trigger})`,
         detail: `${message.compact_metadata.pre_tokens} tokens before compact`,
+      },
+    });
+  } else if (message.type === 'rate_limit_event') {
+    const info = message.rate_limit_info;
+    const statusPrefix = info.status === 'allowed_warning' ? 'Rate limit warning' : 'Rate limit';
+    const status = info.rateLimitType
+      ? `${statusPrefix} (${info.rateLimitType})`
+      : `${statusPrefix}: ${info.status}`;
+    const resetAt = info.resetsAt != null ? formatResetAtUnix(info.resetsAt) : undefined;
+    const detailLines = [
+      info.utilization != null ? `Utilization: ${formatPercent(info.utilization)}` : undefined,
+      info.surpassedThreshold != null
+        ? `Threshold: ${formatPercent(info.surpassedThreshold)}`
+        : undefined,
+      info.isUsingOverage != null
+        ? `Using overage: ${info.isUsingOverage ? 'yes' : 'no'}`
+        : undefined,
+      resetAt ? `Resets at: ${resetAt}` : undefined,
+    ].filter((line): line is string => line !== undefined);
+
+    return withMessage({
+      type: message.type,
+      structured: {
+        type: 'llm_status',
+        timestamp: timestamp(),
+        source: 'claude',
+        status,
+        detail: detailLines.length > 0 ? detailLines.join('\n') : undefined,
       },
     });
   } else if (message.type === 'assistant' || message.type === 'user') {

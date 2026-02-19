@@ -67,6 +67,14 @@ describe('console_formatter', () => {
       'Tool Result'
     );
     expect(format({ type: 'llm_status', timestamp, status: 'compacting' })).toContain('compacting');
+    const rateLimitStatus = format({
+      type: 'llm_status',
+      timestamp,
+      status: 'Rate limit warning (seven_day)',
+      detail: 'Utilization: 77%\nThreshold: 75%',
+    });
+    expect(rateLimitStatus).toContain('Rate limit warning (seven_day)');
+    expect(rateLimitStatus).toContain('Utilization: 77%');
     const todo = format({
       type: 'todo_update',
       timestamp,
