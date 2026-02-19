@@ -494,6 +494,11 @@ export interface TunnelServerOptions {
    * but no response is sent back (the client will hang or timeout).
    */
   onPromptRequest?: PromptRequestHandler;
+  /**
+   * Optional callback invoked for every valid tunnel message received from clients.
+   * This runs before the message is dispatched to normal logging handlers.
+   */
+  onMessage?: (message: TunnelMessage) => void;
 }
 
 /**
@@ -527,7 +532,7 @@ export function createTunnelServer(
   socketPath: string,
   options?: TunnelServerOptions
 ): Promise<TunnelServer> {
-  const { onPromptRequest } = options ?? {};
+  const { onPromptRequest, onMessage } = options ?? {};
 
   return new Promise<TunnelServer>((resolve, reject) => {
     // Remove any stale socket file from a previous run
@@ -591,6 +596,14 @@ export function createTunnelServer(
           if (!isValidTunnelMessage(parsed)) {
             // Invalid structure - silently drop
             continue;
+          }
+
+          if (onMessage) {
+            try {
+              onMessage(parsed);
+            } catch {
+              // Ignore callback errors to avoid affecting tunnel behavior
+            }
           }
 
           // Check if this is a prompt_request that needs special handling

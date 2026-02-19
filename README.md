@@ -59,6 +59,7 @@ These tools are deprecated as coding agents have largely replaced them, but sill
   - [rmfilter](#rmfilter)
   - [apply-llm-edits](#apply-llm-edits)
   - [rmfind](#rmfind)
+  - [run-with-tunnel script](#run-with-tunnel-script)
 - [Complete Command Reference](#complete-command-reference)
 
 ---
@@ -2098,6 +2099,18 @@ rmfind src/**/*.ts --grep getUserData --whole-word
 - `bat` for syntax-highlighted previews
 - `ripgrep` for content filtering
 - LLM API access for `--query`
+
+### run-with-tunnel script
+
+Starts a local tunnel server, sets `TIM_OUTPUT_SOCKET` for a child process, runs the command,
+and prints each received tunnel message as JSON (prefixed with `[tunnel]`).
+
+**Usage:**
+
+```bash
+bun scripts/run-with-tunnel.ts -- tim chat
+bun scripts/run-with-tunnel.ts -- bun test src/logging/tunnel_server.test.ts
+```
 
 ---
 
