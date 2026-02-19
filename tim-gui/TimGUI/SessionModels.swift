@@ -180,6 +180,7 @@ final class SessionItem: Identifiable {
     var workspacePath: String?
     var gitRemote: String?
     let connectedAt: Date
+    var lastMessageReceivedAt: Date?
     var isActive: Bool
     var messages: [SessionMessage]
     var forceScrollToBottomVersion: Int
@@ -194,6 +195,9 @@ final class SessionItem: Identifiable {
         }
         return self.command
     }
+    var displayTimestamp: Date {
+        self.lastMessageReceivedAt ?? self.connectedAt
+    }
 
     init(
         id: UUID,
@@ -204,6 +208,7 @@ final class SessionItem: Identifiable {
         workspacePath: String?,
         gitRemote: String?,
         connectedAt: Date,
+        lastMessageReceivedAt: Date? = nil,
         isActive: Bool,
         messages: [SessionMessage],
         forceScrollToBottomVersion: Int = 0,
@@ -220,6 +225,7 @@ final class SessionItem: Identifiable {
         self.workspacePath = workspacePath
         self.gitRemote = gitRemote
         self.connectedAt = connectedAt
+        self.lastMessageReceivedAt = lastMessageReceivedAt
         self.isActive = isActive
         self.messages = messages
         self.forceScrollToBottomVersion = forceScrollToBottomVersion

@@ -59,6 +59,9 @@ final class SessionState {
             // Flush any messages that arrived before session_info
             if let buffered = pendingMessages.removeValue(forKey: connectionId) {
                 notificationOnly.messages = buffered
+                if !buffered.isEmpty {
+                    notificationOnly.lastMessageReceivedAt = Date()
+                }
             }
 
             if self.selectedSessionId == nil {
@@ -83,6 +86,9 @@ final class SessionState {
         // Flush any messages that arrived before session_info
         if let buffered = pendingMessages.removeValue(forKey: connectionId) {
             session.messages = buffered
+            if !buffered.isEmpty {
+                session.lastMessageReceivedAt = Date()
+            }
         }
 
         self.sessions.insert(session, at: 0)
@@ -131,6 +137,7 @@ final class SessionState {
             return
         }
         self.sessions[index].messages.append(message)
+        self.sessions[index].lastMessageReceivedAt = Date()
     }
 
     func ingestSessionMetadata(connectionId: UUID, tunnelMessage: TunnelMessage) {
@@ -182,6 +189,7 @@ final class SessionState {
         }
 
         self.sessions[index].messages.append(contentsOf: bufferedReplayMessages)
+        self.sessions[index].lastMessageReceivedAt = Date()
         self.sessions[index].forceScrollToBottomVersion += 1
     }
 
@@ -225,6 +233,7 @@ final class SessionState {
         let notificationText = "Agent session disconnected"
         session.notificationMessage = notificationText
         session.hasUnreadNotification = true
+        session.lastMessageReceivedAt = Date()
 
         let content = UNMutableNotificationContent()
         content.title = "Tim"
@@ -287,6 +296,7 @@ final class SessionState {
         if let session = matchedSession {
             session.notificationMessage = payload.message
             session.hasUnreadNotification = true
+            session.lastMessageReceivedAt = Date()
         } else {
             let workspaceTemplate = payload.workspacePath.isEmpty
                 ? nil
@@ -302,6 +312,7 @@ final class SessionState {
                 workspacePath: payload.workspacePath,
                 gitRemote: workspaceTemplate?.gitRemote,
                 connectedAt: Date(),
+                lastMessageReceivedAt: Date(),
                 isActive: false,
                 messages: [],
                 terminal: payload.terminal,
@@ -328,6 +339,7 @@ final class SessionState {
 
         session.notificationMessage = notificationText
         session.hasUnreadNotification = true
+        session.lastMessageReceivedAt = Date()
 
         let content = UNMutableNotificationContent()
         content.title = "Tim"

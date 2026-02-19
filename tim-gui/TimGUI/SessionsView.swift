@@ -177,7 +177,7 @@ struct SessionRowView: View {
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(self.statusStyle)
 
-                    Text(self.session.connectedAt, style: .time)
+                    Text(self.session.displayTimestamp, style: .time)
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }

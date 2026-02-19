@@ -261,6 +261,32 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages[2].text == "third")
     }
 
+    @Test("displayTimestamp falls back to connectedAt before messages are received")
+    func displayTimestampFallsBackToConnectedAt() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo())
+
+        let session = state.sessions[0]
+        #expect(session.lastMessageReceivedAt == nil)
+        #expect(session.displayTimestamp == session.connectedAt)
+    }
+
+    @Test("appendMessage updates lastMessageReceivedAt")
+    func appendMessageUpdatesLastMessageReceivedAt() throws {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo())
+        let connectedAt = state.sessions[0].connectedAt
+
+        state.appendMessage(connectionId: connId, message: self.makeMessage(seq: 1, text: "hello"))
+
+        let session = state.sessions[0]
+        let lastMessageReceivedAt = try #require(session.lastMessageReceivedAt)
+        #expect(lastMessageReceivedAt >= connectedAt)
+        #expect(session.displayTimestamp == lastMessageReceivedAt)
+    }
+
     @Test("appendMessage buffers messages for unknown connectionId (does not affect existing sessions)")
     func appendMessageUnknownConnection() {
         let state = SessionState()
@@ -1302,6 +1328,8 @@ struct SessionStateTests {
         #expect(session.isActive == false)
         #expect(session.hasUnreadNotification == true)
         #expect(session.notificationMessage == "Notification")
+        #expect(session.lastMessageReceivedAt != nil)
+        #expect(session.displayTimestamp == session.lastMessageReceivedAt)
         #expect(session.messages.isEmpty)
     }
 
