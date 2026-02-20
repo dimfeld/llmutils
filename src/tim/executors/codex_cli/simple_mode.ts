@@ -154,6 +154,7 @@ export async function executeSimpleMode(
       message: `Running implementer step${attempt > 0 ? ` (attempt ${attemptNumber})` : ''}...`,
     });
     const attemptOutput = await executeCodexStep(implementerPrompt.prompt, gitRoot, timConfig, {
+      model,
       reasoningLevel: defaultReasoningLevel,
     });
     events.push({ type: 'implementer', message: attemptOutput });
@@ -368,6 +369,7 @@ export async function executeSimpleMode(
       });
 
       const fixerOutput = await executeCodexStep(fixerPrompt, gitRoot, timConfig, {
+        model,
         reasoningLevel: defaultReasoningLevel,
       });
       events.push({ type: 'verifier', message: fixerOutput });

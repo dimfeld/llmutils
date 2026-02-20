@@ -278,7 +278,7 @@ program
 
 program
   .command('generate [plan]')
-  .description('Generate a plan using interactive Claude Code executor')
+  .description('Generate a plan using an interactive executor')
   .option('--plan <plan>', 'Plan to use')
   .option('--latest', 'Use the most recently updated plan')
   .option(
@@ -620,7 +620,10 @@ createAgentCommand(
 program
   .command('chat [prompt]')
   .description('Start an interactive LLM session without a plan')
-  .option('-x, --executor <name>', 'Executor to use (claude-code or codex-cli)')
+  .option(
+    '-x, --executor <name>',
+    'Executor to use: claude/claude-code (default) or codex/codex-cli'
+  )
   .option('-m, --model <model>', 'Model to use')
   .option('--prompt-file <path>', 'Read initial prompt from a file')
   .option('--non-interactive', 'Disable interactive terminal input')

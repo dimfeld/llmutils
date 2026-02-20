@@ -9,6 +9,7 @@ describe('Codex CLI review mode', () => {
 
   beforeEach(() => {
     moduleMocker = new ModuleMocker(import.meta);
+    process.env.CODEX_USE_APP_SERVER = 'false';
   });
 
   afterEach(() => {
@@ -112,6 +113,7 @@ describe('Codex CLI review mode', () => {
 
 describe('Codex CLI executeCodexReviewWithSchema', () => {
   let moduleMocker: ModuleMocker;
+  const originalUseAppServer = process.env.CODEX_USE_APP_SERVER;
 
   beforeEach(() => {
     moduleMocker = new ModuleMocker(import.meta);
@@ -119,6 +121,11 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
 
   afterEach(() => {
     moduleMocker.clear();
+    if (originalUseAppServer === undefined) {
+      delete process.env.CODEX_USE_APP_SERVER;
+    } else {
+      process.env.CODEX_USE_APP_SERVER = originalUseAppServer;
+    }
   });
 
   test('creates temp file with JSON schema and passes it to executeCodexStep', async () => {
@@ -186,6 +193,7 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
   });
 
   test('cleans up temp schema file after execution', async () => {
+    process.env.CODEX_USE_APP_SERVER = 'false';
     let capturedSchemaPath: string | undefined;
 
     await moduleMocker.mock('../../logging.ts', () => ({
@@ -242,6 +250,7 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
   });
 
   test('cleans up temp file even when execution fails', async () => {
+    process.env.CODEX_USE_APP_SERVER = 'false';
     let capturedSchemaPath: string | undefined;
 
     await moduleMocker.mock('../../logging.ts', () => ({
@@ -429,5 +438,63 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
     );
 
     expect(capturedPrompt).toBe('REVIEW PROMPT CONTENT');
+  });
+
+  test('skips schema temp file creation in app-server mode', async () => {
+    delete process.env.CODEX_USE_APP_SERVER;
+    const mkdtempSpy = mock(fs.mkdtemp);
+    let capturedOptions: { outputSchemaPath?: string; outputSchema?: Record<string, unknown> } = {};
+
+    await moduleMocker.mock('../../logging.ts', () => ({
+      log: mock(() => {}),
+      warn: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => '/tmp/repo-review'),
+    }));
+
+    await moduleMocker.mock('./failure_detection.ts', () => ({
+      parseFailedReport: mock(() => ({ failed: false })),
+    }));
+
+    await moduleMocker.mock('fs/promises', () => ({
+      ...fs,
+      mkdtemp: mkdtempSpy,
+    }));
+
+    await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: mock(
+        async (
+          _prompt: string,
+          _cwd: string,
+          _config: unknown,
+          options?: { outputSchemaPath?: string; outputSchema?: Record<string, unknown> }
+        ) => {
+          capturedOptions = options ?? {};
+          return JSON.stringify({ issues: [], recommendations: [], actionItems: [] });
+        }
+      ),
+    }));
+
+    const { executeReviewMode } = await import('./codex_cli/review_mode.ts');
+
+    await executeReviewMode(
+      'REVIEW PROMPT CONTENT',
+      {
+        planId: 'review-plan',
+        planTitle: 'Review Plan',
+        planFilePath: '/tmp/repo-review/plan.yml',
+        executionMode: 'review' as const,
+        captureOutput: 'result' as const,
+      },
+      '/tmp/repo-review',
+      undefined,
+      {}
+    );
+
+    expect(mkdtempSpy).not.toHaveBeenCalled();
+    expect(capturedOptions.outputSchemaPath).toBeUndefined();
+    expect(capturedOptions.outputSchema).toBeDefined();
   });
 });

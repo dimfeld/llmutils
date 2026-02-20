@@ -251,6 +251,28 @@ describe('console_formatter', () => {
     expect(populatedUsage).not.toContain('cached=');
   });
 
+  it('formats token usage with rate limit summary inline', () => {
+    const usageWithRateLimits = format({
+      type: 'token_usage',
+      timestamp,
+      totalTokens: 100,
+      rateLimits: {
+        codex_bengalfox: {
+          limitId: 'codex_bengalfox',
+          limitName: 'GPT-5.3-Codex-Spark',
+          primary: { usedPercent: 2, windowDurationMins: 300 },
+          secondary: { usedPercent: 10, windowDurationMins: 10080 },
+        },
+      },
+    });
+
+    expect(usageWithRateLimits).toContain('total=100');
+    expect(usageWithRateLimits).toContain('rateLimits=');
+    expect(usageWithRateLimits).toContain('GPT-5.3-Codex-Spark');
+    expect(usageWithRateLimits).toContain('primary 2%/300m');
+    expect(usageWithRateLimits).toContain('secondary 10%/10080m');
+  });
+
   it('returns empty output for input_required without prompt', () => {
     expect(format({ type: 'input_required', timestamp })).toBe('');
   });

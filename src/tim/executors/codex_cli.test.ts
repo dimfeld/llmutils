@@ -1,6 +1,20 @@
 import { describe, test, expect, mock, afterEach, beforeEach } from 'bun:test';
 import { ModuleMocker } from '../../testing.js';
 
+const originalCodexUseAppServer = process.env.CODEX_USE_APP_SERVER;
+
+beforeEach(() => {
+  process.env.CODEX_USE_APP_SERVER = 'false';
+});
+
+afterEach(() => {
+  if (originalCodexUseAppServer === undefined) {
+    delete process.env.CODEX_USE_APP_SERVER;
+  } else {
+    process.env.CODEX_USE_APP_SERVER = originalCodexUseAppServer;
+  }
+});
+
 describe('CodexCliExecutor - failure detection across agents', () => {
   let moduleMocker: ModuleMocker;
   let tempDir: string;
@@ -799,6 +813,43 @@ describe('CodexCliExecutor - tdd execution mode routing', () => {
     expect(executeSimpleModeMock).toHaveBeenCalledTimes(1);
     expect(executeNormalModeMock).not.toHaveBeenCalled();
     expect(result).toEqual({ content: 'simple tdd flow' });
+  });
+});
+
+describe('CodexCliExecutor - planning mode routing', () => {
+  let moduleMocker: ModuleMocker;
+  const tempDir = '/tmp/codex-planning-routing-test';
+
+  beforeEach(() => {
+    moduleMocker = new ModuleMocker(import.meta);
+  });
+
+  afterEach(() => {
+    moduleMocker.clear();
+  });
+
+  test('enables chat-style session mode for planning execution', async () => {
+    const executeBareModeMock = mock(async () => ({ content: 'planning flow' }));
+
+    await moduleMocker.mock('./codex_cli/bare_mode.ts', () => ({
+      executeBareMode: executeBareModeMock,
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.ts');
+    const executor = new CodexCliExecutor({}, { baseDir: tempDir, terminalInput: true }, {} as any);
+
+    await executor.execute('CTX', {
+      planId: '301',
+      planTitle: 'Planning Plan',
+      planFilePath: `${tempDir}/plan.md`,
+      executionMode: 'planning',
+    });
+
+    expect(executeBareModeMock).toHaveBeenCalledTimes(1);
+    expect(executeBareModeMock.mock.calls[0]?.[5]).toEqual({
+      appServerMode: 'chat-session',
+      terminalInput: true,
+    });
   });
 });
 

@@ -5,6 +5,20 @@ import * as fs from 'node:fs/promises';
 import type { RepositoryState } from '../../common/git.ts';
 import { ModuleMocker } from '../../testing.js';
 
+const originalCodexUseAppServer = process.env.CODEX_USE_APP_SERVER;
+
+beforeEach(() => {
+  process.env.CODEX_USE_APP_SERVER = 'false';
+});
+
+afterEach(() => {
+  if (originalCodexUseAppServer === undefined) {
+    delete process.env.CODEX_USE_APP_SERVER;
+  } else {
+    process.env.CODEX_USE_APP_SERVER = originalCodexUseAppServer;
+  }
+});
+
 describe('CodexCliExecutor implementer auto-retry', () => {
   let moduleMocker: ModuleMocker;
   let logMessages: string[];

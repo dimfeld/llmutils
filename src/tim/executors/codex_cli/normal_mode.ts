@@ -166,6 +166,7 @@ export async function executeNormalMode(
       message: `Running implementer step${attempt > 0 ? ` (attempt ${attemptNumber})` : ''}...`,
     });
     const attemptOutput = await executeCodexStep(implementerPrompt.prompt, gitRoot, timConfig, {
+      model,
       reasoningLevel: defaultReasoningLevel,
     });
     events.push({ type: 'implementer', message: attemptOutput });
@@ -302,6 +303,7 @@ export async function executeNormalMode(
       message: 'Running tester step...',
     });
     const testerOutput = await executeCodexStep(tester.prompt, gitRoot, timConfig, {
+      model,
       reasoningLevel: defaultReasoningLevel,
     });
     events.push({ type: 'tester', message: testerOutput });
@@ -446,6 +448,7 @@ export async function executeNormalMode(
       });
 
       const fixerOutput = await executeCodexStep(fixerPrompt, gitRoot, timConfig, {
+        model,
         reasoningLevel: defaultReasoningLevel,
       });
       events.push({ type: 'fixer', message: fixerOutput });

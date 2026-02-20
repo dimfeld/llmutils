@@ -80,30 +80,12 @@ The codebase is organized into several main modules with improved modularity and
   - `ready_plans.ts`: Implements readiness detection, filtering, and sorting used by the CLI and MCP list tools
   - `utils/task_operations.ts`: Centralizes task prompting helpers (interactive input, title search, selection menus) used by both CLI commands and MCP tools for task management
 - MCP server (`mcp/generate_mode.ts`) now focuses on registering prompts and delegates tool handlers to the relevant command modules
-- Executor system in `executors/` for different LLM integration approaches
-  - `claude_code/streaming_input.ts`: Builds and sends stream-json messages to Claude Code's stdin; supports both single-prompt (`sendSinglePromptAndWait`) and multi-message (`sendInitialPrompt`, `sendFollowUpMessage`, `closeStdinAndWait`) patterns
-  - `claude_code/format.ts`: Parses Claude Code stream-json output, including system lifecycle events like `init`, `task_started`, `task_notification`, `status`, `compact_boundary`, and `rate_limit_event` (rendered as `llm_status` for terminal and tim-gui)
-  - `claude_code/terminal_input.ts`: `TerminalInputReader` class for reading interactive user input during agent execution; manages readline lifecycle with pause/resume support for prompt coordination and forwards readline `SIGINT` (Ctrl+C) to process-level signal handlers so one Ctrl+C exits immediately while Ctrl+D still closes terminal input
-  - `claude_code/terminal_input_lifecycle.ts`: Shared lifecycle helper (`setupTerminalInput()` / `awaitAndCleanup()`) and `executeWithTerminalInput()` which encapsulates stdin lifecycle branching (terminal input / tunnel or headless forwarding / single prompt); wires user input handlers for both tunnel and headless adapters to forward GUI-originated messages to subprocess stdin; used by both the main executor and `run_claude_subprocess.ts`
+- Executor system in `executors/` for different LLM integration approaches. The two main executors are claude_code and codex_cli. The others are not used much anymore.
 - **Automatic Parent-Child Relationship Maintenance**: All commands (`add`, `set`, `validate`) work together to ensure bidirectional consistency in the dependency graph, automatically updating parent plans when child relationships are created, modified, or removed
 
 There are other directories as well but they are mostly inactive.
 
-## Environment Requirements
-
-- **Bun**: Required as the JavaScript runtime
-- **ripgrep**: Used for efficient code searching
-- **repomix**: Core tool for context preparation
-- **fzf**: Used by rmfind for interactive file selection
-- **bat**: Used by rmfind and rmrun for syntax highlighting
-
-## Configuration Files
-
-The repository uses several configuration files:
-
-- `.rmfilter/`: Directory for rmfilter preset configurations
-- `schema/`: Contains JSON schemas for validating configurations
-- Environment variables (via dotenv) for model configuration
+## Configuration
 
 When adding new values to configSchema.ts, do not use defaults in the zod schemas. It breaks the ability to merge
 the local and main configs together. Instead, apply defaults where the values are read, or set them in
@@ -180,7 +162,6 @@ See docs/testing.md for testing strategy
 
 ## Personal Workflow Notes
 
-- When you learn something about the codebase, update CLAUDE.md
 - When making a change, always look for related tests that need to be updated or written as well
 - When you finish a change, run the tests using `bun test` and then fix any failures you find
 - **After adding a feature, update the README to include documentation about the feature**

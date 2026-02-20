@@ -229,7 +229,7 @@ function addBashPrefixSafely(
   return false;
 }
 
-async function addPermissionToFile(
+export async function addPermissionToFile(
   toolName: string,
   argument?: { exact: boolean; command?: string }
 ): Promise<void> {

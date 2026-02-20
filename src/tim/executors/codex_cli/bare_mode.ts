@@ -4,7 +4,7 @@ import { CodexCliExecutorName, type CodexReasoningLevel } from '../schemas.js';
 import { getGitRoot } from '../../../common/git.js';
 import { log } from '../../../logging.js';
 import { parseFailedReport } from '../failure_detection.js';
-import { executeCodexStep } from './codex_runner.js';
+import { executeCodexStep, type CodexAppServerMode } from './codex_runner.js';
 
 /**
  * Execute bare mode: single prompt with no orchestration or subagents.
@@ -15,8 +15,12 @@ export async function executeBareMode(
   contextContent: string,
   planInfo: ExecutePlanInfo,
   baseDir: string,
-  _model: string | undefined,
-  timConfig: TimConfig
+  model: string | undefined,
+  timConfig: TimConfig,
+  options?: {
+    appServerMode?: CodexAppServerMode;
+    terminalInput?: boolean;
+  }
 ): Promise<void | ExecutorOutput> {
   const gitRoot = await getGitRoot(baseDir);
 
@@ -24,12 +28,14 @@ export async function executeBareMode(
   const codexOptions = timConfig.executors?.[CodexCliExecutorName];
   const defaultReasoningLevel: CodexReasoningLevel = codexOptions?.reasoning?.default ?? 'medium';
 
-  log('Running bare mode (single prompt, no orchestration)...');
-  const output = await executeCodexStep(contextContent, gitRoot, timConfig, {
+  const codexStepOptions = {
+    model,
     reasoningLevel: defaultReasoningLevel,
-  });
+    ...(options?.appServerMode ? { appServerMode: options.appServerMode } : {}),
+    ...(options?.terminalInput !== undefined ? { terminalInput: options.terminalInput } : {}),
+  } as const;
 
-  log('Bare mode execution complete.');
+  const output = await executeCodexStep(contextContent, gitRoot, timConfig, codexStepOptions);
 
   // Parse for failures (included for consistency with other modes)
   const parsed = parseFailedReport(output);
@@ -54,7 +60,4 @@ export async function executeBareMode(
 
     return result;
   }
-
-  // For 'none' capture mode, return void
-  return;
 }

@@ -12,6 +12,35 @@ function formatTimestamp(timestamp: string): string {
   return `${h}:${m}:${s}`;
 }
 
+function formatRateLimitWindow(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const usedPercent =
+    typeof record.usedPercent === 'number'
+      ? record.usedPercent
+      : typeof record.used_percent === 'number'
+        ? record.used_percent
+        : undefined;
+  const windowMins =
+    typeof record.windowDurationMins === 'number'
+      ? record.windowDurationMins
+      : typeof record.window_minutes === 'number'
+        ? record.window_minutes
+        : undefined;
+  if (usedPercent == null && windowMins == null) {
+    return undefined;
+  }
+  if (usedPercent != null && windowMins != null) {
+    return `${Math.round(usedPercent)}%/${windowMins}m`;
+  }
+  if (usedPercent != null) {
+    return `${Math.round(usedPercent)}%`;
+  }
+  return `${windowMins}m`;
+}
+
 const TRUNCATE_LINES = 40;
 
 function truncateLines(text: string): string {
@@ -216,9 +245,46 @@ export function formatStructuredMessage(message: StructuredMessage): string {
           message.reasoningTokens != null ? `reasoning=${message.reasoningTokens}` : undefined,
           message.totalTokens != null ? `total=${message.totalTokens}` : undefined,
         ].filter((part): part is string => part !== undefined);
-        return parts.length > 0
-          ? `${formatHeader(chalk.gray, 'Usage', message.timestamp)}\n${parts.join(' ')}`
-          : formatHeader(chalk.gray, 'Usage', message.timestamp);
+        const lines: string[] = [formatHeader(chalk.gray, 'Usage', message.timestamp)];
+        if (parts.length > 0) {
+          lines.push(parts.join(' '));
+        }
+
+        const rateLimitLines: string[] = [];
+        const rateLimits =
+          message.rateLimits && typeof message.rateLimits === 'object'
+            ? message.rateLimits
+            : undefined;
+        if (rateLimits) {
+          for (const [key, value] of Object.entries(rateLimits)) {
+            if (!value || typeof value !== 'object') {
+              continue;
+            }
+            const entry = value as Record<string, unknown>;
+            const primary = formatRateLimitWindow(entry.primary);
+            const secondary = formatRateLimitWindow(entry.secondary);
+            const label =
+              (typeof entry.limitName === 'string' && entry.limitName.length > 0
+                ? entry.limitName
+                : undefined) ??
+              (typeof entry.limitId === 'string' && entry.limitId.length > 0
+                ? entry.limitId
+                : undefined) ??
+              key;
+            const details = [
+              primary ? `primary ${primary}` : '',
+              secondary ? `secondary ${secondary}` : '',
+            ]
+              .filter(Boolean)
+              .join(', ');
+            rateLimitLines.push(details.length > 0 ? `${label}: ${details}` : label);
+          }
+        }
+        if (rateLimitLines.length > 0) {
+          lines.push(`rateLimits=${rateLimitLines.join(' | ')}`);
+        }
+
+        return lines.join('\n');
       }
       case 'input_required':
         // For now, intentionally silent without a prompt for local console output, since inquirer already prompts.

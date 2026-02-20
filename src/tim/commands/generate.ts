@@ -1,5 +1,5 @@
 // Command handler for 'tim generate'
-// Generates a plan using interactive Claude Code executor
+// Generates a plan using an interactive executor (Claude Code or Codex app-server)
 
 import chalk from 'chalk';
 import { commitAll } from '../../common/process.js';

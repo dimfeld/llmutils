@@ -337,7 +337,7 @@ enum PrefixSelectCommandNormalizer {
             return command
         }
 
-        let range = NSRange(command.startIndex ..< command.endIndex, in: command)
+        let range = NSRange(command.startIndex..<command.endIndex, in: command)
         guard let match = regex.firstMatch(in: command, options: [], range: range),
               match.numberOfRanges > 1,
               let commandRange = Range(match.range(at: 1), in: command)

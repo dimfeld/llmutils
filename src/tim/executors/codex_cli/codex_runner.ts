@@ -9,14 +9,26 @@ import { createCodexStdoutFormatter } from './format';
 import { createTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../../logging/tunnel_protocol.js';
+import { executeCodexStepViaAppServer } from './app_server_runner';
+import { isCodexAppServerEnabled } from './app_server_mode';
+
+export type CodexAppServerMode = 'single-turn' | 'chat-session' | 'single-turn-with-steering';
 
 export interface CodexStepOptions {
+  /** Optional model override passed through from executor/shared options. */
+  model?: string;
   /** Path to JSON schema file for structured output */
   outputSchemaPath?: string;
+  /** Inline JSON schema object for structured output. Only used in app-server mode (CODEX_USE_APP_SERVER). */
+  outputSchema?: Record<string, unknown>;
   /** Inactivity timeout in milliseconds. Defaults to 10 minutes (or CODEX_OUTPUT_TIMEOUT_MS env var). */
   inactivityTimeoutMs?: number;
   /** Reasoning effort level for the model. Defaults to 'high'. */
   reasoningLevel?: 'low' | 'medium' | 'high' | 'xhigh';
+  /** App-server interaction mode. Defaults to single-turn. */
+  appServerMode?: CodexAppServerMode;
+  /** Enable local terminal input forwarding for app-server interactive modes. */
+  terminalInput?: boolean;
 }
 
 /**
@@ -33,6 +45,10 @@ export async function executeCodexStep(
     typeof outputSchemaPathOrOptions === 'string'
       ? { outputSchemaPath: outputSchemaPathOrOptions }
       : (outputSchemaPathOrOptions ?? {});
+
+  if (isCodexAppServerEnabled()) {
+    return executeCodexStepViaAppServer(prompt, cwd, timConfig, options);
+  }
 
   const inactivityOverride = Number.parseInt(process.env.CODEX_OUTPUT_TIMEOUT_MS || '', 10);
   const inactivityTimeoutMs =
@@ -57,6 +73,10 @@ export async function executeCodexStep(
     `model_reasoning_effort=${reasoningLevel}`,
     ...sandboxSettings,
   ];
+
+  if (options.model) {
+    args.push('--model', options.model);
+  }
 
   if (
     !allowAllTools &&

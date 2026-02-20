@@ -973,33 +973,32 @@ tasks:
   });
 
   test('respects dry-run option', async () => {
-    const planContent = `
-id: 1
-title: Dry Run Test
-goal: Test dry run functionality
-tasks:
-  - title: Test task
-    description: Dry run test task
-`;
-    const planFile = join(testDir, 'dry-run.yml');
-    await writeFile(planFile, `---\n${planContent}---\n`);
-
     const mockExecutor = {
       execute: mock(async () => 'Should not be called'),
     };
 
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => planFile,
-      readPlanFile: async () => ({
-        id: 1,
-        title: 'Dry Run Test',
-        goal: 'Test dry run functionality',
-        tasks: [
-          {
-            title: 'Test task',
-            description: 'Dry run test task',
-          },
-        ],
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: async () => ({
+        resolvedPlanFile: join(testDir, 'dry-run.yml'),
+        planData: {
+          id: 1,
+          title: 'Dry Run Test',
+          goal: 'Test dry run functionality',
+          tasks: [
+            {
+              title: 'Test task',
+              description: 'Dry run test task',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['test.ts'],
+          baseBranch: 'main',
+          diffContent: 'test diff',
+        },
       }),
     }));
 
@@ -1012,27 +1011,10 @@ tasks:
       DEFAULT_EXECUTOR: 'codex-cli',
     }));
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-    }));
-
-    await moduleMocker.mock('./review.js', () => ({
-      handleReviewCommand,
-      generateDiffForReview: async () => ({
-        hasChanges: true,
-        changedFiles: ['test.ts'],
-        baseBranch: 'main',
-        diffContent: 'test diff',
+    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
+      getReviewerPrompt: () => ({
+        prompt: 'Generated prompt for dry run',
       }),
-      buildReviewPrompt: (
-        planData: any,
-        diffResult: any,
-        includeDiff: boolean = false,
-        useSubagents: boolean = false,
-        parentChain: any[] = [],
-        completedChildren: any[] = [],
-        customInstructions?: string
-      ) => 'Generated prompt for dry run',
     }));
 
     const mockCommand = {
@@ -1041,7 +1023,7 @@ tasks:
       },
     };
 
-    await handleReviewCommand(planFile, { dryRun: true }, mockCommand);
+    await handleReviewCommand('1', { dryRun: true }, mockCommand);
 
     // Executor should not be called in dry-run mode
     expect(mockExecutor.execute).not.toHaveBeenCalled();

@@ -195,6 +195,7 @@ final class SessionItem: Identifiable {
         }
         return self.command
     }
+
     var displayTimestamp: Date {
         self.lastMessageReceivedAt ?? self.connectedAt
     }

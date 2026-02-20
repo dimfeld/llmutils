@@ -1,6 +1,20 @@
 import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test';
 import { ModuleMocker } from '../../../testing.js';
 
+const originalCodexUseAppServer = process.env.CODEX_USE_APP_SERVER;
+
+beforeEach(() => {
+  process.env.CODEX_USE_APP_SERVER = 'false';
+});
+
+afterEach(() => {
+  if (originalCodexUseAppServer === undefined) {
+    delete process.env.CODEX_USE_APP_SERVER;
+  } else {
+    process.env.CODEX_USE_APP_SERVER = originalCodexUseAppServer;
+  }
+});
+
 describe('executeCodexStep retries', () => {
   let moduleMocker: ModuleMocker;
 

@@ -234,7 +234,7 @@ This plan implements user authentication using JWT tokens...
 
 ### generate - Create Plans
 
-Generate detailed implementation plans interactively using Claude Code. The generate command uses the same interactive prompt as `tim prompts generate-plan`, enabling collaborative refinement during planning.
+Generate detailed implementation plans interactively using Claude Code or Codex (app-server mode). The generate command uses the same interactive prompt as `tim prompts generate-plan`, enabling collaborative refinement during planning.
 
 **Basic usage:**
 
@@ -291,8 +291,8 @@ tim generate 123 --non-interactive
 
 1. Resolves plan from ID, path, `--next-ready`, or `--latest`
 2. Optionally sets up a workspace (lock, plan file copy)
-3. Runs the interactive planning prompt via Claude Code executor
-4. Claude researches the codebase, collaborates with you to refine the plan, and generates structured tasks
+3. Runs the interactive planning prompt via the selected executor
+4. The executor researches the codebase, collaborates with you to refine the plan, and generates structured tasks
 5. Optionally commits changes
 
 **Interactive planning:**
@@ -304,7 +304,9 @@ The generate command enables terminal input by default, allowing you to interact
 - Ask questions to refine the approach
 - Generate structured tasks based on the discussion
 
-`tim generate` keeps stdin open while terminal input is enabled, so you can keep chatting after Claude emits a `result` message and exit with `Ctrl+D`.
+`tim generate` keeps stdin open while terminal input is enabled, so you can keep chatting after the model emits a `result` message and exit with `Ctrl+D`.
+
+With `-x codex-cli`, generate uses a persistent Codex app-server thread by default, matching chat-style interaction until you close the session. Set `CODEX_USE_APP_SERVER=false` (or `0`) to force legacy `codex exec` behavior.
 
 Skip research with `--simple` when:
 
@@ -536,7 +538,7 @@ echo "Explain this codebase" | tim chat
 # Use a specific model
 tim chat -m claude-sonnet-4-5-20250929 "Help me debug this"
 
-# Use Codex (single-prompt only, no interactive input)
+# Use Codex
 tim chat -x codex "Summarize this repository"
 
 # Non-interactive mode (single prompt, then exit)
@@ -545,7 +547,7 @@ tim chat --non-interactive "What does this function do?"
 
 The session stays open after each response, allowing multi-turn conversation. Press Ctrl+D or Ctrl+C to end. Works with Tim-GUI via the headless adapter for remote sessions.
 
-Codex CLI does not currently support interactive input, so it can only be used with an explicit prompt.
+By default, Codex uses app-server mode, so interactive input is supported via the JSON-RPC protocol. Set `CODEX_USE_APP_SERVER=false` (or `0`) to disable app-server mode and fall back to `codex exec` (single-prompt behavior).
 
 ---
 
@@ -568,6 +570,8 @@ tim subagent tdd-tests 123 --input "Write failing tests for task 1 and validate 
 ```
 
 Available subagent types: `implementer`, `tester`, `tdd-tests`, `verifier`. The `-x` flag accepts `codex-cli` or `claude-code` (default: `claude-code`).
+
+With default Codex app-server mode, subagents run a single turn and exit after completion, but you can still steer that active turn with follow-up input.
 
 ---
 
@@ -1625,6 +1629,7 @@ Executors handle LLM interaction and code application:
 - **`codex-cli`**: OpenAI Codex CLI
   - Implement/test/review loop
   - Auto-retry for planning-only responses
+  - Supports app-server mode (enabled by default) for persistent JSON-RPC connection with mid-turn input and interactive approval flows
 
 - **`direct-call`**: Direct API calls
   - Calls any LLM via API
@@ -1635,6 +1640,8 @@ Executors handle LLM interaction and code application:
   - Copies prompt to clipboard
   - Waits for you to paste LLM response
   - Good for web UIs
+
+Codex app-server mode is enabled by default. To disable it and force legacy `codex exec`, set `CODEX_USE_APP_SERVER=false` (or `0`). App-server mode enables richer interaction, including sending input while a run is active.
 
 **Configure executor:**
 
@@ -2135,7 +2142,7 @@ tim run-prompt [PROMPT] [-x claude|claude-code|codex|codex-cli] [--model MODEL] 
 tim run-prompt [PROMPT] [--json-schema JSON_OR_@FILE] [--prompt-file FILE] [-q]
 
 # Interactive chat session
-tim chat [PROMPT] [-x claude-code|codex-cli] [-m MODEL] [--prompt-file FILE]
+tim chat [PROMPT] [-x claude|claude-code|codex|codex-cli] [-m MODEL] [--prompt-file FILE]
 tim chat [PROMPT] [--non-interactive] [--no-terminal-input]
 
 # Run subagents (used by orchestrator, can also be run standalone)

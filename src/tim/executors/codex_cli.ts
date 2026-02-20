@@ -68,7 +68,14 @@ export class CodexCliExecutor implements Executor {
         planInfo,
         this.sharedOptions.baseDir,
         this.sharedOptions.model,
-        this.timConfig
+        this.timConfig,
+        {
+          appServerMode:
+            planInfo.planId === 'chat' || planInfo.executionMode === 'planning'
+              ? 'chat-session'
+              : 'single-turn',
+          terminalInput: this.sharedOptions.terminalInput,
+        }
       );
     }
 

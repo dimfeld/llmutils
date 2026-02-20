@@ -73,6 +73,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
 
   // Track what gets passed to executors
   let capturedCodexPrompt: string | undefined;
+  let capturedCodexOptions: Record<string, unknown> | undefined;
   let capturedClaudeSpawnArgs: string[] | undefined;
 
   // Spy on Bun.write to capture final output (source uses Bun.write(Bun.stdout, ...))
@@ -107,6 +108,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
   beforeEach(async () => {
     clearPlanCache();
     capturedCodexPrompt = undefined;
+    capturedCodexOptions = undefined;
     capturedClaudeSpawnArgs = undefined;
     stdoutWriteCalls = [];
     agentInstructionRequests = [];
@@ -181,8 +183,9 @@ describe('subagent command - prompt construction and executor delegation', () =>
 
     // Mock codex runner - capture the prompt
     await moduleMocker.mock('../executors/codex_cli/codex_runner.js', () => ({
-      executeCodexStep: mock(async (prompt: string) => {
+      executeCodexStep: mock(async (prompt: string, _cwd: string, _config: any, options?: any) => {
         capturedCodexPrompt = prompt;
+        capturedCodexOptions = options;
         return 'Codex execution complete.';
       }),
     }));
@@ -603,6 +606,18 @@ describe('subagent command - prompt construction and executor delegation', () =>
 
     expect(capturedCodexPrompt).toBeDefined();
     expect(capturedClaudeSpawnArgs).toBeUndefined();
+  });
+
+  test('enables single-turn steering for codex subagent execution', async () => {
+    const { handleSubagentCommand } = await import('./subagent.js');
+
+    await handleSubagentCommand('implementer', planFilePath, { executor: 'codex-cli' }, {});
+
+    expect(capturedCodexOptions).toEqual(
+      expect.objectContaining({
+        appServerMode: 'single-turn-with-steering',
+      })
+    );
   });
 
   test('delegates to claude when executor is claude-code', async () => {

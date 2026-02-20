@@ -19,6 +19,7 @@ describe('handleChatCommand', () => {
   const runWithHeadlessAdapterIfEnabledSpy = mock(async (options: any) => options.callback());
 
   const originalStdinIsTTY = process.stdin.isTTY;
+  const originalCodexUseAppServer = process.env.CODEX_USE_APP_SERVER;
 
   beforeEach(async () => {
     moduleMocker.clear();
@@ -34,6 +35,7 @@ describe('handleChatCommand', () => {
       terminalInput: true,
     }));
     isTunnelActiveSpy.mockImplementation(() => false);
+    delete process.env.CODEX_USE_APP_SERVER;
 
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
 
@@ -61,6 +63,11 @@ describe('handleChatCommand', () => {
       value: originalStdinIsTTY,
       configurable: true,
     });
+    if (originalCodexUseAppServer == null) {
+      delete process.env.CODEX_USE_APP_SERVER;
+    } else {
+      process.env.CODEX_USE_APP_SERVER = originalCodexUseAppServer;
+    }
   });
 
   test('defaults to claude-code executor and enables terminal input', async () => {
@@ -74,6 +81,18 @@ describe('handleChatCommand', () => {
       terminalInput: true,
       closeTerminalInputOnResult: false,
       noninteractive: undefined,
+    });
+  });
+
+  test('passes --model through to shared executor options for claude', async () => {
+    const { handleChatCommand } = await import('./chat.js');
+
+    await handleChatCommand('Help me debug this', { model: 'sonnet' }, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    expect(buildExecutorAndLogSpy.mock.calls[0][0]).toBe('claude-code');
+    expect(buildExecutorAndLogSpy.mock.calls[0][1]).toMatchObject({
+      model: 'sonnet',
     });
   });
 
@@ -162,25 +181,71 @@ describe('handleChatCommand', () => {
     expect(mockExecutorExecute.mock.calls[0][0]).toBeUndefined();
   });
 
-  test('rejects codex-cli when terminal input is enabled', async () => {
+  test('rejects codex-cli without an explicit prompt when app-server mode is disabled', async () => {
+    process.env.CODEX_USE_APP_SERVER = 'false';
     const { handleChatCommand } = await import('./chat.js');
 
     await expect(handleChatCommand(undefined, { executor: 'codex-cli' }, {})).rejects.toThrow(
-      'codex-cli does not support interactive input. Provide a prompt via argument, --prompt-file, or stdin.'
+      'codex-cli requires an explicit prompt. Provide a prompt via argument, --prompt-file, or stdin.'
     );
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(0);
     expect(mockExecutorExecute).toHaveBeenCalledTimes(0);
   });
 
-  test('rejects codex-cli when tunnel is active without an initial prompt', async () => {
+  test('allows codex-cli without an explicit prompt when app-server mode is enabled', async () => {
+    const { handleChatCommand } = await import('./chat.js');
+
+    await expect(
+      handleChatCommand(undefined, { executor: 'codex-cli' }, {})
+    ).resolves.toBeUndefined();
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    expect(buildExecutorAndLogSpy.mock.calls[0][1]).toMatchObject({
+      terminalInput: true,
+      noninteractive: undefined,
+    });
+    expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
+    expect(mockExecutorExecute.mock.calls[0][0]).toBe('');
+  });
+
+  test('accepts codex alias and keeps terminal input forwarding in default mode', async () => {
+    const { handleChatCommand } = await import('./chat.js');
+
+    await handleChatCommand('Summarize this repository', { executor: 'codex' }, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    expect(buildExecutorAndLogSpy.mock.calls[0][0]).toBe('codex-cli');
+    expect(buildExecutorAndLogSpy.mock.calls[0][1]).toMatchObject({
+      terminalInput: true,
+      noninteractive: undefined,
+      closeTerminalInputOnResult: false,
+    });
+    expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
+    expect(mockExecutorExecute.mock.calls[0][0]).toBe('Summarize this repository');
+  });
+
+  test('passes --model through to shared executor options for codex', async () => {
+    const { handleChatCommand } = await import('./chat.js');
+
+    await handleChatCommand('Summarize this repository', { executor: 'codex', model: 'gpt-5' }, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    expect(buildExecutorAndLogSpy.mock.calls[0][0]).toBe('codex-cli');
+    expect(buildExecutorAndLogSpy.mock.calls[0][1]).toMatchObject({
+      model: 'gpt-5',
+    });
+  });
+
+  test('rejects codex-cli when tunnel is active without an initial prompt and app-server is disabled', async () => {
+    process.env.CODEX_USE_APP_SERVER = 'false';
     const { handleChatCommand } = await import('./chat.js');
     isTunnelActiveSpy.mockImplementation(() => true);
 
     await expect(
       handleChatCommand(undefined, { executor: 'codex-cli', nonInteractive: true }, {})
     ).rejects.toThrow(
-      'codex-cli does not support interactive input. Provide a prompt via argument, --prompt-file, or stdin.'
+      'codex-cli requires an explicit prompt. Provide a prompt via argument, --prompt-file, or stdin.'
     );
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(0);

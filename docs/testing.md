@@ -12,6 +12,17 @@
 - **Mocks must reproduce real event behavior**: When mocking objects like readline interfaces, ensure methods emit the same events as the real implementation. For example, readline's `close()` fires the `close` event synchronously — if the mock omits this, tests pass while hiding real bugs where close handlers interact with other state (like saved partial input).
 - **Validate boundary inputs even for internal protocols**: Always test empty, missing, or malformed inputs at protocol boundaries — even between trusted internal components. For example, an empty array being silently treated as success can mask real bugs. Deny or error on invalid inputs rather than letting them fall through to a default "approved" path.
 - **Return type changes cascade to all test mocks**: When making a function's return type non-void (e.g., `acquireLock` returning lock info instead of void), every test mock for that function must be updated to return valid objects matching the new type. The change cascades to all callers across the test suite.
+- **Environment variable cleanup**: In Node/Bun, `process.env.X = undefined` sets the value to the string `"undefined"`, not to `undefined`. Use `delete process.env.X` when restoring an env var that was originally unset. The standard pattern for save/restore is:
+  ```typescript
+  const original = process.env.MY_VAR;
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env.MY_VAR;
+    } else {
+      process.env.MY_VAR = original;
+    }
+  });
+  ```
 
 Bun's module mocking does not work properly. If you need to mock a module, use the ModuleMocker class from src/testing.ts instead. For example:
 

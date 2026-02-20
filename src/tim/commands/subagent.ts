@@ -243,7 +243,9 @@ async function executeWithCodex(
   cwd: string,
   timConfig: TimConfig
 ): Promise<string> {
-  return executeCodexStep(prompt, cwd, timConfig);
+  return executeCodexStep(prompt, cwd, timConfig, {
+    appServerMode: 'single-turn-with-steering',
+  });
 }
 
 /**

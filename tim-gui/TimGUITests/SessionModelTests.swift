@@ -1849,13 +1849,15 @@ struct PrefixSelectCommandNormalizationTests {
 
     @Test("extractCommandAfterCd handles spacing and quoted paths")
     func extractCommandAfterCdHandlesSpacingAndQuotes() {
-        #expect(PrefixSelectCommandNormalizer.extractCommandAfterCd(#"cd "/path with spaces" && npm test"#) == "npm test")
+        #expect(PrefixSelectCommandNormalizer
+            .extractCommandAfterCd(#"cd "/path with spaces" && npm test"#) == "npm test")
         #expect(PrefixSelectCommandNormalizer.extractCommandAfterCd("cd /path  &&  npm test   ") == "npm test")
     }
 
     @Test("extractCommandAfterCd leaves non-matching commands unchanged")
     func extractCommandAfterCdLeavesOtherCommandsUnchanged() {
         #expect(PrefixSelectCommandNormalizer.extractCommandAfterCd("npm test") == "npm test")
-        #expect(PrefixSelectCommandNormalizer.extractCommandAfterCd("echo cd /path && npm test") == "echo cd /path && npm test")
+        #expect(PrefixSelectCommandNormalizer
+            .extractCommandAfterCd("echo cd /path && npm test") == "echo cd /path && npm test")
     }
 }

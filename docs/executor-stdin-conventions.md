@@ -1,6 +1,6 @@
-# Claude Code Executor & Execution Conventions
+# Executor & Execution Conventions
 
-Conventions and gotchas for the Claude Code executor's stdin management, terminal input, tunnel forwarding, and pre-execution setup.
+Conventions and gotchas for executor stdin management, subprocess stream processing, terminal input, tunnel forwarding, and pre-execution setup.
 
 ## Stdin Lifecycle with `--input-format stream-json`
 
@@ -77,6 +77,18 @@ The `prompt` parameter in `executeWithTerminalInput()` is optional. When no prom
 ## `logSpawn()` and Exit Codes
 
 The `logSpawn()` function returns a Bun `Subprocess` where `exitCode` may be `null` before the process finishes. Always `await subprocess.exited` before checking `exitCode`.
+
+## Subprocess Stream Processing
+
+These patterns apply to any executor that manages a subprocess with piped stdio (e.g., app-server connections, `codex exec`, Claude Code stream-json).
+
+- **Guard write paths during shutdown**: When a class manages both readable streams and writable sinks, closing the writable side while still consuming the readable side can cause writes-to-closed-sink errors. Use a `closing` flag checked before every write to the sink, and set it before initiating close.
+- **Flush line splitters unconditionally at stream end**: `createLineSplitter()` has its own internal buffer separate from any decoder. Always call its flush/end method when the stream ends, not just when the decoder has remaining content.
+- **Wrap external callbacks in try-catch within stream loops**: An unhandled throw from a notification callback (or any user-provided callback) inside a stream consumption loop kills the loop permanently, causing downstream promises (e.g., stream completion) to never resolve. Always wrap callback invocations in try-catch and log/handle errors without re-throwing.
+
+## Inactivity Timers
+
+- **Re-arm timers after long async operations**: If an inactivity timer fires while a long async operation (like `turnStart()`) is in progress, the timer expiry races with the operation. After the operation completes, re-arm the timer to ensure coverage during the subsequent wait phase. Otherwise, the timer may have already fired and won't trigger again if the _next_ phase stalls.
 
 ## Workspace Locking Conventions
 
