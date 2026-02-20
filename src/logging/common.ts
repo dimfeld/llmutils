@@ -1,11 +1,12 @@
-import type { FileSink } from 'bun';
+import { createWriteStream, type WriteStream } from 'node:fs';
+import { finished } from 'node:stream/promises';
 import stripAnsi from 'strip-ansi';
 
 /**
  * File sink for writing log output to a file.
  * Undefined if no log file is currently open.
  */
-export let logFile: FileSink | undefined;
+export let logFile: WriteStream | undefined;
 
 /**
  * Opens a log file for writing.
@@ -16,7 +17,7 @@ export function openLogFile(logPath: string): void {
   if (logFile) {
     throw new Error('Log file already open');
   }
-  logFile = Bun.file(logPath).writer();
+  logFile = createWriteStream(logPath, { flags: 'a' });
 }
 
 /**
@@ -24,7 +25,13 @@ export function openLogFile(logPath: string): void {
  * Waits for all pending writes to complete.
  */
 export async function closeLogFile(): Promise<void> {
-  await logFile?.end();
+  if (!logFile) {
+    return;
+  }
+
+  const stream = logFile;
+  stream.end();
+  await finished(stream);
   logFile = undefined;
 }
 
