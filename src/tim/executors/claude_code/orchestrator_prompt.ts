@@ -266,7 +266,7 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 - The subagents have access to the same task instructions below that you do, so you don't need to repeat them. You should reference which specific task titles are being worked on so the subagents can focus on the right tasks.
 - When invoking subagents, provide clear, specific instructions in \`--input\` (or \`--input-file\`) about what needs to be done in addition to referencing the task titles.
 - Include relevant context from previous subagent responses when invoking the next subagent.
-- If input is large (roughly over 50KB), write it to a temporary file and pass \`--input-file <path>\` instead of \`--input\`.
+- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp\` or a \`mktemp\` path) and pass \`--input-file <path>\` instead of \`--input\`.
 - If using --input-file, include the plan ID or other random string in the file name to avoid conflicts with other agents and preexisting files.
 - You can also pipe input to stdin and use \`--input-file -\`.`;
 
@@ -426,7 +426,7 @@ ${options.batchMode ? '5' : '4'}. **Iteration**
 - Do NOT implement, verify, or edit files yourself--delegate all work to the subagents via \`tim subagent\`.
 - When invoking subagents, give clear instructions in \`--input\` (or \`--input-file\`) referencing the specific task titles.
 - Provide prior subagent outputs to the next subagent so they have full context.
-- If input is large (roughly over 50KB), write it to a temporary file and pass \`--input-file <path>\` instead of \`--input\`.
+- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp\` or a \`mktemp\` path) and pass \`--input-file <path>\` instead of \`--input\`.
 - You can also pipe input to stdin and use \`--input-file -\`.
 - Keep the scope focused; if verification fails, loop back to implementation before moving forward.${
     options.batchMode
@@ -620,7 +620,7 @@ ${reviewCommandGuidance}
 - We are using Test-Driven Development. The \`tdd-tests\` subagent must run before implementation.
 - Always pass the TDD tests output into the implementer invocation.
 - Do not skip the TDD test phase, even if implementation seems straightforward.
-- If input is large (roughly over 50KB), write it to a temporary file and pass \`--input-file <path>\` instead of \`--input\`.
+- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp\` or a \`mktemp\` path) and pass \`--input-file <path>\` instead of \`--input\`.
 - You can also pipe input to stdin and use \`--input-file -\`.
 - When subagents can see all pending tasks, explicitly state which task titles are in scope for this run.${
     options.batchMode

@@ -154,6 +154,7 @@ describe('orchestrator_prompt subagent commands', () => {
     it('includes large input guidance for input-file usage', () => {
       const out = wrapWithOrchestration('Context', '42', { batchMode: false });
       expect(out).toContain('roughly over 50KB');
+      expect(out).toContain('temp directory');
       expect(out).toContain('--input-file <path>');
       expect(out).toContain('--input-file -');
     });
