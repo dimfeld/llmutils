@@ -306,7 +306,7 @@ export async function handleReviewCommand(
     }
   };
 
-  const isInteractiveEnv = !isPrintMode && process.env.TIM_INTERACTIVE !== '0';
+  const isInteractiveEnv = !isTunnelActive() && !isPrintMode && process.env.TIM_INTERACTIVE !== '0';
   const globalOpts = command.parent.opts();
   let config = getDefaultConfig();
   let completionMessage = '';
@@ -722,20 +722,24 @@ export async function handleReviewCommand(
           actionItems: reviewResult.actionItems,
         });
 
-        // Display formatted output to console
-        if (isPrintMode) {
-          const outputWithNewline = formattedOutput.endsWith('\n')
-            ? formattedOutput
-            : `${formattedOutput}\n`;
-          if (tunnelActive) {
-            // When tunnel is active, write to BOTH:
-            // 1. process.stdout directly so the executor can capture it from the child's stdout
-            // 2. log() which goes through the tunnel adapter to the parent for display
-            process.stdout.write(outputWithNewline);
+        const shouldWriteOutputToFile = Boolean(options.outputFile);
+
+        // Display formatted output to console unless an explicit output file is requested.
+        if (!shouldWriteOutputToFile) {
+          if (isPrintMode) {
+            const outputWithNewline = formattedOutput.endsWith('\n')
+              ? formattedOutput
+              : `${formattedOutput}\n`;
+            if (tunnelActive) {
+              // When tunnel is active, write to BOTH:
+              // 1. process.stdout directly so the executor can capture it from the child's stdout
+              // 2. log() which goes through the tunnel adapter to the parent for display
+              process.stdout.write(outputWithNewline);
+            }
+            log(outputWithNewline);
+          } else {
+            log('\n' + formattedOutput);
           }
-          log(outputWithNewline);
-        } else if (!options.outputFile || outputFormat === 'terminal') {
-          log('\n' + formattedOutput);
         }
 
         // Check if autofix should be performed - with robust issue detection
