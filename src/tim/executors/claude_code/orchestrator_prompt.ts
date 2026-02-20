@@ -298,7 +298,7 @@ ${markTasksDoneGuidance(planId)}
 }
 
 function buildReviewCommand(planId: string, options: OrchestrationOptions): string {
-  const baseCommand = `tim review ${planId} --print --output-file <unique-temp-file>`;
+  const baseCommand = `tim review ${planId} --print`;
   if (options.reviewExecutor) {
     return `${baseCommand} --executor ${options.reviewExecutor}`;
   }
@@ -558,7 +558,7 @@ Each subagent command may take a long time to complete. Always use a timeout of 
    - Instruct tester to run tests and fix failures, then report remaining gaps
 
 ${options.batchMode ? '5' : '4'}. **Review Phase**
-   - Run \`${reviewCommand}\` using the Bash tool. Use a unique filename in the temp directory for the output.
+   - Run \`${reviewCommand}\` using the Bash tool.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
 ${reviewExecutorGuidance}
    - The review command may take up to 15 minutes; use a long timeout.`;
