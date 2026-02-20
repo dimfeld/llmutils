@@ -144,10 +144,7 @@ export async function handleSubagentCommand(
   }
 
   // Print final message to stdout for orchestrator to capture
-  if (!finalMessage.endsWith('\n')) {
-    finalMessage += '\n';
-  }
-  await Bun.write(Bun.stdout, finalMessage);
+  console.log(finalMessage);
 }
 
 async function resolveOrchestratorInput(options: SubagentOptions): Promise<string | undefined> {

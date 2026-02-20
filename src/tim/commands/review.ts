@@ -723,13 +723,10 @@ export async function handleReviewCommand(
         });
 
         if (tunnelActive) {
-          const outputWithNewline = formattedOutput.endsWith('\n')
-            ? formattedOutput
-            : `${formattedOutput}\n`;
           // When tunnel is active, write to BOTH:
-          // 1. process.stdout directly so the executor can capture it from the child's stdout
+          // 1. console.log directly so the executor can capture it from the child's stdout
           // 2. log() which goes through the tunnel adapter to the parent for display
-          await Bun.write(Bun.stdout, outputWithNewline);
+          console.log(formattedOutput);
         }
         log(formattedOutput);
 
