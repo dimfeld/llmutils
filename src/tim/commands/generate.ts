@@ -18,6 +18,7 @@ import { buildPromptText, findMostRecentlyUpdatedPlan } from './prompts.js';
 import type { GenerateModeRegistrationContext } from '../mcp/generate_mode.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
+import { syncPlanToDb } from '../db/plan_sync.js';
 
 export async function handleGenerateCommand(
   planArg: string | undefined,
@@ -264,6 +265,12 @@ export async function handleGenerateCommand(
         await commitAll(commitMessage, currentBaseDir);
         log(chalk.green('✓ Committed changes'));
       }
+
+      await syncPlanToDb(updatedPlan, currentPlanFile, {
+        force: true,
+        config,
+        baseDir: currentBaseDir,
+      });
     },
   });
 }

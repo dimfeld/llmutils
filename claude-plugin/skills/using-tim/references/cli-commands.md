@@ -363,6 +363,16 @@ Extract plan from text.
 tim extract --input description.txt --output tasks/plan.yml
 ```
 
+### tim sync
+
+Sync all plan files to the SQLite database. Useful for initial population or reconciling after manual file edits.
+
+```bash
+tim sync                               # Sync all plans to DB
+tim sync --prune                       # Also remove DB entries for deleted plans
+tim sync --dir tasks/                  # Sync from specific directory
+```
+
 ### tim init
 
 Initialize tim in a repository.

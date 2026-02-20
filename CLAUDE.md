@@ -62,7 +62,8 @@ The codebase is organized into several main modules with improved modularity and
 - Database layer: `db/` directory with SQLite-backed storage for assignments, workspaces, permissions, and project metadata
   - `database.ts`: Singleton connection with WAL mode, foreign keys, and auto-migration
   - `migrations.ts`: Schema versioning with `schema_version` table
-  - CRUD modules: `project.ts`, `assignment.ts`, `permission.ts`, `workspace.ts`, `workspace_lock.ts`
+  - CRUD modules: `project.ts`, `assignment.ts`, `permission.ts`, `workspace.ts`, `workspace_lock.ts`, `plan.ts`
+  - Plan sync: `plan_sync.ts` bridges plan files and DB CRUD with lazy-cached project context; `syncPlanToDb()` is called after every `writePlanFile()`, `syncAllPlansToDb()` handles bulk sync with optional prune
   - `sql_utils.ts`: Shared SQL helpers (e.g. `SQL_NOW_ISO_UTC` for ISO-8601 UTC timestamps)
   - `json_import.ts`: One-time import from legacy JSON files on first DB creation
   - All DB functions are **synchronous** (matching bun:sqlite's native API)
@@ -158,7 +159,10 @@ See docs/testing.md for testing strategy
 - **Avoid control flow that depends on a no-op guard**: If correctness depends on a condition like `x === y` being true (making a branch a no-op), restructure with explicit branches instead. No-op guards are fragile and confuse future readers
 - **Keep defaults identical across shared entry points**: When two or more entry points share semantics (e.g., reuse behavior), keep default parameter values identical in both paths. Otherwise users see behavior drift depending on which command they used
 - **Pass computed defaults downstream, not raw optionals**: If a function computes an effective default (e.g., `shouldCreateBranch = options.createBranch ?? true`), pass the computed value to callees rather than the raw optional input — otherwise defaults can silently diverge between layers
+- **Do not cache path-scoped data under only repo identity**: If a cached context includes directory-specific values (e.g., `tasksDir`), either key by that directory too or pass explicit per-call overrides to avoid stale/wrong lookups after earlier calls prime the cache
 - **Update docs when reordering operations**: After reordering runtime operations (e.g., swapping lock-then-prepare vs prepare-then-lock), update workflow documentation in the same pass to keep docs in sync with behavior
+- **Treat prune as destructive and parse-dependent**: If prune logic depends on parsed plan UUIDs, skip prune when any plan file fails to parse/read to avoid deleting rows for plans that still exist on disk
+- **Reuse upstream error data rather than re-deriving it**: When a function already returns error tracking (e.g., an `erroredFiles` array from a scan), use that data downstream instead of performing a redundant rescan — avoids double-counting errors and unnecessary I/O
 
 ## Personal Workflow Notes
 

@@ -2,8 +2,8 @@ import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import chalk from 'chalk';
 import { log, warn } from '../../logging.js';
-import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
 import { loadEffectiveConfig } from '../configLoader.js';
+import { removePlanFromDb } from '../db/plan_sync.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
 import { readAllPlans, readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
 
@@ -135,8 +135,16 @@ export async function handleRemoveCommand(
   }
 
   for (const target of resolvedTargets) {
-    await removePlanAssignment(target.plan, path.dirname(target.file));
     await fs.unlink(target.file);
+    try {
+      await removePlanFromDb(target.plan.uuid, { baseDir: path.dirname(target.file) });
+    } catch (error) {
+      warn(
+        `Failed to remove plan ${target.plan.id ?? target.plan.uuid ?? target.file} from SQLite: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
     log(chalk.green('Removed'), `${target.file}`);
   }
 }

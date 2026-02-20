@@ -511,6 +511,19 @@ program
     await handleCleanupTempCommand(options, command).catch(handleCommandError);
   });
 
+program
+  .command('sync')
+  .description('Sync all plan files to the SQLite database')
+  .option('--plan <planId>', 'Sync only the specified plan ID or file path')
+  .option('--force', 'Force sync even when plan file updatedAt is older than SQLite updated_at')
+  .option('--verbose', 'Show additional sync warnings and details')
+  .option('--prune', 'Remove DB entries for plans that no longer exist on disk')
+  .option('--dir <directory>', 'Directory to sync (defaults to configured task directory)')
+  .action(async (options, command) => {
+    const { handleSyncCommand } = await import('./commands/sync.js');
+    await handleSyncCommand(options, command).catch(handleCommandError);
+  });
+
 const executorNames = executors
   .values()
   .map((e) => e.name)

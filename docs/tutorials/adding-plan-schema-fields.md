@@ -10,7 +10,8 @@ When adding a new field to the plan schema, you'll typically need to update:
 2. Plan generation/processing logic
 3. Display commands (show, list)
 4. Modification commands (set)
-5. Any filtering or query functionality
+5. SQLite plan tables (if the field should be queryable across workspaces)
+6. Any filtering or query functionality
 
 ## Step 1: Update the Plan Schema
 
@@ -149,7 +150,35 @@ In `src/tim/tim.ts`, add the options to the set command:
 .option('--no-assign', 'Remove the plan assignment')
 ```
 
-## Step 5: Test Your Changes
+## Step 5: Update the SQLite Plan Tables (if applicable)
+
+If the new field should be queryable across workspaces, add it to the SQLite `plan` table:
+
+### Add a Database Migration
+
+Add a new migration version in `src/tim/db/migrations.ts`:
+
+```typescript
+{
+  version: N, // next version number
+  up: `ALTER TABLE plan ADD COLUMN assigned_to TEXT;`
+}
+```
+
+### Update the CRUD Module
+
+Update `src/tim/db/plan.ts`:
+
+1. Add the field to `PlanRow` and `UpsertPlanInput` interfaces
+2. Update the `upsertPlan` function's INSERT and ON CONFLICT clauses to include the new column
+
+### Update the Sync Module
+
+Update `src/tim/db/plan_sync.ts` to map the plan schema field to the DB input field in `syncPlanToDb()`.
+
+Not all plan schema fields need to be in SQLite — the `details` field, for example, is intentionally excluded to keep the DB lightweight. Only add fields that benefit from centralized querying.
+
+## Step 6: Test Your Changes
 
 After making all the changes:
 
@@ -202,7 +231,8 @@ Adding a new field to the plan schema involves:
 2. Ensuring the field is preserved during plan processing
 3. Adding display logic where appropriate
 4. Implementing modification commands
-5. Adding any filtering or query functionality
-6. Testing all changes
+5. Updating the SQLite plan tables (if the field should be queryable)
+6. Adding any filtering or query functionality
+7. Testing all changes
 
 By following this pattern, you can extend the plan schema while maintaining consistency with the existing codebase.

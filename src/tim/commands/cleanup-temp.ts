@@ -3,8 +3,9 @@
 
 import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
-import { log } from '../../logging.js';
+import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
+import { removePlanFromDb } from '../db/plan_sync.js';
 import { readAllPlans } from '../plans.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
 
@@ -34,6 +35,15 @@ export async function handleCleanupTempCommand(options: any, command: any) {
   for (const plan of tempPlans) {
     try {
       await fs.unlink(plan.filename);
+      try {
+        await removePlanFromDb(plan.uuid, { baseDir: tasksDir });
+      } catch (error) {
+        warn(
+          `Failed to remove plan ${plan.id ?? plan.uuid ?? plan.filename} from SQLite: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
       log(chalk.green('  ✓'), `Deleted: ${plan.filename} (ID: ${plan.id}, Title: "${plan.title}")`);
     } catch (err) {
       log(

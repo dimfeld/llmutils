@@ -1409,7 +1409,7 @@ tim generate 123 --workspace task-123
 
 **Workspace tracking:**
 
-Workspaces, assignments, and permissions are tracked in tim's SQLite database at `~/.config/tim/tim.db`.
+Workspaces, assignments, permissions, and plan metadata are tracked in tim's SQLite database at `~/.config/tim/tim.db`. Plan data is automatically synced on every write, enabling centralized querying across workspaces.
 
 **Lock management:**
 
@@ -2256,6 +2256,38 @@ tim prompts plan-questions 123
 tim prompts load-plan 123
 tim prompts compact-plan 123
 ```
+
+### Database Maintenance
+
+Plan metadata (including `details`), tasks, and dependencies are automatically synced to the SQLite database (`~/.config/tim/tim.db`) whenever a plan file is written. This enables centralized querying of plan data across workspaces without reading individual files from disk.
+
+The `tim sync` command performs a bulk sync of all plan files, useful for initial setup or after external changes to plan files:
+
+```bash
+# Sync all plan files to SQLite database
+tim sync
+
+# Sync only one plan by ID (or file path)
+tim sync --plan 123
+
+# Force sync even when plan file updatedAt is older than DB updated_at
+tim sync --force
+
+# Show parse/read warnings during sync
+tim sync --verbose
+
+# Also remove DB entries for plans no longer on disk
+tim sync --prune
+
+# Sync from a specific directory
+tim sync --dir /path/to/tasks
+```
+
+**Prune safety:** If any plan files fail to parse during sync, `--prune` is automatically skipped to avoid accidentally deleting DB entries for plans that still exist on disk but couldn't be read.
+`--plan` and `--prune` are mutually exclusive. By default, sync skips updating a DB row when the plan file's `updatedAt` is older than the row's `updated_at`; use `--force` to override this.
+When using `--plan`, referenced plans listed in that plan's `references` map are also synced if they are missing from the database.
+
+Plan deletions via `tim remove` and `tim cleanup-temp` also remove the corresponding database entries.
 
 ### Utilities
 

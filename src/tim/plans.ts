@@ -7,6 +7,7 @@ import { debugLog, warn } from '../logging.js';
 import { getGitRoot, getTrunkBranch, getUsingJj } from '../common/git.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { resolveTasksDir } from './configSchema.js';
+import { syncPlanToDb } from './db/plan_sync.js';
 import { resolvePlanPathContext } from './path_resolver.js';
 import {
   normalizeContainerToEpic,
@@ -54,6 +55,7 @@ let cachedPlans = new Map<
     duplicates: Record<number, string[]>;
     uuidToId: Map<string, number>;
     idToUuid: Map<number, string>;
+    erroredFiles: string[];
   }
 >();
 
@@ -73,6 +75,7 @@ export async function readAllPlans(
   duplicates: Record<number, string[]>;
   uuidToId: Map<string, number>;
   idToUuid: Map<number, string>;
+  erroredFiles: string[];
 }> {
   let existing = readCache ? cachedPlans.get(directory) : undefined;
   if (existing) {
@@ -85,6 +88,7 @@ export async function readAllPlans(
   const seenIds = new Map<number, string[]>();
   const uuidToId = new Map<string, number>();
   const idToUuid = new Map<number, string>();
+  const erroredFiles: string[] = [];
 
   debugLog(`Starting to scan directory for plan files: ${directory}`);
 
@@ -138,6 +142,7 @@ export async function readAllPlans(
         debugLog(`Skipping file without frontmatter: ${fullPath}`);
         return;
       }
+      erroredFiles.push(fullPath);
       if ((error as Error).name !== 'PlanFileError') {
         // Log detailed error information
         console.error(`Failed to read plan from ${fullPath}:`, error);
@@ -163,7 +168,7 @@ export async function readAllPlans(
     }
   }
 
-  const retVal = { plans, maxNumericId, duplicates, uuidToId, idToUuid };
+  const retVal = { plans, maxNumericId, duplicates, uuidToId, idToUuid, erroredFiles };
   cachedPlans.set(directory, retVal);
   return retVal;
 }
@@ -731,6 +736,11 @@ export async function writePlanFile(
   }
 
   await Bun.write(absolutePath, fullContent);
+
+  await syncPlanToDb(result.data, absolutePath, {
+    baseDir: path.dirname(absolutePath),
+    force: true,
+  });
 }
 
 /**

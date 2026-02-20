@@ -79,6 +79,53 @@ const migrations: Migration[] = [
       CREATE INDEX idx_assignment_workspace_id ON assignment(workspace_id);
     `,
   },
+  {
+    version: 2,
+    up: `
+      CREATE TABLE plan (
+        uuid TEXT NOT NULL PRIMARY KEY,
+        project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+        plan_id INTEGER NOT NULL,
+        title TEXT,
+        goal TEXT,
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK(status IN ('pending', 'in_progress', 'done', 'cancelled', 'deferred')),
+        priority TEXT
+          CHECK(priority IN ('low', 'medium', 'high', 'urgent', 'maybe') OR priority IS NULL),
+        parent_uuid TEXT,
+        epic INTEGER NOT NULL DEFAULT 0,
+        filename TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+      );
+      CREATE INDEX idx_plan_project_id ON plan(project_id);
+      CREATE INDEX idx_plan_project_plan_id ON plan(project_id, plan_id);
+      CREATE INDEX idx_plan_parent_uuid ON plan(parent_uuid);
+
+      CREATE TABLE plan_task (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,
+        task_index INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        done INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(plan_uuid, task_index)
+      );
+      CREATE INDEX idx_plan_task_plan_uuid ON plan_task(plan_uuid);
+
+      CREATE TABLE plan_dependency (
+        plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,
+        depends_on_uuid TEXT NOT NULL,
+        PRIMARY KEY(plan_uuid, depends_on_uuid)
+      );
+    `,
+  },
+  {
+    version: 3,
+    up: `
+      ALTER TABLE plan ADD COLUMN details TEXT;
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {
