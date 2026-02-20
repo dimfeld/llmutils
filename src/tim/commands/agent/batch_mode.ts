@@ -45,6 +45,27 @@ export async function executeBatchMode(
   },
   summaryCollector?: SummaryCollector
 ) {
+  const runPostApplyCommands = async (): Promise<string | null> => {
+    if (!config.postApplyCommands || config.postApplyCommands.length === 0) {
+      return null;
+    }
+
+    sendStructured({
+      type: 'workflow_progress',
+      timestamp: timestamp(),
+      phase: 'post-apply',
+      message: 'Running post-apply commands',
+    });
+    for (const commandConfig of config.postApplyCommands) {
+      const commandSucceeded = await executePostApplyCommand(commandConfig, baseDir);
+      if (!commandSucceeded) {
+        return commandConfig.title;
+      }
+    }
+
+    return null;
+  };
+
   sendStructured({
     type: 'workflow_progress',
     timestamp: timestamp(),
@@ -221,28 +242,6 @@ Available tasks:\n\n${taskDescriptions}`,
         break;
       }
 
-      // Run post-apply commands if configured
-      if (config.postApplyCommands && config.postApplyCommands.length > 0) {
-        sendStructured({
-          type: 'workflow_progress',
-          timestamp: timestamp(),
-          phase: 'post-apply',
-          message: 'Running post-apply commands',
-        });
-        for (const commandConfig of config.postApplyCommands) {
-          const commandSucceeded = await executePostApplyCommand(commandConfig, baseDir);
-          if (!commandSucceeded) {
-            error(`Batch mode stopping because required command "${commandConfig.title}" failed.`);
-            hasError = true;
-            break;
-          }
-        }
-        if (hasError) {
-          if (summaryCollector) summaryCollector.addError('Post-apply command failed');
-          break;
-        }
-      }
-
       // After execution, re-read the plan file to get the updated state
       const updatedPlanData = await readPlanFile(currentPlanFile);
       const remainingIncompleteTasks = getAllIncompleteTasks(updatedPlanData);
@@ -275,6 +274,15 @@ Available tasks:\n\n${taskDescriptions}`,
         }
       }
 
+      // Run post-apply commands if configured
+      const failedPostApplyCommand = await runPostApplyCommands();
+      if (failedPostApplyCommand) {
+        error(`Batch mode stopping because required command "${failedPostApplyCommand}" failed.`);
+        hasError = true;
+        if (summaryCollector) summaryCollector.addError('Post-apply command failed');
+        break;
+      }
+
       // If all tasks are now marked done, update the plan status to 'done'
       const finished = remainingIncompleteTasks.length === 0;
       if (finished) {
@@ -297,6 +305,16 @@ Available tasks:\n\n${taskDescriptions}`,
           } catch (err) {
             error('Failed to update documentation:', err);
             // Don't stop execution for documentation update failures
+          }
+
+          const failedAfterCompletionDocsPostApplyCommand = await runPostApplyCommands();
+          if (failedAfterCompletionDocsPostApplyCommand) {
+            error(
+              `Batch mode stopping because required command "${failedAfterCompletionDocsPostApplyCommand}" failed.`
+            );
+            hasError = true;
+            if (summaryCollector) summaryCollector.addError('Post-apply command failed');
+            break;
           }
         }
 
@@ -353,6 +371,16 @@ Available tasks:\n\n${taskDescriptions}`,
           } catch (err) {
             error('Failed to apply lessons learned:', err as Error);
             // Don't stop execution for lessons update failures
+          }
+
+          const failedAfterLessonsPostApplyCommand = await runPostApplyCommands();
+          if (failedAfterLessonsPostApplyCommand) {
+            error(
+              `Batch mode stopping because required command "${failedAfterLessonsPostApplyCommand}" failed.`
+            );
+            hasError = true;
+            if (summaryCollector) summaryCollector.addError('Post-apply command failed');
+            break;
           }
         } else if (
           !planStillCompleteAfterReview &&

@@ -426,6 +426,26 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
       mode: options.serialTasks ? 'serial' : 'batch',
     });
     if (summaryEnabled) summaryCollector.recordExecutionStart(currentBaseDir);
+    const runPostApplyCommands = async (): Promise<string | null> => {
+      if (!config.postApplyCommands || config.postApplyCommands.length === 0) {
+        return null;
+      }
+
+      sendStructured({
+        type: 'workflow_progress',
+        timestamp: timestamp(),
+        phase: 'post-apply',
+        message: 'Running post-apply commands',
+      });
+      for (const commandConfig of config.postApplyCommands) {
+        const commandSucceeded = await executePostApplyCommand(commandConfig, currentBaseDir);
+        if (!commandSucceeded) {
+          return commandConfig.title;
+        }
+      }
+
+      return null;
+    };
 
     // Check if this is a true stub plan (no tasks at all)
     const needsPreparation = !planData.tasks.length;
@@ -639,26 +659,13 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
           }
 
           // Run post-apply commands if configured
-          if (config.postApplyCommands && config.postApplyCommands.length > 0) {
-            sendStructured({
-              type: 'workflow_progress',
-              timestamp: timestamp(),
-              phase: 'post-apply',
-              message: 'Running post-apply commands',
-            });
-            for (const commandConfig of config.postApplyCommands) {
-              const commandSucceeded = await executePostApplyCommand(commandConfig, currentBaseDir);
-              if (!commandSucceeded) {
-                error(`Agent stopping because required command "${commandConfig.title}" failed.`);
-                hasError = true;
-                recordFailure(`Post-apply command failed: ${commandConfig.title}`);
-                break;
-              }
-            }
-            if (hasError) {
-              if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
-              break;
-            }
+          const failedPostApplyCommand = await runPostApplyCommands();
+          if (failedPostApplyCommand) {
+            error(`Agent stopping because required command "${failedPostApplyCommand}" failed.`);
+            hasError = true;
+            recordFailure(`Post-apply command failed: ${failedPostApplyCommand}`);
+            if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
+            break;
           }
 
           // Update docs if configured for after-iteration mode
@@ -673,6 +680,17 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
             } catch (err) {
               error('Failed to update documentation:', err);
               // Don't stop execution for documentation update failures
+            }
+
+            const failedAfterDocsPostApplyCommand = await runPostApplyCommands();
+            if (failedAfterDocsPostApplyCommand) {
+              error(
+                `Agent stopping because required command "${failedAfterDocsPostApplyCommand}" failed.`
+              );
+              hasError = true;
+              recordFailure(`Post-apply command failed: ${failedAfterDocsPostApplyCommand}`);
+              if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
+              break;
             }
           }
 
@@ -707,6 +725,19 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                 } catch (err) {
                   error('Failed to update documentation:', err);
                   // Don't stop execution for documentation update failures
+                }
+
+                const failedAfterCompletionDocsPostApplyCommand = await runPostApplyCommands();
+                if (failedAfterCompletionDocsPostApplyCommand) {
+                  error(
+                    `Agent stopping because required command "${failedAfterCompletionDocsPostApplyCommand}" failed.`
+                  );
+                  hasError = true;
+                  recordFailure(
+                    `Post-apply command failed: ${failedAfterCompletionDocsPostApplyCommand}`
+                  );
+                  if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
+                  break;
                 }
               }
 
@@ -769,6 +800,17 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                 } catch (err) {
                   error('Failed to apply lessons learned:', err as Error);
                   // Don't stop execution for lessons update failures
+                }
+
+                const failedAfterLessonsPostApplyCommand = await runPostApplyCommands();
+                if (failedAfterLessonsPostApplyCommand) {
+                  error(
+                    `Agent stopping because required command "${failedAfterLessonsPostApplyCommand}" failed.`
+                  );
+                  hasError = true;
+                  recordFailure(`Post-apply command failed: ${failedAfterLessonsPostApplyCommand}`);
+                  if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
+                  break;
                 }
               } else if (
                 !planStillCompleteAfterReview &&
@@ -978,27 +1020,13 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
           break;
         }
 
-        if (config.postApplyCommands && config.postApplyCommands.length > 0) {
-          sendStructured({
-            type: 'workflow_progress',
-            timestamp: timestamp(),
-            phase: 'post-apply',
-            message: 'Running post-apply commands',
-          });
-          for (const commandConfig of config.postApplyCommands) {
-            const commandSucceeded = await executePostApplyCommand(commandConfig, currentBaseDir);
-            if (!commandSucceeded) {
-              // Error logging is handled within executePostApplyCommand
-              error(`Agent stopping because required command "${commandConfig.title}" failed.`);
-              hasError = true;
-              recordFailure(`Post-apply command failed: ${commandConfig.title}`);
-              break;
-            }
-          }
-          if (hasError) {
-            if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
-            break;
-          }
+        const failedPostApplyCommand = await runPostApplyCommands();
+        if (failedPostApplyCommand) {
+          error(`Agent stopping because required command "${failedPostApplyCommand}" failed.`);
+          hasError = true;
+          recordFailure(`Post-apply command failed: ${failedPostApplyCommand}`);
+          if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
+          break;
         }
 
         // Update docs if configured for after-iteration mode
@@ -1013,6 +1041,15 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
           } catch (err) {
             error('Failed to update documentation:', err);
             // Don't stop execution for documentation update failures
+          }
+
+          const failedAfterDocsPostApplyCommand = await runPostApplyCommands();
+          if (failedAfterDocsPostApplyCommand) {
+            error(`Agent stopping because required command "${failedAfterDocsPostApplyCommand}" failed.`);
+            hasError = true;
+            recordFailure(`Post-apply command failed: ${failedAfterDocsPostApplyCommand}`);
+            if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
+            break;
           }
         }
 
@@ -1046,6 +1083,19 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                 error('Failed to update documentation:', err);
                 // Don't stop execution for documentation update failures
               }
+
+              const failedAfterCompletionDocsPostApplyCommand = await runPostApplyCommands();
+              if (failedAfterCompletionDocsPostApplyCommand) {
+                error(
+                  `Agent stopping because required command "${failedAfterCompletionDocsPostApplyCommand}" failed.`
+                );
+                hasError = true;
+                recordFailure(
+                  `Post-apply command failed: ${failedAfterCompletionDocsPostApplyCommand}`
+                );
+                if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
+                break;
+              }
             }
 
             if (config.updateDocs?.applyLessons || options.applyLessons) {
@@ -1058,6 +1108,17 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
               } catch (err) {
                 error('Failed to apply lessons learned:', err as Error);
                 // Don't stop execution for lessons update failures
+              }
+
+              const failedAfterLessonsPostApplyCommand = await runPostApplyCommands();
+              if (failedAfterLessonsPostApplyCommand) {
+                error(
+                  `Agent stopping because required command "${failedAfterLessonsPostApplyCommand}" failed.`
+                );
+                hasError = true;
+                recordFailure(`Post-apply command failed: ${failedAfterLessonsPostApplyCommand}`);
+                if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
+                break;
               }
             }
 

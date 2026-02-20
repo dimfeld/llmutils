@@ -37,6 +37,8 @@ const loadEffectiveConfigSpy = mock(async () => ({
 const getGitRootSpy = mock(async () => '/test/project');
 const buildExecutionPromptWithoutStepsSpy = mock(async () => 'Test batch prompt');
 const executePostApplyCommandSpy = mock(async () => true);
+const runUpdateDocsSpy = mock(async () => {});
+const runUpdateLessonsSpy = mock(async () => {});
 
 describe('timAgent - Batch Mode Execution Loop', () => {
   let tempDir: string;
@@ -57,6 +59,8 @@ describe('timAgent - Batch Mode Execution Loop', () => {
     getGitRootSpy.mockClear();
     buildExecutionPromptWithoutStepsSpy.mockClear();
     executePostApplyCommandSpy.mockClear();
+    runUpdateDocsSpy.mockClear();
+    runUpdateLessonsSpy.mockClear();
 
     // Clear plan cache
     clearPlanCache();
@@ -102,6 +106,14 @@ describe('timAgent - Batch Mode Execution Loop', () => {
 
     await moduleMocker.mock('../../actions.js', () => ({
       executePostApplyCommand: executePostApplyCommandSpy,
+    }));
+
+    await moduleMocker.mock('../update-docs.js', () => ({
+      runUpdateDocs: runUpdateDocsSpy,
+    }));
+
+    await moduleMocker.mock('../update-lessons.js', () => ({
+      runUpdateLessons: runUpdateLessonsSpy,
     }));
 
     await moduleMocker.mock('../../plans.js', () => ({
@@ -611,6 +623,84 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       await expect(timAgent(planFile, options, globalCliOptions)).rejects.toThrow(
         'Batch mode stopped due to error.'
       );
+    });
+
+    test('post-apply commands run again after after-completion docs update', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [{ title: 'Test Command', command: 'echo test' }],
+        updateDocs: { mode: 'after-completion' },
+      });
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true, finalReview: false } as any;
+      const globalCliOptions = {};
+
+      await timAgent(planFile, options, globalCliOptions);
+
+      expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
+      expect(executePostApplyCommandSpy).toHaveBeenCalledTimes(2);
+    });
+
+    test('post-apply commands run again after lessons update', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [{ title: 'Test Command', command: 'echo test' }],
+        updateDocs: { mode: 'never', applyLessons: true },
+      });
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true, finalReview: false } as any;
+      const globalCliOptions = {};
+
+      await timAgent(planFile, options, globalCliOptions);
+
+      expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
+      expect(executePostApplyCommandSpy).toHaveBeenCalledTimes(2);
     });
   });
 
