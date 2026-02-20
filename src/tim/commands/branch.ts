@@ -1,5 +1,4 @@
-import chalk from 'chalk';
-import { log, writeStdout } from '../../logging.js';
+import { writeStdout } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
 import { getCombinedTitle } from '../display_utils.js';
@@ -59,8 +58,7 @@ export async function handleBranchCommand(
 
     const result = await findNextReadyDependency(parentPlanId, tasksDir, true);
     if (!result.plan) {
-      log(result.message);
-      return;
+      throw new Error(result.message);
     }
 
     resolvedPlanFile = result.plan.filename;
@@ -68,22 +66,13 @@ export async function handleBranchCommand(
   } else if (options.latest) {
     const { plans } = await readAllPlans(tasksDir);
     if (plans.size === 0) {
-      log('No plans found in tasks directory.');
-      return;
+      throw new Error('No plans found in tasks directory.');
     }
 
     const latestPlan = await findMostRecentlyUpdatedPlan(plans);
     if (!latestPlan) {
-      log('No plans with updatedAt field found in tasks directory.');
-      return;
+      throw new Error('No plans with updatedAt field found in tasks directory.');
     }
-
-    const title = getCombinedTitle(latestPlan);
-    const label =
-      latestPlan.id !== undefined && latestPlan.id !== null
-        ? `${latestPlan.id} - ${title}`
-        : title || latestPlan.filename;
-    log(chalk.green(`Found latest plan: ${label}`));
 
     resolvedPlanFile = latestPlan.filename;
     selectedPlan = latestPlan;
@@ -95,11 +84,12 @@ export async function handleBranchCommand(
 
     if (!plan) {
       if (options.current) {
-        log('No current plans found. No plans are in progress or ready to be implemented.');
+        throw new Error(
+          'No current plans found. No plans are in progress or ready to be implemented.'
+        );
       } else {
-        log('No ready plans found. All pending plans have incomplete dependencies.');
+        throw new Error('No ready plans found. All pending plans have incomplete dependencies.');
       }
-      return;
     }
 
     resolvedPlanFile = plan.filename;

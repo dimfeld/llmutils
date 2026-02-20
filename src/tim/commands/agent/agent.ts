@@ -1045,7 +1045,9 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
 
           const failedAfterDocsPostApplyCommand = await runPostApplyCommands();
           if (failedAfterDocsPostApplyCommand) {
-            error(`Agent stopping because required command "${failedAfterDocsPostApplyCommand}" failed.`);
+            error(
+              `Agent stopping because required command "${failedAfterDocsPostApplyCommand}" failed.`
+            );
             hasError = true;
             recordFailure(`Post-apply command failed: ${failedAfterDocsPostApplyCommand}`);
             if (summaryEnabled) summaryCollector.addError('Post-apply command failed');

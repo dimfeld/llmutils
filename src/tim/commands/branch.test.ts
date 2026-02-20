@@ -3,7 +3,6 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
-import stripAnsi from 'strip-ansi';
 import { ModuleMocker } from '../../testing.js';
 import { clearPlanCache } from '../plans.js';
 import { generateBranchNameFromPlan, handleBranchCommand } from './branch.js';
@@ -112,8 +111,7 @@ describe('handleBranchCommand', () => {
     await handleBranchCommand(undefined, { latest: true }, command);
 
     expect(writeStdoutSpy).toHaveBeenCalledWith('task-11-latest-plan\n');
-    const logged = stripAnsi(logSpy.mock.calls.map((call) => String(call[0])).join('\n'));
-    expect(logged).toContain('Found latest plan: 11 - Latest plan');
+    expect(logSpy).not.toHaveBeenCalled();
   });
 
   test('throws when no plan or selection flags are provided', async () => {
