@@ -722,25 +722,16 @@ export async function handleReviewCommand(
           actionItems: reviewResult.actionItems,
         });
 
-        const shouldWriteOutputToFile = Boolean(options.outputFile);
-
-        // Display formatted output to console unless an explicit output file is requested.
-        if (!shouldWriteOutputToFile) {
-          if (isPrintMode) {
-            const outputWithNewline = formattedOutput.endsWith('\n')
-              ? formattedOutput
-              : `${formattedOutput}\n`;
-            if (tunnelActive) {
-              // When tunnel is active, write to BOTH:
-              // 1. process.stdout directly so the executor can capture it from the child's stdout
-              // 2. log() which goes through the tunnel adapter to the parent for display
-              process.stdout.write(outputWithNewline);
-            }
-            log(outputWithNewline);
-          } else {
-            log('\n' + formattedOutput);
-          }
+        if (tunnelActive) {
+          const outputWithNewline = formattedOutput.endsWith('\n')
+            ? formattedOutput
+            : `${formattedOutput}\n`;
+          // When tunnel is active, write to BOTH:
+          // 1. process.stdout directly so the executor can capture it from the child's stdout
+          // 2. log() which goes through the tunnel adapter to the parent for display
+          await Bun.write(Bun.stdout, outputWithNewline);
         }
+        log(formattedOutput);
 
         // Check if autofix should be performed - with robust issue detection
         const hasIssues = detectIssuesInReview(reviewResult, rawOutput);

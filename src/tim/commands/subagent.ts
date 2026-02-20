@@ -144,7 +144,10 @@ export async function handleSubagentCommand(
   }
 
   // Print final message to stdout for orchestrator to capture
-  process.stdout.write(finalMessage);
+  if (!finalMessage.endsWith('\n')) {
+    finalMessage += '\n';
+  }
+  await Bun.write(Bun.stdout, finalMessage);
 }
 
 async function resolveOrchestratorInput(options: SubagentOptions): Promise<string | undefined> {

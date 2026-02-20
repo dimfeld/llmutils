@@ -298,7 +298,7 @@ ${markTasksDoneGuidance(planId)}
 }
 
 function buildReviewCommand(planId: string, options: OrchestrationOptions): string {
-  const baseCommand = `tim review ${planId} --output-file <unique-temp-file>`;
+  const baseCommand = `tim review ${planId} --print --output-file <unique-temp-file>`;
   if (options.reviewExecutor) {
     return `${baseCommand} --executor ${options.reviewExecutor}`;
   }

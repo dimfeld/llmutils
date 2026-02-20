@@ -24,6 +24,7 @@ import {
   type StructuredMessage,
   type PromptRequestMessage,
 } from './structured_messages.js';
+import { HeadlessAdapter } from './headless_adapter.js';
 
 export const structuredMessageTypes = new Set<StructuredMessage['type']>(structuredMessageTypeList);
 
@@ -457,7 +458,9 @@ function dispatchMessage(message: TunnelMessage): void {
 
 function shouldIndentForTerminalOutput(): boolean {
   const adapter = getLoggerAdapter();
-  return adapter === undefined || adapter instanceof ConsoleAdapter;
+  return (
+    adapter === undefined || adapter instanceof ConsoleAdapter || adapter instanceof HeadlessAdapter
+  );
 }
 
 function indentText(value: string, shouldIndent: boolean): string {
