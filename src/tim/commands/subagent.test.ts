@@ -75,9 +75,9 @@ describe('subagent command - prompt construction and executor delegation', () =>
   let capturedCodexPrompt: string | undefined;
   let capturedClaudeSpawnArgs: string[] | undefined;
 
-  // Spy on process.stdout.write to capture final output
+  // Spy on Bun.write to capture final output (source uses Bun.write(Bun.stdout, ...))
   let stdoutWriteCalls: string[] = [];
-  let originalStdoutWrite: typeof process.stdout.write;
+  let originalBunWrite: typeof Bun.write;
 
   // Track which custom instructions were requested
   let agentInstructionRequests: string[] = [];
@@ -120,12 +120,15 @@ describe('subagent command - prompt construction and executor delegation', () =>
     planFilePath = path.join(tasksDir, '42-test-plan.plan.md');
     await writePlanFile(planFilePath, basePlan);
 
-    // Capture stdout.write calls
-    originalStdoutWrite = process.stdout.write;
-    process.stdout.write = ((data: any) => {
-      stdoutWriteCalls.push(typeof data === 'string' ? data : data.toString());
-      return true;
-    }) as typeof process.stdout.write;
+    // Capture Bun.write(Bun.stdout, ...) calls
+    originalBunWrite = Bun.write;
+    Bun.write = (async (dest: any, data: any) => {
+      if (dest === Bun.stdout) {
+        stdoutWriteCalls.push(typeof data === 'string' ? data : data.toString());
+        return (typeof data === 'string' ? data : data.toString()).length;
+      }
+      return originalBunWrite(dest, data);
+    }) as typeof Bun.write;
 
     // Mock logging to suppress output
     await moduleMocker.mock('../../logging.js', () => ({
@@ -262,7 +265,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
   afterEach(async () => {
     restoreBunStdin?.();
     restoreIsTTY?.();
-    process.stdout.write = originalStdoutWrite;
+    Bun.write = originalBunWrite;
     moduleMocker.clear();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -997,7 +1000,7 @@ describe('subagent command - permissions MCP integration', () => {
 
   let capturedClaudeSpawnArgs: string[] | undefined;
   let stdoutWriteCalls: string[] = [];
-  let originalStdoutWrite: typeof process.stdout.write;
+  let originalBunWrite: typeof Bun.write;
 
   const basePlan: PlanSchema = {
     id: 42,
@@ -1027,11 +1030,14 @@ describe('subagent command - permissions MCP integration', () => {
     planFilePath = path.join(tasksDir, '42-test-plan.plan.md');
     await writePlanFile(planFilePath, basePlan);
 
-    originalStdoutWrite = process.stdout.write;
-    process.stdout.write = ((data: any) => {
-      stdoutWriteCalls.push(typeof data === 'string' ? data : data.toString());
-      return true;
-    }) as typeof process.stdout.write;
+    originalBunWrite = Bun.write;
+    Bun.write = (async (dest: any, data: any) => {
+      if (dest === Bun.stdout) {
+        stdoutWriteCalls.push(typeof data === 'string' ? data : data.toString());
+        return (typeof data === 'string' ? data : data.toString()).length;
+      }
+      return originalBunWrite(dest, data);
+    }) as typeof Bun.write;
 
     await moduleMocker.mock('../../logging.js', () => ({
       log: mock(() => {}),
@@ -1122,7 +1128,7 @@ describe('subagent command - permissions MCP integration', () => {
   });
 
   afterEach(async () => {
-    process.stdout.write = originalStdoutWrite;
+    Bun.write = originalBunWrite;
     moduleMocker.clear();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -1337,7 +1343,7 @@ describe('subagent command - executeWithClaude error scenarios', () => {
   let planFilePath: string;
 
   let stdoutWriteCalls: string[] = [];
-  let originalStdoutWrite: typeof process.stdout.write;
+  let originalBunWrite: typeof Bun.write;
 
   const basePlan: PlanSchema = {
     id: 42,
@@ -1365,11 +1371,14 @@ describe('subagent command - executeWithClaude error scenarios', () => {
     planFilePath = path.join(tasksDir, '42-test-plan.plan.md');
     await writePlanFile(planFilePath, basePlan);
 
-    originalStdoutWrite = process.stdout.write;
-    process.stdout.write = ((data: any) => {
-      stdoutWriteCalls.push(typeof data === 'string' ? data : data.toString());
-      return true;
-    }) as typeof process.stdout.write;
+    originalBunWrite = Bun.write;
+    Bun.write = (async (dest: any, data: any) => {
+      if (dest === Bun.stdout) {
+        stdoutWriteCalls.push(typeof data === 'string' ? data : data.toString());
+        return (typeof data === 'string' ? data : data.toString()).length;
+      }
+      return originalBunWrite(dest, data);
+    }) as typeof Bun.write;
 
     await moduleMocker.mock('../../logging.js', () => ({
       log: mock(() => {}),
@@ -1461,7 +1470,7 @@ describe('subagent command - executeWithClaude error scenarios', () => {
   });
 
   afterEach(async () => {
-    process.stdout.write = originalStdoutWrite;
+    Bun.write = originalBunWrite;
     moduleMocker.clear();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -1630,7 +1639,7 @@ describe('subagent command - tunnel behavior', () => {
 
   let capturedSpawnEnv: Record<string, string> | undefined;
   let stdoutWriteCalls: string[] = [];
-  let originalStdoutWrite: typeof process.stdout.write;
+  let originalBunWrite: typeof Bun.write;
 
   // Track tunnel mock calls
   let createTunnelServerCalls: string[] = [];
@@ -1783,15 +1792,18 @@ describe('subagent command - tunnel behavior', () => {
     planFilePath = path.join(tasksDir, '42-test-plan.plan.md');
     await writePlanFile(planFilePath, basePlan);
 
-    originalStdoutWrite = process.stdout.write;
-    process.stdout.write = ((data: any) => {
-      stdoutWriteCalls.push(typeof data === 'string' ? data : data.toString());
-      return true;
-    }) as typeof process.stdout.write;
+    originalBunWrite = Bun.write;
+    Bun.write = (async (dest: any, data: any) => {
+      if (dest === Bun.stdout) {
+        stdoutWriteCalls.push(typeof data === 'string' ? data : data.toString());
+        return (typeof data === 'string' ? data : data.toString()).length;
+      }
+      return originalBunWrite(dest, data);
+    }) as typeof Bun.write;
   });
 
   afterEach(async () => {
-    process.stdout.write = originalStdoutWrite;
+    Bun.write = originalBunWrite;
     moduleMocker.clear();
     await fs.rm(tempDir, { recursive: true, force: true });
   });

@@ -59,6 +59,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
     getGitRootSpy.mockClear();
     buildExecutionPromptWithoutStepsSpy.mockClear();
     executePostApplyCommandSpy.mockClear();
+    executePostApplyCommandSpy.mockResolvedValue(true);
     runUpdateDocsSpy.mockClear();
     runUpdateLessonsSpy.mockClear();
 

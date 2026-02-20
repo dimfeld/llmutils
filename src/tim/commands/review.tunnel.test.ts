@@ -145,16 +145,15 @@ describe('Review command tunnel integration', () => {
       const logCalls: string[] = [];
       const stdoutWrites: string[] = [];
 
-      // We need to track both `log()` calls AND `process.stdout.write` calls
-      const originalStdoutWrite = process.stdout.write;
-      const stdoutWriteMock = mock((...args: any[]) => {
-        const data = typeof args[0] === 'string' ? args[0] : args[0]?.toString() || '';
-        stdoutWrites.push(data);
-        return true;
-      });
-
-      // Replace process.stdout.write to track direct writes
-      process.stdout.write = stdoutWriteMock as any;
+      // We need to track both `log()` calls AND `Bun.write(Bun.stdout, ...)` calls
+      const originalBunWrite = Bun.write;
+      Bun.write = (async (dest: any, data: any) => {
+        if (dest === Bun.stdout) {
+          stdoutWrites.push(typeof data === 'string' ? data : data?.toString() || '');
+          return (typeof data === 'string' ? data : data?.toString() || '').length;
+        }
+        return originalBunWrite(dest, data);
+      }) as typeof Bun.write;
 
       await moduleMocker.mock('../../logging.js', () => ({
         log: (...args: any[]) => {
@@ -188,7 +187,7 @@ describe('Review command tunnel integration', () => {
           mockCommand
         );
       } finally {
-        process.stdout.write = originalStdoutWrite;
+        Bun.write = originalBunWrite;
       }
 
       // When tunnel is active + print mode, the quiet logger is NOT installed.
@@ -264,13 +263,14 @@ describe('Review command tunnel integration', () => {
       const logCalls: string[] = [];
       const stdoutWrites: string[] = [];
 
-      const originalStdoutWrite = process.stdout.write;
-      const stdoutWriteMock = mock((...args: any[]) => {
-        const data = typeof args[0] === 'string' ? args[0] : args[0]?.toString() || '';
-        stdoutWrites.push(data);
-        return true;
-      });
-      process.stdout.write = stdoutWriteMock as any;
+      const originalBunWrite = Bun.write;
+      Bun.write = (async (dest: any, data: any) => {
+        if (dest === Bun.stdout) {
+          stdoutWrites.push(typeof data === 'string' ? data : data?.toString() || '');
+          return (typeof data === 'string' ? data : data?.toString() || '').length;
+        }
+        return originalBunWrite(dest, data);
+      }) as typeof Bun.write;
 
       await moduleMocker.mock('../../logging.js', () => ({
         log: (...args: any[]) => {
@@ -304,7 +304,7 @@ describe('Review command tunnel integration', () => {
           mockCommand
         );
       } finally {
-        process.stdout.write = originalStdoutWrite;
+        Bun.write = originalBunWrite;
       }
 
       // BOTH should have received the review output
@@ -327,13 +327,14 @@ describe('Review command tunnel integration', () => {
       const logCalls: string[] = [];
       const stdoutWrites: string[] = [];
 
-      const originalStdoutWrite = process.stdout.write;
-      const stdoutWriteMock = mock((...args: any[]) => {
-        const data = typeof args[0] === 'string' ? args[0] : args[0]?.toString() || '';
-        stdoutWrites.push(data);
-        return true;
-      });
-      process.stdout.write = stdoutWriteMock as any;
+      const originalBunWrite = Bun.write;
+      Bun.write = (async (dest: any, data: any) => {
+        if (dest === Bun.stdout) {
+          stdoutWrites.push(typeof data === 'string' ? data : data?.toString() || '');
+          return (typeof data === 'string' ? data : data?.toString() || '').length;
+        }
+        return originalBunWrite(dest, data);
+      }) as typeof Bun.write;
 
       await moduleMocker.mock('../../logging.js', () => ({
         log: (...args: any[]) => {
@@ -367,10 +368,10 @@ describe('Review command tunnel integration', () => {
           mockCommand
         );
       } finally {
-        process.stdout.write = originalStdoutWrite;
+        Bun.write = originalBunWrite;
       }
 
-      // Without tunnel: process.stdout.write should NOT have been called for review output
+      // Without tunnel: Bun.write(Bun.stdout, ...) should NOT have been called for review output
       // (The review output goes only via log() through the quiet logger path)
       const stdoutOutput = stdoutWrites.join('');
       expect(stdoutOutput).not.toContain('"planId"');
@@ -399,13 +400,14 @@ describe('Review command tunnel integration', () => {
       });
       process.stderr.write = stderrWriteMock as any;
 
-      const originalStdoutWrite = process.stdout.write;
-      const stdoutWriteMock = mock((...args: any[]) => {
-        const data = typeof args[0] === 'string' ? args[0] : args[0]?.toString() || '';
-        stdoutWrites.push(data);
-        return true;
-      });
-      process.stdout.write = stdoutWriteMock as any;
+      const originalBunWrite = Bun.write;
+      Bun.write = (async (dest: any, data: any) => {
+        if (dest === Bun.stdout) {
+          stdoutWrites.push(typeof data === 'string' ? data : data?.toString() || '');
+          return (typeof data === 'string' ? data : data?.toString() || '').length;
+        }
+        return originalBunWrite(dest, data);
+      }) as typeof Bun.write;
 
       await moduleMocker.mock('../../logging.js', () => ({
         log: (...args: any[]) => {
@@ -440,7 +442,7 @@ describe('Review command tunnel integration', () => {
           mockCommand
         );
       } finally {
-        process.stdout.write = originalStdoutWrite;
+        Bun.write = originalBunWrite;
         process.stderr.write = originalStderrWrite;
       }
 
@@ -469,8 +471,13 @@ describe('Review command tunnel integration', () => {
 
       const logCalls: string[] = [];
 
-      const originalStdoutWrite = process.stdout.write;
-      process.stdout.write = mock(() => true) as any;
+      const originalBunWrite = Bun.write;
+      Bun.write = (async (dest: any, data: any) => {
+        if (dest === Bun.stdout) {
+          return (typeof data === 'string' ? data : data?.toString() || '').length;
+        }
+        return originalBunWrite(dest, data);
+      }) as typeof Bun.write;
 
       await moduleMocker.mock('../../logging.js', () => ({
         log: (...args: any[]) => {
@@ -506,7 +513,7 @@ describe('Review command tunnel integration', () => {
           mockCommand
         );
       } finally {
-        process.stdout.write = originalStdoutWrite;
+        Bun.write = originalBunWrite;
       }
 
       // The review runner emits "codex-cli review finished" via log().
