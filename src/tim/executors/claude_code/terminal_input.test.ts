@@ -15,12 +15,15 @@ class FakeReadline {
   writes: string[] = [];
   private readonly lineHandlers: FakeLineHandler[] = [];
   private readonly closeHandlers: FakeSignalHandler[] = [];
+  private readonly sigintHandlers: FakeSignalHandler[] = [];
 
   on(event: string, handler: FakeLineHandler | FakeSignalHandler): this {
     if (event === 'line') {
       this.lineHandlers.push(handler as FakeLineHandler);
     } else if (event === 'close') {
       this.closeHandlers.push(handler as FakeSignalHandler);
+    } else if (event === 'SIGINT') {
+      this.sigintHandlers.push(handler as FakeSignalHandler);
     }
     return this;
   }
@@ -42,6 +45,12 @@ class FakeReadline {
 
   emitClose(): void {
     for (const handler of this.closeHandlers) {
+      handler();
+    }
+  }
+
+  emitSigint(): void {
+    for (const handler of this.sigintHandlers) {
       handler();
     }
   }
@@ -274,6 +283,27 @@ describe('TerminalInputReader', () => {
     expect(onLine).toHaveBeenCalledWith('follow up instruction');
 
     reader.stop();
+  });
+
+  it('forwards readline SIGINT to process SIGINT handling', () => {
+    setTTY(true);
+    const processKillSpy = mock(() => true);
+    const originalProcessKill = process.kill;
+    process.kill = processKillSpy as typeof process.kill;
+
+    try {
+      const reader = new TerminalInputReader({ onLine: () => {} });
+      reader.start();
+
+      createdInterfaces[0].emitSigint();
+
+      expect(processKillSpy).toHaveBeenCalledTimes(1);
+      expect(processKillSpy).toHaveBeenCalledWith(process.pid, 'SIGINT');
+
+      reader.stop();
+    } finally {
+      process.kill = originalProcessKill;
+    }
   });
 
   it('forwards onLine errors to onError handler', async () => {

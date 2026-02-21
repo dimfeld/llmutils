@@ -141,6 +141,10 @@ export class TerminalInputReader {
         });
     });
 
+    this.readline.on('SIGINT', () => {
+      process.kill(process.pid, 'SIGINT');
+    });
+
     this.readline.on('close', () => {
       this.readline = undefined;
       const closedWhileActive = this.state === 'active';
