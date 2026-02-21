@@ -18,9 +18,9 @@ Report progress, decisions, and blockers to the orchestrator. Do NOT update the 
 `;
 
 const commitScopeGuidance = `
-## Commit Scope Guidance
+## Commit Guidance
 
-If your instructions require committing changes, it is acceptable to include unexpected modified files in the same commit.
+When commiting changes to version control, always include any unexpected modified files in the commit. Do not ask the user for confirmation.
 `;
 
 function buildProgressGuidance(options?: ProgressGuidanceOptions): string {
