@@ -178,24 +178,36 @@ describe('createAppServerFormatter', () => {
 
   test('formats file change notifications', () => {
     const formatter = createAppServerFormatter();
+    const started = formatter.handleNotification('item/started', {
+      item: {
+        type: 'fileChange',
+        status: 'in_progress',
+        changes: [{ path: 'src/a.ts', kind: 'modify', diff: '@@ -1 +1 @@\n-old\n+new' }],
+      },
+    });
     const message = formatter.handleNotification('item/completed', {
       item: {
         type: 'fileChange',
+        id: 'fc-1',
+        status: 'completed',
         changes: [
-          { path: 'src/new.ts', kind: 'create' },
-          { path: 'src/old.ts', kind: 'delete' },
-          { path: 'src/edit.ts', kind: 'modify' },
+          { path: 'src/new.ts', kind: 'create', diff: '@@ -0,0 +1 @@\n+new' },
+          { path: 'src/old.ts', kind: 'delete', diff: '@@ -1 +0,0 @@\n-old' },
+          { path: 'src/edit.ts', kind: 'modify', diff: '@@ -1 +1 @@\n-old\n+new' },
         ],
       },
     });
 
+    expect(started).toEqual({ type: 'item/started' });
     expect(message.structured).toEqual(
       expect.objectContaining({
         type: 'file_change_summary',
+        id: 'fc-1',
+        status: 'completed',
         changes: [
-          { path: 'src/new.ts', kind: 'added' },
-          { path: 'src/old.ts', kind: 'removed' },
-          { path: 'src/edit.ts', kind: 'updated' },
+          { path: 'src/new.ts', kind: 'added', diff: '@@ -0,0 +1 @@\n+new' },
+          { path: 'src/old.ts', kind: 'removed', diff: '@@ -1 +0,0 @@\n-old' },
+          { path: 'src/edit.ts', kind: 'updated', diff: '@@ -1 +1 @@\n-old\n+new' },
         ],
       })
     );
@@ -300,27 +312,47 @@ describe('createAppServerFormatter', () => {
     );
   });
 
-  test('formats turn/diff/updated and turn/plan/updated', () => {
+  test('ignores turn/diff/updated and maps turn/codex plan updates to todo_update items', () => {
     const formatter = createAppServerFormatter();
 
     const diff = formatter.handleNotification('turn/diff/updated', {
       changes: [{ path: 'src/a.ts', kind: 'add' }],
     });
-    expect(diff.structured).toEqual(
-      expect.objectContaining({
-        type: 'file_change_summary',
-        changes: [{ path: 'src/a.ts', kind: 'added' }],
-      })
-    );
+    expect(diff).toEqual({ type: 'turn/diff/updated' });
 
     const plan = formatter.handleNotification('turn/plan/updated', {
-      steps: ['inspect', 'test', 'fix'],
+      turnId: 'turn-1',
+      explanation: 'Updated plan after inspection',
+      steps: [
+        { step: 'inspect', status: 'completed' },
+        { step: 'test', status: 'in_progress' },
+        { step: 'fix', status: 'pending' },
+      ],
     });
     expect(plan.structured).toEqual(
       expect.objectContaining({
-        type: 'llm_status',
-        status: 'codex.plan.updated',
-        detail: 'inspect\ntest\nfix',
+        type: 'todo_update',
+        turnId: 'turn-1',
+        explanation: 'Updated plan after inspection',
+        items: [
+          { label: 'inspect', status: 'completed' },
+          { label: 'test', status: 'inProgress' },
+          { label: 'fix', status: 'pending' },
+        ],
+      })
+    );
+
+    const codexPlan = formatter.handleNotification('codex/plan/updated', {
+      turn_id: 'turn-2',
+      text: 'Narrowed approach',
+      plan: [{ text: 'apply patch', completed: true }],
+    });
+    expect(codexPlan.structured).toEqual(
+      expect.objectContaining({
+        type: 'todo_update',
+        turnId: 'turn-2',
+        explanation: 'Narrowed approach',
+        items: [{ label: 'apply patch', status: 'completed' }],
       })
     );
   });

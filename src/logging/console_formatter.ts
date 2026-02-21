@@ -56,16 +56,20 @@ function formatHeader(color: (value: string) => string, title: string, timestamp
 }
 
 function formatFileChange(change: FileChangeItem): string {
+  const diff = typeof change.diff === 'string' && change.diff.trim().length > 0 ? change.diff : '';
+  const withDiff = (line: string) =>
+    diff ? `${line}\n${indentEveryLine(colorizeDiff(diff), 4)}` : line;
+
   if (change.kind === 'added') {
-    return `${chalk.green('+')} ${change.path}`;
+    return withDiff(`${chalk.green('+')} ${change.path}`);
   }
 
   if (change.kind === 'updated') {
-    return `${chalk.cyan('~')} ${change.path}`;
+    return withDiff(`${chalk.cyan('~')} ${change.path}`);
   }
 
   if (change.kind === 'removed') {
-    return `${chalk.red('-')} ${change.path}`;
+    return withDiff(`${chalk.red('-')} ${change.path}`);
   }
 
   const _exhaustive: never = change.kind;

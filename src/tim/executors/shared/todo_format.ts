@@ -35,6 +35,7 @@ export interface FormatTodoLikeOptions {
 const statusIconMap: Record<string, string> = {
   completed: '✓',
   in_progress: '→',
+  inProgress: '→',
   pending: '•',
   not_started: '•',
   blocked: '✗',
@@ -62,6 +63,7 @@ function colorForStatus(status?: TodoStatus | null) {
     case 'completed':
       return chalk.green;
     case 'in_progress':
+    case 'inProgress':
       return chalk.cyan;
     case 'blocked':
       return chalk.red;

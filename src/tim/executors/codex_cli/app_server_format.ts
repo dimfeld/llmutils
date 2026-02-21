@@ -57,6 +57,37 @@ function normalizeFileChangeKind(kind: unknown): 'added' | 'updated' | 'removed'
   return 'updated';
 }
 
+function normalizeFileChangeStatus(
+  status: unknown
+): 'inProgress' | 'completed' | 'failed' | 'declined' {
+  const normalized = typeof status === 'string' ? status.trim().toLowerCase() : '';
+  if (normalized === 'inprogress' || normalized === 'in_progress' || normalized === 'active') {
+    return 'inProgress';
+  }
+  if (normalized === 'failed' || normalized === 'error') {
+    return 'failed';
+  }
+  if (normalized === 'declined' || normalized === 'rejected') {
+    return 'declined';
+  }
+  return 'completed';
+}
+
+function normalizePlanStepStatus(status: unknown): 'pending' | 'inProgress' | 'completed' {
+  const normalized = typeof status === 'string' ? status.trim().toLowerCase() : '';
+  if (normalized === 'completed' || normalized === 'done') {
+    return 'completed';
+  }
+  if (normalized === 'inprogress' || normalized === 'in_progress' || normalized === 'active') {
+    return 'inProgress';
+  }
+  return 'pending';
+}
+
+function extractTextField(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
 function extractItemText(item: Record<string, unknown>): string {
   const text = item.text;
   if (typeof text === 'string') {
@@ -254,68 +285,70 @@ function extractSessionId(params: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
-function formatTurnDiff(params: Record<string, unknown>, ts: string): FormattedCodexMessage {
-  const changesValue = params.changes;
-  const changes = Array.isArray(changesValue)
-    ? changesValue
-        .map((change) => {
-          if (!change || typeof change !== 'object') {
-            return undefined;
-          }
-          const data = change as Record<string, unknown>;
-          const path = data.path;
-          if (typeof path !== 'string' || path.length === 0) {
-            return undefined;
-          }
-          return {
-            path,
-            kind: normalizeFileChangeKind(data.kind),
-          };
-        })
-        .filter((value): value is { path: string; kind: 'added' | 'updated' | 'removed' } =>
-          Boolean(value)
-        )
-    : [];
+function extractChangeDiff(data: Record<string, unknown>): string | undefined {
+  const diff = data.diff ?? data.unifiedDiff ?? data.unified_diff ?? data.patch;
+  return extractTextField(diff);
+}
 
-  if (changes.length > 0) {
-    return {
-      type: 'turn/diff/updated',
-      structured: {
-        type: 'file_change_summary',
-        timestamp: ts,
-        changes,
-      },
-    };
+function formatPlanItem(
+  step: unknown
+): { label: string; status: 'pending' | 'inProgress' | 'completed' } | undefined {
+  if (typeof step === 'string') {
+    const label = step.trim();
+    if (label.length === 0) {
+      return undefined;
+    }
+    return { label, status: 'pending' };
   }
-
+  if (!step || typeof step !== 'object') {
+    return undefined;
+  }
+  const data = step as Record<string, unknown>;
+  const label =
+    extractTextField(data.step) ??
+    extractTextField(data.label) ??
+    extractTextField(data.text) ??
+    extractTextField(data.title);
+  if (!label) {
+    return undefined;
+  }
+  const explicitStatus = normalizePlanStepStatus(data.status);
+  const completedOverride =
+    typeof data.completed === 'boolean' ? (data.completed ? 'completed' : 'pending') : undefined;
   return {
-    type: 'turn/diff/updated',
-    structured: {
-      type: 'llm_status',
-      timestamp: ts,
-      source: 'codex',
-      status: 'codex.turn_diff.updated',
-      detail: JSON.stringify(params),
-    },
+    label,
+    status: completedOverride ?? explicitStatus,
   };
 }
 
-function formatTurnPlan(params: Record<string, unknown>, ts: string): FormattedCodexMessage {
-  const planText =
-    typeof params.text === 'string'
-      ? params.text
-      : Array.isArray(params.steps)
-        ? params.steps.map((step) => String(step)).join('\n')
-        : JSON.stringify(params);
+function formatPlanUpdate(
+  method: string,
+  params: Record<string, unknown>,
+  ts: string
+): FormattedCodexMessage {
+  const sourcePlan = Array.isArray(params.plan)
+    ? params.plan
+    : Array.isArray(params.steps)
+      ? params.steps
+      : [];
+  const items = sourcePlan.map((entry) => formatPlanItem(entry)).filter((item) => Boolean(item));
+  const normalizedItems = items as {
+    label: string;
+    status: 'pending' | 'inProgress' | 'completed';
+  }[];
 
   return {
-    type: 'turn/plan/updated',
+    type: method,
     structured: {
-      type: 'llm_status',
+      type: 'todo_update',
       timestamp: ts,
       source: 'codex',
-      status: 'codex.plan.updated',
-      detail: planText,
+      turnId: extractTextField(params.turnId) ?? extractTextField(params.turn_id),
+      explanation:
+        extractTextField(params.explanation) ??
+        extractTextField(params.reasoning) ??
+        extractTextField(params.text),
+      items: normalizedItems,
     },
   };
 }
@@ -409,43 +442,45 @@ export function createAppServerFormatter() {
     }
 
     if (itemType === 'filechange') {
-      const changes = Array.isArray(item.changes) ? item.changes : [];
-      const normalizedChanges = changes
-        .map((change) => {
-          if (!change || typeof change !== 'object') {
-            return undefined;
-          }
-          const data = change as Record<string, unknown>;
-          if (typeof data.path !== 'string') {
-            return undefined;
-          }
-          return {
-            path: data.path,
-            kind: normalizeFileChangeKind(data.kind),
-          };
-        })
-        .filter((value): value is { path: string; kind: 'added' | 'updated' | 'removed' } =>
-          Boolean(value)
-        );
-
-      if (normalizedChanges.length > 0) {
-        return {
-          type: method,
-          structured: {
-            type: 'file_change_summary',
-            timestamp: ts,
-            changes: normalizedChanges,
-          },
-        };
+      if (method !== 'item/completed') {
+        return { type: method };
       }
+
+      const status = normalizeFileChangeStatus(item.status);
+      if (status !== 'completed') {
+        return { type: method };
+      }
+
+      const changes = Array.isArray(item.changes) ? item.changes : [];
+      const normalizedChanges = changes.flatMap((change) => {
+        if (!change || typeof change !== 'object') {
+          return [];
+        }
+        const data = change as Record<string, unknown>;
+        if (typeof data.path !== 'string') {
+          return [];
+        }
+        const normalized = {
+          path: data.path,
+          kind: normalizeFileChangeKind(data.kind),
+          diff: extractChangeDiff(data),
+        };
+        return [normalized];
+      });
 
       return {
         type: method,
         structured: {
-          type: 'llm_status',
+          type: 'file_change_summary',
           timestamp: ts,
-          source: 'codex',
-          status: 'codex.file_change.no_changes',
+          id:
+            typeof item.id === 'string'
+              ? item.id
+              : typeof item.id === 'number'
+                ? String(item.id)
+                : undefined,
+          status: 'completed',
+          changes: normalizedChanges,
         },
       };
     }
@@ -638,11 +673,11 @@ export function createAppServerFormatter() {
       }
 
       if (method === 'turn/diff/updated') {
-        return formatTurnDiff(payload, ts);
+        return { type: method };
       }
 
-      if (method === 'turn/plan/updated') {
-        return formatTurnPlan(payload, ts);
+      if (method === 'turn/plan/updated' || method === 'codex/plan/updated') {
+        return formatPlanUpdate(method, payload, ts);
       }
 
       return {

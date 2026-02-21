@@ -29,6 +29,7 @@ import { HeadlessAdapter } from './headless_adapter.js';
 export const structuredMessageTypes = new Set<StructuredMessage['type']>(structuredMessageTypeList);
 
 const fileChangeKinds = new Set(['added', 'updated', 'removed']);
+const fileChangeStatuses = new Set(['inProgress', 'completed', 'failed', 'declined']);
 const reviewSeverities = new Set(['critical', 'major', 'minor', 'info']);
 const reviewCategories = new Set([
   'security',
@@ -41,7 +42,14 @@ const reviewCategories = new Set([
 ]);
 const reviewVerdicts = new Set(['ACCEPTABLE', 'NEEDS_FIXES', 'UNKNOWN']);
 const executionSummaryModes = new Set(['serial', 'batch']);
-const todoStatuses = new Set(['pending', 'in_progress', 'completed', 'blocked', 'unknown']);
+const todoStatuses = new Set([
+  'pending',
+  'in_progress',
+  'inProgress',
+  'completed',
+  'blocked',
+  'unknown',
+]);
 const promptTypes = new Set(['input', 'confirm', 'select', 'checkbox', 'prefix_select']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -275,7 +283,9 @@ function isValidStructuredMessagePayload(message: unknown): message is Structure
             typeof item.status === 'string' &&
             todoStatuses.has(item.status)
           );
-        })
+        }) &&
+        (structured.turnId == null || typeof structured.turnId === 'string') &&
+        (structured.explanation == null || typeof structured.explanation === 'string')
       );
     case 'file_write':
       return typeof structured.path === 'string' && typeof structured.lineCount === 'number';
@@ -283,6 +293,9 @@ function isValidStructuredMessagePayload(message: unknown): message is Structure
       return typeof structured.path === 'string' && typeof structured.diff === 'string';
     case 'file_change_summary':
       return (
+        (structured.id == null || typeof structured.id === 'string') &&
+        (structured.status == null ||
+          (typeof structured.status === 'string' && fileChangeStatuses.has(structured.status))) &&
         Array.isArray(structured.changes) &&
         structured.changes.every((change) => {
           if (!isRecord(change)) {
@@ -291,7 +304,8 @@ function isValidStructuredMessagePayload(message: unknown): message is Structure
           return (
             typeof change.path === 'string' &&
             typeof change.kind === 'string' &&
-            fileChangeKinds.has(change.kind)
+            fileChangeKinds.has(change.kind) &&
+            (change.diff == null || typeof change.diff === 'string')
           );
         })
       );

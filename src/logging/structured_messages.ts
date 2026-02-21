@@ -94,7 +94,13 @@ export interface LlmStatusMessage extends StructuredMessageBase {
   source?: 'codex' | 'claude';
 }
 
-export type TodoUpdateStatus = 'pending' | 'in_progress' | 'completed' | 'blocked' | 'unknown';
+export type TodoUpdateStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'inProgress'
+  | 'completed'
+  | 'blocked'
+  | 'unknown';
 
 export interface TodoUpdateItem {
   label: string;
@@ -105,6 +111,8 @@ export interface TodoUpdateMessage extends StructuredMessageBase {
   type: 'todo_update';
   items: TodoUpdateItem[];
   source?: 'codex' | 'claude';
+  turnId?: string;
+  explanation?: string;
 }
 
 export interface FileWriteMessage extends StructuredMessageBase {
@@ -124,11 +132,16 @@ export type FileChangeKind = 'added' | 'updated' | 'removed';
 export interface FileChangeItem {
   path: string;
   kind: FileChangeKind;
+  diff?: string;
 }
+
+export type FileChangeStatus = 'inProgress' | 'completed' | 'failed' | 'declined';
 
 export interface FileChangeSummaryMessage extends StructuredMessageBase {
   type: 'file_change_summary';
   changes: FileChangeItem[];
+  id?: string;
+  status?: FileChangeStatus;
 }
 
 export interface CommandExecMessage extends StructuredMessageBase {
