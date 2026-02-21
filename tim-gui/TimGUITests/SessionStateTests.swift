@@ -1055,7 +1055,49 @@ struct SessionStateTests {
         #expect(state.sessions[0].hasUnreadNotification == true)
     }
 
-    @Test("structured messages other than input_required are ignored")
+    @Test("prompt_request structured output updates notification state")
+    func ingestStructuredPromptRequestNotification() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(
+            command: "agent",
+            workspacePath: "/project/x"))
+
+        state.ingestNotification(
+            connectionId: connId,
+            tunnelMessage: .structured(message: .promptRequest(PromptRequestPayload(
+                requestId: "req-1",
+                promptType: "confirm",
+                promptConfig: PromptConfigPayload(message: "Continue with deploy?"),
+                timeoutMs: nil,
+                timestamp: nil))))
+
+        #expect(state.sessions[0].notificationMessage == "Prompt (confirm): Continue with deploy?")
+        #expect(state.sessions[0].hasUnreadNotification == true)
+    }
+
+    @Test("prompt_answered structured output is ignored")
+    func ingestStructuredPromptAnsweredNotificationIgnored() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(
+            command: "agent",
+            workspacePath: "/project/x"))
+
+        state.ingestNotification(
+            connectionId: connId,
+            tunnelMessage: .structured(message: .promptAnswered(PromptAnsweredPayload(
+                requestId: "req-1",
+                promptType: "confirm",
+                source: "terminal",
+                value: nil,
+                timestamp: nil))))
+
+        #expect(state.sessions[0].notificationMessage == nil)
+        #expect(state.sessions[0].hasUnreadNotification == false)
+    }
+
+    @Test("structured messages other than input_required and prompt_request are ignored")
     func ingestStructuredNotificationIgnoresOtherMessages() {
         let state = SessionState()
         let connId = UUID()

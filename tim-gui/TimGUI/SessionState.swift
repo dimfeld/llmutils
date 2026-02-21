@@ -389,6 +389,12 @@ final class SessionState {
                 return "Input required: \(prompt)"
             }
             return "Input required"
+        case let .promptRequest(prompt):
+            let message = prompt.promptConfig.message.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !message.isEmpty {
+                return "Prompt (\(prompt.promptType)): \(message)"
+            }
+            return "Prompt (\(prompt.promptType))"
         default:
             return nil
         }
