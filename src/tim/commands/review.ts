@@ -727,6 +727,8 @@ export async function handleReviewCommand(
           // 1. console.log directly so the executor can capture it from the child's stdout
           // 2. log() which goes through the tunnel adapter to the parent for display
           console.log(formattedOutput);
+          // Wait so that output flushes, this seems necessary in recent versions of Claude Code
+          await Bun.sleep(500);
         }
         log(formattedOutput);
 

@@ -145,6 +145,8 @@ export async function handleSubagentCommand(
 
   // Print final message to stdout for orchestrator to capture
   console.log(finalMessage);
+  // Wait so that output flushes, this seems necessary in recent versions of Claude Code
+  await Bun.sleep(500);
 }
 
 async function resolveOrchestratorInput(options: SubagentOptions): Promise<string | undefined> {
