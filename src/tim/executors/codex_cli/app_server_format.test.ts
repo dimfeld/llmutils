@@ -336,7 +336,7 @@ describe('createAppServerFormatter', () => {
         explanation: 'Updated plan after inspection',
         items: [
           { label: 'inspect', status: 'completed' },
-          { label: 'test', status: 'inProgress' },
+          { label: 'test', status: 'in_progress' },
           { label: 'fix', status: 'pending' },
         ],
       })

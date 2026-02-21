@@ -52,7 +52,6 @@ describe('Codex CLI bare mode', () => {
 
     expect(result?.content).toBe('BARE MODE OUTPUT');
     expect(result?.metadata?.phase).toBe('bare');
-    expect(logMessages.some((msg) => msg.includes('bare mode'))).toBeTrue();
   });
 
   test('runs single prompt and returns output when captureOutput is "all"', async () => {

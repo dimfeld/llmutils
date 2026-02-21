@@ -94,13 +94,7 @@ export interface LlmStatusMessage extends StructuredMessageBase {
   source?: 'codex' | 'claude';
 }
 
-export type TodoUpdateStatus =
-  | 'pending'
-  | 'in_progress'
-  | 'inProgress'
-  | 'completed'
-  | 'blocked'
-  | 'unknown';
+export type TodoUpdateStatus = 'pending' | 'in_progress' | 'completed' | 'blocked' | 'unknown';
 
 export interface TodoUpdateItem {
   label: string;
@@ -135,7 +129,7 @@ export interface FileChangeItem {
   diff?: string;
 }
 
-export type FileChangeStatus = 'inProgress' | 'completed' | 'failed' | 'declined';
+export type FileChangeStatus = 'in_progress' | 'completed' | 'failed' | 'declined';
 
 export interface FileChangeSummaryMessage extends StructuredMessageBase {
   type: 'file_change_summary';

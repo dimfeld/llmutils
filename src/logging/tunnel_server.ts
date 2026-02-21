@@ -29,7 +29,7 @@ import { HeadlessAdapter } from './headless_adapter.js';
 export const structuredMessageTypes = new Set<StructuredMessage['type']>(structuredMessageTypeList);
 
 const fileChangeKinds = new Set(['added', 'updated', 'removed']);
-const fileChangeStatuses = new Set(['inProgress', 'completed', 'failed', 'declined']);
+const fileChangeStatuses = new Set(['in_progress', 'completed', 'failed', 'declined']);
 const reviewSeverities = new Set(['critical', 'major', 'minor', 'info']);
 const reviewCategories = new Set([
   'security',
@@ -42,14 +42,7 @@ const reviewCategories = new Set([
 ]);
 const reviewVerdicts = new Set(['ACCEPTABLE', 'NEEDS_FIXES', 'UNKNOWN']);
 const executionSummaryModes = new Set(['serial', 'batch']);
-const todoStatuses = new Set([
-  'pending',
-  'in_progress',
-  'inProgress',
-  'completed',
-  'blocked',
-  'unknown',
-]);
+const todoStatuses = new Set(['pending', 'in_progress', 'completed', 'blocked', 'unknown']);
 const promptTypes = new Set(['input', 'confirm', 'select', 'checkbox', 'prefix_select']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {

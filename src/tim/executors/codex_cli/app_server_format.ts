@@ -59,10 +59,10 @@ function normalizeFileChangeKind(kind: unknown): 'added' | 'updated' | 'removed'
 
 function normalizeFileChangeStatus(
   status: unknown
-): 'inProgress' | 'completed' | 'failed' | 'declined' {
+): 'in_progress' | 'completed' | 'failed' | 'declined' {
   const normalized = typeof status === 'string' ? status.trim().toLowerCase() : '';
   if (normalized === 'inprogress' || normalized === 'in_progress' || normalized === 'active') {
-    return 'inProgress';
+    return 'in_progress';
   }
   if (normalized === 'failed' || normalized === 'error') {
     return 'failed';
@@ -73,13 +73,13 @@ function normalizeFileChangeStatus(
   return 'completed';
 }
 
-function normalizePlanStepStatus(status: unknown): 'pending' | 'inProgress' | 'completed' {
+function normalizePlanStepStatus(status: unknown): 'pending' | 'in_progress' | 'completed' {
   const normalized = typeof status === 'string' ? status.trim().toLowerCase() : '';
   if (normalized === 'completed' || normalized === 'done') {
     return 'completed';
   }
   if (normalized === 'inprogress' || normalized === 'in_progress' || normalized === 'active') {
-    return 'inProgress';
+    return 'in_progress';
   }
   return 'pending';
 }
@@ -292,7 +292,7 @@ function extractChangeDiff(data: Record<string, unknown>): string | undefined {
 
 function formatPlanItem(
   step: unknown
-): { label: string; status: 'pending' | 'inProgress' | 'completed' } | undefined {
+): { label: string; status: 'pending' | 'in_progress' | 'completed' } | undefined {
   if (typeof step === 'string') {
     const label = step.trim();
     if (label.length === 0) {
@@ -334,7 +334,7 @@ function formatPlanUpdate(
   const items = sourcePlan.map((entry) => formatPlanItem(entry)).filter((item) => Boolean(item));
   const normalizedItems = items as {
     label: string;
-    status: 'pending' | 'inProgress' | 'completed';
+    status: 'pending' | 'in_progress' | 'completed';
   }[];
 
   return {
