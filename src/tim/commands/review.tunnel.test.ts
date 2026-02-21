@@ -147,6 +147,7 @@ describe('Review command tunnel integration', () => {
 
       // We need to track both `log()` calls AND `Bun.write(Bun.stdout, ...)` calls
       const originalBunWrite = Bun.write;
+      const originalConsoleLog = console.log;
       Bun.write = (async (dest: any, data: any) => {
         if (dest === Bun.stdout) {
           stdoutWrites.push(typeof data === 'string' ? data : data?.toString() || '');
@@ -154,6 +155,9 @@ describe('Review command tunnel integration', () => {
         }
         return originalBunWrite(dest, data);
       }) as typeof Bun.write;
+      console.log = (...args: unknown[]) => {
+        stdoutWrites.push(args.map((arg) => String(arg)).join(' '));
+      };
 
       await moduleMocker.mock('../../logging.js', () => ({
         log: (...args: any[]) => {
@@ -188,6 +192,7 @@ describe('Review command tunnel integration', () => {
         );
       } finally {
         Bun.write = originalBunWrite;
+        console.log = originalConsoleLog;
       }
 
       // When tunnel is active + print mode, the quiet logger is NOT installed.
@@ -264,6 +269,7 @@ describe('Review command tunnel integration', () => {
       const stdoutWrites: string[] = [];
 
       const originalBunWrite = Bun.write;
+      const originalConsoleLog = console.log;
       Bun.write = (async (dest: any, data: any) => {
         if (dest === Bun.stdout) {
           stdoutWrites.push(typeof data === 'string' ? data : data?.toString() || '');
@@ -271,6 +277,9 @@ describe('Review command tunnel integration', () => {
         }
         return originalBunWrite(dest, data);
       }) as typeof Bun.write;
+      console.log = (...args: unknown[]) => {
+        stdoutWrites.push(args.map((arg) => String(arg)).join(' '));
+      };
 
       await moduleMocker.mock('../../logging.js', () => ({
         log: (...args: any[]) => {
@@ -305,6 +314,7 @@ describe('Review command tunnel integration', () => {
         );
       } finally {
         Bun.write = originalBunWrite;
+        console.log = originalConsoleLog;
       }
 
       // BOTH should have received the review output
@@ -328,6 +338,7 @@ describe('Review command tunnel integration', () => {
       const stdoutWrites: string[] = [];
 
       const originalBunWrite = Bun.write;
+      const originalConsoleLog = console.log;
       Bun.write = (async (dest: any, data: any) => {
         if (dest === Bun.stdout) {
           stdoutWrites.push(typeof data === 'string' ? data : data?.toString() || '');
@@ -335,6 +346,9 @@ describe('Review command tunnel integration', () => {
         }
         return originalBunWrite(dest, data);
       }) as typeof Bun.write;
+      console.log = (...args: unknown[]) => {
+        stdoutWrites.push(args.map((arg) => String(arg)).join(' '));
+      };
 
       await moduleMocker.mock('../../logging.js', () => ({
         log: (...args: any[]) => {
@@ -369,6 +383,7 @@ describe('Review command tunnel integration', () => {
         );
       } finally {
         Bun.write = originalBunWrite;
+        console.log = originalConsoleLog;
       }
 
       // Without tunnel: Bun.write(Bun.stdout, ...) should NOT have been called for review output
@@ -401,6 +416,7 @@ describe('Review command tunnel integration', () => {
       process.stderr.write = stderrWriteMock as any;
 
       const originalBunWrite = Bun.write;
+      const originalConsoleLog = console.log;
       Bun.write = (async (dest: any, data: any) => {
         if (dest === Bun.stdout) {
           stdoutWrites.push(typeof data === 'string' ? data : data?.toString() || '');
@@ -408,6 +424,9 @@ describe('Review command tunnel integration', () => {
         }
         return originalBunWrite(dest, data);
       }) as typeof Bun.write;
+      console.log = (...args: unknown[]) => {
+        stdoutWrites.push(args.map((arg) => String(arg)).join(' '));
+      };
 
       await moduleMocker.mock('../../logging.js', () => ({
         log: (...args: any[]) => {
@@ -443,6 +462,7 @@ describe('Review command tunnel integration', () => {
         );
       } finally {
         Bun.write = originalBunWrite;
+        console.log = originalConsoleLog;
         process.stderr.write = originalStderrWrite;
       }
 

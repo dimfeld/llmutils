@@ -78,6 +78,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
   // Spy on Bun.write to capture final output (source uses Bun.write(Bun.stdout, ...))
   let stdoutWriteCalls: string[] = [];
   let originalBunWrite: typeof Bun.write;
+  let originalConsoleLog: typeof console.log;
 
   // Track which custom instructions were requested
   let agentInstructionRequests: string[] = [];
@@ -129,6 +130,10 @@ describe('subagent command - prompt construction and executor delegation', () =>
       }
       return originalBunWrite(dest, data);
     }) as typeof Bun.write;
+    originalConsoleLog = console.log;
+    console.log = (...args: unknown[]) => {
+      stdoutWriteCalls.push(args.map((arg) => String(arg)).join(' '));
+    };
 
     // Mock logging to suppress output
     await moduleMocker.mock('../../logging.js', () => ({
@@ -266,6 +271,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
     restoreBunStdin?.();
     restoreIsTTY?.();
     Bun.write = originalBunWrite;
+    console.log = originalConsoleLog;
     moduleMocker.clear();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -1001,6 +1007,7 @@ describe('subagent command - permissions MCP integration', () => {
   let capturedClaudeSpawnArgs: string[] | undefined;
   let stdoutWriteCalls: string[] = [];
   let originalBunWrite: typeof Bun.write;
+  let originalConsoleLog: typeof console.log;
 
   const basePlan: PlanSchema = {
     id: 42,
@@ -1038,6 +1045,10 @@ describe('subagent command - permissions MCP integration', () => {
       }
       return originalBunWrite(dest, data);
     }) as typeof Bun.write;
+    originalConsoleLog = console.log;
+    console.log = (...args: unknown[]) => {
+      stdoutWriteCalls.push(args.map((arg) => String(arg)).join(' '));
+    };
 
     await moduleMocker.mock('../../logging.js', () => ({
       log: mock(() => {}),
@@ -1129,6 +1140,7 @@ describe('subagent command - permissions MCP integration', () => {
 
   afterEach(async () => {
     Bun.write = originalBunWrite;
+    console.log = originalConsoleLog;
     moduleMocker.clear();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -1344,6 +1356,7 @@ describe('subagent command - executeWithClaude error scenarios', () => {
 
   let stdoutWriteCalls: string[] = [];
   let originalBunWrite: typeof Bun.write;
+  let originalConsoleLog: typeof console.log;
 
   const basePlan: PlanSchema = {
     id: 42,
@@ -1379,6 +1392,10 @@ describe('subagent command - executeWithClaude error scenarios', () => {
       }
       return originalBunWrite(dest, data);
     }) as typeof Bun.write;
+    originalConsoleLog = console.log;
+    console.log = (...args: unknown[]) => {
+      stdoutWriteCalls.push(args.map((arg) => String(arg)).join(' '));
+    };
 
     await moduleMocker.mock('../../logging.js', () => ({
       log: mock(() => {}),
@@ -1471,6 +1488,7 @@ describe('subagent command - executeWithClaude error scenarios', () => {
 
   afterEach(async () => {
     Bun.write = originalBunWrite;
+    console.log = originalConsoleLog;
     moduleMocker.clear();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -1640,6 +1658,7 @@ describe('subagent command - tunnel behavior', () => {
   let capturedSpawnEnv: Record<string, string> | undefined;
   let stdoutWriteCalls: string[] = [];
   let originalBunWrite: typeof Bun.write;
+  let originalConsoleLog: typeof console.log;
 
   // Track tunnel mock calls
   let createTunnelServerCalls: string[] = [];
@@ -1800,10 +1819,15 @@ describe('subagent command - tunnel behavior', () => {
       }
       return originalBunWrite(dest, data);
     }) as typeof Bun.write;
+    originalConsoleLog = console.log;
+    console.log = (...args: unknown[]) => {
+      stdoutWriteCalls.push(args.map((arg) => String(arg)).join(' '));
+    };
   });
 
   afterEach(async () => {
     Bun.write = originalBunWrite;
+    console.log = originalConsoleLog;
     moduleMocker.clear();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
