@@ -19,7 +19,11 @@ import type { ExecutorCommonOptions } from '../executors/types.js';
 import { findNextReadyDependency } from './find_next_dependency.js';
 import { autoClaimPlan, isAutoClaimEnabled } from '../assignments/auto_claim.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
-import { getWorkspaceInfoByPath, patchWorkspaceInfo } from '../workspace/workspace_info.js';
+import {
+  getWorkspaceInfoByPath,
+  patchWorkspaceInfo,
+  touchWorkspaceInfo,
+} from '../workspace/workspace_info.js';
 import { buildPromptText, findMostRecentlyUpdatedPlan } from './prompts.js';
 import type { GenerateModeRegistrationContext } from '../mcp/generate_mode.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
@@ -176,154 +180,166 @@ export async function handleGenerateCommand(
   // Workspace setup
   let currentBaseDir = gitRoot;
   let currentPlanFile = planFile;
+  let touchedWorkspacePath: string | null = null;
 
-  const workspaceResult = await setupWorkspace(
-    {
-      workspace: options.workspace,
-      autoWorkspace: options.autoWorkspace,
-      newWorkspace: options.newWorkspace,
-      nonInteractive: options.nonInteractive,
-      requireWorkspace: options.requireWorkspace,
-      planUuid: parsedPlan.uuid,
-      base: options.base,
-    },
-    currentBaseDir,
-    currentPlanFile,
-    config,
-    'tim generate'
-  );
-  currentBaseDir = workspaceResult.baseDir;
-  currentPlanFile = workspaceResult.planFile;
+  try {
+    const workspaceResult = await setupWorkspace(
+      {
+        workspace: options.workspace,
+        autoWorkspace: options.autoWorkspace,
+        newWorkspace: options.newWorkspace,
+        nonInteractive: options.nonInteractive,
+        requireWorkspace: options.requireWorkspace,
+        planUuid: parsedPlan.uuid,
+        base: options.base,
+      },
+      currentBaseDir,
+      currentPlanFile,
+      config,
+      'tim generate'
+    );
+    currentBaseDir = workspaceResult.baseDir;
+    currentPlanFile = workspaceResult.planFile;
+    touchedWorkspacePath = currentBaseDir;
 
-  // Auto-claim the plan if enabled (before execution, matching agent pattern)
-  if (isAutoClaimEnabled()) {
-    if (parsedPlan.uuid) {
-      try {
-        await autoClaimPlan(
-          { plan: { ...parsedPlan, filename: currentPlanFile }, uuid: parsedPlan.uuid },
-          { cwdForIdentity: currentBaseDir }
-        );
-      } catch (err) {
-        const label = currentPlanId ?? parsedPlan.uuid;
-        warn(`Failed to auto-claim plan ${label}: ${err as Error}`);
+    // Auto-claim the plan if enabled (before execution, matching agent pattern)
+    if (isAutoClaimEnabled()) {
+      if (parsedPlan.uuid) {
+        try {
+          await autoClaimPlan(
+            { plan: { ...parsedPlan, filename: currentPlanFile }, uuid: parsedPlan.uuid },
+            { cwdForIdentity: currentBaseDir }
+          );
+        } catch (err) {
+          const label = currentPlanId ?? parsedPlan.uuid;
+          warn(`Failed to auto-claim plan ${label}: ${err as Error}`);
+        }
+      } else {
+        warn(`Plan at ${currentPlanFile} is missing a UUID; skipping auto-claim.`);
       }
-    } else {
-      warn(`Plan at ${currentPlanFile} is missing a UUID; skipping auto-claim.`);
+    }
+
+    await updateWorkspaceDescriptionFromPlan(currentBaseDir, parsedPlan);
+
+    // Build the prompt using the new interactive prompt system
+    // Use 'generate-plan-simple' for simple mode, 'generate-plan' for full interactive mode
+    // loadResearchPrompt handles the simple flag check on the plan itself,
+    // but we need to handle the --simple CLI flag explicitly
+    const promptName = options.simple ? 'generate-plan-simple' : 'generate-plan';
+
+    const context: GenerateModeRegistrationContext = {
+      config,
+      configPath: globalOpts.config,
+      gitRoot, // Use actual git root for plan resolution, not workspace dir
+    };
+
+    const singlePrompt = await buildPromptText(
+      promptName,
+      {
+        plan: currentPlanFile,
+        allowMultiplePlans: true,
+      },
+      context
+    );
+
+    // Compute terminal input and noninteractive options
+    const noninteractive = options.nonInteractive === true;
+    const terminalInputEnabled =
+      !noninteractive &&
+      process.stdin.isTTY === true &&
+      options.terminalInput !== false &&
+      config.terminalInput !== false;
+
+    // Build executor
+    const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
+    const sharedExecutorOptions: ExecutorCommonOptions = {
+      baseDir: currentBaseDir,
+      model: config.models?.stepGeneration,
+      noninteractive: noninteractive ? true : undefined,
+      terminalInput: terminalInputEnabled,
+      closeTerminalInputOnResult: false,
+      disableInactivityTimeout: true,
+    };
+    const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
+
+    await runWithHeadlessAdapterIfEnabled({
+      enabled: !isTunnelActive(),
+      command: 'generate',
+      config,
+      plan: {
+        id: parsedPlan.id,
+        title: parsedPlan.title,
+      },
+      callback: async () => {
+        log(chalk.blue('🤖 Running plan generation with executor...'));
+
+        // Execute the prompt
+        await executor.execute(singlePrompt, {
+          planId: String(currentPlanId ?? 'generate'),
+          planTitle: parsedPlan.title || 'Generate Plan',
+          planFilePath: currentPlanFile,
+          executionMode: 'planning',
+        });
+
+        // Report generation result
+        const updatedPlan = await readPlanFile(currentPlanFile);
+
+        let needsSync = true;
+        try {
+          const gitRootForBranch = await getGitRoot(currentBaseDir);
+          const currentBranch = await getCurrentBranchName(currentBaseDir);
+          const trunkBranch = await getTrunkBranch(gitRootForBranch);
+          if (
+            currentBranch &&
+            currentBranch !== trunkBranch &&
+            updatedPlan.branch !== currentBranch
+          ) {
+            updatedPlan.branch = currentBranch;
+            await writePlanFile(currentPlanFile, updatedPlan);
+            needsSync = false;
+          }
+        } catch (err) {
+          warn(`Failed to update branch in plan file: ${err as Error}`);
+        }
+
+        const hasTasks = updatedPlan.tasks && updatedPlan.tasks.length > 0;
+
+        if (hasTasks) {
+          log(chalk.green(`✓ Plan generated with ${updatedPlan.tasks.length} tasks`));
+        } else if (updatedPlan.epic) {
+          log(chalk.green('✓ Plan was created as an epic'));
+        } else {
+          warn(
+            chalk.yellow(
+              '⚠️  No tasks were created. Please add tasks manually using `tim tools update-plan-tasks` as described in the using-tim skill'
+            )
+          );
+        }
+
+        // Handle --commit option
+        if (options.commit) {
+          const planTitle = parsedPlan.title || parsedPlan.goal || 'plan';
+          const commitMessage = `Add plan: ${planTitle}`;
+          await commitAll(commitMessage, currentBaseDir);
+          log(chalk.green('✓ Committed changes'));
+        }
+
+        if (needsSync) {
+          await syncPlanToDb(updatedPlan, currentPlanFile, {
+            force: true,
+            config,
+            baseDir: currentBaseDir,
+          });
+        }
+      },
+    });
+  } finally {
+    if (touchedWorkspacePath) {
+      try {
+        touchWorkspaceInfo(touchedWorkspacePath);
+      } catch (err) {
+        warn(`Failed to update workspace last used time: ${err as Error}`);
+      }
     }
   }
-
-  await updateWorkspaceDescriptionFromPlan(currentBaseDir, parsedPlan);
-
-  // Build the prompt using the new interactive prompt system
-  // Use 'generate-plan-simple' for simple mode, 'generate-plan' for full interactive mode
-  // loadResearchPrompt handles the simple flag check on the plan itself,
-  // but we need to handle the --simple CLI flag explicitly
-  const promptName = options.simple ? 'generate-plan-simple' : 'generate-plan';
-
-  const context: GenerateModeRegistrationContext = {
-    config,
-    configPath: globalOpts.config,
-    gitRoot, // Use actual git root for plan resolution, not workspace dir
-  };
-
-  const singlePrompt = await buildPromptText(
-    promptName,
-    {
-      plan: currentPlanFile,
-      allowMultiplePlans: true,
-    },
-    context
-  );
-
-  // Compute terminal input and noninteractive options
-  const noninteractive = options.nonInteractive === true;
-  const terminalInputEnabled =
-    !noninteractive &&
-    process.stdin.isTTY === true &&
-    options.terminalInput !== false &&
-    config.terminalInput !== false;
-
-  // Build executor
-  const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
-  const sharedExecutorOptions: ExecutorCommonOptions = {
-    baseDir: currentBaseDir,
-    model: config.models?.stepGeneration,
-    noninteractive: noninteractive ? true : undefined,
-    terminalInput: terminalInputEnabled,
-    closeTerminalInputOnResult: false,
-    disableInactivityTimeout: true,
-  };
-  const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
-
-  await runWithHeadlessAdapterIfEnabled({
-    enabled: !isTunnelActive(),
-    command: 'generate',
-    config,
-    plan: {
-      id: parsedPlan.id,
-      title: parsedPlan.title,
-    },
-    callback: async () => {
-      log(chalk.blue('🤖 Running plan generation with executor...'));
-
-      // Execute the prompt
-      await executor.execute(singlePrompt, {
-        planId: String(currentPlanId ?? 'generate'),
-        planTitle: parsedPlan.title || 'Generate Plan',
-        planFilePath: currentPlanFile,
-        executionMode: 'planning',
-      });
-
-      // Report generation result
-      const updatedPlan = await readPlanFile(currentPlanFile);
-
-      let needsSync = true;
-      try {
-        const gitRootForBranch = await getGitRoot(currentBaseDir);
-        const currentBranch = await getCurrentBranchName(currentBaseDir);
-        const trunkBranch = await getTrunkBranch(gitRootForBranch);
-        if (
-          currentBranch &&
-          currentBranch !== trunkBranch &&
-          updatedPlan.branch !== currentBranch
-        ) {
-          updatedPlan.branch = currentBranch;
-          await writePlanFile(currentPlanFile, updatedPlan);
-          needsSync = false;
-        }
-      } catch (err) {
-        warn(`Failed to update branch in plan file: ${err as Error}`);
-      }
-
-      const hasTasks = updatedPlan.tasks && updatedPlan.tasks.length > 0;
-
-      if (hasTasks) {
-        log(chalk.green(`✓ Plan generated with ${updatedPlan.tasks.length} tasks`));
-      } else if (updatedPlan.epic) {
-        log(chalk.green('✓ Plan was created as an epic'));
-      } else {
-        warn(
-          chalk.yellow(
-            '⚠️  No tasks were created. Please add tasks manually using `tim tools update-plan-tasks` as described in the using-tim skill'
-          )
-        );
-      }
-
-      // Handle --commit option
-      if (options.commit) {
-        const planTitle = parsedPlan.title || parsedPlan.goal || 'plan';
-        const commitMessage = `Add plan: ${planTitle}`;
-        await commitAll(commitMessage, currentBaseDir);
-        log(chalk.green('✓ Committed changes'));
-      }
-
-      if (needsSync) {
-        await syncPlanToDb(updatedPlan, currentPlanFile, {
-          force: true,
-          config,
-          baseDir: currentBaseDir,
-        });
-      }
-    },
-  });
 }

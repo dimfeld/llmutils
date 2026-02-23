@@ -55,7 +55,11 @@ import { ensureUuidsAndReferences } from '../../utils/references.js';
 import { sendNotification } from '../../notifications.js';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { runWithHeadlessAdapterIfEnabled, type HeadlessPlanSummary } from '../../headless.js';
-import { getWorkspaceInfoByPath, patchWorkspaceInfo } from '../../workspace/workspace_info.js';
+import {
+  getWorkspaceInfoByPath,
+  patchWorkspaceInfo,
+  touchWorkspaceInfo,
+} from '../../workspace/workspace_info.js';
 import { setupWorkspace } from '../../workspace/workspace_setup.js';
 
 export async function handleAgentCommand(
@@ -277,6 +281,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
   let currentPlanFile = planFile;
   let config = getDefaultConfig();
   let currentBaseDir = process.cwd();
+  let touchedWorkspacePath: string | null = null;
   let executionError: Error | undefined;
   let failureReason: Error | undefined;
   let lastKnownPlan: PlanSchema | undefined;
@@ -328,6 +333,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
 
     currentBaseDir = workspaceResult.baseDir;
     currentPlanFile = workspaceResult.planFile;
+    touchedWorkspacePath = currentBaseDir;
 
     // Use orchestrator from CLI options, fallback to config defaultOrchestrator, or fallback to DEFAULT_EXECUTOR
     // Note: defaultOrchestrator and defaultExecutor are independent - agent command uses defaultOrchestrator
@@ -1194,6 +1200,14 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     executionError = failureReason ?? (err instanceof Error ? err : new Error(String(err)));
     throw err;
   } finally {
+    if (touchedWorkspacePath) {
+      try {
+        touchWorkspaceInfo(touchedWorkspacePath);
+      } catch (err) {
+        warn(`Failed to update workspace last used time: ${err as Error}`);
+      }
+    }
+
     let planForNotification = lastKnownPlan;
     try {
       planForNotification = await readPlanFile(currentPlanFile);

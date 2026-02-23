@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import { getDatabase } from '../db/database.js';
+import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import { getOrCreateProject, getProject, getProjectById } from '../db/project.js';
 import {
   findWorkspacesByProjectId,
@@ -146,4 +147,11 @@ export function patchWorkspaceInfo(
   }
 
   return workspaceRowToInfo(updated, db);
+}
+
+export function touchWorkspaceInfo(workspacePath: string): void {
+  const db = getDatabase();
+  db.prepare(`UPDATE workspace SET updated_at = ${SQL_NOW_ISO_UTC} WHERE workspace_path = ?`).run(
+    workspacePath
+  );
 }

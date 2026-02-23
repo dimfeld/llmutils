@@ -50,6 +50,7 @@ describe('handleGenerateCommand', () => {
     return baseDir === trackedWorkspacePath ? { taskId: 'ws-tracked', workspacePath: baseDir } : null;
   });
   const patchWorkspaceInfoSpy = mock(() => ({}));
+  const touchWorkspaceInfoSpy = mock(() => ({}));
 
   // Mock commitAll
   const commitAllSpy = mock(async () => 0);
@@ -71,6 +72,7 @@ describe('handleGenerateCommand', () => {
     trackedWorkspacePath = undefined;
     getWorkspaceInfoByPathSpy.mockClear();
     patchWorkspaceInfoSpy.mockClear();
+    touchWorkspaceInfoSpy.mockClear();
     isTunnelActiveSpy.mockClear();
     runWithHeadlessAdapterIfEnabledSpy.mockClear();
 
@@ -110,6 +112,7 @@ describe('handleGenerateCommand', () => {
     await moduleMocker.mock('../workspace/workspace_info.js', () => ({
       getWorkspaceInfoByPath: getWorkspaceInfoByPathSpy,
       patchWorkspaceInfo: patchWorkspaceInfoSpy,
+      touchWorkspaceInfo: touchWorkspaceInfoSpy,
     }));
 
     await moduleMocker.mock('../../common/process.js', () => ({
@@ -399,7 +402,9 @@ describe('handleGenerateCommand', () => {
     );
 
     expect(patchWorkspaceInfoSpy).toHaveBeenCalledTimes(1);
+    expect(touchWorkspaceInfoSpy).toHaveBeenCalledTimes(1);
     expect(patchWorkspaceInfoSpy.mock.calls[0][0]).toBe(workspaceDir);
+    expect(touchWorkspaceInfoSpy.mock.calls[0][0]).toBe(workspaceDir);
     expect(patchWorkspaceInfoSpy.mock.calls[0][1]).toMatchObject({
       description: '#55 Tracked Workspace Plan',
       planId: '113',
