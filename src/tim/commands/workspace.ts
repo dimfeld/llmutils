@@ -158,8 +158,7 @@ async function buildWorkspaceListEntries(
       mostRecentAssignment: buildWorkspaceAssignmentDisplay(
         mostRecentAssignmentByWorkspace[workspace.workspacePath]
       ),
-      mostRecentAssignmentPlanId:
-        mostRecentAssignmentByWorkspace[workspace.workspacePath]?.planId,
+      mostRecentAssignmentPlanId: mostRecentAssignmentByWorkspace[workspace.workspacePath]?.planId,
       mostRecentAssignmentStatus:
         mostRecentAssignmentByWorkspace[workspace.workspacePath]?.status ?? undefined,
     });
@@ -265,7 +264,8 @@ export async function handleWorkspaceListCommand(options: WorkspaceListOptions, 
 
   // Update lock status for all workspaces
   const workspacesWithStatus = await updateWorkspaceLockStatus(workspaces);
-  const mostRecentAssignments = await resolveMostRecentAssignmentsForWorkspaces(workspacesWithStatus);
+  const mostRecentAssignments =
+    await resolveMostRecentAssignmentsForWorkspaces(workspacesWithStatus);
 
   // Build enriched list entries with live branch info
   const entries = await buildWorkspaceListEntries(workspacesWithStatus, mostRecentAssignments);

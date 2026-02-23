@@ -162,6 +162,7 @@ export async function executeCodexStepViaAppServer(
   let inactivityTimer: ReturnType<typeof setTimeout> | undefined;
   let resolveTurnCompleted: ((status: string) => void) | undefined;
   let turnCompletedPromise: Promise<string> | undefined;
+  let turnStartError: unknown;
   let successfulTurns = 0;
   let chatTurnId: string | undefined;
   let chatTurnCompleted = true;
@@ -183,6 +184,7 @@ export async function executeCodexStepViaAppServer(
   };
 
   const resetTurnTracking = () => {
+    turnStartError = undefined;
     turnCompletedPromise = new Promise<string>((resolve) => {
       resolveTurnCompleted = resolve;
     });
@@ -198,7 +200,7 @@ export async function executeCodexStepViaAppServer(
     sawFirstNotification = true;
 
     inactivityTimer = setTimeout(() => {
-      if (!currentAttemptActive || !connection?.isAlive || !threadId || !currentTurnId) {
+      if (!currentAttemptActive || !connection?.isAlive || !threadId) {
         return;
       }
 
@@ -208,6 +210,17 @@ export async function executeCodexStepViaAppServer(
         `Codex produced no output for ${minutes} minute${minutes === 1 ? '' : 's'}; interrupting attempt.`
       );
 
+      if (!currentTurnId) {
+        // If we never learned a turn id, unblock this attempt and allow retry logic to continue.
+        currentAttemptActive = false;
+        resolveCurrentTurnStatus('interrupted');
+        clearInactivityTimer();
+        return;
+      }
+
+      resolveCurrentTurnStatus('interrupted');
+      currentAttemptActive = false;
+      clearInactivityTimer();
       connection.turnInterrupt({ threadId, turnId: currentTurnId }).catch((err) => {
         debugLog('Failed to interrupt inactive app-server turn:', err);
       });
@@ -253,8 +266,9 @@ export async function executeCodexStepViaAppServer(
           currentAttemptActive = false;
           clearInactivityTimer();
         } else if (method === 'turn/started') {
+          currentTurnId = extractTurnId(params) ?? currentTurnId;
           chatTurnCompleted = false;
-          chatTurnId = extractTurnId(params) ?? chatTurnId;
+          chatTurnId = currentTurnId ?? chatTurnId;
         }
       },
       onServerRequest: approvalHandler,
@@ -281,15 +295,30 @@ export async function executeCodexStepViaAppServer(
           resetTurnTracking();
           resetInactivityTimer();
 
-          const turnResult = await activeConnection.turnStart({
-            threadId: activeThreadId,
-            input: [{ type: 'text', text: promptForAttempt }],
-            model,
-            effort: reasoningLevel,
-            ...(options?.outputSchema ? { outputSchema: options.outputSchema } : {}),
-          });
-          currentTurnId = turnResult.turnId;
-          resetInactivityTimer();
+          void activeConnection
+            .turnStart({
+              threadId: activeThreadId,
+              input: [{ type: 'text', text: promptForAttempt }],
+              model,
+              effort: reasoningLevel,
+              ...(options?.outputSchema ? { outputSchema: options.outputSchema } : {}),
+            })
+            .then((turnResult) => {
+              if (!currentAttemptActive) {
+                return;
+              }
+              currentTurnId = turnResult.turnId;
+              resetInactivityTimer();
+            })
+            .catch((err) => {
+              if (!currentAttemptActive) {
+                return;
+              }
+              turnStartError = err;
+              currentAttemptActive = false;
+              clearInactivityTimer();
+              resolveCurrentTurnStatus('failed');
+            });
 
           if (!turnCompletedPromise) {
             throw new Error('Codex app-server turn tracking was not initialized.');
@@ -299,8 +328,15 @@ export async function executeCodexStepViaAppServer(
           clearInactivityTimer();
 
           if (status.toLowerCase() === 'completed') {
+            if (turnStartError != null) {
+              throw turnStartError;
+            }
             successfulTurns += 1;
             return;
+          }
+
+          if (turnStartError != null) {
+            throw turnStartError;
           }
 
           const inactivitySuffix = interruptedByInactivity ? ' (after inactivity timeout)' : '';

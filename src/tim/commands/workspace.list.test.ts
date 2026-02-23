@@ -408,7 +408,9 @@ describe('workspace list command', () => {
 
     const output = consoleOutput.join('\n');
     expect(output).toContain('Plan');
-    expect(output).toMatch(/\d+\s+(?:minute|minutes|hour|hours|day|days|month|months|year|years)\s+ago|just now/);
+    expect(output).toMatch(
+      /\d+\s+(?:minute|minutes|hour|hours|day|days|month|months|year|years)\s+ago|just now/
+    );
   });
 
   test('table format shows most recent assignment in Plan column', async () => {

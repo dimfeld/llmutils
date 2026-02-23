@@ -263,6 +263,41 @@ describe('executeCodexStepViaAppServer', () => {
     harness.moduleMocker.clear();
   });
 
+  test('retries when turnStart hangs without yielding a turn id', async () => {
+    const harness = await createHarness();
+
+    harness.connection.turnStart.mockImplementationOnce(async () => {
+      harness.connectionHandlers.onNotification?.('item/started', { item: { type: 'reasoning' } });
+      return await new Promise<never>(() => {});
+    });
+
+    harness.connection.turnStart.mockImplementationOnce(async () => {
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { status: 'completed' },
+      });
+      return { turnId: 'turn-2' };
+    });
+
+    const output = await harness.executeCodexStepViaAppServer(
+      'prompt',
+      '/repo',
+      {},
+      {
+        inactivityTimeoutMs: 10,
+      }
+    );
+
+    expect(output).toBe('final agent message');
+    expect(harness.connection.turnStart).toHaveBeenCalledTimes(2);
+    expect(harness.connection.turnStart.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({
+        input: [{ type: 'text', text: 'continue' }],
+      })
+    );
+
+    harness.moduleMocker.clear();
+  });
+
   test('retries when turn status is failed', async () => {
     const harness = await createHarness();
 

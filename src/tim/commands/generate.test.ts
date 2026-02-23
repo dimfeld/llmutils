@@ -47,7 +47,9 @@ describe('handleGenerateCommand', () => {
 
   let trackedWorkspacePath: string | undefined;
   const getWorkspaceInfoByPathSpy = mock((baseDir: string) => {
-    return baseDir === trackedWorkspacePath ? { taskId: 'ws-tracked', workspacePath: baseDir } : null;
+    return baseDir === trackedWorkspacePath
+      ? { taskId: 'ws-tracked', workspacePath: baseDir }
+      : null;
   });
   const patchWorkspaceInfoSpy = mock(() => ({}));
   const touchWorkspaceInfoSpy = mock(() => ({}));
