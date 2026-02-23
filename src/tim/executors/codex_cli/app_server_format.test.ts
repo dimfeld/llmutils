@@ -259,6 +259,9 @@ describe('createAppServerFormatter', () => {
     expect(formatter.handleNotification('item/commandExecution/outputDelta', {})).toEqual({
       type: 'item/commandExecution/outputDelta',
     });
+    expect(formatter.handleNotification('item/commandExecution/terminalInteraction', {})).toEqual({
+      type: 'item/commandExecution/terminalInteraction',
+    });
     expect(formatter.handleNotification('item/anything/delta', {})).toEqual({
       type: 'item/anything/delta',
     });

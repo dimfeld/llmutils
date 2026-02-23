@@ -583,7 +583,11 @@ export function createAppServerFormatter() {
         return { type: method };
       }
 
-      if (method === 'item/agentMessage/delta' || method === 'item/commandExecution/outputDelta') {
+      if (
+        method === 'item/agentMessage/delta' ||
+        method === 'item/commandExecution/outputDelta' ||
+        method === 'item/commandExecution/terminalInteraction'
+      ) {
         return { type: method };
       }
 
