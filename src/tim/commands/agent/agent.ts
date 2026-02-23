@@ -475,6 +475,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
       // This is a true stub plan with no tasks - handle it specially
       // Direct execution branch for true stub plans (no tasks)
       try {
+        await updatePlanBranchMetadata(currentPlanFile, currentBaseDir);
         await executeStubPlan({
           config,
           baseDir: currentBaseDir,
@@ -487,7 +488,6 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
           finalReview: options.finalReview,
           configPath: globalCliOptions.config,
         });
-        await updatePlanBranchMetadata(currentPlanFile, currentBaseDir);
       } catch (err) {
         error('Direct execution failed:', err);
         if (summaryEnabled) summaryCollector.addError(err);
@@ -508,6 +508,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     // Check if batch mode is enabled (default is true, disabled by --serial-tasks)
     if (!options.serialTasks) {
       try {
+        await updatePlanBranchMetadata(currentPlanFile, currentBaseDir);
         const res = await executeBatchMode(
           {
             config,
@@ -525,7 +526,6 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
           },
           summaryEnabled ? summaryCollector : undefined
         );
-        await updatePlanBranchMetadata(currentPlanFile, currentBaseDir);
         return res;
       } catch (err) {
         if (summaryEnabled) summaryCollector.addError(err);
