@@ -262,105 +262,111 @@ struct SessionDetailView: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 4) {
-                        ForEach(self.session.messages) { message in
-                            SessionMessageView(message: message)
-                                .id(message.id)
-                        }
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 4) {
+                    ForEach(self.session.messages) { message in
+                        SessionMessageView(message: message)
+                            .id(message.id)
+                    }
 
-                        Color.clear
-                            .frame(height: 1)
-                            .id(SessionDetailView.bottomAnchorID)
-                            .onAppear {
-                                self.isNearBottom = true
-                                self.autoScrollEnabled = true
-                                self.messageCountAtBottom = self.session.messages.count
-                            }
-                            .onDisappear {
-                                self.isNearBottom = false
-                                // Only disable auto-scroll if content hasn't changed,
-                                // meaning the user scrolled away rather than new
-                                // messages pushing the bottom out of view.
-                                if self.session.messages.count == self.messageCountAtBottom {
-                                    self.autoScrollEnabled = false
-                                }
-                            }
-                    }
-                    .padding(12)
-                    .padding(.bottom, 20)
-                }
-                .overlay(alignment: .bottomTrailing) {
-                    if !self.isNearBottom, !self.autoScrollEnabled {
-                        Button {
+                    Color.clear
+                        .frame(height: 1)
+                        .id(SessionDetailView.bottomAnchorID)
+                        .onAppear {
+                            self.isNearBottom = true
                             self.autoScrollEnabled = true
-                            self.jumpToBottom(proxy)
-                        } label: {
-                            Image(systemName: "chevron.down.circle.fill")
-                                .font(.system(size: 32))
-                                .foregroundStyle(.secondary)
+                            self.messageCountAtBottom = self.session.messages.count
                         }
-                        .buttonStyle(.plain)
-                        .background(.ultraThinMaterial)
-                        .clipShape(.circle)
-                        .help("Scroll to bottom")
-                        .transition(.opacity)
-                        .padding(16)
-                        .padding(.bottom, self.inputBarHeight)
-                    }
+                        .onDisappear {
+                            self.isNearBottom = false
+                            // Only disable auto-scroll if content hasn't changed,
+                            // meaning the user scrolled away rather than new
+                            // messages pushing the bottom out of view.
+                            if self.session.messages.count == self.messageCountAtBottom {
+                                self.autoScrollEnabled = false
+                            }
+                        }
                 }
-                .animation(.easeInOut(duration: 0.2), value: self.isNearBottom)
-                .focusable()
-                .focused(self.$isFocused)
-                .onAppear {
-                    self.jumpToBottom(proxy)
-                    self.isFocused = true
-                }
-                .onChange(of: self.session.messages.count) {
-                    if self.autoScrollEnabled {
+                .padding(12)
+                .padding(.bottom, 20)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if !self.isNearBottom, !self.autoScrollEnabled {
+                    Button {
+                        self.autoScrollEnabled = true
                         self.jumpToBottom(proxy)
+                    } label: {
+                        Image(systemName: "chevron.down.circle.fill")
+                            .font(.system(size: 32))
+                            .foregroundStyle(.secondary)
                     }
-                }
-                .onChange(of: self.session.forceScrollToBottomVersion) {
-                    self.jumpToBottom(proxy)
-                    self.isNearBottom = true
-                    self.autoScrollEnabled = true
-                }
-                .onKeyPress(.home) {
-                    if let firstId = session.messages.first?.id {
-                        proxy.scrollTo(firstId, anchor: .top)
-                    }
-                    return .handled
-                }
-                .onKeyPress(.end) {
-                    self.autoScrollEnabled = true
-                    self.jumpToBottom(proxy)
-                    return .handled
+                    .buttonStyle(.plain)
+                    .background(.ultraThinMaterial)
+                    .clipShape(.circle)
+                    .help("Scroll to bottom")
+                    .transition(.opacity)
+                    .padding(16)
+                    .padding(.bottom, self.inputBarHeight)
                 }
             }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if self.session.isActive {
+                    VStack(spacing: 0) {
+                        if let prompt = self.session.pendingPrompt {
+                            PromptContainerView(prompt: prompt) { value in
+                                try await self.sessionState.sendPromptResponse(
+                                    sessionId: self.session.id,
+                                    requestId: prompt.requestId,
+                                    value: value)
+                            }
+                        }
 
-            if self.session.isActive {
-                if let prompt = self.session.pendingPrompt {
-                    PromptContainerView(prompt: prompt) { value in
-                        try await self.sessionState.sendPromptResponse(
-                            sessionId: self.session.id,
-                            requestId: prompt.requestId,
-                            value: value)
+                        MessageInputBar(inputText: self.$inputText) { text in
+                            try await self.sessionState.sendUserInput(
+                                sessionId: self.session.id, content: text)
+                        }
+                        .background(
+                            GeometryReader { geo in
+                                Color.clear.preference(
+                                    key: InputBarHeightKey.self,
+                                    value: geo.size.height)
+                            })
                     }
                 }
-
-                MessageInputBar(inputText: self.$inputText) { text in
-                    try await self.sessionState.sendUserInput(
-                        sessionId: self.session.id, content: text)
+            }
+            .animation(.easeInOut(duration: 0.2), value: self.isNearBottom)
+            .focusable()
+            .focused(self.$isFocused)
+            .onAppear {
+                self.jumpToBottom(proxy)
+                self.isFocused = true
+            }
+            .onChange(of: self.session.messages.count) {
+                if self.autoScrollEnabled {
+                    self.jumpToBottom(proxy)
                 }
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(
-                            key: InputBarHeightKey.self,
-                            value: geo.size.height)
-                    })
+            }
+            .onChange(of: self.session.forceScrollToBottomVersion) {
+                self.jumpToBottom(proxy)
+                self.isNearBottom = true
+                self.autoScrollEnabled = true
+            }
+            .onChange(of: self.session.pendingPrompt?.requestId) {
+                if self.autoScrollEnabled {
+                    self.jumpToBottom(proxy)
+                }
+            }
+            .onKeyPress(.home) {
+                if let firstId = session.messages.first?.id {
+                    proxy.scrollTo(firstId, anchor: .top)
+                }
+                return .handled
+            }
+            .onKeyPress(.end) {
+                self.autoScrollEnabled = true
+                self.jumpToBottom(proxy)
+                return .handled
             }
         }
         .onPreferenceChange(InputBarHeightKey.self) { height in
