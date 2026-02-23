@@ -231,10 +231,11 @@ function addBashPrefixSafely(
 
 export async function addPermissionToFile(
   toolName: string,
-  argument?: { exact: boolean; command?: string }
+  argument?: { exact: boolean; command?: string },
+  workingDirectory?: string
 ): Promise<void> {
   try {
-    const gitRoot = await getGitRoot();
+    const gitRoot = await getGitRoot(workingDirectory);
     const settingsPath = path.join(gitRoot, '.claude', 'settings.local.json');
 
     let settings: any = {};
@@ -271,7 +272,7 @@ export async function addPermissionToFile(
     }
 
     try {
-      const identity = await getRepositoryIdentity();
+      const identity = await getRepositoryIdentity({ cwd: workingDirectory });
       const db = getDatabase();
       const project = getOrCreateProject(db, identity.repositoryId, {
         remoteUrl: identity.remoteUrl,
@@ -291,7 +292,8 @@ async function handleBashPrefixApproval(
   isPersistent: boolean,
   sessionMessage: string,
   persistentMessage: string,
-  timeout?: number
+  timeout?: number,
+  workingDirectory?: string
 ): Promise<void> {
   const command = input.command as string;
   const selectedPrefix = await promptPrefixSelect({
@@ -311,7 +313,7 @@ async function handleBashPrefixApproval(
   }
 
   if (isPersistent) {
-    await addPermissionToFile(BASH_TOOL_NAME, selectedPrefix);
+    await addPermissionToFile(BASH_TOOL_NAME, selectedPrefix, workingDirectory);
   }
 }
 
@@ -554,12 +556,13 @@ async function handlePermissionLine(
             true,
             '',
             `${BASH_TOOL_NAME} prefix "{prefix}" added to always allowed list`,
-            options.timeout
+            options.timeout,
+            options.workingDirectory
           );
         } else {
           allowedToolsMap.set(tool_name, true);
           log(chalk.blue(`Tool ${tool_name} added to always allowed list`));
-          await addPermissionToFile(tool_name);
+          await addPermissionToFile(tool_name, undefined, options.workingDirectory);
         }
       }
 
@@ -571,7 +574,8 @@ async function handlePermissionLine(
             false,
             `${BASH_TOOL_NAME} prefix "{prefix}" added to allowed list for current session only`,
             '',
-            options.timeout
+            options.timeout,
+            options.workingDirectory
           );
         } else {
           allowedToolsMap.set(tool_name, true);

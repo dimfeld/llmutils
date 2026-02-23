@@ -219,9 +219,8 @@ export class ClaudeCodeExecutor implements Executor {
       if (path.isAbsolute(pathStr)) {
         absolutePath = pathStr;
       } else {
-        // Use the current working directory (assume it's the git root for this context)
-        // In a real scenario, we might need to track the actual cwd from the bash session
-        absolutePath = path.resolve(process.cwd(), pathStr);
+        // Resolve relative paths from the executor workspace base directory.
+        absolutePath = path.resolve(this.sharedOptions.baseDir, pathStr);
       }
 
       normalizedPaths.push(absolutePath);
@@ -380,7 +379,7 @@ export class ClaudeCodeExecutor implements Executor {
     argument?: { exact: boolean; command?: string }
   ): Promise<void> {
     try {
-      const gitRoot = await getGitRoot();
+      const gitRoot = await getGitRoot(this.sharedOptions.baseDir);
       const settingsPath = path.join(gitRoot, '.claude', 'settings.local.json');
 
       // Try to read existing settings
@@ -428,7 +427,7 @@ export class ClaudeCodeExecutor implements Executor {
 
       // Also save to shared permissions for cross-worktree sharing
       try {
-        const identity = await getRepositoryIdentity();
+        const identity = await getRepositoryIdentity({ cwd: this.sharedOptions.baseDir });
         const db = getDatabase();
         const project = getOrCreateProject(db, identity.repositoryId, {
           remoteUrl: identity.remoteUrl,
@@ -455,7 +454,7 @@ export class ClaudeCodeExecutor implements Executor {
    */
   private async loadSharedPermissions(): Promise<string[]> {
     try {
-      const identity = await getRepositoryIdentity();
+      const identity = await getRepositoryIdentity({ cwd: this.sharedOptions.baseDir });
       const db = getDatabase();
       const project = getOrCreateProject(db, identity.repositoryId, {
         remoteUrl: identity.remoteUrl,
@@ -477,7 +476,7 @@ export class ClaudeCodeExecutor implements Executor {
     contextContent: string,
     planInfo: ExecutePlanInfo
   ): Promise<import('./types').ExecutorOutput> {
-    const gitRoot = await getGitRoot();
+    const gitRoot = await getGitRoot(this.sharedOptions.baseDir);
 
     log('Running Claude in review mode with JSON schema output...');
 
@@ -617,7 +616,7 @@ export class ClaudeCodeExecutor implements Executor {
     let { disallowedTools, allowAllTools, mcpConfigFile } = this.options;
 
     // Get git root for agent instructions and other operations
-    const gitRoot = await getGitRoot();
+    const gitRoot = await getGitRoot(this.sharedOptions.baseDir);
 
     let isPermissionsMcpEnabled = this.options.permissionsMcp?.enabled === true;
     if (process.env.CLAUDE_CODE_MCP) {

@@ -8,6 +8,7 @@
  */
 
 import * as fs from 'fs/promises';
+import * as path from 'node:path';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { readPlanFile, resolvePlanFile } from '../plans.js';
 import { getAllIncompleteTasks } from '../plans/find_next.js';
@@ -65,7 +66,7 @@ export async function handleSubagentCommand(
   const config = await loadEffectiveConfig(globalCliOptions.config);
   const planFilePath = await resolvePlanFile(planFileArg, globalCliOptions.config);
   const planData = await readPlanFile(planFilePath);
-  const gitRoot = await getGitRoot();
+  const gitRoot = await getGitRoot(path.dirname(planFilePath));
   const executorType = options.executor || 'claude-code';
 
   // Build the context prompt using the same pattern as batch_mode.ts
