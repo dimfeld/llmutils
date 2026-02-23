@@ -230,6 +230,45 @@ export async function handleWorkspaceListCommand(options: WorkspaceListOptions, 
  * Output workspaces in table format with abbreviated paths and lock status.
  */
 function outputWorkspaceTable(entries: WorkspaceListEntry[], showHeader: boolean): void {
+  const relativeFormatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+
+  const formatRelativeTime = (updatedAt: string | undefined): string => {
+    if (!updatedAt) {
+      return '-';
+    }
+
+    const parsed = Date.parse(updatedAt);
+    if (Number.isNaN(parsed)) {
+      return updatedAt;
+    }
+
+    const now = Date.now();
+    const deltaMs = now - parsed;
+    const absMs = Math.abs(deltaMs);
+
+    if (absMs < 60 * 1000) {
+      return 'just now';
+    }
+
+    const formatElapsed = (value: number, unit: Intl.RelativeTimeFormatUnit): string => {
+      const amount = deltaMs >= 0 ? -Math.round(value) : Math.round(value);
+      return relativeFormatter.format(amount, unit);
+    };
+
+    const minutes = deltaMs / (1000 * 60);
+    if (Math.abs(minutes) < 60) {
+      return formatElapsed(minutes, 'minute');
+    }
+
+    const hours = minutes / 60;
+    if (Math.abs(hours) < 24) {
+      return formatElapsed(hours, 'hour');
+    }
+
+    const days = hours / 24;
+    return formatElapsed(days, 'day');
+  };
+
   const tableData: string[][] = [];
 
   if (showHeader) {
@@ -239,6 +278,7 @@ function outputWorkspaceTable(entries: WorkspaceListEntry[], showHeader: boolean
       chalk.bold('Description'),
       chalk.bold('Branch'),
       chalk.bold('Status'),
+      chalk.bold('Updated'),
     ]);
   }
 
@@ -247,6 +287,7 @@ function outputWorkspaceTable(entries: WorkspaceListEntry[], showHeader: boolean
     const name = entry.name || '-';
     const description = entry.description || '-';
     const branch = entry.branch || '-';
+    const updatedAt = formatRelativeTime(entry.updatedAt);
 
     let status: string;
     if (entry.isPrimary) {
@@ -258,7 +299,7 @@ function outputWorkspaceTable(entries: WorkspaceListEntry[], showHeader: boolean
       status = chalk.green('Available');
     }
 
-    tableData.push([abbreviatedPath, name, description, branch, status]);
+    tableData.push([abbreviatedPath, name, description, branch, status, updatedAt]);
   }
 
   const tableConfig: TableUserConfig = {
@@ -268,6 +309,7 @@ function outputWorkspaceTable(entries: WorkspaceListEntry[], showHeader: boolean
       2: { width: 35, wrapWord: true },
       3: { width: 20, wrapWord: true },
       4: { width: 15, wrapWord: true },
+      5: { width: 28, wrapWord: true },
     },
     border: {
       topBody: '-',

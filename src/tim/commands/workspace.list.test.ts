@@ -376,6 +376,38 @@ describe('workspace list command', () => {
     }
   });
 
+  test('table format includes relative updatedAt value from database', async () => {
+    const workspaceDir = path.join(tempDir, 'workspace-updated');
+    await fs.mkdir(workspaceDir, { recursive: true });
+
+    const workspaceEntry: WorkspaceInfo = {
+      taskId: 'task-updated',
+      workspacePath: workspaceDir,
+      createdAt: '2024-01-01T00:00:00.000Z',
+      repositoryId: 'github.com/test/repo',
+    };
+
+    await writeTrackingData({ [workspaceDir]: workspaceEntry });
+    const db = getDatabase();
+    db.prepare('UPDATE workspace SET updated_at = ? WHERE workspace_path = ?').run(
+      '2024-01-01T00:00:00.000Z',
+      workspaceDir
+    );
+
+    const { handleWorkspaceListCommand } = await import('./workspace.js');
+
+    await handleWorkspaceListCommand({ format: 'table', all: true }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    const output = consoleOutput.join('\n');
+    expect(output).toMatch(/\d+\s+(?:minute|minutes|hour|hours|day|days|month|months|year|years)\s+ago|just now/);
+  });
+
   test('table format shows abbreviated paths with ~ for home directory', async () => {
     // Create a workspace under tempDir which we mock to be under home directory
     const workspaceDir = path.join(tempDir, 'my-project-workspace');

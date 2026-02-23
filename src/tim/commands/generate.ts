@@ -9,17 +9,46 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
 import { readAllPlans, readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
-import { getCombinedTitle } from '../display_utils.js';
+import {
+  buildDescriptionFromPlan,
+  getCombinedTitle,
+  getCombinedTitleFromSummary,
+} from '../display_utils.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { findNextReadyDependency } from './find_next_dependency.js';
 import { autoClaimPlan, isAutoClaimEnabled } from '../assignments/auto_claim.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
+import { getWorkspaceInfoByPath, patchWorkspaceInfo } from '../workspace/workspace_info.js';
 import { buildPromptText, findMostRecentlyUpdatedPlan } from './prompts.js';
 import type { GenerateModeRegistrationContext } from '../mcp/generate_mode.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { syncPlanToDb } from '../db/plan_sync.js';
+
+async function updateWorkspaceDescriptionFromPlan(
+  baseDir: string,
+  planData: PlanSchema
+): Promise<void> {
+  try {
+    const workspaceMetadata = getWorkspaceInfoByPath(baseDir);
+    if (!workspaceMetadata) {
+      return;
+    }
+
+    const description = buildDescriptionFromPlan(planData);
+    const planTitle = getCombinedTitleFromSummary(planData);
+
+    patchWorkspaceInfo(baseDir, {
+      description,
+      planId: planData.id ? String(planData.id) : '',
+      planTitle: planTitle || '',
+      issueUrls: planData.issue && planData.issue.length > 0 ? [...planData.issue] : [],
+    });
+  } catch (err) {
+    warn(`Failed to update workspace description: ${err as Error}`);
+  }
+}
 
 export async function handleGenerateCommand(
   planArg: string | undefined,
@@ -182,6 +211,8 @@ export async function handleGenerateCommand(
       warn(`Plan at ${currentPlanFile} is missing a UUID; skipping auto-claim.`);
     }
   }
+
+  await updateWorkspaceDescriptionFromPlan(currentBaseDir, parsedPlan);
 
   // Build the prompt using the new interactive prompt system
   // Use 'generate-plan-simple' for simple mode, 'generate-plan' for full interactive mode

@@ -45,6 +45,12 @@ describe('handleGenerateCommand', () => {
   const isAutoClaimEnabledSpy = mock(() => false);
   const autoClaimPlanSpy = mock(async () => {});
 
+  let trackedWorkspacePath: string | undefined;
+  const getWorkspaceInfoByPathSpy = mock((baseDir: string) => {
+    return baseDir === trackedWorkspacePath ? { taskId: 'ws-tracked', workspacePath: baseDir } : null;
+  });
+  const patchWorkspaceInfoSpy = mock(() => ({}));
+
   // Mock commitAll
   const commitAllSpy = mock(async () => 0);
   const getCurrentBranchNameSpy = mock(async () => 'main');
@@ -62,6 +68,9 @@ describe('handleGenerateCommand', () => {
     commitAllSpy.mockClear();
     getCurrentBranchNameSpy.mockClear();
     getTrunkBranchSpy.mockClear();
+    trackedWorkspacePath = undefined;
+    getWorkspaceInfoByPathSpy.mockClear();
+    patchWorkspaceInfoSpy.mockClear();
     isTunnelActiveSpy.mockClear();
     runWithHeadlessAdapterIfEnabledSpy.mockClear();
 
@@ -96,6 +105,11 @@ describe('handleGenerateCommand', () => {
     await moduleMocker.mock('../assignments/auto_claim.js', () => ({
       isAutoClaimEnabled: isAutoClaimEnabledSpy,
       autoClaimPlan: autoClaimPlanSpy,
+    }));
+
+    await moduleMocker.mock('../workspace/workspace_info.js', () => ({
+      getWorkspaceInfoByPath: getWorkspaceInfoByPathSpy,
+      patchWorkspaceInfo: patchWorkspaceInfoSpy,
     }));
 
     await moduleMocker.mock('../../common/process.js', () => ({
@@ -351,6 +365,47 @@ describe('handleGenerateCommand', () => {
 
     expect(commitAllSpy).toHaveBeenCalledTimes(1);
     expect(commitAllSpy.mock.calls[0][0]).toContain('Commit Test Plan');
+  });
+
+  test('updates workspace metadata from plan when workspace is tracked', async () => {
+    const workspaceDir = path.join(tempDir, 'workspace-tracked');
+    await fs.mkdir(workspaceDir, { recursive: true });
+    trackedWorkspacePath = workspaceDir;
+
+    const planPath = await createStubPlan(113, {
+      title: 'Tracked Workspace Plan',
+      issue: ['https://github.com/org/repo/issues/55'],
+    });
+    const wsPlanPath = path.join(workspaceDir, path.basename(planPath));
+    await fs.copyFile(planPath, wsPlanPath);
+
+    setupWorkspaceSpy.mockResolvedValueOnce({
+      baseDir: workspaceDir,
+      planFile: wsPlanPath,
+      workspaceTaskId: 'ws-tracked',
+      isNewWorkspace: true,
+    });
+
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      const plan = await readPlanFile(wsPlanPath);
+      plan.tasks = [{ title: 'Task 1', description: 'Description', done: false }];
+      await writePlanFile(wsPlanPath, plan);
+    });
+
+    await handleGenerateCommand(
+      undefined,
+      { plan: planPath, workspace: 'ws-tracked' },
+      buildCommand()
+    );
+
+    expect(patchWorkspaceInfoSpy).toHaveBeenCalledTimes(1);
+    expect(patchWorkspaceInfoSpy.mock.calls[0][0]).toBe(workspaceDir);
+    expect(patchWorkspaceInfoSpy.mock.calls[0][1]).toMatchObject({
+      description: '#55 Tracked Workspace Plan',
+      planId: '113',
+      planTitle: 'Tracked Workspace Plan',
+      issueUrls: ['https://github.com/org/repo/issues/55'],
+    });
   });
 
   test('sets branch to current non-trunk branch after generation', async () => {
