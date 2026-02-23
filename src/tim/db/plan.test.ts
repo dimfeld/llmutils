@@ -176,6 +176,43 @@ describe('tim db/plan', () => {
     expect(found?.title).toBe('Lookup plan');
   });
 
+  test('upsertPlan stores branch and clears it when omitted in later updates', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-branch',
+      planId: 78,
+      title: 'Branch tracking plan',
+      branch: 'feature/branch-a',
+      filename: '78.plan.md',
+    });
+
+    let found = getPlanByUuid(db, 'plan-branch');
+    expect(found).not.toBeNull();
+    expect(found?.branch).toBe('feature/branch-a');
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-branch',
+      planId: 79,
+      title: 'Branch tracking plan updated',
+      branch: 'feature/branch-b',
+      filename: '79.plan.md',
+    });
+
+    found = getPlanByUuid(db, 'plan-branch');
+    expect(found).not.toBeNull();
+    expect(found?.branch).toBe('feature/branch-b');
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-branch',
+      planId: 80,
+      title: 'Branch tracking plan cleared',
+      filename: '80.plan.md',
+    });
+
+    found = getPlanByUuid(db, 'plan-branch');
+    expect(found).not.toBeNull();
+    expect(found?.branch).toBeNull();
+  });
+
   test('getPlanTasksByUuid returns tasks ordered by task_index', () => {
     upsertPlan(db, projectId, { uuid: 'plan-order', planId: 50, filename: '50.plan.md' });
 

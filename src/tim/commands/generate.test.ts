@@ -47,6 +47,8 @@ describe('handleGenerateCommand', () => {
 
   // Mock commitAll
   const commitAllSpy = mock(async () => 0);
+  const getCurrentBranchNameSpy = mock(async () => 'main');
+  const getTrunkBranchSpy = mock(async () => 'main');
 
   beforeEach(async () => {
     logSpy.mockClear();
@@ -58,6 +60,8 @@ describe('handleGenerateCommand', () => {
     isAutoClaimEnabledSpy.mockClear();
     autoClaimPlanSpy.mockClear();
     commitAllSpy.mockClear();
+    getCurrentBranchNameSpy.mockClear();
+    getTrunkBranchSpy.mockClear();
     isTunnelActiveSpy.mockClear();
     runWithHeadlessAdapterIfEnabledSpy.mockClear();
 
@@ -107,6 +111,8 @@ describe('handleGenerateCommand', () => {
 
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => tempDir,
+      getCurrentBranchName: getCurrentBranchNameSpy,
+      getTrunkBranch: getTrunkBranchSpy,
     }));
 
     await moduleMocker.mock('../../logging/tunnel_client.js', () => ({
@@ -345,6 +351,40 @@ describe('handleGenerateCommand', () => {
 
     expect(commitAllSpy).toHaveBeenCalledTimes(1);
     expect(commitAllSpy.mock.calls[0][0]).toContain('Commit Test Plan');
+  });
+
+  test('sets branch to current non-trunk branch after generation', async () => {
+    const planPath = await createStubPlan(210, { branch: 'feature/old-branch' });
+    getCurrentBranchNameSpy.mockResolvedValueOnce('feature/latest-branch');
+    getTrunkBranchSpy.mockResolvedValueOnce('main');
+
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [{ title: 'Task 1', description: 'Description', done: false }];
+      await writePlanFile(planPath, plan);
+    });
+
+    await handleGenerateCommand(undefined, { plan: planPath }, buildCommand());
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.branch).toBe('feature/latest-branch');
+  });
+
+  test('does not set branch when generation runs on trunk branch', async () => {
+    const planPath = await createStubPlan(211);
+    getCurrentBranchNameSpy.mockResolvedValueOnce('main');
+    getTrunkBranchSpy.mockResolvedValueOnce('main');
+
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [{ title: 'Task 1', description: 'Description', done: false }];
+      await writePlanFile(planPath, plan);
+    });
+
+    await handleGenerateCommand(undefined, { plan: planPath }, buildCommand());
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.branch).toBeUndefined();
   });
 
   test('does not commit when --commit is not set', async () => {
@@ -676,6 +716,8 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => tempDir,
+      getCurrentBranchName: mock(async () => 'main'),
+      getTrunkBranch: mock(async () => 'main'),
     }));
 
     await moduleMocker.mock('../workspace/workspace_setup.js', () => ({

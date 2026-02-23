@@ -126,6 +126,12 @@ const migrations: Migration[] = [
       ALTER TABLE plan ADD COLUMN details TEXT;
     `,
   },
+  {
+    version: 4,
+    up: `
+      ALTER TABLE plan ADD COLUMN branch TEXT;
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

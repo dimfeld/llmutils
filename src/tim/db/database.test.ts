@@ -57,7 +57,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(3);
+    expect(version?.version).toBe(4);
     expect(version?.import_completed).toBe(1);
 
     const tables = db
@@ -108,7 +108,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(3);
+    expect(version?.version).toBe(4);
     expect(version?.import_completed).toBe(1);
     const versionRowCount = db2
       .query<{ count: number }, []>('SELECT count(*) as count FROM schema_version')

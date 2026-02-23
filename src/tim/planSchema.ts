@@ -96,6 +96,7 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
     project: projectSchema.optional(),
     tasks: z.array(taskSchema),
     baseBranch: z.string().optional(),
+    branch: z.string().optional(),
     changedFiles: z.array(z.string()).optional(),
     rmfilter: z.array(z.string()).optional(),
     tags: z.array(z.string()).optional(),

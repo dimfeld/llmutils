@@ -5,7 +5,7 @@ import chalk from 'chalk';
 import * as path from 'path';
 import * as fs from 'node:fs/promises';
 import { promptConfirm } from '../../../common/input.js';
-import { getGitRoot } from '../../../common/git.js';
+import { getCurrentBranchName, getGitRoot, getTrunkBranch } from '../../../common/git.js';
 import { logSpawn } from '../../../common/process.js';
 import {
   boldMarkdownHeaders,
@@ -258,6 +258,21 @@ export async function handleAgentCommand(
   }
 }
 
+async function updatePlanBranchMetadata(planFilePath: string, baseDir: string): Promise<void> {
+  try {
+    const planData = await readPlanFile(planFilePath);
+    const gitRootForBranch = await getGitRoot(baseDir);
+    const currentBranch = await getCurrentBranchName(baseDir);
+    const trunkBranch = await getTrunkBranch(gitRootForBranch);
+    if (currentBranch && currentBranch !== trunkBranch && planData.branch !== currentBranch) {
+      planData.branch = currentBranch;
+      await writePlanFile(planFilePath, planData);
+    }
+  } catch (err) {
+    warn(`Failed to update plan branch metadata: ${err as Error}`);
+  }
+}
+
 export async function timAgent(planFile: string, options: any, globalCliOptions: any) {
   let currentPlanFile = planFile;
   let config = getDefaultConfig();
@@ -466,6 +481,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
           finalReview: options.finalReview,
           configPath: globalCliOptions.config,
         });
+        await updatePlanBranchMetadata(currentPlanFile, currentBaseDir);
       } catch (err) {
         error('Direct execution failed:', err);
         if (summaryEnabled) summaryCollector.addError(err);
@@ -503,6 +519,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
           },
           summaryEnabled ? summaryCollector : undefined
         );
+        await updatePlanBranchMetadata(currentPlanFile, currentBaseDir);
         return res;
       } catch (err) {
         if (summaryEnabled) summaryCollector.addError(err);
@@ -531,17 +548,35 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
 
         const planData = await readPlanFile(currentPlanFile);
         lastKnownPlan = planData;
+        let planFileNeedsUpdate = false;
 
         // Check if status needs to be updated from 'pending' to 'in progress'
         if (planData.status === 'pending') {
           planData.status = 'in_progress';
           planData.updatedAt = new Date().toISOString();
-          await writePlanFile(currentPlanFile, planData);
+          planFileNeedsUpdate = true;
 
           // If this plan has a parent, mark it as in_progress too
           if (planData.parent) {
             await markParentInProgress(planData.parent, config);
           }
+        }
+
+        // Keep branch metadata current while processing plans.
+        try {
+          const gitRootForBranch = await getGitRoot(currentBaseDir);
+          const currentBranch = await getCurrentBranchName(currentBaseDir);
+          const trunkBranch = await getTrunkBranch(gitRootForBranch);
+          if (currentBranch && currentBranch !== trunkBranch && planData.branch !== currentBranch) {
+            planData.branch = currentBranch;
+            planFileNeedsUpdate = true;
+          }
+        } catch (err) {
+          warn(`Failed to update plan branch metadata: ${err as Error}`);
+        }
+
+        if (planFileNeedsUpdate) {
+          await writePlanFile(currentPlanFile, planData);
         }
 
         const actionableItem = findNextActionableItem(planData);

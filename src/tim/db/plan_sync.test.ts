@@ -143,6 +143,47 @@ describe('tim db/plan_sync', () => {
     expect(count.count).toBe(0);
   });
 
+  test('syncPlanToDb persists branch and clears it when branch is unset', async () => {
+    const config = buildTestConfig(tasksDir);
+    const planFile = path.join(tasksDir, '46-branch-sync.plan.md');
+    const planUuid = '46464646-4646-4464-8464-464646464646';
+
+    await syncPlanToDb(
+      {
+        id: 46,
+        uuid: planUuid,
+        title: 'Branch sync plan',
+        goal: 'Verify branch sync behavior',
+        branch: 'feature/branch-sync',
+        tasks: [],
+      },
+      planFile,
+      { config }
+    );
+
+    const db = getDatabase();
+    let savedPlan = getPlanByUuid(db, planUuid);
+    expect(savedPlan).not.toBeNull();
+    expect(savedPlan?.branch).toBe('feature/branch-sync');
+
+    await syncPlanToDb(
+      {
+        id: 46,
+        uuid: planUuid,
+        title: 'Branch sync plan',
+        goal: 'Verify branch sync behavior',
+        branch: undefined,
+        tasks: [],
+      },
+      planFile,
+      { config }
+    );
+
+    savedPlan = getPlanByUuid(db, planUuid);
+    expect(savedPlan).not.toBeNull();
+    expect(savedPlan?.branch).toBeNull();
+  });
+
   test('syncPlanToDb gracefully handles unavailable database path', async () => {
     closeDatabaseForTesting();
     clearPlanSyncContext();

@@ -362,6 +362,44 @@
             ]
           }
         },
+        "workspaceUpdateCommands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              },
+              "workingDirectory": {
+                "type": "string"
+              },
+              "env": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "allowFailure": {
+                "default": false,
+                "type": "boolean"
+              },
+              "hideOutputOnSuccess": {
+                "default": false,
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "title",
+              "command"
+            ]
+          }
+        },
         "copyAdditionalGlobs": {
           "type": "array",
           "items": {

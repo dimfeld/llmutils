@@ -157,6 +157,7 @@ function toPlanUpsertInput(
   sourceUpdatedAt?: string | null;
   status: 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred';
   priority?: 'low' | 'medium' | 'high' | 'urgent' | 'maybe' | null;
+  branch?: string | null;
   parentUuid?: string | null;
   epic: boolean;
   filename: string;
@@ -185,6 +186,7 @@ function toPlanUpsertInput(
     sourceUpdatedAt: plan.updatedAt ?? null,
     status: coercePlanStatus(plan.status),
     priority: coercePlanPriority(plan.priority),
+    branch: plan.branch ?? null,
     parentUuid,
     epic: plan.epic === true,
     filename: path.basename(filePath),

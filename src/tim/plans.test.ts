@@ -1556,6 +1556,50 @@ const test = "example";
     expect(readBackPlan.discoveredFrom).toBe(42);
   });
 
+  it('should persist branch through write and read operations', async () => {
+    const planPath = join(tempDir, 'branch-plan.plan.md');
+    const planWithBranch: PlanSchema = {
+      id: 206,
+      title: 'Branch Plan',
+      goal: 'Track latest branch for plan work',
+      details: 'Branch metadata should survive plan file round-trip.',
+      status: 'in_progress',
+      branch: 'feature/link-plan-to-branch',
+      tasks: [],
+    };
+
+    await writePlanFile(planPath, planWithBranch);
+
+    const fileContent = await readFile(planPath, 'utf-8');
+    expect(fileContent).toContain('branch: feature/link-plan-to-branch');
+
+    const readBackPlan = await readPlanFile(planPath);
+    expect(readBackPlan.branch).toBe('feature/link-plan-to-branch');
+  });
+
+  it('should treat branch as optional and omit it when not set', async () => {
+    const planPath = join(tempDir, 'no-branch.plan.md');
+    const planWithoutBranch: PlanSchema = {
+      id: 207,
+      title: 'No Branch Plan',
+      goal: 'Ensure optional branch metadata stays clean',
+      details: 'No branch should be written when not provided.',
+      status: 'pending',
+      tasks: [],
+    };
+
+    await writePlanFile(planPath, planWithoutBranch);
+
+    const fileContent = await readFile(planPath, 'utf-8');
+    const frontMatterEndIndex = fileContent.indexOf('\n---\n', 4);
+    const frontMatterSection = fileContent.substring(4, frontMatterEndIndex);
+    const frontMatterData = yaml.parse(frontMatterSection);
+    expect(frontMatterData.branch).toBeUndefined();
+
+    const readBackPlan = await readPlanFile(planPath);
+    expect(readBackPlan.branch).toBeUndefined();
+  });
+
   it('should merge YAML details field with markdown body for backward compatibility', async () => {
     const planPath = join(tempDir, 'backward-compat-plan.md');
     const yamlDetails = 'This is the details content from the YAML front matter.';

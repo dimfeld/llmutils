@@ -202,6 +202,9 @@
     "baseBranch": {
       "type": "string"
     },
+    "branch": {
+      "type": "string"
+    },
     "changedFiles": {
       "type": "array",
       "items": {

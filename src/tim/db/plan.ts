@@ -10,6 +10,7 @@ export interface PlanRow {
   details: string | null;
   status: 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred';
   priority: 'low' | 'medium' | 'high' | 'urgent' | 'maybe' | null;
+  branch: string | null;
   parent_uuid: string | null;
   epic: number;
   filename: string;
@@ -36,6 +37,7 @@ export interface UpsertPlanInput {
   forceOverwrite?: boolean;
   status?: 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred';
   priority?: 'low' | 'medium' | 'high' | 'urgent' | 'maybe' | null;
+  branch?: string | null;
   parentUuid?: string | null;
   epic?: boolean;
   filename: string;
@@ -132,12 +134,13 @@ export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInp
           details,
           status,
           priority,
+          branch,
           parent_uuid,
           epic,
           filename,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
         ON CONFLICT(uuid) DO UPDATE SET
           project_id = excluded.project_id,
           plan_id = excluded.plan_id,
@@ -146,6 +149,7 @@ export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInp
           details = excluded.details,
           status = excluded.status,
           priority = excluded.priority,
+          branch = excluded.branch,
           parent_uuid = excluded.parent_uuid,
           epic = excluded.epic,
           filename = excluded.filename,
@@ -160,6 +164,7 @@ export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInp
         nextInput.details ?? null,
         nextInput.status ?? 'pending',
         nextInput.priority ?? null,
+        nextInput.branch ?? null,
         nextInput.parentUuid ?? null,
         nextInput.epic ? 1 : 0,
         nextInput.filename

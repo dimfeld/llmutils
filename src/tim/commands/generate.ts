@@ -2,11 +2,12 @@
 // Generates a plan using an interactive executor (Claude Code or Codex app-server)
 
 import chalk from 'chalk';
+import { getCurrentBranchName, getGitRoot, getTrunkBranch } from '../../common/git.js';
 import { commitAll } from '../../common/process.js';
 import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
-import { readAllPlans, readPlanFile, resolvePlanFile } from '../plans.js';
+import { readAllPlans, readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { getCombinedTitle } from '../display_utils.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
@@ -244,6 +245,25 @@ export async function handleGenerateCommand(
 
       // Report generation result
       const updatedPlan = await readPlanFile(currentPlanFile);
+
+      let needsSync = true;
+      try {
+        const gitRootForBranch = await getGitRoot(currentBaseDir);
+        const currentBranch = await getCurrentBranchName(currentBaseDir);
+        const trunkBranch = await getTrunkBranch(gitRootForBranch);
+        if (
+          currentBranch &&
+          currentBranch !== trunkBranch &&
+          updatedPlan.branch !== currentBranch
+        ) {
+          updatedPlan.branch = currentBranch;
+          await writePlanFile(currentPlanFile, updatedPlan);
+          needsSync = false;
+        }
+      } catch (err) {
+        warn(`Failed to update branch in plan file: ${err as Error}`);
+      }
+
       const hasTasks = updatedPlan.tasks && updatedPlan.tasks.length > 0;
 
       if (hasTasks) {
@@ -266,11 +286,13 @@ export async function handleGenerateCommand(
         log(chalk.green('✓ Committed changes'));
       }
 
-      await syncPlanToDb(updatedPlan, currentPlanFile, {
-        force: true,
-        config,
-        baseDir: currentBaseDir,
-      });
+      if (needsSync) {
+        await syncPlanToDb(updatedPlan, currentPlanFile, {
+          force: true,
+          config,
+          baseDir: currentBaseDir,
+        });
+      }
     },
   });
 }
