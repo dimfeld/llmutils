@@ -5,10 +5,12 @@ import * as os from 'node:os';
 import { ModuleMocker } from '../../testing.js';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { importAssignment } from '../db/assignment.js';
 import { getOrCreateProject, getProjectById, listProjects } from '../db/project.js';
 import {
   findWorkspacesByProjectId,
   getWorkspaceIssues,
+  getWorkspaceByPath,
   recordWorkspace,
   setWorkspaceIssues,
   type WorkspaceRow,
@@ -376,7 +378,7 @@ describe('workspace list command', () => {
     }
   });
 
-  test('table format includes relative updatedAt value from database', async () => {
+  test('table format includes Plan column', async () => {
     const workspaceDir = path.join(tempDir, 'workspace-updated');
     await fs.mkdir(workspaceDir, { recursive: true });
 
@@ -405,7 +407,115 @@ describe('workspace list command', () => {
     } as any);
 
     const output = consoleOutput.join('\n');
-    expect(output).toMatch(/\d+\s+(?:minute|minutes|hour|hours|day|days|month|months|year|years)\s+ago|just now/);
+    expect(output).toContain('Plan');
+    expect(output).not.toContain('ago');
+  });
+
+  test('table format shows most recent assignment in Plan column', async () => {
+    const workspaceDir = path.join(tempDir, 'workspace-assigned');
+    await fs.mkdir(workspaceDir, { recursive: true });
+
+    const workspaceEntry: WorkspaceInfo = {
+      taskId: 'task-assigned',
+      workspacePath: workspaceDir,
+      createdAt: '2024-01-01T00:00:00.000Z',
+      repositoryId: 'github.com/test/repo',
+    };
+
+    await writeTrackingData({ [workspaceDir]: workspaceEntry });
+
+    const db = getDatabase();
+    const project = getOrCreateProject(db, 'github.com/test/repo');
+    const workspaceRow = getWorkspaceByPath(db, workspaceDir);
+    if (!workspaceRow) {
+      throw new Error('Workspace row was not created');
+    }
+
+    importAssignment(
+      db,
+      project.id,
+      'plan-100',
+      100,
+      workspaceRow.id,
+      'alice',
+      'in_progress',
+      '2024-01-01T00:00:00.000Z',
+      '2024-01-01T00:00:00.000Z'
+    );
+    importAssignment(
+      db,
+      project.id,
+      'plan-200',
+      200,
+      workspaceRow.id,
+      'alice',
+      'done',
+      '2024-01-02T00:00:00.000Z',
+      '2024-01-02T00:00:00.000Z'
+    );
+
+    const { handleWorkspaceListCommand } = await import('./workspace.js');
+
+    await handleWorkspaceListCommand({ format: 'table', all: true }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    const output = consoleOutput.join('\n');
+    expect(output).toContain('Plan');
+    expect(output).toContain('200 - done');
+  });
+
+  test('JSON output includes most recent assignment metadata', async () => {
+    const workspaceDir = path.join(tempDir, 'workspace-assigned-json');
+    await fs.mkdir(workspaceDir, { recursive: true });
+
+    const workspaceEntry: WorkspaceInfo = {
+      taskId: 'task-assigned-json',
+      workspacePath: workspaceDir,
+      createdAt: '2024-01-01T00:00:00.000Z',
+      repositoryId: 'github.com/test/repo',
+    };
+
+    await writeTrackingData({ [workspaceDir]: workspaceEntry });
+
+    const db = getDatabase();
+    const project = getOrCreateProject(db, 'github.com/test/repo');
+    const workspaceRow = getWorkspaceByPath(db, workspaceDir);
+    if (!workspaceRow) {
+      throw new Error('Workspace row was not created');
+    }
+
+    importAssignment(
+      db,
+      project.id,
+      'plan-300',
+      300,
+      workspaceRow.id,
+      'alice',
+      'in_progress',
+      '2024-01-03T00:00:00.000Z',
+      '2024-01-03T00:00:00.000Z'
+    );
+
+    const { handleWorkspaceListCommand } = await import('./workspace.js');
+
+    await handleWorkspaceListCommand({ format: 'json', all: true }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    const output = JSON.parse(consoleOutput.join('\n'));
+    expect(output).toHaveLength(1);
+    expect(output[0].mostRecentAssignment).toBe('300 - in progress');
+    expect(output[0].mostRecentAssignmentPlanId).toBe(300);
+    expect(output[0].mostRecentAssignmentStatus).toBe('in_progress');
   });
 
   test('table format shows abbreviated paths with ~ for home directory', async () => {

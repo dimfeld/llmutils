@@ -54,6 +54,8 @@ import {
   type WorkspaceInfo,
   type WorkspaceMetadataPatch,
 } from '../workspace/workspace_info.js';
+import { getAssignmentEntriesByProject } from '../db/assignment.js';
+import { getProject } from '../db/project.js';
 
 const PRIMARY_REMOTE_NAME = 'primary';
 
@@ -74,6 +76,15 @@ interface WorkspaceListEntry {
   isPrimary?: boolean;
   createdAt: string;
   updatedAt?: string;
+  mostRecentAssignment?: string;
+  mostRecentAssignmentPlanId?: number;
+  mostRecentAssignmentStatus?: string;
+}
+
+interface WorkspaceAssignmentSummary {
+  planId?: number;
+  status?: string;
+  updatedAt: string;
 }
 
 export interface WorkspaceListOptions {
@@ -107,7 +118,8 @@ async function updateWorkspaceLockStatus(workspaces: WorkspaceInfo[]): Promise<W
 }
 
 async function buildWorkspaceListEntries(
-  workspaces: WorkspaceInfo[]
+  workspaces: WorkspaceInfo[],
+  mostRecentAssignmentByWorkspace: Record<string, WorkspaceAssignmentSummary>
 ): Promise<WorkspaceListEntry[]> {
   const entries: WorkspaceListEntry[] = [];
 
@@ -143,10 +155,77 @@ async function buildWorkspaceListEntries(
       isPrimary: workspace.isPrimary,
       createdAt: workspace.createdAt,
       updatedAt: workspace.updatedAt,
+      mostRecentAssignment: buildWorkspaceAssignmentDisplay(
+        mostRecentAssignmentByWorkspace[workspace.workspacePath]
+      ),
+      mostRecentAssignmentPlanId:
+        mostRecentAssignmentByWorkspace[workspace.workspacePath]?.planId,
+      mostRecentAssignmentStatus:
+        mostRecentAssignmentByWorkspace[workspace.workspacePath]?.status ?? undefined,
     });
   }
 
   return entries;
+}
+
+function buildWorkspaceAssignmentDisplay(assignment?: WorkspaceAssignmentSummary): string {
+  if (!assignment?.planId) {
+    return '-';
+  }
+
+  const status = assignment.status ? assignment.status.replace(/_/g, ' ') : 'pending';
+  return `${assignment.planId} - ${status}`;
+}
+
+async function resolveMostRecentAssignmentsForWorkspaces(
+  workspaces: WorkspaceInfo[]
+): Promise<Record<string, WorkspaceAssignmentSummary>> {
+  const db = getDatabase();
+  const mostRecentByWorkspacePath: Record<string, WorkspaceAssignmentSummary> = {};
+  const workspacePathsByRepository = new Map<string, Set<string>>();
+
+  for (const workspace of workspaces) {
+    if (!workspace.repositoryId) {
+      continue;
+    }
+
+    const repoPaths = workspacePathsByRepository.get(workspace.repositoryId) ?? new Set();
+    repoPaths.add(workspace.workspacePath);
+    workspacePathsByRepository.set(workspace.repositoryId, repoPaths);
+  }
+
+  for (const [repositoryId, workspacePaths] of workspacePathsByRepository) {
+    const project = getProject(db, repositoryId);
+    if (!project) {
+      continue;
+    }
+
+    const assignments = getAssignmentEntriesByProject(db, project.id);
+    for (const assignment of Object.values(assignments)) {
+      for (const workspacePath of assignment.workspacePaths) {
+        if (!workspacePaths.has(workspacePath)) {
+          continue;
+        }
+
+        const current = mostRecentByWorkspacePath[workspacePath];
+        const candidateUpdatedAt = Date.parse(assignment.updatedAt);
+        if (Number.isNaN(candidateUpdatedAt)) {
+          continue;
+        }
+
+        const currentUpdatedAt = current ? Date.parse(current.updatedAt) : Number.NaN;
+        if (Number.isNaN(currentUpdatedAt) || candidateUpdatedAt > currentUpdatedAt) {
+          mostRecentByWorkspacePath[workspacePath] = {
+            planId: assignment.planId,
+            status: assignment.status,
+            updatedAt: assignment.updatedAt,
+          };
+        }
+      }
+    }
+  }
+
+  return mostRecentByWorkspacePath;
 }
 
 export async function handleWorkspaceListCommand(options: WorkspaceListOptions, command: Command) {
@@ -186,9 +265,10 @@ export async function handleWorkspaceListCommand(options: WorkspaceListOptions, 
 
   // Update lock status for all workspaces
   const workspacesWithStatus = await updateWorkspaceLockStatus(workspaces);
+  const mostRecentAssignments = await resolveMostRecentAssignmentsForWorkspaces(workspacesWithStatus);
 
   // Build enriched list entries with live branch info
-  const entries = await buildWorkspaceListEntries(workspacesWithStatus);
+  const entries = await buildWorkspaceListEntries(workspacesWithStatus, mostRecentAssignments);
 
   // Sort entries by name (case-insensitive), with unnamed entries sorted by path
   entries.sort((a, b) => {
@@ -230,45 +310,6 @@ export async function handleWorkspaceListCommand(options: WorkspaceListOptions, 
  * Output workspaces in table format with abbreviated paths and lock status.
  */
 function outputWorkspaceTable(entries: WorkspaceListEntry[], showHeader: boolean): void {
-  const relativeFormatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
-
-  const formatRelativeTime = (updatedAt: string | undefined): string => {
-    if (!updatedAt) {
-      return '-';
-    }
-
-    const parsed = Date.parse(updatedAt);
-    if (Number.isNaN(parsed)) {
-      return updatedAt;
-    }
-
-    const now = Date.now();
-    const deltaMs = now - parsed;
-    const absMs = Math.abs(deltaMs);
-
-    if (absMs < 60 * 1000) {
-      return 'just now';
-    }
-
-    const formatElapsed = (value: number, unit: Intl.RelativeTimeFormatUnit): string => {
-      const amount = deltaMs >= 0 ? -Math.round(value) : Math.round(value);
-      return relativeFormatter.format(amount, unit);
-    };
-
-    const minutes = deltaMs / (1000 * 60);
-    if (Math.abs(minutes) < 60) {
-      return formatElapsed(minutes, 'minute');
-    }
-
-    const hours = minutes / 60;
-    if (Math.abs(hours) < 24) {
-      return formatElapsed(hours, 'hour');
-    }
-
-    const days = hours / 24;
-    return formatElapsed(days, 'day');
-  };
-
   const tableData: string[][] = [];
 
   if (showHeader) {
@@ -278,7 +319,7 @@ function outputWorkspaceTable(entries: WorkspaceListEntry[], showHeader: boolean
       chalk.bold('Description'),
       chalk.bold('Branch'),
       chalk.bold('Status'),
-      chalk.bold('Updated'),
+      chalk.bold('Plan'),
     ]);
   }
 
@@ -287,7 +328,7 @@ function outputWorkspaceTable(entries: WorkspaceListEntry[], showHeader: boolean
     const name = entry.name || '-';
     const description = entry.description || '-';
     const branch = entry.branch || '-';
-    const updatedAt = formatRelativeTime(entry.updatedAt);
+    const plan = entry.mostRecentAssignment || '-';
 
     let status: string;
     if (entry.isPrimary) {
@@ -299,7 +340,7 @@ function outputWorkspaceTable(entries: WorkspaceListEntry[], showHeader: boolean
       status = chalk.green('Available');
     }
 
-    tableData.push([abbreviatedPath, name, description, branch, status, updatedAt]);
+    tableData.push([abbreviatedPath, name, description, branch, status, plan]);
   }
 
   const tableConfig: TableUserConfig = {
@@ -309,7 +350,7 @@ function outputWorkspaceTable(entries: WorkspaceListEntry[], showHeader: boolean
       2: { width: 35, wrapWord: true },
       3: { width: 20, wrapWord: true },
       4: { width: 15, wrapWord: true },
-      5: { width: 28, wrapWord: true },
+      5: { width: 24, wrapWord: true },
     },
     border: {
       topBody: '-',
