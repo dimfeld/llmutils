@@ -408,7 +408,7 @@ describe('workspace list command', () => {
 
     const output = consoleOutput.join('\n');
     expect(output).toContain('Plan');
-    expect(output).not.toContain('ago');
+    expect(output).toMatch(/\d+\s+(?:minute|minutes|hour|hours|day|days|month|months|year|years)\s+ago|just now/);
   });
 
   test('table format shows most recent assignment in Plan column', async () => {
@@ -467,6 +467,7 @@ describe('workspace list command', () => {
     const output = consoleOutput.join('\n');
     expect(output).toContain('Plan');
     expect(output).toContain('200 - done');
+    expect(output).toMatch(/ago\n200 - done|just now\n200 - done/);
   });
 
   test('JSON output includes most recent assignment metadata', async () => {
