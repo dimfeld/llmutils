@@ -292,12 +292,15 @@ program
     'Find and operate on the next ready dependency of the specified parent plan (accepts plan ID or file path)'
   )
   .option(
-    '--workspace <id>',
+    '-w, --workspace <id>',
     'ID for the task, used for workspace naming and tracking. If provided, a new workspace will be created.'
   )
-  .option('--auto-workspace', 'Automatically select an available workspace or create a new one')
   .option(
-    '--new-workspace',
+    '--aw, --auto-workspace',
+    'Automatically select an available workspace or create a new one'
+  )
+  .option(
+    '--nw, --new-workspace',
     'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
   )
   .option('--base <ref>', 'Base branch or revision to checkout in workspace')
@@ -571,12 +574,15 @@ function createAgentCommand(command: Command, description: string) {
       'Write execution summary to the specified file instead of stdout (creates parent directories)'
     )
     .option(
-      '--workspace <id>',
+      '-w, --workspace <id>',
       'ID for the task, used for workspace naming and tracking. If provided, a new workspace will be created.'
     )
-    .option('--auto-workspace', 'Automatically select an available workspace or create a new one')
     .option(
-      '--new-workspace',
+      '--aw, --auto-workspace',
+      'Automatically select an available workspace or create a new one'
+    )
+    .option(
+      '--nw, --new-workspace',
       'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
     )
     .option('--base <ref>', 'Base branch or revision to checkout in workspace')
