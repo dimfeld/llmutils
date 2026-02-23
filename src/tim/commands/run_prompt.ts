@@ -327,6 +327,7 @@ async function executeClaudePrompt(
         ...process.env,
         TIM_EXECUTOR: 'claude',
         TIM_NOTIFY_SUPPRESS: '1',
+        TMPDIR: '/tmp/claude/',
         ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
         CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
         ...tunnelEnv,

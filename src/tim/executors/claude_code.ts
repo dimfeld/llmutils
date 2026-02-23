@@ -762,6 +762,7 @@ export class ClaudeCodeExecutor implements Executor {
           CLAUDECODE: '',
           TIM_EXECUTOR: 'claude',
           TIM_NOTIFY_SUPPRESS: '1',
+          TMPDIR: '/tmp/claude/',
           ...(tunnelServer ? { [TIM_OUTPUT_SOCKET]: tunnelSocketPath } : {}),
           ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
           CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
