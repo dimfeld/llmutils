@@ -1565,6 +1565,8 @@ struct StructuredMessagePayloadTests {
             ],
             "recommendations": ["Use parameterized queries"],
             "actionItems": ["Fix query in user.ts"],
+            "verdict": "NEEDS_FIXES",
+            "fixInstructions": "Fix the SQL injection",
             "timestamp": "2026-02-10T08:00:00Z"
         }
         """
@@ -1580,25 +1582,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.issues[0].suggestion == "Use parameterized queries")
         #expect(p.recommendations == ["Use parameterized queries"])
         #expect(p.actionItems == ["Fix query in user.ts"])
-    }
-
-    @Test("Decodes review_verdict")
-    func decodesReviewVerdict() throws {
-        let json = """
-        {
-            "type": "review_verdict",
-            "verdict": "NEEDS_FIXES",
-            "fixInstructions": "Fix the SQL injection",
-            "timestamp": "2026-02-10T08:00:00Z"
-        }
-        """
-        let msg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(json.utf8))
-        guard case let .reviewVerdict(verdict, fixInstructions, _) = msg else {
-            Issue.record("Expected reviewVerdict, got \(msg)")
-            return
-        }
-        #expect(verdict == "NEEDS_FIXES")
-        #expect(fixInstructions == "Fix the SQL injection")
+        #expect(p.verdict == "NEEDS_FIXES")
+        #expect(p.fixInstructions == "Fix the SQL injection")
     }
 
     @Test("Decodes execution_summary with metadata totalSteps and failedSteps")

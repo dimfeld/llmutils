@@ -161,18 +161,14 @@ export interface ReviewStartMessage extends StructuredMessageBase {
 
 export interface ReviewResultMessage extends StructuredMessageBase {
   type: 'review_result';
+  verdict: ReviewVerdict;
+  fixInstructions?: string;
   issues: ReviewOutput['issues'];
   recommendations: string[];
   actionItems: string[];
 }
 
 export type ReviewVerdict = 'ACCEPTABLE' | 'NEEDS_FIXES' | 'UNKNOWN';
-
-export interface ReviewVerdictMessage extends StructuredMessageBase {
-  type: 'review_verdict';
-  verdict: ReviewVerdict;
-  fixInstructions?: string;
-}
 
 export interface WorkflowProgressMessage extends StructuredMessageBase {
   type: 'workflow_progress';
@@ -293,7 +289,6 @@ export type StructuredMessage =
   | CommandResultMessage
   | ReviewStartMessage
   | ReviewResultMessage
-  | ReviewVerdictMessage
   | WorkflowProgressMessage
   | FailureReportMessage
   | TaskCompletionMessage
@@ -325,7 +320,6 @@ export const structuredMessageTypeList = [
   'command_result',
   'review_start',
   'review_result',
-  'review_verdict',
   'workflow_progress',
   'failure_report',
   'task_completion',

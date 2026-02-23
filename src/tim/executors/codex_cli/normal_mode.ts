@@ -7,8 +7,9 @@ import { log, sendStructured, warn } from '../../../logging';
 import { getImplementerPrompt, getTesterPrompt } from '../claude_code/agent_prompts';
 import { readPlanFile } from '../../plans';
 import { detectPlanningWithoutImplementation, parseFailedReport } from '../failure_detection';
-import { loadAgentInstructionsFor } from './agent_helpers';
+import { loadAgentInstructionsFor, timestamp } from './agent_helpers';
 import { executeCodexStep } from './codex_runner';
+import { sendStructuredReviewResult } from './review_message';
 import {
   categorizeTasks,
   logTaskStatus,
@@ -25,9 +26,6 @@ import {
 } from './external_review';
 
 type AgentType = 'implementer' | 'tester' | 'reviewer' | 'fixer';
-function timestamp(): string {
-  return new Date().toISOString();
-}
 
 function emitFailureReport(
   sourceAgent: 'implementer' | 'tester' | 'fixer',
@@ -406,23 +404,14 @@ export async function executeNormalMode(
 
     if (reviewOutcome.verdict === 'ACCEPTABLE') {
       finalReviewVerdict = 'ACCEPTABLE';
-      sendStructured({
-        type: 'review_verdict',
-        timestamp: timestamp(),
-        verdict: 'ACCEPTABLE',
-      });
+      sendStructuredReviewResult(reviewOutcome);
       const aggregated = buildAggregatedOutput();
       if (aggregated != null) return aggregated;
       return;
     }
 
     finalReviewVerdict = 'NEEDS_FIXES';
-    sendStructured({
-      type: 'review_verdict',
-      timestamp: timestamp(),
-      verdict: 'NEEDS_FIXES',
-      fixInstructions: reviewOutcome.fixInstructions,
-    });
+    sendStructuredReviewResult(reviewOutcome);
     log(`Issues: ${reviewOutcome.fixInstructions}`);
 
     let fixInstructions = reviewOutcome.fixInstructions;
@@ -541,23 +530,14 @@ export async function executeNormalMode(
 
       if (reviewOutcome.verdict === 'ACCEPTABLE') {
         finalReviewVerdict = 'ACCEPTABLE';
-        sendStructured({
-          type: 'review_verdict',
-          timestamp: timestamp(),
-          verdict: 'ACCEPTABLE',
-        });
+        sendStructuredReviewResult(reviewOutcome);
         const aggregated = buildAggregatedOutput();
         if (aggregated != null) return aggregated;
         return;
       }
 
       finalReviewVerdict = 'NEEDS_FIXES';
-      sendStructured({
-        type: 'review_verdict',
-        timestamp: timestamp(),
-        verdict: 'NEEDS_FIXES',
-        fixInstructions: reviewOutcome.fixInstructions,
-      });
+      sendStructuredReviewResult(reviewOutcome);
       log(`Issues: ${reviewOutcome.fixInstructions}`);
       fixInstructions = reviewOutcome.fixInstructions;
       continue;

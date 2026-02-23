@@ -134,7 +134,20 @@ describe('CodexCliExecutor simple mode', () => {
         verdict: 'ACCEPTABLE',
         formattedOutput: 'Verification succeeded. All checks pass.\n\nVERDICT: ACCEPTABLE',
         fixInstructions: 'No issues',
-        reviewResult: { issues: [] },
+        reviewResult: {
+          issues: [
+            {
+              severity: 'minor',
+              category: 'style',
+              content: 'Rename ambiguous variable',
+              file: 'src/simple.ts',
+              line: 9,
+              suggestion: 'Use descriptive name',
+            },
+          ],
+          recommendations: ['rename variable'],
+          actionItems: ['rename ambiguous variable'],
+        },
         rawOutput: '{}',
         warnings: [],
       })),
@@ -217,11 +230,37 @@ describe('CodexCliExecutor simple mode', () => {
         (message) => message.type === 'agent_step_end' && message.phase === 'reviewer'
       )
     ).toBeTrue();
+    const reviewResultMessage = structuredMessages.find(
+      (message) => (message as { type?: string }).type === 'review_result'
+    ) as
+      | {
+          verdict?: string;
+          fixInstructions?: string;
+          issues?: Array<{
+            severity: string;
+            category: string;
+            content: string;
+            file: string;
+            line: string;
+            suggestion: string;
+          }>;
+        }
+      | undefined;
+    expect(reviewResultMessage?.verdict).toBe('ACCEPTABLE');
+    expect(reviewResultMessage?.fixInstructions).toBeUndefined();
+    expect(reviewResultMessage?.issues).toEqual([
+      {
+        severity: 'minor',
+        category: 'style',
+        content: 'Rename ambiguous variable',
+        file: 'src/simple.ts',
+        line: '9',
+        suggestion: 'Use descriptive name',
+      },
+    ]);
     expect(
-      structuredMessages.some(
-        (message) => message.type === 'review_verdict' && message.verdict === 'ACCEPTABLE'
-      )
-    ).toBeTrue();
+      structuredMessages.some((message) => (message as { type?: string }).type === 'review_verdict')
+    ).toBeFalse();
   });
 
   test('retries implementer when initial attempt only plans work', async () => {

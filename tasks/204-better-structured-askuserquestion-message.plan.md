@@ -15,4 +15,4 @@ tags: []
 Currently when we're handling the Ask User Question tool, we have first a select and then if the user selects free text,
 then we do a separate input. This works okay for the GUI it would be much better to just have free text be a selection
 and then have a place to type below it. So that it's all in one single message. This will require creating a new custom
-prompt type, which is a select with free text option. 
+prompt type, which is a select with free text option.

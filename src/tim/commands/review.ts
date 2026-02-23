@@ -57,6 +57,7 @@ import {
   type ReviewPromptBuilder,
 } from '../review_runner.js';
 import { createHeadlessAdapterForCommand } from '../headless.js';
+import { toStructuredReviewIssues } from '../review_structured_message.js';
 import { timestamp } from './agent/agent_helpers.js';
 import which from 'which';
 const FIX_EXECUTOR_COMMANDS = {
@@ -706,40 +707,30 @@ export async function handleReviewCommand(
           outputFormat === 'json' || outputFormat === 'markdown' ? outputFormat : 'terminal'
         );
         const formattedOutput = formatter.format(reviewResult, formatterOptions);
+        const hasIssues = detectIssuesInReview(reviewResult, rawOutput);
 
         sendStructured({
           type: 'review_result',
           timestamp: timestamp(),
-          issues: reviewResult.issues.map((issue) => ({
-            severity: issue.severity,
-            category: issue.category,
-            content: issue.content,
-            file: issue.file ?? '',
-            line: issue.line != null ? String(issue.line) : '',
-            suggestion: issue.suggestion ?? '',
-          })),
+          verdict: hasIssues ? 'NEEDS_FIXES' : 'ACCEPTABLE',
+          fixInstructions: hasIssues ? reviewResult.actionItems.join('\n') : undefined,
+          issues: toStructuredReviewIssues(reviewResult.issues),
           recommendations: reviewResult.recommendations,
           actionItems: reviewResult.actionItems,
         });
 
-        if (tunnelActive) {
-          // When tunnel is active, write to BOTH:
-          // 1. console.log directly so the executor can capture it from the child's stdout
-          // 2. log() which goes through the tunnel adapter to the parent for display
+        if (tunnelActive || isPrintMode) {
+          // In print mode, write formatted output to stdout so the caller gets
+          // machine-readable JSON regardless of tunnel state.
+          // In tunnel mode, stdout output allows the parent executor to capture
+          // the formatted review output from this child process.
+          // The parent receives review data via sendStructured() above.
           console.log(formattedOutput);
           // Wait so that output flushes, this seems necessary in recent versions of Claude Code
           await Bun.sleep(500);
         }
-        log(formattedOutput);
 
         // Check if autofix should be performed - with robust issue detection
-        const hasIssues = detectIssuesInReview(reviewResult, rawOutput);
-        sendStructured({
-          type: 'review_verdict',
-          timestamp: timestamp(),
-          verdict: hasIssues ? 'NEEDS_FIXES' : 'ACCEPTABLE',
-          fixInstructions: hasIssues ? reviewResult.actionItems.join('\n') : undefined,
-        });
         let shouldAutofix = false;
         let shouldCreateCleanupPlan = false;
         let shouldAppendTasksToPlan = false;

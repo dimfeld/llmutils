@@ -910,12 +910,14 @@ struct MessageFormatterTests {
                     content: "SQL injection risk", file: "src/user.ts",
                     line: "42", suggestion: "Use parameterized queries"),
                 ReviewIssueItem(
-                    severity: "warning", category: "performance",
+                    severity: "info", category: "performance",
                     content: "N+1 query", file: "src/api.ts",
                     line: "10", suggestion: nil),
             ],
             recommendations: ["Use parameterized queries"],
             actionItems: ["Fix query in user.ts"],
+            verdict: "NEEDS_FIXES",
+            fixInstructions: nil,
             timestamp: nil)
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .reviewResult(payload)),
@@ -927,19 +929,18 @@ struct MessageFormatterTests {
             return
         }
         #expect(body.contains("Issues: 2"))
-        #expect(body.contains("Recommendations: 1"))
-        #expect(body.contains("Action items: 1"))
-        #expect(body.contains("[critical]"))
+        #expect(body.contains("Critical:"))
         #expect(body.contains("SQL injection risk"))
         #expect(body.contains("(src/user.ts:42)"))
-        #expect(body.contains("[warning]"))
+        #expect(body.contains("Info:"))
         #expect(body.contains("N+1 query"))
     }
 
     @Test("Formats review_result with no issues")
     func formatsReviewResultEmpty() {
         let payload = ReviewResultPayload(
-            issues: [], recommendations: [], actionItems: [], timestamp: nil)
+            issues: [], recommendations: [], actionItems: [],
+            verdict: nil, fixInstructions: nil, timestamp: nil)
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .reviewResult(payload)),
             seq: 201)
@@ -950,39 +951,6 @@ struct MessageFormatterTests {
             return
         }
         #expect(body.contains("Issues: 0"))
-    }
-
-    @Test("Formats review_verdict ACCEPTABLE")
-    func formatsReviewVerdictAcceptable() {
-        let msg = MessageFormatter.format(
-            tunnelMessage: .structured(message: .reviewVerdict(
-                verdict: "ACCEPTABLE", fixInstructions: nil, timestamp: nil)),
-            seq: 202)
-        #expect(msg.category == .lifecycle)
-        #expect(msg.title == "Review Verdict")
-        guard case let .text(body) = msg.body else {
-            Issue.record("Expected .text body")
-            return
-        }
-        #expect(body.contains("Verdict: ACCEPTABLE"))
-    }
-
-    @Test("Formats review_verdict NEEDS_FIXES with instructions")
-    func formatsReviewVerdictNeedsFixes() {
-        let msg = MessageFormatter.format(
-            tunnelMessage: .structured(message: .reviewVerdict(
-                verdict: "NEEDS_FIXES",
-                fixInstructions: "Fix the SQL injection vulnerability",
-                timestamp: nil)),
-            seq: 203)
-        #expect(msg.category == .lifecycle)
-        #expect(msg.title == "Review Verdict")
-        guard case let .text(body) = msg.body else {
-            Issue.record("Expected .text body")
-            return
-        }
-        #expect(body.contains("Verdict: NEEDS_FIXES"))
-        #expect(body.contains("Fix the SQL injection vulnerability"))
     }
 
     // MARK: - Execution summary with key-value pairs

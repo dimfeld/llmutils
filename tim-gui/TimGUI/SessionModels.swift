@@ -362,7 +362,6 @@ enum StructuredMessagePayload: Sendable {
     case commandResult(CommandResultPayload)
     case reviewStart(executor: String?, planId: Int?, timestamp: String?)
     case reviewResult(ReviewResultPayload)
-    case reviewVerdict(verdict: String, fixInstructions: String?, timestamp: String?)
     case workflowProgress(message: String, phase: String?, timestamp: String?)
     case failureReport(FailureReportPayload)
     case taskCompletion(taskTitle: String?, planComplete: Bool, timestamp: String?)
@@ -494,6 +493,8 @@ struct ReviewResultPayload: Sendable {
     let issues: [ReviewIssueItem]
     let recommendations: [String]
     let actionItems: [String]
+    let verdict: String?
+    let fixInstructions: String?
     let timestamp: String?
 }
 
@@ -909,13 +910,9 @@ extension StructuredMessagePayload: Decodable {
                 issues: (try? container.decode([ReviewIssueItem].self, forKey: .issues)) ?? [],
                 recommendations: (try? container.decode([String].self, forKey: .recommendations)) ?? [],
                 actionItems: (try? container.decode([String].self, forKey: .actionItems)) ?? [],
+                verdict: try? container.decodeIfPresent(String.self, forKey: .verdict),
+                fixInstructions: try? container.decodeIfPresent(String.self, forKey: .fixInstructions),
                 timestamp: timestamp))
-
-        case "review_verdict":
-            self = try .reviewVerdict(
-                verdict: container.decode(String.self, forKey: .verdict),
-                fixInstructions: container.decodeIfPresent(String.self, forKey: .fixInstructions),
-                timestamp: timestamp)
 
         case "workflow_progress":
             self = try .workflowProgress(
@@ -1223,37 +1220,52 @@ enum MessageFormatter {
 
         case let .reviewResult(p):
             var lines = ["Issues: \(p.issues.count)"]
-            if !p.recommendations.isEmpty {
-                lines.append("Recommendations: \(p.recommendations.count)")
-            }
-            if !p.actionItems.isEmpty {
-                lines.append("Action items: \(p.actionItems.count)")
-            }
+            let severityOrder = ["critical", "major", "minor", "info"]
+            var grouped: [String: [ReviewIssueItem]] = [:]
             for issue in p.issues {
-                var issueLine = "- "
-                if let sev = issue.severity { issueLine += "[\(sev)] " }
-                if let content = issue.content { issueLine += content }
-                if let file = issue.file {
-                    issueLine += " (\(file)"
-                    if let line = issue.line { issueLine += ":\(line)" }
-                    issueLine += ")"
+                let sev = issue.severity ?? "info"
+                grouped[sev, default: []].append(issue)
+            }
+            for sev in severityOrder {
+                guard let issues = grouped[sev], !issues.isEmpty else { continue }
+                lines.append("")
+                lines.append("\(sev.capitalized):")
+                for issue in issues {
+                    var issueLine = "- "
+                    if let content = issue.content { issueLine += content }
+                    if let file = issue.file {
+                        issueLine += " (\(file)"
+                        if let line = issue.line { issueLine += ":\(line)" }
+                        issueLine += ")"
+                    }
+                    lines.append(issueLine)
                 }
-                lines.append(issueLine)
+            }
+            let remainingSeverities = grouped.keys
+                .filter { !severityOrder.contains($0) }
+                .sorted()
+            if !remainingSeverities.isEmpty {
+                lines.append("")
+                lines.append("Other:")
+                for sev in remainingSeverities {
+                    guard let issues = grouped[sev], !issues.isEmpty else { continue }
+                    lines.append("- \(sev.capitalized):")
+                    for issue in issues {
+                        var issueLine = "  - "
+                        if let content = issue.content { issueLine += content }
+                        if let file = issue.file {
+                            issueLine += " (\(file)"
+                            if let line = issue.line { issueLine += ":\(line)" }
+                            issueLine += ")"
+                        }
+                        lines.append(issueLine)
+                    }
+                }
             }
             return SessionMessage(
                 seq: seq, title: "Review Result",
                 body: .text(lines.joined(separator: "\n")),
                 category: .lifecycle, timestamp: parseTimestamp(p.timestamp))
-
-        case let .reviewVerdict(verdict, fixInstructions, ts):
-            var text = "Verdict: \(verdict)"
-            if let instructions = fixInstructions {
-                text += "\n\(instructions)"
-            }
-            return SessionMessage(
-                seq: seq, title: "Review Verdict",
-                body: .text(text),
-                category: .lifecycle, timestamp: parseTimestamp(ts))
 
         case let .workflowProgress(message, phase, ts):
             let text = phase.map { "[\($0)] \(message)" } ?? message

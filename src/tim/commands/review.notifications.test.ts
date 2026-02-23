@@ -342,6 +342,8 @@ describe('review notifications', () => {
         issues: [
           {
             severity: 'major',
+            category: 'bug',
+            id: 'issue-1',
             content: 'Issue content',
             file: 'src/file.ts',
             line: 10,
@@ -378,6 +380,8 @@ describe('review notifications', () => {
         issues: [
           {
             severity: 'major',
+            category: 'bug',
+            id: 'issue-2',
             content: 'Issue content',
             file: 'src/file.ts',
             line: 10,
@@ -418,6 +422,8 @@ describe('review notifications', () => {
         issues: [
           {
             severity: 'major',
+            category: 'bug',
+            id: 'issue-3',
             content: 'Issue content',
             file: 'src/file.ts',
             line: 10,
@@ -456,6 +462,8 @@ describe('review notifications', () => {
         issues: [
           {
             severity: 'major',
+            category: 'bug',
+            id: 'issue-4',
             content: 'Issue content',
             file: 'src/file.ts',
             line: 10,
@@ -502,12 +510,16 @@ describe('review notifications', () => {
         expect.objectContaining({ type: 'review_start', planId: 123 }),
         expect.objectContaining({
           type: 'review_result',
+          verdict: 'ACCEPTABLE',
+          fixInstructions: undefined,
           recommendations: ['Ship it'],
           actionItems: ['None'],
         }),
-        expect.objectContaining({ type: 'review_verdict', verdict: 'ACCEPTABLE' }),
       ])
     );
+    expect(
+      structuredMessages.some((message) => (message as { type?: string }).type === 'review_verdict')
+    ).toBeFalse();
   });
 
   test('maps review issues to structured review_result fields with expected coercions', async () => {
@@ -527,7 +539,7 @@ describe('review notifications', () => {
           },
         ],
         recommendations: [],
-        actionItems: [],
+        actionItems: ['Fix the testing issue', 'Run tests'],
       },
       rawOutput: '',
       usedExecutors: ['claude-code'],
@@ -544,6 +556,8 @@ describe('review notifications', () => {
     );
 
     expect(reviewResultMessage).toBeDefined();
+    expect(reviewResultMessage?.verdict).toBe('NEEDS_FIXES');
+    expect(reviewResultMessage?.fixInstructions).toBe('Fix the testing issue\nRun tests');
     expect(reviewResultMessage?.issues).toEqual([
       {
         severity: 'major',
@@ -554,6 +568,9 @@ describe('review notifications', () => {
         suggestion: '',
       },
     ]);
+    expect(
+      structuredMessages.some((message) => (message as { type?: string }).type === 'review_verdict')
+    ).toBeFalse();
   });
 
   test('emits structured input_required before action prompt selection', async () => {

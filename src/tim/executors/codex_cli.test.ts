@@ -391,7 +391,20 @@ describe('CodexCliExecutor - failure detection across agents', () => {
         verdict: 'ACCEPTABLE',
         formattedOutput: 'All good.\n\nVERDICT: ACCEPTABLE',
         fixInstructions: 'No issues',
-        reviewResult: { issues: [] },
+        reviewResult: {
+          issues: [
+            {
+              severity: 'major',
+              category: 'correctness',
+              content: 'Handle rejected promise',
+              file: 'src/runner.ts',
+              line: 77,
+              suggestion: 'Wrap in try/catch',
+            },
+          ],
+          recommendations: ['add tests'],
+          actionItems: ['handle rejected promise'],
+        },
         rawOutput: '{}',
         warnings: [],
       })),
@@ -471,11 +484,37 @@ describe('CodexCliExecutor - failure detection across agents', () => {
         (message) => message.type === 'agent_step_end' && message.phase === 'implementer'
       )
     ).toBeTrue();
+    const reviewResultMessage = structuredMessages.find(
+      (message) => (message as { type?: string }).type === 'review_result'
+    ) as
+      | {
+          verdict?: string;
+          fixInstructions?: string;
+          issues?: Array<{
+            severity: string;
+            category: string;
+            content: string;
+            file: string;
+            line: string;
+            suggestion: string;
+          }>;
+        }
+      | undefined;
+    expect(reviewResultMessage?.verdict).toBe('ACCEPTABLE');
+    expect(reviewResultMessage?.fixInstructions).toBeUndefined();
+    expect(reviewResultMessage?.issues).toEqual([
+      {
+        severity: 'major',
+        category: 'correctness',
+        content: 'Handle rejected promise',
+        file: 'src/runner.ts',
+        line: '77',
+        suggestion: 'Wrap in try/catch',
+      },
+    ]);
     expect(
-      structuredMessages.some(
-        (message) => message.type === 'review_verdict' && message.verdict === 'ACCEPTABLE'
-      )
-    ).toBeTrue();
+      structuredMessages.some((message) => (message as { type?: string }).type === 'review_verdict')
+    ).toBeFalse();
   });
 
   test('continues after exhausting planning-only retries', async () => {

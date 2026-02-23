@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import {
   structuredMessageTypeList,
+  type ReviewVerdict,
   type StructuredMessage,
   type UserTerminalInputMessage,
 } from './structured_messages.ts';
@@ -46,6 +47,8 @@ describe('structured_messages', () => {
       {
         type: 'review_result',
         timestamp,
+        verdict: 'NEEDS_FIXES',
+        fixInstructions: 'Fix bug',
         issues: [
           {
             severity: 'major',
@@ -59,7 +62,6 @@ describe('structured_messages', () => {
         recommendations: ['Add tests'],
         actionItems: ['Fix bug'],
       },
-      { type: 'review_verdict', timestamp, verdict: 'NEEDS_FIXES' },
       { type: 'workflow_progress', timestamp, message: 'Running review' },
       { type: 'failure_report', timestamp, summary: 'Failed' },
       { type: 'task_completion', timestamp, planComplete: false },
@@ -117,6 +119,24 @@ describe('structured_messages', () => {
 
   it('includes user_terminal_input in the public message type list', () => {
     expect(structuredMessageTypeList).toContain('user_terminal_input');
+  });
+
+  it('does not include legacy review_verdict in the public message type list', () => {
+    expect(structuredMessageTypeList).not.toContain('review_verdict');
+  });
+
+  it('exposes ReviewVerdict and requires verdict on review_result messages', () => {
+    const verdict: ReviewVerdict = 'ACCEPTABLE';
+    const message: Extract<StructuredMessage, { type: 'review_result' }> = {
+      type: 'review_result',
+      timestamp: '2026-02-08T00:00:00.000Z',
+      verdict,
+      issues: [],
+      recommendations: [],
+      actionItems: [],
+    };
+
+    expect(message.verdict).toBe('ACCEPTABLE');
   });
 
   it('supports user_terminal_input message shape', () => {

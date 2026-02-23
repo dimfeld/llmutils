@@ -5,28 +5,28 @@ goal: ""
 id: 201
 uuid: a2e13a19-4d9a-44da-ab4f-c6f566ecacc1
 generatedBy: agent
-status: pending
+status: done
 priority: medium
 planGeneratedAt: 2026-02-23T09:09:52.475Z
 promptsGeneratedAt: 2026-02-23T09:09:52.475Z
 createdAt: 2026-02-21T01:14:58.731Z
-updatedAt: 2026-02-23T09:09:52.475Z
+updatedAt: 2026-02-23T20:20:59.037Z
 tasks:
   - title: Combine ReviewResultMessage and ReviewVerdictMessage
-    done: false
+    done: true
     description: "In src/logging/structured_messages.ts: Add verdict (ReviewVerdict,
       required), fixInstructions (optional string) fields to
       ReviewResultMessage. Remove ReviewVerdictMessage interface. Remove
       review_verdict from StructuredMessage union and structuredMessageTypeList.
       Keep the ReviewVerdict type alias."
   - title: Update tunnel server validation
-    done: false
+    done: true
     description: "In src/logging/tunnel_server.ts: Update the review_result
       validation case to also check verdict (required string in reviewVerdicts
       set) and fixInstructions (optional string). Remove the review_verdict case
       entirely."
   - title: Extract issue formatting from TerminalFormatter
-    done: false
+    done: true
     description: "In src/tim/formatters/review_formatter.ts: Extract the
       issue-formatting portion from TerminalFormatter into a standalone exported
       function. Accept issues in ReviewOutput issues format (without id field)
@@ -35,36 +35,57 @@ tasks:
       standalone functions. Do not include recommendations, action items, or
       full header. Add tests in review_formatter.test.ts."
   - title: Update console formatter for review_result
-    done: false
+    done: true
     description: "In src/logging/console_formatter.ts: Import the new extracted
       function. Replace empty-string return for review_result with call to
       extracted function passing message.issues. Remove review_verdict case.
       Update console_formatter.test.ts accordingly."
   - title: Update review command to send combined message
-    done: false
+    done: true
     description: "In src/tim/commands/review.ts: Move detectIssuesInReview() before
       sendStructured. Include verdict and fixInstructions in review_result
       message. Remove review_verdict sendStructured call. Remove
       log(formattedOutput) call. Keep console.log for tunnel mode. Update
       review.notifications.test.ts."
   - title: Update codex executor modes to send combined message
-    done: false
+    done: true
     description: "In src/tim/executors/codex_cli/normal_mode.ts and simple_mode.ts:
       Convert all review_verdict sendStructured calls to review_result with full
       issues data from ExternalReviewResult. Update codex_cli.test.ts and
       codex_cli.simple_mode.test.ts."
   - title: Update Swift GUI data models and rendering
-    done: false
+    done: true
     description: "In tim-gui/TimGUI/SessionModels.swift: Add verdict and
       fixInstructions to ReviewResultPayload. Remove .reviewVerdict case from
       StructuredMessagePayload. Update JSON decoding. Update .reviewResult
       rendering to group issues by severity. No recommendations, action items,
       or verdict text. Remove .reviewVerdict rendering. Update Swift tests."
   - title: Update structured_messages.test.ts and tunnel_server.test.ts
-    done: false
+    done: true
     description: Update structured_messages.test.ts for review_verdict removal and
       new verdict field on review_result. Update tunnel_server.test.ts
       validation tests for combined format.
+branch: "201"
+changedFiles:
+  - README.md
+  - src/logging/console_formatter.test.ts
+  - src/logging/console_formatter.ts
+  - src/logging/structured_messages.test.ts
+  - src/logging/structured_messages.ts
+  - src/logging/tunnel_server.test.ts
+  - src/logging/tunnel_server.ts
+  - src/tim/commands/review.notifications.test.ts
+  - src/tim/commands/review.ts
+  - src/tim/executors/codex_cli/normal_mode.ts
+  - src/tim/executors/codex_cli/review_message.ts
+  - src/tim/executors/codex_cli/simple_mode.ts
+  - src/tim/executors/codex_cli.simple_mode.test.ts
+  - src/tim/executors/codex_cli.test.ts
+  - src/tim/formatters/review_formatter.test.ts
+  - src/tim/formatters/review_formatter.ts
+  - tim-gui/TimGUI/SessionModels.swift
+  - tim-gui/TimGUITests/MessageFormatterTests.swift
+  - tim-gui/TimGUITests/SessionModelTests.swift
 tags: []
 ---
 
@@ -376,3 +397,26 @@ Minor:
 - **Keeping console.log with full TerminalFormatter for tunnel mode**: The tunnel mode needs stdout output for the parent executor to capture, and the full header/summary table is valuable there.
 - **No verdict text in console formatter**: The verdict is implicit from the presence/absence of issues. Programmatic consumers can read the verdict from the structured message data.
 - **GUI shows only severity-grouped issues**: Recommendations and action items are being removed in a future change, so the GUI only renders the core issue data.
+
+## Current Progress
+### Current State
+- Current iteration completed a strict review-feedback follow-up with two low-risk fixes: removed duplicate timestamp logic in Codex simple-mode executor wiring and replaced a vacuous review formatter test with real assertions.
+### Completed (So Far)
+- `src/tim/executors/codex_cli/simple_mode.ts`
+  - Removed the local `timestamp()` helper.
+  - Imported shared `timestamp` from `./agent_helpers`.
+- `src/tim/formatters/review_formatter.test.ts`
+  - Replaced a no-assertion `determines overall rating correctly` test with concrete `generateReviewSummary` assertions.
+- `tasks/201-improve-review-results-rendering.plan.md`
+  - Updated this `Current Progress` section to capture the current state and what remains.
+### Remaining
+- Any additional hardening around review-result scoring semantics if rating fields are introduced later.
+### Next Iteration Guidance
+- If review-result rating metadata is added to the formatter summary in a later change, add unit tests that assert the rating mapping alongside issue-count assertions.
+### Decisions / Changes
+- Kept changes minimal and local: no protocol schema changes or behavioral refactors outside the requested reviewer follow-ups.
+### Lessons Learned
+- Duplicate utility implementations can persist across mode-specific files; when touching a file, align it with the paired implementation (`normal_mode.ts` vs `simple_mode.ts`) before larger refactors.
+- Review-feedback-identified empty tests are effectively failing tests by omission; they should either be deleted or converted to explicit assertions to avoid false coverage.
+### Risks / Blockers
+- None

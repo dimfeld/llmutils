@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import type { StructuredMessage, FileChangeItem } from './structured_messages.js';
 import { formatExecutionSummaryToLines } from '../tim/summary/format.js';
 import { formatTodoLikeLines } from '../tim/executors/shared/todo_format.js';
+import { formatSeverityGroupedIssuesForTerminal } from '../tim/formatters/review_formatter.js';
 
 function formatTimestamp(timestamp: string): string {
   const date = new Date(timestamp);
@@ -214,13 +215,10 @@ export function formatStructuredMessage(message: StructuredMessage): string {
       case 'review_start':
         return `${chalk.bold.cyan('### Executing Review')}\n${message.executor ?? 'unknown executor'}`;
       case 'review_result':
-      case 'review_verdict':
-        // Intentionally silent on console because `tim review` already renders
-        // detailed human-facing output through explicit `log()` call to ensure
-        // that calling agent sees it even when tunneling.
-        // Call sites must pair `sendStructured()` for these types with explicit
-        // logging to keep local console visibility.
-        return '';
+        return formatSeverityGroupedIssuesForTerminal(message.issues, {
+          verbosity: 'detailed',
+          showSuggestions: true,
+        });
       case 'workflow_progress':
         return chalk.blue(
           message.phase ? `[${message.phase}] ${message.message}` : message.message

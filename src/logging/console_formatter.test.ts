@@ -144,21 +144,37 @@ describe('console_formatter', () => {
     const reviewResult = format({
       type: 'review_result',
       timestamp,
+      verdict: 'NEEDS_FIXES',
+      fixInstructions: 'apply formatter and add null checks',
       issues: [
+        {
+          severity: 'major',
+          category: 'correctness',
+          content: 'Handle null response',
+          file: 'src/b.ts',
+          line: '12',
+          suggestion: 'Guard nulls',
+        },
         {
           severity: 'minor',
           category: 'style',
-          content: 'Fix style',
+          content: 'Fix spacing',
           file: 'src/a.ts',
           line: '2',
           suggestion: 'Format',
         },
       ],
-      recommendations: ['run format'],
-      actionItems: ['fix style'],
+      recommendations: ['run formatter'],
+      actionItems: ['add null checks'],
     });
-    expect(reviewResult).toBe('');
-    expect(format({ type: 'review_verdict', timestamp, verdict: 'ACCEPTABLE' })).toBe('');
+    expect(reviewResult).toContain('Issues Found');
+    expect(reviewResult).toContain('Major Issues');
+    expect(reviewResult).toContain('Minor Issues');
+    expect(reviewResult).toContain('Handle null response');
+    expect(reviewResult).toContain('Fix spacing');
+    expect(reviewResult).not.toContain('run formatter');
+    expect(reviewResult).not.toContain('add null checks');
+    expect(reviewResult).not.toContain('NEEDS_FIXES');
     expect(
       format({ type: 'workflow_progress', timestamp, message: 'Generating', phase: 'context' })
     ).toContain('Generating');
@@ -168,6 +184,19 @@ describe('console_formatter', () => {
     expect(format({ type: 'task_completion', timestamp, planComplete: true })).toContain(
       'Task complete'
     );
+  });
+
+  it('returns empty output for review_result with zero issues', () => {
+    const reviewResult = format({
+      type: 'review_result',
+      timestamp,
+      verdict: 'ACCEPTABLE',
+      issues: [],
+      recommendations: [],
+      actionItems: [],
+    });
+
+    expect(reviewResult).toBe('');
   });
 
   it('formats summary and misc messages', () => {

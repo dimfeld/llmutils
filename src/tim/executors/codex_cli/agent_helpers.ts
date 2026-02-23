@@ -41,3 +41,7 @@ export async function loadRepositoryReviewDoc(
     return undefined;
   }
 }
+
+export function timestamp(): string {
+  return new Date().toISOString();
+}

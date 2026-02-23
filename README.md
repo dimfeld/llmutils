@@ -1556,7 +1556,7 @@ Behavior:
 - The headless WebSocket also supports GUI→backend messages: `user_input` messages send free-form text from the GUI to the running agent's subprocess stdin, and `prompt_response` messages send structured answers to interactive prompts (confirm, select, input, checkbox, prefix_select). This enables interactive control from tim-gui.
 - For `tim agent` and `tim review`, major lifecycle events are emitted as structured `output`
   payloads (for example: plan discovery, iteration/step lifecycle, failure reports, review
-  start/result/verdict, and `input_required` before interactive prompts). Other commands continue
+  start/result, and `input_required` before interactive prompts). Other commands continue
   emitting plain log output.
 - Claude Code stream-json `system` events such as `task_started` and `task_notification` are
   normalized into `workflow_progress` structured output messages.

@@ -141,6 +141,7 @@ See docs/testing.md for testing strategy
 - **Use todo lists**: Break complex changes into trackable items for systematic progress
 - **Run type checks frequently**: Catch signature mismatches early in the refactoring process
 - **Make incremental commits**: Each commit should focus on a single logical change
+- **Align paired implementations when touching either file**: Duplicate utility implementations can persist across mode-specific files (e.g., `normal_mode.ts` vs `simple_mode.ts`). When touching one file, check and align it with its counterpart before larger refactors
 - **Consolidate shared utilities early**: When multiple modules need the same helper function, put it in `src/common/` from the start rather than duplicating it across callers and consolidating later
 - **Migrate types to their new canonical location first**: When a schema file exports types used by many callers, move types to the new module and update all importers before removing the old file
 - **Audit all call sites when unifying behavior**: When making multiple code paths accept the same input (e.g., treating 'cancelled' as a terminal state), check all guards that control entry into the unified function — not just the function body

@@ -308,13 +308,14 @@ function isValidStructuredMessagePayload(message: unknown): message is Structure
       return typeof structured.exitCode === 'number';
     case 'review_result':
       return (
+        typeof structured.verdict === 'string' &&
+        reviewVerdicts.has(structured.verdict) &&
+        (structured.fixInstructions == null || typeof structured.fixInstructions === 'string') &&
         Array.isArray(structured.issues) &&
         structured.issues.every((issue) => isValidReviewIssue(issue)) &&
         isStringArray(structured.recommendations) &&
         isStringArray(structured.actionItems)
       );
-    case 'review_verdict':
-      return typeof structured.verdict === 'string' && reviewVerdicts.has(structured.verdict);
     case 'workflow_progress':
       return typeof structured.message === 'string';
     case 'failure_report':

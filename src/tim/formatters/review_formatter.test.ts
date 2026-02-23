@@ -11,6 +11,10 @@ import {
   JsonFormatter,
   MarkdownFormatter,
   TerminalFormatter,
+  formatSeverityGroupedIssuesForTerminal,
+  groupIssuesBySeverity,
+  getSeverityColor,
+  getSeverityIcon,
   type ReviewIssue,
   type ReviewResult,
 } from './review_formatter.js';
@@ -75,6 +79,42 @@ describe('generateReviewSummary', () => {
     const oneMajorIssue: ReviewIssue[] = [
       { id: '1', severity: 'major', category: 'bug', content: 'Major test' },
     ];
+
+    expect(generateReviewSummary(criticalIssues, 2)).toMatchObject({
+      totalIssues: 1,
+      criticalCount: 1,
+      majorCount: 0,
+      minorCount: 0,
+      infoCount: 0,
+      filesReviewed: 2,
+    });
+
+    expect(generateReviewSummary(manyMajorIssues, 2)).toMatchObject({
+      totalIssues: 6,
+      criticalCount: 0,
+      majorCount: 6,
+      minorCount: 0,
+      infoCount: 0,
+      filesReviewed: 2,
+    });
+
+    expect(generateReviewSummary(someMajorIssues, 2)).toMatchObject({
+      totalIssues: 3,
+      criticalCount: 0,
+      majorCount: 3,
+      minorCount: 0,
+      infoCount: 0,
+      filesReviewed: 2,
+    });
+
+    expect(generateReviewSummary(oneMajorIssue, 2)).toMatchObject({
+      totalIssues: 1,
+      criticalCount: 0,
+      majorCount: 1,
+      minorCount: 0,
+      infoCount: 0,
+      filesReviewed: 2,
+    });
   });
 });
 
@@ -323,6 +363,14 @@ describe('TerminalFormatter', () => {
     expect(output).toContain('File: src/auth.ts:45');
   });
 
+  test('renders the issues header exactly once in full terminal output', () => {
+    const formatter = new TerminalFormatter();
+    const output = formatter.format(sampleResult, { verbosity: 'normal', colorEnabled: false });
+
+    const headerCount = output.match(/🔍 Issues Found/g)?.length ?? 0;
+    expect(headerCount).toBe(1);
+  });
+
   test('includes action items', () => {
     const formatter = new TerminalFormatter();
     const output = formatter.format(sampleResult, { verbosity: 'normal', colorEnabled: false });
@@ -344,6 +392,132 @@ describe('TerminalFormatter', () => {
   test('returns correct file extension', () => {
     const formatter = new TerminalFormatter();
     expect(formatter.getFileExtension()).toBe('.txt');
+  });
+});
+
+describe('severity-grouped issue formatting helpers', () => {
+  test('groups issues by severity buckets', () => {
+    const grouped = groupIssuesBySeverity([
+      { severity: 'major', category: 'bug', content: 'Major bug' },
+      { severity: 'critical', category: 'security', content: 'Critical bug' },
+      { severity: 'info', category: 'other', content: 'Info note' },
+    ]);
+
+    expect(grouped.critical).toHaveLength(1);
+    expect(grouped.major).toHaveLength(1);
+    expect(grouped.minor).toHaveLength(0);
+    expect(grouped.info).toHaveLength(1);
+  });
+
+  test('exposes severity icons and colors', () => {
+    expect(getSeverityIcon('critical')).toBe('🔴');
+    expect(getSeverityIcon('major')).toBe('🟡');
+    expect(getSeverityIcon('minor')).toBe('🟠');
+    expect(getSeverityIcon('info')).toBe('ℹ️');
+    expect(getSeverityColor('critical')('x')).toBeTruthy();
+  });
+
+  test('formats only severity-grouped issue section for terminal', () => {
+    const output = formatSeverityGroupedIssuesForTerminal(
+      [
+        {
+          severity: 'critical',
+          category: 'security',
+          content: 'Critical SQL injection vulnerability',
+          file: 'src/auth.ts',
+          line: '45',
+          suggestion: 'Use parameterized queries',
+        },
+        {
+          severity: 'minor',
+          category: 'style',
+          content: 'Minor style issue',
+          file: 'src/utils.ts',
+          line: '7',
+          suggestion: 'Rename for clarity',
+        },
+      ],
+      { colorEnabled: false, verbosity: 'detailed', showSuggestions: true, includeHeader: true }
+    );
+
+    expect(output).toContain('🔍 Issues Found');
+    expect(output).toContain('🔴 Critical Issues');
+    expect(output).toContain('🟠 Minor Issues');
+    expect(output).toContain('1. Critical SQL injection vulnerability');
+    expect(output).toContain('Category: security');
+    expect(output).toContain('File: src/auth.ts:45');
+    expect(output).toContain('Suggestion: Use parameterized queries');
+    expect(output).not.toContain('📋 Code Review Report');
+    expect(output).not.toContain('💡 Recommendations');
+    expect(output).not.toContain('✅ Action Items');
+  });
+
+  test('returns empty output for minimal verbosity or no issues', () => {
+    expect(
+      formatSeverityGroupedIssuesForTerminal(
+        [{ severity: 'major', category: 'bug', content: 'Issue' }],
+        { colorEnabled: false, verbosity: 'minimal' }
+      )
+    ).toBe('');
+
+    expect(
+      formatSeverityGroupedIssuesForTerminal([], {
+        colorEnabled: false,
+        verbosity: 'normal',
+      })
+    ).toBe('');
+  });
+
+  test('orders severity groups as critical, major, minor, info', () => {
+    const output = formatSeverityGroupedIssuesForTerminal(
+      [
+        { severity: 'info', category: 'other', content: 'Info issue' },
+        { severity: 'minor', category: 'style', content: 'Minor issue' },
+        { severity: 'major', category: 'bug', content: 'Major issue' },
+        { severity: 'critical', category: 'security', content: 'Critical issue' },
+      ],
+      { colorEnabled: false, verbosity: 'normal' }
+    );
+
+    const criticalIndex = output.indexOf('🔴 Critical Issues');
+    const majorIndex = output.indexOf('🟡 Major Issues');
+    const minorIndex = output.indexOf('🟠 Minor Issues');
+    const infoIndex = output.indexOf('ℹ️ Info Issues');
+
+    expect(criticalIndex).toBeGreaterThan(-1);
+    expect(majorIndex).toBeGreaterThan(criticalIndex);
+    expect(minorIndex).toBeGreaterThan(majorIndex);
+    expect(infoIndex).toBeGreaterThan(minorIndex);
+  });
+
+  test('formats multiple issues within a single severity and handles missing optional fields', () => {
+    const output = formatSeverityGroupedIssuesForTerminal(
+      [
+        {
+          severity: 'major',
+          category: 'bug',
+          content: 'First major issue',
+        },
+        {
+          severity: 'major',
+          category: 'performance',
+          content: 'Second major issue',
+          file: 'src/server.ts',
+        },
+      ],
+      { colorEnabled: false, verbosity: 'detailed', showSuggestions: true }
+    );
+
+    expect(output).toContain('🟡 Major Issues');
+    expect(output).toContain('1. First major issue');
+    expect(output).toContain('2. Second major issue');
+    expect(output).toContain('Category: bug');
+    expect(output).toContain('Category: performance');
+    expect(output).toContain('File: src/server.ts');
+    expect(output).not.toContain('Suggestion:');
+    expect(output).not.toContain('Recommendations');
+    expect(output).not.toContain('Action Items');
+    expect(output).not.toContain('Code Review Report');
   });
 });
 

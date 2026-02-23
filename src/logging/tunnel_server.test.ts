@@ -424,7 +424,7 @@ describe('createTunnelServer', () => {
               },
             }) + '\n'
           );
-          // review_result issues must contain valid issue objects
+          // review_result requires verdict and valid issues
           client.write(
             JSON.stringify({
               type: 'structured',
@@ -434,6 +434,35 @@ describe('createTunnelServer', () => {
                 issues: [42, 'not-an-object', null],
                 recommendations: ['ok'],
                 actionItems: ['ok'],
+              },
+            }) + '\n'
+          );
+          // review_result verdict must be one of reviewVerdicts
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: {
+                type: 'review_result',
+                timestamp: '2026-02-08T00:00:00.000Z',
+                verdict: 'BROKEN',
+                issues: [],
+                recommendations: [],
+                actionItems: [],
+              },
+            }) + '\n'
+          );
+          // review_result fixInstructions must be a string when present
+          client.write(
+            JSON.stringify({
+              type: 'structured',
+              message: {
+                type: 'review_result',
+                timestamp: '2026-02-08T00:00:00.000Z',
+                verdict: 'NEEDS_FIXES',
+                fixInstructions: 123,
+                issues: [],
+                recommendations: [],
+                actionItems: [],
               },
             }) + '\n'
           );
@@ -760,6 +789,101 @@ describe('createTunnelServer', () => {
       content: 'Please add tests',
       source: 'terminal',
     });
+  });
+
+  it('should accept review_result structured messages with combined verdict payload', async () => {
+    const sp = uniqueSocketPath();
+    const { adapter, calls } = createRecordingAdapter();
+
+    await runWithLogger(adapter, async () => {
+      tunnelServer = await createTunnelServer(sp);
+
+      await connectAndSend(sp, [
+        {
+          type: 'structured',
+          message: {
+            type: 'review_result',
+            timestamp: '2026-02-08T00:00:00.000Z',
+            verdict: 'NEEDS_FIXES',
+            fixInstructions: 'Fix the critical issue',
+            issues: [
+              {
+                severity: 'critical',
+                category: 'security',
+                content: 'SQL injection vulnerability',
+                file: 'src/db.ts',
+                line: '42',
+                suggestion: 'Use parameterized queries',
+              },
+            ],
+            recommendations: ['Add security tests'],
+            actionItems: ['Fix SQL injection'],
+          },
+        },
+      ]);
+
+      await waitForCalls(calls, 1);
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('sendStructured');
+    expect(calls[0].args[0]).toMatchObject({
+      type: 'review_result',
+      verdict: 'NEEDS_FIXES',
+      fixInstructions: 'Fix the critical issue',
+    });
+  });
+
+  it('should reject review_result structured messages without verdict', async () => {
+    const sp = uniqueSocketPath();
+    const { adapter, calls } = createRecordingAdapter();
+
+    await runWithLogger(adapter, async () => {
+      tunnelServer = await createTunnelServer(sp);
+
+      await connectAndSend(sp, [
+        {
+          type: 'structured',
+          message: {
+            type: 'review_result',
+            timestamp: '2026-02-08T00:00:00.000Z',
+            issues: [],
+            recommendations: ['Recommendation'],
+            actionItems: ['Action'],
+          },
+        },
+      ]);
+
+      // Ensure server had time to process and drop the invalid payload.
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+
+    expect(calls).toHaveLength(0);
+  });
+
+  it('should reject legacy review_verdict structured messages', async () => {
+    const sp = uniqueSocketPath();
+    const { adapter, calls } = createRecordingAdapter();
+
+    await runWithLogger(adapter, async () => {
+      tunnelServer = await createTunnelServer(sp);
+
+      await connectAndSend(sp, [
+        {
+          type: 'structured',
+          message: {
+            type: 'review_verdict',
+            timestamp: '2026-02-08T00:00:00.000Z',
+            verdict: 'ACCEPTABLE',
+          } as unknown as Record<string, unknown>,
+        },
+      ]);
+
+      // Ensure server had time to process and drop the invalid payload.
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+
+    expect(calls).toHaveLength(0);
   });
 
   it('should handle messages split across TCP chunks', async () => {

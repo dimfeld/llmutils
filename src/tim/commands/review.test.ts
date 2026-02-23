@@ -1110,24 +1110,31 @@ tasks:
     };
 
     const stdoutWrites: string[] = [];
+    const originalConsoleLog = console.log;
+    console.log = (...args: unknown[]) => {
+      stdoutWrites.push(args.map((arg) => String(arg)).join(' '));
+    };
 
-    // Assumption: print mode outputs via log() (not direct stdout writes).
     await moduleMocker.mock('../../logging.js', () => ({
       log: (value: string) => {
         stdoutWrites.push(String(value));
       },
     }));
 
-    await handleReviewCommand(
-      planFile,
-      {
-        print: true,
-        format: 'terminal',
-        verbosity: 'normal',
-        noSave: true,
-      },
-      mockCommand
-    );
+    try {
+      await handleReviewCommand(
+        planFile,
+        {
+          print: true,
+          format: 'terminal',
+          verbosity: 'normal',
+          noSave: true,
+        },
+        mockCommand
+      );
+    } finally {
+      console.log = originalConsoleLog;
+    }
 
     const output = stdoutWrites.join('').trim();
     const jsonStart = output.indexOf('{');

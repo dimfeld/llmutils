@@ -72,6 +72,127 @@ export interface ParsedReviewOutput {
   actionItems: string[];
 }
 
+export interface TerminalIssueFormattingOptions {
+  colorEnabled?: boolean;
+  verbosity?: VerbosityLevel;
+  showSuggestions?: boolean;
+  includeHeader?: boolean;
+}
+
+export type ReviewIssueForTerminal = Omit<ReviewIssue, 'id'>;
+
+export function groupIssuesBySeverity<T extends { severity: ReviewSeverity }>(
+  issues: readonly T[]
+): Record<ReviewSeverity, T[]> {
+  const groups: Record<ReviewSeverity, T[]> = {
+    critical: [],
+    major: [],
+    minor: [],
+    info: [],
+  };
+
+  return issues.reduce((acc, issue) => {
+    acc[issue.severity].push(issue);
+    return acc;
+  }, groups);
+}
+
+export function getSeverityColor(severity: ReviewSeverity) {
+  switch (severity) {
+    case 'critical':
+      return chalk.red.bold;
+    case 'major':
+      return chalk.red;
+    case 'minor':
+      return chalk.yellow;
+    case 'info':
+      return chalk.blue;
+    default:
+      return chalk.gray;
+  }
+}
+
+export function getSeverityIcon(severity: ReviewSeverity): string {
+  switch (severity) {
+    case 'critical':
+      return '🔴';
+    case 'major':
+      return '🟡';
+    case 'minor':
+      return '🟠';
+    case 'info':
+      return 'ℹ️';
+    default:
+      return '•';
+  }
+}
+
+/**
+ * Formats review issues grouped by severity for terminal rendering.
+ * This includes only the issues section (optional section header + grouped issue lists).
+ */
+export function formatSeverityGroupedIssuesForTerminal(
+  issues: readonly ReviewIssueForTerminal[],
+  options: TerminalIssueFormattingOptions = {}
+): string {
+  const {
+    colorEnabled = true,
+    verbosity = 'normal',
+    showSuggestions = true,
+    includeHeader = true,
+  } = options;
+
+  if (verbosity === 'minimal' || issues.length === 0) {
+    return '';
+  }
+
+  const sections: string[] = [];
+  const color = (text: string, colorFn: (str: string) => string) =>
+    colorEnabled ? colorFn(text) : text;
+
+  if (includeHeader) {
+    sections.push(color('🔍 Issues Found', chalk.bold.red));
+    sections.push('');
+  }
+
+  const groupedIssues = groupIssuesBySeverity<ReviewIssueForTerminal>(issues);
+
+  (['critical', 'major', 'minor', 'info'] as const).forEach((severity) => {
+    const severityIssues = groupedIssues[severity];
+    if (severityIssues.length === 0) {
+      return;
+    }
+
+    const severityIcon = getSeverityIcon(severity);
+    sections.push(
+      color(
+        `${severityIcon} ${severity.charAt(0).toUpperCase() + severity.slice(1)} Issues`,
+        getSeverityColor(severity)
+      )
+    );
+    sections.push('');
+
+    severityIssues.forEach((issue, index) => {
+      sections.push(`${index + 1}. ${color(issue.content, chalk.bold)}`);
+      sections.push(`   Category: ${color(issue.category, chalk.cyan)}`);
+
+      if (issue.file) {
+        const line = issue.line != null ? String(issue.line) : '';
+        const fileLocation = `${issue.file}${line ? `:${line}` : ''}`;
+        sections.push(`   File: ${color(fileLocation, chalk.blue)}`);
+      }
+
+      if (verbosity === 'detailed' && showSuggestions && issue.suggestion) {
+        sections.push(`   ${color('Suggestion:', chalk.yellow)} ${issue.suggestion}`);
+      }
+
+      sections.push('');
+    });
+  });
+
+  return sections.join('\n');
+}
+
 /**
  * Error class for JSON review parsing failures.
  * Contains detailed information about what went wrong during parsing.
@@ -365,7 +486,7 @@ export class MarkdownFormatter implements ReviewFormatter {
     if (result.issues.length > 0 && options.verbosity !== 'minimal') {
       sections.push('## Issues Found');
 
-      const groupedIssues = this.groupIssuesBySeverity(result.issues);
+      const groupedIssues = groupIssuesBySeverity(result.issues);
 
       (['critical', 'major', 'minor', 'info'] as const).forEach((severity) => {
         const issues = groupedIssues[severity];
@@ -414,20 +535,6 @@ export class MarkdownFormatter implements ReviewFormatter {
 
   getFileExtension(): string {
     return '.md';
-  }
-
-  private groupIssuesBySeverity(issues: ReviewIssue[]): Record<ReviewSeverity, ReviewIssue[]> {
-    const groups: Record<ReviewSeverity, ReviewIssue[]> = {
-      critical: [],
-      major: [],
-      minor: [],
-      info: [],
-    };
-
-    return issues.reduce((acc, issue) => {
-      acc[issue.severity].push(issue);
-      return acc;
-    }, groups);
   }
 }
 
@@ -497,37 +604,14 @@ export class TerminalFormatter implements ReviewFormatter {
       sections.push(color('🔍 Issues Found', chalk.bold.red));
       sections.push('');
 
-      const groupedIssues = this.groupIssuesBySeverity(result.issues);
-
-      (['critical', 'major', 'minor', 'info'] as const).forEach((severity) => {
-        const issues = groupedIssues[severity];
-        if (issues.length > 0) {
-          const severityIcon = this.getSeverityIcon(severity);
-          sections.push(
-            color(
-              `${severityIcon} ${severity.charAt(0).toUpperCase() + severity.slice(1)} Issues`,
-              this.getSeverityColor(severity)
-            )
-          );
-          sections.push('');
-
-          issues.forEach((issue, index) => {
-            sections.push(`${index + 1}. ${color(issue.content, chalk.bold)}`);
-            sections.push(`   Category: ${color(issue.category, chalk.cyan)}`);
-            if (issue.file) {
-              const fileLocation = `${issue.file}${issue.line ? `:${issue.line}` : ''}`;
-              sections.push(`   File: ${color(fileLocation, chalk.blue)}`);
-            }
-
-            if (options.verbosity === 'detailed') {
-              if (issue.suggestion && options.showSuggestions !== false) {
-                sections.push(`   ${color('Suggestion:', chalk.yellow)} ${issue.suggestion}`);
-              }
-            }
-            sections.push('');
-          });
-        }
-      });
+      sections.push(
+        formatSeverityGroupedIssuesForTerminal(result.issues, {
+          colorEnabled,
+          verbosity: options.verbosity,
+          showSuggestions: options.showSuggestions !== false,
+          includeHeader: false,
+        })
+      );
     }
 
     // Recommendations
@@ -555,20 +639,6 @@ export class TerminalFormatter implements ReviewFormatter {
     return '.txt';
   }
 
-  private groupIssuesBySeverity(issues: ReviewIssue[]): Record<ReviewSeverity, ReviewIssue[]> {
-    const groups: Record<ReviewSeverity, ReviewIssue[]> = {
-      critical: [],
-      major: [],
-      minor: [],
-      info: [],
-    };
-
-    return issues.reduce((acc, issue) => {
-      acc[issue.severity].push(issue);
-      return acc;
-    }, groups);
-  }
-
   private getRatingColor(rating: string, colorEnabled: boolean) {
     if (!colorEnabled) return (text: string) => text;
 
@@ -586,42 +656,12 @@ export class TerminalFormatter implements ReviewFormatter {
     }
   }
 
-  private getSeverityColor(severity: ReviewSeverity) {
-    switch (severity) {
-      case 'critical':
-        return chalk.red.bold;
-      case 'major':
-        return chalk.red;
-      case 'minor':
-        return chalk.yellow;
-      case 'info':
-        return chalk.blue;
-      default:
-        return chalk.gray;
-    }
-  }
-
-  private getSeverityIcon(severity: ReviewSeverity): string {
-    switch (severity) {
-      case 'critical':
-        return '🔴';
-      case 'major':
-        return '🟡';
-      case 'minor':
-        return '🟠';
-      case 'info':
-        return 'ℹ️';
-      default:
-        return '•';
-    }
-  }
-
   private getSeverityCount(count: number, severity: ReviewSeverity, colorEnabled: boolean): string {
     if (count === 0) {
       return colorEnabled ? chalk.gray('0') : '0';
     }
 
-    const colorFn = this.getSeverityColor(severity);
+    const colorFn = getSeverityColor(severity);
     return colorEnabled ? colorFn(count.toString()) : count.toString();
   }
 }

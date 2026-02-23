@@ -144,6 +144,7 @@ describe('Review command tunnel integration', () => {
       // all output) was NOT installed.
       const logCalls: string[] = [];
       const stdoutWrites: string[] = [];
+      const structuredMessages: StructuredMessage[] = [];
 
       // We need to track both `log()` calls AND `Bun.write(Bun.stdout, ...)` calls
       const originalBunWrite = Bun.write;
@@ -167,7 +168,9 @@ describe('Review command tunnel integration', () => {
         runWithLogger,
         writeStdout: () => {},
         writeStderr: () => {},
-        sendStructured: (_message: StructuredMessage) => {},
+        sendStructured: (message: StructuredMessage) => {
+          structuredMessages.push(message);
+        },
       }));
 
       // Set TIM_OUTPUT_SOCKET to make isTunnelActive() return true
@@ -196,17 +199,19 @@ describe('Review command tunnel integration', () => {
       }
 
       // When tunnel is active + print mode, the quiet logger is NOT installed.
-      // Therefore log() calls from the review output should actually happen.
-      // The final JSON output should appear in logCalls (via tunnel-routed log()).
+      // Therefore log() calls from the review flow should still happen.
       const allLogOutput = logCalls.join('\n');
       expect(allLogOutput.length).toBeGreaterThan(0);
 
-      // The output should contain JSON (review result)
-      const jsonStart = allLogOutput.indexOf('{');
-      expect(jsonStart).toBeGreaterThanOrEqual(0);
+      // A structured review_result should be sent for parent-side formatting.
+      const reviewResultMessage = structuredMessages.find((m) => m.type === 'review_result');
+      expect(reviewResultMessage).toBeDefined();
+      expect(reviewResultMessage?.type).toBe('review_result');
+      if (reviewResultMessage?.type === 'review_result') {
+        expect(reviewResultMessage.verdict).toBe('NEEDS_FIXES');
+      }
 
-      // Additionally, process.stdout.write should ALSO have been called
-      // (dual output: stdout for executor capture + log for tunnel).
+      // Additionally, stdout output should be present for executor capture.
       expect(stdoutWrites.length).toBeGreaterThan(0);
       const stdoutOutput = stdoutWrites.join('');
       const stdoutJsonStart = stdoutOutput.indexOf('{');
@@ -261,12 +266,13 @@ describe('Review command tunnel integration', () => {
   });
 
   describe('dual output in print mode with tunnel active', () => {
-    it('should write to both process.stdout and log() when tunnel is active in print mode', async () => {
+    it('should send review_result and write to process.stdout when tunnel is active in print mode', async () => {
       const planFile = join(testDir, 'dual-output-test.yml');
       await setupReviewCommandMocks(planFile);
 
       const logCalls: string[] = [];
       const stdoutWrites: string[] = [];
+      const structuredMessages: StructuredMessage[] = [];
 
       const originalBunWrite = Bun.write;
       const originalConsoleLog = console.log;
@@ -289,7 +295,9 @@ describe('Review command tunnel integration', () => {
         runWithLogger,
         writeStdout: () => {},
         writeStderr: () => {},
-        sendStructured: (_message: StructuredMessage) => {},
+        sendStructured: (message: StructuredMessage) => {
+          structuredMessages.push(message);
+        },
       }));
 
       // Tunnel active
@@ -317,25 +325,28 @@ describe('Review command tunnel integration', () => {
         console.log = originalConsoleLog;
       }
 
-      // BOTH should have received the review output
+      // stdout should receive formatted output for executor capture.
       const stdoutOutput = stdoutWrites.join('');
-      const logOutput = logCalls.join('\n');
-
-      // Verify stdout received JSON output
       expect(stdoutOutput).toContain('{');
       expect(stdoutOutput).toContain('"planId"');
 
-      // Verify log() also received the output (for tunnel)
-      expect(logOutput).toContain('{');
-      expect(logOutput).toContain('"planId"');
+      // Structured review data should be sent for parent-side formatting.
+      const reviewResultMessage = structuredMessages.find((m) => m.type === 'review_result');
+      expect(reviewResultMessage).toBeDefined();
+      expect(reviewResultMessage?.type).toBe('review_result');
+
+      // log() still receives incidental review-runner text.
+      const logOutput = logCalls.join('\n');
+      expect(logOutput).toContain('review finished');
     });
 
-    it('should NOT write to process.stdout.write when tunnel is NOT active in print mode', async () => {
+    it('should write review output to stdout in print mode even when tunnel is not active', async () => {
       const planFile = join(testDir, 'no-dual-output-test.yml');
       await setupReviewCommandMocks(planFile);
 
       const logCalls: string[] = [];
       const stdoutWrites: string[] = [];
+      const structuredMessages: StructuredMessage[] = [];
 
       const originalBunWrite = Bun.write;
       const originalConsoleLog = console.log;
@@ -358,7 +369,9 @@ describe('Review command tunnel integration', () => {
         runWithLogger,
         writeStdout: () => {},
         writeStderr: () => {},
-        sendStructured: (_message: StructuredMessage) => {},
+        sendStructured: (message: StructuredMessage) => {
+          structuredMessages.push(message);
+        },
       }));
 
       // Tunnel NOT active
@@ -386,14 +399,17 @@ describe('Review command tunnel integration', () => {
         console.log = originalConsoleLog;
       }
 
-      // Without tunnel: Bun.write(Bun.stdout, ...) should NOT have been called for review output
-      // (The review output goes only via log() through the quiet logger path)
+      // Without tunnel: print mode still writes formatted review output.
       const stdoutOutput = stdoutWrites.join('');
-      expect(stdoutOutput).not.toContain('"planId"');
+      expect(stdoutOutput).toContain('"planId"');
 
-      // log() should have received the review output
-      const logOutput = logCalls.join('\n');
-      expect(logOutput).toContain('{');
+      // Review data still flows through structured output.
+      const reviewResultMessage = structuredMessages.find((m) => m.type === 'review_result');
+      expect(reviewResultMessage).toBeDefined();
+      expect(reviewResultMessage?.type).toBe('review_result');
+
+      // Keep a minimal assertion that the review flow ran.
+      expect(logCalls.length).toBeGreaterThan(0);
     });
   });
 
@@ -405,6 +421,7 @@ describe('Review command tunnel integration', () => {
       const logCalls: string[] = [];
       const stderrWrites: string[] = [];
       const stdoutWrites: string[] = [];
+      const structuredMessages: StructuredMessage[] = [];
 
       // Track stderr to verify the verbose logger (which redirects to stderr) is NOT installed
       const originalStderrWrite = process.stderr.write;
@@ -436,7 +453,9 @@ describe('Review command tunnel integration', () => {
         runWithLogger,
         writeStdout: () => {},
         writeStderr: () => {},
-        sendStructured: (_message: StructuredMessage) => {},
+        sendStructured: (message: StructuredMessage) => {
+          structuredMessages.push(message);
+        },
       }));
 
       // Tunnel active + verbose + print
@@ -468,13 +487,14 @@ describe('Review command tunnel integration', () => {
 
       // When tunnel is active, even with verbose, the review's verbose logger
       // (which redirects to stderr via console.error) is NOT installed.
-      // Instead, log() calls go through normally (to the tunnel adapter in production).
-      // The final JSON output should be in logCalls AND stdoutWrites (dual output).
-      const logOutput = logCalls.join('\n');
-      expect(logOutput).toContain('"planId"');
+      // Instead, review output is sent via structured data and stdout capture.
+      const reviewResultMessage = structuredMessages.find((m) => m.type === 'review_result');
+      expect(reviewResultMessage).toBeDefined();
+      expect(reviewResultMessage?.type).toBe('review_result');
 
       const stdoutOutput = stdoutWrites.join('');
       expect(stdoutOutput).toContain('"planId"');
+      expect(logCalls.join('\n')).toContain('review finished');
     });
   });
 
