@@ -666,6 +666,122 @@ describe('subagent command - prompt construction and executor delegation', () =>
     expect(capturedClaudeSpawnArgs![modelIdx + 1]).toBe('opus');
   });
 
+  test('uses subagents config model for claude subagent when CLI model is not set', async () => {
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: mock(async () => ({
+        paths: { tasks: tasksDir },
+        models: {},
+        executors: {},
+        subagents: {
+          implementer: {
+            model: {
+              claude: 'sonnet-4.6',
+            },
+          },
+        },
+        agents: {},
+      })),
+    }));
+
+    const { handleSubagentCommand } = await import('./subagent.js');
+
+    await handleSubagentCommand('implementer', planFilePath, { executor: 'claude-code' }, {});
+
+    expect(capturedClaudeSpawnArgs).toBeDefined();
+    const modelIdx = capturedClaudeSpawnArgs!.indexOf('--model');
+    expect(modelIdx).toBeGreaterThan(-1);
+    expect(capturedClaudeSpawnArgs![modelIdx + 1]).toBe('sonnet-4.6');
+  });
+
+  test('uses legacy claude subagent model config as fallback', async () => {
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: mock(async () => ({
+        paths: { tasks: tasksDir },
+        models: {},
+        executors: {
+          'claude-code': {
+            agents: {
+              implementer: {
+                model: 'legacy-sonnet',
+              },
+            },
+          },
+        },
+        agents: {},
+      })),
+    }));
+
+    const { handleSubagentCommand } = await import('./subagent.js');
+
+    await handleSubagentCommand('implementer', planFilePath, { executor: 'claude-code' }, {});
+
+    expect(capturedClaudeSpawnArgs).toBeDefined();
+    const modelIdx = capturedClaudeSpawnArgs!.indexOf('--model');
+    expect(modelIdx).toBeGreaterThan(-1);
+    expect(capturedClaudeSpawnArgs![modelIdx + 1]).toBe('legacy-sonnet');
+  });
+
+  test('uses subagents config model for codex subagent when CLI model is not set', async () => {
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: mock(async () => ({
+        paths: { tasks: tasksDir },
+        models: {},
+        executors: {},
+        subagents: {
+          implementer: {
+            model: {
+              codex: 'gpt-5-codex',
+            },
+          },
+        },
+        agents: {},
+      })),
+    }));
+
+    const { handleSubagentCommand } = await import('./subagent.js');
+
+    await handleSubagentCommand('implementer', planFilePath, { executor: 'codex-cli' }, {});
+
+    expect(capturedCodexOptions).toEqual(
+      expect.objectContaining({
+        model: 'gpt-5-codex',
+      })
+    );
+  });
+
+  test('CLI model overrides subagents config model', async () => {
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: mock(async () => ({
+        paths: { tasks: tasksDir },
+        models: {},
+        executors: {},
+        subagents: {
+          implementer: {
+            model: {
+              codex: 'gpt-5-codex',
+            },
+          },
+        },
+        agents: {},
+      })),
+    }));
+
+    const { handleSubagentCommand } = await import('./subagent.js');
+
+    await handleSubagentCommand(
+      'implementer',
+      planFilePath,
+      { executor: 'codex-cli', model: 'gpt-5-override' },
+      {}
+    );
+
+    expect(capturedCodexOptions).toEqual(
+      expect.objectContaining({
+        model: 'gpt-5-override',
+      })
+    );
+  });
+
   test('claude-code path includes stream-json output format', async () => {
     const { handleSubagentCommand } = await import('./subagent.js');
 
@@ -1640,7 +1756,7 @@ describe('subagent command - executeWithClaude error scenarios', () => {
     expect(stdoutWriteCalls.join('')).toContain('Fallback assistant message.');
   });
 
-  test('model flag is silently ignored for codex-cli executor', async () => {
+  test('model flag is forwarded to codex-cli executor', async () => {
     // Need process mock for this test since it runs codex path
     await moduleMocker.mock('../../common/process.js', () => ({
       spawnWithStreamingIO: mock(async () => {
@@ -1652,7 +1768,6 @@ describe('subagent command - executeWithClaude error scenarios', () => {
 
     const { handleSubagentCommand } = await import('./subagent.js');
 
-    // This should not throw - model is silently ignored for codex
     await handleSubagentCommand(
       'implementer',
       planFilePath,
@@ -1660,7 +1775,7 @@ describe('subagent command - executeWithClaude error scenarios', () => {
       {}
     );
 
-    // Verify that codex was called (not claude) - the output should be from codex
+    // Verify that codex was called (not claude) - output should be from codex
     expect(stdoutWriteCalls.join('')).toContain('Codex done.');
   });
 });

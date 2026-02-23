@@ -834,6 +834,48 @@ describe('configSchema', () => {
     test('rejects non-boolean terminalInput values', () => {
       expect(() => timConfigSchema.parse({ terminalInput: 'yes' })).toThrow();
     });
+
+    test('accepts subagent model overrides per executor', () => {
+      const result = timConfigSchema.parse({
+        subagents: {
+          implementer: {
+            model: {
+              claude: 'sonnet-4.6',
+              codex: 'gpt-5-codex',
+            },
+          },
+          tester: {
+            model: {
+              codex: 'gpt-5',
+            },
+          },
+          verifier: {
+            model: {
+              claude: 'opus-4.1',
+            },
+          },
+        },
+      });
+
+      expect(result.subagents?.implementer?.model?.claude).toBe('sonnet-4.6');
+      expect(result.subagents?.implementer?.model?.codex).toBe('gpt-5-codex');
+      expect(result.subagents?.tester?.model?.codex).toBe('gpt-5');
+      expect(result.subagents?.verifier?.model?.claude).toBe('opus-4.1');
+    });
+
+    test('rejects unknown subagent model executors', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          subagents: {
+            implementer: {
+              model: {
+                claudeCode: 'sonnet-4.6',
+              },
+            },
+          },
+        })
+      ).toThrow();
+    });
   });
 
   describe('resolveTasksDir', () => {

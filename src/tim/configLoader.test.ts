@@ -630,6 +630,10 @@ paths:
   tasks: "./main-tasks"
 models:
   execution: "claude-3-sonnet"
+subagents:
+  implementer:
+    model:
+      claude: "global-sonnet"
 autoexamples:
   - "main-example"
 `
@@ -646,6 +650,13 @@ paths:
   tasks: "./local-tasks"
 models:
   convert_yaml: "claude-3-haiku"
+subagents:
+  implementer:
+    model:
+      codex: "gpt-5-codex"
+  tester:
+    model:
+      claude: "local-haiku"
 autoexamples:
   - "local-example"
 `
@@ -670,6 +681,10 @@ autoexamples:
 
       expect(config.models?.execution).toBe('claude-3-sonnet'); // from main
       expect(config.models?.convert_yaml).toBe('claude-3-haiku'); // from local
+
+      expect(config.subagents?.implementer?.model?.claude).toBe('global-sonnet'); // from main
+      expect(config.subagents?.implementer?.model?.codex).toBe('gpt-5-codex'); // from local
+      expect(config.subagents?.tester?.model?.claude).toBe('local-haiku'); // from local
     });
 
     test('loadConfig parses lifecycle commands', async () => {

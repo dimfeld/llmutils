@@ -22,7 +22,6 @@ import {
 import { loadAgentInstructionsFor } from '../executors/codex_cli/agent_helpers.js';
 import { executeCodexStep } from '../executors/codex_cli/codex_runner.js';
 import { getGitRoot } from '../../common/git.js';
-import { debugLog } from '../../logging.js';
 import { runClaudeSubprocess } from '../executors/claude_code/run_claude_subprocess.js';
 import type { TimConfig } from '../configSchema.js';
 import type { Executor } from '../executors/types.js';
@@ -35,6 +34,9 @@ interface SubagentOptions {
   input?: string;
   inputFile?: string;
 }
+
+type SubagentExecutorModelKey = 'claude' | 'codex';
+type SubagentConfigKey = 'implementer' | 'tester' | 'tddTests' | 'verifier' | 'reviewer';
 
 /**
  * A minimal executor-like object that satisfies the Executor interface
@@ -68,6 +70,7 @@ export async function handleSubagentCommand(
   const planData = await readPlanFile(planFilePath);
   const gitRoot = await getGitRoot(path.dirname(planFilePath));
   const executorType = options.executor || 'claude-code';
+  const selectedModel = resolveSubagentModel(agentType, executorType, options.model, config);
 
   // Build the context prompt using the same pattern as batch_mode.ts
   const incompleteTasks = getAllIncompleteTasks(planData);
@@ -128,20 +131,15 @@ export async function handleSubagentCommand(
     contextContent,
     planId,
     allInstructions || undefined,
-    options.model
+    selectedModel
   );
 
   // Execute using the selected executor
   let finalMessage: string;
   if (executorType === 'codex-cli') {
-    if (options.model) {
-      debugLog(
-        'Note: --model flag is ignored for codex-cli executor (codex uses its default model)'
-      );
-    }
-    finalMessage = await executeWithCodex(agentDefinition.prompt, gitRoot, config);
+    finalMessage = await executeWithCodex(agentDefinition.prompt, gitRoot, config, selectedModel);
   } else {
-    finalMessage = await executeWithClaude(agentDefinition.prompt, gitRoot, config, options.model);
+    finalMessage = await executeWithClaude(agentDefinition.prompt, gitRoot, config, selectedModel);
   }
 
   // Print final message to stdout for orchestrator to capture
@@ -242,10 +240,12 @@ function buildAgentDefinition(
 async function executeWithCodex(
   prompt: string,
   cwd: string,
-  timConfig: TimConfig
+  timConfig: TimConfig,
+  model?: string
 ): Promise<string> {
   return executeCodexStep(prompt, cwd, timConfig, {
     appServerMode: 'single-turn-with-steering',
+    model,
   });
 }
 
@@ -303,4 +303,61 @@ async function executeWithClaude(
   }
 
   return finalMessage;
+}
+
+function resolveSubagentModel(
+  agentType: SubagentType,
+  executorType: string,
+  cliModel: string | undefined,
+  config: TimConfig
+): string | undefined {
+  if (cliModel?.trim()) {
+    return cliModel;
+  }
+
+  const normalizedExecutor = normalizeSubagentExecutor(executorType);
+  const subagentKey = toSubagentConfigKey(agentType);
+  const configuredModel =
+    config.subagents?.[subagentKey]?.model?.[normalizedExecutor] ||
+    config.subagents?.[subagentKey]?.model?.[executorType as SubagentExecutorModelKey];
+  if (configuredModel?.trim()) {
+    return configuredModel;
+  }
+
+  // Backward compatibility for previous claude-only model settings.
+  if (normalizedExecutor === 'claude') {
+    const claudeAgents = (config.executors as Record<string, any> | undefined)?.['claude-code']
+      ?.agents as Record<string, { model?: string } | undefined> | undefined;
+    const legacyAgentKeys = toLegacyClaudeAgentKeys(agentType);
+    for (const key of legacyAgentKeys) {
+      const legacyModel = claudeAgents?.[key]?.model;
+      if (legacyModel?.trim()) {
+        return legacyModel;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function normalizeSubagentExecutor(executorType: string): SubagentExecutorModelKey {
+  return executorType === 'codex-cli' ? 'codex' : 'claude';
+}
+
+function toSubagentConfigKey(agentType: SubagentType): SubagentConfigKey {
+  if (agentType === 'tdd-tests') {
+    return 'tddTests';
+  }
+  return agentType;
+}
+
+function toLegacyClaudeAgentKeys(agentType: SubagentType): SubagentConfigKey[] {
+  switch (agentType) {
+    case 'tdd-tests':
+      return ['tddTests'];
+    case 'verifier':
+      return ['verifier', 'reviewer', 'tester'];
+    default:
+      return [agentType];
+  }
 }

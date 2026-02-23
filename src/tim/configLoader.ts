@@ -53,6 +53,7 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
   mergeConfigKey('paths');
   mergeConfigKey('postApplyCommands');
   mergeConfigKey('planning');
+  mergeConfigKey('subagents');
   mergeConfigKey('tags');
   mergeConfigKey('updateDocs');
 
@@ -82,6 +83,38 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
       merged.executors = mergedExecutors;
     } else {
       merged.executors = localConfig.executors;
+    }
+  }
+
+  // Handle subagents: deep merge nested model maps
+  if (localConfig.subagents !== undefined) {
+    if (mainConfig.subagents && localConfig.subagents) {
+      const mergedSubagents: Record<string, any> = { ...mainConfig.subagents };
+      for (const [subagentName, localSubagentOptions] of Object.entries(localConfig.subagents)) {
+        if (
+          mergedSubagents[subagentName] &&
+          typeof localSubagentOptions === 'object' &&
+          !Array.isArray(localSubagentOptions)
+        ) {
+          const mainSubagentOptions = mergedSubagents[subagentName];
+          mergedSubagents[subagentName] = {
+            ...mainSubagentOptions,
+            ...localSubagentOptions,
+            model:
+              mainSubagentOptions?.model || localSubagentOptions?.model
+                ? {
+                    ...(mainSubagentOptions?.model ?? {}),
+                    ...(localSubagentOptions?.model ?? {}),
+                  }
+                : undefined,
+          };
+        } else {
+          mergedSubagents[subagentName] = localSubagentOptions;
+        }
+      }
+      merged.subagents = mergedSubagents;
+    } else {
+      merged.subagents = localConfig.subagents;
     }
   }
 

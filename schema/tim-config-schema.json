@@ -304,6 +304,113 @@
       "description": "Instructions for the orchestrator when choosing between claude-code and codex-cli for subagent execution in dynamic mode",
       "type": "string"
     },
+    "subagents": {
+      "description": "Per-subagent model overrides keyed by executor (claude, codex)",
+      "type": "object",
+      "properties": {
+        "implementer": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "object",
+              "properties": {
+                "claude": {
+                  "description": "Model override for claude-code execution",
+                  "type": "string"
+                },
+                "codex": {
+                  "description": "Model override for codex-cli execution",
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "tester": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "object",
+              "properties": {
+                "claude": {
+                  "description": "Model override for claude-code execution",
+                  "type": "string"
+                },
+                "codex": {
+                  "description": "Model override for codex-cli execution",
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "tddTests": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "object",
+              "properties": {
+                "claude": {
+                  "description": "Model override for claude-code execution",
+                  "type": "string"
+                },
+                "codex": {
+                  "description": "Model override for codex-cli execution",
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "verifier": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "object",
+              "properties": {
+                "claude": {
+                  "description": "Model override for claude-code execution",
+                  "type": "string"
+                },
+                "codex": {
+                  "description": "Model override for codex-cli execution",
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "reviewer": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "object",
+              "properties": {
+                "claude": {
+                  "description": "Model override for claude-code execution",
+                  "type": "string"
+                },
+                "codex": {
+                  "description": "Model override for codex-cli execution",
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "workspaceCreation": {
       "type": "object",
       "properties": {

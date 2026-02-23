@@ -35,7 +35,7 @@ describe('agent_prompts failure protocol integration', () => {
   });
 
   it('includes commit scope guidance in all subagent prompts', () => {
-    const expectedText = 'it is acceptable to include unexpected modified files in the same commit';
+    const expectedText = 'always include any unexpected modified files in the commit';
     expect(getImplementerPrompt(context).prompt).toContain(expectedText);
     expect(getTesterPrompt(context).prompt).toContain(expectedText);
     expect(getTddTestsPrompt(context).prompt).toContain(expectedText);

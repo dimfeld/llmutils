@@ -269,6 +269,73 @@ export const timConfigSchema = z
       .describe(
         'Instructions for the orchestrator when choosing between claude-code and codex-cli for subagent execution in dynamic mode'
       ),
+    /** Model overrides for specific subagent types and executors. */
+    subagents: z
+      .object({
+        implementer: z
+          .object({
+            model: z
+              .object({
+                claude: z.string().optional().describe('Model override for claude-code execution'),
+                codex: z.string().optional().describe('Model override for codex-cli execution'),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict()
+          .optional(),
+        tester: z
+          .object({
+            model: z
+              .object({
+                claude: z.string().optional().describe('Model override for claude-code execution'),
+                codex: z.string().optional().describe('Model override for codex-cli execution'),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict()
+          .optional(),
+        tddTests: z
+          .object({
+            model: z
+              .object({
+                claude: z.string().optional().describe('Model override for claude-code execution'),
+                codex: z.string().optional().describe('Model override for codex-cli execution'),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict()
+          .optional(),
+        verifier: z
+          .object({
+            model: z
+              .object({
+                claude: z.string().optional().describe('Model override for claude-code execution'),
+                codex: z.string().optional().describe('Model override for codex-cli execution'),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict()
+          .optional(),
+        reviewer: z
+          .object({
+            model: z
+              .object({
+                claude: z.string().optional().describe('Model override for claude-code execution'),
+                codex: z.string().optional().describe('Model override for codex-cli execution'),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional()
+      .describe('Per-subagent model overrides keyed by executor (claude, codex)'),
     /** Configuration for automatic workspace creation. */
     workspaceCreation: workspaceCreationConfigSchema.optional(),
     /** Planning-related configuration options */

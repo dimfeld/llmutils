@@ -1475,6 +1475,22 @@ defaultSubagentExecutor: dynamic # codex-cli, claude-code, or dynamic
 # Instructions for dynamic subagent executor selection
 dynamicSubagentInstructions: 'Use claude-code for UI components, codex-cli for data layer'
 
+# Optional per-subagent model overrides by executor
+subagents:
+  implementer:
+    model:
+      claude: sonnet-4.6
+      codex: gpt-5-codex
+  tester:
+    model:
+      claude: sonnet-4.6
+  tddTests:
+    model:
+      codex: gpt-5-codex
+  verifier:
+    model:
+      claude: sonnet-4.6
+
 # Allow typing messages to the agent during execution (default: true when TTY)
 terminalInput: true
 
@@ -1679,6 +1695,12 @@ tim agent 123 --orchestrator claude-code -x dynamic
 ```
 
 Note: `defaultExecutor` is used by commands like `generate`, `review`, and `compact`. The `agent` command uses `defaultOrchestrator` for its main loop (defaulting to `claude-code`) and `defaultSubagentExecutor` for subagents (defaulting to `dynamic`).
+
+Subagent model precedence:
+
+1. `tim subagent ... --model <model>` CLI flag
+2. `subagents.<type>.model.<claude|codex>` in config
+3. Default executor model behavior
 
 ### Post-Apply Commands
 
