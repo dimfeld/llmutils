@@ -259,6 +259,7 @@ struct SessionDetailView: View {
     @State private var messageCountAtBottom = 0
     @State private var inputText = ""
     @State private var inputBarHeight: CGFloat = 0
+    @State private var isAdjustingBottomInset = false
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -279,6 +280,9 @@ struct SessionDetailView: View {
                             self.messageCountAtBottom = self.session.messages.count
                         }
                         .onDisappear {
+                            // Prompt show/hide changes the bottom inset and can make
+                            // the anchor temporarily disappear without user scrolling.
+                            guard !self.isAdjustingBottomInset else { return }
                             self.isNearBottom = false
                             // Only disable auto-scroll if content hasn't changed,
                             // meaning the user scrolled away rather than new
@@ -353,9 +357,7 @@ struct SessionDetailView: View {
                 self.autoScrollEnabled = true
             }
             .onChange(of: self.session.pendingPrompt?.requestId) {
-                if self.autoScrollEnabled {
-                    self.jumpToBottom(proxy)
-                }
+                self.handlePromptInsetTransition(proxy)
             }
             .onKeyPress(.home) {
                 if let firstId = session.messages.first?.id {
@@ -370,7 +372,11 @@ struct SessionDetailView: View {
             }
         }
         .onPreferenceChange(InputBarHeightKey.self) { height in
-            self.inputBarHeight = height
+            // Ignore sub-point jitter from layout recalculation to avoid
+            // unnecessary view invalidation.
+            if abs(self.inputBarHeight - height) > 0.5 {
+                self.inputBarHeight = height
+            }
         }
     }
 
@@ -379,6 +385,24 @@ struct SessionDetailView: View {
         transaction.animation = nil
         withTransaction(transaction) {
             proxy.scrollTo(SessionDetailView.bottomAnchorID, anchor: .bottom)
+        }
+    }
+
+    private func handlePromptInsetTransition(_ proxy: ScrollViewProxy) {
+        self.isAdjustingBottomInset = true
+
+        if self.autoScrollEnabled {
+            Task { @MainActor in
+                // Wait for inset/layout to settle before forcing scroll.
+                try? await Task.sleep(for: .milliseconds(50))
+                self.jumpToBottom(proxy)
+            }
+        }
+
+        Task { @MainActor in
+            // Keep this guard briefly after prompt mount/unmount.
+            try? await Task.sleep(for: .milliseconds(250))
+            self.isAdjustingBottomInset = false
         }
     }
 
