@@ -14,6 +14,7 @@ import { needArrayOrUndefined } from '../../common/cli.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
 import { ensureReferences, writePlansWithGeneratedUuids } from '../utils/references.js';
+import { syncPlanToDb } from '../db/plan_sync.js';
 
 export async function handleAddCommand(title: string[], options: any, command: any) {
   const globalOpts = command.parent.opts();
@@ -238,6 +239,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
   const { updatedPlan: updatedNewPlan, plansWithGeneratedUuids } = ensureReferences(plan, allPlans);
   await writePlanFile(filePath, updatedNewPlan);
   await writePlansWithGeneratedUuids(plansWithGeneratedUuids, allPlans);
+  let finalPlanFile = filePath;
 
   // Log success message
   log(chalk.green('\u2713 Created plan stub:'), filePath, 'for ID', chalk.green(planId));
@@ -262,8 +264,15 @@ export async function handleAddCommand(title: string[], options: any, command: a
       // Only rename if the new filename is different
       if (newFilename !== filename) {
         await fs.rename(filePath, newFilePath);
+        finalPlanFile = newFilePath;
         log(chalk.gray(`  Renamed plan file to: ${newFilename}`));
       }
     }
   }
+
+  const editedPlan = options.edit ? await readPlanFile(finalPlanFile) : updatedNewPlan;
+  await syncPlanToDb(editedPlan, finalPlanFile, {
+    config,
+    force: true,
+  });
 }
