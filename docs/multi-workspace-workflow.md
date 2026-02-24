@@ -120,11 +120,9 @@ tim_ws auth     # Pre-filter to workspaces matching "auth"
 tim_ws 123      # Pre-filter to workspaces with "123" in name/description
 ```
 
-The switcher displays:
-
-- Workspace name and description
-- Current branch
-- Full path in the preview window
+The switcher displays workspace name, description, and branch. It also prints the full
+`tim workspace list` output before launching the selector so you can always keep the list
+in view.
 
 Use Esc or Ctrl+C to cancel without changing directories.
 

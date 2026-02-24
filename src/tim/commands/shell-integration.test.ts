@@ -10,10 +10,15 @@ describe('shell-integration command', () => {
     expect(output).toContain('~/.zshrc');
     expect(output).toContain('tim_ws()');
     expect(output).toContain('tim workspace list --format tsv --no-header');
+    expect(output).toContain('tim workspace list');
+    expect(output.indexOf('tim workspace list --format tsv --no-header')).toBeGreaterThan(
+      output.indexOf('tim workspace list')
+    );
     expect(output).toContain('fzf');
     expect(output).toContain('--delimiter');
     expect(output).toContain('--with-nth');
-    expect(output).toContain('--preview');
+    expect(output).toContain('--height');
+    expect(output).toContain('40%');
     expect(output).toContain('cd "$workspace_path"');
   });
 
@@ -56,15 +61,13 @@ describe('shell-integration command', () => {
     expect(output).toContain('return 0');
   });
 
-  test('includes preview with path info', async () => {
+  test('does not use preview in fzf and preserves output', async () => {
     const { generateShellFunction } = await import('./shell-integration.js');
 
     const output = generateShellFunction('zsh');
 
-    // New 2-column format: preview shows just the path since formatted description is already visible
-    expect(output).toContain("--preview 'echo");
-    expect(output).toContain('Path:');
-    expect(output).toContain('--preview-window');
+    expect(output).not.toContain('--preview');
+    expect(output).not.toContain('--no-clear');
   });
 
   test('handleShellIntegrationCommand outputs function code', async () => {

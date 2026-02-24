@@ -1388,7 +1388,7 @@ The shell function:
 
 - Uses `fzf` for fuzzy selection
 - Shows workspace name, description, and branch
-- Provides a preview window with full path and details
+- Shows the full workspace list output before opening the selector so it stays visible
 - Handles cancellation gracefully
 
 **Using workspaces with agent and generate:**

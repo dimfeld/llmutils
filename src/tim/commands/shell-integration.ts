@@ -40,6 +40,9 @@ tim_ws() {
     return 1
   fi
 
+  # Show all workspaces first so the full output is visible
+  tim workspace list
+
   # Get the list of workspaces in TSV format (2 columns: path, formatted description)
   local workspace_list
   workspace_list=$(tim workspace list --format tsv --no-header 2>/dev/null)
@@ -52,11 +55,12 @@ tim_ws() {
   # Build fzf command with optional query
   # TSV format: fullPath<tab>formattedDescription
   # Display only the formatted description (field 2), use field 1 for selection
+  # Use a bounded height list to avoid clearing the terminal
   local fzf_args=(
     --delimiter $'\\t'
     --with-nth '2'
-    --preview 'echo "Path: {1}"'
-    --preview-window 'up:1:wrap'
+    --height '40%'
+    --layout reverse
     --header 'Select a workspace (Esc to cancel)'
   )
 
