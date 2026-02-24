@@ -3,6 +3,8 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
 import { getCombinedTitle } from '../display_utils.js';
 import { slugify } from '../id_utils.js';
+import { parseLinearIssueIdentifier } from '../../common/linear.js';
+import { parseGitHubIssueIdentifier } from '../../common/github/issues.js';
 import { findNextReadyDependency } from './find_next_dependency.js';
 import { findMostRecentlyUpdatedPlan } from './prompts.js';
 import { findNextPlan, readAllPlans, readPlanFile, resolvePlanFile } from '../plans.js';
@@ -34,18 +36,14 @@ function getIssueIdFromPlanIssues(plan: PlanSchema): string | undefined {
   }
 
   for (const rawIssue of plan.issue) {
-    const linearIssueMatch = rawIssue.match(
-      /^https:\/\/linear\.app\/[^/]+\/issue\/([A-Za-z][A-Za-z0-9]*-\d+)(?:\/[^/?#]*)?(?:[/?#].*)?$/i
-    );
-    if (linearIssueMatch) {
-      return linearIssueMatch[1].toUpperCase();
+    const linearParsedIssue = parseLinearIssueIdentifier(rawIssue);
+    if (linearParsedIssue) {
+      return linearParsedIssue.identifier;
     }
 
-    const githubIssueMatch = rawIssue.match(
-      /^https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/(\d+)(?:[/?#].*)?$/i
-    );
-    if (githubIssueMatch) {
-      return `gh-${githubIssueMatch[1]}`;
+    const githubParsedIssue = parseGitHubIssueIdentifier(rawIssue);
+    if (githubParsedIssue) {
+      return `gh-${githubParsedIssue.identifier}`;
     }
   }
 

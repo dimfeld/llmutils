@@ -8,6 +8,55 @@ import {
   combineRmprOptions,
   type RmprOptions,
 } from '../../rmpr/comment_options.ts';
+import type { ParsedIssueIdentifier } from '../issue_tracker/types.js';
+
+export function parseGitHubIssueIdentifier(spec: string): ParsedIssueIdentifier | null {
+  const trimmedSpec = spec.trim();
+
+  try {
+    const url = new URL(trimmedSpec);
+    const pathParts = url.pathname.slice(1).split('/');
+
+    // GitHub URL format: /owner/repo/issues/123 or /owner/repo/pull/123
+    if (pathParts.length >= 4 && (pathParts[2] === 'issues' || pathParts[2] === 'pull')) {
+      return {
+        identifier: pathParts[3],
+        owner: pathParts[0],
+        repo: pathParts[1],
+        url: trimmedSpec,
+      };
+    }
+  } catch {
+    // Not a valid URL, continue with other formats
+  }
+
+  const shortMatch = trimmedSpec.match(/^([^/]+)\/([^/#]+)#(\d+)$/);
+  if (shortMatch) {
+    return {
+      identifier: shortMatch[3],
+      owner: shortMatch[1],
+      repo: shortMatch[2],
+    };
+  }
+
+  const altShortMatch = trimmedSpec.match(/^([^/]+)\/([^/]+)\/(\d+)$/);
+  if (altShortMatch) {
+    return {
+      identifier: altShortMatch[3],
+      owner: altShortMatch[1],
+      repo: altShortMatch[2],
+    };
+  }
+
+  const numberMatch = trimmedSpec.match(/^(\d+)$/);
+  if (numberMatch) {
+    return {
+      identifier: numberMatch[1],
+    };
+  }
+
+  return null;
+}
 
 export type FetchedIssueAndComments = Awaited<ReturnType<typeof fetchIssueAndComments>>;
 

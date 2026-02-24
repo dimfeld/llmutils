@@ -6,7 +6,11 @@
  * to provide a consistent API with other issue trackers.
  */
 
-import { fetchIssueAndComments, fetchAllOpenIssues } from '../github/issues.js';
+import {
+  fetchIssueAndComments,
+  fetchAllOpenIssues,
+  parseGitHubIssueIdentifier,
+} from '../github/issues.js';
 import { parsePrOrIssueNumber } from '../github/identifiers.js';
 import { debugLog } from '../../logging.js';
 import type {
@@ -36,56 +40,7 @@ export class GitHubIssueTrackerClient implements IssueTrackerClient {
    * - GitHub URL: https://github.com/owner/repo/issues/123
    */
   parseIssueIdentifier(spec: string): ParsedIssueIdentifier | null {
-    const trimmedSpec = spec.trim();
-
-    try {
-      // Try to parse as URL first
-      const url = new URL(trimmedSpec);
-      const pathParts = url.pathname.slice(1).split('/');
-
-      // GitHub URL format: /owner/repo/issues/123 or /owner/repo/pull/123
-      if (pathParts.length >= 4 && (pathParts[2] === 'issues' || pathParts[2] === 'pull')) {
-        return {
-          identifier: pathParts[3],
-          owner: pathParts[0],
-          repo: pathParts[1],
-          url: trimmedSpec,
-        };
-      }
-    } catch {
-      // Not a valid URL, continue with other formats
-    }
-
-    // Try short format: owner/repo#123
-    const shortMatch = trimmedSpec.match(/^([^/]+)\/([^/#]+)#(\d+)$/);
-    if (shortMatch) {
-      return {
-        identifier: shortMatch[3],
-        owner: shortMatch[1],
-        repo: shortMatch[2],
-      };
-    }
-
-    // Try alternative short format: owner/repo/123
-    const altShortMatch = trimmedSpec.match(/^([^/]+)\/([^/]+)\/(\d+)$/);
-    if (altShortMatch) {
-      return {
-        identifier: altShortMatch[3],
-        owner: altShortMatch[1],
-        repo: altShortMatch[2],
-      };
-    }
-
-    // Try parsing as just a number (uses current repo context)
-    const numberMatch = trimmedSpec.match(/^(\d+)$/);
-    if (numberMatch) {
-      return {
-        identifier: numberMatch[1],
-      };
-    }
-
-    // Invalid format
-    return null;
+    return parseGitHubIssueIdentifier(spec);
   }
 
   /**

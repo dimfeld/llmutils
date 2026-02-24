@@ -19,6 +19,37 @@ import type {
   UserData,
 } from './issue_tracker/types.ts';
 
+export function parseLinearIssueIdentifier(spec: string): ParsedIssueIdentifier | null {
+  const trimmedSpec = spec.trim();
+
+  const keyMatch = trimmedSpec.toUpperCase().match(/^([A-Z][A-Z0-9]*-\d+)$/);
+  if (keyMatch) {
+    return {
+      identifier: keyMatch[1],
+    };
+  }
+
+  const urlMatch = trimmedSpec.match(
+    /^https:\/\/linear\.app\/([^/]+)\/issue\/([A-Z][A-Z0-9]*-\d+)(?:\/[^/]*)?$/i
+  );
+  if (urlMatch) {
+    return {
+      identifier: urlMatch[2].toUpperCase(),
+      owner: urlMatch[1],
+      url: trimmedSpec,
+    };
+  }
+
+  const branchMatch = trimmedSpec.toUpperCase().match(/-([A-Z][A-Z0-9]*-\d+)$/i);
+  if (branchMatch) {
+    return {
+      identifier: branchMatch[1].toUpperCase(),
+    };
+  }
+
+  return null;
+}
+
 /**
  * Linear issue tracker client implementation
  */
@@ -36,38 +67,7 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
    * - Linear URL with slug: https://linear.app/workspace/issue/TEAM-123/some-title-slug
    */
   parseIssueIdentifier(spec: string): ParsedIssueIdentifier | null {
-    const trimmedSpec = spec.trim();
-
-    // Linear issue key format: TEAM-123 (we allow case-insensitive)
-    const keyMatch = trimmedSpec.toUpperCase().match(/^([A-Z][A-Z0-9]*-\d+)$/);
-    if (keyMatch) {
-      return {
-        identifier: keyMatch[1],
-      };
-    }
-
-    // Linear URL format: https://linear.app/workspace/issue/TEAM-123[/optional-slug]
-    const urlMatch = trimmedSpec.match(
-      /^https:\/\/linear\.app\/([^/]+)\/issue\/([A-Z][A-Z0-9]*-\d+)(?:\/[^/]*)?$/i
-    );
-    if (urlMatch) {
-      return {
-        identifier: urlMatch[2].toUpperCase(),
-        owner: urlMatch[1], // workspace name
-        url: trimmedSpec,
-      };
-    }
-
-    // Match on a copied branch name (case-insensitive for the branch part, but issue ID must be uppercase)
-    const branchMatch = trimmedSpec.toUpperCase().match(/-([A-Z][A-Z0-9]*-\d+)$/i);
-    if (branchMatch) {
-      return {
-        identifier: branchMatch[1].toUpperCase(),
-      };
-    }
-
-    // Invalid format
-    return null;
+    return parseLinearIssueIdentifier(spec);
   }
 
   /**
