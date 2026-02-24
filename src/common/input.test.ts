@@ -13,6 +13,14 @@ import type { HeadlessMessage, HeadlessServerMessage } from '../logging/headless
 import { createRecordingAdapter } from '../logging/test_helpers.ts';
 import { ModuleMocker } from '../testing.js';
 
+function createTestHeadlessAdapter(...args: ConstructorParameters<typeof HeadlessAdapter>) {
+  const [url, sessionInfo, wrappedAdapter, options] = args;
+  return new HeadlessAdapter(url, sessionInfo, wrappedAdapter, {
+    ...options,
+    connectWhenSuppressed: true,
+  });
+}
+
 // Mock the @inquirer/prompts module so tests don't require a TTY.
 // Uses ModuleMocker to preserve all original exports (e.g. `search`) and
 // restore them after our tests complete, preventing cross-file mock leaks.
@@ -735,7 +743,7 @@ describe('prompt wrappers', () => {
       headlessServersToClose.push(server);
 
       const { adapter: wrapped, calls } = createRecordingAdapter();
-      const headlessAdapter = new HeadlessAdapter(
+      const headlessAdapter = createTestHeadlessAdapter(
         `ws://127.0.0.1:${server.port}/tim-agent`,
         { command: 'agent' },
         wrapped,
@@ -822,7 +830,7 @@ describe('prompt wrappers', () => {
       headlessServersToClose.push(server);
 
       const { adapter: wrapped, calls } = createRecordingAdapter();
-      const headlessAdapter = new HeadlessAdapter(
+      const headlessAdapter = createTestHeadlessAdapter(
         `ws://127.0.0.1:${server.port}/tim-agent`,
         { command: 'agent' },
         wrapped,
@@ -874,7 +882,7 @@ describe('prompt wrappers', () => {
       headlessServersToClose.push(server);
 
       const { adapter: wrapped, calls } = createRecordingAdapter();
-      const headlessAdapter = new HeadlessAdapter(
+      const headlessAdapter = createTestHeadlessAdapter(
         `ws://127.0.0.1:${server.port}/tim-agent`,
         { command: 'agent' },
         wrapped,
@@ -956,7 +964,7 @@ describe('prompt wrappers', () => {
       headlessServersToClose.push(server);
 
       const { adapter: wrapped, calls } = createRecordingAdapter();
-      const headlessAdapter = new HeadlessAdapter(
+      const headlessAdapter = createTestHeadlessAdapter(
         `ws://127.0.0.1:${server.port}/tim-agent`,
         { command: 'agent' },
         wrapped,
@@ -1003,7 +1011,7 @@ describe('prompt wrappers', () => {
       headlessServersToClose.push(server);
 
       const { adapter: wrapped } = createRecordingAdapter();
-      const headlessAdapter = new HeadlessAdapter(
+      const headlessAdapter = createTestHeadlessAdapter(
         `ws://127.0.0.1:${server.port}/tim-agent`,
         { command: 'agent' },
         wrapped,
@@ -1054,7 +1062,7 @@ describe('prompt wrappers', () => {
       headlessServersToClose.push(server);
 
       const { adapter: wrapped, calls } = createRecordingAdapter();
-      const headlessAdapter = new HeadlessAdapter(
+      const headlessAdapter = createTestHeadlessAdapter(
         `ws://127.0.0.1:${server.port}/tim-agent`,
         { command: 'agent' },
         wrapped,
@@ -1118,7 +1126,7 @@ describe('prompt wrappers', () => {
       headlessServersToClose.push(server);
 
       const { adapter: wrapped } = createRecordingAdapter();
-      const headlessAdapter = new HeadlessAdapter(
+      const headlessAdapter = createTestHeadlessAdapter(
         `ws://127.0.0.1:${server.port}/tim-agent`,
         { command: 'agent' },
         wrapped,

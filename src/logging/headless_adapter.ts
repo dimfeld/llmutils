@@ -22,6 +22,7 @@ interface QueuedMessage {
 interface HeadlessAdapterOptions {
   maxBufferBytes?: number;
   reconnectIntervalMs?: number;
+  connectWhenSuppressed?: boolean;
 }
 
 /** Pending prompt request entry tracked by the HeadlessAdapter. */
@@ -62,6 +63,7 @@ export class HeadlessAdapter implements LoggerAdapter {
   private readonly wrappedAdapter: LoggerAdapter;
   private readonly maxBufferBytes: number;
   private readonly reconnectIntervalMs: number;
+  private readonly connectWhenSuppressed: boolean;
 
   private state: ConnectionState = 'disconnected';
   private socket: WebSocket | undefined;
@@ -88,6 +90,7 @@ export class HeadlessAdapter implements LoggerAdapter {
     this.wrappedAdapter = wrappedAdapter;
     this.maxBufferBytes = options?.maxBufferBytes ?? DEFAULT_MAX_BUFFER_BYTES;
     this.reconnectIntervalMs = options?.reconnectIntervalMs ?? DEFAULT_RECONNECT_INTERVAL_MS;
+    this.connectWhenSuppressed = options?.connectWhenSuppressed ?? false;
   }
 
   log(...args: any[]): void {
@@ -327,6 +330,10 @@ export class HeadlessAdapter implements LoggerAdapter {
   }
 
   private maybeConnect(): void {
+    if (process.env.TIM_NOTIFY_SUPPRESS_INNER && !this.connectWhenSuppressed) {
+      return;
+    }
+
     if (this.destroyed || this.state === 'connected' || this.state === 'connecting') {
       return;
     }

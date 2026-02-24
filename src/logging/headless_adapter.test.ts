@@ -4,6 +4,14 @@ import type { HeadlessMessage, HeadlessServerMessage } from './headless_protocol
 import { createRecordingAdapter } from './test_helpers.ts';
 import { debug, setDebug } from '../common/process.ts';
 
+function createTestHeadlessAdapter(...args: ConstructorParameters<typeof HeadlessAdapter>) {
+  const [url, sessionInfo, wrappedAdapter, options] = args;
+  return new HeadlessAdapter(url, sessionInfo, wrappedAdapter, {
+    ...options,
+    connectWhenSuppressed: true,
+  });
+}
+
 function parseMessage(
   message: string | Buffer | ArrayBuffer | ArrayBufferView
 ): HeadlessMessage | null {
@@ -127,7 +135,7 @@ afterEach(() => {
 describe('HeadlessAdapter', () => {
   it('buffers output while disconnected and forwards local output', async () => {
     const { adapter: wrapped, calls } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       'ws://127.0.0.1:1/tim-agent',
       { command: 'agent' },
       wrapped,
@@ -151,7 +159,7 @@ describe('HeadlessAdapter', () => {
 
   it('forwards structured messages to wrapped adapter and websocket queue', async () => {
     const { adapter: wrapped, calls } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       'ws://127.0.0.1:1/tim-agent',
       { command: 'agent' },
       wrapped,
@@ -195,7 +203,7 @@ describe('HeadlessAdapter', () => {
 
   it('drops non-serializable structured messages without throwing', async () => {
     const { adapter: wrapped, calls } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       'ws://127.0.0.1:1/tim-agent',
       { command: 'agent' },
       wrapped,
@@ -244,7 +252,7 @@ describe('HeadlessAdapter', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       {
         command: 'agent',
@@ -298,7 +306,7 @@ describe('HeadlessAdapter', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       {
         command: 'agent',
@@ -332,7 +340,7 @@ describe('HeadlessAdapter', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       {
         command: 'agent',
@@ -364,7 +372,7 @@ describe('HeadlessAdapter', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
@@ -413,7 +421,7 @@ describe('HeadlessAdapter', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'review' },
       wrapped,
@@ -462,7 +470,7 @@ describe('HeadlessAdapter', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'review' },
       wrapped,
@@ -506,7 +514,7 @@ describe('HeadlessAdapter', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'review' },
       wrapped,
@@ -568,7 +576,7 @@ describe('HeadlessAdapter', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
@@ -702,7 +710,7 @@ describe('HeadlessAdapter', () => {
   it('drops oldest buffered output when max buffer size is exceeded', async () => {
     const { adapter: wrapped } = createRecordingAdapter();
     const maxBufferBytes = 350;
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:9/tim-agent`,
       { command: 'agent' },
       wrapped,
@@ -730,7 +738,7 @@ describe('HeadlessAdapter', () => {
 
   it('handles destroy() without a server available', async () => {
     const { adapter: wrapped, calls } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       'ws://127.0.0.1:9/tim-agent',
       { command: 'review' },
       wrapped,
@@ -759,7 +767,7 @@ describe('HeadlessAdapter', () => {
 
     const { adapter: wrapped } = createRecordingAdapter();
     const reconnectIntervalMs = 200;
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
@@ -788,7 +796,7 @@ describe('HeadlessAdapter', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
@@ -830,7 +838,7 @@ describe('HeadlessAdapter', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
@@ -860,7 +868,7 @@ describe('HeadlessAdapter', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
@@ -900,7 +908,7 @@ describe('HeadlessAdapter', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped, calls } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
@@ -927,7 +935,7 @@ describe('HeadlessAdapter', () => {
 
   it('destroySync() does not throw with no active socket', () => {
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       'ws://127.0.0.1:9/tim-agent',
       { command: 'agent' },
       wrapped,
@@ -949,7 +957,7 @@ describe('HeadlessAdapter', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
@@ -972,7 +980,7 @@ describe('HeadlessAdapter', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
@@ -996,7 +1004,7 @@ describe('HeadlessAdapter', () => {
 
     const { adapter: wrapped } = createRecordingAdapter();
     const maxBufferBytes = 600;
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
@@ -1136,7 +1144,7 @@ describe('HeadlessAdapter prompt handling', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
@@ -1169,7 +1177,7 @@ describe('HeadlessAdapter prompt handling', () => {
 
   it('waitForPromptResponse resolves with complex values', async () => {
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       'ws://127.0.0.1:1/tim-agent',
       { command: 'agent' },
       wrapped,
@@ -1196,7 +1204,7 @@ describe('HeadlessAdapter prompt handling', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped, calls } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
@@ -1247,7 +1255,7 @@ describe('HeadlessAdapter prompt handling', () => {
 
   it('cancel() removes the pending entry and rejects the promise', async () => {
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       'ws://127.0.0.1:1/tim-agent',
       { command: 'agent' },
       wrapped,
@@ -1271,7 +1279,7 @@ describe('HeadlessAdapter prompt handling', () => {
 
   it('cancel() is idempotent (second call is a no-op)', async () => {
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       'ws://127.0.0.1:1/tim-agent',
       { command: 'agent' },
       wrapped,
@@ -1289,7 +1297,7 @@ describe('HeadlessAdapter prompt handling', () => {
 
   it('destroy() rejects all pending prompts', async () => {
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       'ws://127.0.0.1:1/tim-agent',
       { command: 'agent' },
       wrapped,
@@ -1312,7 +1320,7 @@ describe('HeadlessAdapter prompt handling', () => {
 
   it('destroySync() rejects all pending prompts', () => {
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       'ws://127.0.0.1:1/tim-agent',
       { command: 'agent' },
       wrapped,
@@ -1336,7 +1344,7 @@ describe('HeadlessAdapter prompt handling', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
@@ -1401,7 +1409,7 @@ describe('HeadlessAdapter prompt handling', () => {
     });
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${serverInstance.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
@@ -1438,7 +1446,7 @@ describe('HeadlessAdapter prompt handling', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
@@ -1477,7 +1485,7 @@ describe('HeadlessAdapter prompt handling', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
@@ -1521,7 +1529,7 @@ describe('HeadlessAdapter prompt handling', () => {
     serversToClose.push(server);
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
@@ -1582,7 +1590,7 @@ describe('HeadlessAdapter user input handling', () => {
     });
 
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${serverInstance.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
@@ -1608,7 +1616,7 @@ describe('HeadlessAdapter user input handling', () => {
 
   it('setUserInputHandler supports set, dispatch, replace, and clear lifecycle', async () => {
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       'ws://127.0.0.1:1/tim-agent',
       { command: 'agent' },
       wrapped,
@@ -1632,7 +1640,7 @@ describe('HeadlessAdapter user input handling', () => {
 
   it('silently ignores user_input messages when no handler is registered', async () => {
     const { adapter: wrapped } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
+    const adapter = createTestHeadlessAdapter(
       'ws://127.0.0.1:1/tim-agent',
       { command: 'agent' },
       wrapped,

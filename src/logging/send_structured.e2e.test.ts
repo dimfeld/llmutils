@@ -96,7 +96,7 @@ describe('logging sendStructured end-to-end', () => {
       `ws://127.0.0.1:${server.port}/tim-agent`,
       { command: 'agent' },
       wrapped,
-      { reconnectIntervalMs: 50 }
+      { reconnectIntervalMs: 50, connectWhenSuppressed: true }
     );
 
     await runWithLogger(adapter, async () => {
