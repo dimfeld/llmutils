@@ -878,8 +878,10 @@ async function tryReuseExistingWorkspace(
       };
 
       if (options.planData) {
-        metadataPatch.description = buildDescriptionFromPlan(options.planData);
-        metadataPatch.planId = options.planData.id ? String(options.planData.id) : '';
+        const planDescription = buildDescriptionFromPlan(options.planData);
+        const planId = options.planData.id ? String(options.planData.id) : '';
+        metadataPatch.description = planId ? `${planId} - ${planDescription}` : planDescription;
+        metadataPatch.planId = planId;
         metadataPatch.planTitle = options.planData.title || options.planData.goal || '';
         if (options.planData.issue?.length) {
           metadataPatch.issueUrls = [...options.planData.issue];
@@ -1136,10 +1138,12 @@ export async function handleWorkspaceAddCommand(
   }
 
   if (wasReused && importedPlan) {
+    const planDescription = buildDescriptionFromPlan(importedPlan);
+    const planId = importedPlan.id ? String(importedPlan.id) : '';
     const metadataPatch: WorkspaceMetadataPatch = {
-      planId: importedPlan.id ? String(importedPlan.id) : '',
+      planId,
       planTitle: importedPlan.title || importedPlan.goal || '',
-      description: buildDescriptionFromPlan(importedPlan),
+      description: planId ? `${planId} - ${planDescription}` : planDescription,
       issueUrls: importedPlan.issue?.length ? [...importedPlan.issue] : [],
     };
 
@@ -1593,10 +1597,12 @@ export async function handleWorkspaceUpdateCommand(
     try {
       const planPath = await resolvePlanFile(options.fromPlan, globalOpts.config);
       const plan = await readPlanFile(planPath);
-      patch.description = buildDescriptionFromPlan(plan);
+      const planDescription = buildDescriptionFromPlan(plan);
+      const planId = plan.id ? String(plan.id) : '';
+      patch.description = planId ? `${planId} - ${planDescription}` : planDescription;
 
       // Also populate plan metadata fields
-      patch.planId = plan.id ? String(plan.id) : '';
+      patch.planId = planId;
       const planTitle = getCombinedTitleFromSummary(plan);
       patch.planTitle = planTitle || '';
       patch.issueUrls = plan.issue && plan.issue.length > 0 ? [...plan.issue] : [];

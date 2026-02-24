@@ -1264,12 +1264,14 @@ async function updateWorkspaceDescriptionFromPlan(
 
     // Build description from plan
     const description = buildDescriptionFromPlan(planData);
+    const planId = planData.id ? String(planData.id) : '';
+    const prefixedDescription = planId ? `${planId} - ${description}` : description;
     const planTitle = getCombinedTitleFromSummary(planData);
 
     // Update workspace metadata
     patchWorkspaceInfo(baseDir, {
-      description,
-      planId: planData.id ? String(planData.id) : '',
+      description: prefixedDescription,
+      planId,
       planTitle: planTitle || '',
       issueUrls: planData.issue && planData.issue.length > 0 ? [...planData.issue] : [],
     });
