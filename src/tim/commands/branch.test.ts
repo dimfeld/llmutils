@@ -61,6 +61,22 @@ describe('generateBranchNameFromPlan', () => {
 
     expect(name).toBe('123-implement-oauth-login-gh-1471');
   });
+
+  test('truncates slug to keep branch names at or under 63 characters', () => {
+    const name = generateBranchNameFromPlan({
+      id: 123,
+      title: 'This is a very long plan title that keeps going and going and going forever and should be truncated',
+      goal: 'This is a very long plan title that keeps going',
+      status: 'pending',
+      issue: ['https://github.com/owner/repo/issues/1471'],
+      tasks: [],
+    });
+
+    expect(name.length).toBeLessThanOrEqual(63);
+    expect(name.startsWith('123-')).toBe(true);
+    expect(name.includes('...')).toBe(true);
+    expect(name.endsWith('-gh-1471')).toBe(true);
+  });
 });
 
 describe('handleBranchCommand', () => {

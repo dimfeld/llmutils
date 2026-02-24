@@ -17,6 +17,9 @@ type BranchCommandOptions = {
   latest?: boolean;
 };
 
+const MAX_BRANCH_NAME_LENGTH = 63;
+const MID_TRUNCATION_MARKER = '...';
+
 export function generateBranchNameFromPlan(plan: PlanSchema): string {
   const title = getCombinedTitle(plan) || plan.goal || 'plan';
   const slug = slugify(title);
@@ -55,23 +58,57 @@ function buildBranchNameWithId(
   slugSegment: string | undefined,
   issueId: string | undefined
 ): string {
-  const base = slugSegment === undefined ? `${planId}` : `${planId}-${slugSegment}`;
-
-  if (issueId) {
-    return `${base}-${issueId}`;
-  }
-
-  return base;
+  return buildBranchNameWithSlugSegment(`${planId}`, slugSegment, issueId);
 }
 
 function buildBranchNameWithoutId(slugSegment: string | undefined, issueId: string | undefined): string {
-  const base = slugSegment === undefined ? 'plan' : slugSegment;
+  return buildBranchNameWithSlugSegment('plan', slugSegment, issueId);
+}
 
-  if (issueId) {
-    return `${base}-${issueId}`;
+function buildBranchNameWithSlugSegment(
+  prefix: string,
+  slugSegment: string | undefined,
+  issueId: string | undefined
+): string {
+  const issueSuffix = issueId ? `-${issueId}` : '';
+  if (!slugSegment) {
+    return `${prefix}${issueSuffix}`;
   }
 
-  return base;
+  const availableSlugLength = Math.max(
+    0,
+    MAX_BRANCH_NAME_LENGTH - prefix.length - issueSuffix.length - 1
+  );
+  const truncatedSlug = truncateMiddle(slugSegment, availableSlugLength);
+
+  if (truncatedSlug.length === 0) {
+    return `${prefix}${issueSuffix}`;
+  }
+
+  return `${prefix}-${truncatedSlug}${issueSuffix}`;
+}
+
+function truncateMiddle(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  if (maxLength <= 0) {
+    return '';
+  }
+
+  if (maxLength <= MID_TRUNCATION_MARKER.length) {
+    return value.slice(0, maxLength);
+  }
+
+  const visibleLength = maxLength - MID_TRUNCATION_MARKER.length;
+  const leftLength = Math.ceil(visibleLength / 2);
+  const rightLength = Math.floor(visibleLength / 2);
+
+  const left = value.slice(0, leftLength);
+  const right = value.slice(value.length - rightLength);
+
+  return `${left}${MID_TRUNCATION_MARKER}${right}`;
 }
 
 export async function handleBranchCommand(
