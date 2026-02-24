@@ -338,13 +338,17 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
       'tim agent'
     );
 
+    const originalBaseDir = currentBaseDir;
     currentBaseDir = workspaceResult.baseDir;
     currentPlanFile = workspaceResult.planFile;
     touchedWorkspacePath = currentBaseDir;
-    roundTripContext = await prepareWorkspaceRoundTrip({
-      workspacePath: currentBaseDir,
-      workspaceSyncEnabled: options.workspaceSync !== false,
-    });
+
+    if (path.resolve(currentBaseDir) !== path.resolve(originalBaseDir)) {
+      roundTripContext = await prepareWorkspaceRoundTrip({
+        workspacePath: currentBaseDir,
+        workspaceSyncEnabled: options.workspaceSync !== false,
+      });
+    }
 
     if (roundTripContext) {
       await runPreExecutionWorkspaceSync(roundTripContext);

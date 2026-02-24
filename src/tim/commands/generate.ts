@@ -2,6 +2,7 @@
 // Generates a plan using an interactive executor (Claude Code or Codex app-server)
 
 import chalk from 'chalk';
+import * as path from 'node:path';
 import { getCurrentBranchName, getGitRoot, getTrunkBranch } from '../../common/git.js';
 import { commitAll } from '../../common/process.js';
 import { log, warn } from '../../logging.js';
@@ -192,6 +193,7 @@ export async function handleGenerateCommand(
   let generationError: unknown;
 
   try {
+    const originalBaseDir = currentBaseDir;
     const workspaceResult = await setupWorkspace(
       {
         workspace: options.workspace,
@@ -210,10 +212,13 @@ export async function handleGenerateCommand(
     currentBaseDir = workspaceResult.baseDir;
     currentPlanFile = workspaceResult.planFile;
     touchedWorkspacePath = currentBaseDir;
-    roundTripContext = await prepareWorkspaceRoundTrip({
-      workspacePath: currentBaseDir,
-      workspaceSyncEnabled: options.workspaceSync !== false,
-    });
+
+    if (path.resolve(currentBaseDir) !== path.resolve(originalBaseDir)) {
+      roundTripContext = await prepareWorkspaceRoundTrip({
+        workspacePath: currentBaseDir,
+        workspaceSyncEnabled: options.workspaceSync !== false,
+      });
+    }
 
     if (roundTripContext) {
       await runPreExecutionWorkspaceSync(roundTripContext);
