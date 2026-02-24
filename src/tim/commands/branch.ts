@@ -18,12 +18,62 @@ type BranchCommandOptions = {
 export function generateBranchNameFromPlan(plan: PlanSchema): string {
   const title = getCombinedTitle(plan) || plan.goal || 'plan';
   const slug = slugify(title);
+  const issueId = getIssueIdFromPlanIssues(plan);
+  const slugSegment = slug.length > 0 ? slug : undefined;
 
   if (plan.id !== undefined && plan.id !== null) {
-    return slug.length > 0 ? `task-${plan.id}-${slug}` : `task-${plan.id}`;
+    return buildBranchNameWithId(plan.id, slugSegment, issueId);
   }
 
-  return slug.length > 0 ? `task-${slug}` : 'task-plan';
+  return buildBranchNameWithoutId(slugSegment, issueId);
+}
+
+function getIssueIdFromPlanIssues(plan: PlanSchema): string | undefined {
+  if (!plan.issue || plan.issue.length === 0) {
+    return undefined;
+  }
+
+  for (const rawIssue of plan.issue) {
+    const linearIssueMatch = rawIssue.match(
+      /^https:\/\/linear\.app\/[^/]+\/issue\/([A-Za-z][A-Za-z0-9]*-\d+)(?:\/[^/?#]*)?(?:[/?#].*)?$/i
+    );
+    if (linearIssueMatch) {
+      return linearIssueMatch[1].toUpperCase();
+    }
+
+    const githubIssueMatch = rawIssue.match(
+      /^https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/(\d+)(?:[/?#].*)?$/i
+    );
+    if (githubIssueMatch) {
+      return `gh-${githubIssueMatch[1]}`;
+    }
+  }
+
+  return undefined;
+}
+
+function buildBranchNameWithId(
+  planId: number,
+  slugSegment: string | undefined,
+  issueId: string | undefined
+): string {
+  const base = slugSegment === undefined ? `${planId}` : `${planId}-${slugSegment}`;
+
+  if (issueId) {
+    return `${base}-${issueId}`;
+  }
+
+  return base;
+}
+
+function buildBranchNameWithoutId(slugSegment: string | undefined, issueId: string | undefined): string {
+  const base = slugSegment === undefined ? 'plan' : slugSegment;
+
+  if (issueId) {
+    return `${base}-${issueId}`;
+  }
+
+  return base;
 }
 
 export async function handleBranchCommand(

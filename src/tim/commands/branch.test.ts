@@ -21,7 +21,7 @@ describe('generateBranchNameFromPlan', () => {
       tasks: [],
     });
 
-    expect(name).toBe('task-123-implement-oauth-login');
+    expect(name).toBe('123-implement-oauth-login');
   });
 
   test('falls back to task-id when title slug is empty', () => {
@@ -33,7 +33,33 @@ describe('generateBranchNameFromPlan', () => {
       tasks: [],
     });
 
-    expect(name).toBe('task-42');
+    expect(name).toBe('42');
+  });
+
+  test('adds Linear issue id to branch name when present', () => {
+    const name = generateBranchNameFromPlan({
+      id: 123,
+      title: 'Implement OAuth Login',
+      goal: 'Add OAuth login support',
+      status: 'pending',
+      issue: ['https://linear.app/my-org/issue/DF-1471'],
+      tasks: [],
+    });
+
+    expect(name).toBe('123-implement-oauth-login-DF-1471');
+  });
+
+  test('adds GitHub issue id to branch name when present', () => {
+    const name = generateBranchNameFromPlan({
+      id: 123,
+      title: 'Implement OAuth Login',
+      goal: 'Add OAuth login support',
+      status: 'pending',
+      issue: ['https://github.com/owner/repo/issues/1471'],
+      tasks: [],
+    });
+
+    expect(name).toBe('123-implement-oauth-login-gh-1471');
   });
 });
 
@@ -84,7 +110,7 @@ describe('handleBranchCommand', () => {
     const command = { parent: { opts: () => ({}) } } as any;
     await handleBranchCommand('7', {}, command);
 
-    expect(writeStdoutSpy).toHaveBeenCalledWith('task-7-fix-search-filters\n');
+    expect(writeStdoutSpy).toHaveBeenCalledWith('7-fix-search-filters\n');
   });
 
   test('supports --latest selection', async () => {
@@ -110,7 +136,7 @@ describe('handleBranchCommand', () => {
     const command = { parent: { opts: () => ({}) } } as any;
     await handleBranchCommand(undefined, { latest: true }, command);
 
-    expect(writeStdoutSpy).toHaveBeenCalledWith('task-11-latest-plan\n');
+    expect(writeStdoutSpy).toHaveBeenCalledWith('11-latest-plan\n');
     expect(logSpy).not.toHaveBeenCalled();
   });
 
