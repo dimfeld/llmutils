@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { openDatabase } from './database.js';
+import { DATABASE_FILENAME, openDatabase } from './database.js';
 import {
   getOrCreateProject,
   getProject,
@@ -19,7 +19,7 @@ describe('tim db/project', () => {
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-project-db-test-'));
-    db = openDatabase(path.join(tempDir, 'tim.db'));
+    db = openDatabase(path.join(tempDir, DATABASE_FILENAME));
   });
 
   afterEach(async () => {
@@ -124,7 +124,7 @@ describe('tim db/project', () => {
   });
 
   test('reserveNextPlanId handles concurrent access from multiple connections', () => {
-    const dbPath = path.join(tempDir, 'tim.db');
+    const dbPath = path.join(tempDir, DATABASE_FILENAME);
     const db2 = openDatabase(dbPath);
 
     try {

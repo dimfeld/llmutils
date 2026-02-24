@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { openDatabase } from './database.js';
+import { DATABASE_FILENAME, openDatabase } from './database.js';
 import {
   claimAssignment,
   cleanStaleAssignments,
@@ -24,7 +24,7 @@ describe('tim db/assignment', () => {
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-assignment-db-test-'));
-    db = openDatabase(path.join(tempDir, 'tim.db'));
+    db = openDatabase(path.join(tempDir, DATABASE_FILENAME));
     projectId = getOrCreateProject(db, 'repo-1').id;
   });
 

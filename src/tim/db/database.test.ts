@@ -8,6 +8,7 @@ import {
   getDatabase,
   getDefaultDatabasePath,
   openDatabase,
+  DATABASE_FILENAME,
 } from './database.js';
 
 async function createTempDir(prefix: string): Promise<string> {
@@ -36,7 +37,7 @@ describe('tim db/database', () => {
   });
 
   test('openDatabase initializes pragmas and schema', () => {
-    const dbPath = path.join(tempDir, 'tim.db');
+    const dbPath = path.join(tempDir, DATABASE_FILENAME);
     const db = openDatabase(dbPath);
 
     const journalMode = db.query<{ journal_mode: string }, []>('PRAGMA journal_mode').get();
@@ -96,7 +97,7 @@ describe('tim db/database', () => {
   });
 
   test('openDatabase is idempotent across repeated opens', () => {
-    const dbPath = path.join(tempDir, 'tim.db');
+    const dbPath = path.join(tempDir, DATABASE_FILENAME);
 
     const db1 = openDatabase(dbPath);
     db1.close(false);
@@ -135,6 +136,6 @@ describe('tim db/database', () => {
 
   test('getDefaultDatabasePath resolves under tim config root', () => {
     process.env.XDG_CONFIG_HOME = tempDir;
-    expect(getDefaultDatabasePath()).toBe(path.join(tempDir, 'tim', 'tim.db'));
+    expect(getDefaultDatabasePath()).toBe(path.join(tempDir, 'tim', DATABASE_FILENAME));
   });
 });

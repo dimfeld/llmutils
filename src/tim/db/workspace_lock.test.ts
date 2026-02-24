@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { openDatabase } from './database.js';
+import { DATABASE_FILENAME, openDatabase } from './database.js';
 import { getOrCreateProject } from './project.js';
 import { recordWorkspace } from './workspace.js';
 import {
@@ -21,7 +21,7 @@ describe('tim db/workspace_lock', () => {
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-workspace-lock-db-test-'));
-    db = openDatabase(path.join(tempDir, 'tim.db'));
+    db = openDatabase(path.join(tempDir, DATABASE_FILENAME));
     const projectId = getOrCreateProject(db, 'repo-1').id;
     workspaceId = recordWorkspace(db, {
       projectId,

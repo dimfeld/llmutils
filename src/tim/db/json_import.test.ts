@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { getAssignment } from './assignment.js';
-import { openDatabase } from './database.js';
+import { DATABASE_FILENAME, openDatabase } from './database.js';
 import { importFromJsonFiles, markImportCompleted, shouldRunImport } from './json_import.js';
 import { getPermissions } from './permission.js';
 import { getOrCreateProject, getProject, updateProject } from './project.js';
@@ -25,7 +25,7 @@ describe('tim db/json_import', () => {
 
   beforeEach(async () => {
     tempDir = await createTempDir('tim-db-import-test-');
-    dbPath = path.join(tempDir, 'tim.db');
+    dbPath = path.join(tempDir, DATABASE_FILENAME);
   });
 
   afterEach(async () => {

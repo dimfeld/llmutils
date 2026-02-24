@@ -22,6 +22,7 @@ for (const key of KEYS_TO_UNSET) {
   }
 }
 
+process.env.TIM_DATABASE_FILENAME = 'tim.test.db';
 process.env.TIM_NOTIFY_SUPPRESS = '1';
 process.env.TIM_NOTIFY_SUPPRESS_INNER = '1';
 process.env.TIM_LOAD_GLOBAL_CONFIG = '0';

@@ -8,8 +8,9 @@ import { runMigrations } from './migrations.js';
 
 let databaseSingleton: Database | null = null;
 
+export const DATABASE_FILENAME = process.env.TIM_DATABASE_FILENAME || 'tim.db';
 export function getDefaultDatabasePath(): string {
-  return path.join(getTimConfigRoot(), 'tim.db');
+  return path.join(getTimConfigRoot(), DATABASE_FILENAME);
 }
 
 function applyPragmas(db: Database): void {
