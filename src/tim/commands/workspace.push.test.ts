@@ -236,7 +236,7 @@ describe('handleWorkspacePushCommand', () => {
     const { handleWorkspacePushCommand } = await import('./workspace.js');
 
     await expect(handleWorkspacePushCommand(primaryDir, {}, {} as any)).rejects.toThrow(
-      'The current workspace is already the primary workspace.'
+      'Source and destination workspaces are the same.'
     );
   });
 
@@ -417,5 +417,55 @@ describe('handleWorkspacePushCommand', () => {
           args[0] === 'jj' && args[1] === 'git' && args[2] === 'remote' && args[3] === 'set-url'
       )
     ).toBe(false);
+  });
+
+  test('supports explicit --from, --to, and --branch options', async () => {
+    const repositoryId = 'workspace-push-explicit-from-to';
+    const primaryDir = path.join(tempRoot, 'primary-explicit');
+    const sourceDir = path.join(tempRoot, 'source-explicit');
+    const destinationDir = path.join(tempRoot, 'destination-explicit');
+
+    await fs.mkdir(primaryDir, { recursive: true });
+    await initGitRepository(primaryDir);
+    await cloneRepository(primaryDir, sourceDir);
+    await cloneRepository(primaryDir, destinationDir);
+    await createBranchCommit(sourceDir, 'feature/explicit', 'explicit.txt');
+
+    recordWorkspaceForRepo({
+      workspacePath: primaryDir,
+      taskId: 'task-primary',
+      repositoryId,
+      branch: 'main',
+      isPrimary: true,
+    });
+    recordWorkspaceForRepo({
+      workspacePath: sourceDir,
+      taskId: 'task-source',
+      repositoryId,
+      branch: 'feature/explicit',
+    });
+    recordWorkspaceForRepo({
+      workspacePath: destinationDir,
+      taskId: 'task-destination',
+      repositoryId,
+      branch: 'main',
+    });
+
+    const { handleWorkspacePushCommand } = await import('./workspace.js');
+    await expect(
+      handleWorkspacePushCommand(
+        undefined,
+        { from: sourceDir, to: destinationDir, branch: 'feature/explicit' },
+        {} as any
+      )
+    ).resolves.toBeUndefined();
+
+    const sourceHead = (
+      await runGitChecked(sourceDir, ['rev-parse', 'feature/explicit'])
+    ).stdout.trim();
+    const destinationHead = (
+      await runGitChecked(destinationDir, ['rev-parse', 'feature/explicit'])
+    ).stdout.trim();
+    expect(destinationHead).toBe(sourceHead);
   });
 });

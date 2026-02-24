@@ -1292,44 +1292,57 @@ export async function handleWorkspaceUnlockCommand(
 
 export async function handleWorkspacePushCommand(
   workspaceIdentifier: string | undefined,
-  _options: any,
+  options: { from?: string; to?: string; branch?: string },
   _command: Command
 ) {
-  const workspace = await resolveWorkspaceIdentifier(workspaceIdentifier);
-  const workspacePath = workspace.workspacePath;
-  const repositoryId = workspace.repositoryId ?? (await determineRepositoryId(workspacePath));
-  const primaryWorkspace = findPrimaryWorkspaceForRepository(repositoryId);
+  const sourceIdentifier = options.from ?? workspaceIdentifier;
+  const sourceWorkspace = await resolveWorkspaceIdentifier(sourceIdentifier);
+  const sourceWorkspacePath = sourceWorkspace.workspacePath;
+  const sourceRepositoryId =
+    sourceWorkspace.repositoryId ?? (await determineRepositoryId(sourceWorkspacePath));
 
-  if (!primaryWorkspace) {
-    throw new Error(
-      'No primary workspace is configured for this repository. Mark one with: tim workspace update --primary'
-    );
+  let destinationWorkspace: WorkspaceInfo;
+  if (options.to) {
+    destinationWorkspace = await resolveWorkspaceIdentifier(options.to);
+    const destinationRepositoryId =
+      destinationWorkspace.repositoryId ??
+      (await determineRepositoryId(destinationWorkspace.workspacePath));
+    if (destinationRepositoryId !== sourceRepositoryId) {
+      throw new Error(
+        `Source and destination workspaces are in different repositories: ${sourceRepositoryId} vs ${destinationRepositoryId}`
+      );
+    }
+  } else {
+    const primaryWorkspace = findPrimaryWorkspaceForRepository(sourceRepositoryId);
+    if (!primaryWorkspace) {
+      throw new Error(
+        'No primary workspace is configured for this repository. Mark one with: tim workspace update --primary'
+      );
+    }
+    destinationWorkspace = primaryWorkspace;
   }
 
-  if (path.resolve(workspacePath) === path.resolve(primaryWorkspace.workspacePath)) {
-    throw new Error(
-      'The current workspace is already the primary workspace. Run this command from a secondary workspace.'
-    );
+  if (path.resolve(sourceWorkspacePath) === path.resolve(destinationWorkspace.workspacePath)) {
+    throw new Error('Source and destination workspaces are the same. Choose different workspaces.');
   }
 
-  const branch = (await getCurrentBranchName(workspacePath)) ?? workspace.branch;
+  const branch =
+    options.branch ?? (await getCurrentBranchName(sourceWorkspacePath)) ?? sourceWorkspace.branch;
   if (!branch) {
     throw new Error(
-      `No current branch/bookmark detected for workspace ${workspacePath}. Check out or create a branch before pushing.`
+      `No current branch/bookmark detected for workspace ${sourceWorkspacePath}. Check out or create a branch before pushing.`
     );
   }
 
-  const isJj = await getUsingJj(workspacePath);
-  if (isJj) {
-    await ensurePrimaryJjRemote(workspacePath, primaryWorkspace.workspacePath);
-    await pushJjBookmarkToPrimary(workspacePath, branch);
-  } else {
-    await pushGitBranchToPrimary(workspacePath, primaryWorkspace.workspacePath, branch);
-  }
+  await pushWorkspaceRefBetweenWorkspaces({
+    sourceWorkspacePath,
+    destinationWorkspacePath: destinationWorkspace.workspacePath,
+    refName: branch,
+  });
 
-  log(chalk.green('✓ Workspace branch/bookmark pushed to primary workspace'));
-  log(`  Source: ${workspacePath}`);
-  log(`  Primary: ${primaryWorkspace.workspacePath}`);
+  log(chalk.green('✓ Workspace branch/bookmark pushed'));
+  log(`  Source: ${sourceWorkspacePath}`);
+  log(`  Destination: ${destinationWorkspace.workspacePath}`);
   log(`  Ref: ${branch}`);
 }
 
@@ -1439,9 +1452,91 @@ function buildLockCommandLabel(
   return parts.join(' ');
 }
 
-async function ensurePrimaryJjRemote(
+export async function pushWorkspaceRefBetweenWorkspaces(options: {
+  sourceWorkspacePath: string;
+  destinationWorkspacePath: string;
+  refName: string;
+  ensureJjBookmarkAtCurrent?: boolean;
+  remoteName?: string;
+}): Promise<void> {
+  const remoteName = options.remoteName ?? PRIMARY_REMOTE_NAME;
+  const isJj = await getUsingJj(options.sourceWorkspacePath);
+
+  if (isJj) {
+    if (options.ensureJjBookmarkAtCurrent) {
+      await setWorkspaceBookmarkToCurrent(options.sourceWorkspacePath, options.refName);
+    }
+    await ensureJjRemote(options.sourceWorkspacePath, options.destinationWorkspacePath, remoteName);
+    await pushJjBookmarkToWorkspace(options.sourceWorkspacePath, options.refName, remoteName);
+    return;
+  }
+
+  await pushGitBranchToWorkspace(
+    options.sourceWorkspacePath,
+    options.destinationWorkspacePath,
+    options.refName
+  );
+}
+
+export async function ensureWorkspaceRefExists(
   workspacePath: string,
-  primaryWorkspacePath: string
+  refName: string
+): Promise<void> {
+  const isJj = await getUsingJj(workspacePath);
+  if (isJj) {
+    const listResult = await spawnAndLogOutput(['jj', 'bookmark', 'list'], {
+      cwd: workspacePath,
+      quiet: true,
+    });
+    if (listResult.exitCode !== 0) {
+      throw new Error(`Failed to list jj bookmarks: ${listResult.stderr}`);
+    }
+
+    const bookmarkExists = listResult.stdout.split('\n').some((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return false;
+      const name = trimmed.split(/\s+|:/)[0];
+      return name === refName;
+    });
+
+    if (!bookmarkExists) {
+      await setWorkspaceBookmarkToCurrent(workspacePath, refName);
+    }
+    return;
+  }
+
+  const checkResult = await spawnAndLogOutput(['git', 'rev-parse', '--verify', refName], {
+    cwd: workspacePath,
+    quiet: true,
+  });
+  if (checkResult.exitCode === 0) {
+    return;
+  }
+
+  const createResult = await spawnAndLogOutput(['git', 'branch', refName, 'HEAD'], {
+    cwd: workspacePath,
+  });
+  if (createResult.exitCode !== 0) {
+    throw new Error(`Failed to create branch "${refName}": ${createResult.stderr}`);
+  }
+}
+
+export async function setWorkspaceBookmarkToCurrent(
+  workspacePath: string,
+  bookmark: string
+): Promise<void> {
+  const setResult = await spawnAndLogOutput(['jj', 'bookmark', 'set', bookmark], {
+    cwd: workspacePath,
+  });
+  if (setResult.exitCode !== 0) {
+    throw new Error(`Failed to set bookmark "${bookmark}" to current change: ${setResult.stderr}`);
+  }
+}
+
+async function ensureJjRemote(
+  workspacePath: string,
+  destinationWorkspacePath: string,
+  remoteName: string
 ): Promise<void> {
   const listResult = await spawnAndLogOutput(['jj', 'git', 'remote', 'list'], {
     cwd: workspacePath,
@@ -1455,72 +1550,70 @@ async function ensurePrimaryJjRemote(
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
-  const primaryRemoteLine = remoteLines.find(
-    (line) => line.split(/\s+/, 1)[0] === PRIMARY_REMOTE_NAME
-  );
+  const destinationRemoteLine = remoteLines.find((line) => line.split(/\s+/, 1)[0] === remoteName);
 
-  if (!primaryRemoteLine) {
+  if (!destinationRemoteLine) {
     const addRemoteResult = await spawnAndLogOutput(
-      ['jj', 'git', 'remote', 'add', PRIMARY_REMOTE_NAME, primaryWorkspacePath],
+      ['jj', 'git', 'remote', 'add', remoteName, destinationWorkspacePath],
       { cwd: workspacePath }
     );
     if (addRemoteResult.exitCode !== 0) {
-      throw new Error(
-        `Failed to add jj remote "${PRIMARY_REMOTE_NAME}": ${addRemoteResult.stderr}`
-      );
+      throw new Error(`Failed to add jj remote "${remoteName}": ${addRemoteResult.stderr}`);
     }
     return;
   }
 
-  const existingUrl = primaryRemoteLine.split(/\s+/).slice(1).join(' ').trim();
-  if (existingUrl === primaryWorkspacePath) {
+  const existingUrl = destinationRemoteLine.split(/\s+/).slice(1).join(' ').trim();
+  if (existingUrl === destinationWorkspacePath) {
     return;
   }
 
   const setUrlResult = await spawnAndLogOutput(
-    ['jj', 'git', 'remote', 'set-url', PRIMARY_REMOTE_NAME, primaryWorkspacePath],
+    ['jj', 'git', 'remote', 'set-url', remoteName, destinationWorkspacePath],
     { cwd: workspacePath }
   );
   if (setUrlResult.exitCode !== 0) {
-    throw new Error(`Failed to update jj remote "${PRIMARY_REMOTE_NAME}": ${setUrlResult.stderr}`);
+    throw new Error(`Failed to update jj remote "${remoteName}": ${setUrlResult.stderr}`);
   }
 }
 
-async function pushGitBranchToPrimary(
-  workspacePath: string,
-  primaryWorkspacePath: string,
+async function pushGitBranchToWorkspace(
+  sourceWorkspacePath: string,
+  destinationWorkspacePath: string,
   branch: string
 ): Promise<void> {
   const fetchResult = await spawnAndLogOutput(
-    ['git', 'fetch', '--update-head-ok', workspacePath, `${branch}:${branch}`],
-    { cwd: primaryWorkspacePath }
+    ['git', 'fetch', '--update-head-ok', sourceWorkspacePath, `${branch}:${branch}`],
+    { cwd: destinationWorkspacePath }
   );
   if (fetchResult.exitCode !== 0) {
     throw new Error(
-      `Failed to fetch branch "${branch}" into primary workspace: ${fetchResult.stderr}`
+      `Failed to fetch branch "${branch}" into destination workspace: ${fetchResult.stderr}`
     );
   }
 }
 
-async function pushJjBookmarkToPrimary(workspacePath: string, bookmark: string): Promise<void> {
+async function pushJjBookmarkToWorkspace(
+  workspacePath: string,
+  bookmark: string,
+  remoteName: string
+): Promise<void> {
   const trackOutput = await spawnAndLogOutput(
-    ['jj', 'bookmark', 'track', bookmark, '--remote', PRIMARY_REMOTE_NAME],
+    ['jj', 'bookmark', 'track', bookmark, '--remote', remoteName],
     { cwd: workspacePath }
   );
   if (trackOutput.exitCode !== 0) {
     throw new Error(
-      `Failed to track remote bookmark "${bookmark}" to ${PRIMARY_REMOTE_NAME}: ${trackOutput.stderr}`
+      `Failed to track remote bookmark "${bookmark}" to ${remoteName}: ${trackOutput.stderr}`
     );
   }
 
   const pushResult = await spawnAndLogOutput(
-    ['jj', 'git', 'push', '--remote', PRIMARY_REMOTE_NAME, '--bookmark', bookmark],
+    ['jj', 'git', 'push', '--remote', remoteName, '--bookmark', bookmark],
     { cwd: workspacePath }
   );
   if (pushResult.exitCode !== 0) {
-    throw new Error(
-      `Failed to push bookmark "${bookmark}" to ${PRIMARY_REMOTE_NAME}: ${pushResult.stderr}`
-    );
+    throw new Error(`Failed to push bookmark "${bookmark}" to ${remoteName}: ${pushResult.stderr}`);
   }
 }
 

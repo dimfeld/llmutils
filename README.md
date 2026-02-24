@@ -269,6 +269,9 @@ tim generate 123 --auto-workspace --require-workspace
 
 # Use a specific base branch or revision (e.g. for stacked diffs)
 tim generate 123 --auto-workspace --base feature-branch
+
+# Disable automatic workspace round-trip sync
+tim generate 123 --auto-workspace --no-workspace-sync
 ```
 
 **Options:**
@@ -293,7 +296,8 @@ tim generate 123 --non-interactive
 2. Optionally sets up a workspace (lock, plan file copy)
 3. Runs the interactive planning prompt via the selected executor
 4. The executor researches the codebase, collaborates with you to refine the plan, and generates structured tasks
-5. Optionally commits changes
+5. In workspace mode, syncs the workspace branch/bookmark back to primary by default (disable with `--no-workspace-sync`)
+6. Optionally commits changes
 
 **Interactive planning:**
 
@@ -393,6 +397,9 @@ tim agent 123 --workspace feature-xyz
 
 # Use a specific base branch or revision
 tim agent 123 --auto-workspace --base feature-branch
+
+# Disable automatic workspace round-trip sync
+tim agent 123 --auto-workspace --no-workspace-sync
 
 # Agent command handles:
 # - Creating isolated git clone (or preparing existing workspace)
@@ -1340,14 +1347,17 @@ Primary workspaces are shown with a "Primary" status in `tim workspace list`. Th
 
 **Push to primary workspace:**
 
-From a secondary workspace, push your current branch (git) or bookmark (jj) to the primary workspace directory:
+Push a branch/bookmark between tracked workspaces. Defaults are source=current workspace and destination=primary workspace:
 
 ```bash
 tim workspace push
 
-# Push a specific tracked workspace by task ID or path
+# Push from a specific tracked workspace by task ID or path
 tim workspace push task-123
 tim workspace push /path/to/secondary-workspace
+
+# Explicit source/destination/branch
+tim workspace push --from task-123 --to task-456 --branch feature/my-work
 ```
 
 If no primary workspace is configured, set one first:
@@ -2251,8 +2261,8 @@ tim workspace update --from-plan PLAN_ID
 tim workspace update [WORKSPACE] --primary    # Mark as primary (excluded from auto-selection)
 tim workspace update [WORKSPACE] --no-primary # Remove primary designation
 
-# Push current branch/bookmark from a secondary workspace to the primary workspace
-tim workspace push [WORKSPACE]
+# Push branch/bookmark between workspaces
+tim workspace push [WORKSPACE] [--from WORKSPACE] [--to WORKSPACE] [--branch BRANCH]
 
 # Shell integration (interactive workspace switching with fzf)
 tim shell-integration --shell bash|zsh

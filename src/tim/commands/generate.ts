@@ -29,6 +29,11 @@ import type { GenerateModeRegistrationContext } from '../mcp/generate_mode.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { syncPlanToDb } from '../db/plan_sync.js';
+import {
+  prepareWorkspaceRoundTrip,
+  runPostExecutionWorkspaceSync,
+  runPreExecutionWorkspaceSync,
+} from '../workspace/workspace_roundtrip.js';
 
 async function updateWorkspaceDescriptionFromPlan(
   baseDir: string,
@@ -183,6 +188,8 @@ export async function handleGenerateCommand(
   let currentBaseDir = gitRoot;
   let currentPlanFile = planFile;
   let touchedWorkspacePath: string | null = null;
+  let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
+  let generationError: unknown;
 
   try {
     const workspaceResult = await setupWorkspace(
@@ -203,6 +210,14 @@ export async function handleGenerateCommand(
     currentBaseDir = workspaceResult.baseDir;
     currentPlanFile = workspaceResult.planFile;
     touchedWorkspacePath = currentBaseDir;
+    roundTripContext = await prepareWorkspaceRoundTrip({
+      workspacePath: currentBaseDir,
+      workspaceSyncEnabled: options.workspaceSync !== false,
+    });
+
+    if (roundTripContext) {
+      await runPreExecutionWorkspaceSync(roundTripContext);
+    }
 
     // Auto-claim the plan if enabled (before execution, matching agent pattern)
     if (isAutoClaimEnabled()) {
@@ -335,13 +350,36 @@ export async function handleGenerateCommand(
         }
       },
     });
+  } catch (err) {
+    generationError = err;
   } finally {
+    let roundTripError: unknown;
+    if (roundTripContext) {
+      try {
+        const planTitle = parsedPlan.title || parsedPlan.goal || 'plan';
+        await runPostExecutionWorkspaceSync(roundTripContext, `generate plan for ${planTitle}`);
+      } catch (err) {
+        roundTripError = err;
+      }
+    }
+
     if (touchedWorkspacePath) {
       try {
         touchWorkspaceInfo(touchedWorkspacePath);
       } catch (err) {
         warn(`Failed to update workspace last used time: ${err as Error}`);
       }
+    }
+
+    if (generationError) {
+      if (roundTripError) {
+        warn(`Workspace sync failed after generation error: ${roundTripError as Error}`);
+      }
+      throw generationError;
+    }
+
+    if (roundTripError) {
+      throw roundTripError;
     }
   }
 }

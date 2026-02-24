@@ -61,6 +61,11 @@ import {
   touchWorkspaceInfo,
 } from '../../workspace/workspace_info.js';
 import { setupWorkspace } from '../../workspace/workspace_setup.js';
+import {
+  prepareWorkspaceRoundTrip,
+  runPostExecutionWorkspaceSync,
+  runPreExecutionWorkspaceSync,
+} from '../../workspace/workspace_roundtrip.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -282,7 +287,9 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
   let config = getDefaultConfig();
   let currentBaseDir = process.cwd();
   let touchedWorkspacePath: string | null = null;
+  let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
   let executionError: Error | undefined;
+  let hadExecutionFailure = false;
   let failureReason: Error | undefined;
   let lastKnownPlan: PlanSchema | undefined;
   const recordFailure = (err: unknown): void => {
@@ -334,6 +341,14 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     currentBaseDir = workspaceResult.baseDir;
     currentPlanFile = workspaceResult.planFile;
     touchedWorkspacePath = currentBaseDir;
+    roundTripContext = await prepareWorkspaceRoundTrip({
+      workspacePath: currentBaseDir,
+      workspaceSyncEnabled: options.workspaceSync !== false,
+    });
+
+    if (roundTripContext) {
+      await runPreExecutionWorkspaceSync(roundTripContext);
+    }
 
     // Use orchestrator from CLI options, fallback to config defaultOrchestrator, or fallback to DEFAULT_EXECUTOR
     // Note: defaultOrchestrator and defaultExecutor are independent - agent command uses defaultOrchestrator
@@ -1129,9 +1144,25 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
       await closeLogFile();
     }
   } catch (err) {
+    hadExecutionFailure = true;
     executionError = failureReason ?? (err instanceof Error ? err : new Error(String(err)));
     throw err;
   } finally {
+    let workspaceSyncError: Error | undefined;
+    if (roundTripContext) {
+      try {
+        const planTitle = lastKnownPlan?.title || path.parse(currentPlanFile).name;
+        await runPostExecutionWorkspaceSync(roundTripContext, planTitle);
+      } catch (err) {
+        workspaceSyncError = err instanceof Error ? err : new Error(String(err));
+        if (!executionError) {
+          executionError = workspaceSyncError;
+        } else {
+          warn(`Workspace sync failed after execution error: ${workspaceSyncError}`);
+        }
+      }
+    }
+
     if (touchedWorkspacePath) {
       try {
         touchWorkspaceInfo(touchedWorkspacePath);
@@ -1172,6 +1203,10 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
       });
     } catch (err) {
       warn(`Failed to send notification: ${err as Error}`);
+    }
+
+    if (!hadExecutionFailure && workspaceSyncError) {
+      throw workspaceSyncError;
     }
   }
 }

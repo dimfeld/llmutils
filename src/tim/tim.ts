@@ -335,6 +335,7 @@ program
     'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
   )
   .option('--base <ref>', 'Base branch or revision to checkout in workspace')
+  .option('--no-workspace-sync', 'Disable automatic workspace round-trip sync to primary')
   .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
   .option(
     '--no-terminal-input',
@@ -617,6 +618,7 @@ function createAgentCommand(command: Command, description: string) {
       'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
     )
     .option('--base <ref>', 'Base branch or revision to checkout in workspace')
+    .option('--no-workspace-sync', 'Disable automatic workspace round-trip sync to primary')
     .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
     .option(
       '--no-terminal-input',
@@ -1249,7 +1251,10 @@ workspaceCommand
 
 workspaceCommand
   .command('push [workspaceIdentifier]')
-  .description('Push current branch/bookmark to the primary workspace')
+  .description('Push a branch/bookmark between workspaces')
+  .option('--from <workspace>', 'Source workspace task ID or path (defaults to positional/current)')
+  .option('--to <workspace>', 'Destination workspace task ID or path (defaults to primary)')
+  .option('--branch <branch>', 'Branch/bookmark to push (defaults to current source branch)')
   .action(async (workspaceIdentifier, options, command) => {
     const { handleWorkspacePushCommand } = await import('./commands/workspace.js');
     await handleWorkspacePushCommand(workspaceIdentifier, options, command).catch(
