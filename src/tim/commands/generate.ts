@@ -327,7 +327,11 @@ export async function handleGenerateCommand(
         const hasTasks = updatedPlan.tasks && updatedPlan.tasks.length > 0;
 
         if (hasTasks) {
-          log(chalk.green(`✓ Plan generated with ${updatedPlan.tasks.length} tasks`));
+          log(
+            chalk.green(
+              `✓ Plan ${updatedPlan.id ?? String(currentPlanId ?? 'generate')} generated with ${updatedPlan.tasks.length} tasks`
+            )
+          );
         } else if (updatedPlan.epic) {
           log(chalk.green('✓ Plan was created as an epic'));
         } else {
