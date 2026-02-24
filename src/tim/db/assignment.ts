@@ -8,6 +8,7 @@ export interface AssignmentEntry {
   workspacePaths: string[];
   workspaceOwners?: Record<string, string>;
   users: string[];
+  planStatus?: PlanStatus;
   status?: PlanStatus;
   assignedAt: string;
   updatedAt: string;
@@ -38,6 +39,7 @@ interface AssignmentWithWorkspaceRow {
   plan_id: number | null;
   claimed_by_user: string | null;
   status: string | null;
+  plan_status: string | null;
   assigned_at: string;
   updated_at: string;
   workspace_path: string | null;
@@ -152,7 +154,10 @@ export function claimAssignment(
   return claimInTransaction.immediate(projectId, planUuid, planId, workspaceId, user);
 }
 
-function assignmentWithWorkspaceRowToEntry(row: AssignmentWithWorkspaceRow): AssignmentEntry {
+function assignmentWithWorkspaceRowToEntry(
+  row: AssignmentWithWorkspaceRow,
+  usePlanStatus = false
+): AssignmentEntry {
   const workspacePaths = row.workspace_path ? [row.workspace_path] : [];
   const users = row.claimed_by_user ? [row.claimed_by_user] : [];
   return {
@@ -163,7 +168,8 @@ function assignmentWithWorkspaceRowToEntry(row: AssignmentWithWorkspaceRow): Ass
       row.workspace_path && row.claimed_by_user
         ? { [row.workspace_path]: row.claimed_by_user }
         : undefined,
-    status: normalizePlanStatus(row.status),
+    planStatus: usePlanStatus ? normalizePlanStatus(row.plan_status) : undefined,
+    status: normalizePlanStatus(usePlanStatus ? row.plan_status : row.status),
     assignedAt: row.assigned_at,
     updatedAt: row.updated_at,
   };
@@ -207,11 +213,13 @@ export function getAssignmentEntriesByProject(
         a.plan_id,
         a.claimed_by_user,
         a.status,
+        p.status as plan_status,
         a.assigned_at,
         a.updated_at,
         w.workspace_path
       FROM assignment a
       LEFT JOIN workspace w ON w.id = a.workspace_id
+      LEFT JOIN plan p ON p.project_id = a.project_id AND p.uuid = a.plan_uuid
       WHERE a.project_id = ?
       ORDER BY a.assigned_at, a.id
     `
@@ -220,7 +228,7 @@ export function getAssignmentEntriesByProject(
 
   const lookup: Record<string, AssignmentEntry> = {};
   for (const row of rows) {
-    lookup[row.plan_uuid] = assignmentWithWorkspaceRowToEntry(row);
+    lookup[row.plan_uuid] = assignmentWithWorkspaceRowToEntry(row, true);
   }
   return lookup;
 }
