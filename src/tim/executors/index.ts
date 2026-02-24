@@ -1,35 +1,15 @@
 import { DEFAULT_RUN_MODEL } from '../llm_utils/run_and_apply.js';
 import { executors } from './build.ts';
 import { ClaudeCodeExecutor } from './claude_code.ts';
-import { CopyOnlyExecutor } from './copy_only.ts';
-import { CopyPasteExecutor } from './copy_paste.ts';
-import { OneCallExecutor } from './one-call';
 import { CodexCliExecutor } from './codex_cli';
 import { DEFAULT_EXECUTOR } from '../constants.js';
-import {
-  ClaudeCodeExecutorName,
-  CopyOnlyExecutorName,
-  CopyPasteExecutorName,
-  OneCallExecutorName,
-  CodexCliExecutorName,
-} from './schemas.js';
+import { ClaudeCodeExecutorName, CodexCliExecutorName } from './schemas.js';
 
 // Re-export for backward compatibility
 export { DEFAULT_EXECUTOR };
 
 export * from './build.ts';
-export {
-  ClaudeCodeExecutor,
-  ClaudeCodeExecutorName,
-  CopyOnlyExecutor,
-  CopyOnlyExecutorName,
-  CopyPasteExecutor,
-  CopyPasteExecutorName,
-  OneCallExecutor,
-  OneCallExecutorName,
-  CodexCliExecutor,
-  CodexCliExecutorName,
-};
+export { ClaudeCodeExecutor, ClaudeCodeExecutorName, CodexCliExecutor, CodexCliExecutorName };
 
 export function defaultModelForExecutor(executorId: string, modelType: 'execution' | 'answerPr') {
   const executor = executors.get(executorId);

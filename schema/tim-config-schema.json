@@ -765,28 +765,6 @@
             }
           }
         },
-        "copy-only": {
-          "type": "object",
-          "properties": {}
-        },
-        "copy-paste": {
-          "type": "object",
-          "properties": {
-            "executionModel": {
-              "description": "The model string for LLM execution, e.g., 'google/gemini-2.5-pro'.",
-              "type": "string"
-            }
-          }
-        },
-        "direct-call": {
-          "type": "object",
-          "properties": {
-            "executionModel": {
-              "description": "The model string for LLM execution, e.g., 'google/gemini-2.5-pro'.",
-              "type": "string"
-            }
-          }
-        },
         "codex-cli": {
           "type": "object",
           "properties": {

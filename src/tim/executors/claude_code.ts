@@ -441,13 +441,6 @@ export class ClaudeCodeExecutor implements Executor {
     }
   }
 
-  prepareStepOptions(): Partial<PrepareNextStepOptions> {
-    return {
-      rmfilter: false,
-      model: 'claude',
-    };
-  }
-
   /**
    * Loads shared permissions from cross-worktree storage.
    * Returns an array of permission strings to be added to allowedTools.

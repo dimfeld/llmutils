@@ -1,9 +1,6 @@
 import type { GoogleGenerativeAIProviderOptions } from '@ai-sdk/google';
 import { streamText, type LanguageModel, type StreamTextResult, type ToolSet } from 'ai';
-import { applyLlmEdits } from '../../apply-llm-edits/apply.ts';
-import { createRetryRequester } from '../../apply-llm-edits/retry.ts';
-import { askForModelId, createModel } from '../../common/model_factory.ts';
-import { log } from '../../logging.ts';
+import { createModel } from '../../common/model_factory.ts';
 import { streamResultToConsole } from './llm.js';
 
 export const DEFAULT_RUN_MODEL = 'google/gemini-2.5-pro';
@@ -57,43 +54,4 @@ export interface RunPromptOptions {
   file: string;
   interactive?: boolean;
   model?: string;
-}
-
-export async function runPrompt(options: RunPromptOptions) {
-  let model = options.model;
-  if (!model) {
-    model =
-      (
-        await askForModelId({
-          onlyDirectCall: true,
-        })
-      )?.value ?? DEFAULT_RUN_MODEL;
-  }
-
-  let input = await Bun.file(options.file).text();
-
-  const outputFile = Bun.file('repomix-result.txt');
-  // Bun won't truncate the existing content when using a file writer
-  await outputFile.unlink();
-  const fileWriter = outputFile.writer();
-
-  const result = await runStreamingPrompt({
-    input,
-    model,
-
-    handleTextChunk: (text: string) => {
-      fileWriter.write(new TextEncoder().encode(text));
-    },
-  });
-
-  await fileWriter.end();
-  log('\nWrote to repomix-result.txt. Applying...');
-
-  const content = result.text;
-  await applyLlmEdits({
-    content,
-    originalPrompt: input,
-    retryRequester: createRetryRequester(model),
-    interactive: options.interactive ?? false,
-  });
 }

@@ -2,9 +2,6 @@ import { z } from 'zod/v4';
 
 // Executor name constants
 export const ClaudeCodeExecutorName = 'claude-code';
-export const CopyOnlyExecutorName = 'copy-only';
-export const CopyPasteExecutorName = 'copy-paste';
-export const OneCallExecutorName = 'direct-call';
 export const CodexCliExecutorName = 'codex-cli';
 
 /**
@@ -59,31 +56,6 @@ export const claudeCodeOptionsSchema = z.object({
     .boolean()
     .optional()
     .describe('Run executor in streamlined implement/verify mode instead of full review loop'),
-});
-
-/**
- * Schema for the 'copy-only' executor's options.
- */
-export const copyOnlyOptionsSchema = z.object({});
-
-/**
- * Schema for the 'copy-paste' executor's options.
- */
-export const copyPasteOptionsSchema = z.object({
-  executionModel: z
-    .string()
-    .describe("The model string for LLM execution, e.g., 'google/gemini-2.5-pro'.")
-    .optional(),
-});
-
-/**
- * Schema for the 'direct-call' executor's options.
- */
-export const directCallOptionsSchema = z.object({
-  executionModel: z
-    .string()
-    .describe("The model string for LLM execution, e.g., 'google/gemini-2.5-pro'.")
-    .optional(),
 });
 
 /** Valid reasoning effort levels for Codex */

@@ -5,14 +5,8 @@ import { DEFAULT_EXECUTOR } from './constants.js';
 import { getGitRoot } from '../common/git.js';
 import {
   ClaudeCodeExecutorName,
-  CopyOnlyExecutorName,
-  CopyPasteExecutorName,
-  OneCallExecutorName,
   CodexCliExecutorName,
   claudeCodeOptionsSchema,
-  copyOnlyOptionsSchema,
-  copyPasteOptionsSchema,
-  directCallOptionsSchema,
   codexCliOptionsSchema,
 } from './executors/schemas.js';
 
@@ -486,9 +480,6 @@ export const timConfigSchema = z
     executors: z
       .object({
         [ClaudeCodeExecutorName]: claudeCodeOptionsSchema.optional(),
-        [CopyOnlyExecutorName]: copyOnlyOptionsSchema.optional(),
-        [CopyPasteExecutorName]: copyPasteOptionsSchema.optional(),
-        [OneCallExecutorName]: directCallOptionsSchema.optional(),
         [CodexCliExecutorName]: codexCliOptionsSchema.optional(),
       })
       .partial()

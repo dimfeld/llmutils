@@ -2,9 +2,6 @@ import { z } from 'zod/v4';
 import { error, log } from '../../logging.ts';
 import type { TimConfig } from '../configSchema.ts';
 import { ClaudeCodeExecutor } from './claude_code.ts';
-import { CopyOnlyExecutor } from './copy_only.ts';
-import { CopyPasteExecutor } from './copy_paste.ts';
-import { OneCallExecutor } from './one-call';
 import { CodexCliExecutor } from './codex_cli';
 import type { ExecutorCommonOptions, Executor, ExecutorFactory } from './types';
 
@@ -12,10 +9,7 @@ import type { ExecutorCommonOptions, Executor, ExecutorFactory } from './types';
  * A map of available executors, keyed by their names.
  */
 export const executors = new Map<string, ExecutorFactory<any, z.ZodType<any, any>>>([
-  [OneCallExecutor.name, OneCallExecutor],
   [ClaudeCodeExecutor.name, ClaudeCodeExecutor],
-  [CopyPasteExecutor.name, CopyPasteExecutor],
-  [CopyOnlyExecutor.name, CopyOnlyExecutor],
   [CodexCliExecutor.name, CodexCliExecutor],
 ]);
 

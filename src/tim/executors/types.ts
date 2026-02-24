@@ -130,8 +130,6 @@ export interface ExecutorFactory<E extends Executor, SCHEMA extends z.ZodType = 
  * @template ExecutorSpecificOptionsSchema - Zod schema for executor-specific options.
  */
 export interface Executor {
-  prepareStepOptions?: () => Partial<PrepareNextStepOptions>;
-
   forceReviewCommentsMode?: 'inline-edits' | 'separate-context';
   todoDirections?: string;
 

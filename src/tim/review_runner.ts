@@ -113,9 +113,8 @@ export async function prepareReviewExecutors(
       options.sharedExecutorOptions,
       options.config
     );
-    const includeDiff = executor.prepareStepOptions?.()?.rmfilter ?? true;
     const useSubagents = executor.supportsSubagents === true;
-    const prompt = options.buildPrompt({ executorName, includeDiff, useSubagents });
+    const prompt = options.buildPrompt({ executorName, includeDiff: false, useSubagents });
 
     return {
       name: executorName,

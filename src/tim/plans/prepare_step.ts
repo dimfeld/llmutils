@@ -1,28 +1,12 @@
-import { select } from '@inquirer/prompts';
-import os from 'node:os';
 import path from 'path';
 import { getGitRoot } from '../../common/git.js';
-import { quiet } from '../../common/process.js';
-import { Resolver } from '../../dependency_graph/resolve.js';
-import { ImportWalker } from '../../dependency_graph/walk_imports.js';
-import { boldMarkdownHeaders, log, warn } from '../../logging.js';
 import { findAdditionalDocs } from '../../rmfilter/additional_docs.js';
-import { extractFileReferencesFromInstructions } from '../../rmfilter/instructions.js';
-import { findFilesCore, type RmfindOptions } from '../../rmfind/core.js';
-import { Extractor } from '../../treesitter/extract.js';
 import { resolveTasksDir, type TimConfig } from '../configSchema.js';
 import { findSiblingPlans } from '../context_helpers.js';
 import { readPlanFile } from '../plans.js';
 import { findPendingTask } from './find_next.js';
 
 export interface PrepareNextStepOptions {
-  rmfilter?: boolean;
-  withImports?: boolean;
-  withAllImports?: boolean;
-  withImporters?: boolean;
-  rmfilterArgs?: string[];
-  model?: string;
-  autofind?: boolean;
   filePathPrefix?: string;
 }
 
@@ -52,24 +36,8 @@ export async function prepareNextStep(
   baseDir?: string
 ): Promise<{
   prompt: string;
-  promptFilePath: string | null;
   taskIndex: number;
-  rmfilterArgs: string[] | undefined;
 }> {
-  const {
-    rmfilter = false,
-    withImports = false,
-    withAllImports = false,
-    withImporters = false,
-    rmfilterArgs: initialRmfilterArgs = [],
-    autofind = false,
-    model,
-  } = options;
-
-  if (withImports && withAllImports) {
-    throw new Error('Cannot use both --with-imports and --with-all-imports. Please choose one.');
-  }
-
   // 1. Load and parse the plan file
   const planData = await readPlanFile(planFile);
   const result = findPendingTask(planData);
@@ -77,102 +45,9 @@ export async function prepareNextStep(
     throw new Error('No pending tasks found in the plan.');
   }
   const activeTask = result.task;
-  const performImportAnalysis = withImports || withAllImports || withImporters;
 
   const gitRoot = await getGitRoot(baseDir);
   let files: string[] = [];
-
-  // Autofind relevant files based on task details
-  if (autofind) {
-    if (!quiet) {
-      log('[Autofind] Searching for relevant files based on task details...');
-    }
-    // Construct a natural language query string
-    const queryParts = [
-      `Goal: ${planData.goal}`,
-      `Details: ${planData.details}`,
-      `Task: ${activeTask.title}`,
-      `Description: ${activeTask.description}`,
-    ].filter((part) => part != null && part.trim() !== '');
-    const query = queryParts.join('\n\n');
-
-    // Define the RmfindOptions
-    const rmfindOptions: RmfindOptions = {
-      baseDir: gitRoot,
-      query: query,
-      classifierModel: process.env.RMFIND_CLASSIFIER_MODEL || process.env.RMFIND_MODEL,
-      grepGeneratorModel: process.env.RMFIND_GREP_GENERATOR_MODEL || process.env.RMFIND_MODEL,
-      globs: [],
-      quiet: quiet,
-    };
-
-    try {
-      const rmfindResult = await findFilesCore(rmfindOptions);
-      if (rmfindResult && rmfindResult.files.length > 0) {
-        if (!quiet) {
-          log(`[Autofind] Found ${rmfindResult.files.length} potentially relevant files:`);
-          rmfindResult.files.forEach((f) => log(`  - ${path.relative(gitRoot, f)}`));
-        }
-        files = rmfindResult.files;
-      }
-    } catch (error) {
-      warn(
-        `[Autofind] Warning: Failed to find files: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-
-  // Perform import analysis if requested
-  let candidateFilesForImports: string[] = [];
-  if (performImportAnalysis) {
-    const prompts = activeTask.description;
-    const { files: filesFromPrompt } = await extractFileReferencesFromInstructions(
-      gitRoot,
-      prompts
-    );
-
-    if (filesFromPrompt.length > 0) {
-      // If prompt has files, use them. Ensure they are absolute paths.
-      candidateFilesForImports = filesFromPrompt.map((f) => path.resolve(gitRoot, f));
-      if (!quiet) {
-        log(`Using ${candidateFilesForImports.length} files found in prompt for import analysis.`);
-      }
-    } else {
-      // Fallback to autofound files
-      candidateFilesForImports = files.map((f) => path.resolve(gitRoot, f));
-    }
-    // Filter out any non-existent files
-    candidateFilesForImports = (
-      await Promise.all(
-        candidateFilesForImports.map(async (f) => ((await Bun.file(f).exists()) ? f : null))
-      )
-    ).filter((f) => f !== null);
-
-    if (!rmfilter) {
-      const resolver = await Resolver.new(gitRoot);
-      const walker = new ImportWalker(new Extractor(), resolver);
-      const expandedFiles = await Promise.all(
-        candidateFilesForImports.map(async (file) => {
-          const filePath = path.resolve(gitRoot, file);
-          const results = new Set<string>();
-          try {
-            if (withAllImports) {
-              await walker.getImportTree(filePath, results);
-            } else {
-              const definingFiles = await walker.getDefiningFiles(filePath);
-              definingFiles.forEach((imp) => results.add(imp));
-              results.add(filePath);
-            }
-          } catch (error) {
-            warn(`Warning: Error processing imports for ${filePath}:`, error);
-          }
-          return Array.from(results);
-        })
-      );
-      files = [...files, ...expandedFiles.flat()];
-      files = Array.from(new Set(files)).sort();
-    }
-  }
 
   const promptParts: string[] = [];
 
@@ -235,95 +110,42 @@ export async function prepareNextStep(
 
   promptParts.push(`## Task: ${activeTask.title}\n`, `Description: ${activeTask.description}`);
 
-  if (!rmfilter) {
-    // Get additional docs using findAdditionalDocs when rmfilter is false
-    const { filteredMdcFiles } = await findAdditionalDocs(gitRoot, new Set(files), {
-      'no-autodocs': false,
-      docsPaths: config.paths?.docs,
-      instructions: [activeTask.description],
-    });
+  // Get additional docs
+  const { filteredMdcFiles } = await findAdditionalDocs(gitRoot, new Set(files), {
+    'no-autodocs': false,
+    docsPaths: config.paths?.docs,
+    instructions: [activeTask.description],
+  });
 
-    // Add relevant files section
-    promptParts.push(
-      '\n## Relevant Files\n\nThese are relevant files for the task. If you think additional files are relevant, you can update them as well.'
-    );
+  // Add relevant files section
+  promptParts.push(
+    '\n## Relevant Files\n\nThese are relevant files for the task. If you think additional files are relevant, you can update them as well.'
+  );
 
-    // Add all files
-    const filePrefix = options.filePathPrefix || '';
-    files.forEach((file) => promptParts.push(`- ${filePrefix}${path.relative(gitRoot, file)}`));
+  // Add all files
+  const filePrefix = options.filePathPrefix || '';
+  files.forEach((file) => promptParts.push(`- ${filePrefix}${path.relative(gitRoot, file)}`));
 
-    // Add MDC files with their descriptions if available
-    if (filteredMdcFiles.length > 0) {
-      promptParts.push('\n## Additional Documentation\n');
+  // Add MDC files with their descriptions if available
+  if (filteredMdcFiles.length > 0) {
+    promptParts.push('\n## Additional Documentation\n');
 
-      // Add MDC files
-      for (const mdcFile of filteredMdcFiles) {
-        const relativePath = path.relative(gitRoot, mdcFile.filePath);
-        if (mdcFile.data?.description) {
-          promptParts.push(`- ${filePrefix}${relativePath}: ${mdcFile.data.description}`);
-        } else {
-          promptParts.push(`- ${filePrefix}${relativePath}`);
-        }
+    // Add MDC files
+    for (const mdcFile of filteredMdcFiles) {
+      const relativePath = path.relative(gitRoot, mdcFile.filePath);
+      if (mdcFile.data?.description) {
+        promptParts.push(`- ${filePrefix}${relativePath}: ${mdcFile.data.description}`);
+      } else {
+        promptParts.push(`- ${filePrefix}${relativePath}`);
       }
     }
   }
 
   let llmPrompt = promptParts.join('\n');
 
-  // Handle rmfilter
-  let promptFilePath: string | null = null;
-  let finalRmfilterArgs: string[] | undefined;
-  if (rmfilter) {
-    promptFilePath = path.join(
-      os.tmpdir(),
-      `tim-next-prompt-${Date.now()}-${crypto.randomUUID()}.md`
-    );
-    await Bun.write(promptFilePath, llmPrompt);
-
-    const baseRmfilterArgs = ['--gitroot', '--instructions', `@${promptFilePath}`];
-    if (model) {
-      baseRmfilterArgs.push('--model', model);
-    }
-
-    // Convert the potentially updated 'files' list to relative paths
-    const relativeFiles = files.map((f) => path.relative(gitRoot, f));
-
-    if (performImportAnalysis) {
-      // If import analysis is needed, construct the import command block
-      const relativeCandidateFiles = candidateFilesForImports.map((f) => path.relative(gitRoot, f));
-      const importCommandBlockArgs = ['--', ...relativeCandidateFiles];
-      if (withAllImports) {
-        importCommandBlockArgs.push('--with-all-imports');
-      } else if (withImports) {
-        importCommandBlockArgs.push('--with-imports');
-      }
-
-      if (withImporters) {
-        importCommandBlockArgs.push('--with-importers');
-      }
-
-      // Pass base args, files, import block, separator, user args
-      finalRmfilterArgs = [
-        ...baseRmfilterArgs,
-        ...relativeFiles,
-        ...importCommandBlockArgs,
-        ...(initialRmfilterArgs.length > 0 ? ['--', ...initialRmfilterArgs] : []),
-      ];
-    } else {
-      // Pass base args, files, separator, user args
-      finalRmfilterArgs = [
-        ...baseRmfilterArgs,
-        ...relativeFiles,
-        ...(initialRmfilterArgs.length > 0 ? ['--', ...initialRmfilterArgs] : []),
-      ];
-    }
-  }
-
   // Return result
   return {
     prompt: llmPrompt,
-    promptFilePath,
     taskIndex: result.taskIndex,
-    rmfilterArgs: finalRmfilterArgs,
   };
 }

@@ -2,7 +2,6 @@
 export {
   DEFAULT_RUN_MODEL,
   runStreamingPrompt,
-  runPrompt,
   type LlmPromptMessage,
   type LlmPromptStructure,
   type RunPromptOptions,
