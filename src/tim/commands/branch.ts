@@ -61,7 +61,10 @@ function buildBranchNameWithId(
   return buildBranchNameWithSlugSegment(`${planId}`, slugSegment, issueId);
 }
 
-function buildBranchNameWithoutId(slugSegment: string | undefined, issueId: string | undefined): string {
+function buildBranchNameWithoutId(
+  slugSegment: string | undefined,
+  issueId: string | undefined
+): string {
   return buildBranchNameWithSlugSegment('plan', slugSegment, issueId);
 }
 

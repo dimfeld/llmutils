@@ -65,7 +65,8 @@ describe('generateBranchNameFromPlan', () => {
   test('truncates slug to keep branch names at or under 63 characters', () => {
     const name = generateBranchNameFromPlan({
       id: 123,
-      title: 'This is a very long plan title that keeps going and going and going forever and should be truncated',
+      title:
+        'This is a very long plan title that keeps going and going and going forever and should be truncated',
       goal: 'This is a very long plan title that keeps going',
       status: 'pending',
       issue: ['https://github.com/owner/repo/issues/1471'],

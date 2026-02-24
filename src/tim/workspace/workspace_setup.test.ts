@@ -378,6 +378,52 @@ describe('setupWorkspace', () => {
     expect(result.baseDir).toBe(existingWorkspacePath);
   });
 
+  test('uses branch command plan naming when plan file is valid', async () => {
+    const existingWorkspacePath = path.join(tempDir, 'workspace-existing-plan-branch-name');
+    await fs.mkdir(existingWorkspacePath, { recursive: true });
+    await seedWorkspace(existingWorkspacePath, 'task-existing-plan-branch-name');
+
+    const validPlanFile = path.join(baseDir, 'valid.plan.md');
+    await fs.writeFile(
+      validPlanFile,
+      [
+        '---',
+        'id: 42',
+        'title: Add workspace branch naming',
+        'tasks: []',
+        '---',
+        '',
+        'Plan details',
+        '',
+      ].join('\n')
+    );
+
+    spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    const prepareSpy = spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
+      success: true,
+    });
+    spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
+
+    await setupWorkspace(
+      {
+        workspace: 'task-existing-plan-branch-name',
+      },
+      baseDir,
+      validPlanFile,
+      config,
+      'tim generate'
+    );
+
+    expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
+      baseBranch: undefined,
+      branchName: '42-add-workspace-branch-naming',
+      createBranch: true,
+    });
+  });
+
   test('omits plan file path for update commands when plan copy into existing workspace fails', async () => {
     const existingWorkspacePath = path.join(tempDir, 'workspace-existing-copy-fails');
     await fs.mkdir(existingWorkspacePath, { recursive: true });

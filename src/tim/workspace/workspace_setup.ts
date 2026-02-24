@@ -3,7 +3,9 @@ import * as path from 'node:path';
 import { getWorkingCopyStatus } from '../../common/git.js';
 import { logSpawn } from '../../common/process.js';
 import { error, log, sendStructured, warn } from '../../logging.js';
+import { generateBranchNameFromPlan } from '../commands/branch.js';
 import type { TimConfig } from '../configSchema.js';
+import { readPlanFile } from '../plans.js';
 import { WorkspaceAutoSelector } from './workspace_auto_selector.js';
 import { findWorkspaceInfosByTaskId } from './workspace_info.js';
 import { WorkspaceLock } from './workspace_lock.js';
@@ -177,9 +179,19 @@ export async function setupWorkspace(
             );
           }
 
+          let branchName = workspace.taskId;
+          try {
+            const plan = await readPlanFile(planFile);
+            branchName = generateBranchNameFromPlan(plan);
+          } catch (err) {
+            warn(
+              `Failed to generate branch name from plan file ${planFile}. Falling back to workspace task ID: ${err as Error}`
+            );
+          }
+
           const prepareResult = await prepareExistingWorkspace(workspace.path, {
             baseBranch: options.base,
-            branchName: workspace.taskId,
+            branchName,
             createBranch: config.workspaceCreation?.createBranch ?? true,
           });
           if (!prepareResult.success) {
