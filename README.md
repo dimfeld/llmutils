@@ -574,9 +574,12 @@ tim subagent verifier 123 --input "Verify type checks, linting, and tests pass"
 
 # Run the TDD tests subagent (used in TDD mode)
 tim subagent tdd-tests 123 --input "Write failing tests for task 1 and validate failure reasons"
+
+# Also save the final report to a file
+tim subagent implementer 123 --input "Implement tasks 1 and 2" --output-file reports/implementer.txt
 ```
 
-Available subagent types: `implementer`, `tester`, `tdd-tests`, `verifier`. The `-x` flag accepts `codex-cli` or `claude-code` (default: `claude-code`).
+Available subagent types: `implementer`, `tester`, `tdd-tests`, `verifier`. The `-x` flag accepts `codex-cli` or `claude-code` (default: `claude-code`). Use `--output-file <path>` to write the final subagent message to a file.
 
 With default Codex app-server mode, subagents run a single turn and exit after completion, but you can still steer that active turn with follow-up input.
 
@@ -2182,6 +2185,7 @@ tim subagent implementer PLAN [-x codex-cli|claude-code] [--input TEXT] [-m MODE
 tim subagent tester PLAN [-x codex-cli|claude-code] [--input TEXT] [-m MODEL]
 tim subagent tdd-tests PLAN [-x codex-cli|claude-code] [--input TEXT] [-m MODEL]
 tim subagent verifier PLAN [-x codex-cli|claude-code] [--input TEXT] [-m MODEL]
+tim subagent ... [--input-file FILE] [--output-file FILE]
 
 # Track progress
 tim show ID [--short | --full]

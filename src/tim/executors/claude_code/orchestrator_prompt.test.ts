@@ -156,6 +156,14 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('--input-file <path>');
       expect(out).toContain('--input-file -');
     });
+
+    it('includes output-file fallback guidance for subagent and review commands', () => {
+      const out = wrapWithOrchestration('Context', '42', { batchMode: false });
+      expect(out).toContain('--output-file <path>');
+      expect(out).toContain('tim-plan-42-<agent>-output');
+      expect(out).toContain('tim-plan-42-review-output');
+      expect(out).toContain('If command output is empty, read the output file');
+    });
   });
 
   describe('simple mode (wrapWithOrchestrationSimple)', () => {
@@ -228,6 +236,13 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).not.toContain('tim subagent implementer 55 -x codex-cli');
       expect(out).not.toContain('tim subagent implementer 55 -x claude-code');
     });
+
+    it('includes output-file fallback guidance for subagent commands', () => {
+      const out = wrapWithOrchestrationSimple('Context', '55', { batchMode: false });
+      expect(out).toContain('--output-file <path>');
+      expect(out).toContain('tim-plan-55-<agent>-output');
+      expect(out).toContain('If command output is empty, read the output file');
+    });
   });
 
   describe('tdd mode (wrapWithOrchestrationTdd)', () => {
@@ -277,6 +292,17 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('tim subagent tdd-tests 74 -x claude-code');
       expect(out).toContain('tim subagent implementer 74 -x claude-code');
       expect(out).not.toContain('Subagent Executor Selection');
+    });
+
+    it('includes output-file fallback guidance for TDD subagent and review commands', () => {
+      const out = wrapWithOrchestrationTdd('Context', '74', {
+        batchMode: false,
+        simpleMode: false,
+      });
+      expect(out).toContain('--output-file <path>');
+      expect(out).toContain('tim-plan-74-<agent>-output');
+      expect(out).toContain('tim-plan-74-review-output');
+      expect(out).toContain('If command output is empty, read the output file');
     });
   });
 

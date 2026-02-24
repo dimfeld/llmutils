@@ -33,6 +33,7 @@ interface SubagentOptions {
   model?: string;
   input?: string;
   inputFile?: string;
+  outputFile?: string;
 }
 
 type SubagentExecutorModelKey = 'claude' | 'codex';
@@ -142,10 +143,19 @@ export async function handleSubagentCommand(
     finalMessage = await executeWithClaude(agentDefinition.prompt, gitRoot, config, selectedModel);
   }
 
+  if (options.outputFile) {
+    await writeSubagentOutput(options.outputFile, finalMessage);
+  }
+
   // Print final message to stdout for orchestrator to capture
   console.log(finalMessage);
   // Wait so that output flushes, this seems necessary in recent versions of Claude Code
   await Bun.sleep(500);
+}
+
+async function writeSubagentOutput(outputFilePath: string, finalMessage: string): Promise<void> {
+  await fs.mkdir(path.dirname(outputFilePath), { recursive: true });
+  await fs.writeFile(outputFilePath, finalMessage, 'utf8');
 }
 
 async function resolveOrchestratorInput(options: SubagentOptions): Promise<string | undefined> {

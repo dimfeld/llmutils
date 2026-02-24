@@ -136,6 +136,21 @@ function buildSubagentExecutorFlag(options: OrchestrationOptions): string {
   return '';
 }
 
+function buildSubagentOutputCaptureGuidance(planId: string): string {
+  return `Output capture requirement for every \`tim subagent\` run:
+- Always pass \`--output-file <path>\` and use the full path, not $TMPDIR/<filename>
+- Use a temp-dir file name that includes the plan ID and agent name to avoid collisions with other concurrent agents/projects.
+- Recommended pattern: tim-${planId}-<agent>-output-XXXXXX.txt.
+- If the command returns no stdout/stderr output, immediately read the \`--output-file\` path and use that as the subagent output.`;
+}
+
+function buildReviewOutputCaptureGuidance(planId: string): string {
+  return `Output capture requirement for every \`tim review\` run:
+- Always pass \`--output-file <path>\` and use the full path, not $TMPDIR/<filename>
+- Use a temp-dir file name that includes the plan ID (for example tim-${planId}-review-output-XXXXXX.txt) to avoid collisions with other concurrent agents/projects.
+- If the command returns no stdout/stderr output, immediately read the \`--output-file\` path and use that as the review output.`;
+}
+
 /**
  * Builds the subagent executor selection guidance for dynamic mode.
  */
@@ -159,6 +174,8 @@ Decision guidance: ${instructions}
  */
 function buildAvailableAgents(planId: string, options: OrchestrationOptions): string {
   const executorFlag = buildSubagentExecutorFlag(options);
+  const subagentOutputGuidance = buildSubagentOutputCaptureGuidance(planId);
+  const reviewOutputGuidance = buildReviewOutputCaptureGuidance(planId);
   return `## Available Agents
 
 You have access to two specialized agents that you MUST invoke via the Bash tool:
@@ -167,7 +184,11 @@ You have access to two specialized agents that you MUST invoke via the Bash tool
 
 Code reviews are performed by running \`tim review\` (not a subagent).
 
-Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.`;
+Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.
+
+${subagentOutputGuidance}
+
+${reviewOutputGuidance}`;
 }
 
 /**
@@ -192,11 +213,15 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
 
   const implementationSteps = `
    - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Always include \`--output-file\` with a plan-specific temp file path for this command.
+   - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the subagent result.
    - In the input (\`--input\` or \`--input-file\`), specify which tasks to work on and provide relevant context
    - Wait for the subagent to complete and review its output`;
 
   const testingPhase = `${options.batchMode ? '3' : '2'}. **Testing Phase**
    - After implementation is complete, run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Always include \`--output-file\` with a plan-specific temp file path for this command.
+   - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the subagent result.
    - In the input (\`--input\` or \`--input-file\`), ask the tester to create comprehensive tests for the implemented functionality, if needed
    - Emphasize that tests must test actual implementation code. Testing a reproduction or simulation of the code is useless.
    - In the input, instruct the tester to run tests and fix any failures
@@ -209,6 +234,8 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
 
   const reviewPhase = `${options.batchMode ? '4' : '3'}. **Review Phase**
    - Run \`${reviewCommand}\` using the Bash tool.
+   - Always include \`--output-file\` with a plan-specific temp file path for this command.
+   - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the review result.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
 ${reviewExecutorGuidance}
    - The review command may take up to 15 minutes; use a long timeout.
@@ -267,7 +294,8 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 - When invoking subagents, provide clear, specific instructions in \`--input\` (or \`--input-file\`) about what needs to be done in addition to referencing the task titles.
 - Include relevant context from previous subagent responses when invoking the next subagent.
 - If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp\` or a \`mktemp\` path) and pass \`--input-file <path>\` instead of \`--input\`.
-- If using --input-file, include the plan ID or other random string in the file name to avoid conflicts with other agents and preexisting files.
+- If using --input-file, include the plan ID or other random string in the file name to avoid conflicts with other
+agents and preexisting files, and always explicitly pass the full path instead of using "$TMPDIR/filename".
 - You can also pipe input to stdin and use \`--input-file -\`.`;
 
   const failureProtocol = `
@@ -365,7 +393,9 @@ You have two specialized subagents that you MUST invoke via the Bash tool:
 - **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
 - **Verifier**: Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
 
-Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.`;
+Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.
+
+${buildSubagentOutputCaptureGuidance(planId)}`;
 
   const taskSelectionPhase = options.batchMode
     ? `1. **Task Selection Phase**
@@ -388,11 +418,15 @@ You MUST follow this simplified loop:
 ${taskSelectionPhase}
    - Explore the repository and create a plan on how to implement the task.
    - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Always include \`--output-file\` with a plan-specific temp file path for this command.
+   - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the subagent result.
    - In the input (\`--input\` or \`--input-file\`), specify which tasks to work on and provide relevant context
    - Wait for the subagent to complete and review its output
 
 ${options.batchMode ? '3' : '2'}. **Verification Phase**
    - Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Always include \`--output-file\` with a plan-specific temp file path for this command.
+   - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the subagent result.
    - In the input (\`--input\` or \`--input-file\`), direct the verifier to:
      - Ensure tests exist for new or changed behavior (adding tests if gaps remain)
      - Run type checking (e.g. \`bun run check\`)
@@ -493,7 +527,9 @@ You have three specialized subagents that you MUST invoke via the Bash tool:
 - **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
 - **Verifier**: Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
 
-Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.`
+Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.
+
+${buildSubagentOutputCaptureGuidance(planId)}`
     : `## Available Agents
 
 You have three specialized subagents that you MUST invoke via the Bash tool:
@@ -503,7 +539,11 @@ You have three specialized subagents that you MUST invoke via the Bash tool:
 
 Code reviews are performed by running \`tim review\` (not a subagent).
 
-Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.`;
+Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.
+
+${buildSubagentOutputCaptureGuidance(planId)}
+
+${buildReviewOutputCaptureGuidance(planId)}`;
 
   const taskSelectionPhase = options.batchMode
     ? `1. **Task Selection Phase**
@@ -544,6 +584,8 @@ Each subagent command may take a long time to complete. Always use a timeout of 
   const verificationPhase = isSimpleTdd
     ? `${verificationPhaseNumber}. **Verification Phase**
    - Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Always include \`--output-file\` with a plan-specific temp file path for this command.
+   - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the subagent result.
    - In the input (\`--input\` or \`--input-file\`), include:
      - TDD tests output and implementation summary
      - Which tasks are in scope
@@ -551,6 +593,8 @@ Each subagent command may take a long time to complete. Always use a timeout of 
    - Instruct verifier to confirm the implementation satisfies the previously written tests and report gaps`
     : `${verificationPhaseNumber}. **Testing Phase**
    - Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Always include \`--output-file\` with a plan-specific temp file path for this command.
+   - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the subagent result.
    - In the input (\`--input\` or \`--input-file\`), include:
      - TDD tests output and implementer output
      - Which tasks are in scope
@@ -559,6 +603,8 @@ Each subagent command may take a long time to complete. Always use a timeout of 
 
 ${options.batchMode ? '5' : '4'}. **Review Phase**
    - Run \`${reviewCommand}\` using the Bash tool.
+   - Always include \`--output-file\` with a plan-specific temp file path for this command.
+   - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the review result.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
 ${reviewExecutorGuidance}
    - The review command may take up to 15 minutes; use a long timeout.`;
@@ -569,6 +615,8 @@ You MUST follow this TDD process:
 
 ${taskSelectionPhase}
    - Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Always include \`--output-file\` with a plan-specific temp file path for this command.
+   - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the subagent result.
    - In the input (\`--input\` or \`--input-file\`), specify in-scope tasks and expected behavior to define
    - Explicitly instruct the TDD tests agent to:
      - Write tests first
@@ -578,6 +626,8 @@ ${taskSelectionPhase}
 
 ${implementationPhaseNumber}. **Implementation Phase**
    - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - Always include \`--output-file\` with a plan-specific temp file path for this command.
+   - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the subagent result.
    - In the input, include the TDD tests output and direct the implementer to make those tests pass
    - Emphasize that implementation should be driven by existing TDD tests, not by adding unrelated new behavior
    - Wait for the subagent to complete and review its output

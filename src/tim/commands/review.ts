@@ -804,10 +804,6 @@ export async function handleReviewCommand(
                 debugStdinTrace(`issue-action prompt threw name=${name} message=${message}`);
                 throw err;
               }
-            } else {
-              log(
-                chalk.gray('Non-interactive environment detected; skipping fix/cleanup prompts.')
-              );
             }
 
             if (action === 'fix-claude' || action === 'fix-codex') {
@@ -852,8 +848,6 @@ export async function handleReviewCommand(
                   log(chalk.yellow('No issues selected to append as tasks.'));
                 }
               }
-            } else {
-              log(chalk.gray('No action taken.'));
             }
           }
         }

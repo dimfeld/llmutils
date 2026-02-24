@@ -1316,6 +1316,7 @@ for (const agentType of ['implementer', 'tester', 'tdd-tests', 'verifier'] as co
       '--input-file <path>',
       'Read additional instructions from file (use "-" to read from stdin)'
     )
+    .option('--output-file <path>', 'Write the final subagent message to a file')
     .action(async (planFile: string, options: any, command: any) => {
       const { handleSubagentCommand } = await import('./commands/subagent.js');
       await runWithCommandTunnelAdapter(async () => {

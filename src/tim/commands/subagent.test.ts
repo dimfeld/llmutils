@@ -563,6 +563,22 @@ describe('subagent command - prompt construction and executor delegation', () =>
     expect(stdoutWriteCalls.join('')).toContain('Claude execution complete.');
   });
 
+  test('writes final message to --output-file when provided', async () => {
+    const { handleSubagentCommand } = await import('./subagent.js');
+    const outputFilePath = path.join(tempDir, 'subagent-output', 'implementer.txt');
+
+    await handleSubagentCommand(
+      'implementer',
+      planFilePath,
+      { executor: 'codex-cli', outputFile: outputFilePath },
+      {}
+    );
+
+    const fileOutput = await fs.readFile(outputFilePath, 'utf8');
+    expect(fileOutput).toBe('Codex execution complete.');
+    expect(stdoutWriteCalls.join('')).toContain('Codex execution complete.');
+  });
+
   test('includes all incomplete tasks in the context description', async () => {
     const { handleSubagentCommand } = await import('./subagent.js');
 
@@ -1095,10 +1111,11 @@ describe('subagent command registration in tim.ts', () => {
     const sourceFile = path.join(import.meta.dirname, '..', 'tim.ts');
     const source = await fs.readFile(sourceFile, 'utf-8');
 
-    // Each subcommand should accept planFile, executor, model, input, and input-file
+    // Each subcommand should accept planFile, executor, model, input, input-file, and output-file
     expect(source).toContain('<planFile>');
     expect(source).toContain("'--input <text>'");
     expect(source).toContain("'--input-file <path>'");
+    expect(source).toContain("'--output-file <path>'");
     expect(source).toContain("'-x, --executor <name>'");
     expect(source).toContain("'-m, --model <model>'");
   });
