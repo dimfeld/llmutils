@@ -87,12 +87,10 @@ export async function handleListCommand(options: any, command: any, searchTerms?
       assignedUsers.push(plan.assignedTo.trim());
     }
 
-    const effectiveStatus = assignmentEntry?.status ?? plan.status ?? 'pending';
     const fallbackAssigned = assignedWorkspaces.length === 0 && assignedUsers.length > 0;
 
     const listPlan: ListPlan = {
       ...plan,
-      status: effectiveStatus,
       assignmentEntry,
       assignedWorkspaces,
       assignedUsers,
