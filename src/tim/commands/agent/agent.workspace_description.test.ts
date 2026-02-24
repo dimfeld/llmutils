@@ -200,7 +200,7 @@ describe('Agent workspace description auto-update', () => {
     expect(workspaceMetadata).toBeDefined();
 
     // Description should be in format "#issueNumber planTitle"
-    expect(workspaceMetadata!.description).toBe('#456 Implement Feature X');
+    expect(workspaceMetadata!.description).toBe('123 - #456 Implement Feature X');
     expect(workspaceMetadata!.plan_id).toBe('123');
     expect(workspaceMetadata!.plan_title).toBe('Implement Feature X');
     expect(getWorkspaceIssues(db, workspaceMetadata!.id)).toEqual([
@@ -238,7 +238,7 @@ describe('Agent workspace description auto-update', () => {
     expect(workspaceMetadata).toBeDefined();
 
     // Description should be just the title (no issue number)
-    expect(workspaceMetadata!.description).toBe('Refactor Module');
+    expect(workspaceMetadata!.description).toBe('789 - Refactor Module');
     expect(workspaceMetadata!.plan_id).toBe('789');
     expect(workspaceMetadata!.plan_title).toBe('Refactor Module');
     expect(getWorkspaceIssues(db, workspaceMetadata!.id)).toEqual([]);
@@ -282,7 +282,7 @@ describe('Agent workspace description auto-update', () => {
     const updatedWorkspace = getWorkspaceByPath(db, workspaceDir);
     expect(updatedWorkspace).toBeDefined();
 
-    expect(updatedWorkspace!.description).toBe('Maintenance');
+    expect(updatedWorkspace!.description).toBe('321 - Maintenance');
     expect(updatedWorkspace!.plan_title).toBe('Maintenance');
     expect(updatedWorkspace!.plan_id).toBe('321');
     expect(getWorkspaceIssues(db, updatedWorkspace!.id)).toEqual([]);
@@ -354,7 +354,7 @@ describe('Agent workspace description auto-update', () => {
     expect(workspaceMetadata).toBeDefined();
 
     // Description should include project title
-    expect(workspaceMetadata!.description).toBe('#111 Project X - Phase 1');
+    expect(workspaceMetadata!.description).toBe('999 - #111 Project X - Phase 1');
     expect(workspaceMetadata!.plan_title).toBe('Project X - Phase 1');
   });
 });

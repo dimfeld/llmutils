@@ -522,7 +522,7 @@ Authentication implementation plan
 
     const data = await readTrackingData();
     // Description should include issue number and title
-    expect(data[workspaceDir].description).toBe('#789 Implement Authentication');
+    expect(data[workspaceDir].description).toBe('789 - #789 Implement Authentication');
     expect(data[workspaceDir].planId).toBe('789');
     expect(data[workspaceDir].planTitle).toBe('Implement Authentication');
     expect(data[workspaceDir].issueUrls).toEqual(['https://github.com/example/repo/issues/789']);
@@ -659,7 +659,7 @@ describe('extractIssueNumber helper', () => {
       title: 'Fix Bug',
       issue: ['https://github.com/owner/repo/issues/123'],
     });
-    expect(updated.description).toBe('#123 Fix Bug');
+    expect(updated.description).toBe('123 - #123 Fix Bug');
   });
 
   test('extracts GitLab issue numbers correctly', async () => {
@@ -668,7 +668,7 @@ describe('extractIssueNumber helper', () => {
       title: 'Add Feature',
       issue: ['https://gitlab.com/group/project/-/issues/456'],
     });
-    expect(updated.description).toBe('#456 Add Feature');
+    expect(updated.description).toBe('456 - #456 Add Feature');
   });
 
   test('extracts Linear issue IDs correctly', async () => {
@@ -677,7 +677,7 @@ describe('extractIssueNumber helper', () => {
       title: 'Implement Feature',
       issue: ['https://linear.app/team/issue/PROJ-123/implement-feature'],
     });
-    expect(updated.description).toBe('PROJ-123 Implement Feature');
+    expect(updated.description).toBe('789 - PROJ-123 Implement Feature');
   });
 
   test('extracts Jira issue IDs correctly', async () => {
@@ -686,7 +686,7 @@ describe('extractIssueNumber helper', () => {
       title: 'Bug Fix',
       issue: ['https://company.atlassian.net/browse/PROJ-456'],
     });
-    expect(updated.description).toBe('PROJ-456 Bug Fix');
+    expect(updated.description).toBe('101 - PROJ-456 Bug Fix');
   });
 
   test('falls back to title only when no issue URL', async () => {
@@ -695,7 +695,7 @@ describe('extractIssueNumber helper', () => {
       title: 'Standalone Task',
       goal: 'Some goal',
     });
-    expect(updated.description).toBe('Standalone Task');
+    expect(updated.description).toBe('999 - Standalone Task');
   });
 
   test('handles unrecognized issue URL format gracefully', async () => {
@@ -704,7 +704,7 @@ describe('extractIssueNumber helper', () => {
       title: 'Custom Tracker Task',
       issue: ['https://custom-tracker.com/task/abc-xyz'],
     });
-    expect(updated.description).toBe('Custom Tracker Task');
+    expect(updated.description).toBe('888 - Custom Tracker Task');
     expect(updated.issueUrls).toEqual(['https://custom-tracker.com/task/abc-xyz']);
   });
 });

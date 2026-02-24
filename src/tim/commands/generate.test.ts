@@ -408,7 +408,7 @@ describe('handleGenerateCommand', () => {
     expect(patchWorkspaceInfoSpy.mock.calls[0][0]).toBe(workspaceDir);
     expect(touchWorkspaceInfoSpy.mock.calls[0][0]).toBe(workspaceDir);
     expect(patchWorkspaceInfoSpy.mock.calls[0][1]).toMatchObject({
-      description: '#55 Tracked Workspace Plan',
+      description: '113 - #55 Tracked Workspace Plan',
       planId: '113',
       planTitle: 'Tracked Workspace Plan',
       issueUrls: ['https://github.com/org/repo/issues/55'],

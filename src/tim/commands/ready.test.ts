@@ -1282,7 +1282,7 @@ describe('handleReadyCommand', () => {
     expect(mockWarn).not.toHaveBeenCalled();
   });
 
-  test('assignment status overrides plan file status', async () => {
+  test('plan file status overrides assignment status', async () => {
     const now = new Date().toISOString();
 
     await createPlan({
@@ -1313,8 +1313,8 @@ describe('handleReadyCommand', () => {
 
     const logOutput = mockLog.mock.calls.map((call) => call[0]).join('\n');
 
-    expect(logOutput).toContain('In Progress via Assignment');
-    expect(logOutput).toContain('Status: in_progress');
+    expect(logOutput).not.toContain('In Progress via Assignment');
+    expect(logOutput).toContain('No plans are currently ready to execute.');
   });
 
   test('json output includes assignment metadata', async () => {

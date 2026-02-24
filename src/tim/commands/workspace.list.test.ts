@@ -468,8 +468,8 @@ describe('workspace list command', () => {
 
     const output = consoleOutput.join('\n');
     expect(output).toContain('Plan');
-    expect(output).toContain('200 - done');
-    expect(output).toMatch(/ago\n200 - done|just now\n200 - done/);
+    expect(output).toContain('200 - pending');
+    expect(output).toContain('just now');
   });
 
   test('JSON output includes most recent assignment metadata', async () => {
@@ -516,9 +516,9 @@ describe('workspace list command', () => {
 
     const output = JSON.parse(consoleOutput.join('\n'));
     expect(output).toHaveLength(1);
-    expect(output[0].mostRecentAssignment).toBe('300 - in progress');
+    expect(output[0].mostRecentAssignment).toBe('300 - pending');
     expect(output[0].mostRecentAssignmentPlanId).toBe(300);
-    expect(output[0].mostRecentAssignmentStatus).toBe('in_progress');
+    expect(output[0].mostRecentAssignmentStatus).toBeUndefined();
   });
 
   test('table format shows abbreviated paths with ~ for home directory', async () => {

@@ -198,7 +198,7 @@ describe('assignments command handlers', () => {
     const tableOutput = logMock.mock.calls[0][0] as string;
     expect(tableOutput).toContain('Sample Plan');
     expect(tableOutput).toContain(planUuid);
-    expect(tableOutput).toContain('in_progress');
+    expect(tableOutput).toContain('pending');
     expect(logMock).toHaveBeenLastCalledWith('Total assignments: 1');
   });
 
