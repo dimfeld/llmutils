@@ -786,6 +786,16 @@
                     "xhigh"
                   ]
                 },
+                "generate": {
+                  "description": "Reasoning level for generate steps (default: high)",
+                  "type": "string",
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh"
+                  ]
+                },
                 "scopedReview": {
                   "description": "Reasoning level for task-scoped reviews (default: medium)",
                   "type": "string",

@@ -20,13 +20,15 @@ export async function executeBareMode(
   options?: {
     appServerMode?: CodexAppServerMode;
     terminalInput?: boolean;
+    reasoningLevel?: CodexReasoningLevel;
   }
 ): Promise<void | ExecutorOutput> {
   const gitRoot = await getGitRoot(baseDir);
 
   // Get default reasoning level from config
   const codexOptions = timConfig.executors?.[CodexCliExecutorName];
-  const defaultReasoningLevel: CodexReasoningLevel = codexOptions?.reasoning?.default ?? 'medium';
+  const defaultReasoningLevel: CodexReasoningLevel =
+    options?.reasoningLevel ?? codexOptions?.reasoning?.default ?? 'medium';
 
   const codexStepOptions = {
     model,

@@ -75,6 +75,9 @@ export const codexCliOptionsSchema = z.object({
       default: codexReasoningLevelSchema
         .optional()
         .describe('Default reasoning level for implementation steps (default: medium)'),
+      generate: codexReasoningLevelSchema
+        .optional()
+        .describe('Reasoning level for generate steps (default: high)'),
       scopedReview: codexReasoningLevelSchema
         .optional()
         .describe('Reasoning level for task-scoped reviews (default: medium)'),

@@ -65,6 +65,10 @@ export class CodexCliExecutor implements Executor {
               ? 'chat-session'
               : 'single-turn',
           terminalInput: this.sharedOptions.terminalInput,
+          reasoningLevel:
+            planInfo.executionMode === 'planning'
+              ? (this.timConfig.executors?.[CodexCliExecutorName]?.reasoning?.generate ?? 'high')
+              : undefined,
         }
       );
     }
