@@ -25,6 +25,8 @@ import { getGitRoot } from '../../common/git.js';
 import { runClaudeSubprocess } from '../executors/claude_code/run_claude_subprocess.js';
 import type { TimConfig } from '../configSchema.js';
 import type { Executor } from '../executors/types.js';
+import { isTunnelActive } from '../../logging/tunnel_client.js';
+import { log } from '../../logging.js';
 
 export type SubagentType = 'implementer' | 'tester' | 'tdd-tests' | 'verifier';
 
@@ -103,6 +105,7 @@ export async function handleSubagentCommand(
   });
 
   // Load custom agent instructions
+  // @ts-expect-error not including 'test' for now
   const agentInstructionsType: 'implementer' | 'tester' | 'tddTests' | 'reviewer' =
     agentType === 'verifier' ? 'tester' : agentType === 'tdd-tests' ? 'tddTests' : agentType;
   const customInstructions = await loadAgentInstructionsFor(agentInstructionsType, gitRoot, config);
@@ -151,6 +154,10 @@ export async function handleSubagentCommand(
   console.log(finalMessage);
   // Wait so that output flushes, this seems necessary in recent versions of Claude Code
   await Bun.sleep(500);
+
+  if (isTunnelActive()) {
+    log(`Subagent produced ${finalMessage.length} bytes of output`);
+  }
 }
 
 async function writeSubagentOutput(outputFilePath: string, finalMessage: string): Promise<void> {

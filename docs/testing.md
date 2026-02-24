@@ -48,6 +48,10 @@ test('a test', async () => {
 
 Or for a single mock defined across the entire test file, use `afterAll(() => moduleMocker.clear())` to clear the mocks.
 
+### Test Schema Fidelity
+
+- **Test schemas must match production column types and constraints**: When creating test databases with inline `CREATE TABLE` statements, use the same column types as production (e.g., `INTEGER PRIMARY KEY` not `TEXT PRIMARY KEY`). Divergent types can mask real issues — for example, a TEXT primary key in tests won't surface INTEGER coercion bugs or FK constraint mismatches that occur with production data.
+
 ### Database Tests
 
 - Use `openDatabase(':memory:')` from `src/tim/db/database.ts` for isolated in-memory databases — each test gets a fresh schema via auto-migration

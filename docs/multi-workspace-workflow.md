@@ -46,6 +46,7 @@ The assignments database augments the existing plan metadata. Commands read both
 - `tim list --assigned` shows only claimed plans. Use `--unassigned` for the inverse.
 - `tim show 42` prints the workspace path, user, and claim timestamps.
 - `tim assignments list` provides a repository-wide overview of every assignment.
+- **tim-gui** (macOS): The Projects view shows workspaces for each project with status badges (Primary / Locked / Available) and plan assignments. See the [tim-gui section in the README](../README.md#tim-gui-macos) for details.
 
 Each plan is assigned to a single workspace at a time. If another workspace claims an already-assigned plan, tim prints a warning about reassigning and updates the assignment to the new workspace.
 

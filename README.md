@@ -60,6 +60,7 @@ These tools are deprecated as coding agents have largely replaced them, but sill
   - [apply-llm-edits](#apply-llm-edits)
   - [rmfind](#rmfind)
   - [run-with-tunnel script](#run-with-tunnel-script)
+  - [tim-gui (macOS)](#tim-gui-macos)
 - [Complete Command Reference](#complete-command-reference)
 
 ---
@@ -2344,10 +2345,11 @@ tim extract [--input FILE] [--output FILE]
 
 ### tim-gui (macOS)
 
-`tim-gui` is a macOS SwiftUI app that provides a unified session view for monitoring tim agent executions and notifications.
+`tim-gui` is a macOS SwiftUI app for monitoring tim agent sessions and browsing project status.
 
 **Features:**
 
+- **Project tracking**: Browse projects, workspaces, and plan-level task status read from `tim.db`. Default filters show pending, in-progress, blocked (unresolved dependencies), and recently-done (last 7 days) plans. Data auto-refreshes while the Projects view is active.
 - **Session monitoring**: Connects via WebSocket (`ws://localhost:8123/tim-agent`) to display live agent sessions with streaming output
 - **Recent activity time**: Session rows show the time the most recent incoming message or notification was received (falling back to connection time when no messages have arrived yet)
 - **Send messages to agents**: Active sessions show a text input field at the bottom of the session view for sending messages to the running agent's subprocess stdin via the headless WebSocket protocol. Press Enter to send, Shift+Enter to insert a newline. The input field auto-grows up to 5 lines and is hidden when the session is disconnected. Sent messages appear in the message list with distinct styling.

@@ -4,6 +4,7 @@ import UserNotifications
 @main
 struct TimGUIApp: App {
     @State private var sessionState = SessionState()
+    @State private var projectStore = ProjectTrackingStore()
     @State private var server: LocalHTTPServer?
     @State private var isStartingServer = false
     @State private var startError: String?
@@ -12,6 +13,7 @@ struct TimGUIApp: App {
         WindowGroup {
             ContentView(
                 sessionState: self.sessionState,
+                projectStore: self.projectStore,
                 startError: self.startError)
                 .task {
                     UNUserNotificationCenter.current().requestAuthorization(

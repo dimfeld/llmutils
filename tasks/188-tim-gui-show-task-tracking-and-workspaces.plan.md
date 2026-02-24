@@ -7,7 +7,7 @@ goal: Add a new Projects view in tim-gui that reads tim.db and shows projects,
 id: 188
 uuid: 2f287626-23b9-4d02-9e15-983f6ba6d5fd
 generatedBy: agent
-status: pending
+status: done
 priority: medium
 dependencies:
   - 184
@@ -16,10 +16,10 @@ references:
 planGeneratedAt: 2026-02-24T09:24:05.371Z
 promptsGeneratedAt: 2026-02-24T09:24:05.371Z
 createdAt: 2026-02-13T21:10:34.013Z
-updatedAt: 2026-02-24T09:24:05.372Z
+updatedAt: 2026-02-24T20:07:31.580Z
 tasks:
   - title: Create project-tracking domain models and filter semantics
-    done: false
+    done: true
     description: "Add a new Swift model file for project/workspace/plan tracking
       rows and filter state enums. Define canonical mapping for visible states:
       pending and in-progress from plan.status, blocked from unresolved
@@ -28,7 +28,7 @@ tasks:
       in pure helper functions so it is testable independently from UI and
       SQLite wiring."
   - title: Implement SQLite-backed ProjectTrackingStore with tim.db path resolution
-    done: false
+    done: true
     description: Add a store that opens and reads tim.db in read-only mode, with
       injectable DB path for tests. Mirror tim CLI path conventions
       (XDG_CONFIG_HOME/APPDATA/home config root + tim.db filename behavior).
@@ -37,14 +37,14 @@ tasks:
       robust error handling for missing DB, unreadable DB, and busy/locked
       reads.
   - title: Add refresh lifecycle and state management for project tracking
-    done: false
+    done: true
     description: Extend the store with explicit loading/loaded-empty/loaded/error
       states and a refresh pipeline that performs initial load plus periodic
       refresh while the Projects view is active. Coalesce refreshes to avoid UI
       churn under frequent DB updates, and keep all published state updates on
       MainActor.
   - title: Build new ProjectsView UI with project, workspace, and plan-tracking panes
-    done: false
+    done: true
     description: Create a new SwiftUI view that presents projects and their
       workspaces plus plan-level task tracking. Reuse existing empty-state and
       list conventions from SessionsView where practical. Show filter controls
@@ -53,14 +53,14 @@ tasks:
       (primary/locked/available) and plan status/timestamp context in the detail
       area.
   - title: Integrate top-level view switching without regressing sessions
-    done: false
+    done: true
     description: "Update ContentView and app wiring to support two top-level
       destinations: existing Sessions and new Projects. Ensure
       SessionState/websocket behavior remains unchanged when switching views and
       that the new ProjectTrackingStore is initialized and injected in
       TimGUIApp."
   - title: Add automated tests for SQLite projection and filter behavior
-    done: false
+    done: true
     description: "Create tests using temporary SQLite fixtures that validate:
       project/workspace/plan loading, dependency-blocked derivation,
       recently-done 7-day window behavior, and default filter
@@ -68,18 +68,154 @@ tasks:
       malformed/unexpected rows, and transient DB read errors. Prefer real
       queries over heavy mocks."
   - title: Add UI/state tests for Projects view rendering paths
-    done: false
+    done: true
     description: Add tests that verify Projects view behavior across loading, empty,
       data, and error states using store-driven state. Validate that default
       filter presentation matches behavior and that expanding to all statuses
       reveals hidden rows. Keep tests deterministic and aligned with existing
       TimGUITests patterns.
   - title: Update documentation for the new Projects view
-    done: false
+    done: true
     description: Update README and/or tim-gui docs to describe the Projects view,
       where data comes from (tim.db), default filter semantics (including
       dependency-blocked and recently-done 7-day rules), and any operational
       caveats around database availability.
+  - title: "Address Review Feedback: Refresh coalescing drops user-initiated project
+      reloads and can display stale data for the wrong selected project."
+    done: true
+    description: >-
+      Refresh coalescing drops user-initiated project reloads and can display
+      stale data for the wrong selected project. `selectProject(id:)` updates
+      `selectedProjectId` and enqueues `refresh()`, but `refresh()` immediately
+      returns if `isRefreshing` is true. If selection changes while an earlier
+      refresh is mid-flight (after it has captured the previous `projectId`),
+      the queued refresh is dropped and stale workspaces/plans are committed for
+      the old project until the next 10s poll.
+
+
+      Suggestion: Do not drop concurrent refresh requests. Add a `needsRefresh`
+      flag (or generation token) so any refresh request arriving during an
+      active load triggers an immediate follow-up refresh. Also validate that
+      fetched project-specific data still matches the current
+      `selectedProjectId` before assigning it.
+
+
+      Related file: tim-gui/TimGUI/ProjectTrackingStore.swift:303-337
+  - title: "Address Review Feedback: Default DB path resolution does not mirror the
+      documented tim CLI behavior."
+    done: true
+    description: >-
+      Default DB path resolution does not mirror the documented tim CLI
+      behavior. It omits Windows `APPDATA` handling and treats an empty
+      `XDG_CONFIG_HOME` as valid instead of falling back. The plan/acceptance
+      criteria explicitly called out XDG/APPDATA/default-home conventions.
+
+
+      Suggestion: Match `getTimConfigRoot()` semantics: handle Windows with
+      `APPDATA` (or home fallback), trim and ignore empty `XDG_CONFIG_HOME`,
+      then fall back to `~/.config/tim`.
+
+
+      Related file: tim-gui/TimGUI/ProjectTrackingStore.swift:267-278
+  - title: "Address Review Feedback: Critical new behavior is untested: refresh
+      lifecycle/coalescing and DB path resolution semantics."
+    done: true
+    description: >-
+      Critical new behavior is untested: refresh lifecycle/coalescing and DB
+      path resolution semantics. There are no tests for `startRefreshing()`,
+      `stopRefreshing()`, dropped-refresh behavior, or `resolveDefaultDBPath()`
+      env/platform logic, which is why the stale-selection race and path
+      convention drift were not caught.
+
+
+      Suggestion: Add deterministic tests for: (1) selection changes during
+      in-flight refresh, asserting a follow-up refresh occurs; (2) timer
+      lifecycle start/stop; (3) path resolution with empty `XDG_CONFIG_HOME`,
+      custom `TIM_DATABASE_FILENAME`, and platform-specific fallback behavior.
+
+
+      Related file: tim-gui/TimGUITests/ProjectTrackingStoreTests.swift:1-949
+  - title: "Address Review Feedback: Test schema diverges significantly from
+      production schema."
+    done: true
+    description: >-
+      Test schema diverges significantly from production schema. The real tim.db
+      has project.id and workspace.id as INTEGER PRIMARY KEY AUTOINCREMENT, but
+      the test createTestDatabase() creates them as TEXT PRIMARY KEY. The Swift
+      model types (TrackedProject.id: String, TrackedWorkspace.id: String, etc.)
+      reflect the test schema, not the real one. While SQLite type affinity
+      makes this work at runtime (column_text on INTEGER returns string
+      representation, bind_text with '1' compares correctly against INTEGER
+      columns), the tests use non-representative data like 'proj-1' and 'ws-a'
+      that can never appear in a real auto-incrementing integer column.
+      Additional schema differences: plan.plan_id is INTEGER NOT NULL in
+      production but nullable in tests; plan.filename is TEXT NOT NULL but
+      nullable in tests; workspace_lock is missing required NOT NULL columns
+      (lock_type, pid, started_at, hostname, command).
+
+
+      Suggestion: Update the test schema to use INTEGER PRIMARY KEY
+      AUTOINCREMENT for project.id and workspace.id (matching production), and
+      adjust test data to use integer IDs. Consider using columnInt for
+      integer-type columns in the Swift model and adding integer-typed ID
+      fields, or at minimum document the deliberate type mapping choice.
+
+
+      Related file: tim-gui/TimGUITests/ProjectTrackingStoreTests.swift:28-69
+  - title: "Address Review Feedback: filteredPlans() and displayStatus() use Date()
+      as default parameter values, meaning each call creates a new Date."
+    done: true
+    description: >-
+      filteredPlans() and displayStatus() use Date() as default parameter
+      values, meaning each call creates a new Date. In PlansSection.body,
+      filteredPlans() at line 312 and displayStatus() at line 348 each call
+      Date() independently. Different plans in the same render may be evaluated
+      against slightly different times, and the filter result and individual
+      status badges could theoretically disagree at the 7-day boundary.
+
+
+      Suggestion: Create a single 'let now = Date()' at the top of
+      PlansSection.body and pass it explicitly to both filteredPlans(now:) and
+      displayStatus(for:now:).
+
+
+      Related file: tim-gui/TimGUI/ProjectsView.swift:312,348
+  - title: "Address Review Feedback: `sqlite3_step` return codes are not validated
+      in the new store queries, so lock/error conditions can silently produce
+      partial data while still setting `.loaded`."
+    done: true
+    description: >-
+      `sqlite3_step` return codes are not validated in the new store queries, so
+      lock/error conditions can silently produce partial data while still
+      setting `.loaded`. In `doFetchProjects`, `doFetchWorkspaces`, and
+      `doFetchPlansAndDeps`, loops stop on any non-`SQLITE_ROW` result and
+      immediately return arrays without checking for `SQLITE_DONE`. If SQLite
+      returns `SQLITE_BUSY`/`SQLITE_ERROR` after timeout, the UI can show
+      truncated project/workspace/plan data instead of an error state. This
+      violates the plan requirement to handle concurrent DB write/read
+      conditions gracefully.
+
+
+      Suggestion: Capture step result in a variable, continue on `SQLITE_ROW`,
+      break on `SQLITE_DONE`, and throw `StoreError.queryFailed(...)` on any
+      other code. Apply this pattern to all query loops.
+
+
+      Related file: tim-gui/TimGUI/ProjectTrackingStore.swift:100,134,185,225
+branch: full-ws main
+changedFiles:
+  - README.md
+  - docs/multi-workspace-workflow.md
+  - src/tim/commands/subagent.ts
+  - tim-gui/AGENTS.md
+  - tim-gui/TimGUI/ContentView.swift
+  - tim-gui/TimGUI/ProjectTrackingModels.swift
+  - tim-gui/TimGUI/ProjectTrackingStore.swift
+  - tim-gui/TimGUI/ProjectsView.swift
+  - tim-gui/TimGUI/TimGUIApp.swift
+  - tim-gui/TimGUI.xcodeproj/project.pbxproj
+  - tim-gui/TimGUITests/ProjectTrackingModelTests.swift
+  - tim-gui/TimGUITests/ProjectTrackingStoreTests.swift
 tags: []
 ---
 
@@ -378,3 +514,43 @@ No concrete out-of-scope issue requiring a separate discovered-issue plan was fo
 
 - Requirement resolved for this plan: blocked is dependency-derived for plan-level rows (not checklist-row status).
 - Requirement resolved for this plan: “recently done” means `plan.status = 'done'` with `updated_at` in the last 7 days.
+
+## Current Progress
+### Current State
+- All 14 tasks complete. Feature fully implemented with all review feedback addressed.
+
+### Completed (So Far)
+- Tasks 1-8: Core feature implementation (domain models, SQLite store, refresh lifecycle, ProjectsView UI, ContentView integration, tests, documentation)
+- Task 9: Fixed refresh coalescing race — replaced `isRefreshing` guard with `needsRefresh` flag + `while` loop so concurrent calls trigger follow-up refresh. Added `selectedProjectId` validation before assigning project-specific data to prevent stale data commits.
+- Task 10: Fixed DB path resolution to match tim CLI `getTimConfigRoot()` — trims whitespace from `XDG_CONFIG_HOME` (ignores empty/whitespace-only), added `#if os(Windows)` APPDATA handling with `~/AppData/Roaming` fallback.
+- Task 11: Added tests for refresh lifecycle (`startRefreshing`/`stopRefreshing`, restart-after-stop), refresh coalescing (concurrent selection changes, stale data prevention), and DB path resolution (default suffix, custom filename via env var, empty/whitespace XDG fallback, valid XDG usage).
+- Task 12: Updated test schema to match production — `INTEGER PRIMARY KEY AUTOINCREMENT` for project.id and workspace.id, `NOT NULL` on plan.plan_id and plan.filename (with defaults), workspace_lock includes all required NOT NULL columns. All test data uses integer IDs.
+- Task 13: Fixed Date() consistency in PlansSection.body — single `let now = Date()` passed to both `filteredPlans(now:)` and `displayStatus(for:now:)`.
+- Task 14: Added `sqlite3_step` return code validation in all 4 query loops (`doFetchProjects`, `doFetchWorkspaces`, `doFetchPlansAndDeps` plans and deps). Non-`SQLITE_DONE` terminal codes now throw `StoreError.queryFailed(...)` with human-readable `sqlite3_errmsg` instead of silently returning partial data. Added corruption-based tests for projects, workspaces, and plans step-error paths.
+
+### Remaining
+- None
+
+### Next Iteration Guidance
+- None — all tasks complete
+
+### Decisions / Changes
+- Used Apple's built-in `SQLite3` C API rather than adding an external package dependency
+- DB connection is opened/closed per query batch (not kept open) — simpler lifecycle, no deinit concerns
+- `blocked` status only applies to `pending` plans with unresolved dependencies (not in_progress plans)
+- Refresh uses `Task.sleep` with cancellation rather than `Timer.scheduledTimer`
+- ContentView uses segmented `Picker` for tab switching (Sessions/Projects) rather than macOS TabView
+- ProjectsView follows SessionsView's NavigationSplitView pattern with similar empty state design
+- Filter chips use toggle buttons with color-coded backgrounds matching plan status semantics
+- Refresh coalescing uses `needsRefresh` flag pattern (not generation token) for simplicity — the while loop re-checks after each full refresh cycle
+- Test schema uses `DEFAULT` values for `plan.plan_id` (0) and `plan.filename` ('plan.md') to keep test INSERT statements concise while maintaining NOT NULL constraints
+
+### Lessons Learned
+- `return` inside Swift `withCString` closures exits the entire closure, not just the current loop iteration — use `continue` for guard statements inside `while` loops within closures
+- When coalescing async operations, a simple boolean guard that drops concurrent calls creates race windows where user-initiated changes are lost. Use a `needsRefresh` flag that the active operation checks after completing, ensuring no request is silently dropped.
+- Test schemas that diverge from production (e.g., TEXT vs INTEGER primary keys) can mask real issues. Use production-representative schemas in tests, even if test data needs to be less human-readable (integer IDs instead of string labels).
+- SQLite `while sqlite3_step(stmt) == SQLITE_ROW` loops silently swallow errors — always capture the return code, check for `SQLITE_DONE` vs error codes, and include `sqlite3_errmsg(db)` in error messages for diagnostics. In `withCString` closures where you can't throw, capture the error in a local variable and throw after the closure.
+- For corruption-based SQLite tests, corrupt data pages beyond page 1 (which holds `sqlite_master`) so `prepare_v2` succeeds but `sqlite3_step` fails. Use `sqlite_master.rootpage` to find specific table root pages for targeted corruption.
+
+### Risks / Blockers
+- None
