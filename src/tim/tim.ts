@@ -45,7 +45,7 @@ import { CleanupRegistry } from '../common/cleanup_registry.js';
 import { startMcpServer } from './mcp/server.js';
 import { enableAutoClaim } from './assignments/auto_claim.js';
 import { runWithLogger } from '../logging.js';
-import { createTunnelAdapter } from '../logging/tunnel_client.js';
+import { type TunnelAdapter, createTunnelAdapter } from '../logging/tunnel_client.js';
 import { TIM_OUTPUT_SOCKET } from '../logging/tunnel_protocol.js';
 import {
   getPlanParameters,
@@ -83,6 +83,37 @@ function formatSchemaHelp(schema: z.ZodTypeAny): string {
     io: 'input',
   });
   return `\nInput JSON Schema:\n${JSON.stringify(jsonSchema, null, 2)}\n`;
+}
+
+async function runWithCommandTunnelAdapter<T>(callback: () => Promise<T> | T): Promise<T> {
+  const tunnelSocketPath = process.env[TIM_OUTPUT_SOCKET];
+  if (!tunnelSocketPath) {
+    return callback();
+  }
+
+  let tunnelAdapter: TunnelAdapter;
+  try {
+    tunnelAdapter = await createTunnelAdapter(tunnelSocketPath);
+  } catch {
+    // If tunnel connection fails, fall back to normal console output.
+    // Clear the env var so isTunnelActive() returns false so print-mode logging
+    // behavior is correct when the command starts.
+    delete process.env[TIM_OUTPUT_SOCKET];
+    return callback();
+  }
+
+  const cleanupRegistry = CleanupRegistry.getInstance();
+  const unregisterCleanup = cleanupRegistry.register(() => tunnelAdapter.destroySync());
+  try {
+    return await runWithLogger(tunnelAdapter, callback);
+  } finally {
+    unregisterCleanup();
+    try {
+      await tunnelAdapter.destroy();
+    } catch {
+      // Ignore tunnel cleanup failures.
+    }
+  }
 }
 
 const program = new Command();
@@ -1093,7 +1124,9 @@ program
   )
   .action(async (planFile, options, command) => {
     const { handleReviewCommand } = await import('./commands/review.js');
-    await handleReviewCommand(planFile, options, command).catch(handleCommandError);
+    await runWithCommandTunnelAdapter(async () => {
+      await handleReviewCommand(planFile, options, command);
+    }).catch(handleCommandError);
   });
 
 program
@@ -1309,9 +1342,9 @@ for (const agentType of ['implementer', 'tester', 'tdd-tests', 'verifier'] as co
     )
     .action(async (planFile: string, options: any, command: any) => {
       const { handleSubagentCommand } = await import('./commands/subagent.js');
-      await handleSubagentCommand(agentType, planFile, options, command.parent.parent.opts()).catch(
-        handleCommandError
-      );
+      await runWithCommandTunnelAdapter(async () => {
+        await handleSubagentCommand(agentType, planFile, options, command.parent.parent.opts());
+      }).catch(handleCommandError);
     });
 }
 
@@ -1342,26 +1375,7 @@ async function run() {
     process.exit(129);
   });
 
-  // If TIM_OUTPUT_SOCKET is set, install the tunnel adapter to forward all
-  // logging output to the parent tim process via Unix socket.
-  const tunnelSocketPath = process.env[TIM_OUTPUT_SOCKET];
-  if (tunnelSocketPath) {
-    try {
-      const tunnelAdapter = await createTunnelAdapter(tunnelSocketPath);
-      cleanupRegistry.register(() => tunnelAdapter.destroySync());
-      await runWithLogger(tunnelAdapter, () => program.parseAsync(process.argv));
-      await tunnelAdapter.destroy();
-    } catch {
-      // If tunnel connection fails, fall back to normal console output.
-      // Clear the env var so isTunnelActive() returns false — otherwise
-      // the review command would skip installing its quiet/verbose logger
-      // even though no tunnel adapter is actually installed.
-      delete process.env[TIM_OUTPUT_SOCKET];
-      await program.parseAsync(process.argv);
-    }
-  } else {
-    await program.parseAsync(process.argv);
-  }
+  await program.parseAsync(process.argv);
 }
 
 if (import.meta.main) {
