@@ -105,8 +105,7 @@ export async function handleSubagentCommand(
   });
 
   // Load custom agent instructions
-  // @ts-expect-error not including 'test' for now
-  const agentInstructionsType: 'implementer' | 'tester' | 'tddTests' | 'reviewer' =
+  const agentInstructionsType: Parameters<typeof loadAgentInstructionsFor>[0] =
     agentType === 'verifier' ? 'tester' : agentType === 'tdd-tests' ? 'tddTests' : agentType;
   const customInstructions = await loadAgentInstructionsFor(agentInstructionsType, gitRoot, config);
 
