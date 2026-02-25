@@ -43,6 +43,9 @@ const output = await Promise.all([
     entrypoints: ['./src/tim/tim.ts'],
     target: 'bun',
     minify: true,
+    format: 'esm',
+    compile: true,
+    bytecode: true,
   }),
   buildOne({
     outdir: 'dist/claude_code',
@@ -59,4 +62,4 @@ if (output.some((o) => !o)) {
 }
 
 // Copy .wasm files after successful build
-await copyWasmFiles();
+// await copyWasmFiles();
