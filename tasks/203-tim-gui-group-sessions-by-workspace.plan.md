@@ -4,10 +4,11 @@ title: "tim-gui: group sessions by workspace"
 goal: ""
 id: 203
 uuid: 94d6de67-cc76-4721-ad3f-824eaafe9ed1
+simple: true
 status: pending
 priority: medium
 createdAt: 2026-02-23T08:29:07.853Z
-updatedAt: 2026-02-23T08:36:59.221Z
+updatedAt: 2026-02-25T08:22:14.986Z
 tasks: []
 tags: []
 ---
