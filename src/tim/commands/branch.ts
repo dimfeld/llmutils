@@ -41,7 +41,7 @@ function getIssueIdFromPlanIssues(plan: PlanSchema): string | undefined {
   for (const rawIssue of plan.issue) {
     const linearParsedIssue = parseLinearIssueIdentifier(rawIssue);
     if (linearParsedIssue) {
-      return linearParsedIssue.identifier;
+      return linearParsedIssue.identifier?.toLowerCase();
     }
 
     const githubParsedIssue = parseGitHubIssueIdentifier(rawIssue);
