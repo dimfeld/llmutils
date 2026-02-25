@@ -40,16 +40,16 @@ import micromatch from 'micromatch';
 import path from 'node:path';
 import * as clipboard from '../common/clipboard.js';
 import { grepFor } from '../common/file_finder.ts';
-import { Resolver } from '../dependency_graph/resolve.ts';
-import { ImportWalker } from '../dependency_graph/walk_imports.ts';
+import { Resolver } from './dependency_graph/resolve.ts';
+import { ImportWalker } from './dependency_graph/walk_imports.ts';
 import {
   diffFilenameInsideFencePrompt,
   diffFilenameOutsideFencePrompt,
-} from '../editor/diff-editor/prompts.ts';
-import { noArtifacts } from '../editor/fragments.ts';
-import { udiffPrompt } from '../editor/udiff-simple/prompts.ts';
-import { generateWholeFilePrompt } from '../editor/whole-file/prompts.ts';
-import { xmlFormatPrompt } from '../editor/xml/prompt.ts';
+} from './editor/diff-editor/prompts.ts';
+import { noArtifacts } from './editor/fragments.ts';
+import { udiffPrompt } from './editor/udiff-simple/prompts.ts';
+import { generateWholeFilePrompt } from './editor/whole-file/prompts.ts';
+import { xmlFormatPrompt } from './editor/xml/prompt.ts';
 import { debugLog, error, log, warn } from '../logging.ts';
 import {
   buildExamplesTag,
@@ -60,7 +60,7 @@ import {
 import { callRepomix, getOutputPath } from '../rmfilter/repomix.ts';
 import { debug, quiet, setDebug, setQuiet } from '../common/process.ts';
 import { getGitRoot } from '../common/git.ts';
-import { Extractor } from '../treesitter/extract.ts';
+import { Extractor } from './treesitter/extract.ts';
 import {
   getCurrentConfig,
   listPresets,

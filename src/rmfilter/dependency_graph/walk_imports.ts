@@ -9,8 +9,8 @@ import {
 } from '../treesitter/extract.js';
 import { Resolver, type Package } from './resolve.js';
 import * as path from 'path';
-import { error, debugLog } from '../logging.js';
-import { grepFor } from '../common/file_finder.js';
+import { error, debugLog } from '../../logging.js';
+import { grepFor } from '../../common/file_finder.js';
 import { importCandidates, isCodeFile } from './filenames.js';
 
 interface FileInfo {

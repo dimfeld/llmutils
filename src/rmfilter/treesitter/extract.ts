@@ -1,6 +1,6 @@
 import { Parser, Node, Tree, TreeCursor, type Language, Query } from 'web-tree-sitter';
 import { loadLanguage } from './load_language.ts';
-import { log } from '../logging.ts';
+import { log } from '../../logging.ts';
 
 let parserInitDone = false;
 async function initParser() {

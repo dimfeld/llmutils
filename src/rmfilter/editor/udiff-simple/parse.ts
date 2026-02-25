@@ -1,7 +1,7 @@
 import * as diff from 'diff';
 import * as path from 'path';
-import { debugLog, error, log, warn } from '../../logging.ts';
-import { secureWrite } from '../../common/fs.js';
+import { debugLog, error, log, warn } from '../../../logging.ts';
+import { secureWrite } from '../../../common/fs.js';
 import { findClosestMatches } from '../closest_match.ts';
 import type {
   ClosestMatchResult,

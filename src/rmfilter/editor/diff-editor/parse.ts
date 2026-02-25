@@ -1,8 +1,8 @@
 // This is a port of Aider's edit_block coder
 import * as path from 'path';
 import stringComparison from 'string-comparison';
-import { log } from '../../logging.ts';
-import { secureWrite } from '../../common/fs.js';
+import { log } from '../../../logging.ts';
+import { secureWrite } from '../../../common/fs.js';
 import { findClosestMatches } from '../closest_match.ts';
 import type { EditResult, NoMatchFailure, ProcessFileOptions, SuccessResult } from '../types.ts';
 

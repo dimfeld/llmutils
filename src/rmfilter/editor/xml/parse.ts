@@ -1,6 +1,6 @@
 // from github.com/mckaywrigley/o1-xml-parser + modifications
 import { DOMParser } from '@xmldom/xmldom';
-import { error, warn } from '../../logging.ts';
+import { error, warn } from '../../../logging.ts';
 
 interface ParsedFileChange {
   file_summary: string;
