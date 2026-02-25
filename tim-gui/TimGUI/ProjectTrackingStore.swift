@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import os.log
 import SQLite3
 
 // MARK: - LoadState
@@ -49,6 +50,8 @@ private func columnBool(_ stmt: OpaquePointer, _ col: Int32) -> Bool {
     sqlite3_column_int(stmt, col) != 0
 }
 
+private let logger = Logger(subsystem: "com.timgui", category: "ProjectTrackingStore")
+
 // MARK: - SQLite Database Helper
 
 /// Opens a read-only SQLite connection to the given path, runs the operation, then closes.
@@ -59,16 +62,43 @@ private func withSQLiteDB<T>(path: String, operation: (OpaquePointer) throws -> 
     }
 
     var db: OpaquePointer?
-    let rc = sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil)
+    let flags = SQLITE_OPEN_READWRITE
+    let rc = sqlite3_open_v2(path, &db, flags, nil)
     guard rc == SQLITE_OK, let db else {
         let msg = db.map { String(cString: sqlite3_errmsg($0)) } ?? "Unknown error"
+        let nsPath = path as NSString
+        let parentPath = nsPath.deletingLastPathComponent
+        let fm = FileManager.default
+        logger.error(
+            """
+            SQLite open failed rc=\(rc, privacy: .public) flags=\(flags, privacy: .public) \
+            path=\(path, privacy: .public) exists=\(fm.fileExists(atPath: path), privacy: .public) \
+            readable=\(fm.isReadableFile(atPath: path), privacy: .public) \
+            parent=\(parentPath, privacy: .public) parent_exists=\(fm.fileExists(atPath: parentPath), privacy: .public) \
+            parent_readable=\(fm.isReadableFile(atPath: parentPath), privacy: .public) \
+            parent_writable=\(fm.isWritableFile(atPath: parentPath), privacy: .public) \
+            msg=\(msg, privacy: .public)
+            """
+        )
         if let db { sqlite3_close(db) }
         throw StoreError.openFailed(msg)
     }
     defer { sqlite3_close(db) }
 
-    // Handle concurrent WAL reads — retry for up to 5 seconds if writer holds a lock
+    // Match tim's DB access assumptions and keep reads cooperative with concurrent writers.
     sqlite3_busy_timeout(db, 5000)
+    let lockingRc = sqlite3_exec(db, "PRAGMA locking_mode = NORMAL", nil, nil, nil)
+    if lockingRc != SQLITE_OK {
+        logger.warning(
+            "PRAGMA locking_mode failed rc=\(lockingRc, privacy: .public) path=\(path, privacy: .public) msg=\(String(cString: sqlite3_errmsg(db)), privacy: .public)"
+        )
+    }
+    let queryOnlyRc = sqlite3_exec(db, "PRAGMA query_only = ON", nil, nil, nil)
+    if queryOnlyRc != SQLITE_OK {
+        logger.warning(
+            "PRAGMA query_only failed rc=\(queryOnlyRc, privacy: .public) path=\(path, privacy: .public) msg=\(String(cString: sqlite3_errmsg(db)), privacy: .public)"
+        )
+    }
 
     return try operation(db)
 }
@@ -322,14 +352,18 @@ final class ProjectTrackingStore {
         #else
         let xdgConfigHome = env["XDG_CONFIG_HOME"]?.trimmingCharacters(in: .whitespaces)
         if let xdg = xdgConfigHome, !xdg.isEmpty {
-            return URL(fileURLWithPath: xdg)
+            let resolved = URL(fileURLWithPath: xdg)
                 .appendingPathComponent("tim")
                 .appendingPathComponent(dbFileName).path
+            logger.debug("Resolved DB path using XDG_CONFIG_HOME: \(resolved, privacy: .public)")
+            return resolved
         }
-        return FileManager.default.homeDirectoryForCurrentUser
+        let resolved = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config")
             .appendingPathComponent("tim")
             .appendingPathComponent(dbFileName).path
+        logger.debug("Resolved DB path using HOME fallback: \(resolved, privacy: .public)")
+        return resolved
         #endif
     }
 
@@ -390,6 +424,7 @@ final class ProjectTrackingStore {
             self.loadState = .loading
 
             guard let path = dbPath else {
+                logger.error("Refresh aborted: no database path configured")
                 self.loadState = .error("No tim database path configured")
                 break
             }
@@ -422,6 +457,10 @@ final class ProjectTrackingStore {
 
                 self.loadState = .loaded
             } catch {
+                let selected = capturedProjectId ?? "<none>"
+                logger.error(
+                    "Refresh failed path=\(path, privacy: .public) selectedProjectId=\(selected, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                )
                 self.loadState = .error(error.localizedDescription)
             }
 
