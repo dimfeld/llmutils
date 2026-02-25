@@ -1,20 +1,15 @@
 {
-  "name": "llmutils",
+  "name": "llmutils/rmfilter",
   "module": "src/index.ts",
   "type": "module",
   "private": true,
   "bin": {
-    "tim": "./src/tim/tim.ts"
+    "rmfilter": "./src/rmfilter/rmfilter.ts"
   },
   "scripts": {
-    "check": "tsc --noEmit -p tsconfig.build.json",
-    "build": "./build.ts",
-    "lint": "eslint .",
-    "dev-install": "bun run build && pnpm add -g file://$(pwd)",
+    "check": "tsc --noEmit -p ../../tsconfig.build.json",
     "format": "prettier --write --log-level warn .",
-    "update-schemas": "scripts/update-json-schemas.ts",
-    "tim-agent-listener": "bun scripts/tim-agent-listener.ts",
-    "tim": "src/tim/tim.ts"
+    "rmfilter": "src/rmfilter/rmfilter.ts"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -69,9 +64,24 @@
     "strip-ansi": "^7.1.0",
     "table": "^6.9.0",
     "tap-parser": "^18.3.0",
+    "tree-sitter-python": "^0.25.0",
+    "tree-sitter-rust": "^0.24.0",
+    "tree-sitter-svelte": "^0.11.0",
+    "tree-sitter-typescript": "^0.23.2",
+    "web-tree-sitter": "^0.25.10",
     "which": "^6.0.1",
     "yaml": "^2.8.0",
     "zod": "^3.25.67"
   },
-  "trustedDependencies": []
+  "trustedDependencies": [],
+  "pnpm": {
+    "neverBuiltDependencies": [
+      "tree-sitter",
+      "tree-sitter-python",
+      "tree-sitter-rust",
+      "tree-sitter-svelte",
+      "tree-sitter-typescript",
+      "web-tree-sitter"
+    ]
+  }
 }
