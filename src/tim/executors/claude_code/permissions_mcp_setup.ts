@@ -682,7 +682,8 @@ export async function setupPermissionsMcp(
   try {
     await fs.access(permissionsMcpPath);
   } catch {
-    permissionsMcpPath = path.resolve(import.meta.dir, './claude_code/permissions_mcp.js');
+    const dir = path.dirname(process.argv0);
+    permissionsMcpPath = path.resolve(dir, './claude_code/permissions_mcp.js');
   }
 
   // Build the MCP config
@@ -690,7 +691,7 @@ export async function setupPermissionsMcp(
     mcpServers: {
       permissions: {
         type: 'stdio',
-        command: process.execPath,
+        command: 'bun',
         args: [permissionsMcpPath, socketPath],
       },
     },
@@ -698,7 +699,9 @@ export async function setupPermissionsMcp(
 
   // Write the config file
   const mcpConfigFile = path.join(tempDir, 'mcp-config.json');
-  await fs.writeFile(mcpConfigFile, JSON.stringify(mcpConfig, null, 2));
+  const mcpConfigContent = JSON.stringify(mcpConfig, null, 2);
+  debugLog('MCP config file content:', mcpConfigContent);
+  await fs.writeFile(mcpConfigFile, mcpConfigContent);
 
   const cleanup = async () => {
     await new Promise<void>((resolve) => {
