@@ -178,7 +178,7 @@ describe('handleImportCommand Integration Tests', () => {
       checkbox: mock(() => Promise.resolve([])), // Default to no selection
     }));
 
-    await moduleMocker.mock('../../../rmpr/comment_options.js', () => ({
+    await moduleMocker.mock('../../../common/comment_options.js', () => ({
       parseCommandOptionsFromComment: mock(() => ({ options: null })),
       combineRmprOptions: mock(() => ({ rmfilter: ['--include', '*.ts'] })),
     }));

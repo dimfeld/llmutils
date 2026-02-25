@@ -7,7 +7,7 @@ import {
   parseCommandOptionsFromComment,
   combineRmprOptions,
   type RmprOptions,
-} from '../../rmpr/comment_options.ts';
+} from '../comment_options.ts';
 import type { ParsedIssueIdentifier } from '../issue_tracker/types.js';
 
 export function parseGitHubIssueIdentifier(spec: string): ParsedIssueIdentifier | null {

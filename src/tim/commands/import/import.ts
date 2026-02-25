@@ -31,7 +31,7 @@ import {
   parseCommandOptionsFromComment,
   combineRmprOptions,
   type RmprOptions,
-} from '../../../rmpr/comment_options.js';
+} from '../../../common/comment_options.js';
 import { singleLineWithPrefix, limitLines } from '../../../common/formatting.js';
 import { needArrayOrUndefined } from '../../../common/cli.js';
 import * as clipboard from '../../../common/clipboard.js';

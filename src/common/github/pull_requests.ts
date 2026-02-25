@@ -1,7 +1,7 @@
 import { Octokit } from 'octokit';
 import { checkbox, input, select, Separator } from '@inquirer/prompts';
 import { limitLines, singleLineWithPrefix } from '../formatting.ts';
-import type { DetailedReviewComment } from '../../rmpr/types.ts';
+import type { DetailedReviewComment } from '../rmpr_types.ts';
 import { debugLog, error, log, warn } from '../../logging.ts';
 import { parsePrOrIssueNumber } from './identifiers.ts';
 import { getCurrentBranchName } from '../git.ts';

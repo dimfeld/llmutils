@@ -13,7 +13,7 @@ import {
   parseCommandOptionsFromComment,
   combineRmprOptions,
   type RmprOptions,
-} from '../rmpr/comment_options.js';
+} from '../common/comment_options.js';
 import { log } from '../logging.js';
 
 /**

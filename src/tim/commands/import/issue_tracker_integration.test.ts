@@ -31,7 +31,7 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
       error: mock(),
     }));
 
-    await moduleMocker.mock('../../../rmpr/comment_options.js', () => ({
+    await moduleMocker.mock('../../../common/comment_options.js', () => ({
       parseCommandOptionsFromComment: mock(() => ({ options: null })),
       combineRmprOptions: mock(() => ({ rmfilter: ['--include', '*.ts'] })),
     }));
