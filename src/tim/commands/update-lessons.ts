@@ -133,8 +133,8 @@ export function buildUpdateLessonsPrompt(
     'Update existing docs in place when possible rather than creating duplicate guidance.\n',
     'IMPORTANT: Only add lessons to top-level documents like CLAUDE.md, AGENTS.md, or root-level contributor',
     'guides if they are broadly applicable across the entire project. For lessons that are specific to a',
-    'particular feature, module, or area of the codebase, prefer placing them in more targeted locations such',
-    `as ${docsLocation} subdirectories, or documentation near the relevant code.`,
+    'particular coding task, feature, module, or area of the codebase, prefer placing them in more targeted locations such',
+    `as ${docsLocation} subdirectories, or documentation near the relevant code. You can create new documents files if there is no good existing place.`,
     'This prevents top-level documents from becoming cluttered with narrowly-scoped guidance.'
   );
 
