@@ -1,6 +1,6 @@
 import path from 'path';
 import { getGitRoot } from '../../common/git.js';
-import { findAdditionalDocs } from '../../rmfilter/additional_docs.js';
+import { findAdditionalDocs } from '../../common/additional_docs.js';
 import { resolveTasksDir, type TimConfig } from '../configSchema.js';
 import { findSiblingPlans } from '../context_helpers.js';
 import { readPlanFile } from '../plans.js';

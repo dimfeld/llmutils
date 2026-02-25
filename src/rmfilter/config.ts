@@ -7,14 +7,7 @@ import { parse, stringify } from 'yaml';
 import { z } from 'zod/v4';
 import { debugLog, error, log } from '../logging.ts';
 import { getGitRoot } from '../common/git.ts';
-
-export interface ModelPreset {
-  noArtifacts?: boolean;
-  defaultEditFormat?: 'diff';
-  overeager?: boolean;
-
-  isDefault?: boolean;
-}
+import type { ModelPreset } from '../common/model_presets.ts';
 
 export const modelPresets = {
   gemini: {

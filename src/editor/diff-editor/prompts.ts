@@ -1,4 +1,4 @@
-import type { ModelPreset } from '../../rmfilter/config.ts';
+import type { ModelPreset } from '../../common/model_presets.ts';
 import { noArtifacts } from '../fragments.ts';
 
 const fence = '```';

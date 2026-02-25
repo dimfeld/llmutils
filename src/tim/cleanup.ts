@@ -1,7 +1,6 @@
 import path from 'node:path';
 import { debugLog, error, log } from '../logging.ts';
-import { CURRENT_DIFF } from '../rmfilter/additional_docs.ts';
-import { getChangedFilesOnBranch, getGitRoot } from '../common/git.ts';
+import { CURRENT_DIFF, getChangedFilesOnBranch, getGitRoot } from '../common/git.ts';
 
 const doubleSlash = /\/\/\s*.*$/;
 const slashStar = /\/\*[\s\S]*?\*\/$/;

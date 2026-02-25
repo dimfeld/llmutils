@@ -56,7 +56,7 @@ import {
   getAdditionalDocs,
   getDiffTag,
   type AdditionalDocsOptions,
-} from '../rmfilter/additional_docs.ts';
+} from '../common/additional_docs.ts';
 import { callRepomix, getOutputPath } from '../rmfilter/repomix.ts';
 import { debug, quiet, setDebug, setQuiet } from '../common/process.ts';
 import { getGitRoot } from '../common/git.ts';

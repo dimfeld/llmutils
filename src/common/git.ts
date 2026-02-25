@@ -19,12 +19,28 @@ import { findUp } from 'find-up';
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 import { debugLog, log } from '../logging.ts';
-import { CURRENT_DIFF, parseJjRename } from '../rmfilter/additional_docs.ts';
 import { fallbackRepositoryNameFromGitRoot, parseGitRemoteUrl } from './git_url_parser.ts';
 import chalk from 'chalk';
 
 let cachedGitRoot = new Map<string, string>();
 const cachedGitRepository = new Map<string, string>();
+
+export const CURRENT_DIFF = `HEAD~`;
+
+/**
+ * Parses a jj diff rename line and returns the "after" path.
+ * Example input: R apps/inbox/src/{routes/inventory/inventories/[inventoryId] => lib/components/ui/inventory}/InventoryPicker.svelte
+ * Output: apps/inbox/src/lib/components/ui/inventory/InventoryPicker.svelte
+ */
+export function parseJjRename(line: string): string {
+  const match = line.match(/^R\s+(.+?)\{(.+?)\s*=>\s*(.*?)\}(.+)$/);
+  if (!match) {
+    debugLog(`[parseJjRename] Invalid rename format: ${line}`);
+    return '';
+  }
+  const [, prefix, , after, suffix] = match;
+  return `${prefix}${after || ''}${suffix}`;
+}
 
 /**
  * Gets the root directory of the current Git or Jujutsu repository with caching.
