@@ -237,6 +237,107 @@ final class SessionItem: Identifiable {
     }
 }
 
+// MARK: - Session Grouping
+
+/// Parses a git remote URL (SSH or HTTPS) and returns the (owner, repo) tuple.
+private func parseGitRemote(_ remote: String) -> (owner: String, repo: String)? {
+    var ownerRepo: String
+    if remote.hasPrefix("git@") {
+        // SSH format: git@github.com:owner/repo.git
+        guard let colonIdx = remote.firstIndex(of: ":") else { return nil }
+        ownerRepo = String(remote[remote.index(after: colonIdx)...])
+    } else if let url = URL(string: remote), url.host != nil {
+        // HTTPS format: https://github.com/owner/repo.git
+        let parts = url.path.split(separator: "/", omittingEmptySubsequences: true)
+        guard parts.count >= 2 else { return nil }
+        ownerRepo = parts.suffix(2).joined(separator: "/")
+    } else {
+        return nil
+    }
+
+    // Strip .git suffix
+    if ownerRepo.hasSuffix(".git") {
+        ownerRepo = String(ownerRepo.dropLast(4))
+    }
+
+    let parts = ownerRepo.split(separator: "/", omittingEmptySubsequences: true)
+    guard parts.count >= 2 else { return nil }
+    return (String(parts[parts.count - 2]), String(parts[parts.count - 1]))
+}
+
+/// Returns a human-readable display name for a session based on its git remote or workspace path.
+///
+/// - Parameters:
+///   - gitRemote: The git remote URL (SSH or HTTPS format).
+///   - workspacePath: The workspace directory path.
+///   - currentUser: The current OS user name. Pass `nil` to use `NSUserName()`.
+func parseProjectDisplayName(
+    gitRemote: String?,
+    workspacePath: String?,
+    currentUser: String? = nil) -> String
+{
+    if let remote = gitRemote, !remote.isEmpty,
+       let (owner, repo) = parseGitRemote(remote)
+    {
+        let effectiveUser: String
+        if let cu = currentUser, !cu.isEmpty {
+            effectiveUser = cu
+        } else {
+            let nsUser = NSUserName()
+            if !nsUser.isEmpty {
+                effectiveUser = nsUser
+            } else {
+                effectiveUser = ProcessInfo.processInfo.environment["USER"] ?? ""
+            }
+        }
+        if !effectiveUser.isEmpty, owner.lowercased() == effectiveUser.lowercased() {
+            return repo
+        }
+        return "\(owner)/\(repo)"
+    }
+
+    if let path = workspacePath, !path.isEmpty {
+        let components = path.split(separator: "/", omittingEmptySubsequences: true)
+        if components.count <= 2 {
+            return path
+        }
+        return components.suffix(2).joined(separator: "/")
+    }
+
+    return "Unknown"
+}
+
+/// Returns a stable string key for grouping sessions by project.
+///
+/// SSH and HTTPS remotes for the same repository produce the same key.
+func sessionGroupKey(gitRemote: String?, workspacePath: String?) -> String {
+    if let remote = gitRemote, !remote.isEmpty,
+       let (owner, repo) = parseGitRemote(remote)
+    {
+        return "\(owner)/\(repo)".lowercased()
+    }
+
+    if let path = workspacePath, !path.isEmpty {
+        return path
+    }
+
+    return "__unknown__"
+}
+
+@MainActor
+struct SessionGroup: Identifiable {
+    let id: String // grouping key from sessionGroupKey()
+    var displayName: String // derived from parseProjectDisplayName()
+    var sessions: [SessionItem]
+    var hasNotification: Bool {
+        self.sessions.contains { $0.hasUnreadNotification }
+    }
+
+    var sessionCount: Int {
+        self.sessions.count
+    }
+}
+
 // MARK: - HeadlessMessage
 
 enum HeadlessMessage: Sendable {

@@ -2350,6 +2350,7 @@ tim extract [--input FILE] [--output FILE]
 **Features:**
 
 - **Project tracking**: Browse projects, workspaces, and plan-level task status read from `tim.db`. Default filters show pending, in-progress, blocked (unresolved dependencies), and recently-done (last 7 days) plans. Data auto-refreshes while the Projects view is active.
+- **Session grouping**: Sessions are grouped by project in the sidebar. Groups are derived from the session's `gitRemote` (parsed as `owner/repo`, with the owner elided when it matches the current macOS user) or `workspacePath` fallback. Groups are collapsible, show a session count badge, bubble unread notification dots when collapsed, and can be reordered by dragging. A toolbar button jumps to the first session with an active notification.
 - **Session monitoring**: Connects via WebSocket (`ws://localhost:8123/tim-agent`) to display live agent sessions with streaming output
 - **Recent activity time**: Session rows show the time the most recent incoming message or notification was received (falling back to connection time when no messages have arrived yet)
 - **Send messages to agents**: Active sessions show a text input field at the bottom of the session view for sending messages to the running agent's subprocess stdin via the headless WebSocket protocol. Press Enter to send, Shift+Enter to insert a newline. The input field auto-grows up to 5 lines and is hidden when the session is disconnected. Sent messages appear in the message list with distinct styling.

@@ -74,12 +74,13 @@ private func withSQLiteDB<T>(path: String, operation: (OpaquePointer) throws -> 
             SQLite open failed rc=\(rc, privacy: .public) flags=\(flags, privacy: .public) \
             path=\(path, privacy: .public) exists=\(fm.fileExists(atPath: path), privacy: .public) \
             readable=\(fm.isReadableFile(atPath: path), privacy: .public) \
-            parent=\(parentPath, privacy: .public) parent_exists=\(fm.fileExists(atPath: parentPath), privacy: .public) \
+            parent=\(parentPath, privacy: .public) parent_exists=\(
+                fm.fileExists(atPath: parentPath),
+                privacy: .public) \
             parent_readable=\(fm.isReadableFile(atPath: parentPath), privacy: .public) \
             parent_writable=\(fm.isWritableFile(atPath: parentPath), privacy: .public) \
             msg=\(msg, privacy: .public)
-            """
-        )
+            """)
         if let db { sqlite3_close(db) }
         throw StoreError.openFailed(msg)
     }
@@ -90,14 +91,12 @@ private func withSQLiteDB<T>(path: String, operation: (OpaquePointer) throws -> 
     let lockingRc = sqlite3_exec(db, "PRAGMA locking_mode = NORMAL", nil, nil, nil)
     if lockingRc != SQLITE_OK {
         logger.warning(
-            "PRAGMA locking_mode failed rc=\(lockingRc, privacy: .public) path=\(path, privacy: .public) msg=\(String(cString: sqlite3_errmsg(db)), privacy: .public)"
-        )
+            "PRAGMA locking_mode failed rc=\(lockingRc, privacy: .public) path=\(path, privacy: .public) msg=\(String(cString: sqlite3_errmsg(db)), privacy: .public)")
     }
     let queryOnlyRc = sqlite3_exec(db, "PRAGMA query_only = ON", nil, nil, nil)
     if queryOnlyRc != SQLITE_OK {
         logger.warning(
-            "PRAGMA query_only failed rc=\(queryOnlyRc, privacy: .public) path=\(path, privacy: .public) msg=\(String(cString: sqlite3_errmsg(db)), privacy: .public)"
-        )
+            "PRAGMA query_only failed rc=\(queryOnlyRc, privacy: .public) path=\(path, privacy: .public) msg=\(String(cString: sqlite3_errmsg(db)), privacy: .public)")
     }
 
     return try operation(db)
@@ -459,8 +458,7 @@ final class ProjectTrackingStore {
             } catch {
                 let selected = capturedProjectId ?? "<none>"
                 logger.error(
-                    "Refresh failed path=\(path, privacy: .public) selectedProjectId=\(selected, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
-                )
+                    "Refresh failed path=\(path, privacy: .public) selectedProjectId=\(selected, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
                 self.loadState = .error(error.localizedDescription)
             }
 

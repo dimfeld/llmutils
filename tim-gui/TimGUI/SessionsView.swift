@@ -61,10 +61,53 @@ struct SessionsView: View {
     }
 }
 
+// MARK: - SessionGroupHeaderView
+
+private struct SessionGroupHeaderView: View {
+    let group: SessionGroup
+    let isCollapsed: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(self.isCollapsed ? 0 : 90))
+                .animation(.easeInOut(duration: 0.2), value: self.isCollapsed)
+
+            Text(self.group.displayName)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+
+            Spacer()
+
+            // Notification dot - always present, opacity-controlled (per AGENTS.md).
+            // Visible only when the group is collapsed AND has an unread notification.
+            Circle()
+                .fill(.blue)
+                .frame(width: 8, height: 8)
+                .opacity(self.isCollapsed && self.group.hasNotification ? 1 : 0)
+
+            Text("\(self.group.sessionCount)")
+                .font(.caption2)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(.quaternary, in: Capsule())
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: self.onToggle)
+    }
+}
+
 // MARK: - SessionListView
 
 struct SessionListView: View {
     @Bindable var sessionState: SessionState
+    @State private var collapsedGroups: Set<String> = []
 
     private var hasDisconnectedSessions: Bool {
         self.sessionState.sessions.contains { !$0.isActive }
@@ -78,16 +121,58 @@ struct SessionListView: View {
                 icon: "antenna.radiowaves.left.and.right")
                 .padding(.horizontal, 12)
         } else {
-            List(self.sessionState.sessions, selection: self.$sessionState.selectedSessionId) { session in
-                SessionRowView(
-                    session: session,
-                    isSelected: session.id == self.sessionState.selectedSessionId,
-                    onTap: { self.sessionState.handleSessionListItemTap(sessionId: session.id) },
-                    onTerminalTap: { self.sessionState.handleTerminalIconTap(sessionId: session.id) },
-                    onDismiss: { self.sessionState.dismissSession(id: session.id) })
+            List(selection: self.$sessionState.selectedSessionId) {
+                // Each ForEach iteration produces a single Section so that .onMove
+                // operates on one view per group. This avoids unpredictable drag behaviour
+                // that can occur when a ForEach iteration emits multiple sibling views.
+                ForEach(self.sessionState.groupedSessions) { group in
+                    let isCollapsed = self.collapsedGroups.contains(group.id)
+
+                    Section {
+                        if !isCollapsed {
+                            ForEach(group.sessions) { session in
+                                SessionRowView(
+                                    session: session,
+                                    isSelected: session.id == self.sessionState.selectedSessionId,
+                                    onTap: { self.sessionState.handleSessionListItemTap(sessionId: session.id) },
+                                    onTerminalTap: { self.sessionState.handleTerminalIconTap(sessionId: session.id) },
+                                    onDismiss: { self.sessionState.dismissSession(id: session.id) })
+                                    .tag(session.id)
+                            }
+                        }
+                    } header: {
+                        SessionGroupHeaderView(
+                            group: group,
+                            isCollapsed: isCollapsed)
+                        {
+                            if isCollapsed {
+                                self.collapsedGroups.remove(group.id)
+                            } else {
+                                self.collapsedGroups.insert(group.id)
+                            }
+                        }
+                    }
+                }
+                .onMove { from, to in
+                    self.sessionState.moveGroup(from: from, to: to)
+                }
             }
             .listStyle(.sidebar)
             .toolbar {
+                ToolbarItem(placement: .automatic) {
+                    Button(action: {
+                        guard let session = self.sessionState.firstSessionWithNotification else { return }
+                        let groupKey = sessionGroupKey(
+                            gitRemote: session.gitRemote,
+                            workspacePath: session.workspacePath)
+                        self.collapsedGroups.remove(groupKey)
+                        self.sessionState.handleSessionListItemTap(sessionId: session.id)
+                    }) {
+                        Image(systemName: "bell.badge")
+                    }
+                    .disabled(self.sessionState.firstSessionWithNotification == nil)
+                    .help("Jump to first notification")
+                }
                 ToolbarItem(placement: .automatic) {
                     if self.hasDisconnectedSessions {
                         Button(action: { self.sessionState.dismissAllDisconnected() }) {
@@ -687,16 +772,51 @@ struct SessionMessageView: View {
     SessionsView(
         sessionState: {
             let state = SessionState()
+
+            // Session 1 & 2 — same project (myapp), different tasks
+            let connId1 = UUID()
             state.addSession(
-                connectionId: UUID(),
+                connectionId: connId1,
                 info: SessionInfoPayload(
                     command: "agent",
                     planId: 169,
                     planTitle: "Add WebSocket support",
                     workspacePath: "/Users/dev/projects/myapp",
+                    gitRemote: "git@github.com:dimfeld/myapp.git",
+                    terminal: nil))
+            state.addSession(
+                connectionId: UUID(),
+                info: SessionInfoPayload(
+                    command: "agent",
+                    planId: 170,
+                    planTitle: "Fix auth bug",
+                    workspacePath: "/Users/dev/projects/myapp",
+                    gitRemote: "git@github.com:dimfeld/myapp.git",
+                    terminal: nil))
+
+            // Session 3 — different org/project
+            state.addSession(
+                connectionId: UUID(),
+                info: SessionInfoPayload(
+                    command: "agent",
+                    planId: 201,
+                    planTitle: "Refactor parser",
+                    workspacePath: "/Users/dev/projects/lib",
+                    gitRemote: "git@github.com:other-org/lib.git",
+                    terminal: nil))
+
+            // Session 4 — no gitRemote, falls back to workspacePath
+            state.addSession(
+                connectionId: UUID(),
+                info: SessionInfoPayload(
+                    command: "agent",
+                    planId: 202,
+                    planTitle: "Update docs",
+                    workspacePath: "/Users/dev/projects/another",
                     gitRemote: nil,
                     terminal: nil))
-            if let connId = state.sessions.first?.connectionId {
+
+            if let connId = state.sessions.first(where: { $0.connectionId == connId1 })?.connectionId {
                 let ts = "2026-02-13T00:30:00.000Z"
                 var seq = 0
                 func nextSeq() -> Int {

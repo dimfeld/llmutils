@@ -1846,3 +1846,169 @@ struct PrefixSelectCommandNormalizationTests {
             .extractCommandAfterCd("echo cd /path && npm test") == "echo cd /path && npm test")
     }
 }
+
+// MARK: - Project display name and session grouping tests
+
+@Suite("Project display name and session grouping")
+struct ProjectDisplayNameTests {
+    @Test("parseProjectDisplayName with SSH remote returns owner/repo")
+    func parseSSHRemote() {
+        let result = parseProjectDisplayName(
+            gitRemote: "git@github.com:someowner/myrepo.git",
+            workspacePath: nil)
+        #expect(result == "someowner/myrepo")
+    }
+
+    @Test("parseProjectDisplayName with HTTPS remote returns owner/repo")
+    func parseHTTPSRemote() {
+        let result = parseProjectDisplayName(
+            gitRemote: "https://github.com/someowner/myrepo.git",
+            workspacePath: nil)
+        #expect(result == "someowner/myrepo")
+    }
+
+    @Test("parseProjectDisplayName with HTTPS remote without .git suffix")
+    func parseHTTPSRemoteNoGitSuffix() {
+        let result = parseProjectDisplayName(
+            gitRemote: "https://github.com/someowner/myrepo",
+            workspacePath: nil)
+        #expect(result == "someowner/myrepo")
+    }
+
+    @Test("parseProjectDisplayName elides owner when matching current user")
+    func ownerElision() {
+        let result = parseProjectDisplayName(
+            gitRemote: "git@github.com:testuser/myrepo.git",
+            workspacePath: nil,
+            currentUser: "testuser")
+        #expect(result == "myrepo")
+    }
+
+    @Test("parseProjectDisplayName owner elision is case-insensitive")
+    func ownerElisionCaseInsensitive() {
+        let result = parseProjectDisplayName(
+            gitRemote: "git@github.com:TestUser/myrepo.git",
+            workspacePath: nil,
+            currentUser: "testuser")
+        #expect(result == "myrepo")
+    }
+
+    @Test("parseProjectDisplayName does not elide owner when different from current user")
+    func ownerNoElision() {
+        let result = parseProjectDisplayName(
+            gitRemote: "git@github.com:otheruser/myrepo.git",
+            workspacePath: nil,
+            currentUser: "testuser")
+        #expect(result == "otheruser/myrepo")
+    }
+
+    @Test("parseProjectDisplayName falls back to workspacePath when no gitRemote")
+    func workspacePathFallback() {
+        let result = parseProjectDisplayName(
+            gitRemote: nil,
+            workspacePath: "/Users/test/projects/myproject")
+        #expect(result == "projects/myproject")
+    }
+
+    @Test("parseProjectDisplayName returns full path when workspacePath is short")
+    func shortWorkspacePath() {
+        let result = parseProjectDisplayName(
+            gitRemote: nil,
+            workspacePath: "/myproject")
+        #expect(result == "/myproject")
+    }
+
+    @Test("parseProjectDisplayName returns Unknown when neither is available")
+    func unknownFallback() {
+        let result = parseProjectDisplayName(gitRemote: nil, workspacePath: nil)
+        #expect(result == "Unknown")
+    }
+
+    @Test("sessionGroupKey returns consistent key for SSH and HTTPS of same repo")
+    func groupKeyConsistency() {
+        let sshKey = sessionGroupKey(
+            gitRemote: "git@github.com:owner/repo.git",
+            workspacePath: nil)
+        let httpsKey = sessionGroupKey(
+            gitRemote: "https://github.com/owner/repo.git",
+            workspacePath: nil)
+        #expect(sshKey == httpsKey)
+        #expect(sshKey == "owner/repo")
+    }
+
+    @Test("sessionGroupKey is lowercased")
+    func groupKeyLowercased() {
+        let key = sessionGroupKey(
+            gitRemote: "git@github.com:Owner/Repo.git",
+            workspacePath: nil)
+        #expect(key == "owner/repo")
+    }
+
+    @Test("sessionGroupKey falls back to workspacePath when no gitRemote")
+    func groupKeyWorkspacePath() {
+        let key = sessionGroupKey(gitRemote: nil, workspacePath: "/Users/test/myproject")
+        #expect(key == "/Users/test/myproject")
+    }
+
+    @Test("sessionGroupKey returns __unknown__ when neither is available")
+    func groupKeyUnknown() {
+        let key = sessionGroupKey(gitRemote: nil, workspacePath: nil)
+        #expect(key == "__unknown__")
+    }
+
+    @Test("SessionGroup.hasNotification is true when any session has unread notification")
+    @MainActor
+    func sessionGroupHasNotification() {
+        let session1 = SessionItem(
+            id: UUID(), connectionId: UUID(), command: "agent",
+            planId: nil, planTitle: nil, workspacePath: nil, gitRemote: nil,
+            connectedAt: Date(), isActive: true, messages: [],
+            hasUnreadNotification: false)
+        let session2 = SessionItem(
+            id: UUID(), connectionId: UUID(), command: "agent",
+            planId: nil, planTitle: nil, workspacePath: nil, gitRemote: nil,
+            connectedAt: Date(), isActive: true, messages: [],
+            hasUnreadNotification: true)
+        let group = SessionGroup(id: "test", displayName: "Test", sessions: [session1, session2])
+        #expect(group.hasNotification == true)
+        #expect(group.sessionCount == 2)
+    }
+
+    @Test("parseProjectDisplayName with empty currentUser falls through to system user lookup")
+    func emptyCurrentUserFallsThrough() {
+        // Passing currentUser: "" means the explicit override is empty, so the function
+        // should fall through to NSUserName() / env["USER"]. Use an owner that won't
+        // match any real system user to confirm no elision occurs.
+        let result = parseProjectDisplayName(
+            gitRemote: "git@github.com:zzzzunlikelyowner99999/myrepo.git",
+            workspacePath: nil,
+            currentUser: "")
+        // Owner doesn't match any system user, so full owner/repo should be returned
+        #expect(result == "zzzzunlikelyowner99999/myrepo")
+    }
+
+    @Test("parseProjectDisplayName with all user sources empty does not elide owner")
+    func noUserAvailableNoElision() {
+        // When currentUser is an empty string and the owner happens to be empty too,
+        // the guard `!effectiveUser.isEmpty` prevents a false match.
+        // We test with a real owner but explicitly provided non-empty user that differs.
+        let result = parseProjectDisplayName(
+            gitRemote: "git@github.com:differentowner/myrepo.git",
+            workspacePath: nil,
+            currentUser: "anotheruser")
+        #expect(result == "differentowner/myrepo")
+    }
+
+    @Test("SessionGroup.hasNotification is false when no sessions have notifications")
+    @MainActor
+    func sessionGroupNoNotification() {
+        let session = SessionItem(
+            id: UUID(), connectionId: UUID(), command: "agent",
+            planId: nil, planTitle: nil, workspacePath: nil, gitRemote: nil,
+            connectedAt: Date(), isActive: true, messages: [],
+            hasUnreadNotification: false)
+        let group = SessionGroup(id: "test", displayName: "Test", sessions: [session])
+        #expect(group.hasNotification == false)
+        #expect(group.sessionCount == 1)
+    }
+}

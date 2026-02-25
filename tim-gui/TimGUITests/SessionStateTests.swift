@@ -2380,4 +2380,281 @@ struct SessionStateTests {
         state.markDisconnected(connectionId: connId)
         #expect(state.sessions[0].pendingPrompt == nil)
     }
+
+    // MARK: - Grouping tests
+
+    @Test("groupedSessions groups sessions by gitRemote")
+    func groupedSessionsByGitRemote() {
+        let state = SessionState()
+        state.addSession(
+            connectionId: UUID(),
+            info: self.makeInfo(command: "agent1", gitRemote: "git@github.com:owner/repo.git"))
+        state.addSession(
+            connectionId: UUID(),
+            info: self.makeInfo(command: "agent2", gitRemote: "git@github.com:owner/repo.git"))
+        state.addSession(
+            connectionId: UUID(),
+            info: self.makeInfo(command: "agent3", gitRemote: "git@github.com:owner/other.git"))
+
+        let groups = state.groupedSessions
+        #expect(groups.count == 2)
+
+        let repoGroup = groups.first { $0.id == "owner/repo" }
+        #expect(repoGroup?.sessionCount == 2)
+        let otherGroup = groups.first { $0.id == "owner/other" }
+        #expect(otherGroup?.sessionCount == 1)
+    }
+
+    @Test("groupedSessions follows groupOrder ordering")
+    func groupedSessionsOrderFollowsGroupOrder() {
+        let state = SessionState()
+        state.addSession(
+            connectionId: UUID(),
+            info: self.makeInfo(command: "agent1", gitRemote: "git@github.com:owner/alpha.git"))
+        state.addSession(
+            connectionId: UUID(),
+            info: self.makeInfo(command: "agent2", gitRemote: "git@github.com:owner/beta.git"))
+
+        // beta was added last, so it's at index 0 in groupOrder (newest first)
+        #expect(state.groupedSessions[0].id == "owner/beta")
+        #expect(state.groupedSessions[1].id == "owner/alpha")
+    }
+
+    @Test("moveGroup reorders groups in groupOrder")
+    func moveGroupReorders() {
+        let state = SessionState()
+        state.addSession(
+            connectionId: UUID(),
+            info: self.makeInfo(command: "agent1", gitRemote: "git@github.com:owner/alpha.git"))
+        state.addSession(
+            connectionId: UUID(),
+            info: self.makeInfo(command: "agent2", gitRemote: "git@github.com:owner/beta.git"))
+
+        // Initially: [beta, alpha] (beta added last)
+        #expect(state.groupedSessions[0].id == "owner/beta")
+
+        // Move alpha (index 1) before beta (to index 0)
+        state.moveGroup(from: IndexSet(integer: 1), to: 0)
+
+        #expect(state.groupedSessions[0].id == "owner/alpha")
+        #expect(state.groupedSessions[1].id == "owner/beta")
+    }
+
+    @Test("firstSessionWithNotification returns first session with notification in display order")
+    func firstSessionWithNotification() throws {
+        let state = SessionState()
+        let connId1 = UUID()
+        let connId2 = UUID()
+        state.addSession(
+            connectionId: connId1,
+            info: self.makeInfo(command: "agent1", gitRemote: "git@github.com:owner/alpha.git"))
+        state.addSession(
+            connectionId: connId2,
+            info: self.makeInfo(command: "agent2", gitRemote: "git@github.com:owner/beta.git"))
+
+        // No notifications yet
+        #expect(state.firstSessionWithNotification == nil)
+
+        // Set notification on alpha session (which is in group index 1 since beta was added last)
+        let alphaSession = try #require(state.sessions.first { $0.connectionId == connId1 })
+        alphaSession.hasUnreadNotification = true
+
+        // alpha is in the second group, so firstSessionWithNotification should return it
+        // (no session in beta group has a notification)
+        let first = state.firstSessionWithNotification
+        #expect(first?.connectionId == connId1)
+    }
+
+    @Test("firstSessionWithNotification respects group display order after reorder")
+    func firstSessionWithNotificationRespectsGroupOrder() throws {
+        let state = SessionState()
+        let connId1 = UUID()
+        let connId2 = UUID()
+
+        // Add alpha first, then beta — so beta is at index 0 in groupOrder (most recently added)
+        state.addSession(
+            connectionId: connId1,
+            info: self.makeInfo(command: "agent1", gitRemote: "git@github.com:owner/alpha.git"))
+        state.addSession(
+            connectionId: connId2,
+            info: self.makeInfo(command: "agent2", gitRemote: "git@github.com:owner/beta.git"))
+
+        // Initially: beta is first (index 0), alpha is second (index 1)
+        #expect(state.groupedSessions[0].id == "owner/beta")
+        #expect(state.groupedSessions[1].id == "owner/alpha")
+
+        // Set notifications on both groups
+        let alphaSession = try #require(state.sessions.first { $0.connectionId == connId1 })
+        let betaSession = try #require(state.sessions.first { $0.connectionId == connId2 })
+        alphaSession.hasUnreadNotification = true
+        betaSession.hasUnreadNotification = true
+
+        // Before reorder: beta group is first, so firstSessionWithNotification returns beta's session
+        let firstBeforeReorder = state.firstSessionWithNotification
+        #expect(firstBeforeReorder?.connectionId == connId2)
+
+        // Reorder: move alpha (index 1) before beta (to index 0)
+        state.moveGroup(from: IndexSet(integer: 1), to: 0)
+        #expect(state.groupedSessions[0].id == "owner/alpha")
+
+        // After reorder: alpha group is now first, so firstSessionWithNotification returns alpha's session
+        let firstAfterReorder = state.firstSessionWithNotification
+        #expect(firstAfterReorder?.connectionId == connId1)
+    }
+
+    @Test("addSession inserts new group key at index 0 in groupOrder")
+    func addSessionInsertsGroupKeyAtFront() {
+        let state = SessionState()
+        state.addSession(
+            connectionId: UUID(),
+            info: self.makeInfo(command: "agent1", gitRemote: "git@github.com:owner/alpha.git"))
+        state.addSession(
+            connectionId: UUID(),
+            info: self.makeInfo(command: "agent2", gitRemote: "git@github.com:owner/beta.git"))
+
+        // beta was added last, should be at index 0 in groupOrder
+        #expect(state.groupOrder[0] == "owner/beta")
+        #expect(state.groupOrder[1] == "owner/alpha")
+    }
+
+    @Test("addSession does not duplicate existing group key in groupOrder")
+    func addSessionNoDuplicateGroupKey() {
+        let state = SessionState()
+        state.addSession(
+            connectionId: UUID(),
+            info: self.makeInfo(command: "agent1", gitRemote: "git@github.com:owner/repo.git"))
+        state.addSession(
+            connectionId: UUID(),
+            info: self.makeInfo(command: "agent2", gitRemote: "git@github.com:owner/repo.git"))
+
+        // Same group key — groupOrder should only contain it once
+        #expect(state.groupOrder.count == 1)
+        #expect(state.groupOrder[0] == "owner/repo")
+    }
+
+    @Test("dismissSession removes empty group keys from groupOrder")
+    func dismissSessionCleansGroupOrder() throws {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(
+            connectionId: connId,
+            info: self.makeInfo(command: "agent1", gitRemote: "git@github.com:owner/alpha.git"))
+        state.addSession(
+            connectionId: UUID(),
+            info: self.makeInfo(command: "agent2", gitRemote: "git@github.com:owner/beta.git"))
+
+        #expect(state.groupOrder.count == 2)
+
+        // Mark alpha session as disconnected, then dismiss it
+        state.markDisconnected(connectionId: connId)
+        let alphaSession = try #require(state.sessions.first { $0.connectionId == connId })
+        state.dismissSession(id: alphaSession.id)
+
+        // alpha group should be removed from groupOrder
+        #expect(state.groupOrder.count == 1)
+        #expect(state.groupOrder[0] == "owner/beta")
+    }
+
+    @Test("dismissAllDisconnected removes empty group keys from groupOrder")
+    func dismissAllDisconnectedCleansGroupOrder() {
+        let state = SessionState()
+        let connId1 = UUID()
+        state.addSession(
+            connectionId: connId1,
+            info: self.makeInfo(command: "agent1", gitRemote: "git@github.com:owner/alpha.git"))
+        state.addSession(
+            connectionId: UUID(),
+            info: self.makeInfo(command: "agent2", gitRemote: "git@github.com:owner/beta.git"))
+
+        // Disconnect alpha
+        state.markDisconnected(connectionId: connId1)
+        state.dismissAllDisconnected()
+
+        #expect(state.groupOrder.count == 1)
+        #expect(state.groupOrder.contains("owner/beta"))
+        #expect(!state.groupOrder.contains("owner/alpha"))
+    }
+
+    @Test("addSession removes stale group key when session metadata changes to new group")
+    func addSessionRemovesStaleGroupKeyOnMetadataChange() {
+        let state = SessionState()
+        let connId = UUID()
+
+        // Add session with gitRemote alpha
+        state.addSession(
+            connectionId: connId,
+            info: self.makeInfo(command: "agent1", gitRemote: "git@github.com:owner/alpha.git"))
+
+        #expect(state.groupOrder.contains("owner/alpha"))
+        #expect(!state.groupOrder.contains("owner/beta"))
+
+        // Update same session with different gitRemote (simulates session_info update with changed repo)
+        state.addSession(
+            connectionId: connId,
+            info: self.makeInfo(command: "agent1", gitRemote: "git@github.com:owner/beta.git"))
+
+        // Old key should be gone, new key should be present
+        #expect(!state.groupOrder.contains("owner/alpha"))
+        #expect(state.groupOrder.contains("owner/beta"))
+        #expect(state.groupOrder.count == 1)
+    }
+
+    @Test("addSession keeps old group key when another session still uses it after metadata change")
+    func addSessionKeepsOldGroupKeyIfOtherSessionUsesIt() {
+        let state = SessionState()
+        let connId1 = UUID()
+        let connId2 = UUID()
+
+        // Two sessions in the same group
+        state.addSession(
+            connectionId: connId1,
+            info: self.makeInfo(command: "agent1", gitRemote: "git@github.com:owner/alpha.git"))
+        state.addSession(
+            connectionId: connId2,
+            info: self.makeInfo(command: "agent2", gitRemote: "git@github.com:owner/alpha.git"))
+
+        #expect(state.groupOrder.count == 1)
+        #expect(state.groupOrder.contains("owner/alpha"))
+
+        // Move connId1's session to a different group
+        state.addSession(
+            connectionId: connId1,
+            info: self.makeInfo(command: "agent1", gitRemote: "git@github.com:owner/beta.git"))
+
+        // Old key stays because connId2's session still uses it
+        #expect(state.groupOrder.contains("owner/alpha"))
+        #expect(state.groupOrder.contains("owner/beta"))
+        #expect(state.groupOrder.count == 2)
+    }
+
+    @Test("moveGroup works correctly when groupedSessions contains notification-only groups not in groupOrder")
+    func moveGroupWithNotificationOnlyGroups() {
+        let state = SessionState()
+
+        // Add one normal session (goes into groupOrder)
+        state.addSession(
+            connectionId: UUID(),
+            info: self.makeInfo(command: "agent1", gitRemote: "git@github.com:owner/alpha.git"))
+
+        // Inject a notification-only session for a different workspace (NOT added to groupOrder)
+        let notifPayload = MessagePayload(
+            message: "Notification from beta",
+            workspacePath: "/projects/beta",
+            terminal: nil)
+        state.ingestNotification(payload: notifPayload)
+
+        // groupedSessions should have 2 groups: alpha (from groupOrder) and beta (notification-only, appended)
+        #expect(state.groupedSessions.count == 2)
+        // groupOrder only contains alpha
+        #expect(state.groupOrder.count == 1)
+        #expect(state.groupOrder.contains("owner/alpha"))
+
+        // Move the second group (beta, index 1) to position 0
+        state.moveGroup(from: IndexSet(integer: 1), to: 0)
+
+        // After move, groupOrder should contain both keys in new order (beta first, then alpha)
+        #expect(state.groupOrder.count == 2)
+        #expect(state.groupOrder[0] == "/projects/beta")
+        #expect(state.groupOrder[1] == "owner/alpha")
+    }
 }

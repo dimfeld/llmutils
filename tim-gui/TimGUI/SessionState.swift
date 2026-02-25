@@ -22,9 +22,75 @@ final class SessionState {
     var sessions: [SessionItem] = []
     var selectedSessionId: UUID?
     var sendMessageHandler: ((UUID, OutgoingMessage) async throws -> Void)?
+    var groupOrder: [String] = []
     private var pendingMessages: [UUID: [SessionMessage]] = [:]
     private var replayingConnections: Set<UUID> = []
     private var replayMessages: [UUID: [SessionMessage]] = [:]
+
+    /// Groups sessions by project, ordered by `groupOrder`. Groups not in `groupOrder` are appended at the end.
+    ///
+    /// This is a computed property that iterates all sessions on every access. For typical session
+    /// counts (<50), the recomputation cost is negligible. If session counts grow significantly,
+    /// consider caching this as a stored property invalidated when `sessions` or `groupOrder` change.
+    var groupedSessions: [SessionGroup] {
+        var groups: [String: [SessionItem]] = [:]
+        var seenOrder: [String] = []
+        for session in self.sessions {
+            let key = sessionGroupKey(gitRemote: session.gitRemote, workspacePath: session.workspacePath)
+            if groups[key] == nil {
+                seenOrder.append(key)
+            }
+            groups[key, default: []].append(session)
+        }
+
+        var result: [SessionGroup] = []
+        var handled: Set<String> = []
+
+        for key in self.groupOrder {
+            guard let sessionList = groups[key], !sessionList.isEmpty else { continue }
+            let displayName = parseProjectDisplayName(
+                gitRemote: sessionList.first?.gitRemote,
+                workspacePath: sessionList.first?.workspacePath)
+            result.append(SessionGroup(id: key, displayName: displayName, sessions: sessionList))
+            handled.insert(key)
+        }
+
+        // Append groups not in groupOrder, preserving their first-seen order
+        for key in seenOrder where !handled.contains(key) {
+            guard let sessionList = groups[key] else { continue }
+            let displayName = parseProjectDisplayName(
+                gitRemote: sessionList.first?.gitRemote,
+                workspacePath: sessionList.first?.workspacePath)
+            result.append(SessionGroup(id: key, displayName: displayName, sessions: sessionList))
+        }
+
+        return result
+    }
+
+    /// Returns the first session with an unread notification, in grouped display order.
+    ///
+    /// Iterates `groupedSessions` so that after a user reorders groups via drag, the bell
+    /// button jumps to the topmost visible notification group rather than insertion order.
+    var firstSessionWithNotification: SessionItem? {
+        for group in self.groupedSessions {
+            if let session = group.sessions.first(where: { $0.hasUnreadNotification }) {
+                return session
+            }
+        }
+        return nil
+    }
+
+    /// Reorders group display order by moving entries in `groupOrder`.
+    ///
+    /// Rebuilds the order from the current `groupedSessions` array before performing the move,
+    /// so that indices provided by `.onMove` (which operate on `groupedSessions`) always align
+    /// with the array being mutated — even when `groupedSessions` contains notification-only
+    /// groups that are not yet tracked in `groupOrder`.
+    func moveGroup(from: IndexSet, to: Int) {
+        var order = self.groupedSessions.map(\.id)
+        order.move(fromOffsets: from, toOffset: to)
+        self.groupOrder = order
+    }
 
     var selectedSession: SessionItem? {
         guard let id = selectedSessionId else { return nil }
@@ -34,12 +100,25 @@ final class SessionState {
     func addSession(connectionId: UUID, info: SessionInfoPayload) {
         // If a session already exists for this connectionId, update its metadata
         if let existing = sessions.first(where: { $0.connectionId == connectionId }) {
+            let oldKey = sessionGroupKey(gitRemote: existing.gitRemote, workspacePath: existing.workspacePath)
             existing.command = info.command
             existing.planId = info.planId
             existing.planTitle = info.planTitle
             existing.workspacePath = info.workspacePath
             existing.gitRemote = info.gitRemote
             existing.terminal = info.terminal
+            let newKey = sessionGroupKey(gitRemote: info.gitRemote, workspacePath: info.workspacePath)
+            if oldKey != newKey {
+                // Remove old key if no other sessions still belong to it
+                let oldKeyStillUsed = self.sessions.contains { s in
+                    s.id != existing.id &&
+                        sessionGroupKey(gitRemote: s.gitRemote, workspacePath: s.workspacePath) == oldKey
+                }
+                if !oldKeyStillUsed {
+                    self.groupOrder.removeAll { $0 == oldKey }
+                }
+            }
+            if !self.groupOrder.contains(newKey) { self.groupOrder.insert(newKey, at: 0) }
             return
         }
 
@@ -67,6 +146,8 @@ final class SessionState {
             if self.selectedSessionId == nil {
                 self.selectedSessionId = notificationOnly.id
             }
+            let key = sessionGroupKey(gitRemote: info.gitRemote, workspacePath: info.workspacePath)
+            if !self.groupOrder.contains(key) { self.groupOrder.insert(key, at: 0) }
             return
         }
 
@@ -95,6 +176,8 @@ final class SessionState {
         if self.selectedSessionId == nil {
             self.selectedSessionId = session.id
         }
+        let key = sessionGroupKey(gitRemote: info.gitRemote, workspacePath: info.workspacePath)
+        if !self.groupOrder.contains(key) { self.groupOrder.insert(key, at: 0) }
     }
 
     /// Find a notification-only session that matches the incoming session info.
@@ -252,6 +335,8 @@ final class SessionState {
         if self.selectedSessionId == id {
             self.selectedSessionId = self.sessions.first?.id
         }
+        let activeKeys = Set(sessions.map { sessionGroupKey(gitRemote: $0.gitRemote, workspacePath: $0.workspacePath) })
+        self.groupOrder.removeAll { !activeKeys.contains($0) }
     }
 
     func dismissAllDisconnected() {
@@ -261,6 +346,8 @@ final class SessionState {
         if let selectedId = selectedSessionId, disconnectedIds.contains(selectedId) {
             self.selectedSessionId = self.sessions.first?.id
         }
+        let activeKeys = Set(sessions.map { sessionGroupKey(gitRemote: $0.gitRemote, workspacePath: $0.workspacePath) })
+        self.groupOrder.removeAll { !activeKeys.contains($0) }
     }
 
     func sendUserInput(sessionId: UUID, content: String) async throws {

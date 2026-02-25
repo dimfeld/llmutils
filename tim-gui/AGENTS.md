@@ -90,6 +90,31 @@ The app reads `tim.db` (SQLite, read-only). All data for the Projects view comes
 - Concurrent refresh requests are coalesced; additional calls request a follow-up refresh, so updates are not dropped
 - All published state updates happen on MainActor
 
+## Session Grouping by Project
+
+Sessions in the sidebar are grouped by project/workspace. The grouping logic lives in two layers:
+
+### Model Layer (`SessionModels.swift`)
+
+- **`parseProjectDisplayName(gitRemote:workspacePath:currentUser:)`** — Derives a human-readable project name. Parses `gitRemote` (SSH `git@host:owner/repo.git` or HTTPS `https://host/owner/repo.git`) to extract `owner/repo`, stripping `.git` suffix. If `owner` matches the current macOS user (via `NSUserName()` or `USER` env var, case-insensitive), returns just the repo name. Falls back to `SessionRowView.shortenedPath()` on `workspacePath`, then `"Unknown"`.
+- **`sessionGroupKey(gitRemote:workspacePath:)`** — Returns a stable, lowercased grouping key: normalized `owner/repo` from `gitRemote`, or `workspacePath`, or `"__unknown__"`. Lowercasing ensures SSH and HTTPS URLs for the same repo produce the same key.
+- **`SessionGroup`** — `@MainActor` struct with `id` (group key), `displayName`, `sessions: [SessionItem]`, and computed `hasNotification` / `sessionCount`.
+
+### State Layer (`SessionState.swift`)
+
+- **`groupOrder: [String]`** — Ordered list of group keys controlling sidebar display order.
+- **`groupedSessions: [SessionGroup]`** — Computed property that groups sessions by `sessionGroupKey()`, ordered by `groupOrder`, with unknown groups appended at the end.
+- **`firstSessionWithNotification: SessionItem?`** — Computed, iterates `groupedSessions` in display order (group-by-group, then session-by-session within each group) so the toolbar bell button always jumps to the topmost visible notification after user reordering.
+- **`moveGroup(from:to:)`** — Rebuilds `groupOrder` from `groupedSessions.map(\.id)` before applying the move, ensuring indices from `.onMove` align with the visible list (not the raw backing array, which may differ in length).
+- **Auto-insertion and stale key cleanup**: `addSession()` inserts new group keys at index 0 of `groupOrder`. When a session's metadata changes its group key, the old key is removed from `groupOrder` (if no other sessions remain in that group) before inserting the new one.
+- **Cleanup**: `dismissSession()` and `dismissAllDisconnected()` remove `groupOrder` entries with no remaining sessions.
+
+### UI Layer (`SessionsView.swift`)
+
+- **`SessionListView`** uses `@State private var collapsedGroups: Set<String>` to track collapsed groups. The list body iterates `ForEach(sessionState.groupedSessions)` with `.onMove` for group drag-to-reorder. Each ForEach iteration wraps its output in a `Section` (header + session rows) so `.onMove` sees one view per iteration — without this, multiple sibling views per iteration cause unpredictable drag behavior. Uses custom collapse/expand via `if !collapsedGroups.contains(group.id)` rather than `DisclosureGroup`, which has selection-binding quirks inside `List(selection:)`. Session rows are tagged with `.tag(session.id)` to make the selection binding work inside grouped `ForEach`.
+- **`SessionGroupHeaderView`** — Shows animated chevron (rotated when collapsed), project display name, session count badge (capsule), and notification dot (opacity-based, visible only when collapsed and group has notification). Uses `.listRowBackground(.clear)` and `.listRowSeparator(.hidden)` for clean appearance.
+- **Toolbar notification button** — `bell.badge` SF Symbol, disabled when `sessionState.firstSessionWithNotification` is nil. On tap: expands the target group (removes from `collapsedGroups`), selects the session, and calls `handleSessionListItemTap(sessionId:)`. Placed before the "Clear Disconnected" button.
+
 ## Development Conventions
 
 ### Async Coalescing
@@ -110,3 +135,7 @@ All `sqlite3_step` loops **must** validate return codes — `while sqlite3_step(
 
 - **Use `.opacity()` instead of conditional rendering for fixed-size elements**: When toggling visibility of small fixed-size elements (e.g., indicator dots), use `.opacity(condition ? 1 : 0)` rather than `if condition { Circle() }`. Conditional rendering causes layout shifts as SwiftUI adds/removes the element from the view hierarchy, while opacity reserves the space and avoids jank.
 - **Unread-dot behavior**: Clear `hasUnreadNotification` when the user either clicks the session row or clicks the WezTerm terminal icon in that row.
+- **`.onMove` requires one view per `ForEach` iteration**: When a group needs multiple sibling views (e.g., header + session rows), wrap them in a `Section`. Without this, `.onMove` cannot determine item boundaries and drag behavior becomes unpredictable.
+- **`.onMove` index alignment**: `.onMove` provides indices into the array that `ForEach` iterates. Any function receiving those indices must operate on the same array. If the backing store differs in length or ordering from the `ForEach` source, rebuild from the computed array before applying the move.
+- **Prefer custom collapse over `DisclosureGroup` inside `List(selection:)`**: `DisclosureGroup` has selection-binding quirks when used inside `List(selection:)`. Use custom collapse/expand via `if` conditionals + `Set<String>` for tracking collapsed state when the list needs a working selection binding.
+- **Computed property optimization vs. semantic contract**: When a computed property (e.g., grouped sessions) is accessed multiple times in a view body, downstream consumers can sometimes avoid recomputation by operating on the underlying data directly. However, verify this doesn't change semantics — e.g., scanning a raw array for "first match" is only correct if the array order matches the intended display order.
