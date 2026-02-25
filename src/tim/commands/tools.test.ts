@@ -318,6 +318,42 @@ describe('tim tools CLI handlers', () => {
     expect(updatedPlan).toContain('This uses detail instead of description');
   });
 
+  test('update-plan-tasks accepts details as alias for description', async () => {
+    const planFile = path.join(tasksDir, '16-details-alias.plan.md');
+    const plan: PlanSchema = {
+      id: 16,
+      title: 'Details Alias Plan',
+      goal: 'Test details alias',
+      details: 'Initial details',
+      status: 'pending',
+      tasks: [],
+    };
+
+    const context = createToolContext();
+    const args = {
+      plan: planFile,
+      tasks: [
+        {
+          title: 'Task with details',
+          details: 'This uses details instead of description',
+        },
+      ],
+    };
+    await writePlanFile(planFile, plan, { skipUpdatedAt: true });
+    const toolOutput = await updatePlanTasksTool(
+      args as Parameters<typeof updatePlanTasksTool>[0],
+      context
+    );
+
+    expect(toolOutput.text).toContain('Successfully updated plan');
+    expect(toolOutput.text).toContain('1 task');
+
+    // Verify the task was written with description field
+    const updatedPlan = await fs.readFile(planFile, 'utf-8');
+    expect(updatedPlan).toContain('Task with details');
+    expect(updatedPlan).toContain('This uses details instead of description');
+  });
+
   test('update-plan-tasks with --tasks option bypasses stdin', async () => {
     const { handleToolCommand } = await import('./tools.js');
 

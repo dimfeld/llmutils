@@ -16,10 +16,10 @@ export async function updatePlanTasksTool(
   try {
     context.log?.info('Merging generated plan data');
 
-    // Normalize tasks: convert 'detail' to 'description' for backwards compatibility
+    // Normalize tasks: convert legacy aliases to 'description'
     const normalizedTasks = args.tasks.map((task) => ({
       title: task.title,
-      description: (task.description ?? task.detail)!,
+      description: (task.description ?? task.detail ?? task.details)!,
       done: task.done ?? false,
     }));
 
