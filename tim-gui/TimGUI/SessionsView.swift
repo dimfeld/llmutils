@@ -1,5 +1,40 @@
 import SwiftUI
 
+private enum LoopDiagnostics {
+    // Mitigations are enabled by default. Set to "0"/"false"/"no"/"off" to opt out.
+    static let disableContainerAnimation = envFlag("TIM_GUI_DISABLE_CONTAINER_ANIMATION", defaultValue: true)
+    static let disableInputBarHeightFeedback = envFlag(
+        "TIM_GUI_DISABLE_INPUTBAR_HEIGHT_FEEDBACK",
+        defaultValue: true)
+    static let disableMessageTextSelection = envFlag(
+        "TIM_GUI_DISABLE_MESSAGE_TEXT_SELECTION",
+        defaultValue: true)
+
+    private static func envFlag(_ key: String, defaultValue: Bool) -> Bool {
+        guard let value = ProcessInfo.processInfo.environment[key]?.lowercased() else {
+            return defaultValue
+        }
+        if value == "1" || value == "true" || value == "yes" || value == "on" {
+            return true
+        }
+        if value == "0" || value == "false" || value == "no" || value == "off" {
+            return false
+        }
+        return defaultValue
+    }
+}
+
+extension View {
+    @ViewBuilder
+    fileprivate func applyIf(_ condition: Bool, transform: (Self) -> some View) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
+        }
+    }
+}
+
 // MARK: - SessionsView
 
 struct SessionsView: View {
@@ -311,7 +346,9 @@ struct SessionDetailView: View {
                     .help("Scroll to bottom")
                     .transition(.opacity)
                     .padding(16)
-                    .padding(.bottom, self.inputBarHeight)
+                    .padding(
+                        .bottom,
+                        LoopDiagnostics.disableInputBarHeightFeedback ? 0 : self.inputBarHeight)
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -330,16 +367,20 @@ struct SessionDetailView: View {
                             try await self.sessionState.sendUserInput(
                                 sessionId: self.session.id, content: text)
                         }
-                        .background(
-                            GeometryReader { geo in
-                                Color.clear.preference(
-                                    key: InputBarHeightKey.self,
-                                    value: geo.size.height)
-                            })
+                        .applyIf(!LoopDiagnostics.disableInputBarHeightFeedback) { view in
+                            view.background(
+                                GeometryReader { geo in
+                                    Color.clear.preference(
+                                        key: InputBarHeightKey.self,
+                                        value: geo.size.height)
+                                })
+                        }
                     }
                 }
             }
-            .animation(.easeInOut(duration: 0.2), value: self.isNearBottom)
+            .animation(
+                LoopDiagnostics.disableContainerAnimation ? nil : .easeInOut(duration: 0.2),
+                value: self.isNearBottom)
             .focusable()
             .focused(self.$isFocused)
             .onAppear {
@@ -372,6 +413,10 @@ struct SessionDetailView: View {
             }
         }
         .onPreferenceChange(InputBarHeightKey.self) { height in
+            if LoopDiagnostics.disableInputBarHeightFeedback {
+                self.inputBarHeight = 0
+                return
+            }
             // Ignore sub-point jitter from layout recalculation to avoid
             // unnecessary view invalidation.
             if abs(self.inputBarHeight - height) > 0.5 {
@@ -510,7 +555,9 @@ struct SessionMessageView: View {
                 self.bodyView(body)
             }
         }
-        .textSelection(.enabled)
+        .applyIf(!LoopDiagnostics.disableMessageTextSelection) { view in
+            view.textSelection(.enabled)
+        }
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
