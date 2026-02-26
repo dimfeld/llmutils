@@ -35,7 +35,7 @@ The Active Work view uses a `NavigationSplitView`:
 
 - **Sidebar** — project list; each row shows the project display name and the last two path components of its git root for context
 - **Detail pane** — scrollable `ProjectDetailView` for the selected project, containing:
-  - **Workspaces section** — each workspace row shows: name, current git branch (chip), the plan it is assigned to, and a status badge for non-default states only (Primary / Locked). Available status is implied by absence of a badge. Uses unconditional `.frame(width: 14)` on the status icon area to maintain row alignment across mixed states.
+  - **Workspaces section** — shows only recently active workspaces by default (locked, primary, or updated within 48 hours). A "Show all workspaces (N total)" toggle expands to the full list. Each workspace row shows: name, current git branch (chip), assigned plan as `#planId title` (when present), and a status badge for non-default states only (Primary / Locked). Available status is implied by absence of a badge. Uses unconditional `.frame(width: 14)` on the status icon area to maintain row alignment across mixed states. The section uses `.id(selectedProjectId)` to reset the `@State` toggle when switching projects.
   - **Plans section** — shows only active plans (in-progress and blocked); no filter chips. Each plan row shows plan number, title, goal, status badge, and a relative timestamp.
 
 **Plan filtering** — hardcoded to show only active work:
@@ -57,8 +57,8 @@ The app reads `tim.db` (SQLite, read-only). All data for the Projects view comes
 
 **Key files:**
 
-- `ProjectTrackingModels.swift` — Domain types (`TrackedProject`, `TrackedWorkspace`, `TrackedPlan`, `PlanDisplayStatus`) and pure filter functions
-- `ProjectTrackingStore.swift` — `@Observable @MainActor` store that queries `tim.db`, manages `LoadState`, and runs periodic refresh
+- `ProjectTrackingModels.swift` — Domain types (`TrackedProject`, `TrackedWorkspace`, `TrackedPlan`, `PlanDisplayStatus`) and pure filter functions. `TrackedWorkspace.isRecentlyActive(now:)` encapsulates the 48-hour recency check (locked/primary override regardless of date).
+- `ProjectTrackingStore.swift` — `@Observable @MainActor` store that queries `tim.db`, manages `LoadState`, and runs periodic refresh. Includes shared `parseISO8601Date()` helper (file-private, local formatters for thread safety) used by both workspace and plan fetch functions.
 - `ProjectsView.swift` — SwiftUI view hierarchy for the Active Work tab
 - `ContentView.swift` — top-level view with `AppTab` segmented picker (Sessions / Active Work); switching tabs does not affect `SessionState` or WebSocket connections
 
