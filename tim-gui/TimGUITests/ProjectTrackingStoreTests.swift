@@ -1395,8 +1395,7 @@ struct ProjectTrackingStoreTests {
 
         let now = Date()
         let hasActivePlans = store.plans.contains { plan in
-            let status = store.displayStatus(for: plan, now: now)
-            return status == .inProgress || status == .blocked
+            store.displayStatus(for: plan, now: now).isActiveWork
         }
         #expect(hasActivePlans)
     }
@@ -1421,8 +1420,7 @@ struct ProjectTrackingStoreTests {
 
         let now = Date()
         let hasActivePlans = store.plans.contains { plan in
-            let status = store.displayStatus(for: plan, now: now)
-            return status == .inProgress || status == .blocked
+            store.displayStatus(for: plan, now: now).isActiveWork
         }
         #expect(hasActivePlans)
         // Verify the blocked plan's status specifically
@@ -1454,8 +1452,7 @@ struct ProjectTrackingStoreTests {
 
         let now = Date()
         let hasActivePlans = store.plans.contains { plan in
-            let status = store.displayStatus(for: plan, now: now)
-            return status == .inProgress || status == .blocked
+            store.displayStatus(for: plan, now: now).isActiveWork
         }
         #expect(!hasActivePlans)
     }
@@ -1479,8 +1476,7 @@ struct ProjectTrackingStoreTests {
         let now = Date()
         let hasWorkspaces = !store.workspaces.isEmpty
         let hasActivePlans = store.plans.contains { plan in
-            let status = store.displayStatus(for: plan, now: now)
-            return status == .inProgress || status == .blocked
+            store.displayStatus(for: plan, now: now).isActiveWork
         }
 
         // Both conditions false → empty state should be shown
@@ -1508,8 +1504,7 @@ struct ProjectTrackingStoreTests {
         let now = Date()
         let hasWorkspaces = !store.workspaces.isEmpty
         let hasActivePlans = store.plans.contains { plan in
-            let status = store.displayStatus(for: plan, now: now)
-            return status == .inProgress || status == .blocked
+            store.displayStatus(for: plan, now: now).isActiveWork
         }
 
         // hasWorkspaces is true → dashboard content is shown (not empty state)
