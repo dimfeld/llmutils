@@ -11,6 +11,11 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
 import { getAssignmentEntriesByProject, type AssignmentEntry } from '../db/assignment.js';
 import { getDatabase } from '../db/database.js';
+import {
+  getPlanDependenciesByProject,
+  getPlansByProject,
+  getPlanTasksByProject,
+} from '../db/plan.js';
 import { getProject } from '../db/project.js';
 import {
   formatTagsSummary,
@@ -32,6 +37,95 @@ type ListPlan = PlanWithFilename & {
   isAssignedHere: boolean;
 };
 
+interface ListPlansLoadResult {
+  plans: Map<number, PlanWithFilename>;
+  duplicates: Record<number, string[]>;
+}
+
+function loadPlansFromDb(searchDir: string, repositoryId: string): ListPlansLoadResult {
+  const db = getDatabase();
+  const project = getProject(db, repositoryId);
+  if (!project) {
+    return { plans: new Map(), duplicates: {} };
+  }
+
+  const rows = getPlansByProject(db, project.id);
+  if (rows.length === 0) {
+    return { plans: new Map(), duplicates: {} };
+  }
+
+  const planUuidToId = new Map<string, number>();
+  for (const row of rows) {
+    planUuidToId.set(row.uuid, row.plan_id);
+  }
+
+  const tasksByPlanUuid = new Map<
+    string,
+    Array<{ title: string; description: string; done: boolean }>
+  >();
+  const taskRows = getPlanTasksByProject(db, project.id);
+  for (const taskRow of taskRows) {
+    const list = tasksByPlanUuid.get(taskRow.plan_uuid) ?? [];
+    list.push({
+      title: taskRow.title,
+      description: taskRow.description,
+      done: taskRow.done === 1,
+    });
+    tasksByPlanUuid.set(taskRow.plan_uuid, list);
+  }
+
+  const dependenciesByPlanUuid = new Map<string, number[]>();
+  const dependencyRows = getPlanDependenciesByProject(db, project.id);
+  for (const dependencyRow of dependencyRows) {
+    const dependencyPlanId = planUuidToId.get(dependencyRow.depends_on_uuid);
+    if (dependencyPlanId === undefined) {
+      continue;
+    }
+
+    const list = dependenciesByPlanUuid.get(dependencyRow.plan_uuid) ?? [];
+    list.push(dependencyPlanId);
+    dependenciesByPlanUuid.set(dependencyRow.plan_uuid, list);
+  }
+
+  const plans = new Map<number, PlanWithFilename>();
+  const seenIds = new Map<number, string[]>();
+
+  for (const row of rows) {
+    const absoluteFilename = path.join(searchDir, row.filename);
+    const existingPaths = seenIds.get(row.plan_id) ?? [];
+    existingPaths.push(absoluteFilename);
+    seenIds.set(row.plan_id, existingPaths);
+
+    const plan: PlanWithFilename = {
+      id: row.plan_id,
+      uuid: row.uuid,
+      title: row.title ?? undefined,
+      goal: row.goal ?? '',
+      details: row.details ?? '',
+      status: row.status,
+      priority: row.priority ?? undefined,
+      branch: row.branch ?? undefined,
+      epic: row.epic === 1,
+      tasks: tasksByPlanUuid.get(row.uuid) ?? [],
+      dependencies: dependenciesByPlanUuid.get(row.uuid) ?? [],
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      filename: absoluteFilename,
+    };
+
+    plans.set(row.plan_id, plan);
+  }
+
+  const duplicates: Record<number, string[]> = {};
+  for (const [id, filePaths] of seenIds.entries()) {
+    if (filePaths.length > 1) {
+      duplicates[id] = filePaths;
+    }
+  }
+
+  return { plans, duplicates };
+}
+
 export async function handleListCommand(options: any, command: any, searchTerms?: string[]) {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
@@ -47,15 +141,25 @@ export async function handleListCommand(options: any, command: any, searchTerms?
   // Determine directory to search
   let searchDir = options.dir || (await resolveTasksDir(config));
 
-  // Read all plans
-  const { plans, duplicates } = await readAllPlans(searchDir);
+  const repository = await getRepositoryIdentity({ cwd: searchDir });
 
-  if (plans.size === 0) {
-    log('No plan files found in', searchDir);
-    return;
+  const useLocalFiles = options.local === true;
+  let plans: Map<number, PlanWithFilename>;
+  let duplicates: Record<number, string[]>;
+  if (useLocalFiles) {
+    ({ plans, duplicates } = await readAllPlans(searchDir));
+  } else {
+    ({ plans, duplicates } = loadPlansFromDb(searchDir, repository.repositoryId));
+    if (plans.size === 0) {
+      // Fallback keeps list useful in repositories that have not synced plans into SQLite yet.
+      ({ plans, duplicates } = await readAllPlans(searchDir));
+    }
   }
 
-  const repository = await getRepositoryIdentity({ cwd: searchDir });
+  if (plans.size === 0) {
+    log('No plans found in', searchDir);
+    return;
+  }
 
   const db = getDatabase();
   let assignmentsLookup: Record<string, AssignmentEntry> = {};
@@ -317,7 +421,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     chalk.bold('Depends On'),
   ];
 
-  if (options.files) {
+  if (options.showFiles) {
     headers.push(chalk.bold('File'));
   }
 
@@ -454,7 +558,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
       dependenciesDisplay,
     ];
 
-    if (options.files) {
+    if (options.showFiles) {
       row.push(chalk.gray(path.relative(searchDir, plan.filename)));
     }
 
@@ -482,8 +586,8 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     7 + // Steps
     dependsWidth;
 
-  const fileColumnWidth = options.files ? fileWidth : 0;
-  const columnCount = options.files ? 11 : 10;
+  const fileColumnWidth = options.showFiles ? fileWidth : 0;
+  const columnCount = options.showFiles ? 11 : 10;
   const borderPadding = columnCount * 3 + 1; // 3 chars per column separator + 1 for end
 
   const usedWidth = fixedColumnsWidth + fileColumnWidth + borderPadding;
@@ -520,7 +624,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
   };
 
   // Add file column configuration if showing files
-  if (options.files) {
+  if (options.showFiles) {
     tableConfig.columns[10] = { width: fileWidth, wrapWord: true };
   }
 

@@ -27,6 +27,11 @@ export interface PlanTaskRow {
   done: number;
 }
 
+export interface PlanDependencyRow {
+  plan_uuid: string;
+  depends_on_uuid: string;
+}
+
 export interface UpsertPlanInput {
   uuid: string;
   planId: number;
@@ -230,6 +235,34 @@ export function getPlanTasksByUuid(db: Database, planUuid: string): PlanTaskRow[
   return db
     .prepare('SELECT * FROM plan_task WHERE plan_uuid = ? ORDER BY task_index, id')
     .all(planUuid) as PlanTaskRow[];
+}
+
+export function getPlanTasksByProject(db: Database, projectId: number): PlanTaskRow[] {
+  return db
+    .prepare(
+      `
+      SELECT pt.*
+      FROM plan_task pt
+      INNER JOIN plan p ON p.uuid = pt.plan_uuid
+      WHERE p.project_id = ?
+      ORDER BY pt.plan_uuid, pt.task_index, pt.id
+    `
+    )
+    .all(projectId) as PlanTaskRow[];
+}
+
+export function getPlanDependenciesByProject(db: Database, projectId: number): PlanDependencyRow[] {
+  return db
+    .prepare(
+      `
+      SELECT pd.plan_uuid, pd.depends_on_uuid
+      FROM plan_dependency pd
+      INNER JOIN plan p ON p.uuid = pd.plan_uuid
+      WHERE p.project_id = ?
+      ORDER BY pd.plan_uuid, pd.depends_on_uuid
+    `
+    )
+    .all(projectId) as PlanDependencyRow[];
 }
 
 export function deletePlan(db: Database, uuid: string): boolean {

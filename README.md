@@ -2205,8 +2205,8 @@ tim compact ID [--dry-run] [--yes]
 ### Plan Discovery
 
 ```bash
-# List all plans
-tim list [--all] [--status STATUS] [--sort FIELD] [--tag TAG...] [--epic ID]
+# List all plans (SQLite by default, use --local to read plan files directly)
+tim list [--all] [--status STATUS] [--sort FIELD] [--tag TAG...] [--epic ID] [--local] [--show-files]
 
 # List ready plans
 tim ready [--pending-only] [--priority LEVEL] [--format FORMAT] [--tag TAG...] [--epic ID]

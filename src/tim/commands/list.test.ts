@@ -28,6 +28,9 @@ describe('handleListCommand', () => {
   let repositoryId: string;
   let assignmentsData: Record<string, any>;
   let currentUser: string | null;
+  let dbPlans: any[];
+  let dbPlanTasks: any[];
+  let dbPlanDependencies: any[];
 
   beforeEach(async () => {
     // Clear mocks
@@ -47,6 +50,9 @@ describe('handleListCommand', () => {
     repositoryId = 'list-tests';
     assignmentsData = {};
     currentUser = 'alice';
+    dbPlans = [];
+    dbPlanTasks = [];
+    dbPlanDependencies = [];
     // Set up mocks immediately before imports
     await moduleMocker.mock('../../logging.js', () => ({
       log: mockLog,
@@ -104,6 +110,11 @@ describe('handleListCommand', () => {
     await moduleMocker.mock('../db/project.js', () => ({
       getProject: () => ({ id: 1 }),
     }));
+    await moduleMocker.mock('../db/plan.js', () => ({
+      getPlansByProject: () => dbPlans,
+      getPlanTasksByProject: () => dbPlanTasks,
+      getPlanDependenciesByProject: () => dbPlanDependencies,
+    }));
     await moduleMocker.mock('../db/assignment.js', () => ({
       getAssignmentEntriesByProject: () => assignmentsData,
     }));
@@ -128,8 +139,57 @@ describe('handleListCommand', () => {
 
     await handleListCommand(options, command);
 
-    expect(mockLog).toHaveBeenCalledWith('No plan files found in', tasksDir);
+    expect(mockLog).toHaveBeenCalledWith('No plans found in', tasksDir);
     expect(mockTable).not.toHaveBeenCalled();
+  });
+
+  test('reads from SQLite by default', async () => {
+    dbPlans = [
+      {
+        uuid: 'db-plan-1',
+        project_id: 1,
+        plan_id: 44,
+        title: 'Plan from DB',
+        goal: 'loaded from sqlite',
+        details: 'details',
+        status: 'pending',
+        priority: 'high',
+        branch: null,
+        parent_uuid: null,
+        epic: 0,
+        filename: '44-plan-from-db.plan.md',
+        created_at: '2026-01-01T00:00:00.000Z',
+        updated_at: '2026-01-01T00:00:00.000Z',
+      },
+    ];
+    dbPlanTasks = [
+      {
+        id: 1,
+        plan_uuid: 'db-plan-1',
+        task_index: 0,
+        title: 'db task',
+        description: 'from db',
+        done: 0,
+      },
+    ];
+    dbPlanDependencies = [];
+
+    const options = {
+      all: true,
+    };
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleListCommand(options, command);
+
+    expect(mockTable).toHaveBeenCalled();
+    const tableData = mockTable.mock.calls[0][0];
+    expect(tableData).toHaveLength(2);
+    expect(tableData[1][0]).toBe(44);
+    expect(tableData[1][2]).toContain('Plan from DB');
   });
 
   test('lists all plans when --all flag is used', async () => {

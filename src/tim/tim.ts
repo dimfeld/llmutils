@@ -737,7 +737,8 @@ program
     'Filter by status (can specify multiple). Valid values: pending, in_progress, done, cancelled, deferred, ready'
   )
   .option('--all', 'Show all plans regardless of status (overrides default filter)')
-  .option('--files', 'Show file paths column')
+  .option('--local', 'Read plan data from local files instead of SQLite')
+  .option('--show-files', 'Show file paths column')
   .option('-u, --user <username>', 'Filter by assignedTo username')
   .option('--mine', 'Show only plans assigned to current user')
   .option('--assigned', 'Show only plans that are claimed in shared assignments')

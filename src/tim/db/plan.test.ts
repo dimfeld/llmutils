@@ -7,9 +7,11 @@ import * as path from 'node:path';
 import { DATABASE_FILENAME, openDatabase } from './database.js';
 import {
   deletePlan,
+  getPlanDependenciesByProject,
   getPlanByUuid,
   getPlansByProject,
   getPlansNotInSet,
+  getPlanTasksByProject,
   getPlanTasksByUuid,
   upsertPlan,
   upsertPlanDependencies,
@@ -229,6 +231,43 @@ describe('tim db/plan', () => {
     const tasks = getPlanTasksByUuid(db, 'plan-order');
     expect(tasks.map((task) => task.title)).toEqual(['first', 'second', 'third']);
     expect(tasks.map((task) => task.task_index)).toEqual([0, 1, 2]);
+  });
+
+  test('getPlanTasksByProject and getPlanDependenciesByProject are project-scoped', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-proj-a',
+      planId: 101,
+      filename: '101.plan.md',
+      tasks: [{ title: 'task-a', description: 'a', done: false }],
+      dependencyUuids: ['dep-a'],
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'dep-a',
+      planId: 100,
+      filename: '100.plan.md',
+    });
+    upsertPlan(db, otherProjectId, {
+      uuid: 'plan-proj-b',
+      planId: 201,
+      filename: '201.plan.md',
+      tasks: [{ title: 'task-b', description: 'b', done: false }],
+      dependencyUuids: ['dep-b'],
+    });
+    upsertPlan(db, otherProjectId, {
+      uuid: 'dep-b',
+      planId: 200,
+      filename: '200.plan.md',
+    });
+
+    const projectTasks = getPlanTasksByProject(db, projectId);
+    expect(projectTasks).toHaveLength(1);
+    expect(projectTasks[0]?.plan_uuid).toBe('plan-proj-a');
+    expect(projectTasks[0]?.title).toBe('task-a');
+
+    const projectDeps = getPlanDependenciesByProject(db, projectId);
+    expect(projectDeps).toHaveLength(1);
+    expect(projectDeps[0]?.plan_uuid).toBe('plan-proj-a');
+    expect(projectDeps[0]?.depends_on_uuid).toBe('dep-a');
   });
 
   test('deletePlan removes tasks and dependencies via cascade', () => {
