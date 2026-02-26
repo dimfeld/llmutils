@@ -131,6 +131,57 @@ struct PlanSortOrderPlanNumberTests {
 
         #expect(result.count == 3)
     }
+
+    @Test("Same planId: sorted by updatedAt descending (DB default secondary order)")
+    func samePlanIdSortedByUpdatedAtDescending() {
+        let earlier = now.addingTimeInterval(-3600)
+        let evenEarlier = now.addingTimeInterval(-7200)
+
+        let p1 = makePlan(planId: 5, updatedAt: earlier, uuid: "b")
+        let p2 = makePlan(planId: 5, updatedAt: now, uuid: "a")
+        let p3 = makePlan(planId: 5, updatedAt: evenEarlier, uuid: "c")
+
+        let result = PlanSortOrder.planNumber.sorted(
+            [p1, p3, p2],
+            dependencyStatus: [:],
+            now: self.now)
+
+        // Same planId → sort by updatedAt descending
+        #expect(result.map(\.uuid) == ["a", "b", "c"])
+    }
+
+    @Test("nil planId with equal values: secondary updatedAt sort still applies")
+    func nilPlanIdUsesUpdatedAtTiebreaker() {
+        let earlier = now.addingTimeInterval(-3600)
+
+        let p1 = makePlan(planId: nil, updatedAt: earlier, uuid: "b")
+        let p2 = makePlan(planId: nil, updatedAt: now, uuid: "a")
+
+        let result = PlanSortOrder.planNumber.sorted(
+            [p1, p2],
+            dependencyStatus: [:],
+            now: self.now)
+
+        // Both nil planId (treated as 0) → sort by updatedAt descending
+        #expect(result.map(\.uuid) == ["a", "b"])
+    }
+
+    @Test("Same planId and updatedAt: uuid used as final tiebreaker (ascending)")
+    func samePlanIdAndUpdatedAtUsesUuidTiebreaker() {
+        let fixedDate = Date(timeIntervalSince1970: 1_000_000)
+
+        let p1 = makePlan(planId: 3, updatedAt: fixedDate, uuid: "z")
+        let p2 = makePlan(planId: 3, updatedAt: fixedDate, uuid: "a")
+        let p3 = makePlan(planId: 3, updatedAt: fixedDate, uuid: "m")
+
+        let result = PlanSortOrder.planNumber.sorted(
+            [p1, p3, p2],
+            dependencyStatus: [:],
+            now: self.now)
+
+        // Same planId AND same updatedAt → sort by uuid ascending
+        #expect(result.map(\.uuid) == ["a", "m", "z"])
+    }
 }
 
 // MARK: - PlanSortOrder: priority
@@ -197,6 +248,82 @@ struct PlanSortOrderPriorityTests {
         let result = PlanSortOrder.priority.sorted(plans, dependencyStatus: [:], now: self.now)
         #expect(result.count == 3)
     }
+
+    @Test("'maybe' ranked distinctly: urgent > high > medium > low > maybe > nil/unknown")
+    func maybePriorityFullRanking() {
+        let urgent = makePlan(priority: "urgent", uuid: "urgent")
+        let high = makePlan(priority: "high", uuid: "high")
+        let medium = makePlan(priority: "medium", uuid: "medium")
+        let low = makePlan(priority: "low", uuid: "low")
+        let maybe = makePlan(priority: "maybe", uuid: "maybe")
+        let none = makePlan(priority: nil, uuid: "none")
+
+        let result = PlanSortOrder.priority.sorted(
+            [none, low, medium, maybe, high, urgent],
+            dependencyStatus: [:],
+            now: self.now)
+
+        #expect(result.map(\.uuid) == ["urgent", "high", "medium", "low", "maybe", "none"])
+    }
+
+    @Test("'maybe' ranks above nil and unknown priority strings")
+    func maybePriorityRanksAboveNilAndUnknown() {
+        let maybe = makePlan(planId: 3, priority: "maybe", uuid: "maybe")
+        let none = makePlan(planId: 2, priority: nil, uuid: "none")
+        let unknown = makePlan(planId: 1, priority: "critical", uuid: "unknown")
+
+        let result = PlanSortOrder.priority.sorted(
+            [none, unknown, maybe],
+            dependencyStatus: [:],
+            now: self.now)
+
+        #expect(result[0].uuid == "maybe")
+        #expect(Set(result[1...].map(\.uuid)) == Set(["none", "unknown"]))
+    }
+
+    @Test("'maybe' ranks below 'low' priority")
+    func maybePriorityRanksBelowLow() {
+        let low = makePlan(planId: 1, priority: "low", uuid: "low")
+        let maybe = makePlan(planId: 2, priority: "maybe", uuid: "maybe")
+
+        let result = PlanSortOrder.priority.sorted(
+            [maybe, low],
+            dependencyStatus: [:],
+            now: self.now)
+
+        #expect(result[0].uuid == "low")
+        #expect(result[1].uuid == "maybe")
+    }
+
+    @Test("Priority sort: equal priority sorted by planId descending")
+    func equalPrioritySortedByPlanIdDescending() {
+        let p1 = makePlan(planId: 10, priority: "medium", uuid: "a")
+        let p2 = makePlan(planId: 30, priority: "medium", uuid: "b")
+        let p3 = makePlan(planId: 5, priority: "medium", uuid: "c")
+
+        let result = PlanSortOrder.priority.sorted(
+            [p1, p3, p2],
+            dependencyStatus: [:],
+            now: self.now)
+
+        // Same priority → sort by planId descending
+        #expect(result.map(\.planId) == [30, 10, 5])
+    }
+
+    @Test("Priority sort: nil planId treated as 0 for tiebreaker")
+    func prioritySortNilPlanIdTreatedAsZeroTiebreaker() {
+        let withId = makePlan(planId: 5, priority: "high", uuid: "a")
+        let nilId = makePlan(planId: nil, priority: "high", uuid: "b")
+
+        let result = PlanSortOrder.priority.sorted(
+            [nilId, withId],
+            dependencyStatus: [:],
+            now: self.now)
+
+        // Same priority → planId DESC: 5 > nil(0)
+        #expect(result[0].uuid == "a")
+        #expect(result[1].uuid == "b")
+    }
 }
 
 // MARK: - PlanSortOrder: recentlyUpdated
@@ -253,6 +380,40 @@ struct PlanSortOrderRecentlyUpdatedTests {
     func emptyListReturnsEmpty() {
         let result = PlanSortOrder.recentlyUpdated.sorted([], dependencyStatus: [:], now: self.now)
         #expect(result.isEmpty)
+    }
+
+    @Test("RecentlyUpdated sort: equal updatedAt sorted by planId descending")
+    func equalUpdatedAtSortedByPlanIdDescending() {
+        let fixedDate = Date(timeIntervalSince1970: 1_000_000)
+
+        let p1 = makePlan(planId: 10, updatedAt: fixedDate, uuid: "a")
+        let p2 = makePlan(planId: 30, updatedAt: fixedDate, uuid: "b")
+        let p3 = makePlan(planId: 5, updatedAt: fixedDate, uuid: "c")
+
+        let result = PlanSortOrder.recentlyUpdated.sorted(
+            [p1, p3, p2],
+            dependencyStatus: [:],
+            now: self.now)
+
+        // Same updatedAt → sort by planId descending
+        #expect(result.map(\.planId) == [30, 10, 5])
+    }
+
+    @Test("RecentlyUpdated sort: nil planId treated as 0 for tiebreaker")
+    func recentlyUpdatedSortNilPlanIdTreatedAsZeroTiebreaker() {
+        let fixedDate = Date(timeIntervalSince1970: 1_000_000)
+
+        let withId = makePlan(planId: 5, updatedAt: fixedDate, uuid: "a")
+        let nilId = makePlan(planId: nil, updatedAt: fixedDate, uuid: "b")
+
+        let result = PlanSortOrder.recentlyUpdated.sorted(
+            [nilId, withId],
+            dependencyStatus: [:],
+            now: self.now)
+
+        // Same updatedAt → planId DESC: 5 > nil(0)
+        #expect(result[0].uuid == "a")
+        #expect(result[1].uuid == "b")
     }
 }
 
@@ -330,6 +491,36 @@ struct PlanSortOrderStatusTests {
     func emptyListReturnsEmpty() {
         let result = PlanSortOrder.status.sorted([], dependencyStatus: [:], now: self.now)
         #expect(result.isEmpty)
+    }
+
+    @Test("Status sort: equal status sorted by planId descending")
+    func equalStatusSortedByPlanIdDescending() {
+        let p1 = makePlan(planId: 10, status: "pending", uuid: "a")
+        let p2 = makePlan(planId: 30, status: "pending", uuid: "b")
+        let p3 = makePlan(planId: 5, status: "pending", uuid: "c")
+
+        let result = PlanSortOrder.status.sorted(
+            [p1, p3, p2],
+            dependencyStatus: [:],
+            now: self.now)
+
+        // Same status → sort by planId descending
+        #expect(result.map(\.planId) == [30, 10, 5])
+    }
+
+    @Test("Status sort: nil planId treated as 0 for tiebreaker")
+    func statusSortNilPlanIdTreatedAsZeroTiebreaker() {
+        let withId = makePlan(planId: 5, status: "pending", uuid: "a")
+        let nilId = makePlan(planId: nil, status: "pending", uuid: "b")
+
+        let result = PlanSortOrder.status.sorted(
+            [nilId, withId],
+            dependencyStatus: [:],
+            now: self.now)
+
+        // Same status → planId DESC: 5 > nil(0)
+        #expect(result[0].uuid == "a")
+        #expect(result[1].uuid == "b")
     }
 }
 
