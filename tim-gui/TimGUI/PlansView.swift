@@ -8,7 +8,9 @@ enum PlanSortOrder: String, CaseIterable, Identifiable {
     case recentlyUpdated
     case status
 
-    var id: String { self.rawValue }
+    var id: String {
+        self.rawValue
+    }
 
     var label: String {
         switch self {

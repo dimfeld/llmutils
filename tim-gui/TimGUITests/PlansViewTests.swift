@@ -134,8 +134,8 @@ struct PlanSortOrderPlanNumberTests {
 
     @Test("Same planId: sorted by updatedAt descending (DB default secondary order)")
     func samePlanIdSortedByUpdatedAtDescending() {
-        let earlier = now.addingTimeInterval(-3600)
-        let evenEarlier = now.addingTimeInterval(-7200)
+        let earlier = self.now.addingTimeInterval(-3600)
+        let evenEarlier = self.now.addingTimeInterval(-7200)
 
         let p1 = makePlan(planId: 5, updatedAt: earlier, uuid: "b")
         let p2 = makePlan(planId: 5, updatedAt: now, uuid: "a")
@@ -152,7 +152,7 @@ struct PlanSortOrderPlanNumberTests {
 
     @Test("nil planId with equal values: secondary updatedAt sort still applies")
     func nilPlanIdUsesUpdatedAtTiebreaker() {
-        let earlier = now.addingTimeInterval(-3600)
+        let earlier = self.now.addingTimeInterval(-3600)
 
         let p1 = makePlan(planId: nil, updatedAt: earlier, uuid: "b")
         let p2 = makePlan(planId: nil, updatedAt: now, uuid: "a")
@@ -334,9 +334,9 @@ struct PlanSortOrderRecentlyUpdatedTests {
 
     @Test("Sorts plans by updatedAt descending (most recent first)")
     func sortsByUpdatedAtDescending() {
-        let oneHourAgo = now.addingTimeInterval(-1 * 60 * 60)
-        let oneDayAgo = now.addingTimeInterval(-24 * 60 * 60)
-        let oneWeekAgo = now.addingTimeInterval(-7 * 24 * 60 * 60)
+        let oneHourAgo = self.now.addingTimeInterval(-1 * 60 * 60)
+        let oneDayAgo = self.now.addingTimeInterval(-24 * 60 * 60)
+        let oneWeekAgo = self.now.addingTimeInterval(-7 * 24 * 60 * 60)
 
         let p1 = makePlan(updatedAt: oneDayAgo, uuid: "day")
         let p2 = makePlan(updatedAt: oneWeekAgo, uuid: "week")
@@ -423,9 +423,10 @@ struct PlanSortOrderRecentlyUpdatedTests {
 struct PlanSortOrderStatusTests {
     let now = Date()
 
-    @Test("Sorts plans by display status rank: inProgress < blocked < pending < recentlyDone < deferred < done < cancelled")
+    @Test(
+        "Sorts plans by display status rank: inProgress < blocked < pending < recentlyDone < deferred < done < cancelled")
     func sortsByStatusRank() {
-        let recentlyDoneDate = now.addingTimeInterval(-2 * 24 * 60 * 60)
+        let recentlyDoneDate = self.now.addingTimeInterval(-2 * 24 * 60 * 60)
 
         let inProgress = makePlan(status: "in_progress", uuid: "inProgress")
         let cancelled = makePlan(status: "cancelled", uuid: "cancelled")
@@ -437,7 +438,7 @@ struct PlanSortOrderStatusTests {
 
         let result = PlanSortOrder.status.sorted(
             [cancelled, deferred, pending, done, recentlyDone, inProgress, blocked],
-            dependencyStatus: ["blocked": true],  // blocked has unresolved deps
+            dependencyStatus: ["blocked": true], // blocked has unresolved deps
             now: self.now)
 
         #expect(result.map(\.uuid) == [
