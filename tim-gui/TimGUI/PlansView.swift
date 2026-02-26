@@ -287,14 +287,14 @@ private struct PlansBrowserView: View {
 
 // MARK: - PlanDetailView
 
-@MainActor private let planAbsoluteDateFormatter: DateFormatter = {
+@MainActor let planAbsoluteDateFormatter: DateFormatter = {
     let f = DateFormatter()
     f.dateStyle = .medium
     f.timeStyle = .short
     return f
 }()
 
-private struct PlanDetailView: View {
+struct PlanDetailView: View {
     let plan: TrackedPlan
     let store: ProjectTrackingStore
 

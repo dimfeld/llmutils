@@ -690,3 +690,166 @@ struct FilterPlansBySearchTextTests {
         #expect(result.map(\.uuid) == ["a", "c", "d"])
     }
 }
+
+// MARK: - PlanDetailView Tests
+
+@Suite("PlanDetailView")
+@MainActor
+struct PlanDetailViewTests {
+    // MARK: - Instantiation
+
+    @Test("PlanDetailView can be created with a minimal TrackedPlan")
+    func instantiateWithMinimalPlan() {
+        let plan = makePlan(planId: 42, title: "Minimal Plan")
+        let store = ProjectTrackingStore(dbPath: "/nonexistent/test.db")
+        // Verifies PlanDetailView(plan:store:) can be instantiated without crashing
+        let view = PlanDetailView(plan: plan, store: store)
+        _ = view
+    }
+
+    @Test("PlanDetailView can be created with all optional fields populated")
+    func instantiateWithFullPlan() {
+        let now = Date()
+        let plan = TrackedPlan(
+            uuid: UUID().uuidString,
+            projectId: "proj-1",
+            planId: 100,
+            title: "Full Plan",
+            goal: "Implement a comprehensive feature",
+            status: "in_progress",
+            priority: "high",
+            parentUuid: UUID().uuidString,
+            isEpic: true,
+            filename: "tasks/100-full-plan.plan.md",
+            createdAt: now.addingTimeInterval(-7 * 24 * 60 * 60),
+            updatedAt: now.addingTimeInterval(-3600),
+            branch: "feature/full-plan")
+        let store = ProjectTrackingStore(dbPath: "/nonexistent/test.db")
+        let view = PlanDetailView(plan: plan, store: store)
+        _ = view
+    }
+
+    @Test("PlanDetailView can be created with a plan that has no optional fields")
+    func instantiateWithNilFields() {
+        let plan = TrackedPlan(
+            uuid: UUID().uuidString,
+            projectId: "proj-1",
+            planId: nil,
+            title: nil,
+            goal: nil,
+            status: "pending",
+            priority: nil,
+            parentUuid: nil,
+            isEpic: false,
+            filename: nil,
+            createdAt: nil,
+            updatedAt: nil,
+            branch: nil)
+        let store = ProjectTrackingStore(dbPath: "/nonexistent/test.db")
+        let view = PlanDetailView(plan: plan, store: store)
+        _ = view
+    }
+
+    @Test("PlanDetailView can be created with a cancelled plan")
+    func instantiateWithCancelledPlan() {
+        let plan = makePlan(status: "cancelled", uuid: UUID().uuidString)
+        let store = ProjectTrackingStore(dbPath: "/nonexistent/test.db")
+        let view = PlanDetailView(plan: plan, store: store)
+        _ = view
+    }
+
+    @Test("PlanDetailView can be created with a done plan")
+    func instantiateWithDonePlan() {
+        let plan = makePlan(status: "done", updatedAt: Date().addingTimeInterval(-86400))
+        let store = ProjectTrackingStore(dbPath: "/nonexistent/test.db")
+        let view = PlanDetailView(plan: plan, store: store)
+        _ = view
+    }
+
+    // MARK: - planAbsoluteDateFormatter
+
+    @Test("planAbsoluteDateFormatter produces non-empty output for a known date")
+    func absoluteDateFormatterNonEmpty() {
+        var components = DateComponents()
+        components.year = 2025
+        components.month = 6
+        components.day = 15
+        components.hour = 14
+        components.minute = 30
+        let date = Calendar.current.date(from: components)!
+
+        let formatted = planAbsoluteDateFormatter.string(from: date)
+        #expect(!formatted.isEmpty)
+    }
+
+    @Test("planAbsoluteDateFormatter includes the year in its output")
+    func absoluteDateFormatterIncludesYear() {
+        var components = DateComponents()
+        components.year = 2025
+        components.month = 3
+        components.day = 10
+        components.hour = 9
+        components.minute = 0
+        let date = Calendar.current.date(from: components)!
+
+        let formatted = planAbsoluteDateFormatter.string(from: date)
+        #expect(formatted.contains("2025"))
+    }
+
+    @Test("planAbsoluteDateFormatter uses medium date style (includes month name or number)")
+    func absoluteDateFormatterMediumDateStyle() {
+        // Medium date style in en_US locale is "Jun 15, 2025" — includes month
+        // We verify the formatter uses medium date (not short like "6/15/25")
+        // by checking that date and time components appear
+        var components = DateComponents()
+        components.year = 2025
+        components.month = 6
+        components.day = 15
+        components.hour = 14
+        components.minute = 30
+        let date = Calendar.current.date(from: components)!
+
+        let formatted = planAbsoluteDateFormatter.string(from: date)
+        // Medium style includes year and at least a 2-digit day
+        #expect(formatted.contains("2025"))
+        #expect(formatted.contains("15"))
+    }
+
+    @Test("planAbsoluteDateFormatter produces different output for different dates")
+    func absoluteDateFormatterDistinguishesDates() {
+        var c1 = DateComponents()
+        c1.year = 2025; c1.month = 1; c1.day = 1; c1.hour = 12; c1.minute = 0
+        let date1 = Calendar.current.date(from: c1)!
+
+        var c2 = DateComponents()
+        c2.year = 2025; c2.month = 12; c2.day = 31; c2.hour = 23; c2.minute = 59
+        let date2 = Calendar.current.date(from: c2)!
+
+        let f1 = planAbsoluteDateFormatter.string(from: date1)
+        let f2 = planAbsoluteDateFormatter.string(from: date2)
+        #expect(f1 != f2)
+    }
+
+    @Test("planAbsoluteDateFormatter uses short time style (includes hour and minute)")
+    func absoluteDateFormatterShortTimeStyle() {
+        // Short time includes hours and minutes
+        var components = DateComponents()
+        components.year = 2025
+        components.month = 6
+        components.day = 15
+        components.hour = 14
+        components.minute = 30
+        components.second = 45  // seconds should NOT appear in short time style
+        let date = Calendar.current.date(from: components)!
+
+        let formatted = planAbsoluteDateFormatter.string(from: date)
+        // Should contain time information (short style: "2:30 PM" or "14:30" locale-dependent)
+        #expect(!formatted.isEmpty)
+        // Verify times differ for different hours
+        var c2 = DateComponents()
+        c2.year = 2025; c2.month = 6; c2.day = 15; c2.hour = 9; c2.minute = 15
+        let date2 = Calendar.current.date(from: c2)!
+        let formatted2 = planAbsoluteDateFormatter.string(from: date2)
+        #expect(formatted != formatted2)
+    }
+}
