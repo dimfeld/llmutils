@@ -133,6 +133,158 @@ struct PlanDisplayStatusTests {
     }
 }
 
+// MARK: - PlanDisplayStatus.label Tests
+
+@Suite("PlanDisplayStatus.label")
+struct PlanDisplayStatusLabelTests {
+    @Test("pending label is 'Pending'")
+    func pendingLabel() {
+        #expect(PlanDisplayStatus.pending.label == "Pending")
+    }
+
+    @Test("inProgress label is 'In Progress'")
+    func inProgressLabel() {
+        #expect(PlanDisplayStatus.inProgress.label == "In Progress")
+    }
+
+    @Test("blocked label is 'Blocked'")
+    func blockedLabel() {
+        #expect(PlanDisplayStatus.blocked.label == "Blocked")
+    }
+
+    @Test("recentlyDone label is 'Recently Done'")
+    func recentlyDoneLabel() {
+        #expect(PlanDisplayStatus.recentlyDone.label == "Recently Done")
+    }
+
+    @Test("done label is 'Done'")
+    func doneLabel() {
+        #expect(PlanDisplayStatus.done.label == "Done")
+    }
+
+    @Test("cancelled label is 'Cancelled'")
+    func cancelledLabel() {
+        #expect(PlanDisplayStatus.cancelled.label == "Cancelled")
+    }
+
+    @Test("deferred label is 'Deferred'")
+    func deferredLabel() {
+        #expect(PlanDisplayStatus.deferred.label == "Deferred")
+    }
+
+    @Test("All statuses have non-empty labels")
+    func allStatusesHaveNonEmptyLabels() {
+        for status in PlanDisplayStatus.allCases {
+            #expect(!status.label.isEmpty, "Expected non-empty label for \(status)")
+        }
+    }
+
+    @Test("PlanDisplayStatus has exactly 7 cases (one chip per status in FilterChipsView)")
+    func exactlySevenCases() {
+        #expect(PlanDisplayStatus.allCases.count == 7)
+    }
+}
+
+// MARK: - TrackedPlan.displayTitle Tests
+
+@Suite("TrackedPlan.displayTitle")
+struct TrackedPlanDisplayTitleTests {
+    @Test("Uses title when available and non-empty")
+    func usesTitleWhenAvailable() {
+        let plan = TrackedPlan(
+            uuid: "some-uuid",
+            projectId: "proj-1",
+            planId: 1,
+            title: "My Feature Plan",
+            goal: nil,
+            status: "pending",
+            priority: nil,
+            parentUuid: nil,
+            isEpic: false,
+            filename: nil,
+            createdAt: nil,
+            updatedAt: nil,
+            branch: nil)
+        #expect(plan.displayTitle == "My Feature Plan")
+    }
+
+    @Test("Falls back to 'Plan {planId}' when title is nil")
+    func fallsBackToPlanId() {
+        let plan = TrackedPlan(
+            uuid: "some-uuid",
+            projectId: "proj-1",
+            planId: 42,
+            title: nil,
+            goal: nil,
+            status: "pending",
+            priority: nil,
+            parentUuid: nil,
+            isEpic: false,
+            filename: nil,
+            createdAt: nil,
+            updatedAt: nil,
+            branch: nil)
+        #expect(plan.displayTitle == "Plan 42")
+    }
+
+    @Test("Falls back to uuid when both title and planId are nil")
+    func fallsBackToUuid() {
+        let plan = TrackedPlan(
+            uuid: "my-uuid-fallback",
+            projectId: "proj-1",
+            planId: nil,
+            title: nil,
+            goal: nil,
+            status: "pending",
+            priority: nil,
+            parentUuid: nil,
+            isEpic: false,
+            filename: nil,
+            createdAt: nil,
+            updatedAt: nil,
+            branch: nil)
+        #expect(plan.displayTitle == "my-uuid-fallback")
+    }
+
+    @Test("Empty title falls back to 'Plan {planId}'")
+    func emptyTitleFallsBackToPlanId() {
+        let plan = TrackedPlan(
+            uuid: "some-uuid",
+            projectId: "proj-1",
+            planId: 10,
+            title: "",
+            goal: nil,
+            status: "pending",
+            priority: nil,
+            parentUuid: nil,
+            isEpic: false,
+            filename: nil,
+            createdAt: nil,
+            updatedAt: nil,
+            branch: nil)
+        #expect(plan.displayTitle == "Plan 10")
+    }
+
+    @Test("Empty title and nil planId falls back to uuid")
+    func emptyTitleAndNilPlanIdFallsBackToUuid() {
+        let plan = TrackedPlan(
+            uuid: "fallback-uuid-123",
+            projectId: "proj-1",
+            planId: nil,
+            title: "",
+            goal: nil,
+            status: "pending",
+            priority: nil,
+            parentUuid: nil,
+            isEpic: false,
+            filename: nil,
+            createdAt: nil,
+            updatedAt: nil,
+            branch: nil)
+        #expect(plan.displayTitle == "fallback-uuid-123")
+    }
+}
+
 // MARK: - defaultPlanFilters Tests
 
 @Suite("defaultPlanFilters")

@@ -1178,6 +1178,119 @@ struct ProjectTrackingStoreTests {
         #expect(allUuids.contains("deferred-1"))
     }
 
+    // MARK: - Plans Browser Filter Scenarios
+
+    @Test("Resetting filters from All-selected state restores default filter set")
+    func resetFiltersFromAllSelectedRestoresDefaults() async throws {
+        let (path, cleanup) = try makeTestDBPath()
+        defer { cleanup() }
+
+        let oldISO = isoDateString(Date().addingTimeInterval(-10 * 24 * 60 * 60))
+
+        withTestDB(path: path) { db in
+            execSQL(db, "INSERT INTO project (id, repository_id) VALUES (1, 'repo-1')")
+            execSQL(
+                db,
+                "INSERT INTO plan (uuid, project_id, plan_id, status) VALUES ('pending-1', 1, 1, 'pending')")
+            execSQL(
+                db,
+                "INSERT INTO plan (uuid, project_id, plan_id, status, updated_at) VALUES ('old-done', 1, 2, 'done', '\(oldISO)')")
+            execSQL(
+                db,
+                "INSERT INTO plan (uuid, project_id, plan_id, status) VALUES ('cancelled-1', 1, 3, 'cancelled')")
+        }
+
+        let store = ProjectTrackingStore(dbPath: path)
+        store.selectedProjectId = "1"
+        await store.refresh()
+
+        let now = Date()
+
+        // Expand to all statuses (simulates pressing "All" button in FilterChipsView)
+        store.activeFilters = Set(PlanDisplayStatus.allCases)
+        let allVisible = store.filteredPlans(now: now)
+        #expect(allVisible.count == 3)
+
+        // Reset to defaults (simulates pressing "Reset" button in FilterChipsView)
+        store.activeFilters = defaultPlanFilters()
+        let afterReset = store.filteredPlans(now: now)
+        let afterResetUuids = Set(afterReset.map(\.uuid))
+
+        // Only pending should be visible after reset
+        #expect(afterResetUuids.contains("pending-1"))
+        #expect(!afterResetUuids.contains("old-done"))
+        #expect(!afterResetUuids.contains("cancelled-1"))
+
+        // The active filters should match the canonical default set
+        #expect(store.activeFilters == defaultPlanFilters())
+    }
+
+    @Test("Single status filter shows only plans matching that exact status")
+    func singleStatusFilterShowsOnlyMatchingPlans() async throws {
+        let (path, cleanup) = try makeTestDBPath()
+        defer { cleanup() }
+
+        withTestDB(path: path) { db in
+            execSQL(db, "INSERT INTO project (id, repository_id) VALUES (1, 'repo-1')")
+            execSQL(db, "INSERT INTO plan (uuid, project_id, plan_id, status) VALUES ('p1', 1, 1, 'pending')")
+            execSQL(db, "INSERT INTO plan (uuid, project_id, plan_id, status) VALUES ('p2', 1, 2, 'in_progress')")
+            execSQL(db, "INSERT INTO plan (uuid, project_id, plan_id, status) VALUES ('p3', 1, 3, 'cancelled')")
+        }
+
+        let store = ProjectTrackingStore(dbPath: path)
+        store.selectedProjectId = "1"
+        store.activeFilters = [.inProgress]
+        await store.refresh()
+
+        let filtered = store.filteredPlans(now: Date())
+        #expect(filtered.count == 1)
+        #expect(filtered.first?.uuid == "p2")
+    }
+
+    @Test("filteredPlans respects filter changes without re-fetching from DB")
+    func filteredPlansRespectsLiveFilterChanges() async throws {
+        let (path, cleanup) = try makeTestDBPath()
+        defer { cleanup() }
+
+        withTestDB(path: path) { db in
+            execSQL(db, "INSERT INTO project (id, repository_id) VALUES (1, 'repo-1')")
+            execSQL(db, "INSERT INTO plan (uuid, project_id, plan_id, status) VALUES ('pending-1', 1, 1, 'pending')")
+            execSQL(
+                db,
+                "INSERT INTO plan (uuid, project_id, plan_id, status) VALUES ('inprogress-1', 1, 2, 'in_progress')")
+            execSQL(db, "INSERT INTO plan (uuid, project_id, plan_id, status) VALUES ('deferred-1', 1, 3, 'deferred')")
+        }
+
+        let store = ProjectTrackingStore(dbPath: path)
+        store.selectedProjectId = "1"
+        await store.refresh()
+
+        let now = Date()
+
+        // Start with default: pending and inprogress shown, deferred hidden
+        let defaultResult = store.filteredPlans(now: now)
+        let defaultUuids = Set(defaultResult.map(\.uuid))
+        #expect(defaultUuids.contains("pending-1"))
+        #expect(defaultUuids.contains("inprogress-1"))
+        #expect(!defaultUuids.contains("deferred-1"))
+
+        // Add deferred to filters without re-fetching
+        store.activeFilters.insert(.deferred)
+        let withDeferred = store.filteredPlans(now: now)
+        let withDeferredUuids = Set(withDeferred.map(\.uuid))
+        #expect(withDeferredUuids.contains("pending-1"))
+        #expect(withDeferredUuids.contains("inprogress-1"))
+        #expect(withDeferredUuids.contains("deferred-1"))
+
+        // Remove pending from filters
+        store.activeFilters.remove(.pending)
+        let withoutPending = store.filteredPlans(now: now)
+        let withoutPendingUuids = Set(withoutPending.map(\.uuid))
+        #expect(!withoutPendingUuids.contains("pending-1"))
+        #expect(withoutPendingUuids.contains("inprogress-1"))
+        #expect(withoutPendingUuids.contains("deferred-1"))
+    }
+
     // MARK: - DB Path Resolution
 
     @Test("resolveDefaultDBPath returns non-nil path ending in tim.db by default")
