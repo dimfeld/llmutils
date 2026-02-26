@@ -48,6 +48,10 @@ test('a test', async () => {
 
 Or for a single mock defined across the entire test file, use `afterAll(() => moduleMocker.clear())` to clear the mocks.
 
+### Test Against Production Code Paths
+
+- **Tests should call production computed properties and methods rather than duplicating logic in local helpers.** For example, if production code uses `status.isActiveWork` to filter items, tests should assert against that same property — not reimplement the filter predicate locally. Duplicating logic means the test won't catch regressions when the production predicate changes.
+
 ### Test Schema Fidelity
 
 - **Test schemas must match production column types and constraints**: When creating test databases with inline `CREATE TABLE` statements, use the same column types as production (e.g., `INTEGER PRIMARY KEY` not `TEXT PRIMARY KEY`). Divergent types can mask real issues — for example, a TEXT primary key in tests won't surface INTEGER coercion bugs or FK constraint mismatches that occur with production data.

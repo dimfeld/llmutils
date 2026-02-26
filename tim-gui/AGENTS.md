@@ -127,6 +127,10 @@ All `sqlite3_step` loops **must** validate return codes — `while sqlite3_step(
 4. On error, include `sqlite3_errmsg(db)` in the thrown error message for diagnostics
 5. In `withCString` closures where you can't throw, capture the error in a local variable and throw after the closure exits
 
+### Foundation Formatter Thread Safety
+
+`NSFormatter` subclasses (including `ISO8601DateFormatter`, `DateFormatter`, `NumberFormatter`) are **not thread-safe**. Do not hoist them to `nonisolated(unsafe)` globals for reuse across async functions. Instead, create formatter instances at function scope — this avoids both global thread-safety hazards and per-row allocation overhead, striking a good middle ground for performance and correctness.
+
 ## SwiftUI Conventions
 
 - **Use `.opacity()` instead of conditional rendering for fixed-size elements**: When toggling visibility of small fixed-size elements (e.g., indicator dots), use `.opacity(condition ? 1 : 0)` rather than `if condition { Circle() }`. Conditional rendering causes layout shifts as SwiftUI adds/removes the element from the view hierarchy, while opacity reserves the space and avoids jank.
@@ -135,3 +139,7 @@ All `sqlite3_step` loops **must** validate return codes — `while sqlite3_step(
 - **`.onMove` index alignment**: `.onMove` provides indices into the array that `ForEach` iterates. Any function receiving those indices must operate on the same array. If the backing store differs in length or ordering from the `ForEach` source, rebuild from the computed array before applying the move.
 - **Prefer custom collapse over `DisclosureGroup` inside `List(selection:)`**: `DisclosureGroup` has selection-binding quirks when used inside `List(selection:)`. Use custom collapse/expand via `if` conditionals + `Set<String>` for tracking collapsed state when the list needs a working selection binding.
 - **Computed property optimization vs. semantic contract**: When a computed property (e.g., grouped sessions) is accessed multiple times in a view body, downstream consumers can sometimes avoid recomputation by operating on the underlying data directly. However, verify this doesn't change semantics — e.g., scanning a raw array for "first match" is only correct if the array order matches the intended display order.
+- **Use unconditional `.frame(width:)` for optional status icons**: When some rows show a status icon and others don't, wrap the icon area in an unconditional `.frame(width:)` so all rows reserve the same space. This maintains alignment across mixed states without layout shifts.
+- **`@State` persists across parent data changes — use `.id()` to reset**: SwiftUI `@State` in child views is not recreated when the parent passes different data. If a child's local state (e.g., a toggle) should reset when context changes (e.g., project selection), apply `.id(contextValue)` to force view recreation.
+- **Empty-state predicates must match displayed data**: When computing whether to show an empty state, use the same filtered subset that the UI section displays. Using raw collection counts (e.g., all workspaces vs. recently-active workspaces) can hide or incorrectly show empty states.
+- **Pass shared reference time for time-dependent UI**: When multiple views or sections make decisions based on time windows (e.g., "updated within 48 hours"), capture a single `Date()` in the parent and pass it down. Even tiny skew between independent `Date()` calls can create boundary inconsistencies.
