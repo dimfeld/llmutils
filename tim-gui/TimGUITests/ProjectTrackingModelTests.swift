@@ -347,16 +347,22 @@ struct AppTabTests {
         #expect(AppTab.sessions.rawValue == "Sessions")
     }
 
-    @Test("AppTab has exactly two cases")
-    func exactlyTwoCases() {
-        #expect(AppTab.allCases.count == 2)
+    @Test("AppTab has exactly three cases")
+    func exactlyThreeCases() {
+        #expect(AppTab.allCases.count == 3)
     }
 
-    @Test("AppTab contains sessions and activeWork cases")
+    @Test("plans tab has correct raw value")
+    func plansRawValue() {
+        #expect(AppTab.plans.rawValue == "Plans")
+    }
+
+    @Test("AppTab contains sessions, activeWork, and plans cases")
     func containsExpectedCases() {
         let cases = Set(AppTab.allCases)
         #expect(cases.contains(.sessions))
         #expect(cases.contains(.activeWork))
+        #expect(cases.contains(.plans))
     }
 }
 

@@ -19,6 +19,7 @@
 		A1000000000000000000000C /* ProjectTrackingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000001D /* ProjectTrackingModels.swift */; };
 		A1000000000000000000000D /* ProjectTrackingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000001E /* ProjectTrackingStore.swift */; };
 		A1000000000000000000000E /* ProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000001F /* ProjectsView.swift */; };
+		A1000000000000000000000F /* PlansView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000025 /* PlansView.swift */; };
 		A10000000000000000000004 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000014 /* Assets.xcassets */; };
 		A10000000000000000000005 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000015 /* Preview Assets.xcassets */; };
 		A20000000000000000000001 /* ModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* ModelTests.swift */; };
@@ -58,6 +59,7 @@
 		A1000000000000000000001D /* ProjectTrackingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectTrackingModels.swift; sourceTree = "<group>"; };
 		A1000000000000000000001E /* ProjectTrackingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectTrackingStore.swift; sourceTree = "<group>"; };
 		A1000000000000000000001F /* ProjectsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectsView.swift; sourceTree = "<group>"; };
+		A10000000000000000000025 /* PlansView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlansView.swift; sourceTree = "<group>"; };
 		A20000000000000000000010 /* TimGUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TimGUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A20000000000000000000011 /* ModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000013 /* LocalHTTPServerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHTTPServerTests.swift; sourceTree = "<group>"; };
@@ -102,6 +104,7 @@
 				A1000000000000000000001D /* ProjectTrackingModels.swift */,
 				A1000000000000000000001E /* ProjectTrackingStore.swift */,
 				A1000000000000000000001F /* ProjectsView.swift */,
+				A10000000000000000000025 /* PlansView.swift */,
 				A10000000000000000000014 /* Assets.xcassets */,
 				A10000000000000000000031 /* Preview Content */,
 				A10000000000000000000016 /* Info.plist */,
@@ -254,6 +257,7 @@
 				A1000000000000000000000C /* ProjectTrackingModels.swift in Sources */,
 				A1000000000000000000000D /* ProjectTrackingStore.swift in Sources */,
 				A1000000000000000000000E /* ProjectsView.swift in Sources */,
+				A1000000000000000000000F /* PlansView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

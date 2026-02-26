@@ -42,7 +42,7 @@ struct ProjectsView: View {
 
 // MARK: - ProjectsLoadingView
 
-private struct ProjectsLoadingView: View {
+struct ProjectsLoadingView: View {
     var body: some View {
         VStack(spacing: 14) {
             ProgressView()
@@ -57,7 +57,7 @@ private struct ProjectsLoadingView: View {
 
 // MARK: - ProjectsEmptyStateView
 
-private struct ProjectsEmptyStateView: View {
+struct ProjectsEmptyStateView: View {
     let icon: String
     let iconColor: Color
     let title: String
@@ -115,7 +115,7 @@ private struct ProjectsSplitView: View {
 
 // MARK: - ProjectListView
 
-private struct ProjectListView: View {
+struct ProjectListView: View {
     let store: ProjectTrackingStore
 
     var body: some View {
@@ -134,7 +134,7 @@ private struct ProjectListView: View {
 
 // MARK: - ProjectRowView
 
-private struct ProjectRowView: View {
+struct ProjectRowView: View {
     let project: TrackedProject
     let isSelected: Bool
 
@@ -392,13 +392,13 @@ private struct PlansSection: View {
 
 // MARK: - PlanRowView
 
-@MainActor private let planRelativeDateFormatter: RelativeDateTimeFormatter = {
+@MainActor let planRelativeDateFormatter: RelativeDateTimeFormatter = {
     let f = RelativeDateTimeFormatter()
     f.unitsStyle = .short
     return f
 }()
 
-private struct PlanRowView: View {
+struct PlanRowView: View {
     let plan: TrackedPlan
     let displayStatus: PlanDisplayStatus
     let now: Date
