@@ -54,14 +54,25 @@ The filter uses the `PlanDisplayStatus.isActiveWork` computed property as a shar
 
 ### Plans Tab (`PlansView.swift`)
 
-The Plans tab provides a comprehensive plan browsing experience, complementing the Active Work tab's focused view. It uses a `NavigationSplitView` with the same `ProjectListView` sidebar (shared `ProjectTrackingStore` instance keeps project selection synchronized across tabs).
+The Plans tab provides a comprehensive plan browsing experience, complementing the Active Work tab's focused view. It uses a 3-column `NavigationSplitView`: project sidebar | plan list | detail panel. The same `ProjectListView` sidebar is shared (shared `ProjectTrackingStore` instance keeps project selection synchronized across tabs).
 
-**Detail pane** — `PlansBrowserView` for the selected project, containing:
+**Plan list pane** — `PlansBrowserView` for the selected project, containing:
 
 - **Search field** — text field with magnifying glass icon that filters plans by title and goal text using `localizedCaseInsensitiveContains`. Resets on project change via `.id(store.selectedProjectId)`. Implemented as `filterPlansBySearchText()` module-level function for testability.
 - **Sort picker** — compact `.menu`-style Picker with `PlanSortOrder` enum: Plan Number (default, descending), Priority, Recently Updated, Status. All sort modes use deterministic tiebreakers (planId DESC, then uuid) to prevent list jitter on periodic refreshes. Priority sort ranks: urgent > high > medium > low > maybe > nil/unknown.
 - **FilterChipsView** — toggle chips for all 7 `PlanDisplayStatus` values (Pending, In Progress, Blocked, Recently Done, Done, Cancelled, Deferred), plus Reset and All controls. Active chips use colored fill backgrounds; inactive chips use subtle gray.
-- **Filtered plan list** — scrollable list of `PlanRowView` entries matching the active filters, search text, and sort order
+- **Filtered plan list** — scrollable list of `PlanRowView` entries matching the active filters, search text, and sort order. Selected row highlights with accent color (`PlanRowView` accepts `isSelected` parameter).
+
+**Detail panel** — `PlanDetailView` shown when a plan is selected, displaying:
+
+- Plan number, title, full goal text
+- Status with icon, priority
+- Unresolved dependencies (row hidden when there are none, since the data model only tracks boolean unresolved state)
+- Assigned workspace name (or "Unassigned"), branch
+- Epic indicator, parent UUID, filename
+- Created and updated timestamps
+
+Selection clears on project change and when the selected plan is filtered out. `.id(uuid)` on the detail view forces scroll position reset when selection changes.
 
 ### Project Tracking Data Layer
 
