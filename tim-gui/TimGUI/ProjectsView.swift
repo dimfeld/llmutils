@@ -221,8 +221,14 @@ private struct ProjectDetailView: View {
 
 private struct WorkspacesSection: View {
     let workspaces: [TrackedWorkspace]
+    @State private var showAllWorkspaces: Bool = false
 
     var body: some View {
+        let now = Date()
+        let activeWorkspaces = self.workspaces.filter { $0.isRecentlyActive(now: now) }
+        let displayedWorkspaces = self.showAllWorkspaces ? self.workspaces : activeWorkspaces
+        let hiddenCount = self.workspaces.count - activeWorkspaces.count
+
         VStack(alignment: .leading, spacing: 8) {
             Text("Workspaces")
                 .font(.headline)
@@ -233,10 +239,28 @@ private struct WorkspacesSection: View {
                     .font(.subheadline)
                     .foregroundStyle(.tertiary)
                     .padding(.vertical, 4)
+            } else if activeWorkspaces.isEmpty, !self.showAllWorkspaces {
+                Text("No recently active workspaces")
+                    .font(.subheadline)
+                    .foregroundStyle(.tertiary)
+                    .padding(.vertical, 4)
             } else {
-                ForEach(self.workspaces) { workspace in
+                ForEach(displayedWorkspaces) { workspace in
                     WorkspaceRowView(workspace: workspace)
                 }
+            }
+
+            if hiddenCount > 0 {
+                Button {
+                    self.showAllWorkspaces.toggle()
+                } label: {
+                    Text(self.showAllWorkspaces
+                         ? "Show active only"
+                         : "Show all workspaces (\(self.workspaces.count) total)")
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -300,11 +324,20 @@ private struct WorkspaceRowView: View {
                     }
                 }
 
-                if let planTitle = self.workspace.planTitle, !planTitle.isEmpty {
-                    Text(planTitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                if self.workspace.planId != nil || (self.workspace.planTitle != nil && !self.workspace.planTitle!.isEmpty) {
+                    HStack(spacing: 4) {
+                        if let planId = self.workspace.planId {
+                            Text("#\(planId)")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                        }
+                        if let planTitle = self.workspace.planTitle, !planTitle.isEmpty {
+                            Text(planTitle)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .font(.caption)
                 }
             }
 

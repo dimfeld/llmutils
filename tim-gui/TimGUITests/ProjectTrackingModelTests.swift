@@ -25,7 +25,11 @@ private func makePlan(
         branch: nil)
 }
 
-private func makeWorkspace(isPrimary: Bool = false, isLocked: Bool = false) -> TrackedWorkspace {
+private func makeWorkspace(
+    isPrimary: Bool = false,
+    isLocked: Bool = false,
+    updatedAt: Date? = nil) -> TrackedWorkspace
+{
     TrackedWorkspace(
         id: "ws-1",
         projectId: "proj-1",
@@ -36,7 +40,8 @@ private func makeWorkspace(isPrimary: Bool = false, isLocked: Bool = false) -> T
         planId: nil,
         planTitle: nil,
         isPrimary: isPrimary,
-        isLocked: isLocked)
+        isLocked: isLocked,
+        updatedAt: updatedAt)
 }
 
 // MARK: - planDisplayStatus Tests
@@ -504,6 +509,73 @@ struct WorkspaceDisplayStatusBadgeTests {
     }
 }
 
+// MARK: - TrackedWorkspace.isRecentlyActive Tests
+
+@Suite("TrackedWorkspace.isRecentlyActive")
+struct TrackedWorkspaceIsRecentlyActiveTests {
+    let now = Date()
+
+    @Test("Locked workspace is always recently active")
+    func lockedAlwaysActive() {
+        let ws = makeWorkspace(isLocked: true, updatedAt: now.addingTimeInterval(-72 * 60 * 60))
+        #expect(ws.isRecentlyActive(now: now))
+    }
+
+    @Test("Primary workspace is always recently active")
+    func primaryAlwaysActive() {
+        let ws = makeWorkspace(isPrimary: true, updatedAt: now.addingTimeInterval(-72 * 60 * 60))
+        #expect(ws.isRecentlyActive(now: now))
+    }
+
+    @Test("Workspace updated 1 hour ago is recently active")
+    func recentlyUpdated() {
+        let ws = makeWorkspace(updatedAt: now.addingTimeInterval(-1 * 60 * 60))
+        #expect(ws.isRecentlyActive(now: now))
+    }
+
+    @Test("Workspace updated 47 hours ago is recently active")
+    func updatedWithin48Hours() {
+        let ws = makeWorkspace(updatedAt: now.addingTimeInterval(-47 * 60 * 60))
+        #expect(ws.isRecentlyActive(now: now))
+    }
+
+    @Test("Workspace updated exactly 48 hours ago is recently active (boundary inclusive)")
+    func updatedExactly48Hours() {
+        let ws = makeWorkspace(updatedAt: now.addingTimeInterval(-48 * 60 * 60))
+        #expect(ws.isRecentlyActive(now: now))
+    }
+
+    @Test("Workspace updated 48 hours + 1 second ago is NOT recently active")
+    func updatedBeyond48Hours() {
+        let ws = makeWorkspace(updatedAt: now.addingTimeInterval(-(48 * 60 * 60 + 1)))
+        #expect(!ws.isRecentlyActive(now: now))
+    }
+
+    @Test("Workspace updated 72 hours ago is NOT recently active")
+    func oldUpdate() {
+        let ws = makeWorkspace(updatedAt: now.addingTimeInterval(-72 * 60 * 60))
+        #expect(!ws.isRecentlyActive(now: now))
+    }
+
+    @Test("Workspace with nil updatedAt is NOT recently active")
+    func nilUpdatedAt() {
+        let ws = makeWorkspace(updatedAt: nil)
+        #expect(!ws.isRecentlyActive(now: now))
+    }
+
+    @Test("Locked workspace with nil updatedAt is still recently active")
+    func lockedNilUpdatedAt() {
+        let ws = makeWorkspace(isLocked: true, updatedAt: nil)
+        #expect(ws.isRecentlyActive(now: now))
+    }
+
+    @Test("Primary workspace with nil updatedAt is still recently active")
+    func primaryNilUpdatedAt() {
+        let ws = makeWorkspace(isPrimary: true, updatedAt: nil)
+        #expect(ws.isRecentlyActive(now: now))
+    }
+}
+
 // MARK: - TrackedWorkspace.displayName Tests
 
 @Suite("TrackedWorkspace.displayName")
@@ -520,7 +592,8 @@ struct TrackedWorkspaceDisplayNameTests {
             planId: nil,
             planTitle: nil,
             isPrimary: false,
-            isLocked: false)
+            isLocked: false,
+            updatedAt: nil)
         #expect(ws.displayName == "My Workspace")
     }
 
@@ -536,7 +609,8 @@ struct TrackedWorkspaceDisplayNameTests {
             planId: nil,
             planTitle: nil,
             isPrimary: false,
-            isLocked: false)
+            isLocked: false,
+            updatedAt: nil)
         #expect(ws.displayName == "workspaces/my-project")
     }
 
@@ -552,7 +626,8 @@ struct TrackedWorkspaceDisplayNameTests {
             planId: nil,
             planTitle: nil,
             isPrimary: false,
-            isLocked: false)
+            isLocked: false,
+            updatedAt: nil)
         #expect(ws.displayName == "ws-fallback-id")
     }
 
@@ -568,7 +643,8 @@ struct TrackedWorkspaceDisplayNameTests {
             planId: nil,
             planTitle: nil,
             isPrimary: false,
-            isLocked: false)
+            isLocked: false,
+            updatedAt: nil)
         #expect(ws.displayName == "projects/myws")
     }
 }

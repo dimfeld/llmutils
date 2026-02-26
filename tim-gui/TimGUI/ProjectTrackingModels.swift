@@ -44,6 +44,16 @@ struct TrackedWorkspace: Identifiable, Equatable, Sendable {
     let planTitle: String?
     let isPrimary: Bool
     let isLocked: Bool
+    let updatedAt: Date?
+
+    /// A workspace is considered recently active if it is locked, primary,
+    /// or has been updated within the last 48 hours.
+    func isRecentlyActive(now: Date) -> Bool {
+        if self.isLocked || self.isPrimary { return true }
+        guard let updatedAt else { return false }
+        let cutoff = now.addingTimeInterval(-48 * 60 * 60)
+        return updatedAt >= cutoff
+    }
 
     var displayStatus: WorkspaceDisplayStatus {
         if self.isLocked { return .locked }

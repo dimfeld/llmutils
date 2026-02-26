@@ -52,6 +52,25 @@ private func columnBool(_ stmt: OpaquePointer, _ col: Int32) -> Bool {
 
 private let logger = Logger(subsystem: "com.timgui", category: "ProjectTrackingStore")
 
+// MARK: - ISO8601 Date Parsing
+
+private nonisolated(unsafe) let isoDateFormatter: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
+
+private nonisolated(unsafe) let isoDateFormatterNoFrac: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime]
+    return f
+}()
+
+private func parseISO8601Date(_ str: String?) -> Date? {
+    guard let str, !str.isEmpty else { return nil }
+    return isoDateFormatter.date(from: str) ?? isoDateFormatterNoFrac.date(from: str)
+}
+
 // MARK: - SQLite Database Helper
 
 /// Opens a read-only SQLite connection to the given path, runs the operation, then closes.
@@ -152,7 +171,8 @@ private func doFetchWorkspaces(path: String, projectId: String) throws -> [Track
         let sql = """
         SELECT w.id, w.project_id, w.workspace_path, w.branch, w.name, w.description,
                w.plan_id, w.plan_title, w.is_primary,
-               CASE WHEN wl.workspace_id IS NOT NULL THEN 1 ELSE 0 END AS is_locked
+               CASE WHEN wl.workspace_id IS NOT NULL THEN 1 ELSE 0 END AS is_locked,
+               w.updated_at
         FROM workspace w
         LEFT JOIN workspace_lock wl ON w.id = wl.workspace_id
         WHERE w.project_id = ?
@@ -184,7 +204,8 @@ private func doFetchWorkspaces(path: String, projectId: String) throws -> [Track
                         planId: columnInt(stmt, 6),
                         planTitle: columnText(stmt, 7),
                         isPrimary: columnBool(stmt, 8),
-                        isLocked: columnBool(stmt, 9)))
+                        isLocked: columnBool(stmt, 9),
+                        updatedAt: parseISO8601Date(columnText(stmt, 10))))
                     continue
                 }
                 if rc != SQLITE_DONE {
@@ -202,16 +223,6 @@ private typealias PlansAndDeps = ([TrackedPlan], [String: Bool])
 
 private func doFetchPlansAndDeps(path: String, projectId: String) throws -> PlansAndDeps {
     try withSQLiteDB(path: path) { db in
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let isoFormatterNoFrac = ISO8601DateFormatter()
-        isoFormatterNoFrac.formatOptions = [.withInternetDateTime]
-
-        func parseDate(_ str: String?) -> Date? {
-            guard let str, !str.isEmpty else { return nil }
-            return isoFormatter.date(from: str) ?? isoFormatterNoFrac.date(from: str)
-        }
-
         // Fetch plan rows for the project
         let planSQL = """
         SELECT uuid, project_id, plan_id, title, goal, status, priority, parent_uuid,
@@ -247,8 +258,8 @@ private func doFetchPlansAndDeps(path: String, projectId: String) throws -> Plan
                         parentUuid: columnText(planStmt, 7),
                         isEpic: columnBool(planStmt, 8),
                         filename: columnText(planStmt, 9),
-                        createdAt: parseDate(columnText(planStmt, 10)),
-                        updatedAt: parseDate(columnText(planStmt, 11)),
+                        createdAt: parseISO8601Date(columnText(planStmt, 10)),
+                        updatedAt: parseISO8601Date(columnText(planStmt, 11)),
                         branch: columnText(planStmt, 12)))
                     continue
                 }

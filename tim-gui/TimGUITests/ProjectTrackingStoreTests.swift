@@ -59,7 +59,8 @@ private func createTestDatabase(at path: String) throws {
         description TEXT,
         plan_id INTEGER,
         plan_title TEXT,
-        is_primary INTEGER NOT NULL DEFAULT 0
+        is_primary INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE TABLE workspace_lock (
         workspace_id INTEGER PRIMARY KEY NOT NULL REFERENCES workspace(id),
@@ -352,6 +353,53 @@ struct ProjectTrackingStoreTests {
 
         #expect(store.workspaces.count == 1)
         #expect(store.workspaces.first?.id == "1")
+    }
+
+    @Test("Workspace updated_at is parsed from DB")
+    func workspaceUpdatedAtParsed() async throws {
+        let (path, cleanup) = try makeTestDBPath()
+        defer { cleanup() }
+
+        withTestDB(path: path) { db in
+            execSQL(db, "INSERT INTO project (id, repository_id) VALUES (1, 'repo-1')")
+            execSQL(
+                db,
+                "INSERT INTO workspace (id, project_id, workspace_path, name, is_primary, updated_at) VALUES (1, 1, '/tmp/workspace-1', 'WS1', 0, '2026-02-24T10:30:00Z')")
+            execSQL(
+                db,
+                "INSERT INTO workspace (id, project_id, workspace_path, name, is_primary, updated_at) VALUES (2, 1, '/tmp/workspace-2', 'WS2', 0, '2026-02-25T08:00:00.123Z')")
+        }
+
+        let store = ProjectTrackingStore(dbPath: path)
+        store.selectedProjectId = "1"
+        await store.refresh()
+
+        #expect(store.workspaces.count == 2)
+        let ws1 = store.workspaces.first { $0.id == "1" }
+        let ws2 = store.workspaces.first { $0.id == "2" }
+        #expect(ws1?.updatedAt != nil)
+        #expect(ws2?.updatedAt != nil)
+    }
+
+    @Test("Workspace uses DB default updated_at when not explicitly set")
+    func workspaceDefaultUpdatedAt() async throws {
+        let (path, cleanup) = try makeTestDBPath()
+        defer { cleanup() }
+
+        withTestDB(path: path) { db in
+            execSQL(db, "INSERT INTO project (id, repository_id) VALUES (1, 'repo-1')")
+            execSQL(
+                db,
+                "INSERT INTO workspace (id, project_id, workspace_path, name, is_primary) VALUES (1, 1, '/tmp/workspace-1', 'WS1', 0)")
+        }
+
+        let store = ProjectTrackingStore(dbPath: path)
+        store.selectedProjectId = "1"
+        await store.refresh()
+
+        #expect(store.workspaces.count == 1)
+        // The DB default generates the current timestamp, so updatedAt should be non-nil
+        #expect(store.workspaces.first?.updatedAt != nil)
     }
 
     // MARK: - Plan Loading
