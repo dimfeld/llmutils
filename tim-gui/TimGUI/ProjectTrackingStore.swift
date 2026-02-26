@@ -54,21 +54,13 @@ private let logger = Logger(subsystem: "com.timgui", category: "ProjectTrackingS
 
 // MARK: - ISO8601 Date Parsing
 
-private nonisolated(unsafe) let isoDateFormatter: ISO8601DateFormatter = {
-    let f = ISO8601DateFormatter()
-    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return f
-}()
-
-private nonisolated(unsafe) let isoDateFormatterNoFrac: ISO8601DateFormatter = {
-    let f = ISO8601DateFormatter()
-    f.formatOptions = [.withInternetDateTime]
-    return f
-}()
-
 private func parseISO8601Date(_ str: String?) -> Date? {
     guard let str, !str.isEmpty else { return nil }
-    return isoDateFormatter.date(from: str) ?? isoDateFormatterNoFrac.date(from: str)
+    let withFrac = ISO8601DateFormatter()
+    withFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let noFrac = ISO8601DateFormatter()
+    noFrac.formatOptions = [.withInternetDateTime]
+    return withFrac.date(from: str) ?? noFrac.date(from: str)
 }
 
 // MARK: - SQLite Database Helper

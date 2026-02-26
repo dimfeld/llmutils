@@ -208,6 +208,7 @@ private struct ProjectDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     WorkspacesSection(workspaces: self.store.workspaces)
+                        .id(self.store.selectedProjectId)
                     Divider()
                     PlansSection(store: self.store, activePlans: activePlans)
                 }
@@ -324,7 +325,7 @@ private struct WorkspaceRowView: View {
                     }
                 }
 
-                if self.workspace.planId != nil || (self.workspace.planTitle != nil && !self.workspace.planTitle!.isEmpty) {
+                if self.workspace.planId != nil || self.workspace.planTitle.map({ !$0.isEmpty }) == true {
                     HStack(spacing: 4) {
                         if let planId = self.workspace.planId {
                             Text("#\(planId)")
