@@ -699,35 +699,35 @@ struct PlanDetailViewTests {
     // MARK: - planAbsoluteDateFormatter
 
     @Test("planAbsoluteDateFormatter produces non-empty output for a known date")
-    func absoluteDateFormatterNonEmpty() {
+    func absoluteDateFormatterNonEmpty() throws {
         var components = DateComponents()
         components.year = 2025
         components.month = 6
         components.day = 15
         components.hour = 14
         components.minute = 30
-        let date = Calendar.current.date(from: components)!
+        let date = try #require(Calendar.current.date(from: components))
 
         let formatted = planAbsoluteDateFormatter.string(from: date)
         #expect(!formatted.isEmpty)
     }
 
     @Test("planAbsoluteDateFormatter includes the year in its output")
-    func absoluteDateFormatterIncludesYear() {
+    func absoluteDateFormatterIncludesYear() throws {
         var components = DateComponents()
         components.year = 2025
         components.month = 3
         components.day = 10
         components.hour = 9
         components.minute = 0
-        let date = Calendar.current.date(from: components)!
+        let date = try #require(Calendar.current.date(from: components))
 
         let formatted = planAbsoluteDateFormatter.string(from: date)
         #expect(formatted.contains("2025"))
     }
 
     @Test("planAbsoluteDateFormatter uses medium date style (includes month name or number)")
-    func absoluteDateFormatterMediumDateStyle() {
+    func absoluteDateFormatterMediumDateStyle() throws {
         // Medium date style in en_US locale is "Jun 15, 2025" — includes month
         // We verify the formatter uses medium date (not short like "6/15/25")
         // by checking that date and time components appear
@@ -737,7 +737,7 @@ struct PlanDetailViewTests {
         components.day = 15
         components.hour = 14
         components.minute = 30
-        let date = Calendar.current.date(from: components)!
+        let date = try #require(Calendar.current.date(from: components))
 
         let formatted = planAbsoluteDateFormatter.string(from: date)
         // Medium style includes year and at least a 2-digit day
@@ -746,14 +746,14 @@ struct PlanDetailViewTests {
     }
 
     @Test("planAbsoluteDateFormatter produces different output for different dates")
-    func absoluteDateFormatterDistinguishesDates() {
+    func absoluteDateFormatterDistinguishesDates() throws {
         var c1 = DateComponents()
         c1.year = 2025; c1.month = 1; c1.day = 1; c1.hour = 12; c1.minute = 0
-        let date1 = Calendar.current.date(from: c1)!
+        let date1 = try #require(Calendar.current.date(from: c1))
 
         var c2 = DateComponents()
         c2.year = 2025; c2.month = 12; c2.day = 31; c2.hour = 23; c2.minute = 59
-        let date2 = Calendar.current.date(from: c2)!
+        let date2 = try #require(Calendar.current.date(from: c2))
 
         let f1 = planAbsoluteDateFormatter.string(from: date1)
         let f2 = planAbsoluteDateFormatter.string(from: date2)
@@ -761,7 +761,7 @@ struct PlanDetailViewTests {
     }
 
     @Test("planAbsoluteDateFormatter uses short time style (includes hour and minute)")
-    func absoluteDateFormatterShortTimeStyle() {
+    func absoluteDateFormatterShortTimeStyle() throws {
         // Short time includes hours and minutes
         var components = DateComponents()
         components.year = 2025
@@ -769,8 +769,8 @@ struct PlanDetailViewTests {
         components.day = 15
         components.hour = 14
         components.minute = 30
-        components.second = 45  // seconds should NOT appear in short time style
-        let date = Calendar.current.date(from: components)!
+        components.second = 45 // seconds should NOT appear in short time style
+        let date = try #require(Calendar.current.date(from: components))
 
         let formatted = planAbsoluteDateFormatter.string(from: date)
         // Should contain time information (short style: "2:30 PM" or "14:30" locale-dependent)
@@ -778,7 +778,7 @@ struct PlanDetailViewTests {
         // Verify times differ for different hours
         var c2 = DateComponents()
         c2.year = 2025; c2.month = 6; c2.day = 15; c2.hour = 9; c2.minute = 15
-        let date2 = Calendar.current.date(from: c2)!
+        let date2 = try #require(Calendar.current.date(from: c2))
         let formatted2 = planAbsoluteDateFormatter.string(from: date2)
         #expect(formatted != formatted2)
     }

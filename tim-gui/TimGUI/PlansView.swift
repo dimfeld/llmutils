@@ -301,9 +301,9 @@ struct PlanDetailView: View {
 
     var body: some View {
         let now = Date()
-        let displayStatus = self.store.displayStatus(for: plan, now: now)
-        let hasUnresolvedDeps = self.store.planDependencyStatus[plan.uuid] ?? false
-        let assignedWorkspace = self.store.workspaces.first { $0.planId == plan.planId && plan.planId != nil }
+        let displayStatus = self.store.displayStatus(for: self.plan, now: now)
+        let hasUnresolvedDeps = self.store.planDependencyStatus[self.plan.uuid] ?? false
+        let assignedWorkspace = self.store.workspaces.first { $0.planId == self.plan.planId && self.plan.planId != nil }
 
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -314,7 +314,7 @@ struct PlanDetailView: View {
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
                     }
-                    Text(plan.displayTitle)
+                    Text(self.plan.displayTitle)
                         .font(.title2.weight(.bold))
                         .textSelection(.enabled)
                 }
@@ -337,11 +337,11 @@ struct PlanDetailView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     PlanDetailRow(label: "Status") {
                         HStack(spacing: 6) {
-                            Image(systemName: statusIcon(for: displayStatus))
-                                .foregroundStyle(statusColor(for: displayStatus))
+                            Image(systemName: self.statusIcon(for: displayStatus))
+                                .foregroundStyle(self.statusColor(for: displayStatus))
                                 .font(.callout)
                             Text(displayStatus.label)
-                                .foregroundStyle(statusColor(for: displayStatus))
+                                .foregroundStyle(self.statusColor(for: displayStatus))
                         }
                     }
 
@@ -379,7 +379,7 @@ struct PlanDetailView: View {
                         }
                     }
 
-                    if plan.isEpic {
+                    if self.plan.isEpic {
                         PlanDetailRow(label: "Type") {
                             HStack(spacing: 4) {
                                 Image(systemName: "star.fill")
