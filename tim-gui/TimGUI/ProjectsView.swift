@@ -228,7 +228,7 @@ private struct WorkspacesSection: View {
     @State private var showAllWorkspaces: Bool = false
 
     var body: some View {
-        let activeWorkspaces = self.workspaces.filter { $0.isRecentlyActive(now: now) }
+        let activeWorkspaces = self.workspaces.filter { $0.isRecentlyActive(now: self.now) }
         let displayedWorkspaces = self.showAllWorkspaces ? self.workspaces : activeWorkspaces
         let hiddenCount = self.workspaces.count - activeWorkspaces.count
 
@@ -382,8 +382,8 @@ private struct PlansSection: View {
                 ForEach(self.activePlans) { plan in
                     PlanRowView(
                         plan: plan,
-                        displayStatus: self.store.displayStatus(for: plan, now: now),
-                        now: now)
+                        displayStatus: self.store.displayStatus(for: plan, now: self.now),
+                        now: self.now)
                 }
             }
         }
