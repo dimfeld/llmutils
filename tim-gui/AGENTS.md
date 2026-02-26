@@ -63,8 +63,8 @@ The app reads `tim.db` (SQLite, read-only). All data for the Projects view comes
 
 - `ProjectTrackingModels.swift` — Domain types (`TrackedProject`, `TrackedWorkspace`, `TrackedPlan`, `PlanDisplayStatus`) and pure filter functions
 - `ProjectTrackingStore.swift` — `@Observable @MainActor` store that queries `tim.db`, manages `LoadState`, and runs periodic refresh
-- `ProjectsView.swift` — SwiftUI view hierarchy for the Projects tab
-- `ContentView.swift` — top-level view with `AppTab` segmented picker (Sessions / Projects); switching tabs does not affect `SessionState` or WebSocket connections
+- `ProjectsView.swift` — SwiftUI view hierarchy for the Active Work tab
+- `ContentView.swift` — top-level view with `AppTab` segmented picker (Sessions / Active Work); switching tabs does not affect `SessionState` or WebSocket connections
 
 **Database access:**
 

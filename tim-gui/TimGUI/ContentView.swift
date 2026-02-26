@@ -4,7 +4,7 @@ let nestedRectangleCornerRadius: CGFloat = 6
 
 enum AppTab: String, CaseIterable {
     case sessions = "Sessions"
-    case projects = "Projects"
+    case activeWork = "Active Work"
 }
 
 struct ContentView: View {
@@ -49,7 +49,7 @@ struct ContentView: View {
                 switch self.selectedTab {
                 case .sessions:
                     SessionsView(sessionState: self.sessionState)
-                case .projects:
+                case .activeWork:
                     ProjectsView(store: self.projectStore)
                 }
             }

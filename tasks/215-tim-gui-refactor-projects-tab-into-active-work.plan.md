@@ -7,12 +7,12 @@ goal: Transform the current Projects tab into a focused 'Active Work' dashboard
 id: 215
 uuid: 79f51dfc-c14b-4bd1-b129-324090af5a89
 generatedBy: agent
-status: pending
+status: in_progress
 priority: medium
 planGeneratedAt: 2026-02-25T08:32:07.431Z
 promptsGeneratedAt: 2026-02-25T08:32:07.431Z
 createdAt: 2026-02-25T08:31:24.257Z
-updatedAt: 2026-02-25T08:32:07.432Z
+updatedAt: 2026-02-26T07:42:48.791Z
 tasks:
   - title: Rename Projects tab to Active Work in top navigation
     done: false

@@ -191,13 +191,29 @@ private struct ProjectDetailView: View {
     let store: ProjectTrackingStore
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                WorkspacesSection(workspaces: self.store.workspaces)
-                Divider()
-                PlansSection(store: self.store)
+        let now = Date()
+        let hasWorkspaces = !self.store.workspaces.isEmpty
+        let hasActivePlans = self.store.plans.contains { plan in
+            let status = self.store.displayStatus(for: plan, now: now)
+            return status == .inProgress || status == .blocked
+        }
+
+        if !hasWorkspaces, !hasActivePlans {
+            ProjectsEmptyStateView(
+                icon: "tray",
+                iconColor: .secondary,
+                title: "No Active Work",
+                subtitle: "No in-progress plans or workspaces. Browse all plans to get started.")
+                .background(.thinMaterial)
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    WorkspacesSection(workspaces: self.store.workspaces)
+                    Divider()
+                    PlansSection(store: self.store)
+                }
+                .padding(16)
             }
-            .padding(16)
         }
     }
 }
@@ -232,11 +248,11 @@ private struct WorkspacesSection: View {
 private struct WorkspaceRowView: View {
     let workspace: TrackedWorkspace
 
-    private var statusIcon: String {
+    private var statusIcon: String? {
         switch self.workspace.displayStatus {
         case .primary: "star.fill"
         case .locked: "lock.fill"
-        case .available: "circle.fill"
+        case .available: nil
         }
     }
 
@@ -248,20 +264,22 @@ private struct WorkspaceRowView: View {
         }
     }
 
-    private var statusLabel: String {
+    private var statusLabel: String? {
         switch self.workspace.displayStatus {
         case .primary: "Primary"
         case .locked: "Locked"
-        case .available: "Available"
+        case .available: nil
         }
     }
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: self.statusIcon)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(self.statusColor)
-                .frame(width: 14)
+            if let statusIcon {
+                Image(systemName: statusIcon)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(self.statusColor)
+                    .frame(width: 14)
+            }
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -291,9 +309,11 @@ private struct WorkspaceRowView: View {
 
             Spacer()
 
-            Text(self.statusLabel)
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(self.statusColor)
+            if let statusLabel {
+                Text(statusLabel)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(self.statusColor)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -310,40 +330,23 @@ private struct PlansSection: View {
 
     var body: some View {
         let now = Date()
-        let filtered = self.store.filteredPlans(now: now)
+        let activePlans = self.store.plans.filter { plan in
+            let status = self.store.displayStatus(for: plan, now: now)
+            return status == .inProgress || status == .blocked
+        }
 
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Plans")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                Button("Reset") {
-                    self.store.activeFilters = defaultPlanFilters()
-                }
-                .font(.caption)
-                .buttonStyle(.plain)
+            Text("Plans")
+                .font(.headline)
                 .foregroundStyle(.secondary)
 
-                Button("All") {
-                    self.store.activeFilters = Set(PlanDisplayStatus.allCases)
-                }
-                .font(.caption)
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.accentColor)
-            }
-
-            FilterChipsView(store: self.store)
-
-            if filtered.isEmpty {
-                Text("No plans match current filters.")
+            if activePlans.isEmpty {
+                Text("No active plans")
                     .font(.subheadline)
                     .foregroundStyle(.tertiary)
                     .padding(.vertical, 4)
             } else {
-                ForEach(filtered) { plan in
+                ForEach(activePlans) { plan in
                     PlanRowView(
                         plan: plan,
                         displayStatus: self.store.displayStatus(for: plan, now: now),
