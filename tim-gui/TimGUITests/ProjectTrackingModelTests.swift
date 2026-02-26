@@ -516,6 +516,11 @@ struct AppTabTests {
         #expect(cases.contains(.activeWork))
         #expect(cases.contains(.plans))
     }
+
+    @Test("allCases order is Sessions, Active Work, Plans")
+    func tabOrder() {
+        #expect(AppTab.allCases == [.sessions, .activeWork, .plans])
+    }
 }
 
 // MARK: - Active Work Dashboard Filter Tests

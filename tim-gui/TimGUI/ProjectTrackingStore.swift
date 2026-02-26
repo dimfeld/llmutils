@@ -339,6 +339,7 @@ final class ProjectTrackingStore {
 
     private let dbPath: String?
     private var refreshTask: Task<Void, Never>?
+    private var refreshConsumerCount: Int = 0
     private var isRefreshing = false
     /// Set to true when `refresh()` is called while a refresh is already in-flight.
     /// The active refresh checks this flag after completing and runs another refresh if needed.
@@ -393,8 +394,11 @@ final class ProjectTrackingStore {
     // MARK: - Refresh Lifecycle
 
     /// Starts an initial load and begins periodic background refresh every 10 seconds.
-    /// Safe to call multiple times; cancels any existing refresh loop before starting a new one.
+    /// Reference-counted: multiple consumers can safely call start/stop independently.
+    /// The refresh loop runs as long as at least one consumer is active.
     func startRefreshing() {
+        self.refreshConsumerCount += 1
+        guard self.refreshConsumerCount == 1 else { return }
         self.refreshTask?.cancel()
         self.refreshTask = Task {
             await self.refresh()
@@ -407,8 +411,11 @@ final class ProjectTrackingStore {
         }
     }
 
-    /// Cancels the periodic refresh loop.
+    /// Decrements the refresh consumer count and cancels the periodic refresh loop
+    /// when no consumers remain.
     func stopRefreshing() {
+        self.refreshConsumerCount = max(0, self.refreshConsumerCount - 1)
+        guard self.refreshConsumerCount == 0 else { return }
         self.refreshTask?.cancel()
         self.refreshTask = nil
     }
