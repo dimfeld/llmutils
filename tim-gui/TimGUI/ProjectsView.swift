@@ -209,7 +209,7 @@ private struct ProjectDetailView: View {
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    WorkspacesSection(workspaces: self.store.workspaces)
+                    WorkspacesSection(workspaces: self.store.workspaces, now: now)
                         .id(self.store.selectedProjectId)
                     Divider()
                     PlansSection(store: self.store, activePlans: activePlans)
@@ -224,10 +224,10 @@ private struct ProjectDetailView: View {
 
 private struct WorkspacesSection: View {
     let workspaces: [TrackedWorkspace]
+    let now: Date
     @State private var showAllWorkspaces: Bool = false
 
     var body: some View {
-        let now = Date()
         let activeWorkspaces = self.workspaces.filter { $0.isRecentlyActive(now: now) }
         let displayedWorkspaces = self.showAllWorkspaces ? self.workspaces : activeWorkspaces
         let hiddenCount = self.workspaces.count - activeWorkspaces.count
@@ -327,7 +327,7 @@ private struct WorkspaceRowView: View {
                     }
                 }
 
-                if self.workspace.planId != nil || self.workspace.planTitle.map({ !$0.isEmpty }) == true {
+                if self.workspace.planId != nil || !(self.workspace.planTitle?.isEmpty ?? true) {
                     HStack(spacing: 4) {
                         if let planId = self.workspace.planId {
                             Text("#\(planId)")

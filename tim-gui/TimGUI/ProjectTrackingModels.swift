@@ -165,11 +165,13 @@ func planDisplayStatus(
 }
 
 /// Returns the default set of active plan status filters (pending, in-progress, blocked, recently done).
+/// Preserved for the upcoming dedicated Plans browser tab.
 func defaultPlanFilters() -> Set<PlanDisplayStatus> {
     [.pending, .inProgress, .blocked, .recentlyDone]
 }
 
 /// Returns true if the plan should be shown given its display status and the active filter set.
+/// Preserved for the upcoming dedicated Plans browser tab.
 func shouldShowPlan(displayStatus: PlanDisplayStatus, activeFilters: Set<PlanDisplayStatus>) -> Bool {
     activeFilters.contains(displayStatus)
 }

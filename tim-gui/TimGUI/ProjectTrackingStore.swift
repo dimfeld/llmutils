@@ -332,6 +332,8 @@ final class ProjectTrackingStore {
     /// Maps plan UUID → true if the plan has at least one unresolved (non-done) dependency.
     var planDependencyStatus: [String: Bool] = [:]
     var selectedProjectId: String?
+    /// Preserved for the upcoming dedicated Plans browser tab.
+    /// The current Active Work dashboard does not use user-selectable plan filters.
     var activeFilters: Set<PlanDisplayStatus> = defaultPlanFilters()
     var loadState: LoadState = .idle
 
@@ -491,6 +493,7 @@ final class ProjectTrackingStore {
     // MARK: - Computed Helpers
 
     /// Returns the subset of plans that pass the current active filters.
+    /// This is currently used by tests and reserved for the future Plans browser tab.
     func filteredPlans(now: Date = Date()) -> [TrackedPlan] {
         self.plans.filter { plan in
             let hasUnresolved = self.planDependencyStatus[plan.uuid] ?? false
