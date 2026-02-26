@@ -45,7 +45,7 @@ const output = await Promise.all([
     minify: true,
     format: 'esm',
     compile: true,
-    bytecode: true,
+    // bytecode: true,
   }),
   buildOne({
     outdir: 'dist/claude_code',

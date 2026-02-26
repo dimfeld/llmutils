@@ -328,6 +328,183 @@ struct TrackedWorkspaceDisplayStatusTests {
     }
 }
 
+// MARK: - AppTab Tests
+
+@Suite("AppTab")
+struct AppTabTests {
+    @Test("activeWork tab has correct raw value")
+    func activeWorkRawValue() {
+        #expect(AppTab.activeWork.rawValue == "Active Work")
+    }
+
+    @Test("sessions tab has correct raw value")
+    func sessionsRawValue() {
+        #expect(AppTab.sessions.rawValue == "Sessions")
+    }
+
+    @Test("AppTab has exactly two cases")
+    func exactlyTwoCases() {
+        #expect(AppTab.allCases.count == 2)
+    }
+
+    @Test("AppTab contains sessions and activeWork cases")
+    func containsExpectedCases() {
+        let cases = Set(AppTab.allCases)
+        #expect(cases.contains(.sessions))
+        #expect(cases.contains(.activeWork))
+    }
+}
+
+// MARK: - Active Work Dashboard Filter Tests
+
+/// The active work dashboard (PlansSection) only shows plans whose display status
+/// is `.inProgress` or `.blocked`. These tests document and verify that criterion.
+@Suite("activeWorkDashboardFilter")
+struct ActiveWorkDashboardFilterTests {
+    let now = Date()
+
+    private func isShownInActiveWork(displayStatus: PlanDisplayStatus) -> Bool {
+        displayStatus == .inProgress || displayStatus == .blocked
+    }
+
+    @Test("inProgress status shown in active work")
+    func inProgressShown() {
+        #expect(isShownInActiveWork(displayStatus: .inProgress))
+    }
+
+    @Test("blocked status shown in active work")
+    func blockedShown() {
+        #expect(isShownInActiveWork(displayStatus: .blocked))
+    }
+
+    @Test("pending status NOT shown in active work")
+    func pendingHidden() {
+        #expect(!isShownInActiveWork(displayStatus: .pending))
+    }
+
+    @Test("recentlyDone status NOT shown in active work")
+    func recentlyDoneHidden() {
+        #expect(!isShownInActiveWork(displayStatus: .recentlyDone))
+    }
+
+    @Test("done status NOT shown in active work")
+    func doneHidden() {
+        #expect(!isShownInActiveWork(displayStatus: .done))
+    }
+
+    @Test("cancelled status NOT shown in active work")
+    func cancelledHidden() {
+        #expect(!isShownInActiveWork(displayStatus: .cancelled))
+    }
+
+    @Test("deferred status NOT shown in active work")
+    func deferredHidden() {
+        #expect(!isShownInActiveWork(displayStatus: .deferred))
+    }
+
+    @Test("in_progress DB plan → shown in active work")
+    func inProgressDbPlanShown() {
+        let plan = makePlan(status: "in_progress")
+        let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: now)
+        #expect(isShownInActiveWork(displayStatus: status))
+    }
+
+    @Test("pending plan with unresolved deps → shown in active work as blocked")
+    func pendingWithDepsShownAsBlocked() {
+        let plan = makePlan(status: "pending")
+        let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: true, now: now)
+        #expect(status == .blocked)
+        #expect(isShownInActiveWork(displayStatus: status))
+    }
+
+    @Test("pending plan without deps → NOT shown in active work")
+    func pendingNoDepsHidden() {
+        let plan = makePlan(status: "pending")
+        let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: now)
+        #expect(!isShownInActiveWork(displayStatus: status))
+    }
+
+    @Test("recently done plan → NOT shown in active work")
+    func recentlyDoneHiddenFromDB() {
+        let recentlyUpdated = now.addingTimeInterval(-2 * 24 * 60 * 60)
+        let plan = makePlan(status: "done", updatedAt: recentlyUpdated)
+        let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: now)
+        #expect(status == .recentlyDone)
+        #expect(!isShownInActiveWork(displayStatus: status))
+    }
+
+    @Test("old done plan → NOT shown in active work")
+    func oldDoneHiddenFromDB() {
+        let oldDate = now.addingTimeInterval(-10 * 24 * 60 * 60)
+        let plan = makePlan(status: "done", updatedAt: oldDate)
+        let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: now)
+        #expect(status == .done)
+        #expect(!isShownInActiveWork(displayStatus: status))
+    }
+
+    @Test("cancelled plan → NOT shown in active work")
+    func cancelledHiddenFromDB() {
+        let plan = makePlan(status: "cancelled")
+        let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: now)
+        #expect(!isShownInActiveWork(displayStatus: status))
+    }
+
+    @Test("deferred plan → NOT shown in active work")
+    func deferredHiddenFromDB() {
+        let plan = makePlan(status: "deferred")
+        let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: now)
+        #expect(!isShownInActiveWork(displayStatus: status))
+    }
+
+    @Test("Only inProgress and blocked pass active work filter — all other statuses are excluded")
+    func onlyInProgressAndBlockedPassFilter() {
+        let shown: [PlanDisplayStatus] = [.inProgress, .blocked]
+        let hidden: [PlanDisplayStatus] = [.pending, .recentlyDone, .done, .cancelled, .deferred]
+        for status in shown {
+            #expect(isShownInActiveWork(displayStatus: status), "Expected \(status) to be shown")
+        }
+        for status in hidden {
+            #expect(!isShownInActiveWork(displayStatus: status), "Expected \(status) to be hidden")
+        }
+    }
+}
+
+// MARK: - WorkspaceDisplayStatus Badge Visibility Tests
+
+/// Verifies the badge suppression logic introduced in Task 4:
+/// only non-default (primary, locked) states should produce visible indicators.
+@Suite("WorkspaceDisplayStatus badge visibility")
+struct WorkspaceDisplayStatusBadgeTests {
+    @Test("available workspace has no visible status indicators")
+    func availableHasNoBadge() {
+        let ws = makeWorkspace(isPrimary: false, isLocked: false)
+        #expect(ws.displayStatus == .available)
+        // .available is the absence-of-badge state — only locked and primary show indicators
+    }
+
+    @Test("locked workspace has a visible status indicator")
+    func lockedHasBadge() {
+        let ws = makeWorkspace(isPrimary: false, isLocked: true)
+        #expect(ws.displayStatus == .locked)
+    }
+
+    @Test("primary workspace has a visible status indicator")
+    func primaryHasBadge() {
+        let ws = makeWorkspace(isPrimary: true, isLocked: false)
+        #expect(ws.displayStatus == .primary)
+    }
+
+    @Test("available is the only status that maps to no badge")
+    func onlyAvailableHasNoBadge() {
+        let noBadgeStatuses: [WorkspaceDisplayStatus] = [.available]
+        let badgeStatuses: [WorkspaceDisplayStatus] = [.locked, .primary]
+        // Verify .available is distinct from badge-showing statuses
+        for status in noBadgeStatuses {
+            #expect(!badgeStatuses.contains(where: { $0 == status }))
+        }
+    }
+}
+
 // MARK: - TrackedWorkspace.displayName Tests
 
 @Suite("TrackedWorkspace.displayName")

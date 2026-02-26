@@ -1371,4 +1371,177 @@ struct ProjectTrackingStoreTests {
         #expect(store.plans.count == 1)
         #expect(store.plans.first?.uuid == "plan-p2")
     }
+
+    // MARK: - Active Work Dashboard Logic
+
+    /// Tests for the hasActivePlans / hasWorkspaces logic used by ProjectDetailView
+    /// to decide whether to show the active work dashboard or an empty state.
+
+    @Test("Active work: project with in-progress plan has active plans")
+    func activeWorkHasActivePlanInProgress() async throws {
+        let (path, cleanup) = try makeTestDBPath()
+        defer { cleanup() }
+
+        withTestDB(path: path) { db in
+            execSQL(db, "INSERT INTO project (id, repository_id) VALUES (1, 'repo-1')")
+            execSQL(
+                db,
+                "INSERT INTO plan (uuid, project_id, plan_id, status) VALUES ('active-plan', 1, 1, 'in_progress')")
+        }
+
+        let store = ProjectTrackingStore(dbPath: path)
+        store.selectedProjectId = "1"
+        await store.refresh()
+
+        let now = Date()
+        let hasActivePlans = store.plans.contains { plan in
+            let status = store.displayStatus(for: plan, now: now)
+            return status == .inProgress || status == .blocked
+        }
+        #expect(hasActivePlans)
+    }
+
+    @Test("Active work: pending plan with unresolved deps counts as active (blocked)")
+    func activeWorkBlockedPlanCountsAsActive() async throws {
+        let (path, cleanup) = try makeTestDBPath()
+        defer { cleanup() }
+
+        withTestDB(path: path) { db in
+            execSQL(db, "INSERT INTO project (id, repository_id) VALUES (1, 'repo-1')")
+            execSQL(db, "INSERT INTO plan (uuid, project_id, plan_id, status) VALUES ('blocker', 1, 1, 'pending')")
+            execSQL(
+                db,
+                "INSERT INTO plan (uuid, project_id, plan_id, status) VALUES ('blocked-plan', 1, 2, 'pending')")
+            execSQL(db, "INSERT INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES ('blocked-plan', 'blocker')")
+        }
+
+        let store = ProjectTrackingStore(dbPath: path)
+        store.selectedProjectId = "1"
+        await store.refresh()
+
+        let now = Date()
+        let hasActivePlans = store.plans.contains { plan in
+            let status = store.displayStatus(for: plan, now: now)
+            return status == .inProgress || status == .blocked
+        }
+        #expect(hasActivePlans)
+        // Verify the blocked plan's status specifically
+        let blockedPlan = try #require(store.plans.first { $0.uuid == "blocked-plan" })
+        #expect(store.displayStatus(for: blockedPlan, now: now) == .blocked)
+    }
+
+    @Test("Active work: project with only pending/done/cancelled plans has no active plans")
+    func activeWorkNoActivePlansWhenOnlyInactivePlans() async throws {
+        let (path, cleanup) = try makeTestDBPath()
+        defer { cleanup() }
+
+        let oldISO = isoDateString(Date().addingTimeInterval(-10 * 24 * 60 * 60))
+
+        withTestDB(path: path) { db in
+            execSQL(db, "INSERT INTO project (id, repository_id) VALUES (1, 'repo-1')")
+            execSQL(db, "INSERT INTO plan (uuid, project_id, plan_id, status) VALUES ('pending-plan', 1, 1, 'pending')")
+            execSQL(
+                db,
+                "INSERT INTO plan (uuid, project_id, plan_id, status, updated_at) VALUES ('old-done', 1, 2, 'done', '\(oldISO)')")
+            execSQL(
+                db,
+                "INSERT INTO plan (uuid, project_id, plan_id, status) VALUES ('cancelled-plan', 1, 3, 'cancelled')")
+        }
+
+        let store = ProjectTrackingStore(dbPath: path)
+        store.selectedProjectId = "1"
+        await store.refresh()
+
+        let now = Date()
+        let hasActivePlans = store.plans.contains { plan in
+            let status = store.displayStatus(for: plan, now: now)
+            return status == .inProgress || status == .blocked
+        }
+        #expect(!hasActivePlans)
+    }
+
+    @Test("Active work: empty state when no workspaces and no active plans")
+    func activeWorkEmptyStateWhenNoWorkspacesAndNoActivePlans() async throws {
+        let (path, cleanup) = try makeTestDBPath()
+        defer { cleanup() }
+
+        withTestDB(path: path) { db in
+            execSQL(db, "INSERT INTO project (id, repository_id) VALUES (1, 'repo-1')")
+            // Only a pending plan (not in-progress, not blocked)
+            execSQL(db, "INSERT INTO plan (uuid, project_id, plan_id, status) VALUES ('pending-plan', 1, 1, 'pending')")
+            // No workspaces
+        }
+
+        let store = ProjectTrackingStore(dbPath: path)
+        store.selectedProjectId = "1"
+        await store.refresh()
+
+        let now = Date()
+        let hasWorkspaces = !store.workspaces.isEmpty
+        let hasActivePlans = store.plans.contains { plan in
+            let status = store.displayStatus(for: plan, now: now)
+            return status == .inProgress || status == .blocked
+        }
+
+        // Both conditions false → empty state should be shown
+        #expect(!hasWorkspaces)
+        #expect(!hasActivePlans)
+    }
+
+    @Test("Active work: non-empty state when workspaces exist even without active plans")
+    func activeWorkNonEmptyWhenWorkspacesExistAlone() async throws {
+        let (path, cleanup) = try makeTestDBPath()
+        defer { cleanup() }
+
+        withTestDB(path: path) { db in
+            execSQL(db, "INSERT INTO project (id, repository_id) VALUES (1, 'repo-1')")
+            execSQL(
+                db,
+                "INSERT INTO workspace (id, project_id, workspace_path, is_primary) VALUES (1, 1, '/tmp/ws-1', 0)")
+            // No plans at all
+        }
+
+        let store = ProjectTrackingStore(dbPath: path)
+        store.selectedProjectId = "1"
+        await store.refresh()
+
+        let now = Date()
+        let hasWorkspaces = !store.workspaces.isEmpty
+        let hasActivePlans = store.plans.contains { plan in
+            let status = store.displayStatus(for: plan, now: now)
+            return status == .inProgress || status == .blocked
+        }
+
+        // hasWorkspaces is true → dashboard content is shown (not empty state)
+        #expect(hasWorkspaces)
+        #expect(!hasActivePlans)
+    }
+
+    @Test("Active work: workspace with assigned plan title shows linked plan info")
+    func activeWorkWorkspaceLinkedToPlan() async throws {
+        let (path, cleanup) = try makeTestDBPath()
+        defer { cleanup() }
+
+        withTestDB(path: path) { db in
+            execSQL(db, "INSERT INTO project (id, repository_id) VALUES (1, 'repo-1')")
+            execSQL(
+                db,
+                """
+                INSERT INTO workspace (id, project_id, workspace_path, name, plan_id, plan_title, is_primary)
+                VALUES (1, 1, '/tmp/ws-1', 'My Workspace', 42, 'Active Feature Plan', 0)
+                """)
+            execSQL(
+                db,
+                "INSERT INTO plan (uuid, project_id, plan_id, status) VALUES ('linked-plan', 1, 42, 'in_progress')")
+        }
+
+        let store = ProjectTrackingStore(dbPath: path)
+        store.selectedProjectId = "1"
+        await store.refresh()
+
+        let workspace = try #require(store.workspaces.first)
+        #expect(workspace.planId == 42)
+        #expect(workspace.planTitle == "Active Feature Plan")
+        #expect(workspace.displayName == "My Workspace")
+    }
 }
