@@ -22,38 +22,34 @@ Look in the `docs` directory for guidance on writing Swift and using SwiftUI.
 - **MessageInputBar** (in `SessionsView.swift`): Auto-growing text field (1–5 lines) with Enter-to-send, Shift+Enter for newlines. Only visible when session is active. Reports its height via `InputBarHeightKey` preference so the scroll-to-bottom button stays above it.
 - **Backend handling**: `HeadlessAdapter.setUserInputHandler()` receives `user_input` messages and `handleServerMessage()` receives `prompt_response` messages. See `docs/executor-stdin-conventions.md` for details.
 
-## Projects View
+## Active Work Dashboard
 
 The app has two top-level views switched via a segmented picker in `ContentView.swift`:
 
 - **Sessions** — live agent session monitoring (existing behavior, unchanged)
-- **Projects** — browse projects, workspaces, and plan-level task tracking from `tim.db`
+- **Active Work** — focused dashboard showing in-progress plans and workspaces from `tim.db`
 
-### Projects View Layout (`ProjectsView.swift`)
+### Active Work Layout (`ProjectsView.swift`)
 
-The Projects view uses a `NavigationSplitView`:
+The Active Work view uses a `NavigationSplitView`:
 
 - **Sidebar** — project list; each row shows the project display name and the last two path components of its git root for context
 - **Detail pane** — scrollable `ProjectDetailView` for the selected project, containing:
-  - **Workspaces section** — each workspace row shows: name, current git branch (chip), the plan it is assigned to, and a status badge (Primary / Locked / Available)
-  - **Plans section** — filter chip row (one per `PlanDisplayStatus`) followed by matching plan rows; each plan row shows plan number, title, goal, status badge, and a relative timestamp
+  - **Workspaces section** — each workspace row shows: name, current git branch (chip), the plan it is assigned to, and a status badge for non-default states only (Primary / Locked). Available status is implied by absence of a badge. Uses unconditional `.frame(width: 14)` on the status icon area to maintain row alignment across mixed states.
+  - **Plans section** — shows only active plans (in-progress and blocked); no filter chips. Each plan row shows plan number, title, goal, status badge, and a relative timestamp.
 
-**Filter controls** in the Plans section header:
+**Plan filtering** — hardcoded to show only active work:
 
-- Toggle individual chips to include/exclude status groups
-- **"All"** button — enables all status chips at once
-- **"Reset"** button — restores the default active set (pending, in-progress, blocked, recently done)
-
-**Default filter** — visible by default:
-
-- `pending` — plan status is `pending` with no unresolved dependencies
 - `in_progress` — plan status is `in_progress`
 - `blocked` — plan status is `pending` AND at least one dependency plan is not yet `done`
-- `recently_done` — plan status is `done` AND `updated_at` is within the last 7 days
 
-Hidden by default: `done` (older than 7 days), `cancelled`, `deferred`.
+The filter uses the `PlanDisplayStatus.isActiveWork` computed property as a shared predicate.
 
-**States handled:** loading spinner, empty (no projects), error (DB unreadable), and data (split view).
+**Empty states:**
+
+- **No active plans (but workspaces exist)** — section-level message: "No active plans — browse all plans to get started"
+- **No workspaces and no active plans** — full empty state in `ProjectDetailView` guiding the user to pick up work
+- **Loading/error** — loading spinner, empty (no projects), error (DB unreadable)
 
 ### Project Tracking Data Layer
 
