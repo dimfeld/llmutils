@@ -36,6 +36,7 @@ interface WorkspaceInfo {
   originalPlanFilePath?: string;
   branch?: string;
   createdAt?: string;
+  updatedAt?: string;
   name?: string;
   description?: string;
   planId?: string;
@@ -670,6 +671,51 @@ describe('workspace list command', () => {
 
     const output = JSON.parse(consoleOutput.join('\n'));
     expect(output).toHaveLength(2);
+  });
+
+  test('sorts workspaces by recency by default', async () => {
+    const olderWorkspaceDir = path.join(tempDir, 'workspace-older');
+    const newerWorkspaceDir = path.join(tempDir, 'workspace-newer');
+    await fs.mkdir(olderWorkspaceDir, { recursive: true });
+    await fs.mkdir(newerWorkspaceDir, { recursive: true });
+
+    await writeTrackingData({
+      [olderWorkspaceDir]: {
+        taskId: 'task-older',
+        workspacePath: olderWorkspaceDir,
+        repositoryId: 'github.com/test/repo',
+      },
+      [newerWorkspaceDir]: {
+        taskId: 'task-newer',
+        workspacePath: newerWorkspaceDir,
+        repositoryId: 'github.com/test/repo',
+      },
+    });
+
+    const db = getDatabase();
+    db.prepare('UPDATE workspace SET updated_at = ? WHERE workspace_path = ?').run(
+      '2024-01-01T00:00:00.000Z',
+      olderWorkspaceDir
+    );
+    db.prepare('UPDATE workspace SET updated_at = ? WHERE workspace_path = ?').run(
+      '2024-02-01T00:00:00.000Z',
+      newerWorkspaceDir
+    );
+
+    const { handleWorkspaceListCommand } = await import('./workspace.js');
+
+    await handleWorkspaceListCommand({ format: 'json', all: true }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    const output = JSON.parse(consoleOutput.join('\n'));
+    expect(output).toHaveLength(2);
+    expect(output[0].fullPath).toBe(newerWorkspaceDir);
+    expect(output[1].fullPath).toBe(olderWorkspaceDir);
   });
 
   test('TSV includes issue references extracted from URLs', async () => {

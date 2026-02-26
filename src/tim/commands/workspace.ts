@@ -88,6 +88,20 @@ interface WorkspaceAssignmentSummary {
   updatedAt: string;
 }
 
+function getWorkspaceRecencyTimestamp(entry: WorkspaceListEntry): number {
+  const updatedAt = entry.updatedAt ? Date.parse(entry.updatedAt) : Number.NaN;
+  if (!Number.isNaN(updatedAt)) {
+    return updatedAt;
+  }
+
+  const createdAt = Date.parse(entry.createdAt);
+  if (!Number.isNaN(createdAt)) {
+    return createdAt;
+  }
+
+  return Number.NEGATIVE_INFINITY;
+}
+
 export interface WorkspaceListOptions {
   repo?: string;
   format?: WorkspaceListFormat;
@@ -271,15 +285,13 @@ export async function handleWorkspaceListCommand(options: WorkspaceListOptions, 
   // Build enriched list entries with live branch info
   const entries = await buildWorkspaceListEntries(workspacesWithStatus, mostRecentAssignments);
 
-  // Sort entries by name (case-insensitive), with unnamed entries sorted by path
+  // Sort entries by recency (most recent first).
   entries.sort((a, b) => {
-    const nameA = (a.name || '').toLowerCase();
-    const nameB = (b.name || '').toLowerCase();
-    if (nameA && nameB) {
-      return nameA.localeCompare(nameB);
+    const recencyDiff = getWorkspaceRecencyTimestamp(b) - getWorkspaceRecencyTimestamp(a);
+    if (recencyDiff !== 0) {
+      return recencyDiff;
     }
-    if (nameA) return -1;
-    if (nameB) return 1;
+
     return a.fullPath.localeCompare(b.fullPath);
   });
 

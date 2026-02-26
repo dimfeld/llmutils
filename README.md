@@ -1295,6 +1295,8 @@ tim workspace add 123 --from-branch develop
 
 **List workspaces:**
 
+`tim workspace list` sorts workspaces by recency by default (most recently updated first).
+
 ```bash
 # All workspaces for current repository (default table format)
 tim workspace list
