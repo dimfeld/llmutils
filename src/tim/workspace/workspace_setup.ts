@@ -1,9 +1,10 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { getWorkingCopyStatus } from '../../common/git.js';
+import { getCurrentBranchName, getUsingJj, getWorkingCopyStatus } from '../../common/git.js';
 import { logSpawn } from '../../common/process.js';
 import { error, log, sendStructured, warn } from '../../logging.js';
 import { generateBranchNameFromPlan } from '../commands/branch.js';
+import { pullWorkspaceRefIfExists } from '../commands/workspace.js';
 import type { TimConfig } from '../configSchema.js';
 import { readPlanFile } from '../plans.js';
 import { WorkspaceAutoSelector } from './workspace_auto_selector.js';
@@ -173,7 +174,8 @@ export async function setupWorkspace(
             );
           }
 
-          if (status.hasChanges) {
+          const workspaceIsJj = await getUsingJj(workspace.path);
+          if (status.hasChanges && !workspaceIsJj) {
             throw new Error(
               `Workspace at ${workspace.path} has uncommitted changes. Please commit or stash them before reuse.`
             );
@@ -189,15 +191,33 @@ export async function setupWorkspace(
             );
           }
 
-          const prepareResult = await prepareExistingWorkspace(workspace.path, {
-            baseBranch: options.base,
-            branchName,
-            createBranch: config.workspaceCreation?.createBranch ?? true,
-          });
-          if (!prepareResult.success) {
-            throw new Error(
-              `Failed to prepare workspace at ${workspace.path}: ${prepareResult.error ?? 'Unknown error'}`
-            );
+          let preparedWithPlanBranch = false;
+          if (options.autoWorkspace) {
+            try {
+              const currentBranch = await getCurrentBranchName(workspace.path);
+              if (currentBranch !== branchName) {
+                preparedWithPlanBranch = await pullWorkspaceRefIfExists(
+                  workspace.path,
+                  branchName,
+                  'origin'
+                );
+              }
+            } catch (err) {
+              warn(`Failed to pull workspace branch "${branchName}": ${err as Error}`);
+            }
+          }
+
+          if (!preparedWithPlanBranch) {
+            const prepareResult = await prepareExistingWorkspace(workspace.path, {
+              baseBranch: options.base,
+              branchName,
+              createBranch: config.workspaceCreation?.createBranch ?? true,
+            });
+            if (!prepareResult.success) {
+              throw new Error(
+                `Failed to prepare workspace at ${workspace.path}: ${prepareResult.error ?? 'Unknown error'}`
+              );
+            }
           }
 
           let planFileForUpdateCommands: string | undefined = planFile;

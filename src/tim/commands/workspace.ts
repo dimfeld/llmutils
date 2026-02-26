@@ -44,6 +44,7 @@ import { importSingleIssue } from './import/import.js';
 import { readAllPlans } from '../plans.js';
 import { parseIssueInput, type ParsedIssueInput } from '../issue_utils.js';
 import { spawnAndLogOutput } from '../../common/process.js';
+import { generateBranchNameFromPlan } from './branch.js';
 import {
   findPrimaryWorkspaceForRepository,
   findWorkspaceInfosByRepositoryId,
@@ -757,8 +758,11 @@ async function tryReuseExistingWorkspace(
       continue;
     }
 
-    const hasChanges = await hasUncommittedChanges(workspace.workspacePath);
-    if (hasChanges) {
+    const [isJjWorkspace, hasChanges] = await Promise.all([
+      getUsingJj(workspace.workspacePath),
+      hasUncommittedChanges(workspace.workspacePath),
+    ]);
+    if (hasChanges && !isJjWorkspace) {
       log(`Skipping workspace ${workspace.workspacePath}: has uncommitted changes`);
       continue;
     }
@@ -1346,6 +1350,41 @@ export async function handleWorkspacePushCommand(
   log(`  Ref: ${branch}`);
 }
 
+export async function handleWorkspacePullPlanCommand(
+  planIdentifier: string | undefined,
+  options: { workspace?: string; branch?: string; remote?: string },
+  command: Command
+) {
+  if (!planIdentifier) {
+    throw new Error('Plan identifier is required.');
+  }
+
+  const globalOpts = command.parent!.parent!.opts();
+  const workspace = await resolveWorkspaceIdentifier(options.workspace);
+  const planFile = await resolvePlanFile(planIdentifier, globalOpts.config);
+  const plan = await readPlanFile(planFile);
+  const branchName = options.branch ?? plan.branch ?? generateBranchNameFromPlan(plan);
+  const remoteName = options.remote ?? 'origin';
+
+  if (!branchName) {
+    throw new Error(
+      `Could not determine a branch/bookmark name from plan ${planIdentifier}. Use --branch to specify one explicitly.`
+    );
+  }
+
+  const pulled = await pullWorkspaceRefIfExists(workspace.workspacePath, branchName, remoteName);
+  if (!pulled) {
+    log(`No branch/bookmark "${branchName}" found in ${remoteName}; workspace left unchanged.`);
+    log(`  Workspace: ${workspace.workspacePath}`);
+    return;
+  }
+
+  log(chalk.green('✓ Workspace branch/bookmark pulled and checked out'));
+  log(`  Workspace: ${workspace.workspacePath}`);
+  log(`  Ref: ${branchName}`);
+  log(`  Remote: ${remoteName}`);
+}
+
 async function resolveWorkspaceIdentifier(identifier: string | undefined): Promise<WorkspaceInfo> {
   if (identifier) {
     const asPath = path.resolve(process.cwd(), identifier);
@@ -1476,6 +1515,134 @@ export async function pushWorkspaceRefBetweenWorkspaces(options: {
     options.destinationWorkspacePath,
     options.refName
   );
+}
+
+export async function pushWorkspaceRefToRemote(options: {
+  workspacePath: string;
+  refName: string;
+  remoteName?: string;
+  ensureJjBookmarkAtCurrent?: boolean;
+}): Promise<void> {
+  const remoteName = options.remoteName ?? 'origin';
+  const isJj = await getUsingJj(options.workspacePath);
+
+  if (isJj) {
+    if (options.ensureJjBookmarkAtCurrent) {
+      await setWorkspaceBookmarkToCurrent(options.workspacePath, options.refName);
+    }
+    await pushJjBookmarkToWorkspace(options.workspacePath, options.refName, remoteName);
+    return;
+  }
+
+  const pushResult = await spawnAndLogOutput(
+    ['git', 'push', remoteName, `${options.refName}:${options.refName}`],
+    { cwd: options.workspacePath }
+  );
+  if (pushResult.exitCode !== 0) {
+    throw new Error(
+      `Failed to push branch "${options.refName}" to remote "${remoteName}": ${pushResult.stderr}`
+    );
+  }
+}
+
+function isMissingJjBookmarkError(message: string): boolean {
+  return /no such bookmark|bookmark .* not found|could not resolve revision/i.test(message);
+}
+
+export async function pullWorkspaceRefIfExists(
+  workspacePath: string,
+  refName: string,
+  remoteName = 'origin'
+): Promise<boolean> {
+  const isJj = await getUsingJj(workspacePath);
+
+  if (isJj) {
+    const fetchResult = await spawnAndLogOutput(['jj', 'git', 'fetch'], { cwd: workspacePath });
+    if (fetchResult.exitCode !== 0) {
+      throw new Error(`Failed to fetch from remote: ${fetchResult.stderr}`);
+    }
+
+    const trackResult = await spawnAndLogOutput(
+      ['jj', 'bookmark', 'track', refName, '--remote', remoteName],
+      { cwd: workspacePath, quiet: true }
+    );
+    if (trackResult.exitCode !== 0 && !isMissingJjBookmarkError(trackResult.stderr)) {
+      throw new Error(
+        `Failed to track bookmark "${refName}" from remote "${remoteName}": ${trackResult.stderr}`
+      );
+    }
+
+    const editResult = await spawnAndLogOutput(['jj', 'edit', refName], {
+      cwd: workspacePath,
+      quiet: true,
+    });
+    if (editResult.exitCode !== 0) {
+      if (isMissingJjBookmarkError(editResult.stderr)) {
+        return false;
+      }
+      throw new Error(`Failed to check out bookmark "${refName}": ${editResult.stderr}`);
+    }
+
+    return true;
+  }
+
+  const fetchResult = await spawnAndLogOutput(['git', 'fetch', remoteName], { cwd: workspacePath });
+  if (fetchResult.exitCode !== 0) {
+    throw new Error(`Failed to fetch from remote "${remoteName}": ${fetchResult.stderr}`);
+  }
+
+  const localExists = await spawnAndLogOutput(
+    ['git', 'rev-parse', '--verify', `refs/heads/${refName}`],
+    {
+      cwd: workspacePath,
+      quiet: true,
+    }
+  ).then((result) => result.exitCode === 0);
+
+  const remoteExists = await spawnAndLogOutput(
+    ['git', 'rev-parse', '--verify', `refs/remotes/${remoteName}/${refName}`],
+    {
+      cwd: workspacePath,
+      quiet: true,
+    }
+  ).then((result) => result.exitCode === 0);
+
+  if (!localExists && !remoteExists) {
+    return false;
+  }
+
+  if (localExists) {
+    const checkoutResult = await spawnAndLogOutput(['git', 'checkout', refName], {
+      cwd: workspacePath,
+    });
+    if (checkoutResult.exitCode !== 0) {
+      throw new Error(`Failed to check out branch "${refName}": ${checkoutResult.stderr}`);
+    }
+  } else {
+    const checkoutResult = await spawnAndLogOutput(
+      ['git', 'checkout', '--track', '-b', refName, `${remoteName}/${refName}`],
+      { cwd: workspacePath }
+    );
+    if (checkoutResult.exitCode !== 0) {
+      throw new Error(
+        `Failed to create and check out tracking branch "${refName}": ${checkoutResult.stderr}`
+      );
+    }
+  }
+
+  if (remoteExists) {
+    const pullResult = await spawnAndLogOutput(['git', 'pull', '--ff-only', remoteName, refName], {
+      cwd: workspacePath,
+      quiet: true,
+    });
+    if (pullResult.exitCode !== 0) {
+      throw new Error(
+        `Failed to fast-forward branch "${refName}" from ${remoteName}: ${pullResult.stderr}`
+      );
+    }
+  }
+
+  return true;
 }
 
 export async function ensureWorkspaceRefExists(

@@ -297,7 +297,7 @@ tim generate 123 --non-interactive
 2. Optionally sets up a workspace (lock, plan file copy)
 3. Runs the interactive planning prompt via the selected executor
 4. The executor researches the codebase, collaborates with you to refine the plan, and generates structured tasks
-5. In workspace mode, syncs the workspace branch/bookmark back to primary by default (disable with `--no-workspace-sync`)
+5. In workspace mode, syncs the workspace branch/bookmark by default (to `origin`, configurable; disable with `--no-workspace-sync`)
 6. Optionally commits changes
 
 **Interactive planning:**
@@ -1240,6 +1240,12 @@ workspaceCreation:
   # (e.g. reinstall dependencies after pulling latest changes)
   workspaceUpdateCommands:
     - npm install
+
+# Optional workspace sync behavior for agent/generate auto-workspace flows
+workspaceSync:
+  # origin | primary-workspace
+  # default: origin
+  pushTarget: origin
 ```
 
 **Clone methods:**
@@ -1349,7 +1355,7 @@ tim workspace update /path/to/main-workspace --primary
 
 Primary workspaces are shown with a "Primary" status in `tim workspace list`. They can still be used manually with `--workspace`.
 
-**Push to primary workspace:**
+**Push between workspaces:**
 
 Push a branch/bookmark between tracked workspaces. Defaults are source=current workspace and destination=primary workspace:
 
@@ -1368,6 +1374,16 @@ If no primary workspace is configured, set one first:
 
 ```bash
 tim workspace update /path/to/main-workspace --primary
+```
+
+**Pull and checkout a plan branch if it exists:**
+
+```bash
+# Uses plan.branch if set, otherwise generated plan branch name
+tim workspace pull-plan 123
+
+# Specify workspace and remote explicitly
+tim workspace pull-plan 123 --workspace task-123 --remote origin
 ```
 
 **Interactive workspace switching:**
@@ -1413,7 +1429,7 @@ tim generate 123 --workspace task-123
 # 5. Create new workspace if all are locked
 # For existing workspaces:
 #   6. Acquire lock
-#   7. Check for uncommitted changes (fails if dirty)
+#   7. Check for uncommitted changes (fails if dirty for git workspaces)
 #   8. Pull latest and checkout base branch (or --base ref)
 #   9. Copy plan file to workspace
 # 10. Run workspaceUpdateCommands (e.g. npm install)
@@ -2268,6 +2284,9 @@ tim workspace update [WORKSPACE] --no-primary # Remove primary designation
 
 # Push branch/bookmark between workspaces
 tim workspace push [WORKSPACE] [--from WORKSPACE] [--to WORKSPACE] [--branch BRANCH]
+
+# Pull and checkout plan branch/bookmark if it exists
+tim workspace pull-plan PLAN [--workspace WORKSPACE] [--branch BRANCH] [--remote REMOTE]
 
 # Shell integration (interactive workspace switching with fzf)
 tim shell-integration --shell bash|zsh

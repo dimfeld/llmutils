@@ -217,6 +217,7 @@ export async function handleGenerateCommand(
       roundTripContext = await prepareWorkspaceRoundTrip({
         workspacePath: currentBaseDir,
         workspaceSyncEnabled: options.workspaceSync !== false,
+        syncTarget: config.workspaceSync?.pushTarget ?? 'origin',
       });
     }
 

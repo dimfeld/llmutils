@@ -549,6 +549,41 @@ describe('setupWorkspace', () => {
     expect(await WorkspaceLock.getLockInfo(existingWorkspacePath)).toBeNull();
   });
 
+  test('does not fail on dirty existing workspace when using jj', async () => {
+    const existingWorkspacePath = path.join(tempDir, 'workspace-existing-dirty-jj');
+    await fs.mkdir(existingWorkspacePath, { recursive: true });
+    await seedWorkspace(existingWorkspacePath, 'task-existing-dirty-jj');
+
+    spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: true,
+      checkFailed: false,
+      output: 'diff output',
+    });
+    spyOn(git, 'getUsingJj').mockResolvedValue(true);
+    const prepareSpy = spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
+      success: true,
+    });
+    const updateSpy = spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
+
+    await expect(
+      setupWorkspace(
+        {
+          workspace: 'task-existing-dirty-jj',
+        },
+        baseDir,
+        planFile,
+        config,
+        'tim generate'
+      )
+    ).resolves.toMatchObject({
+      baseDir: existingWorkspacePath,
+      workspaceTaskId: 'task-existing-dirty-jj',
+    });
+
+    expect(prepareSpy).toHaveBeenCalled();
+    expect(updateSpy).toHaveBeenCalled();
+  });
+
   test('aborts setup when workspace update command fails with allowFailure false', async () => {
     const existingWorkspacePath = path.join(tempDir, 'workspace-existing-update-fail-hard');
     await fs.mkdir(existingWorkspacePath, { recursive: true });

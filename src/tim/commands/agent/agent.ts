@@ -347,6 +347,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
       roundTripContext = await prepareWorkspaceRoundTrip({
         workspacePath: currentBaseDir,
         workspaceSyncEnabled: options.workspaceSync !== false,
+        syncTarget: config.workspaceSync?.pushTarget ?? 'origin',
       });
     }
 

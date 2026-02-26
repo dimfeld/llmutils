@@ -4,27 +4,49 @@ import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { findPrimaryWorkspaceForRepository, getWorkspaceInfoByPath } from './workspace_info.js';
 import {
   ensureWorkspaceRefExists,
+  pullWorkspaceRefIfExists,
   pushWorkspaceRefBetweenWorkspaces,
+  pushWorkspaceRefToRemote,
   setWorkspaceBookmarkToCurrent,
 } from '../commands/workspace.js';
 
+export type WorkspaceSyncTarget = 'origin' | 'primary-workspace';
+
 export interface WorkspaceRoundTripContext {
   executionWorkspacePath: string;
-  primaryWorkspacePath: string;
+  primaryWorkspacePath?: string;
   refName: string;
+  syncTarget: WorkspaceSyncTarget;
 }
 
 export async function prepareWorkspaceRoundTrip(options: {
   workspacePath: string;
   workspaceSyncEnabled: boolean;
+  syncTarget?: WorkspaceSyncTarget;
 }): Promise<WorkspaceRoundTripContext | null> {
   if (!options.workspaceSyncEnabled) {
     return null;
   }
 
+  const syncTarget = options.syncTarget ?? 'origin';
   const workspaceInfo = getWorkspaceInfoByPath(options.workspacePath);
   if (!workspaceInfo || workspaceInfo.isPrimary) {
     return null;
+  }
+
+  const refName = (await getCurrentBranchName(options.workspacePath)) ?? workspaceInfo.branch;
+  if (!refName) {
+    throw new Error(
+      `No current branch/bookmark detected for workspace ${options.workspacePath}. Check out or create a branch before syncing.`
+    );
+  }
+
+  if (syncTarget === 'origin') {
+    return {
+      executionWorkspacePath: options.workspacePath,
+      refName,
+      syncTarget,
+    };
   }
 
   const repositoryId =
@@ -39,23 +61,26 @@ export async function prepareWorkspaceRoundTrip(options: {
     return null;
   }
 
-  const refName = (await getCurrentBranchName(options.workspacePath)) ?? workspaceInfo.branch;
-  if (!refName) {
-    throw new Error(
-      `No current branch/bookmark detected for workspace ${options.workspacePath}. Check out or create a branch before syncing.`
-    );
-  }
-
   return {
     executionWorkspacePath: options.workspacePath,
     primaryWorkspacePath: primaryWorkspace.workspacePath,
     refName,
+    syncTarget,
   };
 }
 
 export async function runPreExecutionWorkspaceSync(
   context: WorkspaceRoundTripContext
 ): Promise<void> {
+  if (context.syncTarget === 'origin') {
+    await pullWorkspaceRefIfExists(context.executionWorkspacePath, context.refName, 'origin');
+    return;
+  }
+
+  if (!context.primaryWorkspacePath) {
+    throw new Error('Primary workspace path is required for primary-workspace sync.');
+  }
+
   await ensureWorkspaceRefExists(context.primaryWorkspacePath, context.refName);
   await pushWorkspaceRefBetweenWorkspaces({
     sourceWorkspacePath: context.primaryWorkspacePath,
@@ -72,6 +97,20 @@ export async function runPostExecutionWorkspaceSync(
 
   if (await getUsingJj(context.executionWorkspacePath)) {
     await setWorkspaceBookmarkToCurrent(context.executionWorkspacePath, context.refName);
+  }
+
+  if (context.syncTarget === 'origin') {
+    await pushWorkspaceRefToRemote({
+      workspacePath: context.executionWorkspacePath,
+      refName: context.refName,
+      remoteName: 'origin',
+      ensureJjBookmarkAtCurrent: true,
+    });
+    return;
+  }
+
+  if (!context.primaryWorkspacePath) {
+    throw new Error('Primary workspace path is required for primary-workspace sync.');
   }
 
   await pushWorkspaceRefBetweenWorkspaces({

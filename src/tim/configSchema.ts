@@ -332,6 +332,20 @@ export const timConfigSchema = z
       .describe('Per-subagent model overrides keyed by executor (claude, codex)'),
     /** Configuration for automatic workspace creation. */
     workspaceCreation: workspaceCreationConfigSchema.optional(),
+    /** Workspace synchronization behavior for auto-workspace flows. */
+    workspaceSync: z
+      .object({
+        /** Target to sync workspace refs to after execution. */
+        pushTarget: z
+          .enum(['origin', 'primary-workspace'])
+          .optional()
+          .describe(
+            'Target for workspace sync. "origin" pushes to remote VCS; "primary-workspace" syncs with the tracked primary workspace.'
+          ),
+      })
+      .strict()
+      .optional()
+      .describe('Configuration for workspace synchronization behavior'),
     /** Planning-related configuration options */
     planning: z
       .object({
