@@ -332,13 +332,13 @@ final class ProjectTrackingStore {
     /// Maps plan UUID → true if the plan has at least one unresolved (non-done) dependency.
     var planDependencyStatus: [String: Bool] = [:]
     var selectedProjectId: String?
-    /// Preserved for the upcoming dedicated Plans browser tab.
-    /// The current Active Work dashboard does not use user-selectable plan filters.
+    /// User-selectable plan filters for the Plans browser tab.
+    /// The Active Work dashboard does not use these filters.
     var activeFilters: Set<PlanDisplayStatus> = defaultPlanFilters()
     var loadState: LoadState = .idle
 
     private let dbPath: String?
-    var refreshTask: Task<Void, Never>?
+    private var refreshTask: Task<Void, Never>?
     private var refreshConsumerCount: Int = 0
     private var isRefreshing = false
     /// Set to true when `refresh()` is called while a refresh is already in-flight.

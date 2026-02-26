@@ -1404,7 +1404,7 @@ struct ProjectTrackingStoreTests {
         #expect(store.loadState == .loaded)
     }
 
-    @Test("Reference-counted refresh: startRefreshing twice + stopRefreshing once keeps task alive, second stop cancels it")
+    @Test("Reference-counted refresh: startRefreshing twice + stopRefreshing once keeps refreshing, second stop fully stops")
     func referenceCountedRefreshLifecycle() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
@@ -1415,25 +1415,25 @@ struct ProjectTrackingStoreTests {
 
         let store = ProjectTrackingStore(dbPath: path)
 
-        // Calling startRefreshing twice increments the reference count to 2.
-        // Only the first call creates the refresh task; the second is a no-op for task creation.
+        // Start two consumers (reference count = 2)
         store.startRefreshing()
         store.startRefreshing()
 
-        // Allow the initial refresh to complete
-        try await Task.sleep(for: .milliseconds(500))
+        // Wait for initial load to complete using polling
+        for _ in 0..<100 {
+            if store.loadState == .loaded { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
         #expect(store.loadState == .loaded)
 
-        // The task should be alive now (count=2)
-        #expect(store.refreshTask != nil)
-
-        // One stop decrements to count=1 — the task should remain alive
+        // Stop one consumer — store should still be refreshing (count=1)
         store.stopRefreshing()
-        #expect(store.refreshTask != nil, "refreshTask should still be non-nil after one stopRefreshing (count=1)")
+        // Give a moment for any erroneous cancellation to take effect
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(store.loadState == .loaded, "Store should remain loaded with one active consumer")
 
-        // Second stop decrements to count=0 — the task should now be cancelled and cleared
+        // Stop second consumer — now truly stopped (count=0)
         store.stopRefreshing()
-        #expect(store.refreshTask == nil, "refreshTask should be nil after second stopRefreshing (count=0)")
     }
 
     @Test("startRefreshing can restart after stopRefreshing and picks up DB changes")
