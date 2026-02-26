@@ -18,6 +18,11 @@ import {
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { getAssignmentEntriesByProject, type AssignmentEntry } from '../db/assignment.js';
 import { getDatabase } from '../db/database.js';
+import {
+  getPlanDependenciesByProject,
+  getPlansByProject,
+  getPlanTasksByProject,
+} from '../db/plan.js';
 import { getProject } from '../db/project.js';
 import {
   findNextPlan,
@@ -107,6 +112,76 @@ function applyAssignmentsToPlans(
   }
 
   return result;
+}
+
+function loadPlansFromDb(searchDir: string, repositoryId: string): Map<number, PlanWithFilename> {
+  const db = getDatabase();
+  const project = getProject(db, repositoryId);
+  if (!project) {
+    return new Map();
+  }
+
+  const rows = getPlansByProject(db, project.id);
+  if (rows.length === 0) {
+    return new Map();
+  }
+
+  const planUuidToId = new Map<string, number>();
+  for (const row of rows) {
+    planUuidToId.set(row.uuid, row.plan_id);
+  }
+
+  const tasksByPlanUuid = new Map<
+    string,
+    Array<{ title: string; description: string; done: boolean }>
+  >();
+  const taskRows = getPlanTasksByProject(db, project.id);
+  for (const taskRow of taskRows) {
+    const list = tasksByPlanUuid.get(taskRow.plan_uuid) ?? [];
+    list.push({
+      title: taskRow.title,
+      description: taskRow.description,
+      done: taskRow.done === 1,
+    });
+    tasksByPlanUuid.set(taskRow.plan_uuid, list);
+  }
+
+  const dependenciesByPlanUuid = new Map<string, number[]>();
+  const dependencyRows = getPlanDependenciesByProject(db, project.id);
+  for (const dependencyRow of dependencyRows) {
+    const dependencyPlanId = planUuidToId.get(dependencyRow.depends_on_uuid);
+    if (dependencyPlanId === undefined) {
+      continue;
+    }
+
+    const list = dependenciesByPlanUuid.get(dependencyRow.plan_uuid) ?? [];
+    list.push(dependencyPlanId);
+    dependenciesByPlanUuid.set(dependencyRow.plan_uuid, list);
+  }
+
+  const plans = new Map<number, PlanWithFilename>();
+  for (const row of rows) {
+    const parentId = row.parent_uuid ? planUuidToId.get(row.parent_uuid) : undefined;
+    plans.set(row.plan_id, {
+      id: row.plan_id,
+      uuid: row.uuid,
+      title: row.title ?? undefined,
+      goal: row.goal ?? '',
+      details: row.details ?? '',
+      status: row.status,
+      priority: row.priority ?? undefined,
+      branch: row.branch ?? undefined,
+      parent: parentId,
+      epic: row.epic === 1,
+      tasks: tasksByPlanUuid.get(row.uuid) ?? [],
+      dependencies: dependenciesByPlanUuid.get(row.uuid) ?? [],
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      filename: path.join(searchDir, row.filename),
+    });
+  }
+
+  return plans;
 }
 
 function buildAssignmentDisplayInfo(
@@ -539,6 +614,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
   let tasksDir: string | undefined;
   let preloadedPlans: Map<number, PlanWithFilename> | undefined;
   let selectedPlan: PlanWithFilename | undefined;
+  const requestedPlanArg = planFile;
 
   if (options.nextReady) {
     // Validate that --next-ready has a value (parent plan ID or file path)
@@ -652,7 +728,24 @@ export async function handleShowCommand(planFile: string | undefined, options: a
         'Please provide a plan file or use --latest/--next/--current/--next-ready to find a plan'
       );
     }
-    resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
+    try {
+      resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
+    } catch (error) {
+      if (!tasksDir) {
+        tasksDir = await resolveTasksDir(config);
+      }
+      const repositoryForDb = await getRepositoryIdentity({ cwd: tasksDir });
+      const dbPlans = loadPlansFromDb(tasksDir, repositoryForDb.repositoryId);
+      const numericPlanArg = Number(planFile);
+      const dbPlan = !Number.isNaN(numericPlanArg) ? dbPlans.get(numericPlanArg) : undefined;
+      if (!dbPlan) {
+        throw error;
+      }
+
+      selectedPlan = dbPlan;
+      resolvedPlanFile = dbPlan.filename;
+      preloadedPlans = dbPlans;
+    }
   }
 
   if (!tasksDir) {
@@ -668,7 +761,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
     preloadedPlans = plans;
   }
 
-  const allPlans = preloadedPlans;
+  let allPlans = preloadedPlans;
   const resolvedTasksDir = tasksDir;
 
   const repository = await getRepositoryIdentity({ cwd: path.dirname(resolvedPlanFile) });
@@ -700,12 +793,34 @@ export async function handleShowCommand(planFile: string | undefined, options: a
 
   if (!plan) {
     // Fallback to reading the file directly if not found in collection
-    plan = await readPlanFile(resolvedPlanFile);
+    try {
+      plan = await readPlanFile(resolvedPlanFile);
+    } catch (error) {
+      const dbPlans = loadPlansFromDb(resolvedTasksDir, repository.repositoryId);
+      const numericRequestedArg =
+        typeof requestedPlanArg === 'string' ? Number(requestedPlanArg) : Number.NaN;
+      const dbPlanById = !Number.isNaN(numericRequestedArg)
+        ? dbPlans.get(numericRequestedArg)
+        : undefined;
+      const dbPlanByFilename = Array.from(dbPlans.values()).find(
+        (candidate) => path.resolve(candidate.filename) === path.resolve(resolvedPlanFile)
+      );
+      const fallbackPlan = dbPlanById ?? dbPlanByFilename;
+      if (!fallbackPlan) {
+        throw error;
+      }
+
+      plan = fallbackPlan;
+      resolvedPlanFile = fallbackPlan.filename;
+      allPlans = dbPlans;
+    }
   }
 
   if (!plan) {
     throw new Error(`Failed to load plan from ${resolvedPlanFile}`);
   }
+
+  plansWithAssignments = applyAssignmentsToPlans(allPlans, assignmentEntries);
 
   let planAssignmentEntry = plan.uuid ? assignmentEntries[plan.uuid] : undefined;
   let displayedPlan = applyAssignmentStatus(plan, planAssignmentEntry);

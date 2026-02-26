@@ -22,6 +22,9 @@ describe('handleShowCommand', () => {
   let tasksDir: string;
   let repositoryId: string;
   let assignmentsData: Record<string, any>;
+  let dbPlans: any[];
+  let dbPlanTasks: any[];
+  let dbPlanDependencies: any[];
 
   beforeEach(async () => {
     // Clear mocks
@@ -39,6 +42,9 @@ describe('handleShowCommand', () => {
     await fs.mkdir(tasksDir, { recursive: true });
     repositoryId = 'show-tests';
     assignmentsData = {};
+    dbPlans = [];
+    dbPlanTasks = [];
+    dbPlanDependencies = [];
 
     // Mock modules
     await moduleMocker.mock('../../logging.js', () => ({
@@ -69,6 +75,11 @@ describe('handleShowCommand', () => {
     }));
     await moduleMocker.mock('../db/project.js', () => ({
       getProject: () => ({ id: 1 }),
+    }));
+    await moduleMocker.mock('../db/plan.js', () => ({
+      getPlansByProject: () => dbPlans,
+      getPlanTasksByProject: () => dbPlanTasks,
+      getPlanDependenciesByProject: () => dbPlanDependencies,
     }));
     await moduleMocker.mock('../db/assignment.js', () => ({
       getAssignmentEntriesByProject: () => assignmentsData,
@@ -252,6 +263,33 @@ describe('handleShowCommand', () => {
     };
 
     await expect(handleShowCommand('nonexistent', options, command)).rejects.toThrow();
+  });
+
+  test('falls back to SQLite when the plan file is missing', async () => {
+    dbPlans = [
+      {
+        uuid: '77777777-7777-4777-8777-777777777777',
+        project_id: 1,
+        plan_id: 77,
+        title: 'SQLite fallback plan',
+        goal: 'Loaded from sqlite',
+        details: 'SQLite details',
+        status: 'pending',
+        priority: 'medium',
+        branch: null,
+        parent_uuid: null,
+        epic: 0,
+        filename: '77.plan.md',
+        created_at: '2026-01-01T00:00:00.000Z',
+        updated_at: '2026-01-02T00:00:00.000Z',
+      },
+    ];
+
+    await handleShowCommand('77', {}, { parent: { opts: () => ({}) } });
+
+    const output = stripAnsi(logSpy.mock.calls.map((call) => call[0]).join('\n'));
+    expect(output).toContain('SQLite fallback plan');
+    expect(output).toContain('Loaded from sqlite');
   });
 
   test('finds next ready plan with --next flag', async () => {

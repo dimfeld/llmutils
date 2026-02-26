@@ -2,7 +2,11 @@ import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import chalk from 'chalk';
 import { log, warn } from '../../logging.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
+import { getDatabase } from '../db/database.js';
+import { getPlansByProject } from '../db/plan.js';
+import { getProject } from '../db/project.js';
 import { removePlanFromDb } from '../db/plan_sync.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
 import { readAllPlans, readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
@@ -24,12 +28,43 @@ export async function handleRemoveCommand(
   const config = await loadEffectiveConfig(globalOpts.config);
   const { tasksDir } = await resolvePlanPathContext(config);
   const { plans: allPlans } = await readAllPlans(tasksDir, false);
+  const repository = await getRepositoryIdentity({ cwd: tasksDir });
+  const db = getDatabase();
+  const project = getProject(db, repository.repositoryId);
+  const dbPlansById = new Map<number, ReturnType<typeof getPlansByProject>[number]>();
+  if (project) {
+    const dbPlans = getPlansByProject(db, project.id);
+    for (const dbPlan of dbPlans) {
+      dbPlansById.set(dbPlan.plan_id, dbPlan);
+    }
+  }
 
   const resolvedTargets = await Promise.all(
     planFiles.map(async (planArg) => {
-      const resolvedFile = await resolvePlanFile(planArg, globalOpts.config);
-      const plan = await readPlanFile(resolvedFile);
-      return { file: resolvedFile, plan };
+      try {
+        const resolvedFile = await resolvePlanFile(planArg, globalOpts.config);
+        const plan = await readPlanFile(resolvedFile);
+        return { file: resolvedFile, plan };
+      } catch (error) {
+        const numericPlanArg = Number(planArg);
+        const dbPlan = Number.isNaN(numericPlanArg) ? undefined : dbPlansById.get(numericPlanArg);
+        if (!dbPlan) {
+          throw error;
+        }
+
+        return {
+          file: path.join(tasksDir, dbPlan.filename),
+          plan: {
+            id: dbPlan.plan_id,
+            uuid: dbPlan.uuid,
+            title: dbPlan.title ?? undefined,
+            goal: dbPlan.goal ?? '',
+            details: dbPlan.details ?? '',
+            status: dbPlan.status,
+            tasks: [],
+          },
+        };
+      }
     })
   );
 
@@ -135,9 +170,20 @@ export async function handleRemoveCommand(
   }
 
   for (const target of resolvedTargets) {
-    await fs.unlink(target.file);
     try {
-      await removePlanFromDb(target.plan.uuid, { baseDir: path.dirname(target.file) });
+      await fs.unlink(target.file);
+    } catch (error) {
+      const isMissingFile =
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        (error as NodeJS.ErrnoException).code === 'ENOENT';
+      if (!isMissingFile) {
+        throw error;
+      }
+    }
+    try {
+      await removePlanFromDb(target.plan.uuid, { baseDir: tasksDir });
     } catch (error) {
       warn(
         `Failed to remove plan ${target.plan.id ?? target.plan.uuid ?? target.file} from SQLite: ${

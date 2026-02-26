@@ -4,6 +4,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
 import { clearAllTimCaches, stringifyPlanWithFrontmatter } from '../../testing.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { getDatabase } from '../db/database.js';
+import { getPlanByUuid, upsertPlan } from '../db/plan.js';
+import { getOrCreateProject } from '../db/project.js';
 import { handleRemoveCommand } from './remove.js';
 import { readPlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
@@ -159,5 +163,27 @@ describe('tim remove command', () => {
 
     await expect(fs.stat(path.join(tasksDir, '1.plan.md'))).rejects.toThrow();
     await expect(fs.stat(path.join(tasksDir, '2.plan.md'))).rejects.toThrow();
+  });
+
+  test('removes a SQLite plan when no local file exists', async () => {
+    const repository = await getRepositoryIdentity({ cwd: tasksDir });
+    const db = getDatabase();
+    const project = getOrCreateProject(db, repository.repositoryId);
+    upsertPlan(db, project.id, {
+      uuid: '99999999-9999-4999-8999-999999999999',
+      planId: 999,
+      title: 'DB-only plan',
+      goal: 'exists only in sqlite',
+      filename: '999.plan.md',
+      status: 'pending',
+      tasks: [],
+      dependencyUuids: [],
+    });
+
+    await expect(fs.stat(path.join(tasksDir, '999.plan.md'))).rejects.toThrow();
+
+    await handleRemoveCommand(['999'], {}, makeCommand());
+
+    expect(getPlanByUuid(db, '99999999-9999-4999-8999-999999999999')).toBeNull();
   });
 });
