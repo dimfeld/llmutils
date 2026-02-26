@@ -401,6 +401,7 @@ private struct PlansSection: View {
 struct PlanRowView: View {
     let plan: TrackedPlan
     let displayStatus: PlanDisplayStatus
+    var isSelected: Bool = false
     let now: Date
 
     private var statusIcon: String {
@@ -425,6 +426,18 @@ struct PlanRowView: View {
         case .cancelled: .red
         case .deferred: .purple
         }
+    }
+
+    private var rowBackgroundStyle: AnyShapeStyle {
+        self.isSelected
+            ? AnyShapeStyle(Color.accentColor.opacity(0.18))
+            : AnyShapeStyle(.quaternary.opacity(0.08))
+    }
+
+    private var rowBorderStyle: AnyShapeStyle {
+        self.isSelected
+            ? AnyShapeStyle(Color.accentColor.opacity(0.45))
+            : AnyShapeStyle(Color.clear)
     }
 
     var body: some View {
@@ -473,7 +486,11 @@ struct PlanRowView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(
-            .quaternary.opacity(0.08),
-            in: RoundedRectangle(cornerRadius: nestedRectangleCornerRadius))
+            RoundedRectangle(cornerRadius: nestedRectangleCornerRadius)
+                .fill(self.rowBackgroundStyle))
+        .overlay(
+            RoundedRectangle(cornerRadius: nestedRectangleCornerRadius)
+                .stroke(self.rowBorderStyle, lineWidth: 1))
+        .contentShape(RoundedRectangle(cornerRadius: nestedRectangleCornerRadius))
     }
 }

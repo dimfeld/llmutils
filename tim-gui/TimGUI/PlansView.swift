@@ -143,15 +143,18 @@ func filterPlansBySearchText(_ plans: [TrackedPlan], query: String) -> [TrackedP
 
 private struct PlansSplitView: View {
     let store: ProjectTrackingStore
+    @State private var selectedPlanUuid: String?
 
     var body: some View {
         NavigationSplitView {
             ProjectListView(store: self.store)
                 .navigationSplitViewColumnWidth(min: 180, ideal: 240, max: 360)
                 .background(.ultraThinMaterial)
-        } detail: {
+        } content: {
             if self.store.selectedProjectId != nil {
-                PlansBrowserView(store: self.store)
+                PlansBrowserView(
+                    store: self.store,
+                    selectedPlanUuid: self.$selectedPlanUuid)
                     .background(.thinMaterial)
             } else {
                 ProjectsEmptyStateView(
@@ -161,6 +164,23 @@ private struct PlansSplitView: View {
                     subtitle: "Select a project from the sidebar to browse its plans.")
                     .background(.thinMaterial)
             }
+        } detail: {
+            if let uuid = self.selectedPlanUuid,
+               let plan = self.store.plans.first(where: { $0.uuid == uuid })
+            {
+                PlanDetailView(plan: plan, store: self.store)
+                    .background(.thinMaterial)
+            } else {
+                ProjectsEmptyStateView(
+                    icon: "doc.text",
+                    iconColor: .secondary,
+                    title: "No Plan Selected",
+                    subtitle: "Select a plan to view its details.")
+                    .background(.thinMaterial)
+            }
+        }
+        .onChange(of: self.store.selectedProjectId) {
+            self.selectedPlanUuid = nil
         }
     }
 }
@@ -169,6 +189,7 @@ private struct PlansSplitView: View {
 
 private struct PlansBrowserView: View {
     let store: ProjectTrackingStore
+    @Binding var selectedPlanUuid: String?
     @State private var searchText: String = ""
     @State private var sortOrder: PlanSortOrder = .planNumber
 
@@ -239,7 +260,11 @@ private struct PlansBrowserView: View {
                             PlanRowView(
                                 plan: plan,
                                 displayStatus: self.store.displayStatus(for: plan, now: now),
+                                isSelected: plan.uuid == self.selectedPlanUuid,
                                 now: now)
+                                .onTapGesture {
+                                    self.selectedPlanUuid = plan.uuid
+                                }
                         }
                     }
                     .padding(.horizontal, 16)
@@ -248,10 +273,208 @@ private struct PlansBrowserView: View {
             }
         }
         .id(self.store.selectedProjectId)
+        .onChange(of: sorted.map(\.uuid)) { _, visibleUuids in
+            if let selected = self.selectedPlanUuid, !visibleUuids.contains(selected) {
+                self.selectedPlanUuid = nil
+            }
+        }
     }
 
     private func applySearch(_ plans: [TrackedPlan]) -> [TrackedPlan] {
         filterPlansBySearchText(plans, query: self.searchText)
+    }
+}
+
+// MARK: - PlanDetailView
+
+@MainActor private let planAbsoluteDateFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateStyle = .medium
+    f.timeStyle = .short
+    return f
+}()
+
+private struct PlanDetailView: View {
+    let plan: TrackedPlan
+    let store: ProjectTrackingStore
+
+    var body: some View {
+        let now = Date()
+        let displayStatus = self.store.displayStatus(for: plan, now: now)
+        let hasUnresolvedDeps = self.store.planDependencyStatus[plan.uuid] ?? false
+        let assignedWorkspace = self.store.workspaces.first { $0.planId == plan.planId && plan.planId != nil }
+
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                // Header: plan number + title
+                VStack(alignment: .leading, spacing: 6) {
+                    if let planId = plan.planId {
+                        Text("#\(planId)")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(plan.displayTitle)
+                        .font(.title2.weight(.bold))
+                        .textSelection(.enabled)
+                }
+
+                // Goal
+                if let goal = plan.goal, !goal.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Goal")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(goal)
+                            .font(.body)
+                            .textSelection(.enabled)
+                    }
+                }
+
+                Divider()
+
+                // Metadata grid
+                VStack(alignment: .leading, spacing: 12) {
+                    PlanDetailRow(label: "Status") {
+                        HStack(spacing: 6) {
+                            Image(systemName: statusIcon(for: displayStatus))
+                                .foregroundStyle(statusColor(for: displayStatus))
+                                .font(.callout)
+                            Text(displayStatus.label)
+                                .foregroundStyle(statusColor(for: displayStatus))
+                        }
+                    }
+
+                    if let priority = plan.priority, !priority.isEmpty {
+                        PlanDetailRow(label: "Priority") {
+                            Text(priority.capitalized)
+                        }
+                    }
+
+                    PlanDetailRow(label: "Dependencies") {
+                        if hasUnresolvedDeps {
+                            HStack(spacing: 4) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                    .font(.caption)
+                                Text("Has unresolved dependencies")
+                                    .foregroundStyle(.orange)
+                            }
+                        } else {
+                            Text("None")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if let workspace = assignedWorkspace {
+                        PlanDetailRow(label: "Workspace") {
+                            Text(workspace.displayName)
+                        }
+                    }
+
+                    if let branch = plan.branch, !branch.isEmpty {
+                        PlanDetailRow(label: "Branch") {
+                            Text(branch)
+                                .font(.callout.monospaced())
+                        }
+                    }
+
+                    if plan.isEpic {
+                        PlanDetailRow(label: "Type") {
+                            HStack(spacing: 4) {
+                                Image(systemName: "star.fill")
+                                    .foregroundStyle(.yellow)
+                                    .font(.caption)
+                                Text("Epic")
+                            }
+                        }
+                    }
+
+                    if let parentUuid = plan.parentUuid, !parentUuid.isEmpty {
+                        PlanDetailRow(label: "Parent") {
+                            Text(parentUuid)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .textSelection(.enabled)
+                        }
+                    }
+
+                    if let filename = plan.filename, !filename.isEmpty {
+                        PlanDetailRow(label: "File") {
+                            Text(filename)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+                    }
+
+                    Divider()
+
+                    if let createdAt = plan.createdAt {
+                        PlanDetailRow(label: "Created") {
+                            Text(planAbsoluteDateFormatter.string(from: createdAt))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if let updatedAt = plan.updatedAt {
+                        PlanDetailRow(label: "Updated") {
+                            HStack(spacing: 8) {
+                                Text(planAbsoluteDateFormatter.string(from: updatedAt))
+                                    .foregroundStyle(.secondary)
+                                Text("(\(planRelativeDateFormatter.localizedString(for: updatedAt, relativeTo: now)))")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(20)
+        }
+    }
+
+    private func statusIcon(for status: PlanDisplayStatus) -> String {
+        switch status {
+        case .pending: "circle"
+        case .inProgress: "play.circle.fill"
+        case .blocked: "exclamationmark.circle.fill"
+        case .recentlyDone: "checkmark.circle.fill"
+        case .done: "checkmark.circle"
+        case .cancelled: "xmark.circle"
+        case .deferred: "clock.arrow.circlepath"
+        }
+    }
+
+    private func statusColor(for status: PlanDisplayStatus) -> Color {
+        switch status {
+        case .pending: .secondary
+        case .inProgress: .blue
+        case .blocked: .orange
+        case .recentlyDone: .green
+        case .done: .gray
+        case .cancelled: .red
+        case .deferred: .purple
+        }
+    }
+}
+
+// MARK: - PlanDetailRow
+
+private struct PlanDetailRow<Content: View>: View {
+    let label: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(self.label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 90, alignment: .trailing)
+            self.content
+                .font(.callout)
+            Spacer()
+        }
     }
 }
 
