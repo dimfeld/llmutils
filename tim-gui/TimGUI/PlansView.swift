@@ -103,6 +103,19 @@ struct PlansView: View {
     }
 }
 
+// MARK: - Search Filter
+
+/// Filters plans by a search query, matching against title and goal (case-insensitive).
+/// A whitespace-only or empty query returns the original array unchanged.
+func filterPlansBySearchText(_ plans: [TrackedPlan], query: String) -> [TrackedPlan] {
+    let trimmed = query.trimmingCharacters(in: .whitespaces)
+    guard !trimmed.isEmpty else { return plans }
+    return plans.filter { plan in
+        (plan.title ?? "").localizedCaseInsensitiveContains(trimmed)
+            || (plan.goal ?? "").localizedCaseInsensitiveContains(trimmed)
+    }
+}
+
 // MARK: - PlansSplitView
 
 private struct PlansSplitView: View {
@@ -215,12 +228,7 @@ private struct PlansBrowserView: View {
     }
 
     private func applySearch(_ plans: [TrackedPlan]) -> [TrackedPlan] {
-        let query = self.searchText.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return plans }
-        return plans.filter { plan in
-            (plan.title ?? "").localizedCaseInsensitiveContains(query)
-                || (plan.goal ?? "").localizedCaseInsensitiveContains(query)
-        }
+        filterPlansBySearchText(plans, query: self.searchText)
     }
 }
 

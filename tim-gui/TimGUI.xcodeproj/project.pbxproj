@@ -30,6 +30,7 @@
 		A20000000000000000000007 /* SessionStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* SessionStateTests.swift */; };
 		A20000000000000000000008 /* ProjectTrackingModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* ProjectTrackingModelTests.swift */; };
 		A20000000000000000000009 /* ProjectTrackingStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* ProjectTrackingStoreTests.swift */; };
+		A2000000000000000000000A /* PlansViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001A /* PlansViewTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,6 +70,7 @@
 		A20000000000000000000017 /* SessionStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStateTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000018 /* ProjectTrackingModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectTrackingModelTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000019 /* ProjectTrackingStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectTrackingStoreTests.swift; sourceTree = "<group>"; };
+		A2000000000000000000001A /* PlansViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlansViewTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -149,6 +151,7 @@
 				A20000000000000000000017 /* SessionStateTests.swift */,
 				A20000000000000000000018 /* ProjectTrackingModelTests.swift */,
 				A20000000000000000000019 /* ProjectTrackingStoreTests.swift */,
+				A2000000000000000000001A /* PlansViewTests.swift */,
 			);
 			path = TimGUITests;
 			sourceTree = "<group>";
@@ -273,6 +276,7 @@
 				A20000000000000000000007 /* SessionStateTests.swift in Sources */,
 				A20000000000000000000008 /* ProjectTrackingModelTests.swift in Sources */,
 				A20000000000000000000009 /* ProjectTrackingStoreTests.swift in Sources */,
+				A2000000000000000000000A /* PlansViewTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
