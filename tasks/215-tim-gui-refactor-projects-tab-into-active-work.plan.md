@@ -72,7 +72,7 @@ tags:
 - All 6 tasks are complete. The Active Work dashboard is fully implemented with workspace filtering, plan linking, and all supporting infrastructure.
 - Post-review autofix iteration is complete for the selected findings: empty-state gating now matches active-work filtering, workspace toggle styling follows accent color theming, and ISO8601 parsing avoids per-row formatter allocation.
 - Follow-up review polish is complete: dashboard-level and section-level workspace recency checks now share one reference `Date`, the workspace plan-title condition is simplified for readability, and retained plan-filter helpers are explicitly documented as intentional for the upcoming Plans browser tab.
-- Final consistency cleanup is complete: `PlansSection` now receives the parent-captured `now` from `ProjectDetailView` instead of creating its own `Date`, matching the `WorkspacesSection` pattern.
+- Final consistency cleanup from review is complete: `PlansSection` now receives the parent-captured `now` from `ProjectDetailView` instead of creating its own `Date`, matching the `WorkspacesSection` pattern and closing the remaining optional action item.
 - Final stabilization pass confirmed the implementation is complete for this plan scope; no additional product-code changes are pending.
 
 ### Completed (So Far)
