@@ -2315,7 +2315,7 @@ tim prompts compact-plan 123
 
 ### Database Maintenance
 
-Plan metadata (including `details`), tasks, and dependencies are automatically synced to the SQLite database (`~/.config/tim/tim.db`) whenever a plan file is written. This enables centralized querying of plan data across workspaces without reading individual files from disk.
+Plan metadata (including `details`, `simple`, `tdd`, `discoveredFrom`, `issue`, `pullRequest`, `assignedTo`, `baseBranch`), tasks, and dependencies are automatically synced to the SQLite database (`~/.config/tim/tim.db`) whenever a plan file is written. Plan tags are synced to a dedicated `plan_tag` table for query/filter workflows. This enables centralized querying of plan data across workspaces without reading individual files from disk.
 
 The `tim sync` command performs a bulk sync of all plan files, useful for initial setup or after external changes to plan files:
 

@@ -11,6 +11,8 @@ import {
   getPlanByUuid,
   getPlansByProject,
   getPlansNotInSet,
+  getPlanTagsByProject,
+  getPlanTagsByUuid,
   getPlanTasksByProject,
   getPlanTasksByUuid,
   upsertPlan,
@@ -47,7 +49,15 @@ describe('tim db/plan', () => {
       status: 'pending',
       priority: 'high',
       parentUuid: 'parent-uuid',
+      simple: true,
+      tdd: false,
+      discoveredFrom: 3,
+      issue: ['https://github.com/example/repo/issues/1'],
+      pullRequest: ['https://github.com/example/repo/pull/2'],
+      assignedTo: 'dimfeld',
+      baseBranch: 'main',
       epic: true,
+      tags: ['backend', 'sqlite'],
       filename: '10-first.plan.md',
       tasks: [
         { title: 'task a', description: 'desc a', done: false },
@@ -61,7 +71,16 @@ describe('tim db/plan', () => {
     expect(inserted?.project_id).toBe(projectId);
     expect(inserted?.plan_id).toBe(10);
     expect(inserted?.details).toBe('Initial details');
+    expect(inserted?.simple).toBe(1);
+    expect(inserted?.tdd).toBe(0);
+    expect(inserted?.discovered_from).toBe(3);
+    expect(inserted?.issue).toBe('["https://github.com/example/repo/issues/1"]');
+    expect(inserted?.pull_request).toBe('["https://github.com/example/repo/pull/2"]');
+    expect(inserted?.assigned_to).toBe('dimfeld');
+    expect(inserted?.base_branch).toBe('main');
     expect(inserted?.epic).toBe(1);
+    const insertedTags = getPlanTagsByUuid(db, 'plan-1');
+    expect(insertedTags.map((row) => row.tag)).toEqual(['backend', 'sqlite']);
 
     let tasks = getPlanTasksByUuid(db, 'plan-1');
     expect(tasks).toHaveLength(2);
@@ -86,7 +105,15 @@ describe('tim db/plan', () => {
       status: 'in_progress',
       priority: 'urgent',
       parentUuid: null,
+      simple: false,
+      tdd: true,
+      discoveredFrom: null,
+      issue: ['https://github.com/example/repo/issues/8'],
+      pullRequest: [],
+      assignedTo: 'other-user',
+      baseBranch: 'release',
       epic: false,
+      tags: ['migration'],
       filename: '20-updated.plan.md',
       tasks: [{ title: 'task c', description: 'desc c', done: false }],
       dependencyUuids: ['dep-3'],
@@ -99,9 +126,18 @@ describe('tim db/plan', () => {
     expect(updated?.details).toBe('Updated details');
     expect(updated?.status).toBe('in_progress');
     expect(updated?.priority).toBe('urgent');
+    expect(updated?.simple).toBe(0);
+    expect(updated?.tdd).toBe(1);
+    expect(updated?.discovered_from).toBeNull();
+    expect(updated?.issue).toBe('["https://github.com/example/repo/issues/8"]');
+    expect(updated?.pull_request).toBe('[]');
+    expect(updated?.assigned_to).toBe('other-user');
+    expect(updated?.base_branch).toBe('release');
     expect(updated?.parent_uuid).toBeNull();
     expect(updated?.epic).toBe(0);
     expect(updated?.filename).toBe('20-updated.plan.md');
+    const updatedTags = getPlanTagsByUuid(db, 'plan-1');
+    expect(updatedTags.map((row) => row.tag)).toEqual(['migration']);
 
     tasks = getPlanTasksByUuid(db, 'plan-1');
     expect(tasks).toHaveLength(1);
@@ -268,6 +304,27 @@ describe('tim db/plan', () => {
     expect(projectDeps).toHaveLength(1);
     expect(projectDeps[0]?.plan_uuid).toBe('plan-proj-a');
     expect(projectDeps[0]?.depends_on_uuid).toBe('dep-a');
+  });
+
+  test('getPlanTagsByProject is project-scoped', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-tag-a',
+      planId: 301,
+      filename: '301.plan.md',
+      tags: ['a', 'b'],
+    });
+    upsertPlan(db, otherProjectId, {
+      uuid: 'plan-tag-b',
+      planId: 302,
+      filename: '302.plan.md',
+      tags: ['c'],
+    });
+
+    const tags = getPlanTagsByProject(db, projectId);
+    expect(tags.map((tag) => `${tag.plan_uuid}:${tag.tag}`)).toEqual([
+      'plan-tag-a:a',
+      'plan-tag-a:b',
+    ]);
   });
 
   test('deletePlan removes tasks and dependencies via cascade', () => {

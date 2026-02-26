@@ -132,6 +132,25 @@ const migrations: Migration[] = [
       ALTER TABLE plan ADD COLUMN branch TEXT;
     `,
   },
+  {
+    version: 5,
+    up: `
+      ALTER TABLE plan ADD COLUMN simple INTEGER;
+      ALTER TABLE plan ADD COLUMN tdd INTEGER;
+      ALTER TABLE plan ADD COLUMN discovered_from INTEGER;
+      ALTER TABLE plan ADD COLUMN issue TEXT;
+      ALTER TABLE plan ADD COLUMN pull_request TEXT;
+      ALTER TABLE plan ADD COLUMN assigned_to TEXT;
+      ALTER TABLE plan ADD COLUMN base_branch TEXT;
+
+      CREATE TABLE plan_tag (
+        plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,
+        tag TEXT NOT NULL,
+        PRIMARY KEY(plan_uuid, tag)
+      );
+      CREATE INDEX idx_plan_tag_plan_uuid ON plan_tag(plan_uuid);
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

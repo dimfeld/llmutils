@@ -158,11 +158,19 @@ function toPlanUpsertInput(
   status: 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred';
   priority?: 'low' | 'medium' | 'high' | 'urgent' | 'maybe' | null;
   branch?: string | null;
+  simple?: boolean | null;
+  tdd?: boolean | null;
+  discoveredFrom?: number | null;
+  issue?: string[] | null;
+  pullRequest?: string[] | null;
+  assignedTo?: string | null;
+  baseBranch?: string | null;
   parentUuid?: string | null;
   epic: boolean;
   filename: string;
   tasks: Array<{ title: string; description: string; done?: boolean }>;
   dependencyUuids: string[];
+  tags: string[];
 } {
   const parentUuid =
     typeof plan.parent === 'number'
@@ -187,6 +195,13 @@ function toPlanUpsertInput(
     status: coercePlanStatus(plan.status),
     priority: coercePlanPriority(plan.priority),
     branch: plan.branch ?? null,
+    simple: typeof plan.simple === 'boolean' ? plan.simple : null,
+    tdd: typeof plan.tdd === 'boolean' ? plan.tdd : null,
+    discoveredFrom: plan.discoveredFrom ?? null,
+    issue: plan.issue ?? null,
+    pullRequest: plan.pullRequest ?? null,
+    assignedTo: plan.assignedTo ?? null,
+    baseBranch: plan.baseBranch ?? null,
     parentUuid,
     epic: plan.epic === true,
     filename: path.basename(filePath),
@@ -196,6 +211,7 @@ function toPlanUpsertInput(
       done: task.done,
     })),
     dependencyUuids,
+    tags: plan.tags ?? [],
   };
 }
 

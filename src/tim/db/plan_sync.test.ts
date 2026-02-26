@@ -9,7 +9,7 @@ import { getDefaultConfig, type TimConfig } from '../configSchema.js';
 import { clearPlanCache, writePlanFile } from '../plans.js';
 import { claimAssignment, getAssignment } from './assignment.js';
 import { closeDatabaseForTesting, getDatabase } from './database.js';
-import { getPlanByUuid, getPlanTasksByUuid, upsertPlan } from './plan.js';
+import { getPlanByUuid, getPlanTagsByUuid, getPlanTasksByUuid, upsertPlan } from './plan.js';
 import {
   clearPlanSyncContext,
   removePlanFromDb,
@@ -85,12 +85,20 @@ describe('tim db/plan_sync', () => {
       details: 'Plan sync details',
       status: 'in_progress' as const,
       priority: 'high' as const,
+      simple: true,
+      tdd: false,
+      discoveredFrom: 5,
+      issue: ['https://github.com/example/repo/issues/10'],
+      pullRequest: ['https://github.com/example/repo/pull/11'],
+      assignedTo: 'dimfeld',
+      baseBranch: 'main',
       parent: 9,
       references: {
         '9': '99999999-9999-4999-8999-999999999999',
         '7': '77777777-7777-4777-8777-777777777777',
       },
       dependencies: [7],
+      tags: ['sync', 'db'],
       tasks: [{ title: 'task one', description: 'do task one', done: true }],
     };
 
@@ -106,8 +114,17 @@ describe('tim db/plan_sync', () => {
     expect(savedPlan?.project_id).toBe(project?.id);
     expect(savedPlan?.plan_id).toBe(10);
     expect(savedPlan?.details).toBe('Plan sync details');
+    expect(savedPlan?.simple).toBe(1);
+    expect(savedPlan?.tdd).toBe(0);
+    expect(savedPlan?.discovered_from).toBe(5);
+    expect(savedPlan?.issue).toBe('["https://github.com/example/repo/issues/10"]');
+    expect(savedPlan?.pull_request).toBe('["https://github.com/example/repo/pull/11"]');
+    expect(savedPlan?.assigned_to).toBe('dimfeld');
+    expect(savedPlan?.base_branch).toBe('main');
     expect(savedPlan?.parent_uuid).toBe('99999999-9999-4999-8999-999999999999');
     expect(savedPlan?.filename).toBe('10-sample.plan.md');
+    const savedTags = getPlanTagsByUuid(db, '11111111-1111-4111-8111-111111111111');
+    expect(savedTags.map((row) => row.tag)).toEqual(['db', 'sync']);
 
     const savedTasks = getPlanTasksByUuid(db, '11111111-1111-4111-8111-111111111111');
     expect(savedTasks).toHaveLength(1);

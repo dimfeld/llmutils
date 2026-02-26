@@ -11,6 +11,13 @@ export interface PlanRow {
   status: 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred';
   priority: 'low' | 'medium' | 'high' | 'urgent' | 'maybe' | null;
   branch: string | null;
+  simple: number | null;
+  tdd: number | null;
+  discovered_from: number | null;
+  issue: string | null;
+  pull_request: string | null;
+  assigned_to: string | null;
+  base_branch: string | null;
   parent_uuid: string | null;
   epic: number;
   filename: string;
@@ -32,6 +39,11 @@ export interface PlanDependencyRow {
   depends_on_uuid: string;
 }
 
+export interface PlanTagRow {
+  plan_uuid: string;
+  tag: string;
+}
+
 export interface UpsertPlanInput {
   uuid: string;
   planId: number;
@@ -43,6 +55,13 @@ export interface UpsertPlanInput {
   status?: 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred';
   priority?: 'low' | 'medium' | 'high' | 'urgent' | 'maybe' | null;
   branch?: string | null;
+  simple?: boolean | null;
+  tdd?: boolean | null;
+  discoveredFrom?: number | null;
+  issue?: string[] | null;
+  pullRequest?: string[] | null;
+  assignedTo?: string | null;
+  baseBranch?: string | null;
   parentUuid?: string | null;
   epic?: boolean;
   filename: string;
@@ -52,6 +71,7 @@ export interface UpsertPlanInput {
     done?: boolean;
   }>;
   dependencyUuids?: string[];
+  tags?: string[];
 }
 
 function parseTimestamp(value: string | null | undefined): number | null {
@@ -112,6 +132,26 @@ function replacePlanDependencies(db: Database, planUuid: string, dependencyUuids
   }
 }
 
+function replacePlanTags(db: Database, planUuid: string, tags: string[]): void {
+  db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ?').run(planUuid);
+
+  if (tags.length === 0) {
+    return;
+  }
+
+  const insertTag = db.prepare(
+    `
+    INSERT INTO plan_tag (
+      plan_uuid,
+      tag
+    ) VALUES (?, ?)
+  `
+  );
+  for (const tag of new Set(tags)) {
+    insertTag.run(planUuid, tag);
+  }
+}
+
 export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInput): PlanRow {
   const upsertInTransaction = db.transaction(
     (nextProjectId: number, nextInput: UpsertPlanInput): PlanRow => {
@@ -140,12 +180,19 @@ export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInp
           status,
           priority,
           branch,
+          simple,
+          tdd,
+          discovered_from,
+          issue,
+          pull_request,
+          assigned_to,
+          base_branch,
           parent_uuid,
           epic,
           filename,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
         ON CONFLICT(uuid) DO UPDATE SET
           project_id = excluded.project_id,
           plan_id = excluded.plan_id,
@@ -155,6 +202,13 @@ export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInp
           status = excluded.status,
           priority = excluded.priority,
           branch = excluded.branch,
+          simple = excluded.simple,
+          tdd = excluded.tdd,
+          discovered_from = excluded.discovered_from,
+          issue = excluded.issue,
+          pull_request = excluded.pull_request,
+          assigned_to = excluded.assigned_to,
+          base_branch = excluded.base_branch,
           parent_uuid = excluded.parent_uuid,
           epic = excluded.epic,
           filename = excluded.filename,
@@ -170,6 +224,13 @@ export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInp
         nextInput.status ?? 'pending',
         nextInput.priority ?? null,
         nextInput.branch ?? null,
+        typeof nextInput.simple === 'boolean' ? (nextInput.simple ? 1 : 0) : null,
+        typeof nextInput.tdd === 'boolean' ? (nextInput.tdd ? 1 : 0) : null,
+        nextInput.discoveredFrom ?? null,
+        nextInput.issue ? JSON.stringify(nextInput.issue) : null,
+        nextInput.pullRequest ? JSON.stringify(nextInput.pullRequest) : null,
+        nextInput.assignedTo ?? null,
+        nextInput.baseBranch ?? null,
         nextInput.parentUuid ?? null,
         nextInput.epic ? 1 : 0,
         nextInput.filename
@@ -177,6 +238,7 @@ export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInp
 
       replacePlanTasks(db, nextInput.uuid, nextInput.tasks ?? []);
       replacePlanDependencies(db, nextInput.uuid, nextInput.dependencyUuids ?? []);
+      replacePlanTags(db, nextInput.uuid, nextInput.tags ?? []);
 
       const row = getPlanByUuid(db, nextInput.uuid);
       if (!row) {
@@ -263,6 +325,26 @@ export function getPlanDependenciesByProject(db: Database, projectId: number): P
     `
     )
     .all(projectId) as PlanDependencyRow[];
+}
+
+export function getPlanTagsByUuid(db: Database, planUuid: string): PlanTagRow[] {
+  return db
+    .prepare('SELECT * FROM plan_tag WHERE plan_uuid = ? ORDER BY tag')
+    .all(planUuid) as PlanTagRow[];
+}
+
+export function getPlanTagsByProject(db: Database, projectId: number): PlanTagRow[] {
+  return db
+    .prepare(
+      `
+      SELECT pt.*
+      FROM plan_tag pt
+      INNER JOIN plan p ON p.uuid = pt.plan_uuid
+      WHERE p.project_id = ?
+      ORDER BY pt.plan_uuid, pt.tag
+    `
+    )
+    .all(projectId) as PlanTagRow[];
 }
 
 export function deletePlan(db: Database, uuid: string): boolean {
