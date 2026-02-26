@@ -28,7 +28,7 @@ The app has three top-level tabs switched via a segmented picker in `ContentView
 
 - **Sessions** — live agent session monitoring (existing behavior, unchanged)
 - **Active Work** — focused dashboard showing in-progress plans and workspaces from `tim.db`
-- **Plans** — full-featured plan browser with status filters, search, and detailed plan information
+- **Plans** — full-featured plan browser with status filters, search, sorting, and compact plan list. Expanded plan detail view is planned but not yet implemented.
 
 ### Active Work Layout (`ProjectsView.swift`)
 
