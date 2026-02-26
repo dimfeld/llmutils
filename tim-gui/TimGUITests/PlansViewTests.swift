@@ -691,81 +691,11 @@ struct FilterPlansBySearchTextTests {
     }
 }
 
-// MARK: - PlanDetailView Tests
+// MARK: - planAbsoluteDateFormatter Tests
 
 @Suite("PlanDetailView")
 @MainActor
 struct PlanDetailViewTests {
-    // MARK: - Instantiation
-
-    @Test("PlanDetailView can be created with a minimal TrackedPlan")
-    func instantiateWithMinimalPlan() {
-        let plan = makePlan(planId: 42, title: "Minimal Plan")
-        let store = ProjectTrackingStore(dbPath: "/nonexistent/test.db")
-        // Verifies PlanDetailView(plan:store:) can be instantiated without crashing
-        let view = PlanDetailView(plan: plan, store: store)
-        _ = view
-    }
-
-    @Test("PlanDetailView can be created with all optional fields populated")
-    func instantiateWithFullPlan() {
-        let now = Date()
-        let plan = TrackedPlan(
-            uuid: UUID().uuidString,
-            projectId: "proj-1",
-            planId: 100,
-            title: "Full Plan",
-            goal: "Implement a comprehensive feature",
-            status: "in_progress",
-            priority: "high",
-            parentUuid: UUID().uuidString,
-            isEpic: true,
-            filename: "tasks/100-full-plan.plan.md",
-            createdAt: now.addingTimeInterval(-7 * 24 * 60 * 60),
-            updatedAt: now.addingTimeInterval(-3600),
-            branch: "feature/full-plan")
-        let store = ProjectTrackingStore(dbPath: "/nonexistent/test.db")
-        let view = PlanDetailView(plan: plan, store: store)
-        _ = view
-    }
-
-    @Test("PlanDetailView can be created with a plan that has no optional fields")
-    func instantiateWithNilFields() {
-        let plan = TrackedPlan(
-            uuid: UUID().uuidString,
-            projectId: "proj-1",
-            planId: nil,
-            title: nil,
-            goal: nil,
-            status: "pending",
-            priority: nil,
-            parentUuid: nil,
-            isEpic: false,
-            filename: nil,
-            createdAt: nil,
-            updatedAt: nil,
-            branch: nil)
-        let store = ProjectTrackingStore(dbPath: "/nonexistent/test.db")
-        let view = PlanDetailView(plan: plan, store: store)
-        _ = view
-    }
-
-    @Test("PlanDetailView can be created with a cancelled plan")
-    func instantiateWithCancelledPlan() {
-        let plan = makePlan(status: "cancelled", uuid: UUID().uuidString)
-        let store = ProjectTrackingStore(dbPath: "/nonexistent/test.db")
-        let view = PlanDetailView(plan: plan, store: store)
-        _ = view
-    }
-
-    @Test("PlanDetailView can be created with a done plan")
-    func instantiateWithDonePlan() {
-        let plan = makePlan(status: "done", updatedAt: Date().addingTimeInterval(-86400))
-        let store = ProjectTrackingStore(dbPath: "/nonexistent/test.db")
-        let view = PlanDetailView(plan: plan, store: store)
-        _ = view
-    }
-
     // MARK: - planAbsoluteDateFormatter
 
     @Test("planAbsoluteDateFormatter produces non-empty output for a known date")

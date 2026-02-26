@@ -169,6 +169,7 @@ private struct PlansSplitView: View {
                let plan = self.store.plans.first(where: { $0.uuid == uuid })
             {
                 PlanDetailView(plan: plan, store: self.store)
+                    .id(uuid)
                     .background(.thinMaterial)
             } else {
                 ProjectsEmptyStateView(
@@ -350,8 +351,8 @@ struct PlanDetailView: View {
                         }
                     }
 
-                    PlanDetailRow(label: "Dependencies") {
-                        if hasUnresolvedDeps {
+                    if hasUnresolvedDeps {
+                        PlanDetailRow(label: "Dependencies") {
                             HStack(spacing: 4) {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .foregroundStyle(.orange)
@@ -359,15 +360,15 @@ struct PlanDetailView: View {
                                 Text("Has unresolved dependencies")
                                     .foregroundStyle(.orange)
                             }
-                        } else {
-                            Text("None")
-                                .foregroundStyle(.secondary)
                         }
                     }
 
-                    if let workspace = assignedWorkspace {
-                        PlanDetailRow(label: "Workspace") {
+                    PlanDetailRow(label: "Workspace") {
+                        if let workspace = assignedWorkspace {
                             Text(workspace.displayName)
+                        } else {
+                            Text("Unassigned")
+                                .foregroundStyle(.secondary)
                         }
                     }
 
