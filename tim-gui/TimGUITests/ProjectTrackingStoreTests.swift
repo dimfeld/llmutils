@@ -1404,7 +1404,8 @@ struct ProjectTrackingStoreTests {
         #expect(store.loadState == .loaded)
     }
 
-    @Test("Reference-counted refresh: startRefreshing twice + stopRefreshing once keeps refreshing, second stop fully stops")
+    @Test(
+        "Reference-counted refresh: startRefreshing twice + stopRefreshing once keeps refreshing, second stop fully stops")
     func referenceCountedRefreshLifecycle() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }

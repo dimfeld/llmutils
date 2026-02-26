@@ -156,7 +156,7 @@ private struct FilterChipsView: View {
                         FilterChip(
                             label: status.label,
                             isActive: self.store.activeFilters.contains(status),
-                            color: chipColor(for: status))
+                            color: self.chipColor(for: status))
                         {
                             if self.store.activeFilters.contains(status) {
                                 self.store.activeFilters.remove(status)
