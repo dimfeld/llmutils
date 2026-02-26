@@ -338,7 +338,7 @@ final class ProjectTrackingStore {
     var loadState: LoadState = .idle
 
     private let dbPath: String?
-    private var refreshTask: Task<Void, Never>?
+    var refreshTask: Task<Void, Never>?
     private var refreshConsumerCount: Int = 0
     private var isRefreshing = false
     /// Set to true when `refresh()` is called while a refresh is already in-flight.

@@ -1404,6 +1404,38 @@ struct ProjectTrackingStoreTests {
         #expect(store.loadState == .loaded)
     }
 
+    @Test("Reference-counted refresh: startRefreshing twice + stopRefreshing once keeps task alive, second stop cancels it")
+    func referenceCountedRefreshLifecycle() async throws {
+        let (path, cleanup) = try makeTestDBPath()
+        defer { cleanup() }
+
+        withTestDB(path: path) { db in
+            execSQL(db, "INSERT INTO project (id, repository_id) VALUES (1, 'repo-1')")
+        }
+
+        let store = ProjectTrackingStore(dbPath: path)
+
+        // Calling startRefreshing twice increments the reference count to 2.
+        // Only the first call creates the refresh task; the second is a no-op for task creation.
+        store.startRefreshing()
+        store.startRefreshing()
+
+        // Allow the initial refresh to complete
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(store.loadState == .loaded)
+
+        // The task should be alive now (count=2)
+        #expect(store.refreshTask != nil)
+
+        // One stop decrements to count=1 — the task should remain alive
+        store.stopRefreshing()
+        #expect(store.refreshTask != nil, "refreshTask should still be non-nil after one stopRefreshing (count=1)")
+
+        // Second stop decrements to count=0 — the task should now be cancelled and cleared
+        store.stopRefreshing()
+        #expect(store.refreshTask == nil, "refreshTask should be nil after second stopRefreshing (count=0)")
+    }
+
     @Test("startRefreshing can restart after stopRefreshing and picks up DB changes")
     func startRefreshingRestartAfterStop() async throws {
         let (path, cleanup) = try makeTestDBPath()
