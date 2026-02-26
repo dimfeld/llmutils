@@ -212,7 +212,7 @@ private struct ProjectDetailView: View {
                     WorkspacesSection(workspaces: self.store.workspaces, now: now)
                         .id(self.store.selectedProjectId)
                     Divider()
-                    PlansSection(store: self.store, activePlans: activePlans)
+                    PlansSection(store: self.store, activePlans: activePlans, now: now)
                 }
                 .padding(16)
             }
@@ -365,10 +365,9 @@ private struct WorkspaceRowView: View {
 private struct PlansSection: View {
     let store: ProjectTrackingStore
     let activePlans: [TrackedPlan]
+    let now: Date
 
     var body: some View {
-        let now = Date()
-
         VStack(alignment: .leading, spacing: 8) {
             Text("Plans")
                 .font(.headline)

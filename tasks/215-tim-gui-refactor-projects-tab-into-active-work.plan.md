@@ -72,6 +72,7 @@ tags:
 - All 6 tasks are complete. The Active Work dashboard is fully implemented with workspace filtering, plan linking, and all supporting infrastructure.
 - Post-review autofix iteration is complete for the selected findings: empty-state gating now matches active-work filtering, workspace toggle styling follows accent color theming, and ISO8601 parsing avoids per-row formatter allocation.
 - Follow-up review polish is complete: dashboard-level and section-level workspace recency checks now share one reference `Date`, the workspace plan-title condition is simplified for readability, and retained plan-filter helpers are explicitly documented as intentional for the upcoming Plans browser tab.
+- Final consistency cleanup is complete: `PlansSection` now receives the parent-captured `now` from `ProjectDetailView` instead of creating its own `Date`, matching the `WorkspacesSection` pattern.
 - Final stabilization pass confirmed the implementation is complete for this plan scope; no additional product-code changes are pending.
 
 ### Completed (So Far)
@@ -86,6 +87,7 @@ tags:
 - Review fix: `parseISO8601Date` now reuses two `ISO8601DateFormatter` instances per fetch operation (workspaces/plans) instead of allocating formatters on each parse call.
 - Review fix: Active-work dashboard tests now assert against recently-active workspace presence, include a stale-workspace regression case, and include a recently-active workspace visibility case.
 - Review fix: `ProjectDetailView` now passes its captured `now` into `WorkspacesSection`, removing a theoretical 48-hour boundary mismatch between parent gating and child filtering.
+- Review fix: `ProjectDetailView` now passes its captured `now` into `PlansSection`, removing the remaining local `Date()` call in plans display status rendering.
 - Review fix: Workspace row assigned-plan visibility check now uses `!(planTitle?.isEmpty ?? true)` for clearer intent.
 - Review fix: Preserved plan-filter infrastructure (`activeFilters`, `filteredPlans`, `defaultPlanFilters`, `shouldShowPlan`) is now explicitly marked as intentional carry-forward for the planned dedicated Plans browser tab.
 - Progress notes are now aligned with the final state of this plan and include the boundary-consistency and preserved-infrastructure rationale for future follow-up work.
@@ -107,6 +109,7 @@ tags:
 - ProjectDetailView empty-state condition is based on "recently active workspaces OR active plans", aligning the top-level dashboard state with the section-level filtering contract.
 - Date parsing keeps formatter lifecycle local to each fetch function call to avoid shared formatter thread-safety risks while still avoiding per-row formatter allocations.
 - `ProjectDetailView` and `WorkspacesSection` now share a single captured `now` value so dashboard-level and section-level recency logic cannot diverge at time-window boundaries.
+- `PlansSection` now also uses the parent-provided `now`, making all active-work time-based UI decisions in `ProjectDetailView` consistent across both sections.
 - Retained plan-filter helpers are documented in code as intentional future-tab infrastructure, avoiding accidental "dead code" ambiguity while preserving existing tests.
 
 ### Lessons Learned
@@ -117,6 +120,7 @@ tags:
 - Empty-state predicates must use the same filtered subset shown in UI sections; using raw collection counts can reintroduce stale-data visibility bugs.
 - Reusing formatters at function scope is a good middle ground for Foundation formatter performance and thread safety: avoid both global shared formatters and per-row allocations.
 - Even tiny `Date()` skew between parent and child views can create theoretical boundary inconsistencies; pass a shared reference time when multiple UI decisions depend on the same time window.
+- When a parent view already captures reference time for filtering, child sections that derive display state should consume that same value to avoid consistency gaps and review churn.
 
 ### Risks / Blockers
 - None
