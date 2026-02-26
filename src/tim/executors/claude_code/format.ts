@@ -1,7 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import yaml from 'yaml';
 import { debugLog } from '../../../logging.ts';
-import { createTwoFilesPatch } from 'diff';
+import * as diff from 'diff';
 import { detectFailedLineAnywhere } from '../failure_detection.ts';
 import type { StructuredMessage } from '../../../logging/structured_messages.ts';
 import { formatStructuredMessage } from '../../../logging/console_formatter.ts';
@@ -420,13 +420,13 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
           filePaths.push(file_path);
 
           // Create a diff between the old and new strings
-          const diff = createTwoFilesPatch('old', 'new', old_string, new_string);
+          const diffText = diff.createTwoFilesPatch('old', 'new', old_string, new_string);
 
           structuredMessages.push({
             type: 'file_edit',
             timestamp: ts,
             path: file_path,
-            diff,
+            diff: diffText,
           });
           continue;
         }
