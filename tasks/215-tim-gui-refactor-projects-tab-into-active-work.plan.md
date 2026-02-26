@@ -7,12 +7,12 @@ goal: Transform the current Projects tab into a focused 'Active Work' dashboard
 id: 215
 uuid: 79f51dfc-c14b-4bd1-b129-324090af5a89
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 planGeneratedAt: 2026-02-25T08:32:07.431Z
 promptsGeneratedAt: 2026-02-25T08:32:07.431Z
 createdAt: 2026-02-25T08:31:24.257Z
-updatedAt: 2026-02-26T08:07:53.509Z
+updatedAt: 2026-02-26T08:38:03.347Z
 tasks:
   - title: Rename Projects tab to Active Work in top navigation
     done: true
@@ -21,7 +21,7 @@ tasks:
       enum and any related labels. The tab should convey that this is a live
       status dashboard, not a full project browser.
   - title: Filter workspaces to show only recently active ones
-    done: false
+    done: true
     description: In ProjectTrackingStore.swift, update the workspace fetch/filter
       logic to only show workspaces that are either currently locked, marked as
       primary, or have been used recently (e.g. within the last 24-48 hours
@@ -43,7 +43,7 @@ tasks:
       Locked). The absence of a badge implies available. This reduces visual
       noise.
   - title: Visually link workspaces to their assigned plans
-    done: false
+    done: true
     description: When a workspace has an assigned plan (via assignedPlanUuid), show
       the plan title or number inline on the workspace row. This connects the
       two sections and makes it immediately clear what each workspace is working
@@ -59,6 +59,7 @@ changedFiles:
   - tim-gui/AGENTS.md
   - tim-gui/TimGUI/ContentView.swift
   - tim-gui/TimGUI/ProjectTrackingModels.swift
+  - tim-gui/TimGUI/ProjectTrackingStore.swift
   - tim-gui/TimGUI/ProjectsView.swift
   - tim-gui/TimGUITests/ProjectTrackingModelTests.swift
   - tim-gui/TimGUITests/ProjectTrackingStoreTests.swift
@@ -68,32 +69,36 @@ tags:
 
 ## Current Progress
 ### Current State
-- The "Active Work" dashboard is partially implemented with 4 of 6 tasks complete. The tab is renamed, plans are filtered to active-only, workspace badges are cleaned up, and empty states are handled.
+- All 6 tasks are complete. The Active Work dashboard is fully implemented with workspace filtering, plan linking, and all supporting infrastructure.
 
 ### Completed (So Far)
 - Task 1: Renamed `AppTab.projects` to `AppTab.activeWork` with raw value "Active Work" in ContentView.swift
+- Task 2: `TrackedWorkspace` has `updatedAt: Date?` field fetched from DB; `isRecentlyActive(now:)` filters to locked/primary/updated-within-48h; `WorkspacesSection` shows active-only by default with "Show all workspaces (N total)" toggle; `.id(selectedProjectId)` resets toggle on project switch
 - Task 3: Removed FilterChipsView from PlansSection; now hardcodes filter to `.inProgress` and `.blocked` plans only using `PlanDisplayStatus.isActiveWork`. Shows "No active plans — browse all plans to get started" empty state.
 - Task 4: WorkspaceRowView no longer shows icon or label for `.available` status. Uses unconditional `.frame(width: 14)` for alignment consistency across mixed status rows.
+- Task 5: WorkspaceRowView shows `#planId` prefix before plan title when a workspace has an assigned plan, connecting workspaces to their plans visually
 - Task 6: ProjectDetailView shows full empty state when no workspaces and no active plans. PlansSection shows section-level empty state when workspaces exist but no active plans.
 
 ### Remaining
-- Task 2: Filter workspaces to show only recently active ones (locked, primary, or recently used)
-- Task 5: Visually link workspaces to their assigned plans (show plan title/number inline)
+- None
 
 ### Next Iteration Guidance
-- Task 2 requires changes to ProjectTrackingStore.swift's workspace fetch/filter logic and a "Show all workspaces" toggle
-- Task 5 requires reading `assignedPlanUuid` on workspace rows and displaying plan info inline
-- These two tasks are related (both workspace-focused) and could be done together
+- None
 
 ### Decisions / Changes
 - Added `isActiveWork` computed property on `PlanDisplayStatus` as a shared filter predicate used by both views and tests
 - FilterChipsView/FilterChip structs were fully removed from ProjectsView.swift (will be recreated for future Plans browser tab)
 - Active plans list is computed once in ProjectDetailView and passed to PlansSection to avoid duplicate filtering
 - Empty state text is informational only (no navigation CTA) since the Plans browser tab doesn't exist yet
+- Workspace recency uses 48-hour cutoff on `updated_at` field, with locked/primary overriding regardless of date
+- Date parsing extracted into shared `parseISO8601Date()` with local formatters (not global) for thread safety
+- WorkspacesSection uses `.id(selectedProjectId)` to reset `@State` toggle when switching projects
 
 ### Lessons Learned
 - When removing status icons conditionally in SwiftUI, use an unconditional `.frame(width:)` wrapper to maintain row alignment across mixed states
 - Tests should call production computed properties (e.g., `status.isActiveWork`) rather than duplicating the logic in local helpers — otherwise the tests won't catch regressions in the production code
+- Don't hoist `ISO8601DateFormatter` to `nonisolated(unsafe)` globals for reuse across fetch functions — create local instances instead, since `NSFormatter` subclasses aren't thread-safe and the allocation cost is negligible
+- SwiftUI `@State` in child views persists across parent data changes — use `.id(keyValue)` to force view recreation when context changes (e.g., project selection)
 
 ### Risks / Blockers
 - None
