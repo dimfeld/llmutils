@@ -1374,8 +1374,8 @@ struct ProjectTrackingStoreTests {
 
     // MARK: - Active Work Dashboard Logic
 
-    /// Tests for the hasActivePlans / hasWorkspaces logic used by ProjectDetailView
-    /// to decide whether to show the active work dashboard or an empty state.
+    // Tests for the hasActivePlans / hasWorkspaces logic used by ProjectDetailView
+    // to decide whether to show the active work dashboard or an empty state.
 
     @Test("Active work: project with in-progress plan has active plans")
     func activeWorkHasActivePlanInProgress() async throws {

@@ -112,6 +112,10 @@ enum PlanDisplayStatus: String, CaseIterable, Hashable, Sendable {
         case .deferred: "Deferred"
         }
     }
+
+    var isActiveWork: Bool {
+        self == .inProgress || self == .blocked
+    }
 }
 
 // MARK: - Filter Logic

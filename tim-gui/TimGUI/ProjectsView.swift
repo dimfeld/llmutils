@@ -193,24 +193,23 @@ private struct ProjectDetailView: View {
     var body: some View {
         let now = Date()
         let hasWorkspaces = !self.store.workspaces.isEmpty
-        let hasActivePlans = self.store.plans.contains { plan in
-            let status = self.store.displayStatus(for: plan, now: now)
-            return status == .inProgress || status == .blocked
+        let activePlans = self.store.plans.filter { plan in
+            self.store.displayStatus(for: plan, now: now).isActiveWork
         }
 
-        if !hasWorkspaces, !hasActivePlans {
+        if !hasWorkspaces, activePlans.isEmpty {
             ProjectsEmptyStateView(
                 icon: "tray",
                 iconColor: .secondary,
                 title: "No Active Work",
-                subtitle: "No in-progress plans or workspaces. Browse all plans to get started.")
+                subtitle: "No active work — browse all plans to get started")
                 .background(.thinMaterial)
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     WorkspacesSection(workspaces: self.store.workspaces)
                     Divider()
-                    PlansSection(store: self.store)
+                    PlansSection(store: self.store, activePlans: activePlans)
                 }
                 .padding(16)
             }
@@ -274,12 +273,14 @@ private struct WorkspaceRowView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            if let statusIcon {
-                Image(systemName: statusIcon)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(self.statusColor)
-                    .frame(width: 14)
+            Group {
+                if let statusIcon {
+                    Image(systemName: statusIcon)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(self.statusColor)
+                }
             }
+            .frame(width: 14)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -327,26 +328,23 @@ private struct WorkspaceRowView: View {
 
 private struct PlansSection: View {
     let store: ProjectTrackingStore
+    let activePlans: [TrackedPlan]
 
     var body: some View {
         let now = Date()
-        let activePlans = self.store.plans.filter { plan in
-            let status = self.store.displayStatus(for: plan, now: now)
-            return status == .inProgress || status == .blocked
-        }
 
         VStack(alignment: .leading, spacing: 8) {
             Text("Plans")
                 .font(.headline)
                 .foregroundStyle(.secondary)
 
-            if activePlans.isEmpty {
-                Text("No active plans")
+            if self.activePlans.isEmpty {
+                Text("No active plans — browse all plans to get started")
                     .font(.subheadline)
                     .foregroundStyle(.tertiary)
                     .padding(.vertical, 4)
             } else {
-                ForEach(activePlans) { plan in
+                ForEach(self.activePlans) { plan in
                     PlanRowView(
                         plan: plan,
                         displayStatus: self.store.displayStatus(for: plan, now: now),
@@ -354,72 +352,6 @@ private struct PlansSection: View {
                 }
             }
         }
-    }
-}
-
-// MARK: - FilterChipsView
-
-private struct FilterChipsView: View {
-    let store: ProjectTrackingStore
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(PlanDisplayStatus.allCases, id: \.self) { status in
-                    FilterChip(
-                        status: status,
-                        isActive: self.store.activeFilters.contains(status),
-                        onToggle: {
-                            if self.store.activeFilters.contains(status) {
-                                self.store.activeFilters.remove(status)
-                            } else {
-                                self.store.activeFilters.insert(status)
-                            }
-                        })
-                }
-            }
-        }
-    }
-}
-
-// MARK: - FilterChip
-
-private struct FilterChip: View {
-    let status: PlanDisplayStatus
-    let isActive: Bool
-    let onToggle: () -> Void
-
-    private var chipColor: Color {
-        switch self.status {
-        case .pending: .secondary
-        case .inProgress: .blue
-        case .blocked: .orange
-        case .recentlyDone: .green
-        case .done: .gray
-        case .cancelled: .red
-        case .deferred: .purple
-        }
-    }
-
-    var body: some View {
-        Button(action: self.onToggle) {
-            Text(self.status.label)
-                .font(.caption2.weight(.medium))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    self.isActive ? self.chipColor.opacity(0.2) : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 12))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(
-                            self.isActive
-                                ? self.chipColor.opacity(0.6)
-                                : Color.secondary.opacity(0.3),
-                            lineWidth: 1))
-                .foregroundStyle(self.isActive ? self.chipColor : Color.secondary)
-        }
-        .buttonStyle(.plain)
     }
 }
 

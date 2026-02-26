@@ -369,44 +369,44 @@ struct ActiveWorkDashboardFilterTests {
 
     @Test("inProgress status shown in active work")
     func inProgressShown() {
-        #expect(isShownInActiveWork(displayStatus: .inProgress))
+        #expect(self.isShownInActiveWork(displayStatus: .inProgress))
     }
 
     @Test("blocked status shown in active work")
     func blockedShown() {
-        #expect(isShownInActiveWork(displayStatus: .blocked))
+        #expect(self.isShownInActiveWork(displayStatus: .blocked))
     }
 
     @Test("pending status NOT shown in active work")
     func pendingHidden() {
-        #expect(!isShownInActiveWork(displayStatus: .pending))
+        #expect(!self.isShownInActiveWork(displayStatus: .pending))
     }
 
     @Test("recentlyDone status NOT shown in active work")
     func recentlyDoneHidden() {
-        #expect(!isShownInActiveWork(displayStatus: .recentlyDone))
+        #expect(!self.isShownInActiveWork(displayStatus: .recentlyDone))
     }
 
     @Test("done status NOT shown in active work")
     func doneHidden() {
-        #expect(!isShownInActiveWork(displayStatus: .done))
+        #expect(!self.isShownInActiveWork(displayStatus: .done))
     }
 
     @Test("cancelled status NOT shown in active work")
     func cancelledHidden() {
-        #expect(!isShownInActiveWork(displayStatus: .cancelled))
+        #expect(!self.isShownInActiveWork(displayStatus: .cancelled))
     }
 
     @Test("deferred status NOT shown in active work")
     func deferredHidden() {
-        #expect(!isShownInActiveWork(displayStatus: .deferred))
+        #expect(!self.isShownInActiveWork(displayStatus: .deferred))
     }
 
     @Test("in_progress DB plan → shown in active work")
     func inProgressDbPlanShown() {
         let plan = makePlan(status: "in_progress")
         let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: now)
-        #expect(isShownInActiveWork(displayStatus: status))
+        #expect(self.isShownInActiveWork(displayStatus: status))
     }
 
     @Test("pending plan with unresolved deps → shown in active work as blocked")
@@ -414,46 +414,46 @@ struct ActiveWorkDashboardFilterTests {
         let plan = makePlan(status: "pending")
         let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: true, now: now)
         #expect(status == .blocked)
-        #expect(isShownInActiveWork(displayStatus: status))
+        #expect(self.isShownInActiveWork(displayStatus: status))
     }
 
     @Test("pending plan without deps → NOT shown in active work")
     func pendingNoDepsHidden() {
         let plan = makePlan(status: "pending")
         let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: now)
-        #expect(!isShownInActiveWork(displayStatus: status))
+        #expect(!self.isShownInActiveWork(displayStatus: status))
     }
 
     @Test("recently done plan → NOT shown in active work")
     func recentlyDoneHiddenFromDB() {
-        let recentlyUpdated = now.addingTimeInterval(-2 * 24 * 60 * 60)
+        let recentlyUpdated = self.now.addingTimeInterval(-2 * 24 * 60 * 60)
         let plan = makePlan(status: "done", updatedAt: recentlyUpdated)
         let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: now)
         #expect(status == .recentlyDone)
-        #expect(!isShownInActiveWork(displayStatus: status))
+        #expect(!self.isShownInActiveWork(displayStatus: status))
     }
 
     @Test("old done plan → NOT shown in active work")
     func oldDoneHiddenFromDB() {
-        let oldDate = now.addingTimeInterval(-10 * 24 * 60 * 60)
+        let oldDate = self.now.addingTimeInterval(-10 * 24 * 60 * 60)
         let plan = makePlan(status: "done", updatedAt: oldDate)
         let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: now)
         #expect(status == .done)
-        #expect(!isShownInActiveWork(displayStatus: status))
+        #expect(!self.isShownInActiveWork(displayStatus: status))
     }
 
     @Test("cancelled plan → NOT shown in active work")
     func cancelledHiddenFromDB() {
         let plan = makePlan(status: "cancelled")
         let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: now)
-        #expect(!isShownInActiveWork(displayStatus: status))
+        #expect(!self.isShownInActiveWork(displayStatus: status))
     }
 
     @Test("deferred plan → NOT shown in active work")
     func deferredHiddenFromDB() {
         let plan = makePlan(status: "deferred")
         let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: now)
-        #expect(!isShownInActiveWork(displayStatus: status))
+        #expect(!self.isShownInActiveWork(displayStatus: status))
     }
 
     @Test("Only inProgress and blocked pass active work filter — all other statuses are excluded")
@@ -461,10 +461,10 @@ struct ActiveWorkDashboardFilterTests {
         let shown: [PlanDisplayStatus] = [.inProgress, .blocked]
         let hidden: [PlanDisplayStatus] = [.pending, .recentlyDone, .done, .cancelled, .deferred]
         for status in shown {
-            #expect(isShownInActiveWork(displayStatus: status), "Expected \(status) to be shown")
+            #expect(self.isShownInActiveWork(displayStatus: status), "Expected \(status) to be shown")
         }
         for status in hidden {
-            #expect(!isShownInActiveWork(displayStatus: status), "Expected \(status) to be hidden")
+            #expect(!self.isShownInActiveWork(displayStatus: status), "Expected \(status) to be hidden")
         }
     }
 }
