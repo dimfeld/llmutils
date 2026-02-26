@@ -58,8 +58,10 @@ The Plans tab provides a comprehensive plan browsing experience, complementing t
 
 **Detail pane** — `PlansBrowserView` for the selected project, containing:
 
+- **Search field** — text field with magnifying glass icon that filters plans by title and goal text using `localizedCaseInsensitiveContains`. Resets on project change via `.id(store.selectedProjectId)`. Implemented as `filterPlansBySearchText()` module-level function for testability.
+- **Sort picker** — compact `.menu`-style Picker with `PlanSortOrder` enum: Plan Number (default, descending), Priority, Recently Updated, Status. All sort modes use deterministic tiebreakers (planId DESC, then uuid) to prevent list jitter on periodic refreshes. Priority sort ranks: urgent > high > medium > low > maybe > nil/unknown.
 - **FilterChipsView** — toggle chips for all 7 `PlanDisplayStatus` values (Pending, In Progress, Blocked, Recently Done, Done, Cancelled, Deferred), plus Reset and All controls. Active chips use colored fill backgrounds; inactive chips use subtle gray.
-- **Filtered plan list** — scrollable list of `PlanRowView` entries matching the active filters
+- **Filtered plan list** — scrollable list of `PlanRowView` entries matching the active filters, search text, and sort order
 
 ### Project Tracking Data Layer
 
