@@ -499,8 +499,7 @@ final class ProjectTrackingStore {
 
     // MARK: - Computed Helpers
 
-    /// Returns the subset of plans that pass the current active filters.
-    /// This is currently used by tests and reserved for the future Plans browser tab.
+    /// Returns the subset of plans that pass the current active status filters.
     func filteredPlans(now: Date = Date()) -> [TrackedPlan] {
         self.plans.filter { plan in
             let hasUnresolved = self.planDependencyStatus[plan.uuid] ?? false

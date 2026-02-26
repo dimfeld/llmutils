@@ -26,7 +26,8 @@ enum PlanSortOrder: String, CaseIterable, Identifiable {
         case "high": 1
         case "medium": 2
         case "low": 3
-        default: 4
+        case "maybe": 4
+        default: 5
         }
     }
 
@@ -46,18 +47,38 @@ enum PlanSortOrder: String, CaseIterable, Identifiable {
     func sorted(_ plans: [TrackedPlan], dependencyStatus: [String: Bool], now: Date) -> [TrackedPlan] {
         switch self {
         case .planNumber:
-            // Default: highest plan number first (matches DB ORDER BY plan_id DESC)
-            plans.sorted { ($0.planId ?? 0) > ($1.planId ?? 0) }
+            // Default: matches DB ORDER BY plan_id DESC, updated_at DESC
+            plans.sorted {
+                let id0 = $0.planId ?? 0
+                let id1 = $1.planId ?? 0
+                if id0 != id1 { return id0 > id1 }
+                let t0 = $0.updatedAt ?? .distantPast
+                let t1 = $1.updatedAt ?? .distantPast
+                if t0 != t1 { return t0 > t1 }
+                return $0.uuid < $1.uuid
+            }
         case .priority:
-            plans.sorted { Self.priorityRank($0.priority) < Self.priorityRank($1.priority) }
+            plans.sorted {
+                let r0 = Self.priorityRank($0.priority)
+                let r1 = Self.priorityRank($1.priority)
+                if r0 != r1 { return r0 < r1 }
+                return ($0.planId ?? 0) > ($1.planId ?? 0)
+            }
         case .recentlyUpdated:
-            plans.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
+            plans.sorted {
+                let t0 = $0.updatedAt ?? .distantPast
+                let t1 = $1.updatedAt ?? .distantPast
+                if t0 != t1 { return t0 > t1 }
+                return ($0.planId ?? 0) > ($1.planId ?? 0)
+            }
         case .status:
             plans.sorted {
-                Self.statusRank(planDisplayStatus(
+                let s0 = Self.statusRank(planDisplayStatus(
                     for: $0, hasUnresolvedDependencies: dependencyStatus[$0.uuid] ?? false, now: now))
-                    < Self.statusRank(planDisplayStatus(
-                        for: $1, hasUnresolvedDependencies: dependencyStatus[$1.uuid] ?? false, now: now))
+                let s1 = Self.statusRank(planDisplayStatus(
+                    for: $1, hasUnresolvedDependencies: dependencyStatus[$1.uuid] ?? false, now: now))
+                if s0 != s1 { return s0 < s1 }
+                return ($0.planId ?? 0) > ($1.planId ?? 0)
             }
         }
     }
