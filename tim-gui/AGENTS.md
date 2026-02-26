@@ -24,10 +24,11 @@ Look in the `docs` directory for guidance on writing Swift and using SwiftUI.
 
 ## Active Work Dashboard
 
-The app has two top-level views switched via a segmented picker in `ContentView.swift`:
+The app has three top-level tabs switched via a segmented picker in `ContentView.swift`:
 
 - **Sessions** — live agent session monitoring (existing behavior, unchanged)
 - **Active Work** — focused dashboard showing in-progress plans and workspaces from `tim.db`
+- **Plans** — full-featured plan browser with status filters, search, and detailed plan information
 
 ### Active Work Layout (`ProjectsView.swift`)
 
@@ -51,6 +52,15 @@ The filter uses the `PlanDisplayStatus.isActiveWork` computed property as a shar
 - **No workspaces and no active plans** — full empty state in `ProjectDetailView` guiding the user to pick up work
 - **Loading/error** — loading spinner, empty (no projects), error (DB unreadable)
 
+### Plans Tab (`PlansView.swift`)
+
+The Plans tab provides a comprehensive plan browsing experience, complementing the Active Work tab's focused view. It uses a `NavigationSplitView` with the same `ProjectListView` sidebar (shared `ProjectTrackingStore` instance keeps project selection synchronized across tabs).
+
+**Detail pane** — `PlansBrowserView` for the selected project, containing:
+
+- **FilterChipsView** — toggle chips for all 7 `PlanDisplayStatus` values (Pending, In Progress, Blocked, Recently Done, Done, Cancelled, Deferred), plus Reset and All controls. Active chips use colored fill backgrounds; inactive chips use subtle gray.
+- **Filtered plan list** — scrollable list of `PlanRowView` entries matching the active filters
+
 ### Project Tracking Data Layer
 
 The app reads `tim.db` (SQLite, read-only). All data for the Projects view comes from this database; no plan markdown files are scanned.
@@ -60,7 +70,8 @@ The app reads `tim.db` (SQLite, read-only). All data for the Projects view comes
 - `ProjectTrackingModels.swift` — Domain types (`TrackedProject`, `TrackedWorkspace`, `TrackedPlan`, `PlanDisplayStatus`) and pure filter functions. `TrackedWorkspace.isRecentlyActive(now:)` encapsulates the 48-hour recency check (locked/primary override regardless of date).
 - `ProjectTrackingStore.swift` — `@Observable @MainActor` store that queries `tim.db`, manages `LoadState`, and runs periodic refresh. Includes shared `parseISO8601Date()` helper (file-private, local formatters for thread safety) used by both workspace and plan fetch functions.
 - `ProjectsView.swift` — SwiftUI view hierarchy for the Active Work tab
-- `ContentView.swift` — top-level view with `AppTab` segmented picker (Sessions / Active Work); switching tabs does not affect `SessionState` or WebSocket connections
+- `PlansView.swift` — SwiftUI view hierarchy for the Plans tab (full plan browser with filter chips and filtered list)
+- `ContentView.swift` — top-level view with `AppTab` segmented picker (Sessions / Active Work / Plans); switching tabs does not affect `SessionState` or WebSocket connections
 
 **Database access:**
 
@@ -81,8 +92,9 @@ The app reads `tim.db` (SQLite, read-only). All data for the Projects view comes
 
 **Refresh lifecycle:**
 
-- `startRefreshing()` (called on `ProjectsView.onAppear`) does immediate load + 10-second periodic refresh via `Task.sleep` with cancellation
-- `stopRefreshing()` (called on `ProjectsView.onDisappear`) cancels the loop
+- `startRefreshing()` / `stopRefreshing()` are **reference-counted** — multiple tabs (Active Work, Plans) share the same `ProjectTrackingStore` and each call `startRefreshing()` on appear / `stopRefreshing()` on disappear. The refresh loop runs while any tab holds a reference, preventing race conditions during tab switches where lifecycle ordering is not guaranteed.
+- First `startRefreshing()` call does immediate load + 10-second periodic refresh via `Task.sleep` with cancellation
+- Last `stopRefreshing()` call (refcount reaches zero) cancels the loop
 - Concurrent refresh requests are coalesced; additional calls request a follow-up refresh, so updates are not dropped
 - All published state updates happen on MainActor
 
