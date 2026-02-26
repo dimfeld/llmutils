@@ -54,13 +54,13 @@ private let logger = Logger(subsystem: "com.timgui", category: "ProjectTrackingS
 
 // MARK: - ISO8601 Date Parsing
 
-private func parseISO8601Date(_ str: String?) -> Date? {
+private func parseISO8601Date(
+    _ str: String?,
+    withFractionalSeconds: ISO8601DateFormatter,
+    withoutFractionalSeconds: ISO8601DateFormatter) -> Date?
+{
     guard let str, !str.isEmpty else { return nil }
-    let withFrac = ISO8601DateFormatter()
-    withFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    let noFrac = ISO8601DateFormatter()
-    noFrac.formatOptions = [.withInternetDateTime]
-    return withFrac.date(from: str) ?? noFrac.date(from: str)
+    return withFractionalSeconds.date(from: str) ?? withoutFractionalSeconds.date(from: str)
 }
 
 // MARK: - SQLite Database Helper
@@ -160,6 +160,11 @@ private func doFetchProjects(path: String) throws -> [TrackedProject] {
 
 private func doFetchWorkspaces(path: String, projectId: String) throws -> [TrackedWorkspace] {
     try withSQLiteDB(path: path) { db in
+        let withFractionalSeconds = ISO8601DateFormatter()
+        withFractionalSeconds.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let withoutFractionalSeconds = ISO8601DateFormatter()
+        withoutFractionalSeconds.formatOptions = [.withInternetDateTime]
+
         let sql = """
         SELECT w.id, w.project_id, w.workspace_path, w.branch, w.name, w.description,
                w.plan_id, w.plan_title, w.is_primary,
@@ -197,7 +202,10 @@ private func doFetchWorkspaces(path: String, projectId: String) throws -> [Track
                         planTitle: columnText(stmt, 7),
                         isPrimary: columnBool(stmt, 8),
                         isLocked: columnBool(stmt, 9),
-                        updatedAt: parseISO8601Date(columnText(stmt, 10))))
+                        updatedAt: parseISO8601Date(
+                            columnText(stmt, 10),
+                            withFractionalSeconds: withFractionalSeconds,
+                            withoutFractionalSeconds: withoutFractionalSeconds)))
                     continue
                 }
                 if rc != SQLITE_DONE {
@@ -215,6 +223,11 @@ private typealias PlansAndDeps = ([TrackedPlan], [String: Bool])
 
 private func doFetchPlansAndDeps(path: String, projectId: String) throws -> PlansAndDeps {
     try withSQLiteDB(path: path) { db in
+        let withFractionalSeconds = ISO8601DateFormatter()
+        withFractionalSeconds.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let withoutFractionalSeconds = ISO8601DateFormatter()
+        withoutFractionalSeconds.formatOptions = [.withInternetDateTime]
+
         // Fetch plan rows for the project
         let planSQL = """
         SELECT uuid, project_id, plan_id, title, goal, status, priority, parent_uuid,
@@ -250,8 +263,14 @@ private func doFetchPlansAndDeps(path: String, projectId: String) throws -> Plan
                         parentUuid: columnText(planStmt, 7),
                         isEpic: columnBool(planStmt, 8),
                         filename: columnText(planStmt, 9),
-                        createdAt: parseISO8601Date(columnText(planStmt, 10)),
-                        updatedAt: parseISO8601Date(columnText(planStmt, 11)),
+                        createdAt: parseISO8601Date(
+                            columnText(planStmt, 10),
+                            withFractionalSeconds: withFractionalSeconds,
+                            withoutFractionalSeconds: withoutFractionalSeconds),
+                        updatedAt: parseISO8601Date(
+                            columnText(planStmt, 11),
+                            withFractionalSeconds: withFractionalSeconds,
+                            withoutFractionalSeconds: withoutFractionalSeconds),
                         branch: columnText(planStmt, 12)))
                     continue
                 }

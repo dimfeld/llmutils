@@ -192,12 +192,14 @@ private struct ProjectDetailView: View {
 
     var body: some View {
         let now = Date()
-        let hasWorkspaces = !self.store.workspaces.isEmpty
+        let hasRecentlyActiveWorkspaces = self.store.workspaces.contains { workspace in
+            workspace.isRecentlyActive(now: now)
+        }
         let activePlans = self.store.plans.filter { plan in
             self.store.displayStatus(for: plan, now: now).isActiveWork
         }
 
-        if !hasWorkspaces, activePlans.isEmpty {
+        if !hasRecentlyActiveWorkspaces, activePlans.isEmpty {
             ProjectsEmptyStateView(
                 icon: "tray",
                 iconColor: .secondary,
@@ -256,10 +258,10 @@ private struct WorkspacesSection: View {
                     self.showAllWorkspaces.toggle()
                 } label: {
                     Text(self.showAllWorkspaces
-                         ? "Show active only"
-                         : "Show all workspaces (\(self.workspaces.count) total)")
+                        ? "Show active only"
+                        : "Show all workspaces (\(self.workspaces.count) total)")
                         .font(.caption)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(Color.accentColor)
                 }
                 .buttonStyle(.plain)
             }

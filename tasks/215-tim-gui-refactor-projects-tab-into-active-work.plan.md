@@ -12,7 +12,7 @@ priority: medium
 planGeneratedAt: 2026-02-25T08:32:07.431Z
 promptsGeneratedAt: 2026-02-25T08:32:07.431Z
 createdAt: 2026-02-25T08:31:24.257Z
-updatedAt: 2026-02-26T08:38:03.347Z
+updatedAt: 2026-02-26T08:40:46.518Z
 tasks:
   - title: Rename Projects tab to Active Work in top navigation
     done: true
@@ -70,6 +70,7 @@ tags:
 ## Current Progress
 ### Current State
 - All 6 tasks are complete. The Active Work dashboard is fully implemented with workspace filtering, plan linking, and all supporting infrastructure.
+- Post-review autofix iteration is complete for the selected findings: empty-state gating now matches active-work filtering, workspace toggle styling follows accent color theming, and ISO8601 parsing avoids per-row formatter allocation.
 
 ### Completed (So Far)
 - Task 1: Renamed `AppTab.projects` to `AppTab.activeWork` with raw value "Active Work" in ContentView.swift
@@ -78,6 +79,10 @@ tags:
 - Task 4: WorkspaceRowView no longer shows icon or label for `.available` status. Uses unconditional `.frame(width: 14)` for alignment consistency across mixed status rows.
 - Task 5: WorkspaceRowView shows `#planId` prefix before plan title when a workspace has an assigned plan, connecting workspaces to their plans visually
 - Task 6: ProjectDetailView shows full empty state when no workspaces and no active plans. PlansSection shows section-level empty state when workspaces exist but no active plans.
+- Review fix: ProjectDetailView now computes empty-state visibility from recently active workspaces (`isRecentlyActive`) instead of all workspaces, so stale-only workspaces no longer suppress the "No Active Work" state.
+- Review fix: WorkspacesSection toggle text now uses `Color.accentColor` instead of hardcoded `.blue` to respect user/system accent settings.
+- Review fix: `parseISO8601Date` now reuses two `ISO8601DateFormatter` instances per fetch operation (workspaces/plans) instead of allocating formatters on each parse call.
+- Review fix: Active-work dashboard tests now assert against recently-active workspace presence, include a stale-workspace regression case, and include a recently-active workspace visibility case.
 
 ### Remaining
 - None
@@ -93,12 +98,16 @@ tags:
 - Workspace recency uses 48-hour cutoff on `updated_at` field, with locked/primary overriding regardless of date
 - Date parsing extracted into shared `parseISO8601Date()` with local formatters (not global) for thread safety
 - WorkspacesSection uses `.id(selectedProjectId)` to reset `@State` toggle when switching projects
+- ProjectDetailView empty-state condition is based on "recently active workspaces OR active plans", aligning the top-level dashboard state with the section-level filtering contract.
+- Date parsing keeps formatter lifecycle local to each fetch function call to avoid shared formatter thread-safety risks while still avoiding per-row formatter allocations.
 
 ### Lessons Learned
 - When removing status icons conditionally in SwiftUI, use an unconditional `.frame(width:)` wrapper to maintain row alignment across mixed states
 - Tests should call production computed properties (e.g., `status.isActiveWork`) rather than duplicating the logic in local helpers — otherwise the tests won't catch regressions in the production code
 - Don't hoist `ISO8601DateFormatter` to `nonisolated(unsafe)` globals for reuse across fetch functions — create local instances instead, since `NSFormatter` subclasses aren't thread-safe and the allocation cost is negligible
 - SwiftUI `@State` in child views persists across parent data changes — use `.id(keyValue)` to force view recreation when context changes (e.g., project selection)
+- Empty-state predicates must use the same filtered subset shown in UI sections; using raw collection counts can reintroduce stale-data visibility bugs.
+- Reusing formatters at function scope is a good middle ground for Foundation formatter performance and thread safety: avoid both global shared formatters and per-row allocations.
 
 ### Risks / Blockers
 - None

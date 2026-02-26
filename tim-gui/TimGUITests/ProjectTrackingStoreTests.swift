@@ -1422,7 +1422,7 @@ struct ProjectTrackingStoreTests {
 
     // MARK: - Active Work Dashboard Logic
 
-    // Tests for the hasActivePlans / hasWorkspaces logic used by ProjectDetailView
+    // Tests for the hasActivePlans / hasRecentlyActiveWorkspaces logic used by ProjectDetailView
     // to decide whether to show the active work dashboard or an empty state.
 
     @Test("Active work: project with in-progress plan has active plans")
@@ -1505,8 +1505,8 @@ struct ProjectTrackingStoreTests {
         #expect(!hasActivePlans)
     }
 
-    @Test("Active work: empty state when no workspaces and no active plans")
-    func activeWorkEmptyStateWhenNoWorkspacesAndNoActivePlans() async throws {
+    @Test("Active work: empty state when no recently active workspaces and no active plans")
+    func activeWorkEmptyStateWhenNoRecentlyActiveWorkspacesAndNoActivePlans() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1522,26 +1522,32 @@ struct ProjectTrackingStoreTests {
         await store.refresh()
 
         let now = Date()
-        let hasWorkspaces = !store.workspaces.isEmpty
+        let hasRecentlyActiveWorkspaces = store.workspaces.contains { workspace in
+            workspace.isRecentlyActive(now: now)
+        }
         let hasActivePlans = store.plans.contains { plan in
             store.displayStatus(for: plan, now: now).isActiveWork
         }
 
         // Both conditions false → empty state should be shown
-        #expect(!hasWorkspaces)
+        #expect(!hasRecentlyActiveWorkspaces)
         #expect(!hasActivePlans)
     }
 
-    @Test("Active work: non-empty state when workspaces exist even without active plans")
-    func activeWorkNonEmptyWhenWorkspacesExistAlone() async throws {
+    @Test("Active work: stale workspace alone does not prevent empty state")
+    func activeWorkStaleWorkspaceDoesNotPreventEmptyState() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
+        let staleISO = isoDateString(Date().addingTimeInterval(-72 * 60 * 60))
         withTestDB(path: path) { db in
             execSQL(db, "INSERT INTO project (id, repository_id) VALUES (1, 'repo-1')")
             execSQL(
                 db,
-                "INSERT INTO workspace (id, project_id, workspace_path, is_primary) VALUES (1, 1, '/tmp/ws-1', 0)")
+                """
+                INSERT INTO workspace (id, project_id, workspace_path, is_primary, updated_at)
+                VALUES (1, 1, '/tmp/ws-1', 0, '\(staleISO)')
+                """)
             // No plans at all
         }
 
@@ -1550,13 +1556,46 @@ struct ProjectTrackingStoreTests {
         await store.refresh()
 
         let now = Date()
-        let hasWorkspaces = !store.workspaces.isEmpty
+        let hasRecentlyActiveWorkspaces = store.workspaces.contains { workspace in
+            workspace.isRecentlyActive(now: now)
+        }
         let hasActivePlans = store.plans.contains { plan in
             store.displayStatus(for: plan, now: now).isActiveWork
         }
 
-        // hasWorkspaces is true → dashboard content is shown (not empty state)
-        #expect(hasWorkspaces)
+        #expect(!hasRecentlyActiveWorkspaces)
+        #expect(!hasActivePlans)
+    }
+
+    @Test("Active work: recently active workspace keeps dashboard non-empty without active plans")
+    func activeWorkRecentlyActiveWorkspaceKeepsDashboardVisible() async throws {
+        let (path, cleanup) = try makeTestDBPath()
+        defer { cleanup() }
+
+        let recentISO = isoDateString(Date().addingTimeInterval(-2 * 60 * 60))
+        withTestDB(path: path) { db in
+            execSQL(db, "INSERT INTO project (id, repository_id) VALUES (1, 'repo-1')")
+            execSQL(
+                db,
+                """
+                INSERT INTO workspace (id, project_id, workspace_path, is_primary, updated_at)
+                VALUES (1, 1, '/tmp/ws-1', 0, '\(recentISO)')
+                """)
+        }
+
+        let store = ProjectTrackingStore(dbPath: path)
+        store.selectedProjectId = "1"
+        await store.refresh()
+
+        let now = Date()
+        let hasRecentlyActiveWorkspaces = store.workspaces.contains { workspace in
+            workspace.isRecentlyActive(now: now)
+        }
+        let hasActivePlans = store.plans.contains { plan in
+            store.displayStatus(for: plan, now: now).isActiveWork
+        }
+
+        #expect(hasRecentlyActiveWorkspaces)
         #expect(!hasActivePlans)
     }
 

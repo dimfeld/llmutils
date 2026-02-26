@@ -518,61 +518,61 @@ struct TrackedWorkspaceIsRecentlyActiveTests {
     @Test("Locked workspace is always recently active")
     func lockedAlwaysActive() {
         let ws = makeWorkspace(isLocked: true, updatedAt: now.addingTimeInterval(-72 * 60 * 60))
-        #expect(ws.isRecentlyActive(now: now))
+        #expect(ws.isRecentlyActive(now: self.now))
     }
 
     @Test("Primary workspace is always recently active")
     func primaryAlwaysActive() {
         let ws = makeWorkspace(isPrimary: true, updatedAt: now.addingTimeInterval(-72 * 60 * 60))
-        #expect(ws.isRecentlyActive(now: now))
+        #expect(ws.isRecentlyActive(now: self.now))
     }
 
     @Test("Workspace updated 1 hour ago is recently active")
     func recentlyUpdated() {
         let ws = makeWorkspace(updatedAt: now.addingTimeInterval(-1 * 60 * 60))
-        #expect(ws.isRecentlyActive(now: now))
+        #expect(ws.isRecentlyActive(now: self.now))
     }
 
     @Test("Workspace updated 47 hours ago is recently active")
     func updatedWithin48Hours() {
         let ws = makeWorkspace(updatedAt: now.addingTimeInterval(-47 * 60 * 60))
-        #expect(ws.isRecentlyActive(now: now))
+        #expect(ws.isRecentlyActive(now: self.now))
     }
 
     @Test("Workspace updated exactly 48 hours ago is recently active (boundary inclusive)")
     func updatedExactly48Hours() {
         let ws = makeWorkspace(updatedAt: now.addingTimeInterval(-48 * 60 * 60))
-        #expect(ws.isRecentlyActive(now: now))
+        #expect(ws.isRecentlyActive(now: self.now))
     }
 
     @Test("Workspace updated 48 hours + 1 second ago is NOT recently active")
     func updatedBeyond48Hours() {
         let ws = makeWorkspace(updatedAt: now.addingTimeInterval(-(48 * 60 * 60 + 1)))
-        #expect(!ws.isRecentlyActive(now: now))
+        #expect(!ws.isRecentlyActive(now: self.now))
     }
 
     @Test("Workspace updated 72 hours ago is NOT recently active")
     func oldUpdate() {
         let ws = makeWorkspace(updatedAt: now.addingTimeInterval(-72 * 60 * 60))
-        #expect(!ws.isRecentlyActive(now: now))
+        #expect(!ws.isRecentlyActive(now: self.now))
     }
 
     @Test("Workspace with nil updatedAt is NOT recently active")
     func nilUpdatedAt() {
         let ws = makeWorkspace(updatedAt: nil)
-        #expect(!ws.isRecentlyActive(now: now))
+        #expect(!ws.isRecentlyActive(now: self.now))
     }
 
     @Test("Locked workspace with nil updatedAt is still recently active")
     func lockedNilUpdatedAt() {
         let ws = makeWorkspace(isLocked: true, updatedAt: nil)
-        #expect(ws.isRecentlyActive(now: now))
+        #expect(ws.isRecentlyActive(now: self.now))
     }
 
     @Test("Primary workspace with nil updatedAt is still recently active")
     func primaryNilUpdatedAt() {
         let ws = makeWorkspace(isPrimary: true, updatedAt: nil)
-        #expect(ws.isRecentlyActive(now: now))
+        #expect(ws.isRecentlyActive(now: self.now))
     }
 }
 
