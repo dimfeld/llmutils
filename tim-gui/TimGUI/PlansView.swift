@@ -6,7 +6,6 @@ enum PlanSortOrder: String, CaseIterable, Identifiable {
     case planNumber
     case priority
     case recentlyUpdated
-    case status
 
     var id: String {
         self.rawValue
@@ -17,7 +16,6 @@ enum PlanSortOrder: String, CaseIterable, Identifiable {
         case .planNumber: "Plan Number"
         case .priority: "Priority"
         case .recentlyUpdated: "Recently Updated"
-        case .status: "Status"
         }
     }
 
@@ -30,19 +28,6 @@ enum PlanSortOrder: String, CaseIterable, Identifiable {
         case "low": 3
         case "maybe": 4
         default: 5
-        }
-    }
-
-    /// Numeric rank for display status. Groups active statuses first.
-    private static func statusRank(_ status: PlanDisplayStatus) -> Int {
-        switch status {
-        case .inProgress: 0
-        case .blocked: 1
-        case .pending: 2
-        case .recentlyDone: 3
-        case .deferred: 4
-        case .done: 5
-        case .cancelled: 6
         }
     }
 
@@ -71,15 +56,6 @@ enum PlanSortOrder: String, CaseIterable, Identifiable {
                 let t0 = $0.updatedAt ?? .distantPast
                 let t1 = $1.updatedAt ?? .distantPast
                 if t0 != t1 { return t0 > t1 }
-                return ($0.planId ?? 0) > ($1.planId ?? 0)
-            }
-        case .status:
-            plans.sorted {
-                let s0 = Self.statusRank(planDisplayStatus(
-                    for: $0, hasUnresolvedDependencies: dependencyStatus[$0.uuid] ?? false, now: now))
-                let s1 = Self.statusRank(planDisplayStatus(
-                    for: $1, hasUnresolvedDependencies: dependencyStatus[$1.uuid] ?? false, now: now))
-                if s0 != s1 { return s0 < s1 }
                 return ($0.planId ?? 0) > ($1.planId ?? 0)
             }
         }
@@ -139,6 +115,79 @@ func filterPlansBySearchText(_ plans: [TrackedPlan], query: String) -> [TrackedP
     }
 }
 
+// MARK: - Plan Status Grouping
+
+struct PlanStatusGroup: Identifiable {
+    let status: PlanDisplayStatus
+    let plans: [TrackedPlan]
+    var id: PlanDisplayStatus { status }
+}
+
+/// The display order for plan status groups, from most to least actionable.
+let planStatusGroupOrder: [PlanDisplayStatus] = [
+    .inProgress, .pending, .blocked, .recentlyDone, .done, .deferred, .cancelled,
+]
+
+/// Groups pre-sorted plans by their display status, returning groups in a fixed order.
+/// Empty groups are excluded. Within-group order from the input array is preserved.
+func groupPlansByStatus(
+    _ plans: [TrackedPlan],
+    dependencyStatus: [String: Bool],
+    now: Date
+) -> [PlanStatusGroup] {
+    var grouped: [PlanDisplayStatus: [TrackedPlan]] = [:]
+    for plan in plans {
+        let hasUnresolved = dependencyStatus[plan.uuid] ?? false
+        let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: hasUnresolved, now: now)
+        grouped[status, default: []].append(plan)
+    }
+
+    return planStatusGroupOrder.compactMap { status in
+        guard let plans = grouped[status], !plans.isEmpty else { return nil }
+        return PlanStatusGroup(status: status, plans: plans)
+    }
+}
+
+// MARK: - PlanGroupHeaderView
+
+private struct PlanGroupHeaderView: View {
+    let status: PlanDisplayStatus
+    let count: Int
+    let isCollapsed: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(self.isCollapsed ? 0 : 90))
+                .animation(.easeInOut(duration: 0.2), value: self.isCollapsed)
+
+            Image(systemName: self.status.icon)
+                .font(.caption)
+                .foregroundStyle(self.status.color)
+
+            Text(self.status.label)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(self.status.color)
+
+            Spacer()
+
+            Text("\(self.count)")
+                .font(.caption2)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(.quaternary, in: Capsule())
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: self.onToggle)
+    }
+}
+
 // MARK: - PlansSplitView
 
 private struct PlansSplitView: View {
@@ -192,13 +241,15 @@ private struct PlansBrowserView: View {
     let store: ProjectTrackingStore
     @Binding var selectedPlanUuid: String?
     @State private var searchText: String = ""
-    @State private var sortOrder: PlanSortOrder = .planNumber
+    @State private var sortOrder: PlanSortOrder = .recentlyUpdated
+    @State private var collapsedGroups: Set<PlanDisplayStatus> = []
 
     var body: some View {
         let now = Date()
         let statusFiltered = self.store.filteredPlans(now: now)
         let searched = self.applySearch(statusFiltered)
         let sorted = self.sortOrder.sorted(searched, dependencyStatus: self.store.planDependencyStatus, now: now)
+        let groups = groupPlansByStatus(sorted, dependencyStatus: self.store.planDependencyStatus, now: now)
 
         VStack(spacing: 0) {
             FilterChipsView(store: self.store)
@@ -240,7 +291,7 @@ private struct PlansBrowserView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
 
-            if sorted.isEmpty {
+            if groups.isEmpty {
                 Spacer()
                 VStack(spacing: 10) {
                     Image(systemName: "doc.text.magnifyingglass")
@@ -257,15 +308,34 @@ private struct PlansBrowserView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 6) {
-                        ForEach(sorted) { plan in
-                            PlanRowView(
-                                plan: plan,
-                                displayStatus: self.store.displayStatus(for: plan, now: now),
-                                isSelected: plan.uuid == self.selectedPlanUuid,
-                                now: now)
-                                .onTapGesture {
-                                    self.selectedPlanUuid = plan.uuid
+                        ForEach(groups) { group in
+                            let isCollapsed = self.collapsedGroups.contains(group.status)
+                            Section {
+                                if !isCollapsed {
+                                    ForEach(group.plans) { plan in
+                                        PlanRowView(
+                                            plan: plan,
+                                            displayStatus: self.store.displayStatus(for: plan, now: now),
+                                            isSelected: plan.uuid == self.selectedPlanUuid,
+                                            now: now)
+                                            .onTapGesture {
+                                                self.selectedPlanUuid = plan.uuid
+                                            }
+                                    }
                                 }
+                            } header: {
+                                PlanGroupHeaderView(
+                                    status: group.status,
+                                    count: group.plans.count,
+                                    isCollapsed: isCollapsed)
+                                {
+                                    if isCollapsed {
+                                        self.collapsedGroups.remove(group.status)
+                                    } else {
+                                        self.collapsedGroups.insert(group.status)
+                                    }
+                                }
+                            }
                         }
                     }
                     .padding(.horizontal, 16)
@@ -274,7 +344,7 @@ private struct PlansBrowserView: View {
             }
         }
         .id(self.store.selectedProjectId)
-        .onChange(of: sorted.map(\.uuid)) { _, visibleUuids in
+        .onChange(of: groups.flatMap { $0.plans.map(\.uuid) }) { _, visibleUuids in
             if let selected = self.selectedPlanUuid, !visibleUuids.contains(selected) {
                 self.selectedPlanUuid = nil
             }
@@ -337,11 +407,11 @@ struct PlanDetailView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     PlanDetailRow(label: "Status") {
                         HStack(spacing: 6) {
-                            Image(systemName: self.statusIcon(for: displayStatus))
-                                .foregroundStyle(self.statusColor(for: displayStatus))
+                            Image(systemName: displayStatus.icon)
+                                .foregroundStyle(displayStatus.color)
                                 .font(.callout)
                             Text(displayStatus.label)
-                                .foregroundStyle(self.statusColor(for: displayStatus))
+                                .foregroundStyle(displayStatus.color)
                         }
                     }
 
@@ -435,29 +505,6 @@ struct PlanDetailView: View {
         }
     }
 
-    private func statusIcon(for status: PlanDisplayStatus) -> String {
-        switch status {
-        case .pending: "circle"
-        case .inProgress: "play.circle.fill"
-        case .blocked: "exclamationmark.circle.fill"
-        case .recentlyDone: "checkmark.circle.fill"
-        case .done: "checkmark.circle"
-        case .cancelled: "xmark.circle"
-        case .deferred: "clock.arrow.circlepath"
-        }
-    }
-
-    private func statusColor(for status: PlanDisplayStatus) -> Color {
-        switch status {
-        case .pending: .secondary
-        case .inProgress: .blue
-        case .blocked: .orange
-        case .recentlyDone: .green
-        case .done: .gray
-        case .cancelled: .red
-        case .deferred: .purple
-        }
-    }
 }
 
 // MARK: - PlanDetailRow
@@ -524,7 +571,7 @@ private struct FilterChipsView: View {
                         FilterChip(
                             label: status.label,
                             isActive: self.store.activeFilters.contains(status),
-                            color: self.chipColor(for: status))
+                            color: status.color)
                         {
                             if self.store.activeFilters.contains(status) {
                                 self.store.activeFilters.remove(status)
@@ -538,17 +585,6 @@ private struct FilterChipsView: View {
         }
     }
 
-    private func chipColor(for status: PlanDisplayStatus) -> Color {
-        switch status {
-        case .pending: .secondary
-        case .inProgress: .blue
-        case .blocked: .orange
-        case .recentlyDone: .green
-        case .done: .gray
-        case .cancelled: .red
-        case .deferred: .purple
-        }
-    }
 }
 
 // MARK: - FilterChip

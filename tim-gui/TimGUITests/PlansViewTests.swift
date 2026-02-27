@@ -48,11 +48,6 @@ struct PlanSortOrderLabelTests {
         #expect(PlanSortOrder.recentlyUpdated.label == "Recently Updated")
     }
 
-    @Test("status label is 'Status'")
-    func statusLabel() {
-        #expect(PlanSortOrder.status.label == "Status")
-    }
-
     @Test("All sort order cases have non-empty labels")
     func allCasesHaveNonEmptyLabels() {
         for order in PlanSortOrder.allCases {
@@ -60,9 +55,9 @@ struct PlanSortOrderLabelTests {
         }
     }
 
-    @Test("PlanSortOrder has exactly 4 cases")
-    func exactlyFourCases() {
-        #expect(PlanSortOrder.allCases.count == 4)
+    @Test("PlanSortOrder has exactly 3 cases")
+    func exactlyThreeCases() {
+        #expect(PlanSortOrder.allCases.count == 3)
     }
 }
 
@@ -412,114 +407,6 @@ struct PlanSortOrderRecentlyUpdatedTests {
             now: self.now)
 
         // Same updatedAt → planId DESC: 5 > nil(0)
-        #expect(result[0].uuid == "a")
-        #expect(result[1].uuid == "b")
-    }
-}
-
-// MARK: - PlanSortOrder: status
-
-@Suite("PlanSortOrder.sorted – status")
-struct PlanSortOrderStatusTests {
-    let now = Date()
-
-    @Test(
-        "Sorts plans by display status rank: inProgress < blocked < pending < recentlyDone < deferred < done < cancelled")
-    func sortsByStatusRank() {
-        let recentlyDoneDate = self.now.addingTimeInterval(-2 * 24 * 60 * 60)
-
-        let inProgress = makePlan(status: "in_progress", uuid: "inProgress")
-        let cancelled = makePlan(status: "cancelled", uuid: "cancelled")
-        let deferred = makePlan(status: "deferred", uuid: "deferred")
-        let pending = makePlan(status: "pending", uuid: "pending")
-        let done = makePlan(status: "done", updatedAt: now.addingTimeInterval(-14 * 24 * 60 * 60), uuid: "done")
-        let recentlyDone = makePlan(status: "done", updatedAt: recentlyDoneDate, uuid: "recentlyDone")
-        let blocked = makePlan(status: "pending", uuid: "blocked")
-
-        let result = PlanSortOrder.status.sorted(
-            [cancelled, deferred, pending, done, recentlyDone, inProgress, blocked],
-            dependencyStatus: ["blocked": true], // blocked has unresolved deps
-            now: self.now)
-
-        #expect(result.map(\.uuid) == [
-            "inProgress",
-            "blocked",
-            "pending",
-            "recentlyDone",
-            "deferred",
-            "done",
-            "cancelled",
-        ])
-    }
-
-    @Test("Pending plan with unresolved dependency → ranked as blocked")
-    func pendingWithDepRankedAsBlocked() {
-        let pendingBlocked = makePlan(status: "pending", uuid: "pb")
-        let normalPending = makePlan(status: "pending", uuid: "p")
-
-        let result = PlanSortOrder.status.sorted(
-            [normalPending, pendingBlocked],
-            dependencyStatus: [pendingBlocked.uuid: true],
-            now: self.now)
-
-        // pendingBlocked is ranked as .blocked (rank 1), normalPending as .pending (rank 2)
-        #expect(result[0].uuid == "pb")
-        #expect(result[1].uuid == "p")
-    }
-
-    @Test("Done plan updated 3 days ago → ranked as recentlyDone (rank 3)")
-    func recentDoneRankedCorrectly() {
-        let recentDone = makePlan(
-            status: "done",
-            updatedAt: now.addingTimeInterval(-3 * 24 * 60 * 60),
-            uuid: "recent")
-        let oldDone = makePlan(
-            status: "done",
-            updatedAt: now.addingTimeInterval(-14 * 24 * 60 * 60),
-            uuid: "old")
-        let pending = makePlan(status: "pending", uuid: "pending")
-
-        let result = PlanSortOrder.status.sorted(
-            [oldDone, recentDone, pending],
-            dependencyStatus: [:],
-            now: self.now)
-
-        // pending (rank 2) < recentlyDone (rank 3) < done (rank 5)
-        #expect(result.map(\.uuid) == ["pending", "recent", "old"])
-    }
-
-    @Test("Empty list returns empty")
-    func emptyListReturnsEmpty() {
-        let result = PlanSortOrder.status.sorted([], dependencyStatus: [:], now: self.now)
-        #expect(result.isEmpty)
-    }
-
-    @Test("Status sort: equal status sorted by planId descending")
-    func equalStatusSortedByPlanIdDescending() {
-        let p1 = makePlan(planId: 10, status: "pending", uuid: "a")
-        let p2 = makePlan(planId: 30, status: "pending", uuid: "b")
-        let p3 = makePlan(planId: 5, status: "pending", uuid: "c")
-
-        let result = PlanSortOrder.status.sorted(
-            [p1, p3, p2],
-            dependencyStatus: [:],
-            now: self.now)
-
-        // Same status → sort by planId descending
-        #expect(result.map(\.planId) == [30, 10, 5])
-    }
-
-    @Test("Status sort: nil planId treated as 0 for tiebreaker")
-    func statusSortNilPlanIdTreatedAsZeroTiebreaker() {
-        let withId = makePlan(planId: 5, status: "pending", uuid: "a")
-        let nilId = makePlan(planId: nil, status: "pending", uuid: "b")
-
-        let result = PlanSortOrder.status.sorted(
-            [nilId, withId],
-            dependencyStatus: [:],
-            now: self.now)
-
-        // Same status → planId DESC: 5 > nil(0)
         #expect(result[0].uuid == "a")
         #expect(result[1].uuid == "b")
     }

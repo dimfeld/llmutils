@@ -404,30 +404,6 @@ struct PlanRowView: View {
     var isSelected: Bool = false
     let now: Date
 
-    private var statusIcon: String {
-        switch self.displayStatus {
-        case .pending: "circle"
-        case .inProgress: "play.circle.fill"
-        case .blocked: "exclamationmark.circle.fill"
-        case .recentlyDone: "checkmark.circle.fill"
-        case .done: "checkmark.circle"
-        case .cancelled: "xmark.circle"
-        case .deferred: "clock.arrow.circlepath"
-        }
-    }
-
-    private var statusColor: Color {
-        switch self.displayStatus {
-        case .pending: .secondary
-        case .inProgress: .blue
-        case .blocked: .orange
-        case .recentlyDone: .green
-        case .done: .gray
-        case .cancelled: .red
-        case .deferred: .purple
-        }
-    }
-
     private var rowBackgroundStyle: AnyShapeStyle {
         self.isSelected
             ? AnyShapeStyle(Color.accentColor.opacity(0.18))
@@ -442,9 +418,9 @@ struct PlanRowView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: self.statusIcon)
+            Image(systemName: self.displayStatus.icon)
                 .font(.callout)
-                .foregroundStyle(self.statusColor)
+                .foregroundStyle(self.displayStatus.color)
                 .frame(width: 18)
                 .padding(.top, 1)
 
@@ -471,7 +447,7 @@ struct PlanRowView: View {
                 HStack(spacing: 8) {
                     Text(self.displayStatus.label)
                         .font(.caption2.weight(.medium))
-                        .foregroundStyle(self.statusColor)
+                        .foregroundStyle(self.displayStatus.color)
 
                     if let updatedAt = self.plan.updatedAt {
                         Text(planRelativeDateFormatter.localizedString(for: updatedAt, relativeTo: self.now))

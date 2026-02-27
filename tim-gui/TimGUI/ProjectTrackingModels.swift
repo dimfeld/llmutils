@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 // MARK: - TrackedProject
 
@@ -125,6 +126,30 @@ enum PlanDisplayStatus: String, CaseIterable, Hashable, Sendable {
 
     var isActiveWork: Bool {
         self == .inProgress || self == .blocked
+    }
+
+    var color: Color {
+        switch self {
+        case .pending: .secondary
+        case .inProgress: .blue
+        case .blocked: .orange
+        case .recentlyDone: .green
+        case .done: .gray
+        case .cancelled: .red
+        case .deferred: .purple
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .pending: "circle"
+        case .inProgress: "play.circle.fill"
+        case .blocked: "exclamationmark.circle.fill"
+        case .recentlyDone: "checkmark.circle.fill"
+        case .done: "checkmark.circle"
+        case .cancelled: "xmark.circle"
+        case .deferred: "clock.arrow.circlepath"
+        }
     }
 }
 
