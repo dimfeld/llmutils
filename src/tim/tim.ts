@@ -436,6 +436,10 @@ program
   .description('Import GitHub issues and create corresponding local plan files')
   .option('--issue <url|number>', 'Issue URL or number to import')
   .option('--with-subissues', 'Include subissues when importing (Linear only)')
+  .option(
+    '--with-merged-subissues',
+    'Include subissues when importing but merge everything into one plan file (Linear only)'
+  )
   .option('-p, --priority <level>', 'Set the priority level (low, medium, high, urgent)')
   .option('--parent <planId>', 'Set the parent plan ID')
   .option(

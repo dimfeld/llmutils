@@ -2257,6 +2257,8 @@ tim remove ID_OR_PATH [MORE_IDS_OR_PATHS...] [--force]
 # Import from issues
 tim import [--issue NUM] [--output FILE]
 tim import  # interactive multi-select
+tim import TEAM-123 --with-subissues           # create a parent plan + one plan per subissue (Linear)
+tim import TEAM-123 --with-merged-subissues    # merge parent + subissues into one plan (Linear)
 
 # Validate
 tim validate [PLANS...] [--no-fix] [--verbose]

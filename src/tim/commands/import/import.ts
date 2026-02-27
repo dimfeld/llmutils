@@ -36,6 +36,8 @@ import { singleLineWithPrefix, limitLines } from '../../../common/formatting.js'
 import { needArrayOrUndefined } from '../../../common/cli.js';
 import * as clipboard from '../../../common/clipboard.js';
 
+type HierarchicalImportMode = 'none' | 'separate' | 'merged';
+
 /**
  * Apply command-line options to a plan
  *
@@ -499,6 +501,135 @@ async function importHierarchicalIssue(
 }
 
 /**
+ * Import a single issue hierarchically with its subissues merged into one plan file
+ */
+async function importHierarchicalIssueMerged(
+  issueSpecifier: string,
+  tasksDir: string,
+  issueTracker: IssueTrackerClient,
+  options: any,
+  allPlans: Map<number, PlanSchema & { filename: string }>
+): Promise<{ successCount: number; parentPlanId?: number; parentPlanPath?: string }> {
+  log(`Importing issue hierarchically into a single plan: ${issueSpecifier}`);
+
+  if (!issueTracker.fetchIssueWithChildren) {
+    throw new Error('Issue tracker does not support hierarchical issue fetching');
+  }
+
+  const hierarchicalData = await getHierarchicalInstructionsFromIssue(
+    issueTracker,
+    issueSpecifier,
+    false
+  );
+  const parentIssueUrl = hierarchicalData.parentIssue.issue.html_url;
+
+  let existingParentPlan: (PlanSchema & { filename: string }) | undefined;
+  for (const plan of allPlans.values()) {
+    if (plan.issue && plan.issue.includes(parentIssueUrl)) {
+      existingParentPlan = plan;
+      break;
+    }
+  }
+
+  const childIssueUrls = hierarchicalData.childIssues.map(
+    (child) => child.issueData.issue.html_url
+  );
+  const mergedIssueUrls = [...new Set([parentIssueUrl, ...childIssueUrls])];
+
+  const mergedDetailsSegments: string[] = [];
+  if (hierarchicalData.parentIssue.plan?.trim()) {
+    mergedDetailsSegments.push(hierarchicalData.parentIssue.plan.trim());
+  }
+  for (const child of hierarchicalData.childIssues) {
+    if (!child.issueData.plan?.trim()) {
+      continue;
+    }
+    mergedDetailsSegments.push(
+      `## Subissue ${child.issueData.issue.number}: ${child.issueData.issue.title}\n\n${child.issueData.plan.trim()}`
+    );
+  }
+
+  let parentPlanId = existingParentPlan?.id;
+  let parentPlanPath: string;
+  let parentPlan: PlanSchema;
+
+  if (existingParentPlan) {
+    parentPlanPath = existingParentPlan.filename;
+    const currentPlan = await readPlanFile(parentPlanPath);
+    const existingDetails = currentPlan.details || '';
+
+    const newSegments = mergedDetailsSegments.filter(
+      (segment) => !existingDetails.includes(segment)
+    );
+    let updatedDetails = existingDetails;
+    if (newSegments.length > 0) {
+      updatedDetails = updatedDetails.trim();
+      if (updatedDetails && !updatedDetails.endsWith('\n')) {
+        updatedDetails += '\n';
+      }
+      if (updatedDetails) {
+        updatedDetails += '\n\n';
+      }
+      updatedDetails += newSegments.join('\n\n');
+    }
+
+    parentPlan = {
+      ...currentPlan,
+      title: hierarchicalData.parentIssue.issue.title,
+      details: updatedDetails,
+      issue: [...new Set([...(currentPlan.issue || []), ...mergedIssueUrls])],
+      updatedAt: new Date().toISOString(),
+    };
+    parentPlanId = currentPlan.id;
+  } else {
+    const localMaxId = await getMaxNumericPlanId(tasksDir);
+    let newId: number;
+    try {
+      const repoIdentity = await getRepositoryIdentity();
+      const db = getDatabase();
+      const result = reserveNextPlanId(
+        db,
+        repoIdentity.repositoryId,
+        localMaxId,
+        1,
+        repoIdentity.remoteUrl
+      );
+      newId = result.startId;
+    } catch {
+      newId = localMaxId + 1;
+    }
+
+    parentPlan = createStubPlanFromIssue(hierarchicalData.parentIssue, newId);
+    parentPlan.details = mergedDetailsSegments.join('\n\n');
+    parentPlan.issue = mergedIssueUrls;
+    parentPlanId = newId;
+    applyCommandOptions(parentPlan, options);
+
+    const filenameSuffix = hierarchicalData.parentIssue.suggestedFileName.endsWith('.plan.md')
+      ? hierarchicalData.parentIssue.suggestedFileName
+      : hierarchicalData.parentIssue.suggestedFileName.endsWith('.md')
+        ? hierarchicalData.parentIssue.suggestedFileName.replace(/\.md$/, '.plan.md')
+        : `${hierarchicalData.parentIssue.suggestedFileName}.plan.md`;
+    const filename = `${newId}-${filenameSuffix}`;
+    parentPlanPath = path.join(tasksDir, filename);
+  }
+
+  await writePlanFile(parentPlanPath, parentPlan);
+
+  log(`${existingParentPlan ? 'Updated' : 'Created'} merged plan: ${parentPlanPath}`);
+  log(`Plan ID: ${parentPlan.id}`);
+  if (hierarchicalData.childIssues.length > 0) {
+    log(`Merged ${hierarchicalData.childIssues.length} subissue(s) into the parent plan.`);
+  }
+
+  if (options.parent !== undefined && parentPlanId !== undefined) {
+    await updateParentPlanDependencies(Number(options.parent), parentPlanId, allPlans, tasksDir);
+  }
+
+  return { successCount: 1, parentPlanId, parentPlanPath };
+}
+
+/**
  * Import a single issue and create a stub plan file
  *
  * @param issueSpecifier - The issue number or URL
@@ -515,8 +646,20 @@ export async function importSingleIssue(
   issueTracker: IssueTrackerClient,
   options: any,
   allPlans: Map<number, PlanSchema & { filename: string }>,
-  withSubissues = false
+  withSubissues = false,
+  withMergedSubissues = false
 ): Promise<{ success: boolean; planPath?: string }> {
+  if (withMergedSubissues && issueTracker.fetchIssueWithChildren) {
+    const result = await importHierarchicalIssueMerged(
+      issueSpecifier,
+      tasksDir,
+      issueTracker,
+      options,
+      allPlans
+    );
+    return { success: result.successCount > 0, planPath: result.parentPlanPath };
+  }
+
   if (withSubissues && issueTracker.fetchIssueWithChildren) {
     const result = await importHierarchicalIssue(
       issueSpecifier,
@@ -711,6 +854,40 @@ export async function importSingleIssue(
   return { success: true, planPath: fullPath };
 }
 
+function resolveHierarchicalImportMode(
+  options: any,
+  issueTracker: IssueTrackerClient
+): HierarchicalImportMode {
+  const withSubissues = Boolean(options.withSubissues);
+  const withMergedSubissues = Boolean(options.withMergedSubissues);
+
+  if (!withSubissues && !withMergedSubissues) {
+    return 'none';
+  }
+
+  if (!issueTracker.fetchIssueWithChildren) {
+    if (withSubissues) {
+      log(
+        'Warning: --with-subissues flag is only supported for Linear issue tracker. Importing without subissues.'
+      );
+    }
+    if (withMergedSubissues) {
+      log(
+        'Warning: --with-merged-subissues flag is only supported for Linear issue tracker. Importing without subissues.'
+      );
+    }
+    return 'none';
+  }
+
+  if (withSubissues && withMergedSubissues) {
+    log(
+      'Warning: both --with-subissues and --with-merged-subissues were provided. Using merged mode.'
+    );
+  }
+
+  return withMergedSubissues ? 'merged' : 'separate';
+}
+
 /**
  * Handle the import command that imports GitHub issues and creates stub plan files
  *
@@ -762,6 +939,7 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
 
   // Get the issue tracker client
   const issueTracker = await getIssueTracker(config);
+  const hierarchicalImportMode = resolveHierarchicalImportMode(options, issueTracker);
 
   // Handle clipboard mode
   if (options.clipboard) {
@@ -831,7 +1009,8 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
         issueTracker,
         options,
         allPlans,
-        options.withSubissues
+        hierarchicalImportMode === 'separate',
+        hierarchicalImportMode === 'merged'
       );
       if (result.success) {
         successCount++;
@@ -859,26 +1038,22 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
     return;
   }
 
-  // Single issue import mode
-  if (options.withSubissues && !issueTracker.fetchIssueWithChildren) {
-    log(
-      'Warning: --with-subissues flag is only supported for Linear issue tracker. Importing without subissues.'
-    );
-  }
-
   const result = await importSingleIssue(
     issueSpecifier,
     tasksDir,
     issueTracker,
     options,
     allPlans,
-    options.withSubissues
+    hierarchicalImportMode === 'separate',
+    hierarchicalImportMode === 'merged'
   );
   if (result.success) {
-    if (options.withSubissues) {
+    if (hierarchicalImportMode === 'separate') {
       log(
         'Use "tim generate" to add tasks to these plans, or use "tim agent --next-ready <parent-plan>" for hierarchical workflow.'
       );
+    } else if (hierarchicalImportMode === 'merged') {
+      log('Use "tim generate" to add tasks to this merged plan.');
     } else {
       log('Use "tim generate" to add tasks to this plan.');
     }

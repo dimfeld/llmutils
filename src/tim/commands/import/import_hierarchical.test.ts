@@ -257,6 +257,36 @@ describe('Hierarchical Linear Import', () => {
     });
   });
 
+  test('should import Linear issue with children into one plan when --with-merged-subissues is provided', async () => {
+    await handleImportCommand('TEAM-123', { withMergedSubissues: true });
+
+    const { writePlanFile } = await import('../../plans.js');
+    const { getHierarchicalInstructionsFromIssue } = await import('../../issue_utils.js');
+
+    expect(getHierarchicalInstructionsFromIssue).toHaveBeenCalledWith(
+      mockLinearIssueTracker,
+      'TEAM-123',
+      false
+    );
+
+    expect(writePlanFile).toHaveBeenCalledTimes(1);
+    const [planPath, planData] = (writePlanFile as any).mock.calls[0];
+
+    expect(planPath).toMatch(/6-issue-team-123-parent-issue-auth-system\.plan\.md$/);
+    expect(planData).toMatchObject({
+      id: 6,
+      title: 'Parent Issue - Auth System',
+      issue: [
+        'https://linear.app/team/issue/TEAM-123',
+        'https://linear.app/team/issue/TEAM-124',
+        'https://linear.app/team/issue/TEAM-125',
+      ],
+    });
+    expect(planData.details).toContain('This is the main authentication system implementation');
+    expect(planData.details).toContain('## Subissue TEAM-124: Child Issue - Database Setup');
+    expect(planData.details).toContain('## Subissue TEAM-125: Child Issue - API Endpoints');
+  });
+
   test('should fallback to regular import when Linear tracker does not support hierarchical fetching', async () => {
     // Mock a tracker without fetchIssueWithChildren
     const mockBasicTracker = {
@@ -300,6 +330,26 @@ describe('Hierarchical Linear Import', () => {
     );
   });
 
+  test('should show warning when --with-merged-subissues is used with non-Linear tracker', async () => {
+    const mockGitHubTracker = {
+      ...mockLinearIssueTracker,
+      fetchIssueWithChildren: undefined,
+      getDisplayName: mock(() => 'GitHub'),
+      getConfig: mock(() => ({ type: 'github' })),
+    };
+
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
+      getIssueTracker: mock(() => Promise.resolve(mockGitHubTracker)),
+    }));
+
+    await handleImportCommand('123', { withMergedSubissues: true });
+
+    const { log } = await import('../../../logging.js');
+    expect(log).toHaveBeenCalledWith(
+      'Warning: --with-merged-subissues flag is only supported for Linear issue tracker. Importing without subissues.'
+    );
+  });
+
   test('should provide hierarchical workflow message when --with-subissues is successful', async () => {
     await handleImportCommand('TEAM-123', { withSubissues: true });
 
@@ -307,5 +357,12 @@ describe('Hierarchical Linear Import', () => {
     expect(log).toHaveBeenCalledWith(
       'Use "tim generate" to add tasks to these plans, or use "tim agent --next-ready <parent-plan>" for hierarchical workflow.'
     );
+  });
+
+  test('should provide merged workflow message when --with-merged-subissues is successful', async () => {
+    await handleImportCommand('TEAM-123', { withMergedSubissues: true });
+
+    const { log } = await import('../../../logging.js');
+    expect(log).toHaveBeenCalledWith('Use "tim generate" to add tasks to this merged plan.');
   });
 });
