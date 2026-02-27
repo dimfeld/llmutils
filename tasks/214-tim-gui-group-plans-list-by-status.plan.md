@@ -5,15 +5,15 @@ goal: ""
 id: 214
 uuid: f5b93792-9874-40c5-935a-f65a986da89d
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 planGeneratedAt: 2026-02-27T09:09:45.383Z
 promptsGeneratedAt: 2026-02-27T09:09:45.383Z
 createdAt: 2026-02-25T08:21:01.172Z
-updatedAt: 2026-02-27T09:41:37.273Z
+updatedAt: 2026-02-27T10:16:02.629Z
 tasks:
   - title: Extract status color/icon to PlanDisplayStatus computed properties
-    done: false
+    done: true
     description: "In ProjectTrackingModels.swift, add import SwiftUI and add var
       color: Color and var icon: String computed properties to
       PlanDisplayStatus. Use the existing mappings (pending=.secondary/circle,
@@ -25,7 +25,7 @@ tasks:
       PlansView.swift to use these new computed properties instead of their
       private switch statements."
   - title: Define PlanStatusGroup struct and groupPlansByStatus() function
-    done: false
+    done: true
     description: "In PlansView.swift, add a PlanStatusGroup struct (status:
       PlanDisplayStatus, plans: [TrackedPlan], id = status) and a module-level
       constant for group ordering: [.inProgress, .pending, .blocked,
@@ -36,7 +36,7 @@ tasks:
       and filters out empty groups. Preserve within-group ordering from the
       input array."
   - title: Create PlanGroupHeaderView
-    done: false
+    done: true
     description: "In PlansView.swift, create a PlanGroupHeaderView modeled on
       SessionGroupHeaderView from SessionsView.swift. It should show: animated
       chevron (rotationEffect 0 degrees collapsed, 90 degrees expanded with
@@ -46,7 +46,7 @@ tasks:
       badge in a Capsule background. The whole header is tappable via
       .contentShape(Rectangle()).onTapGesture."
   - title: Modify PlansBrowserView for grouped rendering
-    done: false
+    done: true
     description: "In PlansBrowserView in PlansView.swift: (1) Add @State private var
       collapsedGroups: Set<PlanDisplayStatus> = []. (2) After the existing
       filter+search+sort pipeline, call groupPlansByStatus() to produce groups.
@@ -56,13 +56,13 @@ tasks:
       the empty-state check to use groups.isEmpty. (5) Adapt the onChange
       deselection logic to use groups.flatMap to collect all visible UUIDs."
   - title: Remove Status sort option from PlanSortOrder
-    done: false
+    done: true
     description: "In PlansView.swift: remove the .status case from PlanSortOrder
       enum, remove the statusRank() helper function, and remove the .status case
       from the sorted() method. Change the default sort in PlansBrowserView from
       .planNumber to .recentlyUpdated."
   - title: Write tests for groupPlansByStatus and update existing tests
-    done: false
+    done: true
     description: "In PlansViewTests.swift: (1) Add a new test suite for
       groupPlansByStatus() covering: correct group order, empty groups excluded,
       within-group order preserved, all 7 statuses group correctly, blocked
@@ -71,6 +71,12 @@ tasks:
       returns empty array. (2) Remove PlanSortOrderStatusTests suite. (3) Update
       the case count test from 4 to 3 cases. (4) Add tests for
       PlanDisplayStatus.color and .icon computed properties."
+changedFiles:
+  - tim-gui/TimGUI/PlansView.swift
+  - tim-gui/TimGUI/ProjectTrackingModels.swift
+  - tim-gui/TimGUI/ProjectsView.swift
+  - tim-gui/TimGUITests/PlansViewTests.swift
+  - tim-gui/TimGUITests/SessionStateTests.swift
 tags: []
 ---
 
@@ -368,3 +374,29 @@ The `PlansBrowserView` already has `.id(self.store.selectedProjectId)` which res
 7. Change sort order — verify plans re-sort within their groups
 8. Select a plan, then filter it out — verify selection clears
 9. Switch projects — verify all groups reset to expanded
+
+## Current Progress
+### Current State
+- All 6 tasks completed, tested, and reviewed. Full feature implemented.
+### Completed (So Far)
+- Task 1: Extracted `color` and `icon` computed properties to `PlanDisplayStatus` in `ProjectTrackingModels.swift`. Updated `PlanRowView`, `PlanDetailView`, and `FilterChipsView` to use them.
+- Task 2: Added `PlanStatusGroup` struct, `planStatusGroupOrder` constant, and `groupPlansByStatus()` pure function in `PlansView.swift`.
+- Task 3: Created `PlanGroupHeaderView` with animated chevron, status icon/color, label, and count badge.
+- Task 4: Modified `PlansBrowserView` for grouped rendering with `collapsedGroups` state, Section-based layout, and adapted deselection logic.
+- Task 5: Removed `.status` from `PlanSortOrder`, default sort changed to `.recentlyUpdated`.
+- Task 6: Comprehensive tests for `groupPlansByStatus()` (14 cases), `PlanDisplayStatus` properties, `visiblePlanUuids()`, and default sort order.
+### Remaining
+- None. All tasks complete.
+### Next Iteration Guidance
+- Manual testing recommended per the plan's manual testing steps.
+### Decisions / Changes
+- `FilterChipsView` also updated to use `PlanDisplayStatus.color` (was not explicitly in the plan but removes duplication).
+- `group.status` used directly for PlanRowView displayStatus in grouped rendering (avoids redundant recomputation).
+- `planBrowserDefaultSortOrder` extracted as module-level constant for testability.
+- `visiblePlanUuids(from:)` extracted as pure function for testability.
+- Collapse toggle wrapped in `withAnimation(.easeInOut(duration: 0.2))` for smooth content transitions in LazyVStack.
+### Lessons Learned
+- In ScrollView + LazyVStack (unlike List), content changes from state mutations don't animate implicitly. Must wrap state mutations in `withAnimation` for smooth transitions.
+- When grouping plans by status, pass `group.status` directly to child views rather than recomputing via `store.displayStatus()` — it's redundant by construction and avoids inconsistency.
+### Risks / Blockers
+- None
