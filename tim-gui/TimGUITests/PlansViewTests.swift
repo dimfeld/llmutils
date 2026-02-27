@@ -799,10 +799,11 @@ struct GroupPlansByStatusTests {
 
     // MARK: - Group ordering
 
-    @Test("Groups are returned in the defined order: inProgress, pending, blocked, recentlyDone, done, deferred, cancelled")
+    @Test(
+        "Groups are returned in the defined order: inProgress, pending, blocked, recentlyDone, done, deferred, cancelled")
     func groupsAreInCorrectOrder() {
-        let sixDaysAgo = now.addingTimeInterval(-6 * 24 * 60 * 60)
-        let eightDaysAgo = now.addingTimeInterval(-8 * 24 * 60 * 60)
+        let sixDaysAgo = self.now.addingTimeInterval(-6 * 24 * 60 * 60)
+        let eightDaysAgo = self.now.addingTimeInterval(-8 * 24 * 60 * 60)
 
         let inProgress = makePlan(status: "in_progress", uuid: "ip")
         let pending = makePlan(status: "pending", uuid: "p")
@@ -942,7 +943,7 @@ struct GroupPlansByStatusTests {
 
     @Test("Done plan updated within 7 days groups as .recentlyDone")
     func donePlanWithinSevenDaysIsRecentlyDone() {
-        let sixDaysAgo = now.addingTimeInterval(-6 * 24 * 60 * 60)
+        let sixDaysAgo = self.now.addingTimeInterval(-6 * 24 * 60 * 60)
         let plan = makePlan(status: "done", updatedAt: sixDaysAgo, uuid: "rd")
 
         let result = groupPlansByStatus([plan], dependencyStatus: [:], now: now)
@@ -953,7 +954,7 @@ struct GroupPlansByStatusTests {
 
     @Test("Done plan updated more than 7 days ago groups as .done")
     func donePlanOlderThanSevenDaysIsDone() {
-        let eightDaysAgo = now.addingTimeInterval(-8 * 24 * 60 * 60)
+        let eightDaysAgo = self.now.addingTimeInterval(-8 * 24 * 60 * 60)
         let plan = makePlan(status: "done", updatedAt: eightDaysAgo, uuid: "d")
 
         let result = groupPlansByStatus([plan], dependencyStatus: [:], now: now)
@@ -974,8 +975,8 @@ struct GroupPlansByStatusTests {
 
     @Test("recentlyDone and done are separate groups when both present")
     func recentlyDoneAndDoneAreSeparateGroups() {
-        let sixDaysAgo = now.addingTimeInterval(-6 * 24 * 60 * 60)
-        let eightDaysAgo = now.addingTimeInterval(-8 * 24 * 60 * 60)
+        let sixDaysAgo = self.now.addingTimeInterval(-6 * 24 * 60 * 60)
+        let eightDaysAgo = self.now.addingTimeInterval(-8 * 24 * 60 * 60)
 
         let recentPlan = makePlan(status: "done", updatedAt: sixDaysAgo, uuid: "rd")
         let oldPlan = makePlan(status: "done", updatedAt: eightDaysAgo, uuid: "d")
@@ -992,8 +993,8 @@ struct GroupPlansByStatusTests {
 
     @Test("All 7 statuses group correctly into distinct groups")
     func allSevenStatusesGroupCorrectly() {
-        let sixDaysAgo = now.addingTimeInterval(-6 * 24 * 60 * 60)
-        let eightDaysAgo = now.addingTimeInterval(-8 * 24 * 60 * 60)
+        let sixDaysAgo = self.now.addingTimeInterval(-6 * 24 * 60 * 60)
+        let eightDaysAgo = self.now.addingTimeInterval(-8 * 24 * 60 * 60)
 
         let inProgress = makePlan(status: "in_progress", uuid: "ip")
         let pending = makePlan(status: "pending", uuid: "p")

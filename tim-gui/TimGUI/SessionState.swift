@@ -376,13 +376,13 @@ final class SessionState {
     }
 
     func ingestNotification(payload: MessagePayload) {
-        let normalizedGitRemote: String?
-        if let gitRemote = payload.gitRemote?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !gitRemote.isEmpty
+        let normalizedGitRemote: String? = if let gitRemote = payload.gitRemote?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !gitRemote.isEmpty
         {
-            normalizedGitRemote = gitRemote
+            gitRemote
         } else {
-            normalizedGitRemote = nil
+            nil
         }
 
         // If the notification has a pane ID, only match sessions for that same pane.

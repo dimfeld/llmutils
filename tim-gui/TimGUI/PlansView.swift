@@ -120,7 +120,9 @@ func filterPlansBySearchText(_ plans: [TrackedPlan], query: String) -> [TrackedP
 struct PlanStatusGroup: Identifiable {
     let status: PlanDisplayStatus
     let plans: [TrackedPlan]
-    var id: PlanDisplayStatus { status }
+    var id: PlanDisplayStatus {
+        self.status
+    }
 }
 
 /// Collects the UUIDs of all plans across groups, preserving group and within-group order.
@@ -142,8 +144,8 @@ let planStatusGroupOrder: [PlanDisplayStatus] = [
 func groupPlansByStatus(
     _ plans: [TrackedPlan],
     dependencyStatus: [String: Bool],
-    now: Date
-) -> [PlanStatusGroup] {
+    now: Date) -> [PlanStatusGroup]
+{
     var grouped: [PlanDisplayStatus: [TrackedPlan]] = [:]
     for plan in plans {
         let hasUnresolved = dependencyStatus[plan.uuid] ?? false
@@ -515,7 +517,6 @@ struct PlanDetailView: View {
             .padding(20)
         }
     }
-
 }
 
 // MARK: - PlanDetailRow
@@ -595,7 +596,6 @@ private struct FilterChipsView: View {
             }
         }
     }
-
 }
 
 // MARK: - FilterChip

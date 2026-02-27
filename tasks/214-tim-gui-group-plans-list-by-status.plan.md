@@ -10,7 +10,7 @@ priority: medium
 planGeneratedAt: 2026-02-27T09:09:45.383Z
 promptsGeneratedAt: 2026-02-27T09:09:45.383Z
 createdAt: 2026-02-25T08:21:01.172Z
-updatedAt: 2026-02-27T10:16:02.629Z
+updatedAt: 2026-02-27T10:18:43.559Z
 tasks:
   - title: Extract status color/icon to PlanDisplayStatus computed properties
     done: true
