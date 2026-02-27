@@ -1031,3 +1031,51 @@ struct GroupPlansByStatusTests {
         #expect(planStatusGroupOrder.count == 7)
     }
 }
+
+// MARK: - visiblePlanUuids Tests
+
+@Suite("visiblePlanUuids")
+struct VisiblePlanUuidsTests {
+    @Test("Returns empty array for empty groups")
+    func emptyGroupsReturnsEmpty() {
+        let result = visiblePlanUuids(from: [])
+        #expect(result.isEmpty)
+    }
+
+    @Test("Returns UUIDs from a single group in order")
+    func singleGroupReturnsUuidsInOrder() {
+        let plans = [
+            makePlan(status: "pending", uuid: "a"),
+            makePlan(status: "pending", uuid: "b"),
+            makePlan(status: "pending", uuid: "c"),
+        ]
+        let groups = [PlanStatusGroup(status: .pending, plans: plans)]
+        let result = visiblePlanUuids(from: groups)
+        #expect(result == ["a", "b", "c"])
+    }
+
+    @Test("Returns UUIDs from multiple groups preserving group and within-group order")
+    func multipleGroupsPreserveOrder() {
+        let group1 = PlanStatusGroup(
+            status: .inProgress,
+            plans: [makePlan(status: "in_progress", uuid: "ip1"), makePlan(status: "in_progress", uuid: "ip2")])
+        let group2 = PlanStatusGroup(
+            status: .pending,
+            plans: [makePlan(status: "pending", uuid: "p1")])
+        let group3 = PlanStatusGroup(
+            status: .done,
+            plans: [makePlan(status: "done", uuid: "d1"), makePlan(status: "done", uuid: "d2")])
+
+        let result = visiblePlanUuids(from: [group1, group2, group3])
+        #expect(result == ["ip1", "ip2", "p1", "d1", "d2"])
+    }
+
+    @Test("Groups with no plans contribute nothing")
+    func emptyGroupContributesNothing() {
+        let group1 = PlanStatusGroup(status: .inProgress, plans: [makePlan(status: "in_progress", uuid: "ip1")])
+        let group2 = PlanStatusGroup(status: .pending, plans: [])
+
+        let result = visiblePlanUuids(from: [group1, group2])
+        #expect(result == ["ip1"])
+    }
+}

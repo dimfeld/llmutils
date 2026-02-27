@@ -123,6 +123,12 @@ struct PlanStatusGroup: Identifiable {
     var id: PlanDisplayStatus { status }
 }
 
+/// Collects the UUIDs of all plans across groups, preserving group and within-group order.
+/// Used by the deselection logic to detect when a selected plan is no longer visible.
+func visiblePlanUuids(from groups: [PlanStatusGroup]) -> [String] {
+    groups.flatMap { $0.plans.map(\.uuid) }
+}
+
 /// The display order for plan status groups, from most to least actionable.
 let planStatusGroupOrder: [PlanDisplayStatus] = [
     .inProgress, .pending, .blocked, .recentlyDone, .done, .deferred, .cancelled,
@@ -329,10 +335,12 @@ private struct PlansBrowserView: View {
                                     count: group.plans.count,
                                     isCollapsed: isCollapsed)
                                 {
-                                    if isCollapsed {
-                                        self.collapsedGroups.remove(group.status)
-                                    } else {
-                                        self.collapsedGroups.insert(group.status)
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        if isCollapsed {
+                                            self.collapsedGroups.remove(group.status)
+                                        } else {
+                                            self.collapsedGroups.insert(group.status)
+                                        }
                                     }
                                 }
                             }
@@ -344,7 +352,7 @@ private struct PlansBrowserView: View {
             }
         }
         .id(self.store.selectedProjectId)
-        .onChange(of: groups.flatMap { $0.plans.map(\.uuid) }) { _, visibleUuids in
+        .onChange(of: visiblePlanUuids(from: groups)) { _, visibleUuids in
             if let selected = self.selectedPlanUuid, !visibleUuids.contains(selected) {
                 self.selectedPlanUuid = nil
             }
