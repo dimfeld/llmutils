@@ -241,18 +241,36 @@ final class SessionItem: Identifiable {
 
 /// Parses a git remote URL (SSH or HTTPS) and returns the (owner, repo) tuple.
 private func parseGitRemote(_ remote: String) -> (owner: String, repo: String)? {
+    let trimmedRemote = remote.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedRemote.isEmpty else { return nil }
+
+    let remoteWithoutDirectionSuffix = trimmedRemote
+        .replacingOccurrences(of: " (fetch)", with: "")
+        .replacingOccurrences(of: " (push)", with: "")
+
+    let remoteWithoutQueryOrFragment = remoteWithoutDirectionSuffix.replacingOccurrences(
+        of: #"[?#].*$"#,
+        with: "",
+        options: .regularExpression)
+
     var ownerRepo: String
-    if remote.hasPrefix("git@") {
+    if remoteWithoutQueryOrFragment.hasPrefix("git@") {
         // SSH format: git@github.com:owner/repo.git
-        guard let colonIdx = remote.firstIndex(of: ":") else { return nil }
-        ownerRepo = String(remote[remote.index(after: colonIdx)...])
-    } else if let url = URL(string: remote), url.host != nil {
+        guard let colonIdx = remoteWithoutQueryOrFragment.firstIndex(of: ":") else { return nil }
+        ownerRepo = String(remoteWithoutQueryOrFragment[remoteWithoutQueryOrFragment.index(after: colonIdx)...])
+    } else if remoteWithoutQueryOrFragment.contains("://"),
+              let url = URL(string: remoteWithoutQueryOrFragment),
+              url.host != nil
+    {
         // HTTPS format: https://github.com/owner/repo.git
         let parts = url.path.split(separator: "/", omittingEmptySubsequences: true)
         guard parts.count >= 2 else { return nil }
         ownerRepo = parts.suffix(2).joined(separator: "/")
     } else {
-        return nil
+        // Sanitized format from tim headless metadata: github.com/owner/repo or owner/repo
+        let parts = remoteWithoutQueryOrFragment.split(separator: "/", omittingEmptySubsequences: true)
+        guard parts.count >= 2 else { return nil }
+        ownerRepo = parts.suffix(2).joined(separator: "/")
     }
 
     // Strip .git suffix

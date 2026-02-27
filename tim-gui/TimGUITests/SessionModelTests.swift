@@ -1867,6 +1867,14 @@ struct ProjectDisplayNameTests {
         #expect(result == "someowner/myrepo")
     }
 
+    @Test("parseProjectDisplayName with sanitized host/owner/repo remote returns owner/repo")
+    func parseSanitizedHostPathRemote() {
+        let result = parseProjectDisplayName(
+            gitRemote: "github.com/someowner/myrepo",
+            workspacePath: nil)
+        #expect(result == "someowner/myrepo")
+    }
+
     @Test("parseProjectDisplayName with HTTPS remote without .git suffix")
     func parseHTTPSRemoteNoGitSuffix() {
         let result = parseProjectDisplayName(
@@ -1934,6 +1942,14 @@ struct ProjectDisplayNameTests {
             workspacePath: nil)
         #expect(sshKey == httpsKey)
         #expect(sshKey == "owner/repo")
+    }
+
+    @Test("sessionGroupKey parses sanitized host/owner/repo remote")
+    func groupKeySanitizedHostPathRemote() {
+        let key = sessionGroupKey(
+            gitRemote: "github.com/owner/repo",
+            workspacePath: nil)
+        #expect(key == "owner/repo")
     }
 
     @Test("sessionGroupKey is lowercased")
