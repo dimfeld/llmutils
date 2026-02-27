@@ -129,6 +129,9 @@ func visiblePlanUuids(from groups: [PlanStatusGroup]) -> [String] {
     groups.flatMap { $0.plans.map(\.uuid) }
 }
 
+/// The default sort order for the plans browser (used when grouping makes status sort redundant).
+let planBrowserDefaultSortOrder: PlanSortOrder = .recentlyUpdated
+
 /// The display order for plan status groups, from most to least actionable.
 let planStatusGroupOrder: [PlanDisplayStatus] = [
     .inProgress, .pending, .blocked, .recentlyDone, .done, .deferred, .cancelled,
@@ -247,7 +250,7 @@ private struct PlansBrowserView: View {
     let store: ProjectTrackingStore
     @Binding var selectedPlanUuid: String?
     @State private var searchText: String = ""
-    @State private var sortOrder: PlanSortOrder = .recentlyUpdated
+    @State private var sortOrder: PlanSortOrder = planBrowserDefaultSortOrder
     @State private var collapsedGroups: Set<PlanDisplayStatus> = []
 
     var body: some View {
@@ -321,7 +324,7 @@ private struct PlansBrowserView: View {
                                     ForEach(group.plans) { plan in
                                         PlanRowView(
                                             plan: plan,
-                                            displayStatus: self.store.displayStatus(for: plan, now: now),
+                                            displayStatus: group.status,
                                             isSelected: plan.uuid == self.selectedPlanUuid,
                                             now: now)
                                             .onTapGesture {

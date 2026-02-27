@@ -672,6 +672,16 @@ struct PlanDetailViewTests {
     }
 }
 
+// MARK: - Plan browser defaults Tests
+
+@Suite("Plan browser defaults")
+struct PlanBrowserDefaultsTests {
+    @Test("Default sort order is recentlyUpdated")
+    func defaultSortOrderIsRecentlyUpdated() {
+        #expect(planBrowserDefaultSortOrder == .recentlyUpdated)
+    }
+}
+
 // MARK: - PlanDisplayStatus computed properties Tests
 
 @Suite("PlanDisplayStatus computed properties")
