@@ -839,6 +839,7 @@ struct SessionStateTests {
         let payload = MessagePayload(
             message: "Task completed",
             workspacePath: "/project/a",
+            gitRemote: nil,
             terminal: TerminalPayload(type: "wezterm", paneId: "42"))
         state.ingestNotification(payload: payload)
 
@@ -859,6 +860,7 @@ struct SessionStateTests {
         let payload = MessagePayload(
             message: "Done",
             workspacePath: "/project/b",
+            gitRemote: nil,
             terminal: nil)
         state.ingestNotification(payload: payload)
 
@@ -898,6 +900,7 @@ struct SessionStateTests {
         let payload = MessagePayload(
             message: "Hello from unknown",
             workspacePath: "/project/c",
+            gitRemote: nil,
             terminal: TerminalPayload(type: "wezterm", paneId: "99"))
         state.ingestNotification(payload: payload)
 
@@ -947,6 +950,7 @@ struct SessionStateTests {
         let payload = MessagePayload(
             message: "Notification",
             workspacePath: "/shared/project",
+            gitRemote: nil,
             terminal: nil)
         state.ingestNotification(payload: payload)
 
@@ -973,6 +977,7 @@ struct SessionStateTests {
         let payload = MessagePayload(
             message: "Matched by pane",
             workspacePath: "/project",
+            gitRemote: nil,
             terminal: TerminalPayload(type: "wezterm", paneId: "7"))
         state.ingestNotification(payload: payload)
 
@@ -1000,6 +1005,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "/project",
+            gitRemote: nil,
             terminal: nil))
 
         #expect(projectSession.hasUnreadNotification == true)
@@ -1017,12 +1023,14 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "First notification",
             workspacePath: "/project",
+            gitRemote: nil,
             terminal: nil))
         #expect(state.sessions[0].notificationMessage == "First notification")
 
         state.ingestNotification(payload: MessagePayload(
             message: "Second notification",
             workspacePath: "/project",
+            gitRemote: nil,
             terminal: nil))
         #expect(state.sessions[0].notificationMessage == "Second notification")
         #expect(state.sessions[0].hasUnreadNotification == true)
@@ -1043,6 +1051,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Done",
             workspacePath: "/project/x",
+            gitRemote: nil,
             terminal: nil))
 
         #expect(state.sessions.count == 1)
@@ -1174,6 +1183,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "/project",
+            gitRemote: nil,
             terminal: nil))
         let sessionId = state.sessions[0].id
         #expect(state.sessions[0].hasUnreadNotification == true)
@@ -1211,10 +1221,12 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert A",
             workspacePath: "/project/a",
+            gitRemote: nil,
             terminal: nil))
         state.ingestNotification(payload: MessagePayload(
             message: "Alert B",
             workspacePath: "/project/b",
+            gitRemote: nil,
             terminal: nil))
 
         // Both should have notifications
@@ -1244,6 +1256,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Done",
             workspacePath: "/project",
+            gitRemote: nil,
             terminal: nil))
         #expect(state.sessions[0].hasUnreadNotification == true)
 
@@ -1266,6 +1279,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert A",
             workspacePath: "/project/a",
+            gitRemote: nil,
             terminal: nil))
 
         let sessionA = try #require(state.sessions.first { $0.workspacePath == "/project/a" })
@@ -1294,6 +1308,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert A",
             workspacePath: "/project/a",
+            gitRemote: nil,
             terminal: nil))
 
         let sessionA = try #require(state.sessions.first { $0.workspacePath == "/project/a" })
@@ -1316,6 +1331,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "/project",
+            gitRemote: nil,
             terminal: nil))
         #expect(state.sessions[0].hasUnreadNotification == true)
 
@@ -1337,6 +1353,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Done",
             workspacePath: "/project",
+            gitRemote: nil,
             terminal: nil))
 
         // Message should be stored and unread should remain set until explicitly cleared.
@@ -1358,6 +1375,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert B",
             workspacePath: "/project/b",
+            gitRemote: nil,
             terminal: nil))
 
         let sessionB = try #require(state.sessions.first { $0.workspacePath == "/project/b" })
@@ -1373,6 +1391,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "First alert",
             workspacePath: "/orphan/project",
+            gitRemote: nil,
             terminal: nil))
         #expect(state.sessions.count == 1)
         #expect(state.sessions[0].notificationMessage == "First alert")
@@ -1383,6 +1402,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Second alert",
             workspacePath: "/orphan/project",
+            gitRemote: nil,
             terminal: nil))
         #expect(state.sessions.count == 1)
         #expect(state.sessions[0].notificationMessage == "Second alert")
@@ -1396,6 +1416,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Notification",
             workspacePath: "/some/path",
+            gitRemote: nil,
             terminal: terminal))
 
         #expect(state.sessions.count == 1)
@@ -1422,6 +1443,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Orphan notification",
             workspacePath: "/orphan",
+            gitRemote: nil,
             terminal: nil))
         #expect(state.sessions.count == 1)
         #expect(state.sessions[0].isActive == false)
@@ -1561,6 +1583,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Task completed",
             workspacePath: "/project/a",
+            gitRemote: nil,
             terminal: terminal))
         #expect(state.sessions.count == 1)
         #expect(state.sessions[0].command == "")
@@ -1602,6 +1625,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Done",
             workspacePath: "/project/b",
+            gitRemote: nil,
             terminal: nil))
         #expect(state.sessions.count == 1)
         let originalSessionId = state.sessions[0].id
@@ -1631,6 +1655,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "/project",
+            gitRemote: nil,
             terminal: terminal))
 
         let connId = UUID()
@@ -1653,6 +1678,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "/project",
+            gitRemote: nil,
             terminal: nil))
 
         let connId = UUID()
@@ -1705,6 +1731,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "",
+            gitRemote: nil,
             terminal: nil))
 
         // Should create a new notification-only session, not match the existing one
@@ -1726,6 +1753,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Post-disconnect alert",
             workspacePath: "/project",
+            gitRemote: nil,
             terminal: nil))
 
         // Should match the disconnected session, not create a new one
@@ -1742,6 +1770,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "First",
             workspacePath: "/project",
+            gitRemote: nil,
             terminal: terminal))
         #expect(state.sessions.count == 1)
 
@@ -1749,6 +1778,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Second",
             workspacePath: "/project",
+            gitRemote: nil,
             terminal: terminal))
         #expect(state.sessions.count == 1)
         #expect(state.sessions[0].notificationMessage == "Second")
@@ -1762,6 +1792,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "/project",
+            gitRemote: nil,
             terminal: nil))
         // Notification-only sessions should NOT be auto-selected
         #expect(state.selectedSessionId == nil)
@@ -1777,6 +1808,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "/project",
+            gitRemote: nil,
             terminal: nil))
         let notifSessionId = state.sessions[0].id
         // Notification-only sessions do not auto-select
@@ -1809,6 +1841,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Task done",
             workspacePath: "/project/a",
+            gitRemote: nil,
             terminal: TerminalPayload(type: "wezterm", paneId: "42")))
 
         // Pane lookup misses, so a new notification-only session is created.
@@ -1845,6 +1878,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "New run done",
             workspacePath: "/project/a",
+            gitRemote: nil,
             terminal: TerminalPayload(type: "wezterm", paneId: newPaneId)))
 
         // Pane lookup misses, so a notification-only session is created.
@@ -1893,6 +1927,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Task done",
             workspacePath: "/project/a",
+            gitRemote: nil,
             terminal: TerminalPayload(type: "wezterm", paneId: "42")))
 
         #expect(state.sessions.count == 2)
@@ -1912,6 +1947,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert from pane 10",
             workspacePath: "/project",
+            gitRemote: nil,
             terminal: TerminalPayload(type: "wezterm", paneId: "10")))
         #expect(state.sessions.count == 1)
         let notifSessionId = state.sessions[0].id
@@ -1947,6 +1983,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "",
+            gitRemote: nil,
             terminal: nil))
         #expect(state.sessions.count == 1)
 
@@ -1967,6 +2004,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "/orphan",
+            gitRemote: nil,
             terminal: TerminalPayload(type: "wezterm", paneId: "99")))
         #expect(state.sessions.count == 1)
         let sessionId = state.sessions[0].id
@@ -1987,6 +2025,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "First",
             workspacePath: "/orphan",
+            gitRemote: nil,
             terminal: nil))
         #expect(state.sessions.count == 1)
         #expect(state.selectedSessionId == nil)
@@ -1995,6 +2034,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Second",
             workspacePath: "/orphan",
+            gitRemote: nil,
             terminal: nil))
 
         // The session is not selected so hasUnreadNotification should be true
@@ -2015,6 +2055,7 @@ struct SessionStateTests {
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
             workspacePath: "/orphan",
+            gitRemote: nil,
             terminal: nil))
 
         // The existing session should still be selected
@@ -2680,6 +2721,7 @@ struct SessionStateTests {
         let notifPayload = MessagePayload(
             message: "Notification from beta",
             workspacePath: "/projects/beta",
+            gitRemote: nil,
             terminal: nil)
         state.ingestNotification(payload: notifPayload)
 

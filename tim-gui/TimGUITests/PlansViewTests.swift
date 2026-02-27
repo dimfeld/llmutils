@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import TimGUI
 
@@ -668,5 +669,365 @@ struct PlanDetailViewTests {
         let date2 = try #require(Calendar.current.date(from: c2))
         let formatted2 = planAbsoluteDateFormatter.string(from: date2)
         #expect(formatted != formatted2)
+    }
+}
+
+// MARK: - PlanDisplayStatus computed properties Tests
+
+@Suite("PlanDisplayStatus computed properties")
+struct PlanDisplayStatusComputedPropertyTests {
+    @Test("pending has correct icon")
+    func pendingIcon() {
+        #expect(PlanDisplayStatus.pending.icon == "circle")
+    }
+
+    @Test("inProgress has correct icon")
+    func inProgressIcon() {
+        #expect(PlanDisplayStatus.inProgress.icon == "play.circle.fill")
+    }
+
+    @Test("blocked has correct icon")
+    func blockedIcon() {
+        #expect(PlanDisplayStatus.blocked.icon == "exclamationmark.circle.fill")
+    }
+
+    @Test("recentlyDone has correct icon")
+    func recentlyDoneIcon() {
+        #expect(PlanDisplayStatus.recentlyDone.icon == "checkmark.circle.fill")
+    }
+
+    @Test("done has correct icon")
+    func doneIcon() {
+        #expect(PlanDisplayStatus.done.icon == "checkmark.circle")
+    }
+
+    @Test("cancelled has correct icon")
+    func cancelledIcon() {
+        #expect(PlanDisplayStatus.cancelled.icon == "xmark.circle")
+    }
+
+    @Test("deferred has correct icon")
+    func deferredIcon() {
+        #expect(PlanDisplayStatus.deferred.icon == "clock.arrow.circlepath")
+    }
+
+    @Test("All status cases have non-empty icons")
+    func allCasesHaveNonEmptyIcons() {
+        for status in PlanDisplayStatus.allCases {
+            #expect(!status.icon.isEmpty, "Expected non-empty icon for \(status)")
+        }
+    }
+
+    @Test("pending color is secondary")
+    func pendingColor() {
+        #expect(PlanDisplayStatus.pending.color == Color.secondary)
+    }
+
+    @Test("inProgress color is blue")
+    func inProgressColor() {
+        #expect(PlanDisplayStatus.inProgress.color == Color.blue)
+    }
+
+    @Test("blocked color is orange")
+    func blockedColor() {
+        #expect(PlanDisplayStatus.blocked.color == Color.orange)
+    }
+
+    @Test("recentlyDone color is green")
+    func recentlyDoneColor() {
+        #expect(PlanDisplayStatus.recentlyDone.color == Color.green)
+    }
+
+    @Test("done color is gray")
+    func doneColor() {
+        #expect(PlanDisplayStatus.done.color == Color.gray)
+    }
+
+    @Test("cancelled color is red")
+    func cancelledColor() {
+        #expect(PlanDisplayStatus.cancelled.color == Color.red)
+    }
+
+    @Test("deferred color is purple")
+    func deferredColor() {
+        #expect(PlanDisplayStatus.deferred.color == Color.purple)
+    }
+
+    @Test("Each status has a consistent color across multiple calls")
+    func colorConsistency() {
+        for status in PlanDisplayStatus.allCases {
+            #expect(status.color == status.color, "Color not consistent for \(status)")
+        }
+    }
+}
+
+// MARK: - groupPlansByStatus Tests
+
+@Suite("groupPlansByStatus")
+struct GroupPlansByStatusTests {
+    let now = Date()
+
+    // MARK: - Empty and single-status
+
+    @Test("Empty input returns empty array")
+    func emptyInputReturnsEmpty() {
+        let result = groupPlansByStatus([], dependencyStatus: [:], now: now)
+        #expect(result.isEmpty)
+    }
+
+    @Test("Single-status input returns one group with all plans")
+    func singleStatusInputReturnsOneGroup() {
+        let p1 = makePlan(status: "pending", uuid: "a")
+        let p2 = makePlan(status: "pending", uuid: "b")
+
+        let result = groupPlansByStatus([p1, p2], dependencyStatus: [:], now: now)
+
+        #expect(result.count == 1)
+        #expect(result[0].status == .pending)
+        #expect(result[0].plans.count == 2)
+    }
+
+    // MARK: - Group ordering
+
+    @Test("Groups are returned in the defined order: inProgress, pending, blocked, recentlyDone, done, deferred, cancelled")
+    func groupsAreInCorrectOrder() {
+        let sixDaysAgo = now.addingTimeInterval(-6 * 24 * 60 * 60)
+        let eightDaysAgo = now.addingTimeInterval(-8 * 24 * 60 * 60)
+
+        let inProgress = makePlan(status: "in_progress", uuid: "ip")
+        let pending = makePlan(status: "pending", uuid: "p")
+        let blockedPlan = makePlan(status: "pending", uuid: "bl")
+        let recentlyDone = makePlan(status: "done", updatedAt: sixDaysAgo, uuid: "rd")
+        let done = makePlan(status: "done", updatedAt: eightDaysAgo, uuid: "d")
+        let deferred = makePlan(status: "deferred", uuid: "df")
+        let cancelled = makePlan(status: "cancelled", uuid: "c")
+
+        let result = groupPlansByStatus(
+            [inProgress, pending, blockedPlan, recentlyDone, done, deferred, cancelled],
+            dependencyStatus: ["bl": true],
+            now: now)
+
+        #expect(result.count == 7)
+        #expect(result[0].status == .inProgress)
+        #expect(result[1].status == .pending)
+        #expect(result[2].status == .blocked)
+        #expect(result[3].status == .recentlyDone)
+        #expect(result[4].status == .done)
+        #expect(result[5].status == .deferred)
+        #expect(result[6].status == .cancelled)
+    }
+
+    @Test("Partial statuses appear in correct relative order")
+    func partialStatusesRespectGroupOrder() {
+        let pending = makePlan(status: "pending", uuid: "p")
+        let cancelled = makePlan(status: "cancelled", uuid: "c")
+
+        let result = groupPlansByStatus([cancelled, pending], dependencyStatus: [:], now: now)
+
+        #expect(result.count == 2)
+        #expect(result[0].status == .pending)
+        #expect(result[1].status == .cancelled)
+    }
+
+    // MARK: - Empty groups excluded
+
+    @Test("Empty groups are excluded from result")
+    func emptyGroupsExcluded() {
+        let p1 = makePlan(status: "pending", uuid: "a")
+        let p2 = makePlan(status: "in_progress", uuid: "b")
+
+        let result = groupPlansByStatus([p1, p2], dependencyStatus: [:], now: now)
+
+        #expect(result.count == 2)
+        let statuses = result.map(\.status)
+        #expect(statuses.contains(.inProgress))
+        #expect(statuses.contains(.pending))
+        #expect(!statuses.contains(.blocked))
+        #expect(!statuses.contains(.done))
+        #expect(!statuses.contains(.recentlyDone))
+        #expect(!statuses.contains(.deferred))
+        #expect(!statuses.contains(.cancelled))
+    }
+
+    // MARK: - Within-group order preserved
+
+    @Test("Within-group order is preserved from input array")
+    func withinGroupOrderPreserved() {
+        let p1 = makePlan(planId: 10, status: "pending", uuid: "a")
+        let p2 = makePlan(planId: 5, status: "pending", uuid: "b")
+        let p3 = makePlan(planId: 20, status: "pending", uuid: "c")
+
+        let result = groupPlansByStatus([p1, p2, p3], dependencyStatus: [:], now: now)
+
+        #expect(result.count == 1)
+        // Input order preserved: a, b, c (not sorted by planId)
+        #expect(result[0].plans.map(\.uuid) == ["a", "b", "c"])
+    }
+
+    @Test("Within-group order preserved when plans from multiple statuses are interleaved")
+    func withinGroupOrderPreservedWithMixedStatuses() {
+        let ip1 = makePlan(status: "in_progress", uuid: "ip1")
+        let p1 = makePlan(status: "pending", uuid: "p1")
+        let ip2 = makePlan(status: "in_progress", uuid: "ip2")
+        let p2 = makePlan(status: "pending", uuid: "p2")
+
+        let result = groupPlansByStatus([ip1, p1, ip2, p2], dependencyStatus: [:], now: now)
+
+        #expect(result.count == 2)
+        let inProgressGroup = result.first { $0.status == .inProgress }
+        let pendingGroup = result.first { $0.status == .pending }
+
+        // Within-group order matches the original input order
+        #expect(inProgressGroup?.plans.map(\.uuid) == ["ip1", "ip2"])
+        #expect(pendingGroup?.plans.map(\.uuid) == ["p1", "p2"])
+    }
+
+    // MARK: - Blocked status
+
+    @Test("Pending plan with unresolved dependency groups under .blocked")
+    func pendingWithDepsGroupsAsBlocked() {
+        let blockedPlan = makePlan(status: "pending", uuid: "bl")
+        let normalPending = makePlan(status: "pending", uuid: "p")
+
+        let result = groupPlansByStatus(
+            [blockedPlan, normalPending],
+            dependencyStatus: ["bl": true],
+            now: now)
+
+        let statuses = result.map(\.status)
+        #expect(statuses.contains(.pending))
+        #expect(statuses.contains(.blocked))
+
+        let blockedGroup = result.first { $0.status == .blocked }
+        #expect(blockedGroup?.plans.map(\.uuid) == ["bl"])
+
+        let pendingGroup = result.first { $0.status == .pending }
+        #expect(pendingGroup?.plans.map(\.uuid) == ["p"])
+    }
+
+    @Test("Pending plan with false dependency status is not blocked")
+    func pendingWithFalseDepsGroupsAsPending() {
+        let plan = makePlan(status: "pending", uuid: "p")
+
+        let result = groupPlansByStatus(
+            [plan],
+            dependencyStatus: ["p": false],
+            now: now)
+
+        #expect(result.count == 1)
+        #expect(result[0].status == .pending)
+    }
+
+    @Test("Pending plan with no dependency entry groups as .pending")
+    func pendingWithNoDepsGroupsAsPending() {
+        let plan = makePlan(status: "pending", uuid: "p")
+
+        let result = groupPlansByStatus([plan], dependencyStatus: [:], now: now)
+
+        #expect(result.count == 1)
+        #expect(result[0].status == .pending)
+    }
+
+    // MARK: - recentlyDone vs done
+
+    @Test("Done plan updated within 7 days groups as .recentlyDone")
+    func donePlanWithinSevenDaysIsRecentlyDone() {
+        let sixDaysAgo = now.addingTimeInterval(-6 * 24 * 60 * 60)
+        let plan = makePlan(status: "done", updatedAt: sixDaysAgo, uuid: "rd")
+
+        let result = groupPlansByStatus([plan], dependencyStatus: [:], now: now)
+
+        #expect(result.count == 1)
+        #expect(result[0].status == .recentlyDone)
+    }
+
+    @Test("Done plan updated more than 7 days ago groups as .done")
+    func donePlanOlderThanSevenDaysIsDone() {
+        let eightDaysAgo = now.addingTimeInterval(-8 * 24 * 60 * 60)
+        let plan = makePlan(status: "done", updatedAt: eightDaysAgo, uuid: "d")
+
+        let result = groupPlansByStatus([plan], dependencyStatus: [:], now: now)
+
+        #expect(result.count == 1)
+        #expect(result[0].status == .done)
+    }
+
+    @Test("Done plan with nil updatedAt groups as .done")
+    func donePlanWithNilUpdatedAtIsDone() {
+        let plan = makePlan(status: "done", updatedAt: nil, uuid: "d")
+
+        let result = groupPlansByStatus([plan], dependencyStatus: [:], now: now)
+
+        #expect(result.count == 1)
+        #expect(result[0].status == .done)
+    }
+
+    @Test("recentlyDone and done are separate groups when both present")
+    func recentlyDoneAndDoneAreSeparateGroups() {
+        let sixDaysAgo = now.addingTimeInterval(-6 * 24 * 60 * 60)
+        let eightDaysAgo = now.addingTimeInterval(-8 * 24 * 60 * 60)
+
+        let recentPlan = makePlan(status: "done", updatedAt: sixDaysAgo, uuid: "rd")
+        let oldPlan = makePlan(status: "done", updatedAt: eightDaysAgo, uuid: "d")
+
+        let result = groupPlansByStatus([recentPlan, oldPlan], dependencyStatus: [:], now: now)
+
+        #expect(result.count == 2)
+        let statuses = result.map(\.status)
+        #expect(statuses.contains(.recentlyDone))
+        #expect(statuses.contains(.done))
+    }
+
+    // MARK: - All 7 statuses
+
+    @Test("All 7 statuses group correctly into distinct groups")
+    func allSevenStatusesGroupCorrectly() {
+        let sixDaysAgo = now.addingTimeInterval(-6 * 24 * 60 * 60)
+        let eightDaysAgo = now.addingTimeInterval(-8 * 24 * 60 * 60)
+
+        let inProgress = makePlan(status: "in_progress", uuid: "ip")
+        let pending = makePlan(status: "pending", uuid: "p")
+        let blocked = makePlan(status: "pending", uuid: "bl")
+        let recentlyDone = makePlan(status: "done", updatedAt: sixDaysAgo, uuid: "rd")
+        let done = makePlan(status: "done", updatedAt: eightDaysAgo, uuid: "d")
+        let deferred = makePlan(status: "deferred", uuid: "df")
+        let cancelled = makePlan(status: "cancelled", uuid: "c")
+
+        let result = groupPlansByStatus(
+            [inProgress, pending, blocked, recentlyDone, done, deferred, cancelled],
+            dependencyStatus: ["bl": true],
+            now: now)
+
+        #expect(result.count == 7)
+
+        let groupedByStatus = Dictionary(uniqueKeysWithValues: result.map { ($0.status, $0) })
+        #expect(groupedByStatus[.inProgress]?.plans.map(\.uuid) == ["ip"])
+        #expect(groupedByStatus[.pending]?.plans.map(\.uuid) == ["p"])
+        #expect(groupedByStatus[.blocked]?.plans.map(\.uuid) == ["bl"])
+        #expect(groupedByStatus[.recentlyDone]?.plans.map(\.uuid) == ["rd"])
+        #expect(groupedByStatus[.done]?.plans.map(\.uuid) == ["d"])
+        #expect(groupedByStatus[.deferred]?.plans.map(\.uuid) == ["df"])
+        #expect(groupedByStatus[.cancelled]?.plans.map(\.uuid) == ["c"])
+    }
+
+    @Test("Multiple plans in same group are all included")
+    func multiplePlansInSameGroup() {
+        let p1 = makePlan(status: "in_progress", uuid: "a")
+        let p2 = makePlan(status: "in_progress", uuid: "b")
+        let p3 = makePlan(status: "in_progress", uuid: "c")
+
+        let result = groupPlansByStatus([p1, p2, p3], dependencyStatus: [:], now: now)
+
+        #expect(result.count == 1)
+        #expect(result[0].status == .inProgress)
+        #expect(result[0].plans.count == 3)
+    }
+
+    @Test("planStatusGroupOrder contains all 7 PlanDisplayStatus cases")
+    func planStatusGroupOrderContainsAllCases() {
+        let orderSet = Set(planStatusGroupOrder)
+        let allCasesSet = Set(PlanDisplayStatus.allCases)
+        #expect(orderSet == allCasesSet)
+        #expect(planStatusGroupOrder.count == 7)
     }
 }
