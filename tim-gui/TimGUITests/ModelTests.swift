@@ -12,6 +12,7 @@ struct ModelTests {
         {
             "message": "Build complete",
             "workspacePath": "/tmp/project",
+            "gitRemote": "github.com/owner/repo",
             "terminal": {
                 "type": "wezterm",
                 "pane_id": "42"
@@ -23,6 +24,7 @@ struct ModelTests {
 
         #expect(payload.message == "Build complete")
         #expect(payload.workspacePath == "/tmp/project")
+        #expect(payload.gitRemote == "github.com/owner/repo")
         let terminal = try #require(payload.terminal)
         #expect(terminal.type == "wezterm")
         #expect(terminal.paneId == "42")
@@ -41,6 +43,7 @@ struct ModelTests {
 
         #expect(payload.message == "Done")
         #expect(payload.workspacePath == "/tmp/other")
+        #expect(payload.gitRemote == nil)
         #expect(payload.terminal == nil)
     }
 

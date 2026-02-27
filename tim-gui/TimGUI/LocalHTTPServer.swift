@@ -15,6 +15,7 @@ struct TerminalPayload: Codable {
 struct MessagePayload: Codable {
     let message: String
     let workspacePath: String
+    let gitRemote: String?
     let terminal: TerminalPayload?
 }
 

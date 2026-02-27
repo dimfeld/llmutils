@@ -867,6 +867,27 @@ struct SessionStateTests {
         #expect(state.sessions[0].notificationMessage == "Done")
     }
 
+    @Test("ingestNotification matches by gitRemote when pane and workspace are unavailable")
+    func ingestNotificationMatchesByGitRemote() {
+        let state = SessionState()
+        state.addSession(connectionId: UUID(), info: self.makeInfo(
+            command: "agent",
+            workspacePath: "/project/a",
+            gitRemote: "github.com/owner/repo"))
+        state.selectedSessionId = nil
+
+        let payload = MessagePayload(
+            message: "Matched by remote",
+            workspacePath: "",
+            gitRemote: "git@github.com:owner/repo.git",
+            terminal: nil)
+        state.ingestNotification(payload: payload)
+
+        #expect(state.sessions.count == 1)
+        #expect(state.sessions[0].hasUnreadNotification == true)
+        #expect(state.sessions[0].notificationMessage == "Matched by remote")
+    }
+
     @Test("ingestNotification creates new session when no match found")
     func ingestNotificationCreatesNewSession() {
         let state = SessionState()
@@ -889,6 +910,25 @@ struct SessionStateTests {
         #expect(newSession.terminal?.paneId == "99")
         #expect(newSession.isActive == false)
         #expect(newSession.command == "")
+    }
+
+    @Test("ingestNotification creates notification-only session grouped by gitRemote")
+    func ingestNotificationCreatesSessionUsingGitRemote() {
+        let state = SessionState()
+
+        let payload = MessagePayload(
+            message: "Remote-only notification",
+            workspacePath: "",
+            gitRemote: "github.com/owner/remote-only",
+            terminal: nil)
+        state.ingestNotification(payload: payload)
+
+        #expect(state.sessions.count == 1)
+        let newSession = state.sessions[0]
+        #expect(newSession.gitRemote == "github.com/owner/remote-only")
+        #expect(
+            sessionGroupKey(gitRemote: newSession.gitRemote, workspacePath: newSession.workspacePath)
+                == "owner/remote-only")
     }
 
     @Test("ingestNotification with multiple sessions same workspace matches most recent (first)")

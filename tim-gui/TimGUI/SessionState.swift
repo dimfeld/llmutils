@@ -208,6 +208,15 @@ final class SessionState {
         }
     }
 
+    private func findSessionByGitRemoteWithoutPaneId(gitRemote: String) -> SessionItem? {
+        let targetKey = sessionGroupKey(gitRemote: gitRemote, workspacePath: nil)
+        guard targetKey != "__unknown__" else { return nil }
+        return self.sessions.first { session in
+            session.terminal?.paneId == nil &&
+                sessionGroupKey(gitRemote: session.gitRemote, workspacePath: nil) == targetKey
+        }
+    }
+
     func appendMessage(connectionId: UUID, message: SessionMessage) {
         if self.replayingConnections.contains(connectionId) {
             self.replayMessages[connectionId, default: []].append(message)
@@ -367,6 +376,15 @@ final class SessionState {
     }
 
     func ingestNotification(payload: MessagePayload) {
+        let normalizedGitRemote: String?
+        if let gitRemote = payload.gitRemote?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !gitRemote.isEmpty
+        {
+            normalizedGitRemote = gitRemote
+        } else {
+            normalizedGitRemote = nil
+        }
+
         // If the notification has a pane ID, only match sessions for that same pane.
         // Otherwise (no pane ID), match by workspace path.
         var matchedSession: SessionItem?
@@ -378,6 +396,8 @@ final class SessionState {
             matchedSession = self.sessions.first { session in
                 session.workspacePath == payload.workspacePath
             }
+        } else if let gitRemote = normalizedGitRemote {
+            matchedSession = self.findSessionByGitRemoteWithoutPaneId(gitRemote: gitRemote)
         }
 
         if let session = matchedSession {
@@ -388,16 +408,19 @@ final class SessionState {
             let workspaceTemplate = payload.workspacePath.isEmpty
                 ? nil
                 : self.findWorkspaceSessionWithoutPaneId(workspacePath: payload.workspacePath)
+            let remoteTemplate = normalizedGitRemote == nil
+                ? nil
+                : self.findSessionByGitRemoteWithoutPaneId(gitRemote: normalizedGitRemote!)
 
             // Create a notification-only session
             let session = SessionItem(
                 id: UUID(),
                 connectionId: UUID(),
                 command: "",
-                planId: workspaceTemplate?.planId,
-                planTitle: workspaceTemplate?.planTitle,
+                planId: workspaceTemplate?.planId ?? remoteTemplate?.planId,
+                planTitle: workspaceTemplate?.planTitle ?? remoteTemplate?.planTitle,
                 workspacePath: payload.workspacePath,
-                gitRemote: workspaceTemplate?.gitRemote,
+                gitRemote: normalizedGitRemote ?? workspaceTemplate?.gitRemote ?? remoteTemplate?.gitRemote,
                 connectedAt: Date(),
                 lastMessageReceivedAt: Date(),
                 isActive: false,
