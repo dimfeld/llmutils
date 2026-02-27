@@ -59,9 +59,9 @@ The Plans tab provides a comprehensive plan browsing experience, complementing t
 **Plan list pane** — `PlansBrowserView` for the selected project, containing:
 
 - **Search field** — text field with magnifying glass icon that filters plans by title and goal text using `localizedCaseInsensitiveContains`. Resets on project change via `.id(store.selectedProjectId)`. Implemented as `filterPlansBySearchText()` module-level function for testability.
-- **Sort picker** — compact `.menu`-style Picker with `PlanSortOrder` enum: Plan Number (default, descending), Priority, Recently Updated, Status. All sort modes use deterministic tiebreakers (planId DESC, then uuid) to prevent list jitter on periodic refreshes. Priority sort ranks: urgent > high > medium > low > maybe > nil/unknown.
-- **FilterChipsView** — toggle chips for all 7 `PlanDisplayStatus` values (Pending, In Progress, Blocked, Recently Done, Done, Cancelled, Deferred), plus Reset and All controls. Active chips use colored fill backgrounds; inactive chips use subtle gray.
-- **Filtered plan list** — scrollable list of `PlanRowView` entries matching the active filters, search text, and sort order. Selected row highlights with accent color (`PlanRowView` accepts `isSelected` parameter).
+- **Sort picker** — compact `.menu`-style Picker with `PlanSortOrder` enum: Recently Updated (default), Plan Number (descending), Priority. All sort modes use deterministic tiebreakers (planId DESC, then uuid) to prevent list jitter on periodic refreshes. Priority sort ranks: urgent > high > medium > low > maybe > nil/unknown.
+- **FilterChipsView** — toggle chips for all 7 `PlanDisplayStatus` values (Pending, In Progress, Blocked, Recently Done, Done, Cancelled, Deferred), plus Reset and All controls. Active chips use colored fill backgrounds; inactive chips use status-colored fills (using `PlanDisplayStatus.color`).
+- **Grouped plan list** — after filtering and searching, plans are grouped by display status into collapsible sections via `groupPlansByStatus()` (a pure, testable function). Groups are ordered: In Progress, Pending, Blocked, Recently Done, Done, Deferred, Cancelled. Empty groups are hidden. Each group is rendered as a `Section` with a `PlanGroupHeaderView` header containing: animated chevron (rotates 0°→90° on expand), status icon and label in the status color, and a plan count badge in a capsule. Clicking the header toggles collapse/expand (state tracked via `@State collapsedGroups: Set<PlanDisplayStatus>`). Within each group, `PlanRowView` entries are sorted by the selected sort order. Collapse state resets when switching projects (via `.id(store.selectedProjectId)`). The `visiblePlanUuids(from:)` helper (extracted for testability) collects all visible plan UUIDs from groups for deselection logic.
 
 **Detail panel** — `PlanDetailView` shown when a plan is selected, displaying:
 
@@ -73,6 +73,8 @@ The Plans tab provides a comprehensive plan browsing experience, complementing t
 - Created and updated timestamps
 
 Selection clears on project change and when the selected plan is filtered out. `.id(uuid)` on the detail view forces scroll position reset when selection changes.
+
+**`PlanDisplayStatus` computed properties** — `color: Color` and `icon: String` are defined as computed properties on `PlanDisplayStatus` in `ProjectTrackingModels.swift`, providing centralized status→color and status→icon mappings. Used by `PlanRowView`, `PlanDetailView`, `FilterChipsView`, and `PlanGroupHeaderView`.
 
 ### Project Tracking Data Layer
 
@@ -173,3 +175,4 @@ All `sqlite3_step` loops **must** validate return codes — `while sqlite3_step(
 - **Sort comparators need deterministic tiebreakers for refreshing lists**: Even with Swift's stable sort, the source array order can change between periodic DB refresh cycles. Add deterministic tiebreakers (e.g., planId DESC, then uuid) to prevent list jitter on UI refresh.
 - **Prefer hiding rows over showing ambiguous data**: When a data model only exposes partial information (e.g., a boolean "has unresolved dependencies" but not a full list), hide the row when there's nothing actionable to show rather than displaying an ambiguous "None" label.
 - **Test `@Observable` stores by verifying observable state, not implementation details**: Tests should assert on published state (e.g., `loadState`, data arrays, computed properties) rather than inspecting private implementation details like internal `Task` handles. This makes tests resilient to refactoring and focused on behavior that matters to consumers.
+- **Wrap state mutations in `withAnimation` for `ScrollView` + `LazyVStack` content changes**: Unlike `List`, content changes from state mutations in `ScrollView` + `LazyVStack` don't animate implicitly. Wrap state mutations (e.g., collapse/expand toggles) in `withAnimation(.easeInOut(duration: 0.2))` for smooth transitions.
