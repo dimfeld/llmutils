@@ -1257,8 +1257,11 @@ workspaceCommand
 workspaceCommand
   .command('push [workspaceIdentifier]')
   .description('Push a branch/bookmark between workspaces')
-  .option('--from <workspace>', 'Source workspace task ID or path (defaults to positional/current)')
-  .option('--to <workspace>', 'Destination workspace task ID or path (defaults to primary)')
+  .option('--from <workspace>', 'Source workspace task ID or path (defaults to current)')
+  .option(
+    '--to <workspace>',
+    'Destination workspace task ID or path (defaults to positional/primary)'
+  )
   .option('--branch <branch>', 'Branch/bookmark to push (defaults to current source branch)')
   .action(async (workspaceIdentifier, options, command) => {
     const { handleWorkspacePushCommand } = await import('./commands/workspace.js');

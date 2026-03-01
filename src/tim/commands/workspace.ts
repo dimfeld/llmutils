@@ -1311,8 +1311,7 @@ export async function handleWorkspacePushCommand(
   options: { from?: string; to?: string; branch?: string },
   _command: Command
 ) {
-  const sourceIdentifier = options.from ?? workspaceIdentifier;
-  const sourceWorkspace = await resolveWorkspaceIdentifier(sourceIdentifier);
+  const sourceWorkspace = await resolveWorkspaceIdentifier(options.from);
   const sourceWorkspacePath = sourceWorkspace.workspacePath;
   const sourceRepositoryId =
     sourceWorkspace.repositoryId ?? (await determineRepositoryId(sourceWorkspacePath));
@@ -1320,6 +1319,16 @@ export async function handleWorkspacePushCommand(
   let destinationWorkspace: WorkspaceInfo;
   if (options.to) {
     destinationWorkspace = await resolveWorkspaceIdentifier(options.to);
+    const destinationRepositoryId =
+      destinationWorkspace.repositoryId ??
+      (await determineRepositoryId(destinationWorkspace.workspacePath));
+    if (destinationRepositoryId !== sourceRepositoryId) {
+      throw new Error(
+        `Source and destination workspaces are in different repositories: ${sourceRepositoryId} vs ${destinationRepositoryId}`
+      );
+    }
+  } else if (workspaceIdentifier) {
+    destinationWorkspace = await resolveWorkspaceIdentifier(workspaceIdentifier);
     const destinationRepositoryId =
       destinationWorkspace.repositoryId ??
       (await determineRepositoryId(destinationWorkspace.workspacePath));

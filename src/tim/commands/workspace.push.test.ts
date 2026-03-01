@@ -95,12 +95,14 @@ const warnSpy = mock(() => {});
 describe('handleWorkspacePushCommand', () => {
   let moduleMocker: ModuleMocker;
   let tempRoot: string;
+  let originalCwd: string;
   let originalEnv: { XDG_CONFIG_HOME?: string; APPDATA?: string };
 
   beforeEach(async () => {
     clearAllGitCaches();
     moduleMocker = new ModuleMocker(import.meta);
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-push-test-'));
+    originalCwd = process.cwd();
 
     originalEnv = {
       XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
@@ -137,11 +139,12 @@ describe('handleWorkspacePushCommand', () => {
 
     logSpy.mockClear();
     warnSpy.mockClear();
+    process.chdir(originalCwd);
 
     await fs.rm(tempRoot, { recursive: true, force: true });
   });
 
-  test('pushes a git branch from secondary workspace to primary workspace', async () => {
+  test('uses positional workspace as destination and current workspace as source', async () => {
     const repositoryId = 'workspace-push-repo';
     const primaryDir = path.join(tempRoot, 'primary');
     const secondaryDir = path.join(tempRoot, 'secondary');
@@ -150,6 +153,7 @@ describe('handleWorkspacePushCommand', () => {
     await initGitRepository(primaryDir);
     await cloneRepository(primaryDir, secondaryDir);
     await createBranchCommit(secondaryDir, 'feature/happy-path', 'feature.txt');
+    const secondaryRealDir = await fs.realpath(secondaryDir);
 
     recordWorkspaceForRepo({
       workspacePath: primaryDir,
@@ -159,15 +163,16 @@ describe('handleWorkspacePushCommand', () => {
       isPrimary: true,
     });
     recordWorkspaceForRepo({
-      workspacePath: secondaryDir,
+      workspacePath: secondaryRealDir,
       taskId: 'task-secondary',
       repositoryId,
       branch: 'feature/happy-path',
     });
 
     const { handleWorkspacePushCommand } = await import('./workspace.js');
+    process.chdir(secondaryRealDir);
 
-    await handleWorkspacePushCommand(secondaryDir, {}, {} as any);
+    await handleWorkspacePushCommand(primaryDir, {}, {} as any);
 
     const remoteLookup = await runGit(secondaryDir, ['remote', 'get-url', 'primary']);
     expect(remoteLookup.exitCode).not.toBe(0);
@@ -205,9 +210,9 @@ describe('handleWorkspacePushCommand', () => {
 
     const { handleWorkspacePushCommand } = await import('./workspace.js');
 
-    await expect(handleWorkspacePushCommand(workspaceB, {}, {} as any)).rejects.toThrow(
-      'No primary workspace is configured for this repository.'
-    );
+    await expect(
+      handleWorkspacePushCommand(undefined, { from: workspaceB }, {} as any)
+    ).rejects.toThrow('No primary workspace is configured for this repository.');
   });
 
   test('throws when pushing from the primary workspace itself', async () => {
@@ -235,9 +240,9 @@ describe('handleWorkspacePushCommand', () => {
 
     const { handleWorkspacePushCommand } = await import('./workspace.js');
 
-    await expect(handleWorkspacePushCommand(primaryDir, {}, {} as any)).rejects.toThrow(
-      'Source and destination workspaces are the same.'
-    );
+    await expect(
+      handleWorkspacePushCommand(undefined, { from: primaryDir }, {} as any)
+    ).rejects.toThrow('Source and destination workspaces are the same.');
   });
 
   test('throws when no branch can be determined (detached HEAD and no DB branch)', async () => {
@@ -266,9 +271,9 @@ describe('handleWorkspacePushCommand', () => {
 
     const { handleWorkspacePushCommand } = await import('./workspace.js');
 
-    await expect(handleWorkspacePushCommand(secondaryDir, {}, {} as any)).rejects.toThrow(
-      'No current branch/bookmark detected for workspace'
-    );
+    await expect(
+      handleWorkspacePushCommand(undefined, { from: secondaryDir }, {} as any)
+    ).rejects.toThrow('No current branch/bookmark detected for workspace');
   });
 
   test('is idempotent when run twice', async () => {
@@ -297,8 +302,12 @@ describe('handleWorkspacePushCommand', () => {
 
     const { handleWorkspacePushCommand } = await import('./workspace.js');
 
-    await expect(handleWorkspacePushCommand(secondaryDir, {}, {} as any)).resolves.toBeUndefined();
-    await expect(handleWorkspacePushCommand(secondaryDir, {}, {} as any)).resolves.toBeUndefined();
+    await expect(
+      handleWorkspacePushCommand(undefined, { from: secondaryDir }, {} as any)
+    ).resolves.toBeUndefined();
+    await expect(
+      handleWorkspacePushCommand(undefined, { from: secondaryDir }, {} as any)
+    ).resolves.toBeUndefined();
 
     const branchLookup = await runGit(primaryDir, [
       'show-ref',
@@ -338,7 +347,7 @@ describe('handleWorkspacePushCommand', () => {
 
     const { handleWorkspacePushCommand } = await import('./workspace.js');
 
-    await handleWorkspacePushCommand(secondaryDir, {}, {} as any);
+    await handleWorkspacePushCommand(undefined, { from: secondaryDir }, {} as any);
 
     const secondaryHead = (
       await runGitChecked(secondaryDir, ['rev-parse', 'feature/checked-out'])
@@ -399,7 +408,9 @@ describe('handleWorkspacePushCommand', () => {
 
     const { handleWorkspacePushCommand } = await import('./workspace.js');
 
-    await expect(handleWorkspacePushCommand(secondaryDir, {}, {} as any)).resolves.toBeUndefined();
+    await expect(
+      handleWorkspacePushCommand(undefined, { from: secondaryDir }, {} as any)
+    ).resolves.toBeUndefined();
 
     expect(processCalls).toContainEqual(['jj', 'git', 'remote', 'list']);
     expect(processCalls).toContainEqual([
