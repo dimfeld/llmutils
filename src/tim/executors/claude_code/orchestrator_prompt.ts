@@ -182,7 +182,7 @@ You have access to two specialized agents that you MUST invoke via the Bash tool
 - **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
 - **Tester**: Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
 
-Code reviews are performed by running \`tim review\` (not a subagent).
+Code reviews are performed by running \`tim review\` (not a subagent). You can pass additional context to the reviewer via \`--input-file <path>\`.
 
 Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.
 
@@ -235,6 +235,7 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
   const reviewPhase = `${options.batchMode ? '4' : '3'}. **Review Phase**
    - Run \`${reviewCommand}\` using the Bash tool.
    - Always include \`--output-file\` with a plan-specific temp file path for this command.
+   - Pass your research context file and any relevant notes to the reviewer via \`--input-file <path>\` so it has the full picture of what was intended and why.
    - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the review result.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
 ${reviewExecutorGuidance}
@@ -296,7 +297,27 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 - If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp\` or a \`mktemp\` path) and pass \`--input-file <path>\` instead of \`--input\`.
 - If using --input-file, include the plan ID or other random string in the file name to avoid conflicts with other
 agents and preexisting files, and always explicitly pass the full path instead of using "$TMPDIR/filename".
-- You can also pipe input to stdin and use \`--input-file -\`.`;
+- You can also pipe input to stdin and use \`--input-file -\`.
+
+## Sharing Research with Subagents
+
+Before invoking a subagent, write a research context file that includes everything you have learned so far that is relevant to the subagent's work. This saves the subagent from needing to repeat your exploration. The file should contain:
+- Relevant code snippets or file locations you discovered
+- Architectural decisions or patterns you identified
+- Dependencies, constraints, or gotchas you found
+- Any analysis of the existing codebase that informs the implementation
+
+Write this research to a file (e.g. \`/tmp/tim-${planId}-research.md\`) and reference it in the subagent's \`--input-file\`, along with your task-specific instructions. Update the file as you learn more across iterations.
+When invoking \`${reviewCommand}\`, also pass your research and any relevant context via \`--input-file <path>\` so the reviewer has the full picture of what was intended and why.
+
+## Plan Documentation During Implementation
+
+If you or a subagent discover that the plan needs to change during implementation (e.g. the approach needs to differ from what was planned, a task needs to be split or reordered, new tasks are discovered, or requirements turn out to be different than expected):
+
+1. **Update the plan text itself** to reflect the change. Modify the relevant task descriptions, details, or add new tasks as needed so the plan file always represents the current state of the work.
+2. **Document the change** in a \`## Changes Made During Implementation\` section at the bottom of the plan file's markdown body (before any \`## Current Progress\` section). Each entry should briefly explain what changed and why. This prevents reviewers from getting confused by discrepancies between the plan and the actual implementation.
+
+Instruct subagents to report any plan changes they believe are necessary in their output, so you can make the updates.`;
 
   const failureProtocol = `
 \n## Failure Protocol (Conflicting/Impossible Requirements)
@@ -469,6 +490,19 @@ ${options.batchMode ? '5' : '4'}. **Iteration**
       : ''
   }
 
+## Sharing Research with Subagents
+
+Before invoking a subagent, write a research context file that includes everything you have learned so far that is relevant to the subagent's work. This saves the subagent from needing to repeat your exploration. Include relevant code snippets, file locations, architectural decisions, dependencies, constraints, or gotchas you found. Write this research to a file (e.g. \`/tmp/tim-${planId}-research.md\`) and reference it in the subagent's \`--input-file\`, along with your task-specific instructions. Update the file as you learn more across iterations.
+
+## Plan Documentation During Implementation
+
+If you or a subagent discover that the plan needs to change during implementation (e.g. the approach needs to differ, tasks need to be split/reordered, or new tasks are discovered):
+
+1. **Update the plan text itself** to reflect the change so the plan file always represents the current state of the work.
+2. **Document the change** in a \`## Changes Made During Implementation\` section at the bottom of the plan file's markdown body (before any \`## Current Progress\` section). Each entry should briefly explain what changed and why.
+
+Instruct subagents to report any plan changes they believe are necessary in their output, so you can make the updates.
+
 ${markTasksDoneGuidance(planId)}
 
 ${progressSection}`;
@@ -604,6 +638,7 @@ ${buildReviewOutputCaptureGuidance(planId)}`;
 ${options.batchMode ? '5' : '4'}. **Review Phase**
    - Run \`${reviewCommand}\` using the Bash tool.
    - Always include \`--output-file\` with a plan-specific temp file path for this command.
+   - Pass your research context file and any relevant notes to the reviewer via \`--input-file <path>\` so it has the full picture of what was intended and why.
    - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the review result.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
 ${reviewExecutorGuidance}
@@ -678,6 +713,19 @@ ${reviewCommandGuidance}
 - Subagents can read all pending tasks; explicitly tell them which ones are in scope for this batch.`
       : ''
   }
+
+## Sharing Research with Subagents
+
+Before invoking a subagent, write a research context file that includes everything you have learned so far that is relevant to the subagent's work. This saves the subagent from needing to repeat your exploration. Include relevant code snippets, file locations, architectural decisions, dependencies, constraints, or gotchas you found. Write this research to a file (e.g. \`/tmp/tim-${planId}-research.md\`) and reference it in the subagent's \`--input-file\`, along with your task-specific instructions. Update the file as you learn more across iterations.
+
+## Plan Documentation During Implementation
+
+If you or a subagent discover that the plan needs to change during implementation (e.g. the approach needs to differ, tasks need to be split/reordered, or new tasks are discovered):
+
+1. **Update the plan text itself** to reflect the change so the plan file always represents the current state of the work.
+2. **Document the change** in a \`## Changes Made During Implementation\` section at the bottom of the plan file's markdown body (before any \`## Current Progress\` section). Each entry should briefly explain what changed and why.
+
+Instruct subagents to report any plan changes they believe are necessary in their output, so you can make the updates.
 
 ${markTasksDoneGuidance(planId)}
 

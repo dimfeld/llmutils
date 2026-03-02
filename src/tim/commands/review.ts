@@ -286,6 +286,40 @@ async function getAvailableFixActions(): Promise<
   );
 }
 
+/**
+ * Resolves orchestrator-provided input from --input or --input-file options.
+ * Follows the same pattern as subagent.ts resolveOrchestratorInput.
+ */
+async function resolveReviewInput(options: {
+  input?: string;
+  inputFile?: string;
+}): Promise<string | undefined> {
+  if (options.input && options.inputFile) {
+    throw new Error('Cannot provide both --input and --input-file. Use only one.');
+  }
+
+  if (options.input) {
+    return options.input;
+  }
+
+  if (options.inputFile) {
+    if (options.inputFile === '-') {
+      // Read from stdin
+      if (process.stdin.isTTY) {
+        throw new Error('--input-file - requires input on stdin.');
+      }
+      const input = await Bun.stdin.text();
+      if (!input.trim()) {
+        throw new Error('No input received on stdin.');
+      }
+      return input;
+    }
+    return readFile(options.inputFile, 'utf8');
+  }
+
+  return undefined;
+}
+
 export async function handleReviewCommand(
   planFile: string | undefined,
   options: any,
@@ -531,6 +565,15 @@ export async function handleReviewCommand(
             )
           );
         }
+      }
+
+      // Resolve orchestrator-provided input (--input / --input-file)
+      const orchestratorInput = await resolveReviewInput(options);
+      if (orchestratorInput?.trim()) {
+        reviewLog(chalk.gray('Using additional context from --input / --input-file'));
+        customInstructions = customInstructions
+          ? `${customInstructions}\n\n## Additional Context from Orchestrator\n\n${orchestratorInput}`
+          : `## Additional Context from Orchestrator\n\n${orchestratorInput}`;
       }
 
       // Handle focus areas
@@ -1524,6 +1567,8 @@ export async function buildReviewPromptFromOptions(
     taskTitle?: string | string[];
     instructions?: string;
     instructionsFile?: string;
+    input?: string;
+    inputFile?: string;
     focus?: string;
     incremental?: boolean;
     sinceLastReview?: boolean;
@@ -1590,6 +1635,14 @@ export async function buildReviewPromptFromOptions(
         `Warning: Could not read previous review response file: ${options.previousResponse}. ${errorMessage}`
       );
     }
+  }
+
+  // Resolve orchestrator-provided input (--input / --input-file)
+  const orchestratorInput = await resolveReviewInput(options);
+  if (orchestratorInput?.trim()) {
+    customInstructions = customInstructions
+      ? `${customInstructions}\n\n## Additional Context from Orchestrator\n\n${orchestratorInput}`
+      : `## Additional Context from Orchestrator\n\n${orchestratorInput}`;
   }
 
   // Handle focus areas
