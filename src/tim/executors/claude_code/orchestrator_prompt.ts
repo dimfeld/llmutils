@@ -16,6 +16,9 @@ interface OrchestrationOptions {
   dynamicSubagentInstructions?: string;
 }
 
+const INPUT_COMBINATION_GUIDANCE =
+  '- You can use both `--input-file` and `--input` together. `--input-file` is read first and `--input` is appended afterward.';
+
 export function progressSectionGuidance(
   planFilePath?: string,
   options?: { useAtPrefix?: boolean }
@@ -179,10 +182,10 @@ function buildAvailableAgents(planId: string, options: OrchestrationOptions): st
   return `## Available Agents
 
 You have access to two specialized agents that you MUST invoke via the Bash tool:
-- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
-- **Tester**: Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
+- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
+- **Tester**: Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
 
-Code reviews are performed by running \`tim review\` (not a subagent). You can pass additional context to the reviewer via \`--input-file <path>\`.
+Code reviews are performed by running \`tim review\` (not a subagent). You can pass additional context to the reviewer via \`--input-file <paths...>\`.
 
 Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.
 
@@ -235,7 +238,7 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
   const reviewPhase = `${options.batchMode ? '4' : '3'}. **Review Phase**
    - Run \`${reviewCommand}\` using the Bash tool.
    - Always include \`--output-file\` with a plan-specific temp file path for this command.
-   - Pass your research context file and any relevant notes to the reviewer via \`--input-file <path>\` so it has the full picture of what was intended and why.
+   - Pass your research context file and any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why.
    - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the review result.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
 ${reviewExecutorGuidance}
@@ -293,8 +296,9 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 - You are responsible only for coordination and ensuring the workflow is followed correctly.
 - The subagents have access to the same task instructions below that you do, so you don't need to repeat them. You should reference which specific task titles are being worked on so the subagents can focus on the right tasks.
 - When invoking subagents, provide clear, specific instructions in \`--input\` (or \`--input-file\`) about what needs to be done in addition to referencing the task titles.
+- ${INPUT_COMBINATION_GUIDANCE}
 - Include relevant context from previous subagent responses when invoking the next subagent.
-- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp\` or a \`mktemp\` path) and pass \`--input-file <path>\` instead of \`--input\`.
+- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp\` or a \`mktemp\` path) and pass \`--input-file <paths...>\` instead of \`--input\`.
 - If using --input-file, include the plan ID or other random string in the file name to avoid conflicts with other
 agents and preexisting files, and always explicitly pass the full path instead of using "$TMPDIR/filename".
 - You can also pipe input to stdin and use \`--input-file -\`.
@@ -308,7 +312,7 @@ Before invoking a subagent, write a research context file that includes everythi
 - Any analysis of the existing codebase that informs the implementation
 
 Write this research to a file (e.g. \`/tmp/tim-${planId}-research.md\`) and reference it in the subagent's \`--input-file\`, along with your task-specific instructions. Update the file as you learn more across iterations.
-When invoking \`${reviewCommand}\`, also pass your research and any relevant context via \`--input-file <path>\` so the reviewer has the full picture of what was intended and why.
+When invoking \`${reviewCommand}\`, also pass your research and any relevant context via \`--input-file <paths...>\` so the reviewer has the full picture of what was intended and why.
 
 ## Plan Documentation During Implementation
 
@@ -411,8 +415,8 @@ You are coordinating a tim streamlined two-phase workflow (implement → verify)
   const availableAgents = `## Available Agents
 
 You have two specialized subagents that you MUST invoke via the Bash tool:
-- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
-- **Verifier**: Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
+- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
+- **Verifier**: Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
 
 Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.
 
@@ -480,8 +484,9 @@ ${options.batchMode ? '5' : '4'}. **Iteration**
 
 - Do NOT implement, verify, or edit files yourself--delegate all work to the subagents via \`tim subagent\`.
 - When invoking subagents, give clear instructions in \`--input\` (or \`--input-file\`) referencing the specific task titles.
+- ${INPUT_COMBINATION_GUIDANCE}
 - Provide prior subagent outputs to the next subagent so they have full context.
-- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp\` or a \`mktemp\` path) and pass \`--input-file <path>\` instead of \`--input\`.
+- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp\` or a \`mktemp\` path) and pass \`--input-file <paths...>\` instead of \`--input\`.
 - You can also pipe input to stdin and use \`--input-file -\`.
 - Keep the scope focused; if verification fails, loop back to implementation before moving forward.${
     options.batchMode
@@ -557,9 +562,9 @@ You MUST enforce TDD order:
     ? `## Available Agents
 
 You have three specialized subagents that you MUST invoke via the Bash tool:
-- **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
-- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
-- **Verifier**: Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
+- **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
+- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
+- **Verifier**: Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
 
 Each subagent command may take a long time to complete. Always use a timeout of at least 1800000 ms (30 minutes) when invoking them via the Bash tool.
 
@@ -567,9 +572,9 @@ ${buildSubagentOutputCaptureGuidance(planId)}`
     : `## Available Agents
 
 You have three specialized subagents that you MUST invoke via the Bash tool:
-- **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
-- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
-- **Tester**: Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <path>\`)
+- **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
+- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
+- **Tester**: Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool (or \`--input-file <paths...>\`)
 
 Code reviews are performed by running \`tim review\` (not a subagent).
 
@@ -638,7 +643,7 @@ ${buildReviewOutputCaptureGuidance(planId)}`;
 ${options.batchMode ? '5' : '4'}. **Review Phase**
    - Run \`${reviewCommand}\` using the Bash tool.
    - Always include \`--output-file\` with a plan-specific temp file path for this command.
-   - Pass your research context file and any relevant notes to the reviewer via \`--input-file <path>\` so it has the full picture of what was intended and why.
+   - Pass your research context file and any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why.
    - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the review result.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
 ${reviewExecutorGuidance}
@@ -702,10 +707,11 @@ ${iterationPhaseNumber}. **Iteration**
 - Do NOT implement code directly. Always delegate implementation via \`tim subagent implementer\`.
 ${testingGuidance}
 ${reviewCommandGuidance}
+- ${INPUT_COMBINATION_GUIDANCE}
 - We are using Test-Driven Development. The \`tdd-tests\` subagent must run before implementation.
 - Always pass the TDD tests output into the implementer invocation.
 - Do not skip the TDD test phase, even if implementation seems straightforward.
-- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp\` or a \`mktemp\` path) and pass \`--input-file <path>\` instead of \`--input\`.
+- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp\` or a \`mktemp\` path) and pass \`--input-file <paths...>\` instead of \`--input\`.
 - You can also pipe input to stdin and use \`--input-file -\`.
 - When subagents can see all pending tasks, explicitly state which task titles are in scope for this run.${
     options.batchMode
