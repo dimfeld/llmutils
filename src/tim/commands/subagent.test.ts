@@ -453,17 +453,50 @@ describe('subagent command - prompt construction and executor delegation', () =>
     expect(capturedCodexPrompt!).toContain('## Custom Instructions');
   });
 
-  test('rejects using --input and --input-file together', async () => {
+  test('supports --input and --input-file together (file first, then inline input)', async () => {
     const { handleSubagentCommand } = await import('./subagent.js');
+    const fileText = 'Context from file input.';
+    const inputText = 'Inline context appended.';
+    const inputFilePath = path.join(tempDir, 'orchestrator-input.txt');
+    await fs.writeFile(inputFilePath, fileText, 'utf8');
 
     await expect(
       handleSubagentCommand(
         'implementer',
         planFilePath,
-        { executor: 'codex-cli', input: 'inline', inputFile: '/tmp/input.txt' },
+        { executor: 'codex-cli', input: inputText, inputFile: inputFilePath },
         {}
       )
-    ).rejects.toThrow('Cannot provide both --input and --input-file');
+    ).resolves.toBeUndefined();
+
+    expect(capturedCodexPrompt).toBeDefined();
+    expect(capturedCodexPrompt).toContain(fileText);
+    expect(capturedCodexPrompt).toContain(inputText);
+    expect(capturedCodexPrompt!.indexOf(fileText)).toBeLessThan(
+      capturedCodexPrompt!.indexOf(inputText)
+    );
+  });
+
+  test('supports array --input-file values', async () => {
+    const { handleSubagentCommand } = await import('./subagent.js');
+    const firstFileText = 'First file context.';
+    const secondFileText = 'Second file context.';
+    const firstInputFilePath = path.join(tempDir, 'orchestrator-input-1.txt');
+    const secondInputFilePath = path.join(tempDir, 'orchestrator-input-2.txt');
+    await fs.writeFile(firstInputFilePath, firstFileText, 'utf8');
+    await fs.writeFile(secondInputFilePath, secondFileText, 'utf8');
+
+    await handleSubagentCommand('implementer', planFilePath, {
+      executor: 'codex-cli',
+      inputFile: [firstInputFilePath, secondInputFilePath],
+    }, {});
+
+    expect(capturedCodexPrompt).toBeDefined();
+    expect(capturedCodexPrompt).toContain(firstFileText);
+    expect(capturedCodexPrompt).toContain(secondFileText);
+    expect(capturedCodexPrompt!.indexOf(firstFileText)).toBeLessThan(
+      capturedCodexPrompt!.indexOf(secondFileText)
+    );
   });
 
   test('includes custom agent instructions when configured', async () => {
@@ -1114,7 +1147,7 @@ describe('subagent command registration in tim.ts', () => {
     // Each subcommand should accept planFile, executor, model, input, input-file, and output-file
     expect(source).toContain('<planFile>');
     expect(source).toContain("'--input <text>'");
-    expect(source).toContain("'--input-file <path>'");
+    expect(source).toContain("'--input-file <paths...>'");
     expect(source).toContain("'--output-file <path>'");
     expect(source).toContain("'-x, --executor <name>'");
     expect(source).toContain("'-m, --model <model>'");

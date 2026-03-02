@@ -1535,7 +1535,7 @@ export async function buildReviewPromptFromOptions(
     instructions?: string;
     instructionsFile?: string;
     input?: string;
-    inputFile?: string;
+    inputFile?: string | string[];
     focus?: string;
     incremental?: boolean;
     sinceLastReview?: boolean;

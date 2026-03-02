@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 
 export interface OrchestratorInputOptions {
   input?: string;
-  inputFile?: string;
+  inputFile?: string | string[];
 }
 
 interface ResolveOrchestratorInputOptions extends OrchestratorInputOptions {
@@ -12,19 +12,21 @@ interface ResolveOrchestratorInputOptions extends OrchestratorInputOptions {
 export async function resolveOrchestratorInput(
   options: ResolveOrchestratorInputOptions
 ): Promise<string | undefined> {
-  if (options.input && options.inputFile) {
-    throw new Error('Cannot provide both --input and --input-file. Use only one.');
-  }
-
-  if (options.input) {
-    return options.input;
-  }
-
   if (options.inputFile) {
-    if (options.inputFile === '-') {
-      return readStdinText(true);
+    const inputFiles = normalizeInputFiles(options.inputFile);
+    const sourceParts = await Promise.all(inputFiles.map((path) => readInputSource(path)));
+
+    const filtered = sourceParts.filter((part): part is string => typeof part === 'string');
+
+    if (typeof options.input === 'string' && options.input.length > 0) {
+      filtered.push(options.input);
     }
-    return readFile(options.inputFile, 'utf8');
+
+    if (filtered.length > 0) {
+      return filtered.join('\n\n');
+    }
+  } else if (typeof options.input === 'string' && options.input.length > 0) {
+    return options.input;
   }
 
   if (options.fallbackToStdin && !process.stdin.isTTY) {
@@ -35,6 +37,17 @@ export async function resolveOrchestratorInput(
   }
 
   return undefined;
+}
+
+function normalizeInputFiles(inputFile: string | string[]): string[] {
+  return Array.isArray(inputFile) ? inputFile : [inputFile];
+}
+
+async function readInputSource(path: string): Promise<string | undefined> {
+  if (path === '-') {
+    return readStdinText(true);
+  }
+  return readFile(path, 'utf8');
 }
 
 async function readStdinText(requireInput: boolean): Promise<string | undefined> {

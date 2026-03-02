@@ -35,7 +35,7 @@ interface SubagentOptions {
   executor: string;
   model?: string;
   input?: string;
-  inputFile?: string;
+  inputFile?: string | string[];
   outputFile?: string;
 }
 

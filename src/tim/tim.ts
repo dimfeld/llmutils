@@ -1073,8 +1073,8 @@ program
   )
   .option('--input <text>', 'Additional context from the orchestrator (appended to instructions)')
   .option(
-    '--input-file <path>',
-    'Read additional context from file (use "-" to read from stdin). Appended to instructions.'
+    '--input-file <paths...>',
+    'Read additional context from file(s) (use "-" to read from stdin). Appended to instructions.'
   )
   .option(
     '--previous-response <path>',
@@ -1338,10 +1338,10 @@ for (const agentType of ['implementer', 'tester', 'tdd-tests', 'verifier'] as co
     )
     .option('-m, --model <model>', 'Model to use')
     .option('--input <text>', 'Additional instructions from orchestrator')
-    .option(
-      '--input-file <path>',
-      'Read additional instructions from file (use "-" to read from stdin)'
-    )
+  .option(
+    '--input-file <paths...>',
+    'Read additional instructions from file (use "-" to read from stdin)'
+  )
     .option('--output-file <path>', 'Write the final subagent message to a file')
     .action(async (planFile: string, options: any, command: any) => {
       const { handleSubagentCommand } = await import('./commands/subagent.js');
