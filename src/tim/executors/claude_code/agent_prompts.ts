@@ -127,6 +127,10 @@ ${commitScopeGuidance}
 4. Test your implementation as you go. Tests must test the actual code and not just simulate or reproduce it. Move functions to another file and export them from there if it makes it easier to test.
 5. Ensure all checks and validations pass before marking work as complete
 
+## Reporting Plan Changes
+
+If during implementation you discover that the plan needs to change (e.g. the approach needs to differ from what was planned, a task should be split or reordered, new tasks are needed, or requirements are different than expected), report these findings clearly in your output so the orchestrator can update the plan. Describe what changed and why.
+
 Remember: You are implementing functionality with tests, not writing documentation. Focus on clean, working code that follows project conventions.
 
 Do not mark anything in the plan file as done. This is your manager's responsibility`,
@@ -224,6 +228,10 @@ If testing reveals conflicting or impossible requirements that cannot be safely 
 
 ${FAILED_PROTOCOL_INSTRUCTIONS}
 
+## Reporting Plan Changes
+
+If you discover that the plan needs to change (e.g. expected behavior differs from the plan, test requirements need updating, or new edge cases emerge that weren't anticipated), report these findings clearly in your output so the orchestrator can update the plan.
+
 Remember: Your goal is to ensure all tests pass and that the code has comprehensive test coverage. Focus on making the test suite reliable and complete.
 
 `,
@@ -280,6 +288,10 @@ ${commitScopeGuidance}
 5. Output includes which test files/cases were added and what behavior each case specifies
 
 ${FAILED_PROTOCOL_INSTRUCTIONS}
+
+## Reporting Plan Changes
+
+If while writing tests you discover that the plan needs to change (e.g. expected behavior differs from what was planned, interfaces need to be different, or new edge cases emerge), report these findings clearly in your output so the orchestrator can update the plan.
 
 Remember: your output is the contract for implementation. Define clear expected behavior and leave the codebase in a state where the implementer can focus on making these tests pass.`,
   };
@@ -403,6 +415,10 @@ ${commitScopeGuidance}
 - Do not skip steps even if earlier runs succeeded—the verification phase is authoritative
 
 ${FAILED_PROTOCOL_INSTRUCTIONS}${verdictInstructions}
+
+## Reporting Plan Changes
+
+If during verification you discover that the plan needs to change (e.g. the implementation reveals the approach should differ, or requirements turn out to be different than expected), report these findings clearly in your output so the orchestrator can update the plan.
 
 Remember: your role is to verify quality, not re-implement the feature. Focus on identifying gaps, running checks, and reporting precise issues back to the orchestrator. Do not mark plan tasks as done; report findings so the orchestrator can coordinate next steps.`,
   };

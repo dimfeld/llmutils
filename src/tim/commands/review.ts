@@ -59,6 +59,7 @@ import {
 import { createHeadlessAdapterForCommand } from '../headless.js';
 import { toStructuredReviewIssues } from '../review_structured_message.js';
 import { timestamp } from './agent/agent_helpers.js';
+import { resolveOrchestratorInput } from '../utils/orchestrator_input.js';
 import which from 'which';
 const FIX_EXECUTOR_COMMANDS = {
   'claude-code': 'claude',
@@ -531,6 +532,15 @@ export async function handleReviewCommand(
             )
           );
         }
+      }
+
+      // Resolve orchestrator-provided input (--input / --input-file)
+      const orchestratorInput = await resolveOrchestratorInput(options);
+      if (orchestratorInput?.trim()) {
+        reviewLog(chalk.gray('Using additional context from --input / --input-file'));
+        customInstructions = customInstructions
+          ? `${customInstructions}\n\n## Additional Context from Orchestrator\n\n${orchestratorInput}`
+          : `## Additional Context from Orchestrator\n\n${orchestratorInput}`;
       }
 
       // Handle focus areas
@@ -1524,6 +1534,8 @@ export async function buildReviewPromptFromOptions(
     taskTitle?: string | string[];
     instructions?: string;
     instructionsFile?: string;
+    input?: string;
+    inputFile?: string;
     focus?: string;
     incremental?: boolean;
     sinceLastReview?: boolean;
@@ -1590,6 +1602,14 @@ export async function buildReviewPromptFromOptions(
         `Warning: Could not read previous review response file: ${options.previousResponse}. ${errorMessage}`
       );
     }
+  }
+
+  // Resolve orchestrator-provided input (--input / --input-file)
+  const orchestratorInput = await resolveOrchestratorInput(options);
+  if (orchestratorInput?.trim()) {
+    customInstructions = customInstructions
+      ? `${customInstructions}\n\n## Additional Context from Orchestrator\n\n${orchestratorInput}`
+      : `## Additional Context from Orchestrator\n\n${orchestratorInput}`;
   }
 
   // Handle focus areas

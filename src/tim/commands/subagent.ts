@@ -27,6 +27,7 @@ import type { TimConfig } from '../configSchema.js';
 import type { Executor } from '../executors/types.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { log } from '../../logging.js';
+import { resolveOrchestratorInput } from '../utils/orchestrator_input.js';
 
 export type SubagentType = 'implementer' | 'tester' | 'tdd-tests' | 'verifier';
 
@@ -119,7 +120,10 @@ export async function handleSubagentCommand(
     combinedInstructions = parts.length > 0 ? parts.join('\n\n') : undefined;
   }
 
-  const orchestratorInput = await resolveOrchestratorInput(options);
+  const orchestratorInput = await resolveOrchestratorInput({
+    ...options,
+    fallbackToStdin: true,
+  });
 
   // Combine custom instructions with orchestrator-provided input.
   const allInstructions = [combinedInstructions, orchestratorInput]
@@ -162,53 +166,6 @@ export async function handleSubagentCommand(
 async function writeSubagentOutput(outputFilePath: string, finalMessage: string): Promise<void> {
   await fs.mkdir(path.dirname(outputFilePath), { recursive: true });
   await fs.writeFile(outputFilePath, finalMessage, 'utf8');
-}
-
-async function resolveOrchestratorInput(options: SubagentOptions): Promise<string | undefined> {
-  if (options.input && options.inputFile) {
-    throw new Error('Cannot provide both --input and --input-file. Use only one.');
-  }
-
-  if (options.input) {
-    return options.input;
-  }
-
-  if (options.inputFile) {
-    if (options.inputFile === '-') {
-      return readStdinText(true);
-    }
-    return fs.readFile(options.inputFile, 'utf8');
-  }
-
-  // Fallback for piped usage: allow orchestrator to pass large context via stdin
-  // without needing to write a temporary file first.
-  if (!process.stdin.isTTY) {
-    const stdinText = await readStdinText(false);
-    if (stdinText?.trim()) {
-      return stdinText;
-    }
-  }
-
-  return undefined;
-}
-
-async function readStdinText(requireInput: boolean): Promise<string | undefined> {
-  if (process.stdin.isTTY) {
-    if (requireInput) {
-      throw new Error('--input-file - requires input on stdin.');
-    }
-    return undefined;
-  }
-
-  const input = await Bun.stdin.text();
-  if (!input.trim()) {
-    if (requireInput) {
-      throw new Error('No input received on stdin.');
-    }
-    return undefined;
-  }
-
-  return input;
 }
 
 /**

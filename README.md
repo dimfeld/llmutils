@@ -2358,6 +2358,7 @@ tim cleanup [FILES...] [--diff-from BRANCH]
 # Review plan changes
 tim review [PLAN] [--executor NAME] [--serial-both] [--task-index N...]
 tim review [PLAN] --previous-response .rmfilter/reviews/last-review.md
+tim review [PLAN] --input-file context.md  # Pass additional context (e.g. from orchestrator)
 
 # Answer PR comments
 tim answer-pr [PR] [--mode MODE] [--commit] [--comment]

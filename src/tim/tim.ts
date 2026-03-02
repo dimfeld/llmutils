@@ -1071,6 +1071,11 @@ program
     '--instructions-file <path>',
     'Path to file containing custom review instructions. Overrides config file instructions.'
   )
+  .option('--input <text>', 'Additional context from the orchestrator (appended to instructions)')
+  .option(
+    '--input-file <path>',
+    'Read additional context from file (use "-" to read from stdin). Appended to instructions.'
+  )
   .option(
     '--previous-response <path>',
     'Path to a file containing the previous review response to include in this review prompt.'
