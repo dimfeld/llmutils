@@ -758,6 +758,23 @@ struct ProjectTrackingStoreTests {
         #expect(store.loadState == .loaded)
     }
 
+    @Test("Refresh keeps loaded state after initial load")
+    func refreshKeepsLoadedStateAfterInitialLoad() async throws {
+        let (path, cleanup) = try makeTestDBPath()
+        defer { cleanup() }
+
+        withTestDB(path: path) { db in
+            execSQL(db, "INSERT INTO project (id, repository_id) VALUES (1, 'repo-1')")
+        }
+
+        let store = ProjectTrackingStore(dbPath: path)
+        await store.refresh()
+        #expect(store.loadState == .loaded)
+
+        await store.refresh()
+        #expect(store.loadState == .loaded)
+    }
+
     @Test("Default active filters match defaultPlanFilters()")
     func defaultActiveFiltersMatchHelper() throws {
         let (path, cleanup) = try makeTestDBPath()

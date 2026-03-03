@@ -451,7 +451,11 @@ final class ProjectTrackingStore {
             self.needsRefresh = false
             let capturedProjectId = self.selectedProjectId
 
-            self.loadState = .loading
+            // Keep the view hierarchy stable during background refreshes once data is loaded.
+            // This prevents view-local selection state from being reset on each poll cycle.
+            if self.loadState != .loaded {
+                self.loadState = .loading
+            }
 
             guard let path = dbPath else {
                 logger.error("Refresh aborted: no database path configured")
