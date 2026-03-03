@@ -251,9 +251,9 @@ ${reviewExecutorGuidance}
 ${options.batchMode ? '6' : '5'}. **Iteration**
 
 - If the review output identifies issues or tests fail:
-- For small, low-risk review follow-ups (for example wording tweaks, tiny refactors, or single-line fixes), you may apply the changes yourself without spawning the implementer subagent.
+- For straightforward review follow-ups that are easy to implement correctly (for example wording tweaks, focused refactors, small logic adjustments, or similarly contained edits), you may apply the changes yourself without spawning the implementer subagent.
 - Return to step ${options.batchMode ? '2' : '1'} when substantial code changes are required.
-- After small follow-up changes, run the relevant targeted checks yourself. If all changes are small and verification is straightforward, you may skip re-running \`${reviewCommand}\`.
+- After these straightforward follow-up changes, run the relevant targeted checks yourself. If the entire set of changes is straightforward to verify, you may skip re-running \`${reviewCommand}\`.
 - If the review still flags an issue that was supposedly just fixed, trust the review — the fix was incomplete or incorrect. Investigate the issue again rather than dismissing the feedback.
 - Continue this loop until all tests pass and the implementation is satisfactory`;
 
@@ -295,8 +295,8 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 - **DO NOT implement code directly**. Always delegate implementation tasks to the appropriate subagent via \`tim subagent\`.
 - **DO NOT write tests directly**. Always use the tester subagent via \`tim subagent tester\` for test execution and updates.
 - **DO NOT review code directly**. Always run \`${reviewCommand}\` for code quality assessment.
-- Exception: if review feedback requires only tiny, low-risk edits, you may apply those edits directly instead of spawning implementer again.
-- After tiny review follow-ups, run focused verification yourself. If the scope is small and verification is clear, you may skip re-running \`${reviewCommand}\`.
+- Exception: if review feedback requires only straightforward, contained edits, you may apply those edits directly instead of spawning implementer again.
+- After straightforward review follow-ups, run focused verification yourself. If the scope remains straightforward and verification is clear, you may skip re-running \`${reviewCommand}\`.
 - You are responsible only for coordination and ensuring the workflow is followed correctly.
 - The subagents have access to the same task instructions below that you do, so you don't need to repeat them. You should reference which specific task titles are being worked on so the subagents can focus on the right tasks.
 - When invoking subagents, provide clear, specific instructions in \`--input\` (or \`--input-file\`) about what needs to be done in addition to referencing the task titles.
@@ -656,8 +656,8 @@ ${reviewExecutorGuidance}
   const reviewIterationGuidance = isSimpleTdd
     ? ''
     : `
-- For small, low-risk review follow-ups (for example wording tweaks, tiny refactors, or single-line fixes), you may apply the changes yourself without spawning the implementer subagent.
-- After small follow-up changes, run relevant targeted checks yourself. If all changes are small and verification is straightforward, you may skip re-running \`${reviewCommand}\`.`;
+- For straightforward review follow-ups that are easy to implement correctly (for example wording tweaks, focused refactors, small logic adjustments, or similarly contained edits), you may apply the changes yourself without spawning the implementer subagent.
+- After these straightforward follow-up changes, run relevant targeted checks yourself. If the full set of changes is straightforward to verify, you may skip re-running \`${reviewCommand}\`.`;
 
   const workflowInstructions = `## Workflow Instructions
 
@@ -715,8 +715,8 @@ ${iterationPhaseNumber}. **Iteration**
   const reviewFollowupGuidance = isSimpleTdd
     ? ''
     : `
-- Exception: if review feedback requires only tiny, low-risk edits, you may apply those edits directly instead of spawning implementer again.
-- After tiny review follow-ups, run focused verification yourself. If the scope is small and verification is clear, you may skip re-running \`${reviewCommand}\`.`;
+- Exception: if review feedback requires only straightforward, contained edits, you may apply those edits directly instead of spawning implementer again.
+- After straightforward review follow-ups, run focused verification yourself. If the scope remains straightforward and verification is clear, you may skip re-running \`${reviewCommand}\`.`;
 
   const guidance = `## Important Guidelines
 

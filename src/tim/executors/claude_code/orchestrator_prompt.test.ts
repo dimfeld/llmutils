@@ -38,10 +38,12 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain('tim review 123 --print --executor codex-cli');
   });
 
-
   it('allows small review follow-ups without re-running implementer/reviewer', () => {
     const out = wrapWithOrchestration('Context', '123', { batchMode: false });
-    expect(out).toContain('you may apply the changes yourself without spawning the implementer subagent');
+    expect(out).toContain(
+      'you may apply the changes yourself without spawning the implementer subagent'
+    );
+    expect(out).toContain('small logic adjustments');
     expect(out).toContain('you may skip re-running `tim review 123 --print`');
   });
 
@@ -276,6 +278,7 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain(
         'you may apply the changes yourself without spawning the implementer subagent'
       );
+      expect(out).toContain('small logic adjustments');
       expect(out).toContain('you may skip re-running `tim review 71 --print`');
     });
 
