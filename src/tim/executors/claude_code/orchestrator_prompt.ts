@@ -251,7 +251,9 @@ ${reviewExecutorGuidance}
 ${options.batchMode ? '6' : '5'}. **Iteration**
 
 - If the review output identifies issues or tests fail:
-- Return to step ${options.batchMode ? '2' : '1'} with the review feedback
+- For straightforward review follow-ups that are easy to implement correctly (for example wording tweaks, focused refactors, small logic adjustments, or similarly contained edits), you may apply the changes yourself without spawning the implementer subagent.
+- Return to step ${options.batchMode ? '2' : '1'} when substantial code changes are required.
+- After these straightforward follow-up changes, run the relevant targeted checks yourself. If the entire set of changes is straightforward to verify, you may skip re-running \`${reviewCommand}\`.
 - If the review still flags an issue that was supposedly just fixed, trust the review — the fix was incomplete or incorrect. Investigate the issue again rather than dismissing the feedback.
 - Continue this loop until all tests pass and the implementation is satisfactory`;
 
@@ -293,6 +295,8 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 - **DO NOT implement code directly**. Always delegate implementation tasks to the appropriate subagent via \`tim subagent\`.
 - **DO NOT write tests directly**. Always use the tester subagent via \`tim subagent tester\` for test execution and updates.
 - **DO NOT review code directly**. Always run \`${reviewCommand}\` for code quality assessment.
+- Exception: if review feedback requires only straightforward, contained edits, you may apply those edits directly instead of spawning implementer again.
+- After straightforward review follow-ups, run focused verification yourself. If the scope remains straightforward and verification is clear, you may skip re-running \`${reviewCommand}\`.
 - You are responsible only for coordination and ensuring the workflow is followed correctly.
 - The subagents have access to the same task instructions below that you do, so you don't need to repeat them. You should reference which specific task titles are being worked on so the subagents can focus on the right tasks.
 - When invoking subagents, provide clear, specific instructions in \`--input\` (or \`--input-file\`) about what needs to be done in addition to referencing the task titles.
@@ -649,6 +653,12 @@ ${options.batchMode ? '5' : '4'}. **Review Phase**
 ${reviewExecutorGuidance}
    - The review command may take up to 15 minutes; use a long timeout.`;
 
+  const reviewIterationGuidance = isSimpleTdd
+    ? ''
+    : `
+- For straightforward review follow-ups that are easy to implement correctly (for example wording tweaks, focused refactors, small logic adjustments, or similarly contained edits), you may apply the changes yourself without spawning the implementer subagent.
+- After these straightforward follow-up changes, run relevant targeted checks yourself. If the full set of changes is straightforward to verify, you may skip re-running \`${reviewCommand}\`.`;
+
   const workflowInstructions = `## Workflow Instructions
 
 You MUST follow this TDD process:
@@ -679,7 +689,8 @@ ${progressSection}
 
 ${iterationPhaseNumber}. **Iteration**
 - If verification/review identifies issues or tests fail:
-- Return to step ${options.batchMode ? '2' : '1'} and continue the loop
+- Return to step ${options.batchMode ? '2' : '1'} when substantial code changes are required.
+- After each fix iteration, run relevant targeted checks before moving forward.${reviewIterationGuidance}
 - If the review still flags an issue that was supposedly just fixed, trust the review — the fix was incomplete or incorrect. Investigate the issue again rather than dismissing the feedback.
 - Keep TDD order intact for each iteration`;
 
@@ -701,12 +712,18 @@ ${iterationPhaseNumber}. **Iteration**
   const testingGuidance = isSimpleTdd
     ? '- Do NOT verify code directly. Always delegate verification to \`tim subagent verifier\`.'
     : '- Do NOT write or run tests directly. Always delegate testing to \`tim subagent tester\`.';
+  const reviewFollowupGuidance = isSimpleTdd
+    ? ''
+    : `
+- Exception: if review feedback requires only straightforward, contained edits, you may apply those edits directly instead of spawning implementer again.
+- After straightforward review follow-ups, run focused verification yourself. If the scope remains straightforward and verification is clear, you may skip re-running \`${reviewCommand}\`.`;
 
   const guidance = `## Important Guidelines
 
 - Do NOT implement code directly. Always delegate implementation via \`tim subagent implementer\`.
 ${testingGuidance}
 ${reviewCommandGuidance}
+${reviewFollowupGuidance}
 - ${INPUT_COMBINATION_GUIDANCE}
 - We are using Test-Driven Development. The \`tdd-tests\` subagent must run before implementation.
 - Always pass the TDD tests output into the implementer invocation.

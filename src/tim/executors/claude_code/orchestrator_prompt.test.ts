@@ -38,6 +38,15 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain('tim review 123 --print --executor codex-cli');
   });
 
+  it('allows small review follow-ups without re-running implementer/reviewer', () => {
+    const out = wrapWithOrchestration('Context', '123', { batchMode: false });
+    expect(out).toContain(
+      'you may apply the changes yourself without spawning the implementer subagent'
+    );
+    expect(out).toContain('small logic adjustments');
+    expect(out).toContain('you may skip re-running `tim review 123 --print`');
+  });
+
   it('includes progress section guidance in non-batch mode as well', () => {
     const out = wrapWithOrchestration('Context', '999', { batchMode: false });
     expect(out).toContain('Progress Updates (Plan File)');
@@ -160,8 +169,8 @@ describe('orchestrator_prompt subagent commands', () => {
     it('includes output-file fallback guidance for subagent and review commands', () => {
       const out = wrapWithOrchestration('Context', '42', { batchMode: false });
       expect(out).toContain('--output-file <path>');
-      expect(out).toContain('tim-plan-42-<agent>-output');
-      expect(out).toContain('tim-plan-42-review-output');
+      expect(out).toContain('tim-42-<agent>-output');
+      expect(out).toContain('tim-42-review-output');
       expect(out).toContain('If command output is empty, read the output file');
     });
   });
@@ -240,7 +249,7 @@ describe('orchestrator_prompt subagent commands', () => {
     it('includes output-file fallback guidance for subagent commands', () => {
       const out = wrapWithOrchestrationSimple('Context', '55', { batchMode: false });
       expect(out).toContain('--output-file <path>');
-      expect(out).toContain('tim-plan-55-<agent>-output');
+      expect(out).toContain('tim-55-<agent>-output');
       expect(out).toContain('If command output is empty, read the output file');
     });
   });
@@ -259,6 +268,18 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('3. **Testing Phase**');
       expect(out).toContain('4. **Review Phase**');
       expect(out).toContain('pass the TDD tests output');
+    });
+
+    it('allows small TDD review follow-ups without re-running implementer/reviewer', () => {
+      const out = wrapWithOrchestrationTdd('Context', '71', {
+        batchMode: false,
+        simpleMode: false,
+      });
+      expect(out).toContain(
+        'you may apply the changes yourself without spawning the implementer subagent'
+      );
+      expect(out).toContain('small logic adjustments');
+      expect(out).toContain('you may skip re-running `tim review 71 --print`');
     });
 
     it('uses verifier in TDD simple mode', () => {
@@ -300,8 +321,8 @@ describe('orchestrator_prompt subagent commands', () => {
         simpleMode: false,
       });
       expect(out).toContain('--output-file <path>');
-      expect(out).toContain('tim-plan-74-<agent>-output');
-      expect(out).toContain('tim-plan-74-review-output');
+      expect(out).toContain('tim-74-<agent>-output');
+      expect(out).toContain('tim-74-review-output');
       expect(out).toContain('If command output is empty, read the output file');
     });
   });
