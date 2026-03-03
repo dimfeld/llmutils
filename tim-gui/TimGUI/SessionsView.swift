@@ -366,6 +366,8 @@ private struct InputBarHeightKey: PreferenceKey {
 // MARK: - SessionDetailView
 
 struct SessionDetailView: View {
+    private static let maxDisplayedMessages = 100
+
     let session: SessionItem
     var sessionState: SessionState
     /// Whether the bottom anchor is currently visible in the scroll view.
@@ -381,12 +383,15 @@ struct SessionDetailView: View {
     @State private var inputBarHeight: CGFloat = 0
     @State private var isAdjustingBottomInset = false
     @FocusState private var isFocused: Bool
+    private var displayedMessages: [SessionMessage] {
+        Array(self.session.messages.suffix(Self.maxDisplayedMessages))
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
-                    ForEach(self.session.messages) { message in
+                    ForEach(self.displayedMessages) { message in
                         SessionMessageView(message: message)
                             .id(message.id)
                     }
@@ -486,7 +491,7 @@ struct SessionDetailView: View {
                 self.handlePromptInsetTransition(proxy)
             }
             .onKeyPress(.home) {
-                if let firstId = session.messages.first?.id {
+                if let firstId = self.displayedMessages.first?.id {
                     proxy.scrollTo(firstId, anchor: .top)
                 }
                 return .handled
