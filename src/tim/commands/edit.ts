@@ -9,6 +9,9 @@ import { readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
 export async function handleEditCommand(planArg: string, options: any, command: Command) {
   const globalOpts = command.parent!.opts();
   const resolvedPlanFile = await resolvePlanFile(planArg, globalOpts.config);
+  // TODO don't read file twice
+  const beforeEditPlan = await readPlanFile(resolvedPlanFile);
+  const beforeEditUpdatedAt = beforeEditPlan.updatedAt;
   const editor = options.editor || process.env.EDITOR || 'nano';
   const beforeEditContent = await readFile(resolvedPlanFile, 'utf-8');
 
@@ -17,10 +20,13 @@ export async function handleEditCommand(planArg: string, options: any, command: 
   });
   await editorProcess.exited;
 
+  // TODO don't read file twice
   const afterEditContent = await readFile(resolvedPlanFile, 'utf-8');
   if (afterEditContent !== beforeEditContent) {
     const editedPlan = await readPlanFile(resolvedPlanFile);
-    editedPlan.updatedAt = new Date().toISOString();
-    await writePlanFile(resolvedPlanFile, editedPlan);
+    if (editedPlan.updatedAt === beforeEditUpdatedAt) {
+      editedPlan.updatedAt = new Date().toISOString();
+      await writePlanFile(resolvedPlanFile, editedPlan);
+    }
   }
 }

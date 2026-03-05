@@ -1338,10 +1338,10 @@ for (const agentType of ['implementer', 'tester', 'tdd-tests', 'verifier'] as co
     )
     .option('-m, --model <model>', 'Model to use')
     .option('--input <text>', 'Additional instructions from orchestrator')
-  .option(
-    '--input-file <paths...>',
-    'Read additional instructions from file (use "-" to read from stdin)'
-  )
+    .option(
+      '--input-file <paths...>',
+      'Read additional instructions from file (use "-" to read from stdin)'
+    )
     .option('--output-file <path>', 'Write the final subagent message to a file')
     .action(async (planFile: string, options: any, command: any) => {
       const { handleSubagentCommand } = await import('./commands/subagent.js');

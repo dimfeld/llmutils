@@ -486,10 +486,15 @@ describe('subagent command - prompt construction and executor delegation', () =>
     await fs.writeFile(firstInputFilePath, firstFileText, 'utf8');
     await fs.writeFile(secondInputFilePath, secondFileText, 'utf8');
 
-    await handleSubagentCommand('implementer', planFilePath, {
-      executor: 'codex-cli',
-      inputFile: [firstInputFilePath, secondInputFilePath],
-    }, {});
+    await handleSubagentCommand(
+      'implementer',
+      planFilePath,
+      {
+        executor: 'codex-cli',
+        inputFile: [firstInputFilePath, secondInputFilePath],
+      },
+      {}
+    );
 
     expect(capturedCodexPrompt).toBeDefined();
     expect(capturedCodexPrompt).toContain(firstFileText);
