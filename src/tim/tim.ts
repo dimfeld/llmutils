@@ -1036,8 +1036,53 @@ program
   .option('--no-sd, --no-status-description', 'Remove the status description')
   .action(async (planFile, options, command) => {
     const { handleSetCommand } = await import('./commands/set.js');
-    options.dependsOn = intArg(options.dependsOn);
-    options.noDependsOn = intArg(options.noDependsOn);
+    const rawArgs = command.rawArgs ?? [];
+    const sourceArgs = command.parent?.rawArgs && command.parent.rawArgs.length > 0 ? command.parent.rawArgs : rawArgs;
+    const hasFlag = (flag: string, alias?: string) =>
+      sourceArgs.some(
+        (arg) => arg === flag || (alias !== undefined && arg === alias) || arg.startsWith(`${flag}=`)
+      ) || (alias !== undefined && sourceArgs.some((arg) => arg.startsWith(`${alias}=`)));
+    const parsedDependsOn = intArg(options.dependsOn);
+    const parsedNoDependsOn = intArg(options.noDependsOn);
+    const parsedIssue = options.issue;
+    const parsedNoIssue = options.noIssue;
+    const parsedDoc = options.doc;
+    const parsedNoDoc = options.noDoc;
+    const parsedTag = options.tag;
+    const parsedNoTag = options.noTag;
+    const isRemovingDependsOn = hasFlag('--no-depends-on', '--no-d');
+    const isRemovingIssue = hasFlag('--no-issue', '--no-i');
+    const isRemovingDoc = hasFlag('--no-doc');
+    const isRemovingTag = hasFlag('--no-tag');
+
+    if (isRemovingDependsOn) {
+      options.noDependsOn = parsedDependsOn ?? parsedNoDependsOn;
+      options.dependsOn = undefined;
+    } else {
+      options.dependsOn = parsedDependsOn;
+    }
+
+    if (isRemovingIssue) {
+      options.noIssue = parsedIssue ?? parsedNoIssue;
+      options.issue = undefined;
+    } else {
+      options.noIssue = parsedNoIssue;
+    }
+
+    if (isRemovingDoc) {
+      options.noDoc = parsedDoc ?? parsedNoDoc;
+      options.doc = undefined;
+    } else {
+      options.noDoc = parsedNoDoc;
+    }
+
+    if (isRemovingTag) {
+      options.noTag = parsedTag ?? parsedNoTag;
+      options.tag = undefined;
+    } else {
+      options.noTag = parsedNoTag;
+    }
+
     options.parent = intArg(options.parent);
     await handleSetCommand(planFile, options, command.parent.opts()).catch(handleCommandError);
   });
