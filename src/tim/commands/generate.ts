@@ -367,7 +367,11 @@ export async function handleGenerateCommand(
     if (roundTripContext) {
       try {
         const planTitle = parsedPlan.title || parsedPlan.goal || 'plan';
-        await runPostExecutionWorkspaceSync(roundTripContext, `generate plan for ${planTitle}`);
+        const planId = parsedPlan.id;
+        await runPostExecutionWorkspaceSync(
+          roundTripContext,
+          `generate plan for ${planId}: ${planTitle}`
+        );
       } catch (err) {
         roundTripError = err;
       }

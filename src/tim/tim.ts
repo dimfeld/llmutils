@@ -401,10 +401,7 @@ program
   .option('-d, --depends-on <ids...>', 'Specify plan IDs that this plan depends on')
   .option('-p, --priority <level>', 'Set the priority level (low, medium, high, urgent)')
   .option('--parent <planId>', 'Set the parent plan ID')
-  .option(
-    '-s, --status <status>',
-    `Set the initial status ${statusSchemaHelpText}`
-  )
+  .option('-s, --status <status>', `Set the initial status ${statusSchemaHelpText}`)
   .option(
     '--rmfilter <files...>',
     'Set rmfilter files (comma-separated list or multiple arguments)'
@@ -444,10 +441,7 @@ program
   )
   .option('-p, --priority <level>', 'Set the priority level (low, medium, high, urgent)')
   .option('--parent <planId>', 'Set the parent plan ID')
-  .option(
-    '-s, --status <status>',
-    `Set the initial status ${statusSchemaHelpText}`
-  )
+  .option('-s, --status <status>', `Set the initial status ${statusSchemaHelpText}`)
   .option('-d, --depends-on <ids...>', 'Specify plan IDs that this plan depends on')
   .option('--assign <username>', 'Assign the plan to a user')
   .option('--temp', 'Mark this plan as temporary (can be deleted with cleanup-temp command)')
@@ -1039,11 +1033,16 @@ program
   .action(async (planFile, options, command) => {
     const { handleSetCommand } = await import('./commands/set.js');
     const rawArgs = command.rawArgs ?? [];
-    const sourceArgs = command.parent?.rawArgs && command.parent.rawArgs.length > 0 ? command.parent.rawArgs : rawArgs;
+    const sourceArgs =
+      command.parent?.rawArgs && command.parent.rawArgs.length > 0
+        ? command.parent.rawArgs
+        : rawArgs;
     const hasFlag = (flag: string, alias?: string) =>
       sourceArgs.some(
-        (arg: string) => arg === flag || (alias !== undefined && arg === alias) || arg.startsWith(`${flag}=`)
-      ) || (alias !== undefined && sourceArgs.some((arg: string) => arg.startsWith(`${alias}=`)));
+        (arg: string) =>
+          arg === flag || (alias !== undefined && arg === alias) || arg.startsWith(`${flag}=`)
+      ) ||
+      (alias !== undefined && sourceArgs.some((arg: string) => arg.startsWith(`${alias}=`)));
     const parsedDependsOn = intArg(options.dependsOn);
     const parsedNoDependsOn = intArg(options.noDependsOn);
     const parsedIssue = options.issue;

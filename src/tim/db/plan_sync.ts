@@ -30,9 +30,7 @@ const requestKeyToGitRoot = new Map<string, string>();
 
 const VALID_PRIORITIES = new Set(['low', 'medium', 'high', 'urgent', 'maybe']);
 
-function coercePlanStatus(
-  value: unknown
-): PlanSchema['status'] {
+function coercePlanStatus(value: unknown): PlanSchema['status'] {
   if (typeof value === 'string') {
     const parsed = statusSchema.safeParse(value);
     if (parsed.success) {

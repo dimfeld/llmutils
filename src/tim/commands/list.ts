@@ -469,9 +469,9 @@ export async function handleListCommand(options: any, command: any, searchTerms?
                   ? chalk.yellow
                   : actualStatus === 'needs_review'
                     ? chalk.yellow
-                  : actualStatus === 'pending'
-                    ? chalk.white
-                    : chalk.gray;
+                    : actualStatus === 'pending'
+                      ? chalk.white
+                      : chalk.gray;
 
     const priorityColor =
       plan.priority === 'urgent'
@@ -594,7 +594,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     workspaceColumnWidth +
     10 + // Priority
     tagsColumnWidth +
-      7 + // Tasks
+    7 + // Tasks
     dependsWidth;
 
   const fileColumnWidth = options.showFiles ? fileWidth : 0;

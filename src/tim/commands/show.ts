@@ -282,7 +282,7 @@ async function displayPlanInfo(
             ? chalk.yellow
             : actualStatus === 'needs_review'
               ? chalk.yellow
-            : chalk.white;
+              : chalk.white;
 
   const planForChain =
     (plan.id !== undefined ? allPlans.get(plan.id) : undefined) ??
@@ -460,7 +460,7 @@ async function displayPlanInfo(
       for (const depId of plan.dependencies) {
         const depPlan = allPlans.get(depId);
         if (depPlan) {
-        const statusIcon =
+          const statusIcon =
             depPlan.status === 'done'
               ? '✓'
               : depPlan.status === 'in_progress'
@@ -475,7 +475,7 @@ async function displayPlanInfo(
                 ? chalk.yellow
                 : depPlan.status === 'needs_review'
                   ? chalk.yellow
-                : chalk.gray;
+                  : chalk.gray;
           log(
             `  ${statusIcon} ${chalk.cyan(depId)} - ${getCombinedTitleFromSummary(depPlan)} ${statusColor(`[${depPlan.status || 'pending'}]`)}`
           );
