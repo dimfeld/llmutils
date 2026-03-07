@@ -427,7 +427,6 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     chalk.bold('Priority'),
     chalk.bold('Tags'),
     chalk.bold('Tasks'),
-    chalk.bold('Steps'),
     chalk.bold('Depends On'),
   ];
 
@@ -568,7 +567,6 @@ export async function handleListCommand(options: any, command: any, searchTerms?
         }
         return plan.epic ? 'EPIC' : '-';
       })(),
-      '-',
       dependenciesDisplay,
     ];
 
@@ -596,12 +594,11 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     workspaceColumnWidth +
     10 + // Priority
     tagsColumnWidth +
-    7 + // Tasks
-    7 + // Steps
+      7 + // Tasks
     dependsWidth;
 
   const fileColumnWidth = options.showFiles ? fileWidth : 0;
-  const columnCount = options.showFiles ? 11 : 10;
+  const columnCount = options.showFiles ? 10 : 9;
   const borderPadding = columnCount * 3 + 1; // 3 chars per column separator + 1 for end
 
   const usedWidth = fixedColumnsWidth + fileColumnWidth + borderPadding;
@@ -609,7 +606,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
   const titleWidth = Math.min(Math.max(20, availableWidth), maxTitleLength + 2);
 
-  const dependsColumnIndex = 9;
+  const dependsColumnIndex = 8;
 
   const tableConfig: any = {
     columns: {
@@ -639,7 +636,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
   // Add file column configuration if showing files
   if (options.showFiles) {
-    tableConfig.columns[10] = { width: fileWidth, wrapWord: true };
+    tableConfig.columns[9] = { width: fileWidth, wrapWord: true };
   }
 
   const output = table(tableData, tableConfig);
