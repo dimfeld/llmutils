@@ -7,7 +7,7 @@ uuid: a64f399e-a0fe-48bd-ace5-73f478038bfe
 status: pending
 priority: medium
 createdAt: 2026-01-02T01:01:50.359Z
-updatedAt: 2026-01-02T01:01:50.360Z
+updatedAt: 2026-03-07T07:40:40.754Z
 tasks: []
 tags: []
 ---
@@ -23,15 +23,14 @@ Automated mode that does:
 - Check if tasks are filled in. If not run another prompt specifically to read the implementation guide from the plan
 and add a task for each step
 - Run the plan
-- Run review command and add found issues as tasks to the plan. Then run `agent` command again to implement them. Do this until the review is ACCEPTABLE or up to 5 times.
+- Run review command and add found issues as tasks to the plan. Then run `agent` command again to implement them. Do this until the review has no minor-or-above issues, or up to 5 (configurable) times.
 - Make a commit every time we add review tasks so that it's clear where a review fix step started, and list which tasks
 were added
-- Push branch and create draft PR -- use claude code to create the PR description
-- If we ran 5 times without ACCEPTABLE then make sure that the PR description notes that
+- Push branch and create draft PR -- use claude code to create the PR
+- If we ran 5 times without success then add unresolved issues to the plan structured data (see plan 218 which adds this) then make sure that the PR description notes that
 - Unlock workspace if we got through to the end and pushed the branch
-- At the end, print the name and path of the workspace used.
+- At the end, print the name and path of the workspace used and the PR URL.
 
 
 
-This command should be able to start from any step and skip steps that don't need to be done, eg if plan has tasks then don't generate 
-- in the final review step, should add the review issues as tasks and execute them that way so it's easier to see what was done there
+This command should be able to start from any step and skip steps that don't need to be done, eg if plan has tasks then don't generate
