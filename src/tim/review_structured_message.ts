@@ -4,7 +4,7 @@ type StructuredReviewIssue = ReviewOutput['issues'][number];
 
 export interface StructuredReviewIssueInput {
   severity: StructuredReviewIssue['severity'];
-  category: StructuredReviewIssue['category'];
+  category: string;
   content: string;
   file?: string | null;
   line?: string | number | null;

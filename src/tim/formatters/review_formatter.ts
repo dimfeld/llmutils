@@ -3,22 +3,13 @@
 
 import chalk from 'chalk';
 import { table } from 'table';
-import { ReviewOutputSchema, type ReviewOutput } from './review_output_schema.js';
+import { ReviewOutputSchema, type ReviewIssueOutput } from './review_output_schema.js';
 
 export type ReviewSeverity = 'critical' | 'major' | 'minor' | 'info';
-export type ReviewCategory =
-  | 'security'
-  | 'performance'
-  | 'bug'
-  | 'style'
-  | 'compliance'
-  | 'testing'
-  | 'other';
 
 export interface ReviewIssue {
-  id: string;
   severity: ReviewSeverity;
-  category: ReviewCategory;
+  category: string;
   content: string;
   file?: string;
   line?: number | string;
@@ -31,7 +22,7 @@ export interface ReviewSummary {
   majorCount: number;
   minorCount: number;
   infoCount: number;
-  categoryCounts: Record<ReviewCategory, number>;
+  categoryCounts: Record<string, number>;
   filesReviewed: number;
 }
 
@@ -67,7 +58,7 @@ export interface ReviewFormatter {
  * Contains the structured issues, recommendations, and action items extracted from review output.
  */
 export interface ParsedReviewOutput {
-  issues: ReviewIssue[];
+  issues: ReviewIssueOutput[];
   recommendations: string[];
   actionItems: string[];
 }
@@ -279,24 +270,7 @@ export function parseJsonReviewOutput(jsonString: string | object): ParsedReview
     );
   }
 
-  const reviewOutput: ReviewOutput = validation.data;
-
-  // Convert issues to internal format with auto-generated IDs
-  const issues: ReviewIssue[] = reviewOutput.issues.map((issue, index) => ({
-    id: `issue-${index + 1}`,
-    severity: issue.severity,
-    category: issue.category,
-    content: issue.content,
-    ...(issue.file !== undefined ? { file: issue.file } : {}),
-    ...(issue.line !== undefined ? { line: issue.line } : {}),
-    ...(issue.suggestion !== undefined ? { suggestion: issue.suggestion } : {}),
-  }));
-
-  return {
-    issues,
-    recommendations: reviewOutput.recommendations,
-    actionItems: reviewOutput.actionItems,
-  };
+  return validation.data;
 }
 
 /**
@@ -325,15 +299,7 @@ export function generateReviewSummary(issues: ReviewIssue[], filesReviewed: numb
     majorCount: 0,
     minorCount: 0,
     infoCount: 0,
-    categoryCounts: {
-      security: 0,
-      performance: 0,
-      bug: 0,
-      style: 0,
-      compliance: 0,
-      testing: 0,
-      other: 0,
-    },
+    categoryCounts: {},
     filesReviewed,
   };
 
@@ -354,7 +320,7 @@ export function generateReviewSummary(issues: ReviewIssue[], filesReviewed: numb
         break;
     }
 
-    summary.categoryCounts[issue.category]++;
+    summary.categoryCounts[issue.category] = (summary.categoryCounts[issue.category] ?? 0) + 1;
   }
 
   return summary;

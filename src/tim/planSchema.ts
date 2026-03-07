@@ -110,7 +110,6 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
     reviewIssues: z
       .array(
         objectFactory({
-          id: z.string(),
           severity: z.enum(['critical', 'major', 'minor', 'info']),
           category: z.string(),
           content: z.string(),

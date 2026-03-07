@@ -329,16 +329,15 @@ function mergeReviewOutputs(
   const actionItems = results.flatMap((result) => result.parsed.actionItems);
 
   const sortedIssues = sortIssuesByLocation(issues);
-  const outputIssues = sortedIssues.map(toIssueOutput);
 
   return {
-    issues: outputIssues,
+    issues: sortedIssues,
     recommendations,
     actionItems,
   };
 }
 
-function sortIssuesByLocation(issues: ReviewIssue[]): ReviewIssue[] {
+function sortIssuesByLocation(issues: ReviewIssueOutput[]): ReviewIssueOutput[] {
   const decorated = issues.map((issue, index) => ({ issue, index }));
 
   decorated.sort((a, b) => {
@@ -410,15 +409,4 @@ function parseLineNumber(line: number | string): number {
   }
 
   return Number.parseInt(match[0], 10);
-}
-
-function toIssueOutput(issue: ReviewIssue): ReviewIssueOutput {
-  return {
-    severity: issue.severity,
-    category: issue.category,
-    content: issue.content,
-    file: issue.file ?? '',
-    line: issue.line !== undefined ? `${issue.line}` : '',
-    suggestion: issue.suggestion ?? '',
-  };
 }

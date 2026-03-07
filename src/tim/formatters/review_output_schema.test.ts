@@ -27,7 +27,7 @@ describe('ReviewSeveritySchema', () => {
 });
 
 describe('ReviewCategorySchema', () => {
-  test('accepts valid category values', () => {
+  test('accepts supported category values', () => {
     expect(ReviewCategorySchema.safeParse('security').success).toBe(true);
     expect(ReviewCategorySchema.safeParse('performance').success).toBe(true);
     expect(ReviewCategorySchema.safeParse('bug').success).toBe(true);
@@ -39,7 +39,7 @@ describe('ReviewCategorySchema', () => {
 
   test('rejects invalid category values', () => {
     expect(ReviewCategorySchema.safeParse('invalid').success).toBe(false);
-    expect(ReviewCategorySchema.safeParse('error').success).toBe(false);
+    expect(ReviewCategorySchema.safeParse('correctness').success).toBe(false);
     expect(ReviewCategorySchema.safeParse('').success).toBe(false);
   });
 });

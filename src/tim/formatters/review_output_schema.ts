@@ -20,7 +20,7 @@ export const ReviewSeveritySchema = z
   );
 
 /**
- * Categories for classifying the type of issue found.
+ * Category for classifying the type of issue found.
  */
 export const ReviewCategorySchema = z
   .enum(['security', 'performance', 'bug', 'style', 'compliance', 'testing', 'other'])
