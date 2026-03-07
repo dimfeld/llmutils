@@ -30,6 +30,8 @@ import { gatherPlanContext } from '../utils/context_gathering.js';
 import {
   createReviewResult,
   createFormatter,
+  generateReviewSummary,
+  type ReviewResult,
   type VerbosityLevel,
   type FormatterOptions,
   type ReviewIssue,
@@ -287,6 +289,335 @@ async function getAvailableFixActions(): Promise<
   );
 }
 
+type ReviewIssueAction = FixAction | 'cleanup' | 'append' | 'exit';
+
+type ReviewIssueWorkflowResult = {
+  appendedTaskCount: number;
+  actionCompleted: boolean;
+  skipNotification: boolean;
+};
+
+export async function saveReviewIssuesToPlan(
+  planFilePath: string,
+  issues: readonly ReviewIssue[]
+): Promise<void> {
+  const latestPlan = await readPlanFile(planFilePath);
+  latestPlan.reviewIssues = issues.map((issue) => ({ ...issue }));
+  await writePlanFile(planFilePath, latestPlan);
+}
+
+export async function clearSavedReviewIssues(planFilePath: string): Promise<void> {
+  const latestPlan = await readPlanFile(planFilePath);
+  if (!latestPlan.reviewIssues) {
+    return;
+  }
+
+  delete latestPlan.reviewIssues;
+  await writePlanFile(planFilePath, latestPlan);
+}
+
+function summarizeReviewIssues(issues: readonly ReviewIssue[]): string {
+  const counts = {
+    critical: 0,
+    major: 0,
+    minor: 0,
+    info: 0,
+  };
+
+  for (const issue of issues) {
+    counts[issue.severity]++;
+  }
+
+  return [
+    `${issues.length} unresolved review issue${issues.length === 1 ? '' : 's'}`,
+    `${counts.critical} critical`,
+    `${counts.major} major`,
+    `${counts.minor} minor`,
+    `${counts.info} info`,
+  ].join(', ');
+}
+
+function createReviewResultFromSavedIssues(
+  planData: PlanSchema,
+  diffResult: DiffResult,
+  issues: readonly ReviewIssue[]
+): ReviewResult {
+  const summary = generateReviewSummary([...issues], diffResult.changedFiles.length);
+  return {
+    planId: planData.id?.toString() ?? 'unknown',
+    planTitle: planData.title ?? 'Untitled Plan',
+    reviewTimestamp: new Date().toISOString(),
+    baseBranch: diffResult.baseBranch,
+    changedFiles: diffResult.changedFiles,
+    summary,
+    issues: [...issues],
+    rawOutput: JSON.stringify({ issues }),
+    recommendations: [],
+    actionItems: [],
+  };
+}
+
+async function promptForReviewIssueAction(
+  notifyReviewInput: (message: string) => Promise<void>
+): Promise<ReviewIssueAction> {
+  const availableFixActions = await getAvailableFixActions();
+
+  await notifyReviewInput('Review needs input: choose how to proceed with issues.');
+  sendStructured({
+    type: 'input_required',
+    timestamp: timestamp(),
+    prompt: 'Choose how to proceed with review issues',
+  });
+  debugStdinTrace('about to open issue-action prompt');
+
+  try {
+    const action = await promptSelect<ReviewIssueAction>({
+      message: 'Issues were found during review. What would you like to do?',
+      choices: [
+        { name: 'Append issues to the current plan as tasks', value: 'append' },
+        ...availableFixActions.map((option) => ({
+          name: option.label,
+          value: option.action,
+        })),
+        { name: 'Create a cleanup plan (for later execution)', value: 'cleanup' },
+        { name: 'Exit (do nothing)', value: 'exit' },
+      ],
+      default: 'append',
+    });
+    debugStdinTrace(`issue-action prompt resolved with action=${action}`);
+    return action;
+  } catch (err) {
+    const name = err instanceof Error ? err.name : typeof err;
+    const message = err instanceof Error ? err.message : String(err);
+    debugStdinTrace(`issue-action prompt threw name=${name} message=${message}`);
+    throw err;
+  }
+}
+
+async function handleReviewIssueActions(params: {
+  issues: ReviewIssue[];
+  reviewResult: ReviewResult;
+  reviewExecutorName: ReviewExecutorName | null;
+  planData: PlanSchema;
+  scopedPlanData: PlanSchema;
+  diffResult: DiffResult;
+  contextPlanFile: string;
+  options: any;
+  isInteractiveEnv: boolean;
+  isPrintMode: boolean;
+  taskScopeNote?: string;
+  isScoped: boolean;
+  sharedExecutorOptions: ExecutorCommonOptions;
+  config: any;
+  globalOpts: any;
+  notifyReviewInput: (message: string) => Promise<void>;
+}): Promise<ReviewIssueWorkflowResult> {
+  const {
+    issues,
+    reviewResult,
+    reviewExecutorName,
+    planData,
+    scopedPlanData,
+    diffResult,
+    contextPlanFile,
+    options,
+    isInteractiveEnv,
+    isPrintMode,
+    taskScopeNote,
+    isScoped,
+    sharedExecutorOptions,
+    config,
+    globalOpts,
+    notifyReviewInput,
+  } = params;
+
+  let shouldAutofix = false;
+  let shouldCreateCleanupPlan = false;
+  let shouldAppendTasksToPlan = false;
+  let selectedIssues: ReviewIssue[] | null = null;
+  let autofixExecutorName: ReviewExecutorName | null = reviewExecutorName;
+  let appendedTaskCount = 0;
+  let actionCompleted = false;
+  let skipNotification = false;
+
+  if (options.autofix || options.autofixAll) {
+    shouldAutofix = true;
+    if (!options.autofixAll && issues.length > 0) {
+      if (isInteractiveEnv) {
+        selectedIssues = await selectIssuesToFix(issues, 'fix', () =>
+          notifyReviewInput('Review needs input: select issues for autofix.')
+        );
+      } else {
+        selectedIssues = issues;
+      }
+      shouldAutofix = selectedIssues.length > 0;
+      if (!shouldAutofix) {
+        log(chalk.yellow('No issues selected for autofix.'));
+      }
+    }
+  } else if (options.createCleanupPlan) {
+    shouldCreateCleanupPlan = true;
+    if (issues.length > 0) {
+      if (isInteractiveEnv) {
+        selectedIssues = await selectIssuesToFix(issues, 'include in cleanup plan', () =>
+          notifyReviewInput('Review needs input: select issues for the cleanup plan.')
+        );
+      } else {
+        selectedIssues = issues;
+      }
+      shouldCreateCleanupPlan = selectedIssues.length > 0;
+      if (!shouldCreateCleanupPlan) {
+        log(chalk.yellow('No issues selected for cleanup plan.'));
+      }
+    }
+  } else if (!options.noAutofix && isInteractiveEnv) {
+    const action = await promptForReviewIssueAction(notifyReviewInput);
+
+    if (action === 'fix-claude' || action === 'fix-codex') {
+      shouldAutofix = true;
+      autofixExecutorName = FIX_ACTION_EXECUTOR_MAP[action];
+      if (issues.length > 0) {
+        selectedIssues = await selectIssuesToFix(issues, 'fix', () =>
+          notifyReviewInput('Review needs input: select issues for autofix.')
+        );
+        shouldAutofix = selectedIssues.length > 0;
+        if (!shouldAutofix) {
+          log(chalk.yellow('No issues selected for autofix.'));
+        }
+      }
+    } else if (action === 'cleanup') {
+      skipNotification = true;
+      shouldCreateCleanupPlan = true;
+      if (issues.length > 0) {
+        selectedIssues = await selectIssuesToFix(issues, 'include in cleanup plan', () =>
+          notifyReviewInput('Review needs input: select issues for the cleanup plan.')
+        );
+        shouldCreateCleanupPlan = selectedIssues.length > 0;
+        if (!shouldCreateCleanupPlan) {
+          log(chalk.yellow('No issues selected for cleanup plan.'));
+        }
+      }
+    } else if (action === 'append') {
+      skipNotification = true;
+      shouldAppendTasksToPlan = true;
+      if (issues.length > 0) {
+        selectedIssues = await selectIssuesToFix(issues, 'append as plan tasks', () =>
+          notifyReviewInput('Review needs input: select issues to append as tasks.')
+        );
+        shouldAppendTasksToPlan = selectedIssues.length > 0;
+        if (!shouldAppendTasksToPlan) {
+          log(chalk.yellow('No issues selected to append as tasks.'));
+        }
+      }
+    }
+  }
+
+  if (shouldAppendTasksToPlan && !isPrintMode) {
+    const issuesToAppend = selectedIssues && selectedIssues.length > 0 ? selectedIssues : issues;
+
+    if (issuesToAppend.length === 0) {
+      log(chalk.yellow('No review issues available to append as tasks.'));
+    } else {
+      try {
+        const appendedCount = await appendIssuesToPlanTasks(contextPlanFile, issuesToAppend);
+        appendedTaskCount = appendedCount;
+        actionCompleted = true;
+
+        if (appendedCount > 0) {
+          const plural = appendedCount === 1 ? '' : 's';
+          log(
+            chalk.green(
+              `✓ Added ${appendedCount} review issue${plural} as task${plural} to plan ${planData.id}.`
+            )
+          );
+        } else {
+          log(chalk.gray('No new tasks were added (likely due to duplicate titles).'));
+        }
+      } catch (appendErr) {
+        const appendMessage = appendErr instanceof Error ? appendErr.message : String(appendErr);
+        log(chalk.red(`Error appending review issues to plan tasks: ${appendMessage}`));
+      }
+    }
+  }
+
+  if (shouldCreateCleanupPlan && planData.id && !isPrintMode) {
+    sendStructured({
+      type: 'workflow_progress',
+      timestamp: timestamp(),
+      phase: 'cleanup',
+      message: 'Creating cleanup plan',
+    });
+
+    const cleanupScopeNote =
+      isScoped && taskScopeNote ? taskScopeNote.replace('review', 'cleanup plan') : undefined;
+    const cleanupOptions: CleanupPlanOptions = {
+      priority: options.cleanupPriority || 'medium',
+      assign: options.cleanupAssign,
+      scopeNote: cleanupScopeNote,
+      scopedPlan: isScoped ? scopedPlanData : undefined,
+    };
+
+    const cleanupResult = await createCleanupPlan(
+      planData.id,
+      selectedIssues || issues,
+      cleanupOptions,
+      globalOpts
+    );
+
+    log(
+      chalk.green(
+        `✓ Created cleanup plan: ${cleanupResult.filePath} for ID ${chalk.green(cleanupResult.planId)}`
+      )
+    );
+    log(
+      chalk.gray(
+        `  Next step: Use "tim generate ${cleanupResult.planId}" or "tim run ${cleanupResult.planId}"`
+      )
+    );
+    actionCompleted = true;
+  }
+
+  const performAutofix = shouldAutofix && !options.noAutofix;
+
+  if (performAutofix && !isPrintMode) {
+    sendStructured({
+      type: 'workflow_progress',
+      timestamp: timestamp(),
+      phase: 'autofix',
+      message: 'Executing autofix',
+    });
+
+    const autofixPrompt = buildAutofixPrompt(
+      scopedPlanData,
+      reviewResult,
+      diffResult,
+      selectedIssues
+    );
+    const executorName = autofixExecutorName ?? reviewExecutorName;
+    if (!executorName) {
+      throw new Error('No executor available for autofix.');
+    }
+
+    const autofixExecutor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
+    await autofixExecutor.execute(autofixPrompt, {
+      planId: planData.id?.toString() ?? 'unknown',
+      planTitle: `${planData.title ?? 'Untitled Plan'} - Autofix`,
+      planFilePath: contextPlanFile,
+      captureOutput: 'none',
+      executionMode: 'normal',
+    });
+
+    log(chalk.green('Autofix execution completed successfully!'));
+    actionCompleted = true;
+  }
+
+  if (actionCompleted) {
+    await clearSavedReviewIssues(contextPlanFile);
+  }
+
+  return { appendedTaskCount, actionCompleted, skipNotification };
+}
+
 export async function handleReviewCommand(
   planFile: string | undefined,
   options: any,
@@ -444,17 +775,6 @@ export async function handleReviewCommand(
         gatherPlanContext(resolvedPlanFilePath, options, globalOpts)
       );
 
-      // Check if no changes were detected and early return for review
-      if (context.noChangesDetected) {
-        const nothingMessage =
-          options.incremental || options.sinceLastReview
-            ? 'No changes detected since last review. Nothing new to review.'
-            : 'No changes detected compared to trunk branch. Nothing to review.';
-        reviewLog(chalk.yellow(nothingMessage));
-        skipNotification = true;
-        return;
-      }
-
       // Extract context for use in the rest of the function
       const {
         resolvedPlanFile: contextPlanFile,
@@ -465,6 +785,17 @@ export async function handleReviewCommand(
       } = context;
       notifyPlan = planData;
       notifyPlanFile = contextPlanFile;
+
+      // Check if no changes were detected and early return for review
+      if (!options.issues && context.noChangesDetected) {
+        const nothingMessage =
+          options.incremental || options.sinceLastReview
+            ? 'No changes detected since last review. Nothing new to review.'
+            : 'No changes detected compared to trunk branch. Nothing to review.';
+        reviewLog(chalk.yellow(nothingMessage));
+        skipNotification = true;
+        return;
+      }
 
       reviewLog(chalk.green(`Reviewing plan: ${planData.id} - ${planData.title}`));
 
@@ -609,6 +940,57 @@ export async function handleReviewCommand(
         taskTitle: options.taskTitle,
       });
 
+      if (options.issues) {
+        const savedIssues = Array.isArray(planData.reviewIssues) ? planData.reviewIssues : [];
+        if (savedIssues.length === 0) {
+          reviewLog(chalk.yellow('No saved review issues found for this plan.'));
+          completionMessage = 'No saved review issues found.';
+          skipNotification = true;
+          return;
+        }
+
+        reviewLog(chalk.cyan(`Using saved review issues: ${summarizeReviewIssues(savedIssues)}`));
+
+        if (isPrintMode) {
+          console.log(JSON.stringify(savedIssues, null, 2));
+          await Bun.sleep(500);
+          completionMessage = 'Saved review issues printed.';
+          skipNotification = true;
+          return;
+        }
+
+        const savedReviewResult = createReviewResultFromSavedIssues(
+          scopedPlanData,
+          diffResult,
+          savedIssues
+        );
+        const actionResult = await handleReviewIssueActions({
+          issues: savedIssues,
+          reviewResult: savedReviewResult,
+          reviewExecutorName: options.executor || config.defaultExecutor,
+          planData,
+          scopedPlanData,
+          diffResult,
+          contextPlanFile,
+          options,
+          isInteractiveEnv,
+          isPrintMode,
+          taskScopeNote,
+          isScoped,
+          sharedExecutorOptions,
+          config,
+          globalOpts,
+          notifyReviewInput,
+        });
+
+        appendedTaskCount += actionResult.appendedTaskCount;
+        skipNotification ||= actionResult.skipNotification || !actionResult.actionCompleted;
+        completionMessage = actionResult.actionCompleted
+          ? 'Processed saved review issues.'
+          : 'Saved review issues left unchanged.';
+        return;
+      }
+
       const buildPrompt: ReviewPromptBuilder = ({ includeDiff, useSubagents }) =>
         buildReviewPrompt(
           scopedPlanData,
@@ -689,7 +1071,6 @@ export async function handleReviewCommand(
         if (!reviewExecutorName) {
           throw new Error('Review completed without a usable executor result.');
         }
-        let autofixExecutorName: ReviewExecutorName | null = reviewExecutorName;
 
         // Determine format and verbosity from options or config
         const outputFormat = isPrintMode
@@ -719,6 +1100,14 @@ export async function handleReviewCommand(
         const formattedOutput = formatter.format(reviewResult, formatterOptions);
         const hasIssues = detectIssuesInReview(reviewResult, rawOutput);
 
+        const shouldPersistIssues =
+          hasIssues && contextPlanFile && (isInteractiveEnv || options.saveIssues === true);
+        if (shouldPersistIssues) {
+          await saveReviewIssuesToPlan(contextPlanFile, reviewResult.issues);
+        } else if (!hasIssues && planData.reviewIssues) {
+          await clearSavedReviewIssues(contextPlanFile);
+        }
+
         sendStructured({
           type: 'review_result',
           timestamp: timestamp(),
@@ -740,158 +1129,27 @@ export async function handleReviewCommand(
           await Bun.sleep(500);
         }
 
-        // Check if autofix should be performed - with robust issue detection
-        let shouldAutofix = false;
-        let shouldCreateCleanupPlan = false;
-        let shouldAppendTasksToPlan = false;
-        let selectedIssues: ReviewIssue[] | null = null;
-
         if (hasIssues && !isPrintMode) {
-          if (options.autofix || options.autofixAll) {
-            shouldAutofix = true;
-            if (!options.autofixAll && reviewResult.issues && reviewResult.issues.length > 0) {
-              // Allow selection unless --autofix-all is used
-              if (isInteractiveEnv) {
-                selectedIssues = await selectIssuesToFix(reviewResult.issues, 'fix', () =>
-                  notifyReviewInput('Review needs input: select issues for autofix.')
-                );
-              } else {
-                selectedIssues = reviewResult.issues;
-              }
-              shouldAutofix = selectedIssues.length > 0;
-              if (!shouldAutofix) {
-                log(chalk.yellow('No issues selected for autofix.'));
-              }
-            }
-          } else if (options.createCleanupPlan) {
-            shouldCreateCleanupPlan = true;
-            if (reviewResult.issues && reviewResult.issues.length > 0) {
-              if (isInteractiveEnv) {
-                selectedIssues = await selectIssuesToFix(
-                  reviewResult.issues,
-                  'include in cleanup plan',
-                  () => notifyReviewInput('Review needs input: select issues for the cleanup plan.')
-                );
-              } else {
-                selectedIssues = reviewResult.issues;
-              }
-              shouldCreateCleanupPlan = selectedIssues.length > 0;
-              if (!shouldCreateCleanupPlan) {
-                log(chalk.yellow('No issues selected for cleanup plan.'));
-              }
-            }
-          } else if (!options.noAutofix) {
-            // Prompt user for action when interactive; otherwise skip prompting
-            const availableFixActions = await getAvailableFixActions();
-            type ReviewIssueAction = FixAction | 'cleanup' | 'append' | 'exit';
-            let action: ReviewIssueAction = 'exit';
-            if (isInteractiveEnv) {
-              await notifyReviewInput('Review needs input: choose how to proceed with issues.');
-              sendStructured({
-                type: 'input_required',
-                timestamp: timestamp(),
-                prompt: 'Choose how to proceed with review issues',
-              });
-              debugStdinTrace('about to open issue-action prompt');
-              try {
-                action = await promptSelect({
-                  message: 'Issues were found during review. What would you like to do?',
-                  choices: [
-                    { name: 'Append issues to the current plan as tasks', value: 'append' },
-                    ...availableFixActions.map((option) => ({
-                      name: option.label,
-                      value: option.action,
-                    })),
-                    { name: 'Create a cleanup plan (for later execution)', value: 'cleanup' },
-                    { name: 'Exit (do nothing)', value: 'exit' },
-                  ],
-                  default: 'append',
-                });
-                debugStdinTrace(`issue-action prompt resolved with action=${action}`);
-              } catch (err) {
-                const name = err instanceof Error ? err.name : typeof err;
-                const message = err instanceof Error ? err.message : String(err);
-                debugStdinTrace(`issue-action prompt threw name=${name} message=${message}`);
-                throw err;
-              }
-            }
-
-            if (action === 'fix-claude' || action === 'fix-codex') {
-              shouldAutofix = true;
-              autofixExecutorName = FIX_ACTION_EXECUTOR_MAP[action];
-              if (reviewResult.issues && reviewResult.issues.length > 0) {
-                selectedIssues = await selectIssuesToFix(reviewResult.issues, 'fix', () =>
-                  notifyReviewInput('Review needs input: select issues for autofix.')
-                );
-                shouldAutofix = selectedIssues.length > 0;
-                if (!shouldAutofix) {
-                  log(chalk.yellow('No issues selected for autofix.'));
-                }
-              }
-            } else if (action === 'cleanup') {
-              // Don't notify at the end because we're just existing right after the user selects the issues
-              skipNotification = true;
-              shouldCreateCleanupPlan = true;
-              if (reviewResult.issues && reviewResult.issues.length > 0) {
-                selectedIssues = await selectIssuesToFix(
-                  reviewResult.issues,
-                  'include in cleanup plan',
-                  () => notifyReviewInput('Review needs input: select issues for the cleanup plan.')
-                );
-                shouldCreateCleanupPlan = selectedIssues.length > 0;
-                if (!shouldCreateCleanupPlan) {
-                  log(chalk.yellow('No issues selected for cleanup plan.'));
-                }
-              }
-            } else if (action === 'append') {
-              // Don't notify at the end because we're just existing right after the user selects the issues
-              skipNotification = true;
-              shouldAppendTasksToPlan = true;
-              if (reviewResult.issues && reviewResult.issues.length > 0) {
-                selectedIssues = await selectIssuesToFix(
-                  reviewResult.issues,
-                  'append as plan tasks',
-                  () => notifyReviewInput('Review needs input: select issues to append as tasks.')
-                );
-                shouldAppendTasksToPlan = selectedIssues.length > 0;
-                if (!shouldAppendTasksToPlan) {
-                  log(chalk.yellow('No issues selected to append as tasks.'));
-                }
-              }
-            }
-          }
-        }
-
-        const performAutofix = shouldAutofix && !options.noAutofix;
-
-        if (shouldAppendTasksToPlan && hasIssues && !isPrintMode) {
-          const issuesToAppend =
-            (selectedIssues && selectedIssues.length > 0 ? selectedIssues : reviewResult.issues) ||
-            [];
-
-          if (issuesToAppend.length === 0) {
-            log(chalk.yellow('No review issues available to append as tasks.'));
-          } else {
-            try {
-              const appendedCount = await appendIssuesToPlanTasks(contextPlanFile, issuesToAppend);
-              appendedTaskCount = appendedCount;
-
-              if (appendedCount > 0) {
-                const plural = appendedCount === 1 ? '' : 's';
-                log(
-                  chalk.green(
-                    `✓ Added ${appendedCount} review issue${plural} as task${plural} to plan ${planData.id}.`
-                  )
-                );
-              } else {
-                log(chalk.gray('No new tasks were added (likely due to duplicate titles).'));
-              }
-            } catch (appendErr) {
-              const appendMessage =
-                appendErr instanceof Error ? appendErr.message : String(appendErr);
-              log(chalk.red(`Error appending review issues to plan tasks: ${appendMessage}`));
-            }
-          }
+          const actionResult = await handleReviewIssueActions({
+            issues: reviewResult.issues,
+            reviewResult,
+            reviewExecutorName,
+            planData,
+            scopedPlanData,
+            diffResult,
+            contextPlanFile,
+            options,
+            isInteractiveEnv,
+            isPrintMode,
+            taskScopeNote,
+            isScoped,
+            sharedExecutorOptions,
+            config,
+            globalOpts,
+            notifyReviewInput,
+          });
+          appendedTaskCount += actionResult.appendedTaskCount;
+          skipNotification ||= actionResult.skipNotification;
         }
 
         // Persistence logic - save to structured review history
@@ -993,104 +1251,6 @@ export async function handleReviewCommand(
                 `Warning: Could not store incremental review metadata: ${metadataErrorMessage}`
               )
             );
-          }
-        }
-
-        // Create cleanup plan if requested
-        if (shouldCreateCleanupPlan && hasIssues && planData.id && !isPrintMode) {
-          sendStructured({
-            type: 'workflow_progress',
-            timestamp: timestamp(),
-            phase: 'cleanup',
-            message: 'Creating cleanup plan',
-          });
-
-          try {
-            const cleanupScopeNote =
-              isScoped && taskScopeNote
-                ? taskScopeNote.replace('review', 'cleanup plan')
-                : undefined;
-            const cleanupOptions: CleanupPlanOptions = {
-              priority: options.cleanupPriority || 'medium',
-              assign: options.cleanupAssign,
-              scopeNote: cleanupScopeNote,
-              scopedPlan: isScoped ? scopedPlanData : undefined,
-            };
-
-            const cleanupResult = await createCleanupPlan(
-              planData.id,
-              selectedIssues || reviewResult.issues || [],
-              cleanupOptions,
-              globalOpts
-            );
-
-            log(
-              chalk.green(
-                `✓ Created cleanup plan: ${cleanupResult.filePath} for ID ${chalk.green(cleanupResult.planId)}`
-              )
-            );
-            log(
-              chalk.gray(
-                `  Next step: Use "tim generate ${cleanupResult.planId}" or "tim run ${cleanupResult.planId}"`
-              )
-            );
-          } catch (cleanupErr) {
-            const cleanupErrorMessage =
-              cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr);
-            log(chalk.red(`Error creating cleanup plan: ${cleanupErrorMessage}`));
-            throw new Error(`Cleanup plan creation failed: ${cleanupErrorMessage}`);
-          }
-        }
-
-        // Execute autofix if requested or confirmed and issues were detected
-        if (performAutofix && hasIssues && !isPrintMode) {
-          sendStructured({
-            type: 'workflow_progress',
-            timestamp: timestamp(),
-            phase: 'autofix',
-            message: 'Executing autofix',
-          });
-
-          try {
-            // Build the autofix prompt with validation
-            const autofixPrompt = buildAutofixPrompt(
-              scopedPlanData,
-              reviewResult,
-              diffResult,
-              selectedIssues
-            );
-
-            // Execute autofix using the executor in normal mode
-            const executorName = autofixExecutorName ?? reviewExecutorName;
-            const autofixExecutor = buildExecutorAndLog(
-              executorName,
-              sharedExecutorOptions,
-              config
-            );
-
-            const autofixOutput = await autofixExecutor.execute(autofixPrompt, {
-              planId: planData.id?.toString() ?? 'unknown',
-              planTitle: `${planData.title ?? 'Untitled Plan'} - Autofix`,
-              planFilePath: contextPlanFile,
-              captureOutput: 'none', // Allow normal execution output for autofix
-              executionMode: 'normal', // Use full-featured mode for autofix
-            });
-
-            log(chalk.green('Autofix execution completed successfully!'));
-          } catch (autofixErr) {
-            // Enhanced error handling with context preservation
-            const autofixErrorMessage =
-              autofixErr instanceof Error ? autofixErr.message : String(autofixErr);
-            const contextualError = `Autofix execution failed: ${autofixErrorMessage}`;
-
-            log(chalk.red(`Error during autofix execution: ${autofixErrorMessage}`));
-
-            // Preserve stack trace for debugging
-            if (autofixErr instanceof Error && autofixErr.stack) {
-              log(chalk.gray(`Stack trace: ${autofixErr.stack}`));
-            }
-
-            throw new Error(contextualError);
           }
         }
 

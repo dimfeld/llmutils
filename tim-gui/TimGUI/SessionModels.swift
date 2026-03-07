@@ -3,7 +3,7 @@ import Observation
 
 // MARK: - MessageCategory
 
-enum MessageCategory: Sendable {
+enum MessageCategory {
     case lifecycle
     case llmOutput
     case toolUse
@@ -17,7 +17,7 @@ enum MessageCategory: Sendable {
 
 // MARK: - PromptResponseValue
 
-enum PromptResponseValue: Sendable, Encodable, Equatable {
+enum PromptResponseValue: Encodable, Equatable {
     case bool(Bool)
     case string(String)
     case int(Int)
@@ -73,7 +73,7 @@ enum OutgoingMessage: Encodable {
 
 // MARK: - MessageContentBody
 
-enum MessageContentBody: Sendable {
+enum MessageContentBody {
     case text(String)
     case monospaced(String)
     case todoList([TodoDisplayItem])
@@ -81,32 +81,32 @@ enum MessageContentBody: Sendable {
     case keyValuePairs([KeyValuePair])
 }
 
-struct TodoDisplayItem: Sendable, Equatable {
+struct TodoDisplayItem: Equatable {
     let label: String
     let status: TodoStatus
 }
 
-enum TodoStatus: Sendable {
+enum TodoStatus {
     case completed, inProgress, pending, blocked, unknown
 }
 
-struct FileChangeDisplayItem: Sendable, Equatable {
+struct FileChangeDisplayItem: Equatable {
     let path: String
     let kind: FileChangeKind
 }
 
-enum FileChangeKind: Sendable {
+enum FileChangeKind {
     case added, updated, removed, unknown
 }
 
-struct KeyValuePair: Sendable, Equatable {
+struct KeyValuePair: Equatable {
     let key: String
     let value: String
 }
 
 // MARK: - SessionMessage
 
-struct SessionMessage: Identifiable, Sendable {
+struct SessionMessage: Identifiable {
     let id: UUID
     let seq: Int
     let title: String?
@@ -358,7 +358,7 @@ struct SessionGroup: Identifiable {
 
 // MARK: - HeadlessMessage
 
-enum HeadlessMessage: Sendable {
+enum HeadlessMessage {
     case sessionInfo(SessionInfoPayload)
     case output(seq: Int, message: TunnelMessage)
     case replayStart
@@ -366,7 +366,7 @@ enum HeadlessMessage: Sendable {
     case unknown(type: String)
 }
 
-struct SessionInfoPayload: Sendable {
+struct SessionInfoPayload {
     let command: String
     let planId: Int?
     let planTitle: String?
@@ -425,7 +425,7 @@ extension HeadlessMessage: Decodable {
 
 // MARK: - TunnelMessage
 
-enum TunnelMessage: Sendable {
+enum TunnelMessage {
     case args(type: String, args: [String])
     case data(type: String, data: String)
     case structured(message: StructuredMessagePayload)
@@ -462,7 +462,7 @@ extension TunnelMessage: Decodable {
 
 // MARK: - StructuredMessagePayload
 
-enum StructuredMessagePayload: Sendable {
+enum StructuredMessagePayload {
     case agentSessionStart(AgentSessionStartPayload)
     case agentSessionEnd(AgentSessionEndPayload)
     case agentIterationStart(AgentIterationStartPayload)
@@ -497,12 +497,12 @@ enum StructuredMessagePayload: Sendable {
 
 // MARK: - Structured Message Payload Structs
 
-enum UserTerminalInputSource: String, Sendable, Decodable {
+enum UserTerminalInputSource: String, Decodable {
     case terminal
     case gui
 }
 
-struct AgentSessionStartPayload: Sendable {
+struct AgentSessionStartPayload {
     let executor: String?
     let mode: String?
     let planId: Int?
@@ -513,7 +513,7 @@ struct AgentSessionStartPayload: Sendable {
     let timestamp: String?
 }
 
-struct AgentSessionEndPayload: Sendable {
+struct AgentSessionEndPayload {
     let success: Bool
     let sessionId: String?
     let threadId: String?
@@ -524,14 +524,14 @@ struct AgentSessionEndPayload: Sendable {
     let timestamp: String?
 }
 
-struct AgentIterationStartPayload: Sendable {
+struct AgentIterationStartPayload {
     let iterationNumber: Int
     let taskTitle: String?
     let taskDescription: String?
     let timestamp: String?
 }
 
-struct AgentStepStartPayload: Sendable {
+struct AgentStepStartPayload {
     let phase: String
     let executor: String?
     let stepNumber: Int?
@@ -540,28 +540,28 @@ struct AgentStepStartPayload: Sendable {
     let timestamp: String?
 }
 
-struct AgentStepEndPayload: Sendable {
+struct AgentStepEndPayload {
     let phase: String
     let success: Bool
     let summary: String?
     let timestamp: String?
 }
 
-struct LlmToolUsePayload: Sendable {
+struct LlmToolUsePayload {
     let toolName: String
     let inputSummary: String?
     let input: String?
     let timestamp: String?
 }
 
-struct LlmToolResultPayload: Sendable {
+struct LlmToolResultPayload {
     let toolName: String
     let resultSummary: String?
     let result: String?
     let timestamp: String?
 }
 
-struct TodoUpdateItem: Sendable, Decodable {
+struct TodoUpdateItem: Decodable {
     let label: String
     let status: String
 
@@ -571,7 +571,7 @@ struct TodoUpdateItem: Sendable, Decodable {
     }
 }
 
-struct FileChangeItem: Sendable, Decodable {
+struct FileChangeItem: Decodable {
     let path: String
     let kind: String
 
@@ -581,7 +581,7 @@ struct FileChangeItem: Sendable, Decodable {
     }
 }
 
-struct CommandResultPayload: Sendable {
+struct CommandResultPayload {
     let command: String?
     let cwd: String?
     let exitCode: Int
@@ -590,7 +590,7 @@ struct CommandResultPayload: Sendable {
     let timestamp: String?
 }
 
-struct ReviewIssueItem: Sendable, Decodable {
+struct ReviewIssueItem: Decodable {
     let severity: String?
     let category: String?
     let content: String?
@@ -608,7 +608,7 @@ struct ReviewIssueItem: Sendable, Decodable {
     }
 }
 
-struct ReviewResultPayload: Sendable {
+struct ReviewResultPayload {
     let issues: [ReviewIssueItem]
     let recommendations: [String]
     let actionItems: [String]
@@ -617,7 +617,7 @@ struct ReviewResultPayload: Sendable {
     let timestamp: String?
 }
 
-struct FailureReportPayload: Sendable {
+struct FailureReportPayload {
     let summary: String
     let requirements: String?
     let problems: String?
@@ -626,7 +626,7 @@ struct FailureReportPayload: Sendable {
     let timestamp: String?
 }
 
-struct ExecutionSummaryPayload: Sendable {
+struct ExecutionSummaryPayload {
     // The summary is complex; store as a dictionary for basic display
     let planId: String?
     let planTitle: String?
@@ -639,7 +639,7 @@ struct ExecutionSummaryPayload: Sendable {
     let timestamp: String?
 }
 
-struct TokenUsagePayload: Sendable {
+struct TokenUsagePayload {
     let inputTokens: Int?
     let cachedInputTokens: Int?
     let outputTokens: Int?
@@ -648,7 +648,7 @@ struct TokenUsagePayload: Sendable {
     let timestamp: String?
 }
 
-struct PromptChoiceConfigPayload: Sendable, Decodable {
+struct PromptChoiceConfigPayload: Decodable {
     let name: String
     let value: PromptResponseValue?
     let description: String?
@@ -694,7 +694,7 @@ struct PromptChoiceConfigPayload: Sendable, Decodable {
     }
 }
 
-struct PromptConfigPayload: Sendable, Decodable {
+struct PromptConfigPayload: Decodable {
     let message: String
     let header: String?
     let question: String?
@@ -760,7 +760,7 @@ struct PromptConfigPayload: Sendable, Decodable {
     }
 }
 
-struct PromptRequestPayload: Sendable {
+struct PromptRequestPayload {
     let requestId: String
     let promptType: String
     let promptConfig: PromptConfigPayload
@@ -768,7 +768,7 @@ struct PromptRequestPayload: Sendable {
     let timestamp: String?
 }
 
-struct PromptAnsweredPayload: Sendable {
+struct PromptAnsweredPayload {
     let requestId: String
     let promptType: String
     let source: String
@@ -807,7 +807,7 @@ private struct AnyJSON: Decodable {
 }
 
 /// Decodes any JSON value (string, number, bool, object, array) into a String representation.
-private struct RawJSONString: Decodable, Sendable {
+private struct RawJSONString: Decodable {
     let stringValue: String
 
     init(from decoder: Decoder) throws {

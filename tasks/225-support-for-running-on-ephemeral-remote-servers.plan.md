@@ -15,7 +15,7 @@ references:
   "222": 80e8e677-777a-4917-9d42-984dfca6d8f3
   "223": 9414fc10-17e6-44de-b2bb-ba6feb2acf62
 createdAt: 2026-03-07T08:02:15.156Z
-updatedAt: 2026-03-07T08:15:26.233Z
+updatedAt: 2026-03-07T08:53:09.757Z
 tasks: []
 tags: []
 ---
@@ -31,3 +31,5 @@ We should have an adapter system for working with ephemeral server providers. ht
 one we support.
 
 The SQLite database should store information on ephemeral remote sessions and servers.
+
+Workspace push at the end must go through `origin` remote since we won't be able to just push locally between directories.

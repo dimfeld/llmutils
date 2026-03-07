@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import TimGUI
 
-@Suite("SessionState", .serialized)
+@Suite(.serialized)
 @MainActor
 struct SessionStateTests {
     // MARK: - Helpers
@@ -32,8 +32,8 @@ struct SessionStateTests {
 
     // MARK: - addSession
 
-    @Test("addSession creates a session with correct properties from SessionInfoPayload")
-    func addSessionProperties() {
+    @Test
+    func `addSession creates a session with correct properties from SessionInfoPayload`() {
         let state = SessionState()
         let connId = UUID()
         let info = self.makeInfo(
@@ -57,8 +57,8 @@ struct SessionStateTests {
         #expect(session.messages.isEmpty)
     }
 
-    @Test("addSession inserts at index 0 (newest first)")
-    func addSessionInsertsAtFront() {
+    @Test
+    func `addSession inserts at index 0 (newest first)`() {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
@@ -73,8 +73,8 @@ struct SessionStateTests {
         #expect(state.sessions[1].command == "agent")
     }
 
-    @Test("addSession auto-selects first session if nothing is selected")
-    func addSessionAutoSelects() {
+    @Test
+    func `addSession auto-selects first session if nothing is selected`() {
         let state = SessionState()
         #expect(state.selectedSessionId == nil)
 
@@ -84,8 +84,8 @@ struct SessionStateTests {
         #expect(state.selectedSessionId == state.sessions[0].id)
     }
 
-    @Test("addSession does NOT change selection if something is already selected")
-    func addSessionPreservesSelection() throws {
+    @Test
+    func `addSession does NOT change selection if something is already selected`() throws {
         let state = SessionState()
         let connId1 = UUID()
         state.addSession(connectionId: connId1, info: self.makeInfo(command: "agent"))
@@ -100,8 +100,8 @@ struct SessionStateTests {
         #expect(state.selectedSessionId != state.sessions[0].id)
     }
 
-    @Test("addSession with minimal info sets optional fields to nil")
-    func addSessionMinimalInfo() {
+    @Test
+    func `addSession with minimal info sets optional fields to nil`() {
         let state = SessionState()
         let info = self.makeInfo(command: "review")
 
@@ -117,8 +117,8 @@ struct SessionStateTests {
 
     // MARK: - Duplicate session_info handling
 
-    @Test("Duplicate session_info updates metadata instead of creating a new session")
-    func duplicateSessionInfoUpdatesMetadata() {
+    @Test
+    func `Duplicate session_info updates metadata instead of creating a new session`() {
         let state = SessionState()
         let connId = UUID()
 
@@ -156,8 +156,8 @@ struct SessionStateTests {
         #expect(session.gitRemote == "git@github.com:user/other.git")
     }
 
-    @Test("Duplicate session_info preserves existing messages")
-    func duplicateSessionInfoPreservesMessages() {
+    @Test
+    func `Duplicate session_info preserves existing messages`() {
         let state = SessionState()
         let connId = UUID()
 
@@ -174,8 +174,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages[1].text == "msg2")
     }
 
-    @Test("Duplicate session_info does not change selection")
-    func duplicateSessionInfoPreservesSelection() throws {
+    @Test
+    func `Duplicate session_info does not change selection`() throws {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
@@ -192,8 +192,8 @@ struct SessionStateTests {
         #expect(state.sessions.count == 2)
     }
 
-    @Test("Duplicate session_info preserves existing messages")
-    func duplicateSessionInfoPreservesExistingMessages() throws {
+    @Test
+    func `duplicate session info preserves existing messages`() throws {
         let state = SessionState()
         let connId = UUID()
 
@@ -211,8 +211,8 @@ struct SessionStateTests {
         #expect(session.command == "review")
     }
 
-    @Test("Duplicate session_info keeps isActive unchanged")
-    func duplicateSessionInfoKeepsIsActive() {
+    @Test
+    func `Duplicate session_info keeps isActive unchanged`() {
         let state = SessionState()
         let connId = UUID()
 
@@ -226,8 +226,8 @@ struct SessionStateTests {
 
     // MARK: - appendMessage
 
-    @Test("appendMessage adds message to the correct session by connectionId")
-    func appendMessageCorrectSession() {
+    @Test
+    func `appendMessage adds message to the correct session by connectionId`() {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
@@ -245,8 +245,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages.isEmpty)
     }
 
-    @Test("appendMessage appends multiple messages in order")
-    func appendMessageOrder() {
+    @Test
+    func `appendMessage appends multiple messages in order`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo())
@@ -261,8 +261,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages[2].text == "third")
     }
 
-    @Test("displayTimestamp falls back to connectedAt before messages are received")
-    func displayTimestampFallsBackToConnectedAt() {
+    @Test
+    func `displayTimestamp falls back to connectedAt before messages are received`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo())
@@ -272,8 +272,8 @@ struct SessionStateTests {
         #expect(session.displayTimestamp == session.connectedAt)
     }
 
-    @Test("appendMessage updates lastMessageReceivedAt")
-    func appendMessageUpdatesLastMessageReceivedAt() throws {
+    @Test
+    func `appendMessage updates lastMessageReceivedAt`() throws {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo())
@@ -287,8 +287,8 @@ struct SessionStateTests {
         #expect(session.displayTimestamp == lastMessageReceivedAt)
     }
 
-    @Test("appendMessage buffers messages for unknown connectionId (does not affect existing sessions)")
-    func appendMessageUnknownConnection() {
+    @Test
+    func `appendMessage buffers messages for unknown connectionId (does not affect existing sessions)`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo())
@@ -299,8 +299,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages.isEmpty)
     }
 
-    @Test("appendMessage buffers messages before session_info, addSession flushes them")
-    func appendMessageBufferingAndFlush() {
+    @Test
+    func `appendMessage buffers messages before session_info, addSession flushes them`() {
         let state = SessionState()
         let connId = UUID()
 
@@ -321,8 +321,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages[1].text == "early msg 2")
     }
 
-    @Test("appendMessage buffer is per-connection, messages go to correct sessions")
-    func appendMessageBufferingPerConnection() {
+    @Test
+    func `appendMessage buffer is per-connection, messages go to correct sessions`() {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
@@ -342,8 +342,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages[0].text == "conn2 early")
     }
 
-    @Test("appendMessage continues normally after buffered messages are flushed")
-    func appendMessageAfterFlush() {
+    @Test
+    func `appendMessage continues normally after buffered messages are flushed`() {
         let state = SessionState()
         let connId = UUID()
 
@@ -361,8 +361,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages[1].text == "live msg")
     }
 
-    @Test("ingestSessionMetadata updates planTitle from plan_discovery")
-    func ingestSessionMetadataFromPlanDiscovery() {
+    @Test
+    func `ingestSessionMetadata updates planTitle from plan_discovery`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -378,8 +378,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].planTitle == "New Plan Title")
     }
 
-    @Test("ingestSessionMetadata updates planTitle from execution_summary")
-    func ingestSessionMetadataFromExecutionSummary() {
+    @Test
+    func `ingestSessionMetadata updates planTitle from execution_summary`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -401,8 +401,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].planTitle == "Execution Summary Title")
     }
 
-    @Test("ingestSessionMetadata ignores empty titles")
-    func ingestSessionMetadataIgnoresEmptyTitles() {
+    @Test
+    func `ingestSessionMetadata ignores empty titles`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent", planTitle: "Existing"))
@@ -417,8 +417,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].planTitle == "Existing")
     }
 
-    @Test("replay buffers messages and flushes them only on replay_end")
-    func replayBuffersUntilEnd() {
+    @Test
+    func `replay buffers messages and flushes them only on replay_end`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo())
@@ -439,8 +439,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].forceScrollToBottomVersion == 1)
     }
 
-    @Test("messages after replay_end append normally")
-    func replayThenLiveMessages() {
+    @Test
+    func `messages after replay_end append normally`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo())
@@ -457,8 +457,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].forceScrollToBottomVersion == 1)
     }
 
-    @Test("markDisconnected during replay discards buffered replay messages")
-    func replayBufferClearedOnDisconnect() {
+    @Test
+    func `markDisconnected during replay discards buffered replay messages`() {
         let state = SessionState()
         let connId = UUID()
 
@@ -472,8 +472,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages.isEmpty)
     }
 
-    @Test("markDisconnected cleans up pending message buffer")
-    func markDisconnectedCleansPendingBuffer() {
+    @Test
+    func `markDisconnected cleans up pending message buffer`() {
         let state = SessionState()
         let connId = UUID()
 
@@ -491,8 +491,8 @@ struct SessionStateTests {
 
     // MARK: - markDisconnected
 
-    @Test("markDisconnected sets isActive to false")
-    func markDisconnectedSetsInactive() {
+    @Test
+    func `markDisconnected sets isActive to false`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo())
@@ -503,8 +503,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].isActive == false)
     }
 
-    @Test("markDisconnected updates notification state for that session")
-    func markDisconnectedSetsNotification() {
+    @Test
+    func `markDisconnected updates notification state for that session`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo())
@@ -516,8 +516,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].notificationMessage == "Agent session disconnected")
     }
 
-    @Test("markDisconnected sets unread notification for selected session")
-    func markDisconnectedSelectedSessionUnread() {
+    @Test
+    func `markDisconnected sets unread notification for selected session`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo())
@@ -529,8 +529,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].notificationMessage == "Agent session disconnected")
     }
 
-    @Test("markDisconnected only affects the targeted session")
-    func markDisconnectedTargeted() {
+    @Test
+    func `markDisconnected only affects the targeted session`() {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
@@ -544,8 +544,8 @@ struct SessionStateTests {
         #expect(state.sessions[1].isActive == false)
     }
 
-    @Test("markDisconnected is a no-op for unknown connectionId")
-    func markDisconnectedUnknownConnection() {
+    @Test
+    func `markDisconnected is a no-op for unknown connectionId`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo())
@@ -557,8 +557,8 @@ struct SessionStateTests {
 
     // MARK: - dismissSession
 
-    @Test("dismissSession removes a closed session from the list")
-    func dismissSessionRemoves() {
+    @Test
+    func `dismissSession removes a closed session from the list`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo())
@@ -570,8 +570,8 @@ struct SessionStateTests {
         #expect(state.sessions.isEmpty)
     }
 
-    @Test("dismissSession is a no-op for an active session")
-    func dismissSessionActiveSessionNoop() {
+    @Test
+    func `dismissSession is a no-op for an active session`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo())
@@ -584,8 +584,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].id == sessionId)
     }
 
-    @Test("dismissSession reselects first session if dismissed session was selected")
-    func dismissSessionReselects() throws {
+    @Test
+    func `dismissSession reselects first session if dismissed session was selected`() throws {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
@@ -605,8 +605,8 @@ struct SessionStateTests {
         #expect(state.selectedSessionId == state.sessions[0].id)
     }
 
-    @Test("dismissSession does not change selection if a different session was dismissed")
-    func dismissSessionPreservesSelection() throws {
+    @Test
+    func `dismissSession does not change selection if a different session was dismissed`() throws {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
@@ -627,8 +627,8 @@ struct SessionStateTests {
         #expect(state.selectedSessionId == firstSessionId)
     }
 
-    @Test("dismissSession sets selectedSessionId to nil when last session is dismissed")
-    func dismissSessionLastSession() {
+    @Test
+    func `dismissSession sets selectedSessionId to nil when last session is dismissed`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo())
@@ -643,8 +643,8 @@ struct SessionStateTests {
 
     // MARK: - dismissAllDisconnected
 
-    @Test("dismissAllDisconnected removes all inactive sessions and keeps active ones")
-    func dismissAllDisconnectedRemovesInactive() {
+    @Test
+    func `dismissAllDisconnected removes all inactive sessions and keeps active ones`() {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
@@ -663,8 +663,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].isActive == true)
     }
 
-    @Test("dismissAllDisconnected reselects when selected session is removed")
-    func dismissAllDisconnectedReselects() {
+    @Test
+    func `dismissAllDisconnected reselects when selected session is removed`() {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
@@ -682,8 +682,8 @@ struct SessionStateTests {
         #expect(state.selectedSession?.connectionId == connId2)
     }
 
-    @Test("dismissAllDisconnected sets selection to nil when all sessions removed")
-    func dismissAllDisconnectedAllRemoved() {
+    @Test
+    func `dismissAllDisconnected sets selection to nil when all sessions removed`() {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
@@ -699,8 +699,8 @@ struct SessionStateTests {
         #expect(state.selectedSessionId == nil)
     }
 
-    @Test("dismissAllDisconnected is a no-op when no disconnected sessions exist")
-    func dismissAllDisconnectedNoop() {
+    @Test
+    func `dismissAllDisconnected is a no-op when no disconnected sessions exist`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -711,8 +711,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].connectionId == connId)
     }
 
-    @Test("dismissSession is a no-op for unknown session ID")
-    func dismissSessionUnknownId() {
+    @Test
+    func `dismissSession is a no-op for unknown session ID`() {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo())
         let originalCount = state.sessions.count
@@ -724,8 +724,8 @@ struct SessionStateTests {
 
     // MARK: - selectedSession computed property
 
-    @Test("selectedSession returns the correct session when one is selected")
-    func selectedSessionReturnsCorrect() {
+    @Test
+    func `selectedSession returns the correct session when one is selected`() {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
@@ -739,15 +739,15 @@ struct SessionStateTests {
         #expect(selected?.command == "first")
     }
 
-    @Test("selectedSession returns nil when nothing is selected")
-    func selectedSessionReturnsNil() {
+    @Test
+    func `selectedSession returns nil when nothing is selected`() {
         let state = SessionState()
 
         #expect(state.selectedSession == nil)
     }
 
-    @Test("selectedSession returns nil after selectedSessionId is set to an invalid ID")
-    func selectedSessionInvalidId() {
+    @Test
+    func `selectedSession returns nil after selectedSessionId is set to an invalid ID`() {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo())
         state.selectedSessionId = UUID() // Set to a non-existent session ID
@@ -755,8 +755,8 @@ struct SessionStateTests {
         #expect(state.selectedSession == nil)
     }
 
-    @Test("selectedSession updates when selection changes")
-    func selectedSessionUpdatesOnSelectionChange() {
+    @Test
+    func `selectedSession updates when selection changes`() {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
@@ -773,8 +773,8 @@ struct SessionStateTests {
 
     // MARK: - Terminal info
 
-    @Test("addSession populates terminal field from SessionInfoPayload")
-    func addSessionPopulatesTerminal() {
+    @Test
+    func `addSession populates terminal field from SessionInfoPayload`() {
         let state = SessionState()
         let connId = UUID()
         let terminal = TerminalPayload(type: "wezterm", paneId: "42")
@@ -790,16 +790,16 @@ struct SessionStateTests {
         #expect(state.sessions[0].terminal?.paneId == "42")
     }
 
-    @Test("addSession with nil terminal sets terminal to nil")
-    func addSessionNilTerminal() {
+    @Test
+    func `addSession with nil terminal sets terminal to nil`() {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(command: "agent"))
 
         #expect(state.sessions[0].terminal == nil)
     }
 
-    @Test("Duplicate session_info updates terminal field")
-    func duplicateSessionInfoUpdatesTerminal() {
+    @Test
+    func `Duplicate session_info updates terminal field`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -814,8 +814,8 @@ struct SessionStateTests {
 
     // MARK: - Notification properties
 
-    @Test("SessionItem defaults hasUnreadNotification to false and notificationMessage to nil")
-    func sessionItemNotificationDefaults() {
+    @Test
+    func `SessionItem defaults hasUnreadNotification to false and notificationMessage to nil`() {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(command: "agent"))
 
@@ -825,8 +825,8 @@ struct SessionStateTests {
 
     // MARK: - ingestNotification
 
-    @Test("ingestNotification matches session by pane ID")
-    func ingestNotificationMatchesByPaneId() {
+    @Test
+    func `ingestNotification matches session by pane ID`() {
         let state = SessionState()
         let terminal = TerminalPayload(type: "wezterm", paneId: "42")
         state.addSession(connectionId: UUID(), info: self.makeInfo(
@@ -848,8 +848,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].notificationMessage == "Task completed")
     }
 
-    @Test("ingestNotification matches session by workspace path when no pane match")
-    func ingestNotificationMatchesByWorkspace() {
+    @Test
+    func `ingestNotification matches session by workspace path when no pane match`() {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
@@ -869,8 +869,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].notificationMessage == "Done")
     }
 
-    @Test("ingestNotification matches by gitRemote when pane and workspace are unavailable")
-    func ingestNotificationMatchesByGitRemote() {
+    @Test
+    func `ingestNotification matches by gitRemote when pane and workspace are unavailable`() {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
@@ -890,8 +890,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].notificationMessage == "Matched by remote")
     }
 
-    @Test("ingestNotification creates new session when no match found")
-    func ingestNotificationCreatesNewSession() {
+    @Test
+    func `ingestNotification creates new session when no match found`() {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
@@ -915,8 +915,8 @@ struct SessionStateTests {
         #expect(newSession.command == "")
     }
 
-    @Test("ingestNotification creates notification-only session grouped by gitRemote")
-    func ingestNotificationCreatesSessionUsingGitRemote() {
+    @Test
+    func `ingestNotification creates notification-only session grouped by gitRemote`() {
         let state = SessionState()
 
         let payload = MessagePayload(
@@ -934,8 +934,8 @@ struct SessionStateTests {
                 == "owner/remote-only")
     }
 
-    @Test("ingestNotification with multiple sessions same workspace matches most recent (first)")
-    func ingestNotificationMatchesMostRecent() {
+    @Test
+    func `ingestNotification with multiple sessions same workspace matches most recent (first)`() {
         let state = SessionState()
         // Add two sessions with same workspace - second added is at index 0 (most recent)
         let connId1 = UUID()
@@ -961,8 +961,8 @@ struct SessionStateTests {
         #expect(state.sessions[1].hasUnreadNotification == false)
     }
 
-    @Test("ingestNotification prefers pane ID match over workspace match")
-    func ingestNotificationPrefersPaneIdMatch() {
+    @Test
+    func `ingestNotification prefers pane ID match over workspace match`() {
         let state = SessionState()
         // Session with matching workspace but no terminal
         state.addSession(connectionId: UUID(), info: self.makeInfo(
@@ -988,8 +988,8 @@ struct SessionStateTests {
         #expect(state.sessions[1].hasUnreadNotification == false)
     }
 
-    @Test("ingestNotification sets hasUnreadNotification on non-selected matched session")
-    func ingestNotificationSetsFlag() throws {
+    @Test
+    func `ingestNotification sets hasUnreadNotification on non-selected matched session`() throws {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
@@ -1011,8 +1011,8 @@ struct SessionStateTests {
         #expect(projectSession.hasUnreadNotification == true)
     }
 
-    @Test("Second notification replaces message on same session")
-    func ingestNotificationReplacesMessage() {
+    @Test
+    func `Second notification replaces message on same session`() {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
@@ -1036,8 +1036,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].hasUnreadNotification == true)
     }
 
-    @Test("ingestNotification with no terminal info matches by workspace only")
-    func ingestNotificationNoTerminalMatchesByWorkspace() {
+    @Test
+    func `ingestNotification with no terminal info matches by workspace only`() {
         let state = SessionState()
         let terminal = TerminalPayload(type: "wezterm", paneId: "5")
         state.addSession(connectionId: UUID(), info: self.makeInfo(
@@ -1060,8 +1060,8 @@ struct SessionStateTests {
 
     // MARK: - ingestNotification(connectionId:tunnelMessage:)
 
-    @Test("agent_session_end structured output is ignored")
-    func ingestStructuredAgentSessionEndNotificationIgnored() {
+    @Test
+    func `agent_session_end structured output is ignored`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(
@@ -1085,8 +1085,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].notificationMessage == nil)
     }
 
-    @Test("input_required structured output updates selected session with unread badge")
-    func ingestStructuredInputRequiredNotificationSelectedSession() {
+    @Test
+    func `input_required structured output updates selected session with unread badge`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(
@@ -1104,8 +1104,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].hasUnreadNotification == true)
     }
 
-    @Test("prompt_request structured output updates notification state")
-    func ingestStructuredPromptRequestNotification() {
+    @Test
+    func `prompt_request structured output updates notification state`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(
@@ -1125,8 +1125,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].hasUnreadNotification == true)
     }
 
-    @Test("prompt_answered structured output is ignored")
-    func ingestStructuredPromptAnsweredNotificationIgnored() {
+    @Test
+    func `prompt_answered structured output is ignored`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(
@@ -1146,8 +1146,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].hasUnreadNotification == false)
     }
 
-    @Test("structured messages other than input_required and prompt_request are ignored")
-    func ingestStructuredNotificationIgnoresOtherMessages() {
+    @Test
+    func `structured messages other than input_required and prompt_request are ignored`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(
@@ -1172,8 +1172,8 @@ struct SessionStateTests {
 
     // MARK: - markNotificationRead
 
-    @Test("markNotificationRead clears notification on session")
-    func markNotificationReadClears() {
+    @Test
+    func `markNotificationRead clears notification on session`() {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
@@ -1194,8 +1194,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].notificationMessage == "Alert")
     }
 
-    @Test("markNotificationRead is a no-op for unknown session ID")
-    func markNotificationReadUnknownId() {
+    @Test
+    func `markNotificationRead is a no-op for unknown session ID`() {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(command: "agent"))
 
@@ -1205,8 +1205,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].hasUnreadNotification == false)
     }
 
-    @Test("markNotificationRead only clears targeted session, not others")
-    func markNotificationReadTargeted() throws {
+    @Test
+    func `markNotificationRead only clears targeted session, not others`() throws {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
@@ -1245,8 +1245,8 @@ struct SessionStateTests {
         #expect(sessionB.notificationMessage == "Alert B")
     }
 
-    @Test("handleSessionListItemTap clears unread when tapping already-selected session")
-    func handleSessionListItemTapClearsSelectedUnread() {
+    @Test
+    func `handleSessionListItemTap clears unread when tapping already-selected session`() {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
@@ -1265,8 +1265,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].hasUnreadNotification == false)
     }
 
-    @Test("handleSessionListItemTap selects and clears unread for non-selected session")
-    func handleSessionListItemTapSelectsAndClearsUnread() throws {
+    @Test
+    func `handleSessionListItemTap selects and clears unread for non-selected session`() throws {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
@@ -1292,8 +1292,8 @@ struct SessionStateTests {
         #expect(sessionA.hasUnreadNotification == false)
     }
 
-    @Test("handleTerminalIconTap clears unread without changing selection")
-    func handleTerminalIconTapClearsUnread() throws {
+    @Test
+    func `handleTerminalIconTap clears unread without changing selection`() throws {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
@@ -1320,8 +1320,8 @@ struct SessionStateTests {
         #expect(state.selectedSessionId == selectedBeforeTap)
     }
 
-    @Test("handleTerminalIconTap is a no-op for unknown session ID")
-    func handleTerminalIconTapUnknownId() {
+    @Test
+    func `handleTerminalIconTap is a no-op for unknown session ID`() {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
@@ -1340,8 +1340,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].hasUnreadNotification == true)
     }
 
-    @Test("Notification for already-selected session sets unread flag")
-    func ingestNotificationForSelectedSessionSetsFlag() {
+    @Test
+    func `Notification for already-selected session sets unread flag`() {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
@@ -1361,8 +1361,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].hasUnreadNotification == true)
     }
 
-    @Test("Notification for non-selected session sets unread flag")
-    func ingestNotificationForNonSelectedSession() throws {
+    @Test
+    func `Notification for non-selected session sets unread flag`() throws {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
@@ -1383,8 +1383,8 @@ struct SessionStateTests {
         #expect(sessionB.notificationMessage == "Alert B")
     }
 
-    @Test("Second notification to notification-only session updates it rather than creating another")
-    func ingestNotificationUpdatesNotificationOnlySession() {
+    @Test
+    func `Second notification to notification-only session updates it rather than creating another`() {
         let state = SessionState()
 
         // First notification creates a notification-only session
@@ -1409,8 +1409,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].hasUnreadNotification == true)
     }
 
-    @Test("Notification-only session has nil planId, planTitle, gitRemote and empty command")
-    func notificationOnlySessionProperties() {
+    @Test
+    func `Notification-only session has nil planId, planTitle, gitRemote and empty command`() {
         let state = SessionState()
         let terminal = TerminalPayload(type: "wezterm", paneId: "55")
         state.ingestNotification(payload: MessagePayload(
@@ -1436,8 +1436,8 @@ struct SessionStateTests {
         #expect(session.messages.isEmpty)
     }
 
-    @Test("dismissAllDisconnected removes notification-only sessions")
-    func dismissAllDisconnectedRemovesNotificationOnlySessions() {
+    @Test
+    func `dismissAllDisconnected removes notification-only sessions`() {
         let state = SessionState()
         // Create a notification-only session (no matching session)
         state.ingestNotification(payload: MessagePayload(
@@ -1455,8 +1455,8 @@ struct SessionStateTests {
 
     // MARK: - Integration scenarios
 
-    @Test("Full lifecycle: add, message, disconnect, dismiss")
-    func fullLifecycle() {
+    @Test
+    func `Full lifecycle: add, message, disconnect, dismiss`() {
         let state = SessionState()
         let connId = UUID()
         let info = self.makeInfo(
@@ -1491,8 +1491,8 @@ struct SessionStateTests {
         #expect(state.selectedSessionId == nil)
     }
 
-    @Test("Multiple sessions: messages go to correct sessions")
-    func multipleSessionsMessageRouting() {
+    @Test
+    func `Multiple sessions: messages go to correct sessions`() {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
@@ -1518,8 +1518,8 @@ struct SessionStateTests {
 
     // MARK: - Reference semantics (SessionItem as class)
 
-    @Test("SessionItem reference reflects mutations made through SessionState")
-    func referenceSemanticsMutations() {
+    @Test
+    func `SessionItem reference reflects mutations made through SessionState`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent", planTitle: "Test Plan"))
@@ -1539,8 +1539,8 @@ struct SessionStateTests {
         #expect(sessionRef.isActive == false)
     }
 
-    @Test("selectedSession returns the same instance as sessions array element")
-    func selectedSessionIdentity() {
+    @Test
+    func `selectedSession returns the same instance as sessions array element`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -1552,8 +1552,8 @@ struct SessionStateTests {
         #expect(fromArray === fromSelected)
     }
 
-    @Test("Appending messages to SessionItem via reference is visible through SessionState")
-    func referenceMessageAppend() throws {
+    @Test
+    func `Appending messages to SessionItem via reference is visible through SessionState`() throws {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo())
@@ -1574,8 +1574,8 @@ struct SessionStateTests {
 
     // MARK: - Notification-session reconciliation (race condition)
 
-    @Test("Notification arrives first, then session_info with matching pane ID reconciles into one session")
-    func reconcileNotificationThenSessionByPaneId() {
+    @Test
+    func `Notification arrives first, then session_info with matching pane ID reconciles into one session`() {
         let state = SessionState()
         let terminal = TerminalPayload(type: "wezterm", paneId: "42")
 
@@ -1617,8 +1617,8 @@ struct SessionStateTests {
         #expect(session.terminal?.paneId == "42")
     }
 
-    @Test("Notification arrives first, then session_info with matching workspace reconciles into one session")
-    func reconcileNotificationThenSessionByWorkspace() {
+    @Test
+    func `Notification arrives first, then session_info with matching workspace reconciles into one session`() {
         let state = SessionState()
 
         // Notification arrives first (no terminal info)
@@ -1647,8 +1647,8 @@ struct SessionStateTests {
         #expect(session.notificationMessage == "Done")
     }
 
-    @Test("After reconciliation, messages route correctly to the reconciled session")
-    func reconcileSessionReceivesMessages() {
+    @Test
+    func `After reconciliation, messages route correctly to the reconciled session`() {
         let state = SessionState()
         let terminal = TerminalPayload(type: "wezterm", paneId: "7")
 
@@ -1671,8 +1671,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages[0].text == "hello")
     }
 
-    @Test("Reconciliation flushes buffered messages to the notification-only session")
-    func reconcileFlushesBufferedMessages() {
+    @Test
+    func `Reconciliation flushes buffered messages to the notification-only session`() {
         let state = SessionState()
 
         state.ingestNotification(payload: MessagePayload(
@@ -1696,8 +1696,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].hasUnreadNotification == true)
     }
 
-    @Test("Reconciliation does not match a real session (non-empty command)")
-    func reconcileDoesNotMatchRealSession() {
+    @Test
+    func `Reconciliation does not match a real session (non-empty command)`() {
         let state = SessionState()
         let terminal = TerminalPayload(type: "wezterm", paneId: "42")
 
@@ -1720,8 +1720,8 @@ struct SessionStateTests {
 
     // MARK: - Empty workspace path guard
 
-    @Test("ingestNotification with empty workspacePath does not match sessions by workspace")
-    func ingestNotificationEmptyWorkspaceNoMatch() {
+    @Test
+    func `ingestNotification with empty workspacePath does not match sessions by workspace`() {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
@@ -1738,8 +1738,8 @@ struct SessionStateTests {
         #expect(state.sessions.count == 2)
     }
 
-    @Test("ingestNotification matches a disconnected session")
-    func ingestNotificationMatchesDisconnectedSession() {
+    @Test
+    func `ingestNotification matches a disconnected session`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(
@@ -1762,8 +1762,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].notificationMessage == "Post-disconnect alert")
     }
 
-    @Test("Second notification to notification-only session matches by pane ID")
-    func ingestNotificationUpdatesNotificationOnlyByPaneId() {
+    @Test
+    func `Second notification to notification-only session matches by pane ID`() {
         let state = SessionState()
         let terminal = TerminalPayload(type: "wezterm", paneId: "33")
 
@@ -1784,8 +1784,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].notificationMessage == "Second")
     }
 
-    @Test("Notification-only session does NOT auto-select when nothing is selected")
-    func notificationOnlyDoesNotAutoSelect() {
+    @Test
+    func `Notification-only session does NOT auto-select when nothing is selected`() {
         let state = SessionState()
         #expect(state.selectedSessionId == nil)
 
@@ -1800,8 +1800,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].hasUnreadNotification == true)
     }
 
-    @Test("Reconciliation auto-selects when nothing was selected")
-    func reconcileAutoSelectsWhenNothingSelected() {
+    @Test
+    func `Reconciliation auto-selects when nothing was selected`() {
         let state = SessionState()
         #expect(state.selectedSessionId == nil)
 
@@ -1824,8 +1824,8 @@ struct SessionStateTests {
         #expect(state.selectedSession?.command == "agent")
     }
 
-    @Test("Notification with pane ID does not fall back to workspace when pane match is not found")
-    func ingestNotificationPaneIdNoWorkspaceFallback() {
+    @Test
+    func `Notification with pane ID does not fall back to workspace when pane match is not found`() {
         let state = SessionState()
 
         // An older session exists for the same workspace but with a different (or no) pane ID
@@ -1859,8 +1859,8 @@ struct SessionStateTests {
         #expect(existingSession.terminal?.paneId == "10")
     }
 
-    @Test("Pane-miss creates notification-only session before later session_info")
-    func ingestNotificationPaneIdMissBeforeLaterSessionInfo() throws {
+    @Test
+    func `Pane-miss creates notification-only session before later session_info`() throws {
         let state = SessionState()
 
         // An older session exists for the same workspace
@@ -1912,8 +1912,8 @@ struct SessionStateTests {
         #expect(newSession.hasUnreadNotification == true)
     }
 
-    @Test("Pane-miss notification copies metadata from same workspace row without pane ID")
-    func ingestNotificationPaneIdMissCopiesMetadataFromNoPaneRow() {
+    @Test
+    func `Pane-miss notification copies metadata from same workspace row without pane ID`() {
         let state = SessionState()
 
         state.addSession(connectionId: UUID(), info: self.makeInfo(
@@ -1939,8 +1939,8 @@ struct SessionStateTests {
         #expect(notificationSession.terminal?.paneId == "42")
     }
 
-    @Test("Reconciliation does not match notification-only session when pane IDs differ")
-    func reconcileDoesNotMatchMismatchedPaneId() throws {
+    @Test
+    func `Reconciliation does not match notification-only session when pane IDs differ`() throws {
         let state = SessionState()
 
         // Create a notification-only session with pane 10
@@ -1975,8 +1975,8 @@ struct SessionStateTests {
         #expect(newSession.terminal?.paneId == "12")
     }
 
-    @Test("Reconciliation does not match notification-only session with empty workspace by workspace path")
-    func reconcileDoesNotMatchEmptyWorkspace() {
+    @Test
+    func `Reconciliation does not match notification-only session with empty workspace by workspace path`() {
         let state = SessionState()
 
         // Create a notification-only session with no workspace
@@ -1998,8 +1998,8 @@ struct SessionStateTests {
 
     // MARK: - Notification-only session dismiss and selection edge cases
 
-    @Test("dismissSession removes a notification-only session")
-    func dismissNotificationOnlySession() {
+    @Test
+    func `dismissSession removes a notification-only session`() {
         let state = SessionState()
         state.ingestNotification(payload: MessagePayload(
             message: "Alert",
@@ -2016,8 +2016,8 @@ struct SessionStateTests {
         #expect(state.selectedSessionId == nil)
     }
 
-    @Test("Second notification to unselected notification-only session keeps unread flag")
-    func notificationOnlySecondNotificationKeepsUnread() {
+    @Test
+    func `Second notification to unselected notification-only session keeps unread flag`() {
         let state = SessionState()
         #expect(state.selectedSessionId == nil)
 
@@ -2043,8 +2043,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].hasUnreadNotification == true)
     }
 
-    @Test("Notification-only session does not auto-select when another session is already selected")
-    func notificationOnlyNoAutoSelectWhenOtherSelected() throws {
+    @Test
+    func `Notification-only session does not auto-select when another session is already selected`() throws {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(
             command: "agent",
@@ -2065,8 +2065,8 @@ struct SessionStateTests {
 
     // MARK: - sendUserInput
 
-    @Test("sendUserInput adds a local message with .userInput category")
-    func sendUserInputAddsLocalMessage() async throws {
+    @Test
+    func `sendUserInput adds a local message with .userInput category`() async throws {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2086,8 +2086,8 @@ struct SessionStateTests {
         #expect(msg.timestamp != nil)
     }
 
-    @Test("sendUserInput calls handler with correct connectionId and message")
-    func sendUserInputCallsHandler() async throws {
+    @Test
+    func `sendUserInput calls handler with correct connectionId and message`() async throws {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2111,8 +2111,8 @@ struct SessionStateTests {
         #expect(dict["content"] == "test message")
     }
 
-    @Test("sendUserInput is a no-op for inactive session")
-    func sendUserInputInactiveSession() async throws {
+    @Test
+    func `sendUserInput is a no-op for inactive session`() async throws {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2130,8 +2130,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages.isEmpty)
     }
 
-    @Test("sendUserInput is a no-op for unknown session ID")
-    func sendUserInputUnknownSession() async throws {
+    @Test
+    func `sendUserInput is a no-op for unknown session ID`() async throws {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(command: "agent"))
 
@@ -2144,8 +2144,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages.isEmpty)
     }
 
-    @Test("sendUserInput throws when handler is nil")
-    func sendUserInputWithoutHandler() async throws {
+    @Test
+    func `sendUserInput throws when handler is nil`() async throws {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2160,8 +2160,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages.isEmpty)
     }
 
-    @Test("sendUserInput propagates handler error and does not add local message")
-    func sendUserInputHandlerError() async throws {
+    @Test
+    func `sendUserInput propagates handler error and does not add local message`() async throws {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2178,8 +2178,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages.isEmpty)
     }
 
-    @Test("sendUserInput propagates noServer error and does not add local message")
-    func sendUserInputNoServerError() async throws {
+    @Test
+    func `sendUserInput propagates noServer error and does not add local message`() async throws {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2196,8 +2196,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].messages.isEmpty)
     }
 
-    @Test("sendUserInput assigns sequential seq numbers")
-    func sendUserInputSequentialSeq() async throws {
+    @Test
+    func `sendUserInput assigns sequential seq numbers`() async throws {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2230,8 +2230,8 @@ struct SessionStateTests {
             timestamp: nil)
     }
 
-    @Test("setActivePrompt sets prompt on correct session")
-    func setActivePromptSetsOnCorrectSession() throws {
+    @Test
+    func `setActivePrompt sets prompt on correct session`() throws {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
@@ -2250,8 +2250,8 @@ struct SessionStateTests {
         #expect(session2.pendingPrompt == nil)
     }
 
-    @Test("setActivePrompt replaces existing prompt")
-    func setActivePromptReplacesExisting() {
+    @Test
+    func `setActivePrompt replaces existing prompt`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2263,8 +2263,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].pendingPrompt?.requestId == "second")
     }
 
-    @Test("setActivePrompt no-ops for unknown connectionId")
-    func setActivePromptUnknownConnection() {
+    @Test
+    func `setActivePrompt no-ops for unknown connectionId`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2273,8 +2273,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].pendingPrompt == nil)
     }
 
-    @Test("setActivePrompt during replay is a no-op")
-    func setActivePromptDuringReplay() {
+    @Test
+    func `setActivePrompt during replay is a no-op`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2286,8 +2286,8 @@ struct SessionStateTests {
 
     // MARK: - clearActivePrompt
 
-    @Test("clearActivePrompt clears when requestId matches")
-    func clearActivePromptMatchingId() {
+    @Test
+    func `clearActivePrompt clears when requestId matches`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2298,8 +2298,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].pendingPrompt == nil)
     }
 
-    @Test("clearActivePrompt does not clear when requestId does not match")
-    func clearActivePromptMismatchedId() {
+    @Test
+    func `clearActivePrompt does not clear when requestId does not match`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2309,8 +2309,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].pendingPrompt?.requestId == "req-x")
     }
 
-    @Test("clearActivePrompt no-ops when no pending prompt")
-    func clearActivePromptNoPending() {
+    @Test
+    func `clearActivePrompt no-ops when no pending prompt`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2320,8 +2320,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].pendingPrompt == nil)
     }
 
-    @Test("clearActivePrompt during replay is a no-op")
-    func clearActivePromptDuringReplay() {
+    @Test
+    func `clearActivePrompt during replay is a no-op`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2335,8 +2335,8 @@ struct SessionStateTests {
 
     // MARK: - sendPromptResponse
 
-    @Test("sendPromptResponse sends correct OutgoingMessage and clears prompt")
-    func sendPromptResponseSendsAndClears() async throws {
+    @Test
+    func `sendPromptResponse sends correct OutgoingMessage and clears prompt`() async throws {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2369,8 +2369,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].pendingPrompt == nil)
     }
 
-    @Test("sendPromptResponse is a no-op for inactive session")
-    func sendPromptResponseInactiveSession() async throws {
+    @Test
+    func `sendPromptResponse is a no-op for inactive session`() async throws {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2385,8 +2385,8 @@ struct SessionStateTests {
         #expect(handlerCalled == false)
     }
 
-    @Test("sendPromptResponse is a no-op for unknown session ID")
-    func sendPromptResponseUnknownSession() async throws {
+    @Test
+    func `sendPromptResponse is a no-op for unknown session ID`() async throws {
         let state = SessionState()
         state.addSession(connectionId: UUID(), info: self.makeInfo(command: "agent"))
 
@@ -2397,8 +2397,8 @@ struct SessionStateTests {
         #expect(handlerCalled == false)
     }
 
-    @Test("sendPromptResponse throws when handler is nil")
-    func sendPromptResponseWithoutHandler() async throws {
+    @Test
+    func `sendPromptResponse throws when handler is nil`() async throws {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2409,8 +2409,8 @@ struct SessionStateTests {
         }
     }
 
-    @Test("sendPromptResponse preserves prompt when handler throws")
-    func sendPromptResponseHandlerErrorPreservesPrompt() async throws {
+    @Test
+    func `sendPromptResponse preserves prompt when handler throws`() async throws {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2428,8 +2428,8 @@ struct SessionStateTests {
         #expect(state.sessions[0].pendingPrompt?.requestId == "req-err")
     }
 
-    @Test("sendPromptResponse does not clear a newer prompt set during send")
-    func sendPromptResponseDoesNotClearNewerPrompt() async throws {
+    @Test
+    func `sendPromptResponse does not clear a newer prompt set during send`() async throws {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2450,8 +2450,8 @@ struct SessionStateTests {
 
     // MARK: - markDisconnected clears pendingPrompt
 
-    @Test("markDisconnected clears pendingPrompt")
-    func markDisconnectedClearsPrompt() {
+    @Test
+    func `markDisconnected clears pendingPrompt`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2464,8 +2464,8 @@ struct SessionStateTests {
 
     // MARK: - Grouping tests
 
-    @Test("groupedSessions groups sessions by gitRemote")
-    func groupedSessionsByGitRemote() {
+    @Test
+    func `groupedSessions groups sessions by gitRemote`() {
         let state = SessionState()
         state.addSession(
             connectionId: UUID(),
@@ -2486,8 +2486,8 @@ struct SessionStateTests {
         #expect(otherGroup?.sessionCount == 1)
     }
 
-    @Test("groupedSessions follows groupOrder ordering")
-    func groupedSessionsOrderFollowsGroupOrder() {
+    @Test
+    func `groupedSessions follows groupOrder ordering`() {
         let state = SessionState()
         state.addSession(
             connectionId: UUID(),
@@ -2501,8 +2501,8 @@ struct SessionStateTests {
         #expect(state.groupedSessions[1].id == "owner/alpha")
     }
 
-    @Test("moveGroup reorders groups in groupOrder")
-    func moveGroupReorders() {
+    @Test
+    func `moveGroup reorders groups in groupOrder`() {
         let state = SessionState()
         state.addSession(
             connectionId: UUID(),
@@ -2521,8 +2521,8 @@ struct SessionStateTests {
         #expect(state.groupedSessions[1].id == "owner/beta")
     }
 
-    @Test("firstSessionWithNotification returns first session with notification in display order")
-    func firstSessionWithNotification() throws {
+    @Test
+    func `firstSessionWithNotification returns first session with notification in display order`() throws {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
@@ -2546,8 +2546,8 @@ struct SessionStateTests {
         #expect(first?.connectionId == connId1)
     }
 
-    @Test("firstSessionWithNotification respects group display order after reorder")
-    func firstSessionWithNotificationRespectsGroupOrder() throws {
+    @Test
+    func `firstSessionWithNotification respects group display order after reorder`() throws {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
@@ -2583,8 +2583,8 @@ struct SessionStateTests {
         #expect(firstAfterReorder?.connectionId == connId1)
     }
 
-    @Test("addSession inserts new group key at index 0 in groupOrder")
-    func addSessionInsertsGroupKeyAtFront() {
+    @Test
+    func `addSession inserts new group key at index 0 in groupOrder`() {
         let state = SessionState()
         state.addSession(
             connectionId: UUID(),
@@ -2598,8 +2598,8 @@ struct SessionStateTests {
         #expect(state.groupOrder[1] == "owner/alpha")
     }
 
-    @Test("addSession does not duplicate existing group key in groupOrder")
-    func addSessionNoDuplicateGroupKey() {
+    @Test
+    func `addSession does not duplicate existing group key in groupOrder`() {
         let state = SessionState()
         state.addSession(
             connectionId: UUID(),
@@ -2613,8 +2613,8 @@ struct SessionStateTests {
         #expect(state.groupOrder[0] == "owner/repo")
     }
 
-    @Test("dismissSession removes empty group keys from groupOrder")
-    func dismissSessionCleansGroupOrder() throws {
+    @Test
+    func `dismissSession removes empty group keys from groupOrder`() throws {
         let state = SessionState()
         let connId = UUID()
         state.addSession(
@@ -2636,8 +2636,8 @@ struct SessionStateTests {
         #expect(state.groupOrder[0] == "owner/beta")
     }
 
-    @Test("dismissAllDisconnected removes empty group keys from groupOrder")
-    func dismissAllDisconnectedCleansGroupOrder() {
+    @Test
+    func `dismissAllDisconnected removes empty group keys from groupOrder`() {
         let state = SessionState()
         let connId1 = UUID()
         state.addSession(
@@ -2656,8 +2656,8 @@ struct SessionStateTests {
         #expect(!state.groupOrder.contains("owner/alpha"))
     }
 
-    @Test("addSession removes stale group key when session metadata changes to new group")
-    func addSessionRemovesStaleGroupKeyOnMetadataChange() {
+    @Test
+    func `addSession removes stale group key when session metadata changes to new group`() {
         let state = SessionState()
         let connId = UUID()
 
@@ -2680,8 +2680,8 @@ struct SessionStateTests {
         #expect(state.groupOrder.count == 1)
     }
 
-    @Test("addSession keeps old group key when another session still uses it after metadata change")
-    func addSessionKeepsOldGroupKeyIfOtherSessionUsesIt() {
+    @Test
+    func `addSession keeps old group key when another session still uses it after metadata change`() {
         let state = SessionState()
         let connId1 = UUID()
         let connId2 = UUID()
@@ -2708,8 +2708,8 @@ struct SessionStateTests {
         #expect(state.groupOrder.count == 2)
     }
 
-    @Test("moveGroup works correctly when groupedSessions contains notification-only groups not in groupOrder")
-    func moveGroupWithNotificationOnlyGroups() {
+    @Test
+    func `moveGroup works correctly when groupedSessions contains notification-only groups not in groupOrder`() {
         let state = SessionState()
 
         // Add one normal session (goes into groupOrder)

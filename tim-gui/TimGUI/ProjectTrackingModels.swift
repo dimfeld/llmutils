@@ -3,7 +3,7 @@ import SwiftUI
 
 // MARK: - TrackedProject
 
-struct TrackedProject: Identifiable, Equatable, Sendable {
+struct TrackedProject: Identifiable, Equatable {
     let id: String
     let repositoryId: String?
     let remoteUrl: String?
@@ -26,7 +26,7 @@ struct TrackedProject: Identifiable, Equatable, Sendable {
 
 // MARK: - WorkspaceDisplayStatus
 
-enum WorkspaceDisplayStatus: Sendable {
+enum WorkspaceDisplayStatus {
     case available
     case locked
     case primary
@@ -34,7 +34,7 @@ enum WorkspaceDisplayStatus: Sendable {
 
 // MARK: - TrackedWorkspace
 
-struct TrackedWorkspace: Identifiable, Equatable, Sendable {
+struct TrackedWorkspace: Identifiable, Equatable {
     let id: String
     let projectId: String
     let workspacePath: String?
@@ -74,7 +74,7 @@ struct TrackedWorkspace: Identifiable, Equatable, Sendable {
 
 // MARK: - TrackedPlan
 
-struct TrackedPlan: Identifiable, Equatable, Sendable {
+struct TrackedPlan: Identifiable, Equatable {
     let uuid: String
     let projectId: String
     let planId: Int?
@@ -103,7 +103,7 @@ struct TrackedPlan: Identifiable, Equatable, Sendable {
 
 // MARK: - PlanDisplayStatus
 
-enum PlanDisplayStatus: String, CaseIterable, Hashable, Sendable {
+enum PlanDisplayStatus: String, CaseIterable, Hashable {
     case pending
     case inProgress
     case blocked

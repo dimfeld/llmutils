@@ -2,13 +2,12 @@ import Foundation
 import Testing
 @testable import TimGUI
 
-@Suite("MessageFormatter")
 @MainActor
 struct MessageFormatterTests {
     // MARK: - Args messages
 
-    @Test("Formats log args message")
-    func formatsLogArgs() {
+    @Test
+    func `Formats log args message`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .args(type: "log", args: ["Starting", "build", "process"]),
             seq: 1)
@@ -22,8 +21,8 @@ struct MessageFormatterTests {
         #expect(msg.seq == 1)
     }
 
-    @Test("Formats error args message as error category")
-    func formatsErrorArgs() {
+    @Test
+    func `Formats error args message as error category`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .args(type: "error", args: ["Something", "failed"]),
             seq: 2)
@@ -36,8 +35,8 @@ struct MessageFormatterTests {
         #expect(msg.category == .error)
     }
 
-    @Test("Formats warn args message as error category")
-    func formatsWarnArgs() {
+    @Test
+    func `Formats warn args message as error category`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .args(type: "warn", args: ["Watch out"]),
             seq: 3)
@@ -49,8 +48,8 @@ struct MessageFormatterTests {
         #expect(msg.category == .error)
     }
 
-    @Test("Formats debug args message as log category")
-    func formatsDebugArgs() {
+    @Test
+    func `Formats debug args message as log category`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .args(type: "debug", args: ["debug info"]),
             seq: 4)
@@ -64,8 +63,8 @@ struct MessageFormatterTests {
 
     // MARK: - Data messages
 
-    @Test("Formats stdout data message")
-    func formatsStdout() {
+    @Test
+    func `Formats stdout data message`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .data(type: "stdout", data: "hello output"),
             seq: 5)
@@ -78,8 +77,8 @@ struct MessageFormatterTests {
         #expect(msg.category == .log)
     }
 
-    @Test("Formats stderr data message as error category")
-    func formatsStderr() {
+    @Test
+    func `Formats stderr data message as error category`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .data(type: "stderr", data: "error output"),
             seq: 6)
@@ -93,8 +92,8 @@ struct MessageFormatterTests {
 
     // MARK: - Structured messages
 
-    @Test("Formats agent_session_start as lifecycle with key-value pairs")
-    func formatsAgentSessionStart() {
+    @Test
+    func `Formats agent_session_start as lifecycle with key-value pairs`() {
         let payload = AgentSessionStartPayload(
             executor: "claude", mode: "agent", planId: 42,
             sessionId: nil, threadId: nil, tools: nil, mcpServers: nil, timestamp: nil)
@@ -115,8 +114,8 @@ struct MessageFormatterTests {
         ])
     }
 
-    @Test("Formats agent_session_start with nil fields omits those pairs")
-    func formatsAgentSessionStartNilFields() {
+    @Test
+    func `Formats agent_session_start with nil fields omits those pairs`() {
         let payload = AgentSessionStartPayload(
             executor: nil, mode: nil, planId: nil,
             sessionId: nil, threadId: nil, tools: nil, mcpServers: nil, timestamp: nil)
@@ -127,8 +126,8 @@ struct MessageFormatterTests {
         #expect(msg.body == nil)
     }
 
-    @Test("Formats agent_session_end as lifecycle with key-value pairs")
-    func formatsAgentSessionEnd() {
+    @Test
+    func `Formats agent_session_end as lifecycle with key-value pairs`() {
         let payload = AgentSessionEndPayload(
             success: true, sessionId: nil, threadId: nil,
             durationMs: 45000, costUsd: 1.25, turns: 12, summary: nil, timestamp: nil)
@@ -148,8 +147,8 @@ struct MessageFormatterTests {
         #expect(pairDict["Turns"] == "12")
     }
 
-    @Test("Formats agent_session_end failure")
-    func formatsAgentSessionEndFailure() {
+    @Test
+    func `Formats agent_session_end failure`() {
         let payload = AgentSessionEndPayload(
             success: false, sessionId: nil, threadId: nil,
             durationMs: nil, costUsd: nil, turns: nil, summary: nil, timestamp: nil)
@@ -164,8 +163,8 @@ struct MessageFormatterTests {
         #expect(pairs == [KeyValuePair(key: "Success", value: "no")])
     }
 
-    @Test("Formats llm_tool_use as toolUse with monospaced body")
-    func formatsLlmToolUse() {
+    @Test
+    func `Formats llm_tool_use as toolUse with monospaced body`() {
         let payload = LlmToolUsePayload(
             toolName: "Read", inputSummary: "Reading file.ts", input: nil, timestamp: nil)
         let msg = MessageFormatter.format(
@@ -180,8 +179,8 @@ struct MessageFormatterTests {
         #expect(body == "Reading file.ts")
     }
 
-    @Test("Formats llm_tool_result as toolUse with monospaced body")
-    func formatsLlmToolResult() {
+    @Test
+    func `Formats llm_tool_result as toolUse with monospaced body`() {
         let payload = LlmToolResultPayload(
             toolName: "Read", resultSummary: "File contents here", result: nil, timestamp: nil)
         let msg = MessageFormatter.format(
@@ -196,8 +195,8 @@ struct MessageFormatterTests {
         #expect(body == "File contents here")
     }
 
-    @Test("Formats llm_tool_use falls back to input when inputSummary is nil")
-    func formatsLlmToolUseInputFallback() {
+    @Test
+    func `Formats llm_tool_use falls back to input when inputSummary is nil`() {
         let payload = LlmToolUsePayload(
             toolName: "Bash", inputSummary: nil, input: "npm test", timestamp: nil)
         let msg = MessageFormatter.format(
@@ -212,8 +211,8 @@ struct MessageFormatterTests {
         #expect(body == "npm test")
     }
 
-    @Test("Formats llm_tool_use prefers inputSummary over input")
-    func formatsLlmToolUseInputSummaryPreferred() {
+    @Test
+    func `Formats llm_tool_use prefers inputSummary over input`() {
         let payload = LlmToolUsePayload(
             toolName: "Read", inputSummary: "Reading file.ts", input: "src/file.ts", timestamp: nil)
         let msg = MessageFormatter.format(
@@ -227,8 +226,8 @@ struct MessageFormatterTests {
         #expect(!body.contains("src/file.ts"))
     }
 
-    @Test("Formats llm_tool_result falls back to result when resultSummary is nil")
-    func formatsLlmToolResultFallback() {
+    @Test
+    func `Formats llm_tool_result falls back to result when resultSummary is nil`() {
         let payload = LlmToolResultPayload(
             toolName: "Bash", resultSummary: nil, result: "All tests passed", timestamp: nil)
         let msg = MessageFormatter.format(
@@ -243,8 +242,8 @@ struct MessageFormatterTests {
         #expect(body == "All tests passed")
     }
 
-    @Test("Formats llm_tool_result prefers resultSummary over result")
-    func formatsLlmToolResultSummaryPreferred() {
+    @Test
+    func `Formats llm_tool_result prefers resultSummary over result`() {
         let payload = LlmToolResultPayload(
             toolName: "Read", resultSummary: "File contents here", result: "full raw output",
             timestamp: nil)
@@ -259,8 +258,8 @@ struct MessageFormatterTests {
         #expect(!body.contains("full raw output"))
     }
 
-    @Test("Formats user_terminal_input as user message instead of unknown")
-    func formatsUserTerminalInput() {
+    @Test
+    func `Formats user_terminal_input as user message instead of unknown`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(
                 message: .userTerminalInput(
@@ -281,8 +280,8 @@ struct MessageFormatterTests {
         #expect(body == "hello from gui")
     }
 
-    @Test("Formats llm_tool_use with neither inputSummary nor input has nil body")
-    func formatsLlmToolUseNoInput() {
+    @Test
+    func `Formats llm_tool_use with neither inputSummary nor input has nil body`() {
         let payload = LlmToolUsePayload(
             toolName: "Bash", inputSummary: nil, input: nil, timestamp: nil)
         let msg = MessageFormatter.format(
@@ -293,8 +292,8 @@ struct MessageFormatterTests {
         #expect(msg.body == nil)
     }
 
-    @Test("Formats llm_tool_result with neither resultSummary nor result has nil body")
-    func formatsLlmToolResultNoResult() {
+    @Test
+    func `Formats llm_tool_result with neither resultSummary nor result has nil body`() {
         let payload = LlmToolResultPayload(
             toolName: "Write", resultSummary: nil, result: nil, timestamp: nil)
         let msg = MessageFormatter.format(
@@ -305,8 +304,8 @@ struct MessageFormatterTests {
         #expect(msg.body == nil)
     }
 
-    @Test("Formats file_write as fileChange with monospaced body")
-    func formatsFileWrite() {
+    @Test
+    func `Formats file_write as fileChange with monospaced body`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .fileWrite(
                 path: "/tmp/project/new.ts", lineCount: 42, timestamp: nil)),
@@ -321,8 +320,8 @@ struct MessageFormatterTests {
         #expect(body.contains("42 lines"))
     }
 
-    @Test("Formats file_edit as fileChange with monospaced body")
-    func formatsFileEdit() {
+    @Test
+    func `Formats file_edit as fileChange with monospaced body`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .fileEdit(
                 path: "src/main.ts", diff: "+new line\n-old line", timestamp: nil)),
@@ -337,8 +336,8 @@ struct MessageFormatterTests {
         #expect(body.contains("+new line"))
     }
 
-    @Test("Formats command_exec as command with monospaced body")
-    func formatsCommandExec() {
+    @Test
+    func `Formats command_exec as command with monospaced body`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .commandExec(
                 command: "npm test", cwd: "/tmp/project", timestamp: nil)),
@@ -353,8 +352,8 @@ struct MessageFormatterTests {
         #expect(body.contains("/tmp/project"))
     }
 
-    @Test("Formats command_result as command with monospaced body")
-    func formatsCommandResult() {
+    @Test
+    func `Formats command_result as command with monospaced body`() {
         let payload = CommandResultPayload(
             command: "npm test", cwd: nil, exitCode: 0, stdout: "All passed",
             stderr: nil, timestamp: nil)
@@ -370,8 +369,8 @@ struct MessageFormatterTests {
         #expect(body.contains("All passed"))
     }
 
-    @Test("Formats command_result with nonzero exit code")
-    func formatsCommandResultFailure() {
+    @Test
+    func `Formats command_result with nonzero exit code`() {
         let payload = CommandResultPayload(
             command: "npm test", cwd: nil, exitCode: 1, stdout: nil,
             stderr: "Test failed", timestamp: nil)
@@ -386,8 +385,8 @@ struct MessageFormatterTests {
         #expect(body.contains("Test failed"))
     }
 
-    @Test("Formats workflow_progress as progress with text body and no title")
-    func formatsWorkflowProgress() {
+    @Test
+    func `Formats workflow_progress as progress with text body and no title`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .workflowProgress(
                 message: "Building project", phase: "build", timestamp: nil)),
@@ -402,8 +401,8 @@ struct MessageFormatterTests {
         #expect(body.contains("Building project"))
     }
 
-    @Test("Formats workflow_progress without phase")
-    func formatsWorkflowProgressNoPhase() {
+    @Test
+    func `Formats workflow_progress without phase`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .workflowProgress(
                 message: "Building project", phase: nil, timestamp: nil)),
@@ -416,8 +415,8 @@ struct MessageFormatterTests {
         #expect(body == "Building project")
     }
 
-    @Test("Formats failure_report as error with text body and no title")
-    func formatsFailureReport() {
+    @Test
+    func `Formats failure_report as error with text body and no title`() {
         let payload = FailureReportPayload(
             summary: "Build failed", requirements: "Must compile",
             problems: "Syntax error", solutions: "Fix semicolon",
@@ -437,8 +436,8 @@ struct MessageFormatterTests {
         #expect(body.contains("Possible solutions:"))
     }
 
-    @Test("Formats token_usage as log with text body")
-    func formatsTokenUsage() {
+    @Test
+    func `Formats token_usage as log with text body`() {
         let payload = TokenUsagePayload(
             inputTokens: 1000, cachedInputTokens: 500, outputTokens: 200,
             reasoningTokens: nil, totalTokens: 1200, timestamp: nil)
@@ -458,8 +457,8 @@ struct MessageFormatterTests {
         #expect(!body.contains("reasoning="))
     }
 
-    @Test("Formats input_required as progress")
-    func formatsInputRequired() {
+    @Test
+    func `Formats input_required as progress`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .inputRequired(
                 prompt: "Enter your key", timestamp: nil)),
@@ -473,8 +472,8 @@ struct MessageFormatterTests {
         #expect(body == "Input required: Enter your key")
     }
 
-    @Test("Formats task_completion as lifecycle with text body")
-    func formatsTaskCompletion() {
+    @Test
+    func `Formats task_completion as lifecycle with text body`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .taskCompletion(
                 taskTitle: "Add tests", planComplete: true, timestamp: nil)),
@@ -489,8 +488,8 @@ struct MessageFormatterTests {
         #expect(body.contains("plan complete"))
     }
 
-    @Test("Formats prompt_answered as log with text body and no title")
-    func formatsPromptAnswered() {
+    @Test
+    func `Formats prompt_answered as log with text body and no title`() {
         let payload = PromptAnsweredPayload(
             requestId: "req-001", promptType: "select", source: "terminal",
             value: nil, timestamp: nil)
@@ -508,8 +507,8 @@ struct MessageFormatterTests {
         #expect(body.contains("terminal"))
     }
 
-    @Test("Formats prompt_answered with value does not display the value")
-    func formatsPromptAnsweredWithValue() {
+    @Test
+    func `Formats prompt_answered with value does not display the value`() {
         let payload = PromptAnsweredPayload(
             requestId: "req-002", promptType: "input", source: "gui",
             value: "user response", timestamp: nil)
@@ -525,8 +524,8 @@ struct MessageFormatterTests {
         #expect(!body.contains("user response"))
     }
 
-    @Test("Formats plan_discovery as lifecycle with text body")
-    func formatsPlanDiscovery() {
+    @Test
+    func `Formats plan_discovery as lifecycle with text body`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .planDiscovery(
                 planId: 169, title: "WebSocket support", timestamp: nil)),
@@ -540,8 +539,8 @@ struct MessageFormatterTests {
         #expect(body == "Found ready plan: 169 - WebSocket support")
     }
 
-    @Test("Formats unknown as log with text body")
-    func formatsUnknown() {
+    @Test
+    func `Formats unknown as log with text body`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .unknown(type: "future_type")),
             seq: 110)
@@ -554,8 +553,8 @@ struct MessageFormatterTests {
         #expect(body == "Unknown message type: future_type")
     }
 
-    @Test("Formats unknown tunnel message as log with text body")
-    func formatsUnknownTunnel() {
+    @Test
+    func `Formats unknown tunnel message as log with text body`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .unknown(type: "future_tunnel_type"),
             seq: 111)
@@ -568,8 +567,8 @@ struct MessageFormatterTests {
         #expect(body == "Unknown message type: future_tunnel_type")
     }
 
-    @Test("Formats todo_update as progress with todoList body")
-    func formatsTodoUpdate() {
+    @Test
+    func `Formats todo_update as progress with todoList body`() {
         let items = [
             TodoUpdateItem(label: "Done task", status: "completed"),
             TodoUpdateItem(label: "Current task", status: "in_progress"),
@@ -593,8 +592,8 @@ struct MessageFormatterTests {
         ])
     }
 
-    @Test("Formats todo_update with unknown status")
-    func formatsTodoUpdateUnknownStatus() {
+    @Test
+    func `Formats todo_update with unknown status`() {
         let items = [
             TodoUpdateItem(label: "Mystery task", status: "some_future_status"),
         ]
@@ -608,8 +607,8 @@ struct MessageFormatterTests {
         #expect(displayItems == [TodoDisplayItem(label: "Mystery task", status: .unknown)])
     }
 
-    @Test("Formats llm_thinking as llmOutput with text body")
-    func formatsLlmThinking() {
+    @Test
+    func `Formats llm_thinking as llmOutput with text body`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .llmThinking(
                 text: "Let me think about this...", timestamp: nil)),
@@ -623,8 +622,8 @@ struct MessageFormatterTests {
         #expect(body == "Let me think about this...")
     }
 
-    @Test("Formats llm_response as llmOutput with text body")
-    func formatsLlmResponse() {
+    @Test
+    func `Formats llm_response as llmOutput with text body`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .llmResponse(
                 text: "Here is my answer", isUserRequest: false, timestamp: nil)),
@@ -638,8 +637,8 @@ struct MessageFormatterTests {
         #expect(body == "Here is my answer")
     }
 
-    @Test("Formats llm_response with isUserRequest as User title")
-    func formatsLlmResponseUserRequest() {
+    @Test
+    func `Formats llm_response with isUserRequest as User title`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .llmResponse(
                 text: "User said something", isUserRequest: true, timestamp: nil)),
@@ -647,8 +646,8 @@ struct MessageFormatterTests {
         #expect(msg.title == "User")
     }
 
-    @Test("Formats file_change_summary with fileChanges body")
-    func formatsFileChangeSummary() {
+    @Test
+    func `Formats file_change_summary with fileChanges body`() {
         let changes = [
             FileChangeItem(path: "src/new.ts", kind: "added"),
             FileChangeItem(path: "src/main.ts", kind: "updated"),
@@ -671,8 +670,8 @@ struct MessageFormatterTests {
         ])
     }
 
-    @Test("Formats file_change_summary with unknown kind")
-    func formatsFileChangeSummaryUnknownKind() {
+    @Test
+    func `Formats file_change_summary with unknown kind`() {
         let changes = [
             FileChangeItem(path: "src/weird.ts", kind: "some_future_kind"),
         ]
@@ -687,8 +686,8 @@ struct MessageFormatterTests {
         #expect(displayItems == [FileChangeDisplayItem(path: "src/weird.ts", kind: .unknown)])
     }
 
-    @Test("Formats agent_iteration_start with text body")
-    func formatsAgentIterationStart() {
+    @Test
+    func `Formats agent_iteration_start with text body`() {
         let payload = AgentIterationStartPayload(
             iterationNumber: 3, taskTitle: "Build feature",
             taskDescription: nil, timestamp: nil)
@@ -704,8 +703,8 @@ struct MessageFormatterTests {
         #expect(body == "Build feature")
     }
 
-    @Test("Formats agent_step_end success as lifecycle")
-    func formatsAgentStepEndSuccess() {
+    @Test
+    func `Formats agent_step_end success as lifecycle`() {
         let payload = AgentStepEndPayload(
             phase: "implement", success: true, summary: "Completed successfully", timestamp: nil)
         let msg = MessageFormatter.format(
@@ -720,8 +719,8 @@ struct MessageFormatterTests {
         #expect(body == "Completed successfully")
     }
 
-    @Test("Formats agent_step_end failure as error")
-    func formatsAgentStepEndFailure() {
+    @Test
+    func `Formats agent_step_end failure as error`() {
         let payload = AgentStepEndPayload(
             phase: "review", success: false, summary: "Tests failed", timestamp: nil)
         let msg = MessageFormatter.format(
@@ -736,8 +735,8 @@ struct MessageFormatterTests {
         #expect(body == "Tests failed")
     }
 
-    @Test("Formats workspace_info as log with key-value pairs")
-    func formatsWorkspaceInfo() {
+    @Test
+    func `Formats workspace_info as log with key-value pairs`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .workspaceInfo(
                 path: "/tmp/project", planFile: "tasks/42.plan.md",
@@ -757,8 +756,8 @@ struct MessageFormatterTests {
 
     // MARK: - Agent step start
 
-    @Test("Formats agent_step_start as lifecycle with text body")
-    func formatsAgentStepStart() {
+    @Test
+    func `Formats agent_step_start as lifecycle with text body`() {
         let payload = AgentStepStartPayload(
             phase: "implement", executor: "claude", stepNumber: 2,
             attempt: 1, message: "Starting implementation",
@@ -776,8 +775,8 @@ struct MessageFormatterTests {
         #expect(msg.timestamp != nil)
     }
 
-    @Test("Formats agent_step_start without message has nil body")
-    func formatsAgentStepStartNoMessage() {
+    @Test
+    func `Formats agent_step_start without message has nil body`() {
         let payload = AgentStepStartPayload(
             phase: "review", executor: nil, stepNumber: nil,
             attempt: nil, message: nil, timestamp: nil)
@@ -792,8 +791,8 @@ struct MessageFormatterTests {
 
     // MARK: - LLM status
 
-    @Test("Formats llm_status as log with text body")
-    func formatsLlmStatus() {
+    @Test
+    func `Formats llm_status as log with text body`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .llmStatus(
                 status: "streaming", detail: "Generating response",
@@ -809,8 +808,8 @@ struct MessageFormatterTests {
         #expect(msg.timestamp != nil)
     }
 
-    @Test("Formats llm_status without detail")
-    func formatsLlmStatusNoDetail() {
+    @Test
+    func `Formats llm_status without detail`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .llmStatus(
                 status: "idle", detail: nil, timestamp: nil)),
@@ -824,8 +823,8 @@ struct MessageFormatterTests {
         #expect(body == "idle")
     }
 
-    @Test("Formats Claude rate-limit status details")
-    func formatsClaudeRateLimitStatus() {
+    @Test
+    func `Formats Claude rate-limit status details`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .llmStatus(
                 status: "Rate limit warning (seven_day)",
@@ -845,8 +844,8 @@ struct MessageFormatterTests {
 
     // MARK: - Review start
 
-    @Test("Formats review_start as lifecycle with text body")
-    func formatsReviewStart() {
+    @Test
+    func `Formats review_start as lifecycle with text body`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .reviewStart(
                 executor: "claude", planId: 42,
@@ -862,8 +861,8 @@ struct MessageFormatterTests {
         #expect(msg.timestamp != nil)
     }
 
-    @Test("Formats review_start without executor uses fallback")
-    func formatsReviewStartNoExecutor() {
+    @Test
+    func `Formats review_start without executor uses fallback`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .reviewStart(
                 executor: nil, planId: nil, timestamp: nil)),
@@ -879,8 +878,8 @@ struct MessageFormatterTests {
 
     // MARK: - Prompt request
 
-    @Test("Formats prompt_request as progress with text body")
-    func formatsPromptRequest() {
+    @Test
+    func `Formats prompt_request as progress with text body`() {
         let config = PromptConfigPayload(message: "Choose an option", choices: nil)
         let payload = PromptRequestPayload(
             requestId: "req-100", promptType: "select",
@@ -901,8 +900,8 @@ struct MessageFormatterTests {
 
     // MARK: - Review messages
 
-    @Test("Formats review_result with issues as lifecycle with text body")
-    func formatsReviewResult() {
+    @Test
+    func `Formats review_result with issues as lifecycle with text body`() {
         let payload = ReviewResultPayload(
             issues: [
                 ReviewIssueItem(
@@ -936,8 +935,8 @@ struct MessageFormatterTests {
         #expect(body.contains("N+1 query"))
     }
 
-    @Test("Formats review_result with no issues")
-    func formatsReviewResultEmpty() {
+    @Test
+    func `Formats review_result with no issues`() {
         let payload = ReviewResultPayload(
             issues: [], recommendations: [], actionItems: [],
             verdict: nil, fixInstructions: nil, timestamp: nil)
@@ -955,8 +954,8 @@ struct MessageFormatterTests {
 
     // MARK: - Execution summary with key-value pairs
 
-    @Test("Formats execution_summary with key-value pairs")
-    func formatsExecutionSummaryWithSteps() {
+    @Test
+    func `Formats execution_summary with key-value pairs`() {
         let payload = ExecutionSummaryPayload(
             planId: "42", planTitle: "Add feature", mode: "agent",
             durationMs: 120_000, totalSteps: 5, failedSteps: 1,
@@ -980,8 +979,8 @@ struct MessageFormatterTests {
         #expect(pairDict["Changed files"] == "src/main.ts")
     }
 
-    @Test("Formats execution_summary without optional fields")
-    func formatsExecutionSummaryWithoutSteps() {
+    @Test
+    func `Formats execution_summary without optional fields`() {
         let payload = ExecutionSummaryPayload(
             planId: "42", planTitle: nil, mode: nil,
             durationMs: nil, totalSteps: nil, failedSteps: nil,
@@ -998,8 +997,8 @@ struct MessageFormatterTests {
         #expect(pairs == [KeyValuePair(key: "Plan", value: "42")])
     }
 
-    @Test("Formats execution_summary with zero failedSteps omits Failed pair")
-    func formatsExecutionSummaryZeroFailed() {
+    @Test
+    func `Formats execution_summary with zero failedSteps omits Failed pair`() {
         let payload = ExecutionSummaryPayload(
             planId: nil, planTitle: nil, mode: nil,
             durationMs: nil, totalSteps: 3, failedSteps: 0,
@@ -1018,8 +1017,8 @@ struct MessageFormatterTests {
 
     // MARK: - Timestamp parsing
 
-    @Test("Parses ISO8601 timestamp with fractional seconds")
-    func parsesTimestampWithFractions() throws {
+    @Test
+    func `Parses ISO8601 timestamp with fractional seconds`() throws {
         let payload = AgentSessionStartPayload(
             executor: "claude", mode: "agent", planId: nil,
             sessionId: nil, threadId: nil, tools: nil, mcpServers: nil,
@@ -1039,8 +1038,8 @@ struct MessageFormatterTests {
         #expect(components.minute == 30)
     }
 
-    @Test("Parses ISO8601 timestamp without fractional seconds")
-    func parsesTimestampWithoutFractions() throws {
+    @Test
+    func `Parses ISO8601 timestamp without fractional seconds`() throws {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .llmThinking(
                 text: "thinking", timestamp: "2025-06-20T14:00:00Z")),
@@ -1056,8 +1055,8 @@ struct MessageFormatterTests {
         #expect(components.hour == 14)
     }
 
-    @Test("Returns nil timestamp when timestamp string is nil")
-    func returnsNilTimestampWhenNil() {
+    @Test
+    func `Returns nil timestamp when timestamp string is nil`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .llmThinking(
                 text: "thinking", timestamp: nil)),
@@ -1065,8 +1064,8 @@ struct MessageFormatterTests {
         #expect(msg.timestamp == nil)
     }
 
-    @Test("Returns nil timestamp when timestamp string is invalid")
-    func returnsNilTimestampWhenInvalid() {
+    @Test
+    func `Returns nil timestamp when timestamp string is invalid`() {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .llmThinking(
                 text: "thinking", timestamp: "not-a-date")),
@@ -1076,8 +1075,8 @@ struct MessageFormatterTests {
 
     // MARK: - Backward-compatible text property
 
-    @Test("Backward-compatible text property reconstructs from structured fields")
-    func backwardCompatibleText() {
+    @Test
+    func `Backward-compatible text property reconstructs from structured fields`() {
         let items = [
             TodoUpdateItem(label: "Done", status: "completed"),
             TodoUpdateItem(label: "Pending", status: "pending"),

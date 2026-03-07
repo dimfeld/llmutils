@@ -1577,6 +1577,48 @@ const test = "example";
     expect(readBackPlan.branch).toBe('feature/link-plan-to-branch');
   });
 
+  it('should persist reviewIssues through write and read operations', async () => {
+    const planPath = join(tempDir, 'review-issues.plan.md');
+    const planWithReviewIssues: PlanSchema = {
+      id: 208,
+      title: 'Review Issues Plan',
+      goal: 'Persist unresolved review issues',
+      details: 'Saved review issues should survive a round-trip.',
+      status: 'needs_review',
+      tasks: [],
+      reviewIssues: [
+        {
+          id: 'issue-1',
+          severity: 'major',
+          category: 'bug',
+          content: 'Null handling is missing',
+          file: 'src/review.ts',
+          line: 42,
+          suggestion: 'Guard the undefined case',
+        },
+        {
+          id: 'issue-2',
+          severity: 'info',
+          category: 'testing',
+          content: 'Add coverage for the new branch',
+          line: '50-60',
+        },
+      ],
+    };
+
+    await writePlanFile(planPath, planWithReviewIssues);
+
+    const fileContent = await readFile(planPath, 'utf-8');
+    const frontMatterEndIndex = fileContent.indexOf('\n---\n', 4);
+    const frontMatterSection = fileContent.substring(4, frontMatterEndIndex);
+    const frontMatterData = yaml.parse(frontMatterSection);
+
+    expect(frontMatterData.reviewIssues).toEqual(planWithReviewIssues.reviewIssues);
+
+    const readBackPlan = await readPlanFile(planPath);
+    expect(readBackPlan.reviewIssues).toEqual(planWithReviewIssues.reviewIssues);
+  });
+
   it('should treat branch as optional and omit it when not set', async () => {
     const planPath = join(tempDir, 'no-branch.plan.md');
     const planWithoutBranch: PlanSchema = {
@@ -1598,6 +1640,29 @@ const test = "example";
 
     const readBackPlan = await readPlanFile(planPath);
     expect(readBackPlan.branch).toBeUndefined();
+  });
+
+  it('should omit empty reviewIssues arrays when writing a plan file', async () => {
+    const planPath = join(tempDir, 'empty-review-issues.plan.md');
+    await writePlanFile(planPath, {
+      id: 209,
+      title: 'Empty Review Issues Plan',
+      goal: 'Keep empty issue arrays out of YAML',
+      details: 'Empty arrays should be stripped on write.',
+      status: 'pending',
+      tasks: [],
+      reviewIssues: [],
+    });
+
+    const fileContent = await readFile(planPath, 'utf-8');
+    const frontMatterEndIndex = fileContent.indexOf('\n---\n', 4);
+    const frontMatterSection = fileContent.substring(4, frontMatterEndIndex);
+    const frontMatterData = yaml.parse(frontMatterSection);
+
+    expect(frontMatterData.reviewIssues).toBeUndefined();
+
+    const readBackPlan = await readPlanFile(planPath);
+    expect(readBackPlan.reviewIssues).toBeUndefined();
   });
 
   it('should merge YAML details field with markdown body for backward compatibility', async () => {
@@ -2192,5 +2257,51 @@ tasks: []
 
     const parsed = planSchema.parse(plan);
     expect(parsed.discoveredFrom).toBeUndefined();
+  });
+
+  it('should accept valid reviewIssues values', () => {
+    const result = planSchema.safeParse({
+      id: 203,
+      title: 'Review Issues Plan',
+      goal: 'Validate reviewIssues',
+      details: 'Testing valid review issue data',
+      tasks: [],
+      reviewIssues: [
+        {
+          id: 'issue-1',
+          severity: 'critical',
+          category: 'security',
+          content: 'Escape shell arguments before execution',
+          file: 'src/tim/commands/review.ts',
+          line: '120-130',
+          suggestion: 'Use the existing escaping utility',
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('should reject invalid reviewIssues values', () => {
+    const result = planSchema.safeParse({
+      id: 204,
+      title: 'Invalid Review Issues Plan',
+      goal: 'Reject invalid reviewIssues',
+      details: 'Testing invalid review issue data',
+      tasks: [],
+      reviewIssues: [
+        {
+          id: 'issue-1',
+          severity: 'blocker',
+          category: 'security',
+          content: 'Invalid severity should fail validation',
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(['reviewIssues', 0, 'severity']);
+    }
   });
 });

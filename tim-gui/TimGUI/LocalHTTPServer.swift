@@ -21,7 +21,7 @@ struct MessagePayload: Codable {
 
 // MARK: - WebSocket Event
 
-enum WebSocketEvent: Sendable {
+enum WebSocketEvent {
     case sessionInfo(UUID, SessionInfoPayload)
     case output(UUID, Int, TunnelMessage)
     case replayStart(UUID)

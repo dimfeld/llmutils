@@ -1158,6 +1158,14 @@ program
     '--since-last-review',
     'Alias for --incremental. Only review changes since the last review.'
   )
+  .option(
+    '--issues',
+    'Act on previously saved unresolved review issues instead of running a new review.'
+  )
+  .option(
+    '--save-issues',
+    'Save review issues to the plan file in non-interactive mode (e.g. with --print).'
+  )
   .option('--since <commit>', 'Review changes since the specified commit hash.')
   .option(
     '--base <branch>',

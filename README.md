@@ -2359,6 +2359,9 @@ tim cleanup [FILES...] [--diff-from BRANCH]
 tim review [PLAN] [--executor NAME] [--serial-both] [--task-index N...]
 tim review [PLAN] --previous-response .rmfilter/reviews/last-review.md
 tim review [PLAN] --input-file context.md  # Pass additional context (e.g. from orchestrator)
+tim review [PLAN] --issues              # Act on previously saved unresolved review issues
+tim review [PLAN] --issues --print      # Output saved issues as JSON
+tim review [PLAN] --save-issues --print # Save issues to plan file in non-interactive mode
 
 # Answer PR comments
 tim answer-pr [PR] [--mode MODE] [--commit] [--comment]

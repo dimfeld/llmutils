@@ -2,10 +2,9 @@ import Foundation
 import Testing
 @testable import TimGUI
 
-@Suite("HeadlessMessage decoding")
 struct HeadlessMessageTests {
-    @Test("Decodes session_info with all fields")
-    func decodesSessionInfoFull() throws {
+    @Test
+    func `Decodes session_info with all fields`() throws {
         let json = """
         {
             "type": "session_info",
@@ -29,8 +28,8 @@ struct HeadlessMessageTests {
         #expect(info.terminal == nil)
     }
 
-    @Test("Decodes session_info with minimal fields")
-    func decodesSessionInfoMinimal() throws {
+    @Test
+    func `Decodes session_info with minimal fields`() throws {
         let json = """
         {
             "type": "session_info",
@@ -50,8 +49,8 @@ struct HeadlessMessageTests {
         #expect(info.terminal == nil)
     }
 
-    @Test("Decodes session_info with terminal pane info")
-    func decodesSessionInfoWithTerminal() throws {
+    @Test
+    func `Decodes session_info with terminal pane info`() throws {
         let json = """
         {
             "type": "session_info",
@@ -74,8 +73,8 @@ struct HeadlessMessageTests {
         #expect(info.terminal?.paneId == "7")
     }
 
-    @Test("Decodes session_info with terminalPaneId but no terminalType defaults to unknown")
-    func decodesSessionInfoWithTerminalPaneIdOnly() throws {
+    @Test
+    func `Decodes session_info with terminalPaneId but no terminalType defaults to unknown`() throws {
         let json = """
         {
             "type": "session_info",
@@ -92,8 +91,8 @@ struct HeadlessMessageTests {
         #expect(info.terminal?.paneId == "12")
     }
 
-    @Test("Decodes session_info with terminalType but no terminalPaneId has no terminal")
-    func decodesSessionInfoWithTerminalTypeOnly() throws {
+    @Test
+    func `Decodes session_info with terminalType but no terminalPaneId has no terminal`() throws {
         let json = """
         {
             "type": "session_info",
@@ -109,8 +108,8 @@ struct HeadlessMessageTests {
         #expect(info.terminal == nil)
     }
 
-    @Test("Decodes output with args tunnel message")
-    func decodesOutputWithArgs() throws {
+    @Test
+    func `Decodes output with args tunnel message`() throws {
         let json = """
         {
             "type": "output",
@@ -135,8 +134,8 @@ struct HeadlessMessageTests {
         #expect(args == ["hello", "world"])
     }
 
-    @Test("Decodes output with data tunnel message")
-    func decodesOutputWithData() throws {
+    @Test
+    func `Decodes output with data tunnel message`() throws {
         let json = """
         {
             "type": "output",
@@ -161,8 +160,8 @@ struct HeadlessMessageTests {
         #expect(data == "some output text")
     }
 
-    @Test("Decodes output with structured tunnel message")
-    func decodesOutputWithStructured() throws {
+    @Test
+    func `Decodes output with structured tunnel message`() throws {
         let json = """
         {
             "type": "output",
@@ -195,8 +194,8 @@ struct HeadlessMessageTests {
         #expect(phase == "build")
     }
 
-    @Test("Decodes replay_start")
-    func decodesReplayStart() throws {
+    @Test
+    func `Decodes replay_start`() throws {
         let json = """
         {"type": "replay_start"}
         """
@@ -207,8 +206,8 @@ struct HeadlessMessageTests {
         }
     }
 
-    @Test("Decodes replay_end")
-    func decodesReplayEnd() throws {
+    @Test
+    func `Decodes replay_end`() throws {
         let json = """
         {"type": "replay_end"}
         """
@@ -219,8 +218,8 @@ struct HeadlessMessageTests {
         }
     }
 
-    @Test("Unknown type decodes to .unknown")
-    func unknownTypeFallsBack() throws {
+    @Test
+    func `Unknown type decodes to .unknown`() throws {
         let json = """
         {"type": "unknown_message_type"}
         """
@@ -233,10 +232,9 @@ struct HeadlessMessageTests {
     }
 }
 
-@Suite("TunnelMessage decoding")
 struct TunnelMessageTests {
-    @Test("Decodes log with args")
-    func decodesLog() throws {
+    @Test
+    func `Decodes log with args`() throws {
         let json = """
         {"type": "log", "args": ["Starting", "process"]}
         """
@@ -249,8 +247,8 @@ struct TunnelMessageTests {
         #expect(args == ["Starting", "process"])
     }
 
-    @Test("Decodes error with args")
-    func decodesError() throws {
+    @Test
+    func `Decodes error with args`() throws {
         let json = """
         {"type": "error", "args": ["Something failed"]}
         """
@@ -263,8 +261,8 @@ struct TunnelMessageTests {
         #expect(args == ["Something failed"])
     }
 
-    @Test("Decodes warn with args")
-    func decodesWarn() throws {
+    @Test
+    func `Decodes warn with args`() throws {
         let json = """
         {"type": "warn", "args": ["Warning!"]}
         """
@@ -276,8 +274,8 @@ struct TunnelMessageTests {
         #expect(type == "warn")
     }
 
-    @Test("Decodes debug with args")
-    func decodesDebug() throws {
+    @Test
+    func `Decodes debug with args`() throws {
         let json = """
         {"type": "debug", "args": ["debug info"]}
         """
@@ -289,8 +287,8 @@ struct TunnelMessageTests {
         #expect(type == "debug")
     }
 
-    @Test("Decodes stdout with data")
-    func decodesStdout() throws {
+    @Test
+    func `Decodes stdout with data`() throws {
         let json = """
         {"type": "stdout", "data": "hello stdout"}
         """
@@ -303,8 +301,8 @@ struct TunnelMessageTests {
         #expect(data == "hello stdout")
     }
 
-    @Test("Decodes stderr with data")
-    func decodesStderr() throws {
+    @Test
+    func `Decodes stderr with data`() throws {
         let json = """
         {"type": "stderr", "data": "error output"}
         """
@@ -317,8 +315,8 @@ struct TunnelMessageTests {
         #expect(data == "error output")
     }
 
-    @Test("Decodes structured with agent_session_start")
-    func decodesStructured() throws {
+    @Test
+    func `Decodes structured with agent_session_start`() throws {
         let json = """
         {
             "type": "structured",
@@ -345,8 +343,8 @@ struct TunnelMessageTests {
         #expect(payload.planId == 169)
     }
 
-    @Test("Unknown tunnel type decodes to .unknown")
-    func unknownTypeFallsBack() throws {
+    @Test
+    func `Unknown tunnel type decodes to .unknown`() throws {
         let json = """
         {"type": "unknown_tunnel", "data": "something"}
         """
@@ -359,10 +357,9 @@ struct TunnelMessageTests {
     }
 }
 
-@Suite("StructuredMessagePayload decoding")
 struct StructuredMessagePayloadTests {
-    @Test("Decodes agent_session_start")
-    func decodesAgentSessionStart() throws {
+    @Test
+    func `Decodes agent_session_start`() throws {
         let json = """
         {
             "type": "agent_session_start",
@@ -390,8 +387,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.mcpServers == ["context7"])
     }
 
-    @Test("Decodes agent_session_end")
-    func decodesAgentSessionEnd() throws {
+    @Test
+    func `Decodes agent_session_end`() throws {
         let json = """
         {
             "type": "agent_session_end",
@@ -416,8 +413,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.summary == "All tasks completed")
     }
 
-    @Test("Decodes agent_iteration_start")
-    func decodesAgentIterationStart() throws {
+    @Test
+    func `Decodes agent_iteration_start`() throws {
         let json = """
         {
             "type": "agent_iteration_start",
@@ -436,8 +433,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.taskTitle == "Implement feature X")
     }
 
-    @Test("Decodes llm_tool_use with inputSummary")
-    func decodesLlmToolUse() throws {
+    @Test
+    func `Decodes llm_tool_use with inputSummary`() throws {
         let json = """
         {
             "type": "llm_tool_use",
@@ -456,8 +453,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.input == nil)
     }
 
-    @Test("Decodes llm_tool_use with string input field")
-    func decodesLlmToolUseWithInput() throws {
+    @Test
+    func `Decodes llm_tool_use with string input field`() throws {
         let json = """
         {
             "type": "llm_tool_use",
@@ -476,8 +473,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.input == "npm test")
     }
 
-    @Test("Decodes llm_tool_use with both inputSummary and input")
-    func decodesLlmToolUseWithBoth() throws {
+    @Test
+    func `Decodes llm_tool_use with both inputSummary and input`() throws {
         let json = """
         {
             "type": "llm_tool_use",
@@ -496,8 +493,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.input == "src/main.ts")
     }
 
-    @Test("Decodes llm_tool_use with numeric input")
-    func decodesLlmToolUseWithNumericInput() throws {
+    @Test
+    func `Decodes llm_tool_use with numeric input`() throws {
         let json = """
         {
             "type": "llm_tool_use",
@@ -514,8 +511,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.input == "42")
     }
 
-    @Test("Decodes llm_tool_use with boolean input")
-    func decodesLlmToolUseWithBoolInput() throws {
+    @Test
+    func `Decodes llm_tool_use with boolean input`() throws {
         let json = """
         {
             "type": "llm_tool_use",
@@ -532,8 +529,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.input == "true")
     }
 
-    @Test("Decodes llm_tool_use with object input as serialized JSON")
-    func decodesLlmToolUseWithObjectInput() throws {
+    @Test
+    func `Decodes llm_tool_use with object input as serialized JSON`() throws {
         let json = """
         {
             "type": "llm_tool_use",
@@ -550,8 +547,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.input == "{\"content\":\"hello\",\"file_path\":\"\\/tmp\\/test.ts\"}")
     }
 
-    @Test("Decodes llm_tool_use with array input as serialized JSON")
-    func decodesLlmToolUseWithArrayInput() throws {
+    @Test
+    func `Decodes llm_tool_use with array input as serialized JSON`() throws {
         let json = """
         {
             "type": "llm_tool_use",
@@ -568,8 +565,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.input == "[1,2,3]")
     }
 
-    @Test("Decodes llm_tool_use with floating point input")
-    func decodesLlmToolUseWithFloatInput() throws {
+    @Test
+    func `Decodes llm_tool_use with floating point input`() throws {
         let json = """
         {
             "type": "llm_tool_use",
@@ -586,8 +583,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.input == "3.14159")
     }
 
-    @Test("Decodes llm_tool_use with no inputSummary and no input")
-    func decodesLlmToolUseWithNeither() throws {
+    @Test
+    func `Decodes llm_tool_use with no inputSummary and no input`() throws {
         let json = """
         {
             "type": "llm_tool_use",
@@ -605,8 +602,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.input == nil)
     }
 
-    @Test("Decodes llm_tool_result with resultSummary")
-    func decodesLlmToolResult() throws {
+    @Test
+    func `Decodes llm_tool_result with resultSummary`() throws {
         let json = """
         {
             "type": "llm_tool_result",
@@ -625,8 +622,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.result == nil)
     }
 
-    @Test("Decodes llm_tool_result with string result field")
-    func decodesLlmToolResultWithResult() throws {
+    @Test
+    func `Decodes llm_tool_result with string result field`() throws {
         let json = """
         {
             "type": "llm_tool_result",
@@ -645,8 +642,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.result == "All tests passed")
     }
 
-    @Test("Decodes llm_tool_result with numeric result")
-    func decodesLlmToolResultWithNumericResult() throws {
+    @Test
+    func `Decodes llm_tool_result with numeric result`() throws {
         let json = """
         {
             "type": "llm_tool_result",
@@ -663,8 +660,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.result == "99")
     }
 
-    @Test("Decodes llm_tool_result with boolean result")
-    func decodesLlmToolResultWithBoolResult() throws {
+    @Test
+    func `Decodes llm_tool_result with boolean result`() throws {
         let json = """
         {
             "type": "llm_tool_result",
@@ -681,8 +678,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.result == "false")
     }
 
-    @Test("Decodes llm_tool_result with object result as serialized JSON")
-    func decodesLlmToolResultWithObjectResult() throws {
+    @Test
+    func `Decodes llm_tool_result with object result as serialized JSON`() throws {
         let json = """
         {
             "type": "llm_tool_result",
@@ -699,8 +696,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.result == "{\"content\":\"file data\",\"lines\":42}")
     }
 
-    @Test("Decodes llm_tool_result with both resultSummary and result")
-    func decodesLlmToolResultWithBoth() throws {
+    @Test
+    func `Decodes llm_tool_result with both resultSummary and result`() throws {
         let json = """
         {
             "type": "llm_tool_result",
@@ -719,8 +716,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.result == "full raw output here")
     }
 
-    @Test("Decodes llm_tool_result with no resultSummary and no result")
-    func decodesLlmToolResultWithNeither() throws {
+    @Test
+    func `Decodes llm_tool_result with no resultSummary and no result`() throws {
         let json = """
         {
             "type": "llm_tool_result",
@@ -738,8 +735,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.result == nil)
     }
 
-    @Test("Decodes file_write")
-    func decodesFileWrite() throws {
+    @Test
+    func `Decodes file_write`() throws {
         let json = """
         {
             "type": "file_write",
@@ -757,8 +754,8 @@ struct StructuredMessagePayloadTests {
         #expect(lineCount == 42)
     }
 
-    @Test("Decodes command_result")
-    func decodesCommandResult() throws {
+    @Test
+    func `Decodes command_result`() throws {
         let json = """
         {
             "type": "command_result",
@@ -782,8 +779,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.stderr == "1 test failed")
     }
 
-    @Test("Decodes workflow_progress")
-    func decodesWorkflowProgress() throws {
+    @Test
+    func `Decodes workflow_progress`() throws {
         let json = """
         {
             "type": "workflow_progress",
@@ -801,8 +798,8 @@ struct StructuredMessagePayloadTests {
         #expect(phase == "build")
     }
 
-    @Test("Decodes token_usage")
-    func decodesTokenUsage() throws {
+    @Test
+    func `Decodes token_usage`() throws {
         let json = """
         {
             "type": "token_usage",
@@ -826,8 +823,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.totalTokens == 1250)
     }
 
-    @Test("Decodes plan_discovery")
-    func decodesPlanDiscovery() throws {
+    @Test
+    func `Decodes plan_discovery`() throws {
         let json = """
         {
             "type": "plan_discovery",
@@ -845,8 +842,8 @@ struct StructuredMessagePayloadTests {
         #expect(title == "Add WebSocket support")
     }
 
-    @Test("Decodes workspace_info")
-    func decodesWorkspaceInfo() throws {
+    @Test
+    func `Decodes workspace_info`() throws {
         let json = """
         {
             "type": "workspace_info",
@@ -866,8 +863,8 @@ struct StructuredMessagePayloadTests {
         #expect(wsId == "ws-001")
     }
 
-    @Test("Decodes failure_report")
-    func decodesFailureReport() throws {
+    @Test
+    func `Decodes failure_report`() throws {
         let json = """
         {
             "type": "failure_report",
@@ -891,8 +888,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.sourceAgent == "claude")
     }
 
-    @Test("Decodes llm_thinking")
-    func decodesLlmThinking() throws {
+    @Test
+    func `Decodes llm_thinking`() throws {
         let json = """
         {
             "type": "llm_thinking",
@@ -908,8 +905,8 @@ struct StructuredMessagePayloadTests {
         #expect(text == "I need to consider the architecture...")
     }
 
-    @Test("Decodes llm_response")
-    func decodesLlmResponse() throws {
+    @Test
+    func `Decodes llm_response`() throws {
         let json = """
         {
             "type": "llm_response",
@@ -927,8 +924,8 @@ struct StructuredMessagePayloadTests {
         #expect(isUserRequest == true)
     }
 
-    @Test("Decodes llm_status")
-    func decodesLlmStatus() throws {
+    @Test
+    func `Decodes llm_status`() throws {
         let json = """
         {
             "type": "llm_status",
@@ -946,8 +943,8 @@ struct StructuredMessagePayloadTests {
         #expect(detail == "Waiting 30s")
     }
 
-    @Test("Decodes todo_update")
-    func decodesTodoUpdate() throws {
+    @Test
+    func `Decodes todo_update`() throws {
         let json = """
         {
             "type": "todo_update",
@@ -971,8 +968,8 @@ struct StructuredMessagePayloadTests {
         #expect(items[2].status == "pending")
     }
 
-    @Test("Decodes file_edit")
-    func decodesFileEdit() throws {
+    @Test
+    func `Decodes file_edit`() throws {
         let json = """
         {
             "type": "file_edit",
@@ -990,8 +987,8 @@ struct StructuredMessagePayloadTests {
         #expect(diff.contains("import"))
     }
 
-    @Test("Decodes file_change_summary")
-    func decodesFileChangeSummary() throws {
+    @Test
+    func `Decodes file_change_summary`() throws {
         let json = """
         {
             "type": "file_change_summary",
@@ -1014,8 +1011,8 @@ struct StructuredMessagePayloadTests {
         #expect(changes[2].kind == "removed")
     }
 
-    @Test("Decodes command_exec")
-    func decodesCommandExec() throws {
+    @Test
+    func `Decodes command_exec`() throws {
         let json = """
         {
             "type": "command_exec",
@@ -1033,8 +1030,8 @@ struct StructuredMessagePayloadTests {
         #expect(cwd == "/tmp/project")
     }
 
-    @Test("Decodes agent_step_start")
-    func decodesAgentStepStart() throws {
+    @Test
+    func `Decodes agent_step_start`() throws {
         let json = """
         {
             "type": "agent_step_start",
@@ -1057,8 +1054,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.attempt == 1)
     }
 
-    @Test("Decodes agent_step_end")
-    func decodesAgentStepEnd() throws {
+    @Test
+    func `Decodes agent_step_end`() throws {
         let json = """
         {
             "type": "agent_step_end",
@@ -1078,8 +1075,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.summary == "Step completed successfully")
     }
 
-    @Test("Decodes review_start")
-    func decodesReviewStart() throws {
+    @Test
+    func `Decodes review_start`() throws {
         let json = """
         {
             "type": "review_start",
@@ -1097,8 +1094,8 @@ struct StructuredMessagePayloadTests {
         #expect(planId == 42)
     }
 
-    @Test("Decodes task_completion")
-    func decodesTaskCompletion() throws {
+    @Test
+    func `Decodes task_completion`() throws {
         let json = """
         {
             "type": "task_completion",
@@ -1116,8 +1113,8 @@ struct StructuredMessagePayloadTests {
         #expect(planComplete == false)
     }
 
-    @Test("Decodes input_required")
-    func decodesInputRequired() throws {
+    @Test
+    func `Decodes input_required`() throws {
         let json = """
         {
             "type": "input_required",
@@ -1133,8 +1130,8 @@ struct StructuredMessagePayloadTests {
         #expect(prompt == "Enter your API key")
     }
 
-    @Test("Decodes execution_summary")
-    func decodesExecutionSummary() throws {
+    @Test
+    func `Decodes execution_summary`() throws {
         let json = """
         {
             "type": "execution_summary",
@@ -1162,8 +1159,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.errors == ["Type check failed"])
     }
 
-    @Test("Decodes prompt_request")
-    func decodesPromptRequest() throws {
+    @Test
+    func `Decodes prompt_request`() throws {
         let json = """
         {
             "type": "prompt_request",
@@ -1199,8 +1196,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.timeoutMs == 30000)
     }
 
-    @Test("Decodes prompt_request with command field for prefix_select")
-    func decodesPromptRequestPrefixSelect() throws {
+    @Test
+    func `Decodes prompt_request with command field for prefix_select`() throws {
         let json = """
         {
             "type": "prompt_request",
@@ -1226,8 +1223,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.timeoutMs == 60000)
     }
 
-    @Test("Decodes prompt_request with nil command when not present")
-    func decodesPromptRequestWithoutCommand() throws {
+    @Test
+    func `Decodes prompt_request with nil command when not present`() throws {
         let json = """
         {
             "type": "prompt_request",
@@ -1249,8 +1246,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.promptConfig.command == nil)
     }
 
-    @Test("PromptChoiceConfigPayload preserves original JSON types for values")
-    func decodesPromptChoicePreservesTypes() throws {
+    @Test
+    func `PromptChoiceConfigPayload preserves original JSON types for values`() throws {
         let json = """
         {
             "type": "prompt_request",
@@ -1282,8 +1279,8 @@ struct StructuredMessagePayloadTests {
         #expect(choices[4].value == .string("hello"))
     }
 
-    @Test("PromptChoiceConfigPayload preserves bool false values")
-    func decodesPromptChoiceBoolFalse() throws {
+    @Test
+    func `PromptChoiceConfigPayload preserves bool false values`() throws {
         let json = """
         {
             "type": "prompt_request",
@@ -1309,8 +1306,8 @@ struct StructuredMessagePayloadTests {
         #expect(choices[1].value == .bool(false))
     }
 
-    @Test("PromptChoiceConfigPayload with null value decodes to nil")
-    func decodesPromptChoiceNullValue() throws {
+    @Test
+    func `PromptChoiceConfigPayload with null value decodes to nil`() throws {
         let json = """
         {
             "type": "prompt_request",
@@ -1336,8 +1333,8 @@ struct StructuredMessagePayloadTests {
         #expect(choices[1].value == nil)
     }
 
-    @Test("PromptConfigPayload.defaultValue preserves typed values")
-    func decodesPromptConfigDefaultValueTypes() throws {
+    @Test
+    func `PromptConfigPayload.defaultValue preserves typed values`() throws {
         // Bool default
         let boolJson = """
         {
@@ -1424,8 +1421,8 @@ struct StructuredMessagePayloadTests {
         #expect(ndp.promptConfig.defaultValue == nil)
     }
 
-    @Test("Decodes prompt_answered without value")
-    func decodesPromptAnswered() throws {
+    @Test
+    func `Decodes prompt_answered without value`() throws {
         let json = """
         {
             "type": "prompt_answered",
@@ -1446,8 +1443,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.value == nil)
     }
 
-    @Test("Decodes prompt_answered with string value")
-    func decodesPromptAnsweredWithStringValue() throws {
+    @Test
+    func `Decodes prompt_answered with string value`() throws {
         let json = """
         {
             "type": "prompt_answered",
@@ -1468,8 +1465,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.value == "user response")
     }
 
-    @Test("Decodes prompt_answered with numeric value")
-    func decodesPromptAnsweredWithNumericValue() throws {
+    @Test
+    func `Decodes prompt_answered with numeric value`() throws {
         let json = """
         {
             "type": "prompt_answered",
@@ -1488,8 +1485,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.value == "42")
     }
 
-    @Test("Decodes prompt_answered with boolean value")
-    func decodesPromptAnsweredWithBoolValue() throws {
+    @Test
+    func `Decodes prompt_answered with boolean value`() throws {
         let json = """
         {
             "type": "prompt_answered",
@@ -1508,8 +1505,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.value == "true")
     }
 
-    @Test("Decodes prompt_answered with object value as serialized JSON")
-    func decodesPromptAnsweredWithObjectValue() throws {
+    @Test
+    func `Decodes prompt_answered with object value as serialized JSON`() throws {
         let json = """
         {
             "type": "prompt_answered",
@@ -1528,8 +1525,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.value == "{\"confirmed\":true,\"selected\":[\"a\",\"b\"]}")
     }
 
-    @Test("Decodes prompt_answered with array value as serialized JSON")
-    func decodesPromptAnsweredWithArrayValue() throws {
+    @Test
+    func `Decodes prompt_answered with array value as serialized JSON`() throws {
         let json = """
         {
             "type": "prompt_answered",
@@ -1548,8 +1545,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.value == "[\"option1\",\"option2\"]")
     }
 
-    @Test("Decodes review_result with issues")
-    func decodesReviewResult() throws {
+    @Test
+    func `Decodes review_result with issues`() throws {
         let json = """
         {
             "type": "review_result",
@@ -1586,8 +1583,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.fixInstructions == "Fix the SQL injection")
     }
 
-    @Test("Decodes execution_summary with metadata totalSteps and failedSteps")
-    func decodesExecutionSummaryWithMetadata() throws {
+    @Test
+    func `Decodes execution_summary with metadata totalSteps and failedSteps`() throws {
         let json = """
         {
             "type": "execution_summary",
@@ -1618,8 +1615,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.changedFiles == ["a.ts", "b.ts"])
     }
 
-    @Test("Decodes execution_summary without metadata (totalSteps/failedSteps nil)")
-    func decodesExecutionSummaryWithoutMetadata() throws {
+    @Test
+    func `Decodes execution_summary without metadata (totalSteps/failedSteps nil)`() throws {
         let json = """
         {
             "type": "execution_summary",
@@ -1643,8 +1640,8 @@ struct StructuredMessagePayloadTests {
         #expect(p.failedSteps == nil)
     }
 
-    @Test("Unknown structured type falls back to .unknown")
-    func unknownTypeFallsBack() throws {
+    @Test
+    func `Unknown structured type falls back to .unknown`() throws {
         let json = """
         {
             "type": "some_future_message_type",
@@ -1660,8 +1657,8 @@ struct StructuredMessagePayloadTests {
         #expect(type == "some_future_message_type")
     }
 
-    @Test("Decodes user_terminal_input")
-    func decodesUserTerminalInput() throws {
+    @Test
+    func `Decodes user_terminal_input`() throws {
         let json = """
         {
             "type": "user_terminal_input",
@@ -1681,10 +1678,9 @@ struct StructuredMessagePayloadTests {
     }
 }
 
-@Suite("OutgoingMessage encoding")
 struct OutgoingMessageTests {
-    @Test("userInput encodes to correct JSON structure")
-    func userInputEncoding() throws {
+    @Test
+    func `userInput encodes to correct JSON structure`() throws {
         let message = OutgoingMessage.userInput(content: "hello world")
         let data = try JSONEncoder().encode(message)
         let dict = try #require(
@@ -1694,8 +1690,8 @@ struct OutgoingMessageTests {
         #expect(dict.count == 2)
     }
 
-    @Test("userInput handles special characters in content")
-    func userInputSpecialChars() throws {
+    @Test
+    func `userInput handles special characters in content`() throws {
         let message = OutgoingMessage.userInput(content: "line1\nline2\ttab \"quoted\"")
         let data = try JSONEncoder().encode(message)
         let dict = try #require(
@@ -1704,8 +1700,8 @@ struct OutgoingMessageTests {
         #expect(dict["content"] == "line1\nline2\ttab \"quoted\"")
     }
 
-    @Test("userInput handles empty content")
-    func userInputEmptyContent() throws {
+    @Test
+    func `userInput handles empty content`() throws {
         let message = OutgoingMessage.userInput(content: "")
         let data = try JSONEncoder().encode(message)
         let dict = try #require(
@@ -1716,8 +1712,8 @@ struct OutgoingMessageTests {
 
     // MARK: - promptResponse encoding
 
-    @Test("promptResponse with bool true encodes correctly")
-    func promptResponseBoolTrue() throws {
+    @Test
+    func `promptResponse with bool true encodes correctly`() throws {
         let message = OutgoingMessage.promptResponse(requestId: "req-1", value: .bool(true))
         let data = try JSONEncoder().encode(message)
         let dict = try #require(
@@ -1731,8 +1727,8 @@ struct OutgoingMessageTests {
         #expect(dict.count == 3)
     }
 
-    @Test("promptResponse with bool false encodes correctly")
-    func promptResponseBoolFalse() throws {
+    @Test
+    func `promptResponse with bool false encodes correctly`() throws {
         let message = OutgoingMessage.promptResponse(requestId: "req-2", value: .bool(false))
         let data = try JSONEncoder().encode(message)
         let dict = try #require(
@@ -1740,8 +1736,8 @@ struct OutgoingMessageTests {
         #expect(dict["value"] as? Bool == false)
     }
 
-    @Test("promptResponse with string encodes correctly")
-    func promptResponseString() throws {
+    @Test
+    func `promptResponse with string encodes correctly`() throws {
         let message = OutgoingMessage.promptResponse(requestId: "req-3", value: .string("user input text"))
         let data = try JSONEncoder().encode(message)
         let dict = try #require(
@@ -1752,8 +1748,8 @@ struct OutgoingMessageTests {
         #expect(dict.count == 3)
     }
 
-    @Test("promptResponse with int encodes as JSON number")
-    func promptResponseInt() throws {
+    @Test
+    func `promptResponse with int encodes as JSON number`() throws {
         let message = OutgoingMessage.promptResponse(requestId: "req-4", value: .int(42))
         let data = try JSONEncoder().encode(message)
         let dict = try #require(
@@ -1766,8 +1762,8 @@ struct OutgoingMessageTests {
         #expect(value as? String == nil)
     }
 
-    @Test("promptResponse with double encodes as JSON number")
-    func promptResponseDouble() throws {
+    @Test
+    func `promptResponse with double encodes as JSON number`() throws {
         let message = OutgoingMessage.promptResponse(requestId: "req-5", value: .double(3.14))
         let data = try JSONEncoder().encode(message)
         let dict = try #require(
@@ -1778,8 +1774,8 @@ struct OutgoingMessageTests {
         #expect(abs(value - 3.14) < 0.001)
     }
 
-    @Test("promptResponse with array encodes as JSON array")
-    func promptResponseArray() throws {
+    @Test
+    func `promptResponse with array encodes as JSON array`() throws {
         let message = OutgoingMessage.promptResponse(
             requestId: "req-6",
             value: .array([.string("option1"), .string("option2")]))
@@ -1792,8 +1788,8 @@ struct OutgoingMessageTests {
         #expect(arr == ["option1", "option2"])
     }
 
-    @Test("promptResponse with object encodes as JSON object (prefix_select format)")
-    func promptResponseObject() throws {
+    @Test
+    func `promptResponse with object encodes as JSON object (prefix_select format)`() throws {
         let message = OutgoingMessage.promptResponse(
             requestId: "req-7",
             value: .object(["exact": .bool(true), "command": .string("npm install")]))
@@ -1808,8 +1804,8 @@ struct OutgoingMessageTests {
         #expect(valueObj.count == 2)
     }
 
-    @Test("promptResponse with mixed-type array encodes correctly")
-    func promptResponseMixedArray() throws {
+    @Test
+    func `promptResponse with mixed-type array encodes correctly`() throws {
         let message = OutgoingMessage.promptResponse(
             requestId: "req-8",
             value: .array([.string("a"), .int(1), .bool(true)]))
@@ -1824,23 +1820,22 @@ struct OutgoingMessageTests {
     }
 }
 
-@Suite("Prefix select command normalization")
 struct PrefixSelectCommandNormalizationTests {
-    @Test("extractCommandAfterCd strips leading cd prefix")
-    func extractCommandAfterCdStripsCdPrefix() {
+    @Test
+    func `extractCommandAfterCd strips leading cd prefix`() {
         #expect(PrefixSelectCommandNormalizer.extractCommandAfterCd("cd /repo && npm test") == "npm test")
         #expect(PrefixSelectCommandNormalizer.extractCommandAfterCd("cd ../dir && bun run check") == "bun run check")
     }
 
-    @Test("extractCommandAfterCd handles spacing and quoted paths")
-    func extractCommandAfterCdHandlesSpacingAndQuotes() {
+    @Test
+    func `extractCommandAfterCd handles spacing and quoted paths`() {
         #expect(PrefixSelectCommandNormalizer
             .extractCommandAfterCd(#"cd "/path with spaces" && npm test"#) == "npm test")
         #expect(PrefixSelectCommandNormalizer.extractCommandAfterCd("cd /path  &&  npm test   ") == "npm test")
     }
 
-    @Test("extractCommandAfterCd leaves non-matching commands unchanged")
-    func extractCommandAfterCdLeavesOtherCommandsUnchanged() {
+    @Test
+    func `extractCommandAfterCd leaves non-matching commands unchanged`() {
         #expect(PrefixSelectCommandNormalizer.extractCommandAfterCd("npm test") == "npm test")
         #expect(PrefixSelectCommandNormalizer
             .extractCommandAfterCd("echo cd /path && npm test") == "echo cd /path && npm test")
@@ -1849,42 +1844,41 @@ struct PrefixSelectCommandNormalizationTests {
 
 // MARK: - Project display name and session grouping tests
 
-@Suite("Project display name and session grouping")
 struct ProjectDisplayNameTests {
-    @Test("parseProjectDisplayName with SSH remote returns owner/repo")
-    func parseSSHRemote() {
+    @Test
+    func `parseProjectDisplayName with SSH remote returns owner/repo`() {
         let result = parseProjectDisplayName(
             gitRemote: "git@github.com:someowner/myrepo.git",
             workspacePath: nil)
         #expect(result == "someowner/myrepo")
     }
 
-    @Test("parseProjectDisplayName with HTTPS remote returns owner/repo")
-    func parseHTTPSRemote() {
+    @Test
+    func `parseProjectDisplayName with HTTPS remote returns owner/repo`() {
         let result = parseProjectDisplayName(
             gitRemote: "https://github.com/someowner/myrepo.git",
             workspacePath: nil)
         #expect(result == "someowner/myrepo")
     }
 
-    @Test("parseProjectDisplayName with sanitized host/owner/repo remote returns owner/repo")
-    func parseSanitizedHostPathRemote() {
+    @Test
+    func `parseProjectDisplayName with sanitized host/owner/repo remote returns owner/repo`() {
         let result = parseProjectDisplayName(
             gitRemote: "github.com/someowner/myrepo",
             workspacePath: nil)
         #expect(result == "someowner/myrepo")
     }
 
-    @Test("parseProjectDisplayName with HTTPS remote without .git suffix")
-    func parseHTTPSRemoteNoGitSuffix() {
+    @Test
+    func `parseProjectDisplayName with HTTPS remote without .git suffix`() {
         let result = parseProjectDisplayName(
             gitRemote: "https://github.com/someowner/myrepo",
             workspacePath: nil)
         #expect(result == "someowner/myrepo")
     }
 
-    @Test("parseProjectDisplayName elides owner when matching current user")
-    func ownerElision() {
+    @Test
+    func `parseProjectDisplayName elides owner when matching current user`() {
         let result = parseProjectDisplayName(
             gitRemote: "git@github.com:testuser/myrepo.git",
             workspacePath: nil,
@@ -1892,8 +1886,8 @@ struct ProjectDisplayNameTests {
         #expect(result == "myrepo")
     }
 
-    @Test("parseProjectDisplayName owner elision is case-insensitive")
-    func ownerElisionCaseInsensitive() {
+    @Test
+    func `parseProjectDisplayName owner elision is case-insensitive`() {
         let result = parseProjectDisplayName(
             gitRemote: "git@github.com:TestUser/myrepo.git",
             workspacePath: nil,
@@ -1901,8 +1895,8 @@ struct ProjectDisplayNameTests {
         #expect(result == "myrepo")
     }
 
-    @Test("parseProjectDisplayName does not elide owner when different from current user")
-    func ownerNoElision() {
+    @Test
+    func `parseProjectDisplayName does not elide owner when different from current user`() {
         let result = parseProjectDisplayName(
             gitRemote: "git@github.com:otheruser/myrepo.git",
             workspacePath: nil,
@@ -1910,30 +1904,30 @@ struct ProjectDisplayNameTests {
         #expect(result == "otheruser/myrepo")
     }
 
-    @Test("parseProjectDisplayName falls back to workspacePath when no gitRemote")
-    func workspacePathFallback() {
+    @Test
+    func `parseProjectDisplayName falls back to workspacePath when no gitRemote`() {
         let result = parseProjectDisplayName(
             gitRemote: nil,
             workspacePath: "/Users/test/projects/myproject")
         #expect(result == "projects/myproject")
     }
 
-    @Test("parseProjectDisplayName returns full path when workspacePath is short")
-    func shortWorkspacePath() {
+    @Test
+    func `parseProjectDisplayName returns full path when workspacePath is short`() {
         let result = parseProjectDisplayName(
             gitRemote: nil,
             workspacePath: "/myproject")
         #expect(result == "/myproject")
     }
 
-    @Test("parseProjectDisplayName returns Unknown when neither is available")
-    func unknownFallback() {
+    @Test
+    func `parseProjectDisplayName returns Unknown when neither is available`() {
         let result = parseProjectDisplayName(gitRemote: nil, workspacePath: nil)
         #expect(result == "Unknown")
     }
 
-    @Test("sessionGroupKey returns consistent key for SSH and HTTPS of same repo")
-    func groupKeyConsistency() {
+    @Test
+    func `sessionGroupKey returns consistent key for SSH and HTTPS of same repo`() {
         let sshKey = sessionGroupKey(
             gitRemote: "git@github.com:owner/repo.git",
             workspacePath: nil)
@@ -1944,37 +1938,37 @@ struct ProjectDisplayNameTests {
         #expect(sshKey == "owner/repo")
     }
 
-    @Test("sessionGroupKey parses sanitized host/owner/repo remote")
-    func groupKeySanitizedHostPathRemote() {
+    @Test
+    func `sessionGroupKey parses sanitized host/owner/repo remote`() {
         let key = sessionGroupKey(
             gitRemote: "github.com/owner/repo",
             workspacePath: nil)
         #expect(key == "owner/repo")
     }
 
-    @Test("sessionGroupKey is lowercased")
-    func groupKeyLowercased() {
+    @Test
+    func `sessionGroupKey is lowercased`() {
         let key = sessionGroupKey(
             gitRemote: "git@github.com:Owner/Repo.git",
             workspacePath: nil)
         #expect(key == "owner/repo")
     }
 
-    @Test("sessionGroupKey falls back to workspacePath when no gitRemote")
-    func groupKeyWorkspacePath() {
+    @Test
+    func `sessionGroupKey falls back to workspacePath when no gitRemote`() {
         let key = sessionGroupKey(gitRemote: nil, workspacePath: "/Users/test/myproject")
         #expect(key == "/Users/test/myproject")
     }
 
-    @Test("sessionGroupKey returns __unknown__ when neither is available")
-    func groupKeyUnknown() {
+    @Test
+    func `sessionGroupKey returns __unknown__ when neither is available`() {
         let key = sessionGroupKey(gitRemote: nil, workspacePath: nil)
         #expect(key == "__unknown__")
     }
 
-    @Test("SessionGroup.hasNotification is true when any session has unread notification")
+    @Test
     @MainActor
-    func sessionGroupHasNotification() {
+    func `SessionGroup.hasNotification is true when any session has unread notification`() {
         let session1 = SessionItem(
             id: UUID(), connectionId: UUID(), command: "agent",
             planId: nil, planTitle: nil, workspacePath: nil, gitRemote: nil,
@@ -1990,8 +1984,8 @@ struct ProjectDisplayNameTests {
         #expect(group.sessionCount == 2)
     }
 
-    @Test("parseProjectDisplayName with empty currentUser falls through to system user lookup")
-    func emptyCurrentUserFallsThrough() {
+    @Test
+    func `parseProjectDisplayName with empty currentUser falls through to system user lookup`() {
         // Passing currentUser: "" means the explicit override is empty, so the function
         // should fall through to NSUserName() / env["USER"]. Use an owner that won't
         // match any real system user to confirm no elision occurs.
@@ -2003,8 +1997,8 @@ struct ProjectDisplayNameTests {
         #expect(result == "zzzzunlikelyowner99999/myrepo")
     }
 
-    @Test("parseProjectDisplayName with all user sources empty does not elide owner")
-    func noUserAvailableNoElision() {
+    @Test
+    func `parseProjectDisplayName with all user sources empty does not elide owner`() {
         // When currentUser is an empty string and the owner happens to be empty too,
         // the guard `!effectiveUser.isEmpty` prevents a false match.
         // We test with a real owner but explicitly provided non-empty user that differs.
@@ -2015,9 +2009,9 @@ struct ProjectDisplayNameTests {
         #expect(result == "differentowner/myrepo")
     }
 
-    @Test("SessionGroup.hasNotification is false when no sessions have notifications")
+    @Test
     @MainActor
-    func sessionGroupNoNotification() {
+    func `SessionGroup.hasNotification is false when no sessions have notifications`() {
         let session = SessionItem(
             id: UUID(), connectionId: UUID(), command: "agent",
             planId: nil, planTitle: nil, workspacePath: nil, gitRemote: nil,

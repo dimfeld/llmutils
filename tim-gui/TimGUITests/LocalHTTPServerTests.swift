@@ -2,17 +2,16 @@ import Foundation
 import Testing
 @testable import TimGUI
 
-@Suite("LocalHTTPServer")
 struct LocalHTTPServerTests {
-    @Test("Server starts and stops without error")
-    func startStop() async throws {
+    @Test
+    func `Server starts and stops without error`() async throws {
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { _ in })
         try await server.start()
         server.stop()
     }
 
-    @Test("Server accepts POST /messages and delivers payload")
-    func postMessage() async throws {
+    @Test
+    func `Server accepts POST /messages and delivers payload`() async throws {
         let received = LockIsolated<MessagePayload?>(nil)
 
         let server = LocalHTTPServer(port: 0, handler: { @MainActor payload in
@@ -43,8 +42,8 @@ struct LocalHTTPServerTests {
         server.stop()
     }
 
-    @Test("Server returns 404 for unknown paths")
-    func unknownPath() async throws {
+    @Test
+    func `Server returns 404 for unknown paths`() async throws {
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { _ in })
         try await server.start()
 
@@ -59,8 +58,8 @@ struct LocalHTTPServerTests {
         server.stop()
     }
 
-    @Test("sendMessage throws connectionNotFound for unknown connection ID")
-    func sendMessageUnknownConnection() async throws {
+    @Test
+    func `sendMessage throws connectionNotFound for unknown connection ID`() async throws {
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { _ in })
         try await server.start()
 
@@ -71,8 +70,8 @@ struct LocalHTTPServerTests {
         server.stop()
     }
 
-    @Test("Server returns 400 for POST /messages with invalid JSON")
-    func invalidJSON() async throws {
+    @Test
+    func `Server returns 400 for POST /messages with invalid JSON`() async throws {
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { _ in })
         try await server.start()
 

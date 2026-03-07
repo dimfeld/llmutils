@@ -15,7 +15,7 @@ references:
   "222": 80e8e677-777a-4917-9d42-984dfca6d8f3
   "223": 9414fc10-17e6-44de-b2bb-ba6feb2acf62
 createdAt: 2026-03-07T07:53:53.768Z
-updatedAt: 2026-03-07T07:53:53.775Z
+updatedAt: 2026-03-07T08:53:04.414Z
 tasks: []
 tags: []
 ---
@@ -34,3 +34,5 @@ to:
 
 concept of a session id to the protocol so we can multiplex multiple sessions on a single websocket connection. The PID
 info file already will have a session id, so we should use that.
+
+Workspace push at the end must go through `origin` remote since we won't be able to just push locally between directories.

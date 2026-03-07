@@ -28,7 +28,6 @@ private func waitUntil(
     }
 }
 
-@Suite("WebSocket Integration")
 struct WebSocketTests {
     /// Creates a raw TCP connection to the server and sends a WebSocket upgrade request.
     /// Returns the raw TCP NWConnection and the received upgrade response.
@@ -316,8 +315,8 @@ struct WebSocketTests {
 
     // MARK: - Tests
 
-    @Test("WebSocket upgrade returns 101 with correct accept key")
-    func upgradeReturns101() async throws {
+    @Test
+    func `WebSocket upgrade returns 101 with correct accept key`() async throws {
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { _ in })
         try await server.start()
         defer { server.stop() }
@@ -337,8 +336,8 @@ struct WebSocketTests {
         #expect(response.contains("Sec-WebSocket-Accept: \(expectedAccept)"))
     }
 
-    @Test("WebSocket session_info dispatches sessionInfo event")
-    func sessionInfoEvent() async throws {
+    @Test
+    func `WebSocket session_info dispatches sessionInfo event`() async throws {
         let received = LockIsolated<WebSocketEvent?>(nil)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -370,8 +369,8 @@ struct WebSocketTests {
         #expect(info.workspacePath == "/tmp/ws")
     }
 
-    @Test("WebSocket output message dispatches output event")
-    func outputEvent() async throws {
+    @Test
+    func `WebSocket output message dispatches output event`() async throws {
         let received = LockIsolated<[WebSocketEvent]>([])
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -415,8 +414,8 @@ struct WebSocketTests {
         #expect(args == ["hello", "world"])
     }
 
-    @Test("WebSocket disconnect dispatches disconnected event")
-    func disconnectEvent() async throws {
+    @Test
+    func `WebSocket disconnect dispatches disconnected event`() async throws {
         let received = LockIsolated<[WebSocketEvent]>([])
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -446,8 +445,8 @@ struct WebSocketTests {
         #expect(hasDisconnect, "Expected a disconnected event")
     }
 
-    @Test("HTTP POST /messages still works alongside WebSocket")
-    func httpStillWorks() async throws {
+    @Test
+    func `HTTP POST /messages still works alongside WebSocket`() async throws {
         let httpReceived = LockIsolated<MessagePayload?>(nil)
 
         let server = LocalHTTPServer(
@@ -484,8 +483,8 @@ struct WebSocketTests {
         #expect(p.message == "test notification")
     }
 
-    @Test("WebSocket replay_start and replay_end dispatch correct events")
-    func replayEvents() async throws {
+    @Test
+    func `WebSocket replay_start and replay_end dispatch correct events`() async throws {
         let received = LockIsolated<[WebSocketEvent]>([])
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -542,8 +541,8 @@ struct WebSocketTests {
         }
     }
 
-    @Test("Multiple WebSocket connections get different connection IDs")
-    func multipleConnections() async throws {
+    @Test
+    func `Multiple WebSocket connections get different connection IDs`() async throws {
         let connectionIds = LockIsolated<Set<UUID>>([])
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -581,8 +580,8 @@ struct WebSocketTests {
         #expect(ids.count == 2, "Expected 2 distinct connection IDs, got \(ids.count)")
     }
 
-    @Test("WebSocket handles structured output message")
-    func structuredOutputEvent() async throws {
+    @Test
+    func `WebSocket handles structured output message`() async throws {
         let received = LockIsolated<[WebSocketEvent]>([])
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -630,8 +629,8 @@ struct WebSocketTests {
 
     // MARK: - Fragmented Message Tests
 
-    @Test("Fragmented text message is reassembled correctly")
-    func fragmentedTextReassembly() async throws {
+    @Test
+    func `Fragmented text message is reassembled correctly`() async throws {
         let received = LockIsolated<[WebSocketEvent]>([])
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -699,8 +698,8 @@ struct WebSocketTests {
 
     // MARK: - Ping/Pong Tests
 
-    @Test("Server responds to ping with pong containing same payload")
-    func pingPong() async throws {
+    @Test
+    func `Server responds to ping with pong containing same payload`() async throws {
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { _ in })
         try await server.start()
         defer { server.stop() }
@@ -721,8 +720,8 @@ struct WebSocketTests {
         #expect(pongFrame.payload == pingPayload, "Pong payload should match ping payload")
     }
 
-    @Test("Server responds to ping with empty payload")
-    func pingPongEmptyPayload() async throws {
+    @Test
+    func `Server responds to ping with empty payload`() async throws {
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { _ in })
         try await server.start()
         defer { server.stop() }
@@ -743,8 +742,8 @@ struct WebSocketTests {
 
     // MARK: - Close Handshake Tests
 
-    @Test("Server echoes close frame back before disconnecting")
-    func closeHandshake() async throws {
+    @Test
+    func `Server echoes close frame back before disconnecting`() async throws {
         let disconnected = LockIsolated(false)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -786,8 +785,8 @@ struct WebSocketTests {
 
     // MARK: - Oversize Frame Tests
 
-    @Test("Oversize fragmented message is rejected with 1009 close and disconnect")
-    func oversizeFragmentRejection() async throws {
+    @Test
+    func `Oversize fragmented message is rejected with 1009 close and disconnect`() async throws {
         let disconnected = LockIsolated(false)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -834,8 +833,8 @@ struct WebSocketTests {
 
     // MARK: - Leftover Buffer Tests
 
-    @Test("WebSocket upgrade with immediate frame in same TCP segment")
-    func upgradeWithImmediateFrame() async throws {
+    @Test
+    func `WebSocket upgrade with immediate frame in same TCP segment`() async throws {
         let received = LockIsolated<[WebSocketEvent]>([])
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -953,8 +952,8 @@ struct WebSocketTests {
         }
     }
 
-    @Test("Unmasked client frame is rejected with close 1002")
-    func unmaskedFrameRejection() async throws {
+    @Test
+    func `Unmasked client frame is rejected with close 1002`() async throws {
         let disconnected = LockIsolated(false)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -987,8 +986,8 @@ struct WebSocketTests {
         }
     }
 
-    @Test("Continuation frame without prior fragment is rejected with close 1002")
-    func continuationWithoutFragmentRejection() async throws {
+    @Test
+    func `Continuation frame without prior fragment is rejected with close 1002`() async throws {
         let disconnected = LockIsolated(false)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -1020,8 +1019,8 @@ struct WebSocketTests {
         }
     }
 
-    @Test("New data frame while fragmentation is active is rejected with close 1002")
-    func newFrameDuringFragmentationRejection() async throws {
+    @Test
+    func `New data frame while fragmentation is active is rejected with close 1002`() async throws {
         let disconnected = LockIsolated(false)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -1059,8 +1058,8 @@ struct WebSocketTests {
 
     // MARK: - RFC 6455 Compliance Tests
 
-    @Test("Unknown opcode is rejected with close 1002")
-    func unknownOpcodeRejection() async throws {
+    @Test
+    func `Unknown opcode is rejected with close 1002`() async throws {
         let disconnected = LockIsolated(false)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -1091,8 +1090,8 @@ struct WebSocketTests {
         }
     }
 
-    @Test("Binary frame is rejected with close 1003")
-    func binaryFrameRejection() async throws {
+    @Test
+    func `Binary frame is rejected with close 1003`() async throws {
         let disconnected = LockIsolated(false)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -1123,8 +1122,8 @@ struct WebSocketTests {
         }
     }
 
-    @Test("Ping with FIN=0 is rejected with close 1002")
-    func fragmentedPingRejection() async throws {
+    @Test
+    func `Ping with FIN=0 is rejected with close 1002`() async throws {
         let disconnected = LockIsolated(false)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -1155,8 +1154,8 @@ struct WebSocketTests {
         }
     }
 
-    @Test("Close with FIN=0 is rejected with close 1002")
-    func fragmentedCloseRejection() async throws {
+    @Test
+    func `Close with FIN=0 is rejected with close 1002`() async throws {
         let disconnected = LockIsolated(false)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -1190,8 +1189,8 @@ struct WebSocketTests {
         }
     }
 
-    @Test("Ping with payload > 125 bytes is rejected with close 1002")
-    func oversizePingRejection() async throws {
+    @Test
+    func `Ping with payload > 125 bytes is rejected with close 1002`() async throws {
         let disconnected = LockIsolated(false)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -1262,8 +1261,8 @@ struct WebSocketTests {
         }
     }
 
-    @Test("Frame with RSV1 bit set is rejected with close 1002")
-    func rsvBitRejection() async throws {
+    @Test
+    func `Frame with RSV1 bit set is rejected with close 1002`() async throws {
         let disconnected = LockIsolated(false)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -1294,8 +1293,8 @@ struct WebSocketTests {
         }
     }
 
-    @Test("Frame with RSV2 bit set is rejected with close 1002")
-    func rsv2BitRejection() async throws {
+    @Test
+    func `Frame with RSV2 bit set is rejected with close 1002`() async throws {
         let disconnected = LockIsolated(false)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -1326,8 +1325,8 @@ struct WebSocketTests {
         }
     }
 
-    @Test("Frame with RSV3 bit set is rejected with close 1002")
-    func rsv3BitRejection() async throws {
+    @Test
+    func `Frame with RSV3 bit set is rejected with close 1002`() async throws {
         let disconnected = LockIsolated(false)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -1358,8 +1357,8 @@ struct WebSocketTests {
         }
     }
 
-    @Test("Invalid UTF-8 text frame is rejected with close 1007")
-    func invalidUtf8Rejection() async throws {
+    @Test
+    func `Invalid UTF-8 text frame is rejected with close 1007`() async throws {
         let disconnected = LockIsolated(false)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -1391,8 +1390,8 @@ struct WebSocketTests {
         }
     }
 
-    @Test("Invalid UTF-8 in fragmented message is rejected with close 1007")
-    func invalidUtf8FragmentedRejection() async throws {
+    @Test
+    func `Invalid UTF-8 in fragmented message is rejected with close 1007`() async throws {
         let disconnected = LockIsolated(false)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -1429,8 +1428,8 @@ struct WebSocketTests {
 
     // MARK: - Disconnect Ordering Tests
 
-    @Test("Disconnect event fires after last output event")
-    func disconnectOrderingAfterOutput() async throws {
+    @Test
+    func `Disconnect event fires after last output event`() async throws {
         let events = LockIsolated<[String]>([])
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -1481,8 +1480,8 @@ struct WebSocketTests {
             "Output event must be processed before disconnect event, but got: \(receivedEvents)")
     }
 
-    @Test("Oversize frame is rejected with 1009 close and disconnect")
-    func oversizeFrameRejection() async throws {
+    @Test
+    func `Oversize frame is rejected with 1009 close and disconnect`() async throws {
         let disconnected = LockIsolated(false)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -1524,8 +1523,8 @@ struct WebSocketTests {
 
     // MARK: - Close Frame Validation Tests
 
-    @Test("Close frame with 1-byte payload is rejected with close 1002")
-    func closeOneBytePayloadRejection() async throws {
+    @Test
+    func `Close frame with 1-byte payload is rejected with close 1002`() async throws {
         let disconnected = LockIsolated(false)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -1557,8 +1556,8 @@ struct WebSocketTests {
         }
     }
 
-    @Test("Close frame with invalid close code is rejected with close 1002")
-    func closeInvalidCodeRangeRejection() async throws {
+    @Test
+    func `Close frame with invalid close code is rejected with close 1002`() async throws {
         let disconnected = LockIsolated(false)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -1593,8 +1592,8 @@ struct WebSocketTests {
         }
     }
 
-    @Test("Close frame with invalid UTF-8 reason is rejected with close 1007")
-    func closeInvalidUtf8ReasonRejection() async throws {
+    @Test
+    func `Close frame with invalid UTF-8 reason is rejected with close 1007`() async throws {
         let disconnected = LockIsolated(false)
 
         let server = LocalHTTPServer(port: 0, handler: { _ in }, wsHandler: { @MainActor event in
@@ -1629,8 +1628,8 @@ struct WebSocketTests {
         }
     }
 
-    @Test("Reserved close codes 1004, 1005, 1006 are rejected with close 1002")
-    func closeReservedCodesRejection() async throws {
+    @Test
+    func `Reserved close codes 1004, 1005, 1006 are rejected with close 1002`() async throws {
         for code: UInt16 in [1004, 1005, 1006] {
             let disconnected = LockIsolated(false)
 
@@ -1666,8 +1665,8 @@ struct WebSocketTests {
         }
     }
 
-    @Test("Private-use close codes 3000-4999 are accepted")
-    func closePrivateUseCodesAccepted() async throws {
+    @Test
+    func `Private-use close codes 3000-4999 are accepted`() async throws {
         for code: UInt16 in [3000, 4000, 4999] {
             let disconnected = LockIsolated(false)
 
@@ -1702,8 +1701,8 @@ struct WebSocketTests {
         }
     }
 
-    @Test("IANA-registered close codes 1012-1014 are accepted")
-    func closeIanaRegisteredCodesAccepted() async throws {
+    @Test
+    func `IANA-registered close codes 1012-1014 are accepted`() async throws {
         for code: UInt16 in [1012, 1013, 1014] {
             let disconnected = LockIsolated(false)
 
@@ -1741,10 +1740,9 @@ struct WebSocketTests {
 
 // MARK: - Process Launch Tests
 
-@Suite("Process Launch")
 struct ProcessLaunchTests {
-    @Test("waitForProcess throws promptly for invalid executable")
-    func waitForProcessThrowsOnLaunchFailure() async throws {
+    @Test
+    func `waitForProcess throws promptly for invalid executable`() async throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/nonexistent/binary/that/does/not/exist")
         process.arguments = ["--help"]
@@ -1757,8 +1755,8 @@ struct ProcessLaunchTests {
         }
     }
 
-    @Test("waitForProcess succeeds for valid executable")
-    func waitForProcessSucceedsForValidExecutable() async throws {
+    @Test
+    func `waitForProcess succeeds for valid executable`() async throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/true")
 

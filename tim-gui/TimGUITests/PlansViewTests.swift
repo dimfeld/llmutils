@@ -32,44 +32,42 @@ private func makePlan(
 
 // MARK: - PlanSortOrder.label Tests
 
-@Suite("PlanSortOrder.label")
 struct PlanSortOrderLabelTests {
-    @Test("planNumber label is 'Plan Number'")
-    func planNumberLabel() {
+    @Test
+    func `planNumber label is 'Plan Number'`() {
         #expect(PlanSortOrder.planNumber.label == "Plan Number")
     }
 
-    @Test("priority label is 'Priority'")
-    func priorityLabel() {
+    @Test
+    func `priority label is 'Priority'`() {
         #expect(PlanSortOrder.priority.label == "Priority")
     }
 
-    @Test("recentlyUpdated label is 'Recently Updated'")
-    func recentlyUpdatedLabel() {
+    @Test
+    func `recentlyUpdated label is 'Recently Updated'`() {
         #expect(PlanSortOrder.recentlyUpdated.label == "Recently Updated")
     }
 
-    @Test("All sort order cases have non-empty labels")
-    func allCasesHaveNonEmptyLabels() {
+    @Test
+    func `All sort order cases have non-empty labels`() {
         for order in PlanSortOrder.allCases {
             #expect(!order.label.isEmpty, "Expected non-empty label for \(order)")
         }
     }
 
-    @Test("PlanSortOrder has exactly 3 cases")
-    func exactlyThreeCases() {
+    @Test
+    func `PlanSortOrder has exactly 3 cases`() {
         #expect(PlanSortOrder.allCases.count == 3)
     }
 }
 
 // MARK: - PlanSortOrder: planNumber
 
-@Suite("PlanSortOrder.sorted – planNumber")
 struct PlanSortOrderPlanNumberTests {
     let now = Date()
 
-    @Test("Sorts plans by planId descending")
-    func sortsByPlanIdDescending() {
+    @Test
+    func `Sorts plans by planId descending`() {
         let p1 = makePlan(planId: 10)
         let p2 = makePlan(planId: 3)
         let p3 = makePlan(planId: 50)
@@ -83,8 +81,8 @@ struct PlanSortOrderPlanNumberTests {
         #expect(result.map(\.planId) == [50, 10, 7, 3])
     }
 
-    @Test("Plans with nil planId treated as 0 (sorted last)")
-    func nilPlanIdSortedLast() {
+    @Test
+    func `Plans with nil planId treated as 0 (sorted last)`() {
         let p1 = makePlan(planId: 5)
         let p2 = makePlan(planId: nil)
         let p3 = makePlan(planId: 2)
@@ -100,22 +98,22 @@ struct PlanSortOrderPlanNumberTests {
         #expect(result[2].planId == nil)
     }
 
-    @Test("Empty list returns empty")
-    func emptyListReturnsEmpty() {
+    @Test
+    func `Empty list returns empty`() {
         let result = PlanSortOrder.planNumber.sorted([], dependencyStatus: [:], now: self.now)
         #expect(result.isEmpty)
     }
 
-    @Test("Single-element list returns same element")
-    func singleElementList() {
+    @Test
+    func `Single-element list returns same element`() {
         let plan = makePlan(planId: 42)
         let result = PlanSortOrder.planNumber.sorted([plan], dependencyStatus: [:], now: self.now)
         #expect(result.count == 1)
         #expect(result[0].planId == 42)
     }
 
-    @Test("All nil planIds — all equal, list preserved in stable order")
-    func allNilPlanIds() {
+    @Test
+    func `All nil planIds — all equal, list preserved in stable order`() {
         let p1 = makePlan(planId: nil, uuid: "a")
         let p2 = makePlan(planId: nil, uuid: "b")
         let p3 = makePlan(planId: nil, uuid: "c")
@@ -128,8 +126,8 @@ struct PlanSortOrderPlanNumberTests {
         #expect(result.count == 3)
     }
 
-    @Test("Same planId: sorted by updatedAt descending (DB default secondary order)")
-    func samePlanIdSortedByUpdatedAtDescending() {
+    @Test
+    func `Same planId: sorted by updatedAt descending (DB default secondary order)`() {
         let earlier = self.now.addingTimeInterval(-3600)
         let evenEarlier = self.now.addingTimeInterval(-7200)
 
@@ -146,8 +144,8 @@ struct PlanSortOrderPlanNumberTests {
         #expect(result.map(\.uuid) == ["a", "b", "c"])
     }
 
-    @Test("nil planId with equal values: secondary updatedAt sort still applies")
-    func nilPlanIdUsesUpdatedAtTiebreaker() {
+    @Test
+    func `nil planId with equal values: secondary updatedAt sort still applies`() {
         let earlier = self.now.addingTimeInterval(-3600)
 
         let p1 = makePlan(planId: nil, updatedAt: earlier, uuid: "b")
@@ -162,8 +160,8 @@ struct PlanSortOrderPlanNumberTests {
         #expect(result.map(\.uuid) == ["a", "b"])
     }
 
-    @Test("Same planId and updatedAt: uuid used as final tiebreaker (ascending)")
-    func samePlanIdAndUpdatedAtUsesUuidTiebreaker() {
+    @Test
+    func `Same planId and updatedAt: uuid used as final tiebreaker (ascending)`() {
         let fixedDate = Date(timeIntervalSince1970: 1_000_000)
 
         let p1 = makePlan(planId: 3, updatedAt: fixedDate, uuid: "z")
@@ -182,12 +180,11 @@ struct PlanSortOrderPlanNumberTests {
 
 // MARK: - PlanSortOrder: priority
 
-@Suite("PlanSortOrder.sorted – priority")
 struct PlanSortOrderPriorityTests {
     let now = Date()
 
-    @Test("Sorts plans urgent > high > medium > low > nil/unknown")
-    func sortsByPriorityHighToLow() {
+    @Test
+    func `Sorts plans urgent > high > medium > low > nil/unknown`() {
         let low = makePlan(priority: "low", uuid: "low")
         let urgent = makePlan(priority: "urgent", uuid: "urgent")
         let medium = makePlan(priority: "medium", uuid: "medium")
@@ -202,8 +199,8 @@ struct PlanSortOrderPriorityTests {
         #expect(result.map(\.uuid) == ["urgent", "high", "medium", "low", "none"])
     }
 
-    @Test("Priority matching is case-insensitive")
-    func priorityCaseInsensitive() {
+    @Test
+    func `Priority matching is case-insensitive`() {
         let upper = makePlan(priority: "HIGH", uuid: "upper")
         let lower = makePlan(priority: "medium", uuid: "lower")
         let mixed = makePlan(priority: "Urgent", uuid: "mixed")
@@ -216,8 +213,8 @@ struct PlanSortOrderPriorityTests {
         #expect(result.map(\.uuid) == ["mixed", "upper", "lower"])
     }
 
-    @Test("Unknown priority string treated as lowest (same rank as nil)")
-    func unknownPriorityTreatedAsLowest() {
+    @Test
+    func `Unknown priority string treated as lowest (same rank as nil)`() {
         let high = makePlan(priority: "high", uuid: "high")
         let unknown = makePlan(priority: "critical", uuid: "unknown")
         let nilPriority = makePlan(priority: nil, uuid: "nil")
@@ -232,21 +229,21 @@ struct PlanSortOrderPriorityTests {
         #expect(Set(result[1...].map(\.uuid)) == Set(["unknown", "nil"]))
     }
 
-    @Test("Empty list returns empty")
-    func emptyListReturnsEmpty() {
+    @Test
+    func `empty list returns empty`() {
         let result = PlanSortOrder.priority.sorted([], dependencyStatus: [:], now: self.now)
         #expect(result.isEmpty)
     }
 
-    @Test("All same priority — all equal")
-    func allSamePriority() {
+    @Test
+    func `All same priority — all equal`() {
         let plans = (1...3).map { makePlan(priority: "medium", uuid: "p\($0)") }
         let result = PlanSortOrder.priority.sorted(plans, dependencyStatus: [:], now: self.now)
         #expect(result.count == 3)
     }
 
-    @Test("'maybe' ranked distinctly: urgent > high > medium > low > maybe > nil/unknown")
-    func maybePriorityFullRanking() {
+    @Test
+    func `'maybe' ranked distinctly: urgent > high > medium > low > maybe > nil/unknown`() {
         let urgent = makePlan(priority: "urgent", uuid: "urgent")
         let high = makePlan(priority: "high", uuid: "high")
         let medium = makePlan(priority: "medium", uuid: "medium")
@@ -262,8 +259,8 @@ struct PlanSortOrderPriorityTests {
         #expect(result.map(\.uuid) == ["urgent", "high", "medium", "low", "maybe", "none"])
     }
 
-    @Test("'maybe' ranks above nil and unknown priority strings")
-    func maybePriorityRanksAboveNilAndUnknown() {
+    @Test
+    func `'maybe' ranks above nil and unknown priority strings`() {
         let maybe = makePlan(planId: 3, priority: "maybe", uuid: "maybe")
         let none = makePlan(planId: 2, priority: nil, uuid: "none")
         let unknown = makePlan(planId: 1, priority: "critical", uuid: "unknown")
@@ -277,8 +274,8 @@ struct PlanSortOrderPriorityTests {
         #expect(Set(result[1...].map(\.uuid)) == Set(["none", "unknown"]))
     }
 
-    @Test("'maybe' ranks below 'low' priority")
-    func maybePriorityRanksBelowLow() {
+    @Test
+    func `'maybe' ranks below 'low' priority`() {
         let low = makePlan(planId: 1, priority: "low", uuid: "low")
         let maybe = makePlan(planId: 2, priority: "maybe", uuid: "maybe")
 
@@ -291,8 +288,8 @@ struct PlanSortOrderPriorityTests {
         #expect(result[1].uuid == "maybe")
     }
 
-    @Test("Priority sort: equal priority sorted by planId descending")
-    func equalPrioritySortedByPlanIdDescending() {
+    @Test
+    func `Priority sort: equal priority sorted by planId descending`() {
         let p1 = makePlan(planId: 10, priority: "medium", uuid: "a")
         let p2 = makePlan(planId: 30, priority: "medium", uuid: "b")
         let p3 = makePlan(planId: 5, priority: "medium", uuid: "c")
@@ -306,8 +303,8 @@ struct PlanSortOrderPriorityTests {
         #expect(result.map(\.planId) == [30, 10, 5])
     }
 
-    @Test("Priority sort: nil planId treated as 0 for tiebreaker")
-    func prioritySortNilPlanIdTreatedAsZeroTiebreaker() {
+    @Test
+    func `Priority sort: nil planId treated as 0 for tiebreaker`() {
         let withId = makePlan(planId: 5, priority: "high", uuid: "a")
         let nilId = makePlan(planId: nil, priority: "high", uuid: "b")
 
@@ -324,12 +321,11 @@ struct PlanSortOrderPriorityTests {
 
 // MARK: - PlanSortOrder: recentlyUpdated
 
-@Suite("PlanSortOrder.sorted – recentlyUpdated")
 struct PlanSortOrderRecentlyUpdatedTests {
     let now = Date()
 
-    @Test("Sorts plans by updatedAt descending (most recent first)")
-    func sortsByUpdatedAtDescending() {
+    @Test
+    func `Sorts plans by updatedAt descending (most recent first)`() {
         let oneHourAgo = self.now.addingTimeInterval(-1 * 60 * 60)
         let oneDayAgo = self.now.addingTimeInterval(-24 * 60 * 60)
         let oneWeekAgo = self.now.addingTimeInterval(-7 * 24 * 60 * 60)
@@ -346,8 +342,8 @@ struct PlanSortOrderRecentlyUpdatedTests {
         #expect(result.map(\.uuid) == ["hour", "day", "week"])
     }
 
-    @Test("Plans with nil updatedAt sorted last (treated as distantPast)")
-    func nilUpdatedAtSortedLast() {
+    @Test
+    func `Plans with nil updatedAt sorted last (treated as distantPast)`() {
         let recent = makePlan(updatedAt: now.addingTimeInterval(-60), uuid: "recent")
         let nilDate = makePlan(updatedAt: nil, uuid: "nil")
         let old = makePlan(updatedAt: now.addingTimeInterval(-30 * 24 * 60 * 60), uuid: "old")
@@ -362,8 +358,8 @@ struct PlanSortOrderRecentlyUpdatedTests {
         #expect(result[2].uuid == "nil")
     }
 
-    @Test("All nil updatedAt — all equal")
-    func allNilUpdatedAt() {
+    @Test
+    func `All nil updatedAt — all equal`() {
         let plans = (1...3).map { makePlan(updatedAt: nil, uuid: "p\($0)") }
         let result = PlanSortOrder.recentlyUpdated.sorted(
             plans,
@@ -372,14 +368,14 @@ struct PlanSortOrderRecentlyUpdatedTests {
         #expect(result.count == 3)
     }
 
-    @Test("Empty list returns empty")
+    @Test
     func emptyListReturnsEmpty() {
         let result = PlanSortOrder.recentlyUpdated.sorted([], dependencyStatus: [:], now: self.now)
         #expect(result.isEmpty)
     }
 
-    @Test("RecentlyUpdated sort: equal updatedAt sorted by planId descending")
-    func equalUpdatedAtSortedByPlanIdDescending() {
+    @Test
+    func `RecentlyUpdated sort: equal updatedAt sorted by planId descending`() {
         let fixedDate = Date(timeIntervalSince1970: 1_000_000)
 
         let p1 = makePlan(planId: 10, updatedAt: fixedDate, uuid: "a")
@@ -395,8 +391,8 @@ struct PlanSortOrderRecentlyUpdatedTests {
         #expect(result.map(\.planId) == [30, 10, 5])
     }
 
-    @Test("RecentlyUpdated sort: nil planId treated as 0 for tiebreaker")
-    func recentlyUpdatedSortNilPlanIdTreatedAsZeroTiebreaker() {
+    @Test
+    func `RecentlyUpdated sort: nil planId treated as 0 for tiebreaker`() {
         let fixedDate = Date(timeIntervalSince1970: 1_000_000)
 
         let withId = makePlan(planId: 5, updatedAt: fixedDate, uuid: "a")
@@ -415,10 +411,9 @@ struct PlanSortOrderRecentlyUpdatedTests {
 
 // MARK: - filterPlansBySearchText Tests
 
-@Suite("filterPlansBySearchText")
 struct FilterPlansBySearchTextTests {
-    @Test("Empty query returns all plans unchanged")
-    func emptyQueryReturnsAll() {
+    @Test
+    func `Empty query returns all plans unchanged`() {
         let plans = [
             makePlan(title: "Feature A", goal: "Do something"),
             makePlan(title: "Bug Fix", goal: "Fix a crash"),
@@ -427,8 +422,8 @@ struct FilterPlansBySearchTextTests {
         #expect(result.count == 2)
     }
 
-    @Test("Whitespace-only query returns all plans unchanged")
-    func whitespaceOnlyQueryReturnsAll() {
+    @Test
+    func `Whitespace-only query returns all plans unchanged`() {
         let plans = [
             makePlan(title: "Feature A"),
             makePlan(title: "Bug Fix"),
@@ -437,8 +432,8 @@ struct FilterPlansBySearchTextTests {
         #expect(result.count == 2)
     }
 
-    @Test("Query matches title exactly")
-    func queryMatchesTitleExact() {
+    @Test
+    func `Query matches title exactly`() {
         let matching = makePlan(title: "Authentication Feature", uuid: "match")
         let nonMatching = makePlan(title: "Database Migration", uuid: "no-match")
 
@@ -447,8 +442,8 @@ struct FilterPlansBySearchTextTests {
         #expect(result[0].uuid == "match")
     }
 
-    @Test("Query matches title case-insensitively")
-    func queryMatchesTitleCaseInsensitive() {
+    @Test
+    func `Query matches title case-insensitively`() {
         let plan = makePlan(title: "Authentication Feature", uuid: "match")
         let noMatch = makePlan(title: "Unrelated Plan", uuid: "no-match")
 
@@ -465,8 +460,8 @@ struct FilterPlansBySearchTextTests {
         #expect(resultMixed[0].uuid == "match")
     }
 
-    @Test("Query matches goal case-insensitively")
-    func queryMatchesGoalCaseInsensitive() {
+    @Test
+    func `Query matches goal case-insensitively`() {
         let plan = makePlan(title: "Some Plan", goal: "Implement OAuth login", uuid: "match")
         let noMatch = makePlan(title: "Other Plan", goal: "Nothing relevant", uuid: "no-match")
 
@@ -475,8 +470,8 @@ struct FilterPlansBySearchTextTests {
         #expect(result[0].uuid == "match")
     }
 
-    @Test("Query matching title but not goal — plan is included")
-    func queryMatchesTitleButNotGoal() {
+    @Test
+    func `Query matching title but not goal — plan is included`() {
         let plan = makePlan(title: "Refactor Auth", goal: "Cleanup old code", uuid: "match")
         let noMatch = makePlan(title: "UI Changes", goal: "Some design work", uuid: "no-match")
 
@@ -485,8 +480,8 @@ struct FilterPlansBySearchTextTests {
         #expect(result[0].uuid == "match")
     }
 
-    @Test("Query matching goal but not title — plan is included")
-    func queryMatchesGoalButNotTitle() {
+    @Test
+    func `Query matching goal but not title — plan is included`() {
         let plan = makePlan(title: "Plan 100", goal: "Add user authentication system", uuid: "match")
         let noMatch = makePlan(title: "Plan 101", goal: "Unrelated feature", uuid: "no-match")
 
@@ -495,53 +490,53 @@ struct FilterPlansBySearchTextTests {
         #expect(result[0].uuid == "match")
     }
 
-    @Test("Query not matching title or goal — plan is excluded")
-    func queryMatchesNeither() {
+    @Test
+    func `Query not matching title or goal — plan is excluded`() {
         let plan = makePlan(title: "Database Optimization", goal: "Improve query performance")
         let result = filterPlansBySearchText([plan], query: "authentication")
         #expect(result.isEmpty)
     }
 
-    @Test("nil title still matches via goal")
-    func nilTitleMatchesViaGoal() {
+    @Test
+    func `nil title still matches via goal`() {
         let plan = makePlan(title: nil, goal: "Implement search feature", uuid: "match")
         let result = filterPlansBySearchText([plan], query: "search")
         #expect(result.count == 1)
         #expect(result[0].uuid == "match")
     }
 
-    @Test("nil goal still matches via title")
-    func nilGoalMatchesViaTitle() {
+    @Test
+    func `nil goal still matches via title`() {
         let plan = makePlan(title: "Search Feature", goal: nil, uuid: "match")
         let result = filterPlansBySearchText([plan], query: "search")
         #expect(result.count == 1)
         #expect(result[0].uuid == "match")
     }
 
-    @Test("Both nil title and goal — does not match any query")
-    func bothNilDoesNotMatch() {
+    @Test
+    func `Both nil title and goal — does not match any query`() {
         let plan = makePlan(title: nil, goal: nil)
         let result = filterPlansBySearchText([plan], query: "anything")
         #expect(result.isEmpty)
     }
 
-    @Test("Both nil title and goal — empty query still returns the plan")
-    func bothNilEmptyQueryReturnsAll() {
+    @Test
+    func `Both nil title and goal — empty query still returns the plan`() {
         let plan = makePlan(title: nil, goal: nil)
         let result = filterPlansBySearchText([plan], query: "")
         #expect(result.count == 1)
     }
 
-    @Test("Partial substring match is accepted")
-    func partialSubstringMatch() {
+    @Test
+    func `Partial substring match is accepted`() {
         let plan = makePlan(title: "Authentication Feature", uuid: "match")
         let result = filterPlansBySearchText([plan], query: "thent")
         #expect(result.count == 1)
         #expect(result[0].uuid == "match")
     }
 
-    @Test("Multiple matching plans are all returned")
-    func multipleMatchingPlansReturned() {
+    @Test
+    func `Multiple matching plans are all returned`() {
         let p1 = makePlan(title: "Auth Login", uuid: "a1")
         let p2 = makePlan(title: "Unrelated", goal: "Auth middleware", uuid: "a2")
         let p3 = makePlan(title: "Database work", uuid: "a3")
@@ -551,14 +546,14 @@ struct FilterPlansBySearchTextTests {
         #expect(Set(result.map(\.uuid)) == Set(["a1", "a2"]))
     }
 
-    @Test("Empty plans list returns empty")
-    func emptyPlansListReturnsEmpty() {
+    @Test
+    func `Empty plans list returns empty`() {
         let result = filterPlansBySearchText([], query: "anything")
         #expect(result.isEmpty)
     }
 
-    @Test("Query with leading/trailing whitespace is trimmed before matching")
-    func queryWithWhitespaceIsTrimmed() {
+    @Test
+    func `Query with leading/trailing whitespace is trimmed before matching`() {
         let plan = makePlan(title: "Auth Feature", uuid: "match")
         let noMatch = makePlan(title: "Database Work", uuid: "no-match")
 
@@ -567,8 +562,8 @@ struct FilterPlansBySearchTextTests {
         #expect(result[0].uuid == "match")
     }
 
-    @Test("Original array order is preserved for matching plans")
-    func preservesOrderOfMatchingPlans() {
+    @Test
+    func `Original array order is preserved for matching plans`() {
         let p1 = makePlan(title: "Auth: Part 1", uuid: "a")
         let p2 = makePlan(title: "Unrelated", uuid: "b")
         let p3 = makePlan(title: "Auth: Part 2", uuid: "c")
@@ -581,13 +576,12 @@ struct FilterPlansBySearchTextTests {
 
 // MARK: - planAbsoluteDateFormatter Tests
 
-@Suite("PlanDetailView")
 @MainActor
 struct PlanDetailViewTests {
     // MARK: - planAbsoluteDateFormatter
 
-    @Test("planAbsoluteDateFormatter produces non-empty output for a known date")
-    func absoluteDateFormatterNonEmpty() throws {
+    @Test
+    func `planAbsoluteDateFormatter produces non-empty output for a known date`() throws {
         var components = DateComponents()
         components.year = 2025
         components.month = 6
@@ -600,8 +594,8 @@ struct PlanDetailViewTests {
         #expect(!formatted.isEmpty)
     }
 
-    @Test("planAbsoluteDateFormatter includes the year in its output")
-    func absoluteDateFormatterIncludesYear() throws {
+    @Test
+    func `planAbsoluteDateFormatter includes the year in its output`() throws {
         var components = DateComponents()
         components.year = 2025
         components.month = 3
@@ -614,8 +608,8 @@ struct PlanDetailViewTests {
         #expect(formatted.contains("2025"))
     }
 
-    @Test("planAbsoluteDateFormatter uses medium date style (includes month name or number)")
-    func absoluteDateFormatterMediumDateStyle() throws {
+    @Test
+    func `planAbsoluteDateFormatter uses medium date style (includes month name or number)`() throws {
         // Medium date style in en_US locale is "Jun 15, 2025" — includes month
         // We verify the formatter uses medium date (not short like "6/15/25")
         // by checking that date and time components appear
@@ -633,8 +627,8 @@ struct PlanDetailViewTests {
         #expect(formatted.contains("15"))
     }
 
-    @Test("planAbsoluteDateFormatter produces different output for different dates")
-    func absoluteDateFormatterDistinguishesDates() throws {
+    @Test
+    func `planAbsoluteDateFormatter produces different output for different dates`() throws {
         var c1 = DateComponents()
         c1.year = 2025; c1.month = 1; c1.day = 1; c1.hour = 12; c1.minute = 0
         let date1 = try #require(Calendar.current.date(from: c1))
@@ -648,8 +642,8 @@ struct PlanDetailViewTests {
         #expect(f1 != f2)
     }
 
-    @Test("planAbsoluteDateFormatter uses short time style (includes hour and minute)")
-    func absoluteDateFormatterShortTimeStyle() throws {
+    @Test
+    func `planAbsoluteDateFormatter uses short time style (includes hour and minute)`() throws {
         // Short time includes hours and minutes
         var components = DateComponents()
         components.year = 2025
@@ -674,97 +668,95 @@ struct PlanDetailViewTests {
 
 // MARK: - Plan browser defaults Tests
 
-@Suite("Plan browser defaults")
 struct PlanBrowserDefaultsTests {
-    @Test("Default sort order is recentlyUpdated")
-    func defaultSortOrderIsRecentlyUpdated() {
+    @Test
+    func `Default sort order is recentlyUpdated`() {
         #expect(planBrowserDefaultSortOrder == .recentlyUpdated)
     }
 }
 
 // MARK: - PlanDisplayStatus computed properties Tests
 
-@Suite("PlanDisplayStatus computed properties")
 struct PlanDisplayStatusComputedPropertyTests {
-    @Test("pending has correct icon")
-    func pendingIcon() {
+    @Test
+    func `pending has correct icon`() {
         #expect(PlanDisplayStatus.pending.icon == "circle")
     }
 
-    @Test("inProgress has correct icon")
-    func inProgressIcon() {
+    @Test
+    func `inProgress has correct icon`() {
         #expect(PlanDisplayStatus.inProgress.icon == "play.circle.fill")
     }
 
-    @Test("blocked has correct icon")
-    func blockedIcon() {
+    @Test
+    func `blocked has correct icon`() {
         #expect(PlanDisplayStatus.blocked.icon == "exclamationmark.circle.fill")
     }
 
-    @Test("recentlyDone has correct icon")
-    func recentlyDoneIcon() {
+    @Test
+    func `recentlyDone has correct icon`() {
         #expect(PlanDisplayStatus.recentlyDone.icon == "checkmark.circle.fill")
     }
 
-    @Test("done has correct icon")
-    func doneIcon() {
+    @Test
+    func `done has correct icon`() {
         #expect(PlanDisplayStatus.done.icon == "checkmark.circle")
     }
 
-    @Test("cancelled has correct icon")
-    func cancelledIcon() {
+    @Test
+    func `cancelled has correct icon`() {
         #expect(PlanDisplayStatus.cancelled.icon == "xmark.circle")
     }
 
-    @Test("deferred has correct icon")
-    func deferredIcon() {
+    @Test
+    func `deferred has correct icon`() {
         #expect(PlanDisplayStatus.deferred.icon == "clock.arrow.circlepath")
     }
 
-    @Test("All status cases have non-empty icons")
-    func allCasesHaveNonEmptyIcons() {
+    @Test
+    func `All status cases have non-empty icons`() {
         for status in PlanDisplayStatus.allCases {
             #expect(!status.icon.isEmpty, "Expected non-empty icon for \(status)")
         }
     }
 
-    @Test("pending color is secondary")
-    func pendingColor() {
+    @Test
+    func `pending color is secondary`() {
         #expect(PlanDisplayStatus.pending.color == Color.secondary)
     }
 
-    @Test("inProgress color is blue")
-    func inProgressColor() {
+    @Test
+    func `inProgress color is blue`() {
         #expect(PlanDisplayStatus.inProgress.color == Color.blue)
     }
 
-    @Test("blocked color is orange")
-    func blockedColor() {
+    @Test
+    func `blocked color is orange`() {
         #expect(PlanDisplayStatus.blocked.color == Color.orange)
     }
 
-    @Test("recentlyDone color is green")
-    func recentlyDoneColor() {
+    @Test
+    func `recentlyDone color is green`() {
         #expect(PlanDisplayStatus.recentlyDone.color == Color.green)
     }
 
-    @Test("done color is gray")
-    func doneColor() {
+    @Test
+    func `done color is gray`() {
         #expect(PlanDisplayStatus.done.color == Color.gray)
     }
 
-    @Test("cancelled color is red")
-    func cancelledColor() {
+    @Test
+    func `cancelled color is red`() {
         #expect(PlanDisplayStatus.cancelled.color == Color.red)
     }
 
-    @Test("deferred color is purple")
-    func deferredColor() {
+    @Test
+    func `deferred color is purple`() {
         #expect(PlanDisplayStatus.deferred.color == Color.purple)
     }
 
-    @Test("Each status has a consistent color across multiple calls")
-    func colorConsistency() {
+    @Test
+    func `Each status has a consistent color across multiple calls`() {
         for status in PlanDisplayStatus.allCases {
             #expect(status.color == status.color, "Color not consistent for \(status)")
         }
@@ -773,20 +765,19 @@ struct PlanDisplayStatusComputedPropertyTests {
 
 // MARK: - groupPlansByStatus Tests
 
-@Suite("groupPlansByStatus")
 struct GroupPlansByStatusTests {
     let now = Date()
 
     // MARK: - Empty and single-status
 
-    @Test("Empty input returns empty array")
-    func emptyInputReturnsEmpty() {
+    @Test
+    func `Empty input returns empty array`() {
         let result = groupPlansByStatus([], dependencyStatus: [:], now: now)
         #expect(result.isEmpty)
     }
 
-    @Test("Single-status input returns one group with all plans")
-    func singleStatusInputReturnsOneGroup() {
+    @Test
+    func `Single-status input returns one group with all plans`() {
         let p1 = makePlan(status: "pending", uuid: "a")
         let p2 = makePlan(status: "pending", uuid: "b")
 
@@ -799,9 +790,8 @@ struct GroupPlansByStatusTests {
 
     // MARK: - Group ordering
 
-    @Test(
-        "Groups are returned in the defined order: inProgress, pending, blocked, recentlyDone, done, deferred, cancelled")
-    func groupsAreInCorrectOrder() {
+    @Test
+    func `Groups are returned in the defined order: inProgress, pending, blocked, recentlyDone, done, deferred, cancelled`() {
         let sixDaysAgo = self.now.addingTimeInterval(-6 * 24 * 60 * 60)
         let eightDaysAgo = self.now.addingTimeInterval(-8 * 24 * 60 * 60)
 
@@ -828,8 +818,8 @@ struct GroupPlansByStatusTests {
         #expect(result[6].status == .cancelled)
     }
 
-    @Test("Partial statuses appear in correct relative order")
-    func partialStatusesRespectGroupOrder() {
+    @Test
+    func `Partial statuses appear in correct relative order`() {
         let pending = makePlan(status: "pending", uuid: "p")
         let cancelled = makePlan(status: "cancelled", uuid: "c")
 
@@ -842,8 +832,8 @@ struct GroupPlansByStatusTests {
 
     // MARK: - Empty groups excluded
 
-    @Test("Empty groups are excluded from result")
-    func emptyGroupsExcluded() {
+    @Test
+    func `Empty groups are excluded from result`() {
         let p1 = makePlan(status: "pending", uuid: "a")
         let p2 = makePlan(status: "in_progress", uuid: "b")
 
@@ -862,8 +852,8 @@ struct GroupPlansByStatusTests {
 
     // MARK: - Within-group order preserved
 
-    @Test("Within-group order is preserved from input array")
-    func withinGroupOrderPreserved() {
+    @Test
+    func `Within-group order is preserved from input array`() {
         let p1 = makePlan(planId: 10, status: "pending", uuid: "a")
         let p2 = makePlan(planId: 5, status: "pending", uuid: "b")
         let p3 = makePlan(planId: 20, status: "pending", uuid: "c")
@@ -875,8 +865,8 @@ struct GroupPlansByStatusTests {
         #expect(result[0].plans.map(\.uuid) == ["a", "b", "c"])
     }
 
-    @Test("Within-group order preserved when plans from multiple statuses are interleaved")
-    func withinGroupOrderPreservedWithMixedStatuses() {
+    @Test
+    func `Within-group order preserved when plans from multiple statuses are interleaved`() {
         let ip1 = makePlan(status: "in_progress", uuid: "ip1")
         let p1 = makePlan(status: "pending", uuid: "p1")
         let ip2 = makePlan(status: "in_progress", uuid: "ip2")
@@ -895,8 +885,8 @@ struct GroupPlansByStatusTests {
 
     // MARK: - Blocked status
 
-    @Test("Pending plan with unresolved dependency groups under .blocked")
-    func pendingWithDepsGroupsAsBlocked() {
+    @Test
+    func `Pending plan with unresolved dependency groups under .blocked`() {
         let blockedPlan = makePlan(status: "pending", uuid: "bl")
         let normalPending = makePlan(status: "pending", uuid: "p")
 
@@ -916,8 +906,8 @@ struct GroupPlansByStatusTests {
         #expect(pendingGroup?.plans.map(\.uuid) == ["p"])
     }
 
-    @Test("Pending plan with false dependency status is not blocked")
-    func pendingWithFalseDepsGroupsAsPending() {
+    @Test
+    func `Pending plan with false dependency status is not blocked`() {
         let plan = makePlan(status: "pending", uuid: "p")
 
         let result = groupPlansByStatus(
@@ -929,8 +919,8 @@ struct GroupPlansByStatusTests {
         #expect(result[0].status == .pending)
     }
 
-    @Test("Pending plan with no dependency entry groups as .pending")
-    func pendingWithNoDepsGroupsAsPending() {
+    @Test
+    func `Pending plan with no dependency entry groups as .pending`() {
         let plan = makePlan(status: "pending", uuid: "p")
 
         let result = groupPlansByStatus([plan], dependencyStatus: [:], now: now)
@@ -941,8 +931,8 @@ struct GroupPlansByStatusTests {
 
     // MARK: - recentlyDone vs done
 
-    @Test("Done plan updated within 7 days groups as .recentlyDone")
-    func donePlanWithinSevenDaysIsRecentlyDone() {
+    @Test
+    func `Done plan updated within 7 days groups as .recentlyDone`() {
         let sixDaysAgo = self.now.addingTimeInterval(-6 * 24 * 60 * 60)
         let plan = makePlan(status: "done", updatedAt: sixDaysAgo, uuid: "rd")
 
@@ -952,8 +942,8 @@ struct GroupPlansByStatusTests {
         #expect(result[0].status == .recentlyDone)
     }
 
-    @Test("Done plan updated more than 7 days ago groups as .done")
-    func donePlanOlderThanSevenDaysIsDone() {
+    @Test
+    func `Done plan updated more than 7 days ago groups as .done`() {
         let eightDaysAgo = self.now.addingTimeInterval(-8 * 24 * 60 * 60)
         let plan = makePlan(status: "done", updatedAt: eightDaysAgo, uuid: "d")
 
@@ -963,8 +953,8 @@ struct GroupPlansByStatusTests {
         #expect(result[0].status == .done)
     }
 
-    @Test("Done plan with nil updatedAt groups as .done")
-    func donePlanWithNilUpdatedAtIsDone() {
+    @Test
+    func `Done plan with nil updatedAt groups as .done`() {
         let plan = makePlan(status: "done", updatedAt: nil, uuid: "d")
 
         let result = groupPlansByStatus([plan], dependencyStatus: [:], now: now)
@@ -973,8 +963,8 @@ struct GroupPlansByStatusTests {
         #expect(result[0].status == .done)
     }
 
-    @Test("recentlyDone and done are separate groups when both present")
-    func recentlyDoneAndDoneAreSeparateGroups() {
+    @Test
+    func `recentlyDone and done are separate groups when both present`() {
         let sixDaysAgo = self.now.addingTimeInterval(-6 * 24 * 60 * 60)
         let eightDaysAgo = self.now.addingTimeInterval(-8 * 24 * 60 * 60)
 
@@ -991,8 +981,8 @@ struct GroupPlansByStatusTests {
 
     // MARK: - All 7 statuses
 
-    @Test("All 7 statuses group correctly into distinct groups")
-    func allSevenStatusesGroupCorrectly() {
+    @Test
+    func `All 7 statuses group correctly into distinct groups`() {
         let sixDaysAgo = self.now.addingTimeInterval(-6 * 24 * 60 * 60)
         let eightDaysAgo = self.now.addingTimeInterval(-8 * 24 * 60 * 60)
 
@@ -1021,8 +1011,8 @@ struct GroupPlansByStatusTests {
         #expect(groupedByStatus[.cancelled]?.plans.map(\.uuid) == ["c"])
     }
 
-    @Test("Multiple plans in same group are all included")
-    func multiplePlansInSameGroup() {
+    @Test
+    func `Multiple plans in same group are all included`() {
         let p1 = makePlan(status: "in_progress", uuid: "a")
         let p2 = makePlan(status: "in_progress", uuid: "b")
         let p3 = makePlan(status: "in_progress", uuid: "c")
@@ -1034,8 +1024,8 @@ struct GroupPlansByStatusTests {
         #expect(result[0].plans.count == 3)
     }
 
-    @Test("planStatusGroupOrder contains all 7 PlanDisplayStatus cases")
-    func planStatusGroupOrderContainsAllCases() {
+    @Test
+    func `planStatusGroupOrder contains all 7 PlanDisplayStatus cases`() {
         let orderSet = Set(planStatusGroupOrder)
         let allCasesSet = Set(PlanDisplayStatus.allCases)
         #expect(orderSet == allCasesSet)
@@ -1045,16 +1035,15 @@ struct GroupPlansByStatusTests {
 
 // MARK: - visiblePlanUuids Tests
 
-@Suite("visiblePlanUuids")
 struct VisiblePlanUuidsTests {
-    @Test("Returns empty array for empty groups")
-    func emptyGroupsReturnsEmpty() {
+    @Test
+    func `Returns empty array for empty groups`() {
         let result = visiblePlanUuids(from: [])
         #expect(result.isEmpty)
     }
 
-    @Test("Returns UUIDs from a single group in order")
-    func singleGroupReturnsUuidsInOrder() {
+    @Test
+    func `Returns UUIDs from a single group in order`() {
         let plans = [
             makePlan(status: "pending", uuid: "a"),
             makePlan(status: "pending", uuid: "b"),
@@ -1065,8 +1054,8 @@ struct VisiblePlanUuidsTests {
         #expect(result == ["a", "b", "c"])
     }
 
-    @Test("Returns UUIDs from multiple groups preserving group and within-group order")
-    func multipleGroupsPreserveOrder() {
+    @Test
+    func `Returns UUIDs from multiple groups preserving group and within-group order`() {
         let group1 = PlanStatusGroup(
             status: .inProgress,
             plans: [makePlan(status: "in_progress", uuid: "ip1"), makePlan(status: "in_progress", uuid: "ip2")])
@@ -1081,8 +1070,8 @@ struct VisiblePlanUuidsTests {
         #expect(result == ["ip1", "ip2", "p1", "d1", "d2"])
     }
 
-    @Test("Groups with no plans contribute nothing")
-    func emptyGroupContributesNothing() {
+    @Test
+    func `Groups with no plans contribute nothing`() {
         let group1 = PlanStatusGroup(status: .inProgress, plans: [makePlan(status: "in_progress", uuid: "ip1")])
         let group2 = PlanStatusGroup(status: .pending, plans: [])
 

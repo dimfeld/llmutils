@@ -143,7 +143,7 @@ private func getTableRootPage(_ db: OpaquePointer, tableName: String) -> Int? {
 
 // MARK: - ProjectTrackingStoreTests
 
-@Suite("ProjectTrackingStore", .serialized)
+@Suite(.serialized)
 @MainActor
 struct ProjectTrackingStoreTests {
     // MARK: - Fixture Setup
@@ -160,8 +160,8 @@ struct ProjectTrackingStoreTests {
 
     // MARK: - Project Loading
 
-    @Test("Loads projects from DB")
-    func loadsProjects() async throws {
+    @Test
+    func `Loads projects from DB`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -180,8 +180,8 @@ struct ProjectTrackingStoreTests {
         #expect(labels.contains("Beta Project"))
     }
 
-    @Test("Returns empty project list for empty DB")
-    func emptyDB() async throws {
+    @Test
+    func `Returns empty project list for empty DB`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -192,8 +192,8 @@ struct ProjectTrackingStoreTests {
         #expect(store.projects.isEmpty)
     }
 
-    @Test("Missing DB file produces error state")
-    func missingDBFile() async {
+    @Test
+    func `Missing DB file produces error state`() async {
         let nonExistentPath = FileManager.default.temporaryDirectory
             .appendingPathComponent("no-such-\(UUID().uuidString).db").path
 
@@ -206,8 +206,8 @@ struct ProjectTrackingStoreTests {
         }
     }
 
-    @Test("Projects have correct field mapping from DB")
-    func projectFieldMapping() async throws {
+    @Test
+    func `Projects have correct field mapping from DB`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -232,8 +232,8 @@ struct ProjectTrackingStoreTests {
 
     // MARK: - Workspace Loading
 
-    @Test("Loads workspaces for selected project")
-    func loadsWorkspaces() async throws {
+    @Test
+    func `Loads workspaces for selected project`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -257,8 +257,8 @@ struct ProjectTrackingStoreTests {
         #expect(names.contains("Workspace B"))
     }
 
-    @Test("Detects locked workspaces via workspace_lock join")
-    func detectsLockedWorkspaces() async throws {
+    @Test
+    func `Detects locked workspaces via workspace_lock join`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -288,8 +288,8 @@ struct ProjectTrackingStoreTests {
         #expect(free?.displayStatus == .available)
     }
 
-    @Test("Primary workspace has correct display status")
-    func primaryWorkspaceStatus() async throws {
+    @Test
+    func `Primary workspace has correct display status`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -315,8 +315,8 @@ struct ProjectTrackingStoreTests {
         #expect(regular?.displayStatus == .available)
     }
 
-    @Test("Returns empty workspaces for project with no workspaces")
-    func emptyWorkspacesForProject() async throws {
+    @Test
+    func `Returns empty workspaces for project with no workspaces`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -331,8 +331,8 @@ struct ProjectTrackingStoreTests {
         #expect(store.workspaces.isEmpty)
     }
 
-    @Test("Workspaces for other projects are not loaded")
-    func workspacesIsolatedByProject() async throws {
+    @Test
+    func `Workspaces for other projects are not loaded`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -355,8 +355,8 @@ struct ProjectTrackingStoreTests {
         #expect(store.workspaces.first?.id == "1")
     }
 
-    @Test("Workspace updated_at is parsed from DB")
-    func workspaceUpdatedAtParsed() async throws {
+    @Test
+    func `Workspace updated_at is parsed from DB`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -381,8 +381,8 @@ struct ProjectTrackingStoreTests {
         #expect(ws2?.updatedAt != nil)
     }
 
-    @Test("Workspace uses DB default updated_at when not explicitly set")
-    func workspaceDefaultUpdatedAt() async throws {
+    @Test
+    func `Workspace uses DB default updated_at when not explicitly set`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -404,8 +404,8 @@ struct ProjectTrackingStoreTests {
 
     // MARK: - Plan Loading
 
-    @Test("Loads plans for selected project")
-    func loadsPlans() async throws {
+    @Test
+    func `Loads plans for selected project`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -429,8 +429,8 @@ struct ProjectTrackingStoreTests {
         #expect(uuids.contains("uuid-2"))
     }
 
-    @Test("Plans ordered by plan_id descending")
-    func plansOrderedByPlanIdDesc() async throws {
+    @Test
+    func `Plans ordered by plan_id descending`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -451,8 +451,8 @@ struct ProjectTrackingStoreTests {
         #expect(store.plans[2].uuid == "low-id") // plan_id 10
     }
 
-    @Test("Plans for other projects are not loaded")
-    func plansIsolatedByProject() async throws {
+    @Test
+    func `Plans for other projects are not loaded`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -471,8 +471,8 @@ struct ProjectTrackingStoreTests {
         #expect(store.plans.first?.uuid == "p1")
     }
 
-    @Test("Plan date fields parsed from ISO 8601 strings")
-    func planDateFieldsParsed() async throws {
+    @Test
+    func `Plan date fields parsed from ISO 8601 strings`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -502,8 +502,8 @@ struct ProjectTrackingStoreTests {
 
     // MARK: - Dependency Status
 
-    @Test("Plan with all deps done → hasUnresolvedDependencies = false")
-    func allDepsDone() async throws {
+    @Test
+    func `Plan with all deps done → hasUnresolvedDependencies = false`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -524,8 +524,8 @@ struct ProjectTrackingStoreTests {
         #expect(hasUnresolved == false)
     }
 
-    @Test("Plan with at least one non-done dep → hasUnresolvedDependencies = true")
-    func hasUnresolvedDep() async throws {
+    @Test
+    func `Plan with at least one non-done dep → hasUnresolvedDependencies = true`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -548,8 +548,8 @@ struct ProjectTrackingStoreTests {
         #expect(hasUnresolved == true)
     }
 
-    @Test("Plan with in_progress dep → hasUnresolvedDependencies = true")
-    func inProgressDepIsUnresolved() async throws {
+    @Test
+    func `Plan with in_progress dep → hasUnresolvedDependencies = true`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -570,8 +570,8 @@ struct ProjectTrackingStoreTests {
         #expect(hasUnresolved == true)
     }
 
-    @Test("Plan with no deps → not in dependency map (defaults to false)")
-    func noDepsNotInMap() async throws {
+    @Test
+    func `Plan with no deps → not in dependency map (defaults to false)`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -594,8 +594,8 @@ struct ProjectTrackingStoreTests {
 
     // MARK: - Filter Integration
 
-    @Test("filteredPlans with default filters shows pending and in_progress, hides old done/cancelled/deferred")
-    func filteredPlansDefaultFilters() async throws {
+    @Test
+    func `filteredPlans with default filters shows pending and in_progress, hides old done/cancelled/deferred`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -639,8 +639,8 @@ struct ProjectTrackingStoreTests {
         #expect(!uuids.contains("deferred-plan"))
     }
 
-    @Test("filteredPlans shows blocked plans (pending with unresolved deps)")
-    func filteredPlansShowsBlockedPlans() async throws {
+    @Test
+    func `filteredPlans shows blocked plans (pending with unresolved deps)`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -666,8 +666,8 @@ struct ProjectTrackingStoreTests {
         #expect(uuids.contains("blocked-plan"))
     }
 
-    @Test("filteredPlans with all statuses shows everything including old done and cancelled")
-    func filteredPlansAllFilters() async throws {
+    @Test
+    func `filteredPlans with all statuses shows everything including old done and cancelled`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -698,8 +698,8 @@ struct ProjectTrackingStoreTests {
         #expect(filtered.count == 4)
     }
 
-    @Test("filteredPlans with empty filter hides everything")
-    func filteredPlansEmptyFilterHidesAll() async throws {
+    @Test
+    func `filteredPlans with empty filter hides everything`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -719,8 +719,8 @@ struct ProjectTrackingStoreTests {
 
     // MARK: - No Selected Project
 
-    @Test("No selected project results in empty workspaces and plans")
-    func noSelectedProjectEmptyData() async throws {
+    @Test
+    func `No selected project results in empty workspaces and plans`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -745,8 +745,8 @@ struct ProjectTrackingStoreTests {
 
     // MARK: - State Management
 
-    @Test("Load state transitions: idle → loading → loaded")
-    func loadStateTransitions() async throws {
+    @Test
+    func `Load state transitions: idle → loading → loaded`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -758,8 +758,8 @@ struct ProjectTrackingStoreTests {
         #expect(store.loadState == .loaded)
     }
 
-    @Test("Refresh keeps loaded state after initial load")
-    func refreshKeepsLoadedStateAfterInitialLoad() async throws {
+    @Test
+    func `Refresh keeps loaded state after initial load`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -775,8 +775,8 @@ struct ProjectTrackingStoreTests {
         #expect(store.loadState == .loaded)
     }
 
-    @Test("Default active filters match defaultPlanFilters()")
-    func defaultActiveFiltersMatchHelper() throws {
+    @Test
+    func `Default active filters match defaultPlanFilters()`() throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -786,8 +786,8 @@ struct ProjectTrackingStoreTests {
 
     // MARK: - Malformed Row Handling
 
-    @Test("Workspace with null optional fields loads successfully")
-    func workspaceWithNullOptionalFieldsLoads() async throws {
+    @Test
+    func `Workspace with null optional fields loads successfully`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -812,8 +812,8 @@ struct ProjectTrackingStoreTests {
         #expect(named?.name == "Named WS")
     }
 
-    @Test("Plan with empty uuid is skipped, subsequent plans still loaded")
-    func planWithEmptyUuidIsSkipped() async throws {
+    @Test
+    func `Plan with empty uuid is skipped, subsequent plans still loaded`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -834,8 +834,8 @@ struct ProjectTrackingStoreTests {
         #expect(store.plans.first?.uuid == "valid-uuid")
     }
 
-    @Test("Corrupted (non-SQLite) DB file produces error state")
-    func corruptedDBFileProducesErrorState() async throws {
+    @Test
+    func `Corrupted (non-SQLite) DB file produces error state`() async throws {
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("TimGUI-CorruptDB-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
@@ -854,8 +854,8 @@ struct ProjectTrackingStoreTests {
         }
     }
 
-    @Test("Corrupt data pages cause sqlite3_step to fail with error state, not silently return partial data")
-    func corruptDataPagesProduceErrorStateViaSqliteStep() async throws {
+    @Test
+    func `Corrupt data pages cause sqlite3_step to fail with error state, not silently return partial data`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -899,9 +899,8 @@ struct ProjectTrackingStoreTests {
         }
     }
 
-    @Test(
-        "Corrupt workspace pages cause doFetchWorkspaces sqlite3_step to fail with error state when selectedProjectId is set")
-    func workspaceStepErrorProducesErrorState() async throws {
+    @Test
+    func `Corrupt workspace pages cause doFetchWorkspaces sqlite3_step to fail with error state when selectedProjectId is set`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -959,9 +958,8 @@ struct ProjectTrackingStoreTests {
         }
     }
 
-    @Test(
-        "Corrupt plan pages cause doFetchPlansAndDeps sqlite3_step to fail with error state when selectedProjectId is set")
-    func plansStepErrorProducesErrorState() async throws {
+    @Test
+    func `Corrupt plan pages cause doFetchPlansAndDeps sqlite3_step to fail with error state when selectedProjectId is set`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1022,8 +1020,8 @@ struct ProjectTrackingStoreTests {
 
     // MARK: - displayStatus Helper
 
-    @Test("displayStatus helper returns correct status using stored dependency info")
-    func displayStatusHelper() async throws {
+    @Test
+    func `displayStatus helper returns correct status using stored dependency info`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1050,8 +1048,8 @@ struct ProjectTrackingStoreTests {
 
     // MARK: - View State Tests
 
-    @Test("Error state from missing DB contains a non-empty message")
-    func errorStateContainsNonEmptyMessage() async {
+    @Test
+    func `Error state from missing DB contains a non-empty message`() async {
         let nonExistentPath = FileManager.default.temporaryDirectory
             .appendingPathComponent("no-such-\(UUID().uuidString).db").path
 
@@ -1065,8 +1063,8 @@ struct ProjectTrackingStoreTests {
         }
     }
 
-    @Test("Filter toggle: removing a filter hides matching plans, re-adding restores them")
-    func filterToggleRemoveAndRestore() async throws {
+    @Test
+    func `Filter toggle: removing a filter hides matching plans, re-adding restores them`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1102,8 +1100,8 @@ struct ProjectTrackingStoreTests {
         #expect(restored.count == 2)
     }
 
-    @Test("Switching selected project loads project-specific plans and clears previous data")
-    func selectProjectSwitchesData() async throws {
+    @Test
+    func `Switching selected project loads project-specific plans and clears previous data`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1148,8 +1146,8 @@ struct ProjectTrackingStoreTests {
         #expect(store.projects.count == 2)
     }
 
-    @Test("Expanding to all statuses reveals plans hidden by default filters")
-    func expandToAllStatusesRevealsHiddenPlans() async throws {
+    @Test
+    func `Expanding to all statuses reveals plans hidden by default filters`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1197,8 +1195,8 @@ struct ProjectTrackingStoreTests {
 
     // MARK: - Plans Browser Filter Scenarios
 
-    @Test("Resetting filters from All-selected state restores default filter set")
-    func resetFiltersFromAllSelectedRestoresDefaults() async throws {
+    @Test
+    func `Resetting filters from All-selected state restores default filter set`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1242,8 +1240,8 @@ struct ProjectTrackingStoreTests {
         #expect(store.activeFilters == defaultPlanFilters())
     }
 
-    @Test("Single status filter shows only plans matching that exact status")
-    func singleStatusFilterShowsOnlyMatchingPlans() async throws {
+    @Test
+    func `Single status filter shows only plans matching that exact status`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1264,8 +1262,8 @@ struct ProjectTrackingStoreTests {
         #expect(filtered.first?.uuid == "p2")
     }
 
-    @Test("filteredPlans respects filter changes without re-fetching from DB")
-    func filteredPlansRespectsLiveFilterChanges() async throws {
+    @Test
+    func `filteredPlans respects filter changes without re-fetching from DB`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1310,21 +1308,21 @@ struct ProjectTrackingStoreTests {
 
     // MARK: - DB Path Resolution
 
-    @Test("resolveDefaultDBPath returns non-nil path ending in tim.db by default")
-    func resolveDefaultDBPathDefaultSuffix() {
+    @Test
+    func `resolveDefaultDBPath returns non-nil path ending in tim.db by default`() {
         let path = ProjectTrackingStore.resolveDefaultDBPath()
         #expect(path != nil)
         #expect(path?.hasSuffix("tim.db") == true)
     }
 
-    @Test("resolveDefaultDBPath returns a path with /tim/ directory component")
-    func resolveDefaultDBPathContainsTim() {
+    @Test
+    func `resolveDefaultDBPath returns a path with /tim/ directory component`() {
         let path = ProjectTrackingStore.resolveDefaultDBPath()
         #expect(path?.contains("/tim/") == true)
     }
 
-    @Test("resolveDefaultDBPath uses TIM_DATABASE_FILENAME when set in environment")
-    func resolveDefaultDBPathCustomFilename() {
+    @Test
+    func `resolveDefaultDBPath uses TIM_DATABASE_FILENAME when set in environment`() {
         let customFilename = "mytest.db"
         let prev = getenv("TIM_DATABASE_FILENAME").map { String(cString: $0) }
         setenv("TIM_DATABASE_FILENAME", customFilename, 1)
@@ -1335,8 +1333,8 @@ struct ProjectTrackingStoreTests {
         #expect(path?.hasSuffix(customFilename) == true)
     }
 
-    @Test("resolveDefaultDBPath ignores empty XDG_CONFIG_HOME and falls back to home directory")
-    func resolveDefaultDBPathFallsBackForEmptyXdg() {
+    @Test
+    func `resolveDefaultDBPath ignores empty XDG_CONFIG_HOME and falls back to home directory`() {
         let prev = getenv("XDG_CONFIG_HOME").map { String(cString: $0) }
         setenv("XDG_CONFIG_HOME", "", 1)
         defer {
@@ -1348,8 +1346,8 @@ struct ProjectTrackingStoreTests {
         #expect(path?.contains("/.config/tim/") == true)
     }
 
-    @Test("resolveDefaultDBPath ignores whitespace-only XDG_CONFIG_HOME and falls back to home directory")
-    func resolveDefaultDBPathFallsBackForWhitespaceXdg() {
+    @Test
+    func `resolveDefaultDBPath ignores whitespace-only XDG_CONFIG_HOME and falls back to home directory`() {
         let prev = getenv("XDG_CONFIG_HOME").map { String(cString: $0) }
         setenv("XDG_CONFIG_HOME", "   ", 1)
         defer {
@@ -1361,8 +1359,8 @@ struct ProjectTrackingStoreTests {
         #expect(path?.contains("/.config/tim/") == true)
     }
 
-    @Test("resolveDefaultDBPath uses non-empty XDG_CONFIG_HOME when set")
-    func resolveDefaultDBPathUsesValidXdg() {
+    @Test
+    func `resolveDefaultDBPath uses non-empty XDG_CONFIG_HOME when set`() {
         let customXdg = "/tmp/test-xdg-\(UUID().uuidString)"
         let prev = getenv("XDG_CONFIG_HOME").map { String(cString: $0) }
         setenv("XDG_CONFIG_HOME", customXdg, 1)
@@ -1376,8 +1374,8 @@ struct ProjectTrackingStoreTests {
 
     // MARK: - Refresh Lifecycle
 
-    @Test("startRefreshing performs initial load and transitions to loaded state")
-    func startRefreshingPerformsInitialLoad() async throws {
+    @Test
+    func `startRefreshing performs initial load and transitions to loaded state`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1399,8 +1397,8 @@ struct ProjectTrackingStoreTests {
         store.stopRefreshing()
     }
 
-    @Test("stopRefreshing cancels the refresh loop without error")
-    func stopRefreshingCancelsLoop() async throws {
+    @Test
+    func `stopRefreshing cancels the refresh loop without error`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1421,9 +1419,8 @@ struct ProjectTrackingStoreTests {
         #expect(store.loadState == .loaded)
     }
 
-    @Test(
-        "Reference-counted refresh: startRefreshing twice + stopRefreshing once keeps refreshing, second stop fully stops")
-    func referenceCountedRefreshLifecycle() async throws {
+    @Test
+    func `Reference-counted refresh: startRefreshing twice + stopRefreshing once keeps refreshing, second stop fully stops`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1454,8 +1451,8 @@ struct ProjectTrackingStoreTests {
         store.stopRefreshing()
     }
 
-    @Test("startRefreshing can restart after stopRefreshing and picks up DB changes")
-    func startRefreshingRestartAfterStop() async throws {
+    @Test
+    func `startRefreshing can restart after stopRefreshing and picks up DB changes`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1484,8 +1481,8 @@ struct ProjectTrackingStoreTests {
 
     // MARK: - Refresh Coalescing
 
-    @Test("selectProject after initial load switches to new project data")
-    func selectProjectAfterInitialLoadSwitchesData() async throws {
+    @Test
+    func `selectProject after initial load switches to new project data`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1513,8 +1510,8 @@ struct ProjectTrackingStoreTests {
         #expect(store.plans.first?.uuid == "plan-p2")
     }
 
-    @Test("Concurrent refresh with project change results in correct final state")
-    func concurrentRefreshWithProjectChangeResultsInCorrectState() async throws {
+    @Test
+    func `Concurrent refresh with project change results in correct final state`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1547,8 +1544,8 @@ struct ProjectTrackingStoreTests {
         #expect(store.plans.first?.uuid == "plan-p2")
     }
 
-    @Test("Stale project data is not committed when selectedProjectId changes mid-refresh")
-    func staleProjectDataNotCommittedAfterSelectionChange() async throws {
+    @Test
+    func `Stale project data is not committed when selectedProjectId changes mid-refresh`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1588,8 +1585,8 @@ struct ProjectTrackingStoreTests {
     // Tests for the hasActivePlans / hasRecentlyActiveWorkspaces logic used by ProjectDetailView
     // to decide whether to show the active work dashboard or an empty state.
 
-    @Test("Active work: project with in-progress plan has active plans")
-    func activeWorkHasActivePlanInProgress() async throws {
+    @Test
+    func `Active work: project with in-progress plan has active plans`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1611,8 +1608,8 @@ struct ProjectTrackingStoreTests {
         #expect(hasActivePlans)
     }
 
-    @Test("Active work: pending plan with unresolved deps counts as active (blocked)")
-    func activeWorkBlockedPlanCountsAsActive() async throws {
+    @Test
+    func `Active work: pending plan with unresolved deps counts as active (blocked)`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1639,8 +1636,8 @@ struct ProjectTrackingStoreTests {
         #expect(store.displayStatus(for: blockedPlan, now: now) == .blocked)
     }
 
-    @Test("Active work: project with only pending/done/cancelled plans has no active plans")
-    func activeWorkNoActivePlansWhenOnlyInactivePlans() async throws {
+    @Test
+    func `Active work: project with only pending/done/cancelled plans has no active plans`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1668,8 +1665,8 @@ struct ProjectTrackingStoreTests {
         #expect(!hasActivePlans)
     }
 
-    @Test("Active work: empty state when no recently active workspaces and no active plans")
-    func activeWorkEmptyStateWhenNoRecentlyActiveWorkspacesAndNoActivePlans() async throws {
+    @Test
+    func `Active work: empty state when no recently active workspaces and no active plans`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1697,8 +1694,8 @@ struct ProjectTrackingStoreTests {
         #expect(!hasActivePlans)
     }
 
-    @Test("Active work: stale workspace alone does not prevent empty state")
-    func activeWorkStaleWorkspaceDoesNotPreventEmptyState() async throws {
+    @Test
+    func `Active work: stale workspace alone does not prevent empty state`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1730,8 +1727,8 @@ struct ProjectTrackingStoreTests {
         #expect(!hasActivePlans)
     }
 
-    @Test("Active work: recently active workspace keeps dashboard non-empty without active plans")
-    func activeWorkRecentlyActiveWorkspaceKeepsDashboardVisible() async throws {
+    @Test
+    func `Active work: recently active workspace keeps dashboard non-empty without active plans`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 
@@ -1762,8 +1759,8 @@ struct ProjectTrackingStoreTests {
         #expect(!hasActivePlans)
     }
 
-    @Test("Active work: workspace with assigned plan title shows linked plan info")
-    func activeWorkWorkspaceLinkedToPlan() async throws {
+    @Test
+    func `Active work: workspace with assigned plan title shows linked plan info`() async throws {
         let (path, cleanup) = try makeTestDBPath()
         defer { cleanup() }
 

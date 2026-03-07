@@ -46,88 +46,87 @@ private func makeWorkspace(
 
 // MARK: - planDisplayStatus Tests
 
-@Suite("planDisplayStatus")
 struct PlanDisplayStatusTests {
     let now = Date()
 
-    @Test("Pending plan without deps → .pending")
-    func pendingNoDeps() {
+    @Test
+    func `Pending plan without deps → .pending`() {
         let plan = makePlan(status: "pending")
         #expect(planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: self.now) == .pending)
     }
 
-    @Test("Pending plan with unresolved deps → .blocked")
-    func pendingWithUnresolvedDeps() {
+    @Test
+    func `Pending plan with unresolved deps → .blocked`() {
         let plan = makePlan(status: "pending")
         #expect(planDisplayStatus(for: plan, hasUnresolvedDependencies: true, now: self.now) == .blocked)
     }
 
-    @Test("In-progress plan → .inProgress")
-    func inProgressPlan() {
+    @Test
+    func `In-progress plan → .inProgress`() {
         let plan = makePlan(status: "in_progress")
         #expect(planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: self.now) == .inProgress)
     }
 
-    @Test("In-progress plan with deps still → .inProgress (deps don't affect in-progress)")
-    func inProgressWithDeps() {
+    @Test
+    func `In-progress plan with deps still → .inProgress (deps don't affect in-progress)`() {
         let plan = makePlan(status: "in_progress")
         #expect(planDisplayStatus(for: plan, hasUnresolvedDependencies: true, now: self.now) == .inProgress)
     }
 
-    @Test("Done plan updated 3 days ago → .recentlyDone")
-    func doneRecently3Days() {
+    @Test
+    func `Done plan updated 3 days ago → .recentlyDone`() {
         let threeDaysAgo = self.now.addingTimeInterval(-3 * 24 * 60 * 60)
         let plan = makePlan(status: "done", updatedAt: threeDaysAgo)
         #expect(planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: self.now) == .recentlyDone)
     }
 
-    @Test("Done plan updated 8 days ago → .done")
-    func doneOld8Days() {
+    @Test
+    func `Done plan updated 8 days ago → .done`() {
         let eightDaysAgo = self.now.addingTimeInterval(-8 * 24 * 60 * 60)
         let plan = makePlan(status: "done", updatedAt: eightDaysAgo)
         #expect(planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: self.now) == .done)
     }
 
-    @Test("Done plan updated exactly 7 days ago → .recentlyDone (boundary inclusive)")
-    func doneExactly7DaysBoundary() {
+    @Test
+    func `Done plan updated exactly 7 days ago → .recentlyDone (boundary inclusive)`() {
         let sevenDaysAgo = self.now.addingTimeInterval(-7 * 24 * 60 * 60)
         let plan = makePlan(status: "done", updatedAt: sevenDaysAgo)
         #expect(planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: self.now) == .recentlyDone)
     }
 
-    @Test("Done plan updated 7 days + 1 second ago → .done (boundary exclusive)")
-    func done7DaysPlus1SecondBoundary() {
+    @Test
+    func `Done plan updated 7 days + 1 second ago → .done (boundary exclusive)`() {
         let sevenDaysPlus1Sec = self.now.addingTimeInterval(-(7 * 24 * 60 * 60 + 1))
         let plan = makePlan(status: "done", updatedAt: sevenDaysPlus1Sec)
         #expect(planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: self.now) == .done)
     }
 
-    @Test("Done plan with nil updatedAt → .done (no recency without a date)")
-    func doneNilUpdatedAt() {
+    @Test
+    func `Done plan with nil updatedAt → .done (no recency without a date)`() {
         let plan = makePlan(status: "done", updatedAt: nil)
         #expect(planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: self.now) == .done)
     }
 
-    @Test("Cancelled plan → .cancelled")
-    func cancelledPlan() {
+    @Test
+    func `Cancelled plan → .cancelled`() {
         let plan = makePlan(status: "cancelled")
         #expect(planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: self.now) == .cancelled)
     }
 
-    @Test("Deferred plan → .deferred")
-    func deferredPlan() {
+    @Test
+    func `Deferred plan → .deferred`() {
         let plan = makePlan(status: "deferred")
         #expect(planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: self.now) == .deferred)
     }
 
-    @Test("Unknown status falls back to .pending")
-    func unknownStatusFallback() {
+    @Test
+    func `Unknown status falls back to .pending`() {
         let plan = makePlan(status: "some_unknown_state")
         #expect(planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: self.now) == .pending)
     }
 
-    @Test("Empty status falls back to .pending")
-    func emptyStatusFallback() {
+    @Test
+    func `Empty status falls back to .pending`() {
         let plan = makePlan(status: "")
         #expect(planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: self.now) == .pending)
     }
@@ -135,62 +134,60 @@ struct PlanDisplayStatusTests {
 
 // MARK: - PlanDisplayStatus.label Tests
 
-@Suite("PlanDisplayStatus.label")
 struct PlanDisplayStatusLabelTests {
-    @Test("pending label is 'Pending'")
-    func pendingLabel() {
+    @Test
+    func `pending label is 'Pending'`() {
         #expect(PlanDisplayStatus.pending.label == "Pending")
     }
 
-    @Test("inProgress label is 'In Progress'")
-    func inProgressLabel() {
+    @Test
+    func `inProgress label is 'In Progress'`() {
         #expect(PlanDisplayStatus.inProgress.label == "In Progress")
     }
 
-    @Test("blocked label is 'Blocked'")
-    func blockedLabel() {
+    @Test
+    func `blocked label is 'Blocked'`() {
         #expect(PlanDisplayStatus.blocked.label == "Blocked")
     }
 
-    @Test("recentlyDone label is 'Recently Done'")
-    func recentlyDoneLabel() {
+    @Test
+    func `recentlyDone label is 'Recently Done'`() {
         #expect(PlanDisplayStatus.recentlyDone.label == "Recently Done")
     }
 
-    @Test("done label is 'Done'")
-    func doneLabel() {
+    @Test
+    func `done label is 'Done'`() {
         #expect(PlanDisplayStatus.done.label == "Done")
     }
 
-    @Test("cancelled label is 'Cancelled'")
-    func cancelledLabel() {
+    @Test
+    func `cancelled label is 'Cancelled'`() {
         #expect(PlanDisplayStatus.cancelled.label == "Cancelled")
     }
 
-    @Test("deferred label is 'Deferred'")
-    func deferredLabel() {
+    @Test
+    func `deferred label is 'Deferred'`() {
         #expect(PlanDisplayStatus.deferred.label == "Deferred")
     }
 
-    @Test("All statuses have non-empty labels")
-    func allStatusesHaveNonEmptyLabels() {
+    @Test
+    func `All statuses have non-empty labels`() {
         for status in PlanDisplayStatus.allCases {
             #expect(!status.label.isEmpty, "Expected non-empty label for \(status)")
         }
     }
 
-    @Test("PlanDisplayStatus has exactly 7 cases (one chip per status in FilterChipsView)")
-    func exactlySevenCases() {
+    @Test
+    func `PlanDisplayStatus has exactly 7 cases (one chip per status in FilterChipsView)`() {
         #expect(PlanDisplayStatus.allCases.count == 7)
     }
 }
 
 // MARK: - TrackedPlan.displayTitle Tests
 
-@Suite("TrackedPlan.displayTitle")
 struct TrackedPlanDisplayTitleTests {
-    @Test("Uses title when available and non-empty")
-    func usesTitleWhenAvailable() {
+    @Test
+    func `Uses title when available and non-empty`() {
         let plan = TrackedPlan(
             uuid: "some-uuid",
             projectId: "proj-1",
@@ -208,8 +205,8 @@ struct TrackedPlanDisplayTitleTests {
         #expect(plan.displayTitle == "My Feature Plan")
     }
 
-    @Test("Falls back to 'Plan {planId}' when title is nil")
-    func fallsBackToPlanId() {
+    @Test
+    func `Falls back to 'Plan {planId}' when title is nil`() {
         let plan = TrackedPlan(
             uuid: "some-uuid",
             projectId: "proj-1",
@@ -227,8 +224,8 @@ struct TrackedPlanDisplayTitleTests {
         #expect(plan.displayTitle == "Plan 42")
     }
 
-    @Test("Falls back to uuid when both title and planId are nil")
-    func fallsBackToUuid() {
+    @Test
+    func `Falls back to uuid when both title and planId are nil`() {
         let plan = TrackedPlan(
             uuid: "my-uuid-fallback",
             projectId: "proj-1",
@@ -246,8 +243,8 @@ struct TrackedPlanDisplayTitleTests {
         #expect(plan.displayTitle == "my-uuid-fallback")
     }
 
-    @Test("Empty title falls back to 'Plan {planId}'")
-    func emptyTitleFallsBackToPlanId() {
+    @Test
+    func `Empty title falls back to 'Plan {planId}'`() {
         let plan = TrackedPlan(
             uuid: "some-uuid",
             projectId: "proj-1",
@@ -265,8 +262,8 @@ struct TrackedPlanDisplayTitleTests {
         #expect(plan.displayTitle == "Plan 10")
     }
 
-    @Test("Empty title and nil planId falls back to uuid")
-    func emptyTitleAndNilPlanIdFallsBackToUuid() {
+    @Test
+    func `Empty title and nil planId falls back to uuid`() {
         let plan = TrackedPlan(
             uuid: "fallback-uuid-123",
             projectId: "proj-1",
@@ -287,48 +284,46 @@ struct TrackedPlanDisplayTitleTests {
 
 // MARK: - defaultPlanFilters Tests
 
-@Suite("defaultPlanFilters")
 struct DefaultPlanFiltersTests {
-    @Test("Returns exactly {pending, inProgress, blocked, recentlyDone}")
-    func returnsExpectedSet() {
+    @Test
+    func `Returns exactly {pending, inProgress, blocked, recentlyDone}`() {
         let filters = defaultPlanFilters()
         #expect(filters == Set([.pending, .inProgress, .blocked, .recentlyDone]))
     }
 
-    @Test("Does not include done")
-    func doesNotIncludeDone() {
+    @Test
+    func `Does not include done`() {
         #expect(!defaultPlanFilters().contains(.done))
     }
 
-    @Test("Does not include cancelled")
-    func doesNotIncludeCancelled() {
+    @Test
+    func `Does not include cancelled`() {
         #expect(!defaultPlanFilters().contains(.cancelled))
     }
 
-    @Test("Does not include deferred")
-    func doesNotIncludeDeferred() {
+    @Test
+    func `Does not include deferred`() {
         #expect(!defaultPlanFilters().contains(.deferred))
     }
 
-    @Test("Returns exactly 4 filters")
-    func exactlyFourFilters() {
+    @Test
+    func `Returns exactly 4 filters`() {
         #expect(defaultPlanFilters().count == 4)
     }
 }
 
 // MARK: - shouldShowPlan Tests
 
-@Suite("shouldShowPlan")
 struct ShouldShowPlanTests {
-    @Test("Returns true when status is in active filters")
-    func trueWhenInFilters() {
+    @Test
+    func `Returns true when status is in active filters`() {
         #expect(shouldShowPlan(displayStatus: .pending, activeFilters: [.pending, .inProgress]))
         #expect(shouldShowPlan(displayStatus: .blocked, activeFilters: [.pending, .blocked]))
         #expect(shouldShowPlan(displayStatus: .recentlyDone, activeFilters: [.recentlyDone]))
     }
 
-    @Test("Returns false when status is not in active filters")
-    func falseWhenNotInFilters() {
+    @Test
+    func `Returns false when status is not in active filters`() {
         #expect(!shouldShowPlan(displayStatus: .done, activeFilters: [.pending, .inProgress]))
         #expect(!shouldShowPlan(
             displayStatus: .cancelled,
@@ -336,23 +331,23 @@ struct ShouldShowPlanTests {
         #expect(!shouldShowPlan(displayStatus: .deferred, activeFilters: [.pending]))
     }
 
-    @Test("Empty filter set shows nothing")
-    func emptyFilterShowsNothing() {
+    @Test
+    func `Empty filter set shows nothing`() {
         for status in PlanDisplayStatus.allCases {
             #expect(!shouldShowPlan(displayStatus: status, activeFilters: []))
         }
     }
 
-    @Test("All statuses in filter shows everything")
-    func allFiltersShowEverything() {
+    @Test
+    func `All statuses in filter shows everything`() {
         let allFilters = Set(PlanDisplayStatus.allCases)
         for status in PlanDisplayStatus.allCases {
             #expect(shouldShowPlan(displayStatus: status, activeFilters: allFilters))
         }
     }
 
-    @Test("Exact match with single-element filter set")
-    func singleElementFilter() {
+    @Test
+    func `Exact match with single-element filter set`() {
         for status in PlanDisplayStatus.allCases {
             let filter: Set<PlanDisplayStatus> = [status]
             #expect(shouldShowPlan(displayStatus: status, activeFilters: filter))
@@ -365,10 +360,9 @@ struct ShouldShowPlanTests {
 
 // MARK: - TrackedProject.displayName Tests
 
-@Suite("TrackedProject.displayName")
 struct TrackedProjectDisplayNameTests {
-    @Test("Uses remoteLabel when available")
-    func usesRemoteLabel() {
+    @Test
+    func `Uses remoteLabel when available`() {
         let project = TrackedProject(
             id: "id-1",
             repositoryId: nil,
@@ -378,8 +372,8 @@ struct TrackedProjectDisplayNameTests {
         #expect(project.displayName == "My Project Label")
     }
 
-    @Test("Falls back to last path component of lastGitRoot when remoteLabel is nil")
-    func fallsBackToGitRoot() {
+    @Test
+    func `Falls back to last path component of lastGitRoot when remoteLabel is nil`() {
         let project = TrackedProject(
             id: "id-1",
             repositoryId: nil,
@@ -389,8 +383,8 @@ struct TrackedProjectDisplayNameTests {
         #expect(project.displayName == "myproject")
     }
 
-    @Test("Falls back to last path component of remoteUrl when gitRoot is nil")
-    func fallsBackToRemoteUrl() {
+    @Test
+    func `Falls back to last path component of remoteUrl when gitRoot is nil`() {
         let project = TrackedProject(
             id: "id-1",
             repositoryId: nil,
@@ -400,8 +394,8 @@ struct TrackedProjectDisplayNameTests {
         #expect(project.displayName == "reponame")
     }
 
-    @Test("Falls back to id when nothing else is available")
-    func fallsBackToId() {
+    @Test
+    func `Falls back to id when nothing else is available`() {
         let project = TrackedProject(
             id: "my-project-id",
             repositoryId: nil,
@@ -411,8 +405,8 @@ struct TrackedProjectDisplayNameTests {
         #expect(project.displayName == "my-project-id")
     }
 
-    @Test("Empty remoteLabel falls back to lastGitRoot")
-    func emptyLabelFallsBack() {
+    @Test
+    func `Empty remoteLabel falls back to lastGitRoot`() {
         let project = TrackedProject(
             id: "id-1",
             repositoryId: nil,
@@ -422,8 +416,8 @@ struct TrackedProjectDisplayNameTests {
         #expect(project.displayName == "myproject")
     }
 
-    @Test("Empty remoteLabel and nil gitRoot falls back to remoteUrl")
-    func emptyLabelAndNilGitRootFallsBackToUrl() {
+    @Test
+    func `Empty remoteLabel and nil gitRoot falls back to remoteUrl`() {
         let project = TrackedProject(
             id: "id-1",
             repositoryId: nil,
@@ -433,8 +427,8 @@ struct TrackedProjectDisplayNameTests {
         #expect(project.displayName == "the-repo")
     }
 
-    @Test("remoteLabel takes precedence over both gitRoot and remoteUrl")
-    func labelTakesPrecedenceOverAll() {
+    @Test
+    func `remoteLabel takes precedence over both gitRoot and remoteUrl`() {
         let project = TrackedProject(
             id: "id-1",
             repositoryId: nil,
@@ -444,8 +438,8 @@ struct TrackedProjectDisplayNameTests {
         #expect(project.displayName == "Best Label")
     }
 
-    @Test("Handles nested path correctly, returning only last component")
-    func lastPathComponentOnly() {
+    @Test
+    func `Handles nested path correctly, returning only last component`() {
         let project = TrackedProject(
             id: "id-1",
             repositoryId: nil,
@@ -458,28 +452,27 @@ struct TrackedProjectDisplayNameTests {
 
 // MARK: - TrackedWorkspace.displayStatus Tests
 
-@Suite("TrackedWorkspace.displayStatus")
 struct TrackedWorkspaceDisplayStatusTests {
-    @Test("Neither locked nor primary → .available")
-    func availableWorkspace() {
+    @Test
+    func `Neither locked nor primary → .available`() {
         let ws = makeWorkspace(isPrimary: false, isLocked: false)
         #expect(ws.displayStatus == .available)
     }
 
-    @Test("Locked workspace → .locked")
-    func lockedWorkspace() {
+    @Test
+    func `Locked workspace → .locked`() {
         let ws = makeWorkspace(isPrimary: false, isLocked: true)
         #expect(ws.displayStatus == .locked)
     }
 
-    @Test("Primary workspace → .primary")
-    func primaryWorkspace() {
+    @Test
+    func `Primary workspace → .primary`() {
         let ws = makeWorkspace(isPrimary: true, isLocked: false)
         #expect(ws.displayStatus == .primary)
     }
 
-    @Test("Locked AND primary → .locked (locked takes precedence)")
-    func lockedTakesPrecedenceOverPrimary() {
+    @Test
+    func `Locked AND primary → .locked (locked takes precedence)`() {
         let ws = makeWorkspace(isPrimary: true, isLocked: true)
         #expect(ws.displayStatus == .locked)
     }
@@ -487,38 +480,37 @@ struct TrackedWorkspaceDisplayStatusTests {
 
 // MARK: - AppTab Tests
 
-@Suite("AppTab")
 struct AppTabTests {
-    @Test("activeWork tab has correct raw value")
-    func activeWorkRawValue() {
+    @Test
+    func `activeWork tab has correct raw value`() {
         #expect(AppTab.activeWork.rawValue == "Active Work")
     }
 
-    @Test("sessions tab has correct raw value")
-    func sessionsRawValue() {
+    @Test
+    func `sessions tab has correct raw value`() {
         #expect(AppTab.sessions.rawValue == "Sessions")
     }
 
-    @Test("AppTab has exactly three cases")
-    func exactlyThreeCases() {
+    @Test
+    func `AppTab has exactly three cases`() {
         #expect(AppTab.allCases.count == 3)
     }
 
-    @Test("plans tab has correct raw value")
-    func plansRawValue() {
+    @Test
+    func `plans tab has correct raw value`() {
         #expect(AppTab.plans.rawValue == "Plans")
     }
 
-    @Test("AppTab contains sessions, activeWork, and plans cases")
-    func containsExpectedCases() {
+    @Test
+    func `AppTab contains sessions, activeWork, and plans cases`() {
         let cases = Set(AppTab.allCases)
         #expect(cases.contains(.sessions))
         #expect(cases.contains(.activeWork))
         #expect(cases.contains(.plans))
     }
 
-    @Test("allCases order is Sessions, Active Work, Plans")
-    func tabOrder() {
+    @Test
+    func `allCases order is Sessions, Active Work, Plans`() {
         #expect(AppTab.allCases == [.sessions, .activeWork, .plans])
     }
 }
@@ -527,69 +519,68 @@ struct AppTabTests {
 
 /// The active work dashboard (PlansSection) only shows plans whose display status
 /// is `.inProgress` or `.blocked`. These tests document and verify that criterion.
-@Suite("activeWorkDashboardFilter")
 struct ActiveWorkDashboardFilterTests {
     let now = Date()
 
-    @Test("inProgress status shown in active work")
-    func inProgressShown() {
+    @Test
+    func `inProgress status shown in active work`() {
         #expect(PlanDisplayStatus.inProgress.isActiveWork)
     }
 
-    @Test("blocked status shown in active work")
-    func blockedShown() {
+    @Test
+    func `blocked status shown in active work`() {
         #expect(PlanDisplayStatus.blocked.isActiveWork)
     }
 
-    @Test("pending status NOT shown in active work")
-    func pendingHidden() {
+    @Test
+    func `pending status NOT shown in active work`() {
         #expect(!PlanDisplayStatus.pending.isActiveWork)
     }
 
-    @Test("recentlyDone status NOT shown in active work")
-    func recentlyDoneHidden() {
+    @Test
+    func `recentlyDone status NOT shown in active work`() {
         #expect(!PlanDisplayStatus.recentlyDone.isActiveWork)
     }
 
-    @Test("done status NOT shown in active work")
-    func doneHidden() {
+    @Test
+    func `done status NOT shown in active work`() {
         #expect(!PlanDisplayStatus.done.isActiveWork)
     }
 
-    @Test("cancelled status NOT shown in active work")
-    func cancelledHidden() {
+    @Test
+    func `cancelled status NOT shown in active work`() {
         #expect(!PlanDisplayStatus.cancelled.isActiveWork)
     }
 
-    @Test("deferred status NOT shown in active work")
-    func deferredHidden() {
+    @Test
+    func `deferred status NOT shown in active work`() {
         #expect(!PlanDisplayStatus.deferred.isActiveWork)
     }
 
-    @Test("in_progress DB plan → shown in active work")
-    func inProgressDbPlanShown() {
+    @Test
+    func `in_progress DB plan → shown in active work`() {
         let plan = makePlan(status: "in_progress")
         let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: now)
         #expect(status.isActiveWork)
     }
 
-    @Test("pending plan with unresolved deps → shown in active work as blocked")
-    func pendingWithDepsShownAsBlocked() {
+    @Test
+    func `pending plan with unresolved deps → shown in active work as blocked`() {
         let plan = makePlan(status: "pending")
         let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: true, now: now)
         #expect(status == .blocked)
         #expect(status.isActiveWork)
     }
 
-    @Test("pending plan without deps → NOT shown in active work")
-    func pendingNoDepsHidden() {
+    @Test
+    func `pending plan without deps → NOT shown in active work`() {
         let plan = makePlan(status: "pending")
         let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: now)
         #expect(!status.isActiveWork)
     }
 
-    @Test("recently done plan → NOT shown in active work")
-    func recentlyDoneHiddenFromDB() {
+    @Test
+    func `recently done plan → NOT shown in active work`() {
         let recentlyUpdated = self.now.addingTimeInterval(-2 * 24 * 60 * 60)
         let plan = makePlan(status: "done", updatedAt: recentlyUpdated)
         let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: now)
@@ -597,8 +588,8 @@ struct ActiveWorkDashboardFilterTests {
         #expect(!status.isActiveWork)
     }
 
-    @Test("old done plan → NOT shown in active work")
-    func oldDoneHiddenFromDB() {
+    @Test
+    func `old done plan → NOT shown in active work`() {
         let oldDate = self.now.addingTimeInterval(-10 * 24 * 60 * 60)
         let plan = makePlan(status: "done", updatedAt: oldDate)
         let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: now)
@@ -606,22 +597,22 @@ struct ActiveWorkDashboardFilterTests {
         #expect(!status.isActiveWork)
     }
 
-    @Test("cancelled plan → NOT shown in active work")
-    func cancelledHiddenFromDB() {
+    @Test
+    func `cancelled plan → NOT shown in active work`() {
         let plan = makePlan(status: "cancelled")
         let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: now)
         #expect(!status.isActiveWork)
     }
 
-    @Test("deferred plan → NOT shown in active work")
-    func deferredHiddenFromDB() {
+    @Test
+    func `deferred plan → NOT shown in active work`() {
         let plan = makePlan(status: "deferred")
         let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: false, now: now)
         #expect(!status.isActiveWork)
     }
 
-    @Test("Only inProgress and blocked pass active work filter — all other statuses are excluded")
-    func onlyInProgressAndBlockedPassFilter() {
+    @Test
+    func `Only inProgress and blocked pass active work filter — all other statuses are excluded`() {
         let shown: [PlanDisplayStatus] = [.inProgress, .blocked]
         let hidden: [PlanDisplayStatus] = [.pending, .recentlyDone, .done, .cancelled, .deferred]
         for status in shown {
@@ -637,29 +628,28 @@ struct ActiveWorkDashboardFilterTests {
 
 /// Verifies the badge suppression logic introduced in Task 4:
 /// only non-default (primary, locked) states should produce visible indicators.
-@Suite("WorkspaceDisplayStatus badge visibility")
 struct WorkspaceDisplayStatusBadgeTests {
-    @Test("available workspace has no visible status indicators")
-    func availableHasNoBadge() {
+    @Test
+    func `available workspace has no visible status indicators`() {
         let ws = makeWorkspace(isPrimary: false, isLocked: false)
         #expect(ws.displayStatus == .available)
         // .available is the absence-of-badge state — only locked and primary show indicators
     }
 
-    @Test("locked workspace has a visible status indicator")
-    func lockedHasBadge() {
+    @Test
+    func `locked workspace has a visible status indicator`() {
         let ws = makeWorkspace(isPrimary: false, isLocked: true)
         #expect(ws.displayStatus == .locked)
     }
 
-    @Test("primary workspace has a visible status indicator")
-    func primaryHasBadge() {
+    @Test
+    func `primary workspace has a visible status indicator`() {
         let ws = makeWorkspace(isPrimary: true, isLocked: false)
         #expect(ws.displayStatus == .primary)
     }
 
-    @Test("available is the only status that maps to no badge")
-    func onlyAvailableHasNoBadge() {
+    @Test
+    func `available is the only status that maps to no badge`() {
         // Verify via production TrackedWorkspace.displayStatus that only the .available case
         // produces no status indicator — locked and primary workspaces must show badges.
         let availableWs = makeWorkspace(isPrimary: false, isLocked: false)
@@ -674,66 +664,65 @@ struct WorkspaceDisplayStatusBadgeTests {
 
 // MARK: - TrackedWorkspace.isRecentlyActive Tests
 
-@Suite("TrackedWorkspace.isRecentlyActive")
 struct TrackedWorkspaceIsRecentlyActiveTests {
     let now = Date()
 
-    @Test("Locked workspace is always recently active")
-    func lockedAlwaysActive() {
+    @Test
+    func `Locked workspace is always recently active`() {
         let ws = makeWorkspace(isLocked: true, updatedAt: now.addingTimeInterval(-72 * 60 * 60))
         #expect(ws.isRecentlyActive(now: self.now))
     }
 
-    @Test("Primary workspace is always recently active")
-    func primaryAlwaysActive() {
+    @Test
+    func `Primary workspace is always recently active`() {
         let ws = makeWorkspace(isPrimary: true, updatedAt: now.addingTimeInterval(-72 * 60 * 60))
         #expect(ws.isRecentlyActive(now: self.now))
     }
 
-    @Test("Workspace updated 1 hour ago is recently active")
-    func recentlyUpdated() {
+    @Test
+    func `Workspace updated 1 hour ago is recently active`() {
         let ws = makeWorkspace(updatedAt: now.addingTimeInterval(-1 * 60 * 60))
         #expect(ws.isRecentlyActive(now: self.now))
     }
 
-    @Test("Workspace updated 47 hours ago is recently active")
-    func updatedWithin48Hours() {
+    @Test
+    func `Workspace updated 47 hours ago is recently active`() {
         let ws = makeWorkspace(updatedAt: now.addingTimeInterval(-47 * 60 * 60))
         #expect(ws.isRecentlyActive(now: self.now))
     }
 
-    @Test("Workspace updated exactly 48 hours ago is recently active (boundary inclusive)")
-    func updatedExactly48Hours() {
+    @Test
+    func `Workspace updated exactly 48 hours ago is recently active (boundary inclusive)`() {
         let ws = makeWorkspace(updatedAt: now.addingTimeInterval(-48 * 60 * 60))
         #expect(ws.isRecentlyActive(now: self.now))
     }
 
-    @Test("Workspace updated 48 hours + 1 second ago is NOT recently active")
-    func updatedBeyond48Hours() {
+    @Test
+    func `Workspace updated 48 hours + 1 second ago is NOT recently active`() {
         let ws = makeWorkspace(updatedAt: now.addingTimeInterval(-(48 * 60 * 60 + 1)))
         #expect(!ws.isRecentlyActive(now: self.now))
     }
 
-    @Test("Workspace updated 72 hours ago is NOT recently active")
-    func oldUpdate() {
+    @Test
+    func `Workspace updated 72 hours ago is NOT recently active`() {
         let ws = makeWorkspace(updatedAt: now.addingTimeInterval(-72 * 60 * 60))
         #expect(!ws.isRecentlyActive(now: self.now))
     }
 
-    @Test("Workspace with nil updatedAt is NOT recently active")
-    func nilUpdatedAt() {
+    @Test
+    func `Workspace with nil updatedAt is NOT recently active`() {
         let ws = makeWorkspace(updatedAt: nil)
         #expect(!ws.isRecentlyActive(now: self.now))
     }
 
-    @Test("Locked workspace with nil updatedAt is still recently active")
-    func lockedNilUpdatedAt() {
+    @Test
+    func `Locked workspace with nil updatedAt is still recently active`() {
         let ws = makeWorkspace(isLocked: true, updatedAt: nil)
         #expect(ws.isRecentlyActive(now: self.now))
     }
 
-    @Test("Primary workspace with nil updatedAt is still recently active")
-    func primaryNilUpdatedAt() {
+    @Test
+    func `Primary workspace with nil updatedAt is still recently active`() {
         let ws = makeWorkspace(isPrimary: true, updatedAt: nil)
         #expect(ws.isRecentlyActive(now: self.now))
     }
@@ -741,10 +730,9 @@ struct TrackedWorkspaceIsRecentlyActiveTests {
 
 // MARK: - TrackedWorkspace.displayName Tests
 
-@Suite("TrackedWorkspace.displayName")
 struct TrackedWorkspaceDisplayNameTests {
-    @Test("Uses name when available")
-    func usesName() {
+    @Test
+    func `Uses name when available`() {
         let ws = TrackedWorkspace(
             id: "ws-id",
             projectId: "proj-1",
@@ -760,8 +748,8 @@ struct TrackedWorkspaceDisplayNameTests {
         #expect(ws.displayName == "My Workspace")
     }
 
-    @Test("Falls back to last two path components of workspacePath when name is nil")
-    func fallsBackToWorkspacePath() {
+    @Test
+    func `Falls back to last two path components of workspacePath when name is nil`() {
         let ws = TrackedWorkspace(
             id: "ws-id",
             projectId: "proj-1",
@@ -777,8 +765,8 @@ struct TrackedWorkspaceDisplayNameTests {
         #expect(ws.displayName == "workspaces/my-project")
     }
 
-    @Test("Falls back to id when name and workspacePath are both nil")
-    func fallsBackToId() {
+    @Test
+    func `Falls back to id when name and workspacePath are both nil`() {
         let ws = TrackedWorkspace(
             id: "ws-fallback-id",
             projectId: "proj-1",
@@ -794,8 +782,8 @@ struct TrackedWorkspaceDisplayNameTests {
         #expect(ws.displayName == "ws-fallback-id")
     }
 
-    @Test("Empty name falls back to workspacePath")
-    func emptyNameFallsBack() {
+    @Test
+    func `Empty name falls back to workspacePath`() {
         let ws = TrackedWorkspace(
             id: "ws-id",
             projectId: "proj-1",

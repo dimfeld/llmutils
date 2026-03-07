@@ -224,6 +224,64 @@
         "type": "string"
       }
     },
+    "reviewIssues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "major",
+              "minor",
+              "info"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "security",
+              "performance",
+              "bug",
+              "style",
+              "compliance",
+              "testing",
+              "other"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "oneOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "suggestion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "severity",
+          "category",
+          "content"
+        ],
+        "additionalProperties": {}
+      }
+    },
     "not_tim": {
       "description": "Mark file as not a tim plan, to be ignored when listing and reading plans",
       "type": "boolean"

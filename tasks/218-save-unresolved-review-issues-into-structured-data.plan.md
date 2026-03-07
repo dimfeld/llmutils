@@ -5,15 +5,15 @@ goal: ""
 id: 218
 uuid: ba4a7ded-213e-4e02-9f05-c7c702c2aab5
 generatedBy: agent
-status: pending
+status: done
 priority: medium
 planGeneratedAt: 2026-03-07T08:34:44.793Z
 promptsGeneratedAt: 2026-03-07T08:34:44.793Z
 createdAt: 2026-03-07T07:34:29.000Z
-updatedAt: 2026-03-07T08:35:58.254Z
+updatedAt: 2026-03-07T09:06:04.555Z
 tasks:
   - title: Add reviewIssues to plan schema and JSON schema
-    done: false
+    done: true
     description: "Add a new optional `reviewIssues` field to the `phaseSchema` in
       `src/tim/planSchema.ts`. Use `objectFactory` for the inner object to match
       existing patterns. The field is an array of objects with: id (string),
@@ -24,7 +24,7 @@ tasks:
       `reviewIssues` arrays for clean YAML output (follow the pattern used for
       `dependencies`, `issue`, etc.)."
   - title: Save issues to plan immediately after review detection
-    done: false
+    done: true
     description: "In `handleReviewCommand()` in `src/tim/commands/review.ts`, after
       `detectIssuesInReview()` confirms issues exist and before the action
       prompt: re-read the plan file, set `planData.reviewIssues` to
@@ -33,20 +33,20 @@ tasks:
       non-interactive mode (--print or tunnel), also save issues to the plan
       file."
   - title: Clear reviewIssues after user takes action
-    done: false
+    done: true
     description: Add a helper function `clearSavedReviewIssues(planFilePath)` that
       re-reads the plan, deletes `reviewIssues`, and writes it back. Call this
       after the user successfully takes any action (fix, append, or cleanup) in
       both the normal review flow and the `--issues` flow. When the user selects
       "exit", do nothing — the issues remain from the save-before-prompt step.
   - title: Add --issues and --save-issues CLI options
-    done: false
+    done: true
     description: "In `src/tim/tim.ts`, add two new options to the review command:
       `--issues` (act on previously saved unresolved review issues instead of
       running a new review) and `--save-issues` (save review issues to the plan
       file in non-interactive mode)."
   - title: Implement --issues flag handler in review command
-    done: false
+    done: true
     description: "In `src/tim/commands/review.ts`, add an early branch in
       `executeReviewFlow` when `options.issues` is set. Resolve the plan file,
       read it, check for `planData.reviewIssues`. If no saved issues, log a
@@ -57,7 +57,7 @@ tasks:
       function that both the normal flow and the --issues flow can call. After
       action, call clearSavedReviewIssues()."
   - title: Write tests for review issue persistence
-    done: false
+    done: true
     description: "In `src/tim/commands/review.test.ts`, add tests: (1) reviewIssues
       round-trips through readPlanFile/writePlanFile, (2) issues saved to plan
       immediately when review finds issues, (3) issues cleared after user
@@ -67,6 +67,18 @@ tasks:
       non-interactive mode persists issues, (8) new review replaces previously
       saved issues."
 branch: 218-save-unresolved-review-issues-into-structured-data-2
+changedFiles:
+  - schema/tim-plan-schema.json
+  - src/tim/commands/list.ts
+  - src/tim/commands/review.test.ts
+  - src/tim/commands/review.ts
+  - src/tim/commands/show.ts
+  - src/tim/db/plan.ts
+  - src/tim/db/plan_sync.ts
+  - src/tim/planSchema.ts
+  - src/tim/plans.test.ts
+  - src/tim/plans.ts
+  - src/tim/tim.ts
 tags: []
 ---
 
@@ -333,3 +345,27 @@ Add tests for:
 - **Reusing `ReviewIssue` format**: Using the same structure avoids conversion overhead and ensures the select/action prompts work identically whether issues come from a fresh review or saved data.
 - **Save-before-prompt**: Saving immediately after detection ensures crash safety. The cost of an extra plan file write is negligible since reviews already write incremental metadata.
 - **Clear on action**: Prevents confusion from stale issues. If the user wants to see issues after fixing some, they can run a new review.
+
+## Current Progress
+### Current State
+- All 6 tasks completed and passing tests/type checking.
+### Completed (So Far)
+- Task 1: Added `reviewIssues` to Zod schema (`planSchema.ts`), JSON schema (`tim-plan-schema.json`), and empty-array stripping in `writePlanFile()`.
+- Task 2: `saveReviewIssuesToPlan()` helper saves issues before action prompt; `--save-issues` saves in non-interactive mode.
+- Task 3: `clearSavedReviewIssues()` helper clears after fix/append/cleanup; issues persist on exit.
+- Task 4: `--issues` and `--save-issues` CLI options added to `tim.ts`.
+- Task 5: `--issues` handler with early branch in `executeReviewFlow`, shared `handleReviewIssueActions()` function.
+- Task 6: Tests for round-trip, save/clear helpers, schema validation, empty array stripping.
+- Review fix: `createReviewResultFromSavedIssues` now builds `ReviewResult` directly instead of routing through `parseJsonReviewOutput` (which would crash on numeric `line` values and missing optional fields).
+- Review fix: Restored try/catch around `appendIssuesToPlanTasks` in `handleReviewIssueActions`.
+### Remaining
+- None
+### Next Iteration Guidance
+- None
+### Decisions / Changes
+- `saveReviewIssuesToPlan` and `clearSavedReviewIssues` were exported to enable direct testing.
+- `createReviewResultFromSavedIssues` bypasses `createReviewResult`/`parseJsonReviewOutput` to avoid schema mismatch (saved issues use `z.union([z.number(), z.string()])` for `line`, but `ReviewIssueOutputSchema` requires `z.string()`).
+### Lessons Learned
+- When constructing objects from saved/persisted data, avoid re-validating through schemas designed for raw LLM output — the validation rules may be stricter or incompatible with round-tripped types (e.g., YAML converting string `"42"` to number `42`).
+### Risks / Blockers
+- None

@@ -11,11 +11,14 @@ import {
   sanitizeBranchName,
   validateFocusAreas,
   resolveReviewTaskScope,
+  saveReviewIssuesToPlan,
+  clearSavedReviewIssues,
 } from './review.js';
 import { validateInstructionsFilePath } from '../utils/file_validation.js';
 import { generateDiffForReview } from '../incremental_review.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { PlanWithFilename } from '../utils/hierarchy.js';
+import { readPlanFile, writePlanFile } from '../plans.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -32,6 +35,68 @@ beforeEach(async () => {
 
 afterEach(() => {
   moduleMocker.clear();
+});
+
+describe('review issue persistence helpers', () => {
+  test('saveReviewIssuesToPlan persists issues to the plan file', async () => {
+    const planFile = join(testDir, 'review-issues.plan.md');
+    await writePlanFile(planFile, {
+      id: 1,
+      title: 'Persist review issues',
+      goal: 'Verify saved issues round-trip',
+      details: 'Details',
+      tasks: [],
+    });
+
+    const issues = [
+      {
+        id: 'issue-1',
+        severity: 'major' as const,
+        category: 'bug' as const,
+        content: 'A saved issue',
+        file: 'src/example.ts',
+        line: 12,
+        suggestion: 'Add a guard clause',
+      },
+      {
+        id: 'issue-2',
+        severity: 'minor' as const,
+        category: 'testing' as const,
+        content: 'Add a regression test',
+        line: '24-30',
+      },
+    ];
+
+    await saveReviewIssuesToPlan(planFile, issues);
+
+    const updatedPlan = await readPlanFile(planFile);
+    expect(updatedPlan.reviewIssues).toEqual(issues);
+  });
+
+  test('clearSavedReviewIssues removes saved issues and is a no-op when absent', async () => {
+    const planFile = join(testDir, 'clear-review-issues.plan.md');
+    await writePlanFile(planFile, {
+      id: 2,
+      title: 'Clear review issues',
+      goal: 'Verify saved issues can be removed',
+      details: 'Details',
+      tasks: [],
+      reviewIssues: [
+        {
+          id: 'issue-1',
+          severity: 'critical',
+          category: 'security',
+          content: 'A critical issue',
+        },
+      ],
+    });
+
+    await clearSavedReviewIssues(planFile);
+    await clearSavedReviewIssues(planFile);
+
+    const updatedPlan = await readPlanFile(planFile);
+    expect(updatedPlan.reviewIssues).toBeUndefined();
+  });
 });
 
 test('handleReviewCommand resolves plan by file path', async () => {

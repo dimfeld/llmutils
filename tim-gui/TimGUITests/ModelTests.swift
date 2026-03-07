@@ -2,12 +2,11 @@ import Foundation
 import Testing
 @testable import TimGUI
 
-@Suite("Model decoding")
 struct ModelTests {
     // MARK: - MessagePayload
 
-    @Test("Decodes full payload with terminal info")
-    func decodesFullPayload() throws {
+    @Test
+    func `Decodes full payload with terminal info`() throws {
         let json = """
         {
             "message": "Build complete",
@@ -30,8 +29,8 @@ struct ModelTests {
         #expect(terminal.paneId == "42")
     }
 
-    @Test("Decodes payload without terminal info")
-    func decodesPayloadWithoutTerminal() throws {
+    @Test
+    func `Decodes payload without terminal info`() throws {
         let json = """
         {
             "message": "Done",
@@ -47,8 +46,8 @@ struct ModelTests {
         #expect(payload.terminal == nil)
     }
 
-    @Test("Rejects payload missing required fields")
-    func rejectsMissingFields() {
+    @Test
+    func `Rejects payload missing required fields`() {
         let json = """
         { "message": "Hello" }
         """
@@ -60,8 +59,8 @@ struct ModelTests {
 
     // MARK: - TerminalPayload
 
-    @Test("Decodes terminal payload with snake_case pane_id")
-    func decodesTerminalPayload() throws {
+    @Test
+    func `Decodes terminal payload with snake_case pane_id`() throws {
         let json = """
         { "type": "wezterm", "pane_id": "7" }
         """

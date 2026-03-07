@@ -698,7 +698,7 @@ export async function writePlanFile(
   }
 
   // Remove empty arrays
-  const arrayFields = ['dependencies', 'issue', 'pullRequest', 'docs'] as const;
+  const arrayFields = ['dependencies', 'issue', 'pullRequest', 'docs', 'reviewIssues'] as const;
   for (const field of arrayFields) {
     if (Array.isArray(cleanedPlan[field]) && (cleanedPlan[field] as unknown[]).length === 0) {
       delete cleanedPlan[field];

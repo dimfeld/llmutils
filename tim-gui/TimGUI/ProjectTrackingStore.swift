@@ -5,7 +5,7 @@ import SQLite3
 
 // MARK: - LoadState
 
-enum LoadState: Equatable, Sendable {
+enum LoadState: Equatable {
     case idle
     case loading
     case loaded
@@ -14,7 +14,7 @@ enum LoadState: Equatable, Sendable {
 
 // MARK: - StoreError
 
-enum StoreError: LocalizedError, Sendable {
+enum StoreError: LocalizedError {
     case noDatabasePath
     case databaseNotFound(String)
     case openFailed(String)

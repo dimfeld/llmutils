@@ -107,6 +107,19 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
     changedFiles: z.array(z.string()).optional(),
     rmfilter: z.array(z.string()).optional(),
     tags: z.array(z.string()).optional(),
+    reviewIssues: z
+      .array(
+        objectFactory({
+          id: z.string(),
+          severity: z.enum(['critical', 'major', 'minor', 'info']),
+          category: z.string(),
+          content: z.string(),
+          file: z.string().optional(),
+          line: z.union([z.number(), z.string()]).optional(),
+          suggestion: z.string().optional(),
+        })
+      )
+      .optional(),
     not_tim: z
       .boolean()
       .optional()
