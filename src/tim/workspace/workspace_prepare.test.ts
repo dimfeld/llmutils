@@ -42,6 +42,11 @@ async function initGitRepository(dir: string): Promise<void> {
   await runGit(dir, ['commit', '-m', 'Initial commit']);
 }
 
+async function cloneGitRepository(source: string, destination: string): Promise<void> {
+  const result = await runGit(path.dirname(destination), ['clone', source, destination]);
+  expect(result.exitCode).toBe(0);
+}
+
 /**
  * Helper to get current branch name
  */
@@ -393,6 +398,51 @@ describe('prepareExistingWorkspace', () => {
 
     const currentBranch = await getCurrentBranch(tempDir);
     expect(currentBranch).toBe('auto-trunk-branch');
+  });
+
+  test('fast-forwards the base branch from origin before creating a new branch', async () => {
+    const remoteRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-prepare-remote-'));
+    const remoteDir = path.join(remoteRoot, 'origin.git');
+    const peerRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-prepare-peer-'));
+    const peerDir = path.join(peerRoot, 'peer');
+
+    try {
+      expect(
+        (await runGit(remoteRoot, ['init', '--bare', '--initial-branch=main', remoteDir])).exitCode
+      ).toBe(0);
+      const addRemoteResult = await runGit(tempDir, ['remote', 'add', 'origin', remoteDir]);
+      if (addRemoteResult.exitCode !== 0) {
+        expect((await runGit(tempDir, ['remote', 'set-url', 'origin', remoteDir])).exitCode).toBe(
+          0
+        );
+      }
+      expect((await runGit(tempDir, ['push', '-u', 'origin', 'main'])).exitCode).toBe(0);
+
+      await cloneGitRepository(remoteDir, peerDir);
+      expect((await runGit(peerDir, ['config', 'user.email', 'test@example.com'])).exitCode).toBe(
+        0
+      );
+      expect((await runGit(peerDir, ['config', 'user.name', 'Test User'])).exitCode).toBe(0);
+
+      await fs.writeFile(path.join(peerDir, 'REMOTE_CHANGE.md'), 'new base content\n');
+      expect((await runGit(peerDir, ['add', 'REMOTE_CHANGE.md'])).exitCode).toBe(0);
+      expect((await runGit(peerDir, ['commit', '-m', 'Remote update'])).exitCode).toBe(0);
+      expect((await runGit(peerDir, ['push', 'origin', 'main'])).exitCode).toBe(0);
+
+      const result = await prepareExistingWorkspace(tempDir, {
+        branchName: 'branch-from-updated-main',
+        createBranch: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(await fs.readFile(path.join(tempDir, 'REMOTE_CHANGE.md'), 'utf8')).toContain(
+        'new base content'
+      );
+      expect(await getCurrentBranch(tempDir)).toBe('branch-from-updated-main');
+    } finally {
+      await fs.rm(remoteRoot, { recursive: true, force: true });
+      await fs.rm(peerRoot, { recursive: true, force: true });
+    }
   });
 });
 

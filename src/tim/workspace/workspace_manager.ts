@@ -978,6 +978,10 @@ export async function findUniqueBranchName(
   return candidate;
 }
 
+function isMissingJjBookmarkError(message: string): boolean {
+  return /No such bookmark|Revision .* doesn't exist/i.test(message);
+}
+
 /**
  * Options for preparing an existing workspace for reuse.
  */
@@ -988,6 +992,8 @@ export interface PrepareWorkspaceOptions {
   branchName: string;
   /** Whether to create a new branch (default: true) */
   createBranch?: boolean;
+  /** Whether to force the checked-out base branch to the fetched remote tip when available */
+  updateBaseFromRemote?: boolean;
 }
 
 /**
@@ -1087,6 +1093,7 @@ export async function prepareExistingWorkspace(
   log(`Using base branch: ${baseBranch}`);
 
   const shouldCreateBranch = options.createBranch ?? false;
+  const shouldUpdateBaseFromRemote = options.updateBaseFromRemote ?? true;
 
   // Step 3: Checkout base branch or create a new change
   log(`Checking out base branch "${baseBranch}"...`);
@@ -1117,6 +1124,34 @@ export async function prepareExistingWorkspace(
       success: false,
       error: `Failed to checkout base branch "${baseBranch}": ${checkoutResult.stderr}`,
     };
+  }
+
+  if (shouldUpdateBaseFromRemote && hasRemote !== false) {
+    log(`Updating base branch "${baseBranch}" from remote...`);
+    const updateBaseResult = isJj
+      ? await spawnAndLogOutput(['jj', 'bookmark', 'track', baseBranch, '--remote', 'origin'], {
+          cwd: workspacePath,
+          quiet: true,
+        })
+      : await spawnAndLogOutput(['git', 'pull', '--ff-only', 'origin', baseBranch], {
+          cwd: workspacePath,
+        });
+
+    if (updateBaseResult.exitCode !== 0) {
+      const updateOutput = `${updateBaseResult.stderr}\n${updateBaseResult.stdout}`.trim();
+      if (isJj && isMissingJjBookmarkError(updateOutput)) {
+        log(`Remote bookmark "${baseBranch}" not found; using local base branch.`);
+      } else if (allowOffline) {
+        log(
+          `Warning: Failed to update base branch from remote (continuing in offline mode): ${updateBaseResult.stderr}`
+        );
+      } else {
+        return {
+          success: false,
+          error: `Failed to update base branch "${baseBranch}" from remote: ${updateBaseResult.stderr}`,
+        };
+      }
+    }
   }
 
   if (!shouldCreateBranch) {

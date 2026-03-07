@@ -193,6 +193,17 @@ export async function setupWorkspace(
 
           let preparedWithPlanBranch = false;
           if (options.autoWorkspace) {
+            const syncBaseResult = await prepareExistingWorkspace(workspace.path, {
+              baseBranch: options.base,
+              branchName,
+              createBranch: false,
+            });
+            if (!syncBaseResult.success) {
+              throw new Error(
+                `Failed to sync base branch in workspace at ${workspace.path}: ${syncBaseResult.error ?? 'Unknown error'}`
+              );
+            }
+
             try {
               const currentBranch = await getCurrentBranchName(workspace.path);
               if (currentBranch !== branchName) {
