@@ -9,7 +9,7 @@ import type { TimConfig } from '../configSchema.js';
 import { readPlanFile } from '../plans.js';
 import { WorkspaceAutoSelector } from './workspace_auto_selector.js';
 import { findWorkspaceInfosByTaskId } from './workspace_info.js';
-import { WorkspaceLock } from './workspace_lock.js';
+import { WorkspaceAlreadyLocked, WorkspaceLock } from './workspace_lock.js';
 import {
   createWorkspace,
   prepareExistingWorkspace,
@@ -25,6 +25,7 @@ export interface WorkspaceSetupOptions {
   requireWorkspace?: boolean;
   planUuid?: string;
   base?: string;
+  allowPrimaryWorkspaceWhenLocked?: boolean;
 }
 
 export interface WorkspaceSetupResult {
@@ -298,8 +299,18 @@ export async function setupWorkspace(
     }
   }
 
-  const lockInfo = await WorkspaceLock.acquireLock(baseDir, commandLabel, { type: 'pid' });
-  WorkspaceLock.setupCleanupHandlers(baseDir, lockInfo.type);
+  try {
+    const lockInfo = await WorkspaceLock.acquireLock(baseDir, commandLabel, { type: 'pid' });
+    WorkspaceLock.setupCleanupHandlers(baseDir, lockInfo.type);
+  } catch (err) {
+    if (options.allowPrimaryWorkspaceWhenLocked && err instanceof WorkspaceAlreadyLocked) {
+      warn(
+        `Primary workspace is already locked; continuing without acquiring a lock for this run: ${err as Error}`
+      );
+    } else {
+      throw err;
+    }
+  }
 
   return { baseDir, planFile, workspaceTaskId, isNewWorkspace };
 }
