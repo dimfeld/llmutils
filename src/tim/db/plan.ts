@@ -159,10 +159,10 @@ export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInp
     (nextProjectId: number, nextInput: UpsertPlanInput): PlanRow => {
       const existing = getPlanByUuid(db, nextInput.uuid);
       const incomingTimestamp = parseTimestamp(nextInput.sourceUpdatedAt);
-      const effectiveUpdatedAt: string | null =
+      const effectiveUpdatedAt =
         incomingTimestamp === null ? null : (nextInput.sourceUpdatedAt ?? null);
       const incomingCreatedAt = parseTimestamp(nextInput.sourceCreatedAt);
-      const effectiveCreatedAt: string | null =
+      const effectiveCreatedAt =
         incomingCreatedAt === null ? null : (nextInput.sourceCreatedAt ?? null);
       if (existing && nextInput.forceOverwrite !== true) {
         const existingTimestamp = parseTimestamp(existing.updated_at);
