@@ -35,17 +35,20 @@ export async function waitForEnter(readClipboard = false) {
  * @param timeoutMs How long to wait for more input before considering the input complete
  * @returns The complete input as a string
  */
-export async function readStdinUntilTimeout(initialData: Buffer, timeoutMs = 250): Promise<string> {
+export async function readStdinUntilTimeout(
+  initialData: Buffer | string,
+  timeoutMs = 250
+): Promise<string> {
   // Start with the initial data
-  let input = initialData.toString();
+  let input = typeof initialData === 'string' ? initialData : initialData.toString();
 
   return new Promise<string>((resolve) => {
     let timeoutId: NodeJS.Timeout | null = null;
 
     // Set up the data handler
-    const dataHandler = (chunk: Buffer) => {
+    const dataHandler = (chunk: Buffer | string) => {
       // Add the new data to our input
-      input += chunk.toString();
+      input += typeof chunk === 'string' ? chunk : chunk.toString();
 
       // Reset the timeout
       if (timeoutId) {

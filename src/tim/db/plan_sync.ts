@@ -154,6 +154,7 @@ function toPlanUpsertInput(
   title?: string | null;
   goal?: string | null;
   details?: string | null;
+  sourceCreatedAt?: string | null;
   sourceUpdatedAt?: string | null;
   status: PlanSchema['status'];
   priority?: 'low' | 'medium' | 'high' | 'urgent' | 'maybe' | null;
