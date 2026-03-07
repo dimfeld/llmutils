@@ -51,6 +51,7 @@ export interface UpsertPlanInput {
   title?: string | null;
   goal?: string | null;
   details?: string | null;
+  sourceCreatedAt?: string | null;
   sourceUpdatedAt?: string | null;
   forceOverwrite?: boolean;
   status?: PlanSchema['status'];
@@ -157,8 +158,11 @@ export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInp
   const upsertInTransaction = db.transaction(
     (nextProjectId: number, nextInput: UpsertPlanInput): PlanRow => {
       const existing = getPlanByUuid(db, nextInput.uuid);
+      const incomingTimestamp = parseTimestamp(nextInput.sourceUpdatedAt);
+      const effectiveUpdatedAt = incomingTimestamp === null ? null : nextInput.sourceUpdatedAt;
+      const incomingCreatedAt = parseTimestamp(nextInput.sourceCreatedAt);
+      const effectiveCreatedAt = incomingCreatedAt === null ? null : nextInput.sourceCreatedAt;
       if (existing && nextInput.forceOverwrite !== true) {
-        const incomingTimestamp = parseTimestamp(nextInput.sourceUpdatedAt);
         const existingTimestamp = parseTimestamp(existing.updated_at);
         if (
           incomingTimestamp !== null &&
@@ -193,7 +197,7 @@ export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInp
           filename,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}))
         ON CONFLICT(uuid) DO UPDATE SET
           project_id = excluded.project_id,
           plan_id = excluded.plan_id,
@@ -213,7 +217,8 @@ export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInp
           parent_uuid = excluded.parent_uuid,
           epic = excluded.epic,
           filename = excluded.filename,
-          updated_at = ${SQL_NOW_ISO_UTC}
+          created_at = COALESCE(excluded.created_at, ${SQL_NOW_ISO_UTC}),
+          updated_at = COALESCE(excluded.updated_at, ${SQL_NOW_ISO_UTC})
       `
       ).run(
         nextInput.uuid,
@@ -234,7 +239,9 @@ export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInp
         nextInput.baseBranch ?? null,
         nextInput.parentUuid ?? null,
         nextInput.epic ? 1 : 0,
-        nextInput.filename
+        nextInput.filename,
+        effectiveCreatedAt,
+        effectiveUpdatedAt
       );
 
       replacePlanTasks(db, nextInput.uuid, nextInput.tasks ?? []);

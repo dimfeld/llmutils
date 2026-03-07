@@ -83,6 +83,8 @@ describe('tim db/plan_sync', () => {
       title: 'Sample plan',
       goal: 'Do the thing',
       details: 'Plan sync details',
+      createdAt: '2026-02-09T08:00:00.000Z',
+      updatedAt: '2026-02-10T12:34:56.000Z',
       status: 'in_progress' as const,
       priority: 'high' as const,
       simple: true,
@@ -123,6 +125,8 @@ describe('tim db/plan_sync', () => {
     expect(savedPlan?.base_branch).toBe('main');
     expect(savedPlan?.parent_uuid).toBe('99999999-9999-4999-8999-999999999999');
     expect(savedPlan?.filename).toBe('10-sample.plan.md');
+    expect(savedPlan?.created_at).toBe('2026-02-09T08:00:00.000Z');
+    expect(savedPlan?.updated_at).toBe('2026-02-10T12:34:56.000Z');
     const savedTags = getPlanTagsByUuid(db, '11111111-1111-4111-8111-111111111111');
     expect(savedTags.map((row) => row.tag)).toEqual(['db', 'sync']);
 

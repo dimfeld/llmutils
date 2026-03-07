@@ -193,6 +193,7 @@ function toPlanUpsertInput(
     title: plan.title ?? null,
     goal: plan.goal ?? null,
     details: plan.details ?? null,
+    sourceCreatedAt: plan.createdAt ?? null,
     sourceUpdatedAt: plan.updatedAt ?? null,
     status: coercePlanStatus(plan.status),
     priority: coercePlanPriority(plan.priority),
