@@ -203,6 +203,7 @@ export async function handleGenerateCommand(
         requireWorkspace: options.requireWorkspace,
         planUuid: parsedPlan.uuid,
         base: options.base,
+        allowPrimaryWorkspaceWhenLocked: true,
       },
       currentBaseDir,
       currentPlanFile,

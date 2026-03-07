@@ -320,6 +320,7 @@ describe('handleGenerateCommand', () => {
       nonInteractive: true,
       requireWorkspace: true,
       planUuid: '11111111-1111-4111-8111-111111111111',
+      allowPrimaryWorkspaceWhenLocked: true,
     });
   });
 

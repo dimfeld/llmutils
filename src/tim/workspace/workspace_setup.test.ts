@@ -9,7 +9,7 @@ import { recordWorkspace } from '../db/workspace.js';
 import type { TimConfig } from '../configSchema.js';
 import * as git from '../../common/git.js';
 import { WorkspaceAutoSelector } from './workspace_auto_selector.js';
-import { WorkspaceLock } from './workspace_lock.js';
+import { WorkspaceAlreadyLocked, WorkspaceLock } from './workspace_lock.js';
 import * as workspaceCommand from '../commands/workspace.js';
 import * as workspaceManager from './workspace_manager.js';
 import { setupWorkspace } from './workspace_setup.js';
@@ -1178,6 +1178,38 @@ describe('setupWorkspace', () => {
     );
 
     expect(acquireLockSpy).toHaveBeenCalledWith(baseDir, 'tim generate', { type: 'pid' });
+  });
+
+  test('allows generate to continue in primary workspace when already locked and override is enabled', async () => {
+    const acquireLockSpy = spyOn(WorkspaceLock, 'acquireLock').mockRejectedValue(
+      new WorkspaceAlreadyLocked(baseDir, 'pid')
+    );
+
+    const result = await setupWorkspace(
+      { allowPrimaryWorkspaceWhenLocked: true },
+      baseDir,
+      planFile,
+      config,
+      'tim generate'
+    );
+
+    expect(result.baseDir).toBe(baseDir);
+    expect(result.planFile).toBe(planFile);
+    expect(acquireLockSpy).toHaveBeenCalledWith(baseDir, 'tim generate', { type: 'pid' });
+  });
+
+  test('still throws for non-lock errors when primary workspace override is enabled', async () => {
+    spyOn(WorkspaceLock, 'acquireLock').mockRejectedValue(new Error('failed to acquire cwd lock'));
+
+    await expect(
+      setupWorkspace(
+        { allowPrimaryWorkspaceWhenLocked: true },
+        baseDir,
+        planFile,
+        config,
+        'tim generate'
+      )
+    ).rejects.toThrow('failed to acquire cwd lock');
   });
 
   test('locks current working directory when no workspace options are provided', async () => {

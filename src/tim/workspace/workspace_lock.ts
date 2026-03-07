@@ -14,6 +14,16 @@ import { getWorkspaceByPath, recordWorkspace } from '../db/workspace.js';
 
 export type LockType = 'persistent' | 'pid';
 
+export class WorkspaceAlreadyLocked extends Error {
+  constructor(
+    public readonly workspacePath: string,
+    public readonly lockType: LockType
+  ) {
+    super(`Workspace at ${workspacePath} is already locked (${lockType})`);
+    this.name = 'WorkspaceAlreadyLocked';
+  }
+}
+
 export interface LockInfo {
   type: LockType;
   pid?: number;
@@ -104,14 +114,24 @@ export class WorkspaceLock {
     const lockType: LockType = options.type ?? 'persistent';
     const lockCommand = options.owner ? `${command} (owner: ${options.owner})` : command;
 
-    const created = acquireWorkspaceLock(db, workspaceId, {
-      lockType,
-      pid: this.pid,
-      hostname: os.hostname(),
-      command: lockCommand,
-    });
+    try {
+      const created = acquireWorkspaceLock(db, workspaceId, {
+        lockType,
+        pid: this.pid,
+        hostname: os.hostname(),
+        command: lockCommand,
+      });
+      return this.rowToLockInfo(created);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('already locked')) {
+        const existingLock = this.getExistingLock(workspacePath);
+        if (existingLock) {
+          throw new WorkspaceAlreadyLocked(workspacePath, existingLock.lock.lock_type);
+        }
+      }
 
-    return this.rowToLockInfo(created);
+      throw error;
+    }
   }
 
   static async releaseLock(
