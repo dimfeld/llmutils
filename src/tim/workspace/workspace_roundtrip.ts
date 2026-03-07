@@ -96,7 +96,7 @@ export async function runPostExecutionWorkspaceSync(
   await commitAll(commitMessage, context.executionWorkspacePath);
 
   if (await getUsingJj(context.executionWorkspacePath)) {
-    await setWorkspaceBookmarkToCurrent(context.executionWorkspacePath, context.refName);
+    await setWorkspaceBookmarkToCurrent(context.executionWorkspacePath, context.refName, '@-');
   }
 
   if (context.syncTarget === 'origin') {

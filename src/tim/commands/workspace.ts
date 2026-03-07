@@ -1711,13 +1711,19 @@ export async function ensureWorkspaceRefExists(
 
 export async function setWorkspaceBookmarkToCurrent(
   workspacePath: string,
-  bookmark: string
+  bookmark: string,
+  revision = '@'
 ): Promise<void> {
-  const setResult = await spawnAndLogOutput(['jj', 'bookmark', 'set', bookmark], {
-    cwd: workspacePath,
-  });
+  const setResult = await spawnAndLogOutput(
+    ['jj', 'bookmark', 'set', bookmark, '--revision', revision],
+    {
+      cwd: workspacePath,
+    }
+  );
   if (setResult.exitCode !== 0) {
-    throw new Error(`Failed to set bookmark "${bookmark}" to current change: ${setResult.stderr}`);
+    throw new Error(
+      `Failed to set bookmark "${bookmark}" to revision "${revision}": ${setResult.stderr}`
+    );
   }
 }
 
