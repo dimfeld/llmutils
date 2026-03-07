@@ -15,6 +15,7 @@ import {
   getPlanDependenciesByProject,
   getPlansByProject,
   getPlanTasksByProject,
+  getPlanTagsByProject,
 } from '../db/plan.js';
 import { getProject } from '../db/project.js';
 import {
@@ -52,6 +53,14 @@ function loadPlansFromDb(searchDir: string, repositoryId: string): ListPlansLoad
   const rows = getPlansByProject(db, project.id);
   if (rows.length === 0) {
     return { plans: new Map(), duplicates: {} };
+  }
+
+  const tagsByPlanUuid = new Map<string, string[]>();
+  const tagsByProject = getPlanTagsByProject(db, project.id);
+  for (const tagRow of tagsByProject) {
+    const list = tagsByPlanUuid.get(tagRow.plan_uuid) ?? [];
+    list.push(tagRow.tag);
+    tagsByPlanUuid.set(tagRow.plan_uuid, list);
   }
 
   const planUuidToId = new Map<string, number>();
@@ -102,6 +111,7 @@ function loadPlansFromDb(searchDir: string, repositoryId: string): ListPlansLoad
       title: row.title ?? undefined,
       goal: row.goal ?? '',
       details: row.details ?? '',
+      tags: tagsByPlanUuid.get(row.uuid),
       status: row.status,
       priority: row.priority ?? undefined,
       branch: row.branch ?? undefined,

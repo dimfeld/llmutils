@@ -31,6 +31,7 @@ describe('handleListCommand', () => {
   let dbPlans: any[];
   let dbPlanTasks: any[];
   let dbPlanDependencies: any[];
+  let dbPlanTags: any[];
 
   beforeEach(async () => {
     // Clear mocks
@@ -53,6 +54,7 @@ describe('handleListCommand', () => {
     dbPlans = [];
     dbPlanTasks = [];
     dbPlanDependencies = [];
+    dbPlanTags = [];
     // Set up mocks immediately before imports
     await moduleMocker.mock('../../logging.js', () => ({
       log: mockLog,
@@ -114,6 +116,7 @@ describe('handleListCommand', () => {
       getPlansByProject: () => dbPlans,
       getPlanTasksByProject: () => dbPlanTasks,
       getPlanDependenciesByProject: () => dbPlanDependencies,
+      getPlanTagsByProject: () => dbPlanTags,
     }));
     await moduleMocker.mock('../db/assignment.js', () => ({
       getAssignmentEntriesByProject: () => assignmentsData,
@@ -190,6 +193,58 @@ describe('handleListCommand', () => {
     expect(tableData).toHaveLength(2);
     expect(tableData[1][0]).toBe(44);
     expect(tableData[1][2]).toContain('Plan from DB');
+  });
+
+  test('filters tags when reading from SQLite', async () => {
+    dbPlans = [
+      {
+        uuid: 'db-plan-1',
+        project_id: 1,
+        plan_id: 1,
+        title: 'Frontend Plan',
+        goal: 'from sqlite',
+        details: 'details',
+        status: 'pending',
+        priority: 'high',
+        branch: null,
+        parent_uuid: null,
+        epic: 0,
+        filename: '1-plan-from-db.plan.md',
+        created_at: '2026-01-02T00:00:00.000Z',
+        updated_at: '2026-01-02T00:00:00.000Z',
+      },
+      {
+        uuid: 'db-plan-2',
+        project_id: 1,
+        plan_id: 2,
+        title: 'Backend Plan',
+        goal: 'from sqlite',
+        details: 'details',
+        status: 'pending',
+        priority: 'high',
+        branch: null,
+        parent_uuid: null,
+        epic: 0,
+        filename: '2-plan-from-db.plan.md',
+        created_at: '2026-01-02T00:00:00.000Z',
+        updated_at: '2026-01-02T00:00:00.000Z',
+      },
+    ];
+
+    dbPlanTags = [
+      { plan_uuid: 'db-plan-1', tag: 'frontend' },
+      { plan_uuid: 'db-plan-2', tag: 'backend' },
+    ];
+
+    await handleListCommand(
+      { all: true, sort: 'id', tag: ['frontend'] },
+      { parent: { opts: () => ({}) } }
+    );
+
+    const tableData = mockTable.mock.calls[0][0];
+    const titles = tableData.slice(1).map((row: string[]) => row[2]);
+
+    expect(titles).toEqual(['Frontend Plan']);
   });
 
   test('lists all plans when --all flag is used', async () => {
