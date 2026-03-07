@@ -12,12 +12,10 @@ import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
 import type { PlanSchema, Priority } from '../planSchema.js';
 import { ensureReferences, writePlansWithGeneratedUuids } from '../utils/references.js';
 
-type Status = 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred';
-
 export interface SetOptions {
   planFile: string;
   priority?: Priority;
-  status?: Status;
+  status?: PlanSchema['status'];
   statusDescription?: string;
   noStatusDescription?: boolean;
   dependsOn?: number[];

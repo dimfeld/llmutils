@@ -118,6 +118,8 @@ async function runWithCommandTunnelAdapter<T>(callback: () => Promise<T> | T): P
 
 const program = new Command();
 program.name('tim').description('Generate and execute task plans using LLMs');
+
+const statusSchemaHelpText = `(${statusSchema.options.join(', ')})`;
 program.option(
   '-c, --config <path>',
   'Specify path to the tim configuration file (default: .rmfilter/tim.yml)'
@@ -401,7 +403,7 @@ program
   .option('--parent <planId>', 'Set the parent plan ID')
   .option(
     '-s, --status <status>',
-    'Set the initial status (pending, in_progress, done, cancelled, deferred)'
+    `Set the initial status ${statusSchemaHelpText}`
   )
   .option(
     '--rmfilter <files...>',
@@ -444,7 +446,7 @@ program
   .option('--parent <planId>', 'Set the parent plan ID')
   .option(
     '-s, --status <status>',
-    'Set the initial status (pending, in_progress, done, cancelled, deferred)'
+    `Set the initial status ${statusSchemaHelpText}`
   )
   .option('-d, --depends-on <ids...>', 'Specify plan IDs that this plan depends on')
   .option('--assign <username>', 'Assign the plan to a user')
@@ -738,7 +740,7 @@ program
   .option('--reverse', 'Reverse sort order')
   .option(
     '--status <status...>',
-    'Filter by status (can specify multiple). Valid values: pending, in_progress, done, cancelled, deferred, ready'
+    `Filter by status (can specify multiple). Valid values: ${statusSchema.options.join(', ')}, ready`
   )
   .option('--all', 'Show all plans regardless of status (overrides default filter)')
   .option('--local', 'Read plan data from local files instead of SQLite')
@@ -1040,8 +1042,8 @@ program
     const sourceArgs = command.parent?.rawArgs && command.parent.rawArgs.length > 0 ? command.parent.rawArgs : rawArgs;
     const hasFlag = (flag: string, alias?: string) =>
       sourceArgs.some(
-        (arg) => arg === flag || (alias !== undefined && arg === alias) || arg.startsWith(`${flag}=`)
-      ) || (alias !== undefined && sourceArgs.some((arg) => arg.startsWith(`${alias}=`)));
+        (arg: string) => arg === flag || (alias !== undefined && arg === alias) || arg.startsWith(`${flag}=`)
+      ) || (alias !== undefined && sourceArgs.some((arg: string) => arg.startsWith(`${alias}=`)));
     const parsedDependsOn = intArg(options.dependsOn);
     const parsedNoDependsOn = intArg(options.noDependsOn);
     const parsedIssue = options.issue;

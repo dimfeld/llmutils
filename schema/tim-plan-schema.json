@@ -44,7 +44,8 @@
         "in_progress",
         "done",
         "cancelled",
-        "deferred"
+        "deferred",
+        "needs_review"
       ]
     },
     "statusDescription": {

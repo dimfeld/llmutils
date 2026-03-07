@@ -7,7 +7,7 @@ import { getOrCreateProject } from './project.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir, type TimConfig } from '../configSchema.js';
-import type { PlanSchemaInput } from '../planSchema.js';
+import { statusSchema, type PlanSchemaInput, type PlanSchema } from '../planSchema.js';
 import { readAllPlans, readPlanFile } from '../plans.js';
 
 interface PlanSyncContext {
@@ -28,14 +28,16 @@ const cachedContextsByGitRoot = new Map<string, PlanSyncContext>();
 const contextPromisesByRequestKey = new Map<string, Promise<PlanSyncContext>>();
 const requestKeyToGitRoot = new Map<string, string>();
 
-const VALID_STATUSES = new Set(['pending', 'in_progress', 'done', 'cancelled', 'deferred']);
 const VALID_PRIORITIES = new Set(['low', 'medium', 'high', 'urgent', 'maybe']);
 
 function coercePlanStatus(
   value: unknown
-): 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred' {
-  if (typeof value === 'string' && VALID_STATUSES.has(value)) {
-    return value as 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred';
+): PlanSchema['status'] {
+  if (typeof value === 'string') {
+    const parsed = statusSchema.safeParse(value);
+    if (parsed.success) {
+      return parsed.data;
+    }
   }
   return 'pending';
 }
@@ -155,7 +157,7 @@ function toPlanUpsertInput(
   goal?: string | null;
   details?: string | null;
   sourceUpdatedAt?: string | null;
-  status: 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred';
+  status: PlanSchema['status'];
   priority?: 'low' | 'medium' | 'high' | 'urgent' | 'maybe' | null;
   branch?: string | null;
   simple?: boolean | null;

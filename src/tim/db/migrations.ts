@@ -151,6 +151,90 @@ const migrations: Migration[] = [
       CREATE INDEX idx_plan_tag_plan_uuid ON plan_tag(plan_uuid);
     `,
   },
+  {
+    version: 6,
+    // add needs_review to status
+    up: `
+      PRAGMA foreign_keys = OFF;
+      CREATE TABLE plan_new (
+        uuid TEXT NOT NULL PRIMARY KEY,
+        project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+        plan_id INTEGER NOT NULL,
+        title TEXT,
+        goal TEXT,
+        details TEXT,
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK(status IN ('pending', 'in_progress', 'done', 'cancelled', 'deferred', 'needs_review')),
+        priority TEXT
+          CHECK(priority IN ('low', 'medium', 'high', 'urgent', 'maybe') OR priority IS NULL),
+        branch TEXT,
+        simple INTEGER,
+        tdd INTEGER,
+        discovered_from INTEGER,
+        issue TEXT,
+        pull_request TEXT,
+        assigned_to TEXT,
+        base_branch TEXT,
+        parent_uuid TEXT,
+        epic INTEGER NOT NULL DEFAULT 0,
+        filename TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+      );
+      INSERT INTO plan_new (
+        uuid,
+        project_id,
+        plan_id,
+        title,
+        goal,
+        details,
+        status,
+        priority,
+        branch,
+        simple,
+        tdd,
+        discovered_from,
+        issue,
+        pull_request,
+        assigned_to,
+        base_branch,
+        parent_uuid,
+        epic,
+        filename,
+        created_at,
+        updated_at
+      )
+      SELECT
+        uuid,
+        project_id,
+        plan_id,
+        title,
+        goal,
+        details,
+        status,
+        priority,
+        branch,
+        simple,
+        tdd,
+        discovered_from,
+        issue,
+        pull_request,
+        assigned_to,
+        base_branch,
+        parent_uuid,
+        epic,
+        filename,
+        created_at,
+        updated_at
+      FROM plan;
+      DROP TABLE plan;
+      ALTER TABLE plan_new RENAME TO plan;
+      CREATE INDEX idx_plan_project_id ON plan(project_id);
+      CREATE INDEX idx_plan_project_plan_id ON plan(project_id, plan_id);
+      CREATE INDEX idx_plan_parent_uuid ON plan(parent_uuid);
+      PRAGMA foreign_keys = ON;
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

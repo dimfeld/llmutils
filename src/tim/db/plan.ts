@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
+import type { PlanSchema } from '../planSchema.js';
 
 export interface PlanRow {
   uuid: string;
@@ -8,7 +9,7 @@ export interface PlanRow {
   title: string | null;
   goal: string | null;
   details: string | null;
-  status: 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred';
+  status: PlanSchema['status'];
   priority: 'low' | 'medium' | 'high' | 'urgent' | 'maybe' | null;
   branch: string | null;
   simple: number | null;
@@ -52,7 +53,7 @@ export interface UpsertPlanInput {
   details?: string | null;
   sourceUpdatedAt?: string | null;
   forceOverwrite?: boolean;
-  status?: 'pending' | 'in_progress' | 'done' | 'cancelled' | 'deferred';
+  status?: PlanSchema['status'];
   priority?: 'low' | 'medium' | 'high' | 'urgent' | 'maybe' | null;
   branch?: string | null;
   simple?: boolean | null;

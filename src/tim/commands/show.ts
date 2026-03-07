@@ -91,6 +91,8 @@ function getStatusIconAndColor(status: string | undefined): {
     return { icon: '✓', color: chalk.green };
   } else if (status === 'in_progress') {
     return { icon: '⏳', color: chalk.yellow };
+  } else if (status === 'needs_review') {
+    return { icon: '⚠', color: chalk.yellow };
   } else {
     return { icon: '○', color: chalk.gray };
   }
@@ -278,6 +280,8 @@ async function displayPlanInfo(
           ? chalk.dim.gray
           : actualStatus === 'in_progress'
             ? chalk.yellow
+            : actualStatus === 'needs_review'
+              ? chalk.yellow
             : chalk.white;
 
   const planForChain =
@@ -456,13 +460,21 @@ async function displayPlanInfo(
       for (const depId of plan.dependencies) {
         const depPlan = allPlans.get(depId);
         if (depPlan) {
-          const statusIcon =
-            depPlan.status === 'done' ? '✓' : depPlan.status === 'in_progress' ? '⏳' : '○';
+        const statusIcon =
+            depPlan.status === 'done'
+              ? '✓'
+              : depPlan.status === 'in_progress'
+                ? '⏳'
+                : depPlan.status === 'needs_review'
+                  ? '⚠'
+                  : '○';
           const statusColor =
             depPlan.status === 'done'
               ? chalk.green
               : depPlan.status === 'in_progress'
                 ? chalk.yellow
+                : depPlan.status === 'needs_review'
+                  ? chalk.yellow
                 : chalk.gray;
           log(
             `  ${statusIcon} ${chalk.cyan(depId)} - ${getCombinedTitleFromSummary(depPlan)} ${statusColor(`[${depPlan.status || 'pending'}]`)}`

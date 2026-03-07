@@ -458,6 +458,8 @@ export async function handleListCommand(options: any, command: any, searchTerms?
                 ? chalk.magenta
                 : actualStatus === 'in_progress'
                   ? chalk.yellow
+                  : actualStatus === 'needs_review'
+                    ? chalk.yellow
                   : actualStatus === 'pending'
                     ? chalk.white
                     : chalk.gray;
@@ -500,6 +502,8 @@ export async function handleListCommand(options: any, command: any, searchTerms?
             return chalk.green(`${depId}✓`);
           } else if (depStatus === 'in_progress') {
             return chalk.yellow(`${depId}…`);
+          } else if (depStatus === 'needs_review') {
+            return chalk.yellow(`${depId}⚠`);
           } else if (depStatus === 'cancelled') {
             return chalk.gray(`${depId}✗`);
           } else {

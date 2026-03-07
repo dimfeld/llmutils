@@ -91,6 +91,8 @@ export function getStatusDisplayName(status: PlanStatus | undefined): string {
       return 'Cancelled';
     case 'deferred':
       return 'Deferred';
+    case 'needs_review':
+      return 'Needs Review';
     default:
       return 'Pending'; // Default for undefined status
   }

@@ -154,7 +154,7 @@ title: Implement user authentication
 goal: Add secure user login and session management
 id: 123                          # Numeric ID for easy reference
 uuid: abc-def-123                # Stable unique identifier
-status: in_progress              # pending|in_progress|done|cancelled|deferred
+status: in_progress              # pending|in_progress|done|cancelled|deferred|needs_review
 priority: high                   # low|medium|high|urgent|maybe
 simple: false                    # If true, skip research phase
 tdd: false                       # If true, use TDD mode in tim agent/run
@@ -227,7 +227,7 @@ This plan implements user authentication using JWT tokens...
 - **Delimiters**: `<!-- tim-generated-start/end -->` preserve AI-generated content while allowing manual edits outside
 - **UUID References**: Plans can reference each other by UUID for stable cross-references
 - **Progress Tracking**: A structured `## Progress` section in the plan body, updated in place with a living summary (no timestamps)
-- **Status Flow**: `pending` → `in_progress` → `done` (or `cancelled`/`deferred`)
+- **Status Flow**: `pending` → `in_progress` → `done` (or `cancelled`/`deferred`/`needs_review`)
 
 ---
 
