@@ -12,6 +12,7 @@ import { WorkspaceAutoSelector } from './workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace_lock.js';
 import * as workspaceCommand from '../commands/workspace.js';
 import * as workspaceManager from './workspace_manager.js';
+import * as processUtils from '../../common/process.js';
 import { setupWorkspace } from './workspace_setup.js';
 
 describe('setupWorkspace', () => {
@@ -727,6 +728,108 @@ describe('setupWorkspace', () => {
 
     expect(result.baseDir).toBe(existingWorkspacePath);
     expect(result.workspaceTaskId).toBe('task-update-fail-soft');
+  });
+
+  test('updates plan branch metadata to the allocated workspace branch', async () => {
+    const existingWorkspacePath = path.join(tempDir, 'workspace-existing-branch-metadata');
+    await fs.mkdir(existingWorkspacePath, { recursive: true });
+    await seedWorkspace(existingWorkspacePath, 'task-existing-branch-metadata');
+
+    const validPlanFile = path.join(baseDir, 'branch-metadata.plan.md');
+    await fs.writeFile(
+      validPlanFile,
+      ['---', 'id: 88', 'title: Keep branch metadata in sync', 'tasks: []', '---', ''].join('\n')
+    );
+
+    spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    const prepareSpy = spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
+      success: true,
+      actualBranchName: '88-keep-branch-metadata-in-sync-2',
+    });
+    spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
+
+    await setupWorkspace(
+      {
+        workspace: 'task-existing-branch-metadata',
+      },
+      baseDir,
+      validPlanFile,
+      config,
+      'tim generate'
+    );
+
+    expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
+      baseBranch: undefined,
+      branchName: '88-keep-branch-metadata-in-sync',
+      createBranch: true,
+    });
+    expect(await fs.readFile(validPlanFile, 'utf8')).toContain(
+      'branch: 88-keep-branch-metadata-in-sync-2'
+    );
+  });
+
+  test('uses parent plan branch as base when available in the workspace repository', async () => {
+    const existingWorkspacePath = path.join(tempDir, 'workspace-existing-parent-base');
+    await fs.mkdir(existingWorkspacePath, { recursive: true });
+    await seedWorkspace(existingWorkspacePath, 'task-existing-parent-base');
+
+    const parentPlanFile = path.join(baseDir, 'parent.plan.md');
+    const childPlanFile = path.join(baseDir, 'child.plan.md');
+    await fs.writeFile(
+      parentPlanFile,
+      [
+        '---',
+        'id: 20',
+        'title: Parent plan',
+        'branch: feature/parent-plan',
+        'tasks: []',
+        '---',
+        '',
+      ].join('\n')
+    );
+    await fs.writeFile(
+      childPlanFile,
+      ['---', 'id: 21', 'title: Child plan', 'parent: 20', 'tasks: []', '---', ''].join('\n')
+    );
+
+    spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    spyOn(processUtils, 'spawnAndLogOutput').mockImplementation(async (args) => {
+      const cmd = Array.isArray(args) ? args.join(' ') : String(args);
+      if (cmd.includes('refs/heads/feature/parent-plan')) {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      if (cmd.includes('refs/remotes/origin/feature/parent-plan')) {
+        return { exitCode: 1, stdout: '', stderr: '' };
+      }
+      return { exitCode: 1, stdout: '', stderr: '' };
+    });
+
+    const prepareSpy = spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
+      success: true,
+    });
+    spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
+
+    await setupWorkspace(
+      {
+        workspace: 'task-existing-parent-base',
+      },
+      baseDir,
+      childPlanFile,
+      config,
+      'tim generate'
+    );
+
+    expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
+      baseBranch: 'feature/parent-plan',
+      branchName: '21-child-plan',
+      createBranch: true,
+    });
   });
 
   test('passes --base through as baseBranch for existing workspace preparation', async () => {
