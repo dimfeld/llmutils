@@ -1,12 +1,19 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { getCurrentBranchName, getUsingJj, getWorkingCopyStatus } from '../../common/git.js';
+import {
+  getCurrentBranchName,
+  getGitRoot,
+  getUsingJj,
+  getWorkingCopyStatus,
+} from '../../common/git.js';
 import { logSpawn } from '../../common/process.js';
 import { error, log, sendStructured, warn } from '../../logging.js';
 import { generateBranchNameFromPlan } from '../commands/branch.js';
 import { pullWorkspaceRefIfExists } from '../commands/workspace.js';
 import type { TimConfig } from '../configSchema.js';
-import { readPlanFile } from '../plans.js';
+import { resolveConfiguredTasksPath } from '../path_resolver.js';
+import { readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
+import type { PlanSchema } from '../planSchema.js';
 import { WorkspaceAutoSelector } from './workspace_auto_selector.js';
 import { findWorkspaceInfosByTaskId } from './workspace_info.js';
 import { WorkspaceAlreadyLocked, WorkspaceLock } from './workspace_lock.js';
@@ -37,6 +44,32 @@ export interface WorkspaceSetupResult {
 
 function timestamp(): string {
   return new Date().toISOString();
+}
+
+async function getParentPlanBranch(
+  planFile: string,
+  plan: PlanSchema,
+  config: TimConfig,
+  currentBaseDir: string
+): Promise<string | undefined> {
+  if (!plan.parent) {
+    return undefined;
+  }
+
+  const gitRoot = await getGitRoot(currentBaseDir);
+  const tasksDir = resolveConfiguredTasksPath(config, gitRoot);
+  const { plans } = await readAllPlans(tasksDir, false);
+  return plans.get(plan.parent)?.branch;
+}
+
+async function updatePlanBranchMetadata(planFile: string, branch: string): Promise<void> {
+  const plan = await readPlanFile(planFile);
+  if (plan.branch === branch) {
+    return;
+  }
+
+  plan.branch = branch;
+  await writePlanFile(planFile, plan);
 }
 
 export async function setupWorkspace(
@@ -183,9 +216,29 @@ export async function setupWorkspace(
           }
 
           let branchName = workspace.taskId;
+          let planData: PlanSchema | undefined;
+          let baseBranch = options.base;
+          let canRetryWithoutBaseBranch = false;
           try {
-            const plan = await readPlanFile(planFile);
-            branchName = generateBranchNameFromPlan(plan);
+            planData = await readPlanFile(planFile);
+            branchName = planData.branch ?? generateBranchNameFromPlan(planData);
+
+            if (!baseBranch) {
+              baseBranch = planData.baseBranch;
+            }
+
+            if (!baseBranch) {
+              const parentBranch = await getParentPlanBranch(
+                planFile,
+                planData,
+                config,
+                currentBaseDir
+              );
+              if (parentBranch) {
+                baseBranch = parentBranch;
+                canRetryWithoutBaseBranch = true;
+              }
+            }
           } catch (err) {
             warn(
               `Failed to generate branch name from plan file ${planFile}. Falling back to workspace task ID: ${err as Error}`
@@ -195,7 +248,7 @@ export async function setupWorkspace(
           let preparedWithPlanBranch = false;
           if (options.autoWorkspace) {
             const syncBaseResult = await prepareExistingWorkspace(workspace.path, {
-              baseBranch: options.base,
+              baseBranch,
               branchName,
               createBranch: false,
             });
@@ -220,15 +273,33 @@ export async function setupWorkspace(
           }
 
           if (!preparedWithPlanBranch) {
-            const prepareResult = await prepareExistingWorkspace(workspace.path, {
-              baseBranch: options.base,
+            let prepareResult = await prepareExistingWorkspace(workspace.path, {
+              baseBranch,
               branchName,
               createBranch: config.workspaceCreation?.createBranch ?? true,
             });
+
+            if (!prepareResult.success && canRetryWithoutBaseBranch) {
+              prepareResult = await prepareExistingWorkspace(workspace.path, {
+                branchName,
+                createBranch: config.workspaceCreation?.createBranch ?? true,
+              });
+            }
+
             if (!prepareResult.success) {
               throw new Error(
                 `Failed to prepare workspace at ${workspace.path}: ${prepareResult.error ?? 'Unknown error'}`
               );
+            }
+
+            if (prepareResult.actualBranchName) {
+              try {
+                await updatePlanBranchMetadata(planFile, prepareResult.actualBranchName);
+              } catch (err) {
+                warn(
+                  `Failed to update plan branch metadata after workspace preparation: ${err as Error}`
+                );
+              }
             }
           }
 

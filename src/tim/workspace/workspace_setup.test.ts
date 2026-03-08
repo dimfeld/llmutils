@@ -729,6 +729,268 @@ describe('setupWorkspace', () => {
     expect(result.workspaceTaskId).toBe('task-update-fail-soft');
   });
 
+  test('updates plan branch metadata to the allocated workspace branch', async () => {
+    const existingWorkspacePath = path.join(tempDir, 'workspace-existing-branch-metadata');
+    await fs.mkdir(existingWorkspacePath, { recursive: true });
+    await seedWorkspace(existingWorkspacePath, 'task-existing-branch-metadata');
+
+    const validPlanFile = path.join(baseDir, 'branch-metadata.plan.md');
+    await fs.writeFile(
+      validPlanFile,
+      ['---', 'id: 88', 'title: Keep branch metadata in sync', 'tasks: []', '---', ''].join('\n')
+    );
+
+    spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    const prepareSpy = spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
+      success: true,
+      actualBranchName: '88-keep-branch-metadata-in-sync-2',
+    });
+    spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
+
+    await setupWorkspace(
+      {
+        workspace: 'task-existing-branch-metadata',
+      },
+      baseDir,
+      validPlanFile,
+      config,
+      'tim generate'
+    );
+
+    expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
+      baseBranch: undefined,
+      branchName: '88-keep-branch-metadata-in-sync',
+      createBranch: true,
+    });
+    expect(await fs.readFile(validPlanFile, 'utf8')).toContain(
+      'branch: 88-keep-branch-metadata-in-sync-2'
+    );
+  });
+
+  test('uses parent plan branch as base when available on the parent plan', async () => {
+    const existingWorkspacePath = path.join(tempDir, 'workspace-existing-parent-base');
+    await fs.mkdir(existingWorkspacePath, { recursive: true });
+    await seedWorkspace(existingWorkspacePath, 'task-existing-parent-base');
+
+    const parentPlanFile = path.join(baseDir, 'parent.plan.md');
+    const childPlanFile = path.join(baseDir, 'child.plan.md');
+    await fs.writeFile(
+      parentPlanFile,
+      [
+        '---',
+        'id: 20',
+        'title: Parent plan',
+        'branch: feature/parent-plan',
+        'tasks: []',
+        '---',
+        '',
+      ].join('\n')
+    );
+    await fs.writeFile(
+      childPlanFile,
+      ['---', 'id: 21', 'title: Child plan', 'parent: 20', 'tasks: []', '---', ''].join('\n')
+    );
+
+    spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+
+    const prepareSpy = spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
+      success: true,
+    });
+    spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
+
+    await setupWorkspace(
+      {
+        workspace: 'task-existing-parent-base',
+      },
+      baseDir,
+      childPlanFile,
+      config,
+      'tim generate'
+    );
+
+    expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
+      baseBranch: 'feature/parent-plan',
+      branchName: '21-child-plan',
+      createBranch: true,
+    });
+  });
+
+  test('resolves parent plan branch from the tasks root when parent is in a sibling folder', async () => {
+    const existingWorkspacePath = path.join(tempDir, 'workspace-existing-parent-sibling');
+    await fs.mkdir(existingWorkspacePath, { recursive: true });
+    await seedWorkspace(existingWorkspacePath, 'task-existing-parent-sibling');
+
+    const childDir = path.join(baseDir, 'tasks', 'a');
+    const parentDir = path.join(baseDir, 'tasks', 'b');
+    await fs.mkdir(childDir, { recursive: true });
+    await fs.mkdir(parentDir, { recursive: true });
+
+    const parentPlanFile = path.join(parentDir, '20-parent.plan.md');
+    const childPlanFile = path.join(childDir, '21-child.plan.md');
+    await fs.writeFile(
+      parentPlanFile,
+      [
+        '---',
+        'id: 20',
+        'title: Parent plan',
+        'branch: feature/parent-plan',
+        'tasks: []',
+        '---',
+        '',
+      ].join('\n')
+    );
+    await fs.writeFile(
+      childPlanFile,
+      ['---', 'id: 21', 'title: Child plan', 'parent: 20', 'tasks: []', '---', ''].join('\n')
+    );
+
+    const configWithTasksDir: TimConfig = {
+      ...config,
+      paths: {
+        tasks: 'tasks',
+      },
+    };
+
+    spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    const prepareSpy = spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
+      success: true,
+    });
+    spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
+
+    await setupWorkspace(
+      {
+        workspace: 'task-existing-parent-sibling',
+      },
+      baseDir,
+      childPlanFile,
+      configWithTasksDir,
+      'tim generate'
+    );
+
+    expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
+      baseBranch: 'feature/parent-plan',
+      branchName: '21-child-plan',
+      createBranch: true,
+    });
+  });
+
+  test('falls back from an inferred parent base when that base branch cannot be prepared', async () => {
+    const existingWorkspacePath = path.join(tempDir, 'workspace-existing-parent-fallback');
+    await fs.mkdir(existingWorkspacePath, { recursive: true });
+    await seedWorkspace(existingWorkspacePath, 'task-existing-parent-fallback');
+
+    const parentPlanFile = path.join(baseDir, '20-parent.plan.md');
+    const childPlanFile = path.join(baseDir, '21-child.plan.md');
+    await fs.writeFile(
+      parentPlanFile,
+      [
+        '---',
+        'id: 20',
+        'title: Parent plan',
+        'branch: feature/missing-parent',
+        'tasks: []',
+        '---',
+        '',
+      ].join('\n')
+    );
+    await fs.writeFile(
+      childPlanFile,
+      ['---', 'id: 21', 'title: Child plan', 'parent: 20', 'tasks: []', '---', ''].join('\n')
+    );
+
+    spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    const prepareSpy = spyOn(workspaceManager, 'prepareExistingWorkspace')
+      .mockResolvedValueOnce({
+        success: false,
+        error: 'Failed to checkout base branch "feature/missing-parent"',
+      })
+      .mockResolvedValueOnce({
+        success: true,
+      });
+    spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
+
+    await setupWorkspace(
+      {
+        workspace: 'task-existing-parent-fallback',
+      },
+      baseDir,
+      childPlanFile,
+      config,
+      'tim generate'
+    );
+
+    expect(prepareSpy).toHaveBeenNthCalledWith(1, existingWorkspacePath, {
+      baseBranch: 'feature/missing-parent',
+      branchName: '21-child-plan',
+      createBranch: true,
+    });
+    expect(prepareSpy).toHaveBeenNthCalledWith(2, existingWorkspacePath, {
+      branchName: '21-child-plan',
+      createBranch: true,
+    });
+  });
+
+  test('does not fall back when the plan explicitly sets baseBranch and preparation fails', async () => {
+    const existingWorkspacePath = path.join(tempDir, 'workspace-existing-plan-base-explicit');
+    await fs.mkdir(existingWorkspacePath, { recursive: true });
+    await seedWorkspace(existingWorkspacePath, 'task-existing-plan-base-explicit');
+
+    const explicitBasePlanFile = path.join(baseDir, 'explicit-base.plan.md');
+    await fs.writeFile(
+      explicitBasePlanFile,
+      [
+        '---',
+        'id: 22',
+        'title: Explicit base plan',
+        'baseBranch: feature/deleted-base',
+        'tasks: []',
+        '---',
+        '',
+      ].join('\n')
+    );
+
+    spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    const prepareSpy = spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
+      success: false,
+      error: 'Failed to checkout base branch "feature/deleted-base"',
+    });
+    spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
+
+    await expect(
+      setupWorkspace(
+        {
+          workspace: 'task-existing-plan-base-explicit',
+        },
+        baseDir,
+        explicitBasePlanFile,
+        config,
+        'tim generate'
+      )
+    ).rejects.toThrow('feature/deleted-base');
+
+    expect(prepareSpy).toHaveBeenCalledTimes(1);
+    expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
+      baseBranch: 'feature/deleted-base',
+      branchName: '22-explicit-base-plan',
+      createBranch: true,
+    });
+  });
+
   test('passes --base through as baseBranch for existing workspace preparation', async () => {
     const existingWorkspacePath = path.join(tempDir, 'workspace-existing-base-explicit');
     await fs.mkdir(existingWorkspacePath, { recursive: true });
