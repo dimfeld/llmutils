@@ -105,6 +105,11 @@ You may receive a single task or multiple related tasks to implement together. W
 - Use the project's established logging/output mechanisms
 - Reuse existing utilities and abstractions rather than reimplementing
 
+### Addressing Review Feedback
+
+- Make sure you understand the context of the review feedback you are addressing.
+- Think about the changes in the context of the entire system; even small changes can have downstream effects.
+
 ### Import and Dependency Management
 - Use the project's standard import patterns
 - Check neighboring files and dependency files before assuming libraries are available
@@ -483,6 +488,8 @@ ${subagentDirective}CRITICAL: Do not be polite or encouraging. Your job is to fi
 Use git commands to see the recent related commits and which files were changed, so you know what to focus on.
 
 Make sure that your feedback is congruent with the requirements of the project. For example, flagging increased number of rows from a database query is not useful feedback if the feature being implemented requires it.
+
+When reviewing changes that were made due to review feedback, be sure that the fix not only addresses the original issue, but also does not introduce any new issues.
 
 Think deeply before providing your review output.
 

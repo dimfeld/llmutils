@@ -251,9 +251,9 @@ ${reviewExecutorGuidance}
 ${options.batchMode ? '6' : '5'}. **Iteration**
 
 - If the review output identifies issues or tests fail:
-- For straightforward review follow-ups that are easy to implement correctly (for example wording tweaks, focused refactors, small logic adjustments, or similarly contained edits), you may apply the changes yourself without spawning the implementer subagent.
+- For straightforward review follow-ups that are easy to implement correctly (for example wording tweaks, small logic adjustments, or similarly contained edits), you may apply the changes yourself without spawning the implementer subagent.
 - Return to step ${options.batchMode ? '2' : '1'} when substantial code changes are required.
-- After these straightforward follow-up changes, run the relevant targeted checks yourself. If the entire set of changes is straightforward to verify, you may skip re-running \`${reviewCommand}\`.
+- After implementing straightforward follow-up changes, run the relevant targeted checks yourself. If the entire set of changes is trivial and guaranteed to not introduce any bugs (e.g. just wording changes), you may skip re-running \`${reviewCommand}\`. If in doubt, run another review; even simple changes can sometimes have unintended downstream effects.
 - If the review still flags an issue that was supposedly just fixed, trust the review — the fix was incomplete or incorrect. Investigate the issue again rather than dismissing the feedback.
 - Continue this loop until all tests pass and the implementation is satisfactory`;
 
