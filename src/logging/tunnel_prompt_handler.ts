@@ -4,6 +4,7 @@ import type { PromptRequestHandler } from './tunnel_server.js';
 import type { TunnelPromptResponseMessage } from './tunnel_protocol.js';
 import { getActiveInputSource } from '../common/input_pause_registry.js';
 import { runPrefixPrompt } from '../common/prefix_prompt.js';
+import { sendStructured } from '../logging.js';
 
 /**
  * Creates a PromptRequestHandler that renders inquirer prompts on behalf of
@@ -127,6 +128,14 @@ export function createPromptRequestHandler(): PromptRequestHandler {
         type: 'prompt_response',
         requestId,
         value,
+      });
+      sendStructured({
+        type: 'prompt_answered',
+        timestamp: new Date().toISOString(),
+        requestId,
+        promptType,
+        value,
+        source: 'terminal',
       });
     } catch (err) {
       respond({

@@ -13,6 +13,7 @@ const mockSelect = mock(() => Promise.resolve('selected'));
 const mockInput = mock(() => Promise.resolve('typed'));
 const mockCheckbox = mock(() => Promise.resolve(['a', 'b']));
 const mockRunPrefixPrompt = mock(() => Promise.resolve({ exact: false, command: 'git status' }));
+const mockSendStructured = mock(() => {});
 
 await moduleMocker.mock('@inquirer/prompts', () => ({
   confirm: mockConfirm,
@@ -22,6 +23,9 @@ await moduleMocker.mock('@inquirer/prompts', () => ({
 }));
 await moduleMocker.mock('../common/prefix_prompt.js', () => ({
   runPrefixPrompt: mockRunPrefixPrompt,
+}));
+await moduleMocker.mock('../logging.js', () => ({
+  sendStructured: mockSendStructured,
 }));
 
 // Import the handler AFTER the mock is set up so it picks up the mocked module.
@@ -67,6 +71,7 @@ describe('tunnel_prompt_handler', () => {
     mockInput.mockReset();
     mockCheckbox.mockReset();
     mockRunPrefixPrompt.mockReset();
+    mockSendStructured.mockReset();
 
     // Restore default mock implementations
     mockConfirm.mockImplementation(() => Promise.resolve(true));
@@ -76,6 +81,7 @@ describe('tunnel_prompt_handler', () => {
     mockRunPrefixPrompt.mockImplementation(() =>
       Promise.resolve({ exact: false, command: 'git status' })
     );
+    mockSendStructured.mockImplementation(() => {});
 
     // Clear registry between tests
     setActiveInputSource(undefined);
@@ -245,6 +251,14 @@ describe('tunnel_prompt_handler', () => {
       expect(config).toMatchObject({
         message: 'Select command prefix',
         command: 'jj status --summary',
+      });
+      expect(mockSendStructured).toHaveBeenCalledTimes(1);
+      expect(callArgs(mockSendStructured, 0)[0]).toMatchObject({
+        type: 'prompt_answered',
+        requestId: msg.requestId,
+        promptType: 'prefix_select',
+        value: { exact: true, command: 'jj status --summary' },
+        source: 'terminal',
       });
     });
   });
