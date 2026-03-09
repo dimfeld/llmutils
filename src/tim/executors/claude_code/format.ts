@@ -89,6 +89,23 @@ export type Message =
       session_id: string;
     }
 
+  // Progress update for a background task
+  | {
+      type: 'system';
+      subtype: 'task_progress';
+      task_id: string;
+      tool_use_id: string;
+      description: string;
+      usage?: {
+        total_tokens?: number;
+        tool_uses?: number;
+        duration_ms?: number;
+      };
+      last_tool_name?: string;
+      uuid: string;
+      session_id: string;
+    }
+
   // Status update (e.g., compacting)
   | {
       type: 'system';
@@ -282,6 +299,19 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
         timestamp: timestamp(),
         phase: 'task_started',
         message: `Task ${message.task_id} (${message.task_type}): ${message.description}`,
+      },
+    });
+  } else if (message.type === 'system' && message.subtype === 'task_progress') {
+    const durationSuffix =
+      message.usage?.duration_ms != null ? ` (${message.usage.duration_ms}ms)` : '';
+
+    return withMessage({
+      type: message.type,
+      structured: {
+        type: 'workflow_progress',
+        timestamp: timestamp(),
+        phase: 'task_progress',
+        message: `Task In Progress: ${message.description}${durationSuffix}`,
       },
     });
   } else if (message.type === 'system' && message.subtype === 'status') {

@@ -499,6 +499,36 @@ describe('formatJsonMessage', () => {
       expect(result.type).toBe('system');
     });
 
+    test('handles task_progress messages', () => {
+      const taskProgressMessage = JSON.stringify({
+        type: 'system',
+        subtype: 'task_progress',
+        task_id: 'a844abe5e7858035c',
+        tool_use_id: 'toolu_01AHNx7X8V6tA8WLN4dwbK95',
+        description: 'Finding docs/**/*.mdc',
+        usage: {
+          total_tokens: 21711,
+          tool_uses: 3,
+          duration_ms: 2255,
+        },
+        last_tool_name: 'Glob',
+        uuid: '0bed459c-eccf-476e-b9e7-2c6f12c33d88',
+        session_id: 'd1e8f286-76ce-409c-a337-5bf27cce1002',
+      });
+
+      const result = formatJsonMessage(taskProgressMessage);
+      expect(result.type).toBe('system');
+      expect(result.message).toContain('task_progress');
+      expect(result.message).toContain('Task In Progress: Finding docs/**/*.mdc (2255ms)');
+      expect(result.structured).toEqual(
+        expect.objectContaining({
+          type: 'workflow_progress',
+          phase: 'task_progress',
+          message: 'Task In Progress: Finding docs/**/*.mdc (2255ms)',
+        })
+      );
+    });
+
     test('handles status messages with compacting status', () => {
       const statusMessage = JSON.stringify({
         type: 'system',
