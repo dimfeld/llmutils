@@ -2321,7 +2321,7 @@ struct SessionStateTests {
     }
 
     @Test
-    func `clearActivePrompt during replay is a no-op`() {
+    func `clearActivePrompt during replay still clears matching live prompt`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(command: "agent"))
@@ -2329,8 +2329,7 @@ struct SessionStateTests {
 
         state.startReplay(connectionId: connId)
         state.clearActivePrompt(connectionId: connId, requestId: "req-r")
-        // Prompt should still be there because replay mode blocks the clear
-        #expect(state.sessions[0].pendingPrompt?.requestId == "req-r")
+        #expect(state.sessions[0].pendingPrompt == nil)
     }
 
     // MARK: - sendPromptResponse

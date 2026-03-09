@@ -877,6 +877,53 @@ describe('prompt wrappers', () => {
       await headlessAdapter.destroy();
     });
 
+    it('promptPrefixSelect sends prompt_answered after terminal resolution in headless mode', async () => {
+      const server = await createPromptWebSocketServer();
+      headlessServersToClose.push(server);
+
+      const { adapter: wrapped, calls } = createRecordingAdapter();
+      const headlessAdapter = createTestHeadlessAdapter(
+        `ws://127.0.0.1:${server.port}/tim-agent`,
+        { command: 'agent' },
+        wrapped,
+        { reconnectIntervalMs: 50 }
+      );
+
+      headlessAdapter.log('connect');
+      await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
+
+      mockRunPrefixPrompt.mockImplementation(() =>
+        Promise.resolve({ exact: false, command: 'git status' })
+      );
+
+      const result = await runWithLogger(headlessAdapter, () =>
+        promptPrefixSelect({
+          message: 'Choose prefix:',
+          command: 'git status --short',
+        })
+      );
+
+      expect(result).toEqual({ exact: false, command: 'git status' });
+
+      const answeredCalls = calls.filter(
+        (c) =>
+          c.method === 'sendStructured' &&
+          (c.args[0] as Record<string, unknown>).type === 'prompt_answered'
+      );
+      expect(answeredCalls).toHaveLength(1);
+      expect(answeredCalls[0].args[0]).toMatchObject({
+        type: 'prompt_answered',
+        promptType: 'prefix_select',
+        value: { exact: false, command: 'git status' },
+        source: 'terminal',
+      });
+
+      const internals = headlessAdapter as any;
+      expect(internals.pendingPrompts.size).toBe(0);
+
+      await headlessAdapter.destroy();
+    });
+
     it('prompt_answered structured message sent after ws resolution (promptInput)', async () => {
       const server = await createPromptWebSocketServer();
       headlessServersToClose.push(server);

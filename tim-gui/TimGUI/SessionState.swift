@@ -292,7 +292,6 @@ final class SessionState {
     }
 
     func clearActivePrompt(connectionId: UUID, requestId: String) {
-        guard !self.replayingConnections.contains(connectionId) else { return }
         guard let session = sessions.first(where: { $0.connectionId == connectionId }) else { return }
         guard session.pendingPrompt?.requestId == requestId else { return }
         session.pendingPrompt = nil
