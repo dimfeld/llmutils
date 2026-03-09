@@ -244,9 +244,7 @@ export async function syncPlanToDb(
   } catch (error) {
     const label = plan.id ?? plan.uuid;
     warn(
-      `Failed to sync plan ${label} to SQLite: ${
-        error instanceof Error ? error.message : String(error)
-      }`
+      `Failed to sync plan ${label} to SQLite: ${Error.isError(error) ? error.stack : String(error)}`
     );
   }
 }

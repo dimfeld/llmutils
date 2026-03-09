@@ -1,5 +1,5 @@
 import { $ } from 'bun';
-import { realpathSync } from 'node:fs';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { getGitRoot } from '../../common/git.js';
@@ -22,9 +22,9 @@ export interface WorkspacePathOptions {
 export async function getCurrentWorkspacePath(options: WorkspacePathOptions = {}): Promise<string> {
   const gitRoot = await getGitRoot(options.cwd);
   const resolved =
-    typeof realpathSync.native === 'function'
-      ? realpathSync.native(gitRoot)
-      : realpathSync(gitRoot);
+    typeof fs.realpathSync.native === 'function'
+      ? fs.realpathSync.native(gitRoot)
+      : fs.realpathSync(gitRoot);
   return normalizeWorkspacePath(resolved);
 }
 
