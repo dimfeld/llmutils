@@ -115,6 +115,24 @@ rl.on('line', (line) => {
           params: { command: 'git status' },
         });
       }
+      if (mode === 'permissions-server-request') {
+        send({
+          jsonrpc: '2.0',
+          id: 902,
+          method: 'item/permissions/requestApproval',
+          params: {
+            threadId: 'thread-1',
+            turnId: 'turn-1',
+            itemId: 'call-1',
+            reason: 'Select a workspace root',
+            permissions: {
+              fileSystem: {
+                write: ['/repo', '/shared'],
+              },
+            },
+          },
+        });
+      }
       if (mode === 'delayed-server-request') {
         send({
           jsonrpc: '2.0',
@@ -398,6 +416,79 @@ describe('CodexAppServerConnection', () => {
       expect.objectContaining({
         id: 900,
         result: { decision: 'accept' },
+      })
+    );
+
+    await connection.close();
+  });
+
+  test('forwards permission approval request results without reshaping them', async () => {
+    const serverRequests: Array<{ method: string; id: number; params: unknown }> = [];
+    let resolveServerRequest: (() => void) | undefined;
+    const serverRequestSeen = new Promise<void>((resolve) => {
+      resolveServerRequest = resolve;
+    });
+
+    const connection = await CodexAppServerConnection.create({
+      cwd: mockServer.rootDir,
+      env: buildSpawnEnv({
+        PATH: `${mockServer.rootDir}:${process.env.PATH ?? ''}`,
+        MOCK_MODE: 'permissions-server-request',
+        MOCK_REQUEST_LOG: mockServer.requestLogPath,
+        MOCK_CLIENT_RESPONSE_LOG: mockServer.clientResponseLogPath,
+      }),
+      onServerRequest: async (method, id, params) => {
+        serverRequests.push({ method, id, params });
+        if (method === 'item/permissions/requestApproval' && id === 902) {
+          resolveServerRequest?.();
+        }
+        return {
+          scope: 'session',
+          permissions: {
+            fileSystem: {
+              write: ['/repo'],
+            },
+          },
+        };
+      },
+    });
+
+    await connection.threadStart({});
+    await waitFor(serverRequestSeen, 1_000, 'permissions approval server request');
+
+    expect(serverRequests).toContainEqual(
+      expect.objectContaining({
+        method: 'item/permissions/requestApproval',
+        id: 902,
+      })
+    );
+
+    await waitForCondition(
+      async () => {
+        const lines = await readJsonLines(mockServer.clientResponseLogPath);
+        return lines.some(
+          (line) =>
+            line.id === 902 &&
+            line.result?.scope === 'session' &&
+            Array.isArray(line.result?.permissions?.fileSystem?.write)
+        );
+      },
+      1_000,
+      'permissions approval response write'
+    );
+
+    const clientResponses = await readJsonLines(mockServer.clientResponseLogPath);
+    expect(clientResponses).toContainEqual(
+      expect.objectContaining({
+        id: 902,
+        result: {
+          scope: 'session',
+          permissions: {
+            fileSystem: {
+              write: ['/repo'],
+            },
+          },
+        },
       })
     );
 

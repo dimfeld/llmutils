@@ -151,6 +151,7 @@ export async function executeCodexStepViaAppServer(
   // TODO: Pass configured allowed tools from timConfig when available.
   const approvalHandler = createApprovalHandler({
     sandboxAllowsFileWrites: !allowAllTools,
+    writableRoots,
   });
 
   let connection: CodexAppServerConnection | undefined;

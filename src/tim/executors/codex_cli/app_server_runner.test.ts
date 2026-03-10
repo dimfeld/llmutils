@@ -433,9 +433,33 @@ describe('executeCodexStepViaAppServer', () => {
     expect(harness.createApprovalHandlerMock).toHaveBeenCalledTimes(1);
     expect(harness.createApprovalHandlerMock.mock.calls[0]?.[0]).toEqual({
       sandboxAllowsFileWrites: true,
+      writableRoots: ['/repo'],
     });
 
     expect(harness.connectionCreateOptions.current?.onServerRequest).toBe(harness.approvalHandler);
+
+    harness.moduleMocker.clear();
+  });
+
+  test('includes external config directory in writable roots passed to approval handler', async () => {
+    const harness = await createHarness();
+
+    harness.connection.turnStart.mockImplementationOnce(async () => {
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { status: 'completed' },
+      });
+      return { turnId: 'turn-1' };
+    });
+
+    await harness.executeCodexStepViaAppServer('prompt', '/repo', {
+      isUsingExternalStorage: true,
+      externalRepositoryConfigDir: '/shared-config',
+    });
+
+    expect(harness.createApprovalHandlerMock.mock.calls[0]?.[0]).toEqual({
+      sandboxAllowsFileWrites: true,
+      writableRoots: ['/repo', '/shared-config'],
+    });
 
     harness.moduleMocker.clear();
   });

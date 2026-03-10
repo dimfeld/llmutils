@@ -112,9 +112,25 @@ describe('createApprovalHandler', () => {
     const fileResult = await handler('item/fileChange/requestApproval', 2, {
       changes: [{ path: 'src/a.ts', kind: 'modify' }],
     });
+    const permissionsResult = await handler('item/permissions/requestApproval', 3, {
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      permissions: {
+        fileSystem: {
+          write: ['/tmp/project'],
+        },
+      },
+    });
 
     expect(commandResult).toEqual({ decision: 'accept' });
     expect(fileResult).toEqual({ decision: 'accept' });
+    expect(permissionsResult).toEqual({
+      permissions: {
+        fileSystem: {
+          write: ['/tmp/project'],
+        },
+      },
+    });
     expect(mockPromptSelect).not.toHaveBeenCalled();
   });
 
@@ -205,6 +221,141 @@ describe('createApprovalHandler', () => {
     });
 
     expect(result).toEqual({ decision: 'accept' });
+    expect(mockPromptSelect).toHaveBeenCalledTimes(1);
+  });
+
+  test('auto-grants requested filesystem writes that are already within writable roots', async () => {
+    const handler = createApprovalHandler({
+      writableRoots: ['/repo', '/shared'],
+    });
+
+    const result = await handler('item/permissions/requestApproval', 1, {
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      reason: 'Select a workspace root',
+      permissions: {
+        fileSystem: {
+          write: ['/shared'],
+        },
+      },
+    });
+
+    expect(result).toEqual({
+      permissions: {
+        fileSystem: {
+          write: ['/shared'],
+        },
+      },
+    });
+    expect(mockPromptSelect).not.toHaveBeenCalled();
+  });
+
+  test('returns only the already-granted subset when new permissions are declined', async () => {
+    selectResponses.push('decline');
+    const handler = createApprovalHandler({
+      writableRoots: ['/repo'],
+    });
+
+    const result = await handler('item/permissions/requestApproval', 1, {
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      permissions: {
+        fileSystem: {
+          write: ['/repo', '/outside'],
+        },
+      },
+    });
+
+    expect(result).toEqual({
+      permissions: {
+        fileSystem: {
+          write: ['/repo'],
+        },
+      },
+    });
+    expect(mockPromptSelect).toHaveBeenCalledTimes(1);
+  });
+
+  test('sticks granted permissions for later requests in the same turn', async () => {
+    selectResponses.push('allow');
+    const handler = createApprovalHandler();
+
+    const first = await handler('item/permissions/requestApproval', 1, {
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      permissions: {
+        fileSystem: {
+          write: ['/repo'],
+        },
+      },
+    });
+
+    const second = await handler('item/permissions/requestApproval', 2, {
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      permissions: {
+        fileSystem: {
+          write: ['/repo'],
+        },
+      },
+    });
+
+    expect(first).toEqual({
+      permissions: {
+        fileSystem: {
+          write: ['/repo'],
+        },
+      },
+    });
+    expect(second).toEqual({
+      permissions: {
+        fileSystem: {
+          write: ['/repo'],
+        },
+      },
+    });
+    expect(mockPromptSelect).toHaveBeenCalledTimes(1);
+  });
+
+  test('persists session-scoped permission grants across turns in the same thread', async () => {
+    selectResponses.push('session_allow');
+    const handler = createApprovalHandler();
+
+    const first = await handler('item/permissions/requestApproval', 1, {
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      permissions: {
+        macos: {
+          accessibility: true,
+        },
+      },
+    });
+
+    const second = await handler('item/permissions/requestApproval', 2, {
+      threadId: 'thread-1',
+      turnId: 'turn-2',
+      permissions: {
+        macos: {
+          accessibility: true,
+        },
+      },
+    });
+
+    expect(first).toEqual({
+      scope: 'session',
+      permissions: {
+        macos: {
+          accessibility: true,
+        },
+      },
+    });
+    expect(second).toEqual({
+      permissions: {
+        macos: {
+          accessibility: true,
+        },
+      },
+    });
     expect(mockPromptSelect).toHaveBeenCalledTimes(1);
   });
 
