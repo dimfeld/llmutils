@@ -104,6 +104,12 @@ struct KeyValuePair: Equatable {
     let value: String
 }
 
+enum SessionCompletionKind: Equatable {
+    case none
+    case subtask
+    case topLevel
+}
+
 // MARK: - SessionMessage
 
 struct SessionMessage: Identifiable {
@@ -112,20 +118,35 @@ struct SessionMessage: Identifiable {
     let title: String?
     let body: MessageContentBody?
     let category: MessageCategory
+    let completionKind: SessionCompletionKind
     let timestamp: Date?
 
-    init(seq: Int, title: String?, body: MessageContentBody?, category: MessageCategory, timestamp: Date? = nil) {
+    init(
+        seq: Int,
+        title: String?,
+        body: MessageContentBody?,
+        category: MessageCategory,
+        completionKind: SessionCompletionKind = .none,
+        timestamp: Date? = nil)
+    {
         self.id = UUID()
         self.seq = seq
         self.title = title
         self.body = body
         self.category = category
+        self.completionKind = completionKind
         self.timestamp = timestamp
     }
 
     /// Convenience initializer for backward compatibility (tests, previews).
     init(seq: Int, text: String, category: MessageCategory, timestamp: Date? = nil) {
-        self.init(seq: seq, title: nil, body: .text(text), category: category, timestamp: timestamp)
+        self.init(
+            seq: seq,
+            title: nil,
+            body: .text(text),
+            category: category,
+            completionKind: .none,
+            timestamp: timestamp)
     }
 
     /// Flat text representation for backward-compatible test assertions.
@@ -1206,7 +1227,7 @@ enum MessageFormatter {
             return SessionMessage(
                 seq: seq, title: "Done",
                 body: .keyValuePairs(pairs),
-                category: .lifecycle, timestamp: parseTimestamp(p.timestamp))
+                category: .lifecycle, completionKind: .subtask, timestamp: parseTimestamp(p.timestamp))
 
         case let .agentIterationStart(p):
             var bodyParts: [String] = []
@@ -1410,9 +1431,11 @@ enum MessageFormatter {
                 ? "Task complete: \(title) (plan complete)".trimmingCharacters(in: .whitespaces)
                 : "Task complete: \(title)".trimmingCharacters(in: .whitespaces)
             return SessionMessage(
-                seq: seq, title: nil,
+                seq: seq, title: "Done",
                 body: .text(text),
-                category: .lifecycle, timestamp: parseTimestamp(ts))
+                category: .lifecycle,
+                completionKind: planComplete ? .topLevel : .subtask,
+                timestamp: parseTimestamp(ts))
 
         case let .executionSummary(p):
             var pairs: [KeyValuePair] = []

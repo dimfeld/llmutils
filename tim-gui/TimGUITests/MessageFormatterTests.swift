@@ -136,6 +136,7 @@ struct MessageFormatterTests {
             seq: 11)
         #expect(msg.category == .lifecycle)
         #expect(msg.title == "Done")
+        #expect(msg.completionKind == .subtask)
         guard case let .keyValuePairs(pairs) = msg.body else {
             Issue.record("Expected .keyValuePairs body")
             return
@@ -156,6 +157,7 @@ struct MessageFormatterTests {
             tunnelMessage: .structured(message: .agentSessionEnd(payload)),
             seq: 12)
         #expect(msg.title == "Done")
+        #expect(msg.completionKind == .subtask)
         guard case let .keyValuePairs(pairs) = msg.body else {
             Issue.record("Expected .keyValuePairs body")
             return
@@ -479,7 +481,8 @@ struct MessageFormatterTests {
                 taskTitle: "Add tests", planComplete: true, timestamp: nil)),
             seq: 90)
         #expect(msg.category == .lifecycle)
-        #expect(msg.title == nil)
+        #expect(msg.title == "Done")
+        #expect(msg.completionKind == .topLevel)
         guard case let .text(body) = msg.body else {
             Issue.record("Expected .text body")
             return

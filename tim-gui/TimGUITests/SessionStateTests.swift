@@ -1173,7 +1173,7 @@ struct SessionStateTests {
     }
 
     @Test
-    func `agent_session_end updates notification state with latest model response`() {
+    func `subtask done does not update notification state even with latest model response`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(
@@ -1189,14 +1189,39 @@ struct SessionStateTests {
             seq: 2,
             title: "Done",
             body: .text("Success: yes"),
-            category: .lifecycle))
+            category: .lifecycle,
+            completionKind: .subtask))
+
+        #expect(state.sessions[0].notificationMessage == nil)
+        #expect(state.sessions[0].hasUnreadNotification == false)
+    }
+
+    @Test
+    func `top level done updates notification state with latest model response`() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(
+            command: "agent",
+            workspacePath: "/project/x"))
+
+        state.appendMessage(connectionId: connId, message: SessionMessage(
+            seq: 1,
+            title: "Model Response",
+            body: .text("Finished the refactor and all tests are passing."),
+            category: .llmOutput))
+        state.appendMessage(connectionId: connId, message: SessionMessage(
+            seq: 2,
+            title: "Done",
+            body: .text("Task complete: Ship it (plan complete)"),
+            category: .lifecycle,
+            completionKind: .topLevel))
 
         #expect(state.sessions[0].notificationMessage == "Finished the refactor and all tests are passing.")
         #expect(state.sessions[0].hasUnreadNotification == true)
     }
 
     @Test
-    func `agent_session_end falls back to Done when no model response exists`() {
+    func `top level done falls back to Done when no model response exists`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(
@@ -1206,8 +1231,9 @@ struct SessionStateTests {
         state.appendMessage(connectionId: connId, message: SessionMessage(
             seq: 1,
             title: "Done",
-            body: .text("Success: yes"),
-            category: .lifecycle))
+            body: .text("Task complete: Ship it (plan complete)"),
+            category: .lifecycle,
+            completionKind: .topLevel))
 
         #expect(state.sessions[0].notificationMessage == "Done")
         #expect(state.sessions[0].hasUnreadNotification == true)

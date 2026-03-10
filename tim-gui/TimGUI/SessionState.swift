@@ -505,7 +505,7 @@ final class SessionState {
     }
 
     private func isDoneNotificationTrigger(_ message: SessionMessage) -> Bool {
-        message.category == .lifecycle && message.title == "Done"
+        message.completionKind == .topLevel
     }
 
     private func doneNotificationText(for session: SessionItem) -> String {
