@@ -504,7 +504,7 @@ struct SessionStateTests {
     }
 
     @Test
-    func `markDisconnected updates notification state for that session`() {
+    func `markDisconnected does not update notification state for that session`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo())
@@ -512,21 +512,23 @@ struct SessionStateTests {
 
         state.markDisconnected(connectionId: connId)
 
-        #expect(state.sessions[0].hasUnreadNotification == true)
-        #expect(state.sessions[0].notificationMessage == "Agent session disconnected")
+        #expect(state.sessions[0].hasUnreadNotification == false)
+        #expect(state.sessions[0].notificationMessage == nil)
     }
 
     @Test
-    func `markDisconnected sets unread notification for selected session`() {
+    func `markDisconnected preserves existing notification state for selected session`() {
         let state = SessionState()
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo())
+        state.sessions[0].hasUnreadNotification = true
+        state.sessions[0].notificationMessage = "Existing"
         state.selectedSessionId = state.sessions[0].id
 
         state.markDisconnected(connectionId: connId)
 
         #expect(state.sessions[0].hasUnreadNotification == true)
-        #expect(state.sessions[0].notificationMessage == "Agent session disconnected")
+        #expect(state.sessions[0].notificationMessage == "Existing")
     }
 
     @Test
@@ -1168,6 +1170,47 @@ struct SessionStateTests {
 
         #expect(state.sessions[0].notificationMessage == nil)
         #expect(state.sessions[0].hasUnreadNotification == false)
+    }
+
+    @Test
+    func `agent_session_end updates notification state with latest model response`() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(
+            command: "agent",
+            workspacePath: "/project/x"))
+
+        state.appendMessage(connectionId: connId, message: SessionMessage(
+            seq: 1,
+            title: "Model Response",
+            body: .text("Finished the refactor and all tests are passing."),
+            category: .llmOutput))
+        state.appendMessage(connectionId: connId, message: SessionMessage(
+            seq: 2,
+            title: "Done",
+            body: .text("Success: yes"),
+            category: .lifecycle))
+
+        #expect(state.sessions[0].notificationMessage == "Finished the refactor and all tests are passing.")
+        #expect(state.sessions[0].hasUnreadNotification == true)
+    }
+
+    @Test
+    func `agent_session_end falls back to Done when no model response exists`() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(
+            command: "agent",
+            workspacePath: "/project/x"))
+
+        state.appendMessage(connectionId: connId, message: SessionMessage(
+            seq: 1,
+            title: "Done",
+            body: .text("Success: yes"),
+            category: .lifecycle))
+
+        #expect(state.sessions[0].notificationMessage == "Done")
+        #expect(state.sessions[0].hasUnreadNotification == true)
     }
 
     // MARK: - markNotificationRead

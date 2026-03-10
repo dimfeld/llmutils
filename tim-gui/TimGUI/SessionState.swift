@@ -140,6 +140,7 @@ final class SessionState {
                 notificationOnly.messages = buffered
                 if !buffered.isEmpty {
                     notificationOnly.lastMessageReceivedAt = Date()
+                    self.maybeNotifyForDoneMessage(in: notificationOnly, latestMessage: buffered.last)
                 }
             }
 
@@ -169,6 +170,7 @@ final class SessionState {
             session.messages = buffered
             if !buffered.isEmpty {
                 session.lastMessageReceivedAt = Date()
+                self.maybeNotifyForDoneMessage(in: session, latestMessage: buffered.last)
             }
         }
 
@@ -230,6 +232,7 @@ final class SessionState {
         }
         self.sessions[index].messages.append(message)
         self.sessions[index].lastMessageReceivedAt = Date()
+        self.maybeNotifyForDoneMessage(in: self.sessions[index], latestMessage: message)
     }
 
     func ingestSessionMetadata(connectionId: UUID, tunnelMessage: TunnelMessage) {
@@ -320,21 +323,6 @@ final class SessionState {
         let session = self.sessions[index]
         session.isActive = false
         session.pendingPrompt = nil
-
-        let notificationText = "Agent session disconnected"
-        session.notificationMessage = notificationText
-        session.hasUnreadNotification = true
-        session.lastMessageReceivedAt = Date()
-
-        let content = UNMutableNotificationContent()
-        content.title = "Tim"
-        content.body = notificationText
-        content.sound = .default
-        let request = UNNotificationRequest(
-            identifier: UUID().uuidString,
-            content: content,
-            trigger: nil)
-        UNUserNotificationCenter.current().add(request)
     }
 
     func dismissSession(id: UUID) {
@@ -507,5 +495,70 @@ final class SessionState {
         default:
             return nil
         }
+    }
+
+    private func maybeNotifyForDoneMessage(in session: SessionItem, latestMessage: SessionMessage?) {
+        guard let latestMessage, self.isDoneNotificationTrigger(latestMessage) else { return }
+        let notificationText = self.doneNotificationText(for: session)
+        self.setNotification(on: session, text: notificationText)
+        self.postSystemNotification(body: notificationText)
+    }
+
+    private func isDoneNotificationTrigger(_ message: SessionMessage) -> Bool {
+        message.category == .lifecycle && message.title == "Done"
+    }
+
+    private func doneNotificationText(for session: SessionItem) -> String {
+        self.latestModelResponseText(in: session) ?? "Done"
+    }
+
+    private func latestModelResponseText(in session: SessionItem) -> String? {
+        for message in session.messages.reversed() where message.title == "Model Response" {
+            guard let text = self.textContent(from: message.body) else { continue }
+            let normalized = self.normalizeNotificationText(text)
+            if !normalized.isEmpty {
+                return normalized
+            }
+        }
+        return nil
+    }
+
+    private func textContent(from body: MessageContentBody?) -> String? {
+        guard let body else { return nil }
+        switch body {
+        case let .text(text), let .monospaced(text):
+            return text
+        default:
+            return nil
+        }
+    }
+
+    private func normalizeNotificationText(_ text: String) -> String {
+        let collapsed = text
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        let limit = 220
+        guard collapsed.count > limit else { return collapsed }
+        let endIndex = collapsed.index(collapsed.startIndex, offsetBy: limit)
+        return "\(collapsed[..<endIndex])…"
+    }
+
+    private func setNotification(on session: SessionItem, text: String) {
+        session.notificationMessage = text
+        session.hasUnreadNotification = true
+        session.lastMessageReceivedAt = Date()
+    }
+
+    private func postSystemNotification(body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Tim"
+        content.body = body
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil)
+        UNUserNotificationCenter.current().add(request)
     }
 }
