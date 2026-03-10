@@ -35,7 +35,9 @@ describe('orchestrator_prompt failure protocol', () => {
       batchMode: false,
       reviewExecutor: 'codex-cli',
     });
-    expect(out).toContain('tim review 123 --print --executor codex-cli');
+    expect(out).toContain(
+      'tim review 123 --print --output-file <output_path> --executor codex-cli'
+    );
   });
 
   it('allows small review follow-ups without re-running implementer/reviewer', () => {
@@ -44,7 +46,9 @@ describe('orchestrator_prompt failure protocol', () => {
       'you may apply the changes yourself without spawning the implementer subagent'
     );
     expect(out).toContain('small logic adjustments');
-    expect(out).toContain('you may skip re-running `tim review 123 --print`');
+    expect(out).toContain(
+      'you may skip re-running `tim review 123 --print --output-file <output_path>`'
+    );
   });
 
   it('includes progress section guidance in non-batch mode as well', () => {
@@ -164,6 +168,9 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('temp directory');
       expect(out).toContain('--input-file <paths...>');
       expect(out).toContain('--input-file -');
+      expect(out).toContain('include the plan ID plus an extra random suffix');
+      expect(out).toContain('/tmp/tim-42-<purpose>-XXXXXX.md');
+      expect(out).toContain('/tmp/tim-42-research-XXXXXX.md');
     });
 
     it('includes output-file fallback guidance for subagent and review commands', () => {
@@ -224,6 +231,9 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('tim subagent');
       expect(out).toContain('--input');
       expect(out).toContain('--input-file');
+      expect(out).toContain('include the plan ID plus an extra random suffix');
+      expect(out).toContain('/tmp/tim-55-<purpose>-XXXXXX.md');
+      expect(out).toContain('/tmp/tim-55-research-XXXXXX.md');
     });
 
     it('includes fixed -x flag when subagentExecutor is claude-code', () => {
@@ -279,7 +289,9 @@ describe('orchestrator_prompt subagent commands', () => {
         'you may apply the changes yourself without spawning the implementer subagent'
       );
       expect(out).toContain('small logic adjustments');
-      expect(out).toContain('you may skip re-running `tim review 71 --print`');
+      expect(out).toContain(
+        'you may skip re-running `tim review 71 --print --output-file <output_path>`'
+      );
     });
 
     it('uses verifier in TDD simple mode', () => {
@@ -324,6 +336,9 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('tim-74-<agent>-output');
       expect(out).toContain('tim-74-review-output');
       expect(out).toContain('If command output is empty, read the output file');
+      expect(out).toContain('include the plan ID plus an extra random suffix');
+      expect(out).toContain('/tmp/tim-74-<purpose>-XXXXXX.md');
+      expect(out).toContain('/tmp/tim-74-research-XXXXXX.md');
     });
   });
 

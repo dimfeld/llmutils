@@ -19,6 +19,29 @@ interface OrchestrationOptions {
 const INPUT_COMBINATION_GUIDANCE =
   '- You can use both `--input-file` and `--input` together. `--input-file` is read first and `--input` is appended afterward.';
 
+function buildInputFileRandomizationGuidance(planId: string): string {
+  return `- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp\` or a \`mktemp\` path) and pass \`--input-file <paths...>\` instead of \`--input\`.
+- When you create an input file for a subagent or reviewer, include the plan ID plus an extra random suffix in the filename so repeated runs on the same plan do not collide with earlier files.
+- Recommended pattern: \`/tmp/tim-${planId}-<purpose>-XXXXXX.md\`.
+- Always explicitly pass the full path instead of using "$TMPDIR/filename".
+- You can also pipe input to stdin and use \`--input-file -\`.`;
+}
+
+function buildResearchContextGuidance(planId: string, reviewCommand?: string): string {
+  const reviewerLine = reviewCommand
+    ? `When invoking \`${reviewCommand}\`, also pass your research and any relevant context via \`--input-file <paths...>\` so the reviewer has the full picture of what was intended and why. Use the same randomized filename approach for any reviewer input files you create.`
+    : '';
+
+  return `Before invoking a subagent, write a research context file that includes everything you have learned so far that is relevant to the subagent's work. This saves the subagent from needing to repeat your exploration. The file should contain:
+- Relevant code snippets or file locations you discovered
+- Architectural decisions or patterns you identified
+- Dependencies, constraints, or gotchas you found
+- Any analysis of the existing codebase that informs the implementation
+
+Write this research to a file with a randomized, plan-scoped name (for example, \`/tmp/tim-${planId}-research-XXXXXX.md\`) and reference it in the subagent's \`--input-file\`, along with your task-specific instructions. Update the file as you learn more across iterations.
+${reviewerLine}`;
+}
+
 export function progressSectionGuidance(
   planFilePath?: string,
   options?: { useAtPrefix?: boolean }
@@ -302,21 +325,11 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 - When invoking subagents, provide clear, specific instructions in \`--input\` (or \`--input-file\`) about what needs to be done in addition to referencing the task titles.
 - ${INPUT_COMBINATION_GUIDANCE}
 - Include relevant context from previous subagent responses when invoking the next subagent.
-- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp\` or a \`mktemp\` path) and pass \`--input-file <paths...>\` instead of \`--input\`.
-- If using --input-file, include the plan ID or other random string in the file name to avoid conflicts with other
-agents and preexisting files, and always explicitly pass the full path instead of using "$TMPDIR/filename".
-- You can also pipe input to stdin and use \`--input-file -\`.
+- ${buildInputFileRandomizationGuidance(planId)}
 
 ## Sharing Research with Subagents
 
-Before invoking a subagent, write a research context file that includes everything you have learned so far that is relevant to the subagent's work. This saves the subagent from needing to repeat your exploration. The file should contain:
-- Relevant code snippets or file locations you discovered
-- Architectural decisions or patterns you identified
-- Dependencies, constraints, or gotchas you found
-- Any analysis of the existing codebase that informs the implementation
-
-Write this research to a file (e.g. \`/tmp/tim-${planId}-research.md\`) and reference it in the subagent's \`--input-file\`, along with your task-specific instructions. Update the file as you learn more across iterations.
-When invoking \`${reviewCommand}\`, also pass your research and any relevant context via \`--input-file <paths...>\` so the reviewer has the full picture of what was intended and why.
+${buildResearchContextGuidance(planId, reviewCommand)}
 
 ## Plan Documentation During Implementation
 
@@ -490,8 +503,7 @@ ${options.batchMode ? '5' : '4'}. **Iteration**
 - When invoking subagents, give clear instructions in \`--input\` (or \`--input-file\`) referencing the specific task titles.
 - ${INPUT_COMBINATION_GUIDANCE}
 - Provide prior subagent outputs to the next subagent so they have full context.
-- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp\` or a \`mktemp\` path) and pass \`--input-file <paths...>\` instead of \`--input\`.
-- You can also pipe input to stdin and use \`--input-file -\`.
+- ${buildInputFileRandomizationGuidance(planId)}
 - Keep the scope focused; if verification fails, loop back to implementation before moving forward.${
     options.batchMode
       ? `
@@ -501,7 +513,7 @@ ${options.batchMode ? '5' : '4'}. **Iteration**
 
 ## Sharing Research with Subagents
 
-Before invoking a subagent, write a research context file that includes everything you have learned so far that is relevant to the subagent's work. This saves the subagent from needing to repeat your exploration. Include relevant code snippets, file locations, architectural decisions, dependencies, constraints, or gotchas you found. Write this research to a file (e.g. \`/tmp/tim-${planId}-research.md\`) and reference it in the subagent's \`--input-file\`, along with your task-specific instructions. Update the file as you learn more across iterations.
+${buildResearchContextGuidance(planId)}
 
 ## Plan Documentation During Implementation
 
@@ -728,8 +740,7 @@ ${reviewFollowupGuidance}
 - We are using Test-Driven Development. The \`tdd-tests\` subagent must run before implementation.
 - Always pass the TDD tests output into the implementer invocation.
 - Do not skip the TDD test phase, even if implementation seems straightforward.
-- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp\` or a \`mktemp\` path) and pass \`--input-file <paths...>\` instead of \`--input\`.
-- You can also pipe input to stdin and use \`--input-file -\`.
+- ${buildInputFileRandomizationGuidance(planId)}
 - When subagents can see all pending tasks, explicitly state which task titles are in scope for this run.${
     options.batchMode
       ? `
@@ -739,7 +750,7 @@ ${reviewFollowupGuidance}
 
 ## Sharing Research with Subagents
 
-Before invoking a subagent, write a research context file that includes everything you have learned so far that is relevant to the subagent's work. This saves the subagent from needing to repeat your exploration. Include relevant code snippets, file locations, architectural decisions, dependencies, constraints, or gotchas you found. Write this research to a file (e.g. \`/tmp/tim-${planId}-research.md\`) and reference it in the subagent's \`--input-file\`, along with your task-specific instructions. Update the file as you learn more across iterations.
+${buildResearchContextGuidance(planId)}
 
 ## Plan Documentation During Implementation
 
