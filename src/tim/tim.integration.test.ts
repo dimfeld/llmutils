@@ -55,6 +55,7 @@ describe('tim CLI integration tests (internal handlers)', () => {
     }));
     await moduleMocker.mock('../common/git.js', () => ({
       getGitRoot: async () => tempDir,
+      getCurrentBranchName: async () => null,
     }));
     ({ handleListCommand } = await import('./commands/list.js'));
     ({ handleShowCommand } = await import('./commands/show.js'));

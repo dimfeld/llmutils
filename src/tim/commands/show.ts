@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import { stat } from 'node:fs/promises';
 import * as path from 'node:path';
 import * as clipboard from '../../common/clipboard.js';
+import { getCurrentBranchName } from '../../common/git.js';
 import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
@@ -53,6 +54,15 @@ interface AssignmentDisplayInfo {
   updatedAt?: string;
   currentWorkspace: string | null;
   conflicts?: string[];
+}
+
+function parseLeadingPlanIdFromBranchName(branchName: string | null | undefined): string | null {
+  if (!branchName) {
+    return null;
+  }
+
+  const match = branchName.match(/^(\d+)(?:$|[-/_.])/);
+  return match?.[1] ?? null;
 }
 
 function parseIsoTimestamp(value: string | undefined): number | undefined {
@@ -736,9 +746,21 @@ export async function handleShowCommand(planFile: string | undefined, options: a
     selectedPlan = plan;
   } else {
     if (!planFile) {
-      throw new Error(
-        'Please provide a plan file or use --latest/--next/--current/--next-ready to find a plan'
+      const currentBranch = await getCurrentBranchName();
+      const inferredPlanId = parseLeadingPlanIdFromBranchName(currentBranch);
+
+      if (!inferredPlanId) {
+        throw new Error(
+          'Please provide a plan file or use --latest/--next/--current/--next-ready to find a plan'
+        );
+      }
+
+      log(
+        chalk.green(
+          `Using plan ID ${inferredPlanId} from current branch/bookmark: ${currentBranch}`
+        )
       );
+      planFile = inferredPlanId;
     }
     try {
       resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);

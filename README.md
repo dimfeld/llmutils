@@ -671,6 +671,9 @@ Display plan information, status, and tasks.
 # Show specific plan
 tim show 123
 
+# Infer plan from current branch/bookmark when it starts with the plan ID
+tim show
+
 # Show by file path
 tim show tasks/feature.yml
 
@@ -2207,7 +2210,7 @@ tim subagent verifier PLAN [-x codex-cli|claude-code] [--input TEXT] [-m MODEL]
 tim subagent ... [--input-file FILE] [--output-file FILE]
 
 # Track progress
-tim show ID [--short | --full]
+tim show [ID] [--short | --full]
 tim branch-name ID [--latest | --next | --current | --next-ready PARENT_ID]
 
 # Mark complete
@@ -2230,6 +2233,7 @@ tim list [--all] [--status STATUS] [--sort FIELD] [--tag TAG...] [--epic ID] [--
 tim ready [--pending-only] [--priority LEVEL] [--format FORMAT] [--tag TAG...] [--epic ID]
 
 # Show next ready
+tim show            # uses current branch/bookmark when it starts with a plan ID
 tim show --next
 tim show --next-ready PARENT_ID
 

@@ -25,6 +25,7 @@ describe('handleShowCommand', () => {
   let dbPlans: any[];
   let dbPlanTasks: any[];
   let dbPlanDependencies: any[];
+  let currentBranchName: string | null;
 
   beforeEach(async () => {
     // Clear mocks
@@ -45,12 +46,17 @@ describe('handleShowCommand', () => {
     dbPlans = [];
     dbPlanTasks = [];
     dbPlanDependencies = [];
+    currentBranchName = null;
 
     // Mock modules
     await moduleMocker.mock('../../logging.js', () => ({
       log: logSpy,
       error: errorSpy,
       warn: warnSpy,
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getCurrentBranchName: async () => currentBranchName,
     }));
 
     // Mock config loader
@@ -574,6 +580,39 @@ describe('handleShowCommand', () => {
     };
 
     await expect(handleShowCommand(undefined, options, command)).rejects.toThrow(
+      'Please provide a plan file or use --latest/--next/--current/--next-ready to find a plan'
+    );
+  });
+
+  test('uses the current branch plan ID when no plan file is provided', async () => {
+    currentBranchName = '42-branch-selected-plan';
+
+    const plan = {
+      id: 42,
+      title: 'Branch Selected Plan',
+      goal: 'Infer from branch name',
+      details: 'Selected automatically',
+      status: 'pending',
+      tasks: [],
+    };
+
+    await fs.writeFile(path.join(tasksDir, '42.yml'), `---\n${yaml.stringify(plan)}---\n`);
+
+    await handleShowCommand(undefined, {}, { parent: { opts: () => ({}) } });
+
+    const output = stripAnsi(logSpy.mock.calls.map((call) => call[0]).join('\n'));
+    expect(output).toContain(
+      'Using plan ID 42 from current branch/bookmark: 42-branch-selected-plan'
+    );
+    expect(output).toContain('Branch Selected Plan');
+  });
+
+  test('does not infer a plan ID from branch names without a separator', async () => {
+    currentBranchName = '42branch-selected-plan';
+
+    await expect(
+      handleShowCommand(undefined, {}, { parent: { opts: () => ({}) } })
+    ).rejects.toThrow(
       'Please provide a plan file or use --latest/--next/--current/--next-ready to find a plan'
     );
   });
