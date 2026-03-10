@@ -14,7 +14,9 @@ export interface StructuredReviewIssueInput {
 export function toStructuredReviewIssue(issue: StructuredReviewIssueInput): StructuredReviewIssue {
   return {
     severity: issue.severity,
-    category: issue.category,
+    // TODO fix up the rest of the types used in the code to actually allow this to be a string,
+    // but without changing the zod schema that generates the JSON schema for the agents
+    category: issue.category as ReviewOutput['issues'][number]['category'],
     content: issue.content,
     file: issue.file ?? '',
     line: issue.line != null ? String(issue.line) : '',
