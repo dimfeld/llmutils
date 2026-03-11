@@ -21,7 +21,7 @@ const MAX_BRANCH_NAME_LENGTH = 63;
 const MID_TRUNCATION_MARKER = '...';
 
 export function generateBranchNameFromPlan(plan: PlanSchema): string {
-  const title = getCombinedTitle(plan) || plan.goal || 'plan';
+  const title = plan.title || plan.goal || 'plan';
   const slug = slugify(title);
   const issueId = getIssueIdFromPlanIssues(plan);
   const slugSegment = slug.length > 0 ? slug : undefined;

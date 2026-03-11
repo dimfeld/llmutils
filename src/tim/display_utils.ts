@@ -4,38 +4,38 @@ import * as path from 'node:path';
 import type { PlanSchema } from './planSchema.js';
 
 /**
- * Combines project title and phase title for display.
- * If both exist, returns "Project Title - Phase Title"
+ * Combines project title and plan title for display.
+ * If both exist, returns "Project Title - Plan Title"
  * Otherwise returns whichever exists, or 'Untitled' if neither exists.
  */
 export function getCombinedTitle(plan: PlanSchema): string {
   const projectTitle = plan.project?.title;
-  const phaseTitle = plan.title;
+  const planTitle = plan.title;
 
-  if (projectTitle && phaseTitle) {
-    return `${projectTitle} - ${phaseTitle}`;
+  if (projectTitle && planTitle) {
+    return `${projectTitle} - ${planTitle}`;
   } else if (projectTitle) {
     return projectTitle;
-  } else if (phaseTitle) {
-    return phaseTitle;
+  } else if (planTitle) {
+    return planTitle;
   } else {
     return 'Untitled';
   }
 }
 
 /**
- * Combines project goal and phase goal for display.
- * If both exist, returns "Project Goal - Phase Goal"
+ * Combines project goal and plan goal for display.
+ * If both exist, returns "Project Goal - Plan Goal"
  * Otherwise returns whichever exists.
  */
 export function getCombinedGoal(plan: PlanSchema): string {
   const projectGoal = plan.project?.goal;
-  const phaseGoal = plan.goal;
+  const planGoal = plan.goal;
 
-  if (projectGoal && phaseGoal && projectGoal !== phaseGoal) {
-    return `${projectGoal} - ${phaseGoal}`;
-  } else if (phaseGoal) {
-    return phaseGoal;
+  if (projectGoal && planGoal && projectGoal !== planGoal) {
+    return `${projectGoal} - ${planGoal}`;
+  } else if (planGoal) {
+    return planGoal;
   } else if (projectGoal) {
     return projectGoal;
   } else {
@@ -57,20 +57,20 @@ type PartialPlan = {
 };
 
 /**
- * Combines project title and phase title for display from partial plan data.
- * If both exist, returns "Project Title - Phase Title"
+ * Combines project title and plan title for display from partial plan data.
+ * If both exist, returns "Project Title - Plan Title"
  * Otherwise returns whichever exists, or falls back to goal if no title.
  */
 export function getCombinedTitleFromSummary(plan: PartialPlan): string {
   const projectTitle = plan.project?.title;
-  const phaseTitle = plan.title;
+  const planTitle = plan.title;
 
-  if (projectTitle && phaseTitle) {
-    return `${projectTitle} - ${phaseTitle}`;
+  if (projectTitle && planTitle) {
+    return `${projectTitle} - ${planTitle}`;
   } else if (projectTitle) {
     return projectTitle;
-  } else if (phaseTitle) {
-    return phaseTitle;
+  } else if (planTitle) {
+    return planTitle;
   } else {
     // Fallback to goal if no title exists
     return plan.goal || 'Untitled';
@@ -78,18 +78,18 @@ export function getCombinedTitleFromSummary(plan: PartialPlan): string {
 }
 
 /**
- * Combines project goal and phase goal for display from partial plan data.
- * If both exist and are different, returns "Project Goal - Phase Goal"
+ * Combines project goal and plan goal for display from partial plan data.
+ * If both exist and are different, returns "Project Goal - Plan Goal"
  * Otherwise returns whichever exists.
  */
 export function getCombinedGoalFromSummary(plan: PartialPlan): string {
   const projectGoal = plan.project?.goal;
-  const phaseGoal = plan.goal;
+  const planGoal = plan.goal;
 
-  if (projectGoal && phaseGoal && projectGoal !== phaseGoal) {
-    return `${projectGoal} - ${phaseGoal}`;
-  } else if (phaseGoal) {
-    return phaseGoal;
+  if (projectGoal && planGoal && projectGoal !== planGoal) {
+    return `${projectGoal} - ${planGoal}`;
+  } else if (planGoal) {
+    return planGoal;
   } else if (projectGoal) {
     return projectGoal;
   } else {
