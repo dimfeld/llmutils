@@ -499,17 +499,32 @@ final class SessionState {
 
     private func maybeNotifyForDoneMessage(in session: SessionItem, latestMessage: SessionMessage?) {
         guard let latestMessage, self.isDoneNotificationTrigger(latestMessage) else { return }
-        let notificationText = self.doneNotificationText(for: session)
+        let notificationText = self.doneNotificationText(for: session, triggerMessage: latestMessage)
         self.setNotification(on: session, text: notificationText)
         self.postSystemNotification(body: notificationText)
     }
 
     private func isDoneNotificationTrigger(_ message: SessionMessage) -> Bool {
-        message.completionKind == .topLevel
+        if message.transportSource == .tunnel {
+            return false
+        }
+
+        if message.completionKind == .topLevel {
+            return true
+        }
+
+        return message.category == .lifecycle && message.title == "Turn Done"
     }
 
-    private func doneNotificationText(for session: SessionItem) -> String {
-        self.latestModelResponseText(in: session) ?? "Done"
+    private func doneNotificationText(for session: SessionItem, triggerMessage: SessionMessage) -> String {
+        if let latestModelResponse = self.latestModelResponseText(in: session) {
+            return latestModelResponse
+        }
+
+        if triggerMessage.completionKind == .topLevel {
+            return "Done"
+        }
+        return triggerMessage.title ?? "Done"
     }
 
     private func latestModelResponseText(in session: SessionItem) -> String? {

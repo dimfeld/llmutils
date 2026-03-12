@@ -110,6 +110,10 @@ enum SessionCompletionKind: Equatable {
     case topLevel
 }
 
+enum StructuredTransportSource: String, Decodable, Equatable {
+    case tunnel
+}
+
 // MARK: - SessionMessage
 
 struct SessionMessage: Identifiable {
@@ -119,6 +123,7 @@ struct SessionMessage: Identifiable {
     let body: MessageContentBody?
     let category: MessageCategory
     let completionKind: SessionCompletionKind
+    let transportSource: StructuredTransportSource?
     let timestamp: Date?
 
     init(
@@ -127,6 +132,7 @@ struct SessionMessage: Identifiable {
         body: MessageContentBody?,
         category: MessageCategory,
         completionKind: SessionCompletionKind = .none,
+        transportSource: StructuredTransportSource? = nil,
         timestamp: Date? = nil)
     {
         self.id = UUID()
@@ -135,6 +141,7 @@ struct SessionMessage: Identifiable {
         self.body = body
         self.category = category
         self.completionKind = completionKind
+        self.transportSource = transportSource
         self.timestamp = timestamp
     }
 
@@ -146,6 +153,7 @@ struct SessionMessage: Identifiable {
             body: .text(text),
             category: category,
             completionKind: .none,
+            transportSource: nil,
             timestamp: timestamp)
     }
 
@@ -504,7 +512,7 @@ enum StructuredMessagePayload {
     case reviewResult(ReviewResultPayload)
     case workflowProgress(message: String, phase: String?, timestamp: String?)
     case failureReport(FailureReportPayload)
-    case taskCompletion(taskTitle: String?, planComplete: Bool, timestamp: String?)
+    case taskCompletion(TaskCompletionPayload)
     case executionSummary(ExecutionSummaryPayload)
     case tokenUsage(TokenUsagePayload)
     case inputRequired(prompt: String?, timestamp: String?)
@@ -542,6 +550,7 @@ struct AgentSessionEndPayload {
     let costUsd: Double?
     let turns: Int?
     let summary: String?
+    let transportSource: StructuredTransportSource?
     let timestamp: String?
 }
 
@@ -644,6 +653,13 @@ struct FailureReportPayload {
     let problems: String?
     let solutions: String?
     let sourceAgent: String?
+    let timestamp: String?
+}
+
+struct TaskCompletionPayload {
+    let taskTitle: String?
+    let planComplete: Bool
+    let transportSource: StructuredTransportSource?
     let timestamp: String?
 }
 
@@ -898,6 +914,8 @@ extension StructuredMessagePayload: Decodable {
         /// workflow
         /// failure_report
         case requirements, problems, solutions, sourceAgent
+        /// transport metadata
+        case transportSource
         /// task_completion
         case planComplete
         /// execution_summary
@@ -946,6 +964,8 @@ extension StructuredMessagePayload: Decodable {
                 costUsd: container.decodeIfPresent(Double.self, forKey: .costUsd),
                 turns: container.decodeIfPresent(Int.self, forKey: .turns),
                 summary: container.decodeIfPresent(String.self, forKey: .summary),
+                transportSource: container.decodeIfPresent(
+                    StructuredTransportSource.self, forKey: .transportSource),
                 timestamp: timestamp))
 
         case "agent_iteration_start":
@@ -1070,10 +1090,12 @@ extension StructuredMessagePayload: Decodable {
                 timestamp: timestamp))
 
         case "task_completion":
-            self = try .taskCompletion(
+            self = try .taskCompletion(TaskCompletionPayload(
                 taskTitle: container.decodeIfPresent(String.self, forKey: .taskTitle),
                 planComplete: container.decode(Bool.self, forKey: .planComplete),
-                timestamp: timestamp)
+                transportSource: container.decodeIfPresent(
+                    StructuredTransportSource.self, forKey: .transportSource),
+                timestamp: timestamp))
 
         case "execution_summary":
             // Decode the nested 'summary' object with the fields we care about
@@ -1227,7 +1249,10 @@ enum MessageFormatter {
             return SessionMessage(
                 seq: seq, title: "Turn Done",
                 body: .text(parts.joined(separator: ", ")),
-                category: .lifecycle, completionKind: .subtask, timestamp: parseTimestamp(p.timestamp))
+                category: .lifecycle,
+                completionKind: .subtask,
+                transportSource: p.transportSource,
+                timestamp: parseTimestamp(p.timestamp))
 
         case let .agentIterationStart(p):
             var bodyParts: [String] = []
@@ -1425,17 +1450,18 @@ enum MessageFormatter {
                 body: .text(lines.joined(separator: "\n")),
                 category: .error, timestamp: parseTimestamp(p.timestamp))
 
-        case let .taskCompletion(taskTitle, planComplete, ts):
-            let title = taskTitle ?? ""
-            let text = planComplete
+        case let .taskCompletion(payload):
+            let title = payload.taskTitle ?? ""
+            let text = payload.planComplete
                 ? "Task complete: \(title) (plan complete)".trimmingCharacters(in: .whitespaces)
                 : "Task complete: \(title)".trimmingCharacters(in: .whitespaces)
             return SessionMessage(
                 seq: seq, title: "Turn Done",
                 body: .text(text),
                 category: .lifecycle,
-                completionKind: planComplete ? .topLevel : .subtask,
-                timestamp: parseTimestamp(ts))
+                completionKind: payload.planComplete ? .topLevel : .subtask,
+                transportSource: payload.transportSource,
+                timestamp: parseTimestamp(payload.timestamp))
 
         case let .executionSummary(p):
             var pairs: [KeyValuePair] = []

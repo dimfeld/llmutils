@@ -1081,6 +1081,7 @@ struct SessionStateTests {
                 costUsd: nil,
                 turns: nil,
                 summary: "All tasks complete",
+                transportSource: .tunnel,
                 timestamp: nil))))
 
         #expect(state.sessions[0].hasUnreadNotification == false)
@@ -1197,6 +1198,49 @@ struct SessionStateTests {
     }
 
     @Test
+    func `turn done updates notification state with latest model response`() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(
+            command: "agent",
+            workspacePath: "/project/x"))
+
+        state.appendMessage(connectionId: connId, message: SessionMessage(
+            seq: 1,
+            title: "Model Response",
+            body: .text("Finished the refactor and all tests are passing."),
+            category: .llmOutput))
+        state.appendMessage(connectionId: connId, message: SessionMessage(
+            seq: 2,
+            title: "Turn Done",
+            body: .text("Success: yes, Duration: 45s"),
+            category: .lifecycle,
+            completionKind: .subtask))
+
+        #expect(state.sessions[0].notificationMessage == "Finished the refactor and all tests are passing.")
+        #expect(state.sessions[0].hasUnreadNotification == true)
+    }
+
+    @Test
+    func `turn done falls back to Turn Done when no model response exists`() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(
+            command: "agent",
+            workspacePath: "/project/x"))
+
+        state.appendMessage(connectionId: connId, message: SessionMessage(
+            seq: 1,
+            title: "Turn Done",
+            body: .text("Success: yes, Duration: 45s"),
+            category: .lifecycle,
+            completionKind: .subtask))
+
+        #expect(state.sessions[0].notificationMessage == "Turn Done")
+        #expect(state.sessions[0].hasUnreadNotification == true)
+    }
+
+    @Test
     func `top level done updates notification state with latest model response`() {
         let state = SessionState()
         let connId = UUID()
@@ -1211,7 +1255,7 @@ struct SessionStateTests {
             category: .llmOutput))
         state.appendMessage(connectionId: connId, message: SessionMessage(
             seq: 2,
-            title: "Done",
+            title: "Turn Done",
             body: .text("Task complete: Ship it (plan complete)"),
             category: .lifecycle,
             completionKind: .topLevel))
@@ -1230,13 +1274,33 @@ struct SessionStateTests {
 
         state.appendMessage(connectionId: connId, message: SessionMessage(
             seq: 1,
-            title: "Done",
+            title: "Turn Done",
             body: .text("Task complete: Ship it (plan complete)"),
             category: .lifecycle,
             completionKind: .topLevel))
 
         #expect(state.sessions[0].notificationMessage == "Done")
         #expect(state.sessions[0].hasUnreadNotification == true)
+    }
+
+    @Test
+    func `tunneled turn done does not update notification state`() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(
+            command: "agent",
+            workspacePath: "/project/x"))
+
+        state.appendMessage(connectionId: connId, message: SessionMessage(
+            seq: 1,
+            title: "Turn Done",
+            body: .text("Success: yes, Duration: 45s"),
+            category: .lifecycle,
+            completionKind: .subtask,
+            transportSource: .tunnel))
+
+        #expect(state.sessions[0].notificationMessage == nil)
+        #expect(state.sessions[0].hasUnreadNotification == false)
     }
 
     // MARK: - markNotificationRead

@@ -130,7 +130,7 @@ struct MessageFormatterTests {
     func `Formats agent_session_end as lifecycle with key-value pairs`() {
         let payload = AgentSessionEndPayload(
             success: true, sessionId: nil, threadId: nil,
-            durationMs: 45000, costUsd: 1.25, turns: 12, summary: nil, timestamp: nil)
+            durationMs: 45000, costUsd: 1.25, turns: 12, summary: nil, transportSource: nil, timestamp: nil)
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .agentSessionEnd(payload)),
             seq: 11)
@@ -148,7 +148,7 @@ struct MessageFormatterTests {
     func `Formats agent_session_end failure`() {
         let payload = AgentSessionEndPayload(
             success: false, sessionId: nil, threadId: nil,
-            durationMs: nil, costUsd: nil, turns: nil, summary: nil, timestamp: nil)
+            durationMs: nil, costUsd: nil, turns: nil, summary: nil, transportSource: nil, timestamp: nil)
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .agentSessionEnd(payload)),
             seq: 12)
@@ -473,8 +473,8 @@ struct MessageFormatterTests {
     @Test
     func `Formats task_completion as lifecycle with text body`() {
         let msg = MessageFormatter.format(
-            tunnelMessage: .structured(message: .taskCompletion(
-                taskTitle: "Add tests", planComplete: true, timestamp: nil)),
+            tunnelMessage: .structured(message: .taskCompletion(TaskCompletionPayload(
+                taskTitle: "Add tests", planComplete: true, transportSource: nil, timestamp: nil))),
             seq: 90)
         #expect(msg.category == .lifecycle)
         #expect(msg.title == "Turn Done")

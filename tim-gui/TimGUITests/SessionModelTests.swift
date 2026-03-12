@@ -408,6 +408,7 @@ struct StructuredMessagePayloadTests {
         }
         #expect(p.success == true)
         #expect(p.durationMs == 45000)
+        #expect(p.transportSource == nil)
         #expect(p.costUsd == 1.25)
         #expect(p.turns == 12)
         #expect(p.summary == "All tasks completed")
@@ -1101,16 +1102,18 @@ struct StructuredMessagePayloadTests {
             "type": "task_completion",
             "taskTitle": "Add tests",
             "planComplete": false,
+            "transportSource": "tunnel",
             "timestamp": "2026-02-10T08:00:00Z"
         }
         """
         let msg = try JSONDecoder().decode(StructuredMessagePayload.self, from: Data(json.utf8))
-        guard case let .taskCompletion(title, planComplete, _) = msg else {
+        guard case let .taskCompletion(payload) = msg else {
             Issue.record("Expected taskCompletion, got \(msg)")
             return
         }
-        #expect(title == "Add tests")
-        #expect(planComplete == false)
+        #expect(payload.taskTitle == "Add tests")
+        #expect(payload.planComplete == false)
+        #expect(payload.transportSource == .tunnel)
     }
 
     @Test
