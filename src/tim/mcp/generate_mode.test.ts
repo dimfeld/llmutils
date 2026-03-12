@@ -126,12 +126,28 @@ describe('tim MCP generate mode helpers', () => {
 
   test('loadResearchPrompt includes parent plan context when plan has a parent', async () => {
     const parentPath = path.join(tmpDir, '99998-parent.plan.md');
+    const doneSiblingPath = path.join(tmpDir, '99997-done-sibling.plan.md');
+    const pendingSiblingPath = path.join(tmpDir, '99996-pending-sibling.plan.md');
     await writePlanFile(parentPath, {
       ...basePlan,
       id: 99998,
       title: 'Parent Plan',
       goal: 'Coordinate the broader feature',
       details: 'Parent-level context that should be visible while generating tasks.',
+    });
+    await writePlanFile(doneSiblingPath, {
+      ...basePlan,
+      id: 99997,
+      title: 'Done Sibling',
+      status: 'done',
+      parent: 99998,
+    });
+    await writePlanFile(pendingSiblingPath, {
+      ...basePlan,
+      id: 99996,
+      title: 'Pending Sibling',
+      status: 'pending',
+      parent: 99998,
     });
     await writePlanFile(planPath, {
       ...basePlan,
@@ -149,16 +165,39 @@ describe('tim MCP generate mode helpers', () => {
     );
     expect(messageText).toContain('# Current Plan Context');
     expect(messageText).toContain('Title: Test Plan');
+    expect(messageText).toContain('# Sibling Plans');
+    expect(messageText).toContain(
+      '- Pending Sibling (status: pending, path: 99996-pending-sibling.plan.md)'
+    );
+    expect(messageText).toContain(
+      '- Done Sibling (status: done, path: 99997-done-sibling.plan.md)'
+    );
   });
 
   test('loadGeneratePrompt includes parent plan context when plan has a parent', async () => {
     const parentPath = path.join(tmpDir, '99998-parent.plan.md');
+    const doneSiblingPath = path.join(tmpDir, '99997-done-sibling.plan.md');
+    const pendingSiblingPath = path.join(tmpDir, '99996-pending-sibling.plan.md');
     await writePlanFile(parentPath, {
       ...basePlan,
       id: 99998,
       title: 'Parent Plan',
       goal: 'Coordinate the broader feature',
       details: 'Parent-level context that should be visible while generating tasks.',
+    });
+    await writePlanFile(doneSiblingPath, {
+      ...basePlan,
+      id: 99997,
+      title: 'Done Sibling',
+      status: 'done',
+      parent: 99998,
+    });
+    await writePlanFile(pendingSiblingPath, {
+      ...basePlan,
+      id: 99996,
+      title: 'Pending Sibling',
+      status: 'pending',
+      parent: 99998,
     });
     await writePlanFile(planPath, {
       ...basePlan,
@@ -172,6 +211,13 @@ describe('tim MCP generate mode helpers', () => {
     expect(messageText).toContain('Title: Parent Plan');
     expect(messageText).toContain('# Current Plan Context');
     expect(messageText).toContain('Title: Test Plan');
+    expect(messageText).toContain('# Sibling Plans');
+    expect(messageText).toContain(
+      '- Pending Sibling (status: pending, path: 99996-pending-sibling.plan.md)'
+    );
+    expect(messageText).toContain(
+      '- Done Sibling (status: done, path: 99997-done-sibling.plan.md)'
+    );
   });
 
   test('loadPlanPrompt returns plan details and wait instruction', async () => {

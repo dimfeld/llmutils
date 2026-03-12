@@ -1,5 +1,6 @@
 import { FastMCP, UserError } from 'fastmcp';
 import type { SerializableValue } from 'fastmcp';
+import path from 'node:path';
 import {
   generateClaudeCodePlanningPrompt,
   generateClaudeCodeResearchPrompt,
@@ -126,13 +127,33 @@ async function buildGeneratePromptContext(
 
       const parentPlanPath = parentPlan.filename;
       const parentContext = buildPlanContext(parentPlan, parentPlanPath, context);
+      const siblingPlans = Array.from(plans.values())
+        .filter((candidate) => candidate.id !== plan.id && candidate.parent === plan.parent)
+        .sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
+
+      const siblingContext =
+        siblingPlans.length > 0
+          ? `# Sibling Plans
+
+${siblingPlans
+  .map((sibling) => {
+    const relativePath = path.relative(context.gitRoot, sibling.filename) || sibling.filename;
+    const siblingStatus = sibling.status === 'done' ? 'done' : 'pending';
+    return `- ${sibling.title || `Plan ${sibling.id}`} (status: ${siblingStatus}, path: ${relativePath})`;
+  })
+  .join('\n')}
+
+`
+          : '';
       contextBlock = `# Parent Plan Context
 
 ${parentContext}
 
 # Current Plan Context
 
-${contextBlock}`;
+${contextBlock}
+
+${siblingContext}`.trim();
     } catch {
       // Ignore missing or unreadable parent plans so prompt generation still works.
     }
