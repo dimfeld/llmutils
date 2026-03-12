@@ -102,6 +102,7 @@ final class SessionState {
         if let existing = sessions.first(where: { $0.connectionId == connectionId }) {
             let oldKey = sessionGroupKey(gitRemote: existing.gitRemote, workspacePath: existing.workspacePath)
             existing.command = info.command
+            existing.interactive = info.interactive
             existing.planId = info.planId
             existing.planTitle = info.planTitle
             existing.workspacePath = info.workspacePath
@@ -128,6 +129,7 @@ final class SessionState {
         if let notificationOnly = findNotificationOnlySession(info: info) {
             notificationOnly.connectionId = connectionId
             notificationOnly.command = info.command
+            notificationOnly.interactive = info.interactive
             notificationOnly.planId = info.planId
             notificationOnly.planTitle = info.planTitle
             notificationOnly.workspacePath = info.workspacePath
@@ -156,6 +158,7 @@ final class SessionState {
             id: UUID(),
             connectionId: connectionId,
             command: info.command,
+            interactive: info.interactive,
             planId: info.planId,
             planTitle: info.planTitle,
             workspacePath: info.workspacePath,
@@ -321,6 +324,9 @@ final class SessionState {
             return
         }
         let session = self.sessions[index]
+        if !session.interactive {
+            self.maybeNotifyForDisconnect(in: session)
+        }
         session.isActive = false
         session.pendingPrompt = nil
     }
@@ -404,6 +410,7 @@ final class SessionState {
                 id: UUID(),
                 connectionId: UUID(),
                 command: "",
+                interactive: false,
                 planId: workspaceTemplate?.planId ?? remoteTemplate?.planId,
                 planTitle: workspaceTemplate?.planTitle ?? remoteTemplate?.planTitle,
                 workspacePath: payload.workspacePath,
@@ -498,8 +505,18 @@ final class SessionState {
     }
 
     private func maybeNotifyForDoneMessage(in session: SessionItem, latestMessage: SessionMessage?) {
-        guard let latestMessage, self.isDoneNotificationTrigger(latestMessage) else { return }
+        guard session.interactive,
+              let latestMessage,
+              self.isDoneNotificationTrigger(latestMessage)
+        else { return }
+
         let notificationText = self.doneNotificationText(for: session, triggerMessage: latestMessage)
+        self.setNotification(on: session, text: notificationText)
+        self.postSystemNotification(body: notificationText)
+    }
+
+    private func maybeNotifyForDisconnect(in session: SessionItem) {
+        let notificationText = self.disconnectNotificationText(for: session)
         self.setNotification(on: session, text: notificationText)
         self.postSystemNotification(body: notificationText)
     }
@@ -525,6 +542,27 @@ final class SessionState {
             return "Done"
         }
         return triggerMessage.title ?? "Done"
+    }
+
+    private func disconnectNotificationText(for session: SessionItem) -> String {
+        if let latestModelResponse = self.latestModelResponseText(in: session) {
+            return latestModelResponse
+        }
+
+        for message in session.messages.reversed() {
+            if let text = self.textContent(from: message.body) {
+                let normalized = self.normalizeNotificationText(text)
+                if !normalized.isEmpty {
+                    return normalized
+                }
+            }
+
+            if let title = message.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+                return title
+            }
+        }
+
+        return "Session finished"
     }
 
     private func latestModelResponseText(in session: SessionItem) -> String? {

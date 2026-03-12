@@ -9,6 +9,7 @@ struct HeadlessMessageTests {
         {
             "type": "session_info",
             "command": "agent",
+            "interactive": false,
             "planId": 42,
             "planTitle": "Add dark mode",
             "workspacePath": "/tmp/project",
@@ -21,6 +22,7 @@ struct HeadlessMessageTests {
             return
         }
         #expect(info.command == "agent")
+        #expect(info.interactive == false)
         #expect(info.planId == 42)
         #expect(info.planTitle == "Add dark mode")
         #expect(info.workspacePath == "/tmp/project")
@@ -33,7 +35,8 @@ struct HeadlessMessageTests {
         let json = """
         {
             "type": "session_info",
-            "command": "review"
+            "command": "review",
+            "interactive": true
         }
         """
         let msg = try JSONDecoder().decode(HeadlessMessage.self, from: Data(json.utf8))
@@ -42,6 +45,7 @@ struct HeadlessMessageTests {
             return
         }
         #expect(info.command == "review")
+        #expect(info.interactive == true)
         #expect(info.planId == nil)
         #expect(info.planTitle == nil)
         #expect(info.workspacePath == nil)
@@ -55,6 +59,7 @@ struct HeadlessMessageTests {
         {
             "type": "session_info",
             "command": "agent",
+            "interactive": false,
             "planId": 42,
             "planTitle": "Add dark mode",
             "workspacePath": "/tmp/project",
@@ -69,6 +74,7 @@ struct HeadlessMessageTests {
             return
         }
         #expect(info.command == "agent")
+        #expect(info.interactive == false)
         #expect(info.terminal?.type == "wezterm")
         #expect(info.terminal?.paneId == "7")
     }
@@ -1974,11 +1980,13 @@ struct ProjectDisplayNameTests {
     func `SessionGroup.hasNotification is true when any session has unread notification`() {
         let session1 = SessionItem(
             id: UUID(), connectionId: UUID(), command: "agent",
+            interactive: false,
             planId: nil, planTitle: nil, workspacePath: nil, gitRemote: nil,
             connectedAt: Date(), isActive: true, messages: [],
             hasUnreadNotification: false)
         let session2 = SessionItem(
             id: UUID(), connectionId: UUID(), command: "agent",
+            interactive: false,
             planId: nil, planTitle: nil, workspacePath: nil, gitRemote: nil,
             connectedAt: Date(), isActive: true, messages: [],
             hasUnreadNotification: true)
@@ -2017,6 +2025,7 @@ struct ProjectDisplayNameTests {
     func `SessionGroup.hasNotification is false when no sessions have notifications`() {
         let session = SessionItem(
             id: UUID(), connectionId: UUID(), command: "agent",
+            interactive: false,
             planId: nil, planTitle: nil, workspacePath: nil, gitRemote: nil,
             connectedAt: Date(), isActive: true, messages: [],
             hasUnreadNotification: false)

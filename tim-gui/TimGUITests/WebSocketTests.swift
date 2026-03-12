@@ -350,7 +350,7 @@ struct WebSocketTests {
         defer { connection.cancel() }
 
         let sessionInfoJson = """
-        {"type":"session_info","command":"agent","planId":42,"planTitle":"Test Plan","workspacePath":"/tmp/ws"}
+        {"type":"session_info","command":"agent","interactive":false,"planId":42,"planTitle":"Test Plan","workspacePath":"/tmp/ws"}
         """
         try await Self.sendTextFrame(sessionInfoJson, on: connection)
 
@@ -364,6 +364,7 @@ struct WebSocketTests {
             return
         }
         #expect(info.command == "agent")
+        #expect(info.interactive == false)
         #expect(info.planId == 42)
         #expect(info.planTitle == "Test Plan")
         #expect(info.workspacePath == "/tmp/ws")

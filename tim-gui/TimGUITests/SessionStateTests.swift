@@ -9,6 +9,7 @@ struct SessionStateTests {
 
     private func makeInfo(
         command: String = "agent",
+        interactive: Bool = false,
         planId: Int? = nil,
         planTitle: String? = nil,
         workspacePath: String? = nil,
@@ -17,6 +18,7 @@ struct SessionStateTests {
     {
         SessionInfoPayload(
             command: command,
+            interactive: interactive,
             planId: planId,
             planTitle: planTitle,
             workspacePath: workspacePath,
@@ -49,6 +51,7 @@ struct SessionStateTests {
         let session = state.sessions[0]
         #expect(session.connectionId == connId)
         #expect(session.command == "agent")
+        #expect(session.interactive == false)
         #expect(session.planId == 42)
         #expect(session.planTitle == "My Plan")
         #expect(session.workspacePath == "/projects/test")
@@ -125,6 +128,7 @@ struct SessionStateTests {
         // First session_info
         state.addSession(connectionId: connId, info: self.makeInfo(
             command: "agent",
+            interactive: false,
             planId: 10,
             planTitle: "Original Plan",
             workspacePath: "/original/path",
@@ -136,6 +140,7 @@ struct SessionStateTests {
         // Duplicate session_info with updated metadata
         state.addSession(connectionId: connId, info: self.makeInfo(
             command: "review",
+            interactive: true,
             planId: 20,
             planTitle: "Updated Plan",
             workspacePath: "/updated/path",
@@ -150,6 +155,7 @@ struct SessionStateTests {
         #expect(session.connectedAt == originalConnectedAt)
         // Metadata updated
         #expect(session.command == "review")
+        #expect(session.interactive == true)
         #expect(session.planId == 20)
         #expect(session.planTitle == "Updated Plan")
         #expect(session.workspacePath == "/updated/path")
@@ -507,7 +513,7 @@ struct SessionStateTests {
     func `markDisconnected does not update notification state for that session`() {
         let state = SessionState()
         let connId = UUID()
-        state.addSession(connectionId: connId, info: self.makeInfo())
+        state.addSession(connectionId: connId, info: self.makeInfo(interactive: true))
         state.selectedSessionId = nil
 
         state.markDisconnected(connectionId: connId)
@@ -520,7 +526,7 @@ struct SessionStateTests {
     func `markDisconnected preserves existing notification state for selected session`() {
         let state = SessionState()
         let connId = UUID()
-        state.addSession(connectionId: connId, info: self.makeInfo())
+        state.addSession(connectionId: connId, info: self.makeInfo(interactive: true))
         state.sessions[0].hasUnreadNotification = true
         state.sessions[0].notificationMessage = "Existing"
         state.selectedSessionId = state.sessions[0].id
@@ -1203,6 +1209,7 @@ struct SessionStateTests {
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(
             command: "agent",
+            interactive: true,
             workspacePath: "/project/x"))
 
         state.appendMessage(connectionId: connId, message: SessionMessage(
@@ -1227,6 +1234,7 @@ struct SessionStateTests {
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(
             command: "agent",
+            interactive: true,
             workspacePath: "/project/x"))
 
         state.appendMessage(connectionId: connId, message: SessionMessage(
@@ -1246,6 +1254,7 @@ struct SessionStateTests {
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(
             command: "agent",
+            interactive: true,
             workspacePath: "/project/x"))
 
         state.appendMessage(connectionId: connId, message: SessionMessage(
@@ -1270,6 +1279,7 @@ struct SessionStateTests {
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(
             command: "agent",
+            interactive: true,
             workspacePath: "/project/x"))
 
         state.appendMessage(connectionId: connId, message: SessionMessage(
@@ -1289,6 +1299,7 @@ struct SessionStateTests {
         let connId = UUID()
         state.addSession(connectionId: connId, info: self.makeInfo(
             command: "agent",
+            interactive: true,
             workspacePath: "/project/x"))
 
         state.appendMessage(connectionId: connId, message: SessionMessage(
@@ -1301,6 +1312,73 @@ struct SessionStateTests {
 
         #expect(state.sessions[0].notificationMessage == nil)
         #expect(state.sessions[0].hasUnreadNotification == false)
+    }
+
+    @Test
+    func `noninteractive turn done does not update notification state`() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(
+            command: "agent",
+            interactive: false,
+            workspacePath: "/project/x"))
+
+        state.appendMessage(connectionId: connId, message: SessionMessage(
+            seq: 1,
+            title: "Model Response",
+            body: .text("Finished the refactor and all tests are passing."),
+            category: .llmOutput))
+        state.appendMessage(connectionId: connId, message: SessionMessage(
+            seq: 2,
+            title: "Turn Done",
+            body: .text("Success: yes, Duration: 45s"),
+            category: .lifecycle,
+            completionKind: .subtask))
+
+        #expect(state.sessions[0].notificationMessage == nil)
+        #expect(state.sessions[0].hasUnreadNotification == false)
+    }
+
+    @Test
+    func `noninteractive disconnect updates notification state with latest model response`() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(
+            command: "agent",
+            interactive: false,
+            workspacePath: "/project/x"))
+
+        state.appendMessage(connectionId: connId, message: SessionMessage(
+            seq: 1,
+            title: "Model Response",
+            body: .text("Finished the refactor and all tests are passing."),
+            category: .llmOutput))
+
+        state.markDisconnected(connectionId: connId)
+
+        #expect(state.sessions[0].notificationMessage == "Finished the refactor and all tests are passing.")
+        #expect(state.sessions[0].hasUnreadNotification == true)
+    }
+
+    @Test
+    func `noninteractive disconnect falls back to latest message text`() {
+        let state = SessionState()
+        let connId = UUID()
+        state.addSession(connectionId: connId, info: self.makeInfo(
+            command: "agent",
+            interactive: false,
+            workspacePath: "/project/x"))
+
+        state.appendMessage(connectionId: connId, message: SessionMessage(
+            seq: 1,
+            title: "stderr",
+            body: .text("build completed successfully"),
+            category: .log))
+
+        state.markDisconnected(connectionId: connId)
+
+        #expect(state.sessions[0].notificationMessage == "build completed successfully")
+        #expect(state.sessions[0].hasUnreadNotification == true)
     }
 
     // MARK: - markNotificationRead

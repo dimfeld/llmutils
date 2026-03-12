@@ -256,6 +256,7 @@ describe('HeadlessAdapter', () => {
       `ws://127.0.0.1:${server.port}/tim-agent`,
       {
         command: 'agent',
+        interactive: false,
         planId: 166,
         planTitle: 'headless mode',
         workspacePath: '/tmp/workspace',
@@ -274,6 +275,7 @@ describe('HeadlessAdapter', () => {
     expect(server.messages[0]).toMatchObject({
       type: 'session_info',
       command: 'agent',
+      interactive: false,
       planId: 166,
       planTitle: 'headless mode',
       workspacePath: '/tmp/workspace',
@@ -310,6 +312,7 @@ describe('HeadlessAdapter', () => {
       `ws://127.0.0.1:${server.port}/tim-agent`,
       {
         command: 'agent',
+        interactive: false,
         terminalPaneId: '9',
         terminalType: 'wezterm',
       },
@@ -328,6 +331,7 @@ describe('HeadlessAdapter', () => {
     expect(sessionInfo).toMatchObject({
       type: 'session_info',
       command: 'agent',
+      interactive: false,
       terminalPaneId: '9',
       terminalType: 'wezterm',
     });
@@ -344,6 +348,7 @@ describe('HeadlessAdapter', () => {
       `ws://127.0.0.1:${server.port}/tim-agent`,
       {
         command: 'agent',
+        interactive: false,
       },
       wrapped,
       { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
@@ -360,6 +365,7 @@ describe('HeadlessAdapter', () => {
     expect(sessionInfo).toMatchObject({
       type: 'session_info',
       command: 'agent',
+      interactive: false,
     });
     expect(sessionInfo).not.toHaveProperty('terminalPaneId');
     expect(sessionInfo).not.toHaveProperty('terminalType');
@@ -578,7 +584,7 @@ describe('HeadlessAdapter', () => {
     const { adapter: wrapped } = createRecordingAdapter();
     const adapter = createTestHeadlessAdapter(
       `ws://127.0.0.1:${server.port}/tim-agent`,
-      { command: 'agent' },
+      { command: 'agent', interactive: false },
       wrapped,
       { reconnectIntervalMs: 0 }
     );
@@ -632,6 +638,7 @@ describe('HeadlessAdapter', () => {
     expect(server.messages[secondSessionStart]).toMatchObject({
       type: 'session_info',
       command: 'agent',
+      interactive: false,
     });
 
     adapter.log('post-reconnect-live-after-replay');

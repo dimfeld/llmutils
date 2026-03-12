@@ -21,6 +21,7 @@ export interface HeadlessPlanSummary {
 interface RunWithHeadlessOptions<T> {
   enabled: boolean;
   command: 'agent' | 'review' | 'run-prompt' | 'generate' | 'chat';
+  interactive: boolean;
   config: Pick<TimConfig, 'headless'>;
   plan?: HeadlessPlanSummary;
   callback: () => Promise<T>;
@@ -28,6 +29,7 @@ interface RunWithHeadlessOptions<T> {
 
 interface CreateHeadlessAdapterOptions {
   command: 'agent' | 'review' | 'run-prompt' | 'generate' | 'chat';
+  interactive: boolean;
   config: Pick<TimConfig, 'headless'>;
   plan?: HeadlessPlanSummary;
 }
@@ -75,6 +77,7 @@ function warnIfInvalidHeadlessUrl(url: string): void {
 
 export async function buildHeadlessSessionInfo(
   command: 'agent' | 'review' | 'run-prompt' | 'generate' | 'chat',
+  interactive: boolean,
   plan?: HeadlessPlanSummary
 ): Promise<HeadlessSessionInfo> {
   let workspacePath: string | undefined;
@@ -91,6 +94,7 @@ export async function buildHeadlessSessionInfo(
 
   return {
     command,
+    interactive,
     planId: plan?.id,
     planTitle: plan?.title,
     workspacePath,
@@ -103,6 +107,7 @@ export async function buildHeadlessSessionInfo(
 export async function runWithHeadlessAdapterIfEnabled<T>({
   enabled,
   command,
+  interactive,
   config,
   plan,
   callback,
@@ -111,7 +116,7 @@ export async function runWithHeadlessAdapterIfEnabled<T>({
     return callback();
   }
 
-  const sessionInfo = await buildHeadlessSessionInfo(command, plan);
+  const sessionInfo = await buildHeadlessSessionInfo(command, interactive, plan);
   const url = resolveHeadlessUrl(config);
   const headlessAdapter = createHeadlessAdapter(url, sessionInfo);
 
@@ -124,10 +129,11 @@ export async function runWithHeadlessAdapterIfEnabled<T>({
 
 export async function createHeadlessAdapterForCommand({
   command,
+  interactive,
   config,
   plan,
 }: CreateHeadlessAdapterOptions): Promise<HeadlessAdapter> {
-  const sessionInfo = await buildHeadlessSessionInfo(command, plan);
+  const sessionInfo = await buildHeadlessSessionInfo(command, interactive, plan);
   const url = resolveHeadlessUrl(config);
   return createHeadlessAdapter(url, sessionInfo);
 }

@@ -67,6 +67,7 @@ struct ContentView: View {
             let state = SessionState()
             state.addSession(connectionId: UUID(), info: SessionInfoPayload(
                 command: "agent",
+                interactive: false,
                 planId: 42,
                 planTitle: "Example plan",
                 workspacePath: "/tmp/workspace",

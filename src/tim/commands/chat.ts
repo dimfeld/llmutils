@@ -122,6 +122,7 @@ export async function handleChatCommand(
   await runWithHeadlessAdapterIfEnabled({
     enabled: options.headlessAdapter === true || !tunnelActive,
     command: 'chat',
+    interactive: true,
     config,
     callback: async () => {
       await executor.execute(promptForExecution, {

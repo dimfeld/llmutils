@@ -204,6 +204,7 @@ final class SessionItem: Identifiable {
     let id: UUID
     var connectionId: UUID
     var command: String
+    var interactive: Bool
     var planId: Int?
     var planTitle: String?
     var workspacePath: String?
@@ -233,6 +234,7 @@ final class SessionItem: Identifiable {
         id: UUID,
         connectionId: UUID,
         command: String,
+        interactive: Bool,
         planId: Int?,
         planTitle: String?,
         workspacePath: String?,
@@ -250,6 +252,7 @@ final class SessionItem: Identifiable {
         self.id = id
         self.connectionId = connectionId
         self.command = command
+        self.interactive = interactive
         self.planId = planId
         self.planTitle = planTitle
         self.workspacePath = workspacePath
@@ -397,6 +400,7 @@ enum HeadlessMessage {
 
 struct SessionInfoPayload {
     let command: String
+    let interactive: Bool
     let planId: Int?
     let planTitle: String?
     let workspacePath: String?
@@ -410,6 +414,7 @@ extension HeadlessMessage: Decodable {
         case seq
         case message
         case command
+        case interactive
         case planId
         case planTitle
         case workspacePath
@@ -425,6 +430,7 @@ extension HeadlessMessage: Decodable {
         switch type {
         case "session_info":
             let command = try container.decode(String.self, forKey: .command)
+            let interactive = try container.decodeIfPresent(Bool.self, forKey: .interactive) ?? false
             let planId = try container.decodeIfPresent(Int.self, forKey: .planId)
             let planTitle = try container.decodeIfPresent(String.self, forKey: .planTitle)
             let workspacePath = try container.decodeIfPresent(String.self, forKey: .workspacePath)
@@ -435,7 +441,7 @@ extension HeadlessMessage: Decodable {
                 TerminalPayload(type: terminalType ?? "unknown", paneId: paneId)
             }
             self = .sessionInfo(SessionInfoPayload(
-                command: command, planId: planId, planTitle: planTitle,
+                command: command, interactive: interactive, planId: planId, planTitle: planTitle,
                 workspacePath: workspacePath, gitRemote: gitRemote,
                 terminal: terminal))
         case "output":

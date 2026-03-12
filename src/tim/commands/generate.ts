@@ -289,6 +289,7 @@ export async function handleGenerateCommand(
     await runWithHeadlessAdapterIfEnabled({
       enabled: !isTunnelActive(),
       command: 'generate',
+      interactive: true,
       config,
       plan: {
         id: parsedPlan.id,

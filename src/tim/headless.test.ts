@@ -87,13 +87,14 @@ describe('resolveHeadlessUrl', () => {
 
 describe('buildHeadlessSessionInfo', () => {
   test('includes workspace and remote metadata when available', async () => {
-    const info = await buildHeadlessSessionInfo('agent', {
+    const info = await buildHeadlessSessionInfo('agent', false, {
       id: 166,
       title: 'headless mode',
     });
 
     expect(info).toEqual({
       command: 'agent',
+      interactive: false,
       planId: 166,
       planTitle: 'headless mode',
       workspacePath: '/tmp/repo',
@@ -110,7 +111,7 @@ describe('buildHeadlessSessionInfo', () => {
       gitRoot: '/tmp/repo',
     }));
 
-    const info = await buildHeadlessSessionInfo('agent', {
+    const info = await buildHeadlessSessionInfo('agent', false, {
       id: 1,
       title: 'cred test',
     });
@@ -127,13 +128,14 @@ describe('buildHeadlessSessionInfo', () => {
       throw new Error('no repo');
     });
 
-    const info = await buildHeadlessSessionInfo('review', {
+    const info = await buildHeadlessSessionInfo('review', false, {
       id: 42,
       title: 'review plan',
     });
 
     expect(info).toEqual({
       command: 'review',
+      interactive: false,
       planId: 42,
       planTitle: 'review plan',
       workspacePath: undefined,
@@ -146,7 +148,7 @@ describe('buildHeadlessSessionInfo', () => {
   test('includes terminal metadata when WEZTERM_PANE is set', async () => {
     process.env.WEZTERM_PANE = '12';
 
-    const info = await buildHeadlessSessionInfo('agent', {
+    const info = await buildHeadlessSessionInfo('agent', false, {
       id: 99,
       title: 'pane test',
     });
@@ -156,7 +158,7 @@ describe('buildHeadlessSessionInfo', () => {
   });
 
   test('omits terminal metadata when WEZTERM_PANE is unset', async () => {
-    const info = await buildHeadlessSessionInfo('agent', {
+    const info = await buildHeadlessSessionInfo('agent', false, {
       id: 99,
       title: 'pane test',
     });
@@ -168,7 +170,7 @@ describe('buildHeadlessSessionInfo', () => {
   test('omits terminal metadata when WEZTERM_PANE is empty string', async () => {
     process.env.WEZTERM_PANE = '';
 
-    const info = await buildHeadlessSessionInfo('agent', {
+    const info = await buildHeadlessSessionInfo('agent', false, {
       id: 99,
       title: 'empty pane test',
     });
@@ -180,7 +182,7 @@ describe('buildHeadlessSessionInfo', () => {
   test('omits terminal metadata when WEZTERM_PANE is whitespace only', async () => {
     process.env.WEZTERM_PANE = '  ';
 
-    const info = await buildHeadlessSessionInfo('agent', {
+    const info = await buildHeadlessSessionInfo('agent', false, {
       id: 99,
       title: 'whitespace pane test',
     });
@@ -192,11 +194,12 @@ describe('buildHeadlessSessionInfo', () => {
   test('trims whitespace from WEZTERM_PANE value', async () => {
     process.env.WEZTERM_PANE = '  42  ';
 
-    const info = await buildHeadlessSessionInfo('agent', {
+    const info = await buildHeadlessSessionInfo('agent', true, {
       id: 99,
       title: 'trim test',
     });
 
+    expect(info.interactive).toBe(true);
     expect(info.terminalPaneId).toBe('42');
     expect(info.terminalType).toBe('wezterm');
   });
@@ -220,6 +223,7 @@ describe('runWithHeadlessAdapterIfEnabled', () => {
         runWithHeadlessAdapterIfEnabled({
           enabled: true,
           command: 'agent',
+          interactive: false,
           config: {},
           plan: { id: 166, title: 'headless mode' },
           callback: async () => getLoggerAdapter(),
@@ -239,6 +243,7 @@ describe('runWithHeadlessAdapterIfEnabled', () => {
       runWithHeadlessAdapterIfEnabled({
         enabled: false,
         command: 'review',
+        interactive: false,
         config: {},
         callback: async () => getLoggerAdapter(),
       })
@@ -254,6 +259,7 @@ describe('runWithHeadlessAdapterIfEnabled', () => {
         runWithHeadlessAdapterIfEnabled({
           enabled: true,
           command: 'review',
+          interactive: false,
           config: {},
           callback: async () => {
             throw new Error('boom');
@@ -282,6 +288,7 @@ describe('createHeadlessAdapterForCommand', () => {
     const headlessAdapter = await runWithLogger(wrappedAdapter, () =>
       createHeadlessAdapterForCommand({
         command: 'review',
+        interactive: false,
         config: { headless: { url: 'ws://127.0.0.1:9/tim-agent' } },
         plan: { id: 42, title: 'review plan' },
       })

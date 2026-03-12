@@ -526,6 +526,7 @@ export async function handleRunPromptCommand(
       runWithHeadlessAdapterIfEnabledFn({
         enabled: !isTunnelActiveFn(),
         command: 'run-prompt',
+        interactive: false,
         config,
         callback: async () => {
           if (executor === 'claude') {

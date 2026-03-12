@@ -755,6 +755,7 @@ export async function handleReviewCommand(
           headlessAdapter = await runWithLogger(printLogger, () =>
             createHeadlessAdapterForCommand({
               command: 'review',
+              interactive: false,
               config,
               plan: planSummary,
             })
@@ -762,6 +763,7 @@ export async function handleReviewCommand(
         } else {
           headlessAdapter = await createHeadlessAdapterForCommand({
             command: 'review',
+            interactive: false,
             config,
             plan: planSummary,
           });

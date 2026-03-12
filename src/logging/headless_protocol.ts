@@ -2,6 +2,7 @@ import type { TunnelMessage } from './tunnel_protocol.js';
 
 export interface HeadlessSessionInfo {
   command: string;
+  interactive?: boolean;
   planId?: number;
   planTitle?: string;
   workspacePath?: string;

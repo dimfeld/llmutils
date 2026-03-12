@@ -784,6 +784,7 @@ struct SessionMessageView: View {
                 connectionId: connId1,
                 info: SessionInfoPayload(
                     command: "agent",
+                    interactive: false,
                     planId: 169,
                     planTitle: "Add WebSocket support",
                     workspacePath: "/Users/dev/projects/myapp",
@@ -793,6 +794,7 @@ struct SessionMessageView: View {
                 connectionId: UUID(),
                 info: SessionInfoPayload(
                     command: "agent",
+                    interactive: false,
                     planId: 170,
                     planTitle: "Fix auth bug",
                     workspacePath: "/Users/dev/projects/myapp",
@@ -804,6 +806,7 @@ struct SessionMessageView: View {
                 connectionId: UUID(),
                 info: SessionInfoPayload(
                     command: "agent",
+                    interactive: false,
                     planId: 201,
                     planTitle: "Refactor parser",
                     workspacePath: "/Users/dev/projects/lib",
@@ -815,6 +818,7 @@ struct SessionMessageView: View {
                 connectionId: UUID(),
                 info: SessionInfoPayload(
                     command: "agent",
+                    interactive: false,
                     planId: 202,
                     planTitle: "Update docs",
                     workspacePath: "/Users/dev/projects/another",
