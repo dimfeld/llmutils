@@ -102,12 +102,58 @@ function parseBooleanOption(value: unknown, defaultValue = false): boolean {
   return Boolean(value);
 }
 
+async function buildGeneratePromptContext(
+  planArg: string,
+  context: GenerateModeRegistrationContext
+): Promise<{
+  plan: Awaited<ReturnType<typeof resolvePlan>>['plan'];
+  planPath: string;
+  contextBlock: string;
+}> {
+  const { plan, planPath } = await resolvePlan(planArg, context);
+
+  let contextBlock = buildPlanContext(plan, planPath, context);
+
+  if (plan.parent !== undefined) {
+    try {
+      const tasksDir = await resolveTasksDir(context.config);
+      const { plans } = await readAllPlans(tasksDir);
+      const parentPlan = plans.get(plan.parent);
+
+      if (!parentPlan) {
+        throw new Error(`Parent plan ${plan.parent} not found`);
+      }
+
+      const parentPlanPath = parentPlan.filename;
+      const parentContext = buildPlanContext(parentPlan, parentPlanPath, context);
+      contextBlock = `# Parent Plan Context
+
+${parentContext}
+
+# Current Plan Context
+
+${contextBlock}`;
+    } catch {
+      // Ignore missing or unreadable parent plans so prompt generation still works.
+    }
+  }
+
+  return {
+    plan,
+    planPath,
+    contextBlock,
+  };
+}
+
 export async function loadResearchPrompt(
   args: { plan?: string; allowMultiplePlans?: unknown },
   context: GenerateModeRegistrationContext
 ) {
   clearPlanCache();
-  const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
+  const { plan, planPath, contextBlock } = await buildGeneratePromptContext(
+    args.plan ?? '',
+    context
+  );
 
   const allowMultiplePlans = parseBooleanOption(args.allowMultiplePlans, true);
   const parentPlanId = plan.id;
@@ -116,8 +162,6 @@ export async function loadResearchPrompt(
   if (plan.simple) {
     return loadGeneratePrompt({ plan: args.plan, allowMultiplePlans }, context);
   }
-
-  const contextBlock = buildPlanContext(plan, planPath, context);
 
   const multiplePlansGuidance = allowMultiplePlans
     ? `
@@ -249,8 +293,11 @@ export async function loadGeneratePrompt(
   let contextBlock = '';
   let parentPlanId: number | undefined;
   if (args.plan) {
-    const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
-    contextBlock = buildPlanContext(plan, planPath, context);
+    const { plan, contextBlock: builtContextBlock } = await buildGeneratePromptContext(
+      args.plan ?? '',
+      context
+    );
+    contextBlock = builtContextBlock;
     parentPlanId = plan.id;
   }
 

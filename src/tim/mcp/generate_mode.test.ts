@@ -124,6 +124,56 @@ describe('tim MCP generate mode helpers', () => {
     expect(message?.text).toContain('Break the project into phases');
   });
 
+  test('loadResearchPrompt includes parent plan context when plan has a parent', async () => {
+    const parentPath = path.join(tmpDir, '99998-parent.plan.md');
+    await writePlanFile(parentPath, {
+      ...basePlan,
+      id: 99998,
+      title: 'Parent Plan',
+      goal: 'Coordinate the broader feature',
+      details: 'Parent-level context that should be visible while generating tasks.',
+    });
+    await writePlanFile(planPath, {
+      ...basePlan,
+      parent: 99998,
+    });
+
+    const prompt = await loadResearchPrompt({ plan: planPath }, context);
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+
+    expect(messageText).toContain('# Parent Plan Context');
+    expect(messageText).toContain('Title: Parent Plan');
+    expect(messageText).toContain('Goal:\nCoordinate the broader feature');
+    expect(messageText).toContain(
+      'Details:\nParent-level context that should be visible while generating tasks.'
+    );
+    expect(messageText).toContain('# Current Plan Context');
+    expect(messageText).toContain('Title: Test Plan');
+  });
+
+  test('loadGeneratePrompt includes parent plan context when plan has a parent', async () => {
+    const parentPath = path.join(tmpDir, '99998-parent.plan.md');
+    await writePlanFile(parentPath, {
+      ...basePlan,
+      id: 99998,
+      title: 'Parent Plan',
+      goal: 'Coordinate the broader feature',
+      details: 'Parent-level context that should be visible while generating tasks.',
+    });
+    await writePlanFile(planPath, {
+      ...basePlan,
+      parent: 99998,
+    });
+
+    const prompt = await loadGeneratePrompt({ plan: planPath }, context);
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+
+    expect(messageText).toContain('# Parent Plan Context');
+    expect(messageText).toContain('Title: Parent Plan');
+    expect(messageText).toContain('# Current Plan Context');
+    expect(messageText).toContain('Title: Test Plan');
+  });
+
   test('loadPlanPrompt returns plan details and wait instruction', async () => {
     const prompt = await loadPlanPrompt({ plan: planPath }, context);
     const message = prompt.messages[0]?.content;
