@@ -289,7 +289,7 @@ async function getAvailableFixActions(): Promise<
   );
 }
 
-type ReviewIssueAction = FixAction | 'cleanup' | 'append' | 'exit';
+type ReviewIssueAction = FixAction | 'cleanup' | 'append' | 'exit' | 'exit-manually-resolved';
 
 type ReviewIssueWorkflowResult = {
   appendedTaskCount: number;
@@ -380,6 +380,7 @@ async function promptForReviewIssueAction(
           value: option.action,
         })),
         { name: 'Create a cleanup plan (for later execution)', value: 'cleanup' },
+        { name: 'Exit (manually resolved)', value: 'exit-manually-resolved' },
         { name: 'Exit (do nothing)', value: 'exit' },
       ],
       default: 'append',
@@ -509,6 +510,8 @@ async function handleReviewIssueActions(params: {
           log(chalk.yellow('No issues selected to append as tasks.'));
         }
       }
+    } else if (action === 'exit-manually-resolved') {
+      actionCompleted = true;
     }
   }
 
