@@ -124,12 +124,11 @@ export function formatStructuredMessage(message: StructuredMessage): string {
           info.push(`Duration: ${Math.round(message.durationMs / 1000)}s`);
         if (message.costUsd != null) info.push(`Cost: $${message.costUsd.toFixed(2)}`);
         if (message.turns != null) info.push(`Turns: ${message.turns}`);
+        if (message.summary) info.push(`Summary: ${message.summary}`);
 
-        const line =
-          formatHeader(chalk.bold.green, 'Done', message.timestamp) + ' - ' + info.join(', ');
-
-        if (message.summary) return line + '\n' + message.summary;
-        return line;
+        return (
+          formatHeader(chalk.bold.green, 'Turn Done', message.timestamp) + ' - ' + info.join(', ')
+        );
       }
       case 'agent_iteration_start':
         return [

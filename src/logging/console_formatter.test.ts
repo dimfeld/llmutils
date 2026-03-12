@@ -23,10 +23,12 @@ describe('console_formatter', () => {
     expect(start).toContain('168');
 
     const end = format({ type: 'agent_session_end', timestamp, success: true, costUsd: 0.05 });
+    expect(end).toContain('Turn Done');
     expect(end).toContain('Success');
     expect(end).toContain('yes');
     expect(end).toContain('Cost: $0.05');
     const failedEnd = format({ type: 'agent_session_end', timestamp, success: false });
+    expect(failedEnd).toContain('Turn Done');
     expect(failedEnd).toContain('Success');
     expect(failedEnd).toContain('no');
 

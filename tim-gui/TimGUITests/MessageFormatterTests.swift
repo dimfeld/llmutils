@@ -135,17 +135,13 @@ struct MessageFormatterTests {
             tunnelMessage: .structured(message: .agentSessionEnd(payload)),
             seq: 11)
         #expect(msg.category == .lifecycle)
-        #expect(msg.title == "Done")
+        #expect(msg.title == "Turn Done")
         #expect(msg.completionKind == .subtask)
-        guard case let .keyValuePairs(pairs) = msg.body else {
-            Issue.record("Expected .keyValuePairs body")
+        guard case let .text(body) = msg.body else {
+            Issue.record("Expected .text body")
             return
         }
-        let pairDict = Dictionary(uniqueKeysWithValues: pairs.map { ($0.key, $0.value) })
-        #expect(pairDict["Success"] == "yes")
-        #expect(pairDict["Duration"] == "45s")
-        #expect(pairDict["Cost"] == "$1.25")
-        #expect(pairDict["Turns"] == "12")
+        #expect(body == "Success: yes, Duration: 45s, Cost: $1.25, Turns: 12")
     }
 
     @Test
@@ -156,13 +152,13 @@ struct MessageFormatterTests {
         let msg = MessageFormatter.format(
             tunnelMessage: .structured(message: .agentSessionEnd(payload)),
             seq: 12)
-        #expect(msg.title == "Done")
+        #expect(msg.title == "Turn Done")
         #expect(msg.completionKind == .subtask)
-        guard case let .keyValuePairs(pairs) = msg.body else {
-            Issue.record("Expected .keyValuePairs body")
+        guard case let .text(body) = msg.body else {
+            Issue.record("Expected .text body")
             return
         }
-        #expect(pairs == [KeyValuePair(key: "Success", value: "no")])
+        #expect(body == "Success: no")
     }
 
     @Test
@@ -481,7 +477,7 @@ struct MessageFormatterTests {
                 taskTitle: "Add tests", planComplete: true, timestamp: nil)),
             seq: 90)
         #expect(msg.category == .lifecycle)
-        #expect(msg.title == "Done")
+        #expect(msg.title == "Turn Done")
         #expect(msg.completionKind == .topLevel)
         guard case let .text(body) = msg.body else {
             Issue.record("Expected .text body")

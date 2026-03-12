@@ -1219,14 +1219,14 @@ enum MessageFormatter {
                 category: .lifecycle, timestamp: parseTimestamp(p.timestamp))
 
         case let .agentSessionEnd(p):
-            var pairs = [KeyValuePair(key: "Success", value: p.success ? "yes" : "no")]
-            if let d = p.durationMs { pairs.append(KeyValuePair(key: "Duration", value: "\(Int(d / 1000))s")) }
-            if let c = p.costUsd { pairs.append(KeyValuePair(key: "Cost", value: "$\(String(format: "%.2f", c))")) }
-            if let t = p.turns { pairs.append(KeyValuePair(key: "Turns", value: "\(t)")) }
-            if let s = p.summary { pairs.append(KeyValuePair(key: "Summary", value: s)) }
+            var parts = ["Success: \(p.success ? "yes" : "no")"]
+            if let d = p.durationMs { parts.append("Duration: \(Int(d / 1000))s") }
+            if let c = p.costUsd { parts.append("Cost: $\(String(format: "%.2f", c))") }
+            if let t = p.turns { parts.append("Turns: \(t)") }
+            if let s = p.summary { parts.append("Summary: \(s)") }
             return SessionMessage(
-                seq: seq, title: "Done",
-                body: .keyValuePairs(pairs),
+                seq: seq, title: "Turn Done",
+                body: .text(parts.joined(separator: ", ")),
                 category: .lifecycle, completionKind: .subtask, timestamp: parseTimestamp(p.timestamp))
 
         case let .agentIterationStart(p):
@@ -1431,7 +1431,7 @@ enum MessageFormatter {
                 ? "Task complete: \(title) (plan complete)".trimmingCharacters(in: .whitespaces)
                 : "Task complete: \(title)".trimmingCharacters(in: .whitespaces)
             return SessionMessage(
-                seq: seq, title: "Done",
+                seq: seq, title: "Turn Done",
                 body: .text(text),
                 category: .lifecycle,
                 completionKind: planComplete ? .topLevel : .subtask,
