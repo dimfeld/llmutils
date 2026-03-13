@@ -2389,7 +2389,7 @@ tim extract [--input FILE] [--output FILE]
 - **Recent activity time**: Session rows show the time the most recent incoming message or notification was received (falling back to connection time when no messages have arrived yet)
 - **Send messages to agents**: Active sessions show a text input field at the bottom of the session view for sending messages to the running agent's subprocess stdin via the headless WebSocket protocol. Press Enter to send, Shift+Enter to insert a newline. The input field auto-grows up to 5 lines and is hidden when the session is disconnected. Sent messages appear in the message list with distinct styling.
 - **Interactive prompts**: When the backend sends a `prompt_request` (confirm, select, input, checkbox, or prefix_select), the GUI presents an interactive prompt UI. The user's response is sent back as a `prompt_response` message. Prompts auto-dismiss when answered from any source (GUI, terminal, or timeout).
-- **Notification integration**: Incoming HTTP notifications are matched to existing sessions by terminal pane ID (WezTerm) or working directory. Unmatched notifications create standalone session entries.
+- **Notification integration**: Incoming HTTP notifications are matched to existing sessions by terminal pane ID (WezTerm) or working directory. Unmatched notifications create standalone session entries, and selecting a standalone notification shows the full notification text in the detail pane.
 - **Unread indicators**: Sessions with unread notifications show a blue dot; selecting the session clears it
 - **Terminal pane activation**: Sessions with terminal info show a button to activate the associated WezTerm pane
 - **macOS system notifications**: Fires native notifications for all incoming messages

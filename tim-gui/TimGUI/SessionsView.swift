@@ -355,6 +355,11 @@ struct SessionRowView: View {
 
 struct SessionDetailView: View {
     private static let maxDisplayedMessages = 100
+    static func notificationDetailText(for session: SessionItem) -> String? {
+        guard session.command.isEmpty else { return nil }
+        let text = session.notificationMessage?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return text.isEmpty ? nil : text
+    }
 
     let session: SessionItem
     var sessionState: SessionState
@@ -375,11 +380,26 @@ struct SessionDetailView: View {
     private var displayedMessages: ArraySlice<SessionMessage> {
         self.session.messages.suffix(Self.maxDisplayedMessages)
     }
+
+    private var notificationDetailText: String? {
+        Self.notificationDetailText(for: self.session)
+    }
+
     private var shouldShowScrollButton: Bool {
         !self.isNearBottom && !self.autoScrollEnabled
     }
 
     var body: some View {
+        if let notificationDetailText = self.notificationDetailText {
+            OneOffNotificationDetailView(
+                text: notificationDetailText,
+                timestamp: self.session.displayTimestamp)
+        } else {
+            self.messageTranscriptView
+        }
+    }
+
+    private var messageTranscriptView: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
@@ -536,6 +556,36 @@ struct SessionDetailView: View {
     }
 
     static let bottomAnchorID = "session-bottom-anchor"
+}
+
+private struct OneOffNotificationDetailView: View {
+    let text: String
+    let timestamp: Date
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Notification")
+                        .font(.title3.weight(.semibold))
+
+                    Text(self.timestamp, style: .time)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+
+                Text(self.text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .applyIf(!LoopDiagnostics.disableMessageTextSelection) { view in
+                        view.textSelection(.enabled)
+                    }
+                    .padding(14)
+                    .background(.quaternary.opacity(0.18), in: RoundedRectangle(cornerRadius: 12))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+        }
+    }
 }
 
 // MARK: - MessageInputBar

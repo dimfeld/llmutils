@@ -238,6 +238,64 @@ struct HeadlessMessageTests {
     }
 }
 
+@MainActor
+struct SessionDetailViewTests {
+    @Test
+    func `notification detail text returns full text for one-off notifications`() {
+        let session = SessionItem(
+            id: UUID(),
+            connectionId: UUID(),
+            command: "",
+            interactive: false,
+            planId: nil,
+            planTitle: nil,
+            workspacePath: "/tmp/project",
+            gitRemote: nil,
+            connectedAt: Date(),
+            isActive: false,
+            messages: [],
+            notificationMessage: "First line\nSecond line\n\nThird line")
+
+        #expect(
+            SessionDetailView.notificationDetailText(for: session)
+                == "First line\nSecond line\n\nThird line")
+    }
+
+    @Test
+    func `notification detail text ignores normal sessions and blank notifications`() {
+        let regularSession = SessionItem(
+            id: UUID(),
+            connectionId: UUID(),
+            command: "agent",
+            interactive: false,
+            planId: nil,
+            planTitle: nil,
+            workspacePath: nil,
+            gitRemote: nil,
+            connectedAt: Date(),
+            isActive: true,
+            messages: [],
+            notificationMessage: "Should not show")
+
+        let blankNotificationSession = SessionItem(
+            id: UUID(),
+            connectionId: UUID(),
+            command: "",
+            interactive: false,
+            planId: nil,
+            planTitle: nil,
+            workspacePath: nil,
+            gitRemote: nil,
+            connectedAt: Date(),
+            isActive: false,
+            messages: [],
+            notificationMessage: "   \n")
+
+        #expect(SessionDetailView.notificationDetailText(for: regularSession) == nil)
+        #expect(SessionDetailView.notificationDetailText(for: blankNotificationSession) == nil)
+    }
+}
+
 struct TunnelMessageTests {
     @Test
     func `Decodes log with args`() throws {
