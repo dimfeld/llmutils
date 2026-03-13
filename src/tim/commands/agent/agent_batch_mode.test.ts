@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -35,6 +36,10 @@ const loadEffectiveConfigSpy = mock(async () => ({
   postApplyCommands: [],
 }));
 const getGitRootSpy = mock(async () => '/test/project');
+const getWorkingCopyStatusSpy = mock(async () => ({
+  hasChanges: false,
+  checkFailed: false,
+}));
 const buildExecutionPromptWithoutStepsSpy = mock(async () => 'Test batch prompt');
 const executePostApplyCommandSpy = mock(async () => true);
 const runUpdateDocsSpy = mock(async () => {});
@@ -57,6 +62,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
     resolvePlanFileSpy.mockClear();
     loadEffectiveConfigSpy.mockClear();
     getGitRootSpy.mockClear();
+    getWorkingCopyStatusSpy.mockClear();
     buildExecutionPromptWithoutStepsSpy.mockClear();
     executePostApplyCommandSpy.mockClear();
     executePostApplyCommandSpy.mockResolvedValue(true);
@@ -87,8 +93,17 @@ describe('timAgent - Batch Mode Execution Loop', () => {
     }));
 
     getGitRootSpy.mockImplementation(async () => tempDir);
+    getWorkingCopyStatusSpy.mockImplementation(async () => {
+      const content = await fs.readFile(planFile, 'utf-8');
+      return {
+        hasChanges: true,
+        checkFailed: false,
+        diffHash: createHash('sha256').update(content).digest('hex'),
+      };
+    });
     await moduleMocker.mock('../../../common/git.js', () => ({
       getGitRoot: getGitRootSpy,
+      getWorkingCopyStatus: getWorkingCopyStatusSpy,
     }));
 
     await moduleMocker.mock('../../configLoader.js', () => ({
@@ -303,6 +318,49 @@ describe('timAgent - Batch Mode Execution Loop', () => {
 
       // Should have executed twice (once for each batch iteration)
       expect(executorExecuteSpy).toHaveBeenCalledTimes(2);
+    });
+
+    test('batch mode immediately retries when a run makes no changes and finishes quickly', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      let batchCallCount = 0;
+      executorExecuteSpy.mockImplementation(async () => {
+        batchCallCount++;
+        if (batchCallCount === 2) {
+          await createPlanFile({
+            tasks: [
+              {
+                title: 'Task 1',
+                description: 'First task',
+                steps: [{ prompt: 'Do task 1', done: true }],
+                done: true,
+              },
+            ],
+          });
+        }
+      });
+
+      const options = { log: false, nonInteractive: true, steps: '2' } as any;
+      const globalCliOptions = {};
+
+      await timAgent(planFile, options, globalCliOptions);
+
+      expect(executorExecuteSpy).toHaveBeenCalledTimes(2);
+      expect(sendStructuredSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'workflow_progress',
+          phase: 'batch',
+          message: expect.stringContaining('retrying'),
+        })
+      );
     });
 
     test('batch mode terminates when all tasks are complete', async () => {

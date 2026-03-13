@@ -1,4 +1,5 @@
 import { commitAll } from '../../../common/process.js';
+import { getWorkingCopyStatus, type WorkingCopyStatus } from '../../../common/git.js';
 import { promptConfirm } from '../../../common/input.js';
 import { boldMarkdownHeaders, error, log, sendStructured, warn } from '../../../logging.js';
 import chalk from 'chalk';
@@ -14,6 +15,31 @@ import type { SummaryCollector } from '../../summary/collector.js';
 import { runUpdateDocs } from '../update-docs.js';
 import { runUpdateLessons } from '../update-lessons.js';
 import { handleReviewCommand } from '../review.js';
+
+const FAST_NOOP_BATCH_RETRY_MS = 5 * 60 * 1000;
+
+function workingCopyStatusesMatch(
+  beforeStatus: WorkingCopyStatus,
+  afterStatus: WorkingCopyStatus
+): boolean {
+  if (beforeStatus.checkFailed || afterStatus.checkFailed) {
+    return false;
+  }
+
+  if (beforeStatus.hasChanges !== afterStatus.hasChanges) {
+    return false;
+  }
+
+  if (!beforeStatus.hasChanges) {
+    return true;
+  }
+
+  if (beforeStatus.diffHash && afterStatus.diffHash) {
+    return beforeStatus.diffHash === afterStatus.diffHash;
+  }
+
+  return beforeStatus.output === afterStatus.output;
+}
 
 export async function executeBatchMode(
   {
@@ -159,6 +185,9 @@ Available tasks:\n\n${taskDescriptions}`,
         break;
       }
 
+      const workingCopyStatusBeforeRun = await getWorkingCopyStatus(baseDir);
+      let executionDurationMs = 0;
+
       try {
         sendStructured({
           type: 'agent_step_start',
@@ -196,6 +225,7 @@ Available tasks:\n\n${taskDescriptions}`,
         });
         if (summaryCollector) {
           const end = Date.now();
+          executionDurationMs = end - start;
           // Coerce executor output to normalized shape for predictable summaries
           const normalizedOutput =
             typeof output === 'string' ? { content: output } : ((output as any) ?? undefined);
@@ -209,6 +239,8 @@ Available tasks:\n\n${taskDescriptions}`,
             durationMs: end - start,
             iteration,
           });
+        } else {
+          executionDurationMs = Date.now() - start;
         }
         if (!ok) {
           hasError = true;
@@ -249,10 +281,28 @@ Available tasks:\n\n${taskDescriptions}`,
       const completedTaskTitles = incompleteTasks
         .filter((task) => !remainingTaskIndices.has(task.taskIndex))
         .map((task) => task.task.title);
+      const workingCopyStatusAfterRun = await getWorkingCopyStatus(baseDir);
+      const shouldRetryImmediately =
+        executionDurationMs < FAST_NOOP_BATCH_RETRY_MS &&
+        workingCopyStatusesMatch(workingCopyStatusBeforeRun, workingCopyStatusAfterRun);
 
       log(
         `Batch iteration complete. Remaining incomplete tasks: ${remainingIncompleteTasks.length}`
       );
+
+      if (shouldRetryImmediately) {
+        log(
+          'Batch iteration made no working copy changes and finished in under 5 minutes; retrying.'
+        );
+        sendStructured({
+          type: 'workflow_progress',
+          timestamp: timestamp(),
+          phase: 'batch',
+          message:
+            'Batch iteration made no working copy changes and finished in under 5 minutes; retrying.',
+        });
+        continue;
+      }
 
       // Update docs if configured for after-iteration mode
       // Calculate which tasks were just completed by comparing before/after state
