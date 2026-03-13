@@ -60,6 +60,21 @@ describe('createAppServerFormatter', () => {
     );
   });
 
+  test('formats thread idle status changes', () => {
+    const formatter = createAppServerFormatter();
+    const idle = formatter.handleNotification('thread/status/changed', {
+      status: { type: 'idle' },
+    });
+
+    expect(idle.structured).toEqual(
+      expect.objectContaining({
+        type: 'llm_status',
+        source: 'codex',
+        status: 'codex.thread.idle',
+      })
+    );
+  });
+
   test('captures agent messages and ignores item/started without content', () => {
     const formatter = createAppServerFormatter();
     const started = formatter.handleNotification('item/started', {

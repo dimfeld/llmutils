@@ -221,6 +221,31 @@ describe('executeCodexStepViaAppServer', () => {
     harness.moduleMocker.clear();
   });
 
+  test('treats thread idle status as fallback turn completion', async () => {
+    const harness = await createHarness();
+
+    harness.connection.turnStart.mockImplementationOnce(async () => {
+      harness.connectionHandlers.onNotification?.('thread/status/changed', {
+        status: { type: 'running' },
+      });
+      harness.connectionHandlers.onNotification?.('item/completed', {
+        item: { type: 'agentMessage', text: 'task complete' },
+      });
+      harness.connectionHandlers.onNotification?.('thread/status/changed', {
+        status: { type: 'idle' },
+      });
+      return { turnId: 'turn-1' };
+    });
+
+    const output = await harness.executeCodexStepViaAppServer('do work', '/repo', {});
+
+    expect(output).toBe('final agent message');
+    expect(harness.connection.turnStart).toHaveBeenCalledTimes(1);
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
+
+    harness.moduleMocker.clear();
+  });
+
   test('interrupts on inactivity and retries with continue prompt', async () => {
     const harness = await createHarness();
 

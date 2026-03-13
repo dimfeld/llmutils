@@ -43,6 +43,15 @@ function extractTurnId(params: unknown): string | undefined {
   return typeof turn.id === 'string' ? turn.id : undefined;
 }
 
+function extractThreadStatusType(params: unknown): string | undefined {
+  const payload = params && typeof params === 'object' ? (params as Record<string, unknown>) : {};
+  const status =
+    payload.status && typeof payload.status === 'object'
+      ? (payload.status as Record<string, unknown>)
+      : undefined;
+  return typeof status?.type === 'string' ? status.type : undefined;
+}
+
 class UserInputQueue {
   private items: string[] = [];
   private waiters: Array<(value: string | undefined) => void> = [];
@@ -266,6 +275,13 @@ export async function executeCodexStepViaAppServer(
           resolveCurrentTurnStatus(extractTurnStatus(params));
           currentAttemptActive = false;
           clearInactivityTimer();
+        } else if (method === 'thread/status/changed') {
+          if (extractThreadStatusType(params) === 'idle') {
+            chatTurnCompleted = true;
+            resolveCurrentTurnStatus('completed');
+            currentAttemptActive = false;
+            clearInactivityTimer();
+          }
         } else if (method === 'turn/started') {
           currentTurnId = extractTurnId(params) ?? currentTurnId;
           chatTurnCompleted = false;

@@ -194,6 +194,14 @@ function normalizeThreadTokenUsage(payload: Record<string, unknown>): {
   };
 }
 
+function extractThreadStatusType(payload: Record<string, unknown>): string | undefined {
+  const status =
+    payload.status && typeof payload.status === 'object'
+      ? (payload.status as Record<string, unknown>)
+      : undefined;
+  return typeof status?.type === 'string' ? status.type : undefined;
+}
+
 function mergeUsage(
   existing: FormatterState['latestUsage'],
   next: FormatterState['latestUsage']
@@ -581,6 +589,21 @@ export function createAppServerFormatter() {
           state.latestUsage = mergeUsage(state.latestUsage, usage);
         }
         return { type: method };
+      }
+
+      if (lowerMethod === 'thread/status/changed') {
+        const statusType = extractThreadStatusType(payload);
+        return statusType
+          ? {
+              type: method,
+              structured: {
+                type: 'llm_status',
+                timestamp: ts,
+                source: 'codex',
+                status: `codex.thread.${statusType}`,
+              },
+            }
+          : { type: method };
       }
 
       if (
