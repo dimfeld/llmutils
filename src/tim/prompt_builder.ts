@@ -197,8 +197,7 @@ export async function buildExecutionPromptWithoutSteps(
     const relativePlanPath = path.isAbsolute(planFilePath)
       ? path.relative(gitRoot, planFilePath)
       : planFilePath;
-    const prefix = filePathPrefix || '';
-    const planFileReference = `\n## Plan File\n\n- ${prefix}${relativePlanPath}: This is the plan file you can reference if you need to check the plan again.\n`;
+    const planFileReference = `\n## Plan File\n\n- ${relativePlanPath}: This is the plan file whose contents are above. You can read or edit this file if you need to check the plan again.\n`;
     promptParts.push(planFileReference);
 
     // Add task files if available

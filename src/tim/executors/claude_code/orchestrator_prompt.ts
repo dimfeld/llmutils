@@ -119,7 +119,7 @@ When selecting which tasks to batch together, consider:
 
 ## Plan File Updates
 
-After successfully completing your selected tasks, you MUST use the Edit tool to update the plan file at: @${options.planFilePath || 'PLAN_FILE_PATH_NOT_PROVIDED'}
+After successfully completing your selected tasks, you MUST use the Edit tool to update the plan file at: ${options.planFilePath || 'PLAN_FILE_PATH_NOT_PROVIDED'}
 
 For each completed task, update the YAML structure by setting \`done: true\`. Find each task item using the title. Here's an example:
 
