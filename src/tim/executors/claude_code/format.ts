@@ -148,6 +148,11 @@ export interface FormattedClaudeMessage {
   structuredOutput?: unknown;
   type: string;
   filePaths?: string[];
+  resultInfo?: {
+    durationMs: number;
+    turns: number;
+    success: boolean;
+  };
   // Failure detection for assistant messages
   failed?: boolean;
   failedSummary?: string;
@@ -259,6 +264,11 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
           message.subtype === 'success' && typeof message.result === 'string'
             ? message.result
             : undefined,
+        resultInfo: {
+          durationMs: message.duration_ms,
+          turns: message.num_turns,
+          success: message.subtype === 'success' && !message.is_error,
+        },
         structured: {
           type: 'agent_session_end',
           timestamp: timestamp(),

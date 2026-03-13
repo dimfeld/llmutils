@@ -367,6 +367,8 @@ tim agent 123 --tdd --simple
 tim agent 123 --steps 3
 ```
 
+When `tim agent` uses `claude-code` as the orchestrator, a fast single-turn run that produces no working-copy changes may automatically send one extra `continue` turn before the agent loop gives up. This only applies to the agent loop; regular one-shot Claude executor usage is unchanged.
+
 **Subagent executor selection:**
 
 The orchestrator delegates implementation, testing, and verification to subagents. You can control which executor runs these subagents:

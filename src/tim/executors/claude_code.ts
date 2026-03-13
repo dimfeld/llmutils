@@ -5,7 +5,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { debugLog, log, sendStructured, error } from '../../logging.ts';
 import { createLineSplitter, debug, spawnWithStreamingIO } from '../../common/process.ts';
-import { getGitRoot } from '../../common/git.ts';
+import { getGitRoot, getWorkingCopyStatus } from '../../common/git.ts';
 import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
 import type { TimConfig } from '../configSchema.ts';
 import type { Executor, ExecutorCommonOptions, ExecutePlanInfo } from './types.ts';
@@ -41,6 +41,10 @@ import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
 import { setupPermissionsMcp } from './claude_code/permissions_mcp_setup.js';
 import { runClaudeSubprocess, buildAllowedToolsList } from './claude_code/run_claude_subprocess.js';
 import { executeWithTerminalInput } from './claude_code/terminal_input_lifecycle.ts';
+import {
+  FAST_NOOP_ORCHESTRATOR_RETRY_MS,
+  shouldRetryFastNoopOrchestratorTurn,
+} from './claude_code/fast_noop_retry.ts';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -743,6 +747,17 @@ export class ClaudeCodeExecutor implements Executor {
       let failureSummary: string | undefined;
       let failureRaw: string | undefined;
       let seenResultMessage = false;
+      let retryFollowUpSent = false;
+      let resultHandlingPromise: Promise<void> | undefined;
+      const fastNoopOrchestratorRetryEnabled =
+        planInfo.retryFastNoopOrchestratorTurn === true &&
+        planContextAvailable &&
+        (planInfo.executionMode === 'normal' ||
+          planInfo.executionMode === 'simple' ||
+          planInfo.executionMode === 'tdd');
+      const workingCopyStatusBeforeRun = fastNoopOrchestratorRetryEnabled
+        ? await getWorkingCopyStatus(gitRoot)
+        : undefined;
 
       log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
       const disableInactivityTimeout = this.sharedOptions.disableInactivityTimeout === true;
@@ -780,7 +795,52 @@ export class ClaudeCodeExecutor implements Executor {
           for (const result of formattedResults) {
             if (result.type === 'result') {
               seenResultMessage = true;
-              terminalInputResult?.onResultMessage();
+              if (
+                fastNoopOrchestratorRetryEnabled &&
+                !retryFollowUpSent &&
+                result.resultInfo?.success &&
+                result.resultInfo.turns === 1 &&
+                result.resultInfo.durationMs < FAST_NOOP_ORCHESTRATOR_RETRY_MS &&
+                terminalInputResult
+              ) {
+                resultHandlingPromise = (async () => {
+                  try {
+                    const workingCopyStatusAfterRun = await getWorkingCopyStatus(gitRoot);
+                    const shouldRetry = shouldRetryFastNoopOrchestratorTurn(
+                      result.resultInfo,
+                      workingCopyStatusBeforeRun,
+                      workingCopyStatusAfterRun
+                    );
+
+                    if (shouldRetry) {
+                      retryFollowUpSent = true;
+                      log(
+                        'Claude orchestrator finished a single short turn without working copy changes; sending "continue".'
+                      );
+                      sendStructured({
+                        type: 'workflow_progress',
+                        timestamp: new Date().toISOString(),
+                        phase: 'execution',
+                        message:
+                          'Claude orchestrator finished a single short turn without working copy changes; sending "continue".',
+                      });
+                      terminalInputResult.sendFollowUpMessage('continue');
+                      return;
+                    }
+                  } catch (err) {
+                    debugLog(
+                      'Failed to evaluate Claude fast no-op orchestrator retry condition:',
+                      err
+                    );
+                  }
+
+                  terminalInputResult.onResultMessage();
+                  terminalInputResult.closeStdin();
+                })();
+              } else {
+                terminalInputResult?.onResultMessage();
+                terminalInputResult?.closeStdin();
+              }
             }
             if (result.filePaths) {
               for (const filePath of result.filePaths) {
@@ -828,10 +888,14 @@ export class ClaudeCodeExecutor implements Executor {
         tunnelServer,
         terminalInputEnabled: this.sharedOptions.terminalInput === true,
         tunnelForwardingEnabled: isTunnelActive(),
-        closeOnResultMessage: this.sharedOptions.closeTerminalInputOnResult ?? true,
+        closeOnResultMessage: fastNoopOrchestratorRetryEnabled
+          ? false
+          : (this.sharedOptions.closeTerminalInputOnResult ?? true),
+        keepStdinOpenWithoutInteractiveInput: fastNoopOrchestratorRetryEnabled,
       });
 
       const result = await terminalInputResult.resultPromise;
+      await resultHandlingPromise;
 
       if ((killedByTimeout || result.killedByInactivity) && !seenResultMessage) {
         throw new Error(

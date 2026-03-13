@@ -132,11 +132,18 @@ export interface ExecuteWithTerminalInputOptions {
   tunnelForwardingEnabled: boolean;
   /** When false, ignore result messages for stdin closing behavior. */
   closeOnResultMessage?: boolean;
+  /**
+   * When true, keep stdin open even without interactive input sources so the
+   * caller can decide whether to send a follow-up message or close stdin later.
+   */
+  keepStdinOpenWithoutInteractiveInput?: boolean;
 }
 
 export interface ExecuteWithTerminalInputResult {
   resultPromise: Promise<SpawnAndLogOutputResult>;
   onResultMessage: () => void;
+  sendFollowUpMessage: (content: string) => void;
+  closeStdin: () => void;
   cleanup: () => void;
 }
 
@@ -165,6 +172,7 @@ export function executeWithTerminalInput(
     terminalInputEnabled,
     tunnelForwardingEnabled,
     closeOnResultMessage = true,
+    keepStdinOpenWithoutInteractiveInput = false,
   } = options;
 
   // Single shared guard for stdin lifecycle, used across all three paths
@@ -250,6 +258,13 @@ export function executeWithTerminalInput(
     }
   };
 
+  const sendFollowUp = (content: string): void => {
+    if (stdinGuard.isClosed) {
+      return;
+    }
+    sendFollowUpMessage(streaming.stdin, content);
+  };
+
   // Four-path branching: terminal input / tunnel or headless forwarding / single prompt
   let resultPromise: Promise<SpawnAndLogOutputResult>;
   if (terminalInputEnabled) {
@@ -287,12 +302,23 @@ export function executeWithTerminalInput(
     if (prompt == null) {
       throw new Error('Prompt is required when terminal input forwarding is disabled');
     }
-    resultPromise = sendSinglePromptAndWait(streaming, prompt);
+    if (keepStdinOpenWithoutInteractiveInput) {
+      sendInitialPrompt(streaming, prompt);
+      resultPromise = streaming.result.finally(() => {
+        stdinGuard.close();
+      });
+    } else {
+      resultPromise = sendSinglePromptAndWait(streaming, prompt);
+    }
   }
 
   return {
     resultPromise,
     onResultMessage,
+    sendFollowUpMessage: sendFollowUp,
+    closeStdin: () => {
+      stdinGuard.close();
+    },
     cleanup: () => {
       clearTunnelUserInputHandler();
       clearHeadlessUserInputHandler();

@@ -73,6 +73,12 @@ export interface ExecutePlanInfo {
   executionMode: 'normal' | 'simple' | 'tdd' | 'review' | 'planning' | 'bare';
   /** When true, this review is scoped to specific tasks (not the full plan) */
   isTaskScoped?: boolean;
+  /**
+   * When true, the Claude Code executor may automatically send a single
+   * "continue" follow-up if the first orchestrator turn finishes quickly
+   * without any working copy changes.
+   */
+  retryFastNoopOrchestratorTurn?: boolean;
 }
 
 /**

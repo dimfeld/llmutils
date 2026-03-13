@@ -204,6 +204,7 @@ Available tasks:\n\n${taskDescriptions}`,
           batchMode: true,
           executionMode,
           captureOutput: summaryCollector ? 'result' : 'none',
+          retryFastNoopOrchestratorTurn: true,
         });
         iteration += 1;
         const ok = output ? (output as any).success !== false : true;

@@ -968,6 +968,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
             planFilePath: currentPlanFile,
             executionMode,
             captureOutput: summaryEnabled ? 'result' : 'none',
+            retryFastNoopOrchestratorTurn: true,
           });
           const ok = output ? output.success !== false : true;
           if (!ok) {
