@@ -18,6 +18,7 @@ const runWithHeadlessAdapterIfEnabledSpy = mock(async (options: any) => options.
 describe('handleGenerateCommand', () => {
   let tempDir: string;
   let tasksDir: string;
+  let loadedConfig: any;
 
   const logSpy = mock(() => {});
   const warnSpy = mock(() => {});
@@ -58,6 +59,9 @@ describe('handleGenerateCommand', () => {
   const commitAllSpy = mock(async () => 0);
   const getCurrentBranchNameSpy = mock(async () => 'main');
   const getTrunkBranchSpy = mock(async () => 'main');
+  const prepareWorkspaceRoundTripSpy = mock(async () => null);
+  const runPreExecutionWorkspaceSyncSpy = mock(async () => {});
+  const runPostExecutionWorkspaceSyncSpy = mock(async () => {});
 
   beforeEach(async () => {
     logSpy.mockClear();
@@ -71,6 +75,9 @@ describe('handleGenerateCommand', () => {
     commitAllSpy.mockClear();
     getCurrentBranchNameSpy.mockClear();
     getTrunkBranchSpy.mockClear();
+    prepareWorkspaceRoundTripSpy.mockClear();
+    runPreExecutionWorkspaceSyncSpy.mockClear();
+    runPostExecutionWorkspaceSyncSpy.mockClear();
     trackedWorkspacePath = undefined;
     getWorkspaceInfoByPathSpy.mockClear();
     patchWorkspaceInfoSpy.mockClear();
@@ -83,6 +90,10 @@ describe('handleGenerateCommand', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-generate-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
+    loadedConfig = {
+      paths: { tasks: tasksDir },
+      models: { stepGeneration: 'test-model' },
+    };
 
     await moduleMocker.mock('../../logging.js', () => ({
       log: logSpy,
@@ -121,11 +132,14 @@ describe('handleGenerateCommand', () => {
       commitAll: commitAllSpy,
     }));
 
+    await moduleMocker.mock('../workspace/workspace_roundtrip.js', () => ({
+      prepareWorkspaceRoundTrip: prepareWorkspaceRoundTripSpy,
+      runPreExecutionWorkspaceSync: runPreExecutionWorkspaceSyncSpy,
+      runPostExecutionWorkspaceSync: runPostExecutionWorkspaceSyncSpy,
+    }));
+
     await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: { tasks: tasksDir },
-        models: { stepGeneration: 'test-model' },
-      }),
+      loadEffectiveConfig: async () => loadedConfig,
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -605,6 +619,37 @@ describe('handleGenerateCommand', () => {
     expect(buildExecutorAndLogSpy.mock.calls[0][0]).toBe('custom_executor');
   });
 
+  test('uses generate.defaultExecutor before global defaultExecutor', async () => {
+    const planPath = await createStubPlan(123);
+    loadedConfig.generate = { defaultExecutor: 'codex-cli' };
+    loadedConfig.defaultExecutor = 'claude-code';
+
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [{ title: 'Task 1', description: 'Description', done: false }];
+      await writePlanFile(planPath, plan);
+    });
+
+    await handleGenerateCommand(undefined, { plan: planPath }, buildCommand());
+
+    expect(buildExecutorAndLogSpy.mock.calls[0][0]).toBe('codex-cli');
+  });
+
+  test('uses global defaultExecutor when generate.defaultExecutor is not set', async () => {
+    const planPath = await createStubPlan(124);
+    loadedConfig.defaultExecutor = 'codex-cli';
+
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [{ title: 'Task 1', description: 'Description', done: false }];
+      await writePlanFile(planPath, plan);
+    });
+
+    await handleGenerateCommand(undefined, { plan: planPath }, buildCommand());
+
+    expect(buildExecutorAndLogSpy.mock.calls[0][0]).toBe('codex-cli');
+  });
+
   test('computes terminal input enabled by default', async () => {
     const planPath = await createStubPlan(116);
 
@@ -736,6 +781,9 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     execute: mockExecutorExecute,
     filePathPrefix: '',
   }));
+  const prepareWorkspaceRoundTripSpy = mock(async () => null);
+  const runPreExecutionWorkspaceSyncSpy = mock(async () => {});
+  const runPostExecutionWorkspaceSyncSpy = mock(async () => {});
 
   beforeEach(async () => {
     logSpy.mockClear();
@@ -744,6 +792,9 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     readPlanFileSpy.mockClear();
     mockExecutorExecute.mockClear();
     buildExecutorAndLogSpy.mockClear();
+    prepareWorkspaceRoundTripSpy.mockClear();
+    runPreExecutionWorkspaceSyncSpy.mockClear();
+    runPostExecutionWorkspaceSyncSpy.mockClear();
     isTunnelActiveSpy.mockClear();
     runWithHeadlessAdapterIfEnabledSpy.mockClear();
 
@@ -809,6 +860,12 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 
     await moduleMocker.mock('../../common/process.js', () => ({
       commitAll: mock(async () => 0),
+    }));
+
+    await moduleMocker.mock('../workspace/workspace_roundtrip.js', () => ({
+      prepareWorkspaceRoundTrip: prepareWorkspaceRoundTripSpy,
+      runPreExecutionWorkspaceSync: runPreExecutionWorkspaceSyncSpy,
+      runPostExecutionWorkspaceSync: runPostExecutionWorkspaceSyncSpy,
     }));
 
     await moduleMocker.mock('../../logging/tunnel_client.js', () => ({

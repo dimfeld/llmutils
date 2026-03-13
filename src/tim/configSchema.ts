@@ -229,6 +229,17 @@ export const timConfigSchema = z
       .strict()
       .optional()
       .describe('Configuration for PR creation behavior'),
+    /** Default settings for the generate command */
+    generate: z
+      .object({
+        defaultExecutor: z
+          .enum([ClaudeCodeExecutorName, CodexCliExecutorName])
+          .optional()
+          .describe('Default executor to use for the generate command'),
+      })
+      .strict()
+      .optional()
+      .describe('Configuration for tim generate defaults'),
     /** Custom API key environment variables for specific models or model prefixes */
     modelApiKeys: z
       .record(z.string(), z.string().describe('Environment variable name to use for API key'))

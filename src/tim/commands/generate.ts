@@ -275,7 +275,11 @@ export async function handleGenerateCommand(
       config.terminalInput !== false;
 
     // Build executor
-    const executorName = options.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
+    const executorName =
+      options.executor ||
+      config.generate?.defaultExecutor ||
+      config.defaultExecutor ||
+      DEFAULT_EXECUTOR;
     const sharedExecutorOptions: ExecutorCommonOptions = {
       baseDir: currentBaseDir,
       model: config.models?.stepGeneration,

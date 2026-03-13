@@ -763,6 +763,24 @@ describe('configSchema', () => {
       expect(result.defaultOrchestrator).toBe('claude-code');
     });
 
+    test('accepts generate.defaultExecutor with valid executor values', () => {
+      for (const value of ['claude-code', 'codex-cli'] as const) {
+        const result = timConfigSchema.parse({ generate: { defaultExecutor: value } });
+        expect(result.generate?.defaultExecutor).toBe(value);
+      }
+    });
+
+    test('rejects invalid generate.defaultExecutor values', () => {
+      expect(() =>
+        timConfigSchema.parse({ generate: { defaultExecutor: 'invalid-executor' } })
+      ).toThrow();
+    });
+
+    test('generate config is undefined when not specified', () => {
+      const result = timConfigSchema.parse({});
+      expect(result.generate).toBeUndefined();
+    });
+
     test('defaultOrchestrator is undefined when not specified', () => {
       const result = timConfigSchema.parse({});
       expect(result.defaultOrchestrator).toBeUndefined();

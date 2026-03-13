@@ -229,9 +229,6 @@
       "items": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string"
-          },
           "severity": {
             "type": "string",
             "enum": [
@@ -242,16 +239,7 @@
             ]
           },
           "category": {
-            "type": "string",
-            "enum": [
-              "security",
-              "performance",
-              "bug",
-              "style",
-              "compliance",
-              "testing",
-              "other"
-            ]
+            "type": "string"
           },
           "content": {
             "type": "string"
@@ -260,7 +248,7 @@
             "type": "string"
           },
           "line": {
-            "oneOf": [
+            "anyOf": [
               {
                 "type": "number"
               },
@@ -274,7 +262,6 @@
           }
         },
         "required": [
-          "id",
           "severity",
           "category",
           "content"

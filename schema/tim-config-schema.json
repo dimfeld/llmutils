@@ -268,6 +268,21 @@
       },
       "additionalProperties": false
     },
+    "generate": {
+      "description": "Configuration for tim generate defaults",
+      "type": "object",
+      "properties": {
+        "defaultExecutor": {
+          "description": "Default executor to use for the generate command",
+          "type": "string",
+          "enum": [
+            "claude-code",
+            "codex-cli"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "modelApiKeys": {
       "description": "Map of model ID or prefix to environment variable name for API key. Example: {\"openai/\": \"MY_OPENAI_KEY\", \"anthropic/claude-3.5-sonnet\": \"CLAUDE_SONNET_KEY\"}",
       "type": "object",
