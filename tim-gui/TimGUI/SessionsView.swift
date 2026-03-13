@@ -3,9 +3,6 @@ import SwiftUI
 private enum LoopDiagnostics {
     // Mitigations are enabled by default. Set to "0"/"false"/"no"/"off" to opt out.
     static let disableContainerAnimation = envFlag("TIM_GUI_DISABLE_CONTAINER_ANIMATION", defaultValue: true)
-    static let disableInputBarHeightFeedback = envFlag(
-        "TIM_GUI_DISABLE_INPUTBAR_HEIGHT_FEEDBACK",
-        defaultValue: true)
     static let disableMessageTextSelection = envFlag(
         "TIM_GUI_DISABLE_MESSAGE_TEXT_SELECTION",
         defaultValue: true)
@@ -354,15 +351,6 @@ struct SessionRowView: View {
     }
 }
 
-// MARK: - InputBarHeightKey
-
-private struct InputBarHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 // MARK: - SessionDetailView
 
 struct SessionDetailView: View {
@@ -380,13 +368,15 @@ struct SessionDetailView: View {
     /// Used to distinguish "content grew" from "user scrolled away".
     @State private var messageCountAtBottom = 0
     @State private var inputText = ""
-    @State private var inputBarHeight: CGFloat = 0
     @State private var isAdjustingBottomInset = false
     @State private var promptScrollTask: Task<Void, Never>?
     @State private var insetAdjustmentResetTask: Task<Void, Never>?
     @FocusState private var isFocused: Bool
     private var displayedMessages: ArraySlice<SessionMessage> {
         self.session.messages.suffix(Self.maxDisplayedMessages)
+    }
+    private var shouldShowScrollButton: Bool {
+        !self.isNearBottom && !self.autoScrollEnabled
     }
 
     var body: some View {
@@ -423,24 +413,9 @@ struct SessionDetailView: View {
                 .padding(.bottom, 20)
             }
             .overlay(alignment: .bottomTrailing) {
-                if !self.isNearBottom, !self.autoScrollEnabled {
-                    Button {
-                        self.autoScrollEnabled = true
-                        self.jumpToBottom(proxy)
-                    } label: {
-                        Image(systemName: "chevron.down.circle.fill")
-                            .font(.system(size: 32))
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .background(.ultraThinMaterial)
-                    .clipShape(.circle)
-                    .help("Scroll to bottom")
-                    .transition(.opacity)
-                    .padding(16)
-                    .padding(
-                        .bottom,
-                        LoopDiagnostics.disableInputBarHeightFeedback ? 0 : self.inputBarHeight)
+                if !self.session.isActive, self.shouldShowScrollButton {
+                    self.scrollToBottomButton(proxy)
+                        .padding(16)
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -459,13 +434,12 @@ struct SessionDetailView: View {
                             try await self.sessionState.sendUserInput(
                                 sessionId: self.session.id, content: text)
                         }
-                        .applyIf(!LoopDiagnostics.disableInputBarHeightFeedback) { view in
-                            view.background(
-                                GeometryReader { geo in
-                                    Color.clear.preference(
-                                        key: InputBarHeightKey.self,
-                                        value: geo.size.height)
-                                })
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        if self.shouldShowScrollButton {
+                            self.scrollToBottomButton(proxy)
+                                .padding(.top, 12)
+                                .padding(.trailing, 16)
                         }
                     }
                 }
@@ -507,17 +481,6 @@ struct SessionDetailView: View {
                 return .handled
             }
         }
-        .onPreferenceChange(InputBarHeightKey.self) { height in
-            if LoopDiagnostics.disableInputBarHeightFeedback {
-                self.inputBarHeight = 0
-                return
-            }
-            // Ignore sub-point jitter from layout recalculation to avoid
-            // unnecessary view invalidation.
-            if abs(self.inputBarHeight - height) > 0.5 {
-                self.inputBarHeight = height
-            }
-        }
     }
 
     private func jumpToBottom(_ proxy: ScrollViewProxy) {
@@ -554,6 +517,22 @@ struct SessionDetailView: View {
         self.promptScrollTask = nil
         self.insetAdjustmentResetTask?.cancel()
         self.insetAdjustmentResetTask = nil
+    }
+
+    private func scrollToBottomButton(_ proxy: ScrollViewProxy) -> some View {
+        Button {
+            self.autoScrollEnabled = true
+            self.jumpToBottom(proxy)
+        } label: {
+            Image(systemName: "chevron.down.circle.fill")
+                .font(.system(size: 32))
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .background(.ultraThinMaterial)
+        .clipShape(.circle)
+        .help("Scroll to bottom")
+        .transition(.opacity)
     }
 
     static let bottomAnchorID = "session-bottom-anchor"
