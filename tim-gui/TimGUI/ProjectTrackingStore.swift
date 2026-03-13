@@ -349,6 +349,15 @@ final class ProjectTrackingStore {
         self.dbPath = dbPath ?? ProjectTrackingStore.resolveDefaultDBPath()
     }
 
+    private func assignIfChanged<Value: Equatable>(
+        _ keyPath: ReferenceWritableKeyPath<ProjectTrackingStore, Value>,
+        _ newValue: Value)
+    {
+        if self[keyPath: keyPath] != newValue {
+            self[keyPath: keyPath] = newValue
+        }
+    }
+
     // MARK: - DB Path Resolution
 
     /// Resolves the default tim.db path using the same conventions as the tim CLI
@@ -465,7 +474,7 @@ final class ProjectTrackingStore {
 
             do {
                 let fetchedProjects = try await runInBackground { try doFetchProjects(path: path) }
-                self.projects = fetchedProjects
+                self.assignIfChanged(\.projects, fetchedProjects)
 
                 if let projectId = capturedProjectId {
                     let fetchedWorkspaces = try await runInBackground {
@@ -473,20 +482,20 @@ final class ProjectTrackingStore {
                     }
                     // Only commit if the selection hasn't changed since we started fetching
                     if self.selectedProjectId == capturedProjectId {
-                        self.workspaces = fetchedWorkspaces
+                        self.assignIfChanged(\.workspaces, fetchedWorkspaces)
 
                         let (fetchedPlans, fetchedDeps) = try await runInBackground {
                             try doFetchPlansAndDeps(path: path, projectId: projectId)
                         }
                         if self.selectedProjectId == capturedProjectId {
-                            self.plans = fetchedPlans
-                            self.planDependencyStatus = fetchedDeps
+                            self.assignIfChanged(\.plans, fetchedPlans)
+                            self.assignIfChanged(\.planDependencyStatus, fetchedDeps)
                         }
                     }
                 } else {
-                    self.workspaces = []
-                    self.plans = []
-                    self.planDependencyStatus = [:]
+                    self.assignIfChanged(\.workspaces, [])
+                    self.assignIfChanged(\.plans, [])
+                    self.assignIfChanged(\.planDependencyStatus, [:])
                 }
 
                 self.loadState = .loaded

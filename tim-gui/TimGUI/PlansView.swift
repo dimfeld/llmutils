@@ -60,6 +60,35 @@ enum PlanSortOrder: String, CaseIterable, Identifiable {
             }
         }
     }
+
+    func sorted(_ rows: [PlanRowDisplayModel]) -> [PlanRowDisplayModel] {
+        switch self {
+        case .planNumber:
+            rows.sorted {
+                let id0 = $0.plan.planId ?? 0
+                let id1 = $1.plan.planId ?? 0
+                if id0 != id1 { return id0 > id1 }
+                let t0 = $0.plan.updatedAt ?? .distantPast
+                let t1 = $1.plan.updatedAt ?? .distantPast
+                if t0 != t1 { return t0 > t1 }
+                return $0.plan.uuid < $1.plan.uuid
+            }
+        case .priority:
+            rows.sorted {
+                let r0 = Self.priorityRank($0.plan.priority)
+                let r1 = Self.priorityRank($1.plan.priority)
+                if r0 != r1 { return r0 < r1 }
+                return ($0.plan.planId ?? 0) > ($1.plan.planId ?? 0)
+            }
+        case .recentlyUpdated:
+            rows.sorted {
+                let t0 = $0.plan.updatedAt ?? .distantPast
+                let t1 = $1.plan.updatedAt ?? .distantPast
+                if t0 != t1 { return t0 > t1 }
+                return ($0.plan.planId ?? 0) > ($1.plan.planId ?? 0)
+            }
+        }
+    }
 }
 
 // MARK: - PlansView
@@ -125,10 +154,80 @@ struct PlanStatusGroup: Identifiable {
     }
 }
 
+struct PlanRowDisplayModel: Identifiable, Equatable {
+    let plan: TrackedPlan
+    let displayStatus: PlanDisplayStatus
+    let relativeUpdatedText: String?
+
+    var id: String {
+        self.plan.uuid
+    }
+}
+
+struct PlanStatusGroupDisplayModel: Identifiable, Equatable {
+    let status: PlanDisplayStatus
+    let plans: [PlanRowDisplayModel]
+
+    var id: PlanDisplayStatus {
+        self.status
+    }
+}
+
+struct PlansBrowserDerivedData: Equatable {
+    let groups: [PlanStatusGroupDisplayModel]
+    let visiblePlanUuids: [String]
+
+    static let empty = PlansBrowserDerivedData(groups: [], visiblePlanUuids: [])
+}
+
 /// Collects the UUIDs of all plans across groups, preserving group and within-group order.
 /// Used by the deselection logic to detect when a selected plan is no longer visible.
 func visiblePlanUuids(from groups: [PlanStatusGroup]) -> [String] {
     groups.flatMap { $0.plans.map(\.uuid) }
+}
+
+func buildPlansBrowserDerivedData(
+    plans: [TrackedPlan],
+    dependencyStatus: [String: Bool],
+    activeFilters: Set<PlanDisplayStatus>,
+    searchText: String,
+    sortOrder: PlanSortOrder,
+    now: Date) -> PlansBrowserDerivedData
+{
+    let relativeDateFormatter = RelativeDateTimeFormatter()
+    relativeDateFormatter.unitsStyle = .short
+
+    let filtered = plans.compactMap { plan -> PlanRowDisplayModel? in
+        let hasUnresolved = dependencyStatus[plan.uuid] ?? false
+        let status = planDisplayStatus(for: plan, hasUnresolvedDependencies: hasUnresolved, now: now)
+        guard shouldShowPlan(displayStatus: status, activeFilters: activeFilters) else {
+            return nil
+        }
+        return PlanRowDisplayModel(
+            plan: plan,
+            displayStatus: status,
+            relativeUpdatedText: plan.updatedAt.map {
+                relativeDateFormatter.localizedString(for: $0, relativeTo: now)
+            })
+    }
+
+    let searched = filterPlansBySearchText(filtered.map(\.plan), query: searchText)
+    let searchedIds = Set(searched.map(\.uuid))
+    let sorted = sortOrder.sorted(filtered.filter { searchedIds.contains($0.plan.uuid) })
+
+    var grouped: [PlanDisplayStatus: [PlanRowDisplayModel]] = [:]
+    for row in sorted {
+        grouped[row.displayStatus, default: []].append(row)
+    }
+
+    let groups: [PlanStatusGroupDisplayModel] = planStatusGroupOrder.compactMap { status in
+        guard let rows = grouped[status], !rows.isEmpty else { return nil }
+        return PlanStatusGroupDisplayModel(status: status, plans: rows)
+    }
+
+    return PlansBrowserDerivedData(
+        groups: groups,
+        visiblePlanUuids: groups.flatMap { group in group.plans.map { $0.id } })
 }
 
 /// The default sort order for the plans browser (used when grouping makes status sort redundant).
@@ -254,55 +353,49 @@ private struct PlansBrowserView: View {
     @State private var searchText: String = ""
     @State private var sortOrder: PlanSortOrder = planBrowserDefaultSortOrder
     @State private var collapsedGroups: Set<PlanDisplayStatus> = []
+    @State private var derivedData = PlansBrowserDerivedData.empty
 
-    var body: some View {
-        let now = Date()
-        let statusFiltered = self.store.filteredPlans(now: now)
-        let searched = self.applySearch(statusFiltered)
-        let sorted = self.sortOrder.sorted(searched, dependencyStatus: self.store.planDependencyStatus, now: now)
-        let groups = groupPlansByStatus(sorted, dependencyStatus: self.store.planDependencyStatus, now: now)
-
-        VStack(spacing: 0) {
-            FilterChipsView(store: self.store)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
-
-            HStack(spacing: 8) {
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                    TextField("Search plans…", text: self.$searchText)
-                        .textFieldStyle(.plain)
-                        .font(.subheadline)
-                    if !self.searchText.isEmpty {
-                        Button {
-                            self.searchText = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                                .font(.caption)
-                        }
-                        .buttonStyle(.plain)
+    private var searchControls: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                TextField("Search plans…", text: self.$searchText)
+                    .textFieldStyle(.plain)
+                    .font(.subheadline)
+                if !self.searchText.isEmpty {
+                    Button {
+                        self.searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: nestedRectangleCornerRadius))
-
-                Picker("Sort", selection: self.$sortOrder) {
-                    ForEach(PlanSortOrder.allCases) { order in
-                        Text(order.label).tag(order)
-                    }
-                }
-                .pickerStyle(.menu)
-                .fixedSize()
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                .quaternary.opacity(0.5),
+                in: RoundedRectangle(cornerRadius: nestedRectangleCornerRadius))
 
-            if groups.isEmpty {
+            Picker("Sort", selection: self.$sortOrder) {
+                ForEach(PlanSortOrder.allCases) { order in
+                    Text(order.label).tag(order)
+                }
+            }
+            .pickerStyle(.menu)
+            .fixedSize()
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+    }
+
+    private var plansContent: some View {
+        Group {
+            if self.derivedData.groups.isEmpty {
                 Spacer()
                 VStack(spacing: 10) {
                     Image(systemName: "doc.text.magnifyingglass")
@@ -319,18 +412,19 @@ private struct PlansBrowserView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 6) {
-                        ForEach(groups) { group in
+                        ForEach(self.derivedData.groups) { group in
                             let isCollapsed = self.collapsedGroups.contains(group.status)
                             Section {
                                 if !isCollapsed {
                                     ForEach(group.plans) { plan in
                                         PlanRowView(
-                                            plan: plan,
+                                            plan: plan.plan,
                                             displayStatus: group.status,
-                                            isSelected: plan.uuid == self.selectedPlanUuid,
-                                            now: now)
+                                            relativeUpdatedText: plan.relativeUpdatedText,
+                                            isSelected: plan.id == self.selectedPlanUuid)
+                                            .equatable()
                                             .onTapGesture {
-                                                self.selectedPlanUuid = plan.uuid
+                                                self.selectedPlanUuid = plan.id
                                             }
                                     }
                                 }
@@ -356,16 +450,50 @@ private struct PlansBrowserView: View {
                 }
             }
         }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            FilterChipsView(store: self.store)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+            self.searchControls
+            self.plansContent
+        }
         .id(self.store.selectedProjectId)
-        .onChange(of: visiblePlanUuids(from: groups)) { _, visibleUuids in
-            if let selected = self.selectedPlanUuid, !visibleUuids.contains(selected) {
-                self.selectedPlanUuid = nil
-            }
+        .onAppear {
+            self.recomputeDerivedData()
+        }
+        .onChange(of: self.store.plans) {
+            self.recomputeDerivedData()
+        }
+        .onChange(of: self.store.planDependencyStatus) {
+            self.recomputeDerivedData()
+        }
+        .onChange(of: self.store.activeFilters) {
+            self.recomputeDerivedData()
+        }
+        .onChange(of: self.searchText) {
+            self.recomputeDerivedData()
+        }
+        .onChange(of: self.sortOrder) {
+            self.recomputeDerivedData()
         }
     }
 
-    private func applySearch(_ plans: [TrackedPlan]) -> [TrackedPlan] {
-        filterPlansBySearchText(plans, query: self.searchText)
+    private func recomputeDerivedData() {
+        let derived = buildPlansBrowserDerivedData(
+            plans: self.store.plans,
+            dependencyStatus: self.store.planDependencyStatus,
+            activeFilters: self.store.activeFilters,
+            searchText: self.searchText,
+            sortOrder: self.sortOrder,
+            now: Date())
+        self.derivedData = derived
+        if let selected = self.selectedPlanUuid, !derived.visiblePlanUuids.contains(selected) {
+            self.selectedPlanUuid = nil
+        }
     }
 }
 

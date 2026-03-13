@@ -383,7 +383,10 @@ private struct PlansSection: View {
                     PlanRowView(
                         plan: plan,
                         displayStatus: self.store.displayStatus(for: plan, now: self.now),
-                        now: self.now)
+                        relativeUpdatedText: plan.updatedAt.map {
+                            planRelativeDateFormatter.localizedString(for: $0, relativeTo: self.now)
+                        })
+                        .equatable()
                 }
             }
         }
@@ -398,11 +401,11 @@ private struct PlansSection: View {
     return f
 }()
 
-struct PlanRowView: View {
+struct PlanRowView: View, Equatable {
     let plan: TrackedPlan
     let displayStatus: PlanDisplayStatus
+    let relativeUpdatedText: String?
     var isSelected: Bool = false
-    let now: Date
 
     private var rowBackgroundStyle: AnyShapeStyle {
         self.isSelected
@@ -449,8 +452,8 @@ struct PlanRowView: View {
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(self.displayStatus.color)
 
-                    if let updatedAt = self.plan.updatedAt {
-                        Text(planRelativeDateFormatter.localizedString(for: updatedAt, relativeTo: self.now))
+                    if let relativeUpdatedText {
+                        Text(relativeUpdatedText)
                             .font(.caption2.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }

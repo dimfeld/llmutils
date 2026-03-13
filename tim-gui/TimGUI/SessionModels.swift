@@ -3,7 +3,7 @@ import Observation
 
 // MARK: - MessageCategory
 
-enum MessageCategory {
+enum MessageCategory: Equatable {
     case lifecycle
     case llmOutput
     case toolUse
@@ -73,7 +73,7 @@ enum OutgoingMessage: Encodable {
 
 // MARK: - MessageContentBody
 
-enum MessageContentBody {
+enum MessageContentBody: Equatable {
     case text(String)
     case monospaced(String)
     case todoList([TodoDisplayItem])
@@ -81,27 +81,60 @@ enum MessageContentBody {
     case keyValuePairs([KeyValuePair])
 }
 
-struct TodoDisplayItem: Equatable {
+struct TodoDisplayItem: Identifiable, Equatable {
+    let id: UUID
     let label: String
     let status: TodoStatus
+
+    init(id: UUID = UUID(), label: String, status: TodoStatus) {
+        self.id = id
+        self.label = label
+        self.status = status
+    }
+
+    static func == (lhs: TodoDisplayItem, rhs: TodoDisplayItem) -> Bool {
+        lhs.label == rhs.label && lhs.status == rhs.status
+    }
 }
 
-enum TodoStatus {
+enum TodoStatus: Equatable {
     case completed, inProgress, pending, blocked, unknown
 }
 
-struct FileChangeDisplayItem: Equatable {
+struct FileChangeDisplayItem: Identifiable, Equatable {
+    let id: UUID
     let path: String
     let kind: FileChangeKind
+
+    init(id: UUID = UUID(), path: String, kind: FileChangeKind) {
+        self.id = id
+        self.path = path
+        self.kind = kind
+    }
+
+    static func == (lhs: FileChangeDisplayItem, rhs: FileChangeDisplayItem) -> Bool {
+        lhs.path == rhs.path && lhs.kind == rhs.kind
+    }
 }
 
-enum FileChangeKind {
+enum FileChangeKind: Equatable {
     case added, updated, removed, unknown
 }
 
-struct KeyValuePair: Equatable {
+struct KeyValuePair: Identifiable, Equatable {
+    let id: UUID
     let key: String
     let value: String
+
+    init(id: UUID = UUID(), key: String, value: String) {
+        self.id = id
+        self.key = key
+        self.value = value
+    }
+
+    static func == (lhs: KeyValuePair, rhs: KeyValuePair) -> Bool {
+        lhs.key == rhs.key && lhs.value == rhs.value
+    }
 }
 
 enum SessionCompletionKind: Equatable {
@@ -116,7 +149,7 @@ enum StructuredTransportSource: String, Decodable, Equatable {
 
 // MARK: - SessionMessage
 
-struct SessionMessage: Identifiable {
+struct SessionMessage: Identifiable, Equatable {
     let id: UUID
     let seq: Int
     let title: String?

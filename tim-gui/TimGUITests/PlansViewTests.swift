@@ -1079,3 +1079,85 @@ struct VisiblePlanUuidsTests {
         #expect(result == ["ip1"])
     }
 }
+
+// MARK: - buildPlansBrowserDerivedData Tests
+
+struct PlansBrowserDerivedDataTests {
+    let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+    @Test
+    func `Build derived data filters searches sorts and groups once`() {
+        let urgentPending = makePlan(
+            planId: 10,
+            title: "Auth overhaul",
+            goal: "Replace login flow",
+            status: "pending",
+            priority: "urgent",
+            updatedAt: self.now.addingTimeInterval(-3600),
+            uuid: "pending-urgent")
+        let blocked = makePlan(
+            planId: 11,
+            title: "Auth blocked",
+            goal: "Waiting on dependency",
+            status: "pending",
+            priority: "high",
+            updatedAt: self.now.addingTimeInterval(-7200),
+            uuid: "blocked")
+        let done = makePlan(
+            planId: 12,
+            title: "Release notes",
+            goal: "Write changelog",
+            status: "done",
+            priority: "low",
+            updatedAt: self.now.addingTimeInterval(-60),
+            uuid: "done")
+
+        let result = buildPlansBrowserDerivedData(
+            plans: [done, blocked, urgentPending],
+            dependencyStatus: ["blocked": true],
+            activeFilters: [.pending, .blocked],
+            searchText: "auth",
+            sortOrder: .priority,
+            now: self.now)
+
+        #expect(result.groups.map(\.status) == [.pending, .blocked])
+        #expect(result.groups[0].plans.map(\.id) == ["pending-urgent"])
+        #expect(result.groups[1].plans.map(\.id) == ["blocked"])
+        #expect(result.visiblePlanUuids == ["pending-urgent", "blocked"])
+    }
+
+    @Test
+    func `Derived data excludes empty groups and keeps within group order from sorted rows`() {
+        let inProgress = makePlan(
+            planId: 4,
+            title: "Ship feature",
+            status: "in_progress",
+            updatedAt: self.now.addingTimeInterval(-120),
+            uuid: "ip")
+        let pendingNewer = makePlan(
+            planId: 9,
+            title: "Queue newer",
+            status: "pending",
+            updatedAt: self.now.addingTimeInterval(-60),
+            uuid: "pending-new")
+        let pendingOlder = makePlan(
+            planId: 3,
+            title: "Queue older",
+            status: "pending",
+            updatedAt: self.now.addingTimeInterval(-600),
+            uuid: "pending-old")
+
+        let result = buildPlansBrowserDerivedData(
+            plans: [pendingOlder, inProgress, pendingNewer],
+            dependencyStatus: [:],
+            activeFilters: defaultPlanFilters(),
+            searchText: "",
+            sortOrder: .recentlyUpdated,
+            now: self.now)
+
+        #expect(result.groups.map(\.status) == [.inProgress, .pending])
+        #expect(result.groups[0].plans.map(\.id) == ["ip"])
+        #expect(result.groups[1].plans.map(\.id) == ["pending-new", "pending-old"])
+        #expect(result.visiblePlanUuids == ["ip", "pending-new", "pending-old"])
+    }
+}

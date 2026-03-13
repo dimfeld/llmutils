@@ -382,9 +382,11 @@ struct SessionDetailView: View {
     @State private var inputText = ""
     @State private var inputBarHeight: CGFloat = 0
     @State private var isAdjustingBottomInset = false
+    @State private var promptScrollTask: Task<Void, Never>?
+    @State private var insetAdjustmentResetTask: Task<Void, Never>?
     @FocusState private var isFocused: Bool
-    private var displayedMessages: [SessionMessage] {
-        Array(self.session.messages.suffix(Self.maxDisplayedMessages))
+    private var displayedMessages: ArraySlice<SessionMessage> {
+        self.session.messages.suffix(Self.maxDisplayedMessages)
     }
 
     var body: some View {
@@ -393,7 +395,7 @@ struct SessionDetailView: View {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     ForEach(self.displayedMessages) { message in
                         SessionMessageView(message: message)
-                            .id(message.id)
+                            .equatable()
                     }
 
                     Color.clear
@@ -477,6 +479,9 @@ struct SessionDetailView: View {
                 self.jumpToBottom(proxy)
                 self.isFocused = true
             }
+            .onDisappear {
+                self.cancelInsetTasks()
+            }
             .onChange(of: self.session.messages.count) {
                 if self.autoScrollEnabled {
                     self.jumpToBottom(proxy)
@@ -524,21 +529,31 @@ struct SessionDetailView: View {
     }
 
     private func handlePromptInsetTransition(_ proxy: ScrollViewProxy) {
+        self.cancelInsetTasks()
         self.isAdjustingBottomInset = true
 
         if self.autoScrollEnabled {
-            Task { @MainActor in
+            self.promptScrollTask = Task { @MainActor in
                 // Wait for inset/layout to settle before forcing scroll.
                 try? await Task.sleep(for: .milliseconds(50))
+                guard !Task.isCancelled else { return }
                 self.jumpToBottom(proxy)
             }
         }
 
-        Task { @MainActor in
+        self.insetAdjustmentResetTask = Task { @MainActor in
             // Keep this guard briefly after prompt mount/unmount.
             try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
             self.isAdjustingBottomInset = false
         }
+    }
+
+    private func cancelInsetTasks() {
+        self.promptScrollTask?.cancel()
+        self.promptScrollTask = nil
+        self.insetAdjustmentResetTask?.cancel()
+        self.insetAdjustmentResetTask = nil
     }
 
     static let bottomAnchorID = "session-bottom-anchor"
@@ -633,7 +648,7 @@ struct MessageInputBar: View {
     return f
 }()
 
-struct SessionMessageView: View {
+struct SessionMessageView: View, Equatable {
     let message: SessionMessage
 
     var body: some View {
@@ -681,7 +696,7 @@ struct SessionMessageView: View {
 
         case let .todoList(items):
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                ForEach(items) { item in
                     HStack(spacing: 6) {
                         Image(systemName: self.iconForTodoStatus(item.status))
                             .foregroundStyle(self.colorForTodoStatus(item.status))
@@ -695,7 +710,7 @@ struct SessionMessageView: View {
 
         case let .fileChanges(items):
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                ForEach(items) { item in
                     HStack(spacing: 6) {
                         Text(self.indicatorForFileChange(item.kind))
                             .font(.system(.body, design: .monospaced))
@@ -710,7 +725,7 @@ struct SessionMessageView: View {
 
         case let .keyValuePairs(pairs):
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
+                ForEach(pairs) { pair in
                     Text("\(pair.key): ").foregroundStyle(.secondary)
                         + Text(pair.value).foregroundStyle(.primary)
                 }
