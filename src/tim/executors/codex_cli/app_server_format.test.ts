@@ -60,17 +60,36 @@ describe('createAppServerFormatter', () => {
     );
   });
 
-  test('formats thread idle status changes', () => {
+  test('formats thread idle status changes as status plus task completion', () => {
     const formatter = createAppServerFormatter();
     const idle = formatter.handleNotification('thread/status/changed', {
       status: { type: 'idle' },
     });
 
-    expect(idle.structured).toEqual(
+    expect(idle.structured).toEqual([
       expect.objectContaining({
         type: 'llm_status',
         source: 'codex',
         status: 'codex.thread.idle',
+      }),
+      expect.objectContaining({
+        type: 'task_completion',
+        planComplete: false,
+      }),
+    ]);
+  });
+
+  test('formats non-idle thread status changes as status only', () => {
+    const formatter = createAppServerFormatter();
+    const running = formatter.handleNotification('thread/status/changed', {
+      status: { type: 'running' },
+    });
+
+    expect(running.structured).toEqual(
+      expect.objectContaining({
+        type: 'llm_status',
+        source: 'codex',
+        status: 'codex.thread.running',
       })
     );
   });
