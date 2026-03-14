@@ -381,7 +381,7 @@ async function promptForReviewIssueAction(
         })),
         { name: 'Create a cleanup plan (for later execution)', value: 'cleanup' },
         { name: 'Exit (manually resolved)', value: 'exit-manually-resolved' },
-        { name: 'Exit (do nothing)', value: 'exit' },
+        { name: 'Exit (save issues for later)', value: 'exit' },
       ],
       default: 'append',
     });
