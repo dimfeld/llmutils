@@ -99,6 +99,109 @@ describe('review issue persistence helpers', () => {
   });
 });
 
+test('interactive save for later persists only the selected review issues', async () => {
+  const planFile = join(testDir, 'save-selected-review-issues.yml');
+  await writePlanFile(planFile, {
+    id: 10,
+    title: 'Save selected review issues',
+    goal: 'Only persist the issues the user selected',
+    details: 'Details',
+    tasks: [],
+  });
+
+  const reviewIssues = [
+    {
+      id: 'issue-1',
+      severity: 'critical' as const,
+      category: 'security' as const,
+      content: 'Critical security issue',
+      file: 'src/security.ts',
+      line: 12,
+    },
+    {
+      id: 'issue-2',
+      severity: 'minor' as const,
+      category: 'testing' as const,
+      content: 'Missing regression test',
+      file: 'src/security.test.ts',
+      line: 44,
+    },
+  ];
+
+  await moduleMocker.mock('../../common/input.js', () => ({
+    promptSelect: mock(async () => 'exit'),
+    promptCheckbox: mock(async () => [0]),
+  }));
+
+  await moduleMocker.mock('../configLoader.js', () => ({
+    loadEffectiveConfig: async () => ({
+      defaultExecutor: 'codex-cli',
+    }),
+    loadGlobalConfigForNotifications: async () => ({}),
+  }));
+
+  await moduleMocker.mock('../../common/git.js', () => ({
+    getGitRoot: async () => testDir,
+    getTrunkBranch: async () => 'main',
+    getUsingJj: async () => false,
+    getCurrentCommitHash: async () => 'abc123',
+  }));
+
+  await moduleMocker.mock('./review.js', () => ({
+    handleReviewCommand,
+    generateDiffForReview: async () => ({
+      hasChanges: true,
+      changedFiles: ['src/security.ts'],
+      baseBranch: 'main',
+      diffContent: 'diff content',
+    }),
+    buildReviewPrompt: () => 'test review prompt',
+  }));
+
+  await moduleMocker.mock('../review_runner.js', () => ({
+    prepareReviewExecutors: async () => [],
+    runReview: async () => ({
+      reviewResult: {
+        planId: '10',
+        planTitle: 'Save selected review issues',
+        reviewTimestamp: '2026-03-16T00:00:00.000Z',
+        baseBranch: 'main',
+        changedFiles: ['src/security.ts'],
+        summary: 'Issues found',
+        issues: reviewIssues,
+        rawOutput: JSON.stringify({ issues: reviewIssues }),
+        recommendations: [],
+        actionItems: [],
+      },
+      rawOutput: JSON.stringify({ issues: reviewIssues }),
+      usedExecutors: ['codex-cli'],
+      warnings: [],
+    }),
+  }));
+
+  const mockCommand = {
+    parent: {
+      opts: () => ({}),
+    },
+  };
+
+  const originalInteractive = process.env.TIM_INTERACTIVE;
+  process.env.TIM_INTERACTIVE = '1';
+
+  try {
+    await handleReviewCommand(planFile, {}, mockCommand);
+  } finally {
+    if (originalInteractive === undefined) {
+      delete process.env.TIM_INTERACTIVE;
+    } else {
+      process.env.TIM_INTERACTIVE = originalInteractive;
+    }
+  }
+
+  const updatedPlan = await readPlanFile(planFile);
+  expect(updatedPlan.reviewIssues).toEqual([reviewIssues[0]]);
+});
+
 test('handleReviewCommand resolves plan by file path', async () => {
   // Create a test plan file
   const planContent = `

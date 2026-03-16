@@ -294,6 +294,7 @@ type ReviewIssueAction = FixAction | 'cleanup' | 'append' | 'exit' | 'exit-manua
 type ReviewIssueWorkflowResult = {
   appendedTaskCount: number;
   actionCompleted: boolean;
+  savedIssuesForLater: boolean;
   skipNotification: boolean;
 };
 
@@ -436,6 +437,7 @@ async function handleReviewIssueActions(params: {
   let shouldCreateCleanupPlan = false;
   let shouldAppendTasksToPlan = false;
   let selectedIssues: ReviewIssue[] | null = null;
+  let issuesToSaveForLater: ReviewIssue[] | null = null;
   let autofixExecutorName: ReviewExecutorName | null = reviewExecutorName;
   let appendedTaskCount = 0;
   let actionCompleted = false;
@@ -512,6 +514,22 @@ async function handleReviewIssueActions(params: {
       }
     } else if (action === 'exit-manually-resolved') {
       actionCompleted = true;
+    } else if (action === 'exit') {
+      skipNotification = true;
+      if (issues.length > 0) {
+        selectedIssues = await selectIssuesToFix(issues, 'save for later', () =>
+          notifyReviewInput('Review needs input: select issues to save for later.')
+        );
+        issuesToSaveForLater = selectedIssues;
+      } else {
+        issuesToSaveForLater = [];
+      }
+
+      if (issuesToSaveForLater.length > 0) {
+        actionCompleted = true;
+      } else {
+        log(chalk.yellow('No issues selected to save for later.'));
+      }
     }
   }
 
@@ -614,11 +632,26 @@ async function handleReviewIssueActions(params: {
     actionCompleted = true;
   }
 
-  if (actionCompleted) {
+  if (issuesToSaveForLater && !isPrintMode) {
+    await saveReviewIssuesToPlan(contextPlanFile, issuesToSaveForLater);
+    actionCompleted = true;
+    log(
+      chalk.green(
+        `Saved ${issuesToSaveForLater.length} review issue${issuesToSaveForLater.length === 1 ? '' : 's'} for later.`
+      )
+    );
+  }
+
+  if (actionCompleted && issuesToSaveForLater == null) {
     await clearSavedReviewIssues(contextPlanFile);
   }
 
-  return { appendedTaskCount, actionCompleted, skipNotification };
+  return {
+    appendedTaskCount,
+    actionCompleted,
+    savedIssuesForLater: issuesToSaveForLater != null,
+    skipNotification,
+  };
 }
 
 export async function handleReviewCommand(
@@ -1105,11 +1138,7 @@ export async function handleReviewCommand(
         const formattedOutput = formatter.format(reviewResult, formatterOptions);
         const hasIssues = detectIssuesInReview(reviewResult, rawOutput);
 
-        const shouldPersistIssues =
-          hasIssues && contextPlanFile && (isInteractiveEnv || options.saveIssues === true);
-        if (shouldPersistIssues) {
-          await saveReviewIssuesToPlan(contextPlanFile, reviewResult.issues);
-        } else if (!hasIssues && planData.reviewIssues) {
+        if (!hasIssues && planData.reviewIssues) {
           await clearSavedReviewIssues(contextPlanFile);
         }
 
@@ -1155,6 +1184,20 @@ export async function handleReviewCommand(
           });
           appendedTaskCount += actionResult.appendedTaskCount;
           skipNotification ||= actionResult.skipNotification;
+
+          if (
+            options.saveIssues === true &&
+            !actionResult.actionCompleted &&
+            !actionResult.savedIssuesForLater
+          ) {
+            await saveReviewIssuesToPlan(contextPlanFile, reviewResult.issues);
+            skipNotification = true;
+            reviewLog(
+              chalk.green(
+                `Saved ${reviewResult.issues.length} review issue${reviewResult.issues.length === 1 ? '' : 's'} for later.`
+              )
+            );
+          }
         }
 
         // Persistence logic - save to structured review history
