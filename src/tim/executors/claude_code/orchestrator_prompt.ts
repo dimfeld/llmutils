@@ -264,6 +264,7 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
    - Pass your research context file and any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why.
    - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the review result.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
+${buildFinalBatchReviewGuidance(reviewCommand, options)}
 ${reviewExecutorGuidance}
    - The review command may take up to 15 minutes; use a long timeout.
    - The review output focuses on problems; don't expect positive feedback even if the code is perfect.`;
@@ -278,7 +279,7 @@ ${options.batchMode ? '6' : '5'}. **Iteration**
 - Return to step ${options.batchMode ? '2' : '1'} when substantial code changes are required.
 - After implementing straightforward follow-up changes, run the relevant targeted checks yourself. If the entire set of changes is trivial and guaranteed to not introduce any bugs (e.g. just wording changes), you may skip re-running \`${reviewCommand}\`. If in doubt, run another review; even simple changes can sometimes have unintended downstream effects.
 - If the review still flags an issue that was supposedly just fixed, trust the review — the fix was incomplete or incorrect. Investigate the issue again rather than dismissing the feedback.
-- Continue this loop until all tests pass and the implementation is satisfactory`;
+- Continue this loop until all tests pass, the implementation is satisfactory, and any required final full-plan batch review is clean`;
 
   return `## Workflow Instructions
 
@@ -373,6 +374,21 @@ function buildReviewCommand(planId: string, options: OrchestrationOptions): stri
     return `${baseCommand} --executor ${options.reviewExecutor}`;
   }
   return baseCommand;
+}
+
+function buildFinalBatchReviewGuidance(
+  reviewCommand: string,
+  options: OrchestrationOptions
+): string {
+  if (!options.batchMode) {
+    return '';
+  }
+
+  return `
+   - If the selected batch finishes all remaining tasks in the plan, run one final \`${reviewCommand}\` without any \`--task-index\` arguments so the entire completed plan state is reviewed before you stop.
+   - Treat findings from that final full-plan review exactly like normal review feedback: address them, run relevant verification, and re-run the final full-plan review until it no longer finds blocking issues.
+   - Any review findings related to previous tasks in this plan should still be considered, even if those tasks were not performed in this batch of work. The idea is a final quality pass on the entire plan.
+`;
 }
 
 /**
@@ -662,6 +678,7 @@ ${options.batchMode ? '5' : '4'}. **Review Phase**
    - Pass your research context file and any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why.
    - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the review result.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
+${buildFinalBatchReviewGuidance(reviewCommand, options)}
 ${reviewExecutorGuidance}
    - The review command may take up to 15 minutes; use a long timeout.`;
 
@@ -704,7 +721,7 @@ ${iterationPhaseNumber}. **Iteration**
 - Return to step ${options.batchMode ? '2' : '1'} when substantial code changes are required.
 - After each fix iteration, run relevant targeted checks before moving forward.${reviewIterationGuidance}
 - If the review still flags an issue that was supposedly just fixed, trust the review — the fix was incomplete or incorrect. Investigate the issue again rather than dismissing the feedback.
-- Keep TDD order intact for each iteration`;
+- Keep TDD order intact for each iteration, including any final full-plan batch review before stopping`;
 
   const failureProtocol = `
 ## Failure Protocol (Conflicting/Impossible Requirements)
@@ -722,8 +739,8 @@ ${iterationPhaseNumber}. **Iteration**
     ? ''
     : `- Do NOT review code directly. Always run \`${reviewCommand}\` for code quality assessment.`;
   const testingGuidance = isSimpleTdd
-    ? '- Do NOT verify code directly. Always delegate verification to \`tim subagent verifier\`.'
-    : '- Do NOT write or run tests directly. Always delegate testing to \`tim subagent tester\`.';
+    ? '- Do NOT verify code directly. Always delegate verification to `tim subagent verifier`.'
+    : '- Do NOT write or run tests directly. Always delegate testing to `tim subagent tester`.';
   const reviewFollowupGuidance = isSimpleTdd
     ? ''
     : `

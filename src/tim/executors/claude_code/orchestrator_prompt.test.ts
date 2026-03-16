@@ -30,6 +30,13 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).not.toContain('tim-reviewer');
   });
 
+  it('requires a final full-plan review when a batch completes all remaining tasks', () => {
+    const out = wrapWithOrchestration('Context', '123', { batchMode: true });
+    expect(out).toContain('without any `--task-index` arguments');
+    expect(out).toContain('entire completed plan state is reviewed before you stop');
+    expect(out).toContain('final full-plan review');
+  });
+
   it('includes review executor override when provided', () => {
     const out = wrapWithOrchestration('Context', '123', {
       batchMode: false,
@@ -292,6 +299,15 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain(
         'you may skip re-running `tim review 71 --print --output-file <output_path>`'
       );
+    });
+
+    it('requires a final full-plan review in batch TDD mode when all tasks are finished', () => {
+      const out = wrapWithOrchestrationTdd('Context', '71', {
+        batchMode: true,
+        simpleMode: false,
+      });
+      expect(out).toContain('without any `--task-index` arguments');
+      expect(out).toContain('final full-plan batch review before stopping');
     });
 
     it('uses verifier in TDD simple mode', () => {
