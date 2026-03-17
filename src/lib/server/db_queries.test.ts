@@ -8,9 +8,15 @@ import { claimAssignment } from '$tim/db/assignment.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { upsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
-import { recordWorkspace } from '$tim/db/workspace.js';
+import { patchWorkspace, recordWorkspace } from '$tim/db/workspace.js';
+import { acquireWorkspaceLock, getWorkspaceLock } from '$tim/db/workspace_lock.js';
 
-import { getPlanDetail, getPlansForProject, getProjectsWithMetadata } from './db_queries.js';
+import {
+  getPlanDetail,
+  getPlansForProject,
+  getProjectsWithMetadata,
+  getWorkspacesForProject,
+} from './db_queries.js';
 
 describe('lib/server/db_queries', () => {
   let tempDir: string;
@@ -323,6 +329,144 @@ describe('lib/server/db_queries', () => {
       [otherProjectId, 'other-pending'],
     ]);
   });
+
+  test('getWorkspacesForProject returns lock info and recently active flags', () => {
+    const primaryWorkspace = recordWorkspace(db, {
+      projectId,
+      workspacePath: '/tmp/workspaces/primary-workspace',
+      branch: 'feature/primary-workspace',
+      name: 'Primary workspace',
+    });
+    patchWorkspace(db, primaryWorkspace.workspace_path, { isPrimary: true });
+    setWorkspaceUpdatedAt(db, primaryWorkspace.id, daysAgo(5));
+
+    const lockedWorkspace = recordWorkspace(db, {
+      projectId,
+      workspacePath: '/tmp/workspaces/locked-workspace',
+      branch: 'feature/locked-workspace',
+      name: 'Locked workspace',
+    });
+    setWorkspaceUpdatedAt(db, lockedWorkspace.id, daysAgo(5));
+    acquireWorkspaceLock(db, lockedWorkspace.id, {
+      lockType: 'persistent',
+      hostname: 'devbox',
+      command: 'tim agent',
+    });
+
+    const recentWorkspace = recordWorkspace(db, {
+      projectId,
+      workspacePath: '/tmp/workspaces/recent-workspace',
+      branch: 'feature/recent-workspace',
+      name: 'Recent workspace',
+    });
+    setWorkspaceUpdatedAt(db, recentWorkspace.id, hoursAgo(6));
+
+    const staleWorkspace = recordWorkspace(db, {
+      projectId,
+      workspacePath: '/tmp/workspaces/stale-workspace',
+      branch: 'feature/stale-workspace',
+      name: 'Stale workspace',
+    });
+    setWorkspaceUpdatedAt(db, staleWorkspace.id, daysAgo(4));
+
+    const workspaces = getWorkspacesForProject(db, projectId);
+
+    expect(workspaces.map((workspace) => workspace.workspacePath)).toEqual([
+      '/tmp/workspaces/stale-assignment',
+      '/tmp/workspaces/blocked-plan',
+      '/tmp/workspaces/recent-workspace',
+      '/tmp/workspaces/locked-workspace',
+      '/tmp/workspaces/primary-workspace',
+      '/tmp/workspaces/stale-workspace',
+    ]);
+    expect(workspaces).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          workspacePath: '/tmp/workspaces/primary-workspace',
+          isPrimary: true,
+          isLocked: false,
+          isRecentlyActive: true,
+          lockInfo: null,
+        }),
+        expect.objectContaining({
+          workspacePath: '/tmp/workspaces/locked-workspace',
+          isPrimary: false,
+          isLocked: true,
+          isRecentlyActive: true,
+          lockInfo: {
+            type: 'persistent',
+            command: 'tim agent',
+            hostname: 'devbox',
+          },
+        }),
+        expect.objectContaining({
+          workspacePath: '/tmp/workspaces/recent-workspace',
+          isRecentlyActive: true,
+        }),
+        expect.objectContaining({
+          workspacePath: '/tmp/workspaces/stale-workspace',
+          isPrimary: false,
+          isLocked: false,
+          isRecentlyActive: false,
+          lockInfo: null,
+        }),
+      ])
+    );
+  });
+
+  test('getWorkspacesForProject removes stale pid locks before returning data', () => {
+    const workspace = recordWorkspace(db, {
+      projectId,
+      workspacePath: '/tmp/workspaces/stale-lock-cleanup',
+      branch: 'feature/stale-lock-cleanup',
+    });
+    setWorkspaceUpdatedAt(db, workspace.id, daysAgo(5));
+    acquireWorkspaceLock(db, workspace.id, {
+      lockType: 'pid',
+      pid: process.pid,
+      hostname: 'devbox',
+      command: 'tim agent',
+    });
+    db.prepare('UPDATE workspace_lock SET pid = ?, started_at = ? WHERE workspace_id = ?').run(
+      999_999,
+      daysAgo(2),
+      workspace.id
+    );
+
+    const workspaces = getWorkspacesForProject(db, projectId);
+    const staleLockWorkspace = workspaces.find(
+      (entry) => entry.workspacePath === '/tmp/workspaces/stale-lock-cleanup'
+    );
+
+    expect(staleLockWorkspace).toMatchObject({
+      isLocked: false,
+      lockInfo: null,
+      isRecentlyActive: false,
+    });
+    expect(getWorkspaceLock(db, workspace.id)).toBeNull();
+  });
+
+  test('getWorkspacesForProject without a projectId returns workspaces across projects', () => {
+    recordWorkspace(db, {
+      projectId: otherProjectId,
+      workspacePath: '/tmp/workspaces/other-project-workspace',
+      branch: 'feature/other-project',
+      name: 'Other project workspace',
+    });
+
+    const workspaces = getWorkspacesForProject(db);
+
+    expect(workspaces.map((workspace) => workspace.projectId)).toContain(projectId);
+    expect(workspaces.map((workspace) => workspace.projectId)).toContain(otherProjectId);
+    expect(
+      workspaces.find(
+        (workspace) => workspace.workspacePath === '/tmp/workspaces/other-project-workspace'
+      )
+    ).toMatchObject({
+      projectId: otherProjectId,
+      name: 'Other project workspace',
+    });
+  });
 });
 
 function seedPrimaryProject(db: Database, projectId: number): void {
@@ -569,4 +713,12 @@ function seedSecondaryProject(db: Database, projectId: number): void {
 
 function daysAgo(days: number): string {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function hoursAgo(hours: number): string {
+  return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+}
+
+function setWorkspaceUpdatedAt(db: Database, workspaceId: number, updatedAt: string): void {
+  db.prepare('UPDATE workspace SET updated_at = ? WHERE id = ?').run(updatedAt, workspaceId);
 }

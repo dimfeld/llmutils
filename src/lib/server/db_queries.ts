@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite';
 
 import { getAssignmentEntry, type AssignmentEntry } from '$tim/db/assignment.js';
 import { normalizePlanStatus } from '$tim/plans/plan_state_utils.js';
+import { cleanStaleLocks, type WorkspaceLockRow } from '$tim/db/workspace_lock.js';
 import {
   getPlanByUuid,
   getPlanDependenciesByProject,
@@ -16,6 +17,7 @@ import {
   type PlanTaskRow,
 } from '$tim/db/plan.js';
 import { listProjects, type Project } from '$tim/db/project.js';
+import type { WorkspaceRow } from '$tim/db/workspace.js';
 
 export type PlanDisplayStatus =
   | 'pending'
@@ -91,6 +93,25 @@ export interface PlanDetail extends EnrichedPlan {
   parent: EnrichedPlanDependency | null;
 }
 
+export interface EnrichedWorkspace {
+  id: number;
+  projectId: number;
+  workspacePath: string;
+  name: string | null;
+  branch: string | null;
+  planId: string | null;
+  planTitle: string | null;
+  isPrimary: boolean;
+  isLocked: boolean;
+  lockInfo: {
+    type: WorkspaceLockRow['lock_type'];
+    command: string;
+    hostname: string;
+  } | null;
+  updatedAt: string;
+  isRecentlyActive: boolean;
+}
+
 interface PlanQueryBundle {
   plans: PlanRow[];
   tasks: PlanTaskRow[];
@@ -99,6 +120,7 @@ interface PlanQueryBundle {
 }
 
 export const RECENTLY_DONE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+export const RECENTLY_ACTIVE_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 const EMPTY_STATUS_COUNTS: ProjectPlanStatusCounts = {
   pending: 0,
@@ -160,6 +182,15 @@ function isRecentlyDone(updatedAt: string, now = Date.now()): boolean {
   }
 
   return now - updatedAtMs <= RECENTLY_DONE_WINDOW_MS;
+}
+
+function isRecentlyUpdated(updatedAt: string, now = Date.now()): boolean {
+  const updatedAtMs = Date.parse(updatedAt);
+  if (!Number.isFinite(updatedAtMs)) {
+    return false;
+  }
+
+  return now - updatedAtMs <= RECENTLY_ACTIVE_WINDOW_MS;
 }
 
 function computeDisplayStatus(
@@ -368,6 +399,90 @@ export function getPlansForProject(db: Database, projectId?: number): EnrichedPl
   const bundle =
     projectId === undefined ? getAllProjectBundle(db) : getProjectBundle(db, projectId);
   return enrichPlansWithContext(db, bundle).enrichedPlans;
+}
+
+interface WorkspaceQueryRow extends WorkspaceRow {
+  lock_type: WorkspaceLockRow['lock_type'] | null;
+  pid: number | null;
+  started_at: string | null;
+  hostname: string | null;
+  command: string | null;
+}
+
+export function getWorkspacesForProject(db: Database, projectId?: number): EnrichedWorkspace[] {
+  cleanStaleLocks(db);
+
+  const rows = (
+    projectId === undefined
+      ? db
+          .prepare(
+            `
+            SELECT
+              w.*,
+              wl.lock_type,
+              wl.pid,
+              wl.started_at,
+              wl.hostname,
+              wl.command
+            FROM workspace w
+            LEFT JOIN workspace_lock wl ON wl.workspace_id = w.id
+          `
+          )
+          .all()
+      : db
+          .prepare(
+            `
+            SELECT
+              w.*,
+              wl.lock_type,
+              wl.pid,
+              wl.started_at,
+              wl.hostname,
+              wl.command
+            FROM workspace w
+            LEFT JOIN workspace_lock wl ON wl.workspace_id = w.id
+            WHERE w.project_id = ?
+          `
+          )
+          .all(projectId)
+  ) as WorkspaceQueryRow[];
+
+  return rows
+    .map((row) => {
+      const isPrimary = row.is_primary === 1;
+      const isLocked = row.lock_type !== null;
+      const isRecentlyActive = isLocked || isPrimary || isRecentlyUpdated(row.updated_at);
+
+      return {
+        id: row.id,
+        projectId: row.project_id,
+        workspacePath: row.workspace_path,
+        name: row.name,
+        branch: row.branch,
+        planId: row.plan_id,
+        planTitle: row.plan_title,
+        isPrimary,
+        isLocked,
+        lockInfo: isLocked
+          ? {
+              type: row.lock_type!,
+              command: row.command ?? '',
+              hostname: row.hostname ?? '',
+            }
+          : null,
+        updatedAt: row.updated_at,
+        isRecentlyActive,
+      };
+    })
+    .sort((left, right) => {
+      if (left.isRecentlyActive !== right.isRecentlyActive) {
+        return left.isRecentlyActive ? -1 : 1;
+      }
+
+      const timeDiff = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+      if (timeDiff !== 0) return timeDiff;
+      return right.id - left.id;
+    });
 }
 
 export function getPlanDetail(db: Database, planUuid: string): PlanDetail | null {

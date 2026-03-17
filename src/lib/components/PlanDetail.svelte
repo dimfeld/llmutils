@@ -7,15 +7,17 @@
     plan,
     projectId,
     projectName,
+    tab = 'plans',
   }: {
     plan: PlanDetail;
     projectId: string;
     projectName?: string;
+    tab?: string;
   } = $props();
 
   function planUrl(uuid: string, depProjectId?: number | null): string {
     const pid = depProjectId ?? projectId;
-    return `/projects/${pid}/plans/${uuid}`;
+    return `/projects/${pid}/${tab}/${uuid}`;
   }
 
   function formatDate(dateStr: string): string {

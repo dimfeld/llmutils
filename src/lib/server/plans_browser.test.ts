@@ -10,7 +10,7 @@ import { upsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { recordWorkspace } from '$tim/db/workspace.js';
 
-import { getPlanDetailRouteData, getPlansPageData } from './plans_browser.js';
+import { getActiveWorkData, getPlanDetailRouteData, getPlansPageData } from './plans_browser.js';
 
 describe('lib/server/plans_browser', () => {
   let tempDir: string;
@@ -65,6 +65,75 @@ describe('lib/server/plans_browser', () => {
     ]);
   });
 
+  test('getActiveWorkData returns workspaces plus only in-progress and blocked plans', () => {
+    const timestamp = daysAgo(2);
+
+    upsertPlan(db, projectId, {
+      uuid: 'active-open-dependency',
+      planId: 403,
+      title: 'Open dependency',
+      status: 'pending',
+      priority: 'medium',
+      filename: '403-open-dependency.plan.md',
+      sourceCreatedAt: timestamp,
+      sourceUpdatedAt: timestamp,
+    });
+
+    upsertPlan(db, projectId, {
+      uuid: 'blocked-plan',
+      planId: 404,
+      title: 'Blocked plan',
+      goal: 'Should appear in active work',
+      status: 'in_progress',
+      priority: 'urgent',
+      filename: '404-blocked.plan.md',
+      sourceCreatedAt: timestamp,
+      sourceUpdatedAt: timestamp,
+      dependencyUuids: ['active-open-dependency'],
+    });
+
+    const result = getActiveWorkData(db, String(projectId));
+
+    expect(result.workspaces.map((workspace) => workspace.workspacePath)).toEqual([
+      '/tmp/workspaces/feature-plan',
+    ]);
+    expect(result.activePlans.map((plan) => [plan.planId, plan.displayStatus])).toEqual([
+      [402, 'in_progress'],
+      [404, 'blocked'],
+    ]);
+
+    // planNumberToUuid includes all plans, not just active ones
+    expect(result.planNumberToUuid[`${projectId}:401`]).toBe('dependency-done');
+    expect(result.planNumberToUuid[`${projectId}:402`]).toBe('feature-plan');
+    expect(result.planNumberToUuid[`${projectId}:403`]).toBe('active-open-dependency');
+    expect(result.planNumberToUuid[`${projectId}:404`]).toBe('blocked-plan');
+  });
+
+  test('getActiveWorkData supports all-project mode', () => {
+    const otherWorkspace = recordWorkspace(db, {
+      projectId: otherProjectId,
+      taskId: 'task-other-project-plan',
+      workspacePath: '/tmp/workspaces/other-project-plan',
+      branch: 'feature/other-project-plan',
+      planId: '501',
+      planTitle: 'Other project plan',
+    });
+
+    claimAssignment(db, otherProjectId, 'other-project-plan', 501, otherWorkspace.id, 'bob');
+
+    const result = getActiveWorkData(db, 'all');
+
+    expect(result.workspaces.map((workspace) => workspace.projectId)).toEqual(
+      expect.arrayContaining([projectId, otherProjectId])
+    );
+    expect(
+      result.activePlans.map((plan) => [plan.projectId, plan.uuid, plan.displayStatus])
+    ).toEqual([
+      [projectId, 'feature-plan', 'in_progress'],
+      [otherProjectId, 'other-project-plan', 'blocked'],
+    ]);
+  });
+
   describe('getPlanDetailRouteData', () => {
     test('returns plan detail when accessed under the owning project', () => {
       const result = getPlanDetailRouteData(db, 'feature-plan', String(projectId));
@@ -102,6 +171,13 @@ describe('lib/server/plans_browser', () => {
       expect(result).not.toBeNull();
       expect(result!.redirectTo).toBe(`/projects/${otherProjectId}/plans/other-project-plan`);
       expect(result!.planDetail.projectId).toBe(otherProjectId);
+    });
+
+    test('returns redirect URL with active tab when tab is active', () => {
+      const result = getPlanDetailRouteData(db, 'other-project-plan', String(projectId), 'active');
+
+      expect(result).not.toBeNull();
+      expect(result!.redirectTo).toBe(`/projects/${otherProjectId}/active/other-project-plan`);
     });
 
     test('returns null for an unknown plan', () => {

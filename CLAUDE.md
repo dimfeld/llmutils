@@ -94,7 +94,7 @@ The codebase is organized into several main modules with improved modularity and
 
 3. **Web interface** (`src/lib/`, `src/routes/`): SvelteKit-based plans browser (see `docs/web-interface.md` for conventions and gotchas)
    - Server initialization: `src/lib/server/init.ts` provides lazy-init singleton via `getServerContext()` (async) returning `{ config, gitRoot, tasksDir, db, projectId }`. Syncs plan files to DB on first access.
-   - DB query helpers: `src/lib/server/db_queries.ts` provides web-specific enriched queries (`getProjectsWithMetadata`, `getPlansForProject`, `getPlanDetail`) with computed display statuses (`blocked`, `recently_done`) derived from dependency resolution
+   - DB query helpers: `src/lib/server/db_queries.ts` provides web-specific enriched queries (`getProjectsWithMetadata`, `getPlansForProject`, `getPlanDetail`, `getWorkspacesForProject`) with computed display statuses (`blocked`, `recently_done`) derived from dependency resolution
    - Server-only constraint: All DB imports must be in `$lib/server/` or `+page.server.ts` files — bun:sqlite cannot be imported client-side
    - Uses `$tim` and `$common` aliases (configured in `svelte.config.js`) to import from the CLI codebase
    - Route structure: `/projects/[projectId]/{tab}` where `projectId` is a numeric ID or `all`, and tab is `sessions`, `active`, or `plans`
@@ -104,8 +104,10 @@ The codebase is organized into several main modules with improved modularity and
    - Cookie-based project persistence: `src/lib/stores/project.svelte.ts` has helpers (`setLastProjectId`, `getLastProjectId`, `projectUrl`) for remembering the last-selected project; cookie is httpOnly (server-read only)
    - Home page (`/`) redirects to `/projects/{lastProjectId}/sessions` via server-side redirect, falling back to `/projects/all/sessions`
    - Plan detail route: `/projects/[projectId]/plans/[planId]` sub-route loads plan detail server-side; redirects to owning project if accessed under wrong projectId
-   - Components in `src/lib/components/`: `TabNav.svelte`, `ProjectSidebar.svelte`, `PlansList.svelte`, `PlanRow.svelte`, `PlanDetail.svelte`, `FilterChips.svelte`, `StatusBadge.svelte`, `PriorityBadge.svelte`
-   - Plans browser helpers: `src/lib/server/plans_browser.ts` abstraction layer between route handlers and `db_queries.ts`
+   - Active Work route: `/projects/[projectId]/active` with nested `[planId]` sub-route; split-pane layout with workspaces + active plans list on left, plan detail on right (see `docs/web-interface.md` for details)
+   - Components in `src/lib/components/`: `TabNav.svelte`, `ProjectSidebar.svelte`, `PlansList.svelte`, `PlanRow.svelte`, `PlanDetail.svelte`, `FilterChips.svelte`, `StatusBadge.svelte`, `PriorityBadge.svelte`, `WorkspaceBadge.svelte`, `WorkspaceRow.svelte`, `ActivePlanRow.svelte`
+   - Plans browser helpers: `src/lib/server/plans_browser.ts` abstraction layer between route handlers and `db_queries.ts`; includes `getActiveWorkData()` for the Active Work tab
+   - Shared utilities: `src/lib/utils/time.ts` provides `formatRelativeTime()` for human-readable relative timestamps
 
 There are other directories as well but they are mostly inactive.
 
