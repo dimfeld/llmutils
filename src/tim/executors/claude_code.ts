@@ -839,7 +839,9 @@ export class ClaudeCodeExecutor implements Executor {
                 })();
               } else {
                 terminalInputResult?.onResultMessage();
-                terminalInputResult?.closeStdin();
+                if (this.sharedOptions.closeTerminalInputOnResult ?? true) {
+                  terminalInputResult?.closeStdin();
+                }
               }
             }
             if (result.filePaths) {

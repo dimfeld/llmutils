@@ -1721,6 +1721,9 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
     await moduleMocker.mock('../../common/process.ts', () => ({
       spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
         formatStdout = opts.formatStdout;
+        queueMicrotask(() => {
+          formatStdout?.(`${resultLine}\n`);
+        });
         return {
           ...createStreamingProcessMock(),
           kill: mock(() => {}),
@@ -1768,6 +1771,197 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
     formatStdout?.(`${resultLine}\n`);
     expect(onResultMessageSpy).toHaveBeenCalledTimes(1);
     expect(sendSinglePromptAndWaitSpy).toHaveBeenCalledTimes(0);
+  });
+
+  test('does not force-close stdin when closeTerminalInputOnResult is false', async () => {
+    const onResultMessageSpy = mock(() => {});
+    const closeStdinSpy = mock(() => {});
+    const cleanupSpy = mock(() => {});
+    let resolveStreamingResult:
+      | ((value: {
+          exitCode: number;
+          stdout: string;
+          stderr: string;
+          signal: NodeJS.Signals | null;
+          killedByInactivity: boolean;
+        }) => void)
+      | undefined;
+    const executeWithTerminalInputSpy = mock(() => ({
+      resultPromise: new Promise((resolve) => {
+        resolveStreamingResult = resolve;
+      }),
+      onResultMessage: onResultMessageSpy,
+      sendFollowUpMessage: mock(() => {}),
+      closeStdin: closeStdinSpy,
+      cleanup: cleanupSpy,
+    }));
+    const resultLine =
+      '{"type":"result","subtype":"success","total_cost_usd":0,"duration_ms":1,"duration_api_ms":1,"is_error":false,"num_turns":1,"result":"done","session_id":"session"}';
+    let formatStdout: ((output: string) => unknown) | undefined;
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+        formatStdout = opts.formatStdout;
+        setTimeout(() => {
+          formatStdout?.(`${resultLine}\n`);
+          resolveStreamingResult?.({
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            signal: null,
+            killedByInactivity: false,
+          });
+        }, 0);
+        return {
+          ...createStreamingProcessMock(),
+          kill: mock(() => {}),
+        };
+      }),
+      createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock((_line: string) => ({
+        type: 'result',
+        message: 'done',
+        resultInfo: {
+          success: true,
+          turns: 2,
+          durationMs: 1,
+        },
+      })),
+      extractStructuredMessages: mock(() => []),
+      resetToolUseCache: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('./claude_code/terminal_input_lifecycle.ts', () => ({
+      executeWithTerminalInput: executeWithTerminalInputSpy,
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir, terminalInput: true, closeTerminalInputOnResult: false } as any,
+      {} as any
+    );
+
+    const executionPromise = exec.execute('CTX', {
+      planId: 'p1',
+      planTitle: 'T',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'planning',
+    });
+    await executionPromise;
+
+    expect(executeWithTerminalInputSpy).toHaveBeenCalledTimes(1);
+    expect(formatStdout).toBeDefined();
+    expect(onResultMessageSpy).toHaveBeenCalledTimes(1);
+    expect(closeStdinSpy).toHaveBeenCalledTimes(0);
+    expect(cleanupSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('fast no-op retry flow closes stdin when it decides not to continue', async () => {
+    const onResultMessageSpy = mock(() => {});
+    const closeStdinSpy = mock(() => {});
+    const sendFollowUpMessageSpy = mock(() => {});
+    const cleanupSpy = mock(() => {});
+    let resolveStreamingResult:
+      | ((value: {
+          exitCode: number;
+          stdout: string;
+          stderr: string;
+          signal: NodeJS.Signals | null;
+          killedByInactivity: boolean;
+        }) => void)
+      | undefined;
+    let workingCopyStatusCallCount = 0;
+    const executeWithTerminalInputSpy = mock(() => ({
+      resultPromise: new Promise((resolve) => {
+        resolveStreamingResult = resolve;
+      }),
+      onResultMessage: onResultMessageSpy,
+      sendFollowUpMessage: sendFollowUpMessageSpy,
+      closeStdin: closeStdinSpy,
+      cleanup: cleanupSpy,
+    }));
+    let formatStdout: ((output: string) => unknown) | undefined;
+
+    await moduleMocker.mock('../../common/git.ts', () => ({
+      getGitRoot: mock(async () => tempDir),
+      getWorkingCopyStatus: mock(async () => {
+        workingCopyStatusCallCount += 1;
+        return workingCopyStatusCallCount === 1
+          ? { hasChanges: false, checkFailed: false }
+          : { hasChanges: true, checkFailed: false, output: 'changed' };
+      }),
+    }));
+
+    await moduleMocker.mock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+        formatStdout = opts.formatStdout;
+        setTimeout(() => {
+          formatStdout?.('{"type":"result"}\n');
+          resolveStreamingResult?.({
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            signal: null,
+            killedByInactivity: false,
+          });
+        }, 0);
+        return {
+          ...createStreamingProcessMock(),
+          kill: mock(() => {}),
+        };
+      }),
+      createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
+      debug: false,
+    }));
+
+    await moduleMocker.mock('./claude_code/format.ts', () => ({
+      formatJsonMessage: mock((_line: string) => ({
+        type: 'result',
+        message: 'done',
+        resultInfo: {
+          success: true,
+          turns: 1,
+          durationMs: 1,
+        },
+      })),
+      extractStructuredMessages: mock(() => []),
+      resetToolUseCache: mock(() => {}),
+    }));
+
+    await moduleMocker.mock('./claude_code/terminal_input_lifecycle.ts', () => ({
+      executeWithTerminalInput: executeWithTerminalInputSpy,
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir, terminalInput: false } as any,
+      {} as any
+    );
+
+    await exec.execute('CTX', {
+      planId: 'p1',
+      planTitle: 'T',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'normal',
+      retryFastNoopOrchestratorTurn: true,
+    });
+
+    expect(executeWithTerminalInputSpy).toHaveBeenCalledTimes(1);
+    expect(formatStdout).toBeDefined();
+    expect(onResultMessageSpy).toHaveBeenCalledTimes(1);
+    expect(closeStdinSpy).toHaveBeenCalledTimes(1);
+    expect(sendFollowUpMessageSpy).toHaveBeenCalledTimes(0);
+    expect(cleanupSpy).toHaveBeenCalledTimes(1);
   });
 
   test('uses multi-message path for tunnel-forwarded input when terminal input is disabled', async () => {
