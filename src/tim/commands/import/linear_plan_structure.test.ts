@@ -6,7 +6,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 const moduleMocker = new ModuleMocker(import.meta);
 

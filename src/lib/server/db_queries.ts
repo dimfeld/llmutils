@@ -1,0 +1,435 @@
+import type { Database } from 'bun:sqlite';
+
+import { getAssignmentEntry, type AssignmentEntry } from '$tim/db/assignment.js';
+import { normalizePlanStatus } from '$tim/plans/plan_state_utils.js';
+import {
+  getPlanByUuid,
+  getPlanDependenciesByProject,
+  getPlansByProject,
+  getPlanTagsByUuid,
+  getPlanTagsByProject,
+  getPlanTasksByUuid,
+  getPlanTasksByProject,
+  type PlanDependencyRow,
+  type PlanRow,
+  type PlanTagRow,
+  type PlanTaskRow,
+} from '$tim/db/plan.js';
+import { listProjects, type Project } from '$tim/db/project.js';
+
+export type PlanDisplayStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'blocked'
+  | 'needs_review'
+  | 'recently_done'
+  | 'done'
+  | 'cancelled'
+  | 'deferred';
+
+export interface ProjectPlanStatusCounts {
+  pending: number;
+  in_progress: number;
+  needs_review: number;
+  done: number;
+  cancelled: number;
+  deferred: number;
+}
+
+export interface ProjectWithMetadata extends Project {
+  planCount: number;
+  activePlanCount: number;
+  statusCounts: ProjectPlanStatusCounts;
+}
+
+export interface EnrichedPlanTask {
+  id: number;
+  taskIndex: number;
+  title: string;
+  description: string;
+  done: boolean;
+}
+
+export interface EnrichedPlanDependency {
+  uuid: string;
+  projectId: number | null;
+  planId: number | null;
+  title: string | null;
+  status: PlanRow['status'] | null;
+  displayStatus: PlanDisplayStatus | null;
+  isResolved: boolean;
+}
+
+export interface EnrichedPlan {
+  uuid: string;
+  projectId: number;
+  planId: number;
+  title: string | null;
+  goal: string | null;
+  details: string | null;
+  status: PlanRow['status'];
+  displayStatus: PlanDisplayStatus;
+  priority: PlanRow['priority'];
+  branch: string | null;
+  parentUuid: string | null;
+  epic: boolean;
+  filename: string;
+  createdAt: string;
+  updatedAt: string;
+  tags: string[];
+  dependencyUuids: string[];
+  tasks: EnrichedPlanTask[];
+  taskCounts: {
+    done: number;
+    total: number;
+  };
+}
+
+export interface PlanDetail extends EnrichedPlan {
+  dependencies: EnrichedPlanDependency[];
+  assignment: AssignmentEntry | null;
+  parent: EnrichedPlanDependency | null;
+}
+
+interface PlanQueryBundle {
+  plans: PlanRow[];
+  tasks: PlanTaskRow[];
+  dependencies: PlanDependencyRow[];
+  tags: PlanTagRow[];
+}
+
+export const RECENTLY_DONE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+const EMPTY_STATUS_COUNTS: ProjectPlanStatusCounts = {
+  pending: 0,
+  in_progress: 0,
+  needs_review: 0,
+  done: 0,
+  cancelled: 0,
+  deferred: 0,
+};
+
+function createEmptyStatusCounts(): ProjectPlanStatusCounts {
+  return { ...EMPTY_STATUS_COUNTS };
+}
+
+function toTask(task: PlanTaskRow): EnrichedPlanTask {
+  return {
+    id: task.id,
+    taskIndex: task.task_index,
+    title: task.title,
+    description: task.description,
+    done: task.done === 1,
+  };
+}
+
+function groupByPlanUuid<T extends { plan_uuid: string }>(items: T[]): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+
+  for (const item of items) {
+    const existing = grouped.get(item.plan_uuid);
+    if (existing) {
+      existing.push(item);
+    } else {
+      grouped.set(item.plan_uuid, [item]);
+    }
+  }
+
+  return grouped;
+}
+
+function groupTagsByPlanUuid(tags: PlanTagRow[]): Map<string, string[]> {
+  const grouped = new Map<string, string[]>();
+
+  for (const tag of tags) {
+    const existing = grouped.get(tag.plan_uuid);
+    if (existing) {
+      existing.push(tag.tag);
+    } else {
+      grouped.set(tag.plan_uuid, [tag.tag]);
+    }
+  }
+
+  return grouped;
+}
+
+function isRecentlyDone(updatedAt: string, now = Date.now()): boolean {
+  const updatedAtMs = Date.parse(updatedAt);
+  if (!Number.isFinite(updatedAtMs)) {
+    return false;
+  }
+
+  return now - updatedAtMs <= RECENTLY_DONE_WINDOW_MS;
+}
+
+function computeDisplayStatus(
+  plan: PlanRow,
+  dependencyRows: PlanDependencyRow[],
+  planByUuid: ReadonlyMap<string, PlanRow>,
+  now = Date.now()
+): PlanDisplayStatus {
+  if (plan.status === 'pending' || plan.status === 'in_progress') {
+    const hasUnresolvedDependency = dependencyRows.some((dependency) => {
+      const dependencyPlan = planByUuid.get(dependency.depends_on_uuid);
+      return dependencyPlan == null || dependencyPlan.status !== 'done';
+    });
+
+    if (hasUnresolvedDependency) {
+      return 'blocked';
+    }
+  }
+
+  if (plan.status === 'done' && isRecentlyDone(plan.updated_at, now)) {
+    return 'recently_done';
+  }
+
+  return plan.status;
+}
+
+interface EnrichmentContext {
+  planByUuid: Map<string, PlanRow>;
+  dependenciesByPlanUuid: Map<string, PlanDependencyRow[]>;
+  enrichedPlans: EnrichedPlan[];
+}
+
+function enrichPlansWithContext(
+  db: Database,
+  bundle: PlanQueryBundle,
+  now = Date.now()
+): EnrichmentContext {
+  const tasksByPlanUuid = groupByPlanUuid(bundle.tasks);
+  const dependenciesByPlanUuid = groupByPlanUuid(bundle.dependencies);
+  const tagsByPlanUuid = groupTagsByPlanUuid(bundle.tags);
+  const planByUuid = new Map(bundle.plans.map((plan) => [plan.uuid, plan]));
+  const missingDependencyUuids = new Set<string>();
+
+  for (const dependency of bundle.dependencies) {
+    if (!planByUuid.has(dependency.depends_on_uuid)) {
+      missingDependencyUuids.add(dependency.depends_on_uuid);
+    }
+  }
+
+  for (const dependencyPlan of getPlansByUuid(db, missingDependencyUuids)) {
+    planByUuid.set(dependencyPlan.uuid, dependencyPlan);
+  }
+
+  const enrichedPlans = bundle.plans.map((plan) => {
+    const tasks = (tasksByPlanUuid.get(plan.uuid) ?? []).map(toTask);
+    const dependencyRows = dependenciesByPlanUuid.get(plan.uuid) ?? [];
+    const doneTaskCount = tasks.filter((task) => task.done).length;
+
+    return {
+      uuid: plan.uuid,
+      projectId: plan.project_id,
+      planId: plan.plan_id,
+      title: plan.title,
+      goal: plan.goal,
+      details: plan.details,
+      status: plan.status,
+      displayStatus: computeDisplayStatus(plan, dependencyRows, planByUuid, now),
+      priority: plan.priority,
+      branch: plan.branch,
+      parentUuid: plan.parent_uuid,
+      epic: plan.epic === 1,
+      filename: plan.filename,
+      createdAt: plan.created_at,
+      updatedAt: plan.updated_at,
+      tags: tagsByPlanUuid.get(plan.uuid) ?? [],
+      dependencyUuids: dependencyRows.map((dependency) => dependency.depends_on_uuid),
+      tasks,
+      taskCounts: {
+        done: doneTaskCount,
+        total: tasks.length,
+      },
+    };
+  });
+
+  return { planByUuid, dependenciesByPlanUuid, enrichedPlans };
+}
+
+function getAllProjectBundle(db: Database): PlanQueryBundle {
+  return {
+    plans: db.prepare('SELECT * FROM plan ORDER BY project_id, plan_id, uuid').all() as PlanRow[],
+    tasks: db
+      .prepare('SELECT * FROM plan_task ORDER BY plan_uuid, task_index, id')
+      .all() as PlanTaskRow[],
+    dependencies: db
+      .prepare(
+        'SELECT plan_uuid, depends_on_uuid FROM plan_dependency ORDER BY plan_uuid, depends_on_uuid'
+      )
+      .all() as PlanDependencyRow[],
+    tags: db.prepare('SELECT * FROM plan_tag ORDER BY plan_uuid, tag').all() as PlanTagRow[],
+  };
+}
+
+function getProjectBundle(db: Database, projectId: number): PlanQueryBundle {
+  return {
+    plans: getPlansByProject(db, projectId),
+    tasks: getPlanTasksByProject(db, projectId),
+    dependencies: getPlanDependenciesByProject(db, projectId),
+    tags: getPlanTagsByProject(db, projectId),
+  };
+}
+
+function getPlanDependenciesByUuid(db: Database, planUuid: string): PlanDependencyRow[] {
+  return db
+    .prepare(
+      'SELECT plan_uuid, depends_on_uuid FROM plan_dependency WHERE plan_uuid = ? ORDER BY depends_on_uuid'
+    )
+    .all(planUuid) as PlanDependencyRow[];
+}
+
+function getPlansByUuid(db: Database, planUuids: Iterable<string>): PlanRow[] {
+  const plans: PlanRow[] = [];
+  const seen = new Set<string>();
+
+  for (const planUuid of planUuids) {
+    if (seen.has(planUuid)) {
+      continue;
+    }
+    seen.add(planUuid);
+
+    const plan = getPlanByUuid(db, planUuid);
+    if (plan) {
+      plans.push(plan);
+    }
+  }
+
+  return plans;
+}
+
+function toDependencySummary(
+  dependencyUuid: string,
+  planByUuid: ReadonlyMap<string, PlanRow>,
+  dependencyRowsByPlanUuid: ReadonlyMap<string, PlanDependencyRow[]>,
+  now = Date.now()
+): EnrichedPlanDependency {
+  const dependencyPlan = planByUuid.get(dependencyUuid);
+  const dependencyRows = dependencyRowsByPlanUuid.get(dependencyUuid) ?? [];
+  const displayStatus = dependencyPlan
+    ? computeDisplayStatus(dependencyPlan, dependencyRows, planByUuid, now)
+    : null;
+
+  return {
+    uuid: dependencyUuid,
+    projectId: dependencyPlan?.project_id ?? null,
+    planId: dependencyPlan?.plan_id ?? null,
+    title: dependencyPlan?.title ?? null,
+    status: dependencyPlan?.status ?? null,
+    displayStatus,
+    isResolved: dependencyPlan?.status === 'done',
+  };
+}
+
+export function getProjectsWithMetadata(db: Database): ProjectWithMetadata[] {
+  const projects = listProjects(db);
+
+  const rows = db
+    .prepare('SELECT project_id, status, COUNT(*) as count FROM plan GROUP BY project_id, status')
+    .all() as Array<{ project_id: number; status: string; count: number }>;
+
+  const countsByProject = new Map<number, ProjectPlanStatusCounts & { total: number }>();
+  for (const row of rows) {
+    let entry = countsByProject.get(row.project_id);
+    if (!entry) {
+      entry = { ...createEmptyStatusCounts(), total: 0 };
+      countsByProject.set(row.project_id, entry);
+    }
+    entry.total += row.count;
+    if (Object.hasOwn(entry, row.status)) {
+      (entry as unknown as Record<string, number>)[row.status] += row.count;
+    }
+  }
+
+  return projects.map((project) => {
+    const counts = countsByProject.get(project.id);
+    const statusCounts = counts
+      ? {
+          pending: counts.pending,
+          in_progress: counts.in_progress,
+          needs_review: counts.needs_review,
+          done: counts.done,
+          cancelled: counts.cancelled,
+          deferred: counts.deferred,
+        }
+      : createEmptyStatusCounts();
+    const planCount = counts?.total ?? 0;
+
+    return {
+      ...project,
+      planCount,
+      activePlanCount: statusCounts.pending + statusCounts.in_progress + statusCounts.needs_review,
+      statusCounts,
+    };
+  });
+}
+
+export function getPlansForProject(db: Database, projectId?: number): EnrichedPlan[] {
+  const bundle =
+    projectId === undefined ? getAllProjectBundle(db) : getProjectBundle(db, projectId);
+  return enrichPlansWithContext(db, bundle).enrichedPlans;
+}
+
+export function getPlanDetail(db: Database, planUuid: string): PlanDetail | null {
+  const plan = getPlanByUuid(db, planUuid);
+  if (!plan) {
+    return null;
+  }
+
+  const tasks = getPlanTasksByUuid(db, planUuid);
+  const dependencies = getPlanDependenciesByUuid(db, planUuid);
+  const tags = getPlanTagsByUuid(db, planUuid);
+  const referencedPlanUuids = new Set<string>(
+    dependencies.map((dependency) => dependency.depends_on_uuid)
+  );
+
+  if (plan.parent_uuid) {
+    referencedPlanUuids.add(plan.parent_uuid);
+  }
+
+  const referencedPlans = getPlansByUuid(db, referencedPlanUuids);
+  // Load dependency rows for referenced plans so toDependencySummary can compute
+  // their display statuses. enrichPlansWithContext also backfills any remaining
+  // missing plans (e.g. transitive deps) via its own DB lookup pass.
+  const referencedDependencyRows = referencedPlans.flatMap((referencedPlan) =>
+    getPlanDependenciesByUuid(db, referencedPlan.uuid)
+  );
+  const transitiveDependencyPlans = getPlansByUuid(
+    db,
+    referencedDependencyRows.map((dependency) => dependency.depends_on_uuid)
+  );
+  const { planByUuid, dependenciesByPlanUuid, enrichedPlans } = enrichPlansWithContext(db, {
+    plans: [plan, ...referencedPlans, ...transitiveDependencyPlans],
+    tasks,
+    dependencies: [...dependencies, ...referencedDependencyRows],
+    tags,
+  });
+  const enrichedPlan = enrichedPlans[0] ?? null;
+  if (!enrichedPlan || enrichedPlan.uuid !== planUuid) {
+    return null;
+  }
+
+  const dependencySummaries = (dependenciesByPlanUuid.get(planUuid) ?? []).map((dependency) =>
+    toDependencySummary(dependency.depends_on_uuid, planByUuid, dependenciesByPlanUuid)
+  );
+  const rawAssignment = getAssignmentEntry(db, plan.project_id, planUuid);
+  // Override status with the plan's live status to match the semantics of
+  // getAssignmentEntriesByProject which joins the plan table for status.
+  const assignment: AssignmentEntry | null = rawAssignment
+    ? {
+        ...rawAssignment,
+        planStatus: normalizePlanStatus(plan.status),
+        status: normalizePlanStatus(plan.status),
+      }
+    : null;
+  const parent = plan.parent_uuid
+    ? toDependencySummary(plan.parent_uuid, planByUuid, dependenciesByPlanUuid)
+    : null;
+
+  return {
+    ...enrichedPlan,
+    dependencies: dependencySummaries,
+    assignment,
+    parent,
+  };
+}

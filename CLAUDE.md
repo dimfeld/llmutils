@@ -1,3 +1,11 @@
+## Project Configuration
+
+- **Language**: TypeScript
+- **Package Manager**: bun
+- **Add-ons**: prettier, eslint, vitest, sveltekit-adapter, devtools-json, tailwindcss
+
+---
+
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
@@ -83,6 +91,21 @@ The codebase is organized into several main modules with improved modularity and
 - MCP server (`mcp/generate_mode.ts`) now focuses on registering prompts and delegates tool handlers to the relevant command modules
 - Executor system in `executors/` for different LLM integration approaches. The two main executors are claude_code and codex_cli. The others are not used much anymore.
 - **Automatic Parent-Child Relationship Maintenance**: All commands (`add`, `set`, `validate`) work together to ensure bidirectional consistency in the dependency graph, automatically updating parent plans when child relationships are created, modified, or removed
+
+3. **Web interface** (`src/lib/`, `src/routes/`): SvelteKit-based plans browser (see `docs/web-interface.md` for conventions and gotchas)
+   - Server initialization: `src/lib/server/init.ts` provides lazy-init singleton via `getServerContext()` (async) returning `{ config, gitRoot, tasksDir, db, projectId }`. Syncs plan files to DB on first access.
+   - DB query helpers: `src/lib/server/db_queries.ts` provides web-specific enriched queries (`getProjectsWithMetadata`, `getPlansForProject`, `getPlanDetail`) with computed display statuses (`blocked`, `recently_done`) derived from dependency resolution
+   - Server-only constraint: All DB imports must be in `$lib/server/` or `+page.server.ts` files — bun:sqlite cannot be imported client-side
+   - Uses `$tim` and `$common` aliases (configured in `svelte.config.js`) to import from the CLI codebase
+   - Route structure: `/projects/[projectId]/{tab}` where `projectId` is a numeric ID or `all`, and tab is `sessions`, `active`, or `plans`
+   - Root layout (`src/routes/+layout.svelte`): app shell with dark header bar and `TabNav` component; root `+layout.server.ts` loads project list via `getProjectsWithMetadata()`
+   - Project-scoped layout (`src/routes/projects/[projectId]/`): validates projectId (redirects invalid IDs to `/projects/all/{tab}`), renders `ProjectSidebar` + content area; uses `await parent()` to share data from root layout
+   - `TabNav` reads `$page.params.projectId` as source of truth for building tab URLs
+   - Cookie-based project persistence: `src/lib/stores/project.svelte.ts` has helpers (`setLastProjectId`, `getLastProjectId`, `projectUrl`) for remembering the last-selected project; cookie is httpOnly (server-read only)
+   - Home page (`/`) redirects to `/projects/{lastProjectId}/sessions` via server-side redirect, falling back to `/projects/all/sessions`
+   - Plan detail route: `/projects/[projectId]/plans/[planId]` sub-route loads plan detail server-side; redirects to owning project if accessed under wrong projectId
+   - Components in `src/lib/components/`: `TabNav.svelte`, `ProjectSidebar.svelte`, `PlansList.svelte`, `PlanRow.svelte`, `PlanDetail.svelte`, `FilterChips.svelte`, `StatusBadge.svelte`, `PriorityBadge.svelte`
+   - Plans browser helpers: `src/lib/server/plans_browser.ts` abstraction layer between route handlers and `db_queries.ts`
 
 There are other directories as well but they are mostly inactive.
 

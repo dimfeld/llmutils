@@ -1,4 +1,4 @@
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 import { prioritySchema } from '../planSchema.js';
 
 // Simplified task schema for tool parameters

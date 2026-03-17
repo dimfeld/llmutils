@@ -82,6 +82,22 @@ Plan metadata, tasks, and dependencies are mirrored in SQLite alongside the YAML
 
 **Error handling layers**: `syncPlanToDb` has a single try/catch that logs warnings and never rethrows. Callers (e.g., `writePlanFile`) trust this and do not add redundant outer error handling.
 
+### Web Query Helpers
+
+`src/lib/server/db_queries.ts` provides enriched read-only queries for the SvelteKit web interface, layered on top of the CRUD functions in `src/tim/db/plan.ts`:
+
+- **`getProjectsWithMetadata(db)`**: Lists projects with plan counts by status using a single aggregate SQL query (avoids N+1)
+- **`getPlansForProject(db, projectId?)`**: Returns enriched plan objects with tasks, tags, dependency UUIDs, computed display status, and task completion counts. When `projectId` is omitted, queries all projects with unfiltered SQL.
+- **`getPlanDetail(db, planUuid)`**: Single plan with full dependency details (titles, statuses, resolved flag), parent info, and assignment data. Uses targeted single-plan queries (not full project bundle) and loads transitive dependency plans for accurate display status computation. Assignment is fetched via `getAssignmentEntry` (single lookup) with status overridden from the live plan row to avoid stale assignment data.
+
+**Display status computation**: A derived status layered on top of raw plan status:
+
+- `blocked`: Plan is pending/in_progress but has dependencies not all done. Missing/unknown dependency UUIDs are treated as blocking (unresolved) to match tim's CLI readiness semantics.
+- `recently_done`: Plan is done and `updated_at` is within 7 days
+- Otherwise: raw status unchanged
+
+The enrichment pipeline (`enrichPlansWithContext`) builds internal lookup maps (`planByUuid`, `dependenciesByPlanUuid`) and exposes them so callers like `getPlanDetail` can reuse them for dependency resolution without duplicate work. It also backfills missing cross-project dependency plans from the DB so that project-scoped queries can still resolve dependencies on plans in other projects.
+
 ### Testing
 
 - Use `openDatabase(':memory:')` for isolated test databases

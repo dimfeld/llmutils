@@ -227,7 +227,7 @@ func buildPlansBrowserDerivedData(
 
     return PlansBrowserDerivedData(
         groups: groups,
-        visiblePlanUuids: groups.flatMap { group in group.plans.map { $0.id } })
+        visiblePlanUuids: groups.flatMap { group in group.plans.map(\.id) })
 }
 
 /// The default sort order for the plans browser (used when grouping makes status sort redundant).

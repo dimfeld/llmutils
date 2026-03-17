@@ -1,5 +1,5 @@
 import { test, describe, expect } from 'bun:test';
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 import {
   claudeCodeOptionsSchema,
   codexCliOptionsSchema,

@@ -1,4 +1,4 @@
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 import type { Executor, ExecutorCommonOptions, ExecutePlanInfo, ExecutorOutput } from './types';
 import type { TimConfig } from '../configSchema';
 import { CodexCliExecutorName, codexCliOptionsSchema } from './schemas.js';

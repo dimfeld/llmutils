@@ -1,5 +1,5 @@
 import { test, describe, expect, mock } from 'bun:test';
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 import { createExecutor, executors } from './build.ts';
 import type { TimConfig } from '../configSchema.ts';
 import type { ExecutorCommonOptions, ExecutorFactory, Executor } from './types.ts';

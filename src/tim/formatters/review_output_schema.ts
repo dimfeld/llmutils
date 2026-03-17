@@ -4,7 +4,7 @@
  * when running in review mode, enabling reliable parsing of review results.
  */
 
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 /**
  * Severity levels for review issues, from most to least severe.

@@ -1,4 +1,23 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["**/*.test.ts"]
+  "include": [
+    "build.ts",
+    "src/**/*.ts",
+    "src/**/*.js",
+    "test/**/*.ts",
+    "test/**/*.js",
+    "scripts/**/*.ts",
+    "vite.config.ts",
+    "test-preload.ts",
+    "svelte.config.js",
+    "eslint.config.js"
+  ],
+  "exclude": [
+    "**/*.test.ts",
+    "vite.config.ts",
+    "eslint.config.js",
+    "svelte.config.js",
+    "src/lib/**",
+    "src/routes/**"
+  ]
 }

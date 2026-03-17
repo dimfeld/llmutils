@@ -1,6 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'path';
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 import { DEFAULT_EXECUTOR } from './constants.js';
 import { getGitRoot } from '../common/git.js';
 import {

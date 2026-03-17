@@ -1,6 +1,6 @@
 import { statusSchema } from '../planSchema.js';
 import type { PlanSchema } from '../planSchema.js';
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 /**
  * Type for plan status values

@@ -1,4 +1,4 @@
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 import * as clipboard from '../../common/clipboard.ts';
 import * as os from 'os';
 import * as path from 'path';

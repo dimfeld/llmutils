@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 import type { AssignmentsFile } from './assignment.js';
 import type { RepositoryStorageMetadata } from '../external_storage_utils.js';

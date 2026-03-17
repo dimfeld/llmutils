@@ -2,7 +2,7 @@ import { readdir } from 'node:fs/promises';
 import * as path from 'node:path';
 import * as yaml from 'yaml';
 import chalk from 'chalk';
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { createPlanSchemas, type PlanSchema } from '../planSchema.js';
 import { resolveTasksDir } from '../configSchema.js';

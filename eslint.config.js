@@ -1,3 +1,5 @@
+import prettier from 'eslint-config-prettier';
+import svelte from 'eslint-plugin-svelte';
 import js from '@eslint/js';
 import ts from 'typescript-eslint';
 import globals from 'globals';
@@ -10,6 +12,7 @@ export function createConfig() {
       ignores: [
         '**/build/',
         '**/dist/',
+        '**/.svelte-kit/',
         '**/playwright-report/',
         '**/e2e-tests/',
         '**/drizzle.config.ts',
@@ -28,30 +31,26 @@ export function createConfig() {
     },
     js.configs.recommended,
     {
+      languageOptions: { parser: ts.parser, parserOptions: { projectService: true } },
+    },
+    ...svelte.configs['flat/recommended'],
+    {
+      files: ['**/*.svelte', '**/*.svelte.ts'],
       languageOptions: {
-        parser: ts.parser,
         parserOptions: {
+          parser: ts.parser,
           projectService: true,
+          extraFileExtensions: ['.svelte'],
         },
       },
     },
     ...ts.configs.recommendedTypeChecked,
     {
-      languageOptions: {
-        globals: {
-          ...globals.browser,
-          ...globals.node,
-        },
-      },
+      languageOptions: { globals: { ...globals.browser, ...globals.node } },
       rules: {
         'no-unexpected-multiline': 'off',
         'prefer-const': 'off',
-        '@typescript-eslint/no-misused-promises': [
-          'error',
-          {
-            checksVoidReturn: false,
-          },
-        ],
+        '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: false }],
         '@typescript-eslint/no-unused-vars': 'off',
         '@typescript-eslint/no-unsafe-return': pedanticWarn,
         '@typescript-eslint/no-unsafe-call': pedanticWarn,
@@ -63,6 +62,7 @@ export function createConfig() {
         '@typescript-eslint/require-await': pedanticWarn,
         // Doesn't work properly with zod's z.infer
         '@typescript-eslint/no-redundant-type-constituents': 'off',
+
         '@typescript-eslint/no-floating-promises': [
           'error',
           {
@@ -74,4 +74,4 @@ export function createConfig() {
   ].filter((x) => x != null);
 }
 
-export default ts.config(...createConfig(true));
+export default ts.config(...createConfig(true), prettier, svelte.configs.prettier);

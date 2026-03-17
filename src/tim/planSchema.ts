@@ -1,4 +1,4 @@
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 export const prioritySchema = z.enum(['low', 'medium', 'high', 'urgent', 'maybe']);
 export type Priority = z.infer<typeof prioritySchema>;

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, mock } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 import { getDefaultConfig } from '../configSchema.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
