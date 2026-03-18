@@ -1633,13 +1633,13 @@ describe('handleAgentCommand - headless metadata for direct plan argument', () =
     expect(timAgentSpy).toHaveBeenCalledWith(planPath, {}, {});
   });
 
-  test('marks headless session non-interactive when terminal input is disabled', async () => {
+  test('keeps headless session interactive when terminal input is disabled', async () => {
     await handleAgentCommand('123', { terminalInput: false }, {});
 
     expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         command: 'agent',
-        interactive: false,
+        interactive: true,
       })
     );
   });
@@ -1655,7 +1655,7 @@ describe('handleAgentCommand - headless metadata for direct plan argument', () =
     );
   });
 
-  test('marks headless session non-interactive when config disables terminal input', async () => {
+  test('keeps headless session interactive when config disables terminal input', async () => {
     moduleMocker.clear();
 
     await moduleMocker.mock('../../configLoader.js', () => ({
@@ -1690,7 +1690,7 @@ describe('handleAgentCommand - headless metadata for direct plan argument', () =
     expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         command: 'agent',
-        interactive: false,
+        interactive: true,
       })
     );
   });

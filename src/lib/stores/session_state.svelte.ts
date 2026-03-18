@@ -280,8 +280,7 @@ function getRepositoryLabelFromSessionGroupKey(groupKey: string): string {
   }
 
   const withoutScheme = repositoryPart.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, '');
-  const pathPart =
-    withoutScheme.includes(':') && !withoutScheme.includes('/') ? withoutScheme : withoutScheme;
+  const pathPart = withoutScheme;
   const scpParts = pathPart.split(':');
   const normalizedPath =
     scpParts.length > 1

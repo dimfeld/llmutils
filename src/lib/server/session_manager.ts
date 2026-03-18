@@ -572,11 +572,11 @@ function normalizeSessionRemote(gitRemote?: string | null): string {
   }
 
   const parsed = parseGitRemoteUrl(trimmedRemote);
-  if (!parsed?.host || !parsed.path) {
+  if (!parsed?.host || !parsed.fullName) {
     return trimmedRemote;
   }
 
-  return `${parsed.host.toLowerCase()}/${parsed.path.toLowerCase()}`;
+  return `${parsed.host.toLowerCase()}/${parsed.fullName.toLowerCase()}`;
 }
 
 function terminalIdentityKey(
@@ -1023,7 +1023,7 @@ export class SessionManager {
     }
 
     this.projectIdByRemote = null;
-    return this.getProjectIdByRemote().get(gitRemote) ?? null;
+    return this.getProjectIdByRemote().get(normalizedRemote) ?? null;
   }
 
   private getProjectIdByRemote(): Map<string, number> {
