@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, mock } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import * as z from 'zod/v4';
@@ -108,6 +108,20 @@ describe('tim MCP generate mode helpers', () => {
     expect(message?.text).toContain('Please analyze this project description');
   });
 
+  test('loadResearchPrompt includes planning instructions from config', async () => {
+    const instructionFile = path.join(tmpDir, 'planning.md');
+    await writeFile(instructionFile, 'Use phased rollouts and keep scope small.');
+    context.config.planning = {
+      instructions: path.basename(instructionFile),
+    };
+
+    const prompt = await loadResearchPrompt({ plan: planPath }, context);
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+
+    expect(messageText).toContain('# Planning Instructions');
+    expect(messageText).toContain('Use phased rollouts and keep scope small.');
+  });
+
   test('loadQuestionsPrompt encourages iterative questioning', async () => {
     const prompt = await loadQuestionsPrompt({ plan: planPath }, context);
     const message = prompt.messages[0]?.content;
@@ -122,6 +136,20 @@ describe('tim MCP generate mode helpers', () => {
     expect(message?.text).toContain('generate a detailed implementation plan');
     expect(message?.text).toContain("'tim tools update-plan-tasks' CLI command");
     expect(message?.text).toContain('Break the project into phases');
+  });
+
+  test('loadGeneratePrompt includes planning instructions from config', async () => {
+    const instructionPath = path.join(tmpDir, 'planning.md');
+    await writeFile(instructionPath, 'Prefer small, composable steps.');
+    context.config.planning = {
+      instructions: instructionPath,
+    };
+
+    const prompt = await loadGeneratePrompt({ plan: planPath }, context);
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+
+    expect(messageText).toContain('# Planning Instructions');
+    expect(messageText).toContain('Prefer small, composable steps.');
   });
 
   test('loadResearchPrompt includes parent plan context when plan has a parent', async () => {

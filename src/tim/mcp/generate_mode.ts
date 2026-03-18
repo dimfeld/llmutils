@@ -103,6 +103,29 @@ function parseBooleanOption(value: unknown, defaultValue = false): boolean {
   return Boolean(value);
 }
 
+async function loadPlanningInstructions(context: GenerateModeRegistrationContext): Promise<string> {
+  const instructionsPath = context.config.planning?.instructions;
+  if (!instructionsPath) {
+    return '';
+  }
+
+  const resolvedPath = path.isAbsolute(instructionsPath)
+    ? instructionsPath
+    : path.join(context.gitRoot, instructionsPath);
+
+  try {
+    const instructions = (await Bun.file(resolvedPath).text()).trim();
+    if (!instructions) {
+      return '';
+    }
+
+    return `\n# Planning Instructions\n\n${instructions}\n`;
+  } catch (e) {
+    console.error(`While reading planning instructions file ${instructionsPath}:`, e);
+    return '';
+  }
+}
+
 async function buildGeneratePromptContext(
   planArg: string,
   context: GenerateModeRegistrationContext
@@ -209,6 +232,7 @@ IMPORTANT: Do NOT split plans by architectural layers (frontend/backend, UI/API,
 
 Only create multiple plans if it genuinely improves the project organization. For smaller or tightly coupled features, a single plan is preferred.`
     : '';
+  const planningInstructions = await loadPlanningInstructions(context);
 
   const text = `You are generating a tim implementation plan. tim is a tool for managing step-by-step project plans.
 
@@ -224,7 +248,7 @@ ${generateClaudeCodePlanningPrompt(contextBlock, {
   includeNextInstructionSentence: false,
   withBlockingSubissues: false,
   parentPlanId,
-})}${multiplePlansGuidance}
+})}${multiplePlansGuidance}${planningInstructions}
 
 # Output
 
@@ -349,6 +373,7 @@ IMPORTANT: Do NOT split plans by architectural layers (frontend/backend, UI/API,
 
 Only create multiple plans if it genuinely improves the project organization. For smaller or tightly coupled features, a single plan is preferred.`
     : '';
+  const planningInstructions = await loadPlanningInstructions(context);
 
   const text = `You are generating a tim implementation plan. tim is a tool for managing step-by-step project plans.
 
@@ -361,7 +386,7 @@ Use your Todo tools to track progress through these steps:
 ${generateClaudeCodeGenerationPrompt(contextBlock, {
   includeMarkdownFormat: false,
   withBlockingSubissues: false,
-})}${multiplePlansGuidance}
+})}${multiplePlansGuidance}${planningInstructions}
 
 Use the 'tim tools update-plan-tasks' CLI command, as described in the using-tim skill, to add the structured task data to the plan. The list of tasks should correspond to the steps in your step-by-step guide.
 
