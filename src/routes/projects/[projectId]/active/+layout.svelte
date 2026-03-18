@@ -43,7 +43,7 @@
   }
 </script>
 
-<div class="flex h-full">
+<div class="flex h-full w-full">
   <!-- Left pane: workspaces + active plans -->
   <div class="w-96 shrink-0 overflow-y-auto border-r border-gray-200">
     <!-- Workspaces section -->

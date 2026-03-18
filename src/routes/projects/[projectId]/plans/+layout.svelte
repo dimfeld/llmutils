@@ -26,7 +26,7 @@
   let selectedPlanUuid = $derived(page.params.planId ?? null);
 </script>
 
-<div class="flex h-full">
+<div class="flex h-full w-full">
   <!-- Plan list — key forces re-mount on project switch to reset filters -->
   {#key data.projectId}
     <div class="w-96 shrink-0 border-r border-gray-200">

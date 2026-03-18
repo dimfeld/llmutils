@@ -854,7 +854,9 @@ describe('lib/server/session_manager', () => {
 
     expect(notificationSession.connectionId).toBe('conn-1');
     expect(manager.getSessionSnapshot().sessions).toHaveLength(1);
-    expect(manager.getSessionSnapshot().sessions[0]?.groupKey).toBe('github.com/tim/notify|/tmp/repo-3');
+    expect(manager.getSessionSnapshot().sessions[0]?.groupKey).toBe(
+      'github.com/tim/notify|/tmp/repo-3'
+    );
     expect(manager.getSessionSnapshot().sessions[0]?.projectId).toBe(project.id);
   });
 

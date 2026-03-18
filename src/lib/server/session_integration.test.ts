@@ -304,8 +304,7 @@ describe('session integration', () => {
     expect(session.projectId).toBe(project.id);
     expect(events.map((event) => event.event)).toEqual(['session:new', 'session:message']);
     expect(snapshot.sessions[0]).toMatchObject({
-      connectionId:
-        'notification:github.com/tim/notify|/tmp/notify/worktree:wezterm:pane-1',
+      connectionId: 'notification:github.com/tim/notify|/tmp/notify/worktree:wezterm:pane-1',
       projectId: project.id,
       status: 'notification',
       groupKey: 'github.com/tim/notify|/tmp/notify/worktree',
