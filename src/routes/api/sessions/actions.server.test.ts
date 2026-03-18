@@ -180,6 +180,11 @@ describe('/api/sessions actions', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ success: true });
     expect(sentMessages).toEqual([{ content: 'continue', type: 'user_input' }]);
+    expect(currentManager.getSessionSnapshot().sessions[0]?.messages.at(-1)).toMatchObject({
+      category: 'userInput',
+      body: { type: 'text', text: 'continue' },
+      rawType: 'user_input',
+    });
   });
 
   test('input route rejects empty and malformed JSON bodies', async () => {

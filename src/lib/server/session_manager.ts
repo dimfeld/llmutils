@@ -814,7 +814,7 @@ export class SessionManager {
 
     if (websocketSession) {
       const displayMessage: DisplayMessage = {
-        id: this.nextNotificationMessageId(websocketSession.connectionId),
+        id: this.nextSyntheticMessageId(websocketSession.connectionId, 'notif'),
         seq: NOTIFICATION_SEQ,
         timestamp: now,
         category: 'log',
@@ -878,7 +878,7 @@ export class SessionManager {
     }
 
     const displayMessage: DisplayMessage = {
-      id: this.nextNotificationMessageId(connectionId),
+      id: this.nextSyntheticMessageId(connectionId, 'notif'),
       seq: NOTIFICATION_SEQ,
       timestamp: now,
       category: 'log',
@@ -931,10 +931,37 @@ export class SessionManager {
   }
 
   sendUserInput(connectionId: string, content: string): boolean {
-    return this.trySend(connectionId, {
+    const session = this.sessions.get(connectionId);
+    if (!session) {
+      return false;
+    }
+
+    const sent = this.trySend(connectionId, {
       type: 'user_input',
       content,
     });
+
+    if (!sent) {
+      return false;
+    }
+
+    const displayMessage: DisplayMessage = {
+      id: this.nextSyntheticMessageId(connectionId, 'input'),
+      seq: NOTIFICATION_SEQ,
+      timestamp: new Date().toISOString(),
+      category: 'userInput',
+      bodyType: 'text',
+      body: {
+        type: 'text',
+        text: content,
+      },
+      rawType: 'user_input',
+    };
+    session.messages.push(displayMessage);
+    this.trimSessionMessages(session, MAX_SESSION_MESSAGES);
+    this.emit('session:message', { connectionId, message: { ...displayMessage } });
+
+    return true;
   }
 
   private trySend(connectionId: string, message: HeadlessServerMessage): boolean {
@@ -1105,15 +1132,15 @@ export class SessionManager {
     }
   }
 
-  private nextNotificationMessageId(connectionId: string): string {
+  private nextSyntheticMessageId(connectionId: string, prefix: string): string {
     const internals = this.internals.get(connectionId);
     if (!internals) {
-      return `${connectionId}:notif-fallback-${crypto.randomUUID()}`;
+      return `${connectionId}:${prefix}-fallback-${crypto.randomUUID()}`;
     }
 
     const notificationId = internals.nextNotificationId;
     internals.nextNotificationId += 1;
-    return `${connectionId}:notif-${notificationId}`;
+    return `${connectionId}:${prefix}-${notificationId}`;
   }
 
   private trimSessionMessages(session: SessionData, limit: number): void {
