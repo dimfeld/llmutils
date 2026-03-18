@@ -220,17 +220,6 @@ export function executeWithTerminalInput(
       } catch (err) {
         debugLog('Failed to forward headless user input through tunnel: %s', err as Error);
       }
-
-      try {
-        sendStructured({
-          type: 'user_terminal_input',
-          content,
-          source: 'gui',
-          timestamp: new Date().toISOString(),
-        });
-      } catch (err) {
-        debugLog('Failed to send structured message for headless user input: %s', err as Error);
-      }
     });
 
     clearHeadlessUserInputHandler = () => {

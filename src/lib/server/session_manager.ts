@@ -931,37 +931,10 @@ export class SessionManager {
   }
 
   sendUserInput(connectionId: string, content: string): boolean {
-    const session = this.sessions.get(connectionId);
-    if (!session) {
-      return false;
-    }
-
-    const sent = this.trySend(connectionId, {
+    return this.trySend(connectionId, {
       type: 'user_input',
       content,
     });
-
-    if (!sent) {
-      return false;
-    }
-
-    const displayMessage: DisplayMessage = {
-      id: this.nextSyntheticMessageId(connectionId, 'input'),
-      seq: NOTIFICATION_SEQ,
-      timestamp: new Date().toISOString(),
-      category: 'userInput',
-      bodyType: 'text',
-      body: {
-        type: 'text',
-        text: content,
-      },
-      rawType: 'user_input',
-    };
-    session.messages.push(displayMessage);
-    this.trimSessionMessages(session, MAX_SESSION_MESSAGES);
-    this.emit('session:message', { connectionId, message: { ...displayMessage } });
-
-    return true;
   }
 
   private trySend(connectionId: string, message: HeadlessServerMessage): boolean {

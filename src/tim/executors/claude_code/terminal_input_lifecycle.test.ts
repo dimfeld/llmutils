@@ -1375,7 +1375,7 @@ describe('executeWithTerminalInput', () => {
     await result.resultPromise;
   });
 
-  it('wires headless user input handler and forwards input to subprocess, tunnel, and structured log', async () => {
+  it('wires headless user input handler and forwards input to subprocess and tunnel', async () => {
     const sendFollowUpMessageSpy = mock(() => {});
     const sendStructuredSpy = mock(() => {});
     const sendUserInputSpy = mock(() => {});
@@ -1453,16 +1453,7 @@ describe('executeWithTerminalInput', () => {
     expect(sendFollowUpMessageSpy.mock.calls[0][1]).toBe('from headless');
     expect(sendUserInputSpy).toHaveBeenCalledTimes(1);
     expect(sendUserInputSpy).toHaveBeenCalledWith('from headless');
-    expect(
-      sendStructuredSpy.mock.calls.some(
-        (call) =>
-          call[0] &&
-          typeof call[0] === 'object' &&
-          call[0].type === 'user_terminal_input' &&
-          call[0].content === 'from headless' &&
-          call[0].source === 'gui'
-      )
-    ).toBe(true);
+    expect(sendStructuredSpy).not.toHaveBeenCalled();
 
     await result.resultPromise;
   });
@@ -1680,11 +1671,9 @@ describe('executeWithTerminalInput', () => {
     await result.resultPromise;
   });
 
-  it('headless handler still forwards input when sendStructured throws', async () => {
+  it('headless handler still forwards input when GUI echo is owned by the transport', async () => {
     const sendFollowUpMessageSpy = mock(() => {});
-    const sendStructuredSpy = mock(() => {
-      throw new Error('structured logging failed');
-    });
+    const sendStructuredSpy = mock(() => {});
     const sendUserInputSpy = mock(() => {});
     const setUserInputHandlerSpy = mock(() => {});
     const debugLogSpy = mock(() => {});
@@ -1756,16 +1745,15 @@ describe('executeWithTerminalInput', () => {
     const handler = setUserInputHandlerSpy.mock.calls[0][0] as (content: string) => void;
     handler('test input');
 
-    // sendFollowUpMessage and tunnel forwarding should still have been called
-    // even though sendStructured throws
+    // sendFollowUpMessage and tunnel forwarding should still have been called.
     expect(sendFollowUpMessageSpy).toHaveBeenCalledTimes(1);
     expect(sendFollowUpMessageSpy.mock.calls[0][1]).toBe('test input');
     expect(sendUserInputSpy).toHaveBeenCalledTimes(1);
     expect(sendUserInputSpy).toHaveBeenCalledWith('test input');
 
-    // sendStructured was called and threw, debug log should capture it
-    expect(sendStructuredSpy).toHaveBeenCalledTimes(1);
-    expect(debugLogSpy).toHaveBeenCalled();
+    // Headless input echo is emitted by HeadlessAdapter instead of this lifecycle helper.
+    expect(sendStructuredSpy).not.toHaveBeenCalled();
+    expect(debugLogSpy).not.toHaveBeenCalled();
 
     await result.resultPromise;
   });

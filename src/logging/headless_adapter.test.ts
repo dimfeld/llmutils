@@ -69,6 +69,7 @@ async function createWebSocketServer(options?: { port?: number; closeOnOpen?: bo
   port: number;
   messages: HeadlessMessage[];
   getOpenCount: () => number;
+  sendToAll: (message: HeadlessServerMessage) => void;
   close: () => void;
   disconnectClients: () => void;
 }> {
@@ -109,6 +110,12 @@ async function createWebSocketServer(options?: { port?: number; closeOnOpen?: bo
     port: server.port,
     messages,
     getOpenCount: () => openCount,
+    sendToAll: (message: HeadlessServerMessage) => {
+      const payload = JSON.stringify(message);
+      for (const ws of clients) {
+        ws.send(payload);
+      }
+    },
     close: () => {
       for (const ws of clients) {
         ws.close();
@@ -1621,8 +1628,39 @@ describe('HeadlessAdapter user input handling', () => {
     await adapter.destroy();
   }, 10000);
 
-  it('setUserInputHandler supports set, dispatch, replace, and clear lifecycle', async () => {
+  it('echoes server user_input back as structured session output', async () => {
+    const server = await createWebSocketServer();
+    serversToClose.push(server);
+
     const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter(
+      `ws://127.0.0.1:${server.port}/tim-agent`,
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: 0 }
+    );
+
+    adapter.setUserInputHandler(() => {});
+    adapter.log('connect');
+    await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
+
+    server.sendToAll({ type: 'user_input', content: 'echo me' });
+
+    await waitFor(() =>
+      server.messages.some(
+        (message) =>
+          message.type === 'output' &&
+          message.message.type === 'structured' &&
+          message.message.message.type === 'user_terminal_input' &&
+          message.message.message.content === 'echo me'
+      )
+    );
+
+    await adapter.destroy();
+  });
+
+  it('setUserInputHandler supports set, dispatch, replace, and clear lifecycle', async () => {
+    const { adapter: wrapped, calls } = createRecordingAdapter();
     const adapter = createTestHeadlessAdapter(
       'ws://127.0.0.1:1/tim-agent',
       { command: 'agent' },
@@ -1642,6 +1680,25 @@ describe('HeadlessAdapter user input handling', () => {
     (adapter as any).handleServerMessage({ type: 'user_input', content: 'gamma' });
 
     expect(received).toEqual(['first:alpha', 'second:beta']);
+    expect(
+      calls.filter((call) => call.method === 'sendStructured').map((call) => call.args[0])
+    ).toEqual([
+      expect.objectContaining({
+        type: 'user_terminal_input',
+        content: 'alpha',
+        source: 'gui',
+      }),
+      expect.objectContaining({
+        type: 'user_terminal_input',
+        content: 'beta',
+        source: 'gui',
+      }),
+      expect.objectContaining({
+        type: 'user_terminal_input',
+        content: 'gamma',
+        source: 'gui',
+      }),
+    ]);
     await adapter.destroy();
   });
 

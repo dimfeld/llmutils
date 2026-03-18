@@ -213,6 +213,12 @@ export class HeadlessAdapter implements LoggerAdapter {
         break;
       }
       case 'user_input':
+        this.sendStructured({
+          type: 'user_terminal_input',
+          content: message.content,
+          source: 'gui',
+          timestamp: new Date().toISOString(),
+        });
         try {
           this.userInputHandler?.(message.content);
         } catch (err) {

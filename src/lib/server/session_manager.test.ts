@@ -957,36 +957,18 @@ describe('lib/server/session_manager', () => {
     });
   });
 
-  test('sendUserInput delegates to the registered sender and records echoed input', () => {
+  test('sendUserInput delegates to the registered sender', () => {
     const sender = vi.fn<(message: HeadlessServerMessage) => void>();
     manager.handleWebSocketConnect('conn-1', sender);
-    const onMessage = vi.fn();
-    manager.subscribe('session:message', onMessage);
 
     const sentInput = manager.sendUserInput('conn-1', 'continue');
     const missingInput = manager.sendUserInput('missing', 'nope');
-    const snapshot = manager.getSessionSnapshot();
 
     expect(sentInput).toBe(true);
     expect(missingInput).toBe(false);
     expect(sender).toHaveBeenCalledWith({
       type: 'user_input',
       content: 'continue',
-    });
-    expect(snapshot.sessions[0]?.messages.at(-1)).toMatchObject({
-      category: 'userInput',
-      bodyType: 'text',
-      body: { type: 'text', text: 'continue' },
-      rawType: 'user_input',
-    });
-    expect(onMessage).toHaveBeenCalledWith({
-      connectionId: 'conn-1',
-      message: expect.objectContaining({
-        category: 'userInput',
-        bodyType: 'text',
-        body: { type: 'text', text: 'continue' },
-        rawType: 'user_input',
-      }),
     });
   });
 
