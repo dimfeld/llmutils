@@ -8,12 +8,12 @@ simple: true
 status: in_progress
 priority: medium
 createdAt: 2026-03-18T20:52:21.108Z
-updatedAt: 2026-03-18T21:50:22.335Z
+updatedAt: 2026-03-18T21:57:30.552Z
 tasks:
   - title: "Address Review Feedback: `normalizeSessionRemote` uses `parsed.path`
       which retains the `.git` suffix (e.g., `tim/notify.git`), but all tests
       expect it stripped to `github.com/tim/notify`."
-    done: false
+    done: true
     description: >-
       `normalizeSessionRemote` uses `parsed.path` which retains the `.git`
       suffix (e.g., `tim/notify.git`), but all tests expect it stripped to
@@ -31,7 +31,7 @@ tasks:
       non-interactive when `--no-terminal-input` or
       `config.terminalInput=false`, but the executor wiring still accepts
       GUI/websocket follow-up input in those cases."
-    done: false
+    done: true
     description: >-
       `tim agent` still reports headless sessions as non-interactive when
       `--no-terminal-input` or `config.terminalInput=false`, but the executor
@@ -53,7 +53,7 @@ tasks:
       canonicalize equivalent remotes that differ only by `.git` suffix (and
       similar path decoration), because it uses `parseGitRemoteUrl(...).path`,
       which retains `.git`."
-    done: false
+    done: true
     description: >-
       The new remote normalization does not actually canonicalize equivalent
       remotes that differ only by `.git` suffix (and similar path decoration),
@@ -75,7 +75,7 @@ tasks:
       the code invalidates the cache and rebuilds it, but the second lookup on
       line 1026 uses `gitRemote` (the raw, un-normalized input) instead of
       `normalizedRemote`."
-    done: false
+    done: true
     description: >-
       After a cache miss on the normalized remote, the code invalidates the
       cache and rebuilds it, but the second lookup on line 1026 uses `gitRemote`
@@ -133,7 +133,7 @@ tasks:
   - title: "Address Review Feedback: The ternary expression is a no-op — both
       branches evaluate to `withoutScheme`: `const pathPart =
       withoutScheme.includes(':') && !withoutScheme.includes('/') ?"
-    done: false
+    done: true
     description: >-
       The ternary expression is a no-op — both branches evaluate to
       `withoutScheme`: `const pathPart = withoutScheme.includes(':') &&
@@ -146,6 +146,28 @@ tasks:
 
 
       Related file: src/lib/stores/session_state.svelte.ts:284-285
+changedFiles:
+  - package.json
+  - src/lib/components/SessionDetail.svelte
+  - src/lib/server/session_integration.test.ts
+  - src/lib/server/session_manager.test.ts
+  - src/lib/server/session_manager.ts
+  - src/lib/stores/session_state.svelte.ts
+  - src/lib/stores/session_state.test.ts
+  - src/logging/headless_adapter.test.ts
+  - src/logging/headless_adapter.ts
+  - src/routes/projects/[projectId]/active/+layout.svelte
+  - src/routes/projects/[projectId]/plans/+layout.svelte
+  - src/routes/projects/[projectId]/sessions/+layout.svelte
+  - src/routes/projects/[projectId]/sessions/[connectionId]/+page.svelte
+  - src/tim/commands/agent/agent.test.ts
+  - src/tim/commands/agent/agent.ts
+  - src/tim/commands/set.test.ts
+  - src/tim/commands/set.ts
+  - src/tim/executors/claude_code/terminal_input_lifecycle.test.ts
+  - src/tim/executors/claude_code/terminal_input_lifecycle.ts
+  - src/tim/executors/codex_cli/app_server_runner.ts
+  - src/tim/tim.ts
 tags: []
 ---
 
@@ -153,18 +175,23 @@ Agent command is not showing up as an "interactive" session when reported over t
 
 ## Current Progress
 ### Current State
-- Complete. The fix has been implemented, tested, and committed.
+- Addressing review feedback. 5 of 7 review tasks completed.
 ### Completed (So Far)
-- Changed `interactive: false` to a computed expression in `agentCommand()` at `src/tim/commands/agent/agent.ts` line 257
-- The expression is: `options.nonInteractive !== true && options.terminalInput !== false && config.terminalInput !== false`
-- Added test coverage for all three disabling conditions
+- `normalizeSessionRemote` now uses `parsed.fullName` instead of `parsed.path`, properly stripping `.git` suffix for canonical session grouping keys
+- Project-id cache retry lookup now uses `normalizedRemote` instead of raw `gitRemote`
+- Interactive flag in `agentCommand()` simplified to `options.nonInteractive !== true` — terminal-input flags no longer incorrectly suppress headless interactivity
+- Agent tests updated: disabling terminal input no longer expects non-interactive session
+- No-op ternary in `session_state.svelte.ts` simplified
 ### Remaining
-- None
+- Task 5: Extract session-state utility functions to avoid Svelte import crash in tests
+- Task 6: Remove duplicate `user_terminal_input` emission in codex chat-session path
 ### Next Iteration Guidance
-- None
+- Task 5 requires extracting `getSessionGroupKey`/`getSessionGroupLabel` into a plain utility module
+- Task 6 requires finding the duplicated `sendStructured` call in `app_server_runner.ts` around line 562-575
 ### Decisions / Changes
 - Excluded `process.stdin.isTTY` check from the interactive flag computation because when running headless (via websocket), stdin isn't a TTY but the session IS still interactive via the websocket input mechanism
+- Removed `terminalInput` from interactive flag entirely — it controls local stdin, not websocket input capability
 ### Lessons Learned
-- None
+- `parseGitRemoteUrl().path` retains `.git` suffix while `fullName` strips it — always use `fullName` for canonical remote normalization
 ### Risks / Blockers
 - None
