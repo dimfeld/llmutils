@@ -16,6 +16,7 @@ import type {
 } from '../../logging/structured_messages.js';
 import type { TunnelMessage } from '../../logging/tunnel_protocol.js';
 import { listProjects } from '$tim/db/project.js';
+import { parseGitRemoteUrl } from '$common/git_url_parser.js';
 
 export type SessionStatus = 'active' | 'offline' | 'notification';
 export type MessageCategory =
@@ -557,7 +558,25 @@ export function categorizeMessage(message: StructuredMessage): {
 }
 
 export function sessionGroupKey(gitRemote?: string | null, workspacePath?: string | null): string {
-  return `${gitRemote ?? ''}|${workspacePath ?? ''}`;
+  return `${normalizeSessionRemote(gitRemote)}|${workspacePath ?? ''}`;
+}
+
+function normalizeSessionRemote(gitRemote?: string | null): string {
+  if (!gitRemote) {
+    return '';
+  }
+
+  const trimmedRemote = gitRemote.trim();
+  if (!trimmedRemote) {
+    return '';
+  }
+
+  const parsed = parseGitRemoteUrl(trimmedRemote);
+  if (!parsed?.host || !parsed.path) {
+    return trimmedRemote;
+  }
+
+  return `${parsed.host.toLowerCase()}/${parsed.path.toLowerCase()}`;
 }
 
 function terminalIdentityKey(
@@ -992,12 +1011,13 @@ export class SessionManager {
   }
 
   private resolveProjectId(gitRemote?: string | null): number | null {
-    if (!gitRemote) {
+    const normalizedRemote = normalizeSessionRemote(gitRemote);
+    if (!normalizedRemote) {
       return null;
     }
 
     const cached = this.getProjectIdByRemote();
-    const projectId = cached.get(gitRemote);
+    const projectId = cached.get(normalizedRemote);
     if (projectId != null) {
       return projectId;
     }
@@ -1011,11 +1031,17 @@ export class SessionManager {
       return this.projectIdByRemote;
     }
 
-    this.projectIdByRemote = new Map(
-      listProjects(this.db)
-        .filter((project) => project.remote_url != null)
-        .map((project) => [project.remote_url as string, project.id] satisfies [string, number])
-    );
+    const projectEntries = new Map<string, number>();
+    for (const project of listProjects(this.db).filter((project) => project.remote_url != null)) {
+      const remoteUrl = project.remote_url as string;
+      projectEntries.set(remoteUrl, project.id);
+      const normalizedRemote = normalizeSessionRemote(remoteUrl);
+      if (normalizedRemote && normalizedRemote !== remoteUrl) {
+        projectEntries.set(normalizedRemote, project.id);
+      }
+    }
+
+    this.projectIdByRemote = projectEntries;
 
     return this.projectIdByRemote;
   }

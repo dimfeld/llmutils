@@ -167,14 +167,14 @@ describe('session integration', () => {
     if (updatedSession.event === 'session:update') {
       expect(updatedSession.payload.session.projectId).toBe(project.id);
       expect(updatedSession.payload.session.groupKey).toBe(
-        'git@github.com:tim/test.git|/tmp/workspaces/plan-229'
+        'github.com/tim/test|/tmp/workspaces/plan-229'
       );
     }
 
     expect(snapshot.sessions).toHaveLength(1);
     expect(snapshot.sessions[0]).toMatchObject({
       connectionId: 'conn-1',
-      groupKey: 'git@github.com:tim/test.git|/tmp/workspaces/plan-229',
+      groupKey: 'github.com/tim/test|/tmp/workspaces/plan-229',
       projectId: project.id,
       status: 'active',
       sessionInfo: {
@@ -299,16 +299,16 @@ describe('session integration', () => {
     unsubscribe();
 
     expect(session.connectionId).toBe(
-      'notification:git@github.com:tim/notify.git|/tmp/notify/worktree:wezterm:pane-1'
+      'notification:github.com/tim/notify|/tmp/notify/worktree:wezterm:pane-1'
     );
     expect(session.projectId).toBe(project.id);
     expect(events.map((event) => event.event)).toEqual(['session:new', 'session:message']);
     expect(snapshot.sessions[0]).toMatchObject({
       connectionId:
-        'notification:git@github.com:tim/notify.git|/tmp/notify/worktree:wezterm:pane-1',
+        'notification:github.com/tim/notify|/tmp/notify/worktree:wezterm:pane-1',
       projectId: project.id,
       status: 'notification',
-      groupKey: 'git@github.com:tim/notify.git|/tmp/notify/worktree',
+      groupKey: 'github.com/tim/notify|/tmp/notify/worktree',
       sessionInfo: {
         command: 'notification',
         interactive: false,

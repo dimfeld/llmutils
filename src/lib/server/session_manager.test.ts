@@ -519,7 +519,7 @@ describe('lib/server/session_manager', () => {
             planTitle: 'Sessions view',
           }),
           projectId: project.id,
-          groupKey: 'https://example.com/repo-1.git|/tmp/repo-1',
+          groupKey: 'example.com/repo-1|/tmp/repo-1',
         }),
       })
     );
@@ -750,7 +750,7 @@ describe('lib/server/session_manager', () => {
     });
 
     expect(first).toMatchObject({
-      connectionId: 'notification:https://example.com/repo-2.git|/tmp/ws:wezterm:4',
+      connectionId: 'notification:example.com/repo-2|/tmp/ws:wezterm:4',
       status: 'notification',
       projectId: project.id,
       disconnectedAt: '2026-03-17T10:00:00.000Z',
@@ -818,10 +818,10 @@ describe('lib/server/session_manager', () => {
     expect(session?.messages).toHaveLength(200);
     expect(new Set(session?.messages.map((message) => message.id)).size).toBe(200);
     expect(session?.messages[0]?.id).toBe(
-      'notification:https://example.com/notifications.git|/tmp/notifications:notif-5'
+      'notification:example.com/notifications|/tmp/notifications:notif-5'
     );
     expect(session?.messages.at(-1)?.id).toBe(
-      'notification:https://example.com/notifications.git|/tmp/notifications:notif-204'
+      'notification:example.com/notifications|/tmp/notifications:notif-204'
     );
   });
 
@@ -829,6 +829,33 @@ describe('lib/server/session_manager', () => {
     expect(sessionGroupKey('git', '/tmp/ws')).toBe('git|/tmp/ws');
     expect(sessionGroupKey(undefined, '/tmp/ws')).toBe('|/tmp/ws');
     expect(sessionGroupKey(null, null)).toBe('|');
+  });
+
+  test('normalizes equivalent git remotes for project id and group matching', () => {
+    const project = getOrCreateProject(db, 'repo-3', {
+      remoteUrl: 'git@github.com:tim/notify.git',
+      lastGitRoot: '/tmp/repo-3',
+    });
+
+    manager.handleWebSocketConnect('conn-1', vi.fn());
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      workspacePath: '/tmp/repo-3',
+      gitRemote: 'https://github.com/tim/notify.git',
+    });
+
+    const notificationSession = manager.handleHttpNotification({
+      message: 'Build queued',
+      workspacePath: '/tmp/repo-3',
+      gitRemote: 'git@github.com:tim/notify.git',
+    });
+
+    expect(notificationSession.connectionId).toBe('conn-1');
+    expect(manager.getSessionSnapshot().sessions).toHaveLength(1);
+    expect(manager.getSessionSnapshot().sessions[0]?.groupKey).toBe('github.com/tim/notify|/tmp/repo-3');
+    expect(manager.getSessionSnapshot().sessions[0]?.projectId).toBe(project.id);
   });
 
   test('dismissSession only removes offline or notification sessions', () => {
