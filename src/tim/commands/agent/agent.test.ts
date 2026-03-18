@@ -1643,6 +1643,57 @@ describe('handleAgentCommand - headless metadata for direct plan argument', () =
       })
     );
   });
+
+  test('marks headless session non-interactive in non-interactive mode', async () => {
+    await handleAgentCommand('123', { nonInteractive: true }, {});
+
+    expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: 'agent',
+        interactive: false,
+      })
+    );
+  });
+
+  test('marks headless session non-interactive when config disables terminal input', async () => {
+    moduleMocker.clear();
+
+    await moduleMocker.mock('../../configLoader.js', () => ({
+      loadEffectiveConfig: mock(async () => ({
+        paths: { tasks: tasksDir },
+        models: {},
+        postApplyCommands: [],
+        terminalInput: false,
+      })),
+    }));
+
+    await moduleMocker.mock('../../plans.js', () => ({
+      resolvePlanFile: resolvePlanFileSpy,
+      readPlanFile: readPlanFileSpy,
+    }));
+
+    await moduleMocker.mock('../../headless.js', () => ({
+      runWithHeadlessAdapterIfEnabled: runWithHeadlessAdapterIfEnabledSpy,
+    }));
+
+    await moduleMocker.mock('../../../logging/tunnel_client.js', () => ({
+      isTunnelActive: () => false,
+    }));
+
+    await moduleMocker.mock('./agent.js', () => ({
+      timAgent: timAgentSpy,
+      handleAgentCommand,
+    }));
+
+    await handleAgentCommand('123', {}, {});
+
+    expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: 'agent',
+        interactive: false,
+      })
+    );
+  });
 });
 
 // Test executor that actually modifies plan files for testing batch execution
