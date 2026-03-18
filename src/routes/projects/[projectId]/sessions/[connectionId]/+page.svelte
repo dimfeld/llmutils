@@ -23,7 +23,7 @@
 
 {#if session}
   {#key session.connectionId}
-    <div class="flex min-h-0 h-full w-full">
+    <div class="flex h-full min-h-0 w-full">
       <SessionDetail {session} />
     </div>
   {/key}

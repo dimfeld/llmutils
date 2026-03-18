@@ -67,7 +67,7 @@
   }
 </script>
 
-<div class="flex h-full w-full min-h-0 flex-col overflow-hidden">
+<div class="flex h-full min-h-0 w-full flex-col overflow-hidden">
   <!-- Session header -->
   <div class="shrink-0 border-b border-gray-200 px-4 py-3">
     <div class="flex items-center gap-3">

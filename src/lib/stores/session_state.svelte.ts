@@ -280,12 +280,13 @@ function getRepositoryLabelFromSessionGroupKey(groupKey: string): string {
   }
 
   const withoutScheme = repositoryPart.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, '');
-  const pathPart = withoutScheme.includes(':') && !withoutScheme.includes('/')
-    ? withoutScheme
-    : withoutScheme;
+  const pathPart =
+    withoutScheme.includes(':') && !withoutScheme.includes('/') ? withoutScheme : withoutScheme;
   const scpParts = pathPart.split(':');
   const normalizedPath =
-    scpParts.length > 1 ? scpParts.slice(1).join(':').replace(/\/+$/, '') : pathPart.replace(/\/+$/, '');
+    scpParts.length > 1
+      ? scpParts.slice(1).join(':').replace(/\/+$/, '')
+      : pathPart.replace(/\/+$/, '');
 
   const segments = normalizedPath.split('/').filter(Boolean);
   const last = segments.at(-1);

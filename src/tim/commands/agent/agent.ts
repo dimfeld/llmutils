@@ -254,7 +254,10 @@ export async function handleAgentCommand(
     await runWithHeadlessAdapterIfEnabled({
       enabled: !isTunnelActive(),
       command: 'agent',
-      interactive: false,
+      interactive:
+        options.nonInteractive !== true &&
+        options.terminalInput !== false &&
+        config.terminalInput !== false,
       config,
       plan: headlessPlanSummary,
       callback: async () => timAgent(resolvedPlanFilePath, options, globalCliOptions),

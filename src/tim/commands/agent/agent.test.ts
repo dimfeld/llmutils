@@ -1625,11 +1625,23 @@ describe('handleAgentCommand - headless metadata for direct plan argument', () =
     expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         command: 'agent',
+        interactive: true,
         plan: { id: 123, title: 'Direct Plan' },
       })
     );
 
     expect(timAgentSpy).toHaveBeenCalledWith(planPath, {}, {});
+  });
+
+  test('marks headless session non-interactive when terminal input is disabled', async () => {
+    await handleAgentCommand('123', { terminalInput: false }, {});
+
+    expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: 'agent',
+        interactive: false,
+      })
+    );
   });
 });
 
