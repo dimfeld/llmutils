@@ -4,10 +4,11 @@ title: agent command should be interactive session
 goal: ""
 id: 235
 uuid: 040f82db-03d4-439b-9b74-673e4e4cb990
-status: pending
+simple: true
+status: in_progress
 priority: medium
 createdAt: 2026-03-18T20:52:21.108Z
-updatedAt: 2026-03-18T20:52:21.108Z
+updatedAt: 2026-03-18T20:55:36.118Z
 tasks: []
 tags: []
 ---

@@ -34,11 +34,12 @@ export class SessionManager {
     // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const groupMap = new Map<string, { projectId: number | null; sessions: SessionData[] }>();
     for (const session of this.sessions.values()) {
-      const existing = groupMap.get(session.groupKey);
+      const groupKey = getSessionGroupKey(session.projectId, session.groupKey);
+      const existing = groupMap.get(groupKey);
       if (existing) {
         existing.sessions.push(session);
       } else {
-        groupMap.set(session.groupKey, {
+        groupMap.set(groupKey, {
           projectId: session.projectId,
           sessions: [session],
         });
@@ -250,6 +251,15 @@ export class SessionManager {
       return false;
     }
   }
+}
+
+export function getSessionGroupKey(projectId: number | null, groupKey: string): string {
+  if (projectId == null) {
+    return groupKey;
+  }
+  const parts = groupKey.split('|');
+  const workingDirectory = parts[1] || parts[0] || '';
+  return `${projectId}|${workingDirectory}`;
 }
 
 const [getSessionManagerContext, setSessionManagerContext] = createContext<SessionManager>();
