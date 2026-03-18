@@ -86,6 +86,8 @@ export function createSessionEventsResponse(
         send(event, data);
       }
 
+      send('session:sync-complete', {});
+
       signal?.addEventListener('abort', onAbort, { once: true });
     },
     cancel() {

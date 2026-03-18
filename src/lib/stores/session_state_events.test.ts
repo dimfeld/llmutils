@@ -62,10 +62,15 @@ function createState(initialSession?: SessionData) {
     sessions.set(initialSession.connectionId, initialSession);
   }
 
+  let initialized = false;
   let selectedSessionId: string | null = initialSession?.connectionId ?? null;
 
   return {
     sessions,
+    getInitialized: () => initialized,
+    setInitialized: (value: boolean) => {
+      initialized = value;
+    },
     getSelectedSessionId: () => selectedSessionId,
     setSelectedSessionId: (value: string | null) => {
       selectedSessionId = value;
@@ -90,6 +95,16 @@ describe('applySessionEvent', () => {
     expect(state.sessions.get('existing')).toBeUndefined();
     expect(state.sessions.get('conn-a')).toBe(replacementA);
     expect(state.sessions.get('conn-b')).toBe(replacementB);
+    // session:list alone should not mark as initialized; session:sync-complete does that
+    expect(state.getInitialized()).toBe(false);
+  });
+
+  test('session:sync-complete sets initialized to true', () => {
+    const state = createState();
+
+    expect(state.getInitialized()).toBe(false);
+    applySessionEvent('session:sync-complete', {}, state);
+    expect(state.getInitialized()).toBe(true);
   });
 
   test('session:new adds a session to the store', () => {

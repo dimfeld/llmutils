@@ -84,9 +84,18 @@ describe('lib/server/session_routes', () => {
     expect(reader).toBeDefined();
 
     const decoder = new TextDecoder();
-    const firstChunk = await reader!.read();
-    expect(firstChunk.done).toBe(false);
-    expect(decoder.decode(firstChunk.value)).toBe('event: session:list\ndata: {"sessions":[]}\n\n');
+    const streamState = { buffer: '' };
+    const initialEvent = await readSseEvent(reader!, decoder, streamState);
+    expect(initialEvent).toEqual({
+      event: 'session:list',
+      data: { sessions: [] },
+    });
+
+    const syncCompleteEvent = await readSseEvent(reader!, decoder, streamState);
+    expect(syncCompleteEvent).toEqual({
+      event: 'session:sync-complete',
+      data: {},
+    });
 
     manager.handleHttpNotification({
       gitRemote: 'git@example.com:repo.git',
@@ -94,14 +103,15 @@ describe('lib/server/session_routes', () => {
       workspacePath: '/tmp/repo',
     });
 
-    const secondChunk = await reader!.read();
-    expect(secondChunk.done).toBe(false);
-
-    const secondPayload = decoder.decode(secondChunk.value);
-    expect(secondPayload).toContain('event: session:new\n');
-    expect(secondPayload).toContain(
-      '"connectionId":"notification:git@example.com:repo.git|/tmp/repo"'
-    );
+    const secondEvent = await readSseEvent(reader!, decoder, streamState);
+    expect(secondEvent).toMatchObject({
+      event: 'session:new',
+      data: {
+        session: {
+          connectionId: 'notification:example.com/repo|/tmp/repo',
+        },
+      },
+    });
 
     abortController.abort();
     await reader!.cancel();
@@ -176,56 +186,61 @@ describe('lib/server/session_routes', () => {
     manager.dismissSession('conn-1');
 
     const receivedEvents = [];
-    for (let index = 0; index < 15; index += 1) {
+    for (let index = 0; index < 16; index += 1) {
       const event = await readSseEvent(reader!, decoder, streamState);
       expect(event).not.toBeNull();
       receivedEvents.push(event!);
     }
 
     expect(receivedEvents.map((event) => event.event)).toEqual([
-      'session:new', // 0: notification session created
-      'session:message', // 1: first notification message
-      'session:update', // 2: second notification updates session
-      'session:message', // 3: second notification message
-      'session:new', // 4: WS conn-1 connected
-      'session:message', // 5: reconciled first notification
-      'session:message', // 6: reconciled second notification
-      'session:dismissed', // 7: notification session removed
-      'session:update', // 8: session_info metadata
-      'session:prompt', // 9: prompt_request
-      'session:message', // 10: prompt_request message
-      'session:prompt-cleared', // 11: prompt_answered clears prompt
-      'session:message', // 12: prompt_answered message
-      'session:disconnect', // 13: WS disconnect
-      'session:dismissed', // 14: dismiss conn-1
+      'session:sync-complete', // 0: initial snapshot fully delivered
+      'session:new', // 1: notification session created
+      'session:message', // 2: first notification message
+      'session:update', // 3: second notification updates session
+      'session:message', // 4: second notification message
+      'session:new', // 5: WS conn-1 connected
+      'session:message', // 6: reconciled first notification
+      'session:message', // 7: reconciled second notification
+      'session:dismissed', // 8: notification session removed
+      'session:update', // 9: session_info metadata
+      'session:prompt', // 10: prompt_request
+      'session:message', // 11: prompt_request message
+      'session:prompt-cleared', // 12: prompt_answered clears prompt
+      'session:message', // 13: prompt_answered message
+      'session:disconnect', // 14: WS disconnect
+      'session:dismissed', // 15: dismiss conn-1
     ]);
 
-    expect(receivedEvents[0]).toMatchObject({
+    expect(receivedEvents[0]).toEqual({
+      event: 'session:sync-complete',
+      data: {},
+    });
+    expect(receivedEvents[1]).toMatchObject({
       data: {
         session: {
-          connectionId: 'notification:git@example.com:repo.git|/tmp/repo',
+          connectionId: 'notification:example.com/repo|/tmp/repo',
           status: 'notification',
         },
       },
     });
-    expect(receivedEvents[1]).toMatchObject({
+    expect(receivedEvents[2]).toMatchObject({
       data: {
-        connectionId: 'notification:git@example.com:repo.git|/tmp/repo',
+        connectionId: 'notification:example.com/repo|/tmp/repo',
         message: {
           body: { text: 'First notification', type: 'text' },
         },
       },
     });
-    expect(receivedEvents[3]).toMatchObject({
+    expect(receivedEvents[4]).toMatchObject({
       data: {
-        connectionId: 'notification:git@example.com:repo.git|/tmp/repo',
+        connectionId: 'notification:example.com/repo|/tmp/repo',
         message: {
           body: { text: 'Second notification', type: 'text' },
         },
       },
     });
     // Reconciled notification messages re-emitted on the WS session's connectionId
-    expect(receivedEvents[5]).toMatchObject({
+    expect(receivedEvents[6]).toMatchObject({
       data: {
         connectionId: 'conn-1',
         message: {
@@ -233,7 +248,7 @@ describe('lib/server/session_routes', () => {
         },
       },
     });
-    expect(receivedEvents[6]).toMatchObject({
+    expect(receivedEvents[7]).toMatchObject({
       data: {
         connectionId: 'conn-1',
         message: {
@@ -241,11 +256,11 @@ describe('lib/server/session_routes', () => {
         },
       },
     });
-    expect(receivedEvents[7]).toEqual({
+    expect(receivedEvents[8]).toEqual({
       event: 'session:dismissed',
-      data: { connectionId: 'notification:git@example.com:repo.git|/tmp/repo' },
+      data: { connectionId: 'notification:example.com/repo|/tmp/repo' },
     });
-    expect(receivedEvents[10]).toMatchObject({
+    expect(receivedEvents[11]).toMatchObject({
       data: {
         connectionId: 'conn-1',
         message: {
@@ -253,7 +268,7 @@ describe('lib/server/session_routes', () => {
         },
       },
     });
-    expect(receivedEvents[9]).toEqual({
+    expect(receivedEvents[10]).toEqual({
       event: 'session:prompt',
       data: {
         connectionId: 'conn-1',
@@ -264,14 +279,14 @@ describe('lib/server/session_routes', () => {
         },
       },
     });
-    expect(receivedEvents[11]).toEqual({
+    expect(receivedEvents[12]).toEqual({
       event: 'session:prompt-cleared',
       data: {
         connectionId: 'conn-1',
         requestId: 'req-1',
       },
     });
-    expect(receivedEvents[12]).toMatchObject({
+    expect(receivedEvents[13]).toMatchObject({
       event: 'session:message',
       data: {
         connectionId: 'conn-1',
@@ -280,7 +295,7 @@ describe('lib/server/session_routes', () => {
         },
       },
     });
-    expect(receivedEvents[13]).toMatchObject({
+    expect(receivedEvents[14]).toMatchObject({
       event: 'session:disconnect',
       data: {
         session: {
@@ -289,7 +304,7 @@ describe('lib/server/session_routes', () => {
         },
       },
     });
-    expect(receivedEvents[14]).toEqual({
+    expect(receivedEvents[15]).toEqual({
       event: 'session:dismissed',
       data: { connectionId: 'conn-1' },
     });
@@ -344,6 +359,68 @@ describe('lib/server/session_routes', () => {
         ],
       },
     });
+
+    abortController.abort();
+    await reader!.cancel();
+  });
+
+  test('createSessionEventsResponse emits sync-complete after buffered catch-up events', async () => {
+    const originalGetSessionSnapshot = manager.getSessionSnapshot.bind(manager);
+    let injected = false;
+
+    vi.spyOn(manager, 'getSessionSnapshot').mockImplementation(() => {
+      const snapshot = originalGetSessionSnapshot();
+
+      if (!injected) {
+        injected = true;
+        manager.handleHttpNotification({
+          gitRemote: 'git@example.com:repo.git',
+          message: 'Buffered notification',
+          workspacePath: '/tmp/repo',
+        });
+      }
+
+      return snapshot;
+    });
+
+    const abortController = new AbortController();
+    const response = createSessionEventsResponse(manager, abortController.signal);
+    const reader = response.body?.getReader();
+
+    expect(reader).toBeDefined();
+
+    const decoder = new TextDecoder();
+    const streamState = { buffer: '' };
+    const events = [];
+
+    for (let index = 0; index < 4; index += 1) {
+      const event = await readSseEvent(reader!, decoder, streamState);
+      expect(event).not.toBeNull();
+      events.push(event!);
+    }
+
+    expect(events).toEqual([
+      { event: 'session:list', data: { sessions: [] } },
+      {
+        event: 'session:new',
+        data: {
+          session: expect.objectContaining({
+            connectionId: 'notification:example.com/repo|/tmp/repo',
+            status: 'notification',
+          }),
+        },
+      },
+      {
+        event: 'session:message',
+        data: {
+          connectionId: 'notification:example.com/repo|/tmp/repo',
+          message: expect.objectContaining({
+            body: { type: 'text', text: 'Buffered notification' },
+          }),
+        },
+      },
+      { event: 'session:sync-complete', data: {} },
+    ]);
 
     abortController.abort();
     await reader!.cancel();

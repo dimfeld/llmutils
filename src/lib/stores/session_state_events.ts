@@ -12,6 +12,7 @@ import type {
 
 type SessionEventName =
   | 'session:list'
+  | 'session:sync-complete'
   | 'session:new'
   | 'session:update'
   | 'session:disconnect'
@@ -39,6 +40,7 @@ interface SessionMapLike {
 
 export interface SessionStoreMutableState {
   sessions: SessionMapLike;
+  setInitialized(value: boolean): void;
   getSelectedSessionId(): string | null;
   setSelectedSessionId(value: string | null): void;
 }
@@ -77,6 +79,10 @@ export function applySessionEvent(
       for (const session of event.sessions) {
         state.sessions.set(session.connectionId, session);
       }
+      break;
+    }
+    case 'session:sync-complete': {
+      state.setInitialized(true);
       break;
     }
     case 'session:new': {

@@ -15,7 +15,7 @@
 
   // Navigate back to sessions list if this session is dismissed
   $effect(() => {
-    if (connectionId && !sessionManager.sessions.has(connectionId)) {
+    if (connectionId && sessionManager.initialized && !sessionManager.sessions.has(connectionId)) {
       goto(`/projects/${page.params.projectId}/sessions`, { replaceState: true });
     }
   });
@@ -25,6 +25,10 @@
   {#key session.connectionId}
     <SessionDetail {session} />
   {/key}
+{:else if !sessionManager.initialized}
+  <div class="flex flex-1 items-center justify-center">
+    <p class="text-gray-400">Loading...</p>
+  </div>
 {:else}
   <div class="flex flex-1 items-center justify-center">
     <p class="text-gray-400">Session not found</p>

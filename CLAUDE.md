@@ -51,12 +51,12 @@ The codebase is organized into several main modules with improved modularity and
    - CLI utilities (`cli.ts`), file system operations (`fs.ts`), Git integration (`git.ts`)
    - Process management (`process.ts`) with `spawnAndLogOutput()` for fire-and-forget execution and `spawnWithStreamingIO()` for processes that need writable stdin during execution
 
-  - Terminal interaction (`terminal.ts`)
-  - Prompt transport (`common/input.ts` + structured messages): `prompt_request.promptConfig` supports optional `header` and `question` fields for richer GUI rendering in addition to `message`
-  - Config path utilities (`config_paths.ts`) with `getTimConfigRoot()` for XDG-aware config directory resolution
-  - Input pause registry (`input_pause_registry.ts`): `PausableInputSource` interface and getter/setter for coordinating stdin between terminal input readers and inquirer prompts without coupling `common` to feature modules
-  - Prefix selection prompt (`prefix_prompt.ts`): shared custom prompt + `runPrefixPrompt()` used by permissions flows
-  - GitHub integration utilities in `github/` subdirectory
+- Terminal interaction (`terminal.ts`)
+- Prompt transport (`common/input.ts` + structured messages): `prompt_request.promptConfig` supports optional `header` and `question` fields for richer GUI rendering in addition to `message`
+- Config path utilities (`config_paths.ts`) with `getTimConfigRoot()` for XDG-aware config directory resolution
+- Input pause registry (`input_pause_registry.ts`): `PausableInputSource` interface and getter/setter for coordinating stdin between terminal input readers and inquirer prompts without coupling `common` to feature modules
+- Prefix selection prompt (`prefix_prompt.ts`): shared custom prompt + `runPrefixPrompt()` used by permissions flows
+- GitHub integration utilities in `github/` subdirectory
 
 2. **tim**: Manages step-by-step project plans with LLM integration, organized by sub-commands
    - Modular command structure in `commands/` directory with separate files per sub-command
@@ -105,7 +105,7 @@ The codebase is organized into several main modules with improved modularity and
    - Plan detail route: `/projects/[projectId]/plans/[planId]` sub-route loads plan detail server-side; redirects to owning project if accessed under wrong projectId
    - Active Work route: `/projects/[projectId]/active` with nested `[planId]` sub-route; split-pane layout with workspaces + active plans list on left, plan detail on right (see `docs/web-interface.md` for details)
    - Components in `src/lib/components/`: `TabNav.svelte`, `ProjectSidebar.svelte`, `PlansList.svelte`, `PlanRow.svelte`, `PlanDetail.svelte`, `FilterChips.svelte`, `StatusBadge.svelte`, `PriorityBadge.svelte`, `WorkspaceBadge.svelte`, `WorkspaceRow.svelte`, `ActivePlanRow.svelte`, `SessionList.svelte`, `SessionRow.svelte`, `SessionDetail.svelte`, `SessionMessage.svelte`, `PromptRenderer.svelte`, `MessageInput.svelte`
-   - Session store: `src/lib/stores/session_state.svelte.ts` manages SSE connection and reactive session state; SSE event application logic extracted to `src/lib/stores/session_state_events.ts` for testability; session grouping utilities (`getSessionGroupKey`, `getSessionGroupLabel`) extracted to `src/lib/stores/session_group_utils.ts` as a plain TS module for testability; `src/lib/utils/session_colors.ts` defines category color mapping
+   - Session store: `src/lib/stores/session_state.svelte.ts` manages SSE connection and reactive session state; SSE event application logic extracted to `src/lib/stores/session_state_events.ts` for testability; `initialized` flag tracks whether initial SSE sync is complete (gated on `session:sync-complete` event, reset on reconnect); session grouping utilities (`getSessionGroupKey`, `getSessionGroupLabel`) extracted to `src/lib/stores/session_group_utils.ts` as a plain TS module for testability; `src/lib/utils/session_colors.ts` defines category color mapping
    - Plans browser helpers: `src/lib/server/plans_browser.ts` abstraction layer between route handlers and `db_queries.ts`; includes `getActiveWorkData()` for the Active Work tab
    - Shared utilities: `src/lib/utils/time.ts` provides `formatRelativeTime()` for human-readable relative timestamps
 

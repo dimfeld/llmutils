@@ -22,6 +22,7 @@ interface ProjectInfo {
 
 export class SessionManager {
   sessions = new SvelteMap<string, SessionData>();
+  initialized = $state(false);
   selectedSessionId: string | null = $state(null);
   connectionStatus: ConnectionStatus = $state('disconnected');
   currentProjectId: string | null = $state(null);
@@ -114,6 +115,9 @@ export class SessionManager {
 
     const state: SessionStoreMutableState = {
       sessions: this.sessions,
+      setInitialized: (value) => {
+        this.initialized = value;
+      },
       getSelectedSessionId: () => this.selectedSessionId,
       setSelectedSessionId: (value) => {
         this.selectedSessionId = value;
@@ -139,6 +143,8 @@ export class SessionManager {
       this.eventSource = null;
     }
 
+    this.initialized = false;
+
     const url = `${base}/api/sessions/events`;
     const es = new EventSource(url);
     this.eventSource = es;
@@ -158,6 +164,7 @@ export class SessionManager {
 
     const eventTypes = [
       'session:list',
+      'session:sync-complete',
       'session:new',
       'session:update',
       'session:disconnect',
@@ -189,6 +196,7 @@ export class SessionManager {
       this.eventSource = null;
     }
     this.connectionStatus = 'disconnected';
+    this.initialized = false;
     this.reconnectDelay = 1000;
   }
 
