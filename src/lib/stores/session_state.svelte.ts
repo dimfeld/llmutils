@@ -1,5 +1,6 @@
 import { projectDisplayName } from '$lib/stores/project.svelte.js';
 import { base } from '$app/paths';
+import { activateSessionTerminalPane } from '$lib/remote/session_actions.remote.js';
 import type { SessionData, SessionGroup } from '$lib/types/session.js';
 import { createContext } from 'svelte';
 import { SvelteMap } from 'svelte/reactivity';
@@ -229,6 +230,22 @@ export class SessionManager {
         method: 'POST',
       });
       return resp.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async activateTerminalPane(session: SessionData): Promise<boolean> {
+    const terminalType = session.sessionInfo.terminalType;
+    const terminalPaneId = session.sessionInfo.terminalPaneId;
+
+    if (!terminalType || !terminalPaneId) {
+      return false;
+    }
+
+    try {
+      await activateSessionTerminalPane({ terminalPaneId, terminalType });
+      return true;
     } catch {
       return false;
     }

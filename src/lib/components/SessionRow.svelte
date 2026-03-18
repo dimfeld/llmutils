@@ -1,4 +1,6 @@
 <script lang="ts">
+  import TerminalIcon from '@lucide/svelte/icons/terminal';
+
   import type { SessionData } from '$lib/types/session.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
@@ -16,6 +18,9 @@
 
   let relativeTime = $derived(formatRelativeTime(session.connectedAt));
   let canDismiss = $derived(session.status !== 'active');
+  let hasTerminalPane = $derived(
+    session.sessionInfo.terminalType === 'wezterm' && Boolean(session.sessionInfo.terminalPaneId)
+  );
   let workspaceLabel = $derived.by(() => {
     const workspacePath = session.sessionInfo.workspacePath;
     if (!workspacePath) {
@@ -44,7 +49,14 @@
 
   function handleDismiss(e: MouseEvent) {
     e.stopPropagation();
+    e.preventDefault();
     void sessionManager.dismissSession(session.connectionId);
+  }
+
+  function handleActivateTerminal(e: MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    void sessionManager.activateTerminalPane(session);
   }
 </script>
 
@@ -58,6 +70,17 @@
     <span class="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">
       {displayCommand}
     </span>
+    {#if hasTerminalPane}
+      <button
+        type="button"
+        class="rounded p-1 text-gray-400 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-gray-200 hover:text-gray-700"
+        onclick={handleActivateTerminal}
+        aria-label="Activate terminal pane"
+        title="Activate terminal pane"
+      >
+        <TerminalIcon class="size-3.5" />
+      </button>
+    {/if}
     <span class="shrink-0 text-xs text-gray-400">{relativeTime}</span>
   </div>
   {#if session.sessionInfo.planTitle || session.sessionInfo.planId != null}

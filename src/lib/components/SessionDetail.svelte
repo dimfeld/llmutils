@@ -1,10 +1,14 @@
 <script lang="ts">
+  import TerminalIcon from '@lucide/svelte/icons/terminal';
+
   import type { SessionData } from '$lib/types/session.js';
+  import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import SessionMessage from './SessionMessage.svelte';
   import PromptRenderer from './PromptRenderer.svelte';
   import MessageInput from './MessageInput.svelte';
 
   let { session }: { session: SessionData } = $props();
+  const sessionManager = useSessionManager();
 
   let scrollContainer: HTMLDivElement | undefined = $state();
   let autoScroll = $state(true);
@@ -54,6 +58,13 @@
   });
 
   let showInput = $derived(session.status === 'active' && session.sessionInfo.interactive);
+  let hasTerminalPane = $derived(
+    session.sessionInfo.terminalType === 'wezterm' && Boolean(session.sessionInfo.terminalPaneId)
+  );
+
+  function handleActivateTerminal() {
+    void sessionManager.activateTerminalPane(session);
+  }
 </script>
 
 <div class="flex h-full w-full flex-col">
@@ -73,6 +84,17 @@
         </span>
       {/if}
       <span class="text-xs text-gray-400">{statusText}</span>
+      {#if hasTerminalPane}
+        <button
+          type="button"
+          class="rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+          onclick={handleActivateTerminal}
+          aria-label="Activate terminal pane"
+          title="Activate terminal pane"
+        >
+          <TerminalIcon class="size-4" />
+        </button>
+      {/if}
     </div>
     {#if session.sessionInfo.workspacePath}
       <div class="mt-1 text-xs text-gray-400">

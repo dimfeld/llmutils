@@ -95,7 +95,7 @@ HTTP POST to `/messages` on port 8123 creates lightweight "notification" session
 
 ### SSE Endpoint & API Routes
 
-Browser clients receive real-time updates via SSE and interact with sessions through REST endpoints:
+Browser clients receive real-time updates via SSE and interact with sessions through REST endpoints plus a remote command:
 
 - **SSE endpoint** (`src/routes/api/sessions/events/+server.ts`): `GET` returns a `ReadableStream` with SSE headers. On connect, sends `session:list` snapshot then streams events (`session:new`, `session:update`, `session:disconnect`, `session:message`, `session:prompt`, `session:prompt-cleared`, `session:dismissed`). Uses subscribe-before-snapshot pattern with buffering to avoid lost-event race conditions.
 
@@ -107,6 +107,7 @@ Browser clients receive real-time updates via SSE and interact with sessions thr
 - **Prompt response** (`src/routes/api/sessions/[connectionId]/respond/+server.ts`): `POST` with `{ requestId, value }`. Validates `requestId` against the session's active prompt and requires `value` field. Returns `'sent'`, `'no_session'`, or `'no_prompt'`.
 - **User input** (`src/routes/api/sessions/[connectionId]/input/+server.ts`): `POST` with `{ content }`. Sends free-form text to interactive sessions.
 - **Dismiss** (`src/routes/api/sessions/[connectionId]/dismiss/+server.ts`): `POST` to remove offline/notification sessions.
+- **Terminal activation** (`src/lib/remote/session_actions.remote.ts`): remote `command(...)` that resolves the WezTerm pane from session metadata, switches to the pane's workspace, activates the pane, and brings WezTerm to the foreground on macOS.
 - **Shared helpers** (`src/lib/server/session_routes.ts`): `parseJsonBody()`, `badRequest()`, `notFound()`, `success()` used by all action routes.
 
 ### Key Design Decisions
@@ -128,14 +129,14 @@ Browser clients receive real-time updates via SSE and interact with sessions thr
 - **Client-side message cap**: `MAX_CLIENT_MESSAGES` (5000) mirrors the server-side cap to prevent unbounded browser memory growth. Messages are trimmed after push.
 - **State**: `sessions` (SvelteMap for reactivity), `selectedSessionId`, `connectionStatus` (connected/reconnecting/disconnected)
 - **Derived**: `sessionGroups` — sessions grouped by `groupKey`, with the current project's group sorted to top. Group labels resolved from project display name (when `projectId` matches a known project) or workspace path (last 2 components).
-- **Actions**: `sendPromptResponse(connectionId, requestId, value)`, `sendUserInput(connectionId, content)`, `dismissSession(connectionId)` — all POST to action API routes with URL-encoded connectionIds (notification IDs can contain `/`).
+- **Actions**: `sendPromptResponse(connectionId, requestId, value)`, `sendUserInput(connectionId, content)`, `dismissSession(connectionId)` — all POST to action API routes with URL-encoded connectionIds (notification IDs can contain `/`). `activateTerminalPane(session)` calls the remote command exported from `src/lib/remote/session_actions.remote.ts`.
 - **SvelteMap reactivity**: SvelteMap only tracks `.set()`/`.delete()`/`.clear()` — after mutating nested properties on stored objects, the entry must be re-set to trigger reactivity.
 
 ### UI Components
 
 - **`SessionList.svelte`** — Grouped session sidebar (left pane, w-96). Groups are collapsible by project. Shows all sessions regardless of selected project.
-- **`SessionRow.svelte`** — Individual session entry with status indicator dot (green=active, gray=offline, blue=notification), command name, plan title/ID, dismiss button for offline/notification sessions. Uses `<div>` not `<button>` to avoid nested interactive elements.
-- **`SessionDetail.svelte`** — Message transcript view with session header (command, plan, workspace, status), scrollable message list, fixed-position prompt area above messages, conditional message input bar. Uses `{#key connectionId}` for remount on session switch. Auto-scroll is scroll-position-based: active when at bottom, disabled when user scrolls up, resumes on scroll to bottom.
+- **`SessionRow.svelte`** — Individual session entry with status indicator dot (green=active, gray=offline, blue=notification), command name, plan title/ID, dismiss button for offline/notification sessions, and a terminal icon when the session includes WezTerm pane metadata.
+- **`SessionDetail.svelte`** — Message transcript view with session header (command, plan, workspace, status), optional terminal activation button for WezTerm-backed sessions, scrollable message list, fixed-position prompt area above messages, conditional message input bar. Uses `{#key connectionId}` for remount on session switch. Auto-scroll is scroll-position-based: active when at bottom, disabled when user scrolls up, resumes on scroll to bottom.
 - **`SessionMessage.svelte`** — Renders messages by body type: text (colored by category), monospaced (preformatted code blocks), todoList (items with status icons), fileChanges (paths with +/~/- indicators), keyValuePairs (structured metadata table). Long content truncated with expandable reveal.
 - **`PromptRenderer.svelte`** — Renders by prompt type: confirm (Yes/No buttons with default highlighted), input (text field with submit), select (radio group), checkbox (checkbox group). Uses `{#key requestId}` for state reset. Shows header/question fields from promptConfig when present. Falls back to raw JSON display for unsupported types.
 - **`MessageInput.svelte`** — Text input with Enter to send, Shift+Enter for newlines. Hidden (not disabled) when session is offline or non-interactive.
