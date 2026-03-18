@@ -5,10 +5,10 @@ goal: ""
 id: 235
 uuid: 040f82db-03d4-439b-9b74-673e4e4cb990
 simple: true
-status: in_progress
+status: done
 priority: medium
 createdAt: 2026-03-18T20:52:21.108Z
-updatedAt: 2026-03-18T21:57:30.552Z
+updatedAt: 2026-03-18T22:16:47.243Z
 tasks:
   - title: "Address Review Feedback: `normalizeSessionRemote` uses `parsed.path`
       which retains the `.git` suffix (e.g., `tim/notify.git`), but all tests
@@ -93,7 +93,7 @@ tasks:
       Related file: src/lib/server/session_manager.ts:1026
   - title: "Address Review Feedback: The newly added session-state unit test does
       not run at all."
-    done: false
+    done: true
     description: >-
       The newly added session-state unit test does not run at all. It imports
       `session_state.svelte.ts` directly, which pulls in
@@ -113,7 +113,7 @@ tasks:
   - title: "Address Review Feedback: GUI input echo was moved into
       `HeadlessAdapter`, but the Codex chat-session path still emits its own
       `user_terminal_input` structured message."
-    done: false
+    done: true
     description: >-
       GUI input echo was moved into `HeadlessAdapter`, but the Codex
       chat-session path still emits its own `user_terminal_input` structured
@@ -147,11 +147,14 @@ tasks:
 
       Related file: src/lib/stores/session_state.svelte.ts:284-285
 changedFiles:
+  - docs/executor-stdin-conventions.md
+  - docs/web-interface.md
   - package.json
   - src/lib/components/SessionDetail.svelte
   - src/lib/server/session_integration.test.ts
   - src/lib/server/session_manager.test.ts
   - src/lib/server/session_manager.ts
+  - src/lib/stores/session_group_utils.ts
   - src/lib/stores/session_state.svelte.ts
   - src/lib/stores/session_state.test.ts
   - src/logging/headless_adapter.test.ts
@@ -166,6 +169,7 @@ changedFiles:
   - src/tim/commands/set.ts
   - src/tim/executors/claude_code/terminal_input_lifecycle.test.ts
   - src/tim/executors/claude_code/terminal_input_lifecycle.ts
+  - src/tim/executors/codex_cli/app_server_runner.test.ts
   - src/tim/executors/codex_cli/app_server_runner.ts
   - src/tim/tim.ts
 tags: []
@@ -175,23 +179,24 @@ Agent command is not showing up as an "interactive" session when reported over t
 
 ## Current Progress
 ### Current State
-- Addressing review feedback. 5 of 7 review tasks completed.
+- All 7 review feedback tasks completed.
 ### Completed (So Far)
 - `normalizeSessionRemote` now uses `parsed.fullName` instead of `parsed.path`, properly stripping `.git` suffix for canonical session grouping keys
 - Project-id cache retry lookup now uses `normalizedRemote` instead of raw `gitRemote`
 - Interactive flag in `agentCommand()` simplified to `options.nonInteractive !== true` — terminal-input flags no longer incorrectly suppress headless interactivity
 - Agent tests updated: disabling terminal input no longer expects non-interactive session
 - No-op ternary in `session_state.svelte.ts` simplified
+- Extracted `getSessionGroupKey`/`getSessionGroupLabel` and helpers into `src/lib/stores/session_group_utils.ts` — plain TS module with no Svelte dependencies, re-exported from `session_state.svelte.ts` for backward compat. Tests now import from the utility module and pass.
+- Removed duplicate `sendStructured({ type: 'user_terminal_input' })` from the second `headlessForwardingEnabled` block in `app_server_runner.ts` (chat-session path). Added regression test.
 ### Remaining
-- Task 5: Extract session-state utility functions to avoid Svelte import crash in tests
-- Task 6: Remove duplicate `user_terminal_input` emission in codex chat-session path
+- None
 ### Next Iteration Guidance
-- Task 5 requires extracting `getSessionGroupKey`/`getSessionGroupLabel` into a plain utility module
-- Task 6 requires finding the duplicated `sendStructured` call in `app_server_runner.ts` around line 562-575
+- None
 ### Decisions / Changes
 - Excluded `process.stdin.isTTY` check from the interactive flag computation because when running headless (via websocket), stdin isn't a TTY but the session IS still interactive via the websocket input mechanism
 - Removed `terminalInput` from interactive flag entirely — it controls local stdin, not websocket input capability
 ### Lessons Learned
 - `parseGitRemoteUrl().path` retains `.git` suffix while `fullName` strips it — always use `fullName` for canonical remote normalization
+- When `.svelte.ts` files pull in browser/framework imports, pure utility functions should be extracted to plain `.ts` modules so they can be tested without mocking the entire Svelte runtime
 ### Risks / Blockers
 - None
