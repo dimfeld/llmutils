@@ -35,6 +35,7 @@ export interface SetOptions {
   noTag?: string[];
   epic?: boolean;
   noEpic?: boolean;
+  simple?: boolean;
 }
 
 export async function handleSetCommand(
@@ -328,6 +329,12 @@ export async function handleSetCommand(
     } else {
       log('Epic is already false');
     }
+  }
+
+  if (options.simple !== undefined) {
+    plan.simple = options.simple;
+    modified = true;
+    log(`Set simple to ${options.simple}`);
   }
 
   if (modified) {

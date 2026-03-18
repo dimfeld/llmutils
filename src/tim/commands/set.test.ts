@@ -1126,6 +1126,38 @@ describe('tim set command', () => {
     expect(updatedPlan.epic).toBe(false);
   });
 
+  test('should set simple to true', async () => {
+    const planPath = await createTestPlan(304);
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        simple: true,
+      },
+      globalOpts
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.simple).toBe(true);
+  });
+
+  test('should set simple to false using --no-simple', async () => {
+    const planPath = await createTestPlan(305, { simple: true });
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        simple: false,
+      },
+      globalOpts
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.simple).toBeUndefined();
+  });
+
   test('should change epic value', async () => {
     const planPath = await createTestPlan(303, { epic: false });
 

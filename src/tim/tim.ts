@@ -1028,6 +1028,8 @@ program
   .option('--no-assign', 'Remove the plan assignment')
   .option('--epic', 'Mark the plan as an epic')
   .option('--no-epic', 'Mark the plan as not an epic')
+  .option('--simple', 'Mark the plan as simple')
+  .option('--no-simple', 'Mark the plan as not simple')
   .option('--sd, --status-description <description>', 'Set a description for the current status')
   .option('--no-sd, --no-status-description', 'Remove the status description')
   .action(async (planFile, options, command) => {
