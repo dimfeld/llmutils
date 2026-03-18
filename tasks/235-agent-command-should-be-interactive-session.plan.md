@@ -8,7 +8,7 @@ simple: true
 status: done
 priority: medium
 createdAt: 2026-03-18T20:52:21.108Z
-updatedAt: 2026-03-18T22:16:47.243Z
+updatedAt: 2026-03-18T22:19:07.940Z
 tasks:
   - title: "Address Review Feedback: `normalizeSessionRemote` uses `parsed.path`
       which retains the `.git` suffix (e.g., `tim/notify.git`), but all tests

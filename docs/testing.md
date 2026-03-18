@@ -48,6 +48,10 @@ test('a test', async () => {
 
 Or for a single mock defined across the entire test file, use `afterAll(() => moduleMocker.clear())` to clear the mocks.
 
+### Svelte Store Testability
+
+- **Extract pure logic from `.svelte.ts` files into plain `.ts` modules**: `.svelte.ts` files pull in browser/framework imports that make them difficult to test without mocking the entire Svelte runtime. When a `.svelte.ts` store contains pure utility functions or data-transformation logic, extract those into a plain `.ts` module and re-export from the original file for backward compatibility. The plain module can then be tested directly without any Svelte mocking.
+
 ### Test Against Production Code Paths
 
 - **Tests should call production computed properties and methods rather than duplicating logic in local helpers.** For example, if production code uses `status.isActiveWork` to filter items, tests should assert against that same property — not reimplement the filter predicate locally. Duplicating logic means the test won't catch regressions when the production predicate changes.
