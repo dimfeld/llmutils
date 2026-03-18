@@ -76,14 +76,12 @@ export class SessionManager {
   private groupLabel(groupKey: string, projectId: number | null): string {
     if (projectId != null) {
       const project = this.projectsById.get(projectId);
-      if (project) return project.name;
+      if (project) {
+        return getSessionGroupLabel(groupKey, project.name);
+      }
     }
 
-    const parts = groupKey.split('|');
-    const workspacePath = parts[1] || parts[0];
-    if (!workspacePath) return 'Unknown';
-    const segments = workspacePath.replace(/\/+$/, '').split('/');
-    return segments.slice(-2).join('/');
+    return getSessionGroupLabel(groupKey);
   }
 
   selectSession(id: string | null): void {
@@ -260,6 +258,30 @@ export function getSessionGroupKey(projectId: number | null, groupKey: string): 
   const parts = groupKey.split('|');
   const workingDirectory = parts[1] || parts[0] || '';
   return `${projectId}|${workingDirectory}`;
+}
+
+function getWorkspacePathFromSessionGroupKey(groupKey: string): string {
+  const parts = groupKey.split('|');
+  return parts[1] || parts[0] || '';
+}
+
+function formatSessionWorkspaceLabel(groupKey: string): string {
+  const workspacePath = getWorkspacePathFromSessionGroupKey(groupKey);
+  if (!workspacePath) return 'Unknown';
+  const segments = workspacePath.replace(/\/+$/, '').split('/');
+  return segments.slice(-2).join('/');
+}
+
+export function getSessionGroupLabel(groupKey: string, projectName?: string): string {
+  const workspaceLabel = formatSessionWorkspaceLabel(groupKey);
+  if (projectName) {
+    if (workspaceLabel === 'Unknown') {
+      return projectName;
+    }
+    return `${projectName} (${workspaceLabel})`;
+  }
+
+  return workspaceLabel;
 }
 
 const [getSessionManagerContext, setSessionManagerContext] = createContext<SessionManager>();

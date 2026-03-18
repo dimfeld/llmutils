@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { getSessionGroupKey } from './session_state.svelte.js';
+import { getSessionGroupKey, getSessionGroupLabel } from './session_state.svelte.js';
 
 describe('getSessionGroupKey', () => {
   test('uses project id before working directory when project is known', () => {
@@ -20,5 +20,21 @@ describe('getSessionGroupKey', () => {
 
   test('falls back to repository identifier when working directory is missing', () => {
     expect(getSessionGroupKey(7, 'https://example.com/repo.git')).toBe('7|https://example.com/repo.git');
+  });
+
+  test('labels a known project with workspace path', () => {
+    expect(
+      getSessionGroupLabel('https://example.com/repo.git|/Users/dimfeld/Projects/example', 'my-project')
+    ).toBe('my-project (Projects/example)');
+  });
+
+  test('labels an unknown project by workspace path only', () => {
+    expect(getSessionGroupLabel('https://example.com/repo.git|/Users/dimfeld/Projects/example')).toBe(
+      'Projects/example'
+    );
+  });
+
+  test('labels a known project without workspace path as project only', () => {
+    expect(getSessionGroupLabel('https://example.com/repo.git', 'my-project')).toBe('my-project');
   });
 });
