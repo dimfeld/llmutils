@@ -30,7 +30,7 @@ describe('getSessionGroupKey', () => {
 
   test('labels an unknown project by workspace path only', () => {
     expect(getSessionGroupLabel('https://example.com/repo.git|/Users/dimfeld/Projects/example')).toBe(
-      'Projects/example'
+      'repo (Projects/example)'
     );
   });
 
