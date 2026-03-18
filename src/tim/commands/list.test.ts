@@ -195,6 +195,42 @@ describe('handleListCommand', () => {
     expect(tableData[1][2]).toContain('Plan from DB');
   });
 
+  test('shows S in tasks column for simple plans without tasks from SQLite', async () => {
+    dbPlans = [
+      {
+        uuid: 'db-plan-1',
+        project_id: 1,
+        plan_id: 44,
+        title: 'Simple Plan from DB',
+        goal: 'loaded from sqlite',
+        details: 'details',
+        status: 'pending',
+        priority: 'high',
+        branch: null,
+        simple: 1,
+        parent_uuid: null,
+        epic: 0,
+        filename: '44-simple-plan-from-db.plan.md',
+        created_at: '2026-01-01T00:00:00.000Z',
+        updated_at: '2026-01-01T00:00:00.000Z',
+      },
+    ];
+
+    const options = {
+      all: true,
+    };
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleListCommand(options, command);
+
+    const tableData = mockTable.mock.calls[0][0];
+    expect(tableData[1][7]).toBe('S');
+  });
+
   test('filters tags when reading from SQLite', async () => {
     dbPlans = [
       {
@@ -604,6 +640,35 @@ describe('handleListCommand', () => {
     // The combined title should include the project
     expect(tableData[1][2]).toContain('project-123');
     expect(tableData[1][2]).toContain('Plan Title');
+  });
+
+  test('shows S in tasks column for simple plans without tasks from local files', async () => {
+    const plan = {
+      id: 1,
+      title: 'Simple Local Plan',
+      goal: 'Test simple marker',
+      details: 'Details',
+      status: 'pending',
+      simple: true,
+      tasks: [],
+    };
+
+    await fs.writeFile(path.join(tasksDir, '1.yml'), `---\n${yaml.stringify(plan)}---\n`);
+
+    const options = {
+      local: true,
+      all: true,
+    };
+    const command = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleListCommand(options, command);
+
+    const tableData = mockTable.mock.calls[0][0];
+    expect(tableData[1][7]).toBe('S');
   });
 
   test('displays dependency status indicators', async () => {

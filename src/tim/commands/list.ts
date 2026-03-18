@@ -111,6 +111,7 @@ function loadPlansFromDb(searchDir: string, repositoryId: string): ListPlansLoad
       title: row.title ?? undefined,
       goal: row.goal ?? '',
       details: row.details ?? '',
+      simple: row.simple === 1 ? true : undefined,
       tags: tagsByPlanUuid.get(row.uuid),
       status: row.status,
       priority: row.priority ?? undefined,
@@ -564,6 +565,9 @@ export async function handleListCommand(options: any, command: any, searchTerms?
           }
 
           return taskCount.toString();
+        }
+        if (plan.simple) {
+          return 'S';
         }
         return plan.epic ? 'EPIC' : '-';
       })(),
