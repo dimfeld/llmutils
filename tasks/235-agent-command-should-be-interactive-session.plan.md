@@ -14,3 +14,21 @@ tags: []
 ---
 
 Agent command is not showing up as an "interactive" session when reported over the websocket, but it is from the perspective of us being able to write user input into it
+
+## Current Progress
+### Current State
+- Complete. The fix has been implemented, tested, and committed.
+### Completed (So Far)
+- Changed `interactive: false` to a computed expression in `agentCommand()` at `src/tim/commands/agent/agent.ts` line 257
+- The expression is: `options.nonInteractive !== true && options.terminalInput !== false && config.terminalInput !== false`
+- Added test coverage for all three disabling conditions
+### Remaining
+- None
+### Next Iteration Guidance
+- None
+### Decisions / Changes
+- Excluded `process.stdin.isTTY` check from the interactive flag computation because when running headless (via websocket), stdin isn't a TTY but the session IS still interactive via the websocket input mechanism
+### Lessons Learned
+- None
+### Risks / Blockers
+- None
