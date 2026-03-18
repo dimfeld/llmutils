@@ -67,6 +67,8 @@ Both `claude_code.ts` and `run_claude_subprocess.ts` delegate to this helper to 
 
 Tunnel and headless forwarding are interactive input sources alongside terminal input. When writing validation guards (e.g., "is this session interactive?"), check for **all** of `terminalInputEnabled`, tunnel-active state, and headless adapter presence — not just terminal input. For example, a command that requires user interaction to function (like chat with no initial prompt) must allow execution when any of these can provide input. Checking only `terminalInputEnabled` would break Tim-GUI integration where input arrives via the tunnel or the headless WebSocket.
 
+This principle also applies to the session's `interactive` metadata flag reported over the headless protocol. The flag should reflect whether the session can receive input via **any** transport (including WebSocket), not just whether local terminal input is enabled. The `--no-terminal-input` and `config.terminalInput=false` flags control local stdin only — they must not suppress interactivity for headless/GUI sessions.
+
 ### Optional Initial Prompt
 
 The `prompt` parameter in `executeWithTerminalInput()` is optional. When no prompt is provided:

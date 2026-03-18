@@ -91,7 +91,7 @@ The sessions system runs a separate Bun.serve() WebSocket server alongside the S
 
 ### Notification Sessions
 
-HTTP POST to `/messages` on port 8123 creates lightweight "notification" sessions (capped at 200 messages). When a WebSocket session later connects with the same group key (gitRemote + workspacePath), the notification session is reconciled into the full session.
+HTTP POST to `/messages` on port 8123 creates lightweight "notification" sessions (capped at 200 messages). When a WebSocket session later connects with the same group key (normalized gitRemote + workspacePath), the notification session is reconciled into the full session. Remote URLs are normalized via `parseGitRemoteUrl().fullName` to canonicalize equivalent remote formats (HTTPS vs SSH, with/without `.git` suffix) into the same group key.
 
 ### SSE Endpoint & API Routes
 
