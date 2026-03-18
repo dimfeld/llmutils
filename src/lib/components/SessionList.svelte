@@ -6,11 +6,11 @@
   let {
     groups,
     selectedSessionId,
-    onselect,
+    sessionHref,
   }: {
     groups: SessionGroup[];
     selectedSessionId: string | null;
-    onselect: (connectionId: string) => void;
+    sessionHref: (connectionId: string) => string;
   } = $props();
 
   // Track which groups are collapsed
@@ -52,7 +52,7 @@
               <SessionRow
                 {session}
                 selected={session.connectionId === selectedSessionId}
-                {onselect}
+                href={sessionHref(session.connectionId)}
               />
             {/each}
           </div>

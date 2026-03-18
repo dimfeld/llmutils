@@ -6,11 +6,11 @@
   let {
     session,
     selected = false,
-    onselect,
+    href,
   }: {
     session: SessionData;
     selected?: boolean;
-    onselect: (connectionId: string) => void;
+    href: string;
   } = $props();
   const sessionManager = useSessionManager();
 
@@ -48,12 +48,10 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div
-  class="group cursor-pointer rounded-md px-3 py-2 transition-colors
+<a
+  {href}
+  class="group block rounded-md px-3 py-2 transition-colors
     {selected ? 'bg-blue-50 ring-1 ring-blue-200' : 'hover:bg-gray-50'}"
-  onclick={() => onselect(session.connectionId)}
 >
   <div class="flex items-center gap-2">
     <span class="h-2 w-2 shrink-0 rounded-full {statusDotClass}"></span>
@@ -84,4 +82,4 @@
       </button>
     </div>
   {/if}
-</div>
+</a>
