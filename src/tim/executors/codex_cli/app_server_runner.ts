@@ -564,17 +564,6 @@ export async function executeCodexStepViaAppServer(
           inputQueue.push(content);
 
           try {
-            sendStructured({
-              type: 'user_terminal_input',
-              content,
-              source: 'gui',
-              timestamp: new Date().toISOString(),
-            });
-          } catch (err) {
-            debugLog('Failed to send structured headless user input:', err);
-          }
-
-          try {
             tunnelServer?.sendUserInput(content);
           } catch (err) {
             debugLog('Failed to forward headless input through tunnel:', err);

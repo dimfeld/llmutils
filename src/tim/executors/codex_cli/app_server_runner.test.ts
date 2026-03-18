@@ -4,6 +4,16 @@ import { ModuleMocker } from '../../../testing.js';
 type NotificationHandler = (method: string, params: unknown) => void;
 type ServerRequestHandler = (method: string, id: number, params: unknown) => Promise<unknown>;
 
+async function waitFor(condition: () => boolean, timeoutMs: number = 2000): Promise<void> {
+  const start = Date.now();
+  while (!condition()) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error('Timed out waiting for condition');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 interface Harness {
   moduleMocker: ModuleMocker;
   executeCodexStepViaAppServer: (
@@ -35,6 +45,11 @@ interface Harness {
   createPromptRequestHandlerMock: ReturnType<typeof mock>;
   sendStructuredMock: ReturnType<typeof mock>;
   warnMock: ReturnType<typeof mock>;
+  loggerAdapter:
+    | {
+        setUserInputHandler: ReturnType<typeof mock>;
+      }
+    | undefined;
   connectionCreateOptions: { current?: any };
   connectionHandlers: {
     onNotification?: NotificationHandler;
@@ -47,6 +62,7 @@ async function createHarness(options?: {
   finalMessage?: string;
   failedMessage?: string | undefined;
   terminalInputLines?: string[];
+  loggerAdapterKind?: 'headless' | 'tunnel';
 }) {
   const moduleMocker = new ModuleMocker(import.meta);
 
@@ -63,6 +79,11 @@ async function createHarness(options?: {
 
   const sendStructuredMock = mock(() => {});
   const warnMock = mock(() => {});
+  let loggerAdapter:
+    | {
+        setUserInputHandler: ReturnType<typeof mock>;
+      }
+    | undefined;
 
   const formatter = {
     handleNotification: mock(() => ({})),
@@ -98,8 +119,31 @@ async function createHarness(options?: {
     warn: warnMock,
   }));
 
+  class MockHeadlessAdapter {
+    setUserInputHandler = mock(() => {});
+  }
+
+  class MockTunnelAdapter {
+    setUserInputHandler = mock(() => {});
+  }
+
+  if (options?.loggerAdapterKind === 'headless') {
+    loggerAdapter = new MockHeadlessAdapter();
+  } else if (options?.loggerAdapterKind === 'tunnel') {
+    loggerAdapter = new MockTunnelAdapter();
+  }
+
+  await moduleMocker.mock('../../../logging/adapter.js', () => ({
+    getLoggerAdapter: mock(() => loggerAdapter),
+  }));
+
+  await moduleMocker.mock('../../../logging/headless_adapter.js', () => ({
+    HeadlessAdapter: MockHeadlessAdapter,
+  }));
+
   await moduleMocker.mock('../../../logging/tunnel_client.js', () => ({
     isTunnelActive: isTunnelActiveMock,
+    TunnelAdapter: MockTunnelAdapter,
   }));
 
   await moduleMocker.mock('../../../logging/tunnel_server.js', () => ({
@@ -168,6 +212,7 @@ async function createHarness(options?: {
     createPromptRequestHandlerMock,
     sendStructuredMock,
     warnMock,
+    loggerAdapter,
     connectionCreateOptions,
     connectionHandlers,
   };
@@ -585,6 +630,43 @@ describe('executeCodexStepViaAppServer', () => {
         expectedTurnId: 'turn-subagent',
       })
     );
+
+    harness.moduleMocker.clear();
+  });
+
+  test('does not emit duplicate structured gui input messages in headless chat sessions', async () => {
+    const harness = await createHarness({ loggerAdapterKind: 'headless' });
+
+    harness.connection.turnStart.mockImplementationOnce(async () => {
+      throw new Error('stop after gui input');
+    });
+
+    const result = harness.executeCodexStepViaAppServer(
+      '',
+      '/repo',
+      {},
+      { appServerMode: 'chat-session' }
+    );
+
+    await waitFor(() => (harness.loggerAdapter?.setUserInputHandler.mock.calls.length ?? 0) === 1);
+
+    const handler = harness.loggerAdapter?.setUserInputHandler.mock.calls[0]?.[0] as
+      | ((content: string) => void)
+      | undefined;
+    expect(handler).toBeDefined();
+    handler?.('gui input');
+
+    await expect(result).rejects.toThrow('stop after gui input');
+    expect(
+      harness.sendStructuredMock.mock.calls.some(
+        (call) =>
+          call[0] &&
+          typeof call[0] === 'object' &&
+          call[0].type === 'user_terminal_input' &&
+          call[0].source === 'gui' &&
+          call[0].content === 'gui input'
+      )
+    ).toBe(false);
 
     harness.moduleMocker.clear();
   });

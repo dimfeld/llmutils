@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { getSessionGroupKey, getSessionGroupLabel } from './session_state.svelte.js';
+import { getSessionGroupKey, getSessionGroupLabel } from './session_group_utils.js';
 
 describe('getSessionGroupKey', () => {
   test('uses project id before working directory when project is known', () => {
