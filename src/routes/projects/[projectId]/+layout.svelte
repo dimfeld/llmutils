@@ -12,7 +12,11 @@
   } = $props();
 </script>
 
-<ProjectSidebar projects={data.projects} selectedProjectId={data.projectId} />
+<ProjectSidebar
+  projects={data.projects}
+  selectedProjectId={data.projectId}
+  currentUsername={data.currentUsername}
+/>
 <div class="flex-1 overflow-y-auto">
   {@render children()}
 </div>

@@ -1,0 +1,293 @@
+import { describe, expect, test } from 'vitest';
+
+import {
+  applySessionEvent,
+  MAX_CLIENT_MESSAGES,
+  parseSessionEventPayload,
+} from './session_state_events.js';
+import type { ActivePrompt, DisplayMessage, SessionData } from '$lib/types/session.js';
+
+function createMessage(overrides: Partial<DisplayMessage> = {}): DisplayMessage {
+  const seq = overrides.seq ?? 0;
+  return {
+    id: overrides.id ?? `message-${seq}`,
+    seq,
+    timestamp: overrides.timestamp ?? '2026-03-17T10:00:00.000Z',
+    category: overrides.category ?? 'log',
+    bodyType: overrides.bodyType ?? 'text',
+    body: overrides.body ?? { type: 'text', text: `message-${seq}` },
+    rawType: overrides.rawType ?? 'log',
+  };
+}
+
+function createPrompt(overrides: Partial<ActivePrompt> = {}): ActivePrompt {
+  return {
+    requestId: overrides.requestId ?? 'prompt-1',
+    promptType: overrides.promptType ?? 'confirm',
+    promptConfig: overrides.promptConfig ?? {
+      message: 'Continue?',
+      choices: [
+        { name: 'Yes', value: true },
+        { name: 'No', value: false },
+      ],
+    },
+    timeoutMs: overrides.timeoutMs,
+  };
+}
+
+function createSession(connectionId = 'conn-1'): SessionData {
+  return {
+    connectionId,
+    sessionInfo: {
+      command: 'agent',
+      interactive: true,
+      workspacePath: '/tmp/ws',
+    },
+    status: 'active',
+    projectId: null,
+    messages: [
+      createMessage({ id: `${connectionId}-0`, body: { type: 'text', text: 'existing' } }),
+    ],
+    activePrompt: null,
+    isReplaying: false,
+    groupKey: '/tmp/ws',
+    connectedAt: '2026-03-17T10:00:00.000Z',
+    disconnectedAt: null,
+  };
+}
+
+function createState(initialSession?: SessionData) {
+  const sessions = new Map<string, SessionData>();
+  if (initialSession) {
+    sessions.set(initialSession.connectionId, initialSession);
+  }
+
+  let selectedSessionId: string | null = initialSession?.connectionId ?? null;
+
+  return {
+    sessions,
+    getSelectedSessionId: () => selectedSessionId,
+    setSelectedSessionId: (value: string | null) => {
+      selectedSessionId = value;
+    },
+  };
+}
+
+describe('applySessionEvent', () => {
+  test('parseSessionEventPayload returns null for invalid json', () => {
+    expect(parseSessionEventPayload('{')).toBeNull();
+  });
+
+  test('session:list clears existing sessions and repopulates from the snapshot', () => {
+    const existingSession = createSession('existing');
+    const state = createState(existingSession);
+    const replacementA = createSession('conn-a');
+    const replacementB = createSession('conn-b');
+
+    applySessionEvent('session:list', { sessions: [replacementA, replacementB] }, state);
+
+    expect([...state.sessions.keys()]).toEqual(['conn-a', 'conn-b']);
+    expect(state.sessions.get('existing')).toBeUndefined();
+    expect(state.sessions.get('conn-a')).toBe(replacementA);
+    expect(state.sessions.get('conn-b')).toBe(replacementB);
+  });
+
+  test('session:new adds a session to the store', () => {
+    const state = createState();
+    const session = createSession('conn-new');
+
+    applySessionEvent('session:new', { session }, state);
+
+    expect(state.sessions.get(session.connectionId)).toBe(session);
+  });
+
+  test('session:message appends without replacing the existing messages array', () => {
+    const session = createSession();
+    const state = createState(session);
+    const previousMessages = session.messages;
+
+    applySessionEvent(
+      'session:message',
+      {
+        connectionId: session.connectionId,
+        message: createMessage({
+          id: 'conn-1-1',
+          seq: 1,
+          timestamp: '2026-03-17T10:00:01.000Z',
+          category: 'llmOutput',
+          bodyType: 'text',
+          body: { type: 'text', text: 'next' },
+          rawType: 'llm_response',
+        }),
+      },
+      state
+    );
+
+    const updated = state.sessions.get(session.connectionId);
+    expect(updated).toBeDefined();
+    expect(updated!.messages).toBe(previousMessages);
+    expect(updated!.messages).toHaveLength(2);
+    expect(updated!.messages[1]).toMatchObject({
+      id: 'conn-1-1',
+      seq: 1,
+      rawType: 'llm_response',
+    });
+  });
+
+  test('session:message trims to MAX_CLIENT_MESSAGES entries', () => {
+    const session = createSession();
+    session.messages = [];
+    const state = createState(session);
+
+    for (let seq = 1; seq <= MAX_CLIENT_MESSAGES + 5; seq += 1) {
+      applySessionEvent(
+        'session:message',
+        {
+          connectionId: session.connectionId,
+          message: createMessage({
+            id: `msg-${seq}`,
+            seq,
+            body: { type: 'text', text: `message-${seq}` },
+          }),
+        },
+        state
+      );
+    }
+
+    const updated = state.sessions.get(session.connectionId);
+    expect(updated).toBeDefined();
+    expect(updated!.messages).toHaveLength(MAX_CLIENT_MESSAGES);
+    expect(updated!.messages[0]).toMatchObject({ id: 'msg-6', seq: 6 });
+    expect(updated!.messages.at(-1)).toMatchObject({
+      id: `msg-${MAX_CLIENT_MESSAGES + 5}`,
+      seq: MAX_CLIENT_MESSAGES + 5,
+    });
+  });
+
+  test('metadata-only session updates preserve local messages', () => {
+    const session = createSession();
+    const state = createState(session);
+
+    applySessionEvent(
+      'session:update',
+      {
+        session: {
+          ...session,
+          status: 'offline',
+          activePrompt: null,
+          messages: [],
+          disconnectedAt: '2026-03-17T10:05:00.000Z',
+        },
+      },
+      state
+    );
+
+    const updated = state.sessions.get(session.connectionId);
+    expect(updated).toBeDefined();
+    expect(updated!.status).toBe('offline');
+    expect(updated!.messages).toHaveLength(1);
+    expect(updated!.messages[0]).toMatchObject({
+      id: `${session.connectionId}-0`,
+    });
+  });
+
+  test('session:update replaces messages when the server sends a non-empty message array', () => {
+    const session = createSession();
+    const state = createState(session);
+    const replacementMessage = createMessage({
+      id: 'replacement',
+      seq: 9,
+      category: 'progress',
+      rawType: 'workflow_progress',
+    });
+
+    applySessionEvent(
+      'session:update',
+      {
+        session: {
+          ...session,
+          messages: [replacementMessage],
+        },
+      },
+      state
+    );
+
+    const updated = state.sessions.get(session.connectionId);
+    expect(updated).toBeDefined();
+    expect(updated!.messages).toEqual([replacementMessage]);
+  });
+
+  test('session:disconnect preserves local messages for metadata-only updates', () => {
+    const session = createSession();
+    const state = createState(session);
+
+    applySessionEvent(
+      'session:disconnect',
+      {
+        session: {
+          ...session,
+          status: 'offline',
+          messages: [],
+          disconnectedAt: '2026-03-17T10:05:00.000Z',
+        },
+      },
+      state
+    );
+
+    const updated = state.sessions.get(session.connectionId);
+    expect(updated).toBeDefined();
+    expect(updated!.status).toBe('offline');
+    expect(updated!.messages).toHaveLength(1);
+    expect(updated!.messages[0]?.id).toBe(`${session.connectionId}-0`);
+  });
+
+  test('session:prompt sets the active prompt for the session', () => {
+    const session = createSession();
+    const state = createState(session);
+    const prompt = createPrompt({
+      requestId: 'prompt-42',
+      promptType: 'input',
+      promptConfig: {
+        message: 'Enter a value',
+        default: 'abc',
+      },
+    });
+
+    applySessionEvent('session:prompt', { connectionId: session.connectionId, prompt }, state);
+
+    const updated = state.sessions.get(session.connectionId);
+    expect(updated?.activePrompt).toEqual(prompt);
+  });
+
+  test('session:prompt-cleared only clears the matching prompt', () => {
+    const session = createSession();
+    session.activePrompt = createPrompt({ requestId: 'prompt-keep' });
+    const state = createState(session);
+
+    applySessionEvent(
+      'session:prompt-cleared',
+      { connectionId: session.connectionId, requestId: 'different-request' },
+      state
+    );
+
+    expect(state.sessions.get(session.connectionId)?.activePrompt?.requestId).toBe('prompt-keep');
+
+    applySessionEvent(
+      'session:prompt-cleared',
+      { connectionId: session.connectionId, requestId: 'prompt-keep' },
+      state
+    );
+
+    expect(state.sessions.get(session.connectionId)?.activePrompt).toBeNull();
+  });
+
+  test('session:dismissed deletes the session and clears the selection', () => {
+    const session = createSession();
+    const state = createState(session);
+
+    applySessionEvent('session:dismissed', { connectionId: session.connectionId }, state);
+
+    expect(state.sessions.has(session.connectionId)).toBe(false);
+    expect(state.getSelectedSessionId()).toBeNull();
+  });
+});

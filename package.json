@@ -8,8 +8,8 @@
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.build.json",
-    "check-web": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "check-web:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "check-web": "svelte-kit sync && bun run --bun svelte-check --tsconfig ./tsconfig.check-web.json",
+    "check-web:watch": "svelte-kit sync && bun run --bun svelte-check --tsconfig ./tsconfig.check-web.json --watch",
     "dev": "bun --bun vite dev",
     "build": "./build.ts",
     "build-web": "bun --bun vite build",
@@ -19,7 +19,9 @@
     "dev-install": "bun run build && pnpm add -g file://$(pwd)",
     "format": "prettier --write --log-level warn .",
     "update-schemas": "scripts/update-json-schemas.ts",
-    "test:web": "bun --bun vitest run",
+    "test": "bun run test:cli && bun run test:web",
+    "test-web": "bun --bun vitest run",
+    "test-cli": "bun test",
     "tim": "src/tim/tim.ts"
   },
   "devDependencies": {

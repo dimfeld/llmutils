@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import WorkspaceRow from '$lib/components/WorkspaceRow.svelte';
   import ActivePlanRow from '$lib/components/ActivePlanRow.svelte';
   import { projectDisplayName } from '$lib/stores/project.svelte.js';
@@ -23,7 +23,7 @@
     if (!showProject) return {};
     const map: Record<number, string> = {};
     for (const project of data.projects) {
-      map[project.id] = projectDisplayName(project.last_git_root);
+      map[project.id] = projectDisplayName(project.repository_id, data.currentUsername);
     }
     return map;
   });
@@ -32,8 +32,8 @@
     showAllWorkspaces ? data.workspaces : data.workspaces.filter((w) => w.isRecentlyActive)
   );
 
-  let selectedPlanUuid = $derived($page.params.planId ?? null);
-  let projectId = $derived($page.params.projectId);
+  let selectedPlanUuid = $derived(page.params.planId ?? null);
+  let projectId = $derived(page.params.projectId);
 
   function workspacePlanHref(wsProjectId: number, planId: string | null): string | null {
     if (!planId) return null;

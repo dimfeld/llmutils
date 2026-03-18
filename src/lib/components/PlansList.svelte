@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import type { EnrichedPlan, PlanDisplayStatus } from '$lib/server/db_queries.js';
   import FilterChips from './FilterChips.svelte';
   import PlanRow from './PlanRow.svelte';
@@ -14,7 +14,7 @@
     projectNames?: Record<number, string>;
   } = $props();
 
-  let projectId = $derived($page.params.projectId);
+  let projectId = $derived(page.params.projectId);
 
   let searchQuery = $state('');
   let sortOption = $state<'updated' | 'planId' | 'priority'>('updated');

@@ -9,7 +9,7 @@
   let projectName = $derived.by(() => {
     if (!showProject) return undefined;
     const project = data.projects.find((p) => p.id === data.planDetail.projectId);
-    return project ? projectDisplayName(project.last_git_root) : undefined;
+    return project ? projectDisplayName(project.repository_id, data.currentUsername) : undefined;
   });
 </script>
 

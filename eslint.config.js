@@ -43,6 +43,9 @@ export function createConfig() {
           extraFileExtensions: ['.svelte'],
         },
       },
+      rules: {
+        'svelte/no-navigation-without-resolve': 'off',
+      },
     },
     ...ts.configs.recommendedTypeChecked,
     {
@@ -57,7 +60,6 @@ export function createConfig() {
         '@typescript-eslint/no-unsafe-member-access': pedanticWarn,
         '@typescript-eslint/no-unsafe-assignment': pedanticWarn,
         '@typescript-eslint/no-unsafe-argument': pedanticWarn,
-        '@typescript-eslint/no-unsafe-return': pedanticWarn,
         '@typescript-eslint/no-explicit-any': pedanticWarn,
         '@typescript-eslint/require-await': pedanticWarn,
         // Doesn't work properly with zod's z.infer

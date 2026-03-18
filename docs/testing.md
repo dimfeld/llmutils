@@ -62,3 +62,8 @@ Or for a single mock defined across the entire test file, use `afterAll(() => mo
 - Close the database in `afterEach` with `db.close(false)` — the `false` argument avoids throwing on pending transactions
 - For tests that exercise code calling the singleton `getDatabase()`, use `closeDatabaseForTesting()` in cleanup
 - Tests using module mocking that touch DB-dependent code paths need `closeDatabaseForTesting()` and `XDG_CONFIG_HOME` isolation even when the test itself doesn't directly use the DB — transitive calls (e.g., `loadSharedPermissions` via an executor) can initialize the singleton and leak state to subsequent test files
+
+### Server/Network Testing
+
+- **Bun.serve() port 0 for OS-assigned ports**: Use port 0 in tests to let the OS assign a free port. This avoids TOCTOU port allocation flakiness (where a port-availability check passes but another process grabs it before `serve()` binds). Read the actual port from the server handle after it starts.
+- **Testing shutdown/signal handlers**: When testing code that calls `process.exit()`, spy on and mock `process.exit` to prevent the test process from actually exiting. Restore the original in `afterEach`.

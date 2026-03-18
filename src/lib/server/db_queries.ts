@@ -372,26 +372,30 @@ export function getProjectsWithMetadata(db: Database): ProjectWithMetadata[] {
     }
   }
 
-  return projects.map((project) => {
+  return projects.flatMap((project) => {
     const counts = countsByProject.get(project.id);
-    const statusCounts = counts
-      ? {
-          pending: counts.pending,
-          in_progress: counts.in_progress,
-          needs_review: counts.needs_review,
-          done: counts.done,
-          cancelled: counts.cancelled,
-          deferred: counts.deferred,
-        }
-      : createEmptyStatusCounts();
-    const planCount = counts?.total ?? 0;
+    if (!counts) {
+      return [];
+    }
 
-    return {
-      ...project,
-      planCount,
-      activePlanCount: statusCounts.pending + statusCounts.in_progress + statusCounts.needs_review,
-      statusCounts,
+    const statusCounts = {
+      pending: counts.pending,
+      in_progress: counts.in_progress,
+      needs_review: counts.needs_review,
+      done: counts.done,
+      cancelled: counts.cancelled,
+      deferred: counts.deferred,
     };
+
+    return [
+      {
+        ...project,
+        planCount: counts.total,
+        activePlanCount:
+          statusCounts.pending + statusCounts.in_progress + statusCounts.needs_review,
+        statusCounts,
+      },
+    ];
   });
 }
 

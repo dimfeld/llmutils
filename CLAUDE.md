@@ -18,6 +18,7 @@ bun install
 
 # Type checking
 bun run check
+bun run check-web
 
 # Linting
 bun run lint
@@ -25,12 +26,10 @@ bun run lint
 # Code formatting
 bun run format
 
-# Install globally for development
-bun run dev-install
-
 # Run tests
-bun test
-bun test path/to/specific/test.ts
+bun run test
+bun run test-cli path/to/specific/test.ts
+bun run test-web src/lib/server/session_manager.test.ts
 ```
 
 ## Repository Structure
@@ -92,8 +91,10 @@ The codebase is organized into several main modules with improved modularity and
 - Executor system in `executors/` for different LLM integration approaches. The two main executors are claude_code and codex_cli. The others are not used much anymore.
 - **Automatic Parent-Child Relationship Maintenance**: All commands (`add`, `set`, `validate`) work together to ensure bidirectional consistency in the dependency graph, automatically updating parent plans when child relationships are created, modified, or removed
 
-3. **Web interface** (`src/lib/`, `src/routes/`): SvelteKit-based plans browser (see `docs/web-interface.md` for conventions and gotchas)
+3. **Web interface** (`src/lib/`, `src/routes/`): SvelteKit-based plans browser and real-time sessions monitor (see `docs/web-interface.md` for conventions and gotchas)
    - Server initialization: `src/lib/server/init.ts` provides lazy-init singleton via `getServerContext()` (async) returning `{ config, gitRoot, tasksDir, db, projectId }`. Syncs plan files to DB on first access.
+   - Sessions infrastructure: WebSocket server (`src/lib/server/ws_server.ts`) on port 8123 accepts agent connections; session manager (`src/lib/server/session_manager.ts`) tracks sessions and categorizes messages; session context singleton (`src/lib/server/session_context.ts`) survives HMR; started from `src/hooks.server.ts` init function
+   - SSE streaming: `src/routes/api/sessions/events/+server.ts` streams session events to browser; action routes under `src/routes/api/sessions/[connectionId]/` for respond, input, dismiss; shared helpers in `src/lib/server/session_routes.ts`
    - DB query helpers: `src/lib/server/db_queries.ts` provides web-specific enriched queries (`getProjectsWithMetadata`, `getPlansForProject`, `getPlanDetail`, `getWorkspacesForProject`) with computed display statuses (`blocked`, `recently_done`) derived from dependency resolution
    - Server-only constraint: All DB imports must be in `$lib/server/` or `+page.server.ts` files — bun:sqlite cannot be imported client-side
    - Uses `$tim` and `$common` aliases (configured in `svelte.config.js`) to import from the CLI codebase
@@ -105,7 +106,8 @@ The codebase is organized into several main modules with improved modularity and
    - Home page (`/`) redirects to `/projects/{lastProjectId}/sessions` via server-side redirect, falling back to `/projects/all/sessions`
    - Plan detail route: `/projects/[projectId]/plans/[planId]` sub-route loads plan detail server-side; redirects to owning project if accessed under wrong projectId
    - Active Work route: `/projects/[projectId]/active` with nested `[planId]` sub-route; split-pane layout with workspaces + active plans list on left, plan detail on right (see `docs/web-interface.md` for details)
-   - Components in `src/lib/components/`: `TabNav.svelte`, `ProjectSidebar.svelte`, `PlansList.svelte`, `PlanRow.svelte`, `PlanDetail.svelte`, `FilterChips.svelte`, `StatusBadge.svelte`, `PriorityBadge.svelte`, `WorkspaceBadge.svelte`, `WorkspaceRow.svelte`, `ActivePlanRow.svelte`
+   - Components in `src/lib/components/`: `TabNav.svelte`, `ProjectSidebar.svelte`, `PlansList.svelte`, `PlanRow.svelte`, `PlanDetail.svelte`, `FilterChips.svelte`, `StatusBadge.svelte`, `PriorityBadge.svelte`, `WorkspaceBadge.svelte`, `WorkspaceRow.svelte`, `ActivePlanRow.svelte`, `SessionList.svelte`, `SessionRow.svelte`, `SessionDetail.svelte`, `SessionMessage.svelte`, `PromptRenderer.svelte`, `MessageInput.svelte`
+   - Session store: `src/lib/stores/session_state.svelte.ts` manages SSE connection and reactive session state; SSE event application logic extracted to `src/lib/stores/session_state_events.ts` for testability; `src/lib/utils/session_colors.ts` defines category color mapping
    - Plans browser helpers: `src/lib/server/plans_browser.ts` abstraction layer between route handlers and `db_queries.ts`; includes `getActiveWorkData()` for the Active Work tab
    - Shared utilities: `src/lib/utils/time.ts` provides `formatRelativeTime()` for human-readable relative timestamps
 
@@ -183,3 +185,7 @@ See docs/testing.md for testing strategy
 - Don't use `await import('module')` for regular imports. Just put a normal import at the top of the file
 
 - `Promise.resolve(fn()).catch(...)` does NOT catch synchronous throws from `fn()` — the throw occurs before `Promise.resolve` wraps the result. Use Promise.try(() => fn()) for functions that may throw synchronously.
+
+- TypeScript exhaustive switch statements (with `never` in the default case) only error at compile time. At runtime, unknown values fall through and return `undefined` silently. If runtime safety matters, add a `default` case that throws or returns a fallback — a try/catch around the calling code won't help.
+
+- Registering custom `SIGTERM`/`SIGINT` handlers suppresses Node's default termination behavior. You must call `process.exit()` explicitly in the handler or the process will hang.

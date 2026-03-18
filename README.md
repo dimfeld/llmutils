@@ -17,7 +17,7 @@ Tim includes a SvelteKit-based web interface for browsing and managing plans. Th
 
 The interface is organized around projects, with three tabs per project:
 
-- **Sessions** — (coming soon)
+- **Sessions** — real-time monitoring of tim agent processes with live message transcripts, prompt interaction (confirm/input/select/checkbox), and free-form user input. Connects to agents via WebSocket server on port 8123 and streams updates to the browser via SSE.
 - **Active Work** — dashboard of current work per project showing workspaces (with Primary/Locked/Available status badges) and active plans (in_progress + blocked). Workspaces are filtered to "recently active" by default (locked, primary, or updated within 48 hours) with a toggle to show all. Clicking a plan shows full detail in the right pane.
 - **Plans** — browse, filter, search, and inspect plans with two-column layout (list + detail), status/priority badges, collapsible status groups, and clickable dependency navigation
 

@@ -1,16 +1,21 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import type { ProjectWithMetadata } from '$lib/server/db_queries.js';
   import { projectDisplayName, projectUrl } from '$lib/stores/project.svelte.js';
 
   let {
     projects,
     selectedProjectId,
-  }: { projects: ProjectWithMetadata[]; selectedProjectId: string } = $props();
+    currentUsername,
+  }: {
+    projects: ProjectWithMetadata[];
+    selectedProjectId: string;
+    currentUsername: string;
+  } = $props();
 
   let currentTab = $derived.by(() => {
-    const parts = $page.url.pathname.split('/');
+    const parts = page.url.pathname.split('/');
     // URL: /projects/{id}/{tab}
     return parts[3] ?? 'plans';
   });
@@ -35,7 +40,7 @@
           ? 'bg-blue-100 font-medium text-blue-900'
           : 'text-gray-700 hover:bg-gray-100'}"
       >
-        <div class="truncate">{projectDisplayName(project.last_git_root)}</div>
+        <div class="truncate">{projectDisplayName(project.repository_id, currentUsername)}</div>
         <div class="mt-0.5 text-xs text-gray-500">
           {project.activePlanCount} active / {project.planCount} total
         </div>

@@ -85,6 +85,18 @@ describe('lib/server/db_queries', () => {
     });
   });
 
+  test('getProjectsWithMetadata excludes projects with zero total plans', () => {
+    const emptyProjectId = getOrCreateProject(db, 'repo-web-empty', {
+      remoteUrl: 'https://example.com/repo-web-empty.git',
+      lastGitRoot: '/tmp/repo-web-empty',
+    }).id;
+
+    const projects = getProjectsWithMetadata(db);
+
+    expect(projects.map((project) => project.id)).toEqual([projectId, otherProjectId]);
+    expect(projects.find((project) => project.id === emptyProjectId)).toBeUndefined();
+  });
+
   test('getPlansForProject computes blocked display status for unresolved dependencies', () => {
     const plans = getPlansForProject(db, projectId);
     const blockedPlan = plans.find((plan) => plan.uuid === 'plan-blocked');

@@ -19,8 +19,19 @@ export function projectUrl(projectId: number | string, tab: string): string {
   return `/projects/${projectId}/${tab}`;
 }
 
-export function projectDisplayName(lastGitRoot: string | null): string {
-  if (!lastGitRoot) return 'Unknown';
-  const parts = lastGitRoot.replace(/\/+$/, '').split('/');
-  return parts.slice(-2).join('/');
+export function projectDisplayName(
+  repositoryId: string | null,
+  currentUsername?: string | null
+): string {
+  if (!repositoryId) return 'Unknown';
+
+  const parts = repositoryId.split('__').filter(Boolean);
+  if (parts.length === 0) return 'Unknown';
+
+  const nameParts = parts.slice(-2);
+  if (nameParts.length === 2 && currentUsername && nameParts[0] === currentUsername) {
+    return nameParts[1];
+  }
+
+  return nameParts.join('/');
 }

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import PlansList from '$lib/components/PlansList.svelte';
   import { projectDisplayName } from '$lib/stores/project.svelte.js';
   import type { Snippet } from 'svelte';
@@ -18,12 +18,12 @@
     if (!showProject) return {};
     const map: Record<number, string> = {};
     for (const project of data.projects) {
-      map[project.id] = projectDisplayName(project.last_git_root);
+      map[project.id] = projectDisplayName(project.repository_id, data.currentUsername);
     }
     return map;
   });
 
-  let selectedPlanUuid = $derived($page.params.planId ?? null);
+  let selectedPlanUuid = $derived(page.params.planId ?? null);
 </script>
 
 <div class="flex h-full">

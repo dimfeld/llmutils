@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { resolve } from '$app/paths';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { projectUrl } from '$lib/stores/project.svelte.js';
 
   let { projectId }: { projectId: string } = $props();
@@ -11,7 +10,7 @@
     { label: 'Plans', slug: 'plans' },
   ] as const;
 
-  let pathname = $derived($page.url.pathname);
+  let pathname = $derived(page.url.pathname);
 
   function isActive(slug: string): boolean {
     const parts = pathname.split('/');
@@ -23,7 +22,7 @@
   {#each tabs as tab (tab.slug)}
     {@const active = isActive(tab.slug)}
     <a
-      href={resolve(projectUrl(projectId, tab.slug))}
+      href={projectUrl(projectId, tab.slug)}
       class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors {active
         ? 'bg-white/20 text-white'
         : 'text-gray-300 hover:bg-white/10 hover:text-white'}"

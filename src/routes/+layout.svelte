@@ -1,15 +1,33 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
+  import { onMount } from 'svelte';
   import './layout.css';
   import favicon from '$lib/assets/favicon.svg';
   import TabNav from '$lib/components/TabNav.svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import type { Snippet } from 'svelte';
+  import { setSessionManager } from '$lib/stores/session_state.svelte.js';
+  import type { LayoutData } from './$types';
 
-  let { data, children }: { data: { lastProjectId: string }; children: Snippet } = $props();
+  let { data, children }: { data: LayoutData; children: Snippet } = $props();
+  const sessionManager = setSessionManager();
 
   // Use the route param as source of truth; fall back to cookie-based lastProjectId
-  let projectId = $derived($page.params.projectId ?? data.lastProjectId);
+  let projectId = $derived(page.params.projectId ?? data.lastProjectId);
+
+  // Keep session store in sync with project context
+  $effect(() => {
+    sessionManager.setCurrentProjectId(projectId);
+  });
+
+  $effect(() => {
+    sessionManager.setProjects(data.projects, data.currentUsername);
+  });
+
+  onMount(() => {
+    sessionManager.connect();
+    return () => sessionManager.disconnect();
+  });
 </script>
 
 <svelte:head><link rel="icon" href={favicon} /></svelte:head>

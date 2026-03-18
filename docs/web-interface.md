@@ -13,6 +13,10 @@
 - `$derived(() => { ... })` wraps the **function object itself**, not the return value. For multi-statement derivations, use `$derived.by(() => { ... })`.
 - SvelteKit **reuses page components** across param-only navigations — local `$state` persists across route changes. Use `afterNavigate` to reset `$state` when needed, though best is to use a "writable derived" when possible.
 
+### Routing Gotchas
+
+- SvelteKit's `resolve()` from `$app/paths` enforces typed route parameters — it won't accept dynamic/computed path segments. Use `base` from `$app/paths` + template literals for dynamic paths (e.g., `` `${base}/api/sessions/${encodeURIComponent(id)}/respond` ``).
+
 ## Architecture
 
 - Route structure: `/projects/[projectId]/{tab}` where `projectId` is a numeric ID or `all`
@@ -49,6 +53,93 @@ src/routes/projects/[projectId]/active/
 - `WorkspaceRow.svelte` — card-style row showing workspace name/path, branch chip, assigned plan link, status badge, lock command info, optional project name
 - `ActivePlanRow.svelte` — plan row with plan #, title, goal (truncated), status/priority badges, and relative timestamp
 - `src/lib/utils/time.ts` — `formatRelativeTime()` helper for human-readable relative timestamps
+
+## Sessions Tab
+
+The Sessions tab (`/projects/[projectId]/sessions`) provides real-time monitoring of tim agent processes via a WebSocket + SSE architecture.
+
+### Server Infrastructure
+
+The sessions system runs a separate Bun.serve() WebSocket server alongside the SvelteKit dev server:
+
+- **WebSocket server** (`src/lib/server/ws_server.ts`): Listens on port 8123 (configurable via `TIM_WS_PORT` env var or `headless.url` config). Accepts agent WebSocket connections at `/tim-agent` and HTTP POST notifications at `/messages`.
+- **Session manager** (`src/lib/server/session_manager.ts`): Central state management singleton. Tracks active/offline/notification sessions, categorizes all 29 StructuredMessage types into display categories (lifecycle, llmOutput, toolUse, fileChange, command, progress, error, log, userInput), handles replay buffering, prompt tracking, and project resolution from DB.
+- **Session context** (`src/lib/server/session_context.ts`): HMR-safe singleton (uses `Symbol.for`) exposing `getSessionManager()` and `getWsConnections()` for use by SSE and API routes.
+- **Server init** (`src/hooks.server.ts`): Starts the WebSocket server on SvelteKit boot via the `init` export.
+
+### Message Processing
+
+- Incoming agent messages follow the headless protocol: `session_info` → `replay_start` → historical messages → `replay_end` → live messages
+- Messages during replay (`replay_start`..`replay_end`) are added to the session's message list but NOT emitted as SSE events
+- **Replay prompt suppression**: Prompts received during replay are deferred to internal state (`deferredPromptEvent` in `SessionInternals`) rather than stored in `session.activePrompt`. On `replay_end`, any deferred prompt is promoted to the active prompt and emitted. `getSessionSnapshot()` and `cloneSession()` strip `activePrompt` while `isReplaying` is true. `sendPromptResponse()` rejects during replay as a safety guard.
+- Each message is categorized into a `DisplayMessage` with category-based color coding, body type (text/monospaced/todoList/fileChanges/keyValuePairs), and the original structured type
+- Debug tunnel messages are suppressed; `token_usage` and `llm_status` render as compact single-line summaries
+- Non-structured TunnelMessages (log/error/warn/stdout/stderr) have args joined by spaces
+
+### Message Limits
+
+- **WS sessions**: Capped at `MAX_SESSION_MESSAGES` (5000). When exceeded, oldest messages are trimmed via `trimSessionMessages()`.
+- **Notification sessions**: Capped at 200 messages.
+- **SSE snapshots**: `getSessionSnapshot()` caps messages per session at `MAX_SNAPSHOT_MESSAGES` (500) to limit CPU/memory on new SSE client connections. Full message history is still available via incremental SSE events.
+- **Notification message IDs**: Use a monotonic per-session counter (`nextNotificationId` in `SessionInternals`) instead of `messages.length + Date.now()`, preventing duplicate IDs after the 200-message cap trims old messages.
+
+### Defensive Message Handling
+
+- `summarizeStructuredMessage()` has a default case returning a generic fallback for unknown structured message types, preventing crashes from unexpected agent protocol additions.
+- `handleStructuredSideEffects()` is guarded against missing nested message data.
+- WebSocket message dispatch in `ws_server.ts` wraps `sessionManager.handleWebSocketMessage()` in try/catch so malformed client frames cannot crash message processing for that socket.
+
+### Notification Sessions
+
+HTTP POST to `/messages` on port 8123 creates lightweight "notification" sessions (capped at 200 messages). When a WebSocket session later connects with the same group key (gitRemote + workspacePath), the notification session is reconciled into the full session.
+
+### SSE Endpoint & API Routes
+
+Browser clients receive real-time updates via SSE and interact with sessions through REST endpoints:
+
+- **SSE endpoint** (`src/routes/api/sessions/events/+server.ts`): `GET` returns a `ReadableStream` with SSE headers. On connect, sends `session:list` snapshot then streams events (`session:new`, `session:update`, `session:disconnect`, `session:message`, `session:prompt`, `session:prompt-cleared`, `session:dismissed`). Uses subscribe-before-snapshot pattern with buffering to avoid lost-event race conditions.
+
+#### SSE Implementation Gotchas
+
+- **ReadableStream cancel() must not call controller.close()**: When an SSE client disconnects, the `cancel()` callback fires, but the stream is already being torn down by the consumer. Calling `controller.close()` inside `cancel()` throws. Only use `cancel()` for cleanup (unsubscribing listeners, etc.).
+- **Subscribe before snapshot**: If you take the snapshot first and subscribe second, events emitted between those two calls are lost. Subscribe first, buffer events during snapshot delivery, then flush and stream normally.
+- **EventEmitter listeners must not throw**: An exception thrown from an EventEmitter listener propagates through `emit()` and aborts delivery to remaining listeners. Always wrap SSE `controller.enqueue()` calls (and any other potentially-failing operations) in try/catch inside listener callbacks.
+- **Prompt response** (`src/routes/api/sessions/[connectionId]/respond/+server.ts`): `POST` with `{ requestId, value }`. Validates `requestId` against the session's active prompt and requires `value` field. Returns `'sent'`, `'no_session'`, or `'no_prompt'`.
+- **User input** (`src/routes/api/sessions/[connectionId]/input/+server.ts`): `POST` with `{ content }`. Sends free-form text to interactive sessions.
+- **Dismiss** (`src/routes/api/sessions/[connectionId]/dismiss/+server.ts`): `POST` to remove offline/notification sessions.
+- **Shared helpers** (`src/lib/server/session_routes.ts`): `parseJsonBody()`, `badRequest()`, `notFound()`, `success()` used by all action routes.
+
+### Key Design Decisions
+
+- Each WebSocket connection creates a new session (no reconnection merging)
+- Port 8123 conflicts with macOS tim-gui — only one should run at a time
+- Vite HMR may restart the WS server during dev; agents auto-reconnect within 5 seconds
+- SSE subscribes before taking snapshot to avoid lost-event race window, with event buffering during snapshot delivery
+- `sendPromptResponse` validates requestId against activePrompt and clears prompt on success — prevents duplicate responses from multiple browser tabs
+- SSE enqueue calls are wrapped in try/catch for resilience against closed streams
+- **Shutdown**: `hooks.server.ts` registers SIGTERM/SIGINT handlers that call `serverHandle.stop()` then `process.exit(0)` for clean production shutdown. HMR-safe cleanup uses `Symbol.for` singleton pattern. Custom signal handlers suppress default Node.js termination, so explicit `process.exit()` is required.
+
+### Client-Side Session Store
+
+`src/lib/stores/session_state.svelte.ts` is a Svelte 5 runes-based reactive store managing all session state:
+
+- **SSE connection**: Established from root `+layout.svelte` so it stays open across all tab switches. Auto-reconnects on disconnect.
+- **SSE event handling**: Event application logic is extracted into `src/lib/stores/session_state_events.ts` as pure functions for testability without Svelte runtime. Uses `push()` instead of spread for O(1) message append.
+- **Client-side message cap**: `MAX_CLIENT_MESSAGES` (5000) mirrors the server-side cap to prevent unbounded browser memory growth. Messages are trimmed after push.
+- **State**: `sessions` (SvelteMap for reactivity), `selectedSessionId`, `connectionStatus` (connected/reconnecting/disconnected)
+- **Derived**: `sessionGroups` — sessions grouped by `groupKey`, with the current project's group sorted to top. Group labels resolved from project display name (when `projectId` matches a known project) or workspace path (last 2 components).
+- **Actions**: `sendPromptResponse(connectionId, requestId, value)`, `sendUserInput(connectionId, content)`, `dismissSession(connectionId)` — all POST to action API routes with URL-encoded connectionIds (notification IDs can contain `/`).
+- **SvelteMap reactivity**: SvelteMap only tracks `.set()`/`.delete()`/`.clear()` — after mutating nested properties on stored objects, the entry must be re-set to trigger reactivity.
+
+### UI Components
+
+- **`SessionList.svelte`** — Grouped session sidebar (left pane, w-96). Groups are collapsible by project. Shows all sessions regardless of selected project.
+- **`SessionRow.svelte`** — Individual session entry with status indicator dot (green=active, gray=offline, blue=notification), command name, plan title/ID, dismiss button for offline/notification sessions. Uses `<div>` not `<button>` to avoid nested interactive elements.
+- **`SessionDetail.svelte`** — Message transcript view with session header (command, plan, workspace, status), scrollable message list, fixed-position prompt area above messages, conditional message input bar. Uses `{#key connectionId}` for remount on session switch. Auto-scroll is scroll-position-based: active when at bottom, disabled when user scrolls up, resumes on scroll to bottom.
+- **`SessionMessage.svelte`** — Renders messages by body type: text (colored by category), monospaced (preformatted code blocks), todoList (items with status icons), fileChanges (paths with +/~/- indicators), keyValuePairs (structured metadata table). Long content truncated with expandable reveal.
+- **`PromptRenderer.svelte`** — Renders by prompt type: confirm (Yes/No buttons with default highlighted), input (text field with submit), select (radio group), checkbox (checkbox group). Uses `{#key requestId}` for state reset. Shows header/question fields from promptConfig when present. Falls back to raw JSON display for unsupported types.
+- **`MessageInput.svelte`** — Text input with Enter to send, Shift+Enter for newlines. Hidden (not disabled) when session is offline or non-interactive.
+- **Category colors** (`src/lib/utils/session_colors.ts`): lifecycle=green, llmOutput=green, toolUse=cyan, fileChange=cyan, command=cyan, progress=blue, error=red, log=gray, userInput=orange.
 
 ### Key Behaviors
 

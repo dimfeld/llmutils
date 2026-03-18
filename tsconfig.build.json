@@ -4,8 +4,6 @@
     "build.ts",
     "src/**/*.ts",
     "src/**/*.js",
-    "test/**/*.ts",
-    "test/**/*.js",
     "scripts/**/*.ts",
     "vite.config.ts",
     "test-preload.ts",
