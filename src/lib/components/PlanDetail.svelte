@@ -78,7 +78,7 @@
               {/if}
             </span>
             <div class="min-w-0">
-              <span class={task.done ? 'text-gray-500 line-through' : 'text-gray-900'}>
+              <span class={task.done ? 'text-gray-500' : 'text-gray-900'}>
                 {task.title}
               </span>
               {#if task.description}
