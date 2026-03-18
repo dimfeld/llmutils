@@ -12,7 +12,7 @@
   let projectId = $derived(page.params.projectId);
 </script>
 
-<div class="flex h-full">
+<div class="flex h-full min-h-0">
   <!-- Left pane: session list -->
   <div class="w-96 shrink-0 overflow-y-auto border-r border-gray-200">
     <div class="flex items-center justify-between border-b border-gray-100 px-3 py-2">
@@ -32,7 +32,7 @@
   </div>
 
   <!-- Right pane: session detail or empty state -->
-  <div class="flex flex-1 overflow-hidden">
+  <div class="flex flex-1 min-h-0 overflow-hidden">
     {@render children()}
   </div>
 </div>

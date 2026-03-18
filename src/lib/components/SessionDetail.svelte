@@ -67,7 +67,7 @@
   }
 </script>
 
-<div class="flex h-full w-full flex-col">
+<div class="flex h-full w-full min-h-0 flex-col overflow-hidden">
   <!-- Session header -->
   <div class="shrink-0 border-b border-gray-200 px-4 py-3">
     <div class="flex items-center gap-3">
@@ -114,7 +114,7 @@
 
   <!-- Scrollable message list -->
   <div
-    class="min-h-0 flex-1 overflow-y-auto bg-gray-900 p-4 font-mono text-sm"
+    class="h-0 min-h-0 flex-1 overflow-y-auto bg-gray-900 p-4 font-mono text-sm"
     bind:this={scrollContainer}
     onscroll={handleScroll}
   >

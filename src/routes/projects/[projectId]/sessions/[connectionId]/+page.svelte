@@ -23,7 +23,9 @@
 
 {#if session}
   {#key session.connectionId}
-    <SessionDetail {session} />
+    <div class="flex min-h-0 h-full w-full">
+      <SessionDetail {session} />
+    </div>
   {/key}
 {:else}
   <div class="flex flex-1 items-center justify-center">

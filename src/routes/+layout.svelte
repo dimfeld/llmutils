@@ -32,13 +32,13 @@
 
 <svelte:head><link rel="icon" href={favicon} /></svelte:head>
 
-<div class="flex min-h-screen flex-col bg-gray-50">
+<div class="flex h-screen min-h-screen flex-col bg-gray-50">
   <header class="flex items-center justify-between bg-gray-800 px-4 py-2">
     <a href={resolve('/')} class="text-lg font-semibold text-white">tim</a>
     <TabNav {projectId} />
   </header>
 
-  <main class="flex flex-1 overflow-hidden">
+  <main class="flex min-h-0 flex-1 overflow-hidden">
     {@render children()}
   </main>
 </div>

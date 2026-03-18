@@ -29,9 +29,10 @@
 <div class="border-t border-gray-700 bg-gray-800 px-4 py-3">
   <div class="flex gap-2">
     <textarea
-      class="min-w-0 flex-1 resize-none rounded border border-gray-600 bg-gray-900 px-3 py-1.5 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+      class="min-w-0 flex-1 resize-none overflow-hidden rounded border border-gray-600 bg-gray-900 px-3 py-1.5 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
       rows="1"
       placeholder="Send input to session..."
+      style="field-sizing: content;"
       bind:value={content}
       disabled={sending}
       onkeydown={handleKeydown}
