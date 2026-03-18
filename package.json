@@ -19,7 +19,7 @@
     "dev-install": "bun run build && pnpm add -g file://$(pwd)",
     "format": "prettier --write --log-level warn .",
     "update-schemas": "scripts/update-json-schemas.ts",
-    "test": "bun run test:cli && bun run test:web",
+    "test": "bun run test-cli && bun run test-web",
     "test-web": "bun --bun vitest run",
     "test-cli": "bun test",
     "tim": "src/tim/tim.ts"
