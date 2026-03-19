@@ -5,7 +5,7 @@ import chalk from 'chalk';
 import * as path from 'path';
 import * as fs from 'node:fs/promises';
 import { promptConfirm } from '../../../common/input.js';
-import { getCurrentBranchName, getGitRoot, getTrunkBranch } from '../../../common/git.js';
+import { getGitRoot } from '../../../common/git.js';
 import { logSpawn } from '../../../common/process.js';
 import {
   boldMarkdownHeaders,
@@ -268,21 +268,6 @@ export async function handleAgentCommand(
   }
 }
 
-async function updatePlanBranchMetadata(planFilePath: string, baseDir: string): Promise<void> {
-  try {
-    const planData = await readPlanFile(planFilePath);
-    const gitRootForBranch = await getGitRoot(baseDir);
-    const currentBranch = await getCurrentBranchName(baseDir);
-    const trunkBranch = await getTrunkBranch(gitRootForBranch);
-    if (currentBranch && currentBranch !== trunkBranch && planData.branch !== currentBranch) {
-      planData.branch = currentBranch;
-      await writePlanFile(planFilePath, planData);
-    }
-  } catch (err) {
-    warn(`Failed to update plan branch metadata: ${err as Error}`);
-  }
-}
-
 export async function timAgent(planFile: string, options: any, globalCliOptions: any) {
   let currentPlanFile = planFile;
   let config = getDefaultConfig();
@@ -500,7 +485,6 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
       // This is a true stub plan with no tasks - handle it specially
       // Direct execution branch for true stub plans (no tasks)
       try {
-        await updatePlanBranchMetadata(currentPlanFile, currentBaseDir);
         const stubResult = await executeStubPlan({
           config,
           baseDir: currentBaseDir,
@@ -547,7 +531,6 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     // Check if batch mode is enabled (default is true, disabled by --serial-tasks)
     if (!options.serialTasks) {
       try {
-        await updatePlanBranchMetadata(currentPlanFile, currentBaseDir);
         const res = await executeBatchMode(
           {
             config,
@@ -605,19 +588,6 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
           if (planData.parent) {
             await markParentInProgress(planData.parent, config);
           }
-        }
-
-        // Keep branch metadata current while processing plans.
-        try {
-          const gitRootForBranch = await getGitRoot(currentBaseDir);
-          const currentBranch = await getCurrentBranchName(currentBaseDir);
-          const trunkBranch = await getTrunkBranch(gitRootForBranch);
-          if (currentBranch && currentBranch !== trunkBranch && planData.branch !== currentBranch) {
-            planData.branch = currentBranch;
-            planFileNeedsUpdate = true;
-          }
-        } catch (err) {
-          warn(`Failed to update plan branch metadata: ${err as Error}`);
         }
 
         if (planFileNeedsUpdate) {

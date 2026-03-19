@@ -7,7 +7,7 @@ import { generateBranchNameFromPlan } from '../commands/branch.js';
 import { pullWorkspaceRefIfExists } from '../commands/workspace.js';
 import type { TimConfig } from '../configSchema.js';
 import { resolveConfiguredTasksPath } from '../path_resolver.js';
-import { readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
+import { readAllPlans, readPlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { WorkspaceAutoSelector } from './workspace_auto_selector.js';
 import { findWorkspaceInfosByTaskId } from './workspace_info.js';
@@ -57,16 +57,6 @@ async function getParentPlanBranch(
   const tasksDir = resolveConfiguredTasksPath(config, gitRoot);
   const { plans } = await readAllPlans(tasksDir, false);
   return plans.get(plan.parent)?.branch;
-}
-
-async function updatePlanBranchMetadata(planFile: string, branch: string): Promise<void> {
-  const plan = await readPlanFile(planFile);
-  if (plan.branch === branch) {
-    return;
-  }
-
-  plan.branch = branch;
-  await writePlanFile(planFile, plan);
 }
 
 export async function setupWorkspace(
@@ -299,16 +289,6 @@ export async function setupWorkspace(
               throw new Error(
                 `Failed to prepare workspace at ${workspace.path}: ${prepareResult.error ?? 'Unknown error'}`
               );
-            }
-
-            if (prepareResult.actualBranchName) {
-              try {
-                await updatePlanBranchMetadata(planFile, prepareResult.actualBranchName);
-              } catch (err) {
-                warn(
-                  `Failed to update plan branch metadata after workspace preparation: ${err as Error}`
-                );
-              }
             }
           }
 

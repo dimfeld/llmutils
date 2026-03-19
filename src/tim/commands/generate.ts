@@ -314,24 +314,6 @@ export async function handleGenerateCommand(
         // Report generation result
         const updatedPlan = await readPlanFile(currentPlanFile);
 
-        let needsSync = true;
-        try {
-          const gitRootForBranch = await getGitRoot(currentBaseDir);
-          const currentBranch = await getCurrentBranchName(currentBaseDir);
-          const trunkBranch = await getTrunkBranch(gitRootForBranch);
-          if (
-            currentBranch &&
-            currentBranch !== trunkBranch &&
-            updatedPlan.branch !== currentBranch
-          ) {
-            updatedPlan.branch = currentBranch;
-            await writePlanFile(currentPlanFile, updatedPlan);
-            needsSync = false;
-          }
-        } catch (err) {
-          warn(`Failed to update branch in plan file: ${err as Error}`);
-        }
-
         const hasTasks = updatedPlan.tasks && updatedPlan.tasks.length > 0;
 
         if (hasTasks) {
@@ -358,13 +340,11 @@ export async function handleGenerateCommand(
           log(chalk.green('✓ Committed changes'));
         }
 
-        if (needsSync) {
-          await syncPlanToDb(updatedPlan, currentPlanFile, {
-            force: true,
-            config,
-            baseDir: currentBaseDir,
-          });
-        }
+        await syncPlanToDb(updatedPlan, currentPlanFile, {
+          force: true,
+          config,
+          baseDir: currentBaseDir,
+        });
       },
     });
   } catch (err) {

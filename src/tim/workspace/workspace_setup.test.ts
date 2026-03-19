@@ -838,7 +838,7 @@ describe('setupWorkspace', () => {
     expect(result.workspaceTaskId).toBe('task-update-fail-soft');
   });
 
-  test('updates plan branch metadata to the allocated workspace branch', async () => {
+  test('does not update plan branch metadata to the allocated workspace branch', async () => {
     const existingWorkspacePath = path.join(tempDir, 'workspace-existing-branch-metadata');
     await fs.mkdir(existingWorkspacePath, { recursive: true });
     await seedWorkspace(existingWorkspacePath, 'task-existing-branch-metadata');
@@ -874,9 +874,7 @@ describe('setupWorkspace', () => {
       branchName: '88-keep-branch-metadata-in-sync',
       createBranch: true,
     });
-    expect(await fs.readFile(validPlanFile, 'utf8')).toContain(
-      'branch: 88-keep-branch-metadata-in-sync-2'
-    );
+    expect(await fs.readFile(validPlanFile, 'utf8')).not.toContain('branch:');
   });
 
   test('uses parent plan branch as base when available on the parent plan', async () => {

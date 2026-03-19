@@ -1846,7 +1846,7 @@ describe('timAgent - Batch Tasks Mode', () => {
     }));
 
     await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: mock(async () => '/test/project'),
+      getGitRoot: mock(async () => tempDir),
       getCurrentBranchName: mock(async () => 'feature/batch-test'),
       getTrunkBranch: mock(async () => 'main'),
     }));
@@ -2002,7 +2002,7 @@ describe('timAgent - Batch Tasks Mode', () => {
     expect(plan.updatedAt).toBeDefined();
   });
 
-  test('batch mode updates plan branch metadata when running on non-trunk branch', async () => {
+  test('batch mode does not update plan branch metadata when running on non-trunk branch', async () => {
     const options = { batchTasks: true, log: false, nonInteractive: true } as any;
     const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
 
@@ -2010,7 +2010,7 @@ describe('timAgent - Batch Tasks Mode', () => {
 
     const { readPlanFile } = await import('../../plans.js');
     const updatedPlan = await readPlanFile(batchPlanFile);
-    expect(updatedPlan.branch).toBe('feature/batch-test');
+    expect(updatedPlan.branch).toBeUndefined();
   });
 });
 

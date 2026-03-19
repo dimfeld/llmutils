@@ -431,7 +431,7 @@ describe('handleGenerateCommand', () => {
     });
   });
 
-  test('sets branch to current non-trunk branch after generation', async () => {
+  test('does not update branch after generation on a non-trunk branch', async () => {
     const planPath = await createStubPlan(210, { branch: 'feature/old-branch' });
     getCurrentBranchNameSpy.mockResolvedValueOnce('feature/latest-branch');
     getTrunkBranchSpy.mockResolvedValueOnce('main');
@@ -445,7 +445,7 @@ describe('handleGenerateCommand', () => {
     await handleGenerateCommand(undefined, { plan: planPath }, buildCommand());
 
     const updatedPlan = await readPlanFile(planPath);
-    expect(updatedPlan.branch).toBe('feature/latest-branch');
+    expect(updatedPlan.branch).toBe('feature/old-branch');
   });
 
   test('does not set branch when generation runs on trunk branch', async () => {
