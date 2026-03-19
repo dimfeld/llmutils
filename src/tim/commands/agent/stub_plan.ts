@@ -9,6 +9,10 @@ import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
 import { checkAndMarkParentDone, markParentInProgress } from './parent_plans.js';
 import { handleReviewCommand } from '../review.js';
 
+export interface StubPlanExecutionResult {
+  tasksAppended?: number;
+}
+
 export async function executeStubPlan({
   config,
   baseDir,
@@ -31,7 +35,7 @@ export async function executeStubPlan({
   executionMode?: 'normal' | 'simple' | 'tdd';
   finalReview?: boolean;
   configPath?: string;
-}) {
+}): Promise<StubPlanExecutionResult> {
   // Update plan status to in_progress
   planData.status = 'in_progress';
   planData.updatedAt = new Date().toISOString();
@@ -63,7 +67,7 @@ export async function executeStubPlan({
 
   if (dryRun) {
     log('\n--dry-run mode: Would execute the above prompt');
-    return;
+    return {};
   }
 
   // Execute the consolidated prompt
@@ -98,13 +102,18 @@ export async function executeStubPlan({
   if (finalReview !== false) {
     log(boldMarkdownHeaders('\n## Running Final Review\n'));
     try {
-      await handleReviewCommand(
+      const reviewResult = await handleReviewCommand(
         planFilePath,
         {},
         {
           parent: { opts: () => ({ config: configPath }) },
         }
       );
+
+      if (reviewResult.tasksAppended > 0) {
+        await setPlanStatus(planFilePath, 'in_progress');
+        return { tasksAppended: reviewResult.tasksAppended };
+      }
     } catch (err) {
       warn(`Final review failed: ${err as Error}`);
       // Don't fail the agent - plan execution succeeded
@@ -123,4 +132,6 @@ export async function executeStubPlan({
       throw new Error('Commit failed');
     }
   }
+
+  return {};
 }
