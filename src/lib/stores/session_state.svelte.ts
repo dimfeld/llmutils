@@ -141,7 +141,10 @@ export class SessionManager {
       try {
         callback(eventName, parsed);
       } catch (e) {
-        console.error('Session event callback error:', e);
+        // Rethrow asynchronously so the error surfaces but doesn't break other callbacks
+        queueMicrotask(() => {
+          throw e;
+        });
       }
     }
   }

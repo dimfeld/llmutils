@@ -1,5 +1,5 @@
 import type {
-  SessionNewEvent,
+  SessionMessageEvent,
   SessionPromptEvent,
   SessionPromptClearedEvent,
   SessionDismissedEvent,
@@ -24,6 +24,14 @@ function buildPromptBody(event: SessionPromptEvent): string {
   return config.header || config.question || config.message;
 }
 
+function extractMessageText(event: SessionMessageEvent): string | null {
+  const body = event.message.body;
+  if (body.type === 'text') {
+    return body.text;
+  }
+  return null;
+}
+
 export function initSessionNotifications(
   sessionManager: SessionManager,
   navigate: (url: string) => void
@@ -31,7 +39,7 @@ export function initSessionNotifications(
   return sessionManager.onEvent((eventName, parsed) => {
     switch (eventName) {
       case 'session:prompt': {
-        if (document.hasFocus()) break;
+        if (document.hasFocus() || !sessionManager.initialized) break;
         const event = parsed as SessionPromptEvent;
         const session = sessionManager.sessions.get(event.connectionId);
         const projectId = session?.projectId ?? 'all';
@@ -46,23 +54,25 @@ export function initSessionNotifications(
         });
         break;
       }
-      case 'session:new': {
-        if (document.hasFocus()) break;
-        const event = parsed as SessionNewEvent;
-        if (event.session.status === 'notification') {
-          const projectId = event.session.projectId ?? 'all';
-          showBrowserNotification({
-            title: 'Notification',
-            body: event.session.sessionInfo.planTitle || 'New notification',
-            tag: notificationTag(event.session.connectionId),
-            onClick: () => {
-              window.focus();
-              navigate(
-                `/projects/${projectId}/sessions/${encodeURIComponent(event.session.connectionId)}`
-              );
-            },
-          });
-        }
+      case 'session:message': {
+        if (document.hasFocus() || !sessionManager.initialized) break;
+        const event = parsed as SessionMessageEvent;
+        const session = sessionManager.sessions.get(event.connectionId);
+        if (!session || session.status !== 'notification') break;
+        const text = extractMessageText(event);
+        if (!text) break;
+        const projectId = session.projectId ?? 'all';
+        showBrowserNotification({
+          title: 'Notification',
+          body: text,
+          tag: notificationTag(event.connectionId),
+          onClick: () => {
+            window.focus();
+            navigate(
+              `/projects/${projectId}/sessions/${encodeURIComponent(event.connectionId)}`
+            );
+          },
+        });
         break;
       }
       case 'session:prompt-cleared': {

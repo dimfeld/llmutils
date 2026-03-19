@@ -28,7 +28,9 @@
   });
 
   onMount(() => {
-    requestNotificationPermission().catch(() => {});
+    requestNotificationPermission().catch((e) =>
+      console.warn('Failed to request notification permission:', e)
+    );
     sessionManager.connect();
     const cleanupNotifications = initSessionNotifications(sessionManager, (url) => goto(url));
     return () => {

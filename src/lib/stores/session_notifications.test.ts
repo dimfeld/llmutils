@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { ActivePrompt, SessionData } from '$lib/types/session.js';
+import type { ActivePrompt, DisplayMessage, SessionData } from '$lib/types/session.js';
 import { closeNotification } from '$lib/utils/browser_notifications.js';
 
 vi.mock('$lib/remote/session_actions.remote.js', () => ({
@@ -109,6 +109,21 @@ function createSession(overrides: Partial<SessionData> = {}): SessionData {
   };
 }
 
+function createMessage(overrides: Partial<DisplayMessage> = {}): DisplayMessage {
+  return {
+    id: overrides.id ?? 'msg-1',
+    seq: overrides.seq ?? 1,
+    timestamp: overrides.timestamp ?? '2026-03-18T10:00:01.000Z',
+    category: overrides.category ?? 'log',
+    bodyType: overrides.bodyType ?? 'text',
+    body: overrides.body ?? {
+      type: 'text',
+      text: 'Notification text',
+    },
+    rawType: overrides.rawType ?? 'test',
+  };
+}
+
 function emitEvent(manager: SessionManager, eventName: string, payload: unknown): void {
   (
     manager as unknown as {
@@ -165,6 +180,7 @@ describe('session_notifications', () => {
 
   test('shows a prompt notification when the document is unfocused and includes the plan title', () => {
     const manager = new SessionManager();
+    manager.initialized = true;
     manager.sessions.set(
       'conn-1',
       createSession({
@@ -208,6 +224,7 @@ describe('session_notifications', () => {
 
   test('uses question when header is missing and message when both header and question are missing', () => {
     const manager = new SessionManager();
+    manager.initialized = true;
     manager.sessions.set('conn-1', createSession());
     const { hasFocus } = installDomMocks();
     hasFocus.mockReturnValue(false);
@@ -240,6 +257,7 @@ describe('session_notifications', () => {
 
   test('does not show a prompt notification while the document is focused', () => {
     const manager = new SessionManager();
+    manager.initialized = true;
     manager.sessions.set('conn-1', createSession());
     const { hasFocus } = installDomMocks();
     hasFocus.mockReturnValue(true);
@@ -256,24 +274,29 @@ describe('session_notifications', () => {
     cleanup();
   });
 
-  test('shows a notification session event when the document is unfocused', () => {
+  test('shows a notification session message when the document is unfocused', () => {
     const manager = new SessionManager();
+    manager.initialized = true;
+    manager.sessions.set(
+      'notif/1',
+      createSession({
+        connectionId: 'notif/1',
+        projectId: 9,
+        status: 'notification',
+      })
+    );
     const { hasFocus } = installDomMocks();
     hasFocus.mockReturnValue(false);
     const navigate = vi.fn();
 
     const cleanup = initSessionNotifications(manager, navigate);
 
-    emitEvent(manager, 'session:new', {
-      session: createSession({
-        connectionId: 'notif/1',
-        projectId: 9,
-        status: 'notification',
-        sessionInfo: {
-          command: 'agent',
-          interactive: true,
-          workspacePath: '/tmp/ws',
-          planTitle: 'Deployment finished',
+    emitEvent(manager, 'session:message', {
+      connectionId: 'notif/1',
+      message: createMessage({
+        body: {
+          type: 'text',
+          text: 'Deployment finished',
         },
       }),
     });
@@ -292,8 +315,9 @@ describe('session_notifications', () => {
     cleanup();
   });
 
-  test('does not show non-notification session:new events', () => {
+  test('does not show notifications for session:new events', () => {
     const manager = new SessionManager();
+    manager.initialized = true;
     const { hasFocus } = installDomMocks();
     hasFocus.mockReturnValue(false);
 
@@ -311,8 +335,64 @@ describe('session_notifications', () => {
     cleanup();
   });
 
+  test('does not show a notification session message before the initial sync completes', () => {
+    const manager = new SessionManager();
+    manager.sessions.set(
+      'notif-1',
+      createSession({
+        connectionId: 'notif-1',
+        status: 'notification',
+      })
+    );
+    const { hasFocus } = installDomMocks();
+    hasFocus.mockReturnValue(false);
+
+    const cleanup = initSessionNotifications(manager, vi.fn());
+
+    emitEvent(manager, 'session:message', {
+      connectionId: 'notif-1',
+      message: createMessage(),
+    });
+
+    expect(MockNotification.instances).toHaveLength(0);
+
+    cleanup();
+  });
+
+  test('does not show a notification for non-text session messages', () => {
+    const manager = new SessionManager();
+    manager.initialized = true;
+    manager.sessions.set(
+      'notif-1',
+      createSession({
+        connectionId: 'notif-1',
+        status: 'notification',
+      })
+    );
+    const { hasFocus } = installDomMocks();
+    hasFocus.mockReturnValue(false);
+
+    const cleanup = initSessionNotifications(manager, vi.fn());
+
+    emitEvent(manager, 'session:message', {
+      connectionId: 'notif-1',
+      message: createMessage({
+        bodyType: 'monospaced',
+        body: {
+          type: 'monospaced',
+          text: 'internal details',
+        },
+      }),
+    });
+
+    expect(MockNotification.instances).toHaveLength(0);
+
+    cleanup();
+  });
+
   test('clicking a prompt notification focuses the window and navigates to the session', () => {
     const manager = new SessionManager();
+    manager.initialized = true;
     manager.sessions.set(
       'conn/1',
       createSession({
@@ -341,6 +421,7 @@ describe('session_notifications', () => {
 
   test('prompt-cleared closes the matching notification even when focused', () => {
     const manager = new SessionManager();
+    manager.initialized = true;
     manager.sessions.set('conn-1', createSession());
     const { hasFocus } = installDomMocks();
     hasFocus.mockReturnValue(false);
@@ -364,15 +445,21 @@ describe('session_notifications', () => {
 
   test('dismissed closes the matching notification even when focused', () => {
     const manager = new SessionManager();
+    manager.initialized = true;
+    manager.sessions.set(
+      'conn-1',
+      createSession({
+        connectionId: 'conn-1',
+        status: 'notification',
+      })
+    );
     const { hasFocus } = installDomMocks();
     hasFocus.mockReturnValue(false);
     const cleanup = initSessionNotifications(manager, vi.fn());
 
-    emitEvent(manager, 'session:new', {
-      session: createSession({
-        connectionId: 'conn-1',
-        status: 'notification',
-      }),
+    emitEvent(manager, 'session:message', {
+      connectionId: 'conn-1',
+      message: createMessage(),
     });
 
     hasFocus.mockReturnValue(true);
@@ -387,6 +474,7 @@ describe('session_notifications', () => {
 
   test('cleanup unsubscribes from future session events', () => {
     const manager = new SessionManager();
+    manager.initialized = true;
     manager.sessions.set('conn-1', createSession());
     const { hasFocus } = installDomMocks();
     hasFocus.mockReturnValue(false);
@@ -484,7 +572,12 @@ describe('SessionManager.onEvent', () => {
 
   test('callback errors are caught and do not stop later callbacks', () => {
     const manager = new SessionManager();
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const queued: Array<() => void> = [];
+    const queueMicrotaskSpy = vi
+      .spyOn(globalThis, 'queueMicrotask')
+      .mockImplementation((callback: VoidFunction) => {
+        queued.push(callback);
+      });
     const goodCallback = vi.fn();
 
     manager.onEvent(() => {
@@ -499,7 +592,9 @@ describe('SessionManager.onEvent', () => {
     });
 
     expect(goodCallback).toHaveBeenCalledTimes(1);
-    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(queueMicrotaskSpy).toHaveBeenCalledTimes(1);
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toThrow('boom');
     expect(manager.sessions.has('conn-1')).toBe(true);
   });
 });
