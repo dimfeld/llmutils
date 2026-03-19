@@ -291,6 +291,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
   let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
   let executionError: Error | undefined;
   let hadExecutionFailure = false;
+  let postExecutionError: Error | undefined;
   let failureReason: Error | undefined;
   let lastKnownPlan: PlanSchema | undefined;
   const recordFailure = (err: unknown): void => {
@@ -493,11 +494,13 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     const needsPreparation = !planData.tasks.length;
 
     if (needsPreparation) {
+      let continueAfterStubPlan = false;
+
       // This is a true stub plan with no tasks - handle it specially
       // Direct execution branch for true stub plans (no tasks)
       try {
         await updatePlanBranchMetadata(currentPlanFile, currentBaseDir);
-        await executeStubPlan({
+        const stubResult = await executeStubPlan({
           config,
           baseDir: currentBaseDir,
           planFilePath: currentPlanFile,
@@ -509,19 +512,33 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
           finalReview: options.finalReview,
           configPath: globalCliOptions.config,
         });
+
+        if (stubResult.tasksAppended && stubResult.tasksAppended > 0) {
+          const updatedPlanData = await readPlanFile(currentPlanFile);
+          const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';
+          continueAfterStubPlan = await promptConfirm({
+            message: `${stubResult.tasksAppended} new task(s) added from review to plan${planIdStr}. You can edit the plan first if needed. Continue running?`,
+            default: true,
+          });
+        }
       } catch (err) {
         error('Direct execution failed:', err);
         if (summaryEnabled) summaryCollector.addError(err);
         throw err;
       } finally {
-        if (summaryEnabled) {
+        if (!continueAfterStubPlan && summaryEnabled) {
           summaryCollector.recordExecutionEnd();
           await summaryCollector.trackFileChanges(currentBaseDir);
           await writeOrDisplaySummary(summaryCollector.getExecutionSummary(), summaryFilePath);
         }
-        await closeLogFile();
+        if (!continueAfterStubPlan) {
+          await closeLogFile();
+        }
       }
-      return;
+
+      if (!continueAfterStubPlan) {
+        return;
+      }
     }
 
     const maxSteps = options.steps ? parseInt(options.steps, 10) : Infinity;
@@ -1213,8 +1230,12 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     }
 
     if (!hadExecutionFailure && workspaceSyncError) {
-      throw workspaceSyncError;
+      postExecutionError = workspaceSyncError;
     }
+  }
+
+  if (postExecutionError) {
+    throw postExecutionError;
   }
 }
 
