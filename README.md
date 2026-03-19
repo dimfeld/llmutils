@@ -11,6 +11,10 @@ Command-line utilities for managing context with chat-oriented programming and a
 - **rmrun**: Sends rmfilter output to an LLM and applies edits
 - **rmfix**: Toolkit for fixing LLM-generated code when it doesn't apply cleanly
 
+## Tim Prompt Helpers
+
+`tim prompts` can print reusable prompt text for CLI-driven workflows. For implementation work, use `tim prompts implement <plan>` to load a plan and instruct the agent to implement it while keeping the plan up to date.
+
 ## Web Interface
 
 Tim includes a SvelteKit-based web interface for browsing and managing plans. The server-side layer uses lazy initialization to load the tim configuration, sync plan files to the SQLite database, and serve enriched plan data with computed display statuses (e.g. blocked, recently done).

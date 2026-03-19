@@ -26,6 +26,7 @@ import {
   registerGenerateMode,
   mcpManagePlanTask,
   loadGeneratePrompt,
+  loadImplementPrompt,
   loadPlanPrompt,
   loadQuestionsPrompt,
   loadResearchPrompt,
@@ -254,6 +255,55 @@ describe('tim MCP generate mode helpers', () => {
     expect(message?.text).toContain('Plan ID: 99999');
     expect(message?.text).toContain('Test Plan');
     expect(message?.text).toContain('Wait for your human collaborator');
+  });
+
+  test('loadImplementPrompt returns plan details and implementation instruction', async () => {
+    const prompt = await loadImplementPrompt({ plan: planPath }, context);
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+
+    expect(messageText).toContain('Plan ID: 99999');
+    expect(messageText).toContain('Test Plan');
+    expect(messageText).toContain('Load the plan, implement it');
+    expect(messageText).toContain('does not have structured tasks');
+    expect(messageText).toContain('maps back to the plan markdown');
+  });
+
+  test('loadImplementPrompt instructs task-based execution when plan has tasks', async () => {
+    await writePlanFile(planPath, {
+      ...basePlan,
+      tasks: [
+        {
+          title: 'Implement feature',
+          description: 'Build the feature end to end',
+          done: false,
+        },
+      ],
+    });
+
+    const prompt = await loadImplementPrompt({ plan: planPath }, context);
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+
+    expect(messageText).toContain("Follow the plan's tasks and details");
+    expect(messageText).toContain('which plan tasks you completed');
+    expect(messageText).not.toContain('does not have structured tasks');
+  });
+
+  test('loadImplementPrompt falls back to the title when plan has no tasks or details', async () => {
+    await writePlanFile(planPath, {
+      ...basePlan,
+      title: 'Add export button',
+      details: undefined,
+      tasks: [],
+      simple: true,
+    });
+
+    const prompt = await loadImplementPrompt({ plan: planPath }, context);
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+
+    expect(messageText).toContain('Title: Add export button');
+    expect(messageText).toContain('does not have structured tasks or details');
+    expect(messageText).toContain('Use the plan title as the primary direction');
+    expect(messageText).toContain('satisfies the plan title');
   });
 
   test('loadCompactPlanPrompt builds compaction instructions for eligible plans', async () => {

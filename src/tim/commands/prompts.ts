@@ -5,6 +5,7 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
 import {
   loadGeneratePrompt,
+  loadImplementPrompt,
   loadPlanPrompt,
   loadQuestionsPrompt,
   loadResearchPrompt,
@@ -92,6 +93,12 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     requiresPlan: true,
     supportsAllowMultiplePlans: false,
     load: (args, context) => loadPlanPrompt({ plan: args.plan ?? '' }, context),
+  },
+  {
+    name: 'implement',
+    requiresPlan: true,
+    supportsAllowMultiplePlans: false,
+    load: (args, context) => loadImplementPrompt({ plan: args.plan ?? '' }, context),
   },
   {
     name: 'compact-plan',

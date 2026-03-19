@@ -330,6 +330,46 @@ Wait for your human collaborator to review the plan and provide further instruct
   };
 }
 
+export async function loadImplementPrompt(
+  args: { plan: string },
+  context: GenerateModeRegistrationContext
+) {
+  clearPlanCache();
+  const { plan, planPath } = await resolvePlan(args.plan, context);
+  const contextBlock = buildPlanContext(plan, planPath, context);
+  const hasTasks = Array.isArray(plan.tasks) && plan.tasks.length > 0;
+  const hasDetails = typeof plan.details === 'string' && plan.details.trim().length > 0;
+
+  const executionInstructions = hasTasks
+    ? "Follow the plan's tasks and details, but reconcile any conflicts you find in the plan before making code changes."
+    : hasDetails
+      ? 'This plan does not have structured tasks. Use the markdown details in the plan file as the source of truth for the implementation, and reconcile any conflicts you find before making code changes.'
+      : 'This plan does not have structured tasks or details. Use the plan title as the primary direction for what to implement, inspect the surrounding codebase to infer the smallest reasonable change that satisfies that title, and reconcile any conflicting signals you find before making code changes.';
+  const completionInstructions = hasTasks
+    ? 'When implementation is complete, summarize what you changed, what you tested, and which plan tasks you completed.'
+    : hasDetails
+      ? 'When implementation is complete, summarize what you changed, what you tested, and how the completed work maps back to the plan markdown.'
+      : 'When implementation is complete, summarize what you changed, what you tested, and how the completed work satisfies the plan title.';
+
+  const text = `You are implementing a tim plan. tim is a tool for managing step-by-step project plans.
+
+${contextBlock}
+
+Load the plan, implement it, and keep the plan file up to date as you work. ${executionInstructions} ${completionInstructions}`;
+
+  return {
+    messages: [
+      {
+        role: 'user' as const,
+        content: {
+          type: 'text' as const,
+          text,
+        },
+      },
+    ],
+  };
+}
+
 export async function loadGeneratePrompt(
   args: { plan?: string; allowMultiplePlans?: unknown },
   context: GenerateModeRegistrationContext
