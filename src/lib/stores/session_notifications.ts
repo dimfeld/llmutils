@@ -24,36 +24,42 @@ function buildPromptBody(event: SessionPromptEvent): string {
   return config.header || config.question || config.message;
 }
 
-export function initSessionNotifications(sessionManager: SessionManager): () => void {
+export function initSessionNotifications(
+  sessionManager: SessionManager,
+  navigate: (url: string) => void
+): () => void {
   return sessionManager.onEvent((eventName, parsed) => {
-    if (document.hasFocus()) {
-      return;
-    }
-
     switch (eventName) {
       case 'session:prompt': {
+        if (document.hasFocus()) break;
         const event = parsed as SessionPromptEvent;
+        const session = sessionManager.sessions.get(event.connectionId);
+        const projectId = session?.projectId ?? 'all';
         showBrowserNotification({
           title: buildPromptTitle(sessionManager, event.connectionId),
           body: buildPromptBody(event),
           tag: notificationTag(event.connectionId),
           onClick: () => {
             window.focus();
-            sessionManager.selectSession(event.connectionId);
+            navigate(`/projects/${projectId}/sessions/${encodeURIComponent(event.connectionId)}`);
           },
         });
         break;
       }
       case 'session:new': {
+        if (document.hasFocus()) break;
         const event = parsed as SessionNewEvent;
         if (event.session.status === 'notification') {
+          const projectId = event.session.projectId ?? 'all';
           showBrowserNotification({
             title: 'Notification',
             body: event.session.sessionInfo.planTitle || 'New notification',
             tag: notificationTag(event.session.connectionId),
             onClick: () => {
               window.focus();
-              sessionManager.selectSession(event.session.connectionId);
+              navigate(
+                `/projects/${projectId}/sessions/${encodeURIComponent(event.session.connectionId)}`
+              );
             },
           });
         }

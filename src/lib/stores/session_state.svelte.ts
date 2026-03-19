@@ -138,7 +138,11 @@ export class SessionManager {
     applySessionEvent(eventName, parsed, state);
 
     for (const callback of this.eventCallbacks) {
-      callback(eventName, parsed);
+      try {
+        callback(eventName, parsed);
+      } catch (e) {
+        console.error('Session event callback error:', e);
+      }
     }
   }
 

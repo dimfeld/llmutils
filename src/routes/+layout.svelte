@@ -6,6 +6,7 @@
   import TabNav from '$lib/components/TabNav.svelte';
   import { page } from '$app/state';
   import type { Snippet } from 'svelte';
+  import { goto } from '$app/navigation';
   import { setSessionManager } from '$lib/stores/session_state.svelte.js';
   import { initSessionNotifications } from '$lib/stores/session_notifications.js';
   import { requestNotificationPermission } from '$lib/utils/browser_notifications.js';
@@ -27,9 +28,9 @@
   });
 
   onMount(() => {
-    requestNotificationPermission();
+    requestNotificationPermission().catch(() => {});
     sessionManager.connect();
-    const cleanupNotifications = initSessionNotifications(sessionManager);
+    const cleanupNotifications = initSessionNotifications(sessionManager, (url) => goto(url));
     return () => {
       cleanupNotifications();
       sessionManager.disconnect();
