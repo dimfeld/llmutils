@@ -6,10 +6,10 @@ goal: ""
 id: 242
 uuid: 3d52da04-14a5-4c43-a30d-23f8d200879e
 simple: true
-status: in_progress
+status: done
 priority: medium
 createdAt: 2026-03-19T09:10:33.581Z
-updatedAt: 2026-03-19T18:41:54.411Z
+updatedAt: 2026-03-19T18:56:24.698Z
 tasks: []
 branch: 242-simple-plan-execution-should-give-option-to
 tags: []
