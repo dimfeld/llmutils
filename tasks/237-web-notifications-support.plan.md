@@ -8,12 +8,12 @@ goal: "Replicate the tim-gui notification system in the web interface:
 id: 237
 uuid: a3908bae-f909-4424-ba9a-dfa6f4caf968
 generatedBy: agent
-status: pending
+status: in_progress
 priority: medium
 planGeneratedAt: 2026-03-19T06:50:50.976Z
 promptsGeneratedAt: 2026-03-19T06:50:50.976Z
 createdAt: 2026-03-18T21:52:45.558Z
-updatedAt: 2026-03-19T06:50:50.976Z
+updatedAt: 2026-03-19T06:59:26.099Z
 tasks:
   - title: "Server: Add notification text extraction functions"
     done: false
@@ -99,6 +99,7 @@ tasks:
       browser notifications suppressed when page visible. Test
       firstSessionWithNotification across groups. Update session_state_events
       tests for notification field preservation.
+branch: 237-web-notifications-support
 tags: []
 ---
 

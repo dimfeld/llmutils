@@ -20,6 +20,8 @@ interface ProjectInfo {
   name: string;
 }
 
+export type SessionEventCallback = (eventName: string, parsed: unknown) => void;
+
 export class SessionManager {
   sessions = new SvelteMap<string, SessionData>();
   initialized = $state(false);
@@ -32,6 +34,8 @@ export class SessionManager {
   reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   reconnectDelay = 1000;
   readonly MAX_RECONNECT_DELAY = 30000;
+
+  private eventCallbacks: SessionEventCallback[] = [];
 
   sessionGroups = $derived.by(() => {
     // Using plain Map here since this is a local computation variable, not reactive state
@@ -88,6 +92,13 @@ export class SessionManager {
     return getSessionGroupLabel(groupKey);
   }
 
+  onEvent(callback: SessionEventCallback): () => void {
+    this.eventCallbacks.push(callback);
+    return () => {
+      this.eventCallbacks = this.eventCallbacks.filter((cb) => cb !== callback);
+    };
+  }
+
   selectSession(id: string | null): void {
     this.selectedSessionId = id;
   }
@@ -125,6 +136,10 @@ export class SessionManager {
     };
 
     applySessionEvent(eventName, parsed, state);
+
+    for (const callback of this.eventCallbacks) {
+      callback(eventName, parsed);
+    }
   }
 
   private scheduleReconnect(): void {

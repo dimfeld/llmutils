@@ -7,6 +7,8 @@
   import { page } from '$app/state';
   import type { Snippet } from 'svelte';
   import { setSessionManager } from '$lib/stores/session_state.svelte.js';
+  import { initSessionNotifications } from '$lib/stores/session_notifications.js';
+  import { requestNotificationPermission } from '$lib/utils/browser_notifications.js';
   import type { LayoutData } from './$types';
 
   let { data, children }: { data: LayoutData; children: Snippet } = $props();
@@ -25,8 +27,13 @@
   });
 
   onMount(() => {
+    requestNotificationPermission();
     sessionManager.connect();
-    return () => sessionManager.disconnect();
+    const cleanupNotifications = initSessionNotifications(sessionManager);
+    return () => {
+      cleanupNotifications();
+      sessionManager.disconnect();
+    };
   });
 </script>
 
