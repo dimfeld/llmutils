@@ -352,6 +352,40 @@ describe('WorkspaceAutoSelector', () => {
     expect(result?.clearedStaleLock).toBe(false);
   });
 
+  test('selectWorkspace ignores assigned primary workspace for current plan and uses non-primary workspace', async () => {
+    const assignedPrimaryPath = path.join(testDir, 'workspace-assigned-primary');
+    const fallbackPath = path.join(testDir, 'workspace-fallback-non-primary');
+    await fs.mkdir(assignedPrimaryPath, { recursive: true });
+    await fs.mkdir(fallbackPath, { recursive: true });
+
+    await seedWorkspace(
+      'github.com/test/repo',
+      assignedPrimaryPath,
+      'task-assigned-primary',
+      'task-assigned-primary'
+    );
+    await seedWorkspace('github.com/test/repo', fallbackPath, 'task-fallback', 'task-fallback');
+    const db = getDatabase();
+    db.prepare('UPDATE workspace SET is_primary = 1 WHERE workspace_path = ?').run(assignedPrimaryPath);
+    await seedAssignmentForPlan(
+      'github.com/test/repo',
+      '33333333-3333-4333-8333-333333333333',
+      3,
+      assignedPrimaryPath
+    );
+
+    const result = await selector.selectWorkspace('task-next', '/test/plan-next.yml', {
+      interactive: false,
+      preferredPlanUuid: '33333333-3333-4333-8333-333333333333',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.workspace.workspacePath).toBe(fallbackPath);
+    expect(result?.workspace.taskId).toBe('task-fallback');
+    expect(result?.isNew).toBe(false);
+    expect(result?.clearedStaleLock).toBe(false);
+  });
+
   test('selectWorkspace skips assigned workspace when locked and uses another unlocked workspace', async () => {
     const assignedPath = path.join(testDir, 'workspace-assigned-locked');
     const otherPath = path.join(testDir, 'workspace-fallback-unlocked');

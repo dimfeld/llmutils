@@ -343,7 +343,7 @@ program
     '--no-terminal-input',
     'Disable terminal input forwarding to Claude Code during plan generation'
   )
-  .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
+  .option('--require-workspace', 'Fail if workspace creation is requested but fails (default: true)', true)
   .action(async (planArg, options, command) => {
     const { handleGenerateCommand } = await import('./commands/generate.js');
     await handleGenerateCommand(planArg, options, command).catch(handleCommandError);
@@ -624,7 +624,11 @@ function createAgentCommand(command: Command, description: string) {
       '--no-terminal-input',
       'Disable terminal input forwarding to Claude Code during tim agent execution'
     )
-    .option('--require-workspace', 'Fail if workspace creation is requested but fails', false)
+  .option(
+    '--require-workspace',
+    'Fail if workspace creation is requested but fails (default: true)',
+    true
+  )
     .option('--next', 'Execute the next plan that is ready to be implemented')
     .option('--current', 'Execute the current plan (in_progress or next ready plan)')
     .option(

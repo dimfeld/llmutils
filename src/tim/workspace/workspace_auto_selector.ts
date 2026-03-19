@@ -89,7 +89,7 @@ export class WorkspaceAutoSelector {
     const allWorkspaces = findWorkspaceInfosByRepositoryId(repositoryId).sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-    const workspaces = allWorkspaces.filter((workspace) => !workspace.isPrimary);
+    const nonPrimaryWorkspaces = allWorkspaces.filter((workspace) => !workspace.isPrimary);
 
     if (preferredPlanUuid) {
       const preferredWorkspacePath = getPreferredAssignedWorkspacePath(
@@ -98,7 +98,7 @@ export class WorkspaceAutoSelector {
       );
 
       if (preferredWorkspacePath) {
-        const preferredWorkspace = allWorkspaces.find(
+        const preferredWorkspace = nonPrimaryWorkspaces.find(
           (workspace) => workspace.workspacePath === preferredWorkspacePath
         );
 
@@ -126,7 +126,7 @@ export class WorkspaceAutoSelector {
     }
 
     const lockedCandidates: LockedWorkspaceCandidate[] = [];
-    for (const workspace of workspaces) {
+    for (const workspace of nonPrimaryWorkspaces) {
       const lockInfo = await WorkspaceLock.getLockInfoIncludingStale(workspace.workspacePath);
       if (!lockInfo) {
         log(`Selected unlocked workspace: ${workspace.workspacePath}`);
