@@ -16,7 +16,7 @@ references:
 planGeneratedAt: 2026-03-19T01:11:11.620Z
 promptsGeneratedAt: 2026-03-19T01:11:11.620Z
 createdAt: 2026-03-17T09:05:46.119Z
-updatedAt: 2026-03-19T01:11:11.621Z
+updatedAt: 2026-03-19T01:15:55.704Z
 tasks:
   - title: Extract extractCommandAfterCd to client-safe module
     done: false
@@ -46,6 +46,7 @@ tasks:
       multi-word command), then calls the respond route with a
       PrefixPromptResult value ({exact: false, command: prefix}) and verifies it
       is forwarded correctly over WebSocket. Follow the existing test pattern."
+branch: 231-add-prefix-select-prompt-support-to-web-ui
 tags: []
 ---
 
