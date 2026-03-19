@@ -10,3 +10,6 @@ tasks
 
 **/temp_*.md
 schema/*
+.claude
+.codex
+.agents
