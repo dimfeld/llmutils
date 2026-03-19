@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import PQueue from 'p-queue';
 import { debugLog, log } from '../../logging.js';
 import { spawnAndLogOutput } from '../../common/process.js';
-import { getTrunkBranch } from '../../common/git.js';
+import { getJjBookmarkRevisionForWorkingCopy, getTrunkBranch } from '../../common/git.js';
 import { executePostApplyCommand } from '../actions.js';
 import type { PostApplyCommand, TimConfig } from '../configSchema.js';
 import { WorkspaceLock } from './workspace_lock.js';
@@ -606,8 +606,10 @@ export async function ensurePrimaryWorkspaceBranch(
     }
 
     if (isPrimaryJj) {
+      const targetRevision =
+        options?.fromBranch ?? (await getJjBookmarkRevisionForWorkingCopy(mainRepoRoot));
       createResult = await spawnAndLogOutput(
-        ['jj', 'bookmark', 'set', branchName, '--revision', options?.fromBranch ?? '@'],
+        ['jj', 'bookmark', 'set', branchName, '--revision', targetRevision],
         {
           cwd: mainRepoRoot,
         }

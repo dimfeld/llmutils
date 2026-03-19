@@ -194,6 +194,16 @@ export async function getWorkingCopyStatus(cwd: string): Promise<WorkingCopyStat
   };
 }
 
+export async function getJjBookmarkRevisionForWorkingCopy(cwd: string): Promise<'@' | '@-'> {
+  const result = await $`jj status`.cwd(cwd).quiet().nothrow();
+  if (result.exitCode !== 0) {
+    return '@';
+  }
+
+  const output = result.stdout.toString();
+  return output.includes('The working copy has no changes.') ? '@-' : '@';
+}
+
 /**
  * Gets the name of the current Git branch.
  * @param cwd The working directory to run the git command in. Defaults to process.cwd().

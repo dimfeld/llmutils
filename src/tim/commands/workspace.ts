@@ -11,6 +11,7 @@ import {
   getCurrentCommitHash,
   getCurrentJujutsuBranch,
   getGitRoot,
+  getJjBookmarkRevisionForWorkingCopy,
   getUsingJj,
   hasUncommittedChanges,
   isInGitRepository,
@@ -1535,7 +1536,7 @@ export async function pullWorkspaceRefIfExists(
       );
     }
 
-    const editResult = await spawnAndLogOutput(['jj', 'edit', refName], {
+    const editResult = await spawnAndLogOutput(['jj', 'new', refName], {
       cwd: workspacePath,
       quiet: true,
     });
@@ -1656,15 +1657,17 @@ export async function setWorkspaceBookmarkToCurrent(
   bookmark: string,
   revision = '@'
 ): Promise<void> {
+  const targetRevision =
+    revision === '@' ? await getJjBookmarkRevisionForWorkingCopy(workspacePath) : revision;
   const setResult = await spawnAndLogOutput(
-    ['jj', 'bookmark', 'set', bookmark, '--revision', revision],
+    ['jj', 'bookmark', 'set', bookmark, '--revision', targetRevision],
     {
       cwd: workspacePath,
     }
   );
   if (setResult.exitCode !== 0) {
     throw new Error(
-      `Failed to set bookmark "${bookmark}" to revision "${revision}": ${setResult.stderr}`
+      `Failed to set bookmark "${bookmark}" to revision "${targetRevision}": ${setResult.stderr}`
     );
   }
 }

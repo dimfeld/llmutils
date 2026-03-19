@@ -137,6 +137,58 @@ describe('workspace pull plan', () => {
     ).toBe(false);
   });
 
+  test('pullWorkspaceRefIfExists uses jj new when pulling a jj bookmark', async () => {
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getCurrentBranchName: mock(async () => null),
+      getCurrentCommitHash: mock(async () => null),
+      getCurrentJujutsuBranch: mock(async () => null),
+      getGitRoot: mock(async () => tempRoot),
+      getUsingJj: mock(async () => true),
+      hasUncommittedChanges: mock(async () => false),
+      isInGitRepository: mock(async () => true),
+    }));
+
+    await moduleMocker.mock('../../common/process.js', () => ({
+      spawnAndLogOutput: mock(async (args: string[]) => {
+        processCalls.push(args);
+
+        if (args[0] === 'jj' && args[1] === 'git' && args[2] === 'fetch') {
+          return { exitCode: 0, stdout: '', stderr: '' };
+        }
+
+        if (args[0] === 'jj' && args[1] === 'bookmark' && args[2] === 'track') {
+          return { exitCode: 0, stdout: '', stderr: '' };
+        }
+
+        if (args[0] === 'jj' && args[1] === 'new' && args[2] === 'feature/plan') {
+          return { exitCode: 0, stdout: '', stderr: '' };
+        }
+
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }),
+    }));
+
+    const { pullWorkspaceRefIfExists } = await import('./workspace.js');
+    const pulled = await pullWorkspaceRefIfExists(tempRoot, 'feature/plan', 'origin');
+
+    expect(pulled).toBe(true);
+    expect(processCalls).toContainEqual(['jj', 'git', 'fetch']);
+    expect(processCalls).toContainEqual([
+      'jj',
+      'bookmark',
+      'track',
+      'feature/plan',
+      '--remote',
+      'origin',
+    ]);
+    expect(processCalls).toContainEqual(['jj', 'new', 'feature/plan']);
+    expect(
+      processCalls.some(
+        (args) => args[0] === 'jj' && args[1] === 'edit' && args[2] === 'feature/plan'
+      )
+    ).toBe(false);
+  });
+
   test('handleWorkspacePullPlanCommand uses plan branch and pulls into workspace', async () => {
     await moduleMocker.mock('../../common/process.js', () => ({
       spawnAndLogOutput: mock(async (args: string[]) => {
