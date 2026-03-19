@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { ActivePrompt, DisplayMessage, SessionData } from '$lib/types/session.js';
-import { closeNotification } from '$lib/utils/browser_notifications.js';
+import {
+  closeAllNotifications,
+  closeNotification,
+  getActiveNotificationTags,
+} from '$lib/utils/browser_notifications.js';
+
+vi.mock('$app/paths', () => ({
+  resolve: (path: string) => path,
+}));
 
 vi.mock('$lib/remote/session_actions.remote.js', () => ({
   activateSessionTerminalPane: vi.fn(),
@@ -141,9 +149,7 @@ describe('session_notifications', () => {
   });
 
   afterEach(() => {
-    for (const instance of MockNotification.instances) {
-      instance.close();
-    }
+    closeAllNotifications();
 
     if (originalNotification) {
       Object.defineProperty(globalThis, 'Notification', {
@@ -294,6 +300,7 @@ describe('session_notifications', () => {
     emitEvent(manager, 'session:message', {
       connectionId: 'notif/1',
       message: createMessage({
+        seq: 0,
         body: {
           type: 'text',
           text: 'Deployment finished',
@@ -311,6 +318,49 @@ describe('session_notifications', () => {
     MockNotification.instances[0]?.onclick?.call(MockNotification.instances[0], new Event('click'));
 
     expect(navigate).toHaveBeenCalledWith('/projects/9/sessions/notif%2F1');
+
+    cleanup();
+  });
+
+  test('shows a merged notification message for an active session when seq is 0 and includes the plan title', () => {
+    const manager = new SessionManager();
+    manager.initialized = true;
+    manager.sessions.set(
+      'active/1',
+      createSession({
+        connectionId: 'active/1',
+        projectId: 17,
+        status: 'active',
+        sessionInfo: {
+          command: 'agent',
+          interactive: true,
+          workspacePath: '/tmp/ws',
+          planTitle: 'Release prep',
+        },
+      })
+    );
+    const { hasFocus } = installDomMocks();
+    hasFocus.mockReturnValue(false);
+
+    const cleanup = initSessionNotifications(manager, vi.fn());
+
+    emitEvent(manager, 'session:message', {
+      connectionId: 'active/1',
+      message: createMessage({
+        seq: 0,
+        body: {
+          type: 'text',
+          text: 'Build completed',
+        },
+      }),
+    });
+
+    expect(MockNotification.instances).toHaveLength(1);
+    expect(MockNotification.instances[0]).toMatchObject({
+      title: 'Notification: Release prep',
+      body: 'Build completed',
+      tag: 'session:active/1',
+    });
 
     cleanup();
   });
@@ -351,7 +401,9 @@ describe('session_notifications', () => {
 
     emitEvent(manager, 'session:message', {
       connectionId: 'notif-1',
-      message: createMessage(),
+      message: createMessage({
+        seq: 0,
+      }),
     });
 
     expect(MockNotification.instances).toHaveLength(0);
@@ -377,6 +429,7 @@ describe('session_notifications', () => {
     emitEvent(manager, 'session:message', {
       connectionId: 'notif-1',
       message: createMessage({
+        seq: 0,
         bodyType: 'monospaced',
         body: {
           type: 'monospaced',
@@ -386,6 +439,159 @@ describe('session_notifications', () => {
     });
 
     expect(MockNotification.instances).toHaveLength(0);
+
+    cleanup();
+  });
+
+  test('does not show a notification for regular session messages when seq is not 0', () => {
+    const manager = new SessionManager();
+    manager.initialized = true;
+    manager.sessions.set(
+      'notif-1',
+      createSession({
+        connectionId: 'notif-1',
+        status: 'notification',
+      })
+    );
+    const { hasFocus } = installDomMocks();
+    hasFocus.mockReturnValue(false);
+
+    const cleanup = initSessionNotifications(manager, vi.fn());
+
+    emitEvent(manager, 'session:message', {
+      connectionId: 'notif-1',
+      message: createMessage({
+        seq: 1,
+        body: {
+          type: 'text',
+          text: 'Regular log line',
+        },
+      }),
+    });
+
+    expect(MockNotification.instances).toHaveLength(0);
+
+    cleanup();
+  });
+
+  test('deduplicates notification messages with the same message id', () => {
+    const manager = new SessionManager();
+    manager.initialized = true;
+    manager.sessions.set(
+      'notif-1',
+      createSession({
+        connectionId: 'notif-1',
+        status: 'notification',
+      })
+    );
+    const { hasFocus } = installDomMocks();
+    hasFocus.mockReturnValue(false);
+
+    const cleanup = initSessionNotifications(manager, vi.fn());
+    const message = createMessage({
+      id: 'repeat-msg',
+      seq: 0,
+      body: {
+        type: 'text',
+        text: 'Only once',
+      },
+    });
+
+    emitEvent(manager, 'session:message', {
+      connectionId: 'notif-1',
+      message,
+    });
+    emitEvent(manager, 'session:message', {
+      connectionId: 'notif-1',
+      message,
+    });
+
+    expect(MockNotification.instances).toHaveLength(1);
+    expect(MockNotification.instances[0]?.body).toBe('Only once');
+
+    cleanup();
+  });
+
+  test('session:list seeds existing notification message ids so replayed messages do not notify', () => {
+    const manager = new SessionManager();
+    manager.initialized = true;
+    const { hasFocus } = installDomMocks();
+    hasFocus.mockReturnValue(false);
+
+    const cleanup = initSessionNotifications(manager, vi.fn());
+    const seededMessage = createMessage({
+      id: 'seeded-msg',
+      seq: 0,
+      body: {
+        type: 'text',
+        text: 'Already seen',
+      },
+    });
+    const session = createSession({
+      connectionId: 'notif-1',
+      status: 'notification',
+      messages: [seededMessage],
+      activePrompt: createPrompt(),
+    });
+
+    emitEvent(manager, 'session:list', {
+      sessions: [session],
+    });
+    emitEvent(manager, 'session:message', {
+      connectionId: 'notif-1',
+      message: seededMessage,
+    });
+
+    expect(MockNotification.instances).toHaveLength(0);
+
+    cleanup();
+  });
+
+  test('session:list closes stale notifications for missing sessions and cleared prompts', () => {
+    const manager = new SessionManager();
+    manager.initialized = true;
+    manager.sessions.set('missing-conn', createSession({ connectionId: 'missing-conn' }));
+    manager.sessions.set('prompt-cleared', createSession({ connectionId: 'prompt-cleared' }));
+    manager.sessions.set('still-active', createSession({ connectionId: 'still-active' }));
+    const { hasFocus } = installDomMocks();
+    hasFocus.mockReturnValue(false);
+
+    const cleanup = initSessionNotifications(manager, vi.fn());
+
+    emitEvent(manager, 'session:prompt', {
+      connectionId: 'missing-conn',
+      prompt: createPrompt({ requestId: 'prompt-missing' }),
+    });
+    emitEvent(manager, 'session:prompt', {
+      connectionId: 'prompt-cleared',
+      prompt: createPrompt({ requestId: 'prompt-cleared' }),
+    });
+    emitEvent(manager, 'session:prompt', {
+      connectionId: 'still-active',
+      prompt: createPrompt({ requestId: 'prompt-still-active' }),
+    });
+
+    expect(getActiveNotificationTags()).toEqual(
+      new Set(['session:missing-conn', 'session:prompt-cleared', 'session:still-active'])
+    );
+
+    emitEvent(manager, 'session:list', {
+      sessions: [
+        createSession({
+          connectionId: 'prompt-cleared',
+          activePrompt: null,
+        }),
+        createSession({
+          connectionId: 'still-active',
+          activePrompt: createPrompt({ requestId: 'prompt-still-active' }),
+        }),
+      ],
+    });
+
+    expect(getActiveNotificationTags()).toEqual(new Set(['session:still-active']));
+    expect(MockNotification.instances[0]?.closed).toBe(true);
+    expect(MockNotification.instances[1]?.closed).toBe(true);
+    expect(MockNotification.instances[2]?.closed).toBe(false);
 
     cleanup();
   });
@@ -459,7 +665,9 @@ describe('session_notifications', () => {
 
     emitEvent(manager, 'session:message', {
       connectionId: 'conn-1',
-      message: createMessage(),
+      message: createMessage({
+        seq: 0,
+      }),
     });
 
     hasFocus.mockReturnValue(true);
@@ -472,22 +680,84 @@ describe('session_notifications', () => {
     cleanup();
   });
 
-  test('cleanup unsubscribes from future session events', () => {
+  test('disconnect closes the matching notification using the event session connection id', () => {
+    const manager = new SessionManager();
+    manager.initialized = true;
+    manager.sessions.set(
+      'conn-1',
+      createSession({
+        connectionId: 'conn-1',
+        status: 'notification',
+      })
+    );
+    const { hasFocus } = installDomMocks();
+    hasFocus.mockReturnValue(false);
+    const cleanup = initSessionNotifications(manager, vi.fn());
+
+    emitEvent(manager, 'session:message', {
+      connectionId: 'conn-1',
+      message: createMessage({
+        seq: 0,
+      }),
+    });
+
+    emitEvent(manager, 'session:disconnect', {
+      session: createSession({
+        connectionId: 'conn-1',
+        status: 'offline',
+        disconnectedAt: '2026-03-18T10:02:00.000Z',
+      }),
+    });
+
+    expect(MockNotification.instances[0]?.closed).toBe(true);
+    expect(getActiveNotificationTags()).toEqual(new Set());
+
+    cleanup();
+  });
+
+  test('cleanup unsubscribes from future session events and closes all open notifications', () => {
     const manager = new SessionManager();
     manager.initialized = true;
     manager.sessions.set('conn-1', createSession());
+    manager.sessions.set(
+      'conn-2',
+      createSession({
+        connectionId: 'conn-2',
+        status: 'notification',
+      })
+    );
     const { hasFocus } = installDomMocks();
     hasFocus.mockReturnValue(false);
 
     const cleanup = initSessionNotifications(manager, vi.fn());
+
+    emitEvent(manager, 'session:prompt', {
+      connectionId: 'conn-1',
+      prompt: createPrompt(),
+    });
+    emitEvent(manager, 'session:message', {
+      connectionId: 'conn-2',
+      message: createMessage({
+        id: 'cleanup-msg',
+        seq: 0,
+      }),
+    });
+
+    expect(getActiveNotificationTags()).toEqual(new Set(['session:conn-1', 'session:conn-2']));
+
     cleanup();
+
+    expect(MockNotification.instances).toHaveLength(2);
+    expect(MockNotification.instances.every((instance) => instance.closed)).toBe(true);
+    expect(getActiveNotificationTags()).toEqual(new Set());
+    const instanceCountAfterCleanup = MockNotification.instances.length;
 
     emitEvent(manager, 'session:prompt', {
       connectionId: 'conn-1',
       prompt: createPrompt(),
     });
 
-    expect(MockNotification.instances).toHaveLength(0);
+    expect(MockNotification.instances).toHaveLength(instanceCountAfterCleanup);
   });
 });
 

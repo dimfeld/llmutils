@@ -7,100 +7,46 @@ goal: "Replicate the tim-gui notification system in the web interface:
   Notifications API, and a global header bell button for navigation."
 id: 237
 uuid: a3908bae-f909-4424-ba9a-dfa6f4caf968
-generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 planGeneratedAt: 2026-03-19T06:50:50.976Z
 promptsGeneratedAt: 2026-03-19T06:50:50.976Z
 createdAt: 2026-03-18T21:52:45.558Z
-updatedAt: 2026-03-19T06:59:26.099Z
+updatedAt: 2026-03-19T07:53:05.515Z
 tasks:
-  - title: "Server: Add notification text extraction functions"
-    done: false
-    description: "Create pure functions in a new
-      src/lib/server/session_notifications.ts module:
-      computeDoneNotificationText(session) scans messages in reverse for latest
-      llm_response text body, normalizes whitespace, truncates to 220 chars,
-      falls back to Done. computeDisconnectNotificationText(session) does the
-      same scan, then falls back to any text/monospaced body, then Session
-      finished. normalizeNotificationText(text, limit) collapses whitespace and
-      truncates. These match tim-gui SessionState.swift logic."
-  - title: "Server: Add notification field to DisplayMessage for done/completion
-      triggers"
-    done: false
-    description: "Add optional notification field to DisplayMessage interface in
-      both server and client types. In handleWebSocketMessage() for output
-      messages, after formatTunnelMessage() creates the DisplayMessage, check
-      the original structured message: if type is task_completion AND
-      transportSource is NOT tunnel AND session is interactive, compute
-      notification text and set displayMessage.notification."
-  - title: "Server: Add notification field to DisplayMessage for HTTP notifications"
-    done: false
-    description: "In handleHttpNotification(), set displayMessage.notification = {
-      text: payload.message } on the DisplayMessage. Applies to both
-      merge-into-active-session and create-notification-session cases."
-  - title: "Server: Add lastNotification to SessionData for disconnect events"
-    done: false
-    description: Add optional lastNotification field to SessionData in both server
-      and client types. In handleWebSocketDisconnect(), before emitting
-      session:disconnect, check if session is non-interactive. If so, compute
-      disconnect notification text and set session.lastNotification before
-      cloneSessionMetadata().
-  - title: "Server: Add tests for notification logic"
-    done: false
-    description: "Create src/lib/server/session_notifications.test.ts. Test text
-      extraction functions with various message histories. Test notification
-      trigger integration: tunnel-sourced task_completion excluded, non-tunnel
-      interactive task_completion included, non-interactive disconnect included,
-      interactive disconnect excluded."
-  - title: "Client: Update types and applySessionEvent for notification fields"
-    done: false
-    description: Update src/lib/types/session.ts with notification on
-      DisplayMessage, lastNotification on SessionData, and client-only
-      hasUnreadNotification/notificationMessage fields. Update applySessionEvent
-      to default these to false/null for incoming sessions while preserving
-      existing client notification state during metadata-only updates.
-  - title: "Client: Create NotificationManager class"
-    done: false
-    description: "Create src/lib/stores/notification_manager.svelte.ts managing
-      in-UI state and browser notifications. Reactive state for
-      enabled/permission/supported. Methods: handlePromptEvent, handleMessage,
-      handleDisconnect, markRead, firstSessionWithNotification,
-      hasAnyNotification, enable/disable, shouldFireBrowserNotification. Browser
-      notifications use Web Notifications API with onclick navigation."
-  - title: "Client: Hook NotificationManager into SessionManager SSE event processing"
-    done: false
-    description: Add notificationManager to SessionManager. In handleSseEvent(),
-      after applySessionEvent(), dispatch to notification manager methods
-      guarded by this.initialized. Add markNotificationRead method. Initialize
-      NotificationManager in +layout.svelte.
-  - title: "Client: Update SessionRow with notification dot and message"
-    done: false
-    description: Add blue unread dot to SessionRow when hasUnreadNotification. Show
-      notificationMessage as subtitle for notification-only sessions. Add
-      opacity-controlled notification dot to session group headers when
-      collapsed and group has unread notifications.
-  - title: "Client: Add notification clearing on user interaction"
-    done: false
-    description: "Clear notifications on: session route page load, SessionDetail
-      scroll, PromptRenderer respond, MessageInput send, SessionRow terminal
-      icon click. All call sessionManager.markNotificationRead(connectionId)."
-  - title: "Client: Add bell button to global header"
-    done: false
-    description: "Add bell icon button to right side of header in +layout.svelte.
-      Shows blue dot when hasAnyNotification. Button states: hidden if
-      unsupported, gray for default/disabled, active for enabled, bell-off for
-      denied. Clicking navigates to first unread notification session, switching
-      tabs if needed. Uses lucide-svelte Bell/BellOff icons."
-  - title: "Client: Add tests for NotificationManager and event integration"
-    done: false
-    description: Create src/lib/stores/notification_manager.test.ts testing all
-      methods. Mock Notification constructor and document.visibilityState. Test
-      browser notifications suppressed when page visible. Test
-      firstSessionWithNotification across groups. Update session_state_events
-      tests for notification field preservation.
 branch: 237-web-notifications-support
 tags: []
+reviewIssues:
+  - severity: major
+    category: testing
+    content: "The new tests do not exercise the reconnect/sync path that the
+      implementation claims to support. They force `manager.initialized = true`
+      up front and the only `session:list` reconciliation test covers prompt
+      notifications only. That misses both regressions above: message
+      notifications being closed by snapshot reconciliation and pre-sync events
+      being dropped."
+    file: src/lib/stores/session_notifications.test.ts
+    line: 187-189, 515-597
+    suggestion: "Add tests for: 1) a seq-0 message notification surviving
+      `session:list` when the session still exists, and 2) `session:list` plus
+      buffered `session:prompt`/`session:message` before
+      `session:sync-complete`."
+  - severity: major
+    category: bug
+    content: The session:list reconciliation logic closes browser notifications for
+      sessions that exist but have no activePrompt. However, browser
+      notifications can also be created by session:message events (seq===0) for
+      notification-type sessions. These sessions typically have no activePrompt.
+      On SSE reconnect, the session:list reconciliation will close these browser
+      notifications even though the notification session is still active and the
+      user may not have interacted with them yet.
+    file: src/lib/stores/session_notifications.ts
+    line: 89-93
+    suggestion: "Also check if the session has notification-origin messages
+      (seq===0) before closing: if (session && !session.activePrompt) { const
+      hasNotificationMessages = session.messages.some((m) => m.seq ===
+      NOTIFICATION_SEQ); if (!hasNotificationMessages) { closeNotification(tag);
+      } }"
 ---
 
 When a notification comes in we should trigger a browser notification so that the user can respond. This replicates the behavior of the tim-gui native macOS app.

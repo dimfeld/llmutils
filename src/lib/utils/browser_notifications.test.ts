@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import {
+  closeAllNotifications,
   closeNotification,
+  getActiveNotificationTags,
   requestNotificationPermission,
   showBrowserNotification,
 } from './browser_notifications.js';
@@ -54,9 +56,7 @@ describe('browser_notifications', () => {
   });
 
   afterEach(() => {
-    for (const instance of MockNotification.instances) {
-      instance.close();
-    }
+    closeAllNotifications();
 
     if (originalNotification) {
       Object.defineProperty(globalThis, 'Notification', {
@@ -177,5 +177,49 @@ describe('browser_notifications', () => {
 
   test('closeNotification is a no-op for unknown tags', () => {
     expect(() => closeNotification('unknown')).not.toThrow();
+  });
+
+  test('closeAllNotifications closes all tracked notifications and clears their tags', () => {
+    MockNotification.permission = 'granted';
+
+    const first = showBrowserNotification({
+      title: 'Prompt',
+      body: 'First',
+      tag: 'first',
+    }) as MockNotification;
+    const second = showBrowserNotification({
+      title: 'Prompt',
+      body: 'Second',
+      tag: 'second',
+    }) as MockNotification;
+
+    expect(getActiveNotificationTags()).toEqual(new Set(['first', 'second']));
+
+    closeAllNotifications();
+
+    expect(first.closed).toBe(true);
+    expect(second.closed).toBe(true);
+    expect(getActiveNotificationTags()).toEqual(new Set());
+  });
+
+  test('getActiveNotificationTags reflects active tracked notifications only', () => {
+    MockNotification.permission = 'granted';
+
+    showBrowserNotification({
+      title: 'Prompt',
+      body: 'Tracked',
+      tag: 'tracked',
+    });
+    showBrowserNotification({
+      title: 'Prompt',
+      body: 'Other',
+      tag: 'other',
+    });
+
+    expect(getActiveNotificationTags()).toEqual(new Set(['tracked', 'other']));
+
+    closeNotification('tracked');
+
+    expect(getActiveNotificationTags()).toEqual(new Set(['other']));
   });
 });

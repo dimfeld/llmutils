@@ -56,3 +56,14 @@ export function closeNotification(tag: string): void {
     activeNotifications.delete(tag);
   }
 }
+
+export function closeAllNotifications(): void {
+  for (const notification of activeNotifications.values()) {
+    notification.close();
+  }
+  activeNotifications.clear();
+}
+
+export function getActiveNotificationTags(): Set<string> {
+  return new Set(activeNotifications.keys());
+}
