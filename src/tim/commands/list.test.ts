@@ -1073,7 +1073,7 @@ describe('handleListCommand', () => {
     expect(showingCall).toBeTruthy();
     expect(showingCall[0]).toBe('Showing 5 of 10 plan(s) (limited to 5)');
 
-    // Verify the last 5 plans are shown (IDs 6-10)
+    // Verify the newest 5 plans are shown at the end in ascending order (IDs 6-10)
     const shownIds = tableData.slice(1).map((row) => row[0]);
     expect(shownIds).toEqual([6, 7, 8, 9, 10]);
   });
@@ -1215,7 +1215,7 @@ describe('handleListCommand', () => {
     expect(showingCall).toBeTruthy();
     expect(showingCall[0]).toBe('Showing 2 of 4 plan(s) (limited to 2)');
 
-    // Verify the last 2 done plans are shown (IDs 3 and 4)
+    // Verify the newest 2 done plans are shown at the end in ascending order (IDs 3 and 4)
     const shownIds = tableData.slice(1).map((row) => row[0]);
     expect(shownIds).toEqual([3, 4]);
   });
@@ -1306,6 +1306,67 @@ describe('handleListCommand', () => {
     // Taking the last 3 should give us [3, 2, 1]
     const shownIds = tableData.slice(1).map((row) => row[0]);
     expect(shownIds).toEqual([3, 2, 1]);
+  });
+
+  test('limits results without including nullish sort values at the tail', async () => {
+    // Clear cache and mocks
+    clearPlanCache();
+    mockTable.mockClear();
+    mockLog.mockClear();
+
+    const plans = [
+      {
+        id: 1,
+        title: 'Missing Created At 1',
+        goal: 'Goal 1',
+        details: 'Details',
+        status: 'pending',
+        tasks: [],
+      },
+      {
+        id: 2,
+        title: 'Dated Plan',
+        goal: 'Goal 2',
+        details: 'Details',
+        status: 'pending',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        tasks: [],
+      },
+      {
+        id: 3,
+        title: 'Missing Created At 2',
+        goal: 'Goal 3',
+        details: 'Details',
+        status: 'pending',
+        tasks: [],
+      },
+    ];
+
+    for (const plan of plans) {
+      await fs.writeFile(
+        path.join(tasksDir, `${plan.id}.yml`),
+        `---\n${yaml.stringify(plan)}---\n`
+      );
+    }
+
+    await handleListCommand(
+      {
+        all: true,
+        sort: 'created',
+        number: 2,
+      },
+      {
+        parent: {
+          opts: () => ({}),
+        },
+      }
+    );
+
+    expect(mockTable).toHaveBeenCalled();
+    const tableData = mockTable.mock.calls[0][0];
+    const shownTitles = tableData.slice(1).map((row: any[]) => row[2]);
+
+    expect(shownTitles).toEqual(['Dated Plan']);
   });
 
   test('includes workspace assignments in table output', async () => {

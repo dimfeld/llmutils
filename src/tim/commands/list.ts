@@ -38,9 +38,61 @@ type ListPlan = PlanWithFilename & {
   isAssignedHere: boolean;
 };
 
+type ListSortField = 'title' | 'status' | 'priority' | 'updated' | 'id' | 'created';
+
+type SortValueInfo = {
+  hasValue: boolean;
+  value: string | number;
+};
+
 interface ListPlansLoadResult {
   plans: Map<number, PlanWithFilename>;
   duplicates: Record<number, string[]>;
+}
+
+function getSortValue(plan: ListPlan, sort: ListSortField): SortValueInfo {
+  switch (sort) {
+    case 'title':
+      return {
+        hasValue: plan.title != null || plan.goal != null,
+        value: (plan.title || plan.goal || '').toLowerCase(),
+      };
+    case 'status':
+      return {
+        hasValue: plan.status != null,
+        value: plan.status || '',
+      };
+    case 'priority': {
+      const priorityOrder: Record<string, number> = {
+        urgent: 5,
+        high: 4,
+        medium: 3,
+        low: 2,
+        maybe: 1,
+      };
+
+      return {
+        hasValue: plan.priority != null,
+        value: plan.priority ? priorityOrder[plan.priority] || 0 : 0,
+      };
+    }
+    case 'updated':
+      return {
+        hasValue: plan.updatedAt != null,
+        value: plan.updatedAt || '',
+      };
+    case 'id':
+      return {
+        hasValue: true,
+        value: Number(plan.id || 0),
+      };
+    case 'created':
+    default:
+      return {
+        hasValue: plan.createdAt != null,
+        value: plan.createdAt || '',
+      };
+  }
 }
 
 function loadPlansFromDb(searchDir: string, repositoryId: string): ListPlansLoadResult {
@@ -334,61 +386,18 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
   // Sort based on the specified field
   // TODO Secondary sorts for low-cardinality fields like status and priority
+  const sortField = (options.sort ?? 'created') as ListSortField;
+  const sortFieldSource =
+    typeof command?.getOptionValueSource === 'function'
+      ? command.getOptionValueSource('sort')
+      : undefined;
+  const effectiveSortField =
+    options.number && sortFieldSource === 'default' ? ('updated' as ListSortField) : sortField;
   planArray.sort((a, b) => {
-    let aVal: string | number;
-    let bVal: string | number;
-    switch (options.sort) {
-      case 'title':
-        aVal = (a.title || a.goal || '').toLowerCase();
-        bVal = (b.title || b.goal || '').toLowerCase();
-        break;
-      case 'status':
-        aVal = a.status || '';
-        bVal = b.status || '';
-        break;
-      case 'priority': {
-        // Sort priority in reverse (high first)
-        const priorityOrder: Record<string, number> = {
-          urgent: 5,
-          high: 4,
-          medium: 3,
-          low: 2,
-          maybe: 1,
-        };
-        aVal = a.priority ? priorityOrder[a.priority] || 0 : 0;
-        bVal = b.priority ? priorityOrder[b.priority] || 0 : 0;
-        break;
-      }
-      case 'updated':
-        aVal = a.updatedAt || '';
-        bVal = b.updatedAt || '';
-        break;
-      case 'id': {
-        let aNum = Number(a.id || 0);
-        let bNum = Number(b.id || 0);
-
-        if (!isNaN(aNum) && !isNaN(bNum)) {
-          aVal = aNum;
-          bVal = bNum;
-        } else if (!isNaN(aNum) && isNaN(bNum)) {
-          aVal = aNum;
-          bVal = 0;
-        } else if (isNaN(aNum) && !isNaN(bNum)) {
-          aVal = 0;
-          bVal = bNum;
-        } else {
-          aVal = a.id || '';
-          bVal = b.id || '';
-        }
-
-        break;
-      }
-      case 'created':
-      default:
-        aVal = a.createdAt || '';
-        bVal = b.createdAt || '';
-        break;
-    }
+    const aSort = getSortValue(a, effectiveSortField);
+    const bSort = getSortValue(b, effectiveSortField);
+    let aVal = aSort.value;
+    let bVal = bSort.value;
 
     if (aVal === bVal) {
       // Always fall back to ID sort.
@@ -406,6 +415,13 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
   // Apply result limit if specified
   if (options.number && options.number > 0) {
+    const sortablePlans = planArray.filter(
+      (plan) => getSortValue(plan, effectiveSortField).hasValue
+    );
+    if (sortablePlans.length > 0) {
+      planArray = sortablePlans;
+    }
+
     planArray = planArray.slice(-options.number);
   }
 
