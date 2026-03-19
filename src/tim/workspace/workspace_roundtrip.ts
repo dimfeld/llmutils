@@ -104,7 +104,7 @@ export async function runPostExecutionWorkspaceSync(
       workspacePath: context.executionWorkspacePath,
       refName: context.refName,
       remoteName: 'origin',
-      ensureJjBookmarkAtCurrent: true,
+      ensureJjBookmarkAtCurrent: false,
     });
     return;
   }
@@ -117,6 +117,6 @@ export async function runPostExecutionWorkspaceSync(
     sourceWorkspacePath: context.executionWorkspacePath,
     destinationWorkspacePath: context.primaryWorkspacePath,
     refName: context.refName,
-    ensureJjBookmarkAtCurrent: true,
+    ensureJjBookmarkAtCurrent: false,
   });
 }

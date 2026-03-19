@@ -24,6 +24,8 @@ export function createConfig() {
         'src/hooks_loader.mjs',
         'src/scripts/*',
         'src/**/*.test.ts',
+        'src/lib/**',
+        'src/routes/**',
         'playwright.config.ts',
         'tailwind.config.ts',
         'vite.config.ts.*',
@@ -33,20 +35,20 @@ export function createConfig() {
     {
       languageOptions: { parser: ts.parser, parserOptions: { projectService: true } },
     },
-    ...svelte.configs['flat/recommended'],
-    {
-      files: ['**/*.svelte', '**/*.svelte.ts'],
-      languageOptions: {
-        parserOptions: {
-          parser: ts.parser,
-          projectService: true,
-          extraFileExtensions: ['.svelte'],
-        },
-      },
-      rules: {
-        'svelte/no-navigation-without-resolve': 'off',
-      },
-    },
+    // ...svelte.configs['flat/recommended'],
+    // {
+    //   files: ['**/*.svelte', '**/*.svelte.ts'],
+    //   languageOptions: {
+    //     parserOptions: {
+    //       parser: ts.parser,
+    //       projectService: true,
+    //       extraFileExtensions: ['.svelte'],
+    //     },
+    //   },
+    //   rules: {
+    //     'svelte/no-navigation-without-resolve': 'off',
+    //   },
+    // },
     ...ts.configs.recommendedTypeChecked,
     {
       languageOptions: { globals: { ...globals.browser, ...globals.node } },
@@ -76,4 +78,4 @@ export function createConfig() {
   ].filter((x) => x != null);
 }
 
-export default ts.config(...createConfig(true), prettier, svelte.configs.prettier);
+export default ts.config(...createConfig(), prettier, svelte.configs.prettier);

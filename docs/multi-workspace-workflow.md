@@ -158,6 +158,15 @@ tim workspace list --format tsv --no-header  # For scripts
 tim workspace list --format json              # For programmatic use
 ```
 
+## Workspace Creation Design Notes
+
+When creating a new workspace (`tim workspace add`), branch setup follows a two-phase approach:
+
+1. **Primary workspace**: The branch/bookmark is created in the primary workspace. The plan file is staged and committed so it's included in the branch history. For git, `git branch -f` is used; for jj, `jj bookmark set`. This makes branch creation idempotent — rerunning workspace creation for the same task reuses or updates the existing ref instead of failing.
+2. **New workspace**: The branch is pushed to origin from the primary workspace, then fetched and checked out in the new workspace clone. This ensures the plan file and any other committed content are available via normal git sync.
+
+For the `--reuse` flow (reusing an existing workspace), the plan file is copied directly into the workspace since there's no clone step.
+
 ## Workspace Push Design Notes
 
 The `workspace push` command transfers branches between workspaces using different strategies for git and jj. You can set source, destination, and branch explicitly:
@@ -177,6 +186,7 @@ Implementation strategy:
 
 - `tim claim <plan>` - manually claim a plan
 - `tim release <plan>` - remove the current workspace/user from a claim
+- `tim workspace add` - create a new workspace (or reuse an existing one with `--reuse`)
 - `tim workspace list` - list workspaces with status, name, and description
 - `tim workspace update` - update workspace name and description
 - `tim workspace push` - push a branch/bookmark between workspaces

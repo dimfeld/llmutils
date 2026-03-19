@@ -201,6 +201,7 @@ export async function handleGenerateCommand(
         newWorkspace: options.newWorkspace,
         nonInteractive: options.nonInteractive,
         requireWorkspace: options.requireWorkspace,
+        createBranch: true,
         planUuid: parsedPlan.uuid,
         base: options.base,
         allowPrimaryWorkspaceWhenLocked: true,

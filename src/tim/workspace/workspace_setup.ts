@@ -1,11 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import {
-  getCurrentBranchName,
-  getGitRoot,
-  getUsingJj,
-  getWorkingCopyStatus,
-} from '../../common/git.js';
+import { getGitRoot, getUsingJj, getWorkingCopyStatus } from '../../common/git.js';
 import { logSpawn } from '../../common/process.js';
 import { error, log, sendStructured, warn } from '../../logging.js';
 import { generateBranchNameFromPlan } from '../commands/branch.js';
@@ -19,6 +14,7 @@ import { findWorkspaceInfosByTaskId } from './workspace_info.js';
 import { WorkspaceAlreadyLocked, WorkspaceLock } from './workspace_lock.js';
 import {
   createWorkspace,
+  ensurePrimaryWorkspaceBranch,
   prepareExistingWorkspace,
   runWorkspaceUpdateCommands,
   type Workspace,
@@ -32,6 +28,7 @@ export interface WorkspaceSetupOptions {
   requireWorkspace?: boolean;
   planUuid?: string;
   base?: string;
+  createBranch?: boolean;
   allowPrimaryWorkspaceWhenLocked?: boolean;
 }
 
@@ -173,6 +170,7 @@ export async function setupWorkspace(
 
       const relativePlanPath = path.relative(currentBaseDir, planFile);
       const workspacePlanFile = path.join(workspace.path, relativePlanPath);
+      const primaryRepoRoot = (await getGitRoot(currentBaseDir)) || currentBaseDir;
       // createWorkspace() acquires a persistent lock. Replace it with a PID lock so
       // signal-based cleanup handlers can release it on interruption.
       if (isNewWorkspace) {
@@ -219,6 +217,8 @@ export async function setupWorkspace(
           let planData: PlanSchema | undefined;
           let baseBranch = options.base;
           let canRetryWithoutBaseBranch = false;
+          const shouldCreateBranch =
+            options.createBranch ?? config.workspaceCreation?.createBranch ?? true;
           try {
             planData = await readPlanFile(planFile);
             branchName = planData.branch ?? generateBranchNameFromPlan(planData);
@@ -258,15 +258,24 @@ export async function setupWorkspace(
               );
             }
 
-            try {
-              const currentBranch = await getCurrentBranchName(workspace.path);
-              if (currentBranch !== branchName) {
-                preparedWithPlanBranch = await pullWorkspaceRefIfExists(
-                  workspace.path,
-                  branchName,
-                  'origin'
+            if (shouldCreateBranch) {
+              const createResult = await ensurePrimaryWorkspaceBranch(primaryRepoRoot, branchName, {
+                planFilePath: planFile,
+                fromBranch: baseBranch,
+              });
+              if (!createResult.success) {
+                throw new Error(
+                  `Failed to create and push branch "${branchName}" from primary workspace: ${createResult.error ?? 'Unknown error'}`
                 );
               }
+            }
+
+            try {
+              preparedWithPlanBranch = await pullWorkspaceRefIfExists(
+                workspace.path,
+                branchName,
+                'origin'
+              );
             } catch (err) {
               warn(`Failed to pull workspace branch "${branchName}": ${err as Error}`);
             }
@@ -276,13 +285,13 @@ export async function setupWorkspace(
             let prepareResult = await prepareExistingWorkspace(workspace.path, {
               baseBranch,
               branchName,
-              createBranch: config.workspaceCreation?.createBranch ?? true,
+              createBranch: shouldCreateBranch,
             });
 
             if (!prepareResult.success && canRetryWithoutBaseBranch) {
               prepareResult = await prepareExistingWorkspace(workspace.path, {
                 branchName,
-                createBranch: config.workspaceCreation?.createBranch ?? true,
+                createBranch: shouldCreateBranch,
               });
             }
 
@@ -343,12 +352,7 @@ export async function setupWorkspace(
         }
 
         if (isNewWorkspace) {
-          try {
-            await copyPlanIntoWorkspace();
-          } catch (err) {
-            error(`Failed to copy plan file to workspace: ${err as Error}`);
-            error('Continuing with original plan file.');
-          }
+          planFile = workspace.planFilePathInWorkspace ?? workspacePlanFile;
         }
 
         baseDir = workspace.path;

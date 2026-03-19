@@ -366,7 +366,9 @@ describe('WorkspaceAutoSelector', () => {
     );
     await seedWorkspace('github.com/test/repo', fallbackPath, 'task-fallback', 'task-fallback');
     const db = getDatabase();
-    db.prepare('UPDATE workspace SET is_primary = 1 WHERE workspace_path = ?').run(assignedPrimaryPath);
+    db.prepare('UPDATE workspace SET is_primary = 1 WHERE workspace_path = ?').run(
+      assignedPrimaryPath
+    );
     await seedAssignmentForPlan(
       'github.com/test/repo',
       '33333333-3333-4333-8333-333333333333',

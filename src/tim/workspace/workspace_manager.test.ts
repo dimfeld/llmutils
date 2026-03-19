@@ -36,6 +36,8 @@ describe('createWorkspace', () => {
     mockDebugLog.mockReset();
     mockSpawnAndLogOutput.mockReset();
     mockExecutePostApplyCommand.mockReset();
+    mockSpawnAndLogOutput.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
+    mockExecutePostApplyCommand.mockResolvedValue(true);
 
     // Set up module mocks
     await moduleMocker.mock('../../logging.js', () => ({
@@ -102,13 +104,6 @@ describe('createWorkspace', () => {
       };
     });
 
-    // Mock the branch creation
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-    }));
-
     // Execute
     const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
@@ -124,9 +119,8 @@ describe('createWorkspace', () => {
     // Verify log calls
     expect(mockLog).toHaveBeenCalledWith('Creating workspace...');
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Cloning repository'));
-    expect(mockLog).toHaveBeenCalledWith(
-      expect.stringContaining('Creating and checking out branch')
-    );
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Creating and pushing branch'));
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Checking out branch'));
 
     // Verify the workspace directory was actually created
     const stats = await fs.stat(result!.path);
@@ -181,6 +175,80 @@ describe('createWorkspace', () => {
     expect(mockLog).toHaveBeenCalledWith(
       expect.stringContaining(`Inferred repository URL: ${inferredRepositoryUrl}`)
     );
+  });
+
+  test('createWorkspace creates and pushes git branches from the primary workspace before checkout in the new workspace', async () => {
+    const taskId = 'task-primary-branch';
+    const planPath = path.join(mainRepoRoot, 'tasks', 'task-primary-branch.plan.md');
+    await fs.mkdir(path.dirname(planPath), { recursive: true });
+    await fs.writeFile(planPath, 'plan');
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'repo-task-primary-branch');
+    const workspacePlanPath = path.join(targetClonePath, 'tasks', 'task-primary-branch.plan.md');
+
+    const config: TimConfig = {
+      workspaceCreation: {
+        repositoryUrl,
+        cloneLocation,
+        createBranch: true,
+      },
+    };
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[], options?: { cwd?: string }) => {
+      if (cmd[0] === 'git' && cmd[1] === 'clone') {
+        await fs.mkdir(targetClonePath, { recursive: true });
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'status') {
+        return { exitCode: 0, stdout: ' M tasks/task-primary-branch.plan.md', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'checkout' && options?.cwd === targetClonePath) {
+        await fs.mkdir(path.dirname(workspacePlanPath), { recursive: true });
+        await fs.writeFile(workspacePlanPath, 'plan');
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
+
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['git', 'status', '--porcelain', '--', 'tasks/task-primary-branch.plan.md'],
+      { cwd: mainRepoRoot, quiet: true },
+    ]);
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['git', 'add', '--', 'tasks/task-primary-branch.plan.md'],
+      { cwd: mainRepoRoot },
+    ]);
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['git', 'commit', '-m', 'Update plan file', '--', 'tasks/task-primary-branch.plan.md'],
+      { cwd: mainRepoRoot },
+    ]);
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['git', 'branch', '-f', taskId],
+      { cwd: mainRepoRoot },
+    ]);
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['git', 'push', 'origin', taskId],
+      { cwd: mainRepoRoot },
+    ]);
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['git', 'fetch', 'origin'],
+      { cwd: targetClonePath },
+    ]);
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['git', 'checkout', taskId],
+      { cwd: targetClonePath },
+    ]);
+    expect(result?.planFilePathInWorkspace).toBe(workspacePlanPath);
+    expect(
+      await fs
+        .access(workspacePlanPath)
+        .then(() => true)
+        .catch(() => false)
+    ).toBe(true);
   });
 
   test('createWorkspace with tim method - fails on clone error', async () => {
@@ -357,7 +425,7 @@ describe('createWorkspace', () => {
     // Verify
     expect(result).toBeNull();
     expect(mockLog).toHaveBeenCalledWith(
-      expect.stringContaining('Failed to create and checkout branch')
+      expect.stringContaining('Failed to create and push branch')
     );
 
     // Verify the workspace directory was cleaned up
@@ -571,16 +639,15 @@ describe('createWorkspace', () => {
 
     // Verify branch name uses taskId directly
     expect(mockLog).toHaveBeenCalledWith(
-      expect.stringContaining('Creating and checking out branch task-456')
+      expect.stringContaining('Creating and pushing branch task-456')
     );
   });
 
-  test('createWorkspace with a plan file - plan is copied to workspace', async () => {
+  test('createWorkspace with a plan file exposes the expected workspace plan path', async () => {
     // Setup
     const taskId = 'task-789';
     const planPath = path.join(mainRepoRoot, 'test-plan.yml');
-    const planContent = 'id: test-plan\ntitle: Test Plan\nstatus: pending';
-    await fs.writeFile(planPath, planContent);
+    await fs.writeFile(planPath, 'id: test-plan\ntitle: Test Plan\nstatus: pending');
 
     const repositoryUrl = 'https://github.com/example/repo.git';
     const cloneLocation = path.join(testTempDir, 'clones');
@@ -604,13 +671,6 @@ describe('createWorkspace', () => {
       };
     });
 
-    // Mock the branch creation
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-    }));
-
     // Execute with plan file
     const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
@@ -628,22 +688,18 @@ describe('createWorkspace', () => {
       taskId,
     });
 
-    // Verify the plan file was copied
-    const copiedPlanContent = await fs.readFile(result!.planFilePathInWorkspace!, 'utf-8');
-    expect(copiedPlanContent).toBe(planContent);
-
-    // Verify logging
-    expect(mockLog).toHaveBeenCalledWith(
-      expect.stringContaining(`Copying plan file to workspace: ${relativePath}`)
-    );
+    const planExistsInWorkspace = await fs
+      .access(result!.planFilePathInWorkspace!)
+      .then(() => true)
+      .catch(() => false);
+    expect(planExistsInWorkspace).toBe(false);
   });
 
   test('createWorkspace with post-clone commands - LLMUTILS_PLAN_FILE_PATH env var set correctly', async () => {
     // Setup
     const taskId = 'task-env-test';
     const planPath = path.join(mainRepoRoot, 'env-test-plan.yml');
-    const planContent = 'id: env-test\ntitle: Env Test Plan';
-    await fs.writeFile(planPath, planContent);
+    await fs.writeFile(planPath, 'id: env-test\ntitle: Env Test Plan');
 
     const repositoryUrl = 'https://github.com/example/repo.git';
     const cloneLocation = path.join(testTempDir, 'clones');
@@ -783,23 +839,14 @@ describe('createWorkspace', () => {
       };
     });
 
-    // Capture the git checkout command arguments
-    let checkoutArgs: string[] | undefined;
-    mockSpawnAndLogOutput.mockImplementationOnce(async (args) => {
-      checkoutArgs = args;
-      return {
-        exitCode: 0,
-        stdout: '',
-        stderr: '',
-      };
-    });
-
     // Execute
     await createWorkspace(mainRepoRoot, taskId, undefined, config);
 
-    // Verify the branch name uses taskId directly
-    expect(checkoutArgs).toBeDefined();
-    expect(checkoutArgs).toContain('branch-test');
+    const branchCreateCall = mockSpawnAndLogOutput.mock.calls.find(
+      (call) => call[0][0] === 'git' && call[0][1] === 'branch'
+    );
+    expect(branchCreateCall).toBeDefined();
+    expect(branchCreateCall![0]).toContain('branch-test');
   });
 
   test('createWorkspace with tim method - no postCloneCommands provided', async () => {
@@ -1046,6 +1093,7 @@ describe('createWorkspace', () => {
 
       if (cmd[0] === 'git' && cmd[1] === 'init') {
         expect(options?.cwd).toBe(targetClonePath);
+        await fs.mkdir(path.join(targetClonePath, '.jj'), { recursive: true });
         return { exitCode: 0, stdout: '', stderr: '' };
       }
 
@@ -1477,7 +1525,7 @@ describe('createWorkspace', () => {
 
     // Verify that branch creation was not logged
     expect(mockLog).not.toHaveBeenCalledWith(
-      expect.stringContaining('Creating and checking out branch')
+      expect.stringContaining('Creating and pushing branch')
     );
 
     // Verify git checkout was never called
@@ -1493,7 +1541,9 @@ describe('createWorkspace', () => {
     const cloneLocation = path.join(testTempDir, 'clones');
     const targetClonePath = path.join(cloneLocation, 'jj-source-task-jj-from-branch');
 
-    await fs.mkdir(path.join(sourceDirectory, '.jj'), { recursive: true });
+    await fs.mkdir(path.join(mainRepoRoot, '.jj'), { recursive: true });
+    await fs.mkdir(sourceDirectory, { recursive: true });
+    await fs.mkdir(path.join(targetClonePath, '.jj'), { recursive: true });
     await fs.writeFile(path.join(sourceDirectory, 'README.md'), 'jj content');
 
     const config: TimConfig = {
@@ -1527,24 +1577,129 @@ describe('createWorkspace', () => {
     expect(result).not.toBeNull();
     expect(result!.path).toBe(targetClonePath);
 
-    const jjNewCall = mockSpawnAndLogOutput.mock.calls.find(
-      (call) => call[0][0] === 'jj' && call[0][1] === 'new' && call[0][2] === 'main'
-    );
-    expect(jjNewCall).toBeDefined();
-
-    const jjBookmarkCall = mockSpawnAndLogOutput.mock.calls.find(
+    const jjCreateCall = mockSpawnAndLogOutput.mock.calls.find(
       (call) =>
         call[0][0] === 'jj' &&
         call[0][1] === 'bookmark' &&
         call[0][2] === 'set' &&
-        call[0][3] === 'jj-feature'
+        call[0][3] === 'jj-feature' &&
+        call[0][4] === '--revision' &&
+        call[0][5] === 'main' &&
+        call[1]?.cwd === mainRepoRoot
     );
-    expect(jjBookmarkCall).toBeDefined();
+    expect(jjCreateCall).toBeDefined();
+
+    const jjPushCall = mockSpawnAndLogOutput.mock.calls.find(
+      (call) =>
+        call[0][0] === 'jj' &&
+        call[0][1] === 'git' &&
+        call[0][2] === 'push' &&
+        call[0][3] === '--bookmark' &&
+        call[0][4] === 'jj-feature' &&
+        call[1]?.cwd === mainRepoRoot
+    );
+    expect(jjPushCall).toBeDefined();
+
+    const jjWorkspaceNewCall = mockSpawnAndLogOutput.mock.calls.find(
+      (call) =>
+        call[0][0] === 'jj' &&
+        call[0][1] === 'new' &&
+        call[0][2] === 'jj-feature' &&
+        call[1]?.cwd === targetClonePath
+    );
+    expect(jjWorkspaceNewCall).toBeDefined();
 
     const gitCheckoutCalls = mockSpawnAndLogOutput.mock.calls.filter(
       (call) => call[0][0] === 'git' && call[0][1] === 'checkout'
     );
     expect(gitCheckoutCalls).toHaveLength(0);
+  });
+
+  test('createWorkspace falls back to origin/<fromBranch> when the base branch is not local', async () => {
+    const taskId = 'task-remote-base';
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'repo-task-remote-base');
+
+    const config: TimConfig = {
+      workspaceCreation: {
+        repositoryUrl,
+        cloneLocation,
+        createBranch: true,
+      },
+    };
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[], options?: { cwd?: string }) => {
+      if (cmd[0] === 'git' && cmd[1] === 'clone') {
+        await fs.mkdir(targetClonePath, { recursive: true });
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (
+        cmd[0] === 'git' &&
+        cmd[1] === 'rev-parse' &&
+        cmd[2] === '--verify' &&
+        cmd[3] === 'develop'
+      ) {
+        return { exitCode: 1, stdout: '', stderr: 'unknown revision' };
+      }
+
+      if (
+        cmd[0] === 'git' &&
+        cmd[1] === 'rev-parse' &&
+        cmd[2] === '--verify' &&
+        cmd[3] === 'origin/develop'
+      ) {
+        return { exitCode: 0, stdout: 'abc123', stderr: '' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    await createWorkspace(mainRepoRoot, taskId, undefined, config, { fromBranch: 'develop' });
+
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['git', 'branch', '-f', taskId, 'origin/develop'],
+      { cwd: mainRepoRoot },
+    ]);
+  });
+
+  test('createWorkspace cleans up the cloned workspace when branch creation throws', async () => {
+    const taskId = 'task-throw-cleanup';
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'repo-task-throw-cleanup');
+
+    const config: TimConfig = {
+      workspaceCreation: {
+        repositoryUrl,
+        cloneLocation,
+        createBranch: true,
+      },
+    };
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[]) => {
+      if (cmd[0] === 'git' && cmd[1] === 'clone') {
+        await fs.mkdir(targetClonePath, { recursive: true });
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'branch') {
+        throw new Error('missing git binary');
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+
+    expect(result).toBeNull();
+    expect(
+      await fs
+        .access(targetClonePath)
+        .then(() => true)
+        .catch(() => false)
+    ).toBe(false);
   });
 
   test('createWorkspace with relative source directory path should resolve correctly', async () => {
@@ -1623,8 +1778,7 @@ describe('createWorkspace', () => {
     const tasksDir = path.join(mainRepoRoot, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
     const planPath = path.join(tasksDir, 'plan-123.yml');
-    const planContent = 'id: 123\ntitle: Test Plan in Subdirectory\nstatus: pending';
-    await fs.writeFile(planPath, planContent);
+    await fs.writeFile(planPath, 'id: 123\ntitle: Test Plan in Subdirectory\nstatus: pending');
 
     const repositoryUrl = 'https://github.com/example/repo.git';
     const cloneLocation = path.join(testTempDir, 'clones');
@@ -1648,13 +1802,6 @@ describe('createWorkspace', () => {
       };
     });
 
-    // Mock the branch creation
-    mockSpawnAndLogOutput.mockImplementationOnce(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-    }));
-
     // Execute with plan file in subdirectory
     const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
@@ -1665,19 +1812,11 @@ describe('createWorkspace', () => {
     const expectedPlanPath = path.join(targetClonePath, 'tasks', 'plan-123.yml');
     expect(result!.planFilePathInWorkspace).toBe(expectedPlanPath);
 
-    // Verify the plan file was copied to the correct location
-    const copiedPlanContent = await fs.readFile(result!.planFilePathInWorkspace!, 'utf-8');
-    expect(copiedPlanContent).toBe(planContent);
-
-    // Verify the tasks directory exists in the workspace
-    const tasksInWorkspace = path.join(targetClonePath, 'tasks');
-    const tasksDirStats = await fs.stat(tasksInWorkspace);
-    expect(tasksDirStats.isDirectory()).toBe(true);
-
-    // Verify logging shows the relative path
-    expect(mockLog).toHaveBeenCalledWith(
-      expect.stringContaining('Copying plan file to workspace: tasks/plan-123.yml')
-    );
+    const planExistsInWorkspace = await fs
+      .access(result!.planFilePathInWorkspace!)
+      .then(() => true)
+      .catch(() => false);
+    expect(planExistsInWorkspace).toBe(false);
   });
 
   test('createWorkspace sets workspace name to taskId', async () => {

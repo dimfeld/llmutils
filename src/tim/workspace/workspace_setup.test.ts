@@ -73,7 +73,7 @@ describe('setupWorkspace', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  test('uses auto-workspace selector and copies plan into selected workspace', async () => {
+  test('uses auto-workspace selector and points new workspaces at the workspace plan path', async () => {
     const autoWorkspacePath = path.join(tempDir, 'workspace-auto');
     await fs.mkdir(autoWorkspacePath, { recursive: true });
 
@@ -113,10 +113,15 @@ describe('setupWorkspace', () => {
 
     const copiedPlanFile = path.join(autoWorkspacePath, path.basename(planFile));
     expect(result.planFile).toBe(copiedPlanFile);
-    expect(await fs.readFile(result.planFile, 'utf8')).toContain('Plan details');
+    expect(
+      await fs
+        .access(result.planFile)
+        .then(() => true)
+        .catch(() => false)
+    ).toBe(false);
   });
 
-  test('preserves relative plan path when copying plan into selected workspace', async () => {
+  test('preserves relative plan path for new selected workspaces', async () => {
     const autoWorkspacePath = path.join(tempDir, 'workspace-auto-nested-plan');
     await fs.mkdir(autoWorkspacePath, { recursive: true });
 
@@ -149,7 +154,12 @@ describe('setupWorkspace', () => {
 
     const copiedPlanFile = path.join(autoWorkspacePath, 'tasks', 'nested', 'task.plan.md');
     expect(result.planFile).toBe(copiedPlanFile);
-    expect(await fs.readFile(result.planFile, 'utf8')).toContain('Nested plan details');
+    expect(
+      await fs
+        .access(result.planFile)
+        .then(() => true)
+        .catch(() => false)
+    ).toBe(false);
   });
 
   test('preserves relative plan path when reusing an existing manual workspace', async () => {
@@ -212,6 +222,7 @@ describe('setupWorkspace', () => {
       checkFailed: false,
     });
     spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({ success: true });
+    spyOn(workspaceManager, 'ensurePrimaryWorkspaceBranch').mockResolvedValue({ success: true });
 
     await setupWorkspace(
       {
@@ -301,6 +312,7 @@ describe('setupWorkspace', () => {
       checkFailed: false,
     });
     spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({ success: true });
+    spyOn(workspaceManager, 'ensurePrimaryWorkspaceBranch').mockResolvedValue({ success: true });
 
     const acquireLockSpy = spyOn(WorkspaceLock, 'acquireLock');
     const setupCleanupHandlersSpy = spyOn(WorkspaceLock, 'setupCleanupHandlers');
@@ -365,6 +377,12 @@ describe('setupWorkspace', () => {
         success: true,
         actualBranchName: '42-sync-base-before-plan-branch-reuse',
       });
+    const ensurePrimaryBranchSpy = spyOn(
+      workspaceManager,
+      'ensurePrimaryWorkspaceBranch'
+    ).mockResolvedValue({
+      success: true,
+    });
     const pullSpy = spyOn(workspaceCommand, 'pullWorkspaceRefIfExists').mockResolvedValue(true);
     spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
 
@@ -385,11 +403,62 @@ describe('setupWorkspace', () => {
       branchName: '42-sync-base-before-plan-branch-reuse',
       createBranch: false,
     });
+    expect(ensurePrimaryBranchSpy).toHaveBeenCalledWith(
+      baseDir,
+      '42-sync-base-before-plan-branch-reuse',
+      {
+        fromBranch: undefined,
+        planFilePath: validPlanFile,
+      }
+    );
     expect(pullSpy).toHaveBeenCalledWith(
       autoWorkspacePath,
       '42-sync-base-before-plan-branch-reuse',
       'origin'
     );
+  });
+
+  test('auto-workspace reuse skips primary branch setup when createBranch is false', async () => {
+    const autoWorkspacePath = path.join(tempDir, 'workspace-auto-existing-no-branch');
+    await fs.mkdir(autoWorkspacePath, { recursive: true });
+    await seedWorkspace(autoWorkspacePath, 'task-auto-existing-no-branch');
+
+    spyOn(WorkspaceAutoSelector.prototype, 'selectWorkspace').mockResolvedValue({
+      workspace: {
+        taskId: 'task-auto-existing-no-branch',
+        workspacePath: autoWorkspacePath,
+        originalPlanFilePath: planFile,
+        createdAt: new Date().toISOString(),
+      },
+      isNew: false,
+      clearedStaleLock: false,
+    });
+    spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    spyOn(git, 'getCurrentBranchName').mockResolvedValue('main');
+    spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
+      success: true,
+      actualBranchName: 'main',
+    });
+    const ensurePrimaryBranchSpy = spyOn(workspaceManager, 'ensurePrimaryWorkspaceBranch');
+    spyOn(workspaceCommand, 'pullWorkspaceRefIfExists').mockResolvedValue(false);
+    spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
+
+    await setupWorkspace(
+      {
+        autoWorkspace: true,
+        workspace: 'task-auto-existing-no-branch',
+        createBranch: false,
+      },
+      baseDir,
+      planFile,
+      config,
+      'tim generate'
+    );
+
+    expect(ensurePrimaryBranchSpy).not.toHaveBeenCalled();
   });
 
   test('prepares existing workspace, copies plan, and runs workspace update commands in order', async () => {
@@ -486,6 +555,46 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
       baseBranch: undefined,
       branchName: '42-add-workspace-branch-naming',
+      createBranch: true,
+    });
+  });
+
+  test('prefers explicit createBranch when workspace config disables branch creation', async () => {
+    const existingWorkspacePath = path.join(tempDir, 'workspace-existing-create-branch-override');
+    await fs.mkdir(existingWorkspacePath, { recursive: true });
+    await seedWorkspace(existingWorkspacePath, 'task-existing-create-branch-override');
+
+    const configWithBranchDisabled: TimConfig = {
+      ...config,
+      workspaceCreation: {
+        ...config.workspaceCreation,
+        createBranch: false,
+      },
+    };
+
+    spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    const prepareSpy = spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
+      success: true,
+    });
+    spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
+
+    await setupWorkspace(
+      {
+        workspace: 'task-existing-create-branch-override',
+        createBranch: true,
+      },
+      baseDir,
+      planFile,
+      configWithBranchDisabled,
+      'tim generate'
+    );
+
+    expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
+      baseBranch: undefined,
+      branchName: 'task-existing-create-branch-override',
       createBranch: true,
     });
   });
@@ -1138,7 +1247,12 @@ describe('setupWorkspace', () => {
 
     const copiedPlanFile = path.join(createdWorkspacePath, path.basename(planFile));
     expect(result.planFile).toBe(copiedPlanFile);
-    expect(await fs.readFile(copiedPlanFile, 'utf8')).toContain('Plan details');
+    expect(
+      await fs
+        .access(copiedPlanFile)
+        .then(() => true)
+        .catch(() => false)
+    ).toBe(false);
 
     expect(releaseLockSpy).toHaveBeenCalledWith(createdWorkspacePath, { force: true });
     expect(acquireLockSpy).toHaveBeenCalledWith(

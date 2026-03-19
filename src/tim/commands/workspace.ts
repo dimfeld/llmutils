@@ -677,43 +677,6 @@ async function restoreWorkspaceState(
   }
 }
 
-async function cleanupCopiedPlanPath(
-  workspacePath: string,
-  planFilePathInWorkspace: string | undefined,
-  planFileExisted: boolean
-): Promise<void> {
-  if (!planFilePathInWorkspace || planFileExisted) {
-    return;
-  }
-
-  const relativePath = path.relative(workspacePath, planFilePathInWorkspace);
-  if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
-    warn(`Skipping plan cleanup for unexpected path: ${planFilePathInWorkspace}`);
-    return;
-  }
-
-  try {
-    await fs.rm(planFilePathInWorkspace, { force: true, recursive: true });
-  } catch (error) {
-    warn(`Failed to remove copied plan file: ${error as Error}`);
-    return;
-  }
-
-  let currentDir = path.dirname(planFilePathInWorkspace);
-  while (currentDir !== workspacePath) {
-    try {
-      const entries = await fs.readdir(currentDir);
-      if (entries.length > 0) {
-        break;
-      }
-      await fs.rmdir(currentDir);
-    } catch {
-      break;
-    }
-    currentDir = path.dirname(currentDir);
-  }
-}
-
 /**
  * Attempts to find and reuse an existing unlocked, clean workspace.
  *
@@ -831,39 +794,23 @@ async function tryReuseExistingWorkspace(
         continue;
       }
 
-      const planFilePathInWorkspace = options.resolvedPlanFilePath
+      let planFilePathInWorkspace = options.resolvedPlanFilePath
         ? path.join(
             workspace.workspacePath,
             path.relative(options.mainRepoRoot, options.resolvedPlanFilePath)
           )
         : undefined;
-      // Copy plan file to workspace if provided
-      let planFileExisted = false;
-      if (options.resolvedPlanFilePath) {
-        const resolvedPlanPathInWorkspace = planFilePathInWorkspace!;
-        const relativePlanPath = path.relative(options.mainRepoRoot, options.resolvedPlanFilePath);
-        const planFileDir = path.dirname(resolvedPlanPathInWorkspace);
 
+      if (options.resolvedPlanFilePath && planFilePathInWorkspace) {
         try {
-          planFileExisted = await fs
-            .access(resolvedPlanPathInWorkspace)
-            .then(() => true)
-            .catch(() => false);
-          await fs.mkdir(planFileDir, { recursive: true });
-          log(`Copying plan file to workspace: ${relativePlanPath}`);
-          await fs.copyFile(options.resolvedPlanFilePath, resolvedPlanPathInWorkspace);
+          if (options.resolvedPlanFilePath !== planFilePathInWorkspace) {
+            const srcContent = await fs.readFile(options.resolvedPlanFilePath, 'utf8');
+            await fs.mkdir(path.dirname(planFilePathInWorkspace), { recursive: true });
+            await fs.writeFile(planFilePathInWorkspace, srcContent, 'utf8');
+          }
         } catch (error) {
-          const failureReason = `Failed to copy plan file: ${error as Error}`;
-          warn(failureReason);
-          lastFailureReason = failureReason;
-          await cleanupCopiedPlanPath(
-            workspace.workspacePath,
-            resolvedPlanPathInWorkspace,
-            planFileExisted
-          );
-          await restoreWorkspace(prepareResult.actualBranchName);
-          await WorkspaceLock.releaseLock(workspace.workspacePath, { force: true });
-          continue;
+          warn(`Failed to copy plan file into reused workspace: ${error as Error}`);
+          planFilePathInWorkspace = undefined;
         }
       }
 
@@ -877,11 +824,6 @@ async function tryReuseExistingWorkspace(
         const failureReason = 'Failed to run workspace update commands for workspace reuse';
         warn(failureReason);
         lastFailureReason = failureReason;
-        await cleanupCopiedPlanPath(
-          workspace.workspacePath,
-          planFilePathInWorkspace,
-          planFileExisted
-        );
         await restoreWorkspace(prepareResult.actualBranchName);
         await WorkspaceLock.releaseLock(workspace.workspacePath, { force: true });
         continue;
