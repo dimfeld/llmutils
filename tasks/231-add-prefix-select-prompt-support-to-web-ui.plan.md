@@ -5,7 +5,7 @@ goal: ""
 id: 231
 uuid: 1a1b1c8e-f3f2-4e38-b5cd-a3d518a23150
 generatedBy: agent
-status: pending
+status: done
 priority: medium
 dependencies:
   - 229
@@ -16,16 +16,16 @@ references:
 planGeneratedAt: 2026-03-19T01:11:11.620Z
 promptsGeneratedAt: 2026-03-19T01:11:11.620Z
 createdAt: 2026-03-17T09:05:46.119Z
-updatedAt: 2026-03-19T01:15:55.704Z
+updatedAt: 2026-03-19T01:30:17.007Z
 tasks:
   - title: Extract extractCommandAfterCd to client-safe module
-    done: false
+    done: true
     description: Create src/common/prefix_prompt_utils.ts containing the
       extractCommandAfterCd function. Update src/common/prefix_prompt.ts to
       import and re-export from the new file so existing callers are unaffected.
       Verify existing tests still pass.
   - title: Add prefix_select branch to PromptRenderer.svelte
-    done: false
+    done: true
     description: "Add a new {:else if} branch for prefix_select in
       src/lib/components/PromptRenderer.svelte before the {:else} fallback.
       Import extractCommandAfterCd from $common/prefix_prompt_utils.js. Add
@@ -40,13 +40,19 @@ tasks:
       unsupported prompt fallback. Reset prefixWordIndex in the existing
       $effect() block when prompt changes."
   - title: Add server action test for prefix_select prompt response
-    done: false
+    done: true
     description: "In src/routes/api/sessions/actions.server.test.ts, add a test that
       sets up a prefix_select prompt (with promptConfig.command set to a
       multi-word command), then calls the respond route with a
       PrefixPromptResult value ({exact: false, command: prefix}) and verifies it
       is forwarded correctly over WebSocket. Follow the existing test pattern."
 branch: 231-add-prefix-select-prompt-support-to-web-ui
+changedFiles:
+  - package.json
+  - src/common/prefix_prompt.ts
+  - src/common/prefix_prompt_utils.ts
+  - src/lib/components/PromptRenderer.svelte
+  - src/routes/api/sessions/actions.server.test.ts
 tags: []
 ---
 
@@ -245,3 +251,23 @@ Since the existing prompt types don't have Svelte component-level tests, follow 
    - "Allow Exact Command" sends the full command with `exact: true`
    - The prompt clears after responding
    - Single-word commands work correctly
+
+## Current Progress
+### Current State
+- All 3 tasks completed: utility extraction, UI component, and server action test
+### Completed (So Far)
+- Extracted `extractCommandAfterCd` and `PrefixPromptResult` to `src/common/prefix_prompt_utils.ts`
+- Updated `src/common/prefix_prompt.ts` to re-export from utils file
+- Added `prefix_select` branch to `PromptRenderer.svelte` with clickable word segments, prefix/exact submit buttons
+- Added server action test covering both `exact: false` and `exact: true` response paths
+### Remaining
+- None
+### Next Iteration Guidance
+- None
+### Decisions / Changes
+- Guard condition uses `prompt.promptConfig.command?.trim()` to handle whitespace-only commands
+- `src/tim/executors/claude_code/prefix_prompt.ts` imports both exports from `prefix_prompt.js` (via re-exports) for consistency
+### Lessons Learned
+- None
+### Risks / Blockers
+- None

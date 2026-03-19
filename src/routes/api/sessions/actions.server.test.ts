@@ -249,6 +249,97 @@ describe('/api/sessions actions', () => {
     expect(missingResponse.status).toBe(404);
   });
 
+  test('respond route forwards prefix_select PrefixPromptResult value', async () => {
+    const connectionId = 'conn-prefix';
+    const sentMessages: HeadlessServerMessage[] = [];
+    currentManager.handleWebSocketConnect(connectionId, (message) => {
+      sentMessages.push(message);
+    });
+
+    currentManager.handleWebSocketMessage(connectionId, {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      workspacePath: '/tmp/ws',
+    });
+    currentManager.handleWebSocketMessage(connectionId, {
+      type: 'output',
+      seq: 1,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:00:00.000Z',
+          requestId: 'req-prefix-1',
+          promptType: 'prefix_select',
+          promptConfig: { message: 'Allow this command?', command: 'npm run build --production' },
+        },
+      },
+    });
+
+    const { POST } = await import('./[connectionId]/respond/+server.js');
+
+    const response = await POST({
+      params: { connectionId },
+      request: new Request('http://localhost/api/sessions/conn-prefix/respond', {
+        body: JSON.stringify({
+          requestId: 'req-prefix-1',
+          value: { exact: false, command: 'npm run' },
+        }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      }),
+    } as never);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true });
+    expect(sentMessages).toEqual([
+      {
+        type: 'prompt_response',
+        requestId: 'req-prefix-1',
+        value: { exact: false, command: 'npm run' },
+      },
+    ]);
+
+    // Set up another prefix_select prompt to test exact: true path
+    sentMessages.length = 0;
+    currentManager.handleWebSocketMessage(connectionId, {
+      type: 'output',
+      seq: 2,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:01:00.000Z',
+          requestId: 'req-prefix-2',
+          promptType: 'prefix_select',
+          promptConfig: { message: 'Allow this command?', command: 'npm run build --production' },
+        },
+      },
+    });
+
+    const exactResponse = await POST({
+      params: { connectionId },
+      request: new Request('http://localhost/api/sessions/conn-prefix/respond', {
+        body: JSON.stringify({
+          requestId: 'req-prefix-2',
+          value: { exact: true, command: 'npm run build --production' },
+        }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      }),
+    } as never);
+
+    expect(exactResponse.status).toBe(200);
+    expect(sentMessages).toEqual([
+      {
+        type: 'prompt_response',
+        requestId: 'req-prefix-2',
+        value: { exact: true, command: 'npm run build --production' },
+      },
+    ]);
+  });
+
   test('respond and input routes return 404 when the session is missing', async () => {
     const { POST: respondPost } = await import('./[connectionId]/respond/+server.js');
     const { POST: inputPost } = await import('./[connectionId]/input/+server.js');

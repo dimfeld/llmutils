@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ActivePrompt } from '$lib/types/session.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
+  import { extractCommandAfterCd } from '$common/prefix_prompt_utils.js';
 
   let {
     prompt,
@@ -23,11 +24,16 @@
   let selectedValue = $state<string | number | boolean>('');
   let checkedValues = $state<Set<string | number | boolean>>(new Set());
   let sending = $state(false);
+  let prefixWordIndex = $state(0);
+
+  let displayCommand = $derived(extractCommandAfterCd(prompt.promptConfig.command ?? ''));
+  let commandWords = $derived(displayCommand.split(/\s+/).filter((w) => w.length > 0));
 
   $effect(() => {
     inputValue = defaultInputValue;
     selectedValue = defaultSelectedValue;
     checkedValues = new Set(defaultCheckedValues);
+    prefixWordIndex = commandWords.length - 1;
   });
 
   async function respond(value: unknown) {
@@ -61,6 +67,15 @@
 
   function handleCheckboxSubmit() {
     void respond([...checkedValues]);
+  }
+
+  function handlePrefixSubmit() {
+    const selectedPrefix = commandWords.slice(0, prefixWordIndex + 1).join(' ');
+    void respond({ exact: false, command: selectedPrefix });
+  }
+
+  function handleExactCommand() {
+    void respond({ exact: true, command: displayCommand });
   }
 
   function toggleChecked(value: string | number | boolean) {
@@ -187,6 +202,44 @@
       >
         Submit
       </button>
+    </div>
+  {:else if prompt.promptType === 'prefix_select' && prompt.promptConfig.command?.trim()}
+    <div class="flex flex-col gap-3">
+      <div class="flex flex-wrap gap-0.5 rounded bg-gray-900 px-3 py-2 font-mono text-sm">
+        {#each commandWords as word, i}
+          <button
+            type="button"
+            class="rounded px-1 py-0.5 transition-colors {i <= prefixWordIndex
+              ? 'text-green-400 hover:bg-green-900/50'
+              : 'text-gray-500 hover:bg-gray-700'}"
+            disabled={sending}
+            onclick={() => (prefixWordIndex = i)}
+          >
+            {word}
+          </button>
+        {/each}
+      </div>
+      <p class="text-xs text-gray-500">
+        Click a word to set the prefix boundary. Selected words will be allowed as a command prefix.
+      </p>
+      <div class="flex gap-2">
+        <button
+          type="button"
+          class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-500"
+          disabled={sending}
+          onclick={handlePrefixSubmit}
+        >
+          Submit Prefix
+        </button>
+        <button
+          type="button"
+          class="rounded bg-gray-700 px-3 py-1.5 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-600"
+          disabled={sending}
+          onclick={handleExactCommand}
+        >
+          Allow Exact Command
+        </button>
+      </div>
     </div>
   {:else}
     <p class="text-sm text-gray-400">
