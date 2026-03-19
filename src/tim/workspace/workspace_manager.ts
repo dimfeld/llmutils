@@ -707,14 +707,9 @@ export async function createWorkspace(
   if (options?.fromBranch) {
     log(`Checking out base branch "${options.fromBranch}"`);
     const { exitCode, stderr } = isJj
-      ? await spawnAndLogOutput(
-          shouldCreateBranch
-            ? ['jj', 'new', options.fromBranch]
-            : ['jj', 'edit', options.fromBranch],
-          {
-            cwd: targetClonePath,
-          }
-        )
+      ? await spawnAndLogOutput(['jj', 'new', options.fromBranch], {
+          cwd: targetClonePath,
+        })
       : await spawnAndLogOutput(['git', 'checkout', options.fromBranch], {
           cwd: targetClonePath,
         });
@@ -1097,24 +1092,6 @@ export async function prepareExistingWorkspace(
 
   // Step 3: Checkout base branch or create a new change
   log(`Checking out base branch "${baseBranch}"...`);
-  if (isJj && !shouldCreateBranch) {
-    const checkoutResult = await spawnAndLogOutput(['jj', 'edit', baseBranch], {
-      cwd: workspacePath,
-    });
-    if (checkoutResult.exitCode !== 0) {
-      return {
-        success: false,
-        error: `Failed to checkout base branch "${baseBranch}": ${checkoutResult.stderr}`,
-      };
-    }
-
-    log('Skipping branch creation (createBranch=false)');
-    return {
-      success: true,
-      actualBranchName: baseBranch,
-    };
-  }
-
   const checkoutResult = isJj
     ? await spawnAndLogOutput(['jj', 'new', baseBranch], { cwd: workspacePath })
     : await spawnAndLogOutput(['git', 'checkout', baseBranch], { cwd: workspacePath });
