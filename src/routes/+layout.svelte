@@ -2,7 +2,6 @@
   import { resolve } from '$app/paths';
   import { onMount } from 'svelte';
   import './layout.css';
-  import favicon from '$lib/assets/favicon.svg';
   import TabNav from '$lib/components/TabNav.svelte';
   import { page } from '$app/state';
   import type { Snippet } from 'svelte';
@@ -31,16 +30,32 @@
     requestNotificationPermission().catch((e) =>
       console.warn('Failed to request notification permission:', e)
     );
+
+    let removeControllerChangeListener: (() => void) | undefined;
+    if ('serviceWorker' in navigator) {
+      const hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker
+        .register(resolve('/service-worker.js'))
+        .catch((err) => console.warn('Service worker registration failed:', err));
+      const onControllerChange = () => {
+        if (hadController) location.reload();
+      };
+      navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
+      removeControllerChangeListener = () =>
+        navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
+    }
+
     sessionManager.connect();
     const cleanupNotifications = initSessionNotifications(sessionManager, (url) => goto(url));
     return () => {
+      removeControllerChangeListener?.();
       cleanupNotifications();
       sessionManager.disconnect();
     };
   });
 </script>
 
-<svelte:head><link rel="icon" href={favicon} /></svelte:head>
+<svelte:head><link rel="icon" href={resolve('/favicon.png')} /></svelte:head>
 
 <div class="flex h-screen min-h-screen flex-col bg-gray-50">
   <header class="flex items-center justify-between bg-gray-800 px-4 py-2">

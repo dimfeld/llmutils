@@ -108,6 +108,7 @@ The codebase is organized into several main modules with improved modularity and
    - Session store: `src/lib/stores/session_state.svelte.ts` manages SSE connection and reactive session state; SSE event application logic extracted to `src/lib/stores/session_state_events.ts` for testability; `initialized` flag tracks whether initial SSE sync is complete (gated on `session:sync-complete` event, reset on reconnect); session grouping utilities (`getSessionGroupKey`, `getSessionGroupLabel`) extracted to `src/lib/stores/session_group_utils.ts` as a plain TS module for testability; `src/lib/utils/session_colors.ts` defines category color mapping
    - Plans browser helpers: `src/lib/server/plans_browser.ts` abstraction layer between route handlers and `db_queries.ts`; includes `getActiveWorkData()` for the Active Work tab
    - Shared utilities: `src/lib/utils/time.ts` provides `formatRelativeTime()` for human-readable relative timestamps
+   - PWA support: `src/service-worker.ts` (cache-first for static assets, network-only for API/SSE), `static/manifest.webmanifest`, PWA meta tags in `src/app.html`, service worker registration in root layout `onMount`
 
 There are other directories as well but they are mostly inactive.
 

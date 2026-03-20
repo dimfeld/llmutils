@@ -144,6 +144,31 @@ Browser clients receive real-time updates via SSE and interact with sessions thr
 - **`MessageInput.svelte`** — Text input with Enter to send, Shift+Enter for newlines. Hidden (not disabled) when session is offline or non-interactive.
 - **Category colors** (`src/lib/utils/session_colors.ts`): lifecycle=green, llmOutput=green, toolUse=cyan, fileChange=cyan, command=cyan, progress=blue, error=red, log=gray, userInput=orange.
 
+## PWA Support
+
+The web interface is installable as a Progressive Web App, allowing it to run as a standalone desktop/mobile app without browser chrome.
+
+### Key Files
+
+- `static/manifest.webmanifest` — App metadata (name, icons, display mode, theme color). Uses relative URLs and `start_url: "."` for base-path compatibility.
+- `src/service-worker.ts` — SvelteKit built-in service worker using `$service-worker` module (`build`, `files`, `version`)
+- `src/app.html` — PWA meta tags (manifest link, theme-color, apple-mobile-web-app-capable, apple-touch-icon). Uses `%sveltekit.assets%` for base-path safety.
+- `src/routes/+layout.svelte` — Service worker registration in `onMount`
+- `static/icon-192.png`, `static/icon-512.png`, `static/favicon.png` — App icons (sourced from tim-gui macOS app)
+
+### Service Worker Caching Strategy
+
+- **Static assets** (`build` + `files` arrays from `$service-worker`): Cache-first with versioned cache name (`cache-${version}`). These include hashed JS/CSS bundles and static directory contents.
+- **API routes** (`/api/`): Network-only — never cached. SSE streams and REST endpoints must always hit the server.
+- **Everything else** (navigation, external): Not intercepted — browser handles normally.
+
+### Update Behavior
+
+- Install event calls `self.skipWaiting()` for immediate activation of new versions
+- Activate event deletes old versioned caches and calls `clients.claim()`
+- Root layout listens for `controllerchange` and calls `location.reload()` to pick up new assets
+- First-visit guard: `controllerchange` reload is skipped when `navigator.serviceWorker.controller` is null (first service worker install), avoiding an unnecessary reload
+
 ### Key Behaviors
 
 - **Workspace `plan_id` is project-scoped, not globally unique.** Any lookup from a workspace's `plan_id` (text plan number) to a plan UUID must include the project ID to avoid collisions across projects. The "All Projects" mode is the most visible case — workspace plan links use a `planNumberToUuid` map keyed by `${projectId}:${planId}`.
