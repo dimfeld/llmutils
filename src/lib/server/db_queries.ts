@@ -460,7 +460,10 @@ export function getWorkspacesForProject(db: Database, projectId?: number): Enric
       const workspaceType = dbValueToWorkspaceType(row.workspace_type);
       const isLocked = row.lock_type !== null;
       const isRecentlyActive =
-        isLocked || workspaceType === 'primary' || isRecentlyUpdated(row.updated_at);
+        isLocked ||
+        workspaceType === 'primary' ||
+        workspaceType === 'auto' ||
+        isRecentlyUpdated(row.updated_at);
 
       return {
         id: row.id,
