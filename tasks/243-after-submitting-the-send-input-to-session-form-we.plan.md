@@ -9,7 +9,7 @@ simple: true
 status: done
 priority: medium
 createdAt: 2026-03-20T19:09:49.970Z
-updatedAt: 2026-03-20T20:12:20.341Z
+updatedAt: 2026-03-20T20:12:57.105Z
 tasks:
   - title: "Address Review Feedback: `src/lib/components/MessageInput.svelte:17-19`
       sets `sending = false` and immediately calls `textareaEl?.focus()`, but
