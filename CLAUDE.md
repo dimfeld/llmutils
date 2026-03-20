@@ -74,10 +74,10 @@ The codebase is organized into several main modules with improved modularity and
   - All DB functions are **synchronous** (matching bun:sqlite's native API)
   - All write transactions use `db.transaction().immediate()`
 - Workspace management: `workspace.ts` with automated isolation support
-- Workspace types and helpers: `workspace_info.ts` provides `WorkspaceInfo`, `WorkspaceMetadataPatch`, `workspaceRowToInfo()`, and workspace lookup helpers
+- Workspace types and helpers: `workspace_info.ts` provides `WorkspaceInfo`, `WorkspaceMetadataPatch`, `workspaceRowToInfo()`, and workspace lookup helpers. `WorkspaceType` (`'standard' | 'primary' | 'auto'`) is defined in `db/workspace.ts` with integer mapping (0/1/2) for the `workspace_type` DB column
 - Workspace locking: `workspace_lock.ts` (`WorkspaceLock` class) uses DB internally while exposing the same static API (`acquireLock`, `releaseLock`, `getLockInfo`, `isLocked`)
 - Workspace setup: `workspace_setup.ts` provides `setupWorkspace()`, a shared helper used by both `agent` and `generate` commands. Encapsulates workspace selection (auto/manual/new), lock acquisition, plan file copying, cleanup handler registration, and fallback-to-cwd behavior. For existing workspaces, also handles preparation (dirty check, branch checkout via `--base` option) and runs `workspaceUpdateCommands` from config. After switching, sends updated `session_info` to the headless adapter (via `updateHeadlessSessionInfo()`) so the web UI re-groups the session under the correct workspace
-- Auto workspace selection: `workspace_auto_selector.ts` can prefer the workspace assigned to the current plan UUID when running `--auto-workspace`, as long as that workspace is not locked
+- Auto workspace selection: `workspace_auto_selector.ts` handles `--auto-workspace`. When any workspace is tagged `auto`, only auto-typed workspaces are eligible; otherwise all non-primary workspaces are eligible. Also prefers the workspace assigned to the current plan UUID, as long as that workspace is not locked
 - Assignment helpers: `assignments/remove_plan_assignment.ts` for shared plan-unassignment logic, `assignments/claim_plan.ts` and `assignments/release_plan.ts` for workspace claim management
 - Plan state utilities: `plans/plan_state_utils.ts` centralizes `normalizePlanStatus()` and status classification helpers used across commands
 - Shared utilities captured in purpose-built modules:
