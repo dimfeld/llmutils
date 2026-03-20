@@ -8,7 +8,7 @@ simple: true
 status: done
 priority: medium
 createdAt: 2026-03-19T08:14:30.788Z
-updatedAt: 2026-03-20T08:34:44.181Z
+updatedAt: 2026-03-20T08:35:13.187Z
 tasks:
   - title: Add dismissInactiveSessions method and API route
     done: true
