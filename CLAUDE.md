@@ -90,7 +90,7 @@ The codebase is organized into several main modules with improved modularity and
 - **Automatic Parent-Child Relationship Maintenance**: All commands (`add`, `set`, `validate`) work together to ensure bidirectional consistency in the dependency graph, automatically updating parent plans when child relationships are created, modified, or removed
 
 3. **Web interface** (`src/lib/`, `src/routes/`): SvelteKit-based plans browser and real-time sessions monitor (see `docs/web-interface.md` for conventions and gotchas)
-   - Server initialization: `src/lib/server/init.ts` provides lazy-init singleton via `getServerContext()` (async) returning `{ config, gitRoot, tasksDir, db, projectId }`. Syncs plan files to DB on first access.
+   - Server initialization: `src/lib/server/init.ts` provides lazy-init singleton via `getServerContext()` (async) returning `{ config, db }`.
    - Sessions infrastructure: WebSocket server (`src/lib/server/ws_server.ts`) on port 8123 accepts agent connections; session manager (`src/lib/server/session_manager.ts`) tracks sessions and categorizes messages; session context singleton (`src/lib/server/session_context.ts`) survives HMR; started from `src/hooks.server.ts` init function
    - SSE streaming: `src/routes/api/sessions/events/+server.ts` streams session events to browser; action routes under `src/routes/api/sessions/[connectionId]/` for respond, input, dismiss; shared helpers in `src/lib/server/session_routes.ts`
    - DB query helpers: `src/lib/server/db_queries.ts` provides web-specific enriched queries (`getProjectsWithMetadata`, `getPlansForProject`, `getPlanDetail`, `getWorkspacesForProject`) with computed display statuses (`blocked`, `recently_done`) derived from dependency resolution
