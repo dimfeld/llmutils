@@ -890,6 +890,50 @@ describe('lib/server/session_manager', () => {
     expect(manager.getSessionSnapshot().sessions[0].connectionId).toBe('active');
   });
 
+  test('dismissInactiveSessions removes all offline and notification sessions', () => {
+    const onDismiss = vi.fn();
+    manager.subscribe('session:dismissed', onDismiss);
+
+    manager.handleWebSocketConnect('active-1', vi.fn());
+    manager.handleWebSocketConnect('active-2', vi.fn());
+    manager.handleWebSocketConnect('offline-1', vi.fn());
+    manager.handleWebSocketDisconnect('offline-1');
+    manager.handleWebSocketConnect('offline-2', vi.fn());
+    manager.handleWebSocketDisconnect('offline-2');
+    manager.handleHttpNotification({
+      message: 'Alert',
+      workspacePath: '/tmp/n1',
+      gitRemote: null,
+    });
+
+    expect(manager.getSessionSnapshot().sessions).toHaveLength(5);
+
+    const dismissed = manager.dismissInactiveSessions();
+
+    expect(dismissed).toBe(3);
+    expect(onDismiss).toHaveBeenCalledTimes(3);
+    expect(manager.getSessionSnapshot().sessions).toHaveLength(2);
+    const remaining = manager
+      .getSessionSnapshot()
+      .sessions.map((s) => s.connectionId)
+      .sort();
+    expect(remaining).toEqual(['active-1', 'active-2']);
+  });
+
+  test('dismissInactiveSessions returns 0 when no inactive sessions exist', () => {
+    manager.handleWebSocketConnect('active-1', vi.fn());
+
+    const dismissed = manager.dismissInactiveSessions();
+
+    expect(dismissed).toBe(0);
+    expect(manager.getSessionSnapshot().sessions).toHaveLength(1);
+  });
+
+  test('dismissInactiveSessions returns 0 when no sessions exist', () => {
+    const dismissed = manager.dismissInactiveSessions();
+    expect(dismissed).toBe(0);
+  });
+
   test('sendPromptResponse validates active prompt and delegates to the registered sender', () => {
     const sender = vi.fn<(message: HeadlessServerMessage) => void>();
     manager.handleWebSocketConnect('conn-1', sender);
