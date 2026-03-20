@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
 
   let { connectionId }: { connectionId: string } = $props();
@@ -16,6 +17,7 @@
       if (ok) content = '';
     } finally {
       sending = false;
+      await tick();
       textareaEl?.focus();
     }
   }
