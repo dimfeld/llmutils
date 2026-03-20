@@ -1,4 +1,5 @@
 export const TRUNCATE_LINE_LIMIT = 10;
+export const TOOL_USE_TRUNCATE_LINE_LIMIT = 40;
 export const TEXT_TRUNCATE_CHAR_LIMIT = 4000;
 export const KV_VALUE_TRUNCATE_CHARS = 500;
 

@@ -246,7 +246,7 @@ describe('lib/server/session_manager', () => {
           actionItems: [],
         },
         category: 'error',
-        bodyType: 'text',
+        bodyType: 'monospaced',
       },
       {
         message: {
@@ -454,6 +454,65 @@ describe('lib/server/session_manager', () => {
         type: 'text',
         text: 'Unsupported structured message type: unexpected_structured_type',
       },
+    });
+  });
+
+  test('formatTunnelMessage includes detailed review issues, suggestions, and follow-up items', () => {
+    const message = formatTunnelMessage('conn-1', 10, {
+      type: 'structured',
+      message: {
+        type: 'review_result',
+        timestamp: '2026-03-17T10:00:59.000Z',
+        verdict: 'NEEDS_FIXES',
+        fixInstructions: 'Address the major issues before merging.',
+        issues: [
+          {
+            severity: 'major',
+            category: 'correctness',
+            content: 'The tool output truncates too aggressively.',
+            file: 'src/lib/components/SessionMessage.svelte',
+            line: 137,
+            suggestion: 'Apply the 40-line threshold used by the console formatter.',
+          },
+          {
+            severity: 'minor',
+            category: 'ux',
+            content: 'Review results should stay expanded.',
+          },
+        ],
+        recommendations: ['Re-run the web session rendering tests.'],
+        actionItems: ['Verify review output stays untruncated in the browser.'],
+      },
+    });
+
+    expect(message).toMatchObject({
+      id: 'conn-1:10',
+      category: 'error',
+      bodyType: 'monospaced',
+      rawType: 'review_result',
+    });
+    expect(message?.body).toEqual({
+      type: 'monospaced',
+      text: [
+        'Review verdict: NEEDS_FIXES',
+        '',
+        'Address the major issues before merging.',
+        '',
+        'Issues (2):',
+        '',
+        '[!] Major (1)',
+        '  - [correctness] (src/lib/components/SessionMessage.svelte:137) The tool output truncates too aggressively.',
+        '    Suggestion: Apply the 40-line threshold used by the console formatter.',
+        '',
+        '[~] Minor (1)',
+        '  - [ux] Review results should stay expanded.',
+        '',
+        'Recommendations:',
+        '  - Re-run the web session rendering tests.',
+        '',
+        'Action Items:',
+        '  - Verify review output stays untruncated in the browser.',
+      ].join('\n'),
     });
   });
 

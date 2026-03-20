@@ -4,7 +4,7 @@
   import {
     getTextTruncationState,
     KV_VALUE_TRUNCATE_CHARS,
-    TRUNCATE_LINE_LIMIT,
+    TOOL_USE_TRUNCATE_LINE_LIMIT,
   } from './session_message_truncation.js';
 
   let { message }: { message: DisplayMessage } = $props();
@@ -15,14 +15,45 @@
   let expanded = $state(false);
   let kvExpanded = $state(false);
 
+  function getKeyValueTruncationState(value: string, expanded: boolean, isToolUse: boolean) {
+    if (isToolUse) {
+      return getTextTruncationState(value, expanded, {
+        lineLimit: TOOL_USE_TRUNCATE_LINE_LIMIT,
+      });
+    }
+
+    return getTextTruncationState(value, expanded, {
+      charLimit: KV_VALUE_TRUNCATE_CHARS,
+    });
+  }
+
   let textContent = $derived.by(() => {
     if (message.body.type === 'text') return message.body.text;
     if (message.body.type === 'monospaced') return message.body.text;
     return '';
   });
 
+  let skipTruncation = $derived(
+    message.category === 'llmOutput' || message.rawType === 'review_result'
+  );
+  let effectiveLineLimit = $derived(
+    message.category === 'toolUse' || message.category === 'command'
+      ? TOOL_USE_TRUNCATE_LINE_LIMIT
+      : undefined
+  );
+
   let lineCount = $derived(textContent.split('\n').length);
-  let textTruncation = $derived(getTextTruncationState(textContent, expanded));
+  let textTruncation = $derived(
+    skipTruncation
+      ? {
+          isTruncatable: false,
+          displayText: textContent,
+          hiddenLineCount: 0,
+          hiddenCharCount: 0,
+          truncationMode: 'none' as const,
+        }
+      : getTextTruncationState(textContent, expanded, { lineLimit: effectiveLineLimit })
+  );
   let isTruncatable = $derived(
     (message.body.type === 'text' || message.body.type === 'monospaced') &&
       textTruncation.isTruncatable
@@ -31,7 +62,7 @@
   let expandLabel = $derived.by(() => {
     if (expanded) return 'Show less';
     if (textTruncation.truncationMode === 'lines') {
-      return `Show more (${lineCount - TRUNCATE_LINE_LIMIT} more lines)`;
+      return `Show more (${textTruncation.hiddenLineCount} more lines)`;
     }
 
     return `Show more (${textTruncation.hiddenCharCount} more chars)`;
@@ -109,18 +140,20 @@
       </div>
     {/each}
   {:else if message.body.type === 'keyValuePairs'}
+    {@const isToolUseValues = message.category === 'toolUse'}
     {@const hasLongValues = message.body.entries.some(
-      (e) => e.value.length > KV_VALUE_TRUNCATE_CHARS
+      (e) => getKeyValueTruncationState(e.value, kvExpanded, isToolUseValues).isTruncatable
     )}
     <div class="mt-1 pl-2">
       {#each message.body.entries as entry (entry.key)}
+        {@const entryTruncation = getKeyValueTruncationState(
+          entry.value,
+          kvExpanded,
+          isToolUseValues
+        )}
         <div class="flex gap-2">
           <span class="shrink-0 text-gray-500">{entry.key}:</span>
-          <span class="whitespace-pre-wrap"
-            >{!kvExpanded && entry.value.length > KV_VALUE_TRUNCATE_CHARS
-              ? entry.value.slice(0, KV_VALUE_TRUNCATE_CHARS) + '...'
-              : entry.value}</span
-          >
+          <span class="whitespace-pre-wrap">{entryTruncation.displayText}</span>
         </div>
       {/each}
       {#if hasLongValues}
