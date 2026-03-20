@@ -37,13 +37,8 @@ describe('WorkspaceAutoSelector', () => {
       workspacePath,
       taskId,
       branch,
+      workspaceType,
     });
-    if (workspaceType) {
-      db.prepare('UPDATE workspace SET workspace_type = ? WHERE id = ?').run(
-        workspaceType === 'primary' ? 1 : workspaceType === 'auto' ? 2 : 0,
-        row.id
-      );
-    }
     return row;
   }
 
@@ -288,10 +283,13 @@ describe('WorkspaceAutoSelector', () => {
     await fs.mkdir(primaryPath, { recursive: true });
 
     await seedWorkspace('github.com/test/repo', standardPath, 'task-standard', 'task-standard');
-    await seedWorkspace('github.com/test/repo', primaryPath, 'task-primary', 'task-primary');
-
-    const db = getDatabase();
-    db.prepare('UPDATE workspace SET workspace_type = 1 WHERE workspace_path = ?').run(primaryPath);
+    await seedWorkspace(
+      'github.com/test/repo',
+      primaryPath,
+      'task-primary',
+      'task-primary',
+      'primary'
+    );
 
     const result = await selector.selectWorkspace('task-next', '/test/plan-next.yml', {
       interactive: false,
@@ -350,11 +348,14 @@ describe('WorkspaceAutoSelector', () => {
     await fs.mkdir(primaryPath, { recursive: true });
     await fs.mkdir(lockedPath, { recursive: true });
 
-    await seedWorkspace('github.com/test/repo', primaryPath, 'task-primary', 'task-primary');
+    await seedWorkspace(
+      'github.com/test/repo',
+      primaryPath,
+      'task-primary',
+      'task-primary',
+      'primary'
+    );
     await seedWorkspace('github.com/test/repo', lockedPath, 'task-locked', 'task-locked');
-
-    const db = getDatabase();
-    db.prepare('UPDATE workspace SET workspace_type = 1 WHERE workspace_path = ?').run(primaryPath);
     await WorkspaceLock.acquireLock(lockedPath, 'tim agent');
 
     const createWorkspaceSpy = spyOn(
@@ -383,10 +384,7 @@ describe('WorkspaceAutoSelector', () => {
     await fs.mkdir(autoPath, { recursive: true });
 
     await seedWorkspace('github.com/test/repo', standardPath, 'task-standard', 'task-standard');
-    await seedWorkspace('github.com/test/repo', autoPath, 'task-auto', 'task-auto');
-
-    const db = getDatabase();
-    db.prepare('UPDATE workspace SET workspace_type = 2 WHERE workspace_path = ?').run(autoPath);
+    await seedWorkspace('github.com/test/repo', autoPath, 'task-auto', 'task-auto', 'auto');
 
     const result = await selector.selectWorkspace('task-next', '/test/plan-next.yml', {
       interactive: false,
@@ -435,11 +433,8 @@ describe('WorkspaceAutoSelector', () => {
     await fs.mkdir(autoPath, { recursive: true });
     await fs.mkdir(standardPath, { recursive: true });
 
-    await seedWorkspace('github.com/test/repo', autoPath, 'task-auto', 'task-auto');
+    await seedWorkspace('github.com/test/repo', autoPath, 'task-auto', 'task-auto', 'auto');
     await seedWorkspace('github.com/test/repo', standardPath, 'task-standard', 'task-standard');
-
-    const db = getDatabase();
-    db.prepare('UPDATE workspace SET workspace_type = 2 WHERE workspace_path = ?').run(autoPath);
     await WorkspaceLock.acquireLock(autoPath, 'tim agent');
 
     const createWorkspaceSpy = spyOn(
@@ -526,13 +521,10 @@ describe('WorkspaceAutoSelector', () => {
       'github.com/test/repo',
       assignedPrimaryPath,
       'task-assigned-primary',
-      'task-assigned-primary'
+      'task-assigned-primary',
+      'primary'
     );
     await seedWorkspace('github.com/test/repo', fallbackPath, 'task-fallback', 'task-fallback');
-    const db = getDatabase();
-    db.prepare('UPDATE workspace SET workspace_type = 1 WHERE workspace_path = ?').run(
-      assignedPrimaryPath
-    );
     await seedAssignmentForPlan(
       'github.com/test/repo',
       '33333333-3333-4333-8333-333333333333',

@@ -413,7 +413,11 @@ function outputWorkspaceTable(entries: WorkspaceListEntry[], showHeader: boolean
     if (entry.workspaceType === 'primary') {
       status = chalk.blue('Primary');
     } else if (entry.workspaceType === 'auto') {
-      status = chalk.blue('Auto');
+      if (entry.lockedBy) {
+        status = chalk.blue('Auto') + ' ' + chalk.red('(Locked)');
+      } else {
+        status = chalk.blue('Auto');
+      }
     } else if (entry.lockedBy) {
       const lockType = entry.lockedBy.type;
       status = chalk.red(`Locked (${lockType})`);
@@ -1045,6 +1049,11 @@ export async function handleWorkspaceAddCommand(
         taskId: reuseResult.taskId ?? workspaceId,
       };
       wasReused = true;
+
+      // Apply workspace type to the reused workspace if specified
+      if (workspaceType) {
+        patchWorkspaceInfo(reuseResult.workspacePath!, { workspaceType });
+      }
     } else {
       if (options.reuse) {
         const reuseFailureReason = reuseResult.error

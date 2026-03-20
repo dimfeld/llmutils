@@ -29,13 +29,8 @@ function seedWorkspace(
     workspacePath,
     taskId,
     branch: `llmutils-task/${taskId}`,
+    workspaceType,
   });
-  if (workspaceType) {
-    db.prepare('UPDATE workspace SET workspace_type = ? WHERE id = ?').run(
-      workspaceType === 'primary' ? 1 : workspaceType === 'auto' ? 2 : 0,
-      row.id
-    );
-  }
 }
 
 describe('workspace lock/unlock commands', () => {

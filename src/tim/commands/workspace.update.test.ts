@@ -51,13 +51,8 @@ async function writeTrackingData(data: Record<string, WorkspaceInfo>) {
       description: workspace.description,
       planId: workspace.planId,
       planTitle: workspace.planTitle,
+      workspaceType: workspace.workspaceType,
     });
-    if (workspace.workspaceType) {
-      db.prepare('UPDATE workspace SET workspace_type = ? WHERE id = ?').run(
-        workspace.workspaceType === 'primary' ? 1 : workspace.workspaceType === 'auto' ? 2 : 0,
-        row.id
-      );
-    }
     setWorkspaceIssues(db, row.id, workspace.issueUrls ?? []);
   }
 }
@@ -400,6 +395,33 @@ describe('workspace update command', () => {
 
     const data = await readTrackingData();
     expect(data[workspaceDir].workspaceType).toBe('auto');
+  });
+
+  test('removes auto designation when --no-auto is used', async () => {
+    const workspaceDir = path.join(tempDir, 'workspace-no-auto');
+    await fs.mkdir(workspaceDir, { recursive: true });
+
+    await writeTrackingData({
+      [workspaceDir]: {
+        taskId: 'task-no-auto',
+        workspacePath: workspaceDir,
+        createdAt: new Date().toISOString(),
+        workspaceType: 'auto',
+      },
+    });
+
+    const { handleWorkspaceUpdateCommand } = await import('./workspace.js');
+
+    await handleWorkspaceUpdateCommand(workspaceDir, { auto: false }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    const data = await readTrackingData();
+    expect(data[workspaceDir].workspaceType).toBe('standard');
   });
 
   test('throws error when no update options provided', async () => {

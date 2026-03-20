@@ -116,13 +116,8 @@ async function writeTrackingData(data: Record<string, WorkspaceInfo>) {
       description: workspace.description,
       planId: workspace.planId,
       planTitle: workspace.planTitle,
+      workspaceType: workspace.workspaceType,
     });
-    if (workspace.workspaceType) {
-      db.prepare('UPDATE workspace SET workspace_type = ? WHERE id = ?').run(
-        workspace.workspaceType === 'primary' ? 1 : workspace.workspaceType === 'auto' ? 2 : 0,
-        row.id
-      );
-    }
     setWorkspaceIssues(db, row.id, workspace.issueUrls ?? []);
   }
 }
@@ -409,6 +404,90 @@ describe('workspace add --reuse and --try-reuse', () => {
         },
       } as any)
     ).rejects.toThrow('No available workspace found for reuse');
+  });
+
+  test('workspace add --auto persists workspaceType on a newly created workspace', async () => {
+    const { handleWorkspaceAddCommand } = await import('./workspace.js');
+
+    await handleWorkspaceAddCommand(undefined, { id: 'auto-created', auto: true }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    const data = await readTrackingData();
+    const createdWorkspace = Object.values(data).find(
+      (workspace) => workspace.taskId === 'auto-created'
+    );
+
+    expect(createdWorkspace).toBeDefined();
+    expect(createdWorkspace?.workspaceType).toBe('auto');
+  });
+
+  test('workspace add --primary persists workspaceType on a newly created workspace', async () => {
+    const { handleWorkspaceAddCommand } = await import('./workspace.js');
+
+    await handleWorkspaceAddCommand(undefined, { id: 'primary-created', primary: true }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    const data = await readTrackingData();
+    const createdWorkspace = Object.values(data).find(
+      (workspace) => workspace.taskId === 'primary-created'
+    );
+
+    expect(createdWorkspace).toBeDefined();
+    expect(createdWorkspace?.workspaceType).toBe('primary');
+  });
+
+  test('workspace add rejects conflicting --primary and --auto flags', async () => {
+    const { handleWorkspaceAddCommand } = await import('./workspace.js');
+
+    await expect(
+      handleWorkspaceAddCommand(undefined, { id: 'conflicting-type', primary: true, auto: true }, {
+        parent: {
+          parent: {
+            opts: () => ({ config: undefined }),
+          },
+        },
+      } as any)
+    ).rejects.toThrow('Cannot use both --primary and --auto');
+  });
+
+  test('workspace add --reuse applies workspaceType to the reused workspace', async () => {
+    const reusableWorkspace = path.join(clonesDir, 'reused-auto-workspace');
+    await fs.mkdir(reusableWorkspace, { recursive: true });
+    await initGitRepository(reusableWorkspace, bareRemoteDir);
+
+    await writeTrackingData({
+      [reusableWorkspace]: {
+        taskId: 'reused-standard',
+        workspacePath: reusableWorkspace,
+        branch: 'reused-standard',
+        repositoryId: 'test-repo-id',
+        workspaceType: 'standard',
+      },
+    });
+
+    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 431, 'Reuse Auto Type');
+    const { handleWorkspaceAddCommand } = await import('./workspace.js');
+
+    await handleWorkspaceAddCommand(planPath, { reuse: true, auto: true }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    const data = await readTrackingData();
+    expect(data[reusableWorkspace]?.workspaceType).toBe('auto');
   });
 
   test('--try-reuse falls back to creating new workspace when none available', async () => {
