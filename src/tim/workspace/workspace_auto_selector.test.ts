@@ -27,16 +27,24 @@ describe('WorkspaceAutoSelector', () => {
     repositoryId: string,
     workspacePath: string,
     taskId: string,
-    branch?: string
+    branch?: string,
+    workspaceType?: 'standard' | 'primary' | 'auto'
   ) {
     const db = getDatabase();
     const project = getOrCreateProject(db, repositoryId);
-    return recordWorkspace(db, {
+    const row = recordWorkspace(db, {
       projectId: project.id,
       workspacePath,
       taskId,
       branch,
     });
+    if (workspaceType) {
+      db.prepare('UPDATE workspace SET workspace_type = ? WHERE id = ?').run(
+        workspaceType === 'primary' ? 1 : workspaceType === 'auto' ? 2 : 0,
+        row.id
+      );
+    }
+    return row;
   }
 
   async function seedAssignmentForPlan(
@@ -295,6 +303,47 @@ describe('WorkspaceAutoSelector', () => {
     expect(result?.isNew).toBe(false);
   });
 
+  test('selectWorkspace falls back to any non-primary workspace when no auto workspaces exist', async () => {
+    const standardAPath = path.join(testDir, 'workspace-standard-a');
+    const standardBPath = path.join(testDir, 'workspace-standard-b');
+    const primaryPath = path.join(testDir, 'workspace-primary-fallback');
+    await fs.mkdir(standardAPath, { recursive: true });
+    await fs.mkdir(standardBPath, { recursive: true });
+    await fs.mkdir(primaryPath, { recursive: true });
+
+    await seedWorkspace(
+      'github.com/test/repo',
+      standardAPath,
+      'task-standard-a',
+      'task-standard-a',
+      'standard'
+    );
+    await seedWorkspace(
+      'github.com/test/repo',
+      standardBPath,
+      'task-standard-b',
+      'task-standard-b',
+      'standard'
+    );
+    await seedWorkspace(
+      'github.com/test/repo',
+      primaryPath,
+      'task-primary',
+      'task-primary',
+      'primary'
+    );
+    await WorkspaceLock.acquireLock(standardAPath, 'tim agent');
+
+    const result = await selector.selectWorkspace('task-next', '/test/plan-next.yml', {
+      interactive: false,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.workspace.workspacePath).toBe(standardBPath);
+    expect(result?.workspace.workspaceType).toBe('standard');
+    expect(result?.isNew).toBe(false);
+  });
+
   test('selectWorkspace still skips primary when all non-primary workspaces are locked', async () => {
     const primaryPath = path.join(testDir, 'workspace-primary-unlocked');
     const lockedPath = path.join(testDir, 'workspace-non-primary-locked');
@@ -343,6 +392,39 @@ describe('WorkspaceAutoSelector', () => {
       interactive: false,
     });
 
+    expect(result?.workspace.workspacePath).toBe(autoPath);
+    expect(result?.workspace.workspaceType).toBe('auto');
+  });
+
+  test('selectWorkspace ignores standard and primary workspaces when auto workspaces exist', async () => {
+    const standardPath = path.join(testDir, 'workspace-standard-ignored');
+    const primaryPath = path.join(testDir, 'workspace-primary-ignored');
+    const autoPath = path.join(testDir, 'workspace-auto-selected');
+    await fs.mkdir(standardPath, { recursive: true });
+    await fs.mkdir(primaryPath, { recursive: true });
+    await fs.mkdir(autoPath, { recursive: true });
+
+    await seedWorkspace(
+      'github.com/test/repo',
+      standardPath,
+      'task-standard',
+      'task-standard',
+      'standard'
+    );
+    await seedWorkspace(
+      'github.com/test/repo',
+      primaryPath,
+      'task-primary',
+      'task-primary',
+      'primary'
+    );
+    await seedWorkspace('github.com/test/repo', autoPath, 'task-auto', 'task-auto', 'auto');
+
+    const result = await selector.selectWorkspace('task-next', '/test/plan-next.yml', {
+      interactive: false,
+    });
+
+    expect(result).not.toBeNull();
     expect(result?.workspace.workspacePath).toBe(autoPath);
     expect(result?.workspace.workspaceType).toBe('auto');
   });

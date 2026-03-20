@@ -99,6 +99,7 @@ interface WorkspaceInfo {
   planTitle?: string;
   issueUrls?: string[];
   updatedAt?: string;
+  workspaceType?: 'standard' | 'primary' | 'auto';
 }
 
 async function writeTrackingData(data: Record<string, WorkspaceInfo>) {
@@ -116,6 +117,12 @@ async function writeTrackingData(data: Record<string, WorkspaceInfo>) {
       planId: workspace.planId,
       planTitle: workspace.planTitle,
     });
+    if (workspace.workspaceType) {
+      db.prepare('UPDATE workspace SET workspace_type = ? WHERE id = ?').run(
+        workspace.workspaceType === 'primary' ? 1 : workspace.workspaceType === 'auto' ? 2 : 0,
+        row.id
+      );
+    }
     setWorkspaceIssues(db, row.id, workspace.issueUrls ?? []);
   }
 }
@@ -136,6 +143,8 @@ function rowToWorkspaceInfo(db: ReturnType<typeof getDatabase>, row: WorkspaceRo
     planTitle: row.plan_title ?? undefined,
     issueUrls: issueUrls.length ? issueUrls : undefined,
     updatedAt: row.updated_at,
+    workspaceType:
+      row.workspace_type === 1 ? 'primary' : row.workspace_type === 2 ? 'auto' : 'standard',
   };
 }
 
@@ -350,6 +359,45 @@ describe('workspace add --reuse and --try-reuse', () => {
 
     const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 43, 'Test Plan');
 
+    const { handleWorkspaceAddCommand } = await import('./workspace.js');
+
+    await expect(
+      handleWorkspaceAddCommand(planPath, { reuse: true }, {
+        parent: {
+          parent: {
+            opts: () => ({ config: undefined }),
+          },
+        },
+      } as any)
+    ).rejects.toThrow('No available workspace found for reuse');
+  });
+
+  test('--reuse ignores auto and primary workspaces when selecting reusable workspaces', async () => {
+    const autoWorkspace = path.join(clonesDir, 'auto-workspace');
+    const primaryWorkspace = path.join(clonesDir, 'primary-workspace');
+    await fs.mkdir(autoWorkspace, { recursive: true });
+    await fs.mkdir(primaryWorkspace, { recursive: true });
+    await initGitRepository(autoWorkspace, bareRemoteDir);
+    await initGitRepository(primaryWorkspace, bareRemoteDir);
+
+    await writeTrackingData({
+      [autoWorkspace]: {
+        taskId: 'auto-task',
+        workspacePath: autoWorkspace,
+        branch: 'auto-branch',
+        repositoryId: 'test-repo-id',
+        workspaceType: 'auto',
+      },
+      [primaryWorkspace]: {
+        taskId: 'primary-task',
+        workspacePath: primaryWorkspace,
+        branch: 'primary-branch',
+        repositoryId: 'test-repo-id',
+        workspaceType: 'primary',
+      },
+    });
+
+    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 430, 'Test Plan');
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
     await expect(

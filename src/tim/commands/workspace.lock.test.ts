@@ -16,15 +16,26 @@ let originalHome: string | undefined;
 const logSpy = mock(() => {});
 const warnSpy = mock(() => {});
 
-function seedWorkspace(workspacePath: string, taskId: string, repositoryId: string): void {
+function seedWorkspace(
+  workspacePath: string,
+  taskId: string,
+  repositoryId: string,
+  workspaceType?: 'standard' | 'primary' | 'auto'
+): void {
   const db = getDatabase();
   const project = getOrCreateProject(db, repositoryId);
-  recordWorkspace(db, {
+  const row = recordWorkspace(db, {
     projectId: project.id,
     workspacePath,
     taskId,
     branch: `llmutils-task/${taskId}`,
   });
+  if (workspaceType) {
+    db.prepare('UPDATE workspace SET workspace_type = ? WHERE id = ?').run(
+      workspaceType === 'primary' ? 1 : workspaceType === 'auto' ? 2 : 0,
+      row.id
+    );
+  }
 }
 
 describe('workspace lock/unlock commands', () => {
@@ -189,5 +200,35 @@ describe('workspace lock/unlock commands', () => {
     expect(availableLockInfo?.type).toBe('persistent');
 
     await WorkspaceLock.releaseLock(availableWorkspace, { force: true });
+  });
+
+  test('locks only standard workspaces when using --available', async () => {
+    const autoWorkspace = path.join(tempDir, 'workspace-auto');
+    const primaryWorkspace = path.join(tempDir, 'workspace-primary');
+    const standardWorkspace = path.join(tempDir, 'workspace-standard');
+    await fs.mkdir(autoWorkspace, { recursive: true });
+    await fs.mkdir(primaryWorkspace, { recursive: true });
+    await fs.mkdir(standardWorkspace, { recursive: true });
+
+    seedWorkspace(autoWorkspace, 'task-auto', 'example-repo', 'auto');
+    seedWorkspace(primaryWorkspace, 'task-primary', 'example-repo', 'primary');
+    seedWorkspace(standardWorkspace, 'task-standard', 'example-repo', 'standard');
+
+    const { handleWorkspaceLockCommand } = await import('./workspace.js');
+
+    await handleWorkspaceLockCommand(undefined, { available: true }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    expect(await WorkspaceLock.getLockInfo(autoWorkspace)).toBeNull();
+    expect(await WorkspaceLock.getLockInfo(primaryWorkspace)).toBeNull();
+    const standardLockInfo = await WorkspaceLock.getLockInfo(standardWorkspace);
+    expect(standardLockInfo?.type).toBe('persistent');
+
+    await WorkspaceLock.releaseLock(standardWorkspace, { force: true });
   });
 });
