@@ -22,6 +22,7 @@ import { generateAlphanumericId } from '../id_utils.js';
 import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
 import {
   createWorkspace,
+  ensureJjRevisionHasDescription,
   prepareExistingWorkspace,
   runWorkspaceUpdateCommands,
 } from '../workspace/workspace_manager.js';
@@ -1539,7 +1540,8 @@ function isMissingJjBookmarkError(message: string): boolean {
 export async function pullWorkspaceRefIfExists(
   workspacePath: string,
   refName: string,
-  remoteName = 'origin'
+  remoteName = 'origin',
+  planFilePath?: string
 ): Promise<boolean> {
   const isJj = await getUsingJj(workspacePath);
 
@@ -1569,6 +1571,8 @@ export async function pullWorkspaceRefIfExists(
       }
       throw new Error(`Failed to check out bookmark "${refName}": ${editResult.stderr}`);
     }
+
+    await ensureJjRevisionHasDescription(workspacePath, '@', planFilePath, refName);
 
     return true;
   }
@@ -1678,10 +1682,12 @@ export async function ensureWorkspaceRefExists(
 export async function setWorkspaceBookmarkToCurrent(
   workspacePath: string,
   bookmark: string,
-  revision = '@'
+  revision = '@',
+  planFilePath?: string
 ): Promise<void> {
   const targetRevision =
     revision === '@' ? await getJjBookmarkRevisionForWorkingCopy(workspacePath) : revision;
+  await ensureJjRevisionHasDescription(workspacePath, targetRevision, planFilePath, bookmark);
   const setResult = await spawnAndLogOutput(
     ['jj', 'bookmark', 'set', bookmark, '--revision', targetRevision],
     {

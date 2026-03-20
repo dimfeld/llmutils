@@ -434,6 +434,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenNthCalledWith(1, autoWorkspacePath, {
       baseBranch: undefined,
       branchName: '42-sync-base-before-plan-branch-reuse',
+      planFilePath: validPlanFile,
       createBranch: false,
       logSkippedBranchCreation: false,
     });
@@ -448,7 +449,8 @@ describe('setupWorkspace', () => {
     expect(pullSpy).toHaveBeenCalledWith(
       autoWorkspacePath,
       '42-sync-base-before-plan-branch-reuse',
-      'origin'
+      'origin',
+      validPlanFile
     );
   });
 
@@ -535,6 +537,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
       baseBranch: undefined,
       branchName: 'task-existing-prep',
+      planFilePath: planFile,
       createBranch: true,
     });
     expect(updateSpy).toHaveBeenCalledWith(
@@ -589,6 +592,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
       baseBranch: undefined,
       branchName: '42-add-workspace-branch-naming',
+      planFilePath: validPlanFile,
       createBranch: true,
     });
   });
@@ -629,6 +633,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
       baseBranch: undefined,
       branchName: 'task-existing-create-branch-override',
+      planFilePath: planFile,
       createBranch: true,
     });
   });
@@ -906,6 +911,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
       baseBranch: undefined,
       branchName: '88-keep-branch-metadata-in-sync',
+      planFilePath: validPlanFile,
       createBranch: true,
     });
     expect(await fs.readFile(validPlanFile, 'utf8')).not.toContain('branch:');
@@ -958,6 +964,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
       baseBranch: 'feature/parent-plan',
       branchName: '21-child-plan',
+      planFilePath: childPlanFile,
       createBranch: true,
     });
   });
@@ -1020,6 +1027,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
       baseBranch: 'feature/parent-plan',
       branchName: '21-child-plan',
+      planFilePath: childPlanFile,
       createBranch: true,
     });
   });
@@ -1075,10 +1083,12 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenNthCalledWith(1, existingWorkspacePath, {
       baseBranch: 'feature/missing-parent',
       branchName: '21-child-plan',
+      planFilePath: childPlanFile,
       createBranch: true,
     });
     expect(prepareSpy).toHaveBeenNthCalledWith(2, existingWorkspacePath, {
       branchName: '21-child-plan',
+      planFilePath: childPlanFile,
       createBranch: true,
     });
   });
@@ -1128,6 +1138,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
       baseBranch: 'feature/deleted-base',
       branchName: '22-explicit-base-plan',
+      planFilePath: explicitBasePlanFile,
       createBranch: true,
     });
   });
@@ -1160,6 +1171,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
       baseBranch: 'feature/base-branch',
       branchName: 'task-existing-base-explicit',
+      planFilePath: planFile,
       createBranch: true,
     });
   });
@@ -1191,6 +1203,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
       baseBranch: undefined,
       branchName: 'task-existing-base-default',
+      planFilePath: planFile,
       createBranch: true,
     });
   });

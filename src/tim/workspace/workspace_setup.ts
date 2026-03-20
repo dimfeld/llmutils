@@ -248,6 +248,7 @@ export async function setupWorkspace(
             const syncBaseResult = await prepareExistingWorkspace(workspace.path, {
               baseBranch,
               branchName,
+              planFilePath: planFile,
               createBranch: false,
               logSkippedBranchCreation: false,
             });
@@ -273,7 +274,8 @@ export async function setupWorkspace(
               preparedWithPlanBranch = await pullWorkspaceRefIfExists(
                 workspace.path,
                 branchName,
-                'origin'
+                'origin',
+                planFile
               );
             } catch (err) {
               warn(`Failed to pull workspace branch "${branchName}": ${err as Error}`);
@@ -284,12 +286,14 @@ export async function setupWorkspace(
             let prepareResult = await prepareExistingWorkspace(workspace.path, {
               baseBranch,
               branchName,
+              planFilePath: planFile,
               createBranch: shouldCreateBranch,
             });
 
             if (!prepareResult.success && canRetryWithoutBaseBranch) {
               prepareResult = await prepareExistingWorkspace(workspace.path, {
                 branchName,
+                planFilePath: planFile,
                 createBranch: shouldCreateBranch,
               });
             }

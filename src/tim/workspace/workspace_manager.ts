@@ -678,14 +678,14 @@ export async function ensurePrimaryWorkspaceBranch(
   }
 }
 
-async function ensureJjRevisionHasDescription(
+export async function ensureJjRevisionHasDescription(
   repoRoot: string,
   revision: string,
   planFilePath: string | undefined,
   branchName: string
 ): Promise<void> {
   const descriptionResult = await spawnAndLogOutput(
-    ['jj', 'log', '-r', revision, '-T', 'description'],
+    ['jj', 'log', '-r', revision, '--no-graph', '-T', 'description'],
     {
       cwd: repoRoot,
       quiet: true,
@@ -966,6 +966,13 @@ export async function createWorkspace(
                 return newResult;
               }
 
+              await ensureJjRevisionHasDescription(
+                targetClonePath,
+                '@',
+                originalPlanFilePath,
+                branchName
+              );
+
               return spawnAndLogOutput(['jj', 'bookmark', 'set', branchName], {
                 cwd: targetClonePath,
               });
@@ -1204,6 +1211,8 @@ export interface PrepareWorkspaceOptions {
   baseBranch?: string;
   /** Name of new branch to create */
   branchName: string;
+  /** Plan file used to derive a fallback jj revision description when needed */
+  planFilePath?: string;
   /** Whether to create a new branch (default: true) */
   createBranch?: boolean;
   /** Whether to log when branch creation is intentionally skipped (default: true) */
@@ -1370,7 +1379,17 @@ export async function prepareExistingWorkspace(
   // For jj, we already created a new change with "jj new", now set the bookmark
   // For git, create and checkout a new branch
   const createBranchResult = isJj
-    ? await spawnAndLogOutput(['jj', 'bookmark', 'set', actualBranchName], { cwd: workspacePath })
+    ? await (async () => {
+        await ensureJjRevisionHasDescription(
+          workspacePath,
+          '@',
+          options.planFilePath,
+          actualBranchName
+        );
+        return spawnAndLogOutput(['jj', 'bookmark', 'set', actualBranchName], {
+          cwd: workspacePath,
+        });
+      })()
     : await spawnAndLogOutput(['git', 'checkout', '-b', actualBranchName], { cwd: workspacePath });
 
   if (createBranchResult.exitCode !== 0) {

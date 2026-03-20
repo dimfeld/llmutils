@@ -41,6 +41,16 @@ describe('setWorkspaceBookmarkToCurrent', () => {
 
     await setWorkspaceBookmarkToCurrent('/tmp/workspace', 'task-123', '@-');
 
+    expect(processCalls).toContainEqual([
+      'jj',
+      'log',
+      '-r',
+      '@-',
+      '--no-graph',
+      '-T',
+      'description',
+    ]);
+    expect(processCalls).toContainEqual(['jj', 'describe', '-r', '@-', '-m', 'start task-123']);
     expect(processCalls).toContainEqual(['jj', 'bookmark', 'set', 'task-123', '--revision', '@-']);
   });
 
@@ -51,6 +61,16 @@ describe('setWorkspaceBookmarkToCurrent', () => {
     await setWorkspaceBookmarkToCurrent('/tmp/workspace', 'task-123');
 
     expect(getJjBookmarkRevisionForWorkingCopy).toHaveBeenCalledWith('/tmp/workspace');
+    expect(processCalls).toContainEqual([
+      'jj',
+      'log',
+      '-r',
+      '@-',
+      '--no-graph',
+      '-T',
+      'description',
+    ]);
+    expect(processCalls).toContainEqual(['jj', 'describe', '-r', '@-', '-m', 'start task-123']);
     expect(processCalls).toContainEqual(['jj', 'bookmark', 'set', 'task-123', '--revision', '@-']);
   });
 });

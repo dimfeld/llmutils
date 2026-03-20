@@ -15,7 +15,11 @@ const mockSpawnAndLogOutput = mock(async () => ({ exitCode: 0, stdout: '', stder
 const mockExecutePostApplyCommand = mock(async () => true);
 
 // Import the module under test after all mocks are set up
-import { createWorkspace, ensurePrimaryWorkspaceBranch } from './workspace_manager.js';
+import {
+  createWorkspace,
+  ensurePrimaryWorkspaceBranch,
+  prepareExistingWorkspace,
+} from './workspace_manager.js';
 import type { TimConfig, TimConfigInput } from '../configSchema.js';
 
 describe('createWorkspace', () => {
@@ -1615,6 +1619,106 @@ describe('createWorkspace', () => {
     expect(gitCheckoutCalls).toHaveLength(0);
   });
 
+  test('createWorkspace adds a fallback jj description before moving the workspace bookmark to @', async () => {
+    const taskId = 'task-jj-workspace-description';
+    const sourceDirectory = path.join(testTempDir, 'jj-source-description');
+    const cloneLocation = path.join(testTempDir, 'clones-description');
+    const targetClonePath = path.join(
+      cloneLocation,
+      'jj-source-description-task-jj-workspace-description'
+    );
+    const planPath = path.join(mainRepoRoot, 'tasks', 'task-456.plan.md');
+
+    await fs.mkdir(path.join(mainRepoRoot, '.jj'), { recursive: true });
+    await fs.mkdir(path.dirname(planPath), { recursive: true });
+    await fs.writeFile(
+      planPath,
+      '---\nid: 456\ntitle: Prepare workspace description\ntasks: []\n---\n'
+    );
+    await fs.mkdir(sourceDirectory, { recursive: true });
+    await fs.mkdir(path.join(targetClonePath, '.jj'), { recursive: true });
+    await fs.writeFile(path.join(sourceDirectory, 'README.md'), 'jj content');
+
+    const config: TimConfig = {
+      workspaceCreation: {
+        cloneMethod: 'cp',
+        sourceDirectory,
+        cloneLocation,
+        createBranch: true,
+      },
+    };
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[], options?: { cwd?: string }) => {
+      if (cmd[0] === 'git' && cmd[1] === 'ls-files') {
+        return { exitCode: 0, stdout: 'README.md\u0000', stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'log' && options?.cwd === targetClonePath) {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config, {
+      branchName: 'jj-feature-description',
+    });
+
+    expect(result).not.toBeNull();
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['jj', 'log', '-r', '@', '--no-graph', '-T', 'description'],
+      { cwd: targetClonePath, quiet: true },
+    ]);
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['jj', 'describe', '-r', '@', '-m', 'start plan 456: Prepare workspace description'],
+      { cwd: targetClonePath },
+    ]);
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['jj', 'bookmark', 'set', 'jj-feature-description'],
+      { cwd: targetClonePath },
+    ]);
+  });
+
+  test('prepareExistingWorkspace adds a fallback jj description before moving the bookmark to @', async () => {
+    const workspacePath = path.join(testTempDir, 'jj-existing-workspace');
+    const planPath = path.join(mainRepoRoot, 'tasks', 'task-901.plan.md');
+
+    await fs.mkdir(path.join(workspacePath, '.jj'), { recursive: true });
+    await fs.mkdir(path.dirname(planPath), { recursive: true });
+    await fs.writeFile(planPath, '---\nid: 901\ntitle: Prepare reused workspace\ntasks: []\n---\n');
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[], options?: { cwd?: string }) => {
+      if (cmd[0] === 'jj' && cmd[1] === 'git' && cmd[2] === 'remote' && cmd[3] === 'list') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      if (cmd[0] === 'jj' && cmd[1] === 'log' && options?.cwd === workspacePath) {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await prepareExistingWorkspace(workspacePath, {
+      baseBranch: 'main',
+      branchName: 'jj-described',
+      planFilePath: planPath,
+      createBranch: true,
+    });
+
+    expect(result).toEqual({ success: true, actualBranchName: 'jj-described' });
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['jj', 'log', '-r', '@', '--no-graph', '-T', 'description'],
+      { cwd: workspacePath, quiet: true },
+    ]);
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['jj', 'describe', '-r', '@', '-m', 'start plan 901: Prepare reused workspace'],
+      { cwd: workspacePath },
+    ]);
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['jj', 'bookmark', 'set', 'jj-described'],
+      { cwd: workspacePath },
+    ]);
+  });
+
   test('createWorkspace falls back to origin/<fromBranch> when the base branch is not local', async () => {
     const taskId = 'task-remote-base';
     const repositoryUrl = 'https://github.com/example/repo.git';
@@ -2040,7 +2144,7 @@ describe('createWorkspace', () => {
 
     expect(result).toEqual({ success: true });
     expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
-      ['jj', 'log', '-r', '@', '-T', 'description'],
+      ['jj', 'log', '-r', '@', '--no-graph', '-T', 'description'],
       { cwd: mainRepoRoot, quiet: true },
     ]);
     expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([

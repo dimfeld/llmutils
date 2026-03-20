@@ -164,6 +164,10 @@ describe('workspace pull plan', () => {
           return { exitCode: 0, stdout: '', stderr: '' };
         }
 
+        if (args[0] === 'jj' && args[1] === 'log') {
+          return { exitCode: 0, stdout: '', stderr: '' };
+        }
+
         return { exitCode: 0, stdout: '', stderr: '' };
       }),
     }));
@@ -182,6 +186,16 @@ describe('workspace pull plan', () => {
       'origin',
     ]);
     expect(processCalls).toContainEqual(['jj', 'new', 'feature/plan']);
+    expect(processCalls).toContainEqual([
+      'jj',
+      'log',
+      '-r',
+      '@',
+      '--no-graph',
+      '-T',
+      'description',
+    ]);
+    expect(processCalls).toContainEqual(['jj', 'describe', '-r', '@', '-m', 'start feature/plan']);
     expect(
       processCalls.some(
         (args) => args[0] === 'jj' && args[1] === 'edit' && args[2] === 'feature/plan'
