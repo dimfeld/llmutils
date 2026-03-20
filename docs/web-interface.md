@@ -46,11 +46,11 @@ src/routes/projects/[projectId]/active/
 
 - `getWorkspacesForProject(db, projectId?)` in `db_queries.ts` — LEFT JOINs `workspace` with `workspace_lock`, calls `cleanStaleLocks(db)` first, returns `EnrichedWorkspace[]` with `isRecentlyActive` computed flag
 - `getActiveWorkData(db, projectId)` in `plans_browser.ts` — combines workspace data with plans filtered to `displayStatus === 'in_progress' || 'blocked'`
-- "Recently active" criteria: workspace is locked, is primary, or has `updated_at` within 48 hours (`RECENTLY_ACTIVE_WINDOW_MS`)
+- "Recently active" criteria: workspace is locked, is primary, is auto, or has `updated_at` within 48 hours (`RECENTLY_ACTIVE_WINDOW_MS`)
 
 ### Components
 
-- `WorkspaceBadge.svelte` — pill badge for workspace status: Primary (blue), Locked (amber), Available (gray)
+- `WorkspaceBadge.svelte` — pill badge for workspace status: Primary (blue), Auto (green), Locked (amber), Available (gray)
 - `WorkspaceRow.svelte` — card-style row showing workspace name/path, branch chip, assigned plan link, status badge, lock command info, optional project name
 - `ActivePlanRow.svelte` — plan row with plan #, title, goal (truncated), status/priority badges, and relative timestamp
 - `src/lib/utils/time.ts` — `formatRelativeTime()` helper for human-readable relative timestamps
