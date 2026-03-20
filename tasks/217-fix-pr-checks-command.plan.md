@@ -5,12 +5,12 @@ goal: ""
 id: 217
 uuid: 9c2ce79a-286c-459c-9d75-a1b5fa60ece4
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 planGeneratedAt: 2026-03-07T08:42:06.542Z
 promptsGeneratedAt: 2026-03-07T08:42:06.542Z
 createdAt: 2026-03-07T02:47:09.372Z
-updatedAt: 2026-03-20T21:30:27.402Z
+updatedAt: 2026-03-20T21:48:22.426Z
 tasks:
   - title: Add DB migration to rename is_primary to workspace_type
     done: true
@@ -147,13 +147,14 @@ tasks:
 
       5. Test reuse and lock-available filtering excludes both primary and auto
   - title: Update README with workspace type documentation
-    done: false
+    done: true
     description: "Update README to document the workspace type system: standard,
       primary, and auto types; CLI flags --primary/--auto on workspace add and
       update; behavior of auto-selection when auto workspaces exist."
 changedFiles:
   - CLAUDE.md
   - README.md
+  - claude-plugin/skills/using-tim/references/cli-commands.md
   - docs/multi-workspace-workflow.md
   - docs/web-interface.md
   - src/common/git.test.ts
@@ -192,6 +193,7 @@ changedFiles:
   - src/tim/workspace/workspace_roundtrip.ts
   - src/tim/workspace/workspace_setup.test.ts
   - src/tim/workspace/workspace_setup.ts
+  - tim-gui/AGENTS.md
 tags: []
 ---
 
@@ -415,8 +417,8 @@ In `src/tim/workspace/workspace_roundtrip.ts`:
 
 ## Current Progress
 ### Current State
-- All core implementation complete (Tasks 1-8). CLI layer complete (Tasks 6-7). All tests updated and new tests added (Tasks 9-10).
-- 70+ workspace-related tests pass across 5 test files
+- All tasks complete. Plan is done.
+- All tests pass across CLI and web test suites
 - TypeScript compilation clean (only pre-existing errors in treesitter and review_runner)
 ### Completed (So Far)
 - Task 1: DB migration v7 renaming is_primary to workspace_type
@@ -429,12 +431,14 @@ In `src/tim/workspace/workspace_roundtrip.ts`:
 - Task 8: Roundtrip sync updated to check workspaceType === 'primary'
 - Task 9: All existing tests updated for workspace_type rename
 - Task 10: New tests added for auto workspace selection, reuse filtering, lock-available filtering, add command type persistence, mutual exclusivity
+- Task 11: README updated with workspace management section documenting types and CLI flags
 - Also fixed: JSON import preserves legacy isPrimary and new workspaceType fields
 - Also fixed: workspace add --reuse/--try-reuse now applies workspaceType to reused workspace via patchWorkspaceInfo
+- Also fixed: auto workspaces treated as "recently active" in web UI Active Work tab (caught in final review)
 ### Remaining
-- Task 11: Update README with workspace type documentation
+- None
 ### Next Iteration Guidance
-- Task 11 is the only remaining task — update README to document workspace types and CLI flags
+- None
 ### Decisions / Changes
 - WorkspaceType exported from src/tim/db/workspace.ts as the canonical location
 - workspaceType is required (not optional) on WorkspaceInfo with default 'standard'
@@ -443,9 +447,11 @@ In `src/tim/workspace/workspace_roundtrip.ts`:
 - --no-primary and --no-auto both set type to 'standard' regardless of current type (by design per plan spec)
 - resolveWorkspaceTypeOption() is a shared helper used by both add and update command handlers
 - Workspace list display shows lock status for both primary and auto workspaces (e.g. "Auto (Locked)")
+- Auto workspaces are always shown in web Active Work tab (treated as recently active, like primary)
 ### Lessons Learned
 - JSON import is a critical migration path that's easy to overlook — when changing DB schema, always check json_import.ts for legacy field handling
 - When adding CLI flags to a command with multiple code paths (create vs reuse), verify the flag is honored on all paths — the reuse path silently dropped --auto/--primary until caught in review
 - Test seed helpers should use production APIs (e.g. recordWorkspace with workspaceType param) rather than manual SQL UPDATEs to exercise the full code path
+- When adding a new workspace type, check all places that special-case existing types (like primary) — the web UI isRecentlyActive filter was missed because it lives in db_queries.ts, not in the workspace module
 ### Risks / Blockers
 - None
