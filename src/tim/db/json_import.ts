@@ -11,6 +11,7 @@ import { importAssignment } from './assignment.js';
 import { setPermissions } from './permission.js';
 import { getOrCreateProject, updateProject } from './project.js';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
+import type { WorkspaceType } from './workspace.js';
 import { getWorkspaceByPath, recordWorkspace, setWorkspaceIssues } from './workspace.js';
 
 interface RepositoryImportData {
@@ -127,6 +128,19 @@ function isValidWorkspaceEntry(entry: unknown, workspacePath: string): entry is 
     typeof candidate.createdAt === 'string' &&
     candidate.createdAt.length > 0
   );
+}
+
+/** Map legacy isPrimary or current workspaceType from a JSON workspace entry. */
+function resolveImportedWorkspaceType(
+  workspace: WorkspaceInfo & { isPrimary?: boolean }
+): WorkspaceType | undefined {
+  if (workspace.workspaceType && workspace.workspaceType !== 'standard') {
+    return workspace.workspaceType;
+  }
+  if ((workspace as unknown as Record<string, unknown>).isPrimary) {
+    return 'primary';
+  }
+  return undefined;
 }
 
 function parseRepositoryMetadata(filePath: string): RepositoryStorageMetadata | undefined {
@@ -314,6 +328,7 @@ export function importFromJsonFiles(db: Database, configRoot: string): void {
         description: workspace.description,
         planId: workspace.planId ?? null,
         planTitle: workspace.planTitle,
+        workspaceType: resolveImportedWorkspaceType(workspace),
       });
 
       workspaceIdsByPath.set(workspacePath, recordedWorkspace.id);

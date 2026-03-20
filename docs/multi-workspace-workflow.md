@@ -46,7 +46,7 @@ The assignments database augments the existing plan metadata. Commands read both
 - `tim list --assigned` shows only claimed plans. Use `--unassigned` for the inverse.
 - `tim show 42` prints the workspace path, user, and claim timestamps.
 - `tim assignments list` provides a repository-wide overview of every assignment.
-- **tim-gui** (macOS): The Projects view shows workspaces for each project with status badges (Primary / Locked / Available) and plan assignments. See the [tim-gui section in the README](../README.md#tim-gui-macos) for details.
+- **tim-gui** (macOS): The Projects view shows workspaces for each project with status badges (Primary / Auto / Locked / Available) and plan assignments. See the [tim-gui section in the README](../README.md#tim-gui-macos) for details.
 
 Each plan is assigned to a single workspace at a time. If another workspace claims an already-assigned plan, tim prints a warning about reassigning and updates the assignment to the new workspace.
 
@@ -91,6 +91,26 @@ tim release docs-uuid --reset-status
 | `auto-claim` warnings in tests or scripts   | Auto-claim is disabled unless the CLI enables it.                              | Import `enableAutoClaim()` from `src/tim/assignments/auto_claim.js` if you need it in custom tooling. |
 | Claims point to stale workspaces            | The workspace was deleted or renamed.                                          | Run `tim assignments clean-stale` or release the plan manually.                                       |
 | Plan still appears claimed after completion | tim removes assignments when plan status transitions to `done` or `cancelled`. | Verify the plan reached the correct status; re-run `tim release <plan>` if necessary.                 |
+
+## Workspace Types
+
+Each workspace has a type that controls how it participates in auto-selection:
+
+| Type       | DB Value | Description                                                                                                                  |
+| ---------- | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `standard` | 0        | Default type. Eligible for auto-selection only when no `auto` workspaces exist.                                              |
+| `primary`  | 1        | The main checkout used for branch creation and push targets. Never auto-selected.                                            |
+| `auto`     | 2        | Dedicated pool for `--auto-workspace`. When any auto workspace exists, only auto workspaces are eligible for auto-selection. |
+
+### Auto-Selection Behavior
+
+When `--auto-workspace` needs to pick a workspace:
+
+1. If any workspace for the repository has type `auto`, restrict candidates to auto workspaces only.
+2. Otherwise, all non-primary workspaces are candidates (preserving the original behavior).
+3. If all eligible workspaces are locked, a new workspace is created and automatically tagged as `auto` so it remains in the pool for future runs.
+
+This lets you carve out a dedicated set of workspaces for automated use while keeping other workspaces available for manual work.
 
 ## Workspace Switching
 

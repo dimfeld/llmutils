@@ -34,7 +34,7 @@ interface WorkspaceInfo {
   planId?: string;
   planTitle?: string;
   issueUrls?: string[];
-  isPrimary?: boolean;
+  workspaceType?: 'standard' | 'primary' | 'auto';
 }
 
 async function writeTrackingData(data: Record<string, WorkspaceInfo>) {
@@ -51,10 +51,8 @@ async function writeTrackingData(data: Record<string, WorkspaceInfo>) {
       description: workspace.description,
       planId: workspace.planId,
       planTitle: workspace.planTitle,
+      workspaceType: workspace.workspaceType,
     });
-    if (workspace.isPrimary) {
-      db.prepare('UPDATE workspace SET is_primary = 1 WHERE id = ?').run(row.id);
-    }
     setWorkspaceIssues(db, row.id, workspace.issueUrls ?? []);
   }
 }
@@ -86,7 +84,8 @@ function rowToWorkspaceInfo(db: ReturnType<typeof getDatabase>, row: WorkspaceRo
     planId: row.plan_id ?? undefined,
     planTitle: row.plan_title ?? undefined,
     issueUrls: issueUrls.length ? issueUrls : undefined,
-    isPrimary: row.is_primary === 1 ? true : undefined,
+    workspaceType:
+      row.workspace_type === 1 ? 'primary' : row.workspace_type === 2 ? 'auto' : 'standard',
     createdAt: row.created_at,
   };
 }
@@ -342,7 +341,7 @@ describe('workspace update command', () => {
     } as any);
 
     const data = await readTrackingData();
-    expect(data[workspaceDir].isPrimary).toBe(true);
+    expect(data[workspaceDir].workspaceType).toBe('primary');
   });
 
   test('removes primary designation when --no-primary is used', async () => {
@@ -354,7 +353,7 @@ describe('workspace update command', () => {
         taskId: 'task-no-primary',
         workspacePath: workspaceDir,
         createdAt: new Date().toISOString(),
-        isPrimary: true,
+        workspaceType: 'primary',
       },
     });
 
@@ -369,7 +368,60 @@ describe('workspace update command', () => {
     } as any);
 
     const data = await readTrackingData();
-    expect(data[workspaceDir].isPrimary).toBeUndefined();
+    expect(data[workspaceDir].workspaceType).toBe('standard');
+  });
+
+  test('marks workspace as auto when requested', async () => {
+    const workspaceDir = path.join(tempDir, 'workspace-auto');
+    await fs.mkdir(workspaceDir, { recursive: true });
+
+    await writeTrackingData({
+      [workspaceDir]: {
+        taskId: 'task-auto',
+        workspacePath: workspaceDir,
+        createdAt: new Date().toISOString(),
+      },
+    });
+
+    const { handleWorkspaceUpdateCommand } = await import('./workspace.js');
+
+    await handleWorkspaceUpdateCommand(workspaceDir, { auto: true }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    const data = await readTrackingData();
+    expect(data[workspaceDir].workspaceType).toBe('auto');
+  });
+
+  test('removes auto designation when --no-auto is used', async () => {
+    const workspaceDir = path.join(tempDir, 'workspace-no-auto');
+    await fs.mkdir(workspaceDir, { recursive: true });
+
+    await writeTrackingData({
+      [workspaceDir]: {
+        taskId: 'task-no-auto',
+        workspacePath: workspaceDir,
+        createdAt: new Date().toISOString(),
+        workspaceType: 'auto',
+      },
+    });
+
+    const { handleWorkspaceUpdateCommand } = await import('./workspace.js');
+
+    await handleWorkspaceUpdateCommand(workspaceDir, { auto: false }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    const data = await readTrackingData();
+    expect(data[workspaceDir].workspaceType).toBe('standard');
   });
 
   test('throws error when no update options provided', async () => {
@@ -387,8 +439,25 @@ describe('workspace update command', () => {
         },
       } as any)
     ).rejects.toThrow(
-      'At least one of --name, --description, --from-plan, or --primary/--no-primary must be provided'
+      'At least one of --name, --description, --from-plan, --primary/--no-primary, or --auto/--no-auto must be provided'
     );
+  });
+
+  test('throws error when both --primary and --auto are provided', async () => {
+    const workspaceDir = path.join(tempDir, 'workspace-conflicting-type');
+    await fs.mkdir(workspaceDir, { recursive: true });
+
+    const { handleWorkspaceUpdateCommand } = await import('./workspace.js');
+
+    await expect(
+      handleWorkspaceUpdateCommand(workspaceDir, { primary: true, auto: true }, {
+        parent: {
+          parent: {
+            opts: () => ({ config: undefined }),
+          },
+        },
+      } as any)
+    ).rejects.toThrow('Cannot use both --primary and --auto');
   });
 
   test('throws error when target path does not exist and not a valid task ID', async () => {

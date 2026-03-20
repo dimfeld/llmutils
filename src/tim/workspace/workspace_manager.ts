@@ -11,7 +11,7 @@ import type { PostApplyCommand, TimConfig } from '../configSchema.js';
 import { WorkspaceLock } from './workspace_lock.js';
 import { getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
-import { recordWorkspace, setWorkspaceIssues } from '../db/workspace.js';
+import { recordWorkspace, setWorkspaceIssues, type WorkspaceType } from '../db/workspace.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { buildDescriptionFromPlan } from '../display_utils.js';
 import { readPlanFile } from '../plans.js';
@@ -747,7 +747,13 @@ export async function createWorkspace(
   taskId: string,
   originalPlanFilePath: string | undefined,
   config: TimConfig,
-  options?: { branchName?: string; planData?: PlanSchema; fromBranch?: string; targetDir?: string }
+  options?: {
+    branchName?: string;
+    planData?: PlanSchema;
+    fromBranch?: string;
+    targetDir?: string;
+    workspaceType?: WorkspaceType;
+  }
 ): Promise<Workspace | null> {
   // Check if workspace creation is enabled in the config
   if (!config.workspaceCreation) {
@@ -1105,6 +1111,7 @@ export async function createWorkspace(
     branch: shouldCreateBranch ? branchName : undefined,
     planId: options?.planData?.id ? String(options.planData.id) : null,
     planTitle: options?.planData?.title || options?.planData?.goal || null,
+    workspaceType: options?.workspaceType,
   });
   setWorkspaceIssues(db, workspaceRow.id, options?.planData?.issue ?? []);
 

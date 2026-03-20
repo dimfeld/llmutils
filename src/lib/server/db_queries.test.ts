@@ -349,7 +349,7 @@ describe('lib/server/db_queries', () => {
       branch: 'feature/primary-workspace',
       name: 'Primary workspace',
     });
-    patchWorkspace(db, primaryWorkspace.workspace_path, { isPrimary: true });
+    patchWorkspace(db, primaryWorkspace.workspace_path, { workspaceType: 'primary' });
     setWorkspaceUpdatedAt(db, primaryWorkspace.id, daysAgo(5));
 
     const lockedWorkspace = recordWorkspace(db, {
@@ -373,6 +373,15 @@ describe('lib/server/db_queries', () => {
     });
     setWorkspaceUpdatedAt(db, recentWorkspace.id, hoursAgo(6));
 
+    const autoWorkspace = recordWorkspace(db, {
+      projectId,
+      workspacePath: '/tmp/workspaces/auto-workspace',
+      branch: 'feature/auto-workspace',
+      name: 'Auto workspace',
+    });
+    patchWorkspace(db, autoWorkspace.workspace_path, { workspaceType: 'auto' });
+    setWorkspaceUpdatedAt(db, autoWorkspace.id, daysAgo(5));
+
     const staleWorkspace = recordWorkspace(db, {
       projectId,
       workspacePath: '/tmp/workspaces/stale-workspace',
@@ -387,6 +396,7 @@ describe('lib/server/db_queries', () => {
       '/tmp/workspaces/stale-assignment',
       '/tmp/workspaces/blocked-plan',
       '/tmp/workspaces/recent-workspace',
+      '/tmp/workspaces/auto-workspace',
       '/tmp/workspaces/locked-workspace',
       '/tmp/workspaces/primary-workspace',
       '/tmp/workspaces/stale-workspace',
@@ -395,14 +405,14 @@ describe('lib/server/db_queries', () => {
       expect.arrayContaining([
         expect.objectContaining({
           workspacePath: '/tmp/workspaces/primary-workspace',
-          isPrimary: true,
+          workspaceType: 'primary',
           isLocked: false,
           isRecentlyActive: true,
           lockInfo: null,
         }),
         expect.objectContaining({
           workspacePath: '/tmp/workspaces/locked-workspace',
-          isPrimary: false,
+          workspaceType: 'standard',
           isLocked: true,
           isRecentlyActive: true,
           lockInfo: {
@@ -416,8 +426,15 @@ describe('lib/server/db_queries', () => {
           isRecentlyActive: true,
         }),
         expect.objectContaining({
+          workspacePath: '/tmp/workspaces/auto-workspace',
+          workspaceType: 'auto',
+          isLocked: false,
+          isRecentlyActive: true,
+          lockInfo: null,
+        }),
+        expect.objectContaining({
           workspacePath: '/tmp/workspaces/stale-workspace',
-          isPrimary: false,
+          workspaceType: 'standard',
           isLocked: false,
           isRecentlyActive: false,
           lockInfo: null,

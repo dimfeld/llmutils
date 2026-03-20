@@ -226,12 +226,14 @@ tim prompts compact-plan 123
 
 ### tim workspace add
 
-Create a workspace for plan execution.
+Create a workspace for plan execution. Use `--auto` or `--primary` to set the workspace type (mutually exclusive).
 
 ```bash
 tim workspace add 123
 tim workspace add 123 --id feature-oauth
 tim workspace add --id scratch-work     # Without plan
+tim workspace add 123 --auto            # Create as auto workspace
+tim workspace add 123 --primary         # Create as primary workspace
 ```
 
 ### tim workspace list
@@ -254,6 +256,20 @@ tim workspace push /path/to/workspace # Push by path
 ```
 
 Requires a primary workspace to be configured via `tim workspace update /path --primary`.
+
+### tim workspace update
+
+Update workspace metadata including name, description, and type.
+
+```bash
+tim workspace update --name "Auth Feature"
+tim workspace update --primary          # Mark as primary workspace
+tim workspace update --no-primary       # Reset to standard type
+tim workspace update --auto             # Mark as auto workspace (dedicated pool for --auto-workspace)
+tim workspace update --no-auto          # Reset to standard type
+```
+
+Workspace types: `standard` (default), `primary` (push target, excluded from auto-selection), `auto` (dedicated pool for `--auto-workspace`). `--primary` and `--auto` are mutually exclusive.
 
 ## Assignment Commands
 

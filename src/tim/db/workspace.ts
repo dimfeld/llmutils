@@ -1,6 +1,28 @@
 import type { Database } from 'bun:sqlite';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
+export type WorkspaceType = 'standard' | 'primary' | 'auto';
+
+export const WORKSPACE_TYPE_VALUES = {
+  standard: 0,
+  primary: 1,
+  auto: 2,
+} as const satisfies Record<WorkspaceType, number>;
+
+export const WORKSPACE_TYPE_NAMES_BY_VALUE: Record<number, WorkspaceType> = {
+  0: 'standard',
+  1: 'primary',
+  2: 'auto',
+};
+
+export function workspaceTypeToDbValue(workspaceType: WorkspaceType): number {
+  return WORKSPACE_TYPE_VALUES[workspaceType];
+}
+
+export function dbValueToWorkspaceType(workspaceType: number): WorkspaceType {
+  return WORKSPACE_TYPE_NAMES_BY_VALUE[workspaceType] ?? 'standard';
+}
+
 export interface WorkspaceRow {
   id: number;
   project_id: number;
@@ -12,7 +34,7 @@ export interface WorkspaceRow {
   description: string | null;
   plan_id: string | null;
   plan_title: string | null;
-  is_primary: number;
+  workspace_type: number;
   created_at: string;
   updated_at: string;
 }
@@ -27,6 +49,7 @@ export interface RecordWorkspaceInput {
   description?: string | null;
   planId?: string | null;
   planTitle?: string | null;
+  workspaceType?: WorkspaceType;
 }
 
 export interface PatchWorkspaceInput {
@@ -37,11 +60,16 @@ export interface PatchWorkspaceInput {
   branch?: string | null;
   repositoryId?: string;
   taskId?: string;
-  isPrimary?: boolean;
+  workspaceType?: WorkspaceType;
 }
 
 export function recordWorkspace(db: Database, input: RecordWorkspaceInput): WorkspaceRow {
   const recordInTransaction = db.transaction((nextInput: RecordWorkspaceInput): WorkspaceRow => {
+    const workspaceTypeValue =
+      nextInput.workspaceType === undefined
+        ? null
+        : workspaceTypeToDbValue(nextInput.workspaceType);
+
     db.prepare(
       `
       INSERT INTO workspace (
@@ -54,9 +82,10 @@ export function recordWorkspace(db: Database, input: RecordWorkspaceInput): Work
         description,
         plan_id,
         plan_title,
+        workspace_type,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 0), ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
       ON CONFLICT(workspace_path) DO UPDATE SET
         project_id = excluded.project_id,
         task_id = COALESCE(excluded.task_id, workspace.task_id),
@@ -69,6 +98,10 @@ export function recordWorkspace(db: Database, input: RecordWorkspaceInput): Work
         description = COALESCE(excluded.description, workspace.description),
         plan_id = COALESCE(excluded.plan_id, workspace.plan_id),
         plan_title = COALESCE(excluded.plan_title, workspace.plan_title),
+        workspace_type = CASE
+          WHEN ? IS NULL THEN workspace.workspace_type
+          ELSE excluded.workspace_type
+        END,
         updated_at = ${SQL_NOW_ISO_UTC}
     `
     ).run(
@@ -80,7 +113,9 @@ export function recordWorkspace(db: Database, input: RecordWorkspaceInput): Work
       nextInput.name ?? null,
       nextInput.description ?? null,
       nextInput.planId ?? null,
-      nextInput.planTitle ?? null
+      nextInput.planTitle ?? null,
+      workspaceTypeValue,
+      workspaceTypeValue
     );
 
     const row = getWorkspaceByPath(db, nextInput.workspacePath);
@@ -166,9 +201,9 @@ export function patchWorkspace(
         fields.push('task_id = ?');
         values.push(nextPatch.taskId ?? null);
       }
-      if ('isPrimary' in nextPatch) {
-        fields.push('is_primary = ?');
-        values.push(nextPatch.isPrimary ? 1 : 0);
+      if ('workspaceType' in nextPatch) {
+        fields.push('workspace_type = ?');
+        values.push(workspaceTypeToDbValue(nextPatch.workspaceType ?? 'standard'));
       }
       if ('repositoryId' in nextPatch) {
         if (nextPatch.repositoryId === undefined) {

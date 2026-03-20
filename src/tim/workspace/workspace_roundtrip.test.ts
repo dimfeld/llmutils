@@ -175,7 +175,7 @@ describe('prepareWorkspaceRoundTrip', () => {
 
   test('includes the primary workspace in origin sync context when available', async () => {
     getWorkspaceInfoByPath.mockReturnValue({
-      isPrimary: false,
+      workspaceType: 'standard',
       repositoryId: 'repo',
       branch: 'task-123',
     });

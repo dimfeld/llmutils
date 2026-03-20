@@ -56,6 +56,7 @@ Or for a single mock defined across the entire test file, use `afterAll(() => mo
 ### Test Against Production Code Paths
 
 - **Tests should call production computed properties and methods rather than duplicating logic in local helpers.** For example, if production code uses `status.isActiveWork` to filter items, tests should assert against that same property — not reimplement the filter predicate locally. Duplicating logic means the test won't catch regressions when the production predicate changes.
+- **Test seed/setup helpers should use production APIs rather than raw SQL**: When seeding test data, prefer calling production functions (e.g., `recordWorkspace` with a `workspaceType` param) over manual `INSERT`/`UPDATE` statements. Raw SQL bypasses validation, default-setting, and any side effects in the production code path, so tests can pass even when the real API is broken.
 
 ### Test Schema Fidelity
 

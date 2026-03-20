@@ -17,7 +17,11 @@ import {
   type PlanTaskRow,
 } from '$tim/db/plan.js';
 import { listProjects, type Project } from '$tim/db/project.js';
-import type { WorkspaceRow } from '$tim/db/workspace.js';
+import {
+  dbValueToWorkspaceType,
+  type WorkspaceRow,
+  type WorkspaceType,
+} from '$tim/db/workspace.js';
 
 export type PlanDisplayStatus =
   | 'pending'
@@ -101,7 +105,7 @@ export interface EnrichedWorkspace {
   branch: string | null;
   planId: string | null;
   planTitle: string | null;
-  isPrimary: boolean;
+  workspaceType: WorkspaceType;
   isLocked: boolean;
   lockInfo: {
     type: WorkspaceLockRow['lock_type'];
@@ -453,9 +457,13 @@ export function getWorkspacesForProject(db: Database, projectId?: number): Enric
 
   return rows
     .map((row) => {
-      const isPrimary = row.is_primary === 1;
+      const workspaceType = dbValueToWorkspaceType(row.workspace_type);
       const isLocked = row.lock_type !== null;
-      const isRecentlyActive = isLocked || isPrimary || isRecentlyUpdated(row.updated_at);
+      const isRecentlyActive =
+        isLocked ||
+        workspaceType === 'primary' ||
+        workspaceType === 'auto' ||
+        isRecentlyUpdated(row.updated_at);
 
       return {
         id: row.id,
@@ -465,7 +473,7 @@ export function getWorkspacesForProject(db: Database, projectId?: number): Enric
         branch: row.branch,
         planId: row.plan_id,
         planTitle: row.plan_title,
-        isPrimary,
+        workspaceType,
         isLocked,
         lockInfo: isLocked
           ? {

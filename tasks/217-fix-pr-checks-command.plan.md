@@ -5,20 +5,20 @@ goal: ""
 id: 217
 uuid: 9c2ce79a-286c-459c-9d75-a1b5fa60ece4
 generatedBy: agent
-status: pending
+status: done
 priority: medium
 planGeneratedAt: 2026-03-07T08:42:06.542Z
 promptsGeneratedAt: 2026-03-07T08:42:06.542Z
 createdAt: 2026-03-07T02:47:09.372Z
-updatedAt: 2026-03-07T08:42:06.542Z
+updatedAt: 2026-03-20T21:50:06.019Z
 tasks:
   - title: Add DB migration to rename is_primary to workspace_type
-    done: false
+    done: true
     description: Add migration version 7 to src/tim/db/migrations.ts with ALTER
       TABLE workspace RENAME COLUMN is_primary TO workspace_type. Existing
       values (0=standard, 1=primary) are preserved.
   - title: Define WorkspaceType and update DB layer
-    done: false
+    done: true
     description: >-
       In src/tim/db/workspace.ts:
 
@@ -36,7 +36,7 @@ tasks:
 
       6. Update patchWorkspace() to handle workspaceType using the mapping
   - title: Update WorkspaceInfo types and helpers
-    done: false
+    done: true
     description: >-
       In src/tim/workspace/workspace_info.ts:
 
@@ -55,7 +55,7 @@ tasks:
 
       6. Update patchWorkspaceInfo() to pass through workspaceType
   - title: Update auto-selection logic with workspace type filtering
-    done: false
+    done: true
     description: >-
       In src/tim/workspace/workspace_auto_selector.ts:
 
@@ -72,12 +72,12 @@ tasks:
 
       5. Update createWorkspace calls to pass workspaceType through
   - title: Update workspace_manager.ts to accept workspaceType
-    done: false
+    done: true
     description: Update createWorkspace() in src/tim/workspace/workspace_manager.ts
       to accept an optional workspaceType parameter and pass it through to
       recordWorkspace().
   - title: Update workspace commands (workspace.ts)
-    done: false
+    done: true
     description: >-
       In src/tim/commands/workspace.ts:
 
@@ -99,7 +99,7 @@ tasks:
       6. Update handleWorkspaceAddCommand to accept --auto/--primary and pass
       workspaceType to createWorkspace
   - title: Update CLI options in tim.ts
-    done: false
+    done: true
     description: >-
       In src/tim/tim.ts:
 
@@ -116,11 +116,11 @@ tasks:
 
       6. Update help text to describe all workspace types
   - title: Update roundtrip sync
-    done: false
+    done: true
     description: "In src/tim/workspace/workspace_roundtrip.ts: update the check to
       use workspaceType === 'primary' instead of isPrimary."
   - title: Update existing tests for workspace_type rename
-    done: false
+    done: true
     description: >-
       Update all existing tests that reference is_primary or isPrimary:
 
@@ -132,7 +132,7 @@ tasks:
       3. workspace.push.test.ts: update test helpers using isPrimary to use
       workspaceType
   - title: Add new tests for auto workspace selection behavior
-    done: false
+    done: true
     description: >-
       Add new tests in workspace_auto_selector.test.ts:
 
@@ -147,10 +147,53 @@ tasks:
 
       5. Test reuse and lock-available filtering excludes both primary and auto
   - title: Update README with workspace type documentation
-    done: false
+    done: true
     description: "Update README to document the workspace type system: standard,
       primary, and auto types; CLI flags --primary/--auto on workspace add and
       update; behavior of auto-selection when auto workspaces exist."
+changedFiles:
+  - CLAUDE.md
+  - README.md
+  - claude-plugin/skills/using-tim/references/cli-commands.md
+  - docs/multi-workspace-workflow.md
+  - docs/web-interface.md
+  - src/common/git.test.ts
+  - src/common/git.ts
+  - src/lib/components/MessageInput.svelte
+  - src/lib/components/WorkspaceBadge.svelte
+  - src/lib/components/WorkspaceRow.svelte
+  - src/lib/server/db_queries.test.ts
+  - src/lib/server/db_queries.ts
+  - src/lib/server/session_manager.test.ts
+  - src/logging/headless_adapter.test.ts
+  - src/logging/headless_adapter.ts
+  - src/tim/commands/agent/agent.ts
+  - src/tim/commands/generate.test.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/workspace.bookmark.test.ts
+  - src/tim/commands/workspace.lock.test.ts
+  - src/tim/commands/workspace.pull-plan.test.ts
+  - src/tim/commands/workspace.push.test.ts
+  - src/tim/commands/workspace.reuse.test.ts
+  - src/tim/commands/workspace.ts
+  - src/tim/commands/workspace.update.test.ts
+  - src/tim/db/database.test.ts
+  - src/tim/db/json_import.ts
+  - src/tim/db/migrations.ts
+  - src/tim/db/workspace.ts
+  - src/tim/headless.test.ts
+  - src/tim/headless.ts
+  - src/tim/tim.ts
+  - src/tim/workspace/workspace_auto_selector.test.ts
+  - src/tim/workspace/workspace_auto_selector.ts
+  - src/tim/workspace/workspace_info.ts
+  - src/tim/workspace/workspace_manager.test.ts
+  - src/tim/workspace/workspace_manager.ts
+  - src/tim/workspace/workspace_roundtrip.test.ts
+  - src/tim/workspace/workspace_roundtrip.ts
+  - src/tim/workspace/workspace_setup.test.ts
+  - src/tim/workspace/workspace_setup.ts
+  - tim-gui/AGENTS.md
 tags: []
 ---
 
@@ -371,3 +414,44 @@ In `src/tim/workspace/workspace_roundtrip.ts`:
 - **Backward compatibility**: The `isPrimary` field is used in multiple interfaces. Need to ensure all callers are updated and no external consumers rely on it.
 - **The `findPrimaryWorkspaceForRepository` function** is used by workspace manager and push commands. It must continue to work correctly with the new type system.
 - **Workspace reuse and lock-available filtering**: Both manual operations (reuse and lock-available) should only consider standard workspaces, excluding both primary and auto. Auto workspaces are reserved for `--auto-workspace` selection only.
+
+## Current Progress
+### Current State
+- All tasks complete. Plan is done.
+- All tests pass across CLI and web test suites
+- TypeScript compilation clean (only pre-existing errors in treesitter and review_runner)
+### Completed (So Far)
+- Task 1: DB migration v7 renaming is_primary to workspace_type
+- Task 2: WorkspaceType type, mapping constants, DB layer updates
+- Task 3: WorkspaceInfo types updated (workspaceType replaces isPrimary)
+- Task 4: Auto-selection logic updated to prefer auto workspaces when they exist
+- Task 5: workspace_manager.ts createWorkspace accepts workspaceType
+- Task 6: Workspace commands updated — display shows Auto/Primary with lock status, reuse/lock-available filtering excludes auto and primary, add/update handlers support --auto/--primary with mutual exclusivity
+- Task 7: CLI options in tim.ts updated — --auto/--no-auto on workspace update, --auto/--primary on workspace add, help text updated
+- Task 8: Roundtrip sync updated to check workspaceType === 'primary'
+- Task 9: All existing tests updated for workspace_type rename
+- Task 10: New tests added for auto workspace selection, reuse filtering, lock-available filtering, add command type persistence, mutual exclusivity
+- Task 11: README updated with workspace management section documenting types and CLI flags
+- Also fixed: JSON import preserves legacy isPrimary and new workspaceType fields
+- Also fixed: workspace add --reuse/--try-reuse now applies workspaceType to reused workspace via patchWorkspaceInfo
+- Also fixed: auto workspaces treated as "recently active" in web UI Active Work tab (caught in final review)
+### Remaining
+- None
+### Next Iteration Guidance
+- None
+### Decisions / Changes
+- WorkspaceType exported from src/tim/db/workspace.ts as the canonical location
+- workspaceType is required (not optional) on WorkspaceInfo with default 'standard'
+- dbValueToWorkspaceType defaults unknown values to 'standard'
+- JSON import now handles both legacy isPrimary:true and new workspaceType fields
+- --no-primary and --no-auto both set type to 'standard' regardless of current type (by design per plan spec)
+- resolveWorkspaceTypeOption() is a shared helper used by both add and update command handlers
+- Workspace list display shows lock status for both primary and auto workspaces (e.g. "Auto (Locked)")
+- Auto workspaces are always shown in web Active Work tab (treated as recently active, like primary)
+### Lessons Learned
+- JSON import is a critical migration path that's easy to overlook — when changing DB schema, always check json_import.ts for legacy field handling
+- When adding CLI flags to a command with multiple code paths (create vs reuse), verify the flag is honored on all paths — the reuse path silently dropped --auto/--primary until caught in review
+- Test seed helpers should use production APIs (e.g. recordWorkspace with workspaceType param) rather than manual SQL UPDATEs to exercise the full code path
+- When adding a new workspace type, check all places that special-case existing types (like primary) — the web UI isRecentlyActive filter was missed because it lives in db_queries.ts, not in the workspace module
+### Risks / Blockers
+- None
