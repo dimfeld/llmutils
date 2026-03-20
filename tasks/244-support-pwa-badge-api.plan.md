@@ -269,3 +269,25 @@ The `needsAttention` tests should be added to `src/lib/stores/session_state.test
 4. Answer the prompt and verify the badge clears
 5. Test with multiple sessions — badge should persist until all are resolved
 6. Test in a non-PWA context (regular browser tab) — should not error
+
+## Current Progress
+### Current State
+- All 5 tasks completed and passing tests (15 total across 2 test files)
+### Completed (So Far)
+- Created `src/lib/utils/pwa_badge.ts` with feature-detecting `setAppBadge()`/`clearAppBadge()` wrappers
+- Added `needsAttention` `$derived.by()` property to `SessionManager` in `session_state.svelte.ts`
+- Added `$effect` in `src/routes/+layout.svelte` that reactively calls badge API based on `needsAttention`
+- Added `clearAppBadge()` to the `onMount` cleanup function
+- Created `src/lib/utils/pwa_badge.test.ts` (4 tests)
+- Added `needsAttention` tests to `src/lib/stores/session_state.test.ts` (5 tests)
+### Remaining
+- None — all tasks complete
+### Next Iteration Guidance
+- None
+### Decisions / Changes
+- Used `AppBadgeNavigator` type with `setAppBadge?: (contents?: number) => Promise<void>` to match the real API signature
+- Test for `needsAttention` transitions uses in-place status update (not deletion) to match realistic production behavior
+### Lessons Learned
+- None
+### Risks / Blockers
+- None
