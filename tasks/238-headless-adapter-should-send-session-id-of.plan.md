@@ -8,12 +8,12 @@ goal: After workspace switching, the headless adapter sends an updated
 id: 238
 uuid: edf0d437-8849-47af-b357-17137cea7db3
 generatedBy: agent
-status: pending
+status: in_progress
 priority: medium
 planGeneratedAt: 2026-03-20T19:09:25.484Z
 promptsGeneratedAt: 2026-03-20T19:09:25.484Z
 createdAt: 2026-03-19T01:16:52.190Z
-updatedAt: 2026-03-20T19:09:25.484Z
+updatedAt: 2026-03-20T20:09:59.399Z
 tasks:
   - title: Add updateSessionInfo method to HeadlessAdapter
     done: false

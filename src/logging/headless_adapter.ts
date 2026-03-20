@@ -59,7 +59,7 @@ const DEFAULT_RECONNECT_INTERVAL_MS = 5000;
 
 export class HeadlessAdapter implements LoggerAdapter {
   private readonly url: string;
-  private readonly sessionInfo: HeadlessSessionInfo;
+  private sessionInfo: HeadlessSessionInfo;
   private readonly wrappedAdapter: LoggerAdapter;
   private readonly maxBufferBytes: number;
   private readonly reconnectIntervalMs: number;
@@ -150,6 +150,21 @@ export class HeadlessAdapter implements LoggerAdapter {
 
     this.socket = undefined;
     this.state = 'disconnected';
+  }
+
+  updateSessionInfo(patch: Partial<HeadlessSessionInfo>): void {
+    Object.assign(this.sessionInfo, patch);
+
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const sessionMessage: HeadlessSessionInfoMessage = {
+      type: 'session_info',
+      ...this.sessionInfo,
+    };
+    this.enqueueControlPayload(JSON.stringify(sessionMessage as HeadlessMessage));
+    this.startDrainLoop();
   }
 
   async destroy(timeoutMs: number = 2000): Promise<void> {
