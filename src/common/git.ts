@@ -412,35 +412,22 @@ export async function getCurrentJujutsuBranch(cwd?: string): Promise<string | nu
     }
 
     const branchNames = stdout
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
+      .split(/\s+/)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+      .map((entry) => (entry.endsWith('*') ? entry.slice(0, -1) : entry));
 
     if (branchNames.length === 0) {
       return null;
     }
 
-    if (branchNames.length === 1) {
-      const branch = branchNames[0];
-      if (branch.endsWith('*')) {
-        return branch.slice(0, -1);
-      } else {
-        return branch;
-      }
-    }
-
-    // Filter out 'main' and 'master' branches
-    const filteredBranches = branchNames.filter(
+    const localBranches = branchNames.filter((branch) => !branch.includes('@'));
+    const preferredBranches = localBranches.length > 0 ? localBranches : branchNames;
+    const filteredBranches = preferredBranches.filter(
       (branch) => branch !== 'main' && branch !== 'master'
     );
 
-    // Return the first non-main/master branch if any exist, otherwise first branch from original list
-    const branch = filteredBranches.length > 0 ? filteredBranches[0] : branchNames[0];
-    if (branch.endsWith('*')) {
-      return branch.slice(0, -1);
-    } else {
-      return branch;
-    }
+    return filteredBranches[0] ?? preferredBranches[0] ?? null;
   } catch (error) {
     debugLog('Error getting current Jujutsu branch: %o', error);
     return null;

@@ -223,7 +223,7 @@ export async function handleGenerateCommand(
       });
     }
 
-    if (roundTripContext) {
+    if (roundTripContext && roundTripContext.syncTarget !== 'origin') {
       await runPreExecutionWorkspaceSync(roundTripContext);
     }
 

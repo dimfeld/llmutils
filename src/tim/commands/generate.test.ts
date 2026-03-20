@@ -786,6 +786,34 @@ describe('handleGenerateCommand', () => {
       command: 'generate',
     });
   });
+
+  test('skips redundant pre-execution origin sync after workspace setup already switched branches', async () => {
+    const planPath = await createStubPlan(123);
+
+    setupWorkspaceSpy.mockResolvedValueOnce({
+      baseDir: '/tmp/execution-workspace',
+      planFile: planPath,
+      workspaceTaskId: 'ws-123',
+      isNewWorkspace: false,
+    });
+    prepareWorkspaceRoundTripSpy.mockResolvedValueOnce({
+      executionWorkspacePath: '/tmp/execution-workspace',
+      primaryWorkspacePath: '/tmp/primary-workspace',
+      refName: 'feature/test-branch',
+      syncTarget: 'origin',
+    });
+
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [{ title: 'Task 1', description: 'Description', done: false }];
+      await writePlanFile(planPath, plan);
+    });
+
+    await handleGenerateCommand(undefined, { plan: planPath }, buildCommand());
+
+    expect(prepareWorkspaceRoundTripSpy).toHaveBeenCalledTimes(1);
+    expect(runPreExecutionWorkspaceSyncSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('handleGenerateCommand with --next-ready flag', () => {
