@@ -1264,6 +1264,8 @@ workspaceCommand
   .option('--repo-url <url>', 'Repository URL for git method (overrides config)')
   .option('--create-branch', 'Create a new branch for the workspace')
   .option('--no-create-branch', 'Do not create a new branch (default)')
+  .option('--primary', 'Mark the new workspace as primary')
+  .option('--auto', 'Mark the new workspace as auto-selectable')
   .option('--reuse', 'Reuse an existing unlocked workspace (fails if none available)')
   .option('--try-reuse', 'Try to reuse an existing workspace, create new if unavailable')
   .option('--from-branch <branch>', 'Create new branch from this base instead of main/master')
@@ -1314,8 +1316,13 @@ workspaceCommand
     '--from-plan <planId>',
     'Seed description from plan (plan ID or file path). Only sets description, not name.'
   )
-  .option('--primary', 'Mark this workspace as primary (excluded from auto-selection)')
-  .option('--no-primary', 'Remove primary designation from this workspace')
+  .option(
+    '--primary',
+    'Mark this workspace as primary (used as the primary sync/push target and excluded from auto-selection)'
+  )
+  .option('--no-primary', 'Set this workspace type back to standard')
+  .option('--auto', 'Mark this workspace as auto-selectable')
+  .option('--no-auto', 'Set this workspace type back to standard')
   .action(async (workspaceIdentifier, options, command) => {
     const { handleWorkspaceUpdateCommand } = await import('./commands/workspace.js');
     await handleWorkspaceUpdateCommand(workspaceIdentifier, options, command).catch(

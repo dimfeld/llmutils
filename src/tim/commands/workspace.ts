@@ -91,6 +91,29 @@ interface WorkspaceAssignmentSummary {
   updatedAt: string;
 }
 
+function resolveWorkspaceTypeOption(options: {
+  primary?: boolean;
+  auto?: boolean;
+}): WorkspaceType | undefined {
+  if (options.primary === true && options.auto === true) {
+    throw new Error('Cannot use both --primary and --auto');
+  }
+
+  if (options.primary === true) {
+    return 'primary';
+  }
+
+  if (options.auto === true) {
+    return 'auto';
+  }
+
+  if (options.primary === false || options.auto === false) {
+    return 'standard';
+  }
+
+  return undefined;
+}
+
 function getWorkspaceRecencyTimestamp(entry: WorkspaceListEntry): number {
   const updatedAt = entry.updatedAt ? Date.parse(entry.updatedAt) : Number.NaN;
   if (!Number.isNaN(updatedAt)) {
@@ -389,6 +412,8 @@ function outputWorkspaceTable(entries: WorkspaceListEntry[], showHeader: boolean
     let status: string;
     if (entry.workspaceType === 'primary') {
       status = chalk.blue('Primary');
+    } else if (entry.workspaceType === 'auto') {
+      status = chalk.blue('Auto');
     } else if (entry.lockedBy) {
       const lockType = entry.lockedBy.type;
       status = chalk.red(`Locked (${lockType})`);
@@ -718,7 +743,7 @@ async function tryReuseExistingWorkspace(
 
   // Filter to only unlocked workspaces
   const unlockedWorkspaces = workspacesWithStatus.filter(
-    (workspace) => !workspace.lockedBy && workspace.workspaceType !== 'primary'
+    (workspace) => !workspace.lockedBy && workspace.workspaceType === 'standard'
   );
 
   if (unlockedWorkspaces.length === 0) {
@@ -891,6 +916,7 @@ export async function handleWorkspaceAddCommand(
   command: Command
 ) {
   const globalOpts = command.parent!.parent!.opts();
+  const workspaceType = resolveWorkspaceTypeOption(options);
 
   if (options.reuse && options.tryReuse) {
     throw new Error('Cannot use both --reuse and --try-reuse');
@@ -1046,6 +1072,7 @@ export async function handleWorkspaceAddCommand(
         ...(options.fromBranch && { fromBranch: options.fromBranch }),
         ...(planData && { planData }),
         ...(options.targetDir && { targetDir: options.targetDir }),
+        ...(workspaceType && { workspaceType }),
       }
     );
 
@@ -1401,7 +1428,7 @@ async function lockAvailableWorkspace(
   const workspaces = findWorkspaceInfosByRepositoryId(repositoryId);
   const workspacesWithStatus = await updateWorkspaceLockStatus(workspaces);
   const available = workspacesWithStatus.find(
-    (workspace) => !workspace.lockedBy && workspace.workspaceType !== 'primary'
+    (workspace) => !workspace.lockedBy && workspace.workspaceType === 'standard'
   );
 
   if (available) {
@@ -1804,20 +1831,27 @@ function getDefaultLockOwner(): string | undefined {
 
 export async function handleWorkspaceUpdateCommand(
   target: string | undefined,
-  options: { name?: string; description?: string; fromPlan?: string; primary?: boolean },
+  options: {
+    name?: string;
+    description?: string;
+    fromPlan?: string;
+    primary?: boolean;
+    auto?: boolean;
+  },
   command: Command
 ) {
   const globalOpts = command.parent!.parent!.opts();
+  const workspaceType = resolveWorkspaceTypeOption(options);
 
   // Validate that at least one update option is provided
   if (
     options.name === undefined &&
     options.description === undefined &&
     !options.fromPlan &&
-    options.primary === undefined
+    workspaceType === undefined
   ) {
     throw new Error(
-      'At least one of --name, --description, --from-plan, or --primary/--no-primary must be provided.'
+      'At least one of --name, --description, --from-plan, --primary/--no-primary, or --auto/--no-auto must be provided.'
     );
   }
 
@@ -1881,8 +1915,8 @@ export async function handleWorkspaceUpdateCommand(
   } else if (options.description !== undefined) {
     patch.description = options.description;
   }
-  if (options.primary !== undefined) {
-    patch.workspaceType = options.primary ? 'primary' : 'standard';
+  if (workspaceType !== undefined) {
+    patch.workspaceType = workspaceType;
   }
 
   if (!existingMetadata?.repositoryId) {
@@ -1904,7 +1938,5 @@ export async function handleWorkspaceUpdateCommand(
   if (updated.planId) {
     log(`  Plan ID: ${updated.planId}`);
   }
-  if (updated.workspaceType === 'primary') {
-    log(`  Primary: yes`);
-  }
+  log(`  Type: ${updated.workspaceType}`);
 }

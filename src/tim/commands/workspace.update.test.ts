@@ -376,6 +376,32 @@ describe('workspace update command', () => {
     expect(data[workspaceDir].workspaceType).toBe('standard');
   });
 
+  test('marks workspace as auto when requested', async () => {
+    const workspaceDir = path.join(tempDir, 'workspace-auto');
+    await fs.mkdir(workspaceDir, { recursive: true });
+
+    await writeTrackingData({
+      [workspaceDir]: {
+        taskId: 'task-auto',
+        workspacePath: workspaceDir,
+        createdAt: new Date().toISOString(),
+      },
+    });
+
+    const { handleWorkspaceUpdateCommand } = await import('./workspace.js');
+
+    await handleWorkspaceUpdateCommand(workspaceDir, { auto: true }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    const data = await readTrackingData();
+    expect(data[workspaceDir].workspaceType).toBe('auto');
+  });
+
   test('throws error when no update options provided', async () => {
     const workspaceDir = path.join(tempDir, 'workspace-no-opts');
     await fs.mkdir(workspaceDir, { recursive: true });
@@ -391,8 +417,25 @@ describe('workspace update command', () => {
         },
       } as any)
     ).rejects.toThrow(
-      'At least one of --name, --description, --from-plan, or --primary/--no-primary must be provided'
+      'At least one of --name, --description, --from-plan, --primary/--no-primary, or --auto/--no-auto must be provided'
     );
+  });
+
+  test('throws error when both --primary and --auto are provided', async () => {
+    const workspaceDir = path.join(tempDir, 'workspace-conflicting-type');
+    await fs.mkdir(workspaceDir, { recursive: true });
+
+    const { handleWorkspaceUpdateCommand } = await import('./workspace.js');
+
+    await expect(
+      handleWorkspaceUpdateCommand(workspaceDir, { primary: true, auto: true }, {
+        parent: {
+          parent: {
+            opts: () => ({ config: undefined }),
+          },
+        },
+      } as any)
+    ).rejects.toThrow('Cannot use both --primary and --auto');
   });
 
   test('throws error when target path does not exist and not a valid task ID', async () => {
