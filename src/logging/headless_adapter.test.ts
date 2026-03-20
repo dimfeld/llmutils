@@ -429,6 +429,80 @@ describe('HeadlessAdapter', () => {
     await adapter.destroy();
   }, 10000);
 
+  it('updates stored session info when disconnected without enqueueing a websocket message', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter(
+      'ws://127.0.0.1:1/tim-agent',
+      {
+        command: 'agent',
+        interactive: false,
+        workspacePath: '/tmp/original',
+        gitRemote: 'example.com/original',
+      },
+      wrapped,
+      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+    );
+
+    adapter.updateSessionInfo({
+      workspacePath: '/tmp/updated',
+      gitRemote: 'example.com/updated',
+    });
+
+    const internals = adapter as any;
+    expect(internals.sessionInfo).toMatchObject({
+      command: 'agent',
+      interactive: false,
+      workspacePath: '/tmp/updated',
+      gitRemote: 'example.com/updated',
+    });
+    expect(internals.queue).toHaveLength(0);
+
+    await adapter.destroy();
+  });
+
+  it('sends updated session_info immediately when connected', async () => {
+    const server = await createWebSocketServer();
+    serversToClose.push(server);
+
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter(
+      `ws://127.0.0.1:${server.port}/tim-agent`,
+      {
+        command: 'agent',
+        interactive: false,
+        workspacePath: '/tmp/original',
+        gitRemote: 'example.com/original',
+      },
+      wrapped,
+      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+    );
+
+    adapter.log('connect-primer');
+    await waitFor(() => server.messages.some((message) => message.type === 'replay_end'));
+    server.messages.length = 0;
+
+    adapter.updateSessionInfo({
+      workspacePath: '/tmp/updated',
+      gitRemote: 'example.com/updated',
+    });
+
+    await waitFor(() =>
+      server.messages.some(
+        (message) => message.type === 'session_info' && message.workspacePath === '/tmp/updated'
+      )
+    );
+
+    expect(server.messages[0]).toMatchObject({
+      type: 'session_info',
+      command: 'agent',
+      interactive: false,
+      workspacePath: '/tmp/updated',
+      gitRemote: 'example.com/updated',
+    });
+
+    await adapter.destroy();
+  });
+
   it('streams messages in order while connected', async () => {
     const server = await createWebSocketServer();
     serversToClose.push(server);
@@ -717,6 +791,56 @@ describe('HeadlessAdapter', () => {
     await waitFor(() => internals.queue.length === 0);
     expect(internals.bufferedOutputBytes).toBe(0);
     assertByteCountersMatchInternals(internals);
+
+    await adapter.destroy();
+  });
+
+  it('uses updated session info in the reconnect handshake', async () => {
+    const server = await createWebSocketServer();
+    serversToClose.push(server);
+
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter(
+      `ws://127.0.0.1:${server.port}/tim-agent`,
+      {
+        command: 'agent',
+        interactive: false,
+        workspacePath: '/tmp/original',
+        gitRemote: 'example.com/original',
+      },
+      wrapped,
+      { reconnectIntervalMs: 0 }
+    );
+
+    adapter.log('first-message');
+    await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
+    server.messages.length = 0;
+
+    server.disconnectClients();
+    await waitFor(() => (adapter as any).state === 'disconnected');
+
+    adapter.updateSessionInfo({
+      workspacePath: '/tmp/reconnected',
+      gitRemote: 'example.com/reconnected',
+    });
+    adapter.log('reconnect-primer');
+
+    await waitFor(() => {
+      const sessionInfos = server.messages.filter((message) => message.type === 'session_info');
+      return sessionInfos.length >= 1;
+    });
+
+    const reconnectSessionInfo = server.messages.find(
+      (message): message is Extract<HeadlessMessage, { type: 'session_info' }> =>
+        message.type === 'session_info'
+    );
+    expect(reconnectSessionInfo).toMatchObject({
+      type: 'session_info',
+      command: 'agent',
+      interactive: false,
+      workspacePath: '/tmp/reconnected',
+      gitRemote: 'example.com/reconnected',
+    });
 
     await adapter.destroy();
   });

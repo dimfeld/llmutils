@@ -6,6 +6,7 @@ import { error, log, sendStructured, warn } from '../../logging.js';
 import { generateBranchNameFromPlan } from '../commands/branch.js';
 import { pullWorkspaceRefIfExists } from '../commands/workspace.js';
 import type { TimConfig } from '../configSchema.js';
+import { updateHeadlessSessionInfo } from '../headless.js';
 import { resolveConfiguredTasksPath } from '../path_resolver.js';
 import { readAllPlans, readPlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
@@ -356,6 +357,7 @@ export async function setupWorkspace(
           path: workspace.path,
           planFile,
         });
+        updateHeadlessSessionInfo({ workspacePath: workspace.path });
 
         log('---');
 

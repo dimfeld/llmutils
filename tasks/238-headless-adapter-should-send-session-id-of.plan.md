@@ -8,15 +8,15 @@ goal: After workspace switching, the headless adapter sends an updated
 id: 238
 uuid: edf0d437-8849-47af-b357-17137cea7db3
 generatedBy: agent
-status: pending
+status: done
 priority: medium
 planGeneratedAt: 2026-03-20T19:09:25.484Z
 promptsGeneratedAt: 2026-03-20T19:09:25.484Z
 createdAt: 2026-03-19T01:16:52.190Z
-updatedAt: 2026-03-20T19:09:25.484Z
+updatedAt: 2026-03-20T20:21:38.374Z
 tasks:
   - title: Add updateSessionInfo method to HeadlessAdapter
-    done: false
+    done: true
     description: "In src/logging/headless_adapter.ts: remove `readonly` from
       `sessionInfo` field. Add a public `updateSessionInfo(patch:
       Partial<HeadlessSessionInfo>)` method that merges the patch into
@@ -24,36 +24,54 @@ tasks:
       enqueues a `session_info` control payload (using `enqueueControlPayload`)
       and triggers the drain loop to send it immediately."
   - title: Add updateHeadlessSessionInfo helper in headless.ts
-    done: false
+    done: true
     description: "In src/tim/headless.ts: add an exported
       `updateHeadlessSessionInfo(patch: Partial<HeadlessSessionInfo>)` function
       that calls `getLoggerAdapter()`, checks `instanceof HeadlessAdapter`, and
       if so calls `adapter.updateSessionInfo(patch)`. Otherwise silently
       no-ops."
   - title: Call updateHeadlessSessionInfo after workspace setup
-    done: false
+    done: true
     description: "In src/tim/workspace/workspace_setup.ts: after the
       `sendStructured({ type: workspace_info, ... })` call (around line 354),
       add a call to `updateHeadlessSessionInfo({ workspacePath: workspace.path
       })`. Only workspacePath needs updating since gitRemote stays the same."
   - title: Add HeadlessAdapter.updateSessionInfo tests
-    done: false
+    done: true
     description: "In src/logging/headless_adapter.test.ts: add tests for
       updateSessionInfo: (1) merges patch into sessionInfo correctly, (2) sends
       session_info message immediately when connected, (3) updated info is used
       on reconnect handshake, (4) updates stored info even when disconnected."
   - title: Add updateHeadlessSessionInfo helper tests
-    done: false
+    done: true
     description: "In src/tim/headless.test.ts: add tests for
       updateHeadlessSessionInfo: (1) calls updateSessionInfo when
       HeadlessAdapter is active logger, (2) no-ops when no headless adapter is
       active."
   - title: Add session_info re-send test in session manager
-    done: false
+    done: true
     description: "In src/lib/server/session_manager.test.ts: add a test verifying
       that sending a second session_info message on the same connection
       correctly updates the session groupKey, workspacePath, and projectId, and
       emits a session:update event."
+changedFiles:
+  - src/common/git.test.ts
+  - src/common/git.ts
+  - src/lib/server/session_manager.test.ts
+  - src/logging/headless_adapter.test.ts
+  - src/logging/headless_adapter.ts
+  - src/tim/commands/agent/agent.ts
+  - src/tim/commands/generate.test.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/workspace.bookmark.test.ts
+  - src/tim/commands/workspace.pull-plan.test.ts
+  - src/tim/commands/workspace.ts
+  - src/tim/headless.test.ts
+  - src/tim/headless.ts
+  - src/tim/workspace/workspace_manager.test.ts
+  - src/tim/workspace/workspace_manager.ts
+  - src/tim/workspace/workspace_setup.test.ts
+  - src/tim/workspace/workspace_setup.ts
 tags: []
 ---
 
@@ -218,3 +236,25 @@ Run `bun run format`, `bun run check`, and `bun run test` to ensure everything p
 3. **Reconnection behavior**: `prependHandshakeMessages()` already reads `this.sessionInfo` each time, so updated info will naturally be used on reconnect. No special handling needed.
 4. **Thread safety**: Bun is single-threaded, so no concurrency concerns with updating `sessionInfo`.
 5. **Multiple workspace switches**: If the agent switches workspaces multiple times (unlikely but possible), each update should work correctly since the server replaces the entire `sessionInfo`.
+
+## Current Progress
+### Current State
+- All 6 tasks completed. Plan is done.
+### Completed (So Far)
+- Task 1: Added `updateSessionInfo(patch)` method to HeadlessAdapter — removes readonly, merges patch, sends session_info control payload when connected
+- Task 2: Added `updateHeadlessSessionInfo(patch)` helper in headless.ts — checks instanceof HeadlessAdapter, delegates or no-ops
+- Task 3: Called `updateHeadlessSessionInfo({ workspacePath: workspace.path })` after sendStructured workspace_info in workspace_setup.ts
+- Task 4: HeadlessAdapter.updateSessionInfo tests (merge, connected send, reconnect handshake, disconnected update)
+- Task 5: updateHeadlessSessionInfo helper tests (delegation and no-op)
+- Task 6: Session manager re-send test (groupKey/projectId update on second session_info)
+### Remaining
+- None
+### Next Iteration Guidance
+- None
+### Decisions / Changes
+- Implementation followed the plan exactly — no changes were needed
+- Server-side session_info handler was already idempotent as documented in research
+### Lessons Learned
+- None
+### Risks / Blockers
+- None

@@ -138,6 +138,15 @@ export async function createHeadlessAdapterForCommand({
   return createHeadlessAdapter(url, sessionInfo);
 }
 
+export function updateHeadlessSessionInfo(patch: Partial<HeadlessSessionInfo>): void {
+  const adapter = getLoggerAdapter();
+  if (!(adapter instanceof HeadlessAdapter)) {
+    return;
+  }
+
+  adapter.updateSessionInfo(patch);
+}
+
 function createHeadlessAdapter(url: string, sessionInfo: HeadlessSessionInfo): HeadlessAdapter {
   const wrappedAdapter = getLoggerAdapter();
   return wrappedAdapter

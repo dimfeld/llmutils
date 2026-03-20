@@ -17,6 +17,7 @@ let resolveHeadlessUrl: typeof import('./headless.js').resolveHeadlessUrl;
 let buildHeadlessSessionInfo: typeof import('./headless.js').buildHeadlessSessionInfo;
 let runWithHeadlessAdapterIfEnabled: typeof import('./headless.js').runWithHeadlessAdapterIfEnabled;
 let createHeadlessAdapterForCommand: typeof import('./headless.js').createHeadlessAdapterForCommand;
+let updateHeadlessSessionInfo: typeof import('./headless.js').updateHeadlessSessionInfo;
 let resetHeadlessWarningStateForTests: typeof import('./headless.js').resetHeadlessWarningStateForTests;
 
 beforeAll(async () => {
@@ -29,6 +30,7 @@ beforeAll(async () => {
     buildHeadlessSessionInfo,
     runWithHeadlessAdapterIfEnabled,
     createHeadlessAdapterForCommand,
+    updateHeadlessSessionInfo,
     resetHeadlessWarningStateForTests,
   } = await import('./headless.js'));
 });
@@ -297,5 +299,58 @@ describe('createHeadlessAdapterForCommand', () => {
     expect(headlessAdapter).toBeInstanceOf(HeadlessAdapter);
     expect((headlessAdapter as any).wrappedAdapter).toBe(wrappedAdapter);
     await headlessAdapter.destroy();
+  });
+});
+
+describe('updateHeadlessSessionInfo', () => {
+  const wrappedAdapter: LoggerAdapter = {
+    log: () => {},
+    error: () => {},
+    warn: () => {},
+    writeStdout: () => {},
+    writeStderr: () => {},
+    debugLog: () => {},
+    sendStructured: (_message: StructuredMessage) => {},
+  };
+
+  test('calls updateSessionInfo when a headless adapter is the active logger', async () => {
+    const updateSpy = spyOn(HeadlessAdapter.prototype, 'updateSessionInfo');
+
+    try {
+      await runWithLogger(wrappedAdapter, async () => {
+        const headlessAdapter = await createHeadlessAdapterForCommand({
+          command: 'agent',
+          interactive: false,
+          config: { headless: { url: 'ws://127.0.0.1:9/tim-agent' } },
+          plan: { id: 42, title: 'session update test' },
+        });
+
+        try {
+          await runWithLogger(headlessAdapter, async () => {
+            updateHeadlessSessionInfo({ workspacePath: '/tmp/workspaces/ws-1' });
+          });
+        } finally {
+          await headlessAdapter.destroy();
+        }
+      });
+
+      expect(updateSpy).toHaveBeenCalledWith({ workspacePath: '/tmp/workspaces/ws-1' });
+    } finally {
+      updateSpy.mockRestore();
+    }
+  });
+
+  test('no-ops when the active logger is not a headless adapter', async () => {
+    const updateSpy = spyOn(HeadlessAdapter.prototype, 'updateSessionInfo');
+
+    try {
+      await runWithLogger(wrappedAdapter, async () => {
+        updateHeadlessSessionInfo({ workspacePath: '/tmp/workspaces/ws-2' });
+      });
+
+      expect(updateSpy).not.toHaveBeenCalled();
+    } finally {
+      updateSpy.mockRestore();
+    }
   });
 });

@@ -618,6 +618,79 @@ describe('lib/server/session_manager', () => {
     });
   });
 
+  test('replaces session metadata and regroups when session_info is re-sent on the same connection', () => {
+    const originalProject = getOrCreateProject(db, 'repo-1', {
+      remoteUrl: 'https://example.com/repo-1.git',
+      lastGitRoot: '/tmp/repo-1',
+    });
+    const updatedProject = getOrCreateProject(db, 'repo-2', {
+      remoteUrl: 'https://example.com/repo-2.git',
+      lastGitRoot: '/tmp/repo-2',
+    });
+    const onUpdate = vi.fn();
+
+    manager.subscribe('session:update', onUpdate);
+
+    manager.handleWebSocketConnect('conn-1', vi.fn());
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      planId: 229,
+      planTitle: 'Original workspace',
+      workspacePath: '/tmp/repo-1',
+      gitRemote: 'https://example.com/repo-1.git',
+    });
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      planId: 229,
+      planTitle: 'Updated workspace',
+      workspacePath: '/tmp/repo-2',
+      gitRemote: 'https://example.com/repo-2.git',
+    });
+
+    const session = manager.getSessionSnapshot().sessions[0];
+
+    expect(session).toMatchObject({
+      connectionId: 'conn-1',
+      projectId: updatedProject.id,
+      groupKey: 'example.com/repo-2|/tmp/repo-2',
+      sessionInfo: {
+        command: 'agent',
+        interactive: true,
+        planId: 229,
+        planTitle: 'Updated workspace',
+        workspacePath: '/tmp/repo-2',
+        gitRemote: 'https://example.com/repo-2.git',
+      },
+    });
+    expect(session.projectId).not.toBe(originalProject.id);
+    expect(onUpdate).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        session: expect.objectContaining({
+          projectId: originalProject.id,
+          groupKey: 'example.com/repo-1|/tmp/repo-1',
+        }),
+      })
+    );
+    expect(onUpdate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        session: expect.objectContaining({
+          projectId: updatedProject.id,
+          groupKey: 'example.com/repo-2|/tmp/repo-2',
+          sessionInfo: expect.objectContaining({
+            workspacePath: '/tmp/repo-2',
+            gitRemote: 'https://example.com/repo-2.git',
+          }),
+        }),
+      })
+    );
+  });
+
   test('buffers replayed messages, suppresses replay events, and emits deferred prompts after replay ends', () => {
     const onMessage = vi.fn();
     const onPrompt = vi.fn();
