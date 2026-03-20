@@ -176,10 +176,14 @@ export function startWebSocketServer(
         const payload =
           typeof rawMessage === 'string' ? rawMessage : new TextDecoder().decode(rawMessage);
         const message = parseHeadlessMessage(payload);
-        console.log('[ws_server] Received WebSocket message', {
-          connectionId: ws.data.connectionId,
-          message: sanitizeMessageForLog(message ?? { malformedPayload: payload }),
-        });
+        console.dir(
+          '[ws_server] Received WebSocket message',
+          {
+            connectionId: ws.data.connectionId,
+            message: sanitizeMessageForLog(message ?? { malformedPayload: payload }),
+          },
+          { depth: 5 }
+        );
         if (!message) {
           console.warn('[ws_server] Ignoring malformed WebSocket message');
           return;
