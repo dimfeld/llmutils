@@ -267,6 +267,17 @@ export class SessionManager {
     }
   }
 
+  async dismissInactiveSessions(): Promise<boolean> {
+    try {
+      const resp = await fetch(`${base}/api/sessions/dismiss-inactive`, {
+        method: 'POST',
+      });
+      return resp.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async activateTerminalPane(session: SessionData): Promise<boolean> {
     const terminalType = session.sessionInfo.terminalType;
     const terminalPaneId = session.sessionInfo.terminalPaneId;

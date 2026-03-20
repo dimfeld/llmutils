@@ -985,6 +985,20 @@ export class SessionManager {
     return true;
   }
 
+  dismissInactiveSessions(): number {
+    let dismissed = 0;
+    for (const [connectionId, session] of this.sessions) {
+      if (session.status !== 'active') {
+        this.sessions.delete(connectionId);
+        this.senders.delete(connectionId);
+        this.internals.delete(connectionId);
+        this.emit('session:dismissed', { connectionId });
+        dismissed++;
+      }
+    }
+    return dismissed;
+  }
+
   // Clones sessions with messages capped at MAX_SNAPSHOT_MESSAGES per session.
   getSessionSnapshot(): SessionSnapshot {
     return {
