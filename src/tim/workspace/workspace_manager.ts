@@ -1144,6 +1144,8 @@ export interface PrepareWorkspaceOptions {
   branchName: string;
   /** Whether to create a new branch (default: true) */
   createBranch?: boolean;
+  /** Whether to log when branch creation is intentionally skipped (default: true) */
+  logSkippedBranchCreation?: boolean;
   /** Whether to force the checked-out base branch to the fetched remote tip when available */
   updateBaseFromRemote?: boolean;
 }
@@ -1289,7 +1291,10 @@ export async function prepareExistingWorkspace(
   }
 
   if (!shouldCreateBranch) {
-    log('Skipping branch creation (createBranch=false)');
+    if (options.logSkippedBranchCreation !== false) {
+      console.trace('Skipping branch creation (createBranch=false)');
+      log('Skipping branch creation (createBranch=false)');
+    }
     return {
       success: true,
       actualBranchName: baseBranch,

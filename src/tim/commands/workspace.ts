@@ -1039,6 +1039,7 @@ export async function handleWorkspaceAddCommand(
       resolvedPlanFilePath,
       effectiveConfig,
       {
+        createBranch: options.createBranch,
         ...(customBranchName && { branchName: customBranchName }),
         ...(options.fromBranch && { fromBranch: options.fromBranch }),
         ...(planData && { planData }),

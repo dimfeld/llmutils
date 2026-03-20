@@ -622,7 +622,7 @@ export async function getChangedFilesOnBranch(
     'Thumbs.db',
   ];
 
-  let changedFiles: string[] = [];
+  let changedFiles: string[];
   if (await getUsingJj(gitRoot)) {
     if (baseBranch === CURRENT_DIFF) {
       // convert from

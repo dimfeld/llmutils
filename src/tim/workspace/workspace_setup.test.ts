@@ -435,6 +435,7 @@ describe('setupWorkspace', () => {
       baseBranch: undefined,
       branchName: '42-sync-base-before-plan-branch-reuse',
       createBranch: false,
+      logSkippedBranchCreation: false,
     });
     expect(ensurePrimaryBranchSpy).toHaveBeenCalledWith(
       baseDir,

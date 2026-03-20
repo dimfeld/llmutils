@@ -249,6 +249,7 @@ export async function setupWorkspace(
               baseBranch,
               branchName,
               createBranch: false,
+              logSkippedBranchCreation: false,
             });
             if (!syncBaseResult.success) {
               throw new Error(
