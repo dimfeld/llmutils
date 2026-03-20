@@ -106,6 +106,8 @@ describe('setupWorkspace', () => {
     expect(selectWorkspaceSpy).toHaveBeenCalledWith('task-auto', planFile, {
       interactive: false,
       preferNewWorkspace: undefined,
+      createBranch: undefined,
+      base: undefined,
     });
     expect(result.baseDir).toBe(autoWorkspacePath);
     expect(result.workspaceTaskId).toBe('task-auto');
@@ -241,6 +243,37 @@ describe('setupWorkspace', () => {
       preferNewWorkspace: undefined,
       preferredPlanUuid: '11111111-1111-4111-8111-111111111111',
     });
+  });
+
+  test('passes createBranch and base to auto-workspace selector', async () => {
+    const selectWorkspaceSpy = spyOn(
+      WorkspaceAutoSelector.prototype,
+      'selectWorkspace'
+    ).mockResolvedValue(null);
+
+    await expect(
+      setupWorkspace(
+        {
+          autoWorkspace: true,
+          createBranch: true,
+          base: 'develop',
+          requireWorkspace: true,
+        },
+        baseDir,
+        planFile,
+        config,
+        'tim generate'
+      )
+    ).rejects.toThrow('Workspace creation was required but failed. Exiting.');
+
+    expect(selectWorkspaceSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      planFile,
+      expect.objectContaining({
+        createBranch: true,
+        base: 'develop',
+      })
+    );
   });
 
   test('falls back to current directory when auto-workspace selector returns null and requireWorkspace is false', async () => {
@@ -1238,7 +1271,7 @@ describe('setupWorkspace', () => {
       'tim generate'
     );
 
-    expect(createWorkspaceSpy).toHaveBeenCalledWith(baseDir, 'task-new', planFile, config);
+    expect(createWorkspaceSpy).toHaveBeenCalledWith(baseDir, 'task-new', planFile, config, {});
     expect(result.baseDir).toBe(createdWorkspacePath);
     expect(result.workspaceTaskId).toBe('task-new');
     expect(result.isNewWorkspace).toBe(true);
@@ -1260,6 +1293,39 @@ describe('setupWorkspace', () => {
     );
     expect(setupCleanupHandlersSpy).toHaveBeenCalledWith(createdWorkspacePath, 'pid');
     expect((await WorkspaceLock.getLockInfo(createdWorkspacePath))?.type).toBe('pid');
+  });
+
+  test('passes createBranch and base when creating a new manual workspace', async () => {
+    const createdWorkspacePath = path.join(tempDir, 'workspace-new-forwarded-options');
+    await fs.mkdir(createdWorkspacePath, { recursive: true });
+
+    const createWorkspaceSpy = spyOn(
+      await import('./workspace_manager.js'),
+      'createWorkspace'
+    ).mockResolvedValue({
+      path: createdWorkspacePath,
+      taskId: 'task-options',
+      originalPlanFilePath: planFile,
+      planFilePathInWorkspace: path.join(createdWorkspacePath, path.basename(planFile)),
+    });
+
+    await setupWorkspace(
+      {
+        workspace: 'task-options',
+        newWorkspace: true,
+        createBranch: true,
+        base: 'develop',
+      },
+      baseDir,
+      planFile,
+      config,
+      'tim generate'
+    );
+
+    expect(createWorkspaceSpy).toHaveBeenCalledWith(baseDir, 'task-options', planFile, config, {
+      createBranch: true,
+      fromBranch: 'develop',
+    });
   });
 
   test('falls back to current directory when workspace creation fails and requireWorkspace is false', async () => {
@@ -1321,7 +1387,8 @@ describe('setupWorkspace', () => {
       baseDir,
       'task-all-locked-new',
       planFile,
-      config
+      config,
+      {}
     );
     expect(result.baseDir).toBe(createdWorkspacePath);
     expect(result.workspaceTaskId).toBe('task-all-locked-new');
@@ -1376,7 +1443,7 @@ describe('setupWorkspace', () => {
       'tim generate'
     );
 
-    expect(createWorkspaceSpy).toHaveBeenCalledWith(baseDir, 'task-missing', planFile, config);
+    expect(createWorkspaceSpy).toHaveBeenCalledWith(baseDir, 'task-missing', planFile, config, {});
     expect(result.baseDir).toBe(createdWorkspacePath);
     expect(result.workspaceTaskId).toBe('task-missing');
     expect(result.isNewWorkspace).toBe(true);
@@ -1459,7 +1526,13 @@ describe('setupWorkspace', () => {
       'tim generate'
     );
 
-    expect(createWorkspaceSpy).toHaveBeenCalledWith(baseDir, 'task-force-new', planFile, config);
+    expect(createWorkspaceSpy).toHaveBeenCalledWith(
+      baseDir,
+      'task-force-new',
+      planFile,
+      config,
+      {}
+    );
     expect(result.baseDir).toBe(createdWorkspacePath);
     expect(result.workspaceTaskId).toBe('task-force-new');
     expect(result.isNewWorkspace).toBe(true);

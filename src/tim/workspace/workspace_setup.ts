@@ -86,6 +86,8 @@ export async function setupWorkspace(
       selectedWorkspace = await selector.selectWorkspace(taskId, planFile, {
         interactive: !options.nonInteractive,
         preferNewWorkspace: options.newWorkspace,
+        createBranch: options.createBranch,
+        base: options.base,
         ...(options.planUuid ? { preferredPlanUuid: options.planUuid } : {}),
       });
 
@@ -110,7 +112,10 @@ export async function setupWorkspace(
 
       if (options.newWorkspace) {
         log(`Creating workspace for task: ${options.workspace}`);
-        workspace = await createWorkspace(baseDir, options.workspace, planFile, config);
+        workspace = await createWorkspace(baseDir, options.workspace, planFile, config, {
+          ...(options.createBranch !== undefined && { createBranch: options.createBranch }),
+          ...(options.base && { fromBranch: options.base }),
+        });
         isNewWorkspace = true;
       } else if (existingWorkspaces.length > 0) {
         let availableWorkspace = null;
@@ -142,7 +147,10 @@ export async function setupWorkspace(
         }
       } else {
         log(`Creating workspace for task: ${options.workspace}`);
-        workspace = await createWorkspace(baseDir, options.workspace, planFile, config);
+        workspace = await createWorkspace(baseDir, options.workspace, planFile, config, {
+          ...(options.createBranch !== undefined && { createBranch: options.createBranch }),
+          ...(options.base && { fromBranch: options.base }),
+        });
         isNewWorkspace = true;
       }
     }

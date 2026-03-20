@@ -333,9 +333,36 @@ describe('handleGenerateCommand', () => {
       newWorkspace: true,
       nonInteractive: true,
       requireWorkspace: true,
-      createBranch: true,
       planUuid: '11111111-1111-4111-8111-111111111111',
       allowPrimaryWorkspaceWhenLocked: true,
+    });
+  });
+
+  test('passes explicit createBranch through to setupWorkspace', async () => {
+    const planPath = await createStubPlan(109, {
+      uuid: '22222222-2222-4222-8222-222222222222',
+    });
+
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [{ title: 'Task 1', description: 'Description', done: false }];
+      await writePlanFile(planPath, plan);
+    });
+
+    await handleGenerateCommand(
+      undefined,
+      {
+        plan: planPath,
+        autoWorkspace: true,
+        createBranch: false,
+      },
+      buildCommand()
+    );
+
+    const [wsOptions] = setupWorkspaceSpy.mock.calls.at(-1) ?? [];
+    expect(wsOptions).toMatchObject({
+      autoWorkspace: true,
+      createBranch: false,
     });
   });
 

@@ -23,6 +23,10 @@ export interface AutoSelectOptions {
   preferNewWorkspace?: boolean;
   /** Current plan UUID for assignment-aware workspace preference */
   preferredPlanUuid?: string;
+  /** Whether a newly created workspace should create its branch */
+  createBranch?: boolean;
+  /** Base branch/revision to use for newly created workspaces */
+  base?: string;
 }
 
 export interface SelectedWorkspace {
@@ -65,7 +69,13 @@ export class WorkspaceAutoSelector {
     planFilePath: string,
     options: AutoSelectOptions = {}
   ): Promise<SelectedWorkspace | null> {
-    const { interactive = true, preferNewWorkspace = false, preferredPlanUuid } = options;
+    const {
+      interactive = true,
+      preferNewWorkspace = false,
+      preferredPlanUuid,
+      createBranch,
+      base,
+    } = options;
 
     // Get repository ID from current git repo
     let repositoryId: string;
@@ -79,7 +89,10 @@ export class WorkspaceAutoSelector {
 
     if (preferNewWorkspace) {
       // Try to create new workspace first
-      const newWorkspace = await this.createNewWorkspace(taskId, planFilePath);
+      const newWorkspace = await this.createNewWorkspace(taskId, planFilePath, {
+        createBranch,
+        base,
+      });
       if (newWorkspace) {
         return { workspace: newWorkspace, isNew: true, clearedStaleLock: false };
       }
@@ -166,7 +179,10 @@ export class WorkspaceAutoSelector {
 
     // All workspaces are locked, create a new one
     log('All existing workspaces are locked, creating a new workspace');
-    const newWorkspace = await this.createNewWorkspace(taskId, planFilePath);
+    const newWorkspace = await this.createNewWorkspace(taskId, planFilePath, {
+      createBranch,
+      base,
+    });
 
     if (newWorkspace) {
       return { workspace: newWorkspace, isNew: true, clearedStaleLock: false };
@@ -181,9 +197,13 @@ export class WorkspaceAutoSelector {
    */
   private async createNewWorkspace(
     taskId: string,
-    planFilePath: string
+    planFilePath: string,
+    options: Pick<AutoSelectOptions, 'createBranch' | 'base'> = {}
   ): Promise<WorkspaceInfo | null> {
-    const workspace = await createWorkspace(this.mainRepoRoot, taskId, planFilePath, this.config);
+    const workspace = await createWorkspace(this.mainRepoRoot, taskId, planFilePath, this.config, {
+      ...(options.createBranch !== undefined && { createBranch: options.createBranch }),
+      ...(options.base && { fromBranch: options.base }),
+    });
 
     if (!workspace) {
       return null;

@@ -208,7 +208,8 @@ describe('WorkspaceAutoSelector', () => {
       testDir,
       'task-new',
       '/test/plan-new.yml',
-      config
+      config,
+      {}
     );
   });
 
@@ -321,7 +322,37 @@ describe('WorkspaceAutoSelector', () => {
       testDir,
       'task-new',
       '/test/plan-new.yml',
-      config
+      config,
+      {}
+    );
+  });
+
+  test('selectWorkspace passes createBranch and base when creating a new workspace', async () => {
+    const lockedPath = path.join(testDir, 'workspace-locked-forward-options');
+    await fs.mkdir(lockedPath, { recursive: true });
+    await seedWorkspace('github.com/test/repo', lockedPath, 'task-locked', 'task-locked');
+    await WorkspaceLock.acquireLock(lockedPath, 'manual lock');
+
+    const createWorkspaceSpy = spyOn(
+      await import('./workspace_manager.js'),
+      'createWorkspace'
+    ).mockResolvedValue(null);
+
+    await selector.selectWorkspace('task-new', '/test/plan-new.yml', {
+      interactive: false,
+      createBranch: true,
+      base: 'develop',
+    });
+
+    expect(createWorkspaceSpy).toHaveBeenCalledWith(
+      testDir,
+      'task-new',
+      '/test/plan-new.yml',
+      config,
+      {
+        createBranch: true,
+        fromBranch: 'develop',
+      }
     );
   });
 
