@@ -5,12 +5,12 @@ goal: ""
 id: 217
 uuid: 9c2ce79a-286c-459c-9d75-a1b5fa60ece4
 generatedBy: agent
-status: pending
+status: in_progress
 priority: medium
 planGeneratedAt: 2026-03-07T08:42:06.542Z
 promptsGeneratedAt: 2026-03-07T08:42:06.542Z
 createdAt: 2026-03-07T02:47:09.372Z
-updatedAt: 2026-03-07T08:42:06.542Z
+updatedAt: 2026-03-20T20:39:38.953Z
 tasks:
   - title: Add DB migration to rename is_primary to workspace_type
     done: false

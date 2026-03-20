@@ -235,6 +235,12 @@ const migrations: Migration[] = [
       PRAGMA foreign_keys = ON;
     `,
   },
+  {
+    version: 7,
+    up: `
+      ALTER TABLE workspace RENAME COLUMN is_primary TO workspace_type;
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

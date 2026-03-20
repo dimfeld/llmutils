@@ -8,6 +8,7 @@ import { WorkspaceLock, type LockInfo } from './workspace_lock.js';
 import { createWorkspace } from './workspace_manager.js';
 import type { TimConfig } from '../configSchema.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import type { WorkspaceType } from '../db/workspace.js';
 import {
   findWorkspaceInfosByRepositoryId,
   getWorkspaceInfoByPath,
@@ -87,22 +88,27 @@ export class WorkspaceAutoSelector {
       return null;
     }
 
+    // Find existing workspaces for this repository (newest first)
+    const allWorkspaces = findWorkspaceInfosByRepositoryId(repositoryId).sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    const hasAutoWorkspaces = allWorkspaces.some((workspace) => workspace.workspaceType === 'auto');
+    const eligibleWorkspaces = allWorkspaces.filter((workspace) =>
+      hasAutoWorkspaces ? workspace.workspaceType === 'auto' : workspace.workspaceType !== 'primary'
+    );
+    const newWorkspaceType: WorkspaceType | undefined = hasAutoWorkspaces ? 'auto' : undefined;
+
     if (preferNewWorkspace) {
       // Try to create new workspace first
       const newWorkspace = await this.createNewWorkspace(taskId, planFilePath, {
         createBranch,
         base,
+        workspaceType: newWorkspaceType,
       });
       if (newWorkspace) {
         return { workspace: newWorkspace, isNew: true, clearedStaleLock: false };
       }
     }
-
-    // Find existing workspaces for this repository (newest first)
-    const allWorkspaces = findWorkspaceInfosByRepositoryId(repositoryId).sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-    const nonPrimaryWorkspaces = allWorkspaces.filter((workspace) => !workspace.isPrimary);
 
     if (preferredPlanUuid) {
       const preferredWorkspacePath = getPreferredAssignedWorkspacePath(
@@ -111,7 +117,7 @@ export class WorkspaceAutoSelector {
       );
 
       if (preferredWorkspacePath) {
-        const preferredWorkspace = nonPrimaryWorkspaces.find(
+        const preferredWorkspace = eligibleWorkspaces.find(
           (workspace) => workspace.workspacePath === preferredWorkspacePath
         );
 
@@ -139,7 +145,7 @@ export class WorkspaceAutoSelector {
     }
 
     const lockedCandidates: LockedWorkspaceCandidate[] = [];
-    for (const workspace of nonPrimaryWorkspaces) {
+    for (const workspace of eligibleWorkspaces) {
       const lockInfo = await WorkspaceLock.getLockInfoIncludingStale(workspace.workspacePath);
       if (!lockInfo) {
         log(`Selected unlocked workspace: ${workspace.workspacePath}`);
@@ -182,6 +188,7 @@ export class WorkspaceAutoSelector {
     const newWorkspace = await this.createNewWorkspace(taskId, planFilePath, {
       createBranch,
       base,
+      workspaceType: newWorkspaceType,
     });
 
     if (newWorkspace) {
@@ -198,11 +205,14 @@ export class WorkspaceAutoSelector {
   private async createNewWorkspace(
     taskId: string,
     planFilePath: string,
-    options: Pick<AutoSelectOptions, 'createBranch' | 'base'> = {}
+    options: Pick<AutoSelectOptions, 'createBranch' | 'base'> & {
+      workspaceType?: WorkspaceType;
+    } = {}
   ): Promise<WorkspaceInfo | null> {
     const workspace = await createWorkspace(this.mainRepoRoot, taskId, planFilePath, this.config, {
       ...(options.createBranch !== undefined && { createBranch: options.createBranch }),
       ...(options.base && { fromBranch: options.base }),
+      ...(options.workspaceType && { workspaceType: options.workspaceType }),
     });
 
     if (!workspace) {

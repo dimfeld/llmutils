@@ -349,7 +349,7 @@ describe('lib/server/db_queries', () => {
       branch: 'feature/primary-workspace',
       name: 'Primary workspace',
     });
-    patchWorkspace(db, primaryWorkspace.workspace_path, { isPrimary: true });
+    patchWorkspace(db, primaryWorkspace.workspace_path, { workspaceType: 'primary' });
     setWorkspaceUpdatedAt(db, primaryWorkspace.id, daysAgo(5));
 
     const lockedWorkspace = recordWorkspace(db, {
@@ -395,14 +395,14 @@ describe('lib/server/db_queries', () => {
       expect.arrayContaining([
         expect.objectContaining({
           workspacePath: '/tmp/workspaces/primary-workspace',
-          isPrimary: true,
+          workspaceType: 'primary',
           isLocked: false,
           isRecentlyActive: true,
           lockInfo: null,
         }),
         expect.objectContaining({
           workspacePath: '/tmp/workspaces/locked-workspace',
-          isPrimary: false,
+          workspaceType: 'standard',
           isLocked: true,
           isRecentlyActive: true,
           lockInfo: {
@@ -417,7 +417,7 @@ describe('lib/server/db_queries', () => {
         }),
         expect.objectContaining({
           workspacePath: '/tmp/workspaces/stale-workspace',
-          isPrimary: false,
+          workspaceType: 'standard',
           isLocked: false,
           isRecentlyActive: false,
           lockInfo: null,

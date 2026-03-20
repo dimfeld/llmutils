@@ -34,7 +34,7 @@ interface WorkspaceInfo {
   planId?: string;
   planTitle?: string;
   issueUrls?: string[];
-  isPrimary?: boolean;
+  workspaceType?: 'standard' | 'primary' | 'auto';
 }
 
 async function writeTrackingData(data: Record<string, WorkspaceInfo>) {
@@ -52,8 +52,11 @@ async function writeTrackingData(data: Record<string, WorkspaceInfo>) {
       planId: workspace.planId,
       planTitle: workspace.planTitle,
     });
-    if (workspace.isPrimary) {
-      db.prepare('UPDATE workspace SET is_primary = 1 WHERE id = ?').run(row.id);
+    if (workspace.workspaceType) {
+      db.prepare('UPDATE workspace SET workspace_type = ? WHERE id = ?').run(
+        workspace.workspaceType === 'primary' ? 1 : workspace.workspaceType === 'auto' ? 2 : 0,
+        row.id
+      );
     }
     setWorkspaceIssues(db, row.id, workspace.issueUrls ?? []);
   }
@@ -86,7 +89,8 @@ function rowToWorkspaceInfo(db: ReturnType<typeof getDatabase>, row: WorkspaceRo
     planId: row.plan_id ?? undefined,
     planTitle: row.plan_title ?? undefined,
     issueUrls: issueUrls.length ? issueUrls : undefined,
-    isPrimary: row.is_primary === 1 ? true : undefined,
+    workspaceType:
+      row.workspace_type === 1 ? 'primary' : row.workspace_type === 2 ? 'auto' : 'standard',
     createdAt: row.created_at,
   };
 }
@@ -342,7 +346,7 @@ describe('workspace update command', () => {
     } as any);
 
     const data = await readTrackingData();
-    expect(data[workspaceDir].isPrimary).toBe(true);
+    expect(data[workspaceDir].workspaceType).toBe('primary');
   });
 
   test('removes primary designation when --no-primary is used', async () => {
@@ -354,7 +358,7 @@ describe('workspace update command', () => {
         taskId: 'task-no-primary',
         workspacePath: workspaceDir,
         createdAt: new Date().toISOString(),
-        isPrimary: true,
+        workspaceType: 'primary',
       },
     });
 
@@ -369,7 +373,7 @@ describe('workspace update command', () => {
     } as any);
 
     const data = await readTrackingData();
-    expect(data[workspaceDir].isPrimary).toBeUndefined();
+    expect(data[workspaceDir].workspaceType).toBe('standard');
   });
 
   test('throws error when no update options provided', async () => {

@@ -17,7 +17,8 @@
   );
 
   let badgeStatus = $derived.by(() => {
-    if (workspace.isPrimary) return 'primary' as const;
+    if (workspace.workspaceType === 'primary') return 'primary' as const;
+    if (workspace.workspaceType === 'auto') return 'auto' as const;
     if (workspace.isLocked) return 'locked' as const;
     return 'available' as const;
   });

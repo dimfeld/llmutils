@@ -30,7 +30,7 @@ export async function prepareWorkspaceRoundTrip(options: {
 
   const syncTarget = options.syncTarget ?? 'origin';
   const workspaceInfo = getWorkspaceInfoByPath(options.workspacePath);
-  if (!workspaceInfo || workspaceInfo.isPrimary) {
+  if (!workspaceInfo || workspaceInfo.workspaceType === 'primary') {
     return null;
   }
 

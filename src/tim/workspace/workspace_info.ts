@@ -3,6 +3,7 @@ import { getDatabase } from '../db/database.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import { getOrCreateProject, getProject, getProjectById } from '../db/project.js';
 import {
+  dbValueToWorkspaceType,
   findWorkspacesByProjectId,
   findWorkspacesByTaskId,
   getWorkspaceByPath,
@@ -11,6 +12,7 @@ import {
   patchWorkspace,
   setWorkspaceIssues,
   type PatchWorkspaceInput,
+  type WorkspaceType,
   type WorkspaceRow,
 } from '../db/workspace.js';
 
@@ -33,7 +35,7 @@ export interface WorkspaceInfo {
   planId?: string;
   planTitle?: string;
   issueUrls?: string[];
-  isPrimary?: boolean;
+  workspaceType: WorkspaceType;
   updatedAt?: string;
 }
 
@@ -45,7 +47,7 @@ export interface WorkspaceMetadataPatch {
   issueUrls?: string[];
   repositoryId?: string;
   branch?: string;
-  isPrimary?: boolean;
+  workspaceType?: WorkspaceType;
 }
 
 export function workspaceRowToInfo(
@@ -68,7 +70,7 @@ export function workspaceRowToInfo(
     planId: row.plan_id ?? undefined,
     planTitle: row.plan_title ?? undefined,
     issueUrls: issueUrls.length > 0 ? issueUrls : undefined,
-    isPrimary: row.is_primary === 1 ? true : undefined,
+    workspaceType: dbValueToWorkspaceType(row.workspace_type),
     updatedAt: row.updated_at,
   };
 }
@@ -98,7 +100,9 @@ export function findWorkspaceInfosByRepositoryId(repositoryId: string): Workspac
 
 export function findPrimaryWorkspaceForRepository(repositoryId: string): WorkspaceInfo | null {
   return (
-    findWorkspaceInfosByRepositoryId(repositoryId).find((workspace) => workspace.isPrimary) ?? null
+    findWorkspaceInfosByRepositoryId(repositoryId).find(
+      (workspace) => workspace.workspaceType === 'primary'
+    ) ?? null
   );
 }
 
@@ -133,8 +137,8 @@ export function patchWorkspaceInfo(
     getOrCreateProject(db, patch.repositoryId);
     patchInput.repositoryId = patch.repositoryId;
   }
-  if (patch.isPrimary !== undefined) {
-    patchInput.isPrimary = patch.isPrimary;
+  if (patch.workspaceType !== undefined) {
+    patchInput.workspaceType = patch.workspaceType;
   }
 
   const updated = patchWorkspace(db, workspacePath, patchInput);

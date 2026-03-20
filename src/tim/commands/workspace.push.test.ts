@@ -73,7 +73,7 @@ function recordWorkspaceForRepo(input: {
   taskId: string;
   repositoryId: string;
   branch?: string;
-  isPrimary?: boolean;
+  workspaceType?: 'standard' | 'primary' | 'auto';
 }): void {
   const db = getDatabase();
   const project = getOrCreateProject(db, input.repositoryId);
@@ -84,8 +84,11 @@ function recordWorkspaceForRepo(input: {
     branch: input.branch,
   });
 
-  if (input.isPrimary) {
-    db.prepare('UPDATE workspace SET is_primary = 1 WHERE id = ?').run(row.id);
+  if (input.workspaceType) {
+    db.prepare('UPDATE workspace SET workspace_type = ? WHERE id = ?').run(
+      input.workspaceType === 'primary' ? 1 : input.workspaceType === 'auto' ? 2 : 0,
+      row.id
+    );
   }
 }
 
@@ -160,7 +163,7 @@ describe('handleWorkspacePushCommand', () => {
       taskId: 'task-primary',
       repositoryId,
       branch: 'main',
-      isPrimary: true,
+      workspaceType: 'primary',
     });
     recordWorkspaceForRepo({
       workspacePath: secondaryRealDir,
@@ -229,7 +232,7 @@ describe('handleWorkspacePushCommand', () => {
       taskId: 'task-primary',
       repositoryId,
       branch: 'main',
-      isPrimary: true,
+      workspaceType: 'primary',
     });
     recordWorkspaceForRepo({
       workspacePath: secondaryDir,
@@ -261,7 +264,7 @@ describe('handleWorkspacePushCommand', () => {
       taskId: 'task-primary',
       repositoryId,
       branch: 'main',
-      isPrimary: true,
+      workspaceType: 'primary',
     });
     recordWorkspaceForRepo({
       workspacePath: secondaryDir,
@@ -291,7 +294,7 @@ describe('handleWorkspacePushCommand', () => {
       taskId: 'task-primary',
       repositoryId,
       branch: 'main',
-      isPrimary: true,
+      workspaceType: 'primary',
     });
     recordWorkspaceForRepo({
       workspacePath: secondaryDir,
@@ -336,7 +339,7 @@ describe('handleWorkspacePushCommand', () => {
       taskId: 'task-primary',
       repositoryId,
       branch: 'main',
-      isPrimary: true,
+      workspaceType: 'primary',
     });
     recordWorkspaceForRepo({
       workspacePath: secondaryDir,
@@ -371,7 +374,7 @@ describe('handleWorkspacePushCommand', () => {
       taskId: 'task-primary',
       repositoryId,
       branch: 'main',
-      isPrimary: true,
+      workspaceType: 'primary',
     });
     recordWorkspaceForRepo({
       workspacePath: secondaryDir,
@@ -447,7 +450,7 @@ describe('handleWorkspacePushCommand', () => {
       taskId: 'task-primary',
       repositoryId,
       branch: 'main',
-      isPrimary: true,
+      workspaceType: 'primary',
     });
     recordWorkspaceForRepo({
       workspacePath: sourceDir,

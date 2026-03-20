@@ -59,6 +59,7 @@ import {
 } from '../workspace/workspace_info.js';
 import { getAssignmentEntriesByProject } from '../db/assignment.js';
 import { getProject } from '../db/project.js';
+import type { WorkspaceType } from '../db/workspace.js';
 
 const PRIMARY_REMOTE_NAME = 'primary';
 
@@ -76,7 +77,7 @@ interface WorkspaceListEntry {
   issueUrls?: string[];
   repositoryId?: string;
   lockedBy?: WorkspaceInfo['lockedBy'];
-  isPrimary?: boolean;
+  workspaceType: WorkspaceType;
   createdAt: string;
   updatedAt?: string;
   mostRecentAssignment?: string;
@@ -169,7 +170,7 @@ async function buildWorkspaceListEntries(
       issueUrls: workspace.issueUrls,
       repositoryId: workspace.repositoryId,
       lockedBy: workspace.lockedBy,
-      isPrimary: workspace.isPrimary,
+      workspaceType: workspace.workspaceType,
       createdAt: workspace.createdAt,
       updatedAt: workspace.updatedAt,
       mostRecentAssignment: buildWorkspaceAssignmentDisplay(
@@ -386,7 +387,7 @@ function outputWorkspaceTable(entries: WorkspaceListEntry[], showHeader: boolean
     const plan = `${relativeUpdatedAt}\n${entry.mostRecentAssignment || '-'}`;
 
     let status: string;
-    if (entry.isPrimary) {
+    if (entry.workspaceType === 'primary') {
       status = chalk.blue('Primary');
     } else if (entry.lockedBy) {
       const lockType = entry.lockedBy.type;
@@ -717,7 +718,7 @@ async function tryReuseExistingWorkspace(
 
   // Filter to only unlocked workspaces
   const unlockedWorkspaces = workspacesWithStatus.filter(
-    (workspace) => !workspace.lockedBy && !workspace.isPrimary
+    (workspace) => !workspace.lockedBy && workspace.workspaceType !== 'primary'
   );
 
   if (unlockedWorkspaces.length === 0) {
@@ -1400,7 +1401,7 @@ async function lockAvailableWorkspace(
   const workspaces = findWorkspaceInfosByRepositoryId(repositoryId);
   const workspacesWithStatus = await updateWorkspaceLockStatus(workspaces);
   const available = workspacesWithStatus.find(
-    (workspace) => !workspace.lockedBy && !workspace.isPrimary
+    (workspace) => !workspace.lockedBy && workspace.workspaceType !== 'primary'
   );
 
   if (available) {
@@ -1881,7 +1882,7 @@ export async function handleWorkspaceUpdateCommand(
     patch.description = options.description;
   }
   if (options.primary !== undefined) {
-    patch.isPrimary = options.primary;
+    patch.workspaceType = options.primary ? 'primary' : 'standard';
   }
 
   if (!existingMetadata?.repositoryId) {
@@ -1903,7 +1904,7 @@ export async function handleWorkspaceUpdateCommand(
   if (updated.planId) {
     log(`  Plan ID: ${updated.planId}`);
   }
-  if (updated.isPrimary) {
+  if (updated.workspaceType === 'primary') {
     log(`  Primary: yes`);
   }
 }
