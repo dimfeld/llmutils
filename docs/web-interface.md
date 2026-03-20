@@ -155,7 +155,8 @@ The web interface is installable as a Progressive Web App, allowing it to run as
 - `static/manifest.webmanifest` — App metadata (name, icons, display mode, theme color). Uses relative URLs and `start_url: "."` for base-path compatibility.
 - `src/service-worker.ts` — SvelteKit built-in service worker using `$service-worker` module (`build`, `files`, `version`)
 - `src/app.html` — PWA meta tags (manifest link, theme-color, apple-mobile-web-app-capable, apple-touch-icon). Uses `%sveltekit.assets%` for base-path safety.
-- `src/routes/+layout.svelte` — Service worker registration in `onMount`
+- `src/routes/+layout.svelte` — Service worker registration in `onMount`, badge effect reacting to `sessionManager.needsAttention`
+- `src/lib/utils/pwa_badge.ts` — Feature-detecting wrappers for `navigator.setAppBadge()` / `navigator.clearAppBadge()`
 - `static/icon-192.png`, `static/icon-512.png`, `static/favicon.png` — App icons (sourced from tim-gui macOS app)
 
 ### Service Worker Caching Strategy
@@ -170,6 +171,16 @@ The web interface is installable as a Progressive Web App, allowing it to run as
 - Activate event deletes old versioned caches and calls `clients.claim()`
 - Root layout listens for `controllerchange` and calls `location.reload()` to pick up new assets
 - First-visit guard: `controllerchange` reload is skipped when `navigator.serviceWorker.controller` is null (first service worker install), avoiding an unnecessary reload
+
+### App Badge (Attention Indicator)
+
+When installed as a PWA, the app icon displays a badge dot whenever any session needs user attention. This uses the Badging API (`navigator.setAppBadge()` / `navigator.clearAppBadge()`).
+
+- **Badge shown**: At least one session has `activePrompt !== null` (waiting for user input) or `status === 'notification'` (unhandled notification)
+- **Badge cleared**: No sessions need attention
+- `SessionManager.needsAttention` is a `$derived` property that reactively computes attention state across all sessions
+- A `$effect` in the root layout calls the badge API whenever `needsAttention` changes
+- Feature-detected and silently no-ops when the Badge API is unavailable (non-PWA context, unsupported browser)
 
 ### Key Behaviors
 

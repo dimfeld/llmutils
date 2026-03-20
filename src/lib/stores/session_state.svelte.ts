@@ -81,6 +81,16 @@ export class SessionManager {
     return this.sessions.get(this.selectedSessionId) ?? null;
   });
 
+  needsAttention = $derived.by(() => {
+    for (const session of this.sessions.values()) {
+      if (session.activePrompt || session.status === 'notification') {
+        return true;
+      }
+    }
+
+    return false;
+  });
+
   private groupLabel(groupKey: string, projectId: number | null): string {
     if (projectId != null) {
       const project = this.projectsById.get(projectId);
