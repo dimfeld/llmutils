@@ -96,10 +96,10 @@ tim release docs-uuid --reset-status
 
 Each workspace has a type that controls how it participates in auto-selection:
 
-| Type       | DB Value | Description                                                                 |
-| ---------- | -------- | --------------------------------------------------------------------------- |
-| `standard` | 0        | Default type. Eligible for auto-selection only when no `auto` workspaces exist. |
-| `primary`  | 1        | The main checkout used for branch creation and push targets. Never auto-selected. |
+| Type       | DB Value | Description                                                                                                                  |
+| ---------- | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `standard` | 0        | Default type. Eligible for auto-selection only when no `auto` workspaces exist.                                              |
+| `primary`  | 1        | The main checkout used for branch creation and push targets. Never auto-selected.                                            |
 | `auto`     | 2        | Dedicated pool for `--auto-workspace`. When any auto workspace exists, only auto workspaces are eligible for auto-selection. |
 
 ### Auto-Selection Behavior
