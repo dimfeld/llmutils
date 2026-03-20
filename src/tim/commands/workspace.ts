@@ -411,7 +411,11 @@ function outputWorkspaceTable(entries: WorkspaceListEntry[], showHeader: boolean
 
     let status: string;
     if (entry.workspaceType === 'primary') {
-      status = chalk.blue('Primary');
+      if (entry.lockedBy) {
+        status = chalk.blue('Primary') + ' ' + chalk.red('(Locked)');
+      } else {
+        status = chalk.blue('Primary');
+      }
     } else if (entry.workspaceType === 'auto') {
       if (entry.lockedBy) {
         status = chalk.blue('Auto') + ' ' + chalk.red('(Locked)');
