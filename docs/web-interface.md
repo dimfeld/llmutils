@@ -70,6 +70,7 @@ The sessions system runs a separate Bun.serve() WebSocket server alongside the S
 ### Message Processing
 
 - Incoming agent messages follow the headless protocol: `session_info` → `replay_start` → historical messages → `replay_end` → live messages
+- **Dynamic session info updates**: The headless adapter can re-send `session_info` after initial handshake (e.g., after workspace switching in `setupWorkspace()`). The server handler is idempotent — it replaces `session.sessionInfo`, recomputes `groupKey` and `projectId`, and emits `session:update`. The web UI re-groups the session automatically via reactive `sessionGroups`.
 - Messages during replay (`replay_start`..`replay_end`) are added to the session's message list but NOT emitted as SSE events
 - **Replay prompt suppression**: Prompts received during replay are deferred to internal state (`deferredPromptEvent` in `SessionInternals`) rather than stored in `session.activePrompt`. On `replay_end`, any deferred prompt is promoted to the active prompt and emitted. `getSessionSnapshot()` and `cloneSession()` strip `activePrompt` while `isReplaying` is true. `sendPromptResponse()` rejects during replay as a safety guard.
 - Each message is categorized into a `DisplayMessage` with category-based color coding, body type (text/monospaced/todoList/fileChanges/keyValuePairs), and the original structured type
