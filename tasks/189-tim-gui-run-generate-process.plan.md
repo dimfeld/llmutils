@@ -4,6 +4,7 @@ title: run generate command from web
 goal: ""
 id: 189
 uuid: 9a812d63-4354-4355-ab9d-d254dcbef3b0
+generatedBy: agent
 status: pending
 priority: medium
 dependencies:
@@ -16,9 +17,59 @@ references:
   "183": 9c58c35e-6447-4ce3-af6b-3510719dc560
   "184": 05e31645-305d-4e59-8c49-a9fbc9ce0bd7
   "188": 2f287626-23b9-4d02-9e15-983f6ba6d5fd
+planGeneratedAt: 2026-03-20T23:51:20.469Z
+promptsGeneratedAt: 2026-03-20T23:51:20.469Z
 createdAt: 2026-02-13T21:11:06.976Z
-updatedAt: 2026-03-20T22:42:09.090Z
-tasks: []
+updatedAt: 2026-03-20T23:51:20.469Z
+tasks:
+  - title: Add hasActiveSessionForPlan to SessionManager
+    done: false
+    description: "Add a method to src/lib/server/session_manager.ts that checks
+      whether an active session exists for a given plan ID and command type.
+      Returns { active: boolean; connectionId?: string }. Iterate this.sessions
+      checking session.sessionInfo?.planId === planId &&
+      session.sessionInfo?.command === command && session.status === active.
+      Return the connectionId if found so the UI can link to it. Write tests in
+      the existing session manager test file."
+  - title: Add getPrimaryWorkspacePath query helper
+    done: false
+    description: Add a function to src/lib/server/db_queries.ts that queries the
+      primary workspace path for a project. Query workspace table for project_id
+      = ? AND workspace_type = 1 (WORKSPACE_TYPE_VALUES.primary), return
+      workspace_path or null. Write a test for this alongside existing
+      db_queries tests.
+  - title: Create server-side spawn handler
+    done: false
+    description: "Create src/lib/server/plan_actions.ts with
+      spawnGenerateProcess(planId, cwd) function. Spawns [tim, generate, planId,
+      --auto-workspace, --no-terminal-input] via Bun.spawn with { detached:
+      true, cwd, env: process.env, stdio: [ignore, ignore, pipe] }. Waits ~500ms
+      and checks proc.exitCode — if non-null, reads stderr and returns {
+      success: false, error: stderrContent }. If still alive, calls .unref() and
+      returns { success: true, planId }. Write tests mocking Bun.spawn for early
+      failure and successful spawn cases."
+  - title: Create startGenerate remote command
+    done: false
+    description: "Create src/lib/remote/plan_actions.remote.ts following the pattern
+      in src/lib/remote/session_actions.remote.ts. Define startGenerate command
+      with Zod schema accepting { planUuid: string }. Handler: gets server
+      context for DB access, looks up plan by UUID for planId and project_id,
+      validates eligibility (no tasks, not done/cancelled), checks
+      hasActiveSessionForPlan for duplicate prevention, calls
+      getPrimaryWorkspacePath, calls spawnGenerateProcess, returns result. Write
+      tests for the command logic covering plan not found, ineligible,
+      duplicate, no primary workspace, successful spawn, and spawn failure."
+  - title: Add Generate button to PlanDetail component
+    done: false
+    description: "Modify src/lib/components/PlanDetail.svelte: import
+      useSessionManager and startGenerate. Add eligibility check
+      (plan.tasks.length === 0 && displayStatus not done/cancelled). Add derived
+      state checking session store for active generate session matching
+      plan.planId. Add button in header area next to status/priority badges.
+      States: hidden (ineligible), Generate (eligible), Generating... with
+      session link (running), spinner (starting), error message (failed). On
+      click call startGenerate({ planUuid: plan.uuid }), show confirmation +
+      link to /projects/{projectId}/sessions/{connectionId} on success."
 tags: []
 ---
 

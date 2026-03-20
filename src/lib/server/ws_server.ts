@@ -1,4 +1,5 @@
 import process from 'node:process';
+import { inspect } from 'node:util';
 
 import type { TimConfig } from '$tim/configSchema.js';
 import { resolveHeadlessUrl } from '$tim/headless.js';
@@ -176,13 +177,15 @@ export function startWebSocketServer(
         const payload =
           typeof rawMessage === 'string' ? rawMessage : new TextDecoder().decode(rawMessage);
         const message = parseHeadlessMessage(payload);
-        console.dir(
+        console.log(
           '[ws_server] Received WebSocket message',
-          {
-            connectionId: ws.data.connectionId,
-            message: sanitizeMessageForLog(message ?? { malformedPayload: payload }),
-          },
-          { depth: 5 }
+          inspect(
+            {
+              connectionId: ws.data.connectionId,
+              message: sanitizeMessageForLog(message ?? { malformedPayload: payload }),
+            },
+            { depth: 5 }
+          )
         );
         if (!message) {
           console.warn('[ws_server] Ignoring malformed WebSocket message');
