@@ -10,7 +10,7 @@ priority: medium
 planGeneratedAt: 2026-03-07T08:42:06.542Z
 promptsGeneratedAt: 2026-03-07T08:42:06.542Z
 createdAt: 2026-03-07T02:47:09.372Z
-updatedAt: 2026-03-20T21:48:22.426Z
+updatedAt: 2026-03-20T21:50:06.019Z
 tasks:
   - title: Add DB migration to rename is_primary to workspace_type
     done: true
