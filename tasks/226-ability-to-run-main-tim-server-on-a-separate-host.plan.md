@@ -19,8 +19,6 @@ updatedAt: 2026-03-17T09:15:07.537Z
 tasks: []
 tags:
   - remote
-dependsOn:
-  - 220
 ---
 
 Maybe ability to set up the main Tim server on a remote host and have the clients all connect to that. Not too different from what I have been thinking, just the laptop is no longer the primary machine, and when a tim process does anything it proxies changes back to the main server. This "main server" should be an instance of the web interface.
