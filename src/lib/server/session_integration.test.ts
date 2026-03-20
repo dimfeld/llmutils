@@ -554,6 +554,11 @@ describe('session integration', () => {
       },
     });
 
+    expect(await sseReader.readEvent()).toMatchObject({
+      event: 'session:sync-complete',
+      data: {},
+    });
+
     manager.handleWebSocketConnect('conn-sse', () => {});
     manager.handleWebSocketMessage('conn-sse', {
       type: 'session_info',
@@ -624,6 +629,11 @@ describe('session integration', () => {
     expect(initialEvent).toMatchObject({
       event: 'session:list',
       data: { sessions: [] },
+    });
+
+    expect(await sseReader.readEvent()).toMatchObject({
+      event: 'session:sync-complete',
+      data: {},
     });
 
     manager.handleWebSocketConnect('conn-replay', () => {});

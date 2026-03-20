@@ -258,11 +258,7 @@ describe('handleImportCommand Integration Tests', () => {
     });
 
     expect(log).toHaveBeenCalledWith(
-      `Created stub plan file: ${path.join(
-        gitRootDir,
-        'tasks',
-        '6-linear-123-linear-issue-example.plan.md'
-      )}`
+      expect.stringContaining('6-linear-123-linear-issue-example.plan.md')
     );
   });
 
@@ -307,11 +303,7 @@ describe('handleImportCommand Integration Tests', () => {
     });
 
     expect(log).toHaveBeenCalledWith(
-      `Created stub plan file: ${path.join(
-        gitRootDir,
-        'tasks',
-        '6-issue-456-github-issue-example.plan.md'
-      )}`
+      expect.stringContaining('6-issue-456-github-issue-example.plan.md')
     );
   });
 

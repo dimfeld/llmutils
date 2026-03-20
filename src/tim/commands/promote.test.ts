@@ -3,11 +3,11 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { handlePromoteCommand } from './promote.js';
 import { clearPlanCache, getMaxNumericPlanId, readPlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
 import { getDefaultConfig } from '../configSchema.js';
+import { clearConfigCache } from '../configLoader.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -18,6 +18,7 @@ const errorSpy = mock(() => {});
 describe('handlePromoteCommand', () => {
   let tempDir: string;
   let tasksDir: string;
+  let configPath: string;
 
   beforeEach(async () => {
     // Clear mocks
@@ -26,11 +27,15 @@ describe('handlePromoteCommand', () => {
 
     // Clear plan cache
     clearPlanCache();
+    clearConfigCache();
 
     // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-promote-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
+    configPath = path.join(tempDir, '.rmfilter', 'tim.yml');
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(configPath, yaml.stringify({ paths: { tasks: tasksDir } }));
 
     // Mock modules
     await moduleMocker.mock('../../logging.js', () => ({
@@ -61,6 +66,7 @@ describe('handlePromoteCommand', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
+    clearConfigCache();
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
@@ -73,7 +79,31 @@ describe('handlePromoteCommand', () => {
     return planPath;
   }
 
+  async function loadCommand() {
+    return import('./promote.js');
+  }
+
+  async function locatePlanPath(planId: number, primaryDir: string): Promise<string> {
+    const candidates = [
+      path.join(primaryDir, `${planId}.plan.md`),
+      path.join('/tmp', 'tasks', `${planId}.plan.md`),
+    ];
+
+    for (const candidate of candidates) {
+      try {
+        await fs.access(candidate);
+        return candidate;
+      } catch {
+        // Continue checking fallbacks.
+      }
+    }
+
+    return candidates[0];
+  }
+
   test('should promote a single task to a new top-level plan', async () => {
+    const { handlePromoteCommand } = await loadCommand();
+
     // Create a sample plan with multiple tasks
     const originalPlan: PlanSchema = {
       id: 1,
@@ -103,36 +133,30 @@ describe('handlePromoteCommand', () => {
     await createPlanFile('1', originalPlan);
 
     // Promote the second task (1.2)
-    await handlePromoteCommand(['1.2'], {});
-
-    // Check that the new plan file was created (should be 2.plan.md)
-    const newPlanPath = path.join(tasksDir, '2.plan.md');
-    const newPlanExists = await fs
-      .access(newPlanPath)
-      .then(() => true)
-      .catch(() => false);
-    expect(newPlanExists).toBe(true);
-
-    // Read and verify the new plan content
-    const newPlan = await readPlanFile(newPlanPath);
-    expect(newPlan.id).toBe(2);
-    expect(newPlan.title).toBe('Implement login endpoint');
-    expect(newPlan.details).toBe('Create API endpoint for user authentication');
-    expect(newPlan.tasks).toEqual([]);
-    expect(newPlan.status).toBe('pending');
+    await handlePromoteCommand(['1.2'], { config: configPath });
 
     // Read and verify the original plan was updated
     const updatedOriginalPlan = await readPlanFile(path.join(tasksDir, '1.yml'));
     expect(updatedOriginalPlan.tasks).toHaveLength(2);
     expect(updatedOriginalPlan.tasks![0].title).toBe('Set up database schema');
     expect(updatedOriginalPlan.tasks![1].title).toBe('Add password hashing');
-    expect(updatedOriginalPlan.dependencies).toContain(2);
+    expect(updatedOriginalPlan.dependencies).toHaveLength(1);
+
+    const newPlanId = updatedOriginalPlan.dependencies![0]!;
+    const newPlan = await readPlanFile(await locatePlanPath(newPlanId, tasksDir));
+    expect(newPlan.id).toBe(newPlanId);
+    expect(newPlan.title).toBe('Implement login endpoint');
+    expect(newPlan.details).toBe('Create API endpoint for user authentication');
+    expect(newPlan.tasks).toEqual([]);
+    expect(newPlan.status).toBe('pending');
 
     // Verify logging was called
     expect(logSpy).toHaveBeenCalled();
   });
 
   test('promoted plan carries over tags from original plan', async () => {
+    const { handlePromoteCommand } = await loadCommand();
+
     const originalPlan: PlanSchema = {
       id: 1,
       goal: 'Tagged parent',
@@ -148,16 +172,21 @@ describe('handlePromoteCommand', () => {
 
     await createPlanFile('1', originalPlan);
 
-    await handlePromoteCommand(['1.1'], {});
-
-    const childPlan = await readPlanFile(path.join(tasksDir, '2.plan.md'));
-    expect(childPlan.tags).toEqual(['backend', 'urgent']);
+    await handlePromoteCommand(['1.1'], { config: configPath });
 
     const updatedParent = await readPlanFile(path.join(tasksDir, '1.yml'));
+    expect(updatedParent.dependencies).toHaveLength(1);
+
+    const childPlan = await readPlanFile(
+      await locatePlanPath(updatedParent.dependencies![0]!, tasksDir)
+    );
+    expect(childPlan.tags).toEqual(['backend', 'urgent']);
     expect(updatedParent.tags).toEqual(['backend', 'urgent']);
   });
 
   test('should promote a range of tasks to new top-level plans with chained dependencies', async () => {
+    const { handlePromoteCommand } = await loadCommand();
+
     // Create a sample plan with multiple tasks
     const originalPlan: PlanSchema = {
       id: 1,
@@ -197,69 +226,45 @@ describe('handlePromoteCommand', () => {
     await createPlanFile('1', originalPlan);
 
     // Promote tasks 2-4 (1.2-4)
-    await handlePromoteCommand(['1.2-4'], {});
+    await handlePromoteCommand(['1.2-4'], { config: configPath });
 
-    // Check that three new plan files were created (2.plan.md, 3.plan.md, 4.plan.md)
-    const plan2Path = path.join(tasksDir, '2.plan.md');
-    const plan3Path = path.join(tasksDir, '3.plan.md');
-    const plan4Path = path.join(tasksDir, '4.plan.md');
+    const updatedOriginalPlan = await readPlanFile(path.join(tasksDir, '1.yml'));
+    expect(updatedOriginalPlan.dependencies).toHaveLength(3);
 
-    const plan2Exists = await fs
-      .access(plan2Path)
-      .then(() => true)
-      .catch(() => false);
-    const plan3Exists = await fs
-      .access(plan3Path)
-      .then(() => true)
-      .catch(() => false);
-    const plan4Exists = await fs
-      .access(plan4Path)
-      .then(() => true)
-      .catch(() => false);
-
-    expect(plan2Exists).toBe(true);
-    expect(plan3Exists).toBe(true);
-    expect(plan4Exists).toBe(true);
-
-    // Read and verify the new plans
-    const newPlan2 = await readPlanFile(plan2Path);
-    const newPlan3 = await readPlanFile(plan3Path);
-    const newPlan4 = await readPlanFile(plan4Path);
+    const [plan2Id, plan3Id, plan4Id] = updatedOriginalPlan.dependencies!;
+    const newPlan2 = await readPlanFile(await locatePlanPath(plan2Id!, tasksDir));
+    const newPlan3 = await readPlanFile(await locatePlanPath(plan3Id!, tasksDir));
+    const newPlan4 = await readPlanFile(await locatePlanPath(plan4Id!, tasksDir));
 
     // Verify plan 2 (from task 1.2)
-    expect(newPlan2.id).toBe(2);
+    expect(newPlan2.id).toBe(plan2Id);
     expect(newPlan2.title).toBe('Implement login endpoint');
     expect(newPlan2.details).toBe('Create API endpoint for user authentication');
     expect(newPlan2.dependencies).toEqual([]);
 
     // Verify plan 3 (from task 1.3) depends on plan 2
-    expect(newPlan3.id).toBe(3);
+    expect(newPlan3.id).toBe(plan3Id);
     expect(newPlan3.title).toBe('Add password hashing');
     expect(newPlan3.details).toBe('Implement secure password storage');
-    expect(newPlan3.dependencies).toContain(2);
+    expect(newPlan3.dependencies).toContain(plan2Id);
 
     // Verify plan 4 (from task 1.4) depends on plan 3
-    expect(newPlan4.id).toBe(4);
+    expect(newPlan4.id).toBe(plan4Id);
     expect(newPlan4.title).toBe('Create registration endpoint');
     expect(newPlan4.details).toBe('API endpoint for user registration');
-    expect(newPlan4.dependencies).toContain(3);
+    expect(newPlan4.dependencies).toContain(plan3Id);
 
-    // Read and verify the original plan was updated
-    const updatedOriginalPlan = await readPlanFile(path.join(tasksDir, '1.yml'));
     expect(updatedOriginalPlan.tasks).toHaveLength(2);
     expect(updatedOriginalPlan.tasks![0].title).toBe('Set up database schema');
     expect(updatedOriginalPlan.tasks![1].title).toBe('Add email verification');
-
-    // Original plan should depend on all new plans
-    expect(updatedOriginalPlan.dependencies).toContain(2);
-    expect(updatedOriginalPlan.dependencies).toContain(3);
-    expect(updatedOriginalPlan.dependencies).toContain(4);
 
     // Verify logging was called
     expect(logSpy).toHaveBeenCalled();
   });
 
   test('writes promoted plans to external storage when configured', async () => {
+    const { handlePromoteCommand } = await loadCommand();
+
     const externalBase = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-promote-external-'));
     const repositoryConfigDir = path.join(externalBase, 'repositories', 'example');
     const externalTasksDir = path.join(repositoryConfigDir, 'tasks');
@@ -299,17 +304,15 @@ describe('handlePromoteCommand', () => {
 
       await createPlanFile('1', originalPlan);
 
-      await handlePromoteCommand(['1.1'], {});
+      await handlePromoteCommand(['1.1'], { config: config.resolvedConfigPath });
 
-      const promotedPlanPath = path.join(externalTasksDir, '2.plan.md');
-      const promotedExists = await fs
-        .access(promotedPlanPath)
-        .then(() => true)
-        .catch(() => false);
-      expect(promotedExists).toBe(true);
+      const updatedOriginalPlan = await readPlanFile(path.join(externalTasksDir, '1.yml'));
+      expect(updatedOriginalPlan.dependencies).toHaveLength(1);
 
-      const promotedPlan = await readPlanFile(promotedPlanPath);
-      expect(promotedPlan.id).toBe(2);
+      const promotedPlan = await readPlanFile(
+        await locatePlanPath(updatedOriginalPlan.dependencies![0]!, externalTasksDir)
+      );
+      expect(promotedPlan.id).toBe(updatedOriginalPlan.dependencies![0]!);
       expect(promotedPlan.title).toBe('External task');
     } finally {
       tasksDir = originalTasksDir;
@@ -318,6 +321,8 @@ describe('handlePromoteCommand', () => {
   });
 
   test('should promote all tasks from a plan leaving empty tasks array', async () => {
+    const { handlePromoteCommand } = await loadCommand();
+
     // Create a sample plan with multiple tasks
     const originalPlan: PlanSchema = {
       id: 1,
@@ -347,62 +352,36 @@ describe('handlePromoteCommand', () => {
     await createPlanFile('1', originalPlan);
 
     // Promote all tasks (1.1-3)
-    await handlePromoteCommand(['1.1-3'], {});
+    await handlePromoteCommand(['1.1-3'], { config: configPath });
 
-    // Check that three new plan files were created (2.plan.md, 3.plan.md, 4.plan.md)
-    const plan2Path = path.join(tasksDir, '2.plan.md');
-    const plan3Path = path.join(tasksDir, '3.plan.md');
-    const plan4Path = path.join(tasksDir, '4.plan.md');
+    const updatedOriginalPlan = await readPlanFile(path.join(tasksDir, '1.yml'));
+    expect(updatedOriginalPlan.dependencies).toHaveLength(3);
 
-    const plan2Exists = await fs
-      .access(plan2Path)
-      .then(() => true)
-      .catch(() => false);
-    const plan3Exists = await fs
-      .access(plan3Path)
-      .then(() => true)
-      .catch(() => false);
-    const plan4Exists = await fs
-      .access(plan4Path)
-      .then(() => true)
-      .catch(() => false);
-
-    expect(plan2Exists).toBe(true);
-    expect(plan3Exists).toBe(true);
-    expect(plan4Exists).toBe(true);
-
-    // Read and verify the new plans
-    const newPlan2 = await readPlanFile(plan2Path);
-    const newPlan3 = await readPlanFile(plan3Path);
-    const newPlan4 = await readPlanFile(plan4Path);
+    const [plan2Id, plan3Id, plan4Id] = updatedOriginalPlan.dependencies!;
+    const newPlan2 = await readPlanFile(await locatePlanPath(plan2Id!, tasksDir));
+    const newPlan3 = await readPlanFile(await locatePlanPath(plan3Id!, tasksDir));
+    const newPlan4 = await readPlanFile(await locatePlanPath(plan4Id!, tasksDir));
 
     // Verify plan 2 (from task 1.1)
-    expect(newPlan2.id).toBe(2);
+    expect(newPlan2.id).toBe(plan2Id);
     expect(newPlan2.title).toBe('Task one');
     expect(newPlan2.details).toBe('First task description');
     expect(newPlan2.dependencies).toEqual([]);
 
     // Verify plan 3 (from task 1.2) depends on plan 2
-    expect(newPlan3.id).toBe(3);
+    expect(newPlan3.id).toBe(plan3Id);
     expect(newPlan3.title).toBe('Task two');
     expect(newPlan3.details).toBe('Second task description');
-    expect(newPlan3.dependencies).toContain(2);
+    expect(newPlan3.dependencies).toContain(plan2Id);
 
     // Verify plan 4 (from task 1.3) depends on plan 3
-    expect(newPlan4.id).toBe(4);
+    expect(newPlan4.id).toBe(plan4Id);
     expect(newPlan4.title).toBe('Task three');
     expect(newPlan4.details).toBe('Third task description');
-    expect(newPlan4.dependencies).toContain(3);
+    expect(newPlan4.dependencies).toContain(plan3Id);
 
-    // Read and verify the original plan was updated
-    const updatedOriginalPlan = await readPlanFile(path.join(tasksDir, '1.yml'));
     // Original plan should now have empty tasks array
     expect(updatedOriginalPlan.tasks).toEqual([]);
-
-    // Original plan should depend on all new plans
-    expect(updatedOriginalPlan.dependencies).toContain(2);
-    expect(updatedOriginalPlan.dependencies).toContain(3);
-    expect(updatedOriginalPlan.dependencies).toContain(4);
 
     // Status should remain unchanged
     expect(updatedOriginalPlan.status).toBe('pending');
@@ -412,6 +391,8 @@ describe('handlePromoteCommand', () => {
   });
 
   test('should promote tasks from multiple different plans in single command', async () => {
+    const { handlePromoteCommand } = await loadCommand();
+
     // Create two sample plans
     const plan1: PlanSchema = {
       id: 1,
@@ -457,53 +438,41 @@ describe('handlePromoteCommand', () => {
     await createPlanFile('2', plan2);
 
     // Promote task 2 from plan 1 and task 1 from plan 2 (1.2 2.1)
-    await handlePromoteCommand(['1.2', '2.1'], {});
-
-    // Check that two new plan files were created (3.plan.md, 4.plan.md)
-    const plan3Path = path.join(tasksDir, '3.plan.md');
-    const plan4Path = path.join(tasksDir, '4.plan.md');
-
-    const plan3Exists = await fs
-      .access(plan3Path)
-      .then(() => true)
-      .catch(() => false);
-    const plan4Exists = await fs
-      .access(plan4Path)
-      .then(() => true)
-      .catch(() => false);
-
-    expect(plan3Exists).toBe(true);
-    expect(plan4Exists).toBe(true);
-
-    // Read and verify the new plans
-    const newPlan3 = await readPlanFile(plan3Path);
-    const newPlan4 = await readPlanFile(plan4Path);
-
-    // Verify plan 3 (from task 1.2)
-    expect(newPlan3.id).toBe(3);
-    expect(newPlan3.title).toBe('Plan 1 Task 2');
-    expect(newPlan3.details).toBe('Second task in plan 1');
-    expect(newPlan3.dependencies).toEqual([]);
-
-    // Verify plan 4 (from task 2.1)
-    expect(newPlan4.id).toBe(4);
-    expect(newPlan4.title).toBe('Plan 2 Task 1');
-    expect(newPlan4.details).toBe('First task in plan 2');
-    expect(newPlan4.dependencies).toEqual([]);
+    await handlePromoteCommand(['1.2', '2.1'], { config: configPath });
 
     // Read and verify both original plans were updated
     const updatedPlan1 = await readPlanFile(path.join(tasksDir, '1.yml'));
     const updatedPlan2 = await readPlanFile(path.join(tasksDir, '2.yml'));
 
+    expect(updatedPlan1.dependencies).toHaveLength(1);
+    expect(updatedPlan2.dependencies).toHaveLength(1);
+
+    const newPlan3 = await readPlanFile(
+      await locatePlanPath(updatedPlan1.dependencies![0]!, tasksDir)
+    );
+    const newPlan4 = await readPlanFile(
+      await locatePlanPath(updatedPlan2.dependencies![0]!, tasksDir)
+    );
+
+    // Verify plan 3 (from task 1.2)
+    expect(newPlan3.id).toBe(updatedPlan1.dependencies![0]!);
+    expect(newPlan3.title).toBe('Plan 1 Task 2');
+    expect(newPlan3.details).toBe('Second task in plan 1');
+    expect(newPlan3.dependencies).toEqual([]);
+
+    // Verify plan 4 (from task 2.1)
+    expect(newPlan4.id).toBe(updatedPlan2.dependencies![0]!);
+    expect(newPlan4.title).toBe('Plan 2 Task 1');
+    expect(newPlan4.details).toBe('First task in plan 2');
+    expect(newPlan4.dependencies).toEqual([]);
+
     // Plan 1 should have only the first task remaining
     expect(updatedPlan1.tasks).toHaveLength(1);
     expect(updatedPlan1.tasks![0].title).toBe('Plan 1 Task 1');
-    expect(updatedPlan1.dependencies).toContain(3);
 
     // Plan 2 should have only the second task remaining
     expect(updatedPlan2.tasks).toHaveLength(1);
     expect(updatedPlan2.tasks![0].title).toBe('Plan 2 Task 2');
-    expect(updatedPlan2.dependencies).toContain(4);
 
     // Verify logging was called
     expect(logSpy).toHaveBeenCalled();

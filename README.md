@@ -47,11 +47,14 @@ bun run lint
 # Code formatting
 bun run format
 
-# Run tests
-bun test
+# Run the full test suite
+bun run test
 
-# Run web interface tests
-bun run test:web
+# Run CLI tests only
+bun run test-cli
+
+# Run web interface tests only
+bun run test-web
 
 # Install globally for development
 bun run dev-install

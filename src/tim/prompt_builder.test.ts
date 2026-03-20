@@ -373,7 +373,7 @@ describe('prompt_builder', () => {
         });
 
         expect(result).toContain('## Plan File');
-        expect(result).toContain('@/batch-plan.yml: This is the plan file ');
+        expect(result).toContain('batch-plan.yml: This is the plan file ');
       });
 
       test('uses relative path from git root for plan file reference', async () => {
@@ -410,7 +410,7 @@ describe('prompt_builder', () => {
         });
 
         expect(result).toContain('## Plan File');
-        expect(result).toContain('@/nested/subdirs/nested-batch-plan.yml: This is the plan file ');
+        expect(result).toContain('nested/subdirs/nested-batch-plan.yml: This is the plan file ');
       });
 
       test('handles already relative plan file paths', async () => {
@@ -441,7 +441,7 @@ describe('prompt_builder', () => {
         });
 
         expect(result).toContain('## Plan File');
-        expect(result).toContain('@/tasks/relative-batch-plan.yml: This is the plan file ');
+        expect(result).toContain('tasks/relative-batch-plan.yml: This is the plan file ');
       });
 
       test('uses empty prefix when filePathPrefix is not provided', async () => {
@@ -500,7 +500,7 @@ describe('prompt_builder', () => {
         });
 
         expect(result).toContain('## Plan File');
-        expect(result).toContain('$PROJECT/custom-prefix-batch-plan.yml: This is the plan file ');
+        expect(result).toContain('custom-prefix-batch-plan.yml: This is the plan file ');
       });
 
       test('batch mode detection works with description-based detection', async () => {
@@ -529,7 +529,7 @@ describe('prompt_builder', () => {
         });
 
         expect(result).toContain('## Plan File');
-        expect(result).toContain('@/description-batch-plan.yml: This is the plan file ');
+        expect(result).toContain('description-batch-plan.yml: This is the plan file ');
       });
 
       test('handles git root resolution errors gracefully', async () => {
@@ -605,7 +605,7 @@ describe('prompt_builder', () => {
 
         // Verify the exact format of the plan file reference section
         expect(result).toContain(
-          '\n## Plan File\n\n- @/format-batch-plan.yml: This is the plan file '
+          '\n## Plan File\n\n- format-batch-plan.yml: This is the plan file '
         );
 
         // Verify it appears after the task section (batch mode uses Remaining Tasks header)

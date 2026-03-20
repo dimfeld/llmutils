@@ -1,4 +1,5 @@
-- Tests use Bun test.
+- CLI tests use `bun test`.
+- SvelteKit/web tests under `src/lib` and `src/routes` use `bun run test-web` (Vitest).
 - **Prefer real filesystem operations**: Use `fs.mkdtemp()` for temporary directories instead of mocking filesystem calls
 - **Hybrid mocking approach**:
   - Consider mocking complicated external dependencies (logging, process spawning) for interaction verification, but

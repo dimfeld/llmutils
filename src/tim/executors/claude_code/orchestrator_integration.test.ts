@@ -53,7 +53,7 @@ test('wrapWithOrchestration handles missing planFilePath gracefully', () => {
   });
 
   expect(result).toContain('# Batch Task Processing Mode');
-  expect(result).toContain('@PLAN_FILE_PATH_NOT_PROVIDED');
+  expect(result).toContain('PLAN_FILE_PATH_NOT_PROVIDED');
 });
 
 test('wrapWithOrchestration includes batch mode workflow instructions', () => {

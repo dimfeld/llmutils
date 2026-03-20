@@ -820,13 +820,11 @@ executors:
         mcpConfigFile: '/path/to/config', // from local
       });
 
-      // copy-only should only have options from main
-      expect(config.executors?.['copy-only']).toEqual({});
+      // Unsupported executor keys are dropped by schema validation
+      expect(config.executors?.['copy-only']).toBeUndefined();
 
-      // direct-call should only have options from local
-      expect(config.executors?.['direct-call']).toEqual({
-        executionModel: 'gpt-4',
-      });
+      // Unsupported executor keys are dropped by schema validation
+      expect(config.executors?.['direct-call']).toBeUndefined();
     });
   });
 

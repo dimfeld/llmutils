@@ -6,6 +6,7 @@ import { runWithLogger } from '../../logging.js';
 import { getLoggerAdapter, type LoggerAdapter } from '../../logging/adapter.js';
 import { HeadlessAdapter } from '../../logging/headless_adapter.js';
 import { ModuleMocker } from '../../testing.js';
+import { stringifyPlanWithFrontmatter } from '../../testing.js';
 import type { StructuredMessage } from '../../logging/structured_messages.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
@@ -71,7 +72,17 @@ function createStructuredCaptureAdapter(messages: StructuredMessage[]): LoggerAd
 beforeEach(async () => {
   tempDir = await mkdtemp(join(tmpdir(), 'tim-review-notify-'));
   planFile = join(tempDir, 'plan.yml');
-  await writeFile(planFile, 'id: 123\ntitle: Notify Plan\n');
+  await writeFile(
+    planFile,
+    stringifyPlanWithFrontmatter({
+      id: 123,
+      title: 'Notify Plan',
+      goal: 'Goal',
+      details: 'Details',
+      status: 'pending',
+      tasks: [],
+    })
+  );
 
   sendNotificationSpy = mock(async () => true);
   runReviewSpy = mock(async () => ({

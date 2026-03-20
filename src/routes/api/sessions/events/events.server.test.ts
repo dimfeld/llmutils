@@ -62,7 +62,7 @@ describe('/api/sessions/events', () => {
     expect(chunk.done).toBe(false);
     expect(payload).toContain('event: session:list\n');
     expect(payload).toContain(
-      '"sessions":[{"connectionId":"notification:git@example.com:repo.git|/tmp/repo"'
+      '"sessions":[{"connectionId":"notification:example.com/repo|/tmp/repo"'
     );
 
     abortController.abort();

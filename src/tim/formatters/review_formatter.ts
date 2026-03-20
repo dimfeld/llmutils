@@ -3,11 +3,12 @@
 
 import chalk from 'chalk';
 import { table } from 'table';
-import { ReviewOutputSchema, type ReviewIssueOutput } from './review_output_schema.js';
+import { ReviewOutputSchema } from './review_output_schema.js';
 
 export type ReviewSeverity = 'critical' | 'major' | 'minor' | 'info';
 
 export interface ReviewIssue {
+  id?: string;
   severity: ReviewSeverity;
   category: string;
   content: string;
@@ -58,7 +59,7 @@ export interface ReviewFormatter {
  * Contains the structured issues, recommendations, and action items extracted from review output.
  */
 export interface ParsedReviewOutput {
-  issues: ReviewIssueOutput[];
+  issues: ReviewIssue[];
   recommendations: string[];
   actionItems: string[];
 }
@@ -253,6 +254,24 @@ export function parseJsonReviewOutput(jsonString: string | object): ParsedReview
     parsed = jsonString;
   }
 
+  if (
+    parsed &&
+    typeof parsed === 'object' &&
+    'issues' in parsed &&
+    Array.isArray((parsed as { issues?: unknown[] }).issues)
+  ) {
+    parsed = {
+      ...(parsed as Record<string, unknown>),
+      issues: (parsed as { issues: unknown[] }).issues.map((issue) =>
+        issue && typeof issue === 'object'
+          ? Object.fromEntries(
+              Object.entries(issue as Record<string, unknown>).filter(([key]) => key !== 'id')
+            )
+          : issue
+      ),
+    };
+  }
+
   // Validate against the schema
   const validation = ReviewOutputSchema.safeParse(parsed);
   if (!validation.success) {
@@ -270,7 +289,14 @@ export function parseJsonReviewOutput(jsonString: string | object): ParsedReview
     );
   }
 
-  return validation.data;
+  return {
+    issues: validation.data.issues.map((issue, index) => ({
+      ...issue,
+      id: `issue-${index + 1}`,
+    })),
+    recommendations: validation.data.recommendations,
+    actionItems: validation.data.actionItems,
+  };
 }
 
 /**

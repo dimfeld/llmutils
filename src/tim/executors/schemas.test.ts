@@ -3,13 +3,8 @@ import * as z from 'zod/v4';
 import {
   claudeCodeOptionsSchema,
   codexCliOptionsSchema,
-  copyOnlyOptionsSchema,
-  copyPasteOptionsSchema,
-  directCallOptionsSchema,
   ClaudeCodeExecutorName,
-  CopyOnlyExecutorName,
-  CopyPasteExecutorName,
-  OneCallExecutorName,
+  CodexCliExecutorName,
 } from './schemas.ts';
 
 describe('claudeCodeOptionsSchema', () => {
@@ -197,40 +192,7 @@ describe('claudeCodeOptionsSchema', () => {
   });
 });
 
-describe('other executor schemas', () => {
-  test('copyOnlyOptionsSchema accepts empty object', () => {
-    const result = copyOnlyOptionsSchema.safeParse({});
-    expect(result.success).toBe(true);
-  });
-
-  test('copyPasteOptionsSchema accepts optional executionModel', () => {
-    const result1 = copyPasteOptionsSchema.safeParse({});
-    expect(result1.success).toBe(true);
-
-    const result2 = copyPasteOptionsSchema.safeParse({
-      executionModel: 'google/gemini-2.5-pro',
-    });
-
-    expect(result2.success).toBe(true);
-    if (result2.success) {
-      expect(result2.data.executionModel).toBe('google/gemini-2.5-pro');
-    }
-  });
-
-  test('directCallOptionsSchema accepts optional executionModel', () => {
-    const result1 = directCallOptionsSchema.safeParse({});
-    expect(result1.success).toBe(true);
-
-    const result2 = directCallOptionsSchema.safeParse({
-      executionModel: 'google/gemini-2.5-pro',
-    });
-
-    expect(result2.success).toBe(true);
-    if (result2.success) {
-      expect(result2.data.executionModel).toBe('google/gemini-2.5-pro');
-    }
-  });
-
+describe('codexCliOptionsSchema', () => {
   test('codexCliOptionsSchema accepts optional simpleMode flag', () => {
     const result = codexCliOptionsSchema.safeParse({ simpleMode: true });
 
@@ -248,14 +210,33 @@ describe('other executor schemas', () => {
       expect(result.error.issues[0].path).toEqual(['simpleMode']);
     }
   });
+
+  test('codexCliOptionsSchema accepts reasoning configuration', () => {
+    const result = codexCliOptionsSchema.safeParse({
+      reasoning: {
+        default: 'medium',
+        generate: 'high',
+        scopedReview: 'low',
+        fullReview: 'xhigh',
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.reasoning).toEqual({
+        default: 'medium',
+        generate: 'high',
+        scopedReview: 'low',
+        fullReview: 'xhigh',
+      });
+    }
+  });
 });
 
 describe('executor name constants', () => {
   test('executor name constants are defined correctly', () => {
     expect(ClaudeCodeExecutorName).toBe('claude-code');
-    expect(CopyOnlyExecutorName).toBe('copy-only');
-    expect(CopyPasteExecutorName).toBe('copy-paste');
-    expect(OneCallExecutorName).toBe('direct-call');
+    expect(CodexCliExecutorName).toBe('codex-cli');
   });
 });
 

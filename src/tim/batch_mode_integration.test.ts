@@ -158,7 +158,7 @@ tasks:
 
     // Verify prompt includes batch mode plan file reference
     expect(prompt).toContain('## Plan File');
-    expect(prompt).toContain('@/tasks/batch-test-plan.yml: This is the plan file ');
+    expect(prompt).toContain('tasks/batch-test-plan.yml: This is the plan file ');
     expect(prompt).toContain('## Remaining Tasks');
     expect(prompt).toContain('Execute multiple tasks in batch mode');
 
@@ -290,7 +290,7 @@ tasks:
       batchMode: true,
     });
 
-    expect(absoluteResult).toContain('@/nested/deep/plan.yml: This is the plan file ');
+    expect(absoluteResult).toContain('nested/deep/plan.yml: This is the plan file ');
 
     // Test relative path
     const relativePath = 'tasks/relative-plan.yml';
@@ -307,7 +307,7 @@ tasks:
       batchMode: true,
     });
 
-    expect(relativeResult).toContain('@/tasks/relative-plan.yml: This is the plan file ');
+    expect(relativeResult).toContain('tasks/relative-plan.yml: This is the plan file ');
 
     // Test different prefixes
     const customPrefixResult = await buildExecutionPromptWithoutSteps({
@@ -322,7 +322,7 @@ tasks:
       batchMode: true,
     });
 
-    expect(customPrefixResult).toContain('$WORKSPACE/custom-plan.yml: This is the plan file ');
+    expect(customPrefixResult).toContain('custom-plan.yml: This is the plan file ');
 
     // Test no prefix
     const noPrefixResult = await buildExecutionPromptWithoutSteps({
@@ -546,7 +546,7 @@ tasks:
     expect(result).toContain('## Remaining Tasks');
     expect(result).toContain('Execute complex batch mode operations');
     expect(result).toContain('## Plan File');
-    expect(result).toContain('@/complex-plan.yml: This is the plan file ');
+    expect(result).toContain('complex-plan.yml: This is the plan file ');
     expect(result).toContain('## Relevant Files');
     expect(result).toContain('@/src/complex.ts');
     expect(result).toContain('@/lib/utils.ts');

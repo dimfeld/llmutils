@@ -2,10 +2,11 @@ import { describe, expect, test, beforeEach, afterEach, mock } from 'bun:test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'path';
-import yaml from 'yaml';
 import { handleDoneCommand } from './done.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
+import { stringifyPlanWithFrontmatter } from '../../testing.js';
+import { clearConfigCache } from '../configLoader.js';
 
 describe('handleDoneCommand', () => {
   let tempDir: string;
@@ -14,6 +15,7 @@ describe('handleDoneCommand', () => {
   const moduleMocker = new ModuleMocker(import.meta);
 
   beforeEach(async () => {
+    clearConfigCache();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-done-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
@@ -40,6 +42,7 @@ describe('handleDoneCommand', () => {
   });
 
   afterEach(async () => {
+    clearConfigCache();
     moduleMocker.clear();
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -63,7 +66,7 @@ describe('handleDoneCommand', () => {
       ],
     };
 
-    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
+    await fs.writeFile(path.join(tasksDir, '1.plan.md'), stringifyPlanWithFrontmatter(plan));
 
     const options = {};
 
@@ -77,13 +80,17 @@ describe('handleDoneCommand', () => {
 
     // Check that markStepDone was called with correct parameters
     expect(markStepDoneSpy).toHaveBeenCalledWith(
-      expect.stringContaining('1.yml'),
+      expect.stringContaining('1.plan.md'),
       {
         commit: undefined,
       },
       undefined,
       tempDir,
-      expect.any(Object)
+      expect.objectContaining({
+        paths: {
+          tasks: expect.any(String),
+        },
+      })
     );
   });
 
@@ -103,7 +110,7 @@ describe('handleDoneCommand', () => {
       ],
     };
 
-    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
+    await fs.writeFile(path.join(tasksDir, '1.plan.md'), stringifyPlanWithFrontmatter(plan));
 
     const options = {
       commit: true,
@@ -118,13 +125,17 @@ describe('handleDoneCommand', () => {
     await handleDoneCommand('1', options, command);
 
     expect(markStepDoneSpy).toHaveBeenCalledWith(
-      expect.stringContaining('1.yml'),
+      expect.stringContaining('1.plan.md'),
       {
         commit: true,
       },
       undefined,
       tempDir,
-      expect.any(Object)
+      expect.objectContaining({
+        paths: {
+          tasks: expect.any(String),
+        },
+      })
     );
   });
 
@@ -144,7 +155,7 @@ describe('handleDoneCommand', () => {
       ],
     };
 
-    await fs.writeFile(path.join(tasksDir, '1.yml'), yaml.stringify(plan));
+    await fs.writeFile(path.join(tasksDir, '1.plan.md'), stringifyPlanWithFrontmatter(plan));
 
     const options = {};
 
@@ -157,13 +168,17 @@ describe('handleDoneCommand', () => {
     await handleDoneCommand('1', options, command);
 
     expect(markStepDoneSpy).toHaveBeenCalledWith(
-      expect.stringContaining('1.yml'),
+      expect.stringContaining('1.plan.md'),
       {
         commit: undefined,
       },
       undefined,
       tempDir,
-      expect.any(Object)
+      expect.objectContaining({
+        paths: {
+          tasks: expect.any(String),
+        },
+      })
     );
   });
 });

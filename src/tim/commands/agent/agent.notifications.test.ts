@@ -22,7 +22,7 @@ const spawnAndLogOutputSpy = mock(async () => ({
   killedByInactivity: false,
 }));
 
-const executeStubPlanSpy = mock(async () => {});
+const executeStubPlanSpy = mock(async () => ({}));
 const executeBatchModeSpy = mock(async () => undefined);
 const buildExecutorAndLogSpy = mock(() => ({ execute: mock(async () => {}), filePathPrefix: '' }));
 const findNextPlanSpy = mock(async () => undefined);

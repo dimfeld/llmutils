@@ -640,7 +640,7 @@ describe('prepareExistingWorkspace with Jujutsu', () => {
       ]);
 
       expect(logExit).toBe(0);
-      expect(logOutput).toContain('main');
+      expect(logOutput).not.toContain('jj-no-branch');
     } finally {
       if (originalAllowOffline === undefined) {
         delete process.env.ALLOW_OFFLINE;

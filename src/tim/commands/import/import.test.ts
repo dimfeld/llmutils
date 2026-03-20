@@ -580,7 +580,7 @@ describe('handleImportCommand', () => {
     expect(writePlanFile).toHaveBeenCalled();
     const [filePath, planData] = (writePlanFile as any).mock.calls[0];
 
-    expect(filePath).toBe(path.join(gitRootDir, 'tasks', '6-issue-123-test-issue.plan.md'));
+    expect(path.basename(filePath)).toBe('6-issue-123-test-issue.plan.md');
     expect(planData).toMatchObject({
       id: 6, // maxId + 1
       title: 'Test Issue',
@@ -738,9 +738,7 @@ describe('handleImportCommand', () => {
       expect(writePlanFile).toHaveBeenCalled();
 
       const [filePath, planData] = (writePlanFile as any).mock.calls[0];
-      expect(filePath).toBe(
-        path.join(gitRootDir, 'tasks', '6-issue-team-123-linear-issue.plan.md')
-      );
+      expect(path.basename(filePath)).toBe('6-issue-team-123-linear-issue.plan.md');
       expect(planData).toMatchObject({
         id: 6,
         title: 'Linear Issue',

@@ -3,15 +3,21 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
-import { handleCleanupTempCommand } from './cleanup-temp.js';
-import { stringifyPlanWithFrontmatter } from '../../testing.js';
+import { ModuleMocker, stringifyPlanWithFrontmatter } from '../../testing.js';
+import { clearConfigCache } from '../configLoader.js';
+import { clearPlanCache } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 
 describe('tim cleanup-temp command', () => {
   let tempDir: string;
   let tasksDir: string;
+  let moduleMocker: ModuleMocker;
 
   beforeEach(async () => {
+    clearConfigCache();
+    clearPlanCache();
+    moduleMocker = new ModuleMocker(import.meta);
+
     // Create temporary directory structure
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-cleanup-temp-test-'));
     tasksDir = path.join(tempDir, 'tasks');
@@ -31,11 +37,31 @@ describe('tim cleanup-temp command', () => {
   });
 
   afterEach(async () => {
+    clearConfigCache();
+    clearPlanCache();
+    moduleMocker.clear();
+
     // Clean up temporary directory
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
+  async function loadCommand() {
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({ paths: { tasks: tasksDir } }),
+    }));
+    await moduleMocker.mock('../path_resolver.js', () => ({
+      resolvePlanPathContext: async () => ({ tasksDir }),
+    }));
+    await moduleMocker.mock('../db/plan_sync.js', () => ({
+      removePlanFromDb: async () => {},
+    }));
+
+    return import('./cleanup-temp.js');
+  }
+
   test('deletes only plans with temp: true', async () => {
+    const { handleCleanupTempCommand } = await loadCommand();
+
     // Create a temporary plan
     await fs.writeFile(
       path.join(tasksDir, '1-temp-plan.plan.md'),
@@ -114,6 +140,8 @@ describe('tim cleanup-temp command', () => {
   });
 
   test('deletes multiple temporary plans', async () => {
+    const { handleCleanupTempCommand } = await loadCommand();
+
     // Create multiple temporary plans
     for (let i = 1; i <= 3; i++) {
       await fs.writeFile(
@@ -151,6 +179,8 @@ describe('tim cleanup-temp command', () => {
   });
 
   test('handles empty directory gracefully', async () => {
+    const { handleCleanupTempCommand } = await loadCommand();
+
     const command = {
       parent: {
         opts: () => ({ config: path.join(tempDir, '.rmfilter', 'tim.yml') }),
@@ -162,6 +192,8 @@ describe('tim cleanup-temp command', () => {
   });
 
   test('handles directory with no temp plans', async () => {
+    const { handleCleanupTempCommand } = await loadCommand();
+
     // Create only permanent plans
     await fs.writeFile(
       path.join(tasksDir, '1-permanent-plan.plan.md'),

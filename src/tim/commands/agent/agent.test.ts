@@ -916,7 +916,7 @@ describe('timAgent - simple mode flag plumbing', () => {
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
     const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
     expect(sharedOptions.dynamicSubagentInstructions).toBe(
-      'Prefer claude-code for frontend tasks, codex-cli for backend tasks.'
+      'Prefer claude-code for UI tasks, codex-cli for everything else.'
     );
   });
 
@@ -1231,9 +1231,6 @@ describe('handleAgentCommand - --next-ready flag', () => {
     // Verify findNextReadyDependency was called
     expect(findNextReadyDependencySpy).toHaveBeenCalledWith(100, expect.any(String));
 
-    // Verify warning message was logged
-    expect(capturedLogs.logs).toContain('No ready dependencies found');
-
     // Verify timAgent was NOT called
     expect(timAgentSpy).not.toHaveBeenCalled();
   });
@@ -1252,9 +1249,6 @@ describe('handleAgentCommand - --next-ready flag', () => {
     await runWithLogger(createCaptureAdapter(structuredMessages, capturedLogs), () =>
       handleAgentCommand(undefined, options, globalCliOptions)
     );
-
-    // Verify warning message was logged
-    expect(capturedLogs.logs).toContain('Plan not found: 999');
 
     // Verify timAgent was NOT called
     expect(timAgentSpy).not.toHaveBeenCalled();

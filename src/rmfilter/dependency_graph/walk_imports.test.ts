@@ -14,7 +14,7 @@ describe('getDefiningFiles', () => {
     const walker = new ImportWalker(new Extractor(), await Resolver.new(rootDir));
 
     const imports = await walker.getDefiningFiles(
-      path.join(rootDir, 'src/dependency_graph/walk_imports.ts')
+      path.join(rootDir, 'src/rmfilter/dependency_graph/walk_imports.ts')
     );
     const relativeImports = imports
       .values()

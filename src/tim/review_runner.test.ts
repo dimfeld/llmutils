@@ -56,7 +56,7 @@ describe('review_runner', () => {
     });
     expect(buildPrompt).toHaveBeenCalledWith({
       executorName: 'codex-cli',
-      includeDiff: true,
+      includeDiff: false,
       useSubagents: false,
     });
   });

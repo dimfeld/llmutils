@@ -887,6 +887,7 @@ describe('CodexCliExecutor - planning mode routing', () => {
     expect(executeBareModeMock).toHaveBeenCalledTimes(1);
     expect(executeBareModeMock.mock.calls[0]?.[5]).toEqual({
       appServerMode: 'chat-session',
+      reasoningLevel: 'high',
       terminalInput: true,
     });
   });

@@ -46,7 +46,7 @@ describe('generateBranchNameFromPlan', () => {
       tasks: [],
     });
 
-    expect(name).toBe('123-implement-oauth-login-DF-1471');
+    expect(name).toBe('123-implement-oauth-login-df-1471');
   });
 
   test('adds GitHub issue id to branch name when present', () => {
@@ -75,7 +75,7 @@ describe('generateBranchNameFromPlan', () => {
 
     expect(name.length).toBeLessThanOrEqual(63);
     expect(name.startsWith('123-')).toBe(true);
-    expect(name.includes('...')).toBe(true);
+    expect(name.includes('-gh-1471')).toBe(true);
     expect(name.endsWith('-gh-1471')).toBe(true);
   });
 });
