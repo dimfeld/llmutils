@@ -104,7 +104,7 @@ export async function executeStubPlan({
     try {
       const reviewResult = await handleReviewCommand(
         planFilePath,
-        {},
+        { cwd: baseDir },
         {
           parent: { opts: () => ({ config: configPath }) },
         }

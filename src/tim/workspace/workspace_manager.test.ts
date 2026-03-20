@@ -15,7 +15,7 @@ const mockSpawnAndLogOutput = mock(async () => ({ exitCode: 0, stdout: '', stder
 const mockExecutePostApplyCommand = mock(async () => true);
 
 // Import the module under test after all mocks are set up
-import { createWorkspace } from './workspace_manager.js';
+import { createWorkspace, ensurePrimaryWorkspaceBranch } from './workspace_manager.js';
 import type { TimConfig, TimConfigInput } from '../configSchema.js';
 
 describe('createWorkspace', () => {
@@ -2010,5 +2010,50 @@ describe('createWorkspace', () => {
     const workspaceInfo = getWorkspaceInfoByPath(targetClonePath);
     expect(workspaceInfo).not.toBeNull();
     expect(workspaceInfo!.description).toBe('#456 Implement New Feature');
+  });
+
+  test('ensurePrimaryWorkspaceBranch adds a fallback jj description before pushing when missing', async () => {
+    const planPath = path.join(mainRepoRoot, 'tasks', 'task-123.plan.md');
+    await fs.mkdir(path.dirname(planPath), { recursive: true });
+    await fs.writeFile(planPath, '---\nid: 123\ntitle: Wire bookmark push\ntasks: []\n---\n');
+    await fs.mkdir(path.join(mainRepoRoot, '.jj'), { recursive: true });
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[]) => {
+      if (cmd[0] === 'jj' && cmd[1] === 'log') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      if (cmd[0] === 'jj' && cmd[1] === 'describe') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      if (cmd[0] === 'jj' && cmd[1] === 'bookmark' && cmd[2] === 'set') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      if (cmd[0] === 'jj' && cmd[1] === 'git' && cmd[2] === 'push') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      return { exitCode: 0, stdout: 'abc123', stderr: '' };
+    });
+
+    const result = await ensurePrimaryWorkspaceBranch(mainRepoRoot, 'task-123-wire-bookmark-push', {
+      planFilePath: planPath,
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['jj', 'log', '-r', '@', '-T', 'description'],
+      { cwd: mainRepoRoot, quiet: true },
+    ]);
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['jj', 'describe', '-r', '@', '-m', 'start plan 123: Wire bookmark push'],
+      { cwd: mainRepoRoot },
+    ]);
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['jj', 'bookmark', 'set', 'task-123-wire-bookmark-push', '--revision', '@'],
+      { cwd: mainRepoRoot },
+    ]);
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['jj', 'git', 'push', '--bookmark', 'task-123-wire-bookmark-push'],
+      { cwd: mainRepoRoot },
+    ]);
   });
 });

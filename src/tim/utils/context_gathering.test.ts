@@ -96,6 +96,18 @@ describe('gatherPlanContext', () => {
     expect(result.diffResult.changedFiles).toEqual(['src/test.ts', 'src/another.ts']);
   });
 
+  test('should resolve git root from the provided cwd', async () => {
+    let receivedCwd: string | undefined;
+    mockDeps.getGitRoot = async (cwd?: string) => {
+      receivedCwd = cwd;
+      return gitRoot;
+    };
+
+    await gatherPlanContext(planFile, { cwd: '/tmp/switched-workspace' }, {}, mockDeps);
+
+    expect(receivedCwd).toBe('/tmp/switched-workspace');
+  });
+
   test('should handle parent chain loading', async () => {
     const parentPlan: PlanWithFilename = {
       id: 100,

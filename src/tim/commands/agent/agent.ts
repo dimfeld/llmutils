@@ -807,7 +807,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                 try {
                   const reviewResult = await handleReviewCommand(
                     currentPlanFile,
-                    {},
+                    { cwd: currentBaseDir },
                     {
                       parent: { opts: () => ({ config: globalCliOptions.config }) },
                     }

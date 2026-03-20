@@ -9,6 +9,10 @@ describe('runPostExecutionWorkspaceSync', () => {
   const setWorkspaceBookmarkToCurrent = mock(async () => {});
   const pushWorkspaceRefToRemote = mock(async () => {});
   const pushWorkspaceRefBetweenWorkspaces = mock(async () => {});
+  const pullWorkspaceRefIfExists = mock(async () => true);
+  const getRepositoryIdentity = mock(async () => ({ repositoryId: 'repo' }));
+  const findPrimaryWorkspaceForRepository = mock(() => null);
+  const getWorkspaceInfoByPath = mock(() => null);
 
   beforeEach(async () => {
     moduleMocker = new ModuleMocker(import.meta);
@@ -18,6 +22,10 @@ describe('runPostExecutionWorkspaceSync', () => {
     setWorkspaceBookmarkToCurrent.mockClear();
     pushWorkspaceRefToRemote.mockClear();
     pushWorkspaceRefBetweenWorkspaces.mockClear();
+    pullWorkspaceRefIfExists.mockClear();
+    getRepositoryIdentity.mockClear();
+    findPrimaryWorkspaceForRepository.mockClear();
+    getWorkspaceInfoByPath.mockClear();
 
     await moduleMocker.mock('../../common/process.js', () => ({
       commitAll,
@@ -30,19 +38,19 @@ describe('runPostExecutionWorkspaceSync', () => {
 
     await moduleMocker.mock('../commands/workspace.js', () => ({
       ensureWorkspaceRefExists: mock(async () => {}),
-      pullWorkspaceRefIfExists: mock(async () => true),
+      pullWorkspaceRefIfExists,
       pushWorkspaceRefBetweenWorkspaces,
       pushWorkspaceRefToRemote,
       setWorkspaceBookmarkToCurrent,
     }));
 
     await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: mock(async () => ({ repositoryId: 'repo' })),
+      getRepositoryIdentity,
     }));
 
     await moduleMocker.mock('./workspace_info.js', () => ({
-      getWorkspaceInfoByPath: mock(() => null),
-      findPrimaryWorkspaceForRepository: mock(() => null),
+      getWorkspaceInfoByPath,
+      findPrimaryWorkspaceForRepository,
     }));
   });
 
@@ -50,12 +58,13 @@ describe('runPostExecutionWorkspaceSync', () => {
     moduleMocker.clear();
   });
 
-  test('pushes to origin without overriding the bookmark after setting it to @-', async () => {
+  test('pushes to origin and refreshes the primary workspace when available', async () => {
     const { runPostExecutionWorkspaceSync } = await import('./workspace_roundtrip.js');
 
     await runPostExecutionWorkspaceSync(
       {
         executionWorkspacePath: '/tmp/workspace',
+        primaryWorkspacePath: '/tmp/primary',
         refName: 'task-123',
         syncTarget: 'origin',
       },
@@ -69,6 +78,7 @@ describe('runPostExecutionWorkspaceSync', () => {
       remoteName: 'origin',
       ensureJjBookmarkAtCurrent: false,
     });
+    expect(pullWorkspaceRefIfExists).toHaveBeenCalledWith('/tmp/primary', 'task-123', 'origin');
   });
 
   test('pushes to the primary workspace without overriding the bookmark after setting it to @-', async () => {
@@ -90,6 +100,94 @@ describe('runPostExecutionWorkspaceSync', () => {
       destinationWorkspacePath: '/tmp/primary',
       refName: 'task-123',
       ensureJjBookmarkAtCurrent: false,
+    });
+    expect(pullWorkspaceRefIfExists).not.toHaveBeenCalled();
+  });
+
+  test('does not try to refresh origin when there is no primary workspace', async () => {
+    const { runPostExecutionWorkspaceSync } = await import('./workspace_roundtrip.js');
+
+    await runPostExecutionWorkspaceSync(
+      {
+        executionWorkspacePath: '/tmp/workspace',
+        refName: 'task-123',
+        syncTarget: 'origin',
+      },
+      'sync workspace'
+    );
+
+    expect(pullWorkspaceRefIfExists).not.toHaveBeenCalled();
+  });
+});
+
+describe('prepareWorkspaceRoundTrip', () => {
+  let moduleMocker: ModuleMocker;
+  const getCurrentBranchName = mock(async () => 'task-123');
+  const getRepositoryIdentity = mock(async () => ({ repositoryId: 'repo' }));
+  const findPrimaryWorkspaceForRepository = mock(() => null);
+  const getWorkspaceInfoByPath = mock(() => null);
+
+  beforeEach(async () => {
+    moduleMocker = new ModuleMocker(import.meta);
+    getCurrentBranchName.mockClear();
+    getRepositoryIdentity.mockClear();
+    findPrimaryWorkspaceForRepository.mockClear();
+    getWorkspaceInfoByPath.mockClear();
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getCurrentBranchName,
+      getUsingJj: mock(async () => true),
+    }));
+
+    await moduleMocker.mock('../../common/process.js', () => ({
+      commitAll: mock(async () => 1),
+    }));
+
+    await moduleMocker.mock('../commands/workspace.js', () => ({
+      ensureWorkspaceRefExists: mock(async () => {}),
+      pullWorkspaceRefIfExists: mock(async () => true),
+      pushWorkspaceRefBetweenWorkspaces: mock(async () => {}),
+      pushWorkspaceRefToRemote: mock(async () => {}),
+      setWorkspaceBookmarkToCurrent: mock(async () => {}),
+    }));
+
+    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
+      getRepositoryIdentity,
+    }));
+
+    await moduleMocker.mock('./workspace_info.js', () => ({
+      getWorkspaceInfoByPath,
+      findPrimaryWorkspaceForRepository,
+    }));
+  });
+
+  afterEach(() => {
+    moduleMocker.clear();
+  });
+
+  test('includes the primary workspace in origin sync context when available', async () => {
+    getWorkspaceInfoByPath.mockReturnValue({
+      isPrimary: false,
+      repositoryId: 'repo',
+      branch: 'task-123',
+    });
+    findPrimaryWorkspaceForRepository.mockReturnValue({
+      workspacePath: '/tmp/primary',
+    });
+
+    const { prepareWorkspaceRoundTrip } = await import('./workspace_roundtrip.js');
+
+    await expect(
+      prepareWorkspaceRoundTrip({
+        workspacePath: '/tmp/workspace',
+        workspaceSyncEnabled: true,
+        syncTarget: 'origin',
+      })
+    ).resolves.toEqual({
+      executionWorkspacePath: '/tmp/workspace',
+      primaryWorkspacePath: '/tmp/primary',
+      refName: 'task-123',
+      syncTarget: 'origin',
     });
   });
 });

@@ -14,6 +14,7 @@ import { getOrCreateProject } from '../db/project.js';
 import { recordWorkspace, setWorkspaceIssues } from '../db/workspace.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { buildDescriptionFromPlan } from '../display_utils.js';
+import { readPlanFile } from '../plans.js';
 import { findPrimaryWorkspaceForRepository } from './workspace_info.js';
 import type { PlanSchema } from '../planSchema.js';
 
@@ -608,6 +609,12 @@ export async function ensurePrimaryWorkspaceBranch(
     if (isPrimaryJj) {
       const targetRevision =
         options?.fromBranch ?? (await getJjBookmarkRevisionForWorkingCopy(mainRepoRoot));
+      await ensureJjRevisionHasDescription(
+        mainRepoRoot,
+        targetRevision,
+        options?.planFilePath,
+        branchName
+      );
       createResult = await spawnAndLogOutput(
         ['jj', 'bookmark', 'set', branchName, '--revision', targetRevision],
         {
@@ -668,6 +675,61 @@ export async function ensurePrimaryWorkspaceBranch(
       success: false,
       error: String(error),
     };
+  }
+}
+
+async function ensureJjRevisionHasDescription(
+  repoRoot: string,
+  revision: string,
+  planFilePath: string | undefined,
+  branchName: string
+): Promise<void> {
+  const descriptionResult = await spawnAndLogOutput(
+    ['jj', 'log', '-r', revision, '-T', 'description'],
+    {
+      cwd: repoRoot,
+      quiet: true,
+    }
+  );
+  if (descriptionResult.exitCode !== 0) {
+    throw new Error(`Failed to read jj description for ${revision}: ${descriptionResult.stderr}`);
+  }
+
+  if (descriptionResult.stdout.trim().length > 0) {
+    return;
+  }
+
+  const fallbackDescription = await buildJjStartDescription(planFilePath, branchName);
+  const describeResult = await spawnAndLogOutput(
+    ['jj', 'describe', '-r', revision, '-m', fallbackDescription],
+    {
+      cwd: repoRoot,
+    }
+  );
+  if (describeResult.exitCode !== 0) {
+    throw new Error(
+      `Failed to set jj description for ${revision}: ${describeResult.stderr || describeResult.stdout}`
+    );
+  }
+}
+
+async function buildJjStartDescription(
+  planFilePath: string | undefined,
+  branchName: string
+): Promise<string> {
+  if (!planFilePath) {
+    return `start ${branchName}`;
+  }
+
+  try {
+    const plan = await readPlanFile(planFilePath);
+    const title = plan.title || plan.goal || branchName;
+    if (plan.id !== undefined && plan.id !== null && String(plan.id).trim().length > 0) {
+      return `start plan ${plan.id}: ${title}`;
+    }
+    return `start ${title}`;
+  } catch {
+    return `start ${branchName}`;
   }
 }
 
@@ -1292,7 +1354,6 @@ export async function prepareExistingWorkspace(
 
   if (!shouldCreateBranch) {
     if (options.logSkippedBranchCreation !== false) {
-      console.trace('Skipping branch creation (createBranch=false)');
       log('Skipping branch creation (createBranch=false)');
     }
     return {

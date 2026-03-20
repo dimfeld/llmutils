@@ -1482,6 +1482,28 @@ export async function pushWorkspaceRefBetweenWorkspaces(options: {
   );
 }
 
+export async function fetchWorkspaceRefFromWorkspace(options: {
+  sourceWorkspacePath: string;
+  destinationWorkspacePath: string;
+  refName: string;
+  remoteName?: string;
+}): Promise<boolean> {
+  const remoteName = options.remoteName ?? PRIMARY_REMOTE_NAME;
+  const isJj = await getUsingJj(options.destinationWorkspacePath);
+
+  if (isJj) {
+    await ensureJjRemote(options.destinationWorkspacePath, options.sourceWorkspacePath, remoteName);
+    return pullWorkspaceRefIfExists(options.destinationWorkspacePath, options.refName, remoteName);
+  }
+
+  await pushGitBranchToWorkspace(
+    options.sourceWorkspacePath,
+    options.destinationWorkspacePath,
+    options.refName
+  );
+  return true;
+}
+
 export async function pushWorkspaceRefToRemote(options: {
   workspacePath: string;
   refName: string;

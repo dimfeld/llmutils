@@ -838,7 +838,7 @@ export async function handleReviewCommand(
       reviewLog(chalk.green(`Reviewing plan: ${planData.id} - ${planData.title}`));
 
       // Get git root for the rest of the function (needed for file operations)
-      const gitRoot = await getGitRoot();
+      const gitRoot = await getGitRoot(options.cwd);
       notifyCwd = gitRoot;
 
       // Load custom instructions

@@ -89,6 +89,11 @@ describe('executeStubPlan', () => {
 
     expect(result).toEqual({ tasksAppended: 2 });
     expect(handleReviewCommandSpy).toHaveBeenCalledTimes(1);
+    expect(handleReviewCommandSpy).toHaveBeenCalledWith(
+      planFile,
+      { cwd: tempDir },
+      expect.any(Object)
+    );
     expect(updatedPlan.status).toBe('in_progress');
     expect(executorExecuteSpy).toHaveBeenCalledTimes(1);
     expect(checkAndMarkParentDoneSpy).not.toHaveBeenCalled();

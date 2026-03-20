@@ -384,7 +384,7 @@ Available tasks:\n\n${taskDescriptions}`,
           try {
             const reviewResult = await handleReviewCommand(
               currentPlanFile,
-              {},
+              { cwd: baseDir },
               {
                 parent: { opts: () => ({ config: configPath }) },
               }

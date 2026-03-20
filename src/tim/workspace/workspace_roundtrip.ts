@@ -41,29 +41,31 @@ export async function prepareWorkspaceRoundTrip(options: {
     );
   }
 
+  const repositoryId =
+    workspaceInfo.repositoryId ??
+    (await getRepositoryIdentity({ cwd: options.workspacePath })).repositoryId;
+  const primaryWorkspace = findPrimaryWorkspaceForRepository(repositoryId);
+  const primaryWorkspacePath =
+    primaryWorkspace && primaryWorkspace.workspacePath !== options.workspacePath
+      ? primaryWorkspace.workspacePath
+      : undefined;
+
   if (syncTarget === 'origin') {
     return {
       executionWorkspacePath: options.workspacePath,
+      primaryWorkspacePath,
       refName,
       syncTarget,
     };
   }
 
-  const repositoryId =
-    workspaceInfo.repositoryId ??
-    (await getRepositoryIdentity({ cwd: options.workspacePath })).repositoryId;
-  const primaryWorkspace = findPrimaryWorkspaceForRepository(repositoryId);
-  if (!primaryWorkspace) {
-    return null;
-  }
-
-  if (primaryWorkspace.workspacePath === options.workspacePath) {
+  if (!primaryWorkspacePath) {
     return null;
   }
 
   return {
     executionWorkspacePath: options.workspacePath,
-    primaryWorkspacePath: primaryWorkspace.workspacePath,
+    primaryWorkspacePath,
     refName,
     syncTarget,
   };
@@ -106,6 +108,10 @@ export async function runPostExecutionWorkspaceSync(
       remoteName: 'origin',
       ensureJjBookmarkAtCurrent: false,
     });
+
+    if (context.primaryWorkspacePath) {
+      await pullWorkspaceRefIfExists(context.primaryWorkspacePath, context.refName, 'origin');
+    }
     return;
   }
 

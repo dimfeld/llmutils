@@ -86,6 +86,7 @@ export async function gatherPlanContext(
     sinceLastReview?: boolean;
     since?: string;
     base?: string;
+    cwd?: string;
   },
   globalOpts: {
     config?: string;
@@ -106,7 +107,7 @@ export async function gatherPlanContext(
   log(chalk.green(`Loading plan context: ${planData.id} - ${planData.title}`));
 
   // Load all plans for hierarchy traversal
-  const gitRoot = await deps.getGitRoot();
+  const gitRoot = await deps.getGitRoot(options.cwd);
   const config = await loadEffectiveConfig(globalOpts.config);
   const plansDir = await resolveTasksDir(config);
 
