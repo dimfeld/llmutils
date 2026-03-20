@@ -6,6 +6,7 @@
 
   let content = $state('');
   let sending = $state(false);
+  let textareaEl: HTMLTextAreaElement;
 
   async function send() {
     if (!content.trim() || sending) return;
@@ -15,6 +16,7 @@
       if (ok) content = '';
     } finally {
       sending = false;
+      textareaEl?.focus();
     }
   }
 
@@ -33,6 +35,7 @@
       rows="1"
       placeholder="Send input to session..."
       style="field-sizing: content;"
+      bind:this={textareaEl}
       bind:value={content}
       disabled={sending}
       onkeydown={handleKeydown}
