@@ -399,6 +399,7 @@ describe('lib/server/session_manager', () => {
       category: 'progress',
       bodyType: 'text',
       rawType: 'token_usage',
+      triggersNotification: false,
       body: {
         type: 'text',
         text: 'tokens=100 | input=40 | output=60',
@@ -434,6 +435,38 @@ describe('lib/server/session_manager', () => {
       },
     });
     expect(debug).toBeNull();
+  });
+
+  test('formatTunnelMessage marks non-tunnel agent_session_end messages as notification-worthy', () => {
+    const direct = formatTunnelMessage('conn-1', 1, {
+      type: 'structured',
+      message: {
+        type: 'agent_session_end',
+        timestamp: '2026-03-17T10:00:59.000Z',
+        success: true,
+        turns: 1,
+      },
+    });
+
+    const tunneled = formatTunnelMessage('conn-1', 2, {
+      type: 'structured',
+      message: {
+        type: 'agent_session_end',
+        timestamp: '2026-03-17T10:01:00.000Z',
+        success: true,
+        turns: 1,
+        transportSource: 'tunnel',
+      },
+    });
+
+    expect(direct).toMatchObject({
+      rawType: 'agent_session_end',
+      triggersNotification: true,
+    });
+    expect(tunneled).toMatchObject({
+      rawType: 'agent_session_end',
+      triggersNotification: false,
+    });
   });
 
   test('formatTunnelMessage falls back for unknown structured message types', () => {

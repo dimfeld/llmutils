@@ -78,6 +78,7 @@ export interface DisplayMessage {
   bodyType: MessageBodyType;
   body: DisplayMessageBody;
   rawType: StructuredMessage['type'] | TunnelMessage['type'] | string;
+  triggersNotification?: boolean;
 }
 
 export interface ActivePrompt {
@@ -714,6 +715,9 @@ export function formatTunnelMessage(
         bodyType: formatted.body.type,
         body: formatted.body,
         rawType: message.message.type,
+        triggersNotification:
+          message.message.type === 'agent_session_end' &&
+          message.message.transportSource !== 'tunnel',
       };
     }
     case 'stdout':
@@ -900,6 +904,7 @@ export class SessionManager {
           text: payload.message,
         },
         rawType: 'log',
+        triggersNotification: true,
       };
 
       websocketSession.messages.push(displayMessage);
@@ -964,6 +969,7 @@ export class SessionManager {
         text: payload.message,
       },
       rawType: 'log',
+      triggersNotification: true,
     };
     session.messages.push(displayMessage);
     this.trimSessionMessages(session, MAX_NOTIFICATION_MESSAGES);

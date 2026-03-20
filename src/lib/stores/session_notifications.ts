@@ -15,9 +15,6 @@ import {
 } from '$lib/utils/browser_notifications.js';
 import type { SessionManager } from './session_state.svelte.js';
 
-/** Sequence number used by the server for HTTP notification messages. */
-const NOTIFICATION_SEQ = 0;
-
 function notificationTag(connectionId: string): string {
   return `session:${connectionId}`;
 }
@@ -69,7 +66,7 @@ export function initSessionNotifications(
         // Record all existing message IDs so we don't re-notify on reconnect
         for (const session of event.sessions) {
           for (const msg of session.messages) {
-            if (msg.seq === NOTIFICATION_SEQ) {
+            if (msg.triggersNotification) {
               seenMessageIds.add(msg.id);
             }
           }
@@ -108,9 +105,7 @@ export function initSessionNotifications(
       case 'session:message': {
         if (document.hasFocus() || !sessionManager.initialized) break;
         const event = parsed as SessionMessageEvent;
-        // Notification-origin messages use seq === 0 (NOTIFICATION_SEQ) on both
-        // dedicated notification sessions and active sessions that receive merged notifications.
-        if (event.message.seq !== NOTIFICATION_SEQ) break;
+        if (!event.message.triggersNotification) break;
         // Skip already-seen messages (e.g. from reconciliation/replay)
         if (seenMessageIds.has(event.message.id)) break;
         seenMessageIds.add(event.message.id);

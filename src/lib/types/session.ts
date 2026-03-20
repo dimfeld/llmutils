@@ -80,6 +80,7 @@ export interface DisplayMessage {
   bodyType: MessageBodyType;
   body: DisplayMessageBody;
   rawType: string;
+  triggersNotification?: boolean;
 }
 
 export type PromptType = 'input' | 'confirm' | 'select' | 'checkbox' | 'prefix_select';

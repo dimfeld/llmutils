@@ -129,6 +129,7 @@ function createMessage(overrides: Partial<DisplayMessage> = {}): DisplayMessage 
       text: 'Notification text',
     },
     rawType: overrides.rawType ?? 'test',
+    triggersNotification: overrides.triggersNotification,
   };
 }
 
@@ -301,6 +302,7 @@ describe('session_notifications', () => {
       connectionId: 'notif/1',
       message: createMessage({
         seq: 0,
+        triggersNotification: true,
         body: {
           type: 'text',
           text: 'Deployment finished',
@@ -348,6 +350,7 @@ describe('session_notifications', () => {
       connectionId: 'active/1',
       message: createMessage({
         seq: 0,
+        triggersNotification: true,
         body: {
           type: 'text',
           text: 'Build completed',
@@ -403,6 +406,7 @@ describe('session_notifications', () => {
       connectionId: 'notif-1',
       message: createMessage({
         seq: 0,
+        triggersNotification: true,
       }),
     });
 
@@ -430,6 +434,7 @@ describe('session_notifications', () => {
       connectionId: 'notif-1',
       message: createMessage({
         seq: 0,
+        triggersNotification: true,
         bodyType: 'monospaced',
         body: {
           type: 'monospaced',
@@ -443,7 +448,7 @@ describe('session_notifications', () => {
     cleanup();
   });
 
-  test('does not show a notification for regular session messages when seq is not 0', () => {
+  test('does not show a notification when the server does not mark the message as notification-worthy', () => {
     const manager = new SessionManager();
     manager.initialized = true;
     manager.sessions.set(
@@ -462,6 +467,7 @@ describe('session_notifications', () => {
       connectionId: 'notif-1',
       message: createMessage({
         seq: 1,
+        triggersNotification: false,
         body: {
           type: 'text',
           text: 'Regular log line',
@@ -470,6 +476,45 @@ describe('session_notifications', () => {
     });
 
     expect(MockNotification.instances).toHaveLength(0);
+
+    cleanup();
+  });
+
+  test('shows a server-flagged turn done notification for agent session end messages', () => {
+    const manager = new SessionManager();
+    manager.initialized = true;
+    manager.sessions.set(
+      'active-1',
+      createSession({
+        connectionId: 'active-1',
+        projectId: 12,
+        status: 'active',
+      })
+    );
+    const { hasFocus } = installDomMocks();
+    hasFocus.mockReturnValue(false);
+
+    const cleanup = initSessionNotifications(manager, vi.fn());
+
+    emitEvent(manager, 'session:message', {
+      connectionId: 'active-1',
+      message: createMessage({
+        seq: 42,
+        rawType: 'agent_session_end',
+        triggersNotification: true,
+        body: {
+          type: 'text',
+          text: 'Agent session completed | turns=1',
+        },
+      }),
+    });
+
+    expect(MockNotification.instances).toHaveLength(1);
+    expect(MockNotification.instances[0]).toMatchObject({
+      title: 'Notification',
+      body: 'Agent session completed | turns=1',
+      tag: 'session:active-1',
+    });
 
     cleanup();
   });
@@ -491,6 +536,7 @@ describe('session_notifications', () => {
     const message = createMessage({
       id: 'repeat-msg',
       seq: 0,
+      triggersNotification: true,
       body: {
         type: 'text',
         text: 'Only once',
@@ -522,6 +568,7 @@ describe('session_notifications', () => {
     const seededMessage = createMessage({
       id: 'seeded-msg',
       seq: 0,
+      triggersNotification: true,
       body: {
         type: 'text',
         text: 'Already seen',
@@ -667,6 +714,7 @@ describe('session_notifications', () => {
       connectionId: 'conn-1',
       message: createMessage({
         seq: 0,
+        triggersNotification: true,
       }),
     });
 
@@ -698,6 +746,7 @@ describe('session_notifications', () => {
       connectionId: 'conn-1',
       message: createMessage({
         seq: 0,
+        triggersNotification: true,
       }),
     });
 
@@ -740,6 +789,7 @@ describe('session_notifications', () => {
       message: createMessage({
         id: 'cleanup-msg',
         seq: 0,
+        triggersNotification: true,
       }),
     });
 
