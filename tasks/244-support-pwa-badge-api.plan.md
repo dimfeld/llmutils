@@ -5,48 +5,77 @@ goal: ""
 id: 244
 uuid: 4d869df3-59e3-4a43-8172-0e7131e030b9
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 planGeneratedAt: 2026-03-20T21:04:46.615Z
 promptsGeneratedAt: 2026-03-20T21:04:46.615Z
 createdAt: 2026-03-20T20:31:31.513Z
-updatedAt: 2026-03-20T21:22:32.683Z
+updatedAt: 2026-03-20T21:31:27.506Z
 tasks:
   - title: Create PWA badge utility module
-    done: false
+    done: true
     description: Create `src/lib/utils/pwa_badge.ts` with `setAppBadge()` and
       `clearAppBadge()` functions. Each should feature-detect
       `navigator.setAppBadge`/`navigator.clearAppBadge`, call the API if
       available, and silently catch any rejected Promises. No-op when the API is
       unavailable.
   - title: Add needsAttention derived property to SessionManager
-    done: false
+    done: true
     description: Add a `needsAttention = $derived.by(...)` property to
       `SessionManager` in `src/lib/stores/session_state.svelte.ts`. It should
       iterate `this.sessions.values()` and return `true` if any session has
       `activePrompt !== null` OR `status === "notification"`. This is global
       across all projects.
   - title: Add badge effect in root layout
-    done: false
+    done: true
     description: In `src/routes/+layout.svelte`, add an `$effect` that watches
       `sessionManager.needsAttention` and calls `setAppBadge()` when true,
       `clearAppBadge()` when false. Import from the new utility module. Also
       call `clearAppBadge()` in the cleanup function returned from `onMount`.
   - title: Write tests for pwa_badge utility
-    done: false
+    done: true
     description: "Create `src/lib/utils/pwa_badge.test.ts`. Test: (1)
       `setAppBadge()` calls `navigator.setAppBadge()` when available, (2)
       `clearAppBadge()` calls `navigator.clearAppBadge()` when available, (3)
       both are no-ops when API is unavailable (no error thrown), (4) rejected
       Promises are caught silently."
   - title: Write tests for needsAttention derived state
-    done: false
+    done: true
     description: 'Add tests in `src/lib/stores/session_state.test.ts` for the
       `needsAttention` property. Test: (1) returns false with no sessions, (2)
       returns true when a session has activePrompt, (3) returns true when a
       session has status "notification", (4) returns false when sessions exist
       but none need attention, (5) transitions correctly when prompts are
       cleared or sessions dismissed.'
+changedFiles:
+  - CLAUDE.md
+  - docs/multi-workspace-workflow.md
+  - docs/web-interface.md
+  - src/common/git.test.ts
+  - src/common/git.ts
+  - src/lib/components/MessageInput.svelte
+  - src/lib/server/session_manager.test.ts
+  - src/lib/stores/session_state.svelte.ts
+  - src/lib/stores/session_state.test.ts
+  - src/lib/utils/pwa_badge.test.ts
+  - src/lib/utils/pwa_badge.ts
+  - src/logging/headless_adapter.test.ts
+  - src/logging/headless_adapter.ts
+  - src/routes/+layout.svelte
+  - src/tim/commands/agent/agent.ts
+  - src/tim/commands/generate.test.ts
+  - src/tim/commands/generate.ts
+  - src/tim/commands/workspace.bookmark.test.ts
+  - src/tim/commands/workspace.pull-plan.test.ts
+  - src/tim/commands/workspace.ts
+  - src/tim/headless.test.ts
+  - src/tim/headless.ts
+  - src/tim/workspace/workspace_manager.test.ts
+  - src/tim/workspace/workspace_manager.ts
+  - src/tim/workspace/workspace_roundtrip.test.ts
+  - src/tim/workspace/workspace_roundtrip.ts
+  - src/tim/workspace/workspace_setup.test.ts
+  - src/tim/workspace/workspace_setup.ts
 tags: []
 ---
 

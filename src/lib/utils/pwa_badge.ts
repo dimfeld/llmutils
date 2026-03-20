@@ -1,6 +1,6 @@
 type AppBadgeNavigator = Navigator & {
   clearAppBadge?: () => Promise<void>;
-  setAppBadge?: () => Promise<void>;
+  setAppBadge?: (contents?: number) => Promise<void>;
 };
 
 export function setAppBadge(): void {
