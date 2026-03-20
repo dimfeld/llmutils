@@ -519,5 +519,55 @@ describe('Git Utilities', () => {
         await fs.rm(tempDir, { recursive: true, force: true });
       }
     });
+
+    it('should parse a single jj bookmark name from multi-bookmark output', async () => {
+      const versionProc = Bun.spawn(['jj', '--version'], { stdout: 'pipe', stderr: 'pipe' });
+      if ((await versionProc.exited) !== 0) {
+        return;
+      }
+
+      const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jj-current-branch-'));
+      try {
+        const initProc = Bun.spawn(['jj', 'git', 'init'], {
+          cwd: repoDir,
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
+        await initProc.exited;
+
+        await Bun.spawn(['jj', 'config', 'set', '--repo', 'user.email', 'test@example.com'], {
+          cwd: repoDir,
+          stdout: 'pipe',
+          stderr: 'pipe',
+        }).exited;
+        await Bun.spawn(['jj', 'config', 'set', '--repo', 'user.name', 'Test User'], {
+          cwd: repoDir,
+          stdout: 'pipe',
+          stderr: 'pipe',
+        }).exited;
+
+        await fs.writeFile(path.join(repoDir, 'test.txt'), 'initial content');
+        await Bun.spawn(['jj', 'commit', '-m', 'Initial commit'], {
+          cwd: repoDir,
+          stdout: 'pipe',
+          stderr: 'pipe',
+        }).exited;
+        await Bun.spawn(['jj', 'bookmark', 'set', 'main'], {
+          cwd: repoDir,
+          stdout: 'pipe',
+          stderr: 'pipe',
+        }).exited;
+        await Bun.spawn(['jj', 'bookmark', 'set', 'feature/test-branch'], {
+          cwd: repoDir,
+          stdout: 'pipe',
+          stderr: 'pipe',
+        }).exited;
+
+        const currentBranch = await getCurrentJujutsuBranch(repoDir);
+        expect(currentBranch).toBe('feature/test-branch');
+      } finally {
+        await fs.rm(repoDir, { recursive: true, force: true });
+      }
+    });
   });
 });

@@ -339,7 +339,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
       });
     }
 
-    if (roundTripContext) {
+    if (roundTripContext && roundTripContext.syncTarget !== 'origin') {
       await runPreExecutionWorkspaceSync(roundTripContext);
     }
 
