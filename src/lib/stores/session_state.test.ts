@@ -151,7 +151,13 @@ describe('SessionManager.needsAttention', () => {
 
     expect(manager.needsAttention).toBe(true);
 
-    manager.sessions.delete('conn-2');
+    manager.sessions.set(
+      'conn-2',
+      createSession({
+        connectionId: 'conn-2',
+        status: 'active',
+      })
+    );
 
     expect(manager.needsAttention).toBe(false);
   });
