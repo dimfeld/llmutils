@@ -9,6 +9,7 @@
   import { setSessionManager } from '$lib/stores/session_state.svelte.js';
   import { initSessionNotifications } from '$lib/stores/session_notifications.js';
   import { requestNotificationPermission } from '$lib/utils/browser_notifications.js';
+  import { clearAppBadge, setAppBadge } from '$lib/utils/pwa_badge.js';
   import type { LayoutData } from './$types';
 
   let { data, children }: { data: LayoutData; children: Snippet } = $props();
@@ -24,6 +25,14 @@
 
   $effect(() => {
     sessionManager.setProjects(data.projects, data.currentUsername);
+  });
+
+  $effect(() => {
+    if (sessionManager.needsAttention) {
+      setAppBadge();
+    } else {
+      clearAppBadge();
+    }
   });
 
   onMount(() => {
@@ -50,6 +59,7 @@
     return () => {
       removeControllerChangeListener?.();
       cleanupNotifications();
+      clearAppBadge();
       sessionManager.disconnect();
     };
   });
