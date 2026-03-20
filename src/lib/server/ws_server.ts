@@ -9,6 +9,7 @@ import type { MessagePayload, SessionManager } from './session_manager.js';
 const DEFAULT_WS_PORT = 8123;
 const DEFAULT_AGENT_PATH = '/tim-agent';
 const NOTIFICATION_PATH = '/messages';
+const MAX_LOG_STRING_LENGTH = 200;
 
 interface WebSocketData {
   connectionId: string;
@@ -74,6 +75,32 @@ export function resolveHeadlessServerPort(config: Pick<TimConfig, 'headless'>): 
 }
 
 const VALID_HEADLESS_TYPES = new Set(['session_info', 'replay_start', 'replay_end', 'output']);
+
+function truncateLogString(value: string): string {
+  if (value.length <= MAX_LOG_STRING_LENGTH) {
+    return value;
+  }
+
+  return `${value.slice(0, MAX_LOG_STRING_LENGTH)}...(${value.length - MAX_LOG_STRING_LENGTH} more chars)`;
+}
+
+function sanitizeMessageForLog(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return truncateLogString(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeMessageForLog(item));
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nestedValue]) => [key, sanitizeMessageForLog(nestedValue)])
+    );
+  }
+
+  return value;
+}
 
 function parseHeadlessMessage(payload: string): HeadlessMessage | null {
   try {
@@ -149,6 +176,10 @@ export function startWebSocketServer(
         const payload =
           typeof rawMessage === 'string' ? rawMessage : new TextDecoder().decode(rawMessage);
         const message = parseHeadlessMessage(payload);
+        console.log('[ws_server] Received WebSocket message', {
+          connectionId: ws.data.connectionId,
+          message: sanitizeMessageForLog(message ?? { malformedPayload: payload }),
+        });
         if (!message) {
           console.warn('[ws_server] Ignoring malformed WebSocket message');
           return;

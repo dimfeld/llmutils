@@ -241,4 +241,48 @@ describe('lib/server/ws_server', () => {
     ws.close();
     warnSpy.mockRestore();
   });
+
+  test('logs received websocket messages with long string values truncated', async () => {
+    expect.hasAssertions();
+
+    process.env.TIM_WS_PORT = '0';
+    const sessionManager = createSessionManagerStub();
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const server = startWebSocketServer(sessionManager, {});
+    serversToStop.push(server);
+
+    const ws = new WebSocket(`ws://127.0.0.1:${server.port}/tim-agent`);
+    const longString = 'x'.repeat(240);
+
+    await new Promise<void>((resolve, reject) => {
+      ws.addEventListener('open', () => {
+        ws.send(
+          JSON.stringify({
+            type: 'session_info',
+            command: longString,
+            extra: {
+              nested: longString,
+            },
+          })
+        );
+        setTimeout(resolve, 20);
+      });
+      ws.addEventListener('error', () => reject(new Error('websocket error')));
+    });
+
+    expect(logSpy).toHaveBeenCalledWith('[ws_server] Received WebSocket message', {
+      connectionId: expect.any(String),
+      message: {
+        type: 'session_info',
+        command: `${'x'.repeat(200)}...(40 more chars)`,
+        extra: {
+          nested: `${'x'.repeat(200)}...(40 more chars)`,
+        },
+      },
+    });
+
+    ws.close();
+    logSpy.mockRestore();
+  });
 });
