@@ -5,10 +5,10 @@ goal: ""
 id: 240
 uuid: 1d8d0555-1325-4f53-82f2-3f9ff6d50d07
 simple: true
-status: pending
+status: in_progress
 priority: medium
 createdAt: 2026-03-19T08:13:37.834Z
-updatedAt: 2026-03-20T08:28:21.925Z
+updatedAt: 2026-03-20T09:01:18.504Z
 tasks: []
 tags: []
 ---

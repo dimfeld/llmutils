@@ -246,7 +246,7 @@ describe('lib/server/session_manager', () => {
           actionItems: [],
         },
         category: 'error',
-        bodyType: 'text',
+        bodyType: 'monospaced',
       },
       {
         message: {

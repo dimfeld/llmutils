@@ -402,21 +402,78 @@ function summarizeStructuredMessage(message: StructuredMessage): MessageFormatti
             .join(' | '),
         },
       };
-    case 'review_result':
+    case 'review_result': {
+      const sections: string[] = [];
+      sections.push(`Review verdict: ${message.verdict}`);
+
+      if (message.fixInstructions) {
+        sections.push('');
+        sections.push(message.fixInstructions);
+      }
+
+      if (message.issues.length > 0) {
+        sections.push('');
+        sections.push(`Issues (${message.issues.length}):`);
+
+        const severityOrder = ['critical', 'major', 'minor', 'info'] as const;
+        const grouped: Record<string, typeof message.issues> = {};
+        for (const issue of message.issues) {
+          (grouped[issue.severity] ??= []).push(issue);
+        }
+
+        for (const severity of severityOrder) {
+          const issues = grouped[severity];
+          if (!issues?.length) continue;
+
+          const icon =
+            severity === 'critical'
+              ? '!!'
+              : severity === 'major'
+                ? '!'
+                : severity === 'minor'
+                  ? '~'
+                  : 'i';
+          sections.push('');
+          sections.push(
+            `[${icon}] ${severity.charAt(0).toUpperCase() + severity.slice(1)} (${issues.length})`
+          );
+
+          for (const issue of issues) {
+            const location = issue.file
+              ? ` (${issue.file}${issue.line != null ? `:${issue.line}` : ''})`
+              : '';
+            sections.push(`  - [${issue.category}]${location} ${issue.content}`);
+            if (issue.suggestion) {
+              sections.push(`    Suggestion: ${issue.suggestion}`);
+            }
+          }
+        }
+      }
+
+      if (message.recommendations.length > 0) {
+        sections.push('');
+        sections.push('Recommendations:');
+        for (const rec of message.recommendations) {
+          sections.push(`  - ${rec}`);
+        }
+      }
+
+      if (message.actionItems.length > 0) {
+        sections.push('');
+        sections.push('Action Items:');
+        for (const item of message.actionItems) {
+          sections.push(`  - ${item}`);
+        }
+      }
+
       return {
         category: message.verdict === 'NEEDS_FIXES' ? 'error' : 'lifecycle',
         body: {
-          type: 'text',
-          text: [
-            `Review verdict: ${message.verdict}`,
-            message.fixInstructions ?? null,
-            message.issues.length ? `issues=${message.issues.length}` : null,
-            message.actionItems.length ? `actions=${message.actionItems.length}` : null,
-          ]
-            .filter(Boolean)
-            .join(' | '),
+          type: 'monospaced',
+          text: sections.join('\n'),
         },
       };
+    }
     case 'workflow_progress':
       return {
         category: 'progress',

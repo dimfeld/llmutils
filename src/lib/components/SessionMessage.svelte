@@ -4,7 +4,7 @@
   import {
     getTextTruncationState,
     KV_VALUE_TRUNCATE_CHARS,
-    TRUNCATE_LINE_LIMIT,
+    TOOL_USE_TRUNCATE_LINE_LIMIT,
   } from './session_message_truncation.js';
 
   let { message }: { message: DisplayMessage } = $props();
@@ -21,8 +21,25 @@
     return '';
   });
 
+  let skipTruncation = $derived(message.category === 'llmOutput');
+  let effectiveLineLimit = $derived(
+    message.category === 'toolUse' || message.category === 'command'
+      ? TOOL_USE_TRUNCATE_LINE_LIMIT
+      : undefined
+  );
+
   let lineCount = $derived(textContent.split('\n').length);
-  let textTruncation = $derived(getTextTruncationState(textContent, expanded));
+  let textTruncation = $derived(
+    skipTruncation
+      ? {
+          isTruncatable: false,
+          displayText: textContent,
+          hiddenLineCount: 0,
+          hiddenCharCount: 0,
+          truncationMode: 'none' as const,
+        }
+      : getTextTruncationState(textContent, expanded, { lineLimit: effectiveLineLimit })
+  );
   let isTruncatable = $derived(
     (message.body.type === 'text' || message.body.type === 'monospaced') &&
       textTruncation.isTruncatable
@@ -31,7 +48,7 @@
   let expandLabel = $derived.by(() => {
     if (expanded) return 'Show less';
     if (textTruncation.truncationMode === 'lines') {
-      return `Show more (${lineCount - TRUNCATE_LINE_LIMIT} more lines)`;
+      return `Show more (${textTruncation.hiddenLineCount} more lines)`;
     }
 
     return `Show more (${textTruncation.hiddenCharCount} more chars)`;
