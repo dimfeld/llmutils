@@ -15,6 +15,12 @@ Command-line utilities for managing context with chat-oriented programming and a
 
 `tim prompts` can print reusable prompt text for CLI-driven workflows. For implementation work, use `tim prompts implement <plan>` to load a plan and instruct the agent to implement it while keeping the plan up to date.
 
+## Workspace Management
+
+Use `tim workspace list`, `tim workspace add`, and `tim workspace update` to manage repository workspaces. Workspaces can be `standard`, `primary`, or `auto`: `primary` workspaces are reserved for branch/push operations, while `auto` workspaces form the preferred pool for `--auto-workspace`.
+
+`tim workspace add [path] [--primary | --auto]` sets the initial type for a new workspace, and `tim workspace update <id> [--primary | --no-primary | --auto | --no-auto]` changes it later. When at least one `auto` workspace exists, commands such as `tim agent --auto-workspace` and `tim generate --auto-workspace` only choose from `auto` workspaces; otherwise they fall back to any non-`primary` workspace. See [`docs/multi-workspace-workflow.md`](docs/multi-workspace-workflow.md) for the full workflow.
+
 ## Web Interface
 
 Tim includes a SvelteKit-based web interface for browsing and managing plans. The server-side layer uses lazy initialization to load the tim configuration, sync plan files to the SQLite database, and serve enriched plan data with computed display statuses (e.g. blocked, recently done).
