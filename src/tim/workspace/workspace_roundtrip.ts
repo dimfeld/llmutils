@@ -110,7 +110,15 @@ export async function runPostExecutionWorkspaceSync(
     });
 
     if (context.primaryWorkspacePath) {
-      await pullWorkspaceRefIfExists(context.primaryWorkspacePath, context.refName, 'origin');
+      await pullWorkspaceRefIfExists(
+        context.primaryWorkspacePath,
+        context.refName,
+        'origin',
+        undefined,
+        {
+          checkoutJjBookmark: false,
+        }
+      );
     }
     return;
   }

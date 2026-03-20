@@ -181,6 +181,7 @@ Implementation strategy:
 
 - **Git mode** uses `git fetch` from the primary workspace side (rather than `git push` from the secondary). This avoids `receive.denyCurrentBranch` errors that occur when pushing to a non-bare repo where the target branch is checked out.
 - **jj mode** adds a git remote pointing to the destination workspace and uses `jj git push --bookmark`.
+- When an origin-backed round trip refreshes the primary workspace in **jj mode**, tim fetches and tracks the bookmark there without running `jj new`, so the primary workspace's working copy does not move to a fresh change.
 
 ## Related Commands
 

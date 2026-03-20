@@ -1541,7 +1541,10 @@ export async function pullWorkspaceRefIfExists(
   workspacePath: string,
   refName: string,
   remoteName = 'origin',
-  planFilePath?: string
+  planFilePath?: string,
+  options?: {
+    checkoutJjBookmark?: boolean;
+  }
 ): Promise<boolean> {
   const isJj = await getUsingJj(workspacePath);
 
@@ -1559,6 +1562,10 @@ export async function pullWorkspaceRefIfExists(
       throw new Error(
         `Failed to track bookmark "${refName}" from remote "${remoteName}": ${trackResult.stderr}`
       );
+    }
+
+    if (options?.checkoutJjBookmark === false) {
+      return trackResult.exitCode === 0;
     }
 
     const editResult = await spawnAndLogOutput(['jj', 'new', refName], {

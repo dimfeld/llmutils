@@ -78,7 +78,15 @@ describe('runPostExecutionWorkspaceSync', () => {
       remoteName: 'origin',
       ensureJjBookmarkAtCurrent: false,
     });
-    expect(pullWorkspaceRefIfExists).toHaveBeenCalledWith('/tmp/primary', 'task-123', 'origin');
+    expect(pullWorkspaceRefIfExists).toHaveBeenCalledWith(
+      '/tmp/primary',
+      'task-123',
+      'origin',
+      undefined,
+      {
+        checkoutJjBookmark: false,
+      }
+    );
   });
 
   test('pushes to the primary workspace without overriding the bookmark after setting it to @-', async () => {
