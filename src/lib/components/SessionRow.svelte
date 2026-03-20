@@ -21,6 +21,7 @@
   let hasTerminalPane = $derived(
     session.sessionInfo.terminalType === 'wezterm' && Boolean(session.sessionInfo.terminalPaneId)
   );
+  let needsAttention = $derived(sessionManager.hasSessionAttention(session));
   let workspaceLabel = $derived.by(() => {
     const workspacePath = session.sessionInfo.workspacePath;
     if (!workspacePath) {
@@ -70,6 +71,13 @@
     <span class="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">
       {displayCommand}
     </span>
+    {#if needsAttention}
+      <span
+        class="h-2 w-2 shrink-0 rounded-full bg-blue-500"
+        aria-label="Needs attention"
+        title="Needs attention"
+      ></span>
+    {/if}
     {#if hasTerminalPane}
       <button
         type="button"

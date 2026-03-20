@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import { onDestroy } from 'svelte';
   import SessionDetail from '$lib/components/SessionDetail.svelte';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
 
@@ -11,6 +12,16 @@
   // Sync selectedSessionId for any external consumers
   $effect(() => {
     sessionManager.selectSession(connectionId ?? null);
+  });
+
+  $effect(() => {
+    if (session) {
+      sessionManager.acknowledgeSessionAttention(session.connectionId);
+    }
+  });
+
+  onDestroy(() => {
+    sessionManager.selectSession(null);
   });
 
   // Navigate back to sessions list if this session is dismissed

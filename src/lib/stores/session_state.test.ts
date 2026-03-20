@@ -96,68 +96,98 @@ describe('SessionManager.needsAttention', () => {
 
   test('returns true when a session is an unhandled notification', () => {
     const manager = new SessionManager();
-    manager.sessions.set(
-      'conn-1',
-      createSession({
-        status: 'notification',
+    manager['handleSseEvent'](
+      'session:new',
+      JSON.stringify({
+        session: createSession({
+          status: 'notification',
+        }),
       })
     );
 
     expect(manager.needsAttention).toBe(true);
   });
 
-  test('returns false when sessions exist but none need attention', () => {
+  test('returns false after acknowledging a notification session', () => {
     const manager = new SessionManager();
-    manager.sessions.set('conn-1', createSession());
-    manager.sessions.set(
-      'conn-2',
-      createSession({
-        connectionId: 'conn-2',
-        status: 'offline',
+    manager['handleSseEvent'](
+      'session:new',
+      JSON.stringify({
+        session: createSession({
+          status: 'notification',
+        }),
       })
     );
+
+    expect(manager.needsAttention).toBe(true);
+    manager.acknowledgeSessionAttention('conn-1');
 
     expect(manager.needsAttention).toBe(false);
   });
 
-  test('transitions back to false when the last attention state is cleared', () => {
+  test('returns true again when a new notification message arrives after acknowledgement', () => {
     const manager = new SessionManager();
-    manager.sessions.set(
-      'conn-1',
-      createSession({
-        activePrompt: {
-          requestId: 'prompt-1',
-          promptType: 'input',
-          promptConfig: { message: 'Reply' },
+    manager['handleSseEvent'](
+      'session:new',
+      JSON.stringify({
+        session: createSession({
+          status: 'notification',
+        }),
+      })
+    );
+
+    expect(manager.needsAttention).toBe(true);
+
+    manager.acknowledgeSessionAttention('conn-1');
+
+    expect(manager.needsAttention).toBe(false);
+
+    manager['handleSseEvent'](
+      'session:message',
+      JSON.stringify({
+        connectionId: 'conn-1',
+        message: {
+          id: 'msg-1',
+          seq: 1,
+          timestamp: '2026-03-17T10:00:00.000Z',
+          category: 'log',
+          bodyType: 'text',
+          body: { type: 'text', text: 'new notification' },
+          rawType: 'log',
+          triggersNotification: true,
         },
       })
     );
-    manager.sessions.set(
-      'conn-2',
-      createSession({
-        connectionId: 'conn-2',
-        status: 'notification',
+
+    expect(manager.needsAttention).toBe(true);
+  });
+
+  test('returns true for an active session when a notification-worthy message arrives', () => {
+    const manager = new SessionManager();
+    manager.sessions.set('conn-1', createSession({ status: 'active' }));
+
+    expect(manager.needsAttention).toBe(false);
+
+    manager['handleSseEvent'](
+      'session:message',
+      JSON.stringify({
+        connectionId: 'conn-1',
+        message: {
+          id: 'msg-1',
+          seq: 1,
+          timestamp: '2026-03-17T10:00:00.000Z',
+          category: 'log',
+          bodyType: 'text',
+          body: { type: 'text', text: 'turn done' },
+          rawType: 'log',
+          triggersNotification: true,
+        },
       })
     );
 
     expect(manager.needsAttention).toBe(true);
 
-    manager.sessions.set(
-      'conn-1',
-      createSession({
-        activePrompt: null,
-      })
-    );
-
-    expect(manager.needsAttention).toBe(true);
-
-    manager.sessions.set(
-      'conn-2',
-      createSession({
-        connectionId: 'conn-2',
-        status: 'active',
-      })
-    );
+    manager.acknowledgeSessionAttention('conn-1');
 
     expect(manager.needsAttention).toBe(false);
   });

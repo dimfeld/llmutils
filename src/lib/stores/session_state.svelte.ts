@@ -24,6 +24,7 @@ export type SessionEventCallback = (eventName: string, parsed: unknown) => void;
 
 export class SessionManager {
   sessions = new SvelteMap<string, SessionData>();
+  private unreadNotifications = new SvelteMap<string, boolean>();
   initialized = $state(false);
   selectedSessionId: string | null = $state(null);
   connectionStatus: ConnectionStatus = $state('disconnected');
@@ -83,7 +84,7 @@ export class SessionManager {
 
   needsAttention = $derived.by(() => {
     for (const session of this.sessions.values()) {
-      if (session.activePrompt || session.status === 'notification') {
+      if (this.hasSessionAttention(session)) {
         return true;
       }
     }
@@ -111,6 +112,18 @@ export class SessionManager {
 
   selectSession(id: string | null): void {
     this.selectedSessionId = id;
+  }
+
+  acknowledgeSessionAttention(connectionId: string): void {
+    this.unreadNotifications.delete(connectionId);
+  }
+
+  hasSessionAttention(session: SessionData): boolean {
+    if (session.activePrompt) {
+      return true;
+    }
+
+    return this.unreadNotifications.get(session.connectionId) === true;
   }
 
   setCurrentProjectId(id: string | null): void {
@@ -146,6 +159,7 @@ export class SessionManager {
     };
 
     applySessionEvent(eventName, parsed, state);
+    this.reconcileAcknowledgedNotifications(eventName, parsed);
 
     for (const callback of this.eventCallbacks) {
       try {
@@ -155,6 +169,50 @@ export class SessionManager {
         queueMicrotask(() => {
           throw e;
         });
+      }
+    }
+  }
+
+  private reconcileAcknowledgedNotifications(eventName: string, parsed: unknown): void {
+    switch (eventName) {
+      case 'session:list': {
+        const sessions = (parsed as { sessions: SessionData[] }).sessions;
+        const activeSessionIds = new Set(sessions.map((session) => session.connectionId));
+
+        for (const connectionId of this.unreadNotifications.keys()) {
+          if (!activeSessionIds.has(connectionId)) {
+            this.unreadNotifications.delete(connectionId);
+          }
+        }
+
+        for (const session of sessions) {
+          if (session.status === 'notification') {
+            this.unreadNotifications.set(session.connectionId, true);
+          }
+        }
+        break;
+      }
+      case 'session:new': {
+        const session = (parsed as { session: SessionData }).session;
+        if (session.status === 'notification') {
+          this.unreadNotifications.set(session.connectionId, true);
+        }
+        break;
+      }
+      case 'session:message': {
+        const { connectionId, message } = parsed as {
+          connectionId: string;
+          message: { triggersNotification?: boolean };
+        };
+        if (message.triggersNotification) {
+          this.unreadNotifications.set(connectionId, true);
+        }
+        break;
+      }
+      case 'session:dismissed': {
+        const { connectionId } = parsed as { connectionId: string };
+        this.unreadNotifications.delete(connectionId);
+        break;
       }
     }
   }
@@ -271,6 +329,9 @@ export class SessionManager {
       const resp = await fetch(this.sessionActionUrl(connectionId, 'dismiss'), {
         method: 'POST',
       });
+      if (resp.ok) {
+        this.unreadNotifications.delete(connectionId);
+      }
       return resp.ok;
     } catch {
       return false;
