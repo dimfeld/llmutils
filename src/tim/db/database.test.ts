@@ -58,7 +58,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(7);
+    expect(version?.version).toBe(8);
     expect(version?.import_completed).toBe(1);
 
     const tables = db
@@ -79,6 +79,11 @@ describe('tim db/database', () => {
     expect(tables).toContain('plan_task');
     expect(tables).toContain('plan_dependency');
     expect(tables).toContain('plan_tag');
+    expect(tables).toContain('pr_status');
+    expect(tables).toContain('pr_check_run');
+    expect(tables).toContain('pr_review');
+    expect(tables).toContain('pr_label');
+    expect(tables).toContain('plan_pr');
 
     const indices = db
       .query<{ name: string }, []>(
@@ -111,7 +116,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(7);
+    expect(version?.version).toBe(8);
     expect(version?.import_completed).toBe(1);
     const versionRowCount = db2
       .query<{ count: number }, []>('SELECT count(*) as count FROM schema_version')

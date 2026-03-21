@@ -79,6 +79,17 @@ describe('tim/commands/pr', () => {
     currentParsedIdentifier = null;
     currentCachedDetail = null;
 
+    mockLog.mockClear();
+    mockResolvePlan.mockClear();
+    mockGetWorkspaceInfoByPath.mockClear();
+    mockGetDatabase.mockClear();
+    mockRefreshPrStatus.mockClear();
+    mockParsePrOrIssueNumber.mockClear();
+    mockGetPrStatusByUrl.mockClear();
+    mockLinkPlanToPr.mockClear();
+    mockUnlinkPlanFromPr.mockClear();
+    mockCleanOrphanedPrStatus.mockClear();
+
     mockLog.mockImplementation((...args: unknown[]) => {
       logs.push(args.join(' '));
     });
@@ -135,6 +146,45 @@ describe('tim/commands/pr', () => {
     expect(logs.some((line) => line.includes('example/repo#102: Second PR'))).toBe(true);
   });
 
+  test('status reports when a plan has no linked pull requests', async () => {
+    currentPlan.pullRequest = [];
+
+    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+
+    expect(mockRefreshPrStatus).not.toHaveBeenCalled();
+    expect(logs).toContain('Plan 248 has no linked pull requests.');
+  });
+
+  test('status logs passing, failing, and pending PR states', async () => {
+    currentPlan.pullRequest = [
+      'https://github.com/example/repo/pull/401',
+      'https://github.com/example/repo/pull/402',
+      'https://github.com/example/repo/pull/403',
+    ];
+    currentRefreshedStatuses.set(
+      'https://github.com/example/repo/pull/401',
+      createPrDetail(401, 'Passing PR', 'success')
+    );
+    currentRefreshedStatuses.set(
+      'https://github.com/example/repo/pull/402',
+      createPrDetail(402, 'Failing PR', 'failure')
+    );
+    currentRefreshedStatuses.set(
+      'https://github.com/example/repo/pull/403',
+      createPrDetail(403, 'Pending PR', 'pending')
+    );
+
+    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+
+    expect(mockRefreshPrStatus).toHaveBeenCalledTimes(3);
+    expect(logs.some((line) => line.includes('example/repo#401: Passing PR'))).toBe(true);
+    expect(logs.some((line) => line.includes('Merge readiness: ready'))).toBe(true);
+    expect(logs.some((line) => line.includes('example/repo#402: Failing PR'))).toBe(true);
+    expect(logs.some((line) => line.includes('Merge readiness: failing checks'))).toBe(true);
+    expect(logs.some((line) => line.includes('example/repo#403: Pending PR'))).toBe(true);
+    expect(logs.some((line) => line.includes('Merge readiness: checks pending'))).toBe(true);
+  });
+
   test('link validates the PR identifier, refreshes status, and links the plan UUID', async () => {
     currentParsedIdentifier = { owner: 'example', repo: 'repo', number: 201 };
     currentRefreshedStatuses.set(
@@ -164,6 +214,17 @@ describe('tim/commands/pr', () => {
     expect(logs.some((line) => line.includes('Linked'))).toBe(true);
   });
 
+  test('link rejects invalid GitHub pull request identifiers', async () => {
+    currentParsedIdentifier = null;
+
+    await expect(
+      prModule.handlePrLinkCommand('248', 'not-a-pr', {}, createNestedCommand())
+    ).rejects.toThrow('Invalid GitHub pull request identifier: not-a-pr');
+
+    expect(mockRefreshPrStatus).not.toHaveBeenCalled();
+    expect(mockLinkPlanToPr).not.toHaveBeenCalled();
+  });
+
   test('unlink removes the junction and cleans orphaned PR cache rows', async () => {
     currentCachedDetail = createPrDetail(301, 'Cached PR', 'success', 88);
 
@@ -181,6 +242,49 @@ describe('tim/commands/pr', () => {
     expect(mockUnlinkPlanFromPr).toHaveBeenCalledWith(dbHandle, 'plan-248', 88);
     expect(mockCleanOrphanedPrStatus).toHaveBeenCalledWith(dbHandle);
     expect(logs.some((line) => line.includes('Unlinked'))).toBe(true);
+  });
+
+  test('unlink is idempotent when the cached PR exists but the link is already absent', async () => {
+    currentCachedDetail = createPrDetail(302, 'Cached PR', 'success', 89);
+
+    await prModule.handlePrUnlinkCommand(
+      '248',
+      'https://github.com/example/repo/pull/302',
+      {},
+      createNestedCommand()
+    );
+
+    expect(mockUnlinkPlanFromPr).toHaveBeenCalledWith(dbHandle, 'plan-248', 89);
+    expect(mockCleanOrphanedPrStatus).toHaveBeenCalledWith(dbHandle);
+    expect(logs.some((line) => line.includes('Unlinked'))).toBe(true);
+  });
+
+  test('unlink throws when no cached PR status exists for the URL', async () => {
+    currentCachedDetail = null;
+
+    await expect(
+      prModule.handlePrUnlinkCommand(
+        '248',
+        'https://github.com/example/repo/pull/999',
+        {},
+        createNestedCommand()
+      )
+    ).rejects.toThrow('No cached PR status found for https://github.com/example/repo/pull/999');
+
+    expect(mockUnlinkPlanFromPr).not.toHaveBeenCalled();
+    expect(mockCleanOrphanedPrStatus).not.toHaveBeenCalled();
+  });
+
+  test('status surfaces plan resolution failures for invalid plan identifiers', async () => {
+    mockResolvePlan.mockImplementationOnce(async () => {
+      throw new Error('Plan not found: 999');
+    });
+
+    await expect(prModule.handlePrStatusCommand('999', {}, createNestedCommand())).rejects.toThrow(
+      'Plan not found: 999'
+    );
+
+    expect(mockRefreshPrStatus).not.toHaveBeenCalled();
   });
 });
 
