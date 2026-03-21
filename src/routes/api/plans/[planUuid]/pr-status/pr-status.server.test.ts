@@ -148,6 +148,20 @@ describe('/api/plans/[planUuid]/pr-status', () => {
     expect(payload.prStatuses).toHaveLength(1);
   });
 
+  test('POST without GITHUB_TOKEN ignores cached-link sync races and still returns cached data', async () => {
+    syncPlanPrLinks.mockRejectedValueOnce(new Error('cache entry disappeared'));
+    const { POST } = await import('./+server.js');
+
+    const response = await POST({
+      params: { planUuid: 'plan-with-prs' },
+    } as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.error).toBe('GITHUB_TOKEN not configured');
+    expect(payload.prStatuses).toHaveLength(1);
+  });
+
   test('POST syncs links and refreshes each PR when GITHUB_TOKEN is configured', async () => {
     process.env.GITHUB_TOKEN = 'token';
     syncPlanPrLinks.mockResolvedValue([]);
@@ -195,6 +209,40 @@ describe('/api/plans/[planUuid]/pr-status', () => {
         },
       },
     ]);
+  });
+
+  test('POST returns fresh results where available and cached data for failed refreshes', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    syncPlanPrLinks.mockResolvedValue([]);
+    ensurePrStatusFresh
+      .mockResolvedValueOnce({
+        status: {
+          id: 1,
+          pr_url: 'https://github.com/example/repo/pull/1',
+          title: 'Fresh PR One',
+        },
+      })
+      .mockRejectedValueOnce(new Error('second PR refresh failed'));
+
+    const { POST } = await import('./+server.js');
+    const response = await POST({
+      params: { planUuid: 'plan-with-prs' },
+    } as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.prStatuses).toEqual([
+      {
+        status: {
+          id: 1,
+          pr_url: 'https://github.com/example/repo/pull/1',
+          title: 'Fresh PR One',
+        },
+      },
+    ]);
+    expect(payload.error).toContain('GitHub API error for some pull requests');
+    expect(payload.error).toContain('https://github.com/example/repo/pull/2');
+    expect(payload.error).toContain('second PR refresh failed');
   });
 
   test('POST falls back to cached data when GitHub API fails', async () => {

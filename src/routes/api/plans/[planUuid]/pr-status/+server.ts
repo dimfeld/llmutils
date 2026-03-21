@@ -54,7 +54,11 @@ export const POST: RequestHandler = async ({ params }) => {
     // Sync junctions for already-cached PRs only (can't fetch new ones without token).
     const cachedUrls = prUrls.filter((url) => getPrStatusByUrl(db, url) !== null);
     if (cachedUrls.length > 0) {
-      await syncPlanPrLinks(db, plan.uuid, cachedUrls);
+      try {
+        await syncPlanPrLinks(db, plan.uuid, cachedUrls);
+      } catch {
+        // The cache may have changed between filtering and syncing; return cached rows anyway.
+      }
     }
     return json({
       prUrls,
@@ -65,13 +69,32 @@ export const POST: RequestHandler = async ({ params }) => {
 
   try {
     await syncPlanPrLinks(db, plan.uuid, prUrls);
-    const prStatuses = await Promise.all(
+    const refreshResults = await Promise.allSettled(
       prUrls.map((prUrl) => ensurePrStatusFresh(db, prUrl, PR_STATUS_MAX_AGE_MS))
     );
+    const errors: string[] = [];
+    const prStatuses = refreshResults.flatMap((result, index) => {
+      if (result.status === 'fulfilled') {
+        return [result.value];
+      }
+
+      const prUrl = prUrls[index]!;
+      const cached = getPrStatusByUrl(db, prUrl);
+      errors.push(
+        `${prUrl}: ${
+          result.reason instanceof Error ? result.reason.message : String(result.reason)
+        }`
+      );
+
+      return cached ? [cached] : [];
+    });
 
     return json({
       prUrls,
       prStatuses,
+      ...(errors.length > 0
+        ? { error: `GitHub API error for some pull requests: ${errors.join('; ')}` }
+        : {}),
     });
   } catch (err) {
     return json({
