@@ -15,7 +15,11 @@ function isPlanEligibleForGenerate(
   plan: ReturnType<typeof getPlanDetail>
 ): plan is NonNullable<typeof plan> {
   return (
-    plan != null && plan.tasks.length === 0 && plan.status !== 'done' && plan.status !== 'cancelled'
+    plan != null &&
+    plan.tasks.length === 0 &&
+    plan.status !== 'done' &&
+    plan.status !== 'cancelled' &&
+    plan.status !== 'deferred'
   );
 }
 
