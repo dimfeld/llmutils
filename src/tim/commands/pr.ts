@@ -1,8 +1,10 @@
+import path from 'node:path';
 import chalk from 'chalk';
 import { parsePrOrIssueNumber } from '../../common/github/identifiers.js';
-import { refreshPrStatus } from '../../common/github/pr_status_service.js';
+import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_service.js';
 import { log } from '../../logging.js';
 import { getDatabase } from '../db/database.js';
+import { syncPlanToDb } from '../db/plan_sync.js';
 import {
   cleanOrphanedPrStatus,
   getPrStatusByUrl,
@@ -15,6 +17,7 @@ import {
 } from '../db/pr_status.js';
 import { resolvePlan } from '../plan_display.js';
 import type { PlanSchema } from '../planSchema.js';
+import { readPlanFile, writePlanFile } from '../plans.js';
 import { getWorkspaceInfoByPath } from '../workspace/workspace_info.js';
 
 interface RootCommandLike {
@@ -71,6 +74,21 @@ function requirePlanUuid(plan: PlanSchema, planPath: string): string {
   }
 
   return plan.uuid;
+}
+
+async function persistPlanPullRequests(
+  planPath: string,
+  updatePullRequests: (pullRequests: string[]) => string[]
+): Promise<void> {
+  const currentPlan = await readPlanFile(planPath);
+  const nextPullRequests = updatePullRequests(currentPlan.pullRequest ?? []);
+  const updatedPlan = { ...currentPlan, pullRequest: nextPullRequests };
+
+  await writePlanFile(planPath, updatedPlan);
+  await syncPlanToDb(updatedPlan, planPath, {
+    baseDir: path.dirname(path.resolve(planPath)),
+    force: true,
+  });
 }
 
 function formatLifecycleState(status: PrStatusRow): string {
@@ -327,7 +345,12 @@ export async function handlePrStatusCommand(
   _options: Record<string, unknown>,
   command: RootCommandLike
 ): Promise<void> {
+  if (!process.env.GITHUB_TOKEN) {
+    throw new Error('GITHUB_TOKEN environment variable is required for PR status commands');
+  }
+
   const { plan } = await resolvePlanForCommand(planId, command);
+  const planUuid = requirePlanUuid(plan, plan.filename ?? String(plan.id));
   const prUrls = plan.pullRequest ?? [];
 
   if (prUrls.length === 0) {
@@ -336,9 +359,9 @@ export async function handlePrStatusCommand(
   }
 
   const db = getDatabase();
+  const details = await syncPlanPrLinks(db, planUuid, prUrls);
 
-  for (const prUrl of prUrls) {
-    const detail = await refreshPrStatus(db, prUrl);
+  for (const detail of details) {
     logPrStatus(detail);
     log('');
   }
@@ -350,6 +373,10 @@ export async function handlePrLinkCommand(
   _options: Record<string, unknown>,
   command: RootCommandLike
 ): Promise<void> {
+  if (!process.env.GITHUB_TOKEN) {
+    throw new Error('GITHUB_TOKEN environment variable is required for PR status commands');
+  }
+
   const { plan, planPath } = await resolvePlanForCommand(planId, command);
   const planUuid = requirePlanUuid(plan, planPath);
   const parsed = await parsePrOrIssueNumber(prUrl);
@@ -361,6 +388,9 @@ export async function handlePrLinkCommand(
   const db = getDatabase();
   const detail = await refreshPrStatus(db, prUrl);
   linkPlanToPr(db, planUuid, detail.status.id);
+  await persistPlanPullRequests(planPath, (pullRequests) =>
+    pullRequests.includes(prUrl) ? pullRequests : [...pullRequests, prUrl]
+  );
 
   log(
     `Linked ${chalk.cyan(`${parsed.owner}/${parsed.repo}#${parsed.number}`)} to plan ${chalk.bold(String(plan.id))}`
@@ -384,6 +414,9 @@ export async function handlePrUnlinkCommand(
 
   unlinkPlanFromPr(db, planUuid, detail.status.id);
   cleanOrphanedPrStatus(db);
+  await persistPlanPullRequests(planPath, (pullRequests) =>
+    pullRequests.filter((existingPrUrl) => existingPrUrl !== prUrl)
+  );
 
   log(`Unlinked ${chalk.cyan(prUrl)} from plan ${chalk.bold(String(plan.id))}`);
 }
