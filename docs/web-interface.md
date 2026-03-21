@@ -16,7 +16,7 @@
 
 ### Routing Gotchas
 
-- SvelteKit's `resolve()` from `$app/paths` enforces typed route parameters — it won't accept dynamic/computed path segments. Use `base` from `$app/paths` + template literals for dynamic paths (e.g., `` `${base}/api/sessions/${encodeURIComponent(id)}/respond` ``).
+- SvelteKit's `resolve()` from `$app/paths` enforces typed route parameters — it won't accept dynamic/computed path segments. Use `base` from `$app/paths` + template literals for dynamic paths.
 
 ## Architecture
 
@@ -97,7 +97,7 @@ HTTP POST to `/messages` on port 8123 creates lightweight "notification" session
 
 ### SSE Endpoint & API Routes
 
-Browser clients receive real-time updates via SSE and interact with sessions through REST endpoints plus a remote command:
+Browser clients receive real-time updates via SSE and interact with sessions through remote `command()` functions:
 
 - **SSE endpoint** (`src/routes/api/sessions/events/+server.ts`): `GET` returns a `ReadableStream` with SSE headers. On connect, sends `session:list` snapshot, replays any buffered events, then sends `session:sync-complete` to signal that initial state is fully loaded. After sync, streams live events (`session:new`, `session:update`, `session:disconnect`, `session:message`, `session:prompt`, `session:prompt-cleared`, `session:dismissed`). Uses subscribe-before-snapshot pattern with buffering to avoid lost-event race conditions.
 
@@ -106,11 +106,13 @@ Browser clients receive real-time updates via SSE and interact with sessions thr
 - **ReadableStream cancel() must not call controller.close()**: When an SSE client disconnects, the `cancel()` callback fires, but the stream is already being torn down by the consumer. Calling `controller.close()` inside `cancel()` throws. Only use `cancel()` for cleanup (unsubscribing listeners, etc.).
 - **Subscribe before snapshot**: If you take the snapshot first and subscribe second, events emitted between those two calls are lost. Subscribe first, buffer events during snapshot delivery, then flush and stream normally.
 - **EventEmitter listeners must not throw**: An exception thrown from an EventEmitter listener propagates through `emit()` and aborts delivery to remaining listeners. Always wrap SSE `controller.enqueue()` calls (and any other potentially-failing operations) in try/catch inside listener callbacks.
-- **Prompt response** (`src/routes/api/sessions/[connectionId]/respond/+server.ts`): `POST` with `{ requestId, value }`. Validates `requestId` against the session's active prompt and requires `value` field. Returns `'sent'`, `'no_session'`, or `'no_prompt'`.
-- **User input** (`src/routes/api/sessions/[connectionId]/input/+server.ts`): `POST` with `{ content }`. Sends free-form text to interactive sessions.
-- **Dismiss** (`src/routes/api/sessions/[connectionId]/dismiss/+server.ts`): `POST` to remove offline/notification sessions.
-- **Terminal activation** (`src/lib/remote/session_actions.remote.ts`): remote `command(...)` that resolves the WezTerm pane from session metadata, switches to the pane's workspace, activates the pane, and brings WezTerm to the foreground on macOS.
-- **Shared helpers** (`src/lib/server/session_routes.ts`): `parseJsonBody()`, `badRequest()`, `notFound()`, `success()` used by all action routes.
+- **Session actions** (`src/lib/remote/session_actions.remote.ts`): remote `command(...)` functions for session interactions:
+  - `sendSessionPromptResponse`: validates `{ connectionId, requestId, value }` and forwards prompt responses. Throws 400 for wrong requestId, 404 for missing session.
+  - `sendSessionUserInput`: validates `{ connectionId, content }` and sends free-form text to interactive sessions.
+  - `dismissSession`: validates `{ connectionId }` and removes offline/notification sessions.
+  - `dismissInactiveSessions`: bulk-dismisses all inactive sessions, returns `{ dismissed: number }`.
+  - `activateSessionTerminalPane`: resolves the WezTerm pane from session metadata, switches to the pane's workspace, activates the pane, and brings WezTerm to the foreground on macOS.
+- **Shared helpers** (`src/lib/server/session_routes.ts`): `formatSseEvent()`, `createSessionEventsResponse()` used by the SSE endpoint.
 
 ### Key Design Decisions
 
@@ -133,7 +135,7 @@ Browser clients receive real-time updates via SSE and interact with sessions thr
 - **Initialization tracking**: The `initialized` flag is set to `true` only when the `session:sync-complete` event is received, indicating that the snapshot and all buffered catch-up events have been processed. It resets to `false` on SSE reconnect. Pages that need to distinguish "not yet loaded" from "not found" should gate on this flag.
 - **State**: `sessions` (SvelteMap for reactivity), `selectedSessionId`, `connectionStatus` (connected/reconnecting/disconnected), `initialized`
 - **Derived**: `sessionGroups` — sessions grouped by `groupKey`, with the current project's group sorted to top. Group labels resolved from project display name (when `projectId` matches a known project) or workspace path (last 2 components).
-- **Actions**: `sendPromptResponse(connectionId, requestId, value)`, `sendUserInput(connectionId, content)`, `dismissSession(connectionId)` — all POST to action API routes with URL-encoded connectionIds (notification IDs can contain `/`). `activateTerminalPane(session)` calls the remote command exported from `src/lib/remote/session_actions.remote.ts`.
+- **Actions**: `sendPromptResponse(connectionId, requestId, value)`, `sendUserInput(connectionId, content)`, `dismissSession(connectionId)` — all call remote `command()` functions from `src/lib/remote/session_actions.remote.ts`. `activateTerminalPane(session)` also calls a remote command from the same module.
 - **SvelteMap reactivity**: SvelteMap only tracks `.set()`/`.delete()`/`.clear()` — after mutating nested properties on stored objects, the entry must be re-set to trigger reactivity.
 
 ### UI Components

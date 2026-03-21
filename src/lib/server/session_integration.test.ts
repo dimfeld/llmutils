@@ -8,6 +8,12 @@ import type { HeadlessServerMessage } from '$common/../logging/headless_protocol
 import { getOrCreateProject } from '$tim/db/project.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 
+import {
+  dismissSession,
+  sendSessionPromptResponse,
+  sendSessionUserInput,
+} from '$lib/remote/session_actions.remote.js';
+import { invokeCommand } from '$lib/test-utils/invoke_command.js';
 import { createSessionEventsResponse } from './session_routes.js';
 import {
   type SessionManagerEvents,
@@ -714,7 +720,7 @@ describe('session integration', () => {
     await reader.cancel();
   });
 
-  test('route handlers work against the real session manager state', async () => {
+  test('session remote actions work against the real session manager state', async () => {
     expect.hasAssertions();
 
     const sentMessages: HeadlessServerMessage[] = [];
@@ -749,42 +755,19 @@ describe('session integration', () => {
       gitRemote: null,
     });
 
-    const { POST: respondPost } =
-      await import('../../routes/api/sessions/[connectionId]/respond/+server.js');
-    const { POST: inputPost } =
-      await import('../../routes/api/sessions/[connectionId]/input/+server.js');
-    const { POST: dismissPost } =
-      await import('../../routes/api/sessions/[connectionId]/dismiss/+server.js');
+    await invokeCommand(sendSessionPromptResponse, {
+      connectionId: 'conn-routes',
+      requestId: 'req-routes',
+      value: true,
+    });
+    await invokeCommand(sendSessionUserInput, {
+      connectionId: 'conn-routes',
+      content: 'continue',
+    });
+    await invokeCommand(dismissSession, {
+      connectionId: notificationSession.connectionId,
+    });
 
-    const respondResponse = await respondPost({
-      params: { connectionId: 'conn-routes' },
-      request: new Request('http://localhost/api/sessions/conn-routes/respond', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ requestId: 'req-routes', value: true }),
-      }),
-    } as never);
-    const inputResponse = await inputPost({
-      params: { connectionId: 'conn-routes' },
-      request: new Request('http://localhost/api/sessions/conn-routes/input', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ content: 'continue' }),
-      }),
-    } as never);
-    const dismissResponse = await dismissPost({
-      params: { connectionId: notificationSession.connectionId },
-      request: new Request('http://localhost/api/sessions/notification/dismiss', {
-        method: 'POST',
-      }),
-    } as never);
-
-    expect(respondResponse.status).toBe(200);
-    expect(await respondResponse.json()).toEqual({ success: true });
-    expect(inputResponse.status).toBe(200);
-    expect(await inputResponse.json()).toEqual({ success: true });
-    expect(dismissResponse.status).toBe(200);
-    expect(await dismissResponse.json()).toEqual({ success: true });
     expect(sentMessages).toEqual([
       { type: 'prompt_response', requestId: 'req-routes', value: true },
       { type: 'user_input', content: 'continue' },
@@ -797,7 +780,7 @@ describe('session integration', () => {
     ).toBe(false);
   });
 
-  test('dismiss route works with notification connectionIds that contain slashes', async () => {
+  test('dismissSession works with notification connectionIds that contain slashes', async () => {
     expect.hasAssertions();
 
     const notificationSession = manager.handleHttpNotification({
@@ -805,20 +788,10 @@ describe('session integration', () => {
       workspacePath: '/tmp/routes/notify/with/slash',
       gitRemote: null,
     });
-    const encodedConnectionId = encodeURIComponent(notificationSession.connectionId);
+    await invokeCommand(dismissSession, {
+      connectionId: notificationSession.connectionId,
+    });
 
-    const { POST: dismissPost } =
-      await import('../../routes/api/sessions/[connectionId]/dismiss/+server.js');
-
-    const response = await dismissPost({
-      params: { connectionId: decodeURIComponent(encodedConnectionId) },
-      request: new Request(`http://localhost/api/sessions/${encodedConnectionId}/dismiss`, {
-        method: 'POST',
-      }),
-    } as never);
-
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ success: true });
     expect(
       manager
         .getSessionSnapshot()

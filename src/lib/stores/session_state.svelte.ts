@@ -1,6 +1,12 @@
 import { projectDisplayName } from '$lib/stores/project.svelte.js';
 import { base } from '$app/paths';
-import { activateSessionTerminalPane } from '$lib/remote/session_actions.remote.js';
+import {
+  activateSessionTerminalPane,
+  dismissInactiveSessions,
+  dismissSession,
+  sendSessionPromptResponse,
+  sendSessionUserInput,
+} from '$lib/remote/session_actions.remote.js';
 import type {
   SessionClientEvent,
   SessionClientEventMap,
@@ -305,22 +311,18 @@ export class SessionManager {
     this.reconnectDelay = 1000;
   }
 
-  private sessionActionUrl(connectionId: string, action: string): string {
-    return `${base}/api/sessions/${encodeURIComponent(connectionId)}/${action}`;
-  }
-
   async sendPromptResponse(
     connectionId: string,
     requestId: string,
     value: unknown
   ): Promise<boolean> {
     try {
-      const resp = await fetch(this.sessionActionUrl(connectionId, 'respond'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requestId, value }),
+      await sendSessionPromptResponse({
+        connectionId,
+        requestId,
+        value,
       });
-      return resp.ok;
+      return true;
     } catch {
       return false;
     }
@@ -328,12 +330,11 @@ export class SessionManager {
 
   async sendUserInput(connectionId: string, content: string): Promise<boolean> {
     try {
-      const resp = await fetch(this.sessionActionUrl(connectionId, 'input'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
+      await sendSessionUserInput({
+        connectionId,
+        content,
       });
-      return resp.ok;
+      return true;
     } catch {
       return false;
     }
@@ -341,13 +342,9 @@ export class SessionManager {
 
   async dismissSession(connectionId: string): Promise<boolean> {
     try {
-      const resp = await fetch(this.sessionActionUrl(connectionId, 'dismiss'), {
-        method: 'POST',
-      });
-      if (resp.ok) {
-        this.unreadNotifications.delete(connectionId);
-      }
-      return resp.ok;
+      await dismissSession({ connectionId });
+      this.unreadNotifications.delete(connectionId);
+      return true;
     } catch {
       return false;
     }
@@ -355,10 +352,8 @@ export class SessionManager {
 
   async dismissInactiveSessions(): Promise<boolean> {
     try {
-      const resp = await fetch(`${base}/api/sessions/dismiss-inactive`, {
-        method: 'POST',
-      });
-      return resp.ok;
+      await dismissInactiveSessions();
+      return true;
     } catch {
       return false;
     }

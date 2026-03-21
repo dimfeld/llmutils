@@ -1,5 +1,3 @@
-import { json } from '@sveltejs/kit';
-
 import type { SessionManager, SessionManagerEvents, SessionSnapshot } from './session_manager.js';
 import { subscribeToAllSessionEvents } from './session_manager.js';
 
@@ -99,32 +97,4 @@ export function createSessionEventsResponse(
   return new Response(stream, {
     headers: SSE_HEADERS,
   });
-}
-
-export async function parseJsonBody(request: Request): Promise<unknown | null> {
-  try {
-    return await request.json();
-  } catch {
-    return null;
-  }
-}
-
-export function badRequest(message: string): Response {
-  return json({ error: message }, { status: 400 });
-}
-
-export function notFound(message: string): Response {
-  return json({ error: message }, { status: 404 });
-}
-
-export function success(): Response {
-  return json({ success: true });
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-export function isString(value: unknown): value is string {
-  return typeof value === 'string';
 }
