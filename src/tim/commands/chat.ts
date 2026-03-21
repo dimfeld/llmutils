@@ -19,6 +19,7 @@ import {
   touchWorkspaceInfo,
 } from '../workspace/workspace_info.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
+import { updateHeadlessSessionInfo } from '../headless.js';
 import {
   prepareWorkspaceRoundTrip,
   runPostExecutionWorkspaceSync,
@@ -118,9 +119,6 @@ export async function handleChatCommand(
     options.workspace !== undefined ||
     options.autoWorkspace === true ||
     options.newWorkspace === true ||
-    options.base !== undefined ||
-    options.commit === true ||
-    options.workspaceSync === false ||
     options.plan !== undefined;
   const requestedExecutorRaw = options.executor ?? config.defaultExecutor;
   const requestedExecutor = resolveChatExecutor(requestedExecutorRaw);
@@ -191,10 +189,15 @@ export async function handleChatCommand(
         currentPlanData = await readPlanFile(currentPlanFile);
       }
 
+      // --plan implies auto-workspace selection when no explicit workspace option is set
+      const useAutoWorkspace =
+        options.autoWorkspace === true ||
+        (options.plan !== undefined && !options.workspace && !options.newWorkspace);
+
       const workspaceResult = await setupWorkspace(
         {
           workspace: options.workspace,
-          autoWorkspace: options.autoWorkspace,
+          autoWorkspace: useAutoWorkspace,
           newWorkspace: options.newWorkspace,
           nonInteractive: options.nonInteractive,
           requireWorkspace: false,
@@ -252,6 +255,10 @@ export async function handleChatCommand(
           }
         : undefined,
       callback: async () => {
+        if (workspaceMode && currentBaseDir !== process.cwd()) {
+          updateHeadlessSessionInfo({ workspacePath: currentBaseDir });
+        }
+
         await executor.execute(promptForExecution, {
           planId: currentPlanData?.id ? String(currentPlanData.id) : 'chat',
           planTitle: currentPlanData?.title || 'Chat Session',
@@ -268,7 +275,7 @@ export async function handleChatCommand(
     executionError = err;
   } finally {
     let roundTripError: unknown;
-    if (roundTripContext) {
+    if (roundTripContext && options.commit) {
       try {
         await runPostExecutionWorkspaceSync(roundTripContext, 'workspace chat session');
       } catch (err) {

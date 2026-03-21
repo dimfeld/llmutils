@@ -123,6 +123,7 @@ describe('handleChatCommand', () => {
 
     await moduleMocker.mock('../headless.js', () => ({
       runWithHeadlessAdapterIfEnabled: runWithHeadlessAdapterIfEnabledSpy,
+      updateHeadlessSessionInfo: mock(() => {}),
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -447,7 +448,7 @@ describe('handleChatCommand', () => {
     expect(setupWorkspaceSpy.mock.calls[0]).toEqual([
       {
         workspace: 'task-123',
-        autoWorkspace: undefined,
+        autoWorkspace: false,
         newWorkspace: undefined,
         nonInteractive: true,
         requireWorkspace: false,
@@ -558,7 +559,7 @@ describe('handleChatCommand', () => {
       callOrder.push('touch');
     });
 
-    await handleChatCommand('hello', { workspace: 'task-123' }, {});
+    await handleChatCommand('hello', { workspace: 'task-123', commit: true }, {});
 
     expect(prepareWorkspaceRoundTripSpy).toHaveBeenCalledWith({
       workspacePath: '/repo-root/workspaces/task-123',
@@ -590,9 +591,9 @@ describe('handleChatCommand', () => {
       throw executionFailure;
     });
 
-    await expect(handleChatCommand('hello', { workspace: 'task-123' }, {})).rejects.toThrow(
-      'executor failed'
-    );
+    await expect(
+      handleChatCommand('hello', { workspace: 'task-123', commit: true }, {})
+    ).rejects.toThrow('executor failed');
 
     expect(runPostExecutionWorkspaceSyncSpy).toHaveBeenCalledTimes(1);
     expect(touchWorkspaceInfoSpy).toHaveBeenCalledWith('/repo-root/workspaces/task-123');
