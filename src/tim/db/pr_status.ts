@@ -461,52 +461,29 @@ export function unlinkPlanFromPr(db: Database, planUuid: string, prStatusId: num
 }
 
 /** Returns plans in actionable states (pending, in_progress, needs_review) that have open PRs.
- * Used by background polling to determine which PRs need status checks. */
+ * Used by background polling to determine which PRs need status checks.
+ * Combines plan_pr junction links with direct plan.pull_request URL lookups
+ * (canonicalized in TypeScript to avoid raw SQL string comparison mismatches). */
 export function getPlansWithPrs(db: Database, projectId?: number): PlanWithLinkedPrs[] {
-  const query = `
+  // Phase 1: Get plans with linked PRs via plan_pr junction (canonical URLs, filtered by open state)
+  const junctionQuery = `
     SELECT
-      results.uuid AS uuid,
-      results.project_id AS project_id,
-      results.plan_id AS plan_id,
-      results.title AS title,
-      results.pr_url AS pr_url
-    FROM (
-      SELECT
-        p.uuid AS uuid,
-        p.project_id AS project_id,
-        p.plan_id AS plan_id,
-        p.title AS title,
-        ps.pr_url AS pr_url
-      FROM plan p
-      INNER JOIN plan_pr pp ON pp.plan_uuid = p.uuid
-      INNER JOIN pr_status ps ON ps.id = pp.pr_status_id
-      WHERE ps.state = 'open'
-        AND p.status IN ('pending', 'in_progress', 'needs_review')
-        ${projectId === undefined ? '' : 'AND p.project_id = ?'}
-
-      UNION
-
-      SELECT
-        p.uuid AS uuid,
-        p.project_id AS project_id,
-        p.plan_id AS plan_id,
-        p.title AS title,
-        json_each.value AS pr_url
-      FROM plan p
-      INNER JOIN json_each(p.pull_request)
-      LEFT JOIN pr_status ps ON ps.pr_url = json_each.value
-      WHERE p.status IN ('pending', 'in_progress', 'needs_review')
-        AND p.pull_request IS NOT NULL
-        AND p.pull_request != ''
-        AND p.pull_request != '[]'
-        AND (ps.state = 'open' OR ps.state IS NULL)
-        ${projectId === undefined ? '' : 'AND p.project_id = ?'}
-    ) results
-    ORDER BY results.plan_id, results.uuid, results.pr_url
+      p.uuid AS uuid,
+      p.project_id AS project_id,
+      p.plan_id AS plan_id,
+      p.title AS title,
+      ps.pr_url AS pr_url
+    FROM plan p
+    INNER JOIN plan_pr pp ON pp.plan_uuid = p.uuid
+    INNER JOIN pr_status ps ON ps.id = pp.pr_status_id
+    WHERE ps.state = 'open'
+      AND p.status IN ('pending', 'in_progress', 'needs_review')
+      ${projectId === undefined ? '' : 'AND p.project_id = ?'}
+    ORDER BY p.plan_id, p.uuid, ps.pr_url
   `;
 
-  const parameters = projectId === undefined ? [] : [projectId, projectId];
-  const rows = db.prepare(query).all(...parameters) as Array<{
+  const junctionParams = projectId === undefined ? [] : [projectId];
+  const junctionRows = db.prepare(junctionQuery).all(...junctionParams) as Array<{
     uuid: string;
     project_id: number;
     plan_id: number;
@@ -515,20 +492,96 @@ export function getPlansWithPrs(db: Database, projectId?: number): PlanWithLinke
   }>;
 
   const plans = new Map<string, PlanWithLinkedPrs>();
-  for (const row of rows) {
+  const seenPrsByPlan = new Map<string, Set<string>>();
+
+  for (const row of junctionRows) {
     const existing = plans.get(row.uuid);
     if (existing) {
       existing.prUrls.push(row.pr_url);
+      seenPrsByPlan.get(row.uuid)!.add(row.pr_url);
+    } else {
+      plans.set(row.uuid, {
+        uuid: row.uuid,
+        projectId: row.project_id,
+        planId: row.plan_id,
+        title: row.title,
+        prUrls: [row.pr_url],
+      });
+      seenPrsByPlan.set(row.uuid, new Set([row.pr_url]));
+    }
+  }
+
+  // Phase 2: Find active plans with pull_request URLs not covered by plan_pr.
+  // Canonicalize URLs in TypeScript to correctly match against pr_status.pr_url.
+  const fallbackQuery = `
+    SELECT
+      p.uuid AS uuid,
+      p.project_id AS project_id,
+      p.plan_id AS plan_id,
+      p.title AS title,
+      p.pull_request AS pull_request
+    FROM plan p
+    WHERE p.status IN ('pending', 'in_progress', 'needs_review')
+      AND p.pull_request IS NOT NULL
+      AND p.pull_request != ''
+      AND p.pull_request != '[]'
+      ${projectId === undefined ? '' : 'AND p.project_id = ?'}
+    ORDER BY p.plan_id, p.uuid
+  `;
+
+  const fallbackParams = projectId === undefined ? [] : [projectId];
+  const fallbackRows = db.prepare(fallbackQuery).all(...fallbackParams) as Array<{
+    uuid: string;
+    project_id: number;
+    plan_id: number;
+    title: string | null;
+    pull_request: string;
+  }>;
+
+  for (const row of fallbackRows) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(row.pull_request);
+    } catch {
       continue;
     }
 
-    plans.set(row.uuid, {
-      uuid: row.uuid,
-      projectId: row.project_id,
-      planId: row.plan_id,
-      title: row.title,
-      prUrls: [row.pr_url],
-    });
+    if (!Array.isArray(parsed)) {
+      continue;
+    }
+
+    const seen = seenPrsByPlan.get(row.uuid) ?? new Set<string>();
+
+    for (const rawUrl of parsed) {
+      if (typeof rawUrl !== 'string') continue;
+
+      const canonical = tryCanonicalizePrUrl(rawUrl);
+      if (canonical === null || seen.has(canonical)) continue;
+
+      // Check cached state: include if open or not yet cached
+      const cached = db.prepare('SELECT state FROM pr_status WHERE pr_url = ?').get(canonical) as {
+        state: string;
+      } | null;
+      if (cached && cached.state !== 'open') continue;
+
+      seen.add(canonical);
+      const existing = plans.get(row.uuid);
+      if (existing) {
+        existing.prUrls.push(canonical);
+      } else {
+        plans.set(row.uuid, {
+          uuid: row.uuid,
+          projectId: row.project_id,
+          planId: row.plan_id,
+          title: row.title,
+          prUrls: [canonical],
+        });
+      }
+    }
+
+    if (!seenPrsByPlan.has(row.uuid)) {
+      seenPrsByPlan.set(row.uuid, seen);
+    }
   }
 
   return [...plans.values()];
